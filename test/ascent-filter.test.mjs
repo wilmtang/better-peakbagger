@@ -67,6 +67,71 @@ test('trip-report chip applies the settings word threshold', async () => {
     assert.equal(visibleRows(dom).length, expected);
 });
 
+const dateAnchor = (dom, key) =>
+    [...dom.window.document.querySelectorAll('table.gray th a')].find(a =>
+        (new dom.window.URL(a.href)).searchParams.get('sort')?.toLowerCase() === key);
+const dateTexts = dom => dataRows(dom).map(r => r.cells[1].textContent.trim());
+const sectionLabels = dom => sectionRows(dom).map(r => r.textContent.trim());
+const arrow = dom => dom.window.document.querySelector('.pbaf-sort-arrow');
+
+test('[sort desc] toggles instantly: rows reversed, URL rewritten, no navigation', async () => {
+    const dom = await loadPageWithBar(RAINIER, { url: RAINIER_URL });
+
+    assert.equal(arrow(dom).textContent.trim(), '▲');
+    const before = dateTexts(dom);
+    const labelsBefore = sectionLabels(dom);
+
+    dateAnchor(dom, 'ascentdated').click();
+
+    assert.equal(dom.window.location.href, dateAnchor(dom, 'ascentdated').href);
+    assert.equal(arrow(dom).textContent.trim(), '▼');
+    assert.deepEqual(dateTexts(dom), before.slice().reverse());
+    assert.deepEqual(sectionLabels(dom), labelsBefore.slice().reverse());
+    // The active filter survives the reorder untouched.
+    assert.equal(visibleRows(dom).length, 1272);
+    assert.equal(dateAnchor(dom, 'ascentdated').getAttribute('aria-current'), 'true');
+
+    // Toggle back restores the served order exactly.
+    dateAnchor(dom, 'ascentdate').click();
+    assert.deepEqual(dateTexts(dom), before);
+    assert.equal(arrow(dom).textContent.trim(), '▲');
+    assert.ok(dom.window.location.search.match(/sort=ascentdate(&|$)/i));
+});
+
+test('clicking the already-active direction is a no-op (no reload)', async () => {
+    const dom = await loadPageWithBar(RAINIER, { url: RAINIER_URL });
+    const before = dateTexts(dom);
+    dateAnchor(dom, 'ascentdate').click();
+    assert.deepEqual(dateTexts(dom), before);
+    assert.equal(dom.window.location.href, RAINIER_URL);
+});
+
+test('a desc-served page starts with the ▼ indicator and reverses to asc', async () => {
+    const dom = await loadPageWithBar('21500-y9998-sort-ascentdated.html', {
+        url: 'https://www.peakbagger.com/climber/PeakAscents.aspx?pid=21500&u=ft&y=9998&sort=ascentdated'
+    });
+    assert.equal(arrow(dom).textContent.trim(), '▼');
+    const before = dateTexts(dom);
+    dateAnchor(dom, 'ascentdate').click();
+    assert.deepEqual(dateTexts(dom), before.slice().reverse());
+    assert.equal(arrow(dom).textContent.trim(), '▲');
+});
+
+test('non-date sorts are not hijacked', async () => {
+    const dom = await loadPageWithBar('8241-y9999-sort-quality.html', {
+        url: 'https://www.peakbagger.com/climber/PeakAscents.aspx?pid=8241&u=ft&y=9999&sort=Quality'
+    });
+    assert.equal(arrow(dom), null);
+});
+
+test('views whose sort links change the row set are not hijacked', async () => {
+    // Default "Most Recent Year" view: page URL has no y=, links carry y=9998.
+    const dom = await loadPageWithBar('2296-rainier-default-recent-year.html', {
+        url: 'https://www.peakbagger.com/climber/PeakAscents.aspx?pid=2296'
+    });
+    assert.equal(arrow(dom), null);
+});
+
 test('renders on a non-date sort (flat table, no year sections)', async () => {
     const dom = await loadPageWithBar('8241-y9999-sort-quality.html', {
         url: 'https://www.peakbagger.com/climber/PeakAscents.aspx?pid=8241&u=ft&y=9999&sort=Quality'

@@ -64,6 +64,8 @@
 .pbaf-reset[hidden] { display: none; }
 .pbaf-note { color: #55554f; }
 .pbaf-note a { color: #2f6b3f; font-weight: 600; }
+.pbaf-sort-arrow { font-size: 10px; opacity: .85; }
+th a.pbaf-sort-active { text-decoration: none; cursor: default; }
 `;
 
     const injectStyle = () => {
@@ -136,6 +138,7 @@
 
         const dataRows = [];
         const sections = [];
+        const preamble = []; // data rows before the first year separator
         let currentSection = null;
         let pastHeader = false;
         for (const row of rows) {
@@ -163,6 +166,7 @@
             record.beta = record.words > 0 || record.gps || record.link;
             dataRows.push(record);
             if (currentSection) currentSection.items.push(record);
+            else preamble.push(record);
         }
         if (!dataRows.length) return;
 
@@ -305,6 +309,107 @@
 
         table.parentNode.insertBefore(bar, table);
         render();
+
+        // --- Instant Ascent Date sort --------------------------------------
+        // The date header always carries two backend sort links:
+        //   "Ascent Date" -> sort=ascentdate  (oldest first)
+        //   "[sort desc]" -> sort=ascentdated (newest first)
+        // When the table is already date-sorted, the opposite direction is
+        // exactly the served order reversed (sections reversed, rows within
+        // each section reversed), so both links can be answered instantly in
+        // the DOM with no date parsing — which matters because date cells
+        // include "Unknown", partial and malformed values whose backend
+        // ordering is opaque. Anything else (non-date sorts, or views whose
+        // links change the row set, e.g. the default "Most Recent Year" page
+        // linking to y=9998) falls through to normal navigation.
+        const setupInstantDateSort = () => {
+            const dateIndex = headerTexts.findIndex(text => text.startsWith('ascent date'));
+            if (dateIndex === -1) return;
+
+            const sortKeyOf = anchor => {
+                try { return (new URL(anchor.href, location.href).searchParams.get('sort') || '').toLowerCase(); }
+                catch (e) { return ''; }
+            };
+            const anchors = Array.from(headerRow.cells[dateIndex].querySelectorAll('a[href]'));
+            const links = {
+                asc: anchors.find(a => sortKeyOf(a) === 'ascentdate'),
+                desc: anchors.find(a => sortKeyOf(a) === 'ascentdated')
+            };
+            if (!links.asc || !links.desc) return;
+
+            const urlSort = (new URLSearchParams(location.search).get('sort') || 'ascentdate').toLowerCase();
+            if (urlSort !== 'ascentdate' && urlSort !== 'ascentdated') return;
+
+            // Ignoring `sort`, the links' query params must match the page's —
+            // otherwise following them changes which rows are shown, and only
+            // the backend can answer that.
+            const rowSetKey = search => {
+                const params = new URLSearchParams(search);
+                params.delete('sort');
+                return Array.from(params.entries())
+                    .map(([key, value]) => key.toLowerCase() + '=' + value.toLowerCase())
+                    .sort().join('&');
+            };
+            try {
+                if (rowSetKey(new URL(links.asc.href, location.href).search) !== rowSetKey(location.search)) return;
+            } catch (e) { return; }
+
+            // Served direction: trust the year separators over the URL.
+            const years = sections
+                .map(section => parseInt(normalize(section.row.textContent), 10))
+                .filter(Number.isFinite);
+            const servedDir = years.length > 1
+                ? (years[0] > years[years.length - 1] ? 'desc' : 'asc')
+                : (urlSort === 'ascentdated' ? 'desc' : 'asc');
+
+            const servedOrder = rows.slice(rows.indexOf(headerRow) + 1);
+            const reversedOrder = [];
+            for (let i = sections.length - 1; i >= 0; i--) {
+                reversedOrder.push(sections[i].row);
+                for (let j = sections[i].items.length - 1; j >= 0; j--) {
+                    reversedOrder.push(sections[i].items[j].row);
+                }
+            }
+            for (let i = preamble.length - 1; i >= 0; i--) reversedOrder.push(preamble[i].row);
+
+            const arrow = document.createElement('span');
+            arrow.className = 'pbaf-sort-arrow';
+            links.asc.after(arrow);
+
+            let currentDir = servedDir;
+            const paint = () => {
+                arrow.textContent = currentDir === 'asc' ? ' ▲' : ' ▼';
+                for (const [dir, link] of Object.entries(links)) {
+                    const active = dir === currentDir;
+                    link.classList.toggle('pbaf-sort-active', active);
+                    if (active) link.setAttribute('aria-current', 'true');
+                    else link.removeAttribute('aria-current');
+                    link.title = active ? 'Current sort'
+                        : (dir === 'asc' ? 'Sort oldest first (instant)' : 'Sort newest first (instant)');
+                }
+            };
+
+            const applyDir = dir => {
+                if (dir === currentDir) return;
+                const fragment = document.createDocumentFragment();
+                for (const row of (dir === servedDir ? servedOrder : reversedOrder)) fragment.appendChild(row);
+                headerRow.parentNode.appendChild(fragment);
+                currentDir = dir;
+                paint();
+                // The link's own href is exactly the backend request for this
+                // view, so reload/share/back-forward reproduce it server-side.
+                try { history.replaceState(history.state, '', links[dir].href); } catch (e) { /* sandboxed */ }
+            };
+
+            for (const [dir, link] of Object.entries(links)) {
+                link.addEventListener('click', event => {
+                    event.preventDefault();
+                    applyDir(dir);
+                });
+            }
+            paint();
+        };
+        setupInstantDateSort();
 
         // Re-apply the threshold if it changes in the options page / another tab.
         if (S && S.subscribe) {
