@@ -13,7 +13,7 @@ signed-in session, so every page carried the account holder's identity. All of
 it has been **masked** before committing:
 
 - Real name → the pseudonym **`Alex Doe`** (`Doe, Alex`).
-- Real climber id `40786` (as `cid=`/`c=`/`d=`) → `900001`.
+- Real climber id (as `cid=`/`c=`/`d=`) → `900001`.
 - The user's own ascent ids → fake ids; every non-Peakbagger link (Strava,
   Instagram, Flickr, YouTube, Mountain Project, blogs, …) → `https://example.com/`,
   as both `href` and any visible URL text. This keeps `<a href>` structure (so
@@ -23,7 +23,13 @@ it has been **masked** before committing:
   bio (which held a home city and social handles) are additionally genericized.
 
 `test/fixtures-privacy.test.mjs` fails the build if a raw identifier reappears
-(e.g. when refreshing a capture). Re-run the masking when adding new captures.
+(e.g. when refreshing a capture) — the banned identifiers live there only as
+salted hashes, so the guard itself discloses nothing. Re-run the masking when
+adding new captures.
+
+Fixtures are **self-contained**: the site's `pb.css` `<link>` is replaced by an
+inline `<style>` block (fetched from a Wayback `id_` capture of `pb.css`) and
+MHTML `cid:` stylesheet leftovers are dropped.
 
 | File | Original page | Exercises |
 |---|---|---|

@@ -8,7 +8,7 @@ Cloudflare challenge for non-browser clients).
 
 - **live** — saved from the live site (browser "Save as MHTML", extracted to HTML)
   from a signed-in session, then **masked** for the account holder's identity: real
-  name → `Alex Doe`, climber id `40786` → `900001`, the user's own ascent ids →
+  name → `Alex Doe`, real climber id → `900001`, the user's own ascent ids →
   fakes, and every non-Peakbagger link (Strava/etc.) → `https://example.com/`
   (href *and* visible text). The `<a href>` structure is preserved, so link counts
   are unchanged. `test/fixtures-privacy.test.mjs` fails the build if a raw
@@ -19,6 +19,11 @@ Cloudflare challenge for non-browser clients).
   `https://web.archive.org/web/<TIMESTAMP>id_/<ORIGINAL_URL>` (may be gzip). The
   Cloudflare Insights beacon `<script>` is stripped (its token trips secret
   scanners and it's irrelevant to DOM tests).
+
+Both kinds are **self-contained**: the site's `pb.css` `<link>` is replaced by
+an inline `<style>` block (fetched from a Wayback `id_` capture of `pb.css`)
+and MHTML `cid:` stylesheet leftovers are dropped, so opening or testing a
+fixture never touches the live site.
 
 | File | Source | Captured | Original URL | Exercises |
 |---|---|---|---|---|

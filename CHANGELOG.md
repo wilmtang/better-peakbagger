@@ -10,9 +10,15 @@
   holder's identity is masked: real name → a pseudonym, real climber/ascent ids
   → fakes, and external social links (Strava/Instagram/etc.) → placeholders,
   with the personal pages fully genericized (peaks, dates, ranges). New
-  `test/fixtures-privacy.test.mjs` fails the build if a raw identifier reappears.
-  Golden chip counts updated for the larger (~4,145-row) Rainier capture; the
-  smaller peak fixtures (21500/8241/1039) stay as Wayback captures.
+  `test/fixtures-privacy.test.mjs` fails the build if a raw identifier reappears
+  (the banned identifiers are stored only as salted hashes, so the guard itself
+  discloses nothing). Golden chip counts updated for the larger (~4,145-row)
+  Rainier capture; the smaller peak fixtures (21500/8241/1039) stay as Wayback
+  captures.
+- **Test fixtures are self-contained.** Every fixture's `pb.css` stylesheet
+  `<link>` is replaced with an inline `<style>` block (from a Wayback `id_`
+  capture of `pb.css`), and dead MHTML `cid:` stylesheet links are dropped, so
+  fixtures render and test without referencing the live site.
 - **GPX chart: default-series setting.** New options-page control chooses which
   elevation curve the ascent-page chart shows on load — both, distance only, or
   time only (`chartDefaultSeries`, default both). Only the *initial* visibility
