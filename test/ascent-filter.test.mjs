@@ -67,6 +67,51 @@ test('trip-report chip applies the settings word threshold', async () => {
     assert.equal(visibleRows(dom).length, expected);
 });
 
+test('"has beta" definition comes from settings (GPS-only)', async () => {
+    const dom = await loadPageWithBar(RAINIER, {
+        url: RAINIER_URL,
+        settings: { betaTr: false, betaLink: false }
+    });
+    assert.equal(chipCount(dom, 'Has beta'), '221');
+    assert.equal(visibleRows(dom).length, 221);
+    assert.match(chip(dom, 'Has beta').title, /GPS track/);
+    assert.doesNotMatch(chip(dom, 'Has beta').title, /trip report/);
+});
+
+test('beta trip-report signal honors its own word threshold', async () => {
+    const dom = await loadPageWithBar(RAINIER, {
+        url: RAINIER_URL,
+        settings: { betaGps: false, betaLink: false, betaTrMinWords: 100 }
+    });
+    const expected = dataRows(dom).filter(r => {
+        const m = /^TR-(\d+)/.exec(r.cells[4].textContent.trim());
+        return m && parseInt(m[1], 10) >= 100;
+    }).length;
+    assert.ok(expected > 0);
+    assert.equal(chipCount(dom, 'Has beta'), String(expected));
+    assert.equal(visibleRows(dom).length, expected);
+    assert.match(chip(dom, 'Has beta').title, /≥ 100 words/);
+});
+
+test('an all-off beta definition falls back to all-on', async () => {
+    const dom = await loadPageWithBar(RAINIER, {
+        url: RAINIER_URL,
+        settings: { betaTr: false, betaGps: false, betaLink: false }
+    });
+    assert.equal(chipCount(dom, 'Has beta'), '1272');
+});
+
+test('beta definition changes apply live via storage.onChanged', async () => {
+    const dom = await loadPageWithBar(RAINIER, { url: RAINIER_URL });
+    assert.equal(chipCount(dom, 'Has beta'), '1272');
+
+    await dom.chrome.storage.sync.set({ bpbSettings: { betaTr: false, betaLink: false } });
+    await new Promise(resolve => dom.window.setTimeout(resolve, 10));
+
+    assert.equal(chipCount(dom, 'Has beta'), '221');
+    assert.equal(visibleRows(dom).length, 221);
+});
+
 const dateAnchor = (dom, key) =>
     [...dom.window.document.querySelectorAll('table.gray th a')].find(a =>
         (new dom.window.URL(a.href)).searchParams.get('sort')?.toLowerCase() === key);

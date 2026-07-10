@@ -13,14 +13,31 @@
 
     const api = (typeof browser !== 'undefined' && browser.storage) ? browser : chrome;
     const STORAGE_KEY = 'bpbSettings';
-    const DEFAULTS = { units: 'auto', theme: 'system', defaultMinTrWords: 1 };
+    const DEFAULTS = {
+        units: 'auto', theme: 'system', defaultMinTrWords: 1,
+        // What the ascent filter's "Has beta" chip counts: an ascent
+        // qualifies if it has any of the enabled signals.
+        betaTr: true, betaTrMinWords: 1, betaGps: true, betaLink: true
+    };
+
+    const clampWords = value => {
+        const words = parseInt(value, 10);
+        return Number.isFinite(words) && words > 0 ? words : 1;
+    };
 
     const clean = raw => {
         const s = { ...DEFAULTS, ...(raw && typeof raw === 'object' ? raw : {}) };
         if (!['auto', 'imperial', 'metric'].includes(s.units)) s.units = DEFAULTS.units;
         if (!['system', 'light', 'dark'].includes(s.theme)) s.theme = DEFAULTS.theme;
-        const words = parseInt(s.defaultMinTrWords, 10);
-        s.defaultMinTrWords = Number.isFinite(words) && words > 0 ? words : 1;
+        s.defaultMinTrWords = clampWords(s.defaultMinTrWords);
+        for (const key of ['betaTr', 'betaGps', 'betaLink']) {
+            if (typeof s[key] !== 'boolean') s[key] = DEFAULTS[key];
+        }
+        // A "has beta" that matches nothing is never a valid state.
+        if (!s.betaTr && !s.betaGps && !s.betaLink) {
+            s.betaTr = s.betaGps = s.betaLink = true;
+        }
+        s.betaTrMinWords = clampWords(s.betaTrMinWords);
         return s;
     };
 

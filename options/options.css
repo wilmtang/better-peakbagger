@@ -82,6 +82,12 @@ select, input[type="number"] {
 input[type="number"] { min-width: 96px; text-align: right; }
 select:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
+.beta-signals { display: flex; flex-direction: column; gap: 9px; }
+.check { display: flex; align-items: center; gap: 7px; cursor: pointer; white-space: nowrap; }
+.check input[type="checkbox"] { width: 15px; height: 15px; margin: 0; accent-color: var(--accent); cursor: pointer; }
+input[type="number"].mini { min-width: 0; width: 72px; padding: 4px 8px; }
+.check input[type="number"]:disabled { opacity: .45; }
+
 .status {
     margin: 16px 2px 0;
     min-height: 20px;

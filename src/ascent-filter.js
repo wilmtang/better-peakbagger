@@ -178,12 +178,47 @@ th a.pbaf-sort-active { text-decoration: none; cursor: default; }
             link: dataRows.filter(r => r.link).length
         };
 
+        // What "has beta" means is user-configurable (extension settings);
+        // the default matches any trip report, GPS track, or link.
+        let betaCfg = { tr: true, trMinWords: 1, gps: true, link: true };
+        const betaCfgFrom = settings => ({
+            tr: settings.betaTr !== false,
+            trMinWords: Math.max(1, parseInt(settings.betaTrMinWords, 10) || 1),
+            gps: settings.betaGps !== false,
+            link: settings.betaLink !== false
+        });
+        const betaOf = record =>
+            (betaCfg.tr && record.words >= betaCfg.trMinWords) ||
+            (betaCfg.gps && record.gps) ||
+            (betaCfg.link && record.link);
+        const betaTooltip = () => {
+            const parts = [];
+            if (betaCfg.tr) parts.push(betaCfg.trMinWords > 1 ? `a trip report of ≥ ${betaCfg.trMinWords} words` : 'a trip report');
+            if (betaCfg.gps) parts.push('a GPS track');
+            if (betaCfg.link) parts.push('a link');
+            return `Only ascents with ${parts.join(' or ')} — hides entries with no climb beta. `
+                + 'What counts as beta is configurable in the extension settings. Remembered across visits.';
+        };
+        const refreshBeta = () => {
+            counts.beta = 0;
+            for (const record of dataRows) {
+                record.beta = betaOf(record);
+                if (record.beta) counts.beta++;
+            }
+            if (chips.beta) {
+                chips.beta.querySelector('.pbaf-count').textContent = String(counts.beta);
+                chips.beta.title = betaTooltip();
+            }
+        };
+
         const state = loadState();
-        // The threshold default is centralized in extension settings.
+        // The threshold default and the beta definition are centralized in
+        // extension settings.
         if (S) {
             try {
                 const settings = await S.get();
                 state.minWords = Math.max(1, parseInt(settings.defaultMinTrWords, 10) || 1);
+                betaCfg = betaCfgFrom(settings);
             } catch (e) { /* fall back to localStorage/default */ }
         }
         const bar = buildBarShell();
@@ -255,8 +290,7 @@ th a.pbaf-sort-active { text-decoration: none; cursor: default; }
         divider.className = 'pbaf-divider';
 
         bar.append(
-            makeChip('beta', 'Has beta',
-                'Only ascents with a trip report, GPS track, or link — hides entries with no climb beta. Remembered across visits.'),
+            makeChip('beta', 'Has beta', ''),
             divider,
             makeChip('tr', 'Trip report',
                 'Only ascents with a written trip report of at least the chosen word count.'),
@@ -269,6 +303,7 @@ th a.pbaf-sort-active { text-decoration: none; cursor: default; }
             statusEl,
             resetButton
         );
+        refreshBeta();
 
         const render = () => {
             for (const [key, chip] of Object.entries(chips)) {
@@ -411,15 +446,24 @@ th a.pbaf-sort-active { text-decoration: none; cursor: default; }
         };
         setupInstantDateSort();
 
-        // Re-apply the threshold if it changes in the options page / another tab.
+        // Re-apply the threshold and the beta definition if they change in
+        // the options page / another tab.
         if (S && S.subscribe) {
             S.subscribe(settings => {
+                let dirty = false;
                 const words = Math.max(1, parseInt(settings.defaultMinTrWords, 10) || 1);
                 if (words !== state.minWords) {
                     state.minWords = words;
                     wordsInput.value = String(words);
-                    render();
+                    dirty = true;
                 }
+                const nextBeta = betaCfgFrom(settings);
+                if (JSON.stringify(nextBeta) !== JSON.stringify(betaCfg)) {
+                    betaCfg = nextBeta;
+                    refreshBeta();
+                    dirty = true;
+                }
+                if (dirty) render();
             });
         }
     };
