@@ -2,6 +2,12 @@
 
 ## 1.3.0 — 2026-07-10
 
+- **GPX chart: default-series setting.** New options-page control chooses which
+  elevation curve the ascent-page chart shows on load — both, distance only, or
+  time only (`chartDefaultSeries`, default both). Only the *initial* visibility
+  is bound to the setting: the chart legend still toggles either series for the
+  current view, and that peek no longer persists, so it can't quietly change the
+  preference. Applies live to open ascent tabs.
 - **Dark mode: self-healing stylesheet injection.** `data-bpb-theme` was set
   unconditionally, but the dark stylesheet was injected once and gated on
   `window.BPBDarkCSS` — so any timing where that one-shot was skipped left the

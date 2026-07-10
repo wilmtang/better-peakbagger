@@ -15,6 +15,10 @@
     const STORAGE_KEY = 'bpbSettings';
     const DEFAULTS = {
         units: 'auto', theme: 'system',
+        // Which GPX-chart series is shown by default: 'both', or only
+        // 'distance' / 'time'. A legend click can still reveal the hidden one
+        // for the current view without changing this preference.
+        chartDefaultSeries: 'both',
         // What the ascent filter's "Has beta" chip counts: an ascent
         // qualifies if it has any of the enabled signals.
         betaTr: true, betaTrMinWords: 1, betaGps: true, betaLink: true
@@ -29,6 +33,7 @@
         const s = { ...DEFAULTS, ...(raw && typeof raw === 'object' ? raw : {}) };
         if (!['auto', 'imperial', 'metric'].includes(s.units)) s.units = DEFAULTS.units;
         if (!['system', 'light', 'dark'].includes(s.theme)) s.theme = DEFAULTS.theme;
+        if (!['both', 'distance', 'time'].includes(s.chartDefaultSeries)) s.chartDefaultSeries = DEFAULTS.chartDefaultSeries;
         for (const key of ['betaTr', 'betaGps', 'betaLink']) {
             if (typeof s[key] !== 'boolean') s[key] = DEFAULTS[key];
         }

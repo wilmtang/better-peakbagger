@@ -53,7 +53,7 @@ Open the settings from the extension's options (`chrome://extensions` → Detail
 ### GPX Analyzer
 Runs on `climber/ascent.aspx`. When the page has a "Download this GPS track" link, it parses the GPX in-browser and renders a Chart.js chart.
 
-- **Dual-axis charting** — simultaneous **Elevation by Distance** and **Elevation by Time** lines; click a legend entry to isolate one.
+- **Dual-axis charting** — simultaneous **Elevation by Distance** and **Elevation by Time** lines; click a legend entry to isolate one. A setting picks which series loads by default (both / distance only / time only); a legend click still peeks at the hidden one without changing the setting.
 - **Interactive tooltips** — elevation, distance, grade, and timestamp for any trackpoint.
 - **Map synchronization** — hovering the chart drops a color-coded marker onto Peakbagger's native Leaflet map, in sync with your cursor.
 - **Adjusted metrics** — Haversine distance with confirmed-movement de-noising, hysteresis-based elevation gain, windowed grade — to get closer to Garmin/Strava-style totals. Raw-vs-adjusted deltas are shown when they matter.
@@ -74,6 +74,7 @@ The options page centralizes the preferences in `chrome.storage.sync`:
 
 - **Units** — Auto (match page) / Imperial / Metric.
 - **Theme** — Follow system / Light / Dark. Applies to the whole Peakbagger site and the extension's panels.
+- **GPX chart default series** — which elevation curve the chart shows on load (both / distance only / time only). A legend click can still reveal the other one for that view without changing the setting.
 - **"Has beta" means** — which signals the Has beta chip counts: trip report (with its own ≥ N words threshold), GPS track, external link. At least one must stay checked.
 
 Changes apply live to any open Peakbagger tab.
@@ -83,7 +84,7 @@ Changes apply live to any open Peakbagger tab.
 ## Architecture at a glance
 
 ```
-                          chrome.storage.sync  ({ units, theme, beta* })
+                          chrome.storage.sync  ({ units, theme, chartDefaultSeries, beta* })
                                    ▲   │  onChanged
                  ┌─────────────────┼───┼──────────────────────────────────────────┐
    options page  │                 │   ▼                                            │
@@ -314,6 +315,7 @@ Settings shape (`chrome.storage.sync`, key `bpbSettings`):
 ```js
 { units: 'auto' | 'imperial' | 'metric',
   theme: 'system' | 'light' | 'dark',
+  chartDefaultSeries: 'both' | 'distance' | 'time',  // GPX chart's initial series
   betaTr: boolean,                  // "has beta" counts a trip report…
   betaTrMinWords: number,           //   …of at least this many words
   betaGps: boolean,                 // "has beta" counts a GPS track

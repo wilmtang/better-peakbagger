@@ -48,6 +48,20 @@
             </div>
 
             <div class="row">
+                <label class="label" for="chart-series">
+                    <span class="title">GPX chart default series</span>
+                    <span class="desc">Which elevation curve the ascent-page chart shows on load. You can still click a legend entry to reveal the other one for that view — it won’t change this setting.</span>
+                </label>
+                <div class="control">
+                    <select id="chart-series">
+                        <option value="both">Distance &amp; time</option>
+                        <option value="distance">Elevation by distance only</option>
+                        <option value="time">Elevation by time only</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="row">
                 <div class="label">
                     <span class="title">“Has beta” means</span>
                     <span class="desc">What the ascent-list <em>Has beta</em> chip counts. An ascent qualifies if it has at least one of the checked signals.</span>

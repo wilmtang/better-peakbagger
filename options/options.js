@@ -9,6 +9,7 @@
     const root = document.documentElement;
     const unitsEl = document.getElementById('units');
     const themeEl = document.getElementById('theme');
+    const chartSeriesEl = document.getElementById('chart-series');
     const betaTrEl = document.getElementById('beta-tr');
     const betaTrWordsEl = document.getElementById('beta-tr-words');
     const betaGpsEl = document.getElementById('beta-gps');
@@ -28,6 +29,7 @@
     const populate = settings => {
         unitsEl.value = settings.units;
         themeEl.value = settings.theme;
+        chartSeriesEl.value = settings.chartDefaultSeries;
         betaTrEl.checked = settings.betaTr;
         betaTrWordsEl.value = String(settings.betaTrMinWords);
         betaTrWordsEl.disabled = !settings.betaTr;
@@ -45,6 +47,7 @@
 
     unitsEl.addEventListener('change', () => save({ units: unitsEl.value }));
     themeEl.addEventListener('change', () => save({ theme: themeEl.value }));
+    chartSeriesEl.addEventListener('change', () => save({ chartDefaultSeries: chartSeriesEl.value }));
 
     // "Has beta" definition. An empty definition is never valid: block
     // unchecking the last signal instead of silently resetting later.

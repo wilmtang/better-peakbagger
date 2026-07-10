@@ -311,6 +311,10 @@
         return !!(elevTd && elevTd.nextElementSibling && /^[\d,.]+\s*m/.test(elevTd.nextElementSibling.textContent.trim()));
     };
     const resolveUnits = s => s.units === 'metric' ? 'metric' : s.units === 'imperial' ? 'imperial' : (detectPageMetric() ? 'metric' : 'imperial');
+    // Which series to show on load. Only the initial visibility is bound to the
+    // setting; the legend's own click handler toggles visibility for the current
+    // view without writing it back, so a temporary peek never changes the pref.
+    const resolveChartSeries = s => (s.chartDefaultSeries === 'distance' || s.chartDefaultSeries === 'time') ? s.chartDefaultSeries : 'both';
 
     const initChart = async () => {
         // 1. Locate GPX link and build UI
@@ -478,9 +482,19 @@
 
             if (chartInstance) chartInstance.destroy();
 
+            // Initial series visibility follows the setting, but only when both
+            // series exist (a time series needs timestamps). The legend's click
+            // handler can still reveal the hidden one for this view; it doesn't
+            // write the setting, so the peek is transient.
+            const seriesPref = resolveChartSeries(BPB.get());
+            const splittable = hasTime;
+            const hideDistance = splittable && seriesPref === 'time';
+            const hideTime = splittable && seriesPref === 'distance';
+
             const datasets = [{
                 label: `Elevation by Distance`,
                 data: eleDistData,
+                hidden: hideDistance,
                 borderColor: '#fc4c02',
                 backgroundColor: 'rgba(252, 76, 2, 0.15)',
                 borderWidth: 2, fill: true, tension: 0.2, yAxisID: 'y', xAxisID: 'x', pointRadius: 0, pointHoverRadius: 5, hitRadius: 40
@@ -490,11 +504,15 @@
                 datasets.push({
                     label: `Elevation by Time`,
                     data: eleTimeData,
+                    hidden: hideTime,
                     borderColor: '#6ab0de',
                     backgroundColor: 'rgba(0, 127, 182, 0.15)',
                     borderWidth: 2, fill: true, tension: 0.2, yAxisID: 'y', xAxisID: 'xTime', pointRadius: 0, pointHoverRadius: 5, hitRadius: 40
                 });
             }
+
+            // Match the legend handler's rule: one series visible -> index mode.
+            const startsSingle = hideDistance || hideTime;
 
             const maxDist = parseFloat((metrics.distanceM * dMult).toFixed(2));
 
@@ -503,7 +521,7 @@
                 data: { datasets },
                 options: {
                     responsive: true, maintainAspectRatio: false,
-                    interaction: { mode: 'nearest', intersect: true, axis: 'xy' },
+                    interaction: startsSingle ? { mode: 'index', intersect: false } : { mode: 'nearest', intersect: true, axis: 'xy' },
                     onHover: (event, activeElements) => {
                         // FRAGILE DEPENDENCY: the hover-to-highlight-on-map
                         // feature reaches into Peakbagger's own MasterMap iframe
