@@ -1,0 +1,22 @@
+{
+  "name": "better-peakbagger",
+  "version": "1.0.0",
+  "description": "Adds an interactive elevation & time chart to Peakbagger ascent pages and a stackable beta filter to a peak's ascent list.",
+  "private": true,
+  "license": "AGPL-3.0-or-later",
+  "author": "wilmtang",
+  "homepage": "https://github.com/wilmtang/better-peakbagger",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/wilmtang/better-peakbagger.git"
+  },
+  "scripts": {
+    "lint": "web-ext lint --source-dir .",
+    "build": "web-ext build --source-dir . --artifacts-dir web-ext-artifacts --overwrite-dest --ignore-files package.json package-lock.json CHANGELOG.md \"node_modules/**\"",
+    "start:firefox": "web-ext run --source-dir .",
+    "start:chromium": "web-ext run --source-dir . --target chromium"
+  },
+  "devDependencies": {
+    "web-ext": "^10.4.0"
+  }
+}
