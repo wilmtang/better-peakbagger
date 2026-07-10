@@ -253,16 +253,19 @@ Development against this table doesn't touch the live site: `test/fixtures/peaka
 
 ## Deep dive: site-wide dark mode
 
-Dark mode is delivered by a **static stylesheet plus an attribute toggle**, which is fast and predictable:
+Dark mode is delivered by a **stylesheet plus an attribute toggle**, both injected synchronously at `document_start` — the way Dark Reader does it, so there's no flash of the native light page:
 
-- `src/site-dark.css` is injected on **every** Peakbagger page via the manifest, but every rule is scoped under `html[data-bpb-theme="dark"]`, so it's **inert** until that attribute exists.
-- `src/theme.js` (isolated, `document_start`) reads the theme setting, resolves `'system'` via `matchMedia`, and sets `data-bpb-theme="dark"` or `"light"` on `<html>`. It also re-applies on `storage.onChanged` and on OS light/dark changes (while following the system).
+- `src/site-dark-css.js` holds the dark rules as a string (`window.BPBDarkCSS`); every rule is scoped under `html[data-bpb-theme="dark"]`, so it's **inert** until that attribute exists.
+- `src/theme.js` (isolated, `document_start`) injects that string as a `<style>` straight into `<html>` (which exists this early; `<head>` doesn't yet) and sets `data-bpb-theme` — **both in one synchronous tick**. It resolves `'system'` via `matchMedia`, and re-applies on `storage.onChanged` and on OS light/dark changes (while following the system). See [`docs/dark-mode-flash.md`](docs/dark-mode-flash.md) for why this beats a manifest `css` entry.
 
 The dark palette is derived from Peakbagger's native `pb.css` (navy links, purple visited, maroon `h1`, navy `h2`, `table.gray` borders, the `mewallp.gif` body wallpaper) and maps each to a readable dark equivalent, plus higher-specificity overrides for the filter bar (`html[data-bpb-theme="dark"] #pbaf-bar …`, which outrank the bar's own `#pbaf-bar` rules). **Images and the map iframe are left untouched** so photos and topo maps render normally (the theme script uses `all_frames: false`, so it never darkens the map iframe).
 
+One consequence of leaving images alone: the header banner sits on the light `header.jpg` photo, and its title + nav links carry inline `color:black`. The global link recolor would override that black with the light-on-dark link color, washing the links out over the photo — so `.mainbanner a` / `.mainmenu a` are re-darkened back to `#000`.
+
+Every text/background pair in the theme is held to **WCAG 2.1 AA** contrast (4.5:1 normal, 3:1 large) by `test/dark-contrast.test.mjs`, which parses the shipped stylesheet (the single source of truth for colors) and checks each pairing against the captured fixtures — so a future color edit that fails contrast fails the build.
+
 Trade-offs, stated honestly:
 
-- **Flash of native page.** `chrome.storage` is async, so there's a brief moment at `document_start` before the attribute lands where the page shows its native light theme. Eliminating it entirely would require synchronous storage the platform doesn't offer.
 - **Coverage.** Peakbagger is a large, old-school site; the stylesheet targets the common structural elements (body, tables, links, headings, form controls, legacy `bgcolor` cells). A rarely-visited page may show a stray light element — file it and it's a one-line addition.
 - **Stacking with other dark extensions.** If you also run a global dark-mode extension (e.g. Dark Reader), whitelist Peakbagger there so the two don't double up.
 
@@ -291,8 +294,8 @@ options/
   options.js             load/save + self-theming
 src/
   settings.js            shared chrome.storage core (window.BPBSettings)
-  theme.js               site-wide theme applier → data-bpb-theme on <html>
-  site-dark.css          dark rules, scoped under html[data-bpb-theme="dark"]
+  theme.js               injects the dark <style> + sets data-bpb-theme on <html>
+  site-dark-css.js       dark rules as a string (window.BPBDarkCSS), theme-scoped
   bridge.js              relays settings to the MAIN-world analyzer (postMessage)
   gpx-analyzer.js        elevation/time chart + map-hover (MAIN world)
   ascent-filter.js       ascent-list filter bar (isolated world)
@@ -301,8 +304,10 @@ vendor/
 icons/                   16/32/48/128 px
 test/
   fixtures/peakascents/  raw PeakAscents.aspx captures (see its README)
+  fixtures/pages/        whole-page captures, e.g. the home page (see its README)
   helpers/load-page.mjs  jsdom + chrome.storage stub harness
-  ascent-filter.test.mjs fixture-driven tests (npm test)
+  ascent-filter.test.mjs fixture-driven filter/sort tests (npm test)
+  dark-contrast.test.mjs WCAG AA contrast guard for the dark theme
 ```
 
 Settings shape (`chrome.storage.sync`, key `bpbSettings`):

@@ -8,49 +8,67 @@ reproduced on every refresh; Chrome often masked it.
 
 ## Root cause
 
-Dark mode is applied in two parts:
+Showing dark mode with no flash requires **two** things to be live before the
+browser's first paint:
 
-1. `src/site-dark.css` is injected via the manifest at `document_start`, but
-   every rule is scoped under `html[data-bpb-theme="dark"]` — the sheet is
-   inert until that attribute exists.
-2. `src/theme.js` also runs at `document_start`, but it only set the attribute
-   after reading the theme preference from `chrome.storage.sync.get()`, which
-   is asynchronous (an IPC round-trip to the browser process).
+1. **The stylesheet** — the dark rules, every one scoped under
+   `html[data-bpb-theme="dark"]` (inert until that attribute exists).
+2. **The attribute** — `data-bpb-theme="dark"` on `<html>`, set by
+   `src/theme.js`.
 
-That makes the first paint a race: if the renderer paints the page before the
-storage promise resolves, the user sees one or more frames of the native light
-site, then dark mode lands. Peakbagger pages are light HTML that paint almost
-instantly — especially on a refresh served from cache — so the race is easy to
-lose. Which browser "wins" is just timing: Brave backs `storage.sync` locally
-(it has no Google account sync) and consistently lost the race; the bug was
-always present in Chrome too, just usually hidden.
+If either lands after the first paint, the user sees a frame (or several) of
+the native light site. Peakbagger pages are light HTML that paint almost
+instantly — especially a refresh served from cache — so any lag shows.
 
-The original code assumed this was unavoidable ("unavoidable without
-synchronous storage"). It isn't: `chrome.storage` is the only *extension*
-storage that holds the setting, but a content script at `document_start` does
-have synchronous storage available — the page origin's `localStorage`, which
-isolated-world content scripts share with the site.
+There were two independent lags, fixed in turn:
+
+**Lag A — the attribute (async storage).** `theme.js` originally set the
+attribute only after `chrome.storage.sync.get()` resolved, an async IPC
+round-trip to the browser process. The renderer often painted first. Fixed by
+mirroring the preference into the page's `localStorage` (key `bpbThemePref`),
+which an isolated-world content script can read **synchronously** at
+`document_start`, and setting the attribute from that before reconciling with
+the authoritative stored value.
+
+**Lag B — the stylesheet (declarative `css` channel).** Fixing Lag A wasn't
+enough: the sheet was still injected via the manifest's `content_scripts.css`
+array. That's a *separate* renderer subsystem from the content-script JS, and
+it is **not guaranteed to be applied before first paint** — on Brave and on
+cache-served loads it frequently lagged. So the attribute was set instantly but
+the rules it triggers arrived a frame late: still a flash.
 
 ## Fix
 
-`src/theme.js` now mirrors the theme preference into the page's
-`localStorage` (key `bpbThemePref`) and uses it to set the attribute
-synchronously, before first paint:
+Do it the way Dark Reader does — never use the manifest `css` channel. Inject
+the stylesheet from JavaScript at `document_start`, in the **same synchronous
+tick** that sets the attribute, so the parser and renderer can't get ahead of
+either one:
 
-1. **Pre-paint (synchronous):** read `bpbThemePref` from `localStorage` and
-   set `data-bpb-theme` immediately. The mirror stores the *preference*
-   (`system` / `light` / `dark`), not the resolved color, so a `system` user
-   whose OS theme changed between visits still resolves correctly via
-   `matchMedia` (which is synchronous and available at `document_start`).
-2. **First visit (no mirror):** `resolveTheme(null)` falls back to the OS
-   preference — correct for everyone whose setting matches their system.
-3. **Reconcile (asynchronous):** the existing `chrome.storage` read and
+1. `src/site-dark-css.js` (a content script loaded before `theme.js`) exposes
+   the dark rules as a string, `window.BPBDarkCSS`.
+2. `src/theme.js`, at `document_start`, creates a `<style>` with that text and
+   appends it to `document.documentElement`. `<html>` exists this early even
+   though `<head>` does not yet; a `<style>` in `<html>` applies fine, and its
+   `!important` author rules outrank the site's own sheets regardless of order.
+3. In the same tick it reads the `bpbThemePref` mirror and sets
+   `data-bpb-theme` synchronously. The sheet stays inert until the attribute is
+   `"dark"`, so it also serves light mode and later live toggles with no
+   re-injection.
+4. **Reconcile (asynchronous):** the existing `chrome.storage` read and
    `subscribe` listener remain authoritative; when they resolve they re-apply
-   the theme and refresh the mirror.
+   the attribute and refresh the mirror.
 
-All `localStorage` access is wrapped in `try`/`catch` since site storage can
-be blocked (e.g. by browser privacy settings); the extension then degrades to
+The mirror stores the *preference* (`system` / `light` / `dark`), not the
+resolved color, so a `system` user whose OS theme changed between visits still
+resolves correctly via `matchMedia` (synchronous, available at
+`document_start`). All `localStorage` access is wrapped in `try`/`catch` since
+site storage can be blocked by privacy settings; the extension then degrades to
 the old async-only behavior.
+
+Keeping the CSS as a JS string (rather than a `.css` file) is what lets
+`theme.js` inject it synchronously — there's no synchronous way to read an
+extension file's text from a content script, and a `<link>` to it would load
+asynchronously and reintroduce the flash.
 
 ## Remaining edge cases (accepted)
 

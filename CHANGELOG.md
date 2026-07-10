@@ -1,5 +1,32 @@
 # Changelog
 
+## 1.2.1 — 2026-07-10
+
+Dark mode polish: kill the flash for good, fix the washed-out header, and guard
+contrast with a test.
+
+- **Dark mode flash, finished.** 1.2.0 made the `data-bpb-theme` attribute
+  land synchronously, but the dark stylesheet itself was still injected through
+  the manifest `content_scripts.css` array — a separate renderer channel that
+  doesn't reliably apply before first paint (Brave, cache-served loads), so the
+  flash persisted. `src/theme.js` now injects the sheet from JS as a `<style>`
+  in `<html>` at `document_start`, in the same synchronous tick that sets the
+  attribute — the approach Dark Reader uses. The rules moved from
+  `src/site-dark.css` (removed) to `src/site-dark-css.js` as `window.BPBDarkCSS`;
+  the manifest no longer uses a `css` entry. Details in
+  `docs/dark-mode-flash.md`.
+- **Legible header banner.** The site header sits on the (light) `header.jpg`
+  photo with its title + nav links set to inline `color:black`. The theme's
+  global `a { color: … }` was overriding that black with the light-on-dark link
+  color, washing the links out over the photo. `.mainbanner a` / `.mainmenu a`
+  are now re-darkened to `#000`.
+- **WCAG AA contrast guard.** New `test/dark-contrast.test.mjs` parses the
+  shipped dark stylesheet and asserts every text/background pair meets WCAG 2.1
+  AA (4.5:1 normal, 3:1 large), grounded against the captured fixtures. Fixing
+  the pre-existing failures nudged a few muted colors lighter (placeholder,
+  filter label/count) — no visible change, now compliant. Added a home-page
+  capture (`test/fixtures/pages/home-default.html`) so the header is covered.
+
 ## 1.2.0 — 2026-07-10
 
 Instant date sorting, a user-defined "has beta", and a dark mode fix.
