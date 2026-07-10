@@ -1,7 +1,7 @@
 {
   "name": "better-peakbagger",
-  "version": "1.0.0",
-  "description": "Adds an interactive elevation & time chart to Peakbagger ascent pages and a stackable beta filter to a peak's ascent list.",
+  "version": "1.1.0",
+  "description": "Adds an interactive elevation & time chart to Peakbagger ascent pages, a stackable beta filter, plus site-wide dark mode and centralized settings.",
   "private": true,
   "license": "AGPL-3.0-or-later",
   "author": "wilmtang",

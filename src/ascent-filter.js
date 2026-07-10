@@ -9,6 +9,11 @@
 (() => {
     'use strict';
 
+    // Chip on/off states stay in page localStorage (below); the word-count
+    // threshold lives in the shared extension settings (chrome.storage) so it
+    // is editable from the options page too.
+    const S = window.BPBSettings;
+
     const STORAGE_KEY = 'pbAscentBetaFilter.v1';
     const DEFAULT_STATE = { beta: true, tr: false, minWords: 1, gps: false, link: false };
 
@@ -100,7 +105,7 @@
         table.parentNode.insertBefore(bar, table);
     };
 
-    const init = () => {
+    const init = async () => {
         if (document.getElementById('pbaf-bar')) return;
         const table = document.querySelector('table.gray');
         if (!table) return;
@@ -170,6 +175,13 @@
         };
 
         const state = loadState();
+        // The threshold default is centralized in extension settings.
+        if (S) {
+            try {
+                const settings = await S.get();
+                state.minWords = Math.max(1, parseInt(settings.defaultMinTrWords, 10) || 1);
+            } catch (e) { /* fall back to localStorage/default */ }
+        }
         const bar = buildBarShell();
         const chips = {};
 
@@ -210,6 +222,7 @@
             const value = parseInt(wordsInput.value, 10);
             state.minWords = Number.isFinite(value) && value > 0 ? value : 1;
             saveState(state);
+            if (S) S.set({ defaultMinTrWords: state.minWords });
             render();
         });
 
@@ -292,6 +305,18 @@
 
         table.parentNode.insertBefore(bar, table);
         render();
+
+        // Re-apply the threshold if it changes in the options page / another tab.
+        if (S && S.subscribe) {
+            S.subscribe(settings => {
+                const words = Math.max(1, parseInt(settings.defaultMinTrWords, 10) || 1);
+                if (words !== state.minWords) {
+                    state.minWords = words;
+                    wordsInput.value = String(words);
+                    render();
+                }
+            });
+        }
     };
 
     if (document.readyState === 'loading') {

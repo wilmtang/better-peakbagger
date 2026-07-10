@@ -3,10 +3,13 @@
 //
 // Better Peakbagger — GPX Analyzer content script.
 // Runs in the page's MAIN world (see manifest.json) so it can read the raw GPX
-// link, use the page's localStorage for unit persistence, and reach into
-// Peakbagger's same-origin MasterMap iframe for the hover marker. Chart.js is
-// bundled at vendor/chart.umd.min.js and loaded immediately before this file,
-// so the global `Chart` is available here.
+// link and reach into Peakbagger's same-origin MasterMap iframe for the hover
+// marker. Chart.js is bundled at vendor/chart.umd.min.js and loaded immediately
+// before this file, so the global `Chart` is available here.
+//
+// The MAIN world cannot read chrome.storage, so units + theme come from the
+// isolated-world bridge (src/bridge.js) over window.postMessage. The panel and
+// chart re-theme / re-unit live when settings change.
 
 (async () => {
     'use strict';
@@ -254,10 +257,67 @@
         };
     };
 
+    // === Better Peakbagger: theming + centralized settings (via bridge) ===
+    const PALETTES = {
+        light: {
+            panelBg: '#fafafa', panelBorder: '#cccccc', inputBg: '#ffffff', selBorder: '#cccccc',
+            text: '#000000', sub: '#444444', muted: '#777777', faint: '#888888',
+            chartText: '#666666', chartGrid: 'rgba(0,0,0,0.1)', axisTitle: '#000000', timeAxis: '#007fb6'
+        },
+        dark: {
+            panelBg: '#23262a', panelBorder: '#3a3f45', inputBg: '#2b2f34', selBorder: '#4a5058',
+            text: '#e6e1d8', sub: '#b6b0a6', muted: '#9a948a', faint: '#8b857c',
+            chartText: '#b6b0a6', chartGrid: 'rgba(255,255,255,0.12)', axisTitle: '#e6e1d8', timeAxis: '#6ab0de'
+        }
+    };
+    const prefersDark = () => !!(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    const effectiveTheme = pref => (pref === 'light' || pref === 'dark') ? pref : (prefersDark() ? 'dark' : 'light');
+
+    // Bridge client: swaps settings with the isolated-world bridge over postMessage.
+    const BPB = (() => {
+        const FALLBACK = { units: 'auto', theme: 'system', defaultMinTrWords: 1 };
+        let settings = null;
+        const subs = new Set();
+        let resolveReady;
+        const ready = new Promise(r => { resolveReady = r; });
+
+        window.addEventListener('message', event => {
+            if (event.source !== window || event.origin !== location.origin) return;
+            const data = event.data;
+            if (!data || data.__bpb !== true || data.dir !== 'toPage' || !data.settings) return;
+            settings = data.settings;
+            resolveReady(settings);
+            subs.forEach(fn => { try { fn(settings); } catch (e) { /* ignore */ } });
+        });
+
+        return {
+            init: async () => {
+                window.postMessage({ __bpb: true, dir: 'toCS', kind: 'get' }, location.origin);
+                await Promise.race([ready, new Promise(r => setTimeout(r, 800))]);
+                if (!settings) settings = { ...FALLBACK };
+                return settings;
+            },
+            get: () => settings || FALLBACK,
+            set: patch => {
+                settings = { ...(settings || FALLBACK), ...patch };
+                window.postMessage({ __bpb: true, dir: 'toCS', kind: 'set', patch }, location.origin);
+            },
+            subscribe: fn => { subs.add(fn); return () => subs.delete(fn); }
+        };
+    })();
+
+    const detectPageMetric = () => {
+        const elevTd = Array.from(document.querySelectorAll('td')).find(td => td.textContent.trim() === 'Elevation:');
+        return !!(elevTd && elevTd.nextElementSibling && /^[\d,.]+\s*m/.test(elevTd.nextElementSibling.textContent.trim()));
+    };
+    const resolveUnits = s => s.units === 'metric' ? 'metric' : s.units === 'imperial' ? 'imperial' : (detectPageMetric() ? 'metric' : 'imperial');
+
     const initChart = async () => {
         // 1. Locate GPX link and build UI
         const gpxLink = Array.from(document.querySelectorAll('a')).find(a => a.textContent.includes('Download this GPS track'));
         if (!gpxLink) return;
+
+        await BPB.init();
 
         const container = document.createElement('div');
         Object.assign(container.style, { marginTop: '15px', padding: '10px', border: '1px solid #ccc', background: '#fafafa', borderRadius: '5px', maxWidth: '800px' });
@@ -280,7 +340,7 @@
 
         const unitSelect = document.createElement('select');
         Object.assign(unitSelect.style, { padding: '2px 6px', borderRadius: '4px', border: '1px solid #ccc', cursor: 'pointer', outline: 'none' });
-        unitSelect.innerHTML = '<option value="imp">Imperial</option><option value="met">Metric</option>';
+        unitSelect.innerHTML = '<option value="imperial">Imperial</option><option value="metric">Metric</option>';
 
         const hintText = document.createElement('div');
         Object.assign(hintText.style, { fontSize: '0.8em', color: '#888', marginTop: '4px', fontStyle: 'italic' });
@@ -297,6 +357,18 @@
         container.append(headerBox, canvasContainer);
         gpxLink.after(container);
 
+        // Panel palette follows the current theme setting; re-applied on render.
+        const panelPalette = () => PALETTES[effectiveTheme(BPB.get().theme)];
+        const applyPanelTheme = () => {
+            const p = panelPalette();
+            Object.assign(container.style, { background: p.panelBg, borderColor: p.panelBorder, color: p.text });
+            Object.assign(unitSelect.style, { background: p.inputBg, color: p.text, borderColor: p.selBorder });
+            stats.style.color = p.text;
+            subStats.style.color = p.sub;
+            hintText.style.color = p.faint;
+        };
+        applyPanelTheme();
+
         canvas.addEventListener('dblclick', (e) => {
             if (!chartInstance) return;
             const activeElements = chartInstance.getElementsAtEventForMode(e, chartInstance.options.interaction.mode, chartInstance.options.interaction, true);
@@ -308,7 +380,7 @@
                     const text = `${d.lat.toFixed(5)}, ${d.lon.toFixed(5)}`;
                     navigator.clipboard.writeText(text).then(() => {
                         hintText.innerHTML = `<span style="color: #2e8b57; font-weight: bold;">✓ Copied: ${text}</span>`;
-                        setTimeout(() => { hintText.innerText = "Double-click point to copy coordinates"; }, 2500);
+                        setTimeout(() => { hintText.innerText = "Double-click point to copy coordinates"; applyPanelTheme(); }, 2500);
                     }).catch(err => console.error('Failed to copy', err));
                 }
             }
@@ -332,20 +404,8 @@
             return timeStr;
         };
 
-        // 3. Persistent Settings Handling (Memory)
-        const STORAGE_KEY = 'pb_gpx_unit_pref';
-        const savedPref = localStorage.getItem(STORAGE_KEY);
-
-        if (savedPref) {
-            unitSelect.value = savedPref;
-        } else {
-            let isMetricDefault = false;
-            const elevTd = Array.from(document.querySelectorAll('td')).find(td => td.textContent.trim() === 'Elevation:');
-            if (elevTd && elevTd.nextElementSibling && /^[\d,.]+\s*m/.test(elevTd.nextElementSibling.textContent.trim())) {
-                isMetricDefault = true;
-            }
-            unitSelect.value = isMetricDefault ? 'met' : 'imp';
-        }
+        // 3. Centralized unit setting ('auto' detects from the page).
+        unitSelect.value = resolveUnits(BPB.get());
 
         // Processing Arrays & Core Metrics
         let chartInstance = null;
@@ -358,7 +418,10 @@
 
         // 4. Chart & UI Renderer Engine
         const renderData = () => {
-            const isMet = unitSelect.value === 'met';
+            const p = panelPalette();
+            applyPanelTheme();
+
+            const isMet = unitSelect.value === 'metric';
             const dMult = isMet ? 0.001 : 1 / METERS_PER_MILE, eMult = isMet ? 1 : FEET_PER_METER;
             const dUnit = isMet ? 'km' : 'miles', eUnit = isMet ? 'm' : 'ft';
             const formatDistanceM = meters => `${(meters * dMult).toFixed(2)} ${dUnit}`;
@@ -382,7 +445,7 @@
 
             // Format Stats Bar
             let txt = `Interactive Stats: ${formatDistanceM(metrics.distanceM)} | ${formatElevationM(metrics.gainM)} gain`;
-            const subParts = [`<div style="color: #777; font-size: 0.95em; margin-bottom: 2px;">${buildMetricNote()}</div>`];
+            const subParts = [`<div style="color: ${p.muted}; font-size: 0.95em; margin-bottom: 2px;">${buildMetricNote()}</div>`];
             if (hasTime) {
                 txt += ` | Time: ${fmtTime(totalMs)}`;
                 if (summitMs > startMs) {
@@ -391,16 +454,16 @@
                     let campingHtml = "";
                     if (campingSpots.length > 0) {
                         const spotStrs = campingSpots.map(s => `Day ${s.day} (${s.lat.toFixed(5)}, ${s.lon.toFixed(5)})`).join(' | ');
-                        campingHtml = `<div style="color: #888; font-size: 0.95em; margin-top: 2px;">Possible Camping: ${spotStrs}</div>`;
+                        campingHtml = `<div style="color: ${p.faint}; font-size: 0.95em; margin-top: 2px;">Possible Camping: ${spotStrs}</div>`;
                     }
                     subParts.push(`
-                        <div style="color: #666; margin-bottom: 2px;">Start time: ${formatTimeStr(startMs, startMs, isMultiDay)} | Summit time: ${formatTimeStr(summitMs, startMs, isMultiDay)} | Back to car: ${formatTimeStr(endMs, startMs, isMultiDay)}</div>
-                        <div style="color: #888; font-size: 0.95em;">Time to summit: ${fmtTime(timeToSummit)} | Time back: ${fmtTime(timeBack)}</div>
+                        <div style="color: ${p.sub}; margin-bottom: 2px;">Start time: ${formatTimeStr(startMs, startMs, isMultiDay)} | Summit time: ${formatTimeStr(summitMs, startMs, isMultiDay)} | Back to car: ${formatTimeStr(endMs, startMs, isMultiDay)}</div>
+                        <div style="color: ${p.faint}; font-size: 0.95em;">Time to summit: ${fmtTime(timeToSummit)} | Time back: ${fmtTime(timeBack)}</div>
                         ${campingHtml}
                     `);
                 }
             }
-            stats.innerHTML = `<span style="color:#000000;">${txt}</span>`;
+            stats.innerHTML = `<span style="color:${p.text};">${txt}</span>`;
             subStats.innerHTML = subParts.join('');
 
             // Map adjusted arrays
@@ -501,7 +564,7 @@
                         legend: {
                             display: true,
                             position: 'bottom',
-                            labels: { usePointStyle: true, boxWidth: 8 },
+                            labels: { usePointStyle: true, boxWidth: 8, color: p.chartText },
                             onClick: function (e, legendItem, legend) {
                                 const index = legendItem.datasetIndex;
                                 const chart = legend.chart;
@@ -550,8 +613,9 @@
                             position: 'bottom',
                             min: 0,
                             max: maxDist > 0 ? maxDist : 1,
-                            title: { display: true, text: `Distance (${dUnit})` },
-                            ticks: { maxTicksLimit: 10, callback: function (v) { return parseFloat(v).toFixed(1) + ` ${dUnit}`; } }
+                            title: { display: true, text: `Distance (${dUnit})`, color: p.axisTitle },
+                            grid: { color: p.chartGrid },
+                            ticks: { maxTicksLimit: 10, color: p.chartText, callback: function (v) { return parseFloat(v).toFixed(1) + ` ${dUnit}`; } }
                         },
                         ...(hasTime && {
                             xTime: {
@@ -559,10 +623,10 @@
                                 position: 'top',
                                 min: startMs,
                                 max: endMs > startMs ? endMs : startMs + 1000,
-                                title: { display: true, text: 'Time', color: '#007fb6' },
+                                title: { display: true, text: 'Time', color: p.timeAxis },
                                 ticks: {
                                     maxTicksLimit: 10,
-                                    color: '#007fb6',
+                                    color: p.timeAxis,
                                     callback: function (v) {
                                         return formatTimeStr(v, startMs, isMultiDay);
                                     }
@@ -572,7 +636,9 @@
                         }),
                         y: {
                             type: 'linear', position: 'left',
-                            title: { display: true, text: `Elevation (${eUnit})`, color: '#000000' }
+                            title: { display: true, text: `Elevation (${eUnit})`, color: p.axisTitle },
+                            grid: { color: p.chartGrid },
+                            ticks: { color: p.chartText }
                         }
                     }
                 }
@@ -580,8 +646,14 @@
         };
 
         unitSelect.addEventListener('change', () => {
-            localStorage.setItem(STORAGE_KEY, unitSelect.value);
+            BPB.set({ units: unitSelect.value });
             renderData();
+        });
+
+        // Live updates: re-unit / re-theme when settings change elsewhere.
+        BPB.subscribe(() => {
+            unitSelect.value = resolveUnits(BPB.get());
+            if (chartInstance) renderData(); else applyPanelTheme();
         });
 
         // 5. Native DOM XML Extraction Engine

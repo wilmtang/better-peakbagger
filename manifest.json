@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Better Peakbagger",
-  "version": "1.0.0",
-  "description": "Adds an interactive elevation & time chart to Peakbagger ascent pages and a stackable beta filter to a peak's ascent list.",
+  "version": "1.1.0",
+  "description": "Adds an interactive elevation & time chart to Peakbagger ascent pages, a stackable beta filter to a peak's ascent list, plus site-wide dark mode and centralized settings.",
   "homepage_url": "https://github.com/wilmtang/better-peakbagger",
   "icons": {
     "16": "icons/icon-16.png",
@@ -10,7 +10,30 @@
     "48": "icons/icon-48.png",
     "128": "icons/icon-128.png"
   },
+  "permissions": ["storage"],
+  "options_ui": {
+    "page": "options/options.html",
+    "open_in_tab": true
+  },
   "content_scripts": [
+    {
+      "matches": ["*://*.peakbagger.com/*"],
+      "js": ["src/settings.js", "src/theme.js"],
+      "css": ["src/site-dark.css"],
+      "run_at": "document_start",
+      "all_frames": false
+    },
+    {
+      "matches": [
+        "*://www.peakbagger.com/climber/ascent.aspx*",
+        "*://www.peakbagger.com/climber/Ascent.aspx*",
+        "*://peakbagger.com/climber/ascent.aspx*",
+        "*://peakbagger.com/climber/Ascent.aspx*"
+      ],
+      "js": ["src/settings.js", "src/bridge.js"],
+      "run_at": "document_start",
+      "all_frames": false
+    },
     {
       "matches": [
         "*://www.peakbagger.com/climber/ascent.aspx*",
@@ -30,7 +53,7 @@
         "*://peakbagger.com/climber/PeakAscents.aspx*",
         "*://peakbagger.com/climber/peakascents.aspx*"
       ],
-      "js": ["src/ascent-filter.js"],
+      "js": ["src/settings.js", "src/ascent-filter.js"],
       "run_at": "document_end",
       "all_frames": false
     }
