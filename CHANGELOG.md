@@ -2,7 +2,7 @@
 
 ## 1.2.0 — 2026-07-10
 
-Instant date sorting and a user-defined "has beta".
+Instant date sorting, a user-defined "has beta", and a dark mode fix.
 
 - **Instant Ascent Date sort** on the ascent list: the header's
   `Ascent Date` / `[sort desc]` links now reorder the table in the DOM
@@ -23,6 +23,12 @@ Instant date sorting and a user-defined "has beta".
   the Wayback Machine (`test/fixtures/peakascents/`, provenance in its
   README) and a jsdom harness (`npm test`) running the real content
   scripts against them — no live-site access needed for development.
+- **Fixed the flash of the light page on load with dark mode enabled**
+  (most visible in Brave). `src/theme.js` now mirrors the theme preference
+  into page `localStorage` and applies it synchronously at `document_start`,
+  before first paint, instead of waiting for the async `chrome.storage` read
+  (which stays authoritative and reconciles afterwards). Details in
+  `docs/dark-mode-flash.md`.
 
 ## 1.1.0 — 2026-07-09
 
