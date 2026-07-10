@@ -58,6 +58,23 @@ either one:
    `subscribe` listener remain authoritative; when they resolve they re-apply
    the attribute and refresh the mirror.
 
+### Keeping the sheet and the attribute in lockstep
+
+The attribute and the stylesheet are two separate DOM writes, and only the pair
+renders dark. If the attribute is ever set *without* the sheet, the page stays
+light while anything that themes itself independently — notably the GPX chart,
+which colors its own elements via JS `element.style` (CSSOM, never gated on our
+sheet) — goes dark: a confusing "dark chart on a light page." (Reloading an
+unpacked dev build while Peakbagger tabs are open can leave a page in exactly
+this half-applied state until it's reloaded.)
+
+To make that state unreachable, sheet injection is **idempotent** (`ensureSheet()`,
+guarded by the `bpb-site-dark` id) and tied to **every** `apply()` — not just the
+one `document_start` pass. So the authoritative `chrome.storage` read and every
+live toggle re-assert the sheet before setting the attribute; if the initial
+injection was ever skipped or the node was removed, the next `apply()` restores
+it. `test/theme-inject.test.mjs` locks in the invariant.
+
 The mirror stores the *preference* (`system` / `light` / `dark`), not the
 resolved color, so a `system` user whose OS theme changed between visits still
 resolves correctly via `matchMedia` (synchronous, available at

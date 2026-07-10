@@ -36,15 +36,23 @@
     // reconcile), so the same sheet also covers light mode and later live
     // toggles without re-injection.
     const STYLE_ID = 'bpb-site-dark';
-    if (window.BPBDarkCSS && !document.getElementById(STYLE_ID)) {
+    // Idempotent sheet injection. Tied to *every* apply() below (not just this
+    // one document_start pass) so the sheet can never be missing while
+    // data-bpb-theme is set — the exact state that renders self-themed panels
+    // (the GPX chart) dark on an otherwise-light page. `<head>` doesn't exist at
+    // document_start, so fall back to `<html>`; once it exists we prefer it.
+    const ensureSheet = () => {
+        if (!window.BPBDarkCSS || document.getElementById(STYLE_ID)) return;
         const style = document.createElement('style');
         style.id = STYLE_ID;
         style.textContent = window.BPBDarkCSS;
-        root.appendChild(style);
-    }
+        (document.head || root).appendChild(style);
+    };
+    ensureSheet();
 
     let pref = 'system';
     const apply = () => {
+        ensureSheet();
         root.setAttribute('data-bpb-theme', S.resolveTheme(pref));
         try { localStorage.setItem(CACHE_KEY, pref); } catch (e) { /* storage blocked */ }
     };

@@ -2,6 +2,16 @@
 
 ## 1.3.0 — 2026-07-10
 
+- **Dark mode: self-healing stylesheet injection.** `data-bpb-theme` was set
+  unconditionally, but the dark stylesheet was injected once and gated on
+  `window.BPBDarkCSS` — so any timing where that one-shot was skipped left the
+  attribute set with no sheet, which renders the self-themed GPX chart dark on
+  an otherwise-light page (the reported "dark only in the chart on Chrome";
+  reproducible when an unpacked build is reloaded with Peakbagger tabs open).
+  `src/theme.js` now injects the sheet through an idempotent `ensureSheet()`
+  tied to every `apply()`, so the authoritative settings read and every live
+  toggle re-assert the sheet — the attribute can no longer exist without it. New
+  `test/theme-inject.test.mjs` locks in the invariant.
 - **Instant date sort: both directions clickable, and no premature reload.**
   The active-direction header link is no longer made inert — both "Ascent Date"
   and "[sort desc]" stay live, clickable links at all times (the active one is
