@@ -2,6 +2,17 @@
 
 ## 1.3.0 — 2026-07-10
 
+- **Test fixtures: real (masked) captures replace the Wayback ones.** The
+  `pid=2296` Mount Rainier PeakAscents fixtures and the home page are now saved
+  from the live site instead of the Wayback Machine, and four new whole-page
+  fixtures were added (two peak pages, a climber home page, a climber ascent
+  list). Every capture came from a signed-in session, so all of the account
+  holder's identity is masked: real name → a pseudonym, real climber/ascent ids
+  → fakes, and external social links (Strava/Instagram/etc.) → placeholders,
+  with the personal pages fully genericized (peaks, dates, ranges). New
+  `test/fixtures-privacy.test.mjs` fails the build if a raw identifier reappears.
+  Golden chip counts updated for the larger (~4,145-row) Rainier capture; the
+  smaller peak fixtures (21500/8241/1039) stay as Wayback captures.
 - **GPX chart: default-series setting.** New options-page control chooses which
   elevation curve the ascent-page chart shows on load — both, distance only, or
   time only (`chartDefaultSeries`, default both). Only the *initial* visibility

@@ -27,16 +27,16 @@ const sectionRows = dom => [...table(dom).rows].filter(r => r.cells.length === 1
 test('parses the full Rainier table and filters to beta by default', async () => {
     const dom = await loadPageWithBar(RAINIER, { url: RAINIER_URL });
 
-    assert.equal(dataRows(dom).length, 3904);
+    assert.equal(dataRows(dom).length, 4145);
     assert.equal(sectionRows(dom).length, 75);
-    assert.equal(chipCount(dom, 'Has beta'), '1272');
-    assert.equal(chipCount(dom, 'Trip report'), '1163');
-    assert.equal(chipCount(dom, 'GPS track'), '221');
-    assert.equal(chipCount(dom, 'Link'), '143');
+    assert.equal(chipCount(dom, 'Has beta'), '1339');
+    assert.equal(chipCount(dom, 'Trip report'), '1224');
+    assert.equal(chipCount(dom, 'GPS track'), '238');
+    assert.equal(chipCount(dom, 'Link'), '151');
 
     // "Has beta" is on by default.
-    assert.equal(status(dom), 'Showing 1272 of 3904 ascents');
-    assert.equal(visibleRows(dom).length, 1272);
+    assert.equal(status(dom), 'Showing 1339 of 4145 ascents');
+    assert.equal(visibleRows(dom).length, 1339);
     // Year sections with no visible rows collapse.
     assert.ok(sectionRows(dom).some(r => r.style.display === 'none'));
 });
@@ -45,8 +45,8 @@ test('"Show all" reveals every row', async () => {
     const dom = await loadPageWithBar(RAINIER, { url: RAINIER_URL });
 
     dom.window.document.querySelector('.pbaf-reset').click();
-    assert.equal(visibleRows(dom).length, 3904);
-    assert.equal(status(dom), '3904 ascents');
+    assert.equal(visibleRows(dom).length, 4145);
+    assert.equal(status(dom), '4145 ascents');
     assert.ok(sectionRows(dom).every(r => r.style.display === ''));
 });
 
@@ -65,7 +65,7 @@ test('trip-report chip applies its inline word threshold', async () => {
         const m = /^TR-(\d+)/.exec(r.cells[4].textContent.trim());
         return m && parseInt(m[1], 10) >= 100;
     }).length;
-    assert.ok(expected > 0 && expected < 1163);
+    assert.ok(expected > 0 && expected < 1224);
     assert.equal(visibleRows(dom).length, expected);
 });
 
@@ -74,8 +74,8 @@ test('"has beta" definition comes from settings (GPS-only)', async () => {
         url: RAINIER_URL,
         settings: { betaTr: false, betaLink: false }
     });
-    assert.equal(chipCount(dom, 'Has beta'), '221');
-    assert.equal(visibleRows(dom).length, 221);
+    assert.equal(chipCount(dom, 'Has beta'), '238');
+    assert.equal(visibleRows(dom).length, 238);
     assert.match(chip(dom, 'Has beta').title, /GPS track/);
     assert.doesNotMatch(chip(dom, 'Has beta').title, /trip report/);
 });
@@ -100,18 +100,18 @@ test('an all-off beta definition falls back to all-on', async () => {
         url: RAINIER_URL,
         settings: { betaTr: false, betaGps: false, betaLink: false }
     });
-    assert.equal(chipCount(dom, 'Has beta'), '1272');
+    assert.equal(chipCount(dom, 'Has beta'), '1339');
 });
 
 test('beta definition changes apply live via storage.onChanged', async () => {
     const dom = await loadPageWithBar(RAINIER, { url: RAINIER_URL });
-    assert.equal(chipCount(dom, 'Has beta'), '1272');
+    assert.equal(chipCount(dom, 'Has beta'), '1339');
 
     await dom.chrome.storage.sync.set({ bpbSettings: { betaTr: false, betaLink: false } });
     await new Promise(resolve => dom.window.setTimeout(resolve, 10));
 
-    assert.equal(chipCount(dom, 'Has beta'), '221');
-    assert.equal(visibleRows(dom).length, 221);
+    assert.equal(chipCount(dom, 'Has beta'), '238');
+    assert.equal(visibleRows(dom).length, 238);
 });
 
 const dateAnchor = (dom, key) =>
@@ -135,7 +135,7 @@ test('[sort desc] toggles instantly: rows reversed, URL rewritten, no navigation
     assert.deepEqual(dateTexts(dom), before.slice().reverse());
     assert.deepEqual(sectionLabels(dom), labelsBefore.slice().reverse());
     // The active filter survives the reorder untouched.
-    assert.equal(visibleRows(dom).length, 1272);
+    assert.equal(visibleRows(dom).length, 1339);
     assert.equal(dateAnchor(dom, 'ascentdated').getAttribute('aria-current'), 'true');
 
     // Toggle back restores the served order exactly.

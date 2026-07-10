@@ -248,7 +248,7 @@ The date column's header carries two backend sort links — `Ascent Date` (`sort
 - **Strict opt-out guards.** Clicks fall through to normal navigation whenever the DOM answer could differ from the backend's: when the current view isn't date-sorted (reversing a quality-sorted table is not a date sort), or when the links' query params differ from the page's in anything but `sort` (on the default "Most Recent Year" view the links point at `y=9998` — a *different row set* only the server can produce).
 - **Composes with the filters.** Rows keep their visibility through a reorder, and the chips keep their live references to the moved `<tr>` nodes.
 
-Development against this table doesn't touch the live site: `test/fixtures/peakascents/` holds raw Wayback captures (including a ~3,900-row Mount Rainier page), and `npm test` runs the content script against them in jsdom (golden chip counts, sort toggling, the opt-out guards).
+Development against this table doesn't touch the live site: `test/fixtures/peakascents/` holds real captures (a ~4,145-row Mount Rainier page plus smaller Wayback captures), **masked** for the capturer's identity (see the fixtures README and `test/fixtures-privacy.test.mjs`), and `npm test` runs the content script against them in jsdom (golden chip counts, sort toggling, the opt-out guards).
 
 ---
 
@@ -304,11 +304,14 @@ vendor/
   chart.umd.min.js       Chart.js 4.5.1, bundled (MIT)
 icons/                   16/32/48/128 px
 test/
-  fixtures/peakascents/  raw PeakAscents.aspx captures (see its README)
-  fixtures/pages/        whole-page captures, e.g. the home page (see its README)
+  fixtures/peakascents/  PeakAscents.aspx captures, PII-masked (see its README)
+  fixtures/pages/        whole-page captures (home, peaks, climber), masked (see its README)
   helpers/load-page.mjs  jsdom + chrome.storage stub harness
   ascent-filter.test.mjs fixture-driven filter/sort tests (npm test)
   dark-contrast.test.mjs WCAG AA contrast guard for the dark theme
+  theme-inject.test.mjs  dark-theme sheet-injection invariant
+  options.test.mjs       options page end-to-end (populate/save/clean)
+  fixtures-privacy.test.mjs  fails if a fixture leaks the capturer's identity
 ```
 
 Settings shape (`chrome.storage.sync`, key `bpbSettings`):
