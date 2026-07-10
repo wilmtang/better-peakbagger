@@ -145,6 +145,28 @@ test('[sort desc] toggles instantly: rows reversed, URL rewritten, no navigation
     assert.ok(dom.window.location.search.match(/sort=ascentdate(&|$)/i));
 });
 
+test('capture guard intercepts header sort links but lets row-set-changing date links navigate', async () => {
+    const dom = await loadPageWithBar(RAINIER, { url: RAINIER_URL });
+    const { document, MouseEvent } = dom.window;
+
+    // The header's own "[sort desc]" link keeps the current row set -> the guard
+    // intercepts it (prevents the full-page reload; answers in the DOM instead).
+    const header = dateAnchor(dom, 'ascentdated');
+    const headerEvent = new MouseEvent('click', { bubbles: true, cancelable: true });
+    header.dispatchEvent(headerEvent);
+    assert.equal(headerEvent.defaultPrevented, true);
+
+    // A year-jump-style link carries the same sort key but a different y= — a
+    // different row set only the server can produce — so it must navigate.
+    const jump = document.createElement('a');
+    jump.href = 'PeakAscents.aspx?pid=2296&sort=ascentdate&u=ft&y=1999';
+    jump.textContent = '1999';
+    document.body.appendChild(jump);
+    const jumpEvent = new MouseEvent('click', { bubbles: true, cancelable: true });
+    jump.dispatchEvent(jumpEvent);
+    assert.equal(jumpEvent.defaultPrevented, false);
+});
+
 test('clicking the already-active direction is a no-op (no reload)', async () => {
     const dom = await loadPageWithBar(RAINIER, { url: RAINIER_URL });
     const before = dateTexts(dom);

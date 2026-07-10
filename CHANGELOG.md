@@ -2,6 +2,18 @@
 
 ## 1.3.0 — 2026-07-10
 
+- **Instant date sort: both directions clickable, and no premature reload.**
+  The active-direction header link is no longer made inert — both "Ascent Date"
+  and "[sort desc]" stay live, clickable links at all times (the active one is
+  marked with the ▲/▼ arrow and bold, not disabled), so either order is always
+  one click away. Separately, the sorter now wires up synchronously *before* the
+  awaited settings read, and a capture-phase click guard installed at
+  `document_start` holds any header sort-link click made during page load — on a
+  ~4,000-row list the header is clickable long before the filter bar appears —
+  and replays it in the DOM instead of letting it fire a full server reload. The
+  guard keys on the row set, so year-jump / metric-toggle links (different
+  `y=`/`u=`) are left to navigate normally. The ascent-list content script now
+  runs at `document_start` (deferring its DOM work to `DOMContentLoaded`).
 - **Removed the "Default minimum trip-report words" setting** from the options
   page. It duplicated the ascent list's inline `≥ N words` control while adding
   a second place to keep in sync, for little benefit. The Trip report chip's
