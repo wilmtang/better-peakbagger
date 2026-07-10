@@ -5,7 +5,7 @@ A browser extension that makes [Peakbagger](https://www.peakbagger.com/) better 
 Three things:
 
 1. **GPX Analyzer** — on an ascent page with a GPS track, injects a rich interactive elevation chart (by distance *and* time), adjusted route metrics, timing/camping stats, and a marker that follows your cursor on Peakbagger's own map.
-2. **Ascent Beta Filter** — on a peak's "Ascents of a Peak" list, adds a sticky, stackable filter bar so you can narrow hundreds of logged ascents down to the ones with a trip report, GPS track, or link.
+2. **Ascent Beta Filter** — on a peak's "Ascents of a Peak" list, adds a sticky, stackable filter bar so you can narrow hundreds of logged ascents down to the ones with a trip report, GPS track, or link. What "has beta" means is configurable, and the Ascent Date sort links flip instantly in the DOM instead of round-tripping to the server.
 3. **Dark mode + centralized settings** — a site-wide dark theme and an options page for units, theme, and the filter's default word threshold, shared across every Peakbagger page.
 
 Everything runs locally. The extension makes no network requests of its own — the GPX Analyzer only fetches the GPX file already linked on the page — and stores settings in `chrome.storage`.
@@ -63,17 +63,19 @@ Runs on `climber/ascent.aspx`. When the page has a "Download this GPS track" lin
 ### Ascent Beta Filter
 Runs on `climber/PeakAscents.aspx`. Injects a sticky filter bar above the table.
 
-- **Has beta** (on by default) — only ascents with a trip report, GPS track, *or* link.
+- **Has beta** (on by default) — only ascents that have at least one of the signals *you* count as beta (settings: trip report with ≥ N words / GPS track / external link; default: any of the three).
 - **Trip report** — only ascents with a written report, with an adjustable **≥ N words** threshold.
 - **GPS track** / **Link** — only ascents with a GPS track / an external link.
 - Filters **stack** (AND), each chip shows its count, and there's a one-click **Show all**. Empty year separators collapse.
+- **Instant date sort** — the table's "Ascent Date" / "[sort desc]" header links reorder the rows in the DOM in milliseconds instead of reloading from the server, and a ▲/▼ arrow marks the active direction (which the site itself never indicates).
 
 ### Dark mode & settings
-The options page centralizes three preferences in `chrome.storage.sync`:
+The options page centralizes the preferences in `chrome.storage.sync`:
 
 - **Units** — Auto (match page) / Imperial / Metric.
 - **Theme** — Follow system / Light / Dark. Applies to the whole Peakbagger site and the extension's panels.
-- **Default minimum trip-report words** — the filter's starting threshold.
+- **Default minimum trip-report words** — the Trip report chip's starting threshold.
+- **"Has beta" means** — which signals the Has beta chip counts: trip report (with its own ≥ N words threshold), GPS track, external link. At least one must stay checked.
 
 Changes apply live to any open Peakbagger tab.
 
@@ -82,7 +84,7 @@ Changes apply live to any open Peakbagger tab.
 ## Architecture at a glance
 
 ```
-                          chrome.storage.sync  ({ units, theme, defaultMinTrWords })
+                          chrome.storage.sync  ({ units, theme, defaultMinTrWords, beta* })
                                    ▲   │  onChanged
                  ┌─────────────────┼───┼──────────────────────────────────────────┐
    options page  │                 │   ▼                                            │
@@ -229,10 +231,23 @@ The injection works in three steps, inside Chart.js's `onHover` callback:
 Runs in the isolated world on `PeakAscents.aspx`.
 
 - **Column resolution.** Peakbagger renders a *different* column set per URL variant (all-years vs. single-year vs. metric), so the script never assumes fixed positions — it resolves the TR-Words / GPS / Link columns from the header row's text on every load. Cells that "look empty" can contain a literal `&nbsp;` (` `), which the parser normalises before testing.
-- **The data model.** Each data row becomes `{ words, gps, link, beta }` where `beta = words > 0 || gps || link`. Year-separator rows (single-cell) are tracked as sections so they can be hidden when empty.
+- **The data model.** Each data row becomes `{ words, gps, link, beta }`. Year-separator rows (single-cell) are tracked as sections so they can be hidden when empty.
+- **A user-defined "has beta".** `beta` is computed from the shared settings: an ascent qualifies if it has any *enabled* signal — a trip report of at least `betaTrMinWords` words (`betaTr`), a GPS track (`betaGps`), or a link (`betaLink`). The chip's count and tooltip recompute live when the definition changes in the options page, and `clean()` guarantees the definition can never be empty (all-off resets to all-on).
 - **Stackable AND filters.** Each chip is an independent predicate; a row is visible only if it passes *every* active chip. Toggling recomputes visibility, updates the live "Showing x of y" count, hides now-empty year headers, and reveals a **Show all** escape hatch.
 - **State split.** Chip on/off states persist in the page's `localStorage` (`pbAscentBetaFilter.v1`) — lightweight, per-visit UI state. The **word threshold**, by contrast, lives in the shared `chrome.storage` settings (`defaultMinTrWords`), so the inline `≥ N words` input and the options page edit the same value; a `subscribe` keeps the input in sync if it changes elsewhere.
-- **Compact view.** The default `PeakAscents.aspx?pid=…` view (no `y=`) only has Climber + Date columns — nothing to filter. There the bar degrades to a one-click link to the full "all years, full details" view (`y=9999`), preserving the existing `sort`/unit params.
+- **Compact view.** Views whose table lacks the TR-Words / GPS / Link columns have nothing to filter; there the bar degrades to a one-click link to the full "all years, full details" view (`y=9999`), preserving the existing `sort`/unit params.
+
+### Instant Ascent Date sort
+
+The date column's header carries two backend sort links — `Ascent Date` (`sort=ascentdate`, oldest first) and `[sort desc]` (`sort=ascentdated`, newest first) — and following either normally reloads the whole page. The filter script intercepts them and answers in the DOM:
+
+- **Reversal, not sorting.** On a page that is already date-sorted, the opposite direction is exactly the served order reversed: year sections in reverse order, rows within each section reversed. So the toggle never parses a date — which matters, because real date cells include `Unknown`, partial values (`1915-06`), typos (`1941 l`), and red parenthesised variants whose backend ordering is opaque. One `DocumentFragment` re-append flips ~4,000 rows in a few milliseconds.
+- **The URL stays honest.** After a toggle, `history.replaceState` rewrites the address bar to the sort link's own `href`, so reload, share, and back/forward all reproduce the same view server-side.
+- **A sort indicator the site never had.** A ▲/▼ arrow is added next to "Ascent Date" and the active link goes inert (`aria-current`, no underline) — Peakbagger itself gives no visual cue of the current sort.
+- **Strict opt-out guards.** Clicks fall through to normal navigation whenever the DOM answer could differ from the backend's: when the current view isn't date-sorted (reversing a quality-sorted table is not a date sort), or when the links' query params differ from the page's in anything but `sort` (on the default "Most Recent Year" view the links point at `y=9998` — a *different row set* only the server can produce).
+- **Composes with the filters.** Rows keep their visibility through a reorder, and the chips keep their live references to the moved `<tr>` nodes.
+
+Development against this table doesn't touch the live site: `test/fixtures/peakascents/` holds raw Wayback captures (including a ~3,900-row Mount Rainier page), and `npm test` runs the content script against them in jsdom (golden chip counts, sort toggling, the opt-out guards).
 
 ---
 
@@ -284,27 +299,37 @@ src/
 vendor/
   chart.umd.min.js       Chart.js 4.5.1, bundled (MIT)
 icons/                   16/32/48/128 px
+test/
+  fixtures/peakascents/  raw PeakAscents.aspx captures (see its README)
+  helpers/load-page.mjs  jsdom + chrome.storage stub harness
+  ascent-filter.test.mjs fixture-driven tests (npm test)
 ```
 
 Settings shape (`chrome.storage.sync`, key `bpbSettings`):
 ```js
 { units: 'auto' | 'imperial' | 'metric',
   theme: 'system' | 'light' | 'dark',
-  defaultMinTrWords: number }
-```
+  defaultMinTrWords: number,        // Trip report chip's starting threshold
+  betaTr: boolean,                  // "has beta" counts a trip report…
+  betaTrMinWords: number,           //   …of at least this many words
+  betaGps: boolean,                 // "has beta" counts a GPS track
+  betaLink: boolean }               // "has beta" counts an external link
 
 ---
 
 ## Development & packaging
 
 ```
+npm test                fixture-driven tests (jsdom, no network needed)
 npm run lint            web-ext lint (0 errors expected)
 npm run build           zip to web-ext-artifacts/ for Chrome Web Store / AMO
 npm run start:firefox   launch a temp Firefox with the extension
 npm run start:chromium  same for Chromium
 ```
 
-No build step for development — load the folder unpacked. `npm run build` just zips the shippable files (`manifest.json`, `src/`, `vendor/`, `icons/`, `options/`, README, LICENSE); `node_modules`, the lockfile, and `CHANGELOG.md` are excluded.
+No build step for development — load the folder unpacked. `npm run build` just zips the shippable files (`manifest.json`, `src/`, `vendor/`, `icons/`, `options/`, README, LICENSE); `node_modules`, the lockfile, `CHANGELOG.md`, and `test/` are excluded.
+
+Peakbagger sits behind a Cloudflare challenge, so tests never hit the live site: `test/fixtures/peakascents/` holds raw captures (fetched from the Wayback Machine's unrewritten `id_` URLs) and the jsdom harness runs the real content scripts against them with a stubbed `chrome.storage`.
 
 ---
 

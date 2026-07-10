@@ -1,5 +1,29 @@
 # Changelog
 
+## 1.2.0 — 2026-07-10
+
+Instant date sorting and a user-defined "has beta".
+
+- **Instant Ascent Date sort** on the ascent list: the header's
+  `Ascent Date` / `[sort desc]` links now reorder the table in the DOM
+  (milliseconds, no page reload). Implemented as a reversal of the served
+  order — sections and rows within sections — so `Unknown`/malformed dates
+  keep their backend ordering. The URL is rewritten via
+  `history.replaceState` so reload/share reproduce the view, and a ▲/▼
+  arrow now marks the active sort direction (the site never showed one).
+  Views where the links would change the row set (non-date sorts, the
+  default "Most Recent Year" page) still navigate normally.
+- **Configurable "Has beta"**: new options-page group choosing which
+  signals the chip counts — trip report with **≥ N words** (its own
+  threshold, separate from the Trip report chip's), GPS track, external
+  link. Defaults match the old hardcoded rule; at least one signal must
+  stay checked. Changes apply live to open tabs (count and tooltip
+  included).
+- **Test infrastructure**: raw `PeakAscents.aspx` fixtures captured from
+  the Wayback Machine (`test/fixtures/peakascents/`, provenance in its
+  README) and a jsdom harness (`npm test`) running the real content
+  scripts against them — no live-site access needed for development.
+
 ## 1.1.0 — 2026-07-09
 
 Site-wide dark mode and a centralized settings page.
