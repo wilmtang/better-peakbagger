@@ -50,11 +50,13 @@ test('"Show all" reveals every row', async () => {
     assert.ok(sectionRows(dom).every(r => r.style.display === ''));
 });
 
-test('trip-report chip applies the settings word threshold', async () => {
-    const dom = await loadPageWithBar(RAINIER, {
-        url: RAINIER_URL,
-        settings: { defaultMinTrWords: 100 }
-    });
+test('trip-report chip applies its inline word threshold', async () => {
+    const dom = await loadPageWithBar(RAINIER, { url: RAINIER_URL });
+
+    // The threshold is per-page UI state, edited through the inline input.
+    const wordsInput = dom.window.document.querySelector('.pbaf-words input');
+    wordsInput.value = '100';
+    wordsInput.dispatchEvent(new dom.window.Event('input'));
 
     chip(dom, 'Trip report').click();
     // Independent expectation: rows whose TR cell reports >= 100 words.

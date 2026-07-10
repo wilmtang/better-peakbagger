@@ -212,14 +212,13 @@ th a.pbaf-sort-active { text-decoration: none; cursor: default; }
         };
 
         const state = loadState();
-        // The threshold default and the beta definition are centralized in
-        // extension settings.
+        // The Trip report chip's word threshold is per-page UI state and lives
+        // in localStorage (state.minWords, above). The "has beta" definition is
+        // centralized in extension settings.
         if (S) {
             try {
-                const settings = await S.get();
-                state.minWords = Math.max(1, parseInt(settings.defaultMinTrWords, 10) || 1);
-                betaCfg = betaCfgFrom(settings);
-            } catch (e) { /* fall back to localStorage/default */ }
+                betaCfg = betaCfgFrom(await S.get());
+            } catch (e) { /* fall back to defaults */ }
         }
         const bar = buildBarShell();
         const chips = {};
@@ -261,7 +260,6 @@ th a.pbaf-sort-active { text-decoration: none; cursor: default; }
             const value = parseInt(wordsInput.value, 10);
             state.minWords = Number.isFinite(value) && value > 0 ? value : 1;
             saveState(state);
-            if (S) S.set({ defaultMinTrWords: state.minWords });
             render();
         });
 
@@ -446,24 +444,16 @@ th a.pbaf-sort-active { text-decoration: none; cursor: default; }
         };
         setupInstantDateSort();
 
-        // Re-apply the threshold and the beta definition if they change in
-        // the options page / another tab.
+        // Re-apply the beta definition if it changes in the options page /
+        // another tab. (The Trip report word threshold is local UI state.)
         if (S && S.subscribe) {
             S.subscribe(settings => {
-                let dirty = false;
-                const words = Math.max(1, parseInt(settings.defaultMinTrWords, 10) || 1);
-                if (words !== state.minWords) {
-                    state.minWords = words;
-                    wordsInput.value = String(words);
-                    dirty = true;
-                }
                 const nextBeta = betaCfgFrom(settings);
                 if (JSON.stringify(nextBeta) !== JSON.stringify(betaCfg)) {
                     betaCfg = nextBeta;
                     refreshBeta();
-                    dirty = true;
+                    render();
                 }
-                if (dirty) render();
             });
         }
     };

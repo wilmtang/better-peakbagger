@@ -14,7 +14,7 @@
     const api = (typeof browser !== 'undefined' && browser.storage) ? browser : chrome;
     const STORAGE_KEY = 'bpbSettings';
     const DEFAULTS = {
-        units: 'auto', theme: 'system', defaultMinTrWords: 1,
+        units: 'auto', theme: 'system',
         // What the ascent filter's "Has beta" chip counts: an ascent
         // qualifies if it has any of the enabled signals.
         betaTr: true, betaTrMinWords: 1, betaGps: true, betaLink: true
@@ -29,7 +29,6 @@
         const s = { ...DEFAULTS, ...(raw && typeof raw === 'object' ? raw : {}) };
         if (!['auto', 'imperial', 'metric'].includes(s.units)) s.units = DEFAULTS.units;
         if (!['system', 'light', 'dark'].includes(s.theme)) s.theme = DEFAULTS.theme;
-        s.defaultMinTrWords = clampWords(s.defaultMinTrWords);
         for (const key of ['betaTr', 'betaGps', 'betaLink']) {
             if (typeof s[key] !== 'boolean') s[key] = DEFAULTS[key];
         }

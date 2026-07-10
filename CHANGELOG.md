@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.3.0 — 2026-07-10
+
+- **Removed the "Default minimum trip-report words" setting** from the options
+  page. It duplicated the ascent list's inline `≥ N words` control while adding
+  a second place to keep in sync, for little benefit. The Trip report chip's
+  threshold now persists on its own in the page's `localStorage` (alongside the
+  chip on/off states), so it is still remembered across visits — just edited in
+  one place. The `defaultMinTrWords` field is gone from `chrome.storage`; the
+  configurable "Has beta" definition (with its own `betaTrMinWords`) is
+  unchanged.
+
 ## 1.2.1 — 2026-07-10
 
 Dark mode polish: kill the flash for good, fix the washed-out header, and guard

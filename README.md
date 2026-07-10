@@ -74,7 +74,6 @@ The options page centralizes the preferences in `chrome.storage.sync`:
 
 - **Units** — Auto (match page) / Imperial / Metric.
 - **Theme** — Follow system / Light / Dark. Applies to the whole Peakbagger site and the extension's panels.
-- **Default minimum trip-report words** — the Trip report chip's starting threshold.
 - **"Has beta" means** — which signals the Has beta chip counts: trip report (with its own ≥ N words threshold), GPS track, external link. At least one must stay checked.
 
 Changes apply live to any open Peakbagger tab.
@@ -84,7 +83,7 @@ Changes apply live to any open Peakbagger tab.
 ## Architecture at a glance
 
 ```
-                          chrome.storage.sync  ({ units, theme, defaultMinTrWords, beta* })
+                          chrome.storage.sync  ({ units, theme, beta* })
                                    ▲   │  onChanged
                  ┌─────────────────┼───┼──────────────────────────────────────────┐
    options page  │                 │   ▼                                            │
@@ -133,11 +132,11 @@ The heritage here matters: these two features started as Tampermonkey userscript
 
 ## Deep dive: the settings system and the bridge
 
-Settings live in **`chrome.storage.sync`** under a single key (`bpbSettings`). `sync` means they roam across a signed-in user's browsers; the payload is three fields, far under the quota.
+Settings live in **`chrome.storage.sync`** under a single key (`bpbSettings`). `sync` means they roam across a signed-in user's browsers; the payload is a handful of fields, far under the quota.
 
 `src/settings.js` is the shared core, loaded into every isolated content script and the options page. It exposes `window.BPBSettings` with:
 
-- `get()` / `set(patch)` — promise-based, with input **sanitisation** (`clean()`), so a corrupt or partial stored object can never crash a consumer; unknown values fall back to defaults (`{ units: 'auto', theme: 'system', defaultMinTrWords: 1 }`).
+- `get()` / `set(patch)` — promise-based, with input **sanitisation** (`clean()`), so a corrupt or partial stored object can never crash a consumer; unknown values fall back to defaults (`{ units: 'auto', theme: 'system', … }`).
 - `subscribe(cb)` — wraps `chrome.storage.onChanged` so any context is notified when settings change in another (the options page, another tab).
 - `resolveTheme(pref)` — turns the `'system'` preference into a concrete `'light' | 'dark'` via `matchMedia('(prefers-color-scheme: dark)')`.
 
@@ -234,7 +233,7 @@ Runs in the isolated world on `PeakAscents.aspx`.
 - **The data model.** Each data row becomes `{ words, gps, link, beta }`. Year-separator rows (single-cell) are tracked as sections so they can be hidden when empty.
 - **A user-defined "has beta".** `beta` is computed from the shared settings: an ascent qualifies if it has any *enabled* signal — a trip report of at least `betaTrMinWords` words (`betaTr`), a GPS track (`betaGps`), or a link (`betaLink`). The chip's count and tooltip recompute live when the definition changes in the options page, and `clean()` guarantees the definition can never be empty (all-off resets to all-on).
 - **Stackable AND filters.** Each chip is an independent predicate; a row is visible only if it passes *every* active chip. Toggling recomputes visibility, updates the live "Showing x of y" count, hides now-empty year headers, and reveals a **Show all** escape hatch.
-- **State split.** Chip on/off states persist in the page's `localStorage` (`pbAscentBetaFilter.v1`) — lightweight, per-visit UI state. The **word threshold**, by contrast, lives in the shared `chrome.storage` settings (`defaultMinTrWords`), so the inline `≥ N words` input and the options page edit the same value; a `subscribe` keeps the input in sync if it changes elsewhere.
+- **State split.** The filter's per-page UI state — chip on/off states *and* the Trip report `≥ N words` threshold — persists together in the page's `localStorage` (`pbAscentBetaFilter.v1`), so it is remembered across visits without touching the synced settings. The shared `chrome.storage` settings own only the cross-cutting **"has beta" definition** (`betaTr`/`betaTrMinWords`/`betaGps`/`betaLink`); a `subscribe` re-applies it live when the options page changes it.
 - **Compact view.** Views whose table lacks the TR-Words / GPS / Link columns have nothing to filter; there the bar degrades to a one-click link to the full "all years, full details" view (`y=9999`), preserving the existing `sort`/unit params.
 
 ### Instant Ascent Date sort
@@ -314,7 +313,6 @@ Settings shape (`chrome.storage.sync`, key `bpbSettings`):
 ```js
 { units: 'auto' | 'imperial' | 'metric',
   theme: 'system' | 'light' | 'dark',
-  defaultMinTrWords: number,        // Trip report chip's starting threshold
   betaTr: boolean,                  // "has beta" counts a trip report…
   betaTrMinWords: number,           //   …of at least this many words
   betaGps: boolean,                 // "has beta" counts a GPS track

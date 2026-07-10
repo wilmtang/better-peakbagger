@@ -275,7 +275,7 @@
 
     // Bridge client: swaps settings with the isolated-world bridge over postMessage.
     const BPB = (() => {
-        const FALLBACK = { units: 'auto', theme: 'system', defaultMinTrWords: 1 };
+        const FALLBACK = { units: 'auto', theme: 'system' };
         let settings = null;
         const subs = new Set();
         let resolveReady;
