@@ -1,0 +1,47 @@
+{
+  "manifest_version": 3,
+  "name": "Better Peakbagger",
+  "version": "1.0.0",
+  "description": "Adds an interactive elevation & time chart to Peakbagger ascent pages and a stackable beta filter to a peak's ascent list.",
+  "homepage_url": "https://github.com/wilmtang/better-peakbagger",
+  "icons": {
+    "16": "icons/icon-16.png",
+    "32": "icons/icon-32.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "*://www.peakbagger.com/climber/ascent.aspx*",
+        "*://www.peakbagger.com/climber/Ascent.aspx*",
+        "*://peakbagger.com/climber/ascent.aspx*",
+        "*://peakbagger.com/climber/Ascent.aspx*"
+      ],
+      "js": ["vendor/chart.umd.min.js", "src/gpx-analyzer.js"],
+      "run_at": "document_end",
+      "all_frames": false,
+      "world": "MAIN"
+    },
+    {
+      "matches": [
+        "*://www.peakbagger.com/climber/PeakAscents.aspx*",
+        "*://www.peakbagger.com/climber/peakascents.aspx*",
+        "*://peakbagger.com/climber/PeakAscents.aspx*",
+        "*://peakbagger.com/climber/peakascents.aspx*"
+      ],
+      "js": ["src/ascent-filter.js"],
+      "run_at": "document_end",
+      "all_frames": false
+    }
+  ],
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "better-peakbagger@wilmtang.github.io",
+      "strict_min_version": "140.0",
+      "data_collection_permissions": {
+        "required": ["none"]
+      }
+    }
+  }
+}
