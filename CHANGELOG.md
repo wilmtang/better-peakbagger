@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- **Fixed the flash of the light page on load with dark mode enabled**
+  (most visible in Brave). `src/theme.js` now mirrors the theme preference
+  into page `localStorage` and applies it synchronously at `document_start`,
+  before first paint, instead of waiting for the async `chrome.storage` read
+  (which stays authoritative and reconciles afterwards). Details in
+  `docs/dark-mode-flash.md`.
+
 ## 1.1.0 — 2026-07-09
 
 Site-wide dark mode and a centralized settings page.
