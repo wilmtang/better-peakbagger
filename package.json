@@ -14,9 +14,11 @@
     "lint": "web-ext lint --source-dir . --ignore-files \"test/**\"",
     "build": "web-ext build --source-dir . --artifacts-dir web-ext-artifacts --overwrite-dest --ignore-files package.json package-lock.json CHANGELOG.md \"node_modules/**\" \"test/**\"",
     "start:firefox": "web-ext run --source-dir .",
-    "start:chromium": "web-ext run --source-dir . --target chromium"
+    "start:chromium": "web-ext run --source-dir . --target chromium",
+    "test": "node --test \"test/**/*.test.mjs\""
   },
   "devDependencies": {
+    "jsdom": "^29.1.1",
     "web-ext": "^10.4.0"
   }
 }
