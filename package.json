@@ -12,7 +12,7 @@
   },
   "scripts": {
     "lint": "web-ext lint --source-dir . --ignore-files \"test/**\"",
-    "build": "web-ext build --source-dir . --artifacts-dir web-ext-artifacts --overwrite-dest --ignore-files package.json package-lock.json CHANGELOG.md \"node_modules/**\" \"test/**\"",
+    "build": "web-ext build --source-dir . --artifacts-dir web-ext-artifacts --overwrite-dest --ignore-files package.json package-lock.json CHANGELOG.md \"node_modules/**\" \"test/**\" \"store-assets/**\"",
     "start:firefox": "web-ext run --source-dir .",
     "start:chromium": "web-ext run --source-dir . --target chromium",
     "test": "node --test \"test/**/*.test.mjs\""
