@@ -34,6 +34,17 @@ html[data-bpb-theme="dark"] a:link { color: #7ab6ff !important; }
 html[data-bpb-theme="dark"] a:visited { color: #c39bf0 !important; }
 html[data-bpb-theme="dark"] a:hover { color: #9ecbff !important; }
 
+/* Peakbagger uses inline navy for help and hint copy on form pages. Preserve
+   that hierarchy with a muted steel blue: distinct from warm body text, but
+   less link-like than the saturated blue above. Match at a property boundary
+   so a navy background does not get mistaken for navy text. */
+html[data-bpb-theme="dark"] [style^="color:navy" i],
+html[data-bpb-theme="dark"] [style^="color: navy" i],
+html[data-bpb-theme="dark"] [style*=";color:navy" i],
+html[data-bpb-theme="dark"] [style*=";color: navy" i],
+html[data-bpb-theme="dark"] [style*="; color:navy" i],
+html[data-bpb-theme="dark"] [style*="; color: navy" i] { color: #94adc5 !important; }
+
 /* The header banner sits on the untouched header.jpg photo (a light image).
    Its title + nav links are inline color:black in the native markup; keep them
    dark so they stay legible on the photo, instead of the light-on-dark link
@@ -51,6 +62,16 @@ html[data-bpb-theme="dark"] h1 { color: #e79a9a !important; }
 html[data-bpb-theme="dark"] h2 { color: #8fb8ff !important; }
 html[data-bpb-theme="dark"] h3,
 html[data-bpb-theme="dark"] h4 { color: #e6e1d8 !important; }
+
+/* Small section and metric labels on climber pages carry maroon inline. Map
+   the same legacy semantic color to the dark-theme h1 red. As with navy above,
+   property boundaries avoid treating a maroon background as maroon text. */
+html[data-bpb-theme="dark"] [style^="color:maroon" i],
+html[data-bpb-theme="dark"] [style^="color: maroon" i],
+html[data-bpb-theme="dark"] [style*=";color:maroon" i],
+html[data-bpb-theme="dark"] [style*=";color: maroon" i],
+html[data-bpb-theme="dark"] [style*="; color:maroon" i],
+html[data-bpb-theme="dark"] [style*="; color: maroon" i] { color: #e79a9a !important; }
 
 /* Data tables */
 html[data-bpb-theme="dark"] table.gray {

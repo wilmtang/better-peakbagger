@@ -81,6 +81,8 @@ const PAIRS = [
     ['link',                 fg('a:link'),                                  bg('body'),                                    NORMAL],
     ['visited link',         fg('a:visited'),                               bg('body'),                                    NORMAL],
     ['hover link',           fg('a:hover'),                                 bg('body'),                                    NORMAL],
+    ['legacy navy text',     fg('[style^="color:navy" i]'),                bg('body'),                                    NORMAL],
+    ['legacy maroon text',   fg('[style^="color:maroon" i]'),              bg('body'),                                    NORMAL],
     ['h1',                   fg('h1'),                                      bg('body'),                                    LARGE],
     ['h2',                   fg('h2'),                                      bg('body'),                                    LARGE],
     ['h3',                   fg('h3'),                                      bg('body'),                                    LARGE],
@@ -137,21 +139,84 @@ test('header banner links stay dark enough for the light header.jpg photo', () =
     }
 });
 
+test('legacy inline navy text is fixed without flattening other inline colors', () => {
+    const dom = new JSDOM(`<!doctype html>
+        <html data-bpb-theme="dark">
+        <head><style>${win.BPBDarkCSS}</style></head>
+        <body>
+            <span id="start-spaced" style="color: Navy">Help</span>
+            <span id="start-tight" style="color:navy">Help</span>
+            <span id="middle-spaced" style="font-size:small; color:Navy">Hint</span>
+            <span id="middle-tight" style="font-size:small;color:navy">Hint</span>
+            <span id="navy-background" style="background-color:navy;color:white">Label</span>
+            <span id="error" style="color:Red">Error</span>
+            <span id="with-link" style="color: Navy"><a href="#help">Help link</a></span>
+        </body>
+        </html>`, { url: 'https://www.peakbagger.com/climber/ascentedit.aspx' });
+
+    const color = id => dom.window.getComputedStyle(dom.window.document.getElementById(id)).color;
+    for (const id of ['start-spaced', 'start-tight', 'middle-spaced', 'middle-tight', 'with-link']) {
+        assert.equal(color(id), 'rgb(148, 173, 197)', `${id} should use the muted help color`);
+    }
+    assert.notEqual(color('start-spaced'), color('navy-background'), 'help text keeps its own hierarchy');
+    assert.notEqual(
+        color('start-spaced'),
+        dom.window.getComputedStyle(dom.window.document.body).color,
+        'help text must remain visually distinct from body text'
+    );
+    assert.equal(color('navy-background'), 'rgb(255, 255, 255)', 'a navy background is not navy text');
+    assert.equal(color('error'), 'rgb(255, 0, 0)', 'status/error colors remain intentional');
+    assert.equal(
+        dom.window.getComputedStyle(dom.window.document.querySelector('#with-link a')).color,
+        'rgb(122, 182, 255)',
+        'nested links retain the dark-theme link color'
+    );
+});
+
+test('legacy inline maroon labels use the dark-theme semantic red', () => {
+    const dom = new JSDOM(`<!doctype html>
+        <html data-bpb-theme="dark">
+        <head><style>${win.BPBDarkCSS}</style></head>
+        <body>
+            <span id="start" style="color:maroon">Highest Priority Lists</span>
+            <span id="middle" style="font-size:small; color: maroon; font-weight:bold">Most Complete Lists</span>
+            <span id="background" style="background-color:maroon;color:white">Label</span>
+            <span id="with-link" style="color: maroon"><a href="#metric">P-Index:</a></span>
+        </body>
+        </html>`, { url: 'https://www.peakbagger.com/climber/climber.aspx' });
+
+    const color = id => dom.window.getComputedStyle(dom.window.document.getElementById(id)).color;
+    assert.equal(color('start'), 'rgb(231, 154, 154)');
+    assert.equal(color('middle'), 'rgb(231, 154, 154)');
+    assert.equal(color('background'), 'rgb(255, 255, 255)', 'a maroon background is not maroon text');
+    assert.equal(
+        dom.window.getComputedStyle(dom.window.document.querySelector('#with-link a')).color,
+        'rgb(122, 182, 255)',
+        'nested links retain the dark-theme link color'
+    );
+});
+
 // Guard against contrast-checking dead CSS: every selector the pairs target
 // must match a real element in the captured fixtures.
 test('contrast pairs are grounded in real fixtures', async () => {
     const home = new JSDOM(
         await readFile(path.join(root, 'test/fixtures/pages/home-default.html'), 'utf8')
     ).window.document;
+    const climber = new JSDOM(
+        await readFile(path.join(root, 'test/fixtures/pages/climber-home.html'), 'utf8')
+    ).window.document;
     const peak = (await loadPageWithBar('2296-rainier-default-recent-year.html', {
         url: 'https://www.peakbagger.com/climber/PeakAscents.aspx?pid=2296'
     })).window.document;
 
     const matches = (doc, sel) => doc.querySelector(sel) !== null;
-    const anywhere = sel => matches(home, sel) || matches(peak, sel);
+    const anywhere = sel => matches(home, sel) || matches(climber, sel) || matches(peak, sel);
 
     // Shared site chrome + content, across either capture.
-    for (const sel of ['.mainbanner a', '.mainmenu a', 'a', 'table.gray', 'h1', 'h2', 'th', 'input']) {
+    for (const sel of [
+        '.mainbanner a', '.mainmenu a', 'a', 'table.gray', 'h1', 'h2', 'th', 'input',
+        '[style*="; color: maroon" i]'
+    ]) {
         assert.ok(anywhere(sel), `no fixture element matches "${sel}"`);
     }
     // Filter bar is injected by ascent-filter.js onto the PeakAscents page.
