@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Better Peakbagger",
   "version": "1.3.0",
-  "description": "Adds an interactive elevation & time chart to Peakbagger ascent pages, a stackable beta filter to a peak's ascent list, plus site-wide dark mode and centralized settings.",
+  "description": "Enhances Peakbagger with an interactive GPX elevation chart, ascent beta filter, and site-wide dark mode.",
   "homepage_url": "https://github.com/wilmtang/better-peakbagger",
   "icons": {
     "16": "icons/icon-16.png",
@@ -12,6 +12,9 @@
   },
   "permissions": [
     "storage"
+  ],
+  "host_permissions": [
+    "https://www.strava.com/*"
   ],
   "options_ui": {
     "page": "options/options.html",

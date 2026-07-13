@@ -54,3 +54,25 @@ test('the removed "minimum trip-report words" control is gone', async () => {
     const dom = await loadOptions({});
     assert.equal(el(dom, 'minwords'), null);
 });
+
+test('Strava prototype tests a token without saving it', async () => {
+    const dom = await loadOptions({});
+    const calls = [];
+    dom.window.fetch = async (url, options) => {
+        calls.push({ url, options });
+        return url.endsWith('/athlete')
+            ? { ok: true, status: 200, json: async () => ({ id: 7, firstname: 'Test' }) }
+            : { ok: true, status: 200, json: async () => [{ name: 'Morning Hike' }] };
+    };
+
+    el(dom, 'strava-token').value = 'secret-test-token';
+    el(dom, 'strava-test').click();
+    await new Promise(r => dom.window.setTimeout(r, 10));
+
+    assert.equal(calls.length, 2);
+    assert.equal(calls[0].options.headers.Authorization, 'Bearer secret-test-token');
+    assert.match(el(dom, 'strava-result').textContent, /Latest activity: Morning Hike/);
+    assert.doesNotMatch(el(dom, 'strava-result').textContent, /secret-test-token/);
+    assert.equal(el(dom, 'strava-token').value, '');
+    assert.equal(dom.chrome._store.stravaToken, undefined);
+});

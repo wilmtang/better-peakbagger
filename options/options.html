@@ -85,6 +85,21 @@
             </div>
         </section>
 
+        <section class="card">
+            <div class="row prototype-row">
+                <div class="label">
+                    <span class="title">Strava token prototype</span>
+                    <span class="desc">Tests a token directly against Strava and requests one recent activity. Tokens normally expire after six hours; the API can confirm current validity, not remaining lifetime. The token is never saved and is cleared after the test.</span>
+                </div>
+                <div class="token-test">
+                    <label for="strava-token">Access token</label>
+                    <input id="strava-token" type="password" autocomplete="off" spellcheck="false">
+                    <button id="strava-test" type="button">Test token</button>
+                    <span id="strava-result" class="token-result" role="status" aria-live="polite"></span>
+                </div>
+            </div>
+        </section>
+
         <p class="status" id="status" role="status" aria-live="polite"></p>
     </main>
 
