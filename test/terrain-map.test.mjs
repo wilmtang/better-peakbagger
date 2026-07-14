@@ -9,14 +9,72 @@ import { fileURLToPath } from 'node:url';
 import { JSDOM } from 'jsdom';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const terrainSource = await readFile(path.join(root, 'src', 'terrain-map.js'), 'utf8');
+const terrainBridgeSource = await readFile(path.join(root, 'src', 'terrain-map.js'), 'utf8');
+const terrainFrameSource = await readFile(path.join(root, 'src', 'terrain-frame.js'), 'utf8');
 
-test('3D terrain validates coordinate-only routes before loading public DEM tiles', async () => {
+test('3D terrain waits for the extension frame handshake before sending route coordinates', () => {
     const dom = new JSDOM(`<!doctype html><body>
       <div id="bpb-map-viewport">
         <iframe src="https://www.peakbagger.com/map/MasterMap.aspx"></iframe>
       </div>
     </body>`, {
+        url: 'https://www.peakbagger.com/climber/ascent.aspx?aid=1',
+        runScripts: 'outside-only'
+    });
+    const { window } = dom;
+    const pageMessages = [];
+    const frameMessages = [];
+    window.chrome = { runtime: { getURL: path => `chrome-extension://test-id/${path}` } };
+    window.postMessage = message => { pageMessages.push(message); };
+    window.eval(terrainBridgeSource);
+
+    const dispatchPage = data => window.dispatchEvent(new window.MessageEvent('message', {
+        source: window,
+        origin: window.location.origin,
+        data: { __bpbTerrain: true, dir: 'toCS', ...data }
+    }));
+    dispatchPage({
+        type: 'init',
+        routeSegments: [[[48.7, -121.8], [48.71, -121.81]]],
+        routeStyle: { color: '#d9483b' },
+        theme: 'light'
+    });
+
+    const frame = window.document.getElementById('bpb-terrain-frame');
+    assert.ok(frame);
+    assert.equal(frame.src, 'chrome-extension://test-id/terrain/terrain.html');
+    assert.equal(frameMessages.length, 0, 'route coordinates must wait until the frame listener is ready');
+    frame.contentWindow.postMessage = message => { frameMessages.push(message); };
+
+    dispatchPage({ type: 'update', routeStyle: { color: '#347a3f' }, theme: 'dark' });
+    window.dispatchEvent(new window.MessageEvent('message', {
+        source: frame.contentWindow,
+        origin: 'chrome-extension://test-id',
+        data: { __bpbTerrainFrame: true, dir: 'toParent', type: 'ready' }
+    }));
+    const init = frameMessages.find(message => message.type === 'init');
+    assert.ok(init);
+    assert.deepEqual(init.routeSegments, [[[48.7, -121.8], [48.71, -121.81]]]);
+    assert.equal(init.routeStyle.color, '#347a3f');
+    assert.equal(init.theme, 'dark');
+
+    window.dispatchEvent(new window.MessageEvent('message', {
+        source: frame.contentWindow,
+        origin: 'chrome-extension://test-id',
+        data: { __bpbTerrainFrame: true, dir: 'toParent', type: 'loaded' }
+    }));
+    assert.equal(frame.style.opacity, '1');
+    assert.equal(frame.style.pointerEvents, 'auto');
+    assert.equal(pageMessages.at(-1).type, 'loaded');
+
+    dispatchPage({ type: 'destroy' });
+    assert.equal(window.document.getElementById('bpb-terrain-frame'), null);
+    assert.equal(pageMessages.at(-1).type, 'destroyed');
+    dom.window.close();
+});
+
+test('3D terrain frame validates coordinate-only routes before loading public DEM tiles', async () => {
+    const dom = new JSDOM('<!doctype html><body></body>', {
         url: 'https://www.peakbagger.com/climber/ascent.aspx?aid=1',
         runScripts: 'outside-only',
         pretendToBeVisual: true
@@ -40,6 +98,7 @@ test('3D terrain validates coordinate-only routes before loading public DEM tile
         once(type, callback) {
             if (type === 'load') window.queueMicrotask(callback);
         }
+        on() {}
         addSource(id, source) {
             const stored = {
                 ...source,
@@ -63,12 +122,12 @@ test('3D terrain validates coordinate-only routes before loading public DEM tile
         setWorkerUrl(url) { workerUrl = url; }
     };
     window.postMessage = message => { messages.push(message); };
-    window.eval(terrainSource);
+    window.eval(terrainFrameSource);
 
     const dispatch = data => window.dispatchEvent(new window.MessageEvent('message', {
         source: window,
         origin: window.location.origin,
-        data: { __bpbTerrain: true, dir: 'toCS', ...data }
+        data: { __bpbTerrainFrame: true, dir: 'toFrame', ...data }
     }));
 
     dispatch({ type: 'init', routeSegments: [[[48.7, -121.8, 1000], [48.71, -121.81, 1200]]] });
@@ -107,7 +166,7 @@ test('3D terrain validates coordinate-only routes before loading public DEM tile
         ]
     });
     assert.deepEqual(JSON.parse(JSON.stringify(map.fitted.bounds)), [[-121.82, 48.7], [-121.8, 48.76]]);
-    assert.equal(window.document.getElementById('bpb-terrain-map').style.visibility, 'visible');
+    assert.equal(window.document.getElementById('bpb-terrain-map').style.pointerEvents, 'auto');
     assert.equal(messages.at(-1).type, 'loaded');
 
     dispatch({ type: 'highlight', coordinates: [-121.81, 48.71] });

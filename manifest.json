@@ -100,11 +100,9 @@
         "*://peakbagger.com/climber/Ascent.aspx*"
       ],
       "css": [
-        "vendor/maplibre-gl.css",
         "src/terrain-map.css"
       ],
       "js": [
-        "vendor/maplibre-gl-csp.js",
         "src/terrain-map.js"
       ],
       "run_at": "document_end",
@@ -132,7 +130,7 @@
   "web_accessible_resources": [
     {
       "resources": [
-        "vendor/maplibre-gl-csp-worker.js"
+        "terrain/terrain.html"
       ],
       "matches": [
         "*://*.peakbagger.com/*"

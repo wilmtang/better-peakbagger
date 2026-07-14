@@ -201,6 +201,17 @@ test('GPX analyzer adds a thick, segment-preserving route casing behind native L
     assert.equal(terrainMessages.at(-1).type, 'destroy');
     assert.equal(terrainToggle.textContent, '3D terrain');
 
+    terrainToggle.click();
+    await waitFor(dom, () => terrainMessages.filter(message => message.type === 'init').length === 2);
+    window.dispatchEvent(new window.MessageEvent('message', {
+        source: window,
+        origin: window.location.origin,
+        data: { __bpbTerrain: true, dir: 'toPage', type: 'error', reason: 'maplibre' }
+    }));
+    assert.equal(iframe.style.visibility, 'visible');
+    assert.equal(terrainToggle.textContent, '3D terrain');
+    assert.match(window.document.getElementById('bpb-terrain-message').textContent, /could not render 3D terrain/);
+
     sendSettings({
         units: 'imperial', theme: 'light', chartDefaultSeries: 'both',
         mapRouteColor: '#2457a7', mapRouteWidth: 7,

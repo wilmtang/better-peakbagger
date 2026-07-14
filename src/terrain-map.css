@@ -1,7 +1,7 @@
 /* Copyright (C) 2026 wilmtang <wilm.tang@outlook.com> */
 /* SPDX-License-Identifier: AGPL-3.0-or-later */
 
-#bpb-terrain-map {
+#bpb-terrain-frame {
     position: absolute;
     inset: 0 0 18px;
     z-index: 2;
@@ -10,9 +10,27 @@
     border-radius: 4px;
     background: #d9ded2;
     box-sizing: border-box;
+    width: 100%;
+    height: calc(100% - 18px);
+    opacity: 0;
+    pointer-events: none;
+}
+
+html:has(.bpb-terrain-frame-body),
+.bpb-terrain-frame-body {
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    overflow: hidden;
+}
+
+#bpb-terrain-map {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    background: #d9ded2;
     color: #252821;
     font: 12px/1.35 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-    visibility: hidden;
     pointer-events: none;
 }
 

@@ -851,6 +851,14 @@
             showTerrainMessage(message, 'error');
         };
 
+        const terrainFailureMessage = reason => ({
+            frame: '3D terrain could not start in this browser. The 2D map is unchanged.',
+            unavailable: '3D terrain is unavailable in this browser. The 2D map is unchanged.',
+            maplibre: 'Your browser could not render 3D terrain. The 2D map is unchanged.',
+            renderer: 'Your browser could not render 3D terrain. The 2D map is unchanged.',
+            timeout: '3D terrain took too long to load. The 2D map is unchanged.'
+        })[reason] || '3D terrain could not load. The 2D map is unchanged.';
+
         const startTerrain = () => {
             if (terrainState !== 'idle' || !mapViewport || !mapIframe || !mapRouteSegments.length) return;
             terrainState = 'loading';
@@ -914,7 +922,7 @@
                 showTerrainMessage('');
                 updateTerrainButton();
             } else if (data.type === 'error' && terrainState === 'loading') {
-                failTerrain('3D terrain could not load. The 2D map is unchanged.');
+                failTerrain(terrainFailureMessage(data.reason));
             }
         });
 

@@ -38,7 +38,10 @@ const safeFile = async pathname => {
 const server = createServer(async (request, response) => {
     try {
         const url = new URL(request.url, 'http://127.0.0.1');
-        const file = await safeFile(decodeURIComponent(url.pathname));
+        const pathname = url.pathname === '/climber/ascent.aspx'
+            ? '/scripts/showcase/terrain.html'
+            : decodeURIComponent(url.pathname);
+        const file = await safeFile(pathname);
         if (!file) {
             response.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' });
             response.end('Not found');
@@ -48,7 +51,14 @@ const server = createServer(async (request, response) => {
             'content-type': contentTypes.get(path.extname(file)) || 'application/octet-stream',
             'cache-control': 'no-store'
         });
-        response.end(await readFile(file));
+        let contents = await readFile(file);
+        if (url.pathname === '/terrain/terrain.html') {
+            contents = Buffer.from(contents.toString('utf8').replace('</head>', `  <script>
+    globalThis.chrome = { runtime: { getURL: resource => new URL('/' + resource, location.origin).href } };
+  </script>
+</head>`));
+        }
+        response.end(contents);
     } catch (error) {
         response.writeHead(500, { 'content-type': 'text/plain; charset=utf-8' });
         response.end(error.stack || error.message);
@@ -156,6 +166,7 @@ const chrome = spawn(chromePath, [
     '--disable-sync',
     '--enable-unsafe-swiftshader',
     '--use-angle=swiftshader',
+    '--host-resolver-rules=MAP www.peakbagger.com 127.0.0.1',
     '--remote-debugging-port=0',
     `--user-data-dir=${profile}`,
     'about:blank'
@@ -185,7 +196,7 @@ try {
         runtimeErrors.push(exceptionDetails.exception?.description || exceptionDetails.text || 'Unknown runtime exception');
     });
 
-    const baseUrl = `http://127.0.0.1:${serverPort}/scripts/showcase/terrain.html`;
+    const baseUrl = `http://www.peakbagger.com:${serverPort}/climber/ascent.aspx`;
     await navigate(cdp, `${baseUrl}?mode=notice`, 1000, 900);
     await waitForPageState(cdp, `(() => {
         const notice = document.getElementById('bpb-terrain-disclosure');
@@ -198,10 +209,11 @@ try {
     await navigate(cdp, `${baseUrl}?mode=terrain&map=wide`, 1280, 950);
     const ready = await waitForPageState(cdp, `(() => {
         const toggle = document.getElementById('bpb-terrain-toggle');
-        const surface = document.getElementById('bpb-terrain-map');
+        const frame = document.getElementById('bpb-terrain-frame');
+        const surface = frame && frame.contentDocument && frame.contentDocument.getElementById('bpb-terrain-map');
         const message = document.getElementById('bpb-terrain-message');
         return {
-            ready: toggle && toggle.textContent === '2D map' && surface && surface.style.visibility === 'visible',
+            ready: toggle && toggle.textContent === '2D map' && frame && frame.style.opacity === '1' && surface,
             toggle: toggle && toggle.textContent,
             message: message && message.textContent,
             canvas: surface && surface.querySelector('canvas') && {
@@ -219,10 +231,11 @@ try {
     await navigate(cdp, `${baseUrl}?mode=terrain&theme=dark`, 1000, 900);
     const darkReady = await waitForPageState(cdp, `(() => {
         const toggle = document.getElementById('bpb-terrain-toggle');
-        const surface = document.getElementById('bpb-terrain-map');
+        const frame = document.getElementById('bpb-terrain-frame');
+        const surface = frame && frame.contentDocument && frame.contentDocument.getElementById('bpb-terrain-map');
         return {
-            ready: toggle && toggle.textContent === '2D map' && surface
-                && surface.style.visibility === 'visible' && surface.dataset.theme === 'dark',
+            ready: toggle && toggle.textContent === '2D map' && frame && frame.style.opacity === '1'
+                && surface && surface.dataset.theme === 'dark',
             canvas: surface && surface.querySelector('canvas') && {
                 width: surface.querySelector('canvas').width,
                 height: surface.querySelector('canvas').height

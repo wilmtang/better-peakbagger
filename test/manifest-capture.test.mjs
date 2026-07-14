@@ -30,18 +30,21 @@ test('settings are embedded in the browser add-on manager', () => {
     });
 });
 
-test('3D terrain is isolated from Peakbagger globals and exposes only its packaged worker', () => {
+test('3D terrain is isolated from Peakbagger globals in an extension-owned frame', async () => {
     const terrainEntry = manifest.content_scripts.find(entry => entry.js.includes('src/terrain-map.js'));
     assert.ok(terrainEntry);
     assert.equal(terrainEntry.world, undefined, 'terrain should run in the default isolated extension world');
-    assert.deepEqual(terrainEntry.js, ['vendor/maplibre-gl-csp.js', 'src/terrain-map.js']);
-    assert.deepEqual(terrainEntry.css, ['vendor/maplibre-gl.css', 'src/terrain-map.css']);
+    assert.deepEqual(terrainEntry.js, ['src/terrain-map.js']);
+    assert.deepEqual(terrainEntry.css, ['src/terrain-map.css']);
     assert.ok(terrainEntry.matches.every(pattern => /peakbagger\.com\/climber\/(?:a|A)scent\.aspx/.test(pattern)));
 
     assert.deepEqual(manifest.web_accessible_resources, [{
-        resources: ['vendor/maplibre-gl-csp-worker.js'],
+        resources: ['terrain/terrain.html'],
         matches: ['*://*.peakbagger.com/*']
     }]);
+    const terrainFrame = await fs.readFile(new URL('../terrain/terrain.html', import.meta.url), 'utf8');
+    assert.match(terrainFrame, /vendor\/maplibre-gl-csp\.js/);
+    assert.match(terrainFrame, /src\/terrain-frame\.js/);
     assert.ok(manifest.host_permissions.every(pattern => !pattern.includes('mapterhorn.com')),
         'public CORS tiles must not broaden persistent extension host access');
 });

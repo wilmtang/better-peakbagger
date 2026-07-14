@@ -190,7 +190,7 @@ and the [discussion board](https://github.com/wilmtang/better-peakbagger/discuss
                           │  settings.js  (shared)   │                             │
                           │  theme.js  → data-bpb-theme on <html>                  │
                           │  bridge.js  ←── postMessage ──┐                        │
-                          │  terrain-map.js + MapLibre ◀──┼── coordinate segments │
+                          │  terrain-map.js (frame bridge)◀┼── coordinate segments │
                           │  ascent-filter.js             │                        │
                           └───────────────────────────────┼────────────────────────┘
                                                            │  window.postMessage
@@ -198,6 +198,11 @@ and the [discussion board](https://github.com/wilmtang/better-peakbagger/discuss
                           │  MAIN (page) world              ▼                        │
                           │  chart.umd.min.js  +  gpx-analyzer.js                    │
                           │  (needs page globals: map iframe, Chart, clipboard)      │
+                          └──────────────────────────────────────────────────────────┘
+                                                           │ validated coordinates
+                                                           ▼
+                          ┌──────────────────────────────────────────────────────────┐
+                          │  extension frame: terrain-frame.js + packaged MapLibre   │
                           └──────────────────────────────────────────────────────────┘
 ```
 
@@ -219,11 +224,11 @@ toolbar click (`activeTab`) ──▶ inject provider adapter in MAIN world
                   grouped ascent tabs ◀── verified handshake ── fill + Preview once
 ```
 
-Three boundaries do most of the work:
+Four boundaries do most of the work:
 
 1. **Content scripts run in two different JavaScript "worlds,"** and each feature is placed in the world it needs. The GPX Analyzer and the on-demand activity-provider adapter run in the page's own world; form filling and extension UI run in the isolated extension world.
 2. Because the MAIN-world analyzer can't touch `chrome.storage`, a tiny **bridge** relays settings across the world boundary over `window.postMessage`.
-3. The optional MapLibre renderer stays **isolated and dormant** until the user accepts its per-page notice. It receives only coordinate segments from the analyzer; the packaged renderer then requests public terrain tiles for that area.
+3. The optional MapLibre renderer stays **in an extension-owned frame and dormant** until the user accepts its per-page notice. The isolated bridge relays only coordinate segments from the analyzer; the packaged renderer then requests public terrain tiles for that area.
 4. Activity capture is a **gated transaction**, not a persistent provider integration: the extension receives temporary access only after a toolbar click, refuses ambiguous ownership, keeps only a privacy-reduced draft payload in session storage, and never activates Peakbagger's Save controls.
 
 ---
@@ -329,7 +334,8 @@ This split is the single most important design constraint in the extension. Here
 | `gpx-analyzer.js` | **MAIN** | Needs page-realm access: the map iframe's Leaflet globals (see below), the bundled `Chart` global, and page clipboard/`localStorage` semantics identical to a userscript. |
 | `chart.umd.min.js` | **MAIN** | Loaded immediately before the analyzer so the `Chart` UMD global lands in the same realm the analyzer reads. |
 | `provider-page.js` | **MAIN**, injected on demand | Needs the activity page's signed-in state and authenticated same-origin export; exposes only the narrow ownership/capture adapter to the background. |
-| `terrain-map.js`, MapLibre | isolated | Owns the WebGL terrain surface and packaged CSP worker. It has no need for Peakbagger globals and does not request terrain until the analyzer sends a consented coordinate-only route. |
+| `terrain-map.js` | isolated | Creates the extension-owned frame and relays only validated terrain messages between it and the analyzer. |
+| `terrain-frame.js`, MapLibre | extension document | Owns the WebGL terrain surface and packaged CSP worker. It has no access to Peakbagger globals and does not request terrain until the bridge sends a consented coordinate-only route. |
 | `theme.js`, `bridge.js`, `ascent-filter.js`, `settings.js` | isolated | They only touch the DOM and `chrome.storage`; no page globals needed. |
 | `ascent-draft.js` | isolated | Uses extension messaging to verify a prepared draft, then fills the Peakbagger DOM and starts Preview. |
 
@@ -443,9 +449,10 @@ and is hidden only after MapLibre reports a successful load.
   safety.
 
 The MapLibre library and its strict-CSP worker are checked into `vendor/`; no
-executable code is downloaded at runtime. The renderer runs in the isolated
-extension world so Peakbagger's page globals and CSP remain outside the WebGL
-implementation.
+executable code is downloaded at runtime. The renderer runs in a packaged
+extension document, while a small isolated-world bridge owns the Peakbagger DOM
+handoff. This keeps Peakbagger's page globals and content-script worker sandbox
+outside the WebGL implementation.
 
 ---
 
@@ -564,7 +571,8 @@ src/
   site-dark-css.js       dark rules as a string (window.BPBDarkCSS), theme-scoped
   bridge.js              relays settings to the MAIN-world analyzer (postMessage)
   gpx-analyzer.js        elevation/time chart + map-hover (MAIN world)
-  terrain-map.js         opt-in MapLibre terrain renderer (isolated world)
+  terrain-map.js         isolated bridge for the extension-owned terrain frame
+  terrain-frame.js       opt-in MapLibre terrain renderer (extension document)
   terrain-map.css        scoped 3D surface and control styling
   ascent-filter.js       ascent-list filter and instant table sort (isolated world)
   provider-page.js       on-demand Garmin/Strava ownership + minimal GPX extraction
@@ -576,6 +584,8 @@ vendor/
   maplibre-gl-csp.js     MapLibre GL JS 5.24.0 strict-CSP build (BSD-3-Clause)
   maplibre-gl-csp-worker.js  packaged MapLibre worker, loaded only for 3D
   maplibre-gl.css        MapLibre controls and canvas styles
+terrain/
+  terrain.html           packaged renderer frame; loads only local code and CSS
 icons/                   16/32/48/128 px
 test/
   fixtures/peakascents/  PeakAscents.aspx captures, PII-masked (see its README)
