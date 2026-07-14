@@ -25,7 +25,13 @@ const REQUIRED_FILES = [
   "popup/popup.html",
   "src/background.js",
   "src/capture-core.js",
+  "src/terrain-map.css",
+  "src/terrain-map.js",
   "vendor/chart.umd.min.js",
+  "vendor/maplibre-LICENSE.txt",
+  "vendor/maplibre-gl-csp-worker.js",
+  "vendor/maplibre-gl-csp.js",
+  "vendor/maplibre-gl.css",
 ];
 
 export async function verifyReleaseArchive(archiveBytes, expectedVersion) {

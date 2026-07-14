@@ -94,6 +94,24 @@
     },
     {
       "matches": [
+        "*://www.peakbagger.com/climber/ascent.aspx*",
+        "*://www.peakbagger.com/climber/Ascent.aspx*",
+        "*://peakbagger.com/climber/ascent.aspx*",
+        "*://peakbagger.com/climber/Ascent.aspx*"
+      ],
+      "css": [
+        "vendor/maplibre-gl.css",
+        "src/terrain-map.css"
+      ],
+      "js": [
+        "vendor/maplibre-gl-csp.js",
+        "src/terrain-map.js"
+      ],
+      "run_at": "document_end",
+      "all_frames": false
+    },
+    {
+      "matches": [
         "*://www.peakbagger.com/climber/PeakAscents.aspx*",
         "*://www.peakbagger.com/climber/peakascents.aspx*",
         "*://www.peakbagger.com/climber/ClimbListC.aspx*",
@@ -109,6 +127,16 @@
       ],
       "run_at": "document_start",
       "all_frames": false
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "vendor/maplibre-gl-csp-worker.js"
+      ],
+      "matches": [
+        "*://*.peakbagger.com/*"
+      ]
     }
   ],
   "browser_specific_settings": {

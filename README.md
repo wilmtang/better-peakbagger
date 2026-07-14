@@ -65,7 +65,10 @@ from its lower-right corner, with the page width as its upper bound; an opt-in
 setting can restore the last selected basemap. The chart sits immediately below
 the map, before Peakbagger's full-screen map and GPX-download links. Hover over
 the chart to follow the same point on the map, or double-click a point to copy
-its coordinates.
+its coordinates. **3D terrain** opens an extension-owned MapLibre view of the
+same route at true vertical scale. It loads public Mapterhorn elevation tiles
+only after a per-page privacy notice and keeps Peakbagger's 2D map available as
+the immediate fallback.
 
 ![Three-day GPX analysis with a high-contrast route and chart-synchronized Leaflet marker](store-assets/showcase-gpx-map-sync.gif)
 
@@ -102,7 +105,9 @@ discovery and, only after you choose **Open drafts**, a reduced coordinate-only
 track for Preview. Waypoint coordinates and names are included by default and
 can be turned off in Settings. Source health and device fields plus each
 trackpoint's time and elevation are excluded; derived draft values remain yours
-to review.
+to review. The
+optional 3D terrain view makes a separate, explicit request to Mapterhorn for
+tiles covering the viewed map area; no terrain request occurs before consent.
 
 ## FAQ
 
@@ -160,6 +165,7 @@ and the [discussion board](https://github.com/wilmtang/better-peakbagger/discuss
 - [Deep dive: content-script worlds](#deep-dive-content-script-worlds)
 - [Deep dive: the settings system and the bridge](#deep-dive-the-settings-system-and-the-bridge)
 - [Deep dive: the GPX Analyzer](#deep-dive-the-gpx-analyzer)
+- [Deep dive: opt-in 3D terrain](#deep-dive-opt-in-3d-terrain)
 - [Deep dive: the Leaflet map-hover injection](#deep-dive-the-leaflet-map-hover-injection)
 - [Deep dive: the Ascent Beta Filter](#deep-dive-the-ascent-beta-filter)
 - [Deep dive: site-wide dark mode](#deep-dive-site-wide-dark-mode)
@@ -184,6 +190,7 @@ and the [discussion board](https://github.com/wilmtang/better-peakbagger/discuss
                           │  settings.js  (shared)   │                             │
                           │  theme.js  → data-bpb-theme on <html>                  │
                           │  bridge.js  ←── postMessage ──┐                        │
+                          │  terrain-map.js + MapLibre ◀──┼── coordinate segments │
                           │  ascent-filter.js             │                        │
                           └───────────────────────────────┼────────────────────────┘
                                                            │  window.postMessage
@@ -216,7 +223,8 @@ Three boundaries do most of the work:
 
 1. **Content scripts run in two different JavaScript "worlds,"** and each feature is placed in the world it needs. The GPX Analyzer and the on-demand activity-provider adapter run in the page's own world; form filling and extension UI run in the isolated extension world.
 2. Because the MAIN-world analyzer can't touch `chrome.storage`, a tiny **bridge** relays settings across the world boundary over `window.postMessage`.
-3. Activity capture is a **gated transaction**, not a persistent provider integration: the extension receives temporary access only after a toolbar click, refuses ambiguous ownership, keeps only a privacy-reduced draft payload in session storage, and never activates Peakbagger's Save controls.
+3. The optional MapLibre renderer stays **isolated and dormant** until the user accepts its per-page notice. It receives only coordinate segments from the analyzer; the packaged renderer then requests public terrain tiles for that area.
+4. Activity capture is a **gated transaction**, not a persistent provider integration: the extension receives temporary access only after a toolbar click, refuses ambiguous ownership, keeps only a privacy-reduced draft payload in session storage, and never activates Peakbagger's Save controls.
 
 ---
 
@@ -321,6 +329,7 @@ This split is the single most important design constraint in the extension. Here
 | `gpx-analyzer.js` | **MAIN** | Needs page-realm access: the map iframe's Leaflet globals (see below), the bundled `Chart` global, and page clipboard/`localStorage` semantics identical to a userscript. |
 | `chart.umd.min.js` | **MAIN** | Loaded immediately before the analyzer so the `Chart` UMD global lands in the same realm the analyzer reads. |
 | `provider-page.js` | **MAIN**, injected on demand | Needs the activity page's signed-in state and authenticated same-origin export; exposes only the narrow ownership/capture adapter to the background. |
+| `terrain-map.js`, MapLibre | isolated | Owns the WebGL terrain surface and packaged CSP worker. It has no need for Peakbagger globals and does not request terrain until the analyzer sends a consented coordinate-only route. |
 | `theme.js`, `bridge.js`, `ascent-filter.js`, `settings.js` | isolated | They only touch the DOM and `chrome.storage`; no page globals needed. |
 | `ascent-draft.js` | isolated | Uses extension messaging to verify a prepared draft, then fills the Peakbagger DOM and starts Preview. |
 
@@ -394,6 +403,49 @@ The chart plots two datasets on one shared Y (elevation) with **two X axes** —
 - **Dynamic interaction mode.** A custom legend `onClick` toggles dataset visibility, and when only *one* line remains it switches to `{ mode: 'index', intersect: false }` so you can scrub the X axis from anywhere in the plot's vertical space; re-enabling the second line restores strict `xy` proximity.
 
 Theming is applied per-render: a `PALETTES[light|dark]` object (resolved from the current theme) colors the panel (inline styles) and the chart (`scales.*.ticks/grid/title.color`, legend label color). Because the analyzer paints its own panel with inline styles, the site-wide dark stylesheet deliberately leaves it alone — the analyzer is the single owner of its own colors and re-themes live on a settings push.
+
+---
+
+## Deep dive: opt-in 3D terrain
+
+Leaflet remains the right tool for Peakbagger's native 2D map, but a Leaflet
+plugin would not provide a sound 3D boundary here: the extension would have to
+mutate a site-owned Leaflet instance and depend on plugin APIs Peakbagger does
+not ship. The 3D view instead uses packaged
+[MapLibre GL JS](https://maplibre.org/maplibre-gl-js/docs/examples/3d-terrain/)
+in a separate extension-owned surface. Peakbagger's iframe remains underneath
+and is hidden only after MapLibre reports a successful load.
+
+- **Terrain source.** The renderer reads the public
+  [Mapterhorn](https://mapterhorn.com/data-access/) TileJSON endpoint. Its
+  Terrarium-encoded DEM tiles provide global 30 m coverage, 10 m coverage across
+  the U.S., and higher-resolution coverage where Mapterhorn has incorporated
+  public regional data. The view uses hypsometric relief plus hillshade and
+  preserves a 1:1 vertical scale; it deliberately omits a second remote basemap.
+- **Explicit network boundary.** No Mapterhorn request occurs on page load or
+  when the user first opens the notice. Only **Load 3D terrain** starts the
+  renderer. Mapterhorn then receives tile coordinates for the viewed area plus
+  ordinary request metadata under its
+  [privacy policy](https://mapterhorn.com/privacy-policy/). Returning to the 2D
+  map destroys the WebGL map and stops its tile activity.
+- **Coordinate-only handoff.** The analyzer sends the isolated renderer only
+  latitude, longitude, and segment boundaries, capped at 3,000 points. The
+  renderer rejects extra per-point fields, invalid coordinates, excessive
+  segments, and implausibly global bounds. Source GPX, timestamps, elevations,
+  health fields, and metadata do not cross this boundary.
+- **Fail-closed fallback.** The native map stays visible while terrain loads.
+  Missing WebGL support, invalid input, a missing renderer, or a tile timeout
+  removes the partial 3D surface and leaves the 2D map unchanged. Chart hover
+  follows the route in either view.
+- **Planning limit.** This is a terrain-shape view, not current conditions. The
+  map labels itself **Not live conditions** because a DEM cannot establish
+  current snow bridges, crevasses, cornices, rockfall, vegetation, or route
+  safety.
+
+The MapLibre library and its strict-CSP worker are checked into `vendor/`; no
+executable code is downloaded at runtime. The renderer runs in the isolated
+extension world so Peakbagger's page globals and CSP remain outside the WebGL
+implementation.
 
 ---
 
@@ -490,10 +542,10 @@ The options page themes itself with the same `data-bpb-theme` mechanism (CSS var
 
 - **Manifest V3** for both engines. Chrome uses a service worker; Firefox uses the background-scripts fallback from the same source files.
 - **`"world": "MAIN"`** for the analyzer requires **Chrome 111+** and **Firefox 128+**.
-- **`browser_specific_settings.gecko`** provides the Firefox add-on `id`, `strict_min_version: "140.0"`, and the required `locationInfo` disclosure. This is a disclosure that activity coordinates are sent to Peakbagger for lookup/Preview, not permission to access device geolocation.
+- **`browser_specific_settings.gecko`** provides the Firefox add-on `id`, `strict_min_version: "140.0"`, and the required `locationInfo` disclosure. This is a data-handling disclosure for coordinates sent to Peakbagger and, only after the 3D notice is accepted, map-tile coordinates requested from Mapterhorn; it is not permission to access device geolocation.
 - **Storage promises.** `chrome.storage.*` returns promises in MV3 on both engines; `settings.js` also prefers `browser.*` when present, so it's native on Firefox and works via the `chrome.*` alias on Chromium.
 - **Match patterns.** `*://*.peakbagger.com/*` covers `www` and the bare host; the ascent/peak-ascent entries list both `ascent.aspx` and `Ascent.aspx` casings since match-pattern paths are case-sensitive.
-- **No remote code.** [Chart.js](https://www.chartjs.org/) 4.5.1 is vendored at `vendor/chart.umd.min.js` (MIT) rather than pulled from a CDN — required by MV3, and better for privacy and reliability.
+- **No remote code.** [Chart.js](https://www.chartjs.org/) 4.5.1 and [MapLibre GL JS](https://maplibre.org/) 5.24.0 are vendored under `vendor/` rather than pulled from a CDN — required by MV3, and better for privacy and reliability. Mapterhorn supplies elevation data, never executable code.
 
 ---
 
@@ -512,6 +564,8 @@ src/
   site-dark-css.js       dark rules as a string (window.BPBDarkCSS), theme-scoped
   bridge.js              relays settings to the MAIN-world analyzer (postMessage)
   gpx-analyzer.js        elevation/time chart + map-hover (MAIN world)
+  terrain-map.js         opt-in MapLibre terrain renderer (isolated world)
+  terrain-map.css        scoped 3D surface and control styling
   ascent-filter.js       ascent-list filter and instant table sort (isolated world)
   provider-page.js       on-demand Garmin/Strava ownership + minimal GPX extraction
   capture-core.js        segment validation, summit scoring, metrics, GPX reduction
@@ -519,6 +573,9 @@ src/
   ascent-draft.js        fail-closed ascent form filling + one Preview submission
 vendor/
   chart.umd.min.js       Chart.js 4.5.1, bundled (MIT)
+  maplibre-gl-csp.js     MapLibre GL JS 5.24.0 strict-CSP build (BSD-3-Clause)
+  maplibre-gl-csp-worker.js  packaged MapLibre worker, loaded only for 3D
+  maplibre-gl.css        MapLibre controls and canvas styles
 icons/                   16/32/48/128 px
 test/
   fixtures/peakascents/  PeakAscents.aspx captures, PII-masked (see its README)
@@ -529,6 +586,7 @@ test/
   theme-inject.test.mjs  dark-theme sheet-injection invariant
   options.test.mjs       options page end-to-end (populate/save/clean)
   provider-page.test.mjs provider ownership/export adapters and privacy parsing
+  terrain-map.test.mjs   DEM boundary, route validation, renderer lifecycle
   capture-core.test.mjs  track validation, scoring, metrics, and reduction
   background-capture.test.mjs  session jobs, lookup, grouping, and handshakes
   ascent-draft.test.mjs  form/privacy validation and exactly-once Preview
@@ -606,8 +664,9 @@ the Peakbagger summit lookup and GPS Preview actions described below.
   sorting, theme, login and summit checks, and validated draft filling on
   Peakbagger. There is no persistent Garmin Connect or Strava host access.
 - **Firefox `locationInfo` disclosure** reports that activity coordinates are
-  sent to Peakbagger for summit lookup and GPS Preview. It is a data-handling
-  disclosure, not permission to read the device's location.
+  sent to Peakbagger for summit lookup and GPS Preview and, after separate 3D
+  consent, that tile coordinates for the viewed area go to Mapterhorn. It is a
+  data-handling disclosure, not permission to read the device's location.
 
 ### Activity-data flow
 
@@ -625,6 +684,10 @@ the Peakbagger summit lookup and GPS Preview actions described below.
 - **GPS Preview:** only after you choose **Open drafts**, Peakbagger receives a
   newly serialized GPX containing latitude, longitude, and segment boundaries,
   plus waypoint coordinates/names by default, reduced to at most 3,000 total points.
+- **3D terrain:** only after you choose **Load 3D terrain**, Mapterhorn receives
+  tile requests covering the route area and subsequent map movements. The
+  renderer receives coordinate segments only; it does not receive source GPX,
+  time, elevation, or activity metadata. Returning to 2D destroys the renderer.
 - **Excluded source fields:** heart rate, cadence, power, temperature, device
   fields, descriptions, routes, waypoint elevation/time/symbols, extension
   elements, and each trackpoint's timestamp and elevation. The activity/track
@@ -636,8 +699,10 @@ the Peakbagger summit lookup and GPS Preview actions described below.
   extension path clicks either Peakbagger Save control. Review and publication
   remain with you.
 
-The existing GPX Analyzer fetches only the GPX already linked from the current
-Peakbagger ascent page and processes it locally. Cross-page preferences live in
+The GPX Analyzer fetches only the GPX already linked from the current
+Peakbagger ascent page and processes it locally. Its optional 3D view is the
+only analyzer path that contacts another service, and it does so only after the
+notice described above. Cross-page preferences live in
 `storage.sync` and may leave the device only through the user's browser-sync
 account. Page-specific filter state and the early theme mirror stay in
 Peakbagger's `localStorage`.

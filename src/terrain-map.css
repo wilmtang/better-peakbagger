@@ -1,0 +1,111 @@
+/* Copyright (C) 2026 wilmtang <wilm.tang@outlook.com> */
+/* SPDX-License-Identifier: AGPL-3.0-or-later */
+
+#bpb-terrain-map {
+    position: absolute;
+    inset: 0 0 18px;
+    z-index: 2;
+    overflow: hidden;
+    border: 1px solid #b8b3aa;
+    border-radius: 4px;
+    background: #d9ded2;
+    box-sizing: border-box;
+    color: #252821;
+    font: 12px/1.35 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    visibility: hidden;
+    pointer-events: none;
+}
+
+#bpb-terrain-map[data-theme="dark"] {
+    border-color: #4a5058;
+    background: #252a27;
+    color: #f1eee7;
+}
+
+#bpb-terrain-canvas {
+    position: absolute;
+    inset: 0;
+}
+
+#bpb-terrain-map .bpb-terrain-badge,
+#bpb-terrain-map .bpb-terrain-status {
+    position: absolute;
+    left: 10px;
+    z-index: 3;
+    margin: 0;
+    padding: 5px 8px;
+    border: 1px solid rgb(53 58 49 / 20%);
+    border-radius: 7px;
+    background: rgb(250 249 245 / 88%);
+    box-shadow: 0 1px 4px rgb(0 0 0 / 14%);
+    backdrop-filter: blur(8px);
+}
+
+#bpb-terrain-map[data-theme="dark"] .bpb-terrain-badge,
+#bpb-terrain-map[data-theme="dark"] .bpb-terrain-status {
+    border-color: rgb(255 255 255 / 16%);
+    background: rgb(31 35 33 / 88%);
+    box-shadow: 0 1px 5px rgb(0 0 0 / 32%);
+}
+
+#bpb-terrain-map .bpb-terrain-badge {
+    top: 10px;
+    font-weight: 600;
+}
+
+#bpb-terrain-map .bpb-terrain-badge span {
+    margin-left: 4px;
+    color: #5f655a;
+    font-weight: 400;
+}
+
+#bpb-terrain-map[data-theme="dark"] .bpb-terrain-badge span {
+    color: #bbb8ae;
+}
+
+#bpb-terrain-map .bpb-terrain-status {
+    bottom: 28px;
+}
+
+#bpb-terrain-map .maplibregl-ctrl-group {
+    overflow: hidden;
+    border: 1px solid rgb(53 58 49 / 20%);
+    border-radius: 8px;
+    box-shadow: 0 1px 4px rgb(0 0 0 / 16%);
+}
+
+#bpb-terrain-map[data-theme="dark"] .maplibregl-ctrl-group {
+    border-color: rgb(255 255 255 / 16%);
+    background: #272c29;
+}
+
+#bpb-terrain-map[data-theme="dark"] .maplibregl-ctrl-group button + button {
+    border-top-color: rgb(255 255 255 / 12%);
+}
+
+#bpb-terrain-map[data-theme="dark"] .maplibregl-ctrl-group button .maplibregl-ctrl-icon {
+    filter: invert(1) brightness(1.3);
+}
+
+#bpb-terrain-map .maplibregl-ctrl-attrib {
+    color: #343730;
+    background: rgb(250 249 245 / 82%);
+}
+
+#bpb-terrain-map[data-theme="dark"] .maplibregl-ctrl-attrib {
+    color: #e2ded5;
+    background: rgb(31 35 33 / 82%);
+}
+
+#bpb-terrain-map[data-theme="dark"] .maplibregl-ctrl-attrib a {
+    color: #aad0ff;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    #bpb-terrain-map * {
+        scroll-behavior: auto !important;
+        transition-duration: 0.01ms !important;
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+    }
+}

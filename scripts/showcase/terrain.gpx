@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1">
+  <trk>
+    <name>Synthetic Mount Baker terrain check</name>
+    <trkseg>
+      <trkpt lat="48.706100" lon="-121.809800"><ele>1050</ele><time>2026-07-10T13:20:00Z</time></trkpt>
+      <trkpt lat="48.711400" lon="-121.811200"><ele>1190</ele><time>2026-07-10T14:05:00Z</time></trkpt>
+      <trkpt lat="48.718300" lon="-121.813800"><ele>1370</ele><time>2026-07-10T15:00:00Z</time></trkpt>
+      <trkpt lat="48.725200" lon="-121.816700"><ele>1580</ele><time>2026-07-10T16:00:00Z</time></trkpt>
+      <trkpt lat="48.733800" lon="-121.818200"><ele>1950</ele><time>2026-07-10T17:20:00Z</time></trkpt>
+      <trkpt lat="48.741700" lon="-121.817500"><ele>2220</ele><time>2026-07-11T10:10:00Z</time></trkpt>
+      <trkpt lat="48.750100" lon="-121.815800"><ele>2510</ele><time>2026-07-11T11:15:00Z</time></trkpt>
+      <trkpt lat="48.758400" lon="-121.816700"><ele>2790</ele><time>2026-07-11T12:20:00Z</time></trkpt>
+      <trkpt lat="48.766100" lon="-121.816000"><ele>3030</ele><time>2026-07-11T13:15:00Z</time></trkpt>
+      <trkpt lat="48.772500" lon="-121.814700"><ele>3200</ele><time>2026-07-11T13:55:00Z</time></trkpt>
+      <trkpt lat="48.777000" lon="-121.813000"><ele>3286</ele><time>2026-07-11T14:18:00Z</time></trkpt>
+    </trkseg>
+  </trk>
+</gpx>

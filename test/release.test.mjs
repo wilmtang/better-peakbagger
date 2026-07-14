@@ -48,6 +48,8 @@ test("Firefox metadata preserves the project's or-later license grant", () => {
   assert.match(metadata.version.custom_license.text["en-US"], /at your option/);
   assert.match(metadata.version.custom_license.text["en-US"], /GNU AFFERO/);
   assert.match(metadata.version.approval_notes, /Chart\.js 4\.5\.1/);
+  assert.match(metadata.version.approval_notes, /MapLibre GL JS 5\.24\.0/);
+  assert.match(metadata.version.approval_notes, /tiles\.mapterhorn\.com/);
   assert.match(metadata.description["en-US"], /coordinate corridor boxes/);
   assert.match(metadata.description["en-US"], /Waypoint coordinates and names are included by default/);
 });
@@ -65,7 +67,13 @@ async function makeReleaseZip(extraFiles = {}, omittedFiles = []) {
     "popup/popup.html": "popup",
     "src/background.js": "background",
     "src/capture-core.js": "core",
+    "src/terrain-map.css": "terrain css",
+    "src/terrain-map.js": "terrain",
     "vendor/chart.umd.min.js": "chart",
+    "vendor/maplibre-LICENSE.txt": "maplibre license",
+    "vendor/maplibre-gl-csp-worker.js": "maplibre worker",
+    "vendor/maplibre-gl-csp.js": "maplibre",
+    "vendor/maplibre-gl.css": "maplibre css",
     ...extraFiles,
   };
   for (const [name, contents] of Object.entries(files)) {

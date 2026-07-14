@@ -43,6 +43,7 @@ test('GPX analyzer adds a thick, segment-preserving route casing behind native L
     const { window } = dom;
     const polylineCalls = [];
     const sentPatches = [];
+    const terrainMessages = [];
     const makeMap = () => ({
         layers: [],
         invalidateCalls: 0,
@@ -108,6 +109,10 @@ test('GPX analyzer adds a thick, segment-preserving route casing behind native L
         data: { __bpb: true, dir: 'toPage', settings }
     })));
     window.postMessage = message => {
+        if (message && message.__bpbTerrain === true) {
+            terrainMessages.push(message);
+            return;
+        }
         if (!message || message.dir !== 'toCS') return;
         if (message.kind === 'set') {
             sentPatches.push(message.patch);
@@ -162,6 +167,39 @@ test('GPX analyzer adds a thick, segment-preserving route casing behind native L
     ]);
     assert.ok(calls.every(call => call.options.interactive === false));
     assert.ok(calls.every(call => call.broughtToBack));
+
+    const terrainToggle = window.document.getElementById('bpb-terrain-toggle');
+    const terrainDisclosure = window.document.getElementById('bpb-terrain-disclosure');
+    assert.equal(terrainToggle.disabled, false);
+    terrainToggle.click();
+    assert.equal(terrainDisclosure.style.display, 'block');
+    assert.match(terrainDisclosure.textContent, /service receives the viewed map area and request metadata/i);
+    assert.equal(terrainMessages.some(message => message.type === 'init'), false,
+        'opening the privacy notice must not initialize terrain or request tiles');
+
+    window.document.querySelector('#bpb-terrain-disclosure button').click();
+    await waitFor(dom, () => terrainMessages.some(message => message.type === 'init'));
+    const terrainInit = terrainMessages.find(message => message.type === 'init');
+    assert.deepEqual(JSON.parse(JSON.stringify(terrainInit.routeSegments)), expectedSegments);
+    assert.deepEqual(Object.keys(terrainInit).sort(), ['__bpbTerrain', 'dir', 'routeSegments', 'routeStyle', 'theme', 'type']);
+    assert.equal(JSON.stringify(terrainInit).includes('<gpx'), false);
+    assert.equal(JSON.stringify(terrainInit).includes('2026-07-10'), false);
+
+    window.dispatchEvent(new window.MessageEvent('message', {
+        source: window,
+        origin: window.location.origin,
+        data: { __bpbTerrain: true, dir: 'toPage', type: 'loaded' }
+    }));
+    assert.equal(iframe.style.visibility, 'hidden');
+    assert.equal(iframe.getAttribute('aria-hidden'), 'true');
+    assert.equal(terrainToggle.textContent, '2D map');
+    assert.equal(terrainToggle.getAttribute('aria-pressed'), 'true');
+
+    terrainToggle.click();
+    assert.equal(iframe.style.visibility, 'visible');
+    assert.equal(iframe.hasAttribute('aria-hidden'), false);
+    assert.equal(terrainMessages.at(-1).type, 'destroy');
+    assert.equal(terrainToggle.textContent, '3D terrain');
 
     sendSettings({
         units: 'imperial', theme: 'light', chartDefaultSeries: 'both',

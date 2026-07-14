@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>3D terrain showcase</title>
+  <link rel="stylesheet" href="/scripts/showcase/showcase.css">
+  <link rel="stylesheet" href="/vendor/maplibre-gl.css">
+  <link rel="stylesheet" href="/src/terrain-map.css">
+  <style>
+    body { overflow: auto; }
+    .terrain-check { width: 860px; margin: 28px auto; padding: 22px 30px 34px; background: #f7f5ef; }
+    .terrain-check h2 { margin: 0 0 4px; text-align: center; color: #752522; font: 21px Georgia, serif; }
+    .terrain-check > p { margin: 0 0 12px; text-align: center; color: #655d58; font-size: 12px; }
+    .terrain-check .map-shell { width: 800px; min-height: 468px; }
+    .terrain-check iframe { display: block; width: 100%; height: 450px; border: 0; }
+    .terrain-check .analyzer-shell > a { color: #174d82; font-size: 11px; }
+  </style>
+  <script>
+    window.chrome = { runtime: { getURL: path => `/${path}` } };
+    window.addEventListener('message', event => {
+      if (event.source !== window || !event.data || event.data.__bpb !== true || event.data.dir !== 'toCS') return;
+      const params = new URLSearchParams(location.search);
+      const wide = params.get('map') === 'wide';
+      const theme = params.get('theme') === 'dark' ? 'dark' : 'light';
+      window.postMessage({
+        __bpb: true,
+        dir: 'toPage',
+        settings: {
+          units: 'imperial', theme, chartDefaultSeries: 'both',
+          mapViewportWidth: wide ? 800 : 450, mapViewportHeight: 450
+        }
+      }, location.origin);
+    });
+  </script>
+</head>
+<body>
+  <main class="terrain-check">
+    <h2>Mount Baker — Easton Glacier</h2>
+    <p>Synthetic route · terrain renderer visual check</p>
+    <div class="map-shell">
+      <iframe src="/scripts/showcase/terrain-native-map.html?view=MasterMap.aspx" title="Synthetic Peakbagger route map"></iframe>
+    </div>
+    <div class="analyzer-shell">
+      <a href="/scripts/showcase/terrain.gpx">Download this GPS track</a>
+    </div>
+    <a href="/map/BigMap.aspx">Click Here for a Full Screen Map</a>
+  </main>
+
+  <script src="/vendor/chart.umd.min.js"></script>
+  <script src="/vendor/maplibre-gl-csp.js"></script>
+  <script src="/src/terrain-map.js"></script>
+  <script src="/src/gpx-analyzer.js"></script>
+  <script>
+    window.addEventListener('load', () => {
+      const mode = new URLSearchParams(location.search).get('mode');
+      let attempts = 0;
+      const timer = setInterval(() => {
+        attempts++;
+        const toggle = document.getElementById('bpb-terrain-toggle');
+        if (toggle && !toggle.disabled) {
+          toggle.click();
+          if (mode === 'terrain') document.querySelector('#bpb-terrain-disclosure button').click();
+          clearInterval(timer);
+        } else if (attempts >= 50) {
+          clearInterval(timer);
+        }
+      }, 100);
+    });
+  </script>
+</body>
+</html>

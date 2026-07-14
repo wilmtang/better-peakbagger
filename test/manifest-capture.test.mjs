@@ -30,6 +30,22 @@ test('settings are embedded in the browser add-on manager', () => {
     });
 });
 
+test('3D terrain is isolated from Peakbagger globals and exposes only its packaged worker', () => {
+    const terrainEntry = manifest.content_scripts.find(entry => entry.js.includes('src/terrain-map.js'));
+    assert.ok(terrainEntry);
+    assert.equal(terrainEntry.world, undefined, 'terrain should run in the default isolated extension world');
+    assert.deepEqual(terrainEntry.js, ['vendor/maplibre-gl-csp.js', 'src/terrain-map.js']);
+    assert.deepEqual(terrainEntry.css, ['vendor/maplibre-gl.css', 'src/terrain-map.css']);
+    assert.ok(terrainEntry.matches.every(pattern => /peakbagger\.com\/climber\/(?:a|A)scent\.aspx/.test(pattern)));
+
+    assert.deepEqual(manifest.web_accessible_resources, [{
+        resources: ['vendor/maplibre-gl-csp-worker.js'],
+        matches: ['*://*.peakbagger.com/*']
+    }]);
+    assert.ok(manifest.host_permissions.every(pattern => !pattern.includes('mapterhorn.com')),
+        'public CORS tiles must not broaden persistent extension host access');
+});
+
 test('ascent editor integration is isolated to Peakbagger and runtime code never names a Save control', async () => {
     const draftEntry = manifest.content_scripts.find(entry => entry.js.includes('src/ascent-draft.js'));
     assert.ok(draftEntry);
