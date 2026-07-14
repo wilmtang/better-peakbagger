@@ -127,6 +127,24 @@
         return true;
     };
 
+    const setSelectValue = (id, value, dispatchChange = true) => {
+        const element = document.getElementById(id);
+        if (!element || element.tagName !== 'SELECT') return false;
+        const stringValue = String(value);
+        if (![...element.options].some(option => option.value === stringValue)) return false;
+        element.value = stringValue;
+        element.dispatchEvent(new Event('input', { bubbles: true }));
+        if (dispatchChange) element.dispatchEvent(new Event('change', { bubbles: true }));
+        return true;
+    };
+
+    const selectNewTrip = () => {
+        const element = document.getElementById('TripDD');
+        if (!element || element.tagName !== 'SELECT') return false;
+        const option = [...element.options].find(candidate => /^\s*\*\*\s*Add New Trip\s*$/i.test(candidate.textContent || ''));
+        return option ? setSelectValue('TripDD', option.value) : false;
+    };
+
     const setDuration = async (prefix, duration) => {
         await setField(`${prefix}Day`, duration.days);
         await setField(`${prefix}Hr`, duration.hours);
@@ -163,30 +181,63 @@
         if (Number.isFinite(gainM)) await setField('ExUpM', Math.max(0, fields.upGainM - gainM));
         await setField('ExDnFt', fields.downGainM * FEET_PER_METER);
         await setField('ExDnM', fields.downGainM);
+
+        if (fields.tripInfo) {
+            const complete = selectNewTrip()
+                && setTextField('TripSeqText', String(fields.tripInfo.sequence))
+                && setTextField('TripNameText', fields.tripInfo.name)
+                && setTextField('TripNightsText', fields.tripInfo.nightsOut === null ? '' : String(fields.tripInfo.nightsOut));
+            if (!complete) throw new Error('Peakbagger’s Trip Info fields have changed or did not load completely.');
+        }
+
+        if (fields.wildernessNightsOut !== null && fields.wildernessNightsOut !== undefined) {
+            // AscentNightsDD has an inline AutoPostBack handler. Sending a
+            // synthetic change here would reload before GPX Preview; its
+            // selected value is still included in the Preview form post.
+            if (!setSelectValue('AscentNightsDD', fields.wildernessNightsOut, false)) {
+                throw new Error('Peakbagger’s Wilderness Nights field has changed or does not support this trip length.');
+            }
+        }
     };
 
-    const validatePrivateGpx = gpx => {
+    const validatePrivateGpx = (gpx, allowWaypoints = false) => {
         if (!gpx) return false;
         const xml = new DOMParser().parseFromString(gpx, 'application/xml');
         if (xml.getElementsByTagName('parsererror').length) return false;
         const elements = [...xml.getElementsByTagName('*')];
-        const allowed = new Set(['gpx', 'trk', 'trkseg', 'trkpt']);
+        const allowed = new Set(['gpx', 'wpt', 'name', 'trk', 'trkseg', 'trkpt']);
         if (elements.some(element => !allowed.has(element.localName))) return false;
         const points = elements.filter(element => element.localName === 'trkpt');
+        const waypoints = elements.filter(element => element.localName === 'wpt');
+        const names = elements.filter(element => element.localName === 'name');
         const segments = elements.filter(element => element.localName === 'trkseg');
-        if (points.length > 3000 || segments.length > 50) return false;
-        return points.every(point => {
+        if ((!allowWaypoints && waypoints.length) || points.length + waypoints.length > 3000 || segments.length > 50) return false;
+        const validCoordinate = point => {
+            if (!point.hasAttribute('lat') || !point.hasAttribute('lon')) return false;
             const attributes = [...point.attributes];
             if (attributes.some(attribute => attribute.name !== 'lat' && attribute.name !== 'lon')) return false;
-            const lat = Number(point.getAttribute('lat'));
-            const lon = Number(point.getAttribute('lon'));
+            const latText = point.getAttribute('lat');
+            const lonText = point.getAttribute('lon');
+            if (!latText.trim() || !lonText.trim()) return false;
+            const lat = Number(latText);
+            const lon = Number(lonText);
             return Number.isFinite(lat) && lat >= -90 && lat <= 90
                 && Number.isFinite(lon) && lon >= -180 && lon <= 180;
-        });
+        };
+        return points.every(point => validCoordinate(point) && point.children.length === 0 && !(point.textContent || '').trim())
+            && waypoints.every(waypoint => waypoint.parentElement?.localName === 'gpx'
+                && validCoordinate(waypoint)
+                && [...waypoint.children].every(child => child.localName === 'name')
+                && [...waypoint.children].filter(child => child.localName === 'name').length <= 1
+                && [...waypoint.childNodes].every(node => node.nodeType === 1 || !(node.textContent || '').trim()))
+            && names.every(name => name.parentElement?.localName === 'wpt'
+                && name.attributes.length === 0
+                && name.children.length === 0
+                && (name.textContent || '').length <= 200);
     };
 
-    const attachGpx = gpx => {
-        if (!validatePrivateGpx(gpx)) throw new Error('The prepared upload failed its privacy check.');
+    const attachGpx = (gpx, allowWaypoints) => {
+        if (!validatePrivateGpx(gpx, allowWaypoints)) throw new Error('The prepared upload failed its privacy check.');
         const input = document.getElementById('GPXUpload');
         const transfer = new DataTransfer();
         transfer.items.add(new File([gpx], 'track.gpx', { type: 'application/gpx+xml' }));
@@ -196,7 +247,7 @@
 
     const applyAndPreview = async payload => {
         await fillForm(payload.fields);
-        attachGpx(payload.gpx);
+        attachGpx(payload.gpx, payload.allowWaypoints);
         const acknowledgment = await ext.runtime.sendMessage({
             type: 'DRAFT_PREVIEW_STARTED',
             jobId: payload.jobId,

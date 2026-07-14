@@ -148,6 +148,18 @@ test('privacy upload contains only track geometry and segment structure', () => 
     assert.doesNotMatch(gpx, /<(?:ele|time|extensions|wpt|rte|name)(?:\s|>)/i);
 });
 
+test('opt-in waypoints are validated, bounded, escaped, and limited to coordinates plus name', () => {
+    const waypoints = Core.sanitizeWaypoints([
+        { lat: '47.1', lon: '-121.2', name: ' Camp & <Water> ', ele: 999, desc: 'private' },
+        { lat: 95, lon: 1, name: 'invalid' }
+    ]);
+    assert.deepEqual(waypoints, [{ lat: 47.1, lon: -121.2, name: 'Camp & <Water>' }]);
+
+    const gpx = Core.serializeUploadGpx([[point(1, 2), point(3, 4)]], waypoints);
+    assert.match(gpx, /<wpt lat="47\.1" lon="-121\.2"><name>Camp &amp; &lt;Water&gt;<\/name><\/wpt>/);
+    assert.doesNotMatch(gpx, /999|private|<(?:ele|time|desc|sym|extensions)(?:\s|>)/i);
+});
+
 test('draft fields use full-resolution distance, gains, durations, and activity offset', () => {
     const start = Date.UTC(2026, 6, 1, 15, 0);
     const segments = [[
@@ -183,6 +195,16 @@ test('Strava displayed wall-clock time derives the activity timezone from GPX UT
     assert.equal(formatted.date, '2026-07-11');
     assert.equal(formatted.time, '17:13');
     assert.equal(formatted.timezoneKnown, true);
+});
+
+test('nights out uses the activity-local calendar span and stays unknown without timestamps', () => {
+    const start = Date.UTC(2026, 6, 1, 23, 30);
+    const segments = [[
+        point(0, 0, 100, start),
+        point(0, 0.001, 100, Date.UTC(2026, 6, 3, 1, 0))
+    ]];
+    assert.equal(Core.calculateNightsOut(segments, { utcOffsetMinutes: 0 }), 2);
+    assert.equal(Core.calculateNightsOut([[point(0, 0), point(0, 1)]], {}), null);
 });
 
 test('same-day draft suffixes follow encounter order without mutating matches', () => {

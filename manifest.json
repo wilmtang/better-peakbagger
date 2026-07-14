@@ -29,6 +29,7 @@
     "service_worker": "src/background.js",
     "scripts": [
       "src/capture-core.js",
+      "src/settings.js",
       "src/background.js"
     ]
   },

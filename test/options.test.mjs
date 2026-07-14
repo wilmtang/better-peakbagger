@@ -36,11 +36,12 @@ test('settings are grouped by the surface they affect', async () => {
     const sections = Array.from(dom.window.document.querySelectorAll('.settings-section'));
     assert.deepEqual(sections.map(section => section.querySelector('h2').textContent), [
         'General',
+        'Activity capture',
         'Map & GPX chart',
         'Ascent beta filters'
     ]);
 
-    const [general, mapChart, beta] = sections;
+    const [general, capture, mapChart, beta] = sections;
     for (const section of sections) {
         const heading = section.querySelector('h2');
         assert.equal(section.getAttribute('aria-labelledby'), heading.id);
@@ -48,12 +49,34 @@ test('settings are grouped by the surface they affect', async () => {
     }
     assert.ok(general.querySelector('#theme'));
     assert.equal(general.querySelector('#units'), null);
+    for (const id of ['retain-waypoints', 'fill-trip-info', 'fill-wilderness-nights']) {
+        assert.ok(capture.querySelector(`#${id}`), `${id} should belong to Activity capture`);
+    }
     for (const id of ['units', 'chart-series', 'map-route-color', 'remember-map-layer', 'map-viewport-width']) {
         assert.ok(mapChart.querySelector(`#${id}`), `${id} should belong to Map & GPX chart`);
     }
     for (const id of ['beta-tr', 'beta-tr-words', 'beta-gps', 'beta-link']) {
         assert.ok(beta.querySelector(`#${id}`), `${id} should belong to Ascent beta filters`);
     }
+});
+
+test('activity capture settings have safe defaults and persist changes', async () => {
+    const dom = await loadOptions({});
+    assert.equal(el(dom, 'retain-waypoints').checked, false);
+    assert.equal(el(dom, 'fill-trip-info').checked, true);
+    assert.equal(el(dom, 'fill-wilderness-nights').checked, true);
+
+    el(dom, 'retain-waypoints').checked = true;
+    el(dom, 'retain-waypoints').dispatchEvent(new dom.window.Event('change'));
+    el(dom, 'fill-trip-info').checked = false;
+    el(dom, 'fill-trip-info').dispatchEvent(new dom.window.Event('change'));
+    el(dom, 'fill-wilderness-nights').checked = false;
+    el(dom, 'fill-wilderness-nights').dispatchEvent(new dom.window.Event('change'));
+    await new Promise(r => dom.window.setTimeout(r, 20));
+
+    assert.equal(dom.chrome._store.bpbSettings.retainWaypoints, true);
+    assert.equal(dom.chrome._store.bpbSettings.fillTripInfo, false);
+    assert.equal(dom.chrome._store.bpbSettings.fillWildernessNights, false);
 });
 
 test('chart-series select populates from the stored setting', async () => {

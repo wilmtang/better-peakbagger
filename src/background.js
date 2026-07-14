@@ -4,8 +4,9 @@
 // Garmin/Strava capture coordinator. Long-lived state contains only the reduced
 // privacy upload and derived ascent values, and lives in storage.session.
 
-if (typeof importScripts === 'function' && !globalThis.BPBCaptureCore) {
-    importScripts('capture-core.js');
+if (typeof importScripts === 'function') {
+    if (!globalThis.BPBCaptureCore) importScripts('capture-core.js');
+    if (!globalThis.BPBSettings) importScripts('settings.js');
 }
 
 (() => {
@@ -13,7 +14,8 @@ if (typeof importScripts === 'function' && !globalThis.BPBCaptureCore) {
 
     const ext = globalThis.browser || globalThis.chrome;
     const Core = globalThis.BPBCaptureCore;
-    if (!ext || !Core) return;
+    const Settings = globalThis.BPBSettings;
+    if (!ext || !Core || !Settings) return;
 
     const JOBS_KEY = 'bpbCaptureJobs';
     const DRAFTS_KEY = 'bpbDraftTabs';
@@ -28,6 +30,20 @@ if (typeof importScripts === 'function' && !globalThis.BPBCaptureCore) {
         if (!ext.storage.session) throw new Error('This browser does not provide private session storage.');
         return ext.storage.session;
     };
+
+    const readCapturePreferences = async () => {
+        const settings = await Settings.get();
+        return {
+            retainWaypoints: settings.retainWaypoints,
+            fillTripInfo: settings.fillTripInfo,
+            fillWildernessNights: settings.fillWildernessNights
+        };
+    };
+
+    const sameCapturePreferences = (left, right) => !!left && !!right
+        && left.retainWaypoints === right.retainWaypoints
+        && left.fillTripInfo === right.fillTripInfo
+        && left.fillWildernessNights === right.fillWildernessNights;
 
     const readMap = async key => (await storage().get(key))[key] || {};
     const mutateMap = (key, mutate) => {
@@ -57,6 +73,9 @@ if (typeof importScripts === 'function' && !globalThis.BPBCaptureCore) {
     const publicJob = job => job ? {
         ...job,
         uploadGpx: undefined,
+        capturePreferences: undefined,
+        tripName: undefined,
+        nightsOut: undefined,
         matches: (job.matches || []).map(match => ({ ...match, draftFields: undefined }))
     } : null;
 
@@ -151,12 +170,12 @@ if (typeof importScripts === 'function' && !globalThis.BPBCaptureCore) {
         return results[0].result;
     };
 
-    const captureProvider = async tabId => {
+    const captureProvider = async (tabId, capturePreferences) => {
         const results = await ext.scripting.executeScript({
             target: { tabId },
-            func: async () => {
+            func: async options => {
                 try {
-                    return await globalThis.BPBProviderPage.capture();
+                    return await globalThis.BPBProviderPage.capture(options);
                 } catch (error) {
                     return {
                         ok: false,
@@ -167,13 +186,17 @@ if (typeof importScripts === 'function' && !globalThis.BPBCaptureCore) {
                     };
                 }
             },
+            args: [{
+                retainWaypoints: capturePreferences.retainWaypoints,
+                includeTripName: capturePreferences.fillTripInfo
+            }],
             world: 'MAIN'
         });
         if (!results || !results[0]) throw new Error('The activity page returned no capture result.');
         return results[0].result;
     };
 
-    const processCapture = async (tabId, expectedUrl) => {
+    const processCapture = async (tabId, expectedUrl, capturePreferences) => {
         try {
             const tab = await ext.tabs.get(tabId);
             if (!tab.url || tab.url !== expectedUrl) {
@@ -202,7 +225,7 @@ if (typeof importScripts === 'function' && !globalThis.BPBCaptureCore) {
                 return;
             }
 
-            const capture = await captureProvider(tabId);
+            const capture = await captureProvider(tabId, capturePreferences);
             if (!capture || !capture.ok) {
                 const messages = {
                     'provider-signed-out': 'Sign in to the activity provider before capturing.',
@@ -221,6 +244,9 @@ if (typeof importScripts === 'function' && !globalThis.BPBCaptureCore) {
 
             await updateJob(tabId, { phase: 'analyzing' });
             const sanitized = Core.sanitizeTrack(capture.segments);
+            const waypoints = capturePreferences.retainWaypoints
+                ? Core.sanitizeWaypoints(capture.waypoints)
+                : [];
             const pointCount = sanitized.segments.reduce((sum, segment) => sum + segment.length, 0);
             if (pointCount < 2) throw new Error('The exported GPX contains fewer than two usable track points.');
             if (sanitized.segments.length > Core.MAX_TRACK_SEGMENTS) {
@@ -245,12 +271,23 @@ if (typeof importScripts === 'function' && !globalThis.BPBCaptureCore) {
                 });
                 return;
             }
-            const reduced = Core.reduceTrack(sanitized.segments, visibleMatches);
-            const uploadGpx = Core.serializeUploadGpx(reduced.segments);
+            const trackPointLimit = Core.MAX_UPLOAD_POINTS - waypoints.length;
+            if (trackPointLimit < 2) {
+                const error = new Error(`The GPX has ${waypoints.length} waypoints, leaving no room for a usable track within Peakbagger’s 3,000-point limit.`);
+                error.code = 'too-many-waypoints';
+                throw error;
+            }
+            const reduced = Core.reduceTrack(sanitized.segments, visibleMatches, trackPointLimit);
+            const uploadGpx = Core.serializeUploadGpx(reduced.segments, waypoints);
             const matches = visibleMatches.map(match => ({
                 ...Core.publicMatch(match),
                 draftFields: Core.calculateDraftFields(sanitized.segments, match, capture.metadata)
             }));
+            const rawTripName = typeof capture.metadata?.title === 'string' ? capture.metadata.title : '';
+            const tripName = capturePreferences.fillTripInfo && matches.length > 1
+                ? rawTripName.replace(/\s+/g, ' ').trim().slice(0, 200)
+                : '';
+            const nightsOut = Core.calculateNightsOut(sanitized.segments, capture.metadata);
 
             await updateJob(tabId, {
                 phase: matches.length ? 'ready' : 'no-matches',
@@ -262,10 +299,13 @@ if (typeof importScripts === 'function' && !globalThis.BPBCaptureCore) {
                 trackSummary: {
                     originalPointCount: reduced.originalPointCount,
                     retainedPointCount: reduced.retainedPointCount,
+                    retainedWaypointCount: waypoints.length,
                     maxDeviationM: reduced.maxDeviationM,
                     removedPrivateData: true,
                     breakCounts: sanitized.quality
                 },
+                tripName,
+                nightsOut,
                 uploadGpx,
                 error: null,
                 expiresAt: now() + JOB_TTL_MS
@@ -280,6 +320,7 @@ if (typeof importScripts === 'function' && !globalThis.BPBCaptureCore) {
     const startCapture = async message => {
         const tabId = Number(message.tabId);
         const tab = await ext.tabs.get(tabId);
+        const capturePreferences = await readCapturePreferences();
         const activity = activityFromUrl(tab.url);
         if (!activity) {
             await setBadge(tabId, '');
@@ -290,10 +331,12 @@ if (typeof importScripts === 'function' && !globalThis.BPBCaptureCore) {
         const sameActivity = current && current.provider === activity.provider && current.activityId === activity.activityId;
         if (processes.has(tabId)) {
             await processes.get(tabId);
-            return publicJob((await readMap(JOBS_KEY))[tabId]);
+            const completed = (await readMap(JOBS_KEY))[tabId];
+            if (sameCapturePreferences(completed?.capturePreferences, capturePreferences)) return publicJob(completed);
         }
         const terminalPhases = new Set(['ready', 'no-matches', 'error', 'opened', 'previewed']);
-        if (!message.force && sameActivity && current.expiresAt > now() && terminalPhases.has(current.phase)) {
+        if (!message.force && sameActivity && sameCapturePreferences(current.capturePreferences, capturePreferences)
+            && current.expiresAt > now() && terminalPhases.has(current.phase)) {
             return publicJob(current);
         }
         await setBadge(tabId, '');
@@ -306,13 +349,14 @@ if (typeof importScripts === 'function' && !globalThis.BPBCaptureCore) {
             phase: 'starting',
             matches: [],
             selectedIds: [],
+            capturePreferences,
             createdAt: now(),
             updatedAt: now(),
             expiresAt: now() + JOB_TTL_MS,
             error: null
         };
         await mutateMap(JOBS_KEY, map => { map[tabId] = job; });
-        const process = processCapture(tabId, tab.url);
+        const process = processCapture(tabId, tab.url, capturePreferences);
         processes.set(tabId, process);
         await process;
         return publicJob((await readMap(JOBS_KEY))[tabId]);
@@ -340,10 +384,21 @@ if (typeof importScripts === 'function' && !globalThis.BPBCaptureCore) {
         if (!job || !job.uploadGpx || (job.phase !== 'ready' && job.phase !== 'opened')) {
             throw new Error('Capture results are no longer available. Capture the activity again.');
         }
-        const selected = Core.assignDraftSuffixes(job.matches
-            .filter(match => job.selectedIds.includes(match.id)))
-            .sort((a, b) => b.confidence - a.confidence);
-        if (!selected.length) throw new Error('Select at least one detected peak.');
+        const selectedWithSuffixes = Core.assignDraftSuffixes(job.matches
+            .filter(match => job.selectedIds.includes(match.id)));
+        if (!selectedWithSuffixes.length) throw new Error('Select at least one detected peak.');
+        const trackOrdered = selectedWithSuffixes.map((match, index) => ({ match, index }))
+            .sort((left, right) => {
+                const distance = left.match.draftFields.upDistanceM - right.match.draftFields.upDistanceM;
+                return Number.isFinite(distance) && distance !== 0 ? distance : left.index - right.index;
+            })
+            .map(({ match }) => match);
+        const sequenceById = new Map(trackOrdered.map((match, index) => [String(match.id), index + 1]));
+        const fallbackTripName = trackOrdered.map(match => match.name).join(' / ').slice(0, 200);
+        const useTripInfo = job.capturePreferences?.fillTripInfo && selectedWithSuffixes.length > 1;
+        const useWildernessNights = job.capturePreferences?.fillWildernessNights
+            && selectedWithSuffixes.length === 1 && Number.isInteger(job.nightsOut) && job.nightsOut > 0;
+        const selected = selectedWithSuffixes.sort((a, b) => b.confidence - a.confidence);
 
         const existingDrafts = await readMap(DRAFTS_KEY);
         const existingForJob = Object.values(existingDrafts)
@@ -369,6 +424,12 @@ if (typeof importScripts === 'function' && !globalThis.BPBCaptureCore) {
                 classification: match.classification,
                 confidence: match.confidence,
                 suffix: match.draftFields.suffix,
+                tripInfo: useTripInfo ? {
+                    sequence: sequenceById.get(String(match.id)),
+                    name: job.tripName || fallbackTripName,
+                    nightsOut: Number.isInteger(job.nightsOut) ? job.nightsOut : null
+                } : null,
+                wildernessNightsOut: useWildernessNights ? job.nightsOut : null,
                 previewStarted: false,
                 complete: false,
                 focusOnReady: index === 0,
@@ -435,7 +496,13 @@ if (typeof importScripts === 'function' && !globalThis.BPBCaptureCore) {
             cid: draft.cid,
             classification: draft.classification,
             confidence: draft.confidence,
-            fields: { ...match.draftFields, suffix: draft.suffix || '' },
+            fields: {
+                ...match.draftFields,
+                suffix: draft.suffix || '',
+                tripInfo: draft.tripInfo || null,
+                wildernessNightsOut: draft.wildernessNightsOut ?? null
+            },
+            allowWaypoints: !!job.capturePreferences?.retainWaypoints,
             gpx: job.uploadGpx
         };
     };

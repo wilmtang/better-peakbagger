@@ -158,6 +158,16 @@
         return { segments, quality };
     };
 
+    const sanitizeWaypoints = rawWaypoints => (rawWaypoints || []).flatMap(rawWaypoint => {
+        const lat = finiteOrNull(rawWaypoint && rawWaypoint.lat);
+        const lon = finiteOrNull(rawWaypoint && rawWaypoint.lon);
+        if (lat === null || lon === null || lat < -90 || lat > 90 || lon < -180 || lon > 180) return [];
+        const name = typeof rawWaypoint.name === 'string'
+            ? rawWaypoint.name.replace(/\s+/g, ' ').trim().slice(0, 200)
+            : '';
+        return [{ lat, lon, name }];
+    });
+
     const buildTrackIndex = segments => {
         const cumulativeBySegment = [];
         const segmentOffsets = [];
@@ -626,7 +636,18 @@
         return { segments: reducedSegments, originalPointCount, retainedPointCount, maxDeviationM };
     };
 
-    const serializeUploadGpx = segments => {
+    const escapeXml = value => String(value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&apos;');
+
+    const serializeUploadGpx = (segments, waypoints = []) => {
+        const waypointBody = waypoints.map(waypoint => {
+            const name = waypoint.name ? `<name>${escapeXml(waypoint.name)}</name>` : '';
+            return `<wpt lat="${waypoint.lat}" lon="${waypoint.lon}">${name}</wpt>`;
+        }).join('');
         const body = segments.map(segment => {
             const points = segment.map(point =>
                 `<trkpt lat="${point.lat}" lon="${point.lon}"></trkpt>`).join('');
@@ -634,7 +655,7 @@
         }).join('');
         return `<?xml version="1.0" encoding="UTF-8"?>`
             + `<gpx version="1.1" creator="Better Peakbagger" xmlns="http://www.topografix.com/GPX/1/1">`
-            + `<trk>${body}</trk></gpx>`;
+            + `${waypointBody}<trk>${body}</trk></gpx>`;
     };
 
     const calculateConfirmedGainM = elevations => {
@@ -738,6 +759,16 @@
         };
     };
 
+    const calculateNightsOut = (segments, providerMeta = {}) => {
+        const firstTime = firstFinite(segments, 'time');
+        const lastTime = firstFinite(segments, 'time', true);
+        if (!Number.isFinite(firstTime) || !Number.isFinite(lastTime) || lastTime < firstTime) return null;
+        const offsetMs = timezoneOffsetMinutes(providerMeta, firstTime) * 60 * 1000;
+        const firstDay = Math.floor((firstTime + offsetMs) / 86400000);
+        const lastDay = Math.floor((lastTime + offsetMs) / 86400000);
+        return Math.max(0, lastDay - firstDay);
+    };
+
     const calculateDraftFields = (segments, match, providerMeta = {}) => {
         const trackIndex = buildTrackIndex(segments);
         const encounter = match.encounter;
@@ -822,6 +853,7 @@
         distanceM,
         pointSegmentDistanceM,
         sanitizeTrack,
+        sanitizeWaypoints,
         buildTrackIndex,
         buildQueryBoxes,
         parsePeakbaggerPeaks,
@@ -829,6 +861,7 @@
         reduceTrack,
         serializeUploadGpx,
         calculateDraftFields,
+        calculateNightsOut,
         assignDraftSuffixes,
         publicMatch,
         formatEncounterDateTime,

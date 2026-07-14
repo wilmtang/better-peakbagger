@@ -9,6 +9,9 @@
     const root = document.documentElement;
     const unitsEl = document.getElementById('units');
     const themeEl = document.getElementById('theme');
+    const retainWaypointsEl = document.getElementById('retain-waypoints');
+    const fillTripInfoEl = document.getElementById('fill-trip-info');
+    const fillWildernessNightsEl = document.getElementById('fill-wilderness-nights');
     const chartSeriesEl = document.getElementById('chart-series');
     const mapRouteColorEl = document.getElementById('map-route-color');
     const mapRouteWidthEl = document.getElementById('map-route-width');
@@ -37,6 +40,9 @@
     const populate = settings => {
         unitsEl.value = settings.units;
         themeEl.value = settings.theme;
+        retainWaypointsEl.checked = settings.retainWaypoints;
+        fillTripInfoEl.checked = settings.fillTripInfo;
+        fillWildernessNightsEl.checked = settings.fillWildernessNights;
         chartSeriesEl.value = settings.chartDefaultSeries;
         mapRouteColorEl.value = settings.mapRouteColor;
         mapRouteWidthEl.value = String(settings.mapRouteWidth);
@@ -53,15 +59,22 @@
         applyTheme(settings.theme);
     };
 
-    const save = async patch => {
-        const next = await S.set(patch);
-        applyTheme(next.theme);
-        flash();
-        return next;
+    let saveQueue = Promise.resolve();
+    const save = patch => {
+        saveQueue = saveQueue.then(async () => {
+            const next = await S.set(patch);
+            applyTheme(next.theme);
+            flash();
+            return next;
+        });
+        return saveQueue;
     };
 
     unitsEl.addEventListener('change', () => save({ units: unitsEl.value }));
     themeEl.addEventListener('change', () => save({ theme: themeEl.value }));
+    retainWaypointsEl.addEventListener('change', () => save({ retainWaypoints: retainWaypointsEl.checked }));
+    fillTripInfoEl.addEventListener('change', () => save({ fillTripInfo: fillTripInfoEl.checked }));
+    fillWildernessNightsEl.addEventListener('change', () => save({ fillWildernessNights: fillWildernessNightsEl.checked }));
     chartSeriesEl.addEventListener('change', () => save({ chartDefaultSeries: chartSeriesEl.value }));
     mapRouteColorEl.addEventListener('change', () => save({ mapRouteColor: mapRouteColorEl.value }));
     mapRouteWidthEl.addEventListener('change', () => save({ mapRouteWidth: mapRouteWidthEl.value }).then(populate));

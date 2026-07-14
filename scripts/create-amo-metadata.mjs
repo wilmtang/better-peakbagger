@@ -17,7 +17,7 @@ export function buildAmoMetadata(licenseText) {
         "",
         "It can turn an owned Garmin or Strava activity into confidence-ranked Peakbagger drafts, analyze ascent GPX tracks, filter and sort ascent lists, and apply a site-wide dark theme. Drafts always stop for manual review before Save.",
         "",
-        "Raw provider GPX stays on the activity page. When the user explicitly starts capture, small coordinate corridor boxes are sent to Peakbagger to find nearby summits. If the user opens drafts, a newly serialized, reduced coordinate-only GPX is sent to Peakbagger Preview.",
+        "Raw provider GPX stays on the activity page. When the user explicitly starts capture, small coordinate corridor boxes are sent to Peakbagger to find nearby summits. If the user opens drafts, a newly serialized, reduced coordinate GPX is sent to Peakbagger Preview. Waypoints remain off by default; when enabled, only their coordinates and names are added to that upload.",
       ].join("\n"),
     },
     homepage: {

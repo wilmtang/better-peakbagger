@@ -37,6 +37,50 @@
             </div>
         </section>
 
+        <section class="settings-section" aria-labelledby="capture-settings-heading">
+            <h2 class="section-title" id="capture-settings-heading">Activity capture</h2>
+            <div class="card">
+                <div class="row">
+                    <div class="label">
+                        <span class="title">Retain GPX waypoints</span>
+                        <span class="desc">Include waypoint names and coordinates in the GPX sent to Peakbagger. Other waypoint details remain excluded.</span>
+                    </div>
+                    <div class="control">
+                        <label class="check" for="retain-waypoints">
+                            <input type="checkbox" id="retain-waypoints">
+                            <span>Include waypoints</span>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="row">
+                    <div class="label">
+                        <span class="title">Trip info for multiple peaks</span>
+                        <span class="desc">Create one Peakbagger trip, named after the activity, with peaks sequenced in track order.</span>
+                    </div>
+                    <div class="control">
+                        <label class="check" for="fill-trip-info">
+                            <input type="checkbox" id="fill-trip-info">
+                            <span>Fill automatically</span>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="row">
+                    <div class="label">
+                        <span class="title">Wilderness nights for overnight ascents</span>
+                        <span class="desc">For a capture with one selected peak, fill nights out from the GPX date span.</span>
+                    </div>
+                    <div class="control">
+                        <label class="check" for="fill-wilderness-nights">
+                            <input type="checkbox" id="fill-wilderness-nights">
+                            <span>Fill automatically</span>
+                        </label>
+                    </div>
+                </div>
+            </div>
+        </section>
+
         <section class="settings-section" aria-labelledby="map-chart-settings-heading">
             <h2 class="section-title" id="map-chart-settings-heading">Map &amp; GPX chart</h2>
             <div class="card">

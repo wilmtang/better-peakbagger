@@ -88,6 +88,35 @@ test('GPX extraction selects only analysis fields and preserves segments', () =>
     assert.doesNotMatch(JSON.stringify(segments), /175|92|Private|Secret|hr|cad/);
 });
 
+test('waypoint coordinates, names, and the track name leave the page only when requested', () => {
+    const dom = load(stravaPage(), 'https://www.strava.com/activities/123');
+    const gpx = `<?xml version="1.0"?><gpx xmlns="http://www.topografix.com/GPX/1/1">
+      <wpt lat="47.1" lon="-121.2"><ele>999</ele><time>2026-07-01T00:00:00Z</time>
+        <name> Camp &amp; Water </name><desc>Private note</desc><sym>Tent</sym></wpt>
+      <wpt lat="" lon=""><name>Invalid</name></wpt>
+      <trk><name> Afternoon Hike </name><trkseg>
+        <trkpt lat="47" lon="-121"/><trkpt lat="47.2" lon="-121.3"/>
+      </trkseg></trk></gpx>`;
+
+    const defaults = dom.window.BPBProviderPage.parseGpxData(gpx);
+    assert.deepEqual([...defaults.waypoints], []);
+    assert.equal(defaults.trackName, '');
+
+    const retained = dom.window.BPBProviderPage.parseGpxData(gpx, {
+        retainWaypoints: true,
+        includeTripName: true
+    });
+    assert.equal(retained.waypoints.length, 2);
+    assert.equal(retained.waypoints[1].lat, null);
+    assert.equal(retained.waypoints[1].lon, null);
+    const sanitizedWaypoints = retained.waypoints.filter(waypoint => waypoint.lat !== null && waypoint.lon !== null);
+    assert.deepEqual(JSON.parse(JSON.stringify(sanitizedWaypoints)), [
+        { lat: 47.1, lon: -121.2, name: 'Camp & Water' }
+    ]);
+    assert.equal(retained.trackName, 'Afternoon Hike');
+    assert.doesNotMatch(JSON.stringify(retained.waypoints), /999|Private|Tent|2026/);
+});
+
 test('successful capture fetches only the provider GPX endpoint', async () => {
     const dom = load(stravaPage(), 'https://www.strava.com/activities/123');
     const requested = [];
@@ -102,7 +131,22 @@ test('successful capture fetches only the provider GPX endpoint', async () => {
     assert.equal(capture.ok, true);
     assert.deepEqual(requested, ['/activities/123/export_gpx']);
     assert.equal(capture.segments[0].length, 2);
+    assert.deepEqual([...capture.waypoints], []);
+    assert.equal(capture.metadata.title, undefined);
     assert.equal(capture.metadata.displayedLocalStart, '2026-07-11T16:13:00');
+});
+
+test('capture returns allowlisted waypoint and trip-name data for enabled settings', async () => {
+    const dom = load(stravaPage(), 'https://www.strava.com/activities/123');
+    dom.window.fetch = async () => ({
+        ok: true,
+        text: async () => '<gpx><wpt lat="1.2" lon="2.3"><name>Camp</name><desc>secret</desc></wpt><trk><name>Overnight traverse</name><trkseg><trkpt lat="1" lon="2"/><trkpt lat="1.1" lon="2.1"/></trkseg></trk></gpx>'
+    });
+
+    const capture = await dom.window.BPBProviderPage.capture({ retainWaypoints: true, includeTripName: true });
+    assert.deepEqual(JSON.parse(JSON.stringify(capture.waypoints)), [{ lat: 1.2, lon: 2.3, name: 'Camp' }]);
+    assert.equal(capture.metadata.title, 'Overnight traverse');
+    assert.doesNotMatch(JSON.stringify(capture), /secret/);
 });
 
 test('Garmin current-session capture uses the gc-api route and same-page CSRF header', async () => {

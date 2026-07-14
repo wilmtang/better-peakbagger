@@ -2,9 +2,15 @@
 
 ## Unreleased
 
+- **Capture details, under user control.** New Activity capture settings can
+  retain GPX waypoint coordinates and names (off by default), create and
+  sequence Peakbagger Trip Info for multiple selected summits, and fill
+  wilderness nights for an overnight single-ascent capture. Waypoints share
+  Peakbagger's 3,000-point limit with the reduced track; all other waypoint
+  fields remain excluded.
 - **Clearer Settings organization.** Preferences are now grouped into General,
-  Map & GPX chart, and Ascent beta filters so each control is discoverable by
-  the surface it affects.
+  Activity capture, Map & GPX chart, and Ascent beta filters so each control is
+  discoverable by the surface it affects.
 - **Map-first GPX layout.** The elevation chart now sits directly below the
   ascent map and its waypoint legend, before Peakbagger's full-screen map link,
   GPS-track warning, and GPX download link.

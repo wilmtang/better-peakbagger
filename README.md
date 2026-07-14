@@ -87,7 +87,9 @@ by “has beta.” Sortable columns reorder instantly without reloading the page
 Use a site-wide dark theme that follows your system or stays light or dark.
 Shared settings also control units, the GPX chart's default view, route
 appearance, map size, optional map-layer memory, and which signals count as
-ascent beta. Changes apply to open Peakbagger tabs immediately.
+ascent beta. Activity-capture settings control opt-in waypoint retention plus
+automatic Trip Info and wilderness-night filling. Changes apply to open
+Peakbagger tabs immediately and to the next activity capture.
 
 ![Better Peakbagger settings beside Peakbagger dark mode](store-assets/screenshot-3-dark-mode-settings.png)
 
@@ -97,8 +99,10 @@ There is no Better Peakbagger account, analytics, or telemetry. The raw Garmin
 or Strava GPX is processed on the activity page and is never stored or sent to
 the extension developer. Peakbagger receives small corridor boxes for summit
 discovery and, only after you choose **Open drafts**, a reduced coordinate-only
-track for Preview. Source health and device fields plus each trackpoint's time
-and elevation are excluded; derived draft values remain yours to review.
+track for Preview. If you opt in to retaining waypoints, their coordinates and
+names are added to that newly serialized upload. Source health and device fields
+plus each trackpoint's time and elevation are excluded; derived draft values
+remain yours to review.
 
 ## FAQ
 
@@ -235,14 +239,14 @@ Garmin and Strava remain isolated behind separate adapters because their page DO
 
 ### 2. Two track representations, one privacy boundary
 
-The source XML never leaves the activity page and is never persisted. The parser ignores everything except ordered track points and segment boundaries, producing two successively narrower representations:
+The source XML never leaves the activity page and is never persisted. By default, the parser returns only ordered track points and segment boundaries. The Trip Info setting also allowlists the track/activity name, and the off-by-default waypoint setting allowlists waypoint coordinates and names. Capture then produces successively narrower representations:
 
 | Representation | Fields | Lifetime and purpose |
 | --- | --- | --- |
 | Full-resolution analysis | latitude, longitude, optional elevation, optional timestamp, segment boundaries | In memory while validating the track, finding summits, and calculating ascent fields. |
-| Peakbagger upload | latitude, longitude, segment boundaries | Reduced to at most 3,000 original points, kept in `storage.session`, and uploaded only after **Open drafts**. |
+| Peakbagger upload | track latitude/longitude and segment boundaries; optional waypoint latitude/longitude/name | Reduced to at most 3,000 total trackpoints and waypoints, kept in `storage.session`, and uploaded only after **Open drafts**. |
 
-The upload serializer constructs new GPX rather than deleting selected nodes from the source. Its allowlist is deliberately tiny: `<gpx>`, `<trk>`, `<trkseg>`, and `<trkpt lat="…" lon="…">`. A second validator on the Peakbagger draft page rejects anything outside that shape, more than 3,000 points, or more than 50 segments before attaching the file. Names, descriptions, metadata, waypoints, routes, timestamps, elevation, device fields, heart rate, cadence, temperature, power, and all extensions therefore have no path into the upload.
+The upload serializer constructs new GPX rather than deleting selected nodes from the source. Its default allowlist is deliberately tiny: `<gpx>`, `<trk>`, `<trkseg>`, and `<trkpt lat="…" lon="…">`. With waypoint retention enabled, it may additionally emit `<wpt lat="…" lon="…"><name>…</name></wpt>`. A second validator on the Peakbagger draft page enforces the setting and rejects anything outside that shape, more than 3,000 total points, or more than 50 segments before attaching the file. Descriptions, metadata, routes, timestamps, elevation, symbols, device fields, heart rate, cadence, temperature, power, and all extensions have no path into the upload.
 
 Timestamps and elevation are optional analysis inputs, not assumptions about a provider export. If timestamps are absent, the extension does not invent them: it uses the provider's displayed local start date when available, leaves the encounter time empty, calculates durations as zero, and lowers the track-quality evidence.
 
@@ -281,15 +285,15 @@ The reducer is segment-aware and uses a globally prioritized Ramer–Douglas–P
 3. Repeatedly keep the highest-error vertex across *all* segments, split its interval, and enqueue the two new candidates until 3,000 points are retained or no candidates remain.
 4. Serialize retained points in their original segment and recording order, then measure the largest distance from every omitted point to its retained line segment.
 
-This global priority matters: a winding section receives more of the fixed budget than a nearly straight section, regardless of which segment appeared first. The reducer never invents or moves a coordinate and never connects separate segments. It reports original count, retained count, and maximum measured deviation. If protected anchors alone exceed 3,000—or the sanitized track exceeds Peakbagger's 50-segment limit—the capture fails instead of dropping a required point.
+This global priority matters: a winding section receives more of the fixed budget than a nearly straight section, regardless of which segment appeared first. The reducer never invents or moves a coordinate and never connects separate segments. It reports original count, retained count, and maximum measured deviation. Retained waypoints consume the same 3,000-point budget before track reduction. If protected anchors and waypoints cannot fit—or the sanitized track exceeds Peakbagger's 50-segment limit—the capture fails instead of dropping required data.
 
 ### 6. Draft handoff and exactly-once Preview
 
-Ready jobs contain only the reduced GPX, public match evidence, calculated form values, selection state, and identifiers in `storage.session`, with a 30-minute expiry. Closing the popup does not cancel background work, and repeated clicks for the same activity reuse the in-flight or completed job.
+Ready jobs contain only the reduced GPX, public match evidence, calculated form values, any allowlisted trip name, the settings snapshot, selection state, and identifiers in `storage.session`, with a 30-minute expiry. Closing the popup does not cancel background work, and repeated clicks for the same activity reuse the in-flight or completed job only while the capture settings still match.
 
-Before tabs open, only the selected matches are grouped by ascent date. A date with multiple selected summits receives alphabetical Peakbagger suffixes (`a`, `b`, …) in ascending route distance, which is their track-encounter order; a date with one selected summit keeps its suffix blank. The suffix is stored on the private draft before matches are sorted by confidence, so confidence-ranked tab order cannot change ascent identity.
+Before tabs open, only the selected matches are grouped by ascent date. A date with multiple selected summits receives alphabetical Peakbagger suffixes (`a`, `b`, …) in ascending route distance, which is their track-encounter order; a date with one selected summit keeps its suffix blank. The suffix is stored on the private draft before matches are sorted by confidence, so confidence-ranked tab order cannot change ascent identity. When Trip Info filling is enabled, multiple selected summits also share one new trip named after the activity and receive 1-based sequence values in track order. Calendar-date span supplies New Trip Nights Out. For an overnight capture with one selected summit, the separate wilderness-night setting fills `Wilderness Nights out on Single Ascent Trip` instead, avoiding duplicated nights across multi-peak drafts.
 
-Selected matches then open as inactive tabs in the **Peak Drafts** group. Each blank tab is assigned a private `{ jobId, tabId, pid, cid }` identity before navigation. On the ascent editor, `src/ascent-draft.js` sends a ready handshake; the background checks the sender tab plus `pid` and `cid` before returning any payload. The content script verifies the expected form and the coordinate-only GPX, fills both metric and imperial fields plus the assigned suffix, attaches the file, records a Preview-start acknowledgement, and clicks `GPXPreview` exactly once. Encounter time remains analysis metadata and is never written into Peakbagger's suffix field.
+Selected matches then open as inactive tabs in the **Peak Drafts** group. Each blank tab is assigned a private `{ jobId, tabId, pid, cid }` identity before navigation. On the ascent editor, `src/ascent-draft.js` sends a ready handshake; the background checks the sender tab plus `pid` and `cid` before returning any payload. The content script verifies the expected form and privacy-reduced GPX, fills both metric and imperial fields plus the assigned suffix and enabled trip fields, attaches the file, records a Preview-start acknowledgement, and clicks `GPXPreview` exactly once. Encounter time remains analysis metadata and is never written into Peakbagger's suffix field.
 
 After Peakbagger reloads with the Preview result, the second handshake sees that Preview already started and shows a short-lived, dismissible Strong/Probable confidence notice instead of submitting again. When all drafts finish Preview, the background clears the stored GPX. No code path clicks either Save control: the user must review Peakbagger's result and save each ascent manually.
 
@@ -322,7 +326,7 @@ The heritage here matters: these two features started as Tampermonkey userscript
 
 Settings live in **`chrome.storage.sync`** under a single key (`bpbSettings`). `sync` means they roam across a signed-in user's browsers; the payload is a handful of fields, far under the quota.
 
-`src/settings.js` is the shared core, loaded into every isolated content script and the options page. It exposes `window.BPBSettings` with:
+`src/settings.js` is the shared core, loaded into the background worker, every isolated content script, and the options page. It exposes `globalThis.BPBSettings` with:
 
 - `get()` / `set(patch)` — promise-based, with input **sanitisation** (`clean()`), so a corrupt or partial stored object can never crash a consumer; unknown values fall back to defaults (`{ units: 'auto', theme: 'system', … }`).
 - `subscribe(cb)` — wraps `chrome.storage.onChanged` so any context is notified when settings change in another (the options page, another tab).
@@ -528,6 +532,9 @@ Settings shape (`chrome.storage.sync`, key `bpbSettings`):
 ```js
 { units: 'auto' | 'imperial' | 'metric',
   theme: 'system' | 'light' | 'dark',
+  retainWaypoints: boolean,         // default false; allowlists waypoint coordinates/names
+  fillTripInfo: boolean,            // default true; multiple selected peaks
+  fillWildernessNights: boolean,    // default true; overnight single-peak capture
   chartDefaultSeries: 'both' | 'distance' | 'time',  // GPX chart's initial series
   mapRouteColor: '#rrggbb', mapRouteWidth: 1..12,        // defaults #d9483b / 5
   mapRouteCasingColor: '#rrggbb', mapRouteCasingWidth: 3..20, // defaults #ffffff / 9
@@ -609,12 +616,14 @@ the Peakbagger summit lookup and GPS Preview actions described below.
   and expire after 30 minutes.
 - **GPS Preview:** only after you choose **Open drafts**, Peakbagger receives a
   newly serialized GPX containing latitude, longitude, and segment boundaries,
-  reduced to at most 3,000 existing trackpoints.
+  plus opt-in waypoint coordinates/names, reduced to at most 3,000 total points.
 - **Excluded source fields:** heart rate, cadence, power, temperature, device
-  fields, metadata, names, descriptions, routes, waypoints, extension elements,
-  and each trackpoint's timestamp and elevation. Derived form values such as the
-  activity date, ascent times, distance, and gain are retained for the prepared
-  draft; the source fields themselves are not.
+  fields, descriptions, routes, waypoint elevation/time/symbols, extension
+  elements, and each trackpoint's timestamp and elevation. The activity/track
+  name is retained only for enabled multi-peak Trip Info; waypoint coordinates
+  and names are retained only when explicitly enabled. Derived form values such
+  as the activity date, ascent times, distance, gain, and nights out are retained
+  for the prepared draft; the other source fields are not.
 - **Manual publication:** Better Peakbagger can prepare GPS Preview, but no
   extension path clicks either Peakbagger Save control. Review and publication
   remain with you.

@@ -2,20 +2,23 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // Better Peakbagger — shared settings core.
-// Loaded into every isolated-world content script (theme, bridge, filter) and
-// the options page, where chrome.storage is available. It is NOT usable from
-// the page MAIN world (the GPX analyzer), which reaches settings through the
-// bridge (src/bridge.js) instead. Idempotent: safe to inject more than once
-// into the same isolated world.
+// Loaded into every isolated-world content script (theme, bridge, filter), the
+// options page, and the background worker, where extension storage is
+// available. It is NOT usable from the page MAIN world (the GPX analyzer),
+// which reaches settings through the bridge (src/bridge.js) instead.
+// Idempotent: safe to inject more than once into the same global.
 
 (() => {
-    if (window.BPBSettings) return;
+    if (globalThis.BPBSettings) return;
 
     const api = (typeof browser !== 'undefined' && browser.storage) ? browser : chrome;
     const STORAGE_KEY = 'bpbSettings';
     const MAP_LAYERS = new Set(['L_CT', 'L_MT', 'L_FS', 'L_3D', 'L_SN', 'L_AG', 'L_OT', 'L_OS', 'L_AI', 'L_XX', 'B_B1', 'G_SA']);
     const DEFAULTS = {
         units: 'auto', theme: 'system',
+        retainWaypoints: false,
+        fillTripInfo: true,
+        fillWildernessNights: true,
         // Which GPX-chart series is shown by default: 'both', or only
         // 'distance' / 'time'. A legend click can still reveal the hidden one
         // for the current view without changing this preference.
@@ -46,6 +49,9 @@
         const s = { ...DEFAULTS, ...(raw && typeof raw === 'object' ? raw : {}) };
         if (!['auto', 'imperial', 'metric'].includes(s.units)) s.units = DEFAULTS.units;
         if (!['system', 'light', 'dark'].includes(s.theme)) s.theme = DEFAULTS.theme;
+        for (const key of ['retainWaypoints', 'fillTripInfo', 'fillWildernessNights']) {
+            if (typeof s[key] !== 'boolean') s[key] = DEFAULTS[key];
+        }
         if (!['both', 'distance', 'time'].includes(s.chartDefaultSeries)) s.chartDefaultSeries = DEFAULTS.chartDefaultSeries;
         s.mapRouteColor = cleanColor(s.mapRouteColor, DEFAULTS.mapRouteColor);
         s.mapRouteWidth = clampInteger(s.mapRouteWidth, 1, 12, DEFAULTS.mapRouteWidth);
@@ -106,8 +112,8 @@
     // Resolve a theme preference to a concrete 'light' | 'dark'.
     const resolveTheme = theme => {
         if (theme === 'light' || theme === 'dark') return theme;
-        return (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light';
+        return (globalThis.matchMedia && globalThis.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light';
     };
 
-    window.BPBSettings = { STORAGE_KEY, DEFAULTS, clean, get, set, subscribe, resolveTheme };
+    globalThis.BPBSettings = { STORAGE_KEY, DEFAULTS, clean, get, set, subscribe, resolveTheme };
 })();

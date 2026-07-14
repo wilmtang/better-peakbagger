@@ -49,7 +49,7 @@ test("Firefox metadata preserves the project's or-later license grant", () => {
   assert.match(metadata.version.custom_license.text["en-US"], /GNU AFFERO/);
   assert.match(metadata.version.approval_notes, /Chart\.js 4\.5\.1/);
   assert.match(metadata.description["en-US"], /coordinate corridor boxes/);
-  assert.match(metadata.description["en-US"], /coordinate-only GPX/);
+  assert.match(metadata.description["en-US"], /Waypoints remain off by default/);
 });
 
 async function makeReleaseZip(extraFiles = {}, omittedFiles = []) {

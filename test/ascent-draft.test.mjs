@@ -13,6 +13,9 @@ const formHtml = `<!doctype html><body><form>
   <input id="GainFt" value="300"><input id="GainM" value="91"><input id="ExUpFt"><input id="ExUpM"><input id="ExDnFt"><input id="ExDnM">
   <input id="UpMi"><input id="UpKm"><input id="DnMi"><input id="DnKm"><input id="UpDay"><input id="UpHr"><input id="UpMin">
   <input id="DnDay"><input id="DnHr"><input id="DnMin"><input id="GPXUpload" type="file">
+  <select id="TripDD"><option value="existing">Existing Trip</option><option value="new">**Add New Trip</option></select>
+  <input id="TripSeqText"><input id="TripNameText"><input id="TripNightsText">
+  <select id="AscentNightsDD">${Array.from({ length: 101 }, (_, value) => `<option value="${value}">${value}</option>`).join('')}</select>
   <button id="GPXPreview" type="button">Preview</button><button id="SaveButton" type="button">Save</button>
 </form></body>`;
 
@@ -83,6 +86,57 @@ test('fills the expected fields, attaches coordinate-only GPX, previews once, an
     dom.window.close();
 });
 
+test('fills multi-peak Trip Info and accepts allowlisted waypoint names only when opted in', async () => {
+    let previewClicks = 0;
+    const payload = {
+        action: 'apply', jobId: 'job', pid: '12', cid: '34', classification: 'strong', confidence: 91,
+        allowWaypoints: true,
+        fields: {
+            date: '2026-07-01', suffix: 'a', startElevationM: 1000, endElevationM: 900,
+            upDistanceM: 5000, downDistanceM: 6000, upGainM: 1200, downGainM: 80,
+            upDuration: { days: 0, hours: 2, minutes: 5 },
+            downDuration: { days: 0, hours: 1, minutes: 55 },
+            tripInfo: { sequence: 2, name: 'Afternoon Hike', nightsOut: 1 },
+            wildernessNightsOut: null
+        },
+        gpx: '<?xml version="1.0"?><gpx><wpt lat="47.1" lon="-121.2"><name>Camp &amp; Water</name></wpt><trk><trkseg><trkpt lat="47" lon="-121"></trkpt></trkseg></trk></gpx>'
+    };
+    const { dom } = loadDraft(message => message.type === 'DRAFT_READY' ? payload : { ok: true });
+    dom.window.document.getElementById('GPXPreview').addEventListener('click', () => { previewClicks++; });
+    await waitForCondition(() => previewClicks === 1);
+
+    assert.equal(dom.window.document.getElementById('TripDD').value, 'new');
+    assert.equal(dom.window.document.getElementById('TripSeqText').value, '2');
+    assert.equal(dom.window.document.getElementById('TripNameText').value, 'Afternoon Hike');
+    assert.equal(dom.window.document.getElementById('TripNightsText').value, '1');
+    assert.equal(dom.window.document.getElementById('GPXUpload').files.length, 1);
+    dom.window.close();
+});
+
+test('fills single-ascent wilderness nights without firing Peakbagger’s AutoPostBack change', async () => {
+    let previewClicks = 0;
+    let nightsChanges = 0;
+    const payload = {
+        action: 'apply', jobId: 'job', pid: '12', cid: '34', classification: 'strong', confidence: 91,
+        fields: {
+            date: '2026-07-01', suffix: '', startElevationM: 1000, endElevationM: 900,
+            upDistanceM: 5000, downDistanceM: 6000, upGainM: 1200, downGainM: 80,
+            upDuration: { days: 1, hours: 2, minutes: 5 },
+            downDuration: { days: 1, hours: 1, minutes: 55 },
+            tripInfo: null, wildernessNightsOut: 2
+        },
+        gpx: '<gpx><trk><trkseg><trkpt lat="47" lon="-121"></trkpt></trkseg></trk></gpx>'
+    };
+    const { dom } = loadDraft(message => message.type === 'DRAFT_READY' ? payload : { ok: true });
+    dom.window.document.getElementById('AscentNightsDD').addEventListener('change', () => { nightsChanges++; });
+    dom.window.document.getElementById('GPXPreview').addEventListener('click', () => { previewClicks++; });
+    await waitForCondition(() => previewClicks === 1);
+
+    assert.equal(dom.window.document.getElementById('AscentNightsDD').value, '2');
+    assert.equal(nightsChanges, 0);
+    dom.window.close();
+});
+
 test('a post-preview reload shows a dismissible, short-lived confidence toast without another submission', async () => {
     const { dom, messages } = loadDraft(() => ({ action: 'banner', classification: 'probable', confidence: 71 }));
     let previewClicks = 0;
@@ -126,5 +180,22 @@ test('privacy guard blocks a payload containing time, elevation, or extensions',
     const banner = dom.window.document.getElementById('bpb-draft-banner');
     assert.ok(banner);
     assert.match(banner.textContent, /privacy check/);
+    dom.window.close();
+});
+
+test('privacy guard rejects waypoint data unless the capture explicitly opted in', async () => {
+    const { dom, messages } = loadDraft(message => message.type === 'DRAFT_READY' ? {
+        action: 'apply', jobId: 'job', pid: '12', cid: '34', classification: 'strong', confidence: 90,
+        allowWaypoints: false,
+        fields: {
+            date: '2026-01-01', suffix: '', startElevationM: 1, endElevationM: 1,
+            upDistanceM: 1, downDistanceM: 1, upGainM: 1, downGainM: 0,
+            upDuration: { days: 0, hours: 0, minutes: 0 }, downDuration: { days: 0, hours: 0, minutes: 0 }
+        },
+        gpx: '<gpx><wpt lat="1" lon="2"><name>Camp</name></wpt><trk><trkseg><trkpt lat="1" lon="2"></trkpt></trkseg></trk></gpx>'
+    } : { ok: true });
+    await waitForCondition(() => dom.window.document.getElementById('bpb-draft-banner'));
+    assert.deepEqual(messages.map(message => message.type), ['DRAFT_READY']);
+    assert.match(dom.window.document.getElementById('bpb-draft-banner').textContent, /privacy check/);
     dom.window.close();
 });

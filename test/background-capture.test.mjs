@@ -10,14 +10,16 @@ import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 const Core = require('../src/capture-core.js');
 const source = await fs.readFile(new URL('../src/background.js', import.meta.url), 'utf8');
+const settingsSource = await fs.readFile(new URL('../src/settings.js', import.meta.url), 'utf8');
 
 const event = () => {
     const listeners = [];
     return { listeners, addListener: listener => listeners.push(listener) };
 };
 
-const createHarness = ({ peakXml = null, captureResult = null, ownershipResult = null } = {}) => {
+const createHarness = ({ peakXml = null, captureResult = null, ownershipResult = null, settings = {} } = {}) => {
     const values = {};
+    const syncValues = { bpbSettings: structuredClone(settings) };
     const tabs = new Map([[1, {
         id: 1,
         windowId: 9,
@@ -31,6 +33,7 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
     const grouped = [];
     const groupUpdates = [];
     const badgeCalls = [];
+    const scriptCalls = [];
     const capture = captureResult || {
         ok: true,
         provider: 'strava',
@@ -48,11 +51,16 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
             session: {
                 get: async key => ({ [key]: structuredClone(values[key]) }),
                 set: async patch => Object.assign(values, structuredClone(patch))
+            },
+            sync: {
+                get: async key => ({ [key]: structuredClone(syncValues[key]) }),
+                set: async patch => Object.assign(syncValues, structuredClone(patch))
             }
         },
         runtime: { onMessage: runtimeMessage },
         scripting: {
             executeScript: async details => {
+                scriptCalls.push(structuredClone({ files: details.files, args: details.args, world: details.world }));
                 if (details.files) return [];
                 const isOwnershipCheck = String(details.func).includes('inspectOwnership');
                 const result = isOwnershipCheck && ownershipResult ? ownershipResult : capture;
@@ -108,12 +116,13 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
         console,
         structuredClone
     });
+    vm.runInContext(settingsSource, context, { filename: 'settings.js' });
     vm.runInContext(source, context, { filename: 'background.js' });
     const listener = runtimeMessage.listeners[0];
     const send = (message, sender = {}) => new Promise(resolve => {
         assert.equal(listener(message, sender, resolve), true);
     });
-    return { send, values, tabs, grouped, groupUpdates, badgeCalls, fetchCalls };
+    return { send, values, syncValues, tabs, grouped, groupUpdates, badgeCalls, fetchCalls, scriptCalls };
 };
 
 test('background capture persists a private job, opens grouped drafts, and previews idempotently', async () => {
@@ -129,6 +138,10 @@ test('background capture persists a private job, opens grouped drafts, and previ
     assert.match(storedJob.uploadGpx, /<trkpt lat="0" lon="-0.001">/);
     assert.doesNotMatch(storedJob.uploadGpx, /<(?:ele|time|extensions)(?:\s|>)/i);
     assert.equal(JSON.stringify(storedJob).includes('heart'), false);
+    assert.deepEqual(harness.scriptCalls.find(call => call.args)?.args, [{
+        retainWaypoints: false,
+        includeTripName: true
+    }]);
 
     const opened = await harness.send({ type: 'CAPTURE_OPEN_DRAFTS', tabId: 1, selectedIds: [7] });
     assert.deepEqual([...opened.tabIds], [100]);
@@ -168,6 +181,115 @@ test('same-day suffixes include only selected ascents and follow track order', a
 
     assert.equal(earlier.fields.suffix, 'a');
     assert.equal(later.fields.suffix, 'b');
+});
+
+test('waypoint opt-in shares the 3,000-point budget and multi-peak drafts receive one sequenced trip', async () => {
+    const harness = createHarness({
+        settings: { retainWaypoints: true },
+        peakXml: '<p><t i="7" n="First Peak" a="0" o="0" e="426.51" r="100" l="Test Range"/><t i="8" n="Second Peak" a="0" o="0" e="426.51" r="100" l="Test Range"/></p>',
+        captureResult: {
+            ok: true,
+            provider: 'strava',
+            activityId: '123',
+            metadata: { title: 'Afternoon Hike', utcOffsetMinutes: 0 },
+            waypoints: [{ lat: 0.01, lon: 0.02, name: 'Camp & Water', ele: 999, desc: 'private' }],
+            segments: [[
+                { lat: 0, lon: -0.001, ele: 100, time: Date.UTC(2026, 6, 1, 23, 0) },
+                { lat: 0, lon: 0, ele: 130, time: Date.UTC(2026, 6, 2, 12, 0) },
+                { lat: 0, lon: 0.001, ele: 100, time: Date.UTC(2026, 6, 3, 1, 0) }
+            ]]
+        }
+    });
+
+    const ready = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    assert.equal(ready.matches.length, 2);
+    const storedJob = harness.values.bpbCaptureJobs['1'];
+    assert.match(storedJob.uploadGpx, /<wpt lat="0\.01" lon="0\.02"><name>Camp &amp; Water<\/name><\/wpt>/);
+    assert.equal(storedJob.trackSummary.retainedPointCount + storedJob.trackSummary.retainedWaypointCount <= 3000, true);
+    assert.doesNotMatch(storedJob.uploadGpx, /999|private/);
+    storedJob.matches.find(match => match.id === 7).confidence = 80;
+    storedJob.matches.find(match => match.id === 7).draftFields.upDistanceM = 300;
+    storedJob.matches.find(match => match.id === 8).confidence = 95;
+    storedJob.matches.find(match => match.id === 8).draftFields.upDistanceM = 100;
+
+    await harness.send({ type: 'CAPTURE_OPEN_DRAFTS', tabId: 1, selectedIds: [7, 8] });
+    const first = await harness.send({ type: 'DRAFT_READY', pid: '8', cid: '77' }, { tab: { id: 100 } });
+    const second = await harness.send({ type: 'DRAFT_READY', pid: '7', cid: '77' }, { tab: { id: 101 } });
+    assert.equal(first.allowWaypoints, true);
+    assert.deepEqual({ ...first.fields.tripInfo }, { sequence: 1, name: 'Afternoon Hike', nightsOut: 2 });
+    assert.deepEqual({ ...second.fields.tripInfo }, { sequence: 2, name: 'Afternoon Hike', nightsOut: 2 });
+    assert.equal(first.fields.wildernessNightsOut, null);
+    assert.equal(second.fields.wildernessNightsOut, null);
+});
+
+test('waypoints cannot crowd a usable track out of Peakbagger’s total-point limit', async () => {
+    const harness = createHarness({
+        settings: { retainWaypoints: true },
+        captureResult: {
+            ok: true,
+            provider: 'strava',
+            activityId: '123',
+            metadata: { title: 'Too many waypoints', utcOffsetMinutes: 0 },
+            waypoints: Array.from({ length: 2999 }, (_, index) => ({ lat: 0.01, lon: index / 10000, name: `W${index}` })),
+            segments: [[
+                { lat: 0, lon: -0.001, ele: 100, time: Date.UTC(2026, 6, 1, 15, 0) },
+                { lat: 0, lon: 0, ele: 130, time: Date.UTC(2026, 6, 1, 16, 0) },
+                { lat: 0, lon: 0.001, ele: 100, time: Date.UTC(2026, 6, 1, 17, 0) }
+            ]]
+        }
+    });
+    const result = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    assert.equal(result.phase, 'error');
+    assert.equal(result.error.code, 'too-many-waypoints');
+    assert.equal(harness.values.bpbCaptureJobs['1'].uploadGpx, undefined);
+});
+
+test('single-peak overnight captures fill wilderness nights without creating Trip Info', async () => {
+    const harness = createHarness({
+        captureResult: {
+            ok: true,
+            provider: 'strava',
+            activityId: '123',
+            metadata: { title: 'Overnight hike', utcOffsetMinutes: 0 },
+            segments: [[
+                { lat: 0, lon: -0.001, ele: 100, time: Date.UTC(2026, 6, 1, 23, 0) },
+                { lat: 0, lon: 0, ele: 130, time: Date.UTC(2026, 6, 2, 12, 0) },
+                { lat: 0, lon: 0.001, ele: 100, time: Date.UTC(2026, 6, 3, 1, 0) }
+            ]]
+        }
+    });
+
+    await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    await harness.send({ type: 'CAPTURE_OPEN_DRAFTS', tabId: 1, selectedIds: [7] });
+    const apply = await harness.send({ type: 'DRAFT_READY', pid: '7', cid: '77' }, { tab: { id: 100 } });
+    assert.equal(apply.fields.tripInfo, null);
+    assert.equal(apply.fields.wildernessNightsOut, 2);
+});
+
+test('disabled draft autofill settings leave trip and wilderness fields untouched', async () => {
+    const harness = createHarness({
+        settings: { fillTripInfo: false, fillWildernessNights: false },
+        peakXml: '<p><t i="7" n="First Peak" a="0" o="0" e="426.51" r="100" l="Test Range"/><t i="8" n="Second Peak" a="0" o="0" e="426.51" r="100" l="Test Range"/></p>'
+    });
+    await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    await harness.send({ type: 'CAPTURE_OPEN_DRAFTS', tabId: 1, selectedIds: [7, 8] });
+    const apply = await harness.send({ type: 'DRAFT_READY', pid: '7', cid: '77' }, { tab: { id: 100 } });
+    assert.equal(apply.fields.tripInfo, null);
+    assert.equal(apply.fields.wildernessNightsOut, null);
+});
+
+test('changing capture settings invalidates a reusable job for the same activity', async () => {
+    const harness = createHarness();
+    await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    const firstId = harness.values.bpbCaptureJobs['1'].id;
+    harness.syncValues.bpbSettings.retainWaypoints = true;
+
+    await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    assert.notEqual(harness.values.bpbCaptureJobs['1'].id, firstId);
+    assert.deepEqual(harness.scriptCalls.filter(call => call.args).at(-1).args, [{
+        retainWaypoints: true,
+        includeTripName: true
+    }]);
 });
 
 test('Possible and Weak matches are hidden and no coordinate upload is retained', async () => {

@@ -19,7 +19,7 @@ test('capture permissions are explicit and provider access remains activeTab-onl
 
 test('Chrome and Firefox background declarations share the same fail-closed coordinator', () => {
     assert.equal(manifest.background.service_worker, 'src/background.js');
-    assert.deepEqual(manifest.background.scripts, ['src/capture-core.js', 'src/background.js']);
+    assert.deepEqual(manifest.background.scripts, ['src/capture-core.js', 'src/settings.js', 'src/background.js']);
     assert.deepEqual(manifest.browser_specific_settings.gecko.data_collection_permissions.required, ['locationInfo']);
 });
 

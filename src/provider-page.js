@@ -2,8 +2,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // Injected on demand into Garmin Connect or Strava's MAIN world. Raw GPX is
-// parsed here and never sent to the background worker; only track-point fields
-// used for analysis leave the activity page.
+// parsed here and never sent to the background worker. Only track-point fields
+// used for analysis leave by default; an explicit capture setting may also
+// allowlist waypoint coordinates/names and the track name used for Trip Info.
 
 (() => {
     'use strict';
@@ -111,7 +112,11 @@
         return [...root.getElementsByTagName(localName)];
     };
 
-    const parseGpxText = text => {
+    const cleanName = value => typeof value === 'string'
+        ? value.replace(/\s+/g, ' ').trim().slice(0, 200)
+        : '';
+
+    const parseGpxData = (text, options = {}) => {
         const xml = new DOMParser().parseFromString(text, 'application/xml');
         if (elementsByLocalName(xml, 'parsererror').length) throw new Error('The provider returned invalid GPX XML.');
         const trackSegments = elementsByLocalName(xml, 'trkseg');
@@ -131,8 +136,26 @@
             };
         }));
         if (!segments.length) throw new Error('The provider GPX contains no track segments.');
-        return segments;
+        const waypoints = options.retainWaypoints
+            ? elementsByLocalName(xml, 'wpt').map(waypoint => {
+                const latText = waypoint.getAttribute('lat');
+                const lonText = waypoint.getAttribute('lon');
+                return {
+                    lat: latText === null || !latText.trim() ? null : Number(latText),
+                    lon: lonText === null || !lonText.trim() ? null : Number(lonText),
+                    name: cleanName(directChild(waypoint, 'name')?.textContent || '')
+                };
+            })
+            : [];
+        const firstTrack = elementsByLocalName(xml, 'trk')[0];
+        const trackName = options.includeTripName
+            ? cleanName((firstTrack && directChild(firstTrack, 'name')?.textContent) || '')
+            : '';
+        return { segments, waypoints, trackName };
     };
+
+    // Kept for tests and callers that only need the established analysis shape.
+    const parseGpxText = text => parseGpxData(text).segments;
 
     const activityMetadata = provider => {
         const main = document.querySelector('main') || document.body;
@@ -182,7 +205,7 @@
         return { endpoint: path, headers };
     };
 
-    const capture = async () => {
+    const capture = async (options = {}) => {
         const ownership = inspectOwnership();
         if (!ownership.ok) return ownership;
         try {
@@ -199,11 +222,17 @@
                 throw new Error(`${providerName} GPX export failed with HTTP ${response.status}. Reload the activity and try again.`);
             }
             const text = await response.text();
-            const segments = parseGpxText(text);
+            const parsed = parseGpxData(text, options);
+            const metadata = activityMetadata(ownership.provider);
+            if (options.includeTripName) {
+                metadata.title = parsed.trackName
+                    || cleanName((document.querySelector('main') || document.body).querySelector('h1')?.textContent || '');
+            }
             return {
                 ...ownership,
-                segments,
-                metadata: activityMetadata(ownership.provider)
+                segments: parsed.segments,
+                waypoints: parsed.waypoints,
+                metadata
             };
         } catch (error) {
             return {
@@ -218,7 +247,7 @@
         }
     };
 
-    const API = { providerFromUrl, profileId, inspectOwnership, parseGpxText, garminExportRequest, capture };
+    const API = { providerFromUrl, profileId, inspectOwnership, parseGpxData, parseGpxText, garminExportRequest, capture };
     globalThis.BPBProviderPage = API;
     if (typeof module !== 'undefined' && module.exports) module.exports = API;
 })();
