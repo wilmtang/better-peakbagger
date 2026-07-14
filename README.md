@@ -291,7 +291,15 @@ This global priority matters: a winding section receives more of the fixed budge
 
 Ready jobs contain only the reduced GPX, public match evidence, calculated form values, any allowlisted trip name, the settings snapshot, selection state, and identifiers in `storage.session`, with a 30-minute expiry. Closing the popup does not cancel background work, and repeated clicks for the same activity reuse the in-flight or completed job only while the capture settings still match.
 
-Before tabs open, only the selected matches are grouped by ascent date. A date with multiple selected summits receives alphabetical Peakbagger suffixes (`a`, `b`, …) in ascending route distance, which is their track-encounter order; a date with one selected summit keeps its suffix blank. The suffix is stored on the private draft before matches are sorted by confidence, so confidence-ranked tab order cannot change ascent identity. When Trip Info filling is enabled, multiple selected summits also share one new trip named after the activity and receive 1-based sequence values in track order. Calendar-date span supplies New Trip Nights Out. For an overnight capture with one selected summit, the separate wilderness-night setting fills `Wilderness Nights out on Single Ascent Trip` instead, avoiding duplicated nights across multi-peak drafts.
+Before tabs open, only the selected matches are grouped by ascent date. A date with multiple selected summits receives alphabetical Peakbagger suffixes (`a`, `b`, …) in ascending route distance, which is their track-encounter order; a date with one selected summit keeps its suffix blank. The suffix is stored on the private draft before matches are sorted by confidence, so confidence-ranked tab order cannot change ascent identity. When Trip Info filling is enabled, multiple selected summits also share one new trip and receive 1-based sequence values in track order.
+
+The new trip name uses the first available source in this order:
+
+1. The first GPX track's direct `<name>` value.
+2. The activity page's main heading.
+3. The selected summit names in track order, joined with ` / `.
+
+Whitespace in GPX and activity-page names is normalized, and every result is limited to 200 characters. Calendar-date span supplies New Trip Nights Out. For an overnight capture with one selected summit, the separate wilderness-night setting fills `Wilderness Nights out on Single Ascent Trip` instead, avoiding duplicated nights across multi-peak drafts.
 
 Selected matches then open as inactive tabs in the **Peak Drafts** group. Each blank tab is assigned a private `{ jobId, tabId, pid, cid }` identity before navigation. On the ascent editor, `src/ascent-draft.js` sends a ready handshake; the background checks the sender tab plus `pid` and `cid` before returning any payload. The content script verifies the expected form and privacy-reduced GPX, fills both metric and imperial fields plus the assigned suffix and enabled trip fields, attaches the file, records a Preview-start acknowledgement, and clicks `GPXPreview` exactly once. Encounter time remains analysis metadata and is never written into Peakbagger's suffix field.
 
