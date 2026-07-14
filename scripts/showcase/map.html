@@ -17,8 +17,8 @@
     .basemap, svg { position: absolute; inset: 0; width: 100%; height: 100%; }
     .basemap { object-fit: cover; }
     .route-shadow, .route { fill: none; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
-    .route-shadow { stroke: rgba(255,255,255,.96); stroke-width: 9; }
-    .route { stroke: #d9483b; stroke-width: 5; }
+    .route-shadow { display: none; }
+    .route { stroke: #d9483b; stroke-width: 2; opacity: .75; }
 
     .leaflet-control {
       position: absolute;
@@ -95,9 +95,61 @@
     document.getElementById('route-shadow').setAttribute('points', projectedRoute);
     document.getElementById('route').setAttribute('points', projectedRoute);
 
-    const map = window.mapsPlaceholder = {};
+    const svg = document.querySelector('svg');
+    const map = window.mapsPlaceholder = {
+      _layers: [],
+      removeLayer(layer) {
+        this._layers = this._layers.filter(candidate => candidate !== layer);
+        if (layer && typeof layer._remove === 'function') layer._remove();
+        return this;
+      }
+    };
+
+    const svgPath = latLngs => {
+      const segments = Array.isArray(latLngs[0] && latLngs[0][0]) ? latLngs : [latLngs];
+      return segments.map(segment => segment.map((point, index) => {
+        const [x, y] = pointToPercent(point);
+        return `${index ? 'L' : 'M'}${(x * 10).toFixed(2)} ${(y * 10).toFixed(2)}`;
+      }).join(' ')).join(' ');
+    };
 
     window.L = {
+      polyline(latLngs, options) {
+        let element = null;
+        return {
+          _map: null,
+          addTo(targetMap) {
+            this._map = targetMap;
+            element = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+            element.setAttribute('d', svgPath(latLngs));
+            element.setAttribute('fill', 'none');
+            if (options.className) element.setAttribute('class', options.className);
+            svg.append(element);
+            targetMap._layers.push(this);
+            this.setStyle(options);
+            return this;
+          },
+          setStyle(style) {
+            element.setAttribute('stroke', style.color || '#d9483b');
+            element.setAttribute('stroke-width', String(style.weight || 3));
+            element.setAttribute('stroke-opacity', String(style.opacity == null ? 1 : style.opacity));
+            element.setAttribute('stroke-linecap', style.lineCap || 'round');
+            element.setAttribute('stroke-linejoin', style.lineJoin || 'round');
+            element.style.pointerEvents = style.interactive === false ? 'none' : '';
+            element.style.vectorEffect = 'non-scaling-stroke';
+            return this;
+          },
+          bringToBack() {
+            if (element) svg.insertBefore(element, svg.firstChild);
+            return this;
+          },
+          _remove() {
+            if (element) element.remove();
+            element = null;
+            this._map = null;
+          }
+        };
+      },
       circleMarker(latLng, options) {
         let markerElement = null;
         const marker = {

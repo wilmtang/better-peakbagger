@@ -25,6 +25,7 @@
     const GRADE_MAX_LOOKBACK_POINTS = 50;
     const MAX_REASONABLE_SPEED_MPS = 10;
     const PAUSE_RESET_SECONDS = 300;
+    const MAX_MAP_ROUTE_POINTS = 3000;
 
     const toRad = x => x * Math.PI / 180;
 
@@ -257,6 +258,69 @@
         };
     };
 
+    const sampleRouteSegment = (points, targetCount) => {
+        if (points.length <= targetCount) return points;
+        if (targetCount <= 2) return [points[0], points[points.length - 1]];
+
+        return Array.from({ length: targetCount }, (_, index) => {
+            const sourceIndex = Math.round(index * (points.length - 1) / (targetCount - 1));
+            return points[sourceIndex];
+        });
+    };
+
+    const limitMapRouteSegments = segments => {
+        const pointCount = segments.reduce((sum, segment) => sum + segment.length, 0);
+        if (pointCount <= MAX_MAP_ROUTE_POINTS) return segments;
+
+        // Every segment needs both endpoints or the overlay would either bridge
+        // a gap or silently truncate it. Pathological GPX with more than 1,500
+        // usable segments keeps Peakbagger's native route instead of drawing an
+        // incomplete enhancement.
+        if (segments.length * 2 > MAX_MAP_ROUTE_POINTS) return [];
+
+        const extraBudget = MAX_MAP_ROUTE_POINTS - segments.length * 2;
+        const totalExtraPoints = pointCount - segments.length * 2;
+        const targetCounts = segments.map(segment => {
+            const proportional = Math.floor(extraBudget * (segment.length - 2) / totalExtraPoints);
+            return Math.min(segment.length, 2 + proportional);
+        });
+
+        let remaining = MAX_MAP_ROUTE_POINTS - targetCounts.reduce((sum, count) => sum + count, 0);
+        for (let index = 0; remaining > 0; index = (index + 1) % segments.length) {
+            if (targetCounts[index] >= segments[index].length) continue;
+            targetCounts[index]++;
+            remaining--;
+        }
+
+        return segments.map((segment, index) => sampleRouteSegment(segment, targetCounts[index]));
+    };
+
+    const parseMapRouteSegments = xml => {
+        const segments = [];
+
+        Array.from(xml.querySelectorAll('trkseg')).forEach(segmentNode => {
+            let current = [];
+
+            Array.from(segmentNode.children).forEach(node => {
+                if (node.localName !== 'trkpt') return;
+                const lat = parseFloat(node.getAttribute('lat'));
+                const lon = parseFloat(node.getAttribute('lon'));
+
+                if (Number.isFinite(lat) && Number.isFinite(lon)) {
+                    current.push([lat, lon]);
+                    return;
+                }
+
+                if (current.length >= 2) segments.push(current);
+                current = [];
+            });
+
+            if (current.length >= 2) segments.push(current);
+        });
+
+        return limitMapRouteSegments(segments);
+    };
+
     // === Better Peakbagger: theming + centralized settings (via bridge) ===
     const PALETTES = {
         light: {
@@ -418,7 +482,115 @@
         let totalMs = 0, hasTime = false;
         let startMs = 0, endMs = 0, summitMs = 0;
         let campingSpots = [];
+        let mapRouteSegments = [];
         let hoverMarker = null;
+        let routeOverlay = null;
+        let boundMapIframe = null;
+        let mapRetryTimer = null;
+
+        const findMapIframe = () => document.querySelector('iframe[src*="MasterMap.aspx"], iframe[src*="mastermap.aspx"]');
+
+        const removeOverlayLayers = (map, layers) => {
+            layers.forEach(layer => {
+                try {
+                    if (map && typeof map.removeLayer === 'function') map.removeLayer(layer);
+                    else if (layer && typeof layer.remove === 'function') layer.remove();
+                } catch (e) { /* Peakbagger may already have discarded the old map. */ }
+            });
+        };
+
+        const removeRouteOverlay = () => {
+            if (!routeOverlay) return;
+            removeOverlayLayers(routeOverlay.map, routeOverlay.layers);
+            routeOverlay = null;
+        };
+
+        const ensureRouteOverlay = () => {
+            if (!mapRouteSegments.length) return false;
+
+            try {
+                const iframe = findMapIframe();
+                const iframeWin = iframe ? iframe.contentWindow : null;
+                const map = iframeWin && iframeWin.mapsPlaceholder;
+                const L = iframeWin && iframeWin.L;
+                if (!map || !L || typeof L.polyline !== 'function') return false;
+
+                if (routeOverlay && routeOverlay.map === map && routeOverlay.layers.every(layer => layer && layer._map === map)) {
+                    return true;
+                }
+
+                removeRouteOverlay();
+                const layers = [];
+
+                try {
+                    const routeGeometry = mapRouteSegments.length === 1 ? mapRouteSegments[0] : mapRouteSegments;
+                    const outline = L.polyline(routeGeometry, {
+                        color: '#ffffff',
+                        weight: 9,
+                        opacity: 0.92,
+                        interactive: false,
+                        lineCap: 'round',
+                        lineJoin: 'round',
+                        className: 'bpb-route-outline'
+                    }).addTo(map);
+                    layers.push(outline);
+                    const route = L.polyline(routeGeometry, {
+                        color: '#d9483b',
+                        weight: 5,
+                        opacity: 1,
+                        interactive: false,
+                        lineCap: 'round',
+                        lineJoin: 'round',
+                        className: 'bpb-route-highlight'
+                    }).addTo(map);
+                    layers.push(route);
+
+                    // Keep native markers and Peakbagger's own thin route on
+                    // top. Calling these in reverse order preserves the white
+                    // casing beneath the red line in Leaflet's shared path pane.
+                    if (typeof route.bringToBack === 'function') route.bringToBack();
+                    if (typeof outline.bringToBack === 'function') outline.bringToBack();
+                } catch (e) {
+                    removeOverlayLayers(map, layers);
+                    return false;
+                }
+
+                routeOverlay = { map, layers };
+                return true;
+            } catch (e) {
+                // Same-origin access and Leaflet globals are Peakbagger-owned.
+                // If either changes, retain the native map without disruption.
+                return false;
+            }
+        };
+
+        const handleMapIframeLoad = () => {
+            hoverMarker = null;
+            removeRouteOverlay();
+            scheduleRouteOverlay();
+        };
+
+        const scheduleRouteOverlay = () => {
+            if (!mapRouteSegments.length) return;
+
+            const iframe = findMapIframe();
+            if (iframe && iframe !== boundMapIframe) {
+                if (boundMapIframe) boundMapIframe.removeEventListener('load', handleMapIframeLoad);
+                boundMapIframe = iframe;
+                boundMapIframe.addEventListener('load', handleMapIframeLoad);
+            }
+
+            if (ensureRouteOverlay() || mapRetryTimer) return;
+
+            let attempts = 0;
+            mapRetryTimer = setInterval(() => {
+                attempts++;
+                if (ensureRouteOverlay() || attempts >= 20) {
+                    clearInterval(mapRetryTimer);
+                    mapRetryTimer = null;
+                }
+            }, 250);
+        };
 
         // 4. Chart & UI Renderer Engine
         const renderData = () => {
@@ -536,6 +708,7 @@
                         const iframeWin = mapIframe ? mapIframe.contentWindow : null;
 
                         if (activeElements.length > 0 && iframeWin && iframeWin.mapsPlaceholder && iframeWin.L) {
+                            ensureRouteOverlay();
                             const datasetIndex = activeElements[0].datasetIndex;
                             const idx = activeElements[0].index;
                             const dataArray = datasetIndex === 0 ? eleDistData : eleTimeData;
@@ -680,6 +853,8 @@
             const trkpts = Array.from(xml.querySelectorAll('trkpt'));
             if (!trkpts.length) return stats.innerText = "No track points found.";
 
+            mapRouteSegments = parseMapRouteSegments(xml);
+
             const parsedPoints = trkpts.map(pt => {
                 const eleNode = pt.querySelector('ele');
                 const timeNode = pt.querySelector('time');
@@ -718,6 +893,7 @@
             }
 
             renderData();
+            scheduleRouteOverlay();
 
         } catch (e) {
             stats.innerText = "Error parsing GPX file.";

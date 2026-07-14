@@ -378,7 +378,7 @@ Peakbagger renders that map inside an `<iframe src="…/MasterMap.aspx">`. Insid
 - `mapsPlaceholder` — the Leaflet map instance.
 - `L` — the Leaflet library itself.
 
-The injection works in three steps, inside Chart.js's `onHover` callback:
+The map integration works in three parts:
 
 1. **Iframe interception.** Find the map iframe and grab its `contentWindow`:
    ```js
@@ -387,17 +387,19 @@ The injection works in three steps, inside Chart.js's `onHover` callback:
    ```
    This only works because the analyzer runs in the **MAIN world**. An isolated content script can reach a same-origin iframe's *DOM*, but **not** the JavaScript globals (`mapsPlaceholder`, `L`) the iframe's own scripts defined — those live in that frame's page realm. Reading them requires being in the page realm ourselves. *This is the concrete reason the analyzer is a MAIN-world script.* (The iframe is same-origin — both are `peakbagger.com` — so the cross-frame property access is permitted; a cross-origin iframe would throw.)
 
-2. **Leaflet hooking.** The hovered chart point carries the original `{ lat, lon }` (stashed on each datum as `_raw`). Using the iframe's `L` and map instance, the analyzer creates or moves a high-visibility `L.circleMarker` on the real map — red when hovering the distance line, blue for the time line:
+2. **Leaflet hooking.** Once the GPX and map are ready, the analyzer draws a non-interactive high-contrast route beneath Peakbagger's native markers: a 5 px red line over a 9 px white casing. It does not guess at or mutate Peakbagger's own route layer. Original GPX segment breaks are preserved, rendering is capped at 3,000 sampled points with every segment endpoint retained, and pathological tracks that cannot fit without dropping a segment fail closed to the native route.
+
+   The hovered chart point carries the original `{ lat, lon }` (stashed on each datum as `_raw`). Using the iframe's `L` and map instance, the analyzer also creates or moves a high-visibility `L.circleMarker` on the real map — red when hovering the distance line, blue for the time line:
    ```js
    const L = iframeWin.L, map = iframeWin.mapsPlaceholder;
    hoverMarker = L.circleMarker([d.lat, d.lon], { radius: 9, color: '#fff', fillColor, weight: 2, fillOpacity: 1 }).addTo(map);
    // subsequent hovers just: hoverMarker.setLatLng([d.lat, d.lon])
    ```
-   The marker is recreated if it no longer belongs to the current map instance (the iframe can reload underneath us).
+   The route casing and marker are recreated if they no longer belong to the current map instance (the iframe can reload underneath us).
 
 3. **Real-time sync.** `onHover` fires continuously, so `setLatLng` moves the dot in lockstep with the cursor. When the cursor leaves the 40 px hit halo, `activeElements` is empty and the marker is faded to `opacity: 0`.
 
-**Why it's fragile, and how it fails.** `mapsPlaceholder` and `L` are undocumented Peakbagger internals. If Peakbagger renames them, restructures the iframe, or changes origin, the guard `iframeWin && iframeWin.mapsPlaceholder && iframeWin.L` simply goes false and the marker is skipped. **The failure is closed**: the chart, tooltips, and every other feature keep working; you just lose the moving dot. No exception, no console spam. That's the intended contract for a feature built on someone else's private globals.
+**Why it's fragile, and how it fails.** `mapsPlaceholder` and `L` are undocumented Peakbagger internals. If Peakbagger renames them, restructures the iframe, changes origin, or removes the standard `L.polyline` API, the guards simply leave the native route alone and skip the affected enhancement. **The failure is closed**: the chart, tooltips, and every other feature keep working; you may lose the thicker route, the moving dot, or both. No exception, no console spam. That's the intended contract for a feature built on someone else's private globals.
 
 ---
 
