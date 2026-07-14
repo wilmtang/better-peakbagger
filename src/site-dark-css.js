@@ -145,5 +145,11 @@ html[data-bpb-theme="dark"] .pbaf-reset { color: #a29c92 !important; }
 html[data-bpb-theme="dark"] .pbaf-reset:hover { color: #8fdcae !important; }
 html[data-bpb-theme="dark"] .pbaf-note { color: #b6b0a6 !important; }
 html[data-bpb-theme="dark"] .pbaf-note a { color: #8fdcae !important; }
+html[data-bpb-theme="dark"] button.pbaf-date-sort {
+    background: transparent !important;
+    border: 0 !important;
+    color: #7ab6ff !important;
+}
+html[data-bpb-theme="dark"] button.pbaf-date-sort:hover { color: #9ecbff !important; }
 `;
 })();

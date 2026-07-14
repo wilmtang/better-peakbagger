@@ -1,7 +1,7 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
-// Test helper: load a PeakAscents fixture into jsdom, stub chrome.storage,
+// Test helper: load an ascent-list fixture into jsdom, stub chrome.storage,
 // and eval the extension's isolated-world content scripts against it.
 
 import { readFile } from 'node:fs/promises';
@@ -11,6 +11,7 @@ import { JSDOM } from 'jsdom';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 export const FIXTURES = path.join(root, 'test', 'fixtures', 'peakascents');
+export const PAGE_FIXTURES = path.join(root, 'test', 'fixtures', 'pages');
 
 // Minimal in-memory chrome.storage.sync + onChanged, enough for settings.js.
 export const makeChromeStub = (initial = {}) => {
@@ -46,8 +47,13 @@ export const waitFor = async (dom, predicate, ms = 5000) => {
     }
 };
 
-export const loadPage = async (fixture, { url, settings = {}, scripts = ['src/settings.js', 'src/ascent-filter.js'] } = {}) => {
-    const html = await readFile(path.join(FIXTURES, fixture), 'utf8');
+export const loadPage = async (fixture, {
+    url,
+    settings = {},
+    scripts = ['src/settings.js', 'src/ascent-filter.js'],
+    fixtures = FIXTURES
+} = {}) => {
+    const html = await readFile(path.join(fixtures, fixture), 'utf8');
     const dom = new JSDOM(html, { url, runScripts: 'outside-only' });
     dom.chrome = makeChromeStub({ bpbSettings: settings });
     dom.window.chrome = dom.chrome;

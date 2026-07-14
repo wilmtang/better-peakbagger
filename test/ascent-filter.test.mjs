@@ -6,7 +6,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { loadPageWithBar } from './helpers/load-page.mjs';
+import { loadPage, loadPageWithBar, PAGE_FIXTURES, waitFor } from './helpers/load-page.mjs';
 
 const RAINIER = '2296-rainier-y9999-sort-ascentdate.html';
 const RAINIER_URL = 'https://www.peakbagger.com/climber/PeakAscents.aspx?pid=2296&sort=AscentDate&u=ft&y=9999';
@@ -114,65 +114,69 @@ test('beta definition changes apply live via storage.onChanged', async () => {
     assert.equal(visibleRows(dom).length, 238);
 });
 
-const dateAnchor = (dom, key) =>
-    [...dom.window.document.querySelectorAll('table.gray th a')].find(a =>
-        (new dom.window.URL(a.href)).searchParams.get('sort')?.toLowerCase() === key);
 const dateTexts = dom => dataRows(dom).map(r => r.cells[1].textContent.trim());
 const sectionLabels = dom => sectionRows(dom).map(r => r.textContent.trim());
 const arrow = dom => dom.window.document.querySelector('.pbaf-sort-arrow');
+const sortControl = dom => dom.window.document.querySelector('.pbaf-date-sort');
 
-test('[sort desc] toggles instantly: rows reversed, URL rewritten, no navigation', async () => {
+test('the date header is one persistent toggle with no backend links', async () => {
     const dom = await loadPageWithBar(RAINIER, { url: RAINIER_URL });
 
     assert.equal(arrow(dom).textContent.trim(), '▲');
+    assert.equal(sortControl(dom).textContent.trim(), 'Ascent Date ▲');
+    assert.equal(sortControl(dom).tagName, 'BUTTON');
+    assert.equal(sortControl(dom).type, 'button');
+    assert.equal(sortControl(dom).closest('th').getAttribute('aria-sort'), 'ascending');
+    assert.equal(sortControl(dom).closest('th').querySelectorAll('a[href]').length, 0);
     const before = dateTexts(dom);
     const labelsBefore = sectionLabels(dom);
 
-    dateAnchor(dom, 'ascentdated').click();
+    sortControl(dom).click();
 
-    assert.equal(dom.window.location.href, dateAnchor(dom, 'ascentdated').href);
     assert.equal(arrow(dom).textContent.trim(), '▼');
+    assert.equal(sortControl(dom).closest('th').getAttribute('aria-sort'), 'descending');
+    assert.match(dom.window.location.search, /sort=ascentdated(&|$)/i);
     assert.deepEqual(dateTexts(dom), before.slice().reverse());
     assert.deepEqual(sectionLabels(dom), labelsBefore.slice().reverse());
     // The active filter survives the reorder untouched.
     assert.equal(visibleRows(dom).length, 1339);
-    assert.equal(dateAnchor(dom, 'ascentdated').getAttribute('aria-current'), 'true');
 
-    // Toggle back restores the served order exactly.
-    dateAnchor(dom, 'ascentdate').click();
+    // Clicking the same control restores the served order exactly.
+    sortControl(dom).click();
     assert.deepEqual(dateTexts(dom), before);
     assert.equal(arrow(dom).textContent.trim(), '▲');
     assert.ok(dom.window.location.search.match(/sort=ascentdate(&|$)/i));
 });
 
-test('capture guard intercepts header sort links but lets row-set-changing date links navigate', async () => {
+test('capture guard intercepts native header sort links but lets year links navigate', async () => {
     const dom = await loadPageWithBar(RAINIER, { url: RAINIER_URL });
     const { document, MouseEvent } = dom.window;
 
-    // The header's own "[sort desc]" link keeps the current row set -> the guard
-    // intercepts it (prevents the full-page reload; answers in the DOM instead).
-    const header = dateAnchor(dom, 'ascentdated');
+    // Recreate the native header link that exists before initialization replaces
+    // the pair. The document-start guard must prevent its navigation and route
+    // the requested direction through the now-ready DOM sorter.
+    const nativeHeader = document.createElement('th');
+    nativeHeader.innerHTML = '<a href="?pid=2296&sort=ascentdated&u=ft&y=9998">Ascent Date</a>';
+    document.body.appendChild(nativeHeader);
+    const header = nativeHeader.querySelector('a');
     const headerEvent = new MouseEvent('click', { bubbles: true, cancelable: true });
     header.dispatchEvent(headerEvent);
     assert.equal(headerEvent.defaultPrevented, true);
+    assert.equal(arrow(dom).textContent.trim(), '▼');
 
-    // A year-jump-style link carries the same sort key but a different y= — a
-    // different row set only the server can produce — so it must navigate.
+    // A year-jump-style link is outside a th, so the guard must leave it alone.
     const jump = document.createElement('a');
     jump.href = 'PeakAscents.aspx?pid=2296&sort=ascentdate&u=ft&y=1999';
     jump.textContent = '1999';
     document.body.appendChild(jump);
+    let preventedByGuard = null;
+    jump.addEventListener('click', event => {
+        preventedByGuard = event.defaultPrevented;
+        event.preventDefault(); // Keep jsdom from attempting a real navigation.
+    });
     const jumpEvent = new MouseEvent('click', { bubbles: true, cancelable: true });
     jump.dispatchEvent(jumpEvent);
-    assert.equal(jumpEvent.defaultPrevented, false);
-});
-
-test('clicking the already-active direction is a no-op (no reload)', async () => {
-    const dom = await loadPageWithBar(RAINIER, { url: RAINIER_URL });
-    const before = dateTexts(dom);
-    dateAnchor(dom, 'ascentdate').click();
-    assert.deepEqual(dateTexts(dom), before);
-    assert.equal(dom.window.location.href, RAINIER_URL);
+    assert.equal(preventedByGuard, false);
 });
 
 test('a desc-served page starts with the ▼ indicator and reverses to asc', async () => {
@@ -181,7 +185,7 @@ test('a desc-served page starts with the ▼ indicator and reverses to asc', asy
     });
     assert.equal(arrow(dom).textContent.trim(), '▼');
     const before = dateTexts(dom);
-    dateAnchor(dom, 'ascentdate').click();
+    sortControl(dom).click();
     assert.deepEqual(dateTexts(dom), before.slice().reverse());
     assert.equal(arrow(dom).textContent.trim(), '▲');
 });
@@ -193,12 +197,54 @@ test('non-date sorts are not hijacked', async () => {
     assert.equal(arrow(dom), null);
 });
 
-test('views whose sort links change the row set are not hijacked', async () => {
-    // Default "Most Recent Year" view: page URL has no y=, links carry y=9998.
+test('default views sort their current rows without adopting backend-link params', async () => {
+    // The native links add y=9998, but the current table is already a complete
+    // sortable row set. Reordering it must preserve the default-view URL.
     const dom = await loadPageWithBar('2296-rainier-default-recent-year.html', {
         url: 'https://www.peakbagger.com/climber/PeakAscents.aspx?pid=2296'
     });
-    assert.equal(arrow(dom), null);
+    const before = dateTexts(dom);
+    sortControl(dom).click();
+    assert.deepEqual(dateTexts(dom), before.slice().reverse());
+    assert.equal(new dom.window.URL(dom.window.location.href).searchParams.get('y'), null);
+    assert.equal(new dom.window.URL(dom.window.location.href).searchParams.get('sort'), 'ascentdated');
+});
+
+test('personal ClimbListC pages get only the persistent client-side date toggle', async () => {
+    const dom = await loadPage('climber-ascents.html', {
+        fixtures: PAGE_FIXTURES,
+        url: 'https://www.peakbagger.com/climber/ClimbListC.aspx?cid=40786'
+    });
+    await waitFor(dom, () => sortControl(dom));
+
+    assert.equal(bar(dom), null);
+    assert.equal(sortControl(dom).textContent.trim(), 'Ascent Date ▲');
+    assert.equal(sortControl(dom).tabIndex, 0);
+    const before = dateTexts(dom);
+    sortControl(dom).dispatchEvent(new dom.window.KeyboardEvent('keydown', {
+        key: ' ', bubbles: true, cancelable: true
+    }));
+    assert.deepEqual(dateTexts(dom), before.slice().reverse());
+    const url = new dom.window.URL(dom.window.location.href);
+    assert.equal(url.searchParams.get('cid'), '40786');
+    assert.equal(url.searchParams.get('y'), null);
+    assert.equal(url.searchParams.get('sort'), 'ascentdated');
+});
+
+test('personal all-years date URLs toggle in place', async () => {
+    const dom = await loadPage('climber-ascents.html', {
+        fixtures: PAGE_FIXTURES,
+        url: 'https://www.peakbagger.com/climber/ClimbListC.aspx?cid=40786&sort=AscentDate&u=ft&j=-1&y=9999'
+    });
+    await waitFor(dom, () => sortControl(dom));
+
+    const before = dateTexts(dom);
+    sortControl(dom).click();
+    assert.deepEqual(dateTexts(dom), before.slice().reverse());
+    const url = new dom.window.URL(dom.window.location.href);
+    assert.equal(url.searchParams.get('y'), '9999');
+    assert.equal(url.searchParams.get('j'), '-1');
+    assert.equal(url.searchParams.get('sort'), 'ascentdated');
 });
 
 test('renders on a non-date sort (flat table, no year sections)', async () => {

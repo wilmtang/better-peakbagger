@@ -1,10 +1,10 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
-// Better Peakbagger — Ascent Beta Filter content script.
-// Runs in the default isolated content-script world: it only reads the ascent
-// table in the page DOM and persists chip preferences in the page's
-// (same-origin) localStorage, so no page-global access is needed.
+// Better Peakbagger — ascent-list filter and instant date-sort content script.
+// Runs in the default isolated content-script world: it only reads ascent-table
+// DOM, reorders existing rows, and persists PeakAscents chip preferences in the
+// page's (same-origin) localStorage, so no page-global access is needed.
 
 (() => {
     'use strict';
@@ -32,18 +32,6 @@
     // Cells that "look empty" may contain a literal &nbsp; depending on column.
     const normalize = text => (text || '').replace(/\u00a0/g, ' ').trim();
 
-    // Ignoring `sort`, do two URLs request the same set of rows? Year-jump and
-    // unit-toggle links change y=/u=, so they don't — only the header's own two
-    // date-sort links keep the current row set. Used both to spot those header
-    // links and to gate the instant sorter.
-    const rowSetKey = search => {
-        const params = new URLSearchParams(search);
-        params.delete('sort');
-        return Array.from(params.entries())
-            .map(([key, value]) => key.toLowerCase() + '=' + value.toLowerCase())
-            .sort().join('&');
-    };
-
     // --- Early date-sort click guard ------------------------------------------
     // The instant date sort (below) only wires up once the DOM is parsed and the
     // filter has initialized. On a big ascent list the header renders and is
@@ -53,31 +41,31 @@
     // synchronously at document_start and holds those clicks until the sorter has
     // decided: it replays the last one instantly once ready, navigates it if the
     // page turns out not to be a candidate, and passes every other click through.
-    // It targets only same-row-set date-sort links (the header pair), so the
-    // year-jump / metric-toggle links that also carry sort=ascentdate navigate
-    // untouched.
-    const dateSortHref = target => {
+    // It targets only date-sort links inside a table header, so year-jump and
+    // unit-toggle links that carry the same sort key navigate untouched.
+    const dateSortTarget = target => {
         const anchor = target && target.closest ? target.closest('a[href]') : null;
         if (!anchor) return null;
+        const header = anchor.closest('th');
+        if (!header || !normalize(header.textContent).toLowerCase().startsWith('ascent date')) return null;
         let url;
         try { url = new URL(anchor.href, location.href); } catch (e) { return null; }
         const sort = (url.searchParams.get('sort') || '').toLowerCase();
         if (sort !== 'ascentdate' && sort !== 'ascentdated') return null;
-        if (rowSetKey(url.search) !== rowSetKey(location.search)) return null;
-        return anchor.href;
+        return { href: anchor.href, dir: sort === 'ascentdated' ? 'desc' : 'asc' };
     };
 
     let sortReady = false;      // instant sorter is wired and owns these clicks
     let sortOptOut = false;     // page isn't a candidate: let clicks navigate
-    let pendingSortHref = null; // a click held before the sorter decided
-    let applyInstantSort = null;// (href) => reorder in the DOM, set once ready
+    let pendingSortTarget = null;// a click held before the sorter decided
+    let applyInstantSort = null;// (direction) => reorder in the DOM, set once ready
 
     document.addEventListener('click', event => {
-        const href = dateSortHref(event.target);
-        if (!href || sortOptOut) return;   // not ours, or navigation is allowed
+        const target = dateSortTarget(event.target);
+        if (!target || sortOptOut) return; // not ours, or navigation is allowed
         event.preventDefault();
-        if (sortReady) applyInstantSort(href);
-        else pendingSortHref = href;       // hold until the sorter decides
+        if (sortReady) applyInstantSort(target.dir);
+        else pendingSortTarget = target;   // hold until the sorter decides
     }, true);
 
     // Called on any path that will NOT run the instant sorter, so a held click
@@ -86,29 +74,28 @@
     const optOutInstantSort = () => {
         if (sortOptOut || sortReady) return;
         sortOptOut = true;
-        if (pendingSortHref) {
-            const href = pendingSortHref;
-            pendingSortHref = null;
+        if (pendingSortTarget) {
+            const { href } = pendingSortTarget;
+            pendingSortTarget = null;
             try { location.href = href; } catch (e) { /* sandboxed */ }
         }
     };
 
     // --- Instant Ascent Date sort ---------------------------------------------
-    // The date header always carries two backend sort links:
+    // The native date header carries two backend sort links:
     //   "Ascent Date" -> sort=ascentdate  (oldest first)
     //   "[sort desc]" -> sort=ascentdated (newest first)
-    // When the table is already date-sorted, the opposite direction is exactly
-    // the served order reversed (sections reversed, rows within each section
-    // reversed), so both links can be answered instantly in the DOM with no date
-    // parsing — which matters because date cells include "Unknown", partial and
-    // malformed values whose backend ordering is opaque. Anything else (non-date
-    // sorts, or views whose links change the row set, e.g. the default "Most
-    // Recent Year" page linking to y=9998) opts out to normal navigation.
+    // Replace that pair with one persistent toggle. When the table is already
+    // date-sorted, the opposite direction is exactly the served order reversed
+    // (sections reversed, rows within each section reversed), so the toggle can
+    // answer instantly in the DOM with no date parsing — which matters because
+    // date cells include "Unknown", partial and malformed values whose backend
+    // ordering is opaque. Default views are date-ascending even when `sort` is
+    // omitted; explicit non-date sorts still opt out to normal navigation.
     //
     // Runs synchronously, before init's awaited settings read, so the click guard
     // above is released — and any held click replayed — without waiting on the
-    // chrome.storage round-trip. Both directions stay live links: the active one
-    // is marked (arrow + bold) but never disabled, so either is one click away.
+    // chrome.storage round-trip.
     const setupInstantDateSort = ({ headerTexts, headerRow, sections, preamble, rows }) => {
         const dateIndex = headerTexts.findIndex(text => text.startsWith('ascent date'));
         if (dateIndex === -1) return optOutInstantSort();
@@ -126,14 +113,6 @@
 
         const urlSort = (new URLSearchParams(location.search).get('sort') || 'ascentdate').toLowerCase();
         if (urlSort !== 'ascentdate' && urlSort !== 'ascentdated') return optOutInstantSort();
-
-        // The links' non-sort params must match the page's — otherwise following
-        // them changes which rows are shown, and only the backend can answer that.
-        try {
-            if (rowSetKey(new URL(links.asc.href, location.href).search) !== rowSetKey(location.search)) {
-                return optOutInstantSort();
-            }
-        } catch (e) { return optOutInstantSort(); }
 
         // Served direction: trust the year separators over the URL.
         const years = sections
@@ -153,22 +132,23 @@
         }
         for (let i = preamble.length - 1; i >= 0; i--) reversedOrder.push(preamble[i].row);
 
+        const control = document.createElement('button');
+        control.type = 'button';
+        control.className = 'pbaf-date-sort';
+        control.append('Ascent Date');
         const arrow = document.createElement('span');
         arrow.className = 'pbaf-sort-arrow';
-        links.asc.after(arrow);
+        control.append(arrow);
+        headerRow.cells[dateIndex].replaceChildren(control);
 
         let currentDir = servedDir;
         const paint = () => {
             arrow.textContent = currentDir === 'asc' ? ' ▲' : ' ▼';
-            for (const [dir, link] of Object.entries(links)) {
-                const active = dir === currentDir;
-                link.classList.toggle('pbaf-sort-active', active);
-                if (active) link.setAttribute('aria-current', 'true');
-                else link.removeAttribute('aria-current');
-                link.title = active
-                    ? (dir === 'asc' ? 'Sorted oldest first' : 'Sorted newest first')
-                    : (dir === 'asc' ? 'Sort oldest first (instant)' : 'Sort newest first (instant)');
-            }
+            const current = currentDir === 'asc' ? 'oldest first' : 'newest first';
+            const next = currentDir === 'asc' ? 'newest first' : 'oldest first';
+            control.title = `Sorted ${current}. Click to sort ${next}.`;
+            control.setAttribute('aria-label', `Ascent Date, sorted ${current}. Sort ${next}.`);
+            headerRow.cells[dateIndex].setAttribute('aria-sort', currentDir === 'asc' ? 'ascending' : 'descending');
         };
 
         const applyDir = dir => {
@@ -178,25 +158,32 @@
             headerRow.parentNode.appendChild(fragment);
             currentDir = dir;
             paint();
-            // The link's own href is exactly the backend request for this view,
-            // so reload/share/back-forward reproduce it server-side.
-            try { history.replaceState(history.state, '', links[dir].href); } catch (e) { /* sandboxed */ }
+            // Preserve the current row-set URL. Native header links often add or
+            // change y=/j=/u= defaults; copying one would make reload/share show
+            // a different list than the rows the user just sorted.
+            try {
+                const url = new URL(location.href);
+                url.searchParams.set('sort', dir === 'asc' ? 'ascentdate' : 'ascentdated');
+                history.replaceState(history.state, '', url.href);
+            } catch (e) { /* sandboxed */ }
         };
 
-        // The document-level guard owns these clicks (it caught them before we
-        // were ready). Route them here by direction now that we can answer.
-        applyInstantSort = href => {
-            const key = (() => {
-                try { return (new URL(href, location.href).searchParams.get('sort') || '').toLowerCase(); }
-                catch (e) { return ''; }
-            })();
-            applyDir(key === 'ascentdated' ? 'desc' : 'asc');
-        };
+        const toggle = () => applyDir(currentDir === 'asc' ? 'desc' : 'asc');
+        control.addEventListener('click', toggle);
+        control.addEventListener('keydown', event => {
+            if (event.key !== 'Enter' && event.key !== ' ') return;
+            event.preventDefault();
+            toggle();
+        });
+
+        // The document-level guard owns clicks caught before the native links
+        // were replaced. Route them here now that the DOM sorter is ready.
+        applyInstantSort = applyDir;
         sortReady = true;
-        if (pendingSortHref) {
-            const href = pendingSortHref;
-            pendingSortHref = null;
-            applyInstantSort(href);
+        if (pendingSortTarget) {
+            const { dir } = pendingSortTarget;
+            pendingSortTarget = null;
+            applyInstantSort(dir);
         }
         paint();
     };
@@ -233,11 +220,10 @@
 .pbaf-reset[hidden] { display: none; }
 .pbaf-note { color: #55554f; }
 .pbaf-note a { color: #2f6b3f; font-weight: 600; }
+.pbaf-date-sort { appearance: none; border: 0; padding: 0; background: transparent; color: navy;
+    font: inherit; font-weight: inherit; cursor: pointer; text-decoration: underline; text-underline-offset: 1px; }
+.pbaf-date-sort:focus-visible { outline: 2px solid #2f6b3f; outline-offset: 2px; }
 .pbaf-sort-arrow { font-size: 10px; opacity: .85; }
-/* Mark the active direction without disabling it: both links stay clickable
-   (pointer cursor, live link styling) so either direction is always one click
-   away — the active one just reads as current. */
-th a.pbaf-sort-active { font-weight: 700; }
 `;
 
     const injectStyle = () => {
@@ -303,11 +289,6 @@ th a.pbaf-sort-active { font-weight: 700; }
 
         injectStyle();
 
-        if (columns.tr === null && columns.gps === null && columns.link === null) {
-            renderCompactNotice(table);
-            return optOutInstantSort();
-        }
-
         const dataRows = [];
         const sections = [];
         const preamble = []; // data rows before the first year separator
@@ -346,6 +327,15 @@ th a.pbaf-sort-active { font-weight: 700; }
         // settings read below — so the click guard is released (and any held
         // click replayed) as early as possible, not after the storage round-trip.
         setupInstantDateSort({ headerTexts, headerRow, sections, preamble, rows });
+
+        // Personal ClimbListC pages share the ascent-table structure and date
+        // header, but the beta-filter feature belongs only to PeakAscents.
+        if (!/\/peakascents\.aspx$/i.test(location.pathname)) return;
+
+        if (columns.tr === null && columns.gps === null && columns.link === null) {
+            renderCompactNotice(table);
+            return;
+        }
 
         const total = dataRows.length;
         const counts = {

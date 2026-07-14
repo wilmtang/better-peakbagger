@@ -103,6 +103,7 @@ const PAIRS = [
     ['filter reset',         fg('.pbaf-reset'),                             bg('#pbaf-bar'),                               NORMAL],
     ['filter note',          fg('.pbaf-note'),                              bg('#pbaf-bar'),                               NORMAL],
     ['filter note link',     fg('.pbaf-note a'),                            bg('#pbaf-bar'),                               NORMAL],
+    ['date sort control',    fg('button.pbaf-date-sort'),                   bg('table.gray'),                              NORMAL],
 ];
 
 test('every dark-theme text/background pair meets WCAG AA', () => {
@@ -223,7 +224,10 @@ test('contrast pairs are grounded in real fixtures', async () => {
     // `.pbaf-note` is omitted here: it renders only on the condensed
     // "Most Recent Year" view (ascent-filter's compact-notice branch), which no
     // current capture exercises — its colors are still contrast-checked above.
-    for (const sel of ['#pbaf-bar', '.pbaf-chip', '.pbaf-label', '.pbaf-count', '.pbaf-status', '.pbaf-reset']) {
+    for (const sel of [
+        '#pbaf-bar', '.pbaf-chip', '.pbaf-label', '.pbaf-count', '.pbaf-status', '.pbaf-reset',
+        '.pbaf-date-sort'
+    ]) {
         assert.ok(matches(peak, sel), `filter bar element missing from fixture: "${sel}"`);
     }
 });

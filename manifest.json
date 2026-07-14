@@ -95,8 +95,12 @@
       "matches": [
         "*://www.peakbagger.com/climber/PeakAscents.aspx*",
         "*://www.peakbagger.com/climber/peakascents.aspx*",
+        "*://www.peakbagger.com/climber/ClimbListC.aspx*",
+        "*://www.peakbagger.com/climber/climblistc.aspx*",
         "*://peakbagger.com/climber/PeakAscents.aspx*",
-        "*://peakbagger.com/climber/peakascents.aspx*"
+        "*://peakbagger.com/climber/peakascents.aspx*",
+        "*://peakbagger.com/climber/ClimbListC.aspx*",
+        "*://peakbagger.com/climber/climblistc.aspx*"
       ],
       "js": [
         "src/settings.js",
