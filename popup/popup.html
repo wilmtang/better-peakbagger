@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Peakbagger Drafts</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <main>
+    <header class="brand">
+      <img src="../icons/icon-32.png" width="28" height="28" alt="">
+      <div>
+        <h1>Peakbagger Drafts</h1>
+        <p id="provider-label">Capture this activity</p>
+      </div>
+    </header>
+
+    <section id="state" aria-live="polite"></section>
+    <section id="results" hidden>
+      <div id="track-summary" class="summary"></div>
+      <div class="result-heading">
+        <h2>Detected peaks</h2>
+        <span id="selection-count"></span>
+      </div>
+      <div id="peak-list" class="peak-list"></div>
+      <p class="privacy-note">Peak lookup sends small track-corridor boxes to Peakbagger. Opening drafts sends only the reduced latitude/longitude track to Preview. Save is always manual.</p>
+      <button id="open-drafts" class="primary" type="button"></button>
+    </section>
+  </main>
+  <script src="popup.js"></script>
+</body>
+</html>

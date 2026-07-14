@@ -2,13 +2,14 @@
 
 A browser extension that makes [Peakbagger](https://www.peakbagger.com/) better for trip planning. It works on **Chrome** and **Firefox** (Manifest V3) and needs no userscript manager.
 
-Three things:
+Four things:
 
-1. **GPX Analyzer** — on an ascent page with a GPS track, injects a rich interactive elevation chart (by distance *and* time), adjusted route metrics, timing/camping stats, and a marker that follows your cursor on Peakbagger's own map.
-2. **Ascent Beta Filter** — on a peak's "Ascents of a Peak" list, adds a sticky, stackable filter bar so you can narrow hundreds of logged ascents down to the ones with a trip report, GPS track, or link. What "has beta" means is configurable, and the Ascent Date sort links flip instantly in the DOM instead of round-tripping to the server.
-3. **Dark mode + centralized settings** — a site-wide dark theme and an options page for units, theme, and the filter's default word threshold, shared across every Peakbagger page.
+1. **Activity → ascent drafts** — on an owned Garmin Connect or Strava activity, detects confident summit encounters and opens prefilled Peakbagger ascent pages for review.
+2. **GPX Analyzer** — on an ascent page with a GPS track, injects a rich interactive elevation chart (by distance *and* time), adjusted route metrics, timing/camping stats, and a marker that follows your cursor on Peakbagger's own map.
+3. **Ascent Beta Filter** — on a peak's "Ascents of a Peak" list, adds a sticky, stackable filter bar so you can narrow hundreds of logged ascents down to the ones with a trip report, GPS track, or link. What "has beta" means is configurable, and the Ascent Date sort links flip instantly in the DOM instead of round-tripping to the server.
+4. **Dark mode + centralized settings** — a site-wide dark theme and an options page for units, theme, and the filter's default word threshold, shared across every Peakbagger page.
 
-Everything runs locally. The extension makes no network requests of its own — the GPX Analyzer only fetches the GPX file already linked on the page — and stores settings in `chrome.storage`.
+Analysis runs locally. Activity capture contacts Peakbagger to look up nearby summits and, only after the user clicks **Open drafts**, uploads a reduced coordinate-only track to Peakbagger Preview. No analytics or telemetry are used.
 
 ---
 
@@ -49,6 +50,20 @@ Open the settings from the extension's options (`chrome://extensions` → Detail
 ---
 
 ## Feature tour
+
+### Garmin/Strava → Peakbagger drafts
+Open an activity recorded by the currently signed-in Garmin or Strava account,
+then click the extension icon. The popup verifies ownership before accessing the
+provider GPX, detects summit encounters from the full-resolution track, and
+lists only **Strong** and **Probable** matches with confidence evidence. Strong
+matches are selected by default; Probable matches are opt-in.
+
+Opening drafts creates a **Peak Drafts** browser tab group. Every selected
+Peakbagger ascent page is prefilled and automatically runs GPS Preview, but the
+extension never clicks Save. The reduced upload contains only latitude,
+longitude, and track-segment structure and never includes heart rate, cadence,
+power, temperature, timestamps, elevation, device metadata, routes, waypoints,
+or GPX extensions.
 
 ### GPX Analyzer
 Runs on `climber/ascent.aspx`. When the page has a "Download this GPS track" link, it parses the GPX in-browser and renders a Chart.js chart.
@@ -276,9 +291,9 @@ The options page themes itself with the same `data-bpb-theme` mechanism (CSS var
 
 ## Cross-browser notes
 
-- **Manifest V3** for both engines. Content-script-only design (no background service worker needed).
+- **Manifest V3** for both engines. Chrome uses a service worker; Firefox uses the background-scripts fallback from the same source files.
 - **`"world": "MAIN"`** for the analyzer requires **Chrome 111+** and **Firefox 128+**.
-- **`browser_specific_settings.gecko`** provides the Firefox add-on `id`, `strict_min_version: "140.0"`, and `data_collection_permissions: { required: ["none"] }` (declaring the extension collects no data — a newer AMO requirement, which sets the practical Firefox floor at 140).
+- **`browser_specific_settings.gecko`** provides the Firefox add-on `id`, `strict_min_version: "140.0"`, and the required `locationInfo` disclosure. This is a disclosure that activity coordinates are sent to Peakbagger for lookup/Preview, not permission to access device geolocation.
 - **Storage promises.** `chrome.storage.*` returns promises in MV3 on both engines; `settings.js` also prefers `browser.*` when present, so it's native on Firefox and works via the `chrome.*` alias on Chromium.
 - **Match patterns.** `*://*.peakbagger.com/*` covers `www` and the bare host; the ascent/peak-ascent entries list both `ascent.aspx` and `Ascent.aspx` casings since match-pattern paths are case-sensitive.
 - **No remote code.** [Chart.js](https://www.chartjs.org/) 4.5.1 is vendored at `vendor/chart.umd.min.js` (MIT) rather than pulled from a CDN — required by MV3, and better for privacy and reliability.
@@ -289,6 +304,7 @@ The options page themes itself with the same `data-bpb-theme` mechanism (CSS var
 
 ```
 manifest.json            MV3 manifest (permissions, options_ui, content scripts)
+popup/                   activity capture, confidence list, and draft selection UI
 options/
   options.html           settings UI
   options.css            themed via data-bpb-theme + CSS variables
@@ -300,6 +316,10 @@ src/
   bridge.js              relays settings to the MAIN-world analyzer (postMessage)
   gpx-analyzer.js        elevation/time chart + map-hover (MAIN world)
   ascent-filter.js       ascent-list filter bar (isolated world)
+  provider-page.js       on-demand Garmin/Strava ownership + minimal GPX extraction
+  capture-core.js        segment validation, summit scoring, metrics, GPX reduction
+  background.js          session jobs, Peakbagger lookup, draft tabs and grouping
+  ascent-draft.js        fail-closed ascent form filling + one Preview submission
 vendor/
   chart.umd.min.js       Chart.js 4.5.1, bundled (MIT)
 icons/                   16/32/48/128 px
@@ -323,6 +343,7 @@ Settings shape (`chrome.storage.sync`, key `bpbSettings`):
   betaTrMinWords: number,           //   …of at least this many words
   betaGps: boolean,                 // "has beta" counts a GPS track
   betaLink: boolean }               // "has beta" counts an external link
+```
 
 ---
 
@@ -344,7 +365,19 @@ Peakbagger sits behind a Cloudflare challenge, so tests never hit the live site:
 
 ## Privacy
 
-No analytics, no network requests of the extension's own. The GPX Analyzer only fetches the GPX already linked on the ascent page. Preferences live in `chrome.storage.sync` (or your browser's `localStorage` for the filter's chip states) and never leave your browser except via your own browser-sync account.
+No analytics or telemetry. The existing GPX Analyzer only fetches the GPX already linked on a Peakbagger ascent page.
+
+Activity capture verifies provider ownership before fetching the activity GPX.
+The raw GPX is parsed in the activity page and is never persisted. Peakbagger
+receives small track-corridor bounding boxes for summit discovery. Clicking
+**Open drafts** sends Peakbagger Preview a reduced GPX containing only latitude,
+longitude, and segment boundaries. Heart rate, cadence, power, temperature,
+timestamps, elevation, device metadata, routes, waypoints, names, and extensions
+are removed before session storage or transmission. Prepared data lives only in
+`storage.session` and expires after 30 minutes.
+
+Preferences live in `chrome.storage.sync` (or page `localStorage` for filter
+chip state) and leave the browser only through the user's browser-sync account.
 
 ## License
 

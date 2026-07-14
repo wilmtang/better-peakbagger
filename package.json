@@ -1,7 +1,7 @@
 {
   "name": "better-peakbagger",
-  "version": "1.3.0",
-  "description": "Adds an interactive elevation & time chart to Peakbagger ascent pages, a stackable beta filter, plus site-wide dark mode and centralized settings.",
+  "version": "1.4.0",
+  "description": "Captures your Garmin and Strava activities into confidence-ranked Peakbagger drafts, plus GPX analysis, beta filters, and dark mode.",
   "private": true,
   "license": "AGPL-3.0-or-later",
   "author": "wilmtang",

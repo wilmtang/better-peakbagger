@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.4.0 — 2026-07-13
+
+- **Garmin/Strava activity capture.** Clicking the toolbar icon on an owned
+  activity verifies the signed-in viewer against the activity author and an
+  owner-only edit control before the GPX export is accessed.
+- **Confidence-ranked Peakbagger drafts.** Full-resolution, segment-aware
+  analysis detects Strong and Probable summit encounters; Possible and Weak
+  candidates stay hidden. Strong matches start selected and Probable matches
+  remain opt-in.
+- **Private GPX Preview workflow.** Draft tabs are grouped as “Peak Drafts,”
+  prefilled, and sent through Peakbagger's Preview step without ever clicking
+  Save. The uploaded GPX contains only reduced latitude/longitude trackpoints,
+  with health, device, time, elevation, waypoint, route, and extension data
+  removed.
+
 ## 1.3.0 — 2026-07-10
 
 - **Test fixtures: real (masked) captures replace the Wayback ones.** The
