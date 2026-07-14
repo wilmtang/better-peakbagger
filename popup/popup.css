@@ -111,7 +111,7 @@ button:disabled { cursor: not-allowed; opacity: .55; }
 .peak-row input { margin: 2px 0 0; accent-color: #175cd3; }
 .peak-name { display: block; font-size: 13px; font-weight: 700; }
 .peak-evidence { display: block; margin-top: 3px; color: #667085; font-size: 11px; line-height: 1.35; }
-.confidence { border-radius: 999px; padding: 4px 7px; font-size: 10px; font-weight: 800; white-space: nowrap; }
+.confidence { border-radius: 999px; padding: 4px 8px; font-size: 10px; font-weight: 800; white-space: nowrap; }
 .strong .confidence { color: #067647; background: #ecfdf3; }
 .probable .confidence { color: #93370d; background: #fffaeb; }
 

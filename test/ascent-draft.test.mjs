@@ -74,18 +74,27 @@ test('fills the expected fields, attaches coordinate-only GPX, previews once, an
     assert.equal(previewClicks, 1);
     assert.equal(saveClicks, 0);
     assert.deepEqual(messages.map(message => message.type), ['DRAFT_READY', 'DRAFT_PREVIEW_STARTED']);
+    assert.match(dom.window.document.getElementById('bpb-draft-banner').textContent, /91% confidence/);
+    dom.window.close();
 });
 
-test('a post-preview reload shows the confidence banner without another submission', async () => {
+test('a post-preview reload shows a dismissible, short-lived confidence toast without another submission', async () => {
     const { dom, messages } = loadDraft(() => ({ action: 'banner', classification: 'probable', confidence: 71 }));
     let previewClicks = 0;
     dom.window.document.getElementById('GPXPreview').addEventListener('click', () => { previewClicks++; });
     await waitForAsync();
     assert.equal(previewClicks, 0);
     assert.equal(messages.length, 1);
-    assert.match(dom.window.document.getElementById('bpb-draft-banner').textContent, /Probable match · 71%/);
-    assert.match(dom.window.document.getElementById('bpb-draft-banner').textContent, /Preview submitted/);
-    assert.match(dom.window.document.getElementById('bpb-draft-banner').textContent, /Save is manual/);
+    const banner = dom.window.document.getElementById('bpb-draft-banner');
+    assert.match(banner.textContent, /Probable match · 71% confidence/);
+    assert.match(banner.textContent, /Preview is ready/);
+    assert.equal(banner.style.position, 'fixed');
+    assert.equal(banner.dataset.autoDismissMs, '4000');
+    const dismiss = banner.querySelector('button[aria-label="Dismiss notification"]');
+    assert.ok(dismiss);
+    dismiss.click();
+    assert.equal(dom.window.document.getElementById('bpb-draft-banner'), null);
+    dom.window.close();
 });
 
 test('ordinary Peakbagger editor tabs are left completely untouched', async () => {
@@ -94,6 +103,7 @@ test('ordinary Peakbagger editor tabs are left completely untouched', async () =
     assert.equal(messages.length, 1);
     assert.equal(dom.window.document.getElementById('bpb-draft-banner'), null);
     assert.equal(dom.window.document.getElementById('DateText').value, '');
+    dom.window.close();
 });
 
 test('privacy guard blocks a payload containing time, elevation, or extensions', async () => {
@@ -109,4 +119,5 @@ test('privacy guard blocks a payload containing time, elevation, or extensions',
     await waitForAsync();
     assert.deepEqual(messages.map(message => message.type), ['DRAFT_READY']);
     assert.match(dom.window.document.getElementById('bpb-draft-banner').textContent, /privacy check/);
+    dom.window.close();
 });

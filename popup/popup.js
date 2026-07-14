@@ -135,7 +135,7 @@
             text.append(name, evidence);
             const confidence = document.createElement('span');
             confidence.className = 'confidence';
-            confidence.textContent = `${match.classification === 'strong' ? 'Strong' : 'Probable'} ${match.confidence}%`;
+            confidence.textContent = `${match.classification === 'strong' ? 'Strong' : 'Probable'} match · ${match.confidence}% confidence`;
             row.append(checkbox, text, confidence);
             list.append(row);
         });

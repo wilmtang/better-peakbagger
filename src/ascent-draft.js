@@ -13,6 +13,7 @@
     const FEET_PER_METER = 3.28084;
     const METERS_PER_MILE = 1609.344;
     const BANNER_ID = 'bpb-draft-banner';
+    const BANNER_DISMISS_MS = 4000;
 
     const pageIds = () => {
         const params = new URLSearchParams(location.search);
@@ -25,6 +26,7 @@
         const banner = document.createElement('div');
         banner.id = BANNER_ID;
         banner.setAttribute('role', kind === 'error' ? 'alert' : 'status');
+        banner.setAttribute('aria-live', kind === 'error' ? 'assertive' : 'polite');
         const colors = {
             strong: ['#067647', '#ecfdf3', '#a6f4c5'],
             probable: ['#93370d', '#fffaeb', '#fedf89'],
@@ -32,20 +34,77 @@
         };
         const [color, background, border] = colors[kind] || colors.probable;
         Object.assign(banner.style, {
-            position: 'sticky',
-            top: '0',
+            all: 'initial',
+            position: 'fixed',
+            top: '12px',
+            right: '12px',
             zIndex: '2147483647',
-            margin: '0 0 12px',
-            padding: '10px 14px',
+            display: 'flex',
+            alignItems: 'flex-start',
+            gap: '10px',
+            width: 'calc(100vw - 24px)',
+            maxWidth: '460px',
+            boxSizing: 'border-box',
+            padding: '11px 12px 11px 14px',
             color,
             background,
             border: `1px solid ${border}`,
-            borderRadius: '6px',
+            borderRadius: '10px',
             font: '600 14px/1.4 system-ui, sans-serif',
-            boxShadow: '0 2px 8px rgba(0,0,0,.12)'
+            boxShadow: '0 8px 24px rgba(16,24,40,.18)',
+            opacity: '1',
+            transform: 'translateY(0)',
+            transition: 'opacity 160ms ease, transform 160ms ease'
         });
-        banner.textContent = message;
+
+        const text = document.createElement('span');
+        Object.assign(text.style, {
+            all: 'initial',
+            flex: '1',
+            color,
+            font: '600 14px/1.4 system-ui, sans-serif'
+        });
+        text.textContent = message;
+
+        const dismissButton = document.createElement('button');
+        dismissButton.type = 'button';
+        dismissButton.setAttribute('aria-label', 'Dismiss notification');
+        dismissButton.title = 'Dismiss';
+        dismissButton.textContent = '\u00d7';
+        Object.assign(dismissButton.style, {
+            all: 'initial',
+            flex: '0 0 auto',
+            width: '24px',
+            height: '24px',
+            color,
+            font: '700 20px/22px system-ui, sans-serif',
+            textAlign: 'center',
+            cursor: 'pointer',
+            borderRadius: '6px',
+            outline: '2px solid transparent',
+            outlineOffset: '1px'
+        });
+
+        let dismissTimer = null;
+        const dismiss = immediate => {
+            if (dismissTimer !== null) globalThis.clearTimeout(dismissTimer);
+            if (immediate) {
+                banner.remove();
+                return;
+            }
+            banner.style.opacity = '0';
+            banner.style.transform = 'translateY(-8px)';
+            globalThis.setTimeout(() => banner.remove(), 160);
+        };
+        dismissButton.addEventListener('focus', () => { dismissButton.style.outlineColor = color; });
+        dismissButton.addEventListener('blur', () => { dismissButton.style.outlineColor = 'transparent'; });
+        dismissButton.addEventListener('click', () => dismiss(true));
+        banner.append(text, dismissButton);
         (document.body || document.documentElement).prepend(banner);
+        if (kind !== 'error') {
+            banner.dataset.autoDismissMs = String(BANNER_DISMISS_MS);
+            dismissTimer = globalThis.setTimeout(() => dismiss(false), BANNER_DISMISS_MS);
+        }
     };
 
     const setField = async (id, value, digits = 0) => {
@@ -147,7 +206,7 @@
         if (!acknowledgment?.ok) throw new Error('Preview was already started or the draft identity changed.');
         const preview = document.getElementById('GPXPreview');
         showBanner(payload.classification,
-            `${payload.classification === 'strong' ? 'Strong' : 'Probable'} match · ${payload.confidence}% · Preparing GPS Preview…`);
+            `${payload.classification === 'strong' ? 'Strong' : 'Probable'} match · ${payload.confidence}% confidence. Preparing GPS Preview…`);
         preview.click();
     };
 
@@ -164,7 +223,7 @@
             if (response.action === 'banner') {
                 const label = response.classification === 'strong' ? 'Strong' : 'Probable';
                 showBanner(response.classification,
-                    `${label} match · ${response.confidence}% · GPS Preview submitted. Check Peakbagger’s result; Save is manual.`);
+                    `${label} match · ${response.confidence}% confidence. Preview is ready—review Peakbagger’s result before saving.`);
                 return;
             }
             if (response.action === 'apply') await applyAndPreview(response);
