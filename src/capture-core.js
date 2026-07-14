@@ -766,6 +766,44 @@
         };
     };
 
+    const suffixForIndex = index => {
+        let value = index + 1;
+        let suffix = '';
+        while (value > 0) {
+            value--;
+            suffix = String.fromCharCode(97 + (value % 26)) + suffix;
+            value = Math.floor(value / 26);
+        }
+        return suffix;
+    };
+
+    const assignDraftSuffixes = matches => {
+        const result = matches.map(match => ({
+            ...match,
+            draftFields: { ...match.draftFields, suffix: '' }
+        }));
+        const byDate = new Map();
+        result.forEach((match, index) => {
+            const date = match.draftFields.date;
+            if (!date) return;
+            if (!byDate.has(date)) byDate.set(date, []);
+            byDate.get(date).push({ match, index });
+        });
+        for (const group of byDate.values()) {
+            if (group.length < 2) continue;
+            group.sort((a, b) => {
+                const aDistance = a.match.draftFields.upDistanceM;
+                const bDistance = b.match.draftFields.upDistanceM;
+                if (Number.isFinite(aDistance) && Number.isFinite(bDistance) && aDistance !== bDistance) {
+                    return aDistance - bDistance;
+                }
+                return a.index - b.index;
+            });
+            group.forEach(({ match }, index) => { match.draftFields.suffix = suffixForIndex(index); });
+        }
+        return result;
+    };
+
     const publicMatch = match => ({
         id: match.id,
         name: match.name,
@@ -791,6 +829,7 @@
         reduceTrack,
         serializeUploadGpx,
         calculateDraftFields,
+        assignDraftSuffixes,
         publicMatch,
         formatEncounterDateTime,
         cubicDecay

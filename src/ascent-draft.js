@@ -143,7 +143,7 @@
     const fillForm = async fields => {
         if (!formIsReady()) throw new Error('Peakbagger’s ascent form has changed or did not load completely.');
         setTextField('DateText', fields.date);
-        setTextField('SuffixText', fields.time);
+        setTextField('SuffixText', fields.suffix || '');
 
         await setField('StartFt', fields.startElevationM === null ? null : fields.startElevationM * FEET_PER_METER);
         await setField('StartM', fields.startElevationM);

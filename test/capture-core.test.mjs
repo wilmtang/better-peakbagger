@@ -184,3 +184,17 @@ test('Strava displayed wall-clock time derives the activity timezone from GPX UT
     assert.equal(formatted.time, '17:13');
     assert.equal(formatted.timezoneKnown, true);
 });
+
+test('same-day draft suffixes follow encounter order without mutating matches', () => {
+    const matches = [
+        { id: 1, draftFields: { date: '2026-07-01', upDistanceM: 300 } },
+        { id: 2, draftFields: { date: '2026-07-02', upDistanceM: 50 } },
+        { id: 3, draftFields: { date: '2026-07-01', upDistanceM: 100 } },
+        { id: 4, draftFields: { date: '2026-07-01', upDistanceM: 200 } }
+    ];
+
+    const assigned = Core.assignDraftSuffixes(matches);
+
+    assert.deepEqual(assigned.map(match => match.draftFields.suffix), ['c', '', 'a', 'b']);
+    assert.equal(matches[0].draftFields.suffix, undefined);
+});

@@ -57,7 +57,7 @@ test('fills the expected fields, attaches coordinate-only GPX, previews once, an
     const payload = {
         action: 'apply', jobId: 'job', pid: '12', cid: '34', classification: 'strong', confidence: 91,
         fields: {
-            date: '2026-07-01', time: '08:45', startElevationM: 1000, endElevationM: 900,
+            date: '2026-07-01', time: '08:45', suffix: 'a', startElevationM: 1000, endElevationM: 900,
             upDistanceM: 5000, downDistanceM: 6000, upGainM: 1200, downGainM: 80,
             upDuration: { days: 0, hours: 2, minutes: 5 },
             downDuration: { days: 0, hours: 1, minutes: 55 }
@@ -70,7 +70,7 @@ test('fills the expected fields, attaches coordinate-only GPX, previews once, an
     await waitForCondition(() => previewClicks === 1);
 
     assert.equal(dom.window.document.getElementById('DateText').value, '2026-07-01');
-    assert.equal(dom.window.document.getElementById('SuffixText').value, '08:45');
+    assert.equal(dom.window.document.getElementById('SuffixText').value, 'a');
     assert.equal(dom.window.document.getElementById('UpMi').value, '3.11');
     assert.equal(dom.window.document.getElementById('UpKm').value, '5.00');
     assert.equal(dom.window.document.getElementById('StartM').value, '1000');

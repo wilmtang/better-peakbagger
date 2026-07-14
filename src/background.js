@@ -340,8 +340,8 @@ if (typeof importScripts === 'function' && !globalThis.BPBCaptureCore) {
         if (!job || !job.uploadGpx || (job.phase !== 'ready' && job.phase !== 'opened')) {
             throw new Error('Capture results are no longer available. Capture the activity again.');
         }
-        const selected = job.matches
-            .filter(match => job.selectedIds.includes(match.id))
+        const selected = Core.assignDraftSuffixes(job.matches
+            .filter(match => job.selectedIds.includes(match.id)))
             .sort((a, b) => b.confidence - a.confidence);
         if (!selected.length) throw new Error('Select at least one detected peak.');
 
@@ -368,6 +368,7 @@ if (typeof importScripts === 'function' && !globalThis.BPBCaptureCore) {
                 cid: job.cid,
                 classification: match.classification,
                 confidence: match.confidence,
+                suffix: match.draftFields.suffix,
                 previewStarted: false,
                 complete: false,
                 focusOnReady: index === 0,
@@ -434,7 +435,7 @@ if (typeof importScripts === 'function' && !globalThis.BPBCaptureCore) {
             cid: draft.cid,
             classification: draft.classification,
             confidence: draft.confidence,
-            fields: match.draftFields,
+            fields: { ...match.draftFields, suffix: draft.suffix || '' },
             gpx: job.uploadGpx
         };
     };

@@ -138,6 +138,7 @@ test('background capture persists a private job, opens grouped drafts, and previ
 
     const apply = await harness.send({ type: 'DRAFT_READY', pid: '7', cid: '77' }, { tab: { id: 100 } });
     assert.equal(apply.action, 'apply');
+    assert.equal(apply.fields.suffix, '');
     assert.match(apply.gpx, /<gpx/);
     assert.equal(await harness.send({ type: 'DRAFT_PREVIEW_STARTED', jobId: apply.jobId, pid: 7, cid: 77 }, { tab: { id: 100 } }).then(value => value.ok), true);
 
@@ -148,6 +149,25 @@ test('background capture persists a private job, opens grouped drafts, and previ
 
     const duplicate = await harness.send({ type: 'DRAFT_PREVIEW_STARTED', jobId: apply.jobId, pid: 7, cid: 77 }, { tab: { id: 100 } });
     assert.equal(duplicate.ok, false);
+});
+
+test('same-day suffixes include only selected ascents and follow track order', async () => {
+    const harness = createHarness();
+    await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    const job = harness.values.bpbCaptureJobs['1'];
+    const base = job.matches[0];
+    job.matches = [
+        { ...structuredClone(base), id: 7, confidence: 95, draftFields: { ...base.draftFields, upDistanceM: 300 } },
+        { ...structuredClone(base), id: 8, confidence: 90, draftFields: { ...base.draftFields, upDistanceM: 100 } },
+        { ...structuredClone(base), id: 9, confidence: 85, draftFields: { ...base.draftFields, upDistanceM: 200 } }
+    ];
+
+    await harness.send({ type: 'CAPTURE_OPEN_DRAFTS', tabId: 1, selectedIds: [7, 9] });
+    const later = await harness.send({ type: 'DRAFT_READY', pid: '7', cid: '77' }, { tab: { id: 100 } });
+    const earlier = await harness.send({ type: 'DRAFT_READY', pid: '9', cid: '77' }, { tab: { id: 101 } });
+
+    assert.equal(earlier.fields.suffix, 'a');
+    assert.equal(later.fields.suffix, 'b');
 });
 
 test('Possible and Weak matches are hidden and no coordinate upload is retained', async () => {
