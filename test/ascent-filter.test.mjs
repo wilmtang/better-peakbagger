@@ -41,6 +41,18 @@ test('parses the full Rainier table and filters to beta by default', async () =>
     assert.ok(sectionRows(dom).some(r => r.style.display === 'none'));
 });
 
+test('filter chips form one group without a divider after Has beta', async () => {
+    const dom = await loadPageWithBar('1039-default-full-columns.html', {
+        url: 'https://www.peakbagger.com/climber/PeakAscents.aspx?pid=1039'
+    });
+
+    assert.equal(bar(dom).querySelector('.pbaf-divider'), null);
+    assert.deepEqual(
+        [...bar(dom).querySelectorAll('.pbaf-chip')].map(control => control.childNodes[1].textContent.trim()),
+        ['Has beta', 'Trip report', 'GPS track', 'Link']
+    );
+});
+
 test('"Show all" reveals every row', async () => {
     const dom = await loadPageWithBar(RAINIER, { url: RAINIER_URL });
 

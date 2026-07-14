@@ -345,7 +345,6 @@
     font: 13px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; color: #333; }
 #pbaf-bar * { box-sizing: border-box; }
 .pbaf-label { font-size: 10px; font-weight: 700; letter-spacing: .08em; color: #98988f; text-transform: uppercase; margin-right: 2px; }
-.pbaf-divider { width: 1px; height: 18px; background: #e2e2dc; }
 .pbaf-chip { appearance: none; display: inline-flex; align-items: center; gap: 5px; padding: 3px 11px;
     border: 1px solid #c8c8c2; border-radius: 999px; background: #fff; color: #3d3d38; font: inherit; cursor: pointer;
     transition: border-color .12s, background .12s, color .12s; user-select: none; }
@@ -597,12 +596,8 @@
             render();
         });
 
-        const divider = document.createElement('span');
-        divider.className = 'pbaf-divider';
-
         bar.append(
             makeChip('beta', 'Has beta', ''),
-            divider,
             makeChip('tr', 'Trip report',
                 'Only ascents with a written trip report of at least the chosen word count.'),
             wordsWrap,
