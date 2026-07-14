@@ -463,7 +463,11 @@ npm run start:firefox   launch a temp Firefox with the extension
 npm run start:chromium  same for Chromium
 ```
 
-No build step for development — load the folder unpacked. `npm run build` just zips the shippable files (`manifest.json`, `src/`, `vendor/`, `icons/`, `options/`, README, LICENSE); `node_modules`, the lockfile, `CHANGELOG.md`, and `test/` are excluded.
+No build step for development — load the folder unpacked. `npm run build` just zips the shippable files (`manifest.json`, `src/`, `vendor/`, `icons/`, `popup/`, `options/`, README, LICENSE); `node_modules`, the lockfile, `CHANGELOG.md`, and `test/` are excluded.
+
+Version tags submit verified packages to both browser stores after their one-time
+publisher setup. See [Browser store releases](docs/releasing.md) for credentials,
+first-release constraints, and the release checklist.
 
 Automated tests do not require live Garmin, Strava, or Peakbagger accounts. Peakbagger page features run against PII-masked captures in `test/fixtures/`; the capture pipeline uses synthetic provider DOM/GPX data, mocked network responses, and stubbed extension APIs. This makes the privacy and failure-path invariants repeatable, but current provider DOM/export behavior still needs manual browser verification before a release.
 

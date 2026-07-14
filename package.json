@@ -11,14 +11,37 @@
     "url": "https://github.com/wilmtang/better-peakbagger.git"
   },
   "scripts": {
-    "lint": "web-ext lint --source-dir . --ignore-files \"test/**\"",
-    "build": "web-ext build --source-dir . --artifacts-dir web-ext-artifacts --overwrite-dest --ignore-files package.json package-lock.json CHANGELOG.md \"node_modules/**\" \"test/**\" \"store-assets/**\"",
+    "lint": "web-ext lint",
+    "build": "web-ext build --overwrite-dest",
+    "release:check": "node scripts/release-check.mjs",
+    "release:metadata:firefox": "node scripts/create-amo-metadata.mjs web-ext-artifacts/amo-metadata.json",
+    "release:sign:firefox": "web-ext sign --channel=listed --amo-metadata=web-ext-artifacts/amo-metadata.json --approval-timeout=0 --timeout=600000 --no-input",
+    "release:verify-archive": "node scripts/verify-release-archive.mjs",
     "start:firefox": "web-ext run --source-dir .",
     "start:chromium": "web-ext run --source-dir . --target chromium",
     "test": "node --test \"test/**/*.test.mjs\""
   },
   "devDependencies": {
+    "jszip": "^3.10.1",
     "jsdom": "^29.1.1",
     "web-ext": "^10.4.0"
+  },
+  "webExt": {
+    "sourceDir": ".",
+    "artifactsDir": "web-ext-artifacts",
+    "ignoreFiles": [
+      "AGENTS.md",
+      "CHANGELOG.md",
+      "docs",
+      "docs/**",
+      "package.json",
+      "package-lock.json",
+      "scripts",
+      "scripts/**",
+      "store-assets",
+      "store-assets/**",
+      "test",
+      "test/**"
+    ]
   }
 }
