@@ -65,11 +65,14 @@ from its lower-right corner, with the page width as its upper bound; an opt-in
 setting can restore the last selected basemap. The chart sits immediately below
 the map, before Peakbagger's full-screen map and GPX-download links. Hover over
 the chart to follow the same point on the map, or double-click a point to copy
-its coordinates. **3D terrain** opens an extension-owned MapLibre view of the
-same route at true vertical scale. Mapterhorn supplies the elevation model; when
-Peakbagger's selected Leaflet layer is a compatible raster layer, that same map
-is draped over the terrain. Tile requests begin only after a per-page privacy
-notice, and Peakbagger's 2D map remains the immediate fallback.
+its coordinates. Full Screen single-ascent and 10-track GPS maps also honor the
+route-width preference without changing Peakbagger's route colors, hover
+highlights, click details, or trip-report links. **3D terrain** opens an
+extension-owned MapLibre view of the same route at true vertical scale.
+Mapterhorn supplies the elevation model; when Peakbagger's selected Leaflet
+layer is a compatible raster layer, that same map is draped over the terrain.
+Tile requests begin only after a per-page privacy notice, and Peakbagger's 2D
+map remains the immediate fallback.
 
 ![Three-day GPX analysis with a high-contrast route and chart-synchronized Leaflet marker](store-assets/showcase-gpx-map-sync.gif)
 
@@ -170,6 +173,7 @@ and the [discussion board](https://github.com/wilmtang/better-peakbagger/discuss
 - [Deep dive: the GPX Analyzer](#deep-dive-the-gpx-analyzer)
 - [Deep dive: opt-in 3D terrain](#deep-dive-opt-in-3d-terrain)
 - [Deep dive: the Leaflet map-hover injection](#deep-dive-the-leaflet-map-hover-injection)
+- [Deep dive: native Full Screen GPS tracks](#deep-dive-native-full-screen-gps-tracks)
 - [Deep dive: the Ascent Beta Filter](#deep-dive-the-ascent-beta-filter)
 - [Deep dive: site-wide dark mode](#deep-dive-site-wide-dark-mode)
 - [Cross-browser notes](#cross-browser-notes)
@@ -193,6 +197,7 @@ and the [discussion board](https://github.com/wilmtang/better-peakbagger/discuss
                           │  settings.js  (shared)   │                             │
                           │  theme.js  → data-bpb-theme on <html>                  │
                           │  bridge.js  ←── postMessage ──┐                        │
+                          │  big-map-bridge.js (width only)│                        │
                           │  terrain-map.js (frame bridge)◀┼── coordinates + safe  │
                           │                                │   raster descriptor   │
                           │  ascent-filter.js             │                        │
@@ -202,6 +207,7 @@ and the [discussion board](https://github.com/wilmtang/better-peakbagger/discuss
                           │  MAIN (page) world              ▼                        │
                           │  chart.umd.min.js  +  gpx-analyzer.js                    │
                           │  (needs page globals: map iframe, Chart, clipboard)      │
+                          │  big-map.js (native Full Screen Leaflet tracks)           │
                           └──────────────────────────────────────────────────────────┘
                                                            │ validated terrain input
                                                            ▼
@@ -338,6 +344,8 @@ This split is the single most important design constraint in the extension. Here
 | `gpx-analyzer.js` | **MAIN** | Needs page-realm access: the map iframe's Leaflet globals (see below), the bundled `Chart` global, and page clipboard/`localStorage` semantics identical to a userscript. |
 | `chart.umd.min.js` | **MAIN** | Loaded immediately before the analyzer so the `Chart` UMD global lands in the same realm the analyzer reads. |
 | `provider-page.js` | **MAIN**, injected on demand | Needs the activity page's signed-in state and authenticated same-origin export; exposes only the narrow ownership/capture adapter to the background. |
+| `big-map.js` | **MAIN** | Reads the Full Screen page's own Leaflet map and changes only native GPS-polyline weight. |
+| `big-map-bridge.js` | isolated | Sends the MAIN-world BigMap enhancer only the validated route width; it has no settings-write path. |
 | `terrain-map.js` | isolated | Creates the extension-owned frame and relays only validated terrain messages between it and the analyzer. |
 | `terrain-frame.js`, MapLibre | extension document | Owns the WebGL terrain surface and packaged CSP worker. It has no access to Peakbagger globals and does not request tiles until the bridge sends a consented coordinate route plus an optional validated raster descriptor. |
 | `theme.js`, `bridge.js`, `ascent-filter.js`, `settings.js` | isolated | They only touch the DOM and `chrome.storage`; no page globals needed. |
@@ -649,6 +657,37 @@ The map integration works in three parts:
 
 ---
 
+## Deep dive: native Full Screen GPS tracks
+
+`BigMap.aspx?t=A` (one ascent) and `BigMap.aspx?t=G` (the recent/different-route
+GPS view) do not expose the ascent page's downloadable GPX to the analyzer.
+They already own the correct route layers, colors, hover state, popups, and trip
+report links. Redrawing those routes would duplicate geometry and break the
+meaning of the 10-track color palette, so `big-map.js` mutates one native style
+property instead: Leaflet `weight`.
+
+The MAIN-world script accepts only the validated 1–12 px `mapRouteWidth` sent by
+a dedicated, read-only isolated-world bridge. On `t=G`, it requires a genuine
+`L.Polyline` with Peakbagger's native mouseover plus click/popup behavior. That
+extra gate excludes polygons, tile layers, markers, and transient line-shaped
+hover effects. On `t=A`, the single native route may be non-interactive, so the
+gate accepts a non-filled polyline with at least two valid Leaflet coordinates.
+
+The enhancer calls `setStyle({ weight })`—never `color`, opacity, dash pattern,
+pane, z-order, or event replacement. Peakbagger's mouseover can therefore make
+a route wider or otherwise highlight it, and its click handler opens the same
+native details/trip-report popup. A small mouseout listener runs after the
+native synchronous handlers and restores the configured base width. Layers
+added after page load are handled through Leaflet's `layeradd` event; changing
+the preference in Settings updates open BigMap pages.
+
+This is also fail-closed. Only the documented GPS URL modes are eligible, and
+the script looks for the same page-owned `L` plus `mapsPlaceholder`/`map`
+globals Peakbagger currently uses. Missing globals, changed layer structure, or
+ambiguous group layers leave the Full Screen map entirely native.
+
+---
+
 ## Deep dive: the Ascent Beta Filter
 
 Runs in the isolated world on `PeakAscents.aspx` and personal `ClimbListC.aspx` ascent lists.
@@ -704,7 +743,7 @@ The options page themes itself with the same `data-bpb-theme` mechanism (CSS var
 - **`"world": "MAIN"`** for the analyzer requires **Chrome 111+** and **Firefox 128+**.
 - **`browser_specific_settings.gecko`** provides the Firefox add-on `id`, `strict_min_version: "140.0"`, and the required `locationInfo` disclosure. This is a data-handling disclosure for coordinates sent to Peakbagger and, only after the 3D notice is accepted, map-tile coordinates requested from Mapterhorn and a compatible selected map provider; it is not permission to access device geolocation.
 - **Storage promises.** `chrome.storage.*` returns promises in MV3 on both engines; `settings.js` also prefers `browser.*` when present, so it's native on Firefox and works via the `chrome.*` alias on Chromium.
-- **Match patterns.** `*://*.peakbagger.com/*` covers `www` and the bare host; the ascent/peak-ascent entries list both `ascent.aspx` and `Ascent.aspx` casings since match-pattern paths are case-sensitive.
+- **Match patterns.** `*://*.peakbagger.com/*` covers `www` and the bare host; page-specific entries list relevant filename casings (`ascent.aspx`/`Ascent.aspx` and `BigMap.aspx`/`bigmap.aspx`) because match-pattern paths are case-sensitive.
 - **No remote code.** [Chart.js](https://www.chartjs.org/) 4.5.1 and [MapLibre GL JS](https://maplibre.org/) 5.24.0 are vendored under `vendor/` rather than pulled from a CDN — required by MV3, and better for privacy and reliability. Mapterhorn supplies elevation data, never executable code.
 
 ---
@@ -724,7 +763,10 @@ src/
   site-dark-css.js       dark rules as a string (window.BPBDarkCSS), theme-scoped
   bridge.js              relays settings to the MAIN-world analyzer (postMessage)
   gpx-analyzer.js        elevation/time chart + map-hover (MAIN world)
+  big-map-bridge.js      read-only Full Screen route-width bridge
+  big-map.js             native Full Screen GPS track width (MAIN world)
   terrain-map.js         isolated bridge for the extension-owned terrain frame
+  terrain-cache.js       bounded best-effort Mapterhorn DEM cache
   terrain-frame.js       opt-in MapLibre terrain renderer (extension document)
   terrain-map.css        scoped 3D surface and control styling
   ascent-filter.js       ascent-list filter and instant table sort (isolated world)
@@ -750,6 +792,8 @@ test/
   options.test.mjs       options page end-to-end (populate/save/clean)
   provider-page.test.mjs provider ownership/export adapters and privacy parsing
   terrain-map.test.mjs   DEM boundary, route validation, renderer lifecycle
+  terrain-cache.test.mjs CacheStorage reuse, eviction, and disable behavior
+  big-map.test.mjs       native GPS color/hover/click preservation
   capture-core.test.mjs  track validation, scoring, metrics, and reduction
   background-capture.test.mjs  session jobs, lookup, grouping, and handshakes
   ascent-draft.test.mjs  form/privacy validation and exactly-once Preview

@@ -49,6 +49,18 @@ test('3D terrain is isolated from Peakbagger globals in an extension-owned frame
         'public CORS tiles must not broaden persistent extension host access');
 });
 
+test('Full Screen GPS maps get a narrow read-only bridge and a MAIN-world Leaflet enhancer', () => {
+    const bridgeEntry = manifest.content_scripts.find(entry => entry.js.includes('src/big-map-bridge.js'));
+    const pageEntry = manifest.content_scripts.find(entry => entry.js.includes('src/big-map.js'));
+    assert.ok(bridgeEntry);
+    assert.deepEqual(bridgeEntry.js, ['src/settings.js', 'src/big-map-bridge.js']);
+    assert.equal(bridgeEntry.world, undefined);
+    assert.ok(pageEntry);
+    assert.deepEqual(pageEntry.js, ['src/big-map.js']);
+    assert.equal(pageEntry.world, 'MAIN');
+    assert.ok(pageEntry.matches.every(pattern => /bigmap/i.test(pattern)));
+});
+
 test('ascent editor integration is isolated to Peakbagger and runtime code never names a Save control', async () => {
     const draftEntry = manifest.content_scripts.find(entry => entry.js.includes('src/ascent-draft.js'));
     assert.ok(draftEntry);

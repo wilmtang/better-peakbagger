@@ -125,6 +125,30 @@
       ],
       "run_at": "document_start",
       "all_frames": false
+    },
+    {
+      "matches": [
+        "*://*.peakbagger.com/*BigMap.aspx*",
+        "*://*.peakbagger.com/*bigmap.aspx*"
+      ],
+      "js": [
+        "src/settings.js",
+        "src/big-map-bridge.js"
+      ],
+      "run_at": "document_start",
+      "all_frames": false
+    },
+    {
+      "matches": [
+        "*://*.peakbagger.com/*BigMap.aspx*",
+        "*://*.peakbagger.com/*bigmap.aspx*"
+      ],
+      "js": [
+        "src/big-map.js"
+      ],
+      "run_at": "document_end",
+      "all_frames": false,
+      "world": "MAIN"
     }
   ],
   "web_accessible_resources": [
