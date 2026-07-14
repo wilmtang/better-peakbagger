@@ -148,7 +148,7 @@ test('privacy upload contains only track geometry and segment structure', () => 
     assert.doesNotMatch(gpx, /<(?:ele|time|extensions|wpt|rte|name)(?:\s|>)/i);
 });
 
-test('opt-in waypoints are validated, bounded, escaped, and limited to coordinates plus name', () => {
+test('retained waypoints are validated, bounded, escaped, and limited to coordinates plus name', () => {
     const waypoints = Core.sanitizeWaypoints([
         { lat: '47.1', lon: '-121.2', name: ' Camp & <Water> ', ele: 999, desc: 'private' },
         { lat: 95, lon: 1, name: 'invalid' }

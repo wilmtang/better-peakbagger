@@ -86,7 +86,7 @@ test('fills the expected fields, attaches coordinate-only GPX, previews once, an
     dom.window.close();
 });
 
-test('fills multi-peak Trip Info and accepts allowlisted waypoint names only when opted in', async () => {
+test('fills multi-peak Trip Info and accepts allowlisted waypoint names when capture permits them', async () => {
     let previewClicks = 0;
     const payload = {
         action: 'apply', jobId: 'job', pid: '12', cid: '34', classification: 'strong', confidence: 91,
@@ -183,7 +183,7 @@ test('privacy guard blocks a payload containing time, elevation, or extensions',
     dom.window.close();
 });
 
-test('privacy guard rejects waypoint data unless the capture explicitly opted in', async () => {
+test('privacy guard rejects waypoint data when capture disabled retention', async () => {
     const { dom, messages } = loadDraft(message => message.type === 'DRAFT_READY' ? {
         action: 'apply', jobId: 'job', pid: '12', cid: '34', classification: 'strong', confidence: 90,
         allowWaypoints: false,

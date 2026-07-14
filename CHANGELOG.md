@@ -3,7 +3,7 @@
 ## Unreleased
 
 - **Capture details, under user control.** New Activity capture settings can
-  retain GPX waypoint coordinates and names (off by default), create and
+  retain GPX waypoint coordinates and names (on by default), create and
   sequence Peakbagger Trip Info for multiple selected summits, and fill
   wilderness nights for an overnight single-ascent capture. Waypoints share
   Peakbagger's 3,000-point limit with the reduced track; all other waypoint

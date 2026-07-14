@@ -139,7 +139,7 @@ test('background capture persists a private job, opens grouped drafts, and previ
     assert.doesNotMatch(storedJob.uploadGpx, /<(?:ele|time|extensions)(?:\s|>)/i);
     assert.equal(JSON.stringify(storedJob).includes('heart'), false);
     assert.deepEqual(harness.scriptCalls.find(call => call.args)?.args, [{
-        retainWaypoints: false,
+        retainWaypoints: true,
         includeTripName: true
     }]);
 
@@ -183,7 +183,7 @@ test('same-day suffixes include only selected ascents and follow track order', a
     assert.equal(later.fields.suffix, 'b');
 });
 
-test('waypoint opt-in shares the 3,000-point budget and multi-peak drafts receive one sequenced trip', async () => {
+test('retained waypoints share the 3,000-point budget and multi-peak drafts receive one sequenced trip', async () => {
     const harness = createHarness({
         settings: { retainWaypoints: true },
         peakXml: '<p><t i="7" n="First Peak" a="0" o="0" e="426.51" r="100" l="Test Range"/><t i="8" n="Second Peak" a="0" o="0" e="426.51" r="100" l="Test Range"/></p>',
@@ -282,12 +282,12 @@ test('changing capture settings invalidates a reusable job for the same activity
     const harness = createHarness();
     await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
     const firstId = harness.values.bpbCaptureJobs['1'].id;
-    harness.syncValues.bpbSettings.retainWaypoints = true;
+    harness.syncValues.bpbSettings.retainWaypoints = false;
 
     await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
     assert.notEqual(harness.values.bpbCaptureJobs['1'].id, firstId);
     assert.deepEqual(harness.scriptCalls.filter(call => call.args).at(-1).args, [{
-        retainWaypoints: true,
+        retainWaypoints: false,
         includeTripName: true
     }]);
 });

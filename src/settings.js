@@ -16,7 +16,7 @@
     const MAP_LAYERS = new Set(['L_CT', 'L_MT', 'L_FS', 'L_3D', 'L_SN', 'L_AG', 'L_OT', 'L_OS', 'L_AI', 'L_XX', 'B_B1', 'G_SA']);
     const DEFAULTS = {
         units: 'auto', theme: 'system',
-        retainWaypoints: false,
+        retainWaypoints: true,
         fillTripInfo: true,
         fillWildernessNights: true,
         // Which GPX-chart series is shown by default: 'both', or only

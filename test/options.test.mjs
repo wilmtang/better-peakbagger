@@ -60,13 +60,13 @@ test('settings are grouped by the surface they affect', async () => {
     }
 });
 
-test('activity capture settings have safe defaults and persist changes', async () => {
+test('activity capture settings have documented defaults and persist changes', async () => {
     const dom = await loadOptions({});
-    assert.equal(el(dom, 'retain-waypoints').checked, false);
+    assert.equal(el(dom, 'retain-waypoints').checked, true);
     assert.equal(el(dom, 'fill-trip-info').checked, true);
     assert.equal(el(dom, 'fill-wilderness-nights').checked, true);
 
-    el(dom, 'retain-waypoints').checked = true;
+    el(dom, 'retain-waypoints').checked = false;
     el(dom, 'retain-waypoints').dispatchEvent(new dom.window.Event('change'));
     el(dom, 'fill-trip-info').checked = false;
     el(dom, 'fill-trip-info').dispatchEvent(new dom.window.Event('change'));
@@ -74,7 +74,7 @@ test('activity capture settings have safe defaults and persist changes', async (
     el(dom, 'fill-wilderness-nights').dispatchEvent(new dom.window.Event('change'));
     await new Promise(r => dom.window.setTimeout(r, 20));
 
-    assert.equal(dom.chrome._store.bpbSettings.retainWaypoints, true);
+    assert.equal(dom.chrome._store.bpbSettings.retainWaypoints, false);
     assert.equal(dom.chrome._store.bpbSettings.fillTripInfo, false);
     assert.equal(dom.chrome._store.bpbSettings.fillWildernessNights, false);
 });

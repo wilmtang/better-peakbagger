@@ -87,7 +87,7 @@ by “has beta.” Sortable columns reorder instantly without reloading the page
 Use a site-wide dark theme that follows your system or stays light or dark.
 Shared settings also control units, the GPX chart's default view, route
 appearance, map size, optional map-layer memory, and which signals count as
-ascent beta. Activity-capture settings control opt-in waypoint retention plus
+ascent beta. Activity-capture settings control waypoint retention plus
 automatic Trip Info and wilderness-night filling. Changes apply to open
 Peakbagger tabs immediately and to the next activity capture.
 
@@ -99,10 +99,10 @@ There is no Better Peakbagger account, analytics, or telemetry. The raw Garmin
 or Strava GPX is processed on the activity page and is never stored or sent to
 the extension developer. Peakbagger receives small corridor boxes for summit
 discovery and, only after you choose **Open drafts**, a reduced coordinate-only
-track for Preview. If you opt in to retaining waypoints, their coordinates and
-names are added to that newly serialized upload. Source health and device fields
-plus each trackpoint's time and elevation are excluded; derived draft values
-remain yours to review.
+track for Preview. Waypoint coordinates and names are included by default and
+can be turned off in Settings. Source health and device fields plus each
+trackpoint's time and elevation are excluded; derived draft values remain yours
+to review.
 
 ## FAQ
 
@@ -239,14 +239,14 @@ Garmin and Strava remain isolated behind separate adapters because their page DO
 
 ### 2. Two track representations, one privacy boundary
 
-The source XML never leaves the activity page and is never persisted. By default, the parser returns only ordered track points and segment boundaries. The Trip Info setting also allowlists the track/activity name, and the off-by-default waypoint setting allowlists waypoint coordinates and names. Capture then produces successively narrower representations:
+The source XML never leaves the activity page and is never persisted. With default settings, the parser returns ordered track points and segment boundaries, the track/activity name for Trip Info, and waypoint coordinates and names. Waypoint retention can be turned off. Capture then produces successively narrower representations:
 
 | Representation | Fields | Lifetime and purpose |
 | --- | --- | --- |
 | Full-resolution analysis | latitude, longitude, optional elevation, optional timestamp, segment boundaries | In memory while validating the track, finding summits, and calculating ascent fields. |
 | Peakbagger upload | track latitude/longitude and segment boundaries; optional waypoint latitude/longitude/name | Reduced to at most 3,000 total trackpoints and waypoints, kept in `storage.session`, and uploaded only after **Open drafts**. |
 
-The upload serializer constructs new GPX rather than deleting selected nodes from the source. Its default allowlist is deliberately tiny: `<gpx>`, `<trk>`, `<trkseg>`, and `<trkpt lat="…" lon="…">`. With waypoint retention enabled, it may additionally emit `<wpt lat="…" lon="…"><name>…</name></wpt>`. A second validator on the Peakbagger draft page enforces the setting and rejects anything outside that shape, more than 3,000 total points, or more than 50 segments before attaching the file. Descriptions, metadata, routes, timestamps, elevation, symbols, device fields, heart rate, cadence, temperature, power, and all extensions have no path into the upload.
+The upload serializer constructs new GPX rather than deleting selected nodes from the source. Its allowlist is deliberately tiny: `<gpx>`, `<trk>`, `<trkseg>`, `<trkpt lat="…" lon="…">`, and—when waypoint retention is enabled—`<wpt lat="…" lon="…"><name>…</name></wpt>`. A second validator on the Peakbagger draft page enforces the setting and rejects anything outside that shape, more than 3,000 total points, or more than 50 segments before attaching the file. Descriptions, metadata, routes, timestamps, elevation, symbols, device fields, heart rate, cadence, temperature, power, and all extensions have no path into the upload.
 
 Timestamps and elevation are optional analysis inputs, not assumptions about a provider export. If timestamps are absent, the extension does not invent them: it uses the provider's displayed local start date when available, leaves the encounter time empty, calculates durations as zero, and lowers the track-quality evidence.
 
@@ -532,7 +532,7 @@ Settings shape (`chrome.storage.sync`, key `bpbSettings`):
 ```js
 { units: 'auto' | 'imperial' | 'metric',
   theme: 'system' | 'light' | 'dark',
-  retainWaypoints: boolean,         // default false; allowlists waypoint coordinates/names
+  retainWaypoints: boolean,         // default true; allowlists waypoint coordinates/names
   fillTripInfo: boolean,            // default true; multiple selected peaks
   fillWildernessNights: boolean,    // default true; overnight single-peak capture
   chartDefaultSeries: 'both' | 'distance' | 'time',  // GPX chart's initial series
@@ -616,12 +616,12 @@ the Peakbagger summit lookup and GPS Preview actions described below.
   and expire after 30 minutes.
 - **GPS Preview:** only after you choose **Open drafts**, Peakbagger receives a
   newly serialized GPX containing latitude, longitude, and segment boundaries,
-  plus opt-in waypoint coordinates/names, reduced to at most 3,000 total points.
+  plus waypoint coordinates/names by default, reduced to at most 3,000 total points.
 - **Excluded source fields:** heart rate, cadence, power, temperature, device
   fields, descriptions, routes, waypoint elevation/time/symbols, extension
   elements, and each trackpoint's timestamp and elevation. The activity/track
   name is retained only for enabled multi-peak Trip Info; waypoint coordinates
-  and names are retained only when explicitly enabled. Derived form values such
+  and names are retained unless disabled. Derived form values such
   as the activity date, ascent times, distance, gain, and nights out are retained
   for the prepared draft; the other source fields are not.
 - **Manual publication:** Better Peakbagger can prepare GPS Preview, but no
