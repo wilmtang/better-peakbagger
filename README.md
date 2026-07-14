@@ -79,13 +79,13 @@ Runs on `climber/ascent.aspx`. When the page has a "Download this GPS track" lin
 - **Double-click a point** copies its `lat, lon` to the clipboard.
 
 ### Ascent Beta Filter
-Runs on `climber/PeakAscents.aspx` and personal `climber/ClimbListC.aspx` pages. Injects a sticky filter bar above the table and adds instant date sorting.
+Runs on `climber/PeakAscents.aspx` and personal `climber/ClimbListC.aspx` pages. Injects a sticky filter bar above the table and makes the sortable columns instant and local.
 
 - **Has beta** (on by default) — only ascents that have at least one of the signals *you* count as beta (settings: trip report with ≥ N words / GPS track / external link; default: any of the three).
 - **Trip report** — only ascents with a written report, with an adjustable **≥ N words** threshold.
 - **GPS track** / **Link** — only ascents with a GPS track / an external link.
 - Filters **stack** (AND), each chip shows its count, and there's a one-click **Show all**. Empty year separators collapse.
-- **Instant date sort** — one persistent **Ascent Date ▲/▼** control reorders the current rows in milliseconds instead of reloading from the server. Click the same place again to reverse direction.
+- **Instant table sort** — every natively sortable header reorders the current rows in the browser instead of reloading from the server. Click the same header again to reverse direction.
 
 ### Dark mode & settings
 The options page centralizes the preferences in `chrome.storage.sync`:
@@ -353,18 +353,19 @@ Runs in the isolated world on `PeakAscents.aspx` and personal `ClimbListC.aspx` 
 - **State split.** The filter's per-page UI state — chip on/off states *and* the Trip report `≥ N words` threshold — persists together in the page's `localStorage` (`pbAscentBetaFilter.v1`), so it is remembered across visits without touching the synced settings. The shared `chrome.storage` settings own only the cross-cutting **"has beta" definition** (`betaTr`/`betaTrMinWords`/`betaGps`/`betaLink`); a `subscribe` re-applies it live when the options page changes it.
 - **Compact view.** Views whose table lacks the TR-Words / GPS / Link columns have nothing to filter; there the bar degrades to a one-click link to the full "all years, full details" view (`y=9999`), preserving the existing `sort`/unit params.
 
-### Instant Ascent Date sort
+### Instant table sort
 
-The date column's header normally carries two backend sort links — `Ascent Date` (`sort=ascentdate`, oldest first) and `[sort desc]` (`sort=ascentdated`, newest first) — and following either reloads the whole page. On `PeakAscents.aspx` and personal `ClimbListC.aspx` pages, the script replaces that pair with one persistent **Ascent Date ▲/▼** toggle and answers in the DOM:
+Peakbagger's sortable table headers are backend links, so changing Climber, Date, GPS, TR-Words, Route, metrics, icons, quality, or Link normally reloads the whole page. On `PeakAscents.aspx` and personal `ClimbListC.aspx` pages, the script replaces every one of those native sort links with a persistent ▲/▼ control and answers in the DOM:
 
-- **Reversal, not sorting.** On a page that is already date-sorted, the opposite direction is exactly the served order reversed: year sections in reverse order, rows within each section reversed. So the toggle never parses a date — which matters, because real date cells include `Unknown`, partial values (`1915-06`), typos (`1941 l`), and red parenthesised variants whose backend ordering is opaque. One `DocumentFragment` re-append flips ~4,000 rows in a few milliseconds.
-- **The URL stays honest.** After a toggle, `history.replaceState` changes only the current URL's `sort` parameter. Existing list identity, year, unit, and subset parameters are preserved instead of being replaced by defaults embedded in Peakbagger's native sort links.
-- **One control that stays put.** A ▲/▼ arrow shows the current order, and clicking the same **Ascent Date** control toggles between oldest-first and newest-first. The control exposes `aria-sort`, a next-action label, keyboard activation, and a visible focus state.
-- **No premature reload.** The sorter wires up synchronously, *before* the awaited settings read, and a capture-phase click guard installed at `document_start` holds any native "Ascent Date" / "[sort desc]" header click made in the meantime (the header is clickable long before a ~4,000-row page finishes parsing) — replaying it in the DOM once ready instead of letting it fire a full server reload. Year-jump and metric-toggle links remain untouched.
-- **Current rows are the invariant.** Default views may have backend sort links that add `y=`/`j=`/`u=` parameters. The sorter never follows or copies those links; it reorders only the `<tr>` nodes already present and updates only the current URL's `sort` parameter. Explicit non-date sorts still opt out because reversing a quality-sorted table is not a date sort.
+- **Type-aware, stable sorting.** Text uses case-insensitive natural ordering; numbers, presence flags, and icon sequences use values already present in each cell. Equal values keep their original relative order.
+- **Exact date reversal.** On a page that is already date-sorted, the opposite direction is the served order reversed: year sections reverse along with the rows inside them. The sorter does not reinterpret `Unknown`, partial dates (`1915-06`), typos (`1941 l`), or red parenthesised variants. If Date is selected from a flat non-date response, a conservative year/month/day fallback is used because the backend order is not present in the DOM.
+- **Honest grouping.** Year separators are date grouping metadata, so they are hidden during any non-date sort and restored exactly when the user returns to Date.
+- **Persistent controls.** A ▲/▼ arrow marks the active column and direction. Each button exposes `aria-sort`, a next-action label, keyboard activation, and a visible focus state.
+- **No premature reload.** The sorter wires up synchronously, *before* the awaited settings read, and a capture-phase click guard installed at `document_start` holds any native header-sort click made while a large table is still parsing. It replays that click in the DOM once ready; year-jump and metric-toggle links remain untouched.
+- **Current rows are the invariant.** Default views may have backend sort links that add `y=`/`j=`/`u=` parameters. The sorter never follows or copies those links and reorders only the `<tr>` nodes already present. Date toggles update only the URL's `sort` parameter because Peakbagger has distinct ascending/descending date keys.
 - **Composes with the filters.** Rows keep their visibility through a reorder, and the chips keep their live references to the moved `<tr>` nodes.
 
-Development against this table doesn't touch the live site: `test/fixtures/peakascents/` holds real captures (a ~4,145-row Mount Rainier page plus smaller Wayback captures), **masked** for the capturer's identity (see the fixtures README and `test/fixtures-privacy.test.mjs`), and `npm test` runs the content script against them in jsdom (golden chip counts, sort toggling, the opt-out guards).
+Development against this table doesn't touch the live site: `test/fixtures/peakascents/` holds real captures (a ~4,145-row Mount Rainier page plus smaller Wayback captures), **masked** for the capturer's identity (see the fixtures README and `test/fixtures-privacy.test.mjs`), and `npm test` runs the content script against them in jsdom (golden chip counts, type-aware sort toggling, grouping restoration, and click guards).
 
 ---
 
@@ -416,7 +417,7 @@ src/
   site-dark-css.js       dark rules as a string (window.BPBDarkCSS), theme-scoped
   bridge.js              relays settings to the MAIN-world analyzer (postMessage)
   gpx-analyzer.js        elevation/time chart + map-hover (MAIN world)
-  ascent-filter.js       ascent-list filter and instant date sort (isolated world)
+  ascent-filter.js       ascent-list filter and instant table sort (isolated world)
   provider-page.js       on-demand Garmin/Strava ownership + minimal GPX extraction
   capture-core.js        segment validation, summit scoring, metrics, GPX reduction
   background.js          session jobs, Peakbagger lookup, draft tabs and grouping

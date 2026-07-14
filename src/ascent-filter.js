@@ -1,7 +1,7 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
-// Better Peakbagger — ascent-list filter and instant date-sort content script.
+// Better Peakbagger — ascent-list filter and instant table-sort content script.
 // Runs in the default isolated content-script world: it only reads ascent-table
 // DOM, reorders existing rows, and persists PeakAscents chip preferences in the
 // page's (same-origin) localStorage, so no page-global access is needed.
@@ -32,39 +32,39 @@
     // Cells that "look empty" may contain a literal &nbsp; depending on column.
     const normalize = text => (text || '').replace(/\u00a0/g, ' ').trim();
 
-    // --- Early date-sort click guard ------------------------------------------
-    // The instant date sort (below) only wires up once the DOM is parsed and the
-    // filter has initialized. On a big ascent list the header renders and is
-    // clickable well before that, so a click on "Ascent Date" / "[sort desc]" in
-    // that window would fire a full-page server reload — exactly the sort we can
-    // answer instantly in the DOM. This capture-phase guard installs
-    // synchronously at document_start and holds those clicks until the sorter has
-    // decided: it replays the last one instantly once ready, navigates it if the
-    // page turns out not to be a candidate, and passes every other click through.
-    // It targets only date-sort links inside a table header, so year-jump and
-    // unit-toggle links that carry the same sort key navigate untouched.
-    const dateSortTarget = target => {
+    // --- Early table-sort click guard -----------------------------------------
+    // The client-side sorter (below) only wires up once the DOM is parsed. On a
+    // large ascent list the header is clickable well before then, so hold native
+    // sort-link clicks until the sorter has decided whether it owns this table.
+    // Links outside table headers (year jumps, unit toggles, etc.) are untouched.
+    const tableSortTarget = target => {
         const anchor = target && target.closest ? target.closest('a[href]') : null;
         if (!anchor) return null;
         const header = anchor.closest('th');
-        if (!header || !normalize(header.textContent).toLowerCase().startsWith('ascent date')) return null;
+        if (!header) return null;
         let url;
         try { url = new URL(anchor.href, location.href); } catch (e) { return null; }
-        const sort = (url.searchParams.get('sort') || '').toLowerCase();
-        if (sort !== 'ascentdate' && sort !== 'ascentdated') return null;
-        return { href: anchor.href, dir: sort === 'ascentdated' ? 'desc' : 'asc' };
+        const rawKey = url.searchParams.get('sort') || '';
+        if (!rawKey) return null;
+        const lowerKey = rawKey.toLowerCase();
+        return {
+            href: anchor.href,
+            columnIndex: header.cellIndex,
+            key: lowerKey === 'ascentdated' ? 'ascentdate' : lowerKey,
+            dir: lowerKey === 'ascentdated' ? 'desc' : (lowerKey === 'ascentdate' ? 'asc' : null)
+        };
     };
 
-    let sortReady = false;      // instant sorter is wired and owns these clicks
-    let sortOptOut = false;     // page isn't a candidate: let clicks navigate
+    let sortReady = false;       // instant sorter is wired and owns these clicks
+    let sortOptOut = false;      // page isn't a candidate: let clicks navigate
     let pendingSortTarget = null;// a click held before the sorter decided
-    let applyInstantSort = null;// (direction) => reorder in the DOM, set once ready
+    let applyInstantSort = null; // (target) => reorder in the DOM, set once ready
 
     document.addEventListener('click', event => {
-        const target = dateSortTarget(event.target);
+        const target = tableSortTarget(event.target);
         if (!target || sortOptOut) return; // not ours, or navigation is allowed
         event.preventDefault();
-        if (sortReady) applyInstantSort(target.dir);
+        if (sortReady) applyInstantSort(target);
         else pendingSortTarget = target;   // hold until the sorter decides
     }, true);
 
@@ -81,109 +81,259 @@
         }
     };
 
-    // --- Instant Ascent Date sort ---------------------------------------------
-    // The native date header carries two backend sort links:
-    //   "Ascent Date" -> sort=ascentdate  (oldest first)
-    //   "[sort desc]" -> sort=ascentdated (newest first)
-    // Replace that pair with one persistent toggle. When the table is already
-    // date-sorted, the opposite direction is exactly the served order reversed
-    // (sections reversed, rows within each section reversed), so the toggle can
-    // answer instantly in the DOM with no date parsing — which matters because
-    // date cells include "Unknown", partial and malformed values whose backend
-    // ordering is opaque. Default views are date-ascending even when `sort` is
-    // omitted; explicit non-date sorts still opt out to normal navigation.
-    //
-    // Runs synchronously, before init's awaited settings read, so the click guard
-    // above is released — and any held click replayed — without waiting on the
-    // chrome.storage round-trip.
-    const setupInstantDateSort = ({ headerTexts, headerRow, sections, preamble, rows }) => {
-        const dateIndex = headerTexts.findIndex(text => text.startsWith('ascent date'));
-        if (dateIndex === -1) return optOutInstantSort();
-
-        const sortKeyOf = anchor => {
-            try { return (new URL(anchor.href, location.href).searchParams.get('sort') || '').toLowerCase(); }
+    // --- Instant table sorting ------------------------------------------------
+    // Replace every native backend sort link with a button that reorders only the
+    // rows already on the page. Date-sorted pages keep Peakbagger's exact served
+    // order so Unknown, partial, and malformed dates retain backend semantics.
+    // Other columns use values already present in their cells; their sort is
+    // stable and type-aware for numbers, presence flags, icons, and dates.
+    const setupInstantTableSort = ({ headerRow, sections, preamble, rows, dataRows }) => {
+        const keyOf = anchor => {
+            try { return new URL(anchor.href, location.href).searchParams.get('sort') || ''; }
             catch (e) { return ''; }
         };
-        const anchors = Array.from(headerRow.cells[dateIndex].querySelectorAll('a[href]'));
-        const links = {
-            asc: anchors.find(a => sortKeyOf(a) === 'ascentdate'),
-            desc: anchors.find(a => sortKeyOf(a) === 'ascentdated')
+        const numericKeys = new Set([
+            'words', 'vertpeakft', 'tripupft', 'totalkm', 'tripkm',
+            'quality', 'elevft', 'promft'
+        ]);
+        const descendingFirstKeys = new Set([
+            ...numericKeys, 'gps', 'routestring', 'gearstring', 'urllink'
+        ]);
+        const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
+
+        const sortable = Array.from(headerRow.cells).flatMap((cell, index) => {
+            const anchors = Array.from(cell.querySelectorAll('a[href]'));
+            const primary = anchors.find(anchor => keyOf(anchor).toLowerCase() !== 'ascentdated');
+            if (!primary) return [];
+            const rawKey = keyOf(primary);
+            if (!rawKey) return [];
+            const key = rawKey.toLowerCase();
+            const label = normalize(primary.textContent) || normalize(cell.textContent);
+            return [{
+                id: `${index}:${key}`,
+                index,
+                key,
+                label,
+                defaultDir: descendingFirstKeys.has(key) ? 'desc' : 'asc',
+                cell,
+                control: null,
+                arrow: null
+            }];
+        });
+        if (!sortable.length) return optOutInstantSort();
+
+        dataRows.forEach((record, index) => {
+            record.sortIndex = index;
+            record.sortValues = new Map();
+        });
+        const readValueAt = (record, column) => {
+            const cell = record.row.cells[column.index];
+            if (!cell) return '';
+
+            if (column.key === 'ascentdate') {
+                const text = normalize(cell.textContent);
+                const match = /(\d{4})(?:-(\d{1,2}))?(?:-(\d{1,2}))?/.exec(text);
+                if (!match) return [0, 0, 0, text.toLowerCase()];
+                return [
+                    parseInt(match[1], 10),
+                    match[2] ? parseInt(match[2], 10) : 0,
+                    match[3] ? parseInt(match[3], 10) : 0,
+                    text.slice(match.index + match[0].length).replace(/[()]/g, '').trim().toLowerCase()
+                ];
+            }
+            if (column.key === 'words') return record.words;
+            if (column.key === 'gps') return record.gps ? 1 : 0;
+            if (column.key === 'urllink') return cell.querySelector('a[href]') ? 1 : 0;
+            if (numericKeys.has(column.key)) {
+                const match = /-?\d+(?:\.\d+)?/.exec(normalize(cell.textContent).replace(/,/g, ''));
+                return match ? parseFloat(match[0]) : 0;
+            }
+            if (column.key === 'routestring' || column.key === 'gearstring') {
+                return Array.from(cell.querySelectorAll('img')).map(image => {
+                    const src = image.getAttribute('src') || '';
+                    return src.slice(src.lastIndexOf('/') + 1);
+                }).join('|');
+            }
+
+            const text = normalize(cell.textContent);
+            if (text) return text;
+            return Array.from(cell.querySelectorAll('img')).map(image =>
+                normalize(image.title || image.alt || image.getAttribute('src'))
+            ).join('|');
         };
-        if (!links.asc || !links.desc) return optOutInstantSort();
+        const valueAt = (record, column) => {
+            if (!record.sortValues.has(column.id)) {
+                record.sortValues.set(column.id, readValueAt(record, column));
+            }
+            return record.sortValues.get(column.id);
+        };
+        const compareValues = (left, right) => {
+            if (Array.isArray(left) && Array.isArray(right)) {
+                for (let i = 0; i < Math.max(left.length, right.length); i++) {
+                    const compared = compareValues(left[i] ?? '', right[i] ?? '');
+                    if (compared) return compared;
+                }
+                return 0;
+            }
+            if (typeof left === 'number' && typeof right === 'number') return left - right;
+            return collator.compare(String(left), String(right));
+        };
+        const compareRecords = (left, right, column, dir, stable = true) => {
+            const compared = compareValues(valueAt(left, column), valueAt(right, column));
+            if (compared) return dir === 'asc' ? compared : -compared;
+            return stable ? left.sortIndex - right.sortIndex : 0;
+        };
+        const inferDirection = column => {
+            let ascending = true;
+            let descending = true;
+            for (let i = 1; i < dataRows.length && (ascending || descending); i++) {
+                const compared = compareRecords(dataRows[i - 1], dataRows[i], column, 'asc', false);
+                if (compared > 0) ascending = false;
+                if (compared < 0) descending = false;
+            }
+            if (ascending) return 'asc';
+            if (descending) return 'desc';
+            return null;
+        };
 
         const urlSort = (new URLSearchParams(location.search).get('sort') || 'ascentdate').toLowerCase();
-        if (urlSort !== 'ascentdate' && urlSort !== 'ascentdated') return optOutInstantSort();
-
-        // Served direction: trust the year separators over the URL.
+        const dateServed = urlSort === 'ascentdate' || urlSort === 'ascentdated';
         const years = sections
             .map(section => parseInt(normalize(section.row.textContent), 10))
             .filter(Number.isFinite);
-        const servedDir = years.length > 1
+        const servedDateDir = years.length > 1
             ? (years[0] > years[years.length - 1] ? 'desc' : 'asc')
             : (urlSort === 'ascentdated' ? 'desc' : 'asc');
-
         const servedOrder = rows.slice(rows.indexOf(headerRow) + 1);
-        const reversedOrder = [];
+        const reversedDateOrder = [];
         for (let i = sections.length - 1; i >= 0; i--) {
-            reversedOrder.push(sections[i].row);
+            reversedDateOrder.push(sections[i].row);
             for (let j = sections[i].items.length - 1; j >= 0; j--) {
-                reversedOrder.push(sections[i].items[j].row);
+                reversedDateOrder.push(sections[i].items[j].row);
             }
         }
-        for (let i = preamble.length - 1; i >= 0; i--) reversedOrder.push(preamble[i].row);
+        for (let i = preamble.length - 1; i >= 0; i--) reversedDateOrder.push(preamble[i].row);
+        const knownRows = new Set([
+            ...dataRows.map(record => record.row),
+            ...sections.map(section => section.row)
+        ]);
+        const otherRows = servedOrder.filter(row => !knownRows.has(row));
+        reversedDateOrder.push(...otherRows);
 
-        const control = document.createElement('button');
-        control.type = 'button';
-        control.className = 'pbaf-date-sort';
-        control.append('Ascent Date');
-        const arrow = document.createElement('span');
-        arrow.className = 'pbaf-sort-arrow';
-        control.append(arrow);
-        headerRow.cells[dateIndex].replaceChildren(control);
-
-        let currentDir = servedDir;
-        const paint = () => {
-            arrow.textContent = currentDir === 'asc' ? ' ▲' : ' ▼';
-            const current = currentDir === 'asc' ? 'oldest first' : 'newest first';
-            const next = currentDir === 'asc' ? 'newest first' : 'oldest first';
-            control.title = `Sorted ${current}. Click to sort ${next}.`;
-            control.setAttribute('aria-label', `Ascent Date, sorted ${current}. Sort ${next}.`);
-            headerRow.cells[dateIndex].setAttribute('aria-sort', currentDir === 'asc' ? 'ascending' : 'descending');
+        const appendRecords = (records, showSections) => {
+            const fragment = document.createDocumentFragment();
+            for (const section of sections) section.row.hidden = !showSections;
+            for (const record of records) fragment.appendChild(record.row);
+            for (const row of otherRows) fragment.appendChild(row);
+            for (const section of sections) fragment.appendChild(section.row);
+            headerRow.parentNode.appendChild(fragment);
         };
 
-        const applyDir = dir => {
-            if (dir === currentDir) return;
-            const fragment = document.createDocumentFragment();
-            for (const row of (dir === servedDir ? servedOrder : reversedOrder)) fragment.appendChild(row);
-            headerRow.parentNode.appendChild(fragment);
+        let currentColumn = null;
+        let currentDir = null;
+        if (dateServed) {
+            currentColumn = sortable.find(column => column.key === 'ascentdate') || null;
+            currentDir = currentColumn ? servedDateDir : null;
+        } else {
+            const servedColumn = sortable.find(column => column.key === urlSort) || null;
+            const servedDirection = servedColumn && inferDirection(servedColumn);
+            if (servedDirection) {
+                currentColumn = servedColumn;
+                currentDir = servedDirection;
+            }
+        }
+
+        const directionWords = (column, dir) => {
+            if (column.key === 'ascentdate') return dir === 'asc' ? 'oldest first' : 'newest first';
+            return dir === 'asc' ? 'ascending' : 'descending';
+        };
+        const paint = () => {
+            for (const column of sortable) {
+                const active = currentColumn && currentColumn.id === column.id;
+                column.cell.removeAttribute('aria-sort');
+                column.arrow.textContent = active ? (currentDir === 'asc' ? ' ▲' : ' ▼') : '';
+                if (active) {
+                    const current = directionWords(column, currentDir);
+                    const nextDir = currentDir === 'asc' ? 'desc' : 'asc';
+                    const next = directionWords(column, nextDir);
+                    column.cell.setAttribute('aria-sort', currentDir === 'asc' ? 'ascending' : 'descending');
+                    column.control.title = `Sorted ${current}. Click to sort ${next}.`;
+                    column.control.setAttribute('aria-label', `${column.label}, sorted ${current}. Sort ${next}.`);
+                } else {
+                    const first = directionWords(column, column.defaultDir);
+                    column.control.title = `Sort ${first}.`;
+                    column.control.setAttribute('aria-label', `${column.label}. Sort ${first}.`);
+                }
+            }
+        };
+
+        const apply = (column, dir) => {
+            if (!column || (currentColumn && currentColumn.id === column.id && currentDir === dir)) return;
+
+            if (column.key === 'ascentdate' && dateServed) {
+                for (const section of sections) section.row.hidden = false;
+                const order = dir === servedDateDir ? servedOrder : reversedDateOrder;
+                const fragment = document.createDocumentFragment();
+                for (const row of order) fragment.appendChild(row);
+                headerRow.parentNode.appendChild(fragment);
+            } else {
+                const sorted = dataRows.slice().sort((left, right) => compareRecords(left, right, column, dir));
+                appendRecords(sorted, column.key === 'ascentdate');
+            }
+
+            currentColumn = column;
             currentDir = dir;
             paint();
-            // Preserve the current row-set URL. Native header links often add or
-            // change y=/j=/u= defaults; copying one would make reload/share show
-            // a different list than the rows the user just sorted.
-            try {
-                const url = new URL(location.href);
-                url.searchParams.set('sort', dir === 'asc' ? 'ascentdate' : 'ascentdated');
-                history.replaceState(history.state, '', url.href);
-            } catch (e) { /* sandboxed */ }
+
+            // Date has native ascending/descending URL keys. Preserve the current
+            // row-set parameters without adopting defaults from a header link.
+            if (column.key === 'ascentdate') {
+                try {
+                    const url = new URL(location.href);
+                    url.searchParams.set('sort', dir === 'asc' ? 'ascentdate' : 'ascentdated');
+                    history.replaceState(history.state, '', url.href);
+                } catch (e) { /* sandboxed */ }
+            }
         };
 
-        const toggle = () => applyDir(currentDir === 'asc' ? 'desc' : 'asc');
-        control.addEventListener('click', toggle);
-        control.addEventListener('keydown', event => {
-            if (event.key !== 'Enter' && event.key !== ' ') return;
-            event.preventDefault();
-            toggle();
-        });
+        for (const column of sortable) {
+            const control = document.createElement('button');
+            control.type = 'button';
+            control.className = 'pbaf-table-sort' + (column.key === 'ascentdate' ? ' pbaf-date-sort' : '');
+            control.append(column.label);
+            const arrow = document.createElement('span');
+            arrow.className = 'pbaf-sort-arrow';
+            control.appendChild(arrow);
+            column.control = control;
+            column.arrow = arrow;
+            column.cell.replaceChildren(control);
 
-        // The document-level guard owns clicks caught before the native links
-        // were replaced. Route them here now that the DOM sorter is ready.
-        applyInstantSort = applyDir;
+            const toggle = () => {
+                const dir = currentColumn && currentColumn.id === column.id
+                    ? (currentDir === 'asc' ? 'desc' : 'asc')
+                    : column.defaultDir;
+                apply(column, dir);
+            };
+            control.addEventListener('click', toggle);
+            control.addEventListener('keydown', event => {
+                if (event.key !== 'Enter' && event.key !== ' ') return;
+                event.preventDefault();
+                toggle();
+            });
+        }
+
+        // Route header clicks held during DOM parsing through the corresponding
+        // client-side control now that all native links have been replaced.
+        applyInstantSort = target => {
+            const column = sortable.find(candidate => candidate.index === target.columnIndex)
+                || sortable.find(candidate => candidate.key === target.key);
+            if (column) apply(column, target.dir || column.defaultDir);
+        };
         sortReady = true;
         if (pendingSortTarget) {
-            const { dir } = pendingSortTarget;
+            const target = pendingSortTarget;
             pendingSortTarget = null;
-            applyInstantSort(dir);
+            applyInstantSort(target);
         }
         paint();
     };
@@ -220,9 +370,9 @@
 .pbaf-reset[hidden] { display: none; }
 .pbaf-note { color: #55554f; }
 .pbaf-note a { color: #2f6b3f; font-weight: 600; }
-.pbaf-date-sort { appearance: none; border: 0; padding: 0; background: transparent; color: navy;
+.pbaf-table-sort { appearance: none; border: 0; padding: 0; background: transparent; color: navy;
     font: inherit; font-weight: inherit; cursor: pointer; text-decoration: underline; text-underline-offset: 1px; }
-.pbaf-date-sort:focus-visible { outline: 2px solid #2f6b3f; outline-offset: 2px; }
+.pbaf-table-sort:focus-visible { outline: 2px solid #2f6b3f; outline-offset: 2px; }
 .pbaf-sort-arrow { font-size: 10px; opacity: .85; }
 `;
 
@@ -323,10 +473,10 @@
         }
         if (!dataRows.length) return optOutInstantSort();
 
-        // Wire the instant date sort now — synchronously, before the awaited
+        // Wire instant table sorting now — synchronously, before the awaited
         // settings read below — so the click guard is released (and any held
         // click replayed) as early as possible, not after the storage round-trip.
-        setupInstantDateSort({ headerTexts, headerRow, sections, preamble, rows });
+        setupInstantTableSort({ headerRow, sections, preamble, rows, dataRows });
 
         if (columns.tr === null && columns.gps === null && columns.link === null) {
             renderCompactNotice(table);

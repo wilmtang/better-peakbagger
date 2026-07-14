@@ -116,8 +116,11 @@ test('beta definition changes apply live via storage.onChanged', async () => {
 
 const dateTexts = dom => dataRows(dom).map(r => r.cells[1].textContent.trim());
 const sectionLabels = dom => sectionRows(dom).map(r => r.textContent.trim());
-const arrow = dom => dom.window.document.querySelector('.pbaf-sort-arrow');
-const sortControl = dom => dom.window.document.querySelector('.pbaf-date-sort');
+const tableSortControl = (dom, label) =>
+    [...dom.window.document.querySelectorAll('.pbaf-table-sort')]
+        .find(control => control.firstChild.textContent.trim() === label);
+const sortControl = dom => tableSortControl(dom, 'Ascent Date');
+const arrow = dom => sortControl(dom)?.querySelector('.pbaf-sort-arrow') || null;
 
 test('the date header is one persistent toggle with no backend links', async () => {
     const dom = await loadPageWithBar(RAINIER, { url: RAINIER_URL });
@@ -190,11 +193,74 @@ test('a desc-served page starts with the ▼ indicator and reverses to asc', asy
     assert.equal(arrow(dom).textContent.trim(), '▲');
 });
 
-test('non-date sorts are not hijacked', async () => {
+test('a non-date-served page replaces backend links and preserves its active sort', async () => {
     const dom = await loadPageWithBar('8241-y9999-sort-quality.html', {
         url: 'https://www.peakbagger.com/climber/PeakAscents.aspx?pid=8241&u=ft&y=9999&sort=Quality'
     });
-    assert.equal(arrow(dom), null);
+
+    assert.ok(sortControl(dom));
+    assert.equal(tableSortControl(dom, 'Qlty').closest('th').getAttribute('aria-sort'), 'descending');
+    assert.equal(tableSortControl(dom, 'Qlty').querySelector('.pbaf-sort-arrow').textContent.trim(), '▼');
+    assert.equal(table(dom).querySelectorAll('th a[href]').length, 0);
+});
+
+test('all native sortable headers become client-side controls', async () => {
+    const dom = await loadPageWithBar('1039-default-full-columns.html', {
+        url: 'https://www.peakbagger.com/climber/PeakAscents.aspx?pid=1039'
+    });
+    const header = [...table(dom).rows].find(row => row.cells[0]?.tagName === 'TH');
+    const labels = [...header.querySelectorAll('.pbaf-table-sort')]
+        .map(control => control.firstChild.textContent.trim());
+
+    assert.deepEqual(labels, [
+        'Climber', 'Ascent Date', 'Type', 'GPS', 'TR-Words', 'Route',
+        'Gain-Ft', 'Mi', 'Route Icons', 'Gear Icons', 'Qlty', 'Link'
+    ]);
+    assert.equal(header.querySelectorAll('a[href]').length, 0);
+    assert.ok([...header.querySelectorAll('.pbaf-table-sort')].every(control => control.type === 'button'));
+});
+
+test('text and numeric controls sort existing rows in both directions', async () => {
+    const dom = await loadPageWithBar('1039-default-full-columns.html', {
+        url: 'https://www.peakbagger.com/climber/PeakAscents.aspx?pid=1039'
+    });
+    const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
+    const climbers = () => dataRows(dom).map(row => row.cells[0].textContent.trim());
+    const words = () => dataRows(dom).map(row => {
+        const match = /TR-(\d+)/.exec(row.cells[4].textContent.trim());
+        return match ? parseInt(match[1], 10) : 0;
+    });
+    const isOrdered = (values, compare) => values.every((value, index) =>
+        index === 0 || compare(values[index - 1], value) <= 0
+    );
+
+    tableSortControl(dom, 'Climber').click();
+    assert.ok(isOrdered(climbers(), (left, right) => collator.compare(left, right)));
+    assert.ok(sectionRows(dom).every(row => row.hidden));
+
+    tableSortControl(dom, 'Climber').click();
+    assert.ok(isOrdered(climbers(), (left, right) => collator.compare(right, left)));
+
+    tableSortControl(dom, 'TR-Words').click();
+    assert.ok(isOrdered(words(), (left, right) => right - left));
+    tableSortControl(dom, 'TR-Words').click();
+    assert.ok(isOrdered(words(), (left, right) => left - right));
+});
+
+test('switching back to date restores exact rows and year separators', async () => {
+    const dom = await loadPageWithBar('1039-default-full-columns.html', {
+        url: 'https://www.peakbagger.com/climber/PeakAscents.aspx?pid=1039'
+    });
+    const datesBefore = dateTexts(dom);
+    const sectionsBefore = sectionLabels(dom);
+
+    tableSortControl(dom, 'GPS').click();
+    assert.ok(sectionRows(dom).every(row => row.hidden));
+
+    sortControl(dom).click();
+    assert.deepEqual(dateTexts(dom), datesBefore);
+    assert.deepEqual(sectionLabels(dom), sectionsBefore);
+    assert.ok(sectionRows(dom).every(row => !row.hidden));
 });
 
 test('default views sort their current rows without adopting backend-link params', async () => {
