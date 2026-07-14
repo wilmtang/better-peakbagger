@@ -55,11 +55,15 @@ export async function verifyReleaseArchive(archiveBytes, expectedVersion) {
   return entries;
 }
 
-async function main() {
-  const archivePath = process.argv[2];
-  if (!archivePath) {
+export function requireSingleArchivePath(archivePaths) {
+  if (archivePaths.length !== 1) {
     throw new Error("Usage: node scripts/verify-release-archive.mjs ARCHIVE_PATH");
   }
+  return archivePaths[0];
+}
+
+async function main() {
+  const archivePath = requireSingleArchivePath(process.argv.slice(2));
 
   const packageJson = JSON.parse(await readFile("package.json", "utf8"));
   const entries = await verifyReleaseArchive(await readFile(archivePath), packageJson.version);

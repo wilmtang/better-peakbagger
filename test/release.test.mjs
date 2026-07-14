@@ -5,7 +5,10 @@ import JSZip from "jszip";
 import { buildAmoMetadata } from "../scripts/create-amo-metadata.mjs";
 import { publishChrome } from "../scripts/publish-chrome.mjs";
 import { validateRelease } from "../scripts/release-check.mjs";
-import { verifyReleaseArchive } from "../scripts/verify-release-archive.mjs";
+import {
+  requireSingleArchivePath,
+  verifyReleaseArchive,
+} from "../scripts/verify-release-archive.mjs";
 
 function releaseState(overrides = {}) {
   return {
@@ -80,6 +83,15 @@ test("release archive rejects development and internal files", async () => {
   await assert.rejects(
     verifyReleaseArchive(await makeReleaseZip(), "1.4.1"),
     /does not match/,
+  );
+});
+
+test("release archive verification rejects ambiguous archive paths", () => {
+  assert.equal(requireSingleArchivePath(["release.zip"]), "release.zip");
+  assert.throws(() => requireSingleArchivePath([]), /Usage:/);
+  assert.throws(
+    () => requireSingleArchivePath(["old.zip", "release.zip"]),
+    /Usage:/,
   );
 });
 

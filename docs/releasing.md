@@ -90,7 +90,7 @@ visible in the AMO Developer Hub.
    npm test
    npm run lint
    npm run build
-   npm run release:verify-archive -- web-ext-artifacts/*.zip
+   npm run release:verify-archive -- web-ext-artifacts/better_peakbagger-X.Y.Z.zip
    npm run release:check -- vX.Y.Z
    ```
 
