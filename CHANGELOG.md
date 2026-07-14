@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- **Map-first GPX layout.** The elevation chart now sits directly below the
+  ascent map and its waypoint legend, before Peakbagger's full-screen map link,
+  GPS-track warning, and GPX download link.
 - **Optional map-layer memory.** A new off-by-default setting remembers the
   last layer chosen in Peakbagger's native map control and restores it on later
   ascent maps. Unknown or unavailable layer IDs fail closed to the site default,
@@ -16,8 +19,8 @@
   available beside the chart and all four appearance values are in Settings.
   The non-interactive, extension-owned layers preserve GPX segment breaks,
   remain behind Peakbagger's native route and markers, and are recreated after
-  map-iframe reloads. Unsupported or
-  pathological tracks leave the native map unchanged.
+  map-iframe reloads. Unsupported or pathological tracks leave the native map
+  unchanged.
 - **Correct same-day ascent suffixes.** Draft filling no longer writes encounter
   time into Peakbagger's suffix field. Only selected summits sharing an ascent
   date receive `a`, `b`, … in track-encounter order; singleton dates remain

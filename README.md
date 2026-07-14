@@ -61,9 +61,10 @@ time views, route metrics, grades, timing, and multi-day camping details. The
 map route is reinforced with a configurable line and casing (5 px red over
 9 px white by default) while Peakbagger's native route and markers remain on
 top. The map opens at full content width and can be resized from its lower-right
-corner; an opt-in setting can restore the last selected basemap. Hover over the
-chart to follow the same point on the map, or double-click a point to copy its
-coordinates.
+corner; an opt-in setting can restore the last selected basemap. The chart sits
+immediately below the map, before Peakbagger's full-screen map and GPX-download
+links. Hover over the chart to follow the same point on the map, or double-click
+a point to copy its coordinates.
 
 ![Three-day GPX analysis with a high-contrast route and chart-synchronized Leaflet marker](store-assets/showcase-gpx-map-sync.gif)
 
@@ -83,8 +84,9 @@ by “has beta.” Sortable columns reorder instantly without reloading the page
 ### Make Peakbagger easier on the eyes
 
 Use a site-wide dark theme that follows your system or stays light or dark.
-Shared settings also control units, the GPX chart's default view, and which
-signals count as ascent beta. Changes apply to open Peakbagger tabs immediately.
+Shared settings also control units, the GPX chart's default view, route
+appearance, map size, optional map-layer memory, and which signals count as
+ascent beta. Changes apply to open Peakbagger tabs immediately.
 
 ![Better Peakbagger settings beside Peakbagger dark mode](store-assets/screenshot-3-dark-mode-settings.png)
 
@@ -338,10 +340,16 @@ Flow:
 
 1. On load the analyzer posts `{ dir:'toCS', kind:'get' }` and `await`s the first `toPage` reply (with an 800 ms fallback to defaults, so a missing/slow bridge never hangs the chart).
 2. The bridge answers `get` by reading storage and posting the settings back.
-3. When the user flips the in-chart unit dropdown, the analyzer posts `{ kind:'set', patch:{ units } }`; the bridge writes storage. `storage.onChanged` then fires, the bridge re-broadcasts, and the chart re-renders — so the inline control and the options page edit **one** source of truth.
-4. Any external change (options page, another tab) reaches the chart the same way: `onChanged` → bridge push → analyzer re-render.
+3. Inline controls post narrow patches through the same channel: the chart's
+   unit and route-color controls, the map resize grip, and—when explicitly
+   enabled—the native layer selector. The bridge validates and writes each
+   patch to the shared settings object.
+4. Any external change (Settings or another tab) returns through
+   `storage.onChanged` → bridge push. The analyzer updates only the affected
+   surface; for example, a saved layer ID does not rebuild the chart or route
+   overlay.
 
-Every message is validated (`event.source === window`, `event.origin === location.origin`, an `__bpb` tag, and a direction). The data — units, a theme name, a small integer — is non-sensitive, so exposure on the shared `window` is harmless; the checks exist to ignore unrelated page traffic, not to protect secrets.
+Every message is validated (`event.source === window`, `event.origin === location.origin`, an `__bpb` tag, and a direction). The bridged data is limited to validated preferences—enumerated strings, booleans, bounded numbers, hex colors, and a known map-layer ID—and contains no activity data. The checks reject unrelated page traffic and prevent arbitrary values from becoming extension settings.
 
 ---
 
@@ -520,10 +528,10 @@ Settings shape (`chrome.storage.sync`, key `bpbSettings`):
 { units: 'auto' | 'imperial' | 'metric',
   theme: 'system' | 'light' | 'dark',
   chartDefaultSeries: 'both' | 'distance' | 'time',  // GPX chart's initial series
-  mapRouteColor: '#rrggbb', mapRouteWidth: 1..12,
-  mapRouteCasingColor: '#rrggbb', mapRouteCasingWidth: 3..20,
-  mapViewportWidth: 45..100,       // percent of the parent content width
-  mapViewportHeight: 240..720,     // pixels; default 450
+  mapRouteColor: '#rrggbb', mapRouteWidth: 1..12,        // defaults #d9483b / 5
+  mapRouteCasingColor: '#rrggbb', mapRouteCasingWidth: 3..20, // defaults #ffffff / 9
+  mapViewportWidth: 45..100,       // percent; default 100
+  mapViewportHeight: 240..720,     // pixels; default 450; reset restores both
   rememberMapLayer: boolean,       // opt-in; default false
   mapLastLayer: '' | known layer ID,
   betaTr: boolean,                  // "has beta" counts a trip report…
