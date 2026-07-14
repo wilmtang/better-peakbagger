@@ -17,6 +17,7 @@
     "release:metadata:firefox": "node scripts/create-amo-metadata.mjs web-ext-artifacts/amo-metadata.json",
     "release:sign:firefox": "web-ext sign --channel=listed --amo-metadata=web-ext-artifacts/amo-metadata.json --approval-timeout=0 --timeout=600000 --no-input",
     "release:verify-archive": "node scripts/verify-release-archive.mjs",
+    "showcase:render": "node scripts/render-showcase.mjs",
     "start:firefox": "web-ext run --source-dir .",
     "start:chromium": "web-ext run --source-dir . --target chromium",
     "test": "node --test \"test/**/*.test.mjs\""

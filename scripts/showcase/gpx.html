@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>GPX analyzer showcase</title>
+  <link rel="stylesheet" href="/scripts/showcase/showcase.css">
+  <script>
+    window.addEventListener('message', event => {
+      if (event.source !== window || !event.data || event.data.__bpb !== true || event.data.dir !== 'toCS') return;
+      window.postMessage({
+        __bpb: true,
+        dir: 'toPage',
+        settings: { units: 'imperial', theme: 'light', chartDefaultSeries: 'both' }
+      }, location.origin);
+    });
+  </script>
+</head>
+<body>
+  <main class="showcase">
+    <header class="showcase-head">
+      <span class="showcase-logo" aria-hidden="true"></span>
+      <div>
+        <h1>See the whole trip, then find the exact point</h1>
+        <p class="showcase-subtitle">Distance + time, multi-day timing, camp transitions, and a live route marker—together.</p>
+      </div>
+    </header>
+
+    <section class="browser">
+      <div class="browser-bar">
+        <span class="traffic-lights"><i></i><i></i><i></i></span>
+        <div class="address">peakbagger.com/climber/ascent.aspx?aid=482614</div>
+      </div>
+      <div class="gpx-stage">
+        <div class="gpx-title">
+          <h2>Mount Baker — Easton Glacier</h2>
+          <p>July 10–12, 2026 · three-day climb from trailhead to summit and back</p>
+        </div>
+        <div class="gpx-columns">
+          <div class="analyzer-column">
+            <a href="/scripts/showcase/multiday.gpx">Download this GPS track</a>
+          </div>
+          <aside class="map-card">
+            <iframe src="/scripts/showcase/MasterMap.aspx" title="Peakbagger Leaflet route map"></iframe>
+            <div class="map-caption"><strong>Peakbagger route map</strong><span class="live-pill">● chart point</span></div>
+          </aside>
+        </div>
+        <span class="feature-badge">Hover chart → map</span>
+      </div>
+    </section>
+  </main>
+
+  <script src="/vendor/chart.umd.min.js"></script>
+  <script src="/src/gpx-analyzer.js"></script>
+  <script>
+    const hoverFraction = Math.min(.88, Math.max(.12, Number(new URLSearchParams(location.search).get('hover')) || .56));
+
+    const placeChartHover = () => {
+      const canvas = document.querySelector('canvas');
+      const iframe = document.querySelector('iframe[src*="MasterMap.aspx"]');
+      const chart = canvas && window.Chart && Chart.getChart(canvas);
+      if (!chart || !iframe || !iframe.contentWindow || !iframe.contentWindow.L) return false;
+
+      const meta = chart.getDatasetMeta(0);
+      const index = Math.min(meta.data.length - 1, Math.max(0, Math.round((meta.data.length - 1) * hoverFraction)));
+      const active = [{ datasetIndex: 0, index }];
+      const point = meta.data[index];
+      chart.setActiveElements(active);
+      chart.tooltip.setActiveElements(active, { x: point.x, y: point.y });
+      chart.options.onHover(null, active, chart);
+      chart.update();
+      return !!iframe.contentDocument.querySelector('.track-marker');
+    };
+
+    window.addEventListener('load', () => {
+      let attempts = 0;
+      const timer = setInterval(() => {
+        attempts++;
+        if (placeChartHover() || attempts >= 20) clearInterval(timer);
+      }, 100);
+    });
+  </script>
+</body>
+</html>

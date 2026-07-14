@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Activity capture showcase</title>
+  <link rel="stylesheet" href="/scripts/showcase/showcase.css">
+</head>
+<body>
+  <main class="showcase">
+    <header class="showcase-head">
+      <span class="showcase-logo" aria-hidden="true"></span>
+      <div>
+        <h1>From activity to draft—without the private extras</h1>
+        <p class="showcase-subtitle">Capture a route you own, find likely summits, then review before anything is saved.</p>
+      </div>
+    </header>
+
+    <section class="browser">
+      <div class="browser-bar">
+        <span class="traffic-lights"><i></i><i></i><i></i></span>
+        <div class="address" id="address"></div>
+      </div>
+      <div class="provider-stage" id="provider-stage">
+        <nav class="provider-nav">
+          <span class="provider-wordmark" id="provider-wordmark"></span>
+          <span class="provider-nav-items">Dashboard Activities Training</span>
+        </nav>
+
+        <div class="provider-content">
+          <div class="activity-heading">
+            <div>
+              <div class="activity-eyebrow">Your activity</div>
+              <h2>Mount Baker summit push</h2>
+              <div class="activity-byline" id="activity-byline"></div>
+            </div>
+            <span class="owned">✓ Owned by you</span>
+          </div>
+
+          <div class="route-card" aria-hidden="true">
+            <svg viewBox="0 0 660 184" preserveAspectRatio="none">
+              <path class="route-shadow" d="M35 150 C90 137 125 150 174 118 S252 116 292 84 S365 93 395 53 S458 42 487 78 S546 103 620 31"/>
+              <path class="route" d="M35 150 C90 137 125 150 174 118 S252 116 292 84 S365 93 395 53 S458 42 487 78 S546 103 620 31"/>
+            </svg>
+          </div>
+
+          <div class="activity-stats">
+            <div class="activity-stat"><span>Distance</span><strong>13.8 mi</strong></div>
+            <div class="activity-stat"><span>Elevation gain</span><strong>7,420 ft</strong></div>
+            <div class="activity-stat"><span>Elapsed time</span><strong>14h 36m</strong></div>
+            <div class="activity-stat"><span>Start</span><strong>5:42 AM</strong></div>
+          </div>
+
+          <div class="private-source">
+            <b>Source GPX stays here:</b>
+            <span class="private-pill">Heart rate 142 bpm</span>
+            <span class="private-pill" id="device-pill"></span>
+            <span class="private-pill">Time + elevation</span>
+          </div>
+        </div>
+
+        <aside class="popup-shell">
+          <iframe id="capture-popup" title="Better Peakbagger capture results"></iframe>
+        </aside>
+
+        <div class="privacy-callout">
+          <strong>Peakbagger Preview receives</strong>
+          <span class="stripped">health · device · time · elevation</span>
+          <span class="privacy-arrow">→</span>
+          <span class="allowed">latitude + longitude only</span>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const provider = new URLSearchParams(location.search).get('provider') === 'garmin' ? 'garmin' : 'strava';
+    const garmin = provider === 'garmin';
+    document.getElementById('provider-stage').classList.toggle('garmin', garmin);
+    document.getElementById('provider-wordmark').textContent = garmin ? 'GARMIN CONNECT' : 'STRAVA';
+    document.getElementById('address').textContent = garmin ? 'connect.garmin.com/modern/activity/482614' : 'strava.com/activities/482614';
+    document.getElementById('activity-byline').textContent = garmin ? 'Hiking · July 12, 2026 · North Cascades' : 'Trail run · July 12, 2026 · North Cascades';
+    document.getElementById('device-pill').textContent = garmin ? 'Device fēnix 8' : 'Device recording metadata';
+    document.getElementById('capture-popup').src = `/popup/popup.html?showcase=1&provider=${provider}`;
+  </script>
+</body>
+</html>

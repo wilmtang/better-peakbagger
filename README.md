@@ -44,6 +44,14 @@ Selected ascents open together as prefilled Peakbagger drafts with GPS Preview
 already prepared. Review the details, make any corrections, and save when you
 are satisfied.
 
+![Garmin and Strava activity capture with privacy-reduced Peakbagger drafts](store-assets/showcase-activity-capture.gif)
+
+The provider page keeps the source activity's health, device, timing, and
+elevation fields. The popup makes the handoff visible: Preview receives only a
+newly serialized, reduced latitude/longitude track. The animation alternates
+synthetic Garmin and Strava activities; the popup itself is rendered from the
+shipped extension UI.
+
 ### Understand every mile of a GPS track
 
 Peakbagger ascent pages gain an interactive elevation chart with distance and
@@ -51,7 +59,11 @@ time views, route metrics, grades, timing, and multi-day camping details. Hover
 over the chart to follow the same point on Peakbagger's map, or double-click a
 point to copy its coordinates.
 
-![Interactive GPX analysis on a Peakbagger ascent](store-assets/screenshot-1-gpx-analyzer.png)
+![Three-day GPX analysis with distance and time curves synchronized to the Peakbagger map](store-assets/showcase-gpx-map-sync.gif)
+
+This synthetic three-day track shows both elevation series, start/summit/end
+timing, car-to-car duration, overnight transitions, and the analyzer's live
+Leaflet marker without exposing a real trip.
 
 ### Find useful ascent beta faster
 
@@ -59,11 +71,15 @@ Filter long ascent lists to trips with a report, GPS track, or external link.
 Filters combine naturally, show live result counts, and remember what you mean
 by “has beta.” Sortable columns reorder instantly without reloading the page.
 
+![Ascent beta filters and in-page sorting](store-assets/screenshot-2-beta-filter.png)
+
 ### Make Peakbagger easier on the eyes
 
 Use a site-wide dark theme that follows your system or stays light or dark.
 Shared settings also control units, the GPX chart's default view, and which
 signals count as ascent beta. Changes apply to open Peakbagger tabs immediately.
+
+![Better Peakbagger settings beside Peakbagger dark mode](store-assets/screenshot-3-dark-mode-settings.png)
 
 ## Privacy by design
 
