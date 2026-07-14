@@ -31,6 +31,31 @@ const loadOptions = async (settings = {}) => {
 
 const el = (dom, id) => dom.window.document.getElementById(id);
 
+test('settings are grouped by the surface they affect', async () => {
+    const dom = await loadOptions({});
+    const sections = Array.from(dom.window.document.querySelectorAll('.settings-section'));
+    assert.deepEqual(sections.map(section => section.querySelector('h2').textContent), [
+        'General',
+        'Map & GPX chart',
+        'Ascent beta filters'
+    ]);
+
+    const [general, mapChart, beta] = sections;
+    for (const section of sections) {
+        const heading = section.querySelector('h2');
+        assert.equal(section.getAttribute('aria-labelledby'), heading.id);
+        assert.equal(section.querySelectorAll(':scope > .card').length, 1);
+    }
+    assert.ok(general.querySelector('#theme'));
+    assert.equal(general.querySelector('#units'), null);
+    for (const id of ['units', 'chart-series', 'map-route-color', 'remember-map-layer', 'map-viewport-width']) {
+        assert.ok(mapChart.querySelector(`#${id}`), `${id} should belong to Map & GPX chart`);
+    }
+    for (const id of ['beta-tr', 'beta-tr-words', 'beta-gps', 'beta-link']) {
+        assert.ok(beta.querySelector(`#${id}`), `${id} should belong to Ascent beta filters`);
+    }
+});
+
 test('chart-series select populates from the stored setting', async () => {
     const dom = await loadOptions({ chartDefaultSeries: 'time' });
     assert.equal(el(dom, 'chart-series').value, 'time');

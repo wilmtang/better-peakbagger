@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- **Clearer Settings organization.** Preferences are now grouped into General,
+  Map & GPX chart, and Ascent beta filters so each control is discoverable by
+  the surface it affects.
 - **Map-first GPX layout.** The elevation chart now sits directly below the
   ascent map and its waypoint legend, before Peakbagger's full-screen map link,
   GPS-track warning, and GPX download link.

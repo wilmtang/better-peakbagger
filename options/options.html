@@ -18,123 +18,136 @@
             </div>
         </header>
 
-        <section class="card">
-            <div class="row">
-                <label class="label" for="units">
-                    <span class="title">Units</span>
-                    <span class="desc">Distance and elevation in the GPX chart. “Auto” matches whatever the ascent page shows.</span>
-                </label>
-                <div class="control">
-                    <select id="units">
-                        <option value="auto">Auto (match page)</option>
-                        <option value="imperial">Imperial (mi / ft)</option>
-                        <option value="metric">Metric (km / m)</option>
-                    </select>
+        <section class="settings-section" aria-labelledby="general-settings-heading">
+            <h2 class="section-title" id="general-settings-heading">General</h2>
+            <div class="card">
+                <div class="row">
+                    <label class="label" for="theme">
+                        <span class="title">Theme</span>
+                        <span class="desc">Dark or light mode for Peakbagger pages and this extension’s panels.</span>
+                    </label>
+                    <div class="control">
+                        <select id="theme">
+                            <option value="system">Follow system</option>
+                            <option value="light">Light</option>
+                            <option value="dark">Dark</option>
+                        </select>
+                    </div>
                 </div>
             </div>
+        </section>
 
-            <div class="row">
-                <label class="label" for="theme">
-                    <span class="title">Theme</span>
-                    <span class="desc">Dark or light mode for Peakbagger pages and this extension’s panels.</span>
-                </label>
-                <div class="control">
-                    <select id="theme">
-                        <option value="system">Follow system</option>
-                        <option value="light">Light</option>
-                        <option value="dark">Dark</option>
-                    </select>
+        <section class="settings-section" aria-labelledby="map-chart-settings-heading">
+            <h2 class="section-title" id="map-chart-settings-heading">Map &amp; GPX chart</h2>
+            <div class="card">
+                <div class="row">
+                    <label class="label" for="units">
+                        <span class="title">Units</span>
+                        <span class="desc">Distance and elevation in the GPX chart. “Auto” matches whatever the ascent page shows.</span>
+                    </label>
+                    <div class="control">
+                        <select id="units">
+                            <option value="auto">Auto (match page)</option>
+                            <option value="imperial">Imperial (mi / ft)</option>
+                            <option value="metric">Metric (km / m)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="row">
+                    <label class="label" for="chart-series">
+                        <span class="title">GPX chart default series</span>
+                        <span class="desc">Which elevation curve the ascent-page chart shows on load. You can still click a legend entry to reveal the other one for that view — it won’t change this setting.</span>
+                    </label>
+                    <div class="control">
+                        <select id="chart-series">
+                            <option value="both">Distance &amp; time</option>
+                            <option value="distance">Elevation by distance only</option>
+                            <option value="time">Elevation by time only</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="row">
+                    <div class="label">
+                        <span class="title">Map route appearance</span>
+                        <span class="desc">Colors and widths for the GPX route drawn over the map. The casing stays at least 2 px wider so it remains visible.</span>
+                    </div>
+                    <fieldset class="control route-style" aria-label="Map route appearance">
+                        <label class="route-style-row" for="map-route-color">
+                            <span>Route</span>
+                            <input id="map-route-color" type="color" aria-label="Route color">
+                            <input id="map-route-width" class="route-width" type="number" min="1" max="12" step="1" inputmode="numeric" aria-label="Route width in pixels">
+                            <span>px</span>
+                        </label>
+                        <label class="route-style-row" for="map-route-casing-color">
+                            <span>Casing</span>
+                            <input id="map-route-casing-color" type="color" aria-label="Route casing color">
+                            <input id="map-route-casing-width" class="route-width" type="number" min="3" max="20" step="1" inputmode="numeric" aria-label="Route casing width in pixels">
+                            <span>px</span>
+                        </label>
+                    </fieldset>
+                </div>
+
+                <div class="row">
+                    <div class="label">
+                        <span class="title">Remember map layer</span>
+                        <span class="desc">Load the layer you last selected on an ascent map. Turning this off forgets the saved layer.</span>
+                    </div>
+                    <div class="control">
+                        <label class="check" for="remember-map-layer">
+                            <input type="checkbox" id="remember-map-layer">
+                            <span>Use last selected</span>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="row">
+                    <div class="label">
+                        <span class="title">Map viewport</span>
+                        <span class="desc">By default, ascent maps use Peakbagger’s original 450 × 450 px size. Drag the lower-right corner up to the page width; changes apply to every ascent page.</span>
+                    </div>
+                    <fieldset class="control viewport-size" aria-label="Map viewport size">
+                        <label class="viewport-size-row" for="map-viewport-width">
+                            <span>Width</span>
+                            <input id="map-viewport-width" type="number" min="320" max="4096" step="10" inputmode="numeric" aria-label="Map width in pixels">
+                            <span>px</span>
+                        </label>
+                        <label class="viewport-size-row" for="map-viewport-height">
+                            <span>Height</span>
+                            <input id="map-viewport-height" type="number" min="240" max="720" step="10" inputmode="numeric" aria-label="Map height in pixels">
+                            <span>px</span>
+                        </label>
+                        <button id="map-viewport-reset" class="secondary" type="button">Reset size</button>
+                    </fieldset>
                 </div>
             </div>
+        </section>
 
-            <div class="row">
-                <label class="label" for="chart-series">
-                    <span class="title">GPX chart default series</span>
-                    <span class="desc">Which elevation curve the ascent-page chart shows on load. You can still click a legend entry to reveal the other one for that view — it won’t change this setting.</span>
-                </label>
-                <div class="control">
-                    <select id="chart-series">
-                        <option value="both">Distance &amp; time</option>
-                        <option value="distance">Elevation by distance only</option>
-                        <option value="time">Elevation by time only</option>
-                    </select>
-                </div>
-            </div>
-
-            <div class="row">
-                <div class="label">
-                    <span class="title">Map route appearance</span>
-                    <span class="desc">Colors and widths for the GPX route drawn over the map. The casing stays at least 2 px wider so it remains visible.</span>
-                </div>
-                <fieldset class="control route-style" aria-label="Map route appearance">
-                    <label class="route-style-row" for="map-route-color">
-                        <span>Route</span>
-                        <input id="map-route-color" type="color" aria-label="Route color">
-                        <input id="map-route-width" class="route-width" type="number" min="1" max="12" step="1" inputmode="numeric" aria-label="Route width in pixels">
-                        <span>px</span>
-                    </label>
-                    <label class="route-style-row" for="map-route-casing-color">
-                        <span>Casing</span>
-                        <input id="map-route-casing-color" type="color" aria-label="Route casing color">
-                        <input id="map-route-casing-width" class="route-width" type="number" min="3" max="20" step="1" inputmode="numeric" aria-label="Route casing width in pixels">
-                        <span>px</span>
-                    </label>
-                </fieldset>
-            </div>
-
-            <div class="row">
-                <div class="label">
-                    <span class="title">Remember map layer</span>
-                    <span class="desc">Load the layer you last selected on an ascent map. Turning this off forgets the saved layer.</span>
-                </div>
-                <div class="control">
-                    <label class="check" for="remember-map-layer">
-                        <input type="checkbox" id="remember-map-layer">
-                        <span>Use last selected</span>
-                    </label>
-                </div>
-            </div>
-
-            <div class="row">
-                <div class="label">
-                    <span class="title">Map viewport</span>
-                    <span class="desc">By default, ascent maps use Peakbagger’s original 450 × 450 px size. Drag the lower-right corner up to the page width; changes apply to every ascent page.</span>
-                </div>
-                <fieldset class="control viewport-size" aria-label="Map viewport size">
-                    <label class="viewport-size-row" for="map-viewport-width">
-                        <span>Width</span>
-                        <input id="map-viewport-width" type="number" min="320" max="4096" step="10" inputmode="numeric" aria-label="Map width in pixels">
-                        <span>px</span>
-                    </label>
-                    <label class="viewport-size-row" for="map-viewport-height">
-                        <span>Height</span>
-                        <input id="map-viewport-height" type="number" min="240" max="720" step="10" inputmode="numeric" aria-label="Map height in pixels">
-                        <span>px</span>
-                    </label>
-                    <button id="map-viewport-reset" class="secondary" type="button">Reset size</button>
-                </fieldset>
-            </div>
-
-            <div class="row">
-                <div class="label">
-                    <span class="title">“Has beta” means</span>
-                    <span class="desc">What the ascent-list <em>Has beta</em> chip counts. An ascent qualifies if it has at least one of the checked signals.</span>
-                </div>
-                <div class="control beta-signals">
-                    <label class="check">
-                        <input type="checkbox" id="beta-tr">
-                        <span>Trip report with ≥</span>
-                        <input id="beta-tr-words" class="mini" type="number" min="1" step="1" inputmode="numeric" aria-label="Minimum words for a trip report to count as beta">
-                        <span>words</span>
-                    </label>
-                    <label class="check">
-                        <input type="checkbox" id="beta-gps">
-                        <span>GPS track</span>
-                    </label>
-                    <label class="check">
-                        <input type="checkbox" id="beta-link">
-                        <span>External link</span>
-                    </label>
+        <section class="settings-section" aria-labelledby="beta-settings-heading">
+            <h2 class="section-title" id="beta-settings-heading">Ascent beta filters</h2>
+            <div class="card">
+                <div class="row">
+                    <div class="label">
+                        <span class="title">“Has beta” means</span>
+                        <span class="desc">What the ascent-list <em>Has beta</em> chip counts. An ascent qualifies if it has at least one of the checked signals.</span>
+                    </div>
+                    <div class="control beta-signals">
+                        <label class="check">
+                            <input type="checkbox" id="beta-tr">
+                            <span>Trip report with ≥</span>
+                            <input id="beta-tr-words" class="mini" type="number" min="1" step="1" inputmode="numeric" aria-label="Minimum words for a trip report to count as beta">
+                            <span>words</span>
+                        </label>
+                        <label class="check">
+                            <input type="checkbox" id="beta-gps">
+                            <span>GPS track</span>
+                        </label>
+                        <label class="check">
+                            <input type="checkbox" id="beta-link">
+                            <span>External link</span>
+                        </label>
+                    </div>
                 </div>
             </div>
         </section>
