@@ -7,9 +7,8 @@ ascent drafts, makes GPS tracks easier to understand, surfaces the trip reports
 that matter, and adds a polished dark mode to
 [Peakbagger](https://www.peakbagger.com/).
 
-[**Install for Chrome**](https://chromewebstore.google.com/detail/better-peakbagger/kndjohodnpdoejmjkiiakejfehoodedn)
-·
-[**Install for Firefox**](https://addons.mozilla.org/en-US/firefox/addon/better-peakbagger/)
+[![Chrome Web Store](https://img.shields.io/chrome-web-store/v/kndjohodnpdoejmjkiiakejfehoodedn?style=for-the-badge&logo=googlechrome&logoColor=white&label=Chrome%20Web%20Store&color=4285F4)](https://chromewebstore.google.com/detail/better-peakbagger/kndjohodnpdoejmjkiiakejfehoodedn)
+[![Firefox Add-ons](https://img.shields.io/amo/v/better-peakbagger?style=for-the-badge&logo=firefoxbrowser&logoColor=white&label=Firefox%20Add-ons&color=FF7139)](https://addons.mozilla.org/en-US/firefox/addon/better-peakbagger/)
 
 Works with Chrome, Edge, Brave, and Firefox. No userscript manager required.
 No analytics or telemetry.
