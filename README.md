@@ -58,10 +58,10 @@ shipped extension UI.
 
 Peakbagger ascent pages gain an interactive elevation chart with distance and
 time views, route metrics, grades, timing, and multi-day camping details. The
-map route is reinforced with a 5 px red line over a 9 px white casing while
-Peakbagger's native route and markers remain on top. Hover over the chart to
-follow the same point on the map, or double-click a point to copy its
-coordinates.
+map route is reinforced with a configurable line and casing (5 px red over
+9 px white by default) while Peakbagger's native route and markers remain on
+top. Hover over the chart to follow the same point on the map, or double-click
+a point to copy its coordinates.
 
 ![Three-day GPX analysis with a high-contrast route and chart-synchronized Leaflet marker](store-assets/showcase-gpx-map-sync.gif)
 
@@ -394,7 +394,7 @@ The map integration works in three parts:
    ```
    This only works because the analyzer runs in the **MAIN world**. An isolated content script can reach a same-origin iframe's *DOM*, but **not** the JavaScript globals (`mapsPlaceholder`, `L`) the iframe's own scripts defined — those live in that frame's page realm. Reading them requires being in the page realm ourselves. *This is the concrete reason the analyzer is a MAIN-world script.* (The iframe is same-origin — both are `peakbagger.com` — so the cross-frame property access is permitted; a cross-origin iframe would throw.)
 
-2. **Leaflet hooking.** Once the GPX and map are ready, the analyzer draws a non-interactive high-contrast route beneath Peakbagger's native markers and native route: a 5 px red line over a 9 px white casing. It does not guess at or mutate Peakbagger's own route layer. Original GPX segment breaks are preserved, rendering is capped at 3,000 sampled points with every segment endpoint retained, and pathological tracks that cannot fit without dropping a segment fail closed to the native route.
+2. **Leaflet hooking.** Once the GPX and map are ready, the analyzer draws a non-interactive high-contrast route beneath Peakbagger's native markers and native route: a configurable line and wider casing, defaulting to 5 px red over 9 px white. Colors can be changed beside the chart or in Settings; widths live in Settings, where validation keeps the casing at least 2 px wider. It does not guess at or mutate Peakbagger's own route layer. Original GPX segment breaks are preserved, rendering is capped at 3,000 sampled points with every segment endpoint retained, and pathological tracks that cannot fit without dropping a segment fail closed to the native route.
 
    The hovered chart point carries the original `{ lat, lon }` (stashed on each datum as `_raw`). Using the iframe's `L` and map instance, the analyzer also creates or moves a high-visibility `L.circleMarker` on the real map — red when hovering the distance line, blue for the time line:
    ```js
@@ -514,6 +514,8 @@ Settings shape (`chrome.storage.sync`, key `bpbSettings`):
 { units: 'auto' | 'imperial' | 'metric',
   theme: 'system' | 'light' | 'dark',
   chartDefaultSeries: 'both' | 'distance' | 'time',  // GPX chart's initial series
+  mapRouteColor: '#rrggbb', mapRouteWidth: 1..12,
+  mapRouteCasingColor: '#rrggbb', mapRouteCasingWidth: 3..20,
   betaTr: boolean,                  // "has beta" counts a trip report…
   betaTrMinWords: number,           //   …of at least this many words
   betaGps: boolean,                 // "has beta" counts a GPS track

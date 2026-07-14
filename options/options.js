@@ -10,6 +10,10 @@
     const unitsEl = document.getElementById('units');
     const themeEl = document.getElementById('theme');
     const chartSeriesEl = document.getElementById('chart-series');
+    const mapRouteColorEl = document.getElementById('map-route-color');
+    const mapRouteWidthEl = document.getElementById('map-route-width');
+    const mapRouteCasingColorEl = document.getElementById('map-route-casing-color');
+    const mapRouteCasingWidthEl = document.getElementById('map-route-casing-width');
     const betaTrEl = document.getElementById('beta-tr');
     const betaTrWordsEl = document.getElementById('beta-tr-words');
     const betaGpsEl = document.getElementById('beta-gps');
@@ -30,6 +34,10 @@
         unitsEl.value = settings.units;
         themeEl.value = settings.theme;
         chartSeriesEl.value = settings.chartDefaultSeries;
+        mapRouteColorEl.value = settings.mapRouteColor;
+        mapRouteWidthEl.value = String(settings.mapRouteWidth);
+        mapRouteCasingColorEl.value = settings.mapRouteCasingColor;
+        mapRouteCasingWidthEl.value = String(settings.mapRouteCasingWidth);
         betaTrEl.checked = settings.betaTr;
         betaTrWordsEl.value = String(settings.betaTrMinWords);
         betaTrWordsEl.disabled = !settings.betaTr;
@@ -48,6 +56,10 @@
     unitsEl.addEventListener('change', () => save({ units: unitsEl.value }));
     themeEl.addEventListener('change', () => save({ theme: themeEl.value }));
     chartSeriesEl.addEventListener('change', () => save({ chartDefaultSeries: chartSeriesEl.value }));
+    mapRouteColorEl.addEventListener('change', () => save({ mapRouteColor: mapRouteColorEl.value }));
+    mapRouteWidthEl.addEventListener('change', () => save({ mapRouteWidth: mapRouteWidthEl.value }).then(populate));
+    mapRouteCasingColorEl.addEventListener('change', () => save({ mapRouteCasingColor: mapRouteCasingColorEl.value }));
+    mapRouteCasingWidthEl.addEventListener('change', () => save({ mapRouteCasingWidth: mapRouteCasingWidthEl.value }).then(populate));
 
     // "Has beta" definition. An empty definition is never valid: block
     // unchecking the last signal instead of silently resetting later.

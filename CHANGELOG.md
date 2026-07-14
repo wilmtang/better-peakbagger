@@ -2,10 +2,12 @@
 
 ## Unreleased
 
-- **More visible GPX routes.** The ascent-page analyzer now draws a 5 px red
-  route over a 9 px white casing. The non-interactive, extension-owned layers
-  preserve GPX segment breaks, remain behind Peakbagger's native route and
-  markers, and are recreated after map-iframe reloads. Unsupported or
+- **More visible GPX routes.** The ascent-page analyzer now draws a configurable
+  route and wider casing, defaulting to 5 px red over 9 px white. Colors are
+  available beside the chart and all four appearance values are in Settings.
+  The non-interactive, extension-owned layers preserve GPX segment breaks,
+  remain behind Peakbagger's native route and markers, and are recreated after
+  map-iframe reloads. Unsupported or
   pathological tracks leave the native map unchanged.
 - **Correct same-day ascent suffixes.** Draft filling no longer writes encounter
   time into Peakbagger's suffix field. Only selected summits sharing an ascent

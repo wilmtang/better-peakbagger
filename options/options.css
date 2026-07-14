@@ -82,6 +82,20 @@ select, input[type="number"] {
 input[type="number"] { min-width: 96px; text-align: right; }
 select:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
+.route-style { border: 0; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.route-style-row { display: grid; grid-template-columns: 50px 34px 58px 18px; align-items: center; gap: 7px; }
+input[type="color"] {
+    width: 34px;
+    height: 30px;
+    padding: 3px;
+    color: var(--text);
+    background: var(--input-bg);
+    border: 1px solid var(--input-border);
+    border-radius: 8px;
+    cursor: pointer;
+}
+input[type="number"].route-width { min-width: 0; width: 58px; padding: 5px 7px; }
+
 .beta-signals { display: flex; flex-direction: column; gap: 9px; }
 .check { display: flex; align-items: center; gap: 7px; cursor: pointer; white-space: nowrap; }
 .check input[type="checkbox"] { width: 15px; height: 15px; margin: 0; accent-color: var(--accent); cursor: pointer; }

@@ -26,6 +26,10 @@
     const MAX_REASONABLE_SPEED_MPS = 10;
     const PAUSE_RESET_SECONDS = 300;
     const MAX_MAP_ROUTE_POINTS = 3000;
+    const DEFAULT_MAP_ROUTE_STYLE = {
+        color: '#d9483b', width: 5,
+        casingColor: '#ffffff', casingWidth: 9
+    };
 
     const toRad = x => x * Math.PI / 180;
 
@@ -379,6 +383,17 @@
     // setting; the legend's own click handler toggles visibility for the current
     // view without writing it back, so a temporary peek never changes the pref.
     const resolveChartSeries = s => (s.chartDefaultSeries === 'distance' || s.chartDefaultSeries === 'time') ? s.chartDefaultSeries : 'both';
+    const resolveMapRouteStyle = settings => {
+        const color = value => typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value);
+        const integer = (value, min, max, fallback) => Number.isInteger(value) && value >= min && value <= max ? value : fallback;
+        const width = integer(settings.mapRouteWidth, 1, 12, DEFAULT_MAP_ROUTE_STYLE.width);
+        return {
+            color: color(settings.mapRouteColor) ? settings.mapRouteColor : DEFAULT_MAP_ROUTE_STYLE.color,
+            width,
+            casingColor: color(settings.mapRouteCasingColor) ? settings.mapRouteCasingColor : DEFAULT_MAP_ROUTE_STYLE.casingColor,
+            casingWidth: Math.max(integer(settings.mapRouteCasingWidth, 3, 20, DEFAULT_MAP_ROUTE_STYLE.casingWidth), width + 2)
+        };
+    };
 
     const initChart = async () => {
         // 1. Locate GPX link and build UI
@@ -411,11 +426,33 @@
         Object.assign(unitSelect.style, { padding: '2px 6px', borderRadius: '4px', border: '1px solid #ccc', cursor: 'pointer', outline: 'none' });
         unitSelect.innerHTML = '<option value="imperial">Imperial</option><option value="metric">Metric</option>';
 
+        const routeStyleControls = document.createElement('div');
+        Object.assign(routeStyleControls.style, { display: 'flex', gap: '8px', marginTop: '7px', fontSize: '0.8em' });
+
+        const createColorControl = (id, text) => {
+            const label = document.createElement('label');
+            Object.assign(label.style, { display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer' });
+            label.htmlFor = id;
+            const caption = document.createElement('span');
+            caption.innerText = text;
+            const input = document.createElement('input');
+            input.id = id;
+            input.type = 'color';
+            input.setAttribute('aria-label', `${text} color`);
+            Object.assign(input.style, { width: '26px', height: '22px', padding: '2px', border: '1px solid #ccc', borderRadius: '5px', cursor: 'pointer' });
+            label.append(caption, input);
+            routeStyleControls.append(label);
+            return { label, input };
+        };
+
+        const routeColorControl = createColorControl('bpb-map-route-color', 'Route');
+        const routeCasingColorControl = createColorControl('bpb-map-route-casing-color', 'Casing');
+
         const hintText = document.createElement('div');
         Object.assign(hintText.style, { fontSize: '0.8em', color: '#888', marginTop: '4px', fontStyle: 'italic' });
         hintText.innerText = "Double-click point to copy coordinates";
 
-        controlsContainer.append(unitSelect, hintText);
+        controlsContainer.append(unitSelect, routeStyleControls, hintText);
         headerBox.append(statsContainer, controlsContainer);
 
         const canvasContainer = document.createElement('div');
@@ -434,6 +471,10 @@
             const p = panelPalette();
             Object.assign(container.style, { background: p.panelBg, borderColor: p.panelBorder, color: p.text });
             Object.assign(unitSelect.style, { background: p.inputBg, color: p.text, borderColor: p.selBorder });
+            [routeColorControl, routeCasingColorControl].forEach(control => {
+                control.label.style.color = p.sub;
+                Object.assign(control.input.style, { background: p.inputBg, borderColor: p.selBorder });
+            });
             stats.style.color = p.text;
             subStats.style.color = p.sub;
             hintText.style.color = p.faint;
@@ -477,6 +518,12 @@
 
         // 3. Centralized unit setting ('auto' detects from the page).
         unitSelect.value = resolveUnits(BPB.get());
+        const syncRouteStyleControls = () => {
+            const style = resolveMapRouteStyle(BPB.get());
+            routeColorControl.input.value = style.color;
+            routeCasingColorControl.input.value = style.casingColor;
+        };
+        syncRouteStyleControls();
 
         // Processing Arrays & Core Metrics
         let chartInstance = null;
@@ -527,9 +574,10 @@
 
                 try {
                     const routeGeometry = mapRouteSegments.length === 1 ? mapRouteSegments[0] : mapRouteSegments;
+                    const routeStyle = resolveMapRouteStyle(BPB.get());
                     const outline = L.polyline(routeGeometry, {
-                        color: '#ffffff',
-                        weight: 9,
+                        color: routeStyle.casingColor,
+                        weight: routeStyle.casingWidth,
                         opacity: 0.92,
                         interactive: false,
                         lineCap: 'round',
@@ -538,8 +586,8 @@
                     }).addTo(map);
                     layers.push(outline);
                     const route = L.polyline(routeGeometry, {
-                        color: '#d9483b',
-                        weight: 5,
+                        color: routeStyle.color,
+                        weight: routeStyle.width,
                         opacity: 1,
                         interactive: false,
                         lineCap: 'round',
@@ -844,9 +892,21 @@
             renderData();
         });
 
+        const bindRouteColor = (control, key) => control.input.addEventListener('change', () => {
+            BPB.set({ [key]: control.input.value });
+            syncRouteStyleControls();
+            removeRouteOverlay();
+            scheduleRouteOverlay();
+        });
+        bindRouteColor(routeColorControl, 'mapRouteColor');
+        bindRouteColor(routeCasingColorControl, 'mapRouteCasingColor');
+
         // Live updates: re-unit / re-theme when settings change elsewhere.
         BPB.subscribe(() => {
             unitSelect.value = resolveUnits(BPB.get());
+            syncRouteStyleControls();
+            removeRouteOverlay();
+            scheduleRouteOverlay();
             if (chartInstance) renderData(); else applyPanelTheme();
         });
 

@@ -50,6 +50,33 @@ test('an invalid chartDefaultSeries is cleaned to the default', async () => {
     assert.equal(el(dom, 'chart-series').value, 'both');
 });
 
+test('map route appearance populates, enforces a visible casing, and saves edits', async () => {
+    const dom = await loadOptions({
+        mapRouteColor: '#2457A7',
+        mapRouteWidth: 8,
+        mapRouteCasingColor: 'not-a-color',
+        mapRouteCasingWidth: 4
+    });
+
+    assert.equal(el(dom, 'map-route-color').value, '#2457a7');
+    assert.equal(el(dom, 'map-route-width').value, '8');
+    assert.equal(el(dom, 'map-route-casing-color').value, '#ffffff');
+    assert.equal(el(dom, 'map-route-casing-width').value, '10');
+
+    const routeWidth = el(dom, 'map-route-width');
+    routeWidth.value = '11';
+    routeWidth.dispatchEvent(new dom.window.Event('change'));
+    await new Promise(r => dom.window.setTimeout(r, 10));
+    assert.equal(dom.chrome._store.bpbSettings.mapRouteWidth, 11);
+    assert.equal(dom.chrome._store.bpbSettings.mapRouteCasingWidth, 13);
+
+    const casingColor = el(dom, 'map-route-casing-color');
+    casingColor.value = '#efe8d5';
+    casingColor.dispatchEvent(new dom.window.Event('change'));
+    await new Promise(r => dom.window.setTimeout(r, 10));
+    assert.equal(dom.chrome._store.bpbSettings.mapRouteCasingColor, '#efe8d5');
+});
+
 test('the removed "minimum trip-report words" control is gone', async () => {
     const dom = await loadOptions({});
     assert.equal(el(dom, 'minwords'), null);

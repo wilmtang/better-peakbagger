@@ -63,6 +63,27 @@
 
             <div class="row">
                 <div class="label">
+                    <span class="title">Map route appearance</span>
+                    <span class="desc">Colors and widths for the GPX route drawn over the map. The casing stays at least 2 px wider so it remains visible.</span>
+                </div>
+                <fieldset class="control route-style" aria-label="Map route appearance">
+                    <label class="route-style-row" for="map-route-color">
+                        <span>Route</span>
+                        <input id="map-route-color" type="color" aria-label="Route color">
+                        <input id="map-route-width" class="route-width" type="number" min="1" max="12" step="1" inputmode="numeric" aria-label="Route width in pixels">
+                        <span>px</span>
+                    </label>
+                    <label class="route-style-row" for="map-route-casing-color">
+                        <span>Casing</span>
+                        <input id="map-route-casing-color" type="color" aria-label="Route casing color">
+                        <input id="map-route-casing-width" class="route-width" type="number" min="3" max="20" step="1" inputmode="numeric" aria-label="Route casing width in pixels">
+                        <span>px</span>
+                    </label>
+                </fieldset>
+            </div>
+
+            <div class="row">
+                <div class="label">
                     <span class="title">“Has beta” means</span>
                     <span class="desc">What the ascent-list <em>Has beta</em> chip counts. An ascent qualifies if it has at least one of the checked signals.</span>
                 </div>

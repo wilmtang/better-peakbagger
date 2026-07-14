@@ -42,6 +42,7 @@ test('GPX analyzer adds a thick, segment-preserving route casing behind native L
     });
     const { window } = dom;
     const polylineCalls = [];
+    const sentPatches = [];
     const makeMap = () => ({
         layers: [],
         removeLayer(layer) {
@@ -93,17 +94,19 @@ test('GPX analyzer adds a thick, segment-preserving route casing behind native L
         isDatasetVisible() { return true; }
     };
 
+    const sendSettings = settings => window.queueMicrotask(() => window.dispatchEvent(new window.MessageEvent('message', {
+        source: window,
+        origin: window.location.origin,
+        data: { __bpb: true, dir: 'toPage', settings }
+    })));
     window.postMessage = message => {
-        if (!message || message.dir !== 'toCS' || message.kind !== 'get') return;
-        window.queueMicrotask(() => window.dispatchEvent(new window.MessageEvent('message', {
-            source: window,
-            origin: window.location.origin,
-            data: {
-                __bpb: true,
-                dir: 'toPage',
-                settings: { units: 'imperial', theme: 'light', chartDefaultSeries: 'both' }
-            }
-        })));
+        if (!message || message.dir !== 'toCS') return;
+        if (message.kind === 'set') {
+            sentPatches.push(message.patch);
+            return;
+        }
+        if (message.kind !== 'get') return;
+        sendSettings({ units: 'imperial', theme: 'light', chartDefaultSeries: 'both' });
     };
 
     Object.defineProperty(window.document, 'readyState', { configurable: true, value: 'complete' });
@@ -137,13 +140,38 @@ test('GPX analyzer adds a thick, segment-preserving route casing behind native L
     assert.ok(calls.every(call => call.options.interactive === false));
     assert.ok(calls.every(call => call.broughtToBack));
 
+    sendSettings({
+        units: 'imperial', theme: 'light', chartDefaultSeries: 'both',
+        mapRouteColor: '#2457a7', mapRouteWidth: 7,
+        mapRouteCasingColor: '#f1eadc', mapRouteCasingWidth: 13
+    });
+    await waitFor(dom, () => polylineCalls.length === 4);
+    assert.deepEqual(polylineCalls.slice(-2).map(call => [call.options.color, call.options.weight]), [
+        ['#f1eadc', 13],
+        ['#2457a7', 7]
+    ]);
+
+    const routeColor = window.document.getElementById('bpb-map-route-color');
+    const casingColor = window.document.getElementById('bpb-map-route-casing-color');
+    assert.equal(routeColor.value, '#2457a7');
+    assert.equal(casingColor.value, '#f1eadc');
+
+    routeColor.value = '#347a3f';
+    routeColor.dispatchEvent(new window.Event('change'));
+    await waitFor(dom, () => polylineCalls.length === 6);
+    assert.equal(sentPatches.at(-1).mapRouteColor, '#347a3f');
+    assert.deepEqual(polylineCalls.slice(-2).map(call => [call.options.color, call.options.weight]), [
+        ['#f1eadc', 13],
+        ['#347a3f', 7]
+    ]);
+
     const reloadedMap = makeMap();
     Object.defineProperty(iframe, 'contentWindow', {
         configurable: true,
         value: { mapsPlaceholder: reloadedMap, L }
     });
     iframe.dispatchEvent(new window.Event('load'));
-    await waitFor(dom, () => polylineCalls.length === 4);
+    await waitFor(dom, () => polylineCalls.length === 8);
 
     assert.equal(map.layers.length, 0, 'layers from the discarded map should be removed');
     assert.equal(reloadedMap.layers.length, 2, 'route casing should be recreated on the new map');

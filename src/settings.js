@@ -19,6 +19,8 @@
         // 'distance' / 'time'. A legend click can still reveal the hidden one
         // for the current view without changing this preference.
         chartDefaultSeries: 'both',
+        mapRouteColor: '#d9483b', mapRouteWidth: 5,
+        mapRouteCasingColor: '#ffffff', mapRouteCasingWidth: 9,
         // What the ascent filter's "Has beta" chip counts: an ascent
         // qualifies if it has any of the enabled signals.
         betaTr: true, betaTrMinWords: 1, betaGps: true, betaLink: true
@@ -29,11 +31,24 @@
         return Number.isFinite(words) && words > 0 ? words : 1;
     };
 
+    const cleanColor = (value, fallback) =>
+        typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value) ? value.toLowerCase() : fallback;
+
+    const clampInteger = (value, min, max, fallback) => {
+        const parsed = parseInt(value, 10);
+        return Number.isFinite(parsed) ? Math.min(max, Math.max(min, parsed)) : fallback;
+    };
+
     const clean = raw => {
         const s = { ...DEFAULTS, ...(raw && typeof raw === 'object' ? raw : {}) };
         if (!['auto', 'imperial', 'metric'].includes(s.units)) s.units = DEFAULTS.units;
         if (!['system', 'light', 'dark'].includes(s.theme)) s.theme = DEFAULTS.theme;
         if (!['both', 'distance', 'time'].includes(s.chartDefaultSeries)) s.chartDefaultSeries = DEFAULTS.chartDefaultSeries;
+        s.mapRouteColor = cleanColor(s.mapRouteColor, DEFAULTS.mapRouteColor);
+        s.mapRouteWidth = clampInteger(s.mapRouteWidth, 1, 12, DEFAULTS.mapRouteWidth);
+        s.mapRouteCasingColor = cleanColor(s.mapRouteCasingColor, DEFAULTS.mapRouteCasingColor);
+        s.mapRouteCasingWidth = clampInteger(s.mapRouteCasingWidth, 3, 20, DEFAULTS.mapRouteCasingWidth);
+        s.mapRouteCasingWidth = Math.max(s.mapRouteCasingWidth, s.mapRouteWidth + 2);
         for (const key of ['betaTr', 'betaGps', 'betaLink']) {
             if (typeof s[key] !== 'boolean') s[key] = DEFAULTS[key];
         }
