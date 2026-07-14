@@ -120,6 +120,7 @@ and the [discussion board](https://github.com/wilmtang/better-peakbagger/discuss
 - [Development & packaging](#development--packaging)
 - [Privacy](#privacy)
 - [License](#license)
+- [Acknowledgements](ACKNOWLEDGEMENTS.md)
 
 ---
 
@@ -487,7 +488,7 @@ npm run start:firefox   launch a temp Firefox with the extension
 npm run start:chromium  same for Chromium
 ```
 
-No build step for development — load the folder unpacked. `npm run build` just zips the shippable files (`manifest.json`, `src/`, `vendor/`, `icons/`, `popup/`, `options/`, README, LICENSE); `node_modules`, the lockfile, `CHANGELOG.md`, and `test/` are excluded.
+No build step for development — load the folder unpacked. `npm run build` just zips the shippable files (`manifest.json`, `src/`, `vendor/`, `icons/`, `popup/`, `options/`, README, LICENSE, and ACKNOWLEDGEMENTS); `node_modules`, the lockfile, `CHANGELOG.md`, and `test/` are excluded.
 
 Version tags submit verified packages to both browser stores after their one-time
 publisher setup. See [Browser store releases](docs/releasing.md) for credentials,
@@ -515,4 +516,5 @@ chip state) and leave the browser only through the user's browser-sync account.
 
 ## License
 
-[AGPL-3.0-or-later](LICENSE). Chart.js is under the MIT License.
+[AGPL-3.0-or-later](LICENSE). Third-party license notices and project credits
+are in [ACKNOWLEDGEMENTS.md](ACKNOWLEDGEMENTS.md).

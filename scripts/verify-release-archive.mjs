@@ -4,6 +4,7 @@ import path from "node:path";
 import JSZip from "jszip";
 
 const ALLOWED_TOP_LEVEL = new Set([
+  "ACKNOWLEDGEMENTS.md",
   "LICENSE",
   "README.md",
   "icons",
@@ -15,6 +16,7 @@ const ALLOWED_TOP_LEVEL = new Set([
 ]);
 
 const REQUIRED_FILES = [
+  "ACKNOWLEDGEMENTS.md",
   "LICENSE",
   "README.md",
   "manifest.json",

@@ -52,9 +52,11 @@ test("Firefox metadata preserves the project's or-later license grant", () => {
   assert.match(metadata.description["en-US"], /coordinate-only GPX/);
 });
 
-async function makeReleaseZip(extraFiles = {}) {
+async function makeReleaseZip(extraFiles = {}, omittedFiles = []) {
   const zip = new JSZip();
+  const omitted = new Set(omittedFiles);
   const files = {
+    "ACKNOWLEDGEMENTS.md": "acknowledgements",
     LICENSE: "license",
     "README.md": "readme",
     "manifest.json": JSON.stringify({ version: "1.4.0" }),
@@ -67,7 +69,9 @@ async function makeReleaseZip(extraFiles = {}) {
     ...extraFiles,
   };
   for (const [name, contents] of Object.entries(files)) {
-    zip.file(name, contents);
+    if (!omitted.has(name)) {
+      zip.file(name, contents);
+    }
   }
   return zip.generateAsync({ type: "uint8array" });
 }
@@ -83,6 +87,16 @@ test("release archive rejects development and internal files", async () => {
   await assert.rejects(
     verifyReleaseArchive(await makeReleaseZip(), "1.4.1"),
     /does not match/,
+  );
+});
+
+test("release archive requires third-party acknowledgements", async () => {
+  await assert.rejects(
+    verifyReleaseArchive(
+      await makeReleaseZip({}, ["ACKNOWLEDGEMENTS.md"]),
+      "1.4.0",
+    ),
+    /missing required file: ACKNOWLEDGEMENTS\.md/,
   );
 });
 
