@@ -121,8 +121,10 @@ test('privacy guard blocks a payload containing time, elevation, or extensions',
         },
         gpx: '<gpx><trk><trkseg><trkpt lat="1" lon="2"><time>private</time></trkpt></trkseg></trk></gpx>'
     } : { ok: true });
-    await waitForAsync();
+    await waitForCondition(() => dom.window.document.getElementById('bpb-draft-banner'));
     assert.deepEqual(messages.map(message => message.type), ['DRAFT_READY']);
-    assert.match(dom.window.document.getElementById('bpb-draft-banner').textContent, /privacy check/);
+    const banner = dom.window.document.getElementById('bpb-draft-banner');
+    assert.ok(banner);
+    assert.match(banner.textContent, /privacy check/);
     dom.window.close();
 });
