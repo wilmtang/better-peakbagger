@@ -45,6 +45,8 @@ test('GPX analyzer adds a thick, segment-preserving route casing behind native L
     const sentPatches = [];
     const makeMap = () => ({
         layers: [],
+        invalidateCalls: 0,
+        invalidateSize() { this.invalidateCalls++; },
         removeLayer(layer) {
             this.layers = this.layers.filter(candidate => candidate !== layer);
             layer._map = null;
@@ -121,6 +123,14 @@ test('GPX analyzer adds a thick, segment-preserving route casing behind native L
     assert.ok(analysis.compareDocumentPosition(fullScreenMapLink) & window.Node.DOCUMENT_POSITION_FOLLOWING,
         'the analysis should render above the Full Screen Map section');
 
+    const mapViewport = window.document.getElementById('bpb-map-viewport');
+    const mapResizeHandle = window.document.getElementById('bpb-map-resize-handle');
+    assert.equal(mapViewport.style.width, '100%');
+    assert.equal(mapViewport.style.height, '468px');
+    assert.equal(iframe.style.width, '100%');
+    assert.equal(iframe.style.maxWidth, '100%');
+    await waitFor(dom, () => map.invalidateCalls > 0);
+
     const calls = polylineCalls.map(call => ({
         latLngs: JSON.parse(JSON.stringify(call.latLngs)),
         options: call.options,
@@ -143,13 +153,35 @@ test('GPX analyzer adds a thick, segment-preserving route casing behind native L
     sendSettings({
         units: 'imperial', theme: 'light', chartDefaultSeries: 'both',
         mapRouteColor: '#2457a7', mapRouteWidth: 7,
-        mapRouteCasingColor: '#f1eadc', mapRouteCasingWidth: 13
+        mapRouteCasingColor: '#f1eadc', mapRouteCasingWidth: 13,
+        mapViewportWidth: 80, mapViewportHeight: 600
     });
     await waitFor(dom, () => polylineCalls.length === 4);
     assert.deepEqual(polylineCalls.slice(-2).map(call => [call.options.color, call.options.weight]), [
         ['#f1eadc', 13],
         ['#2457a7', 7]
     ]);
+    assert.equal(mapViewport.style.width, '80%');
+    assert.equal(mapViewport.style.height, '618px');
+
+    mapResizeHandle.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowDown' }));
+    assert.equal(mapViewport.style.height, '628px');
+    assert.equal(sentPatches.at(-1).mapViewportHeight, 610);
+
+    mapViewport.parentElement.getBoundingClientRect = () => ({ width: 800 });
+    mapViewport.getBoundingClientRect = () => ({ width: 640 });
+    const dispatchPointer = (type, values) => {
+        const event = new window.Event(type, { bubbles: true, cancelable: true });
+        Object.defineProperties(event, Object.fromEntries(Object.entries(values).map(([key, value]) => [key, { value }])));
+        mapResizeHandle.dispatchEvent(event);
+    };
+    dispatchPointer('pointerdown', { button: 0, pointerId: 1, clientX: 0, clientY: 0 });
+    dispatchPointer('pointermove', { pointerId: 1, clientX: 160, clientY: 50 });
+    dispatchPointer('pointerup', { pointerId: 1 });
+    assert.equal(mapViewport.style.width, '100%');
+    assert.equal(mapViewport.style.height, '678px');
+    assert.equal(sentPatches.at(-1).mapViewportWidth, 100);
+    assert.equal(sentPatches.at(-1).mapViewportHeight, 660);
 
     const routeColor = window.document.getElementById('bpb-map-route-color');
     const casingColor = window.document.getElementById('bpb-map-route-casing-color');

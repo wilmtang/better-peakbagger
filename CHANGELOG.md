@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **Resizable GPX maps.** Ascent maps now open at the full parent width and can
+  be resized from a keyboard-accessible lower-right grip. Width and height are
+  bounded, saved across ascent pages, editable in Settings, and resettable to
+  100% × 450 px. Leaflet is notified after each resize so tiles and overlays
+  reflow correctly.
 - **More visible GPX routes.** The ascent-page analyzer now draws a configurable
   route and wider casing, defaulting to 5 px red over 9 px white. Colors are
   available beside the chart and all four appearance values are in Settings.

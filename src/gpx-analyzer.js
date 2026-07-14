@@ -30,6 +30,11 @@
         color: '#d9483b', width: 5,
         casingColor: '#ffffff', casingWidth: 9
     };
+    const MAP_VIEWPORT_DEFAULT = { width: 100, height: 450 };
+    const MAP_VIEWPORT_MIN_WIDTH = 45;
+    const MAP_VIEWPORT_MIN_HEIGHT = 240;
+    const MAP_VIEWPORT_MAX_HEIGHT = 720;
+    const MAP_RESIZE_RAIL_HEIGHT = 18;
 
     const toRad = x => x * Math.PI / 180;
 
@@ -394,6 +399,13 @@
             casingWidth: Math.max(integer(settings.mapRouteCasingWidth, 3, 20, DEFAULT_MAP_ROUTE_STYLE.casingWidth), width + 2)
         };
     };
+    const resolveMapViewportSize = settings => {
+        const integer = (value, min, max, fallback) => Number.isInteger(value) && value >= min && value <= max ? value : fallback;
+        return {
+            width: integer(settings.mapViewportWidth, MAP_VIEWPORT_MIN_WIDTH, 100, MAP_VIEWPORT_DEFAULT.width),
+            height: integer(settings.mapViewportHeight, MAP_VIEWPORT_MIN_HEIGHT, MAP_VIEWPORT_MAX_HEIGHT, MAP_VIEWPORT_DEFAULT.height)
+        };
+    };
 
     const initChart = async () => {
         // 1. Locate GPX link and build UI
@@ -401,6 +413,142 @@
         if (!gpxLink) return;
 
         await BPB.init();
+
+        const mapIframe = document.querySelector('iframe[src*="MasterMap.aspx"], iframe[src*="mastermap.aspx"]');
+        let mapViewport = null;
+        let mapResizeHandle = null;
+        let mapViewportSize = resolveMapViewportSize(BPB.get());
+        let mapInvalidateFrame = null;
+
+        const scheduleMapInvalidate = () => {
+            if (!mapIframe || mapInvalidateFrame !== null) return;
+            const invalidate = () => {
+                mapInvalidateFrame = null;
+                try {
+                    const map = mapIframe.contentWindow && mapIframe.contentWindow.mapsPlaceholder;
+                    if (map && typeof map.invalidateSize === 'function') map.invalidateSize(false);
+                } catch (e) { /* Peakbagger may replace or discard its map while resizing. */ }
+            };
+            mapInvalidateFrame = typeof requestAnimationFrame === 'function'
+                ? requestAnimationFrame(invalidate)
+                : setTimeout(invalidate, 0);
+        };
+
+        const applyMapViewportSize = size => {
+            mapViewportSize = {
+                width: Math.min(100, Math.max(MAP_VIEWPORT_MIN_WIDTH, Math.round(size.width))),
+                height: Math.min(MAP_VIEWPORT_MAX_HEIGHT, Math.max(MAP_VIEWPORT_MIN_HEIGHT, Math.round(size.height)))
+            };
+            if (!mapViewport) return;
+            mapViewport.style.width = `${mapViewportSize.width}%`;
+            mapViewport.style.height = `${mapViewportSize.height + MAP_RESIZE_RAIL_HEIGHT}px`;
+            if (mapResizeHandle) {
+                mapResizeHandle.setAttribute('aria-label', `Resize map. Current size ${mapViewportSize.width}% wide by ${mapViewportSize.height} pixels high. Use arrow keys for small steps.`);
+            }
+            scheduleMapInvalidate();
+        };
+
+        const persistMapViewportSize = () => BPB.set({
+            mapViewportWidth: mapViewportSize.width,
+            mapViewportHeight: mapViewportSize.height
+        });
+
+        if (mapIframe && mapIframe.parentElement) {
+            mapViewport = document.createElement('div');
+            mapViewport.id = 'bpb-map-viewport';
+            Object.assign(mapViewport.style, {
+                position: 'relative',
+                maxWidth: '100%',
+                minWidth: 'min(320px, 100%)',
+                minHeight: `${MAP_VIEWPORT_MIN_HEIGHT + MAP_RESIZE_RAIL_HEIGHT}px`,
+                maxHeight: `${MAP_VIEWPORT_MAX_HEIGHT + MAP_RESIZE_RAIL_HEIGHT}px`,
+                boxSizing: 'border-box'
+            });
+
+            mapIframe.before(mapViewport);
+            mapViewport.append(mapIframe);
+            Object.assign(mapIframe.style, {
+                display: 'block',
+                width: '100%',
+                maxWidth: '100%',
+                height: `calc(100% - ${MAP_RESIZE_RAIL_HEIGHT}px)`,
+                boxSizing: 'border-box'
+            });
+
+            mapResizeHandle = document.createElement('button');
+            mapResizeHandle.id = 'bpb-map-resize-handle';
+            mapResizeHandle.type = 'button';
+            mapResizeHandle.title = 'Drag to resize map';
+            mapResizeHandle.textContent = '◢';
+            Object.assign(mapResizeHandle.style, {
+                position: 'absolute',
+                right: '0',
+                bottom: '0',
+                width: '24px',
+                height: `${MAP_RESIZE_RAIL_HEIGHT}px`,
+                padding: '0',
+                border: '0',
+                background: 'transparent',
+                color: 'currentColor',
+                lineHeight: `${MAP_RESIZE_RAIL_HEIGHT}px`,
+                cursor: 'nwse-resize',
+                opacity: '0.72'
+            });
+            mapViewport.append(mapResizeHandle);
+
+            let drag = null;
+            mapResizeHandle.addEventListener('pointerdown', event => {
+                if (event.button !== 0) return;
+                const parentWidth = mapViewport.parentElement.getBoundingClientRect().width;
+                const viewportWidth = mapViewport.getBoundingClientRect().width;
+                if (!(parentWidth > 0) || !(viewportWidth > 0)) return;
+                drag = {
+                    pointerId: event.pointerId,
+                    startX: event.clientX,
+                    startY: event.clientY,
+                    startWidth: viewportWidth,
+                    startHeight: mapViewportSize.height,
+                    parentWidth
+                };
+                if (mapResizeHandle.setPointerCapture) mapResizeHandle.setPointerCapture(event.pointerId);
+                event.preventDefault();
+            });
+            mapResizeHandle.addEventListener('pointermove', event => {
+                if (!drag || event.pointerId !== drag.pointerId) return;
+                const minWidth = Math.min(drag.parentWidth, Math.max(320, drag.parentWidth * MAP_VIEWPORT_MIN_WIDTH / 100));
+                const widthPx = Math.min(drag.parentWidth, Math.max(minWidth, drag.startWidth + event.clientX - drag.startX));
+                applyMapViewportSize({
+                    width: widthPx / drag.parentWidth * 100,
+                    height: drag.startHeight + event.clientY - drag.startY
+                });
+            });
+            const finishDrag = event => {
+                if (!drag || event.pointerId !== drag.pointerId) return;
+                if (mapResizeHandle.releasePointerCapture && mapResizeHandle.hasPointerCapture && mapResizeHandle.hasPointerCapture(event.pointerId)) {
+                    mapResizeHandle.releasePointerCapture(event.pointerId);
+                }
+                drag = null;
+                persistMapViewportSize();
+            };
+            mapResizeHandle.addEventListener('pointerup', finishDrag);
+            mapResizeHandle.addEventListener('pointercancel', finishDrag);
+            mapResizeHandle.addEventListener('keydown', event => {
+                const largeStep = event.shiftKey;
+                let next = { ...mapViewportSize };
+                if (event.key === 'ArrowLeft') next.width -= largeStep ? 5 : 2;
+                else if (event.key === 'ArrowRight') next.width += largeStep ? 5 : 2;
+                else if (event.key === 'ArrowUp') next.height -= largeStep ? 50 : 10;
+                else if (event.key === 'ArrowDown') next.height += largeStep ? 50 : 10;
+                else return;
+                event.preventDefault();
+                applyMapViewportSize(next);
+                persistMapViewportSize();
+            });
+
+            applyMapViewportSize(mapViewportSize);
+            window.addEventListener('resize', scheduleMapInvalidate);
+            if (typeof ResizeObserver === 'function') new ResizeObserver(scheduleMapInvalidate).observe(mapViewport);
+        }
 
         const container = document.createElement('div');
         container.id = 'bpb-gpx-analysis';
@@ -904,6 +1052,7 @@
         // Live updates: re-unit / re-theme when settings change elsewhere.
         BPB.subscribe(() => {
             unitSelect.value = resolveUnits(BPB.get());
+            applyMapViewportSize(resolveMapViewportSize(BPB.get()));
             syncRouteStyleControls();
             removeRouteOverlay();
             scheduleRouteOverlay();

@@ -77,6 +77,24 @@ test('map route appearance populates, enforces a visible casing, and saves edits
     assert.equal(dom.chrome._store.bpbSettings.mapRouteCasingColor, '#efe8d5');
 });
 
+test('map viewport settings clamp unsafe sizes and reset to the full-width default', async () => {
+    const dom = await loadOptions({ mapViewportWidth: 20, mapViewportHeight: 2000 });
+    assert.equal(el(dom, 'map-viewport-width').value, '45');
+    assert.equal(el(dom, 'map-viewport-height').value, '720');
+
+    const height = el(dom, 'map-viewport-height');
+    height.value = '560';
+    height.dispatchEvent(new dom.window.Event('change'));
+    await new Promise(r => dom.window.setTimeout(r, 10));
+    assert.equal(dom.chrome._store.bpbSettings.mapViewportHeight, 560);
+
+    el(dom, 'map-viewport-reset').dispatchEvent(new dom.window.Event('click'));
+    await new Promise(r => dom.window.setTimeout(r, 10));
+    assert.equal(dom.chrome._store.bpbSettings.mapViewportWidth, 100);
+    assert.equal(dom.chrome._store.bpbSettings.mapViewportHeight, 450);
+    assert.equal(el(dom, 'status').textContent, 'Map size reset');
+});
+
 test('the removed "minimum trip-report words" control is gone', async () => {
     const dom = await loadOptions({});
     assert.equal(el(dom, 'minwords'), null);

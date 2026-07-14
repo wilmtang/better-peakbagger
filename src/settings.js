@@ -21,6 +21,7 @@
         chartDefaultSeries: 'both',
         mapRouteColor: '#d9483b', mapRouteWidth: 5,
         mapRouteCasingColor: '#ffffff', mapRouteCasingWidth: 9,
+        mapViewportWidth: 100, mapViewportHeight: 450,
         // What the ascent filter's "Has beta" chip counts: an ascent
         // qualifies if it has any of the enabled signals.
         betaTr: true, betaTrMinWords: 1, betaGps: true, betaLink: true
@@ -49,6 +50,8 @@
         s.mapRouteCasingColor = cleanColor(s.mapRouteCasingColor, DEFAULTS.mapRouteCasingColor);
         s.mapRouteCasingWidth = clampInteger(s.mapRouteCasingWidth, 3, 20, DEFAULTS.mapRouteCasingWidth);
         s.mapRouteCasingWidth = Math.max(s.mapRouteCasingWidth, s.mapRouteWidth + 2);
+        s.mapViewportWidth = clampInteger(s.mapViewportWidth, 45, 100, DEFAULTS.mapViewportWidth);
+        s.mapViewportHeight = clampInteger(s.mapViewportHeight, 240, 720, DEFAULTS.mapViewportHeight);
         for (const key of ['betaTr', 'betaGps', 'betaLink']) {
             if (typeof s[key] !== 'boolean') s[key] = DEFAULTS[key];
         }

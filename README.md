@@ -60,8 +60,9 @@ Peakbagger ascent pages gain an interactive elevation chart with distance and
 time views, route metrics, grades, timing, and multi-day camping details. The
 map route is reinforced with a configurable line and casing (5 px red over
 9 px white by default) while Peakbagger's native route and markers remain on
-top. Hover over the chart to follow the same point on the map, or double-click
-a point to copy its coordinates.
+top. The map opens at full content width and can be resized from its lower-right
+corner. Hover over the chart to follow the same point on the map, or
+double-click a point to copy its coordinates.
 
 ![Three-day GPX analysis with a high-contrast route and chart-synchronized Leaflet marker](store-assets/showcase-gpx-map-sync.gif)
 
@@ -166,7 +167,7 @@ and the [discussion board](https://github.com/wilmtang/better-peakbagger/discuss
 ## Architecture at a glance
 
 ```
-                          chrome.storage.sync  ({ units, theme, chartDefaultSeries, beta* })
+                          chrome.storage.sync  ({ units, theme, chart/map preferences, beta* })
                                    ▲   │  onChanged
                  ┌─────────────────┼───┼──────────────────────────────────────────┐
    options page  │                 │   ▼                                            │
@@ -396,6 +397,8 @@ The map integration works in three parts:
 
 2. **Leaflet hooking.** Once the GPX and map are ready, the analyzer draws a non-interactive high-contrast route beneath Peakbagger's native markers and native route: a configurable line and wider casing, defaulting to 5 px red over 9 px white. Colors can be changed beside the chart or in Settings; widths live in Settings, where validation keeps the casing at least 2 px wider. It does not guess at or mutate Peakbagger's own route layer. Original GPX segment breaks are preserved, rendering is capped at 3,000 sampled points with every segment endpoint retained, and pathological tracks that cannot fit without dropping a segment fail closed to the native route.
 
+   The parent page wraps the iframe in an extension-owned, keyboard-accessible resize surface. Width is stored as 45–100% of the available content area and height as 240–720 px (100% × 450 px by default); neither dimension can overflow the parent. Dragging persists once the pointer is released, arrow keys provide smaller adjustments, and every change calls Leaflet's `invalidateSize(false)` so tiles and overlays reflow. Settings exposes both dimensions and a reset to the full-width default.
+
    The hovered chart point carries the original `{ lat, lon }` (stashed on each datum as `_raw`). Using the iframe's `L` and map instance, the analyzer also creates or moves a high-visibility `L.circleMarker` on the real map — red when hovering the distance line, blue for the time line:
    ```js
    const L = iframeWin.L, map = iframeWin.mapsPlaceholder;
@@ -516,6 +519,8 @@ Settings shape (`chrome.storage.sync`, key `bpbSettings`):
   chartDefaultSeries: 'both' | 'distance' | 'time',  // GPX chart's initial series
   mapRouteColor: '#rrggbb', mapRouteWidth: 1..12,
   mapRouteCasingColor: '#rrggbb', mapRouteCasingWidth: 3..20,
+  mapViewportWidth: 45..100,       // percent of the parent content width
+  mapViewportHeight: 240..720,     // pixels; default 450
   betaTr: boolean,                  // "has beta" counts a trip report…
   betaTrMinWords: number,           //   …of at least this many words
   betaGps: boolean,                 // "has beta" counts a GPS track

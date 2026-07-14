@@ -14,6 +14,9 @@
     const mapRouteWidthEl = document.getElementById('map-route-width');
     const mapRouteCasingColorEl = document.getElementById('map-route-casing-color');
     const mapRouteCasingWidthEl = document.getElementById('map-route-casing-width');
+    const mapViewportWidthEl = document.getElementById('map-viewport-width');
+    const mapViewportHeightEl = document.getElementById('map-viewport-height');
+    const mapViewportResetEl = document.getElementById('map-viewport-reset');
     const betaTrEl = document.getElementById('beta-tr');
     const betaTrWordsEl = document.getElementById('beta-tr-words');
     const betaGpsEl = document.getElementById('beta-gps');
@@ -38,6 +41,8 @@
         mapRouteWidthEl.value = String(settings.mapRouteWidth);
         mapRouteCasingColorEl.value = settings.mapRouteCasingColor;
         mapRouteCasingWidthEl.value = String(settings.mapRouteCasingWidth);
+        mapViewportWidthEl.value = String(settings.mapViewportWidth);
+        mapViewportHeightEl.value = String(settings.mapViewportHeight);
         betaTrEl.checked = settings.betaTr;
         betaTrWordsEl.value = String(settings.betaTrMinWords);
         betaTrWordsEl.disabled = !settings.betaTr;
@@ -60,6 +65,17 @@
     mapRouteWidthEl.addEventListener('change', () => save({ mapRouteWidth: mapRouteWidthEl.value }).then(populate));
     mapRouteCasingColorEl.addEventListener('change', () => save({ mapRouteCasingColor: mapRouteCasingColorEl.value }));
     mapRouteCasingWidthEl.addEventListener('change', () => save({ mapRouteCasingWidth: mapRouteCasingWidthEl.value }).then(populate));
+    mapViewportWidthEl.addEventListener('change', () => save({ mapViewportWidth: mapViewportWidthEl.value }).then(populate));
+    mapViewportHeightEl.addEventListener('change', () => save({ mapViewportHeight: mapViewportHeightEl.value }).then(populate));
+    mapViewportResetEl.addEventListener('click', () => {
+        save({
+            mapViewportWidth: S.DEFAULTS.mapViewportWidth,
+            mapViewportHeight: S.DEFAULTS.mapViewportHeight
+        }).then(settings => {
+            populate(settings);
+            flash('Map size reset');
+        });
+    });
 
     // "Has beta" definition. An empty definition is never valid: block
     // unchecking the last signal instead of silently resetting later.

@@ -84,6 +84,26 @@
 
             <div class="row">
                 <div class="label">
+                    <span class="title">Map viewport</span>
+                    <span class="desc">Default size for ascent-page maps. You can also drag the map’s lower-right corner; changes apply to every ascent page.</span>
+                </div>
+                <fieldset class="control viewport-size" aria-label="Map viewport size">
+                    <label class="viewport-size-row" for="map-viewport-width">
+                        <span>Width</span>
+                        <input id="map-viewport-width" type="number" min="45" max="100" step="1" inputmode="numeric" aria-label="Map width percentage">
+                        <span>%</span>
+                    </label>
+                    <label class="viewport-size-row" for="map-viewport-height">
+                        <span>Height</span>
+                        <input id="map-viewport-height" type="number" min="240" max="720" step="10" inputmode="numeric" aria-label="Map height in pixels">
+                        <span>px</span>
+                    </label>
+                    <button id="map-viewport-reset" class="secondary" type="button">Reset size</button>
+                </fieldset>
+            </div>
+
+            <div class="row">
+                <div class="label">
                     <span class="title">“Has beta” means</span>
                     <span class="desc">What the ascent-list <em>Has beta</em> chip counts. An ascent qualifies if it has at least one of the checked signals.</span>
                 </div>
