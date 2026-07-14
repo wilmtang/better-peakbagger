@@ -1,0 +1,109 @@
+# Browser store releases
+
+Pushing an exact `vMAJOR.MINOR.PATCH` tag starts `.github/workflows/release.yml`.
+The workflow verifies the tagged source and Chrome package, then submits that
+version independently to the Chrome Web Store and Firefox Add-ons (AMO). Store
+review is asynchronous; a successful workflow means both stores accepted the
+submissions, not that review has completed.
+
+The workflow deliberately has no manual dispatch. A store version cannot be
+reused, so publishing an arbitrary branch or rerunning a successful store job
+would create an avoidable partial-release failure.
+
+## One-time setup
+
+Create a protected GitHub environment named `browser-stores`. Restrict it to
+release tags and, if desired, require a reviewer. Configure the following in
+that environment.
+
+### Chrome Web Store
+
+The [Chrome Web Store API](https://developer.chrome.com/docs/webstore/using-api)
+can upload only a new version of an existing item. It cannot perform this
+project's first dashboard upload. For the initial Chrome release:
+
+1. Enable two-step verification on the publisher account.
+2. Run `npm ci`, `npm test`, `npm run lint`, and `npm run build` locally.
+3. Upload the ZIP from `web-ext-artifacts/` in the Developer Dashboard. Complete
+   the Listing, Privacy, Distribution, and reviewer-instructions fields, then
+   publish that first version manually.
+4. Do not tag that same version for automated Chrome submission. The first
+   automated release must have a higher manifest version.
+
+For subsequent automated releases, follow Google's
+[service-account setup](https://developer.chrome.com/docs/webstore/service-accounts):
+
+1. Enable the Chrome Web Store API in a Google Cloud project and create a
+   service account. No long-lived JSON key is needed.
+2. Add the service-account email to the Chrome Web Store publisher account.
+   Chrome currently permits one service account per publisher.
+3. Configure GitHub-to-Google
+   [Workload Identity Federation](https://github.com/google-github-actions/auth#workload-identity-federation-through-a-service-account).
+   Restrict the provider to this repository and release-tag refs, and grant that
+   identity `roles/iam.workloadIdentityUser` on the service account.
+4. Add these GitHub environment variables:
+
+   - `GCP_WORKLOAD_IDENTITY_PROVIDER`: full provider resource name
+   - `GCP_SERVICE_ACCOUNT`: linked service-account email
+   - `CHROME_PUBLISHER_ID`: Publisher ID from the Developer Dashboard
+   - `CHROME_EXTENSION_ID`: existing Chrome Web Store item ID
+
+The workflow requests a short-lived token scoped only to
+`https://www.googleapis.com/auth/chromewebstore`, uploads the verified ZIP,
+waits for package processing, and submits it with automatic publication after
+approval. Store warnings fail the job instead of being accepted silently.
+
+If listing visibility is changed in the Developer Dashboard, Chrome requires
+one manual publication with that visibility before the API can publish again.
+
+### Firefox Add-ons
+
+Create an AMO developer account and generate API credentials. Add them as
+GitHub environment secrets:
+
+- `AMO_JWT_ISSUER`
+- `AMO_JWT_SECRET`
+
+`web-ext sign --channel=listed` can create the first AMO listing as well as
+submit updates. The checked-in Gecko ID is the stable AMO identity and must not
+change. Listing metadata is generated from `LICENSE` for every submission. A
+custom license is intentional: AMO's predefined choice is
+`AGPL-3.0-only`, while this project grants `AGPL-3.0-or-later`.
+
+The Firefox command disables waiting for approval. AMO may take longer than a
+CI job to review a listed version; timing out after a successful submission
+would make a rerun attempt to reuse the same version. Review status remains
+visible in the AMO Developer Hub.
+
+## Release checklist
+
+1. Manually verify current Garmin, Strava, and Peakbagger behavior in both
+   browser families. Automated fixtures cannot establish that live provider
+   DOM and export flows still work.
+2. Update the same version in `manifest.json`, `package.json`, and both root
+   version fields in `package-lock.json`.
+3. Add a matching `## X.Y.Z` heading to `CHANGELOG.md`.
+4. Run:
+
+   ```sh
+   npm ci
+   npm test
+   npm run lint
+   npm run build
+   npm run release:verify-archive -- web-ext-artifacts/better_peakbagger-X.Y.Z.zip
+   npm run release:check -- vX.Y.Z
+   ```
+
+5. Commit the release metadata, merge it to the release branch, create an
+   annotated tag on that exact commit, and push the tag:
+
+   ```sh
+   git tag -a vX.Y.Z -m "Release X.Y.Z"
+   git push origin vX.Y.Z
+   ```
+
+The verification job must finish before either store job starts. The store jobs
+then run independently because the stores have no shared transaction. If one
+store job fails after the other succeeds, use GitHub's **Re-run failed jobs**
+action. Do not rerun all jobs: the successful store may reject the duplicate
+version.

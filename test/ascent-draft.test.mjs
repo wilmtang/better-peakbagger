@@ -17,6 +17,11 @@ const formHtml = `<!doctype html><body><form>
 </form></body>`;
 
 const waitForAsync = () => new Promise(resolve => setTimeout(resolve, 30));
+const waitForCondition = async condition => {
+    for (let attempt = 0; attempt < 50 && !condition(); attempt++) {
+        await new Promise(resolve => setTimeout(resolve, 10));
+    }
+};
 
 const loadDraft = responseFactory => {
     const dom = new JSDOM(formHtml, {
@@ -62,7 +67,7 @@ test('fills the expected fields, attaches coordinate-only GPX, previews once, an
     const { dom, messages } = loadDraft(message => message.type === 'DRAFT_READY' ? payload : { ok: true });
     dom.window.document.getElementById('GPXPreview').addEventListener('click', () => { previewClicks++; });
     dom.window.document.getElementById('SaveButton').addEventListener('click', () => { saveClicks++; });
-    await waitForAsync();
+    await waitForCondition(() => previewClicks === 1);
 
     assert.equal(dom.window.document.getElementById('DateText').value, '2026-07-01');
     assert.equal(dom.window.document.getElementById('SuffixText').value, '08:45');
