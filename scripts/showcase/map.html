@@ -9,32 +9,16 @@
     html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; }
     body {
       position: relative;
-      background:
-        radial-gradient(ellipse at 75% 19%, rgba(239,240,224,.92) 0 8%, transparent 9%),
-        linear-gradient(28deg, transparent 47%, rgba(112,137,103,.28) 48%, transparent 49%) 0 0/50px 50px,
-        linear-gradient(152deg, transparent 47%, rgba(95,124,91,.22) 48%, transparent 49%) 0 0/72px 72px,
-        linear-gradient(135deg, #b8ccb1 0%, #e1dec4 46%, #a8c3a4 100%);
+      background: #e8e8dc;
       font: 11px/1.2 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       color: #314336;
     }
 
-    svg { position: absolute; inset: 0; width: 100%; height: 100%; }
-    .route-shadow { fill: none; stroke: rgba(255,255,255,.95); stroke-width: 8; stroke-linecap: round; stroke-linejoin: round; }
-    .route { fill: none; stroke: #d44a37; stroke-width: 4; stroke-linecap: round; stroke-linejoin: round; }
-    .contour { fill: none; stroke: rgba(79,108,75,.25); stroke-width: 1; }
-
-    .label {
-      position: absolute;
-      border-radius: 4px;
-      padding: 3px 5px;
-      color: #34463a;
-      background: rgba(255,255,255,.86);
-      box-shadow: 0 1px 3px rgba(37,55,42,.15);
-      font-weight: 700;
-    }
-    .trailhead { left: 8%; bottom: 10%; }
-    .camp { left: 44%; top: 49%; }
-    .summit { right: 7%; top: 8%; }
+    .basemap, svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+    .basemap { object-fit: cover; }
+    .route-shadow, .route { fill: none; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+    .route-shadow { stroke: rgba(255,255,255,.96); stroke-width: 9; }
+    .route { stroke: #d9483b; stroke-width: 5; }
 
     .leaflet-control {
       position: absolute;
@@ -49,7 +33,15 @@
     }
     .leaflet-control b { width: 27px; height: 27px; text-align: center; font-size: 19px; line-height: 25px; }
     .leaflet-control b + b { border-top: 1px solid #ccd1cc; }
-    .attribution { position: absolute; right: 4px; bottom: 3px; color: #607064; font-size: 9px; }
+    .attribution {
+      position: absolute;
+      right: 3px;
+      bottom: 2px;
+      padding: 2px 4px;
+      color: #394d40;
+      background: rgba(255,255,255,.82);
+      font-size: 8px;
+    }
 
     .track-marker {
       position: absolute;
@@ -66,27 +58,44 @@
   </style>
 </head>
 <body>
-  <svg viewBox="0 0 320 430" preserveAspectRatio="none" aria-hidden="true">
-    <path class="contour" d="M-20 345 C65 260 99 387 174 288 S270 234 344 130"/>
-    <path class="contour" d="M-25 379 C55 298 112 411 185 319 S275 266 350 171"/>
-    <path class="contour" d="M-30 305 C38 220 110 344 163 249 S257 187 338 88"/>
-    <path class="contour" d="M-30 261 C42 191 112 292 165 205 S252 143 332 52"/>
-    <path class="route-shadow" d="M31 377 C52 336 90 352 105 303 S136 263 145 232 S185 222 194 179 S235 160 239 119 S275 98 291 55"/>
-    <path class="route" d="M31 377 C52 336 90 352 105 303 S136 263 145 232 S185 222 194 179 S235 160 239 119 S275 98 291 55"/>
+  <img class="basemap" src="/scripts/showcase/usgs-topo.png" alt="">
+  <svg viewBox="0 0 1000 1000" preserveAspectRatio="none" aria-hidden="true">
+    <polyline class="route-shadow" id="route-shadow"/>
+    <polyline class="route" id="route"/>
   </svg>
-  <span class="label trailhead">Trailhead</span>
-  <span class="label camp">Camp</span>
-  <span class="label summit">Summit</span>
   <span class="leaflet-control"><b>+</b><b>−</b></span>
-  <span class="attribution">Leaflet · Peakbagger map</span>
+  <span class="attribution">Synthetic demo track · Map services and data: U.S. Geological Survey, National Geospatial Program</span>
 
   <script>
-    const map = window.mapsPlaceholder = {};
+    const bounds = { west: -122.005, east: -121.625, south: 48.699875, north: 48.790125 };
+    const routePoints = [
+      [48.7061, -121.8098],
+      [48.7114, -121.8112],
+      [48.7183, -121.8138],
+      [48.7252, -121.8167],
+      [48.7338, -121.8182],
+      [48.7417, -121.8175],
+      [48.7501, -121.8158],
+      [48.7584, -121.8167],
+      [48.7661, -121.8160],
+      [48.7725, -121.8147],
+      [48.7770, -121.8130]
+    ];
+
     const pointToPercent = ([lat, lon]) => {
-      const x = 9 + ((lon + 121.88) / .07) * 82;
-      const y = 89 - ((lat - 48.72) / .08) * 80;
-      return [Math.max(5, Math.min(95, x)), Math.max(5, Math.min(95, y))];
+      const x = ((lon - bounds.west) / (bounds.east - bounds.west)) * 100;
+      const y = ((bounds.north - lat) / (bounds.north - bounds.south)) * 100;
+      return [Math.max(1, Math.min(99, x)), Math.max(1, Math.min(99, y))];
     };
+
+    const projectedRoute = routePoints.map(point => {
+      const [x, y] = pointToPercent(point);
+      return `${(x * 10).toFixed(2)},${(y * 10).toFixed(2)}`;
+    }).join(' ');
+    document.getElementById('route-shadow').setAttribute('points', projectedRoute);
+    document.getElementById('route').setAttribute('points', projectedRoute);
+
+    const map = window.mapsPlaceholder = {};
 
     window.L = {
       circleMarker(latLng, options) {

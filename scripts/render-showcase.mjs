@@ -16,6 +16,8 @@ const chrome = process.env.CHROME_BIN || ({
     win32: path.join(process.env.PROGRAMFILES || 'C:\\Program Files', 'Google/Chrome/Application/chrome.exe')
 }[process.platform] || 'google-chrome');
 const ffmpeg = process.env.FFMPEG_BIN || 'ffmpeg';
+const usgsTopoUrl = 'https://basemap.nationalmap.gov/arcgis/rest/services/USGSTopo/MapServer/export?bbox=-122.005,48.70,-121.625,48.79&bboxSR=4326&imageSR=4326&size=800,190&format=png32&transparent=false&f=image';
+let usgsTopo;
 
 const contentTypes = new Map([
     ['.css', 'text/css; charset=utf-8'],
@@ -75,13 +77,13 @@ const interpolate = (a, b, t) => a + (b - a) * t;
 
 const multiDayGpx = () => {
     const anchors = [
-        { time: '2026-07-10T13:20:00Z', lat: 48.724, lon: -121.873, ele: 1100 },
-        { time: '2026-07-10T22:40:00Z', lat: 48.754, lon: -121.846, ele: 1950 },
-        { time: '2026-07-11T08:30:00Z', lat: 48.7541, lon: -121.8459, ele: 1955 },
-        { time: '2026-07-11T14:18:00Z', lat: 48.792, lon: -121.814, ele: 3286 },
-        { time: '2026-07-11T22:10:00Z', lat: 48.7542, lon: -121.8461, ele: 1946 },
-        { time: '2026-07-12T13:00:00Z', lat: 48.754, lon: -121.846, ele: 1950 },
-        { time: '2026-07-12T18:42:00Z', lat: 48.724, lon: -121.873, ele: 1100 }
+        { time: '2026-07-10T13:20:00Z', lat: 48.7061, lon: -121.8098, ele: 1050 },
+        { time: '2026-07-10T22:40:00Z', lat: 48.7338, lon: -121.8182, ele: 1950 },
+        { time: '2026-07-11T08:30:00Z', lat: 48.7339, lon: -121.8181, ele: 1955 },
+        { time: '2026-07-11T14:18:00Z', lat: 48.7770, lon: -121.8130, ele: 3286 },
+        { time: '2026-07-11T22:10:00Z', lat: 48.7340, lon: -121.8183, ele: 1946 },
+        { time: '2026-07-12T13:00:00Z', lat: 48.7338, lon: -121.8182, ele: 1950 },
+        { time: '2026-07-12T18:42:00Z', lat: 48.7061, lon: -121.8098, ele: 1050 }
     ].map(anchor => ({ ...anchor, ms: Date.parse(anchor.time) }));
 
     const points = [];
@@ -130,6 +132,12 @@ const server = createServer(async (request, response) => {
         if (url.pathname === '/scripts/showcase/MasterMap.aspx') {
             response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
             response.end(await readFile(path.join(root, 'scripts/showcase/map.html')));
+            return;
+        }
+
+        if (url.pathname === '/scripts/showcase/usgs-topo.png') {
+            response.writeHead(200, { 'content-type': 'image/png', 'cache-control': 'public, max-age=3600' });
+            response.end(usgsTopo);
             return;
         }
 
@@ -192,6 +200,10 @@ const gif = async (frames, output, frameDuration) => {
 
 await mkdir(outputDir, { recursive: true });
 
+const topoResponse = await fetch(usgsTopoUrl);
+if (!topoResponse.ok) throw new Error(`USGS topo request failed with ${topoResponse.status}`);
+usgsTopo = Buffer.from(await topoResponse.arrayBuffer());
+
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
 const { port } = server.address();
 
@@ -199,7 +211,8 @@ try {
     const frameDir = await mkdtemp(path.join(os.tmpdir(), 'better-peakbagger-showcase-'));
     const activityStrava = path.join(frameDir, 'activity-strava.png');
     const activityGarmin = path.join(frameDir, 'activity-garmin.png');
-    const gpxFrames = [.22, .4, .58, .78].map((_, index) => path.join(frameDir, `gpx-${index}.png`));
+    const gpxHoverFractions = [.14, .28, .42, .56, .7, .84];
+    const gpxFrames = gpxHoverFractions.map((_, index) => path.join(frameDir, `gpx-${index}.png`));
 
     try {
         await screenshot(port, '/scripts/showcase/capture.html?provider=strava', activityStrava);
@@ -208,12 +221,12 @@ try {
         await screenshot(port, '/scripts/showcase/capture.html?provider=garmin', path.join(outputDir, 'screenshot-0-garmin-capture.png'));
 
         for (let index = 0; index < gpxFrames.length; index++) {
-            await screenshot(port, `/scripts/showcase/gpx.html?hover=${[.22, .4, .58, .78][index]}`, gpxFrames[index]);
+            await screenshot(port, `/scripts/showcase/gpx.html?hover=${gpxHoverFractions[index]}`, gpxFrames[index]);
         }
-        await screenshot(port, '/scripts/showcase/gpx.html?hover=.58', path.join(outputDir, 'screenshot-1-gpx-analyzer.png'));
+        await screenshot(port, '/scripts/showcase/gpx.html?hover=.56', path.join(outputDir, 'screenshot-1-gpx-analyzer.png'));
 
         await gif([activityStrava, activityGarmin], path.join(outputDir, 'showcase-activity-capture.gif'), 2.4);
-        await gif(gpxFrames, path.join(outputDir, 'showcase-gpx-map-sync.gif'), .9);
+        await gif(gpxFrames, path.join(outputDir, 'showcase-gpx-map-sync.gif'), 1);
     } finally {
         await rm(frameDir, { recursive: true, force: true });
     }

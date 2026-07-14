@@ -239,66 +239,71 @@ body {
 
 /* GPX scene --------------------------------------------------------------- */
 
+.gpx-showcase-page {
+    background: linear-gradient(145deg, #eceee8 0%, #dce5da 100%);
+}
+
+.gpx-showcase {
+    padding: 20px 40px;
+}
+
+.gpx-showcase .browser {
+    height: 760px;
+    margin-top: 0;
+    border-radius: 14px;
+}
+
 .gpx-stage {
     position: relative;
     height: calc(100% - 46px);
-    padding: 20px 25px 18px;
+    overflow: hidden;
+    padding: 11px 25px 12px;
     color: #291d19;
     background: #f7f5ef;
     font-family: Arial, Helvetica, sans-serif;
 }
 
-.gpx-title { text-align: center; }
-.gpx-title h2 { margin: 0; color: #752522; font-family: Georgia, serif; font-size: 24px; }
-.gpx-title p { margin: 4px 0 0; color: #655d58; font-size: 12px; }
-
-.gpx-columns {
-    display: grid;
-    grid-template-columns: 805px 1fr;
-    gap: 18px;
-    align-items: start;
-    margin-top: 14px;
+.gpx-page {
+    width: 800px;
+    margin: 0 auto;
 }
 
-.analyzer-column > a { color: #174d82; font-size: 12px; }
-.analyzer-column > div { width: 100%; max-width: none !important; margin-top: 7px !important; }
-.analyzer-column > div > div:first-child > div:last-child { flex: 0 0 155px; }
-.analyzer-column > div > div:first-child > div:last-child > div { max-width: 155px; text-align: right; }
+.gpx-title { text-align: center; }
+.gpx-title h2 { margin: 0; color: #752522; font-family: Georgia, serif; font-size: 21px; }
+.gpx-title p { margin: 2px 0 0; color: #655d58; font-size: 11px; }
+
+.analyzer-column > a { color: #174d82; font-size: 11px; }
+.analyzer-column > div { margin-top: 6px !important; }
+.analyzer-column > div > div:first-child > div:last-child { flex: 0 0 145px; }
+.analyzer-column > div > div:first-child > div:last-child > div { max-width: 145px; text-align: right; }
 .analyzer-column canvas { max-width: 100%; }
 
 .map-card {
     position: relative;
+    width: 800px;
+    height: 190px;
+    margin: 7px 0 8px;
     overflow: hidden;
     border: 1px solid #c7c7be;
-    border-radius: 8px;
+    border-radius: 2px;
     background: #e4eadc;
-    box-shadow: 0 5px 15px rgba(57, 54, 43, .12);
 }
 
-.map-card iframe { display: block; width: 100%; height: 430px; border: 0; }
+.map-card iframe { display: block; width: 100%; height: 190px; border: 0; }
 
-.map-caption {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 9px 11px;
-    color: #555a53;
-    background: #fff;
-    font: 11px/1.2 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-}
-
-.map-caption strong { color: #263c2e; }
-.live-pill { border-radius: 999px; padding: 4px 7px; color: #9e1e1a; background: #fff0ef; font-weight: 750; }
-
-.feature-badge {
+.showcase-cursor {
     position: absolute;
-    z-index: 4;
-    right: 42px;
-    top: 81px;
-    border-radius: 999px;
-    padding: 6px 10px;
-    color: #fff;
-    background: #245f3a;
-    box-shadow: 0 6px 14px rgba(21, 74, 40, .22);
-    font: 700 11px/1 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    z-index: 6;
+    width: 21px;
+    height: 27px;
+    transform: translate(5px, 4px);
+    pointer-events: none;
+    filter: drop-shadow(0 1px 2px rgba(0, 0, 0, .5));
+}
+
+.showcase-cursor svg { display: block; width: 100%; height: 100%; }
+.showcase-cursor path { fill: #fff; stroke: #171717; stroke-width: 1.7; stroke-linejoin: round; }
+
+@media (prefers-reduced-motion: reduce) {
+    .showcase-cursor { transition: none; }
 }

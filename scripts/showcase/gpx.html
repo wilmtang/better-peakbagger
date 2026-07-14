@@ -16,36 +16,26 @@
     });
   </script>
 </head>
-<body>
-  <main class="showcase">
-    <header class="showcase-head">
-      <span class="showcase-logo" aria-hidden="true"></span>
-      <div>
-        <h1>See the whole trip, then find the exact point</h1>
-        <p class="showcase-subtitle">Distance + time, multi-day timing, camp transitions, and a live route marker—together.</p>
-      </div>
-    </header>
-
+<body class="gpx-showcase-page">
+  <main class="showcase gpx-showcase">
     <section class="browser">
       <div class="browser-bar">
         <span class="traffic-lights"><i></i><i></i><i></i></span>
         <div class="address">peakbagger.com/climber/ascent.aspx?aid=482614</div>
       </div>
       <div class="gpx-stage">
-        <div class="gpx-title">
-          <h2>Mount Baker — Easton Glacier</h2>
-          <p>July 10–12, 2026 · three-day climb from trailhead to summit and back</p>
-        </div>
-        <div class="gpx-columns">
-          <div class="analyzer-column">
-            <a href="/scripts/showcase/multiday.gpx">Download this GPS track</a>
+        <div class="gpx-page">
+          <div class="gpx-title">
+            <h2>Mount Baker — Easton Glacier</h2>
+            <p>July 10–12, 2026 · Synthetic three-day demo track</p>
           </div>
           <aside class="map-card">
             <iframe src="/scripts/showcase/MasterMap.aspx" title="Peakbagger Leaflet route map"></iframe>
-            <div class="map-caption"><strong>Peakbagger route map</strong><span class="live-pill">● chart point</span></div>
           </aside>
+          <div class="analyzer-column">
+            <a href="/scripts/showcase/multiday.gpx">Download this GPS track</a>
+          </div>
         </div>
-        <span class="feature-badge">Hover chart → map</span>
       </div>
     </section>
   </main>
@@ -69,6 +59,17 @@
       chart.tooltip.setActiveElements(active, { x: point.x, y: point.y });
       chart.options.onHover(null, active, chart);
       chart.update();
+
+      let cursor = canvas.parentElement.querySelector('.showcase-cursor');
+      if (!cursor) {
+        cursor = document.createElement('span');
+        cursor.className = 'showcase-cursor';
+        cursor.setAttribute('aria-hidden', 'true');
+        cursor.innerHTML = '<svg viewBox="0 0 24 30"><path d="M3 2v22l6-6 4 9 4-2-4-9h8z"/></svg>';
+        canvas.parentElement.append(cursor);
+      }
+      cursor.style.left = `${point.x}px`;
+      cursor.style.top = `${point.y}px`;
       return !!iframe.contentDocument.querySelector('.track-marker');
     };
 
