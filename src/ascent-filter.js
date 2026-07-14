@@ -328,10 +328,6 @@
         // click replayed) as early as possible, not after the storage round-trip.
         setupInstantDateSort({ headerTexts, headerRow, sections, preamble, rows });
 
-        // Personal ClimbListC pages share the ascent-table structure and date
-        // header, but the beta-filter feature belongs only to PeakAscents.
-        if (!/\/peakascents\.aspx$/i.test(location.pathname)) return;
-
         if (columns.tr === null && columns.gps === null && columns.link === null) {
             renderCompactNotice(table);
             return;

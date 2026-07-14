@@ -210,21 +210,24 @@ test('default views sort their current rows without adopting backend-link params
     assert.equal(new dom.window.URL(dom.window.location.href).searchParams.get('sort'), 'ascentdated');
 });
 
-test('personal ClimbListC pages get only the persistent client-side date toggle', async () => {
+test('personal ClimbListC pages retain the beta bar and persistent date toggle', async () => {
     const dom = await loadPage('climber-ascents.html', {
         fixtures: PAGE_FIXTURES,
         url: 'https://www.peakbagger.com/climber/ClimbListC.aspx?cid=40786'
     });
-    await waitFor(dom, () => sortControl(dom));
+    await waitFor(dom, () => bar(dom) && sortControl(dom));
 
-    assert.equal(bar(dom), null);
+    assert.ok(bar(dom));
+    assert.match(status(dom), /^Showing \d+ of 38 ascents$/);
     assert.equal(sortControl(dom).textContent.trim(), 'Ascent Date ▲');
     assert.equal(sortControl(dom).tabIndex, 0);
+    const visibleBefore = visibleRows(dom).length;
     const before = dateTexts(dom);
     sortControl(dom).dispatchEvent(new dom.window.KeyboardEvent('keydown', {
         key: ' ', bubbles: true, cancelable: true
     }));
     assert.deepEqual(dateTexts(dom), before.slice().reverse());
+    assert.equal(visibleRows(dom).length, visibleBefore);
     const url = new dom.window.URL(dom.window.location.href);
     assert.equal(url.searchParams.get('cid'), '40786');
     assert.equal(url.searchParams.get('y'), null);
@@ -236,8 +239,9 @@ test('personal all-years date URLs toggle in place', async () => {
         fixtures: PAGE_FIXTURES,
         url: 'https://www.peakbagger.com/climber/ClimbListC.aspx?cid=40786&sort=AscentDate&u=ft&j=-1&y=9999'
     });
-    await waitFor(dom, () => sortControl(dom));
+    await waitFor(dom, () => bar(dom) && sortControl(dom));
 
+    assert.ok(bar(dom));
     const before = dateTexts(dom);
     sortControl(dom).click();
     assert.deepEqual(dateTexts(dom), before.slice().reverse());

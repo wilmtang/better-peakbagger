@@ -79,7 +79,7 @@ Runs on `climber/ascent.aspx`. When the page has a "Download this GPS track" lin
 - **Double-click a point** copies its `lat, lon` to the clipboard.
 
 ### Ascent Beta Filter
-Runs on `climber/PeakAscents.aspx`. Injects a sticky filter bar above the table; its date sorter also runs on personal `climber/ClimbListC.aspx` pages.
+Runs on `climber/PeakAscents.aspx` and personal `climber/ClimbListC.aspx` pages. Injects a sticky filter bar above the table and adds instant date sorting.
 
 - **Has beta** (on by default) — only ascents that have at least one of the signals *you* count as beta (settings: trip report with ≥ N words / GPS track / external link; default: any of the three).
 - **Trip report** — only ascents with a written report, with an adjustable **≥ N words** threshold.
@@ -344,7 +344,7 @@ The injection works in three steps, inside Chart.js's `onHover` callback:
 
 ## Deep dive: the Ascent Beta Filter
 
-The filter runs in the isolated world on `PeakAscents.aspx`; the date-sort portion also runs on personal `ClimbListC.aspx` ascent lists.
+Runs in the isolated world on `PeakAscents.aspx` and personal `ClimbListC.aspx` ascent lists.
 
 - **Column resolution.** Peakbagger renders a *different* column set per URL variant (all-years vs. single-year vs. metric), so the script never assumes fixed positions — it resolves the TR-Words / GPS / Link columns from the header row's text on every load. Cells that "look empty" can contain a literal `&nbsp;` (` `), which the parser normalises before testing.
 - **The data model.** Each data row becomes `{ words, gps, link, beta }`. Year-separator rows (single-cell) are tracked as sections so they can be hidden when empty.
