@@ -28,8 +28,13 @@ const gpx = `<?xml version="1.0"?>
 
 test('GPX analyzer adds a thick, segment-preserving route casing behind native Leaflet layers', async () => {
     const dom = new JSDOM(`<!doctype html><body>
-      <iframe src="https://www.peakbagger.com/map/MasterMap.aspx"></iframe>
-      <a href="https://www.peakbagger.com/demo.gpx">Download this GPS track</a>
+      <p>
+        <iframe src="https://www.peakbagger.com/map/MasterMap.aspx"></iframe><br>
+        GPS Waypoints - Hover or click to see name and lat/long<br>
+        <a href="https://www.peakbagger.com/map/BigMap.aspx">Click Here for a Full Screen Map</a><br>
+        <span>Note: GPS Tracks may not be accurate.</span>
+      </p>
+      <p><a href="https://www.peakbagger.com/demo.gpx">Download this GPS track</a></p>
     </body>`, {
         url: 'https://www.peakbagger.com/climber/ascent.aspx?aid=1',
         runScripts: 'outside-only',
@@ -104,6 +109,14 @@ test('GPX analyzer adds a thick, segment-preserving route casing behind native L
     Object.defineProperty(window.document, 'readyState', { configurable: true, value: 'complete' });
     window.eval(analyzerSource);
     await waitFor(dom, () => polylineCalls.length === 2);
+
+    const analysis = window.document.getElementById('bpb-gpx-analysis');
+    const fullScreenMapLink = window.document.querySelector('a[href*="BigMap.aspx"]');
+    assert.ok(analysis, 'the analysis panel should be added');
+    assert.ok(iframe.compareDocumentPosition(analysis) & window.Node.DOCUMENT_POSITION_FOLLOWING,
+        'the analysis should render below the map');
+    assert.ok(analysis.compareDocumentPosition(fullScreenMapLink) & window.Node.DOCUMENT_POSITION_FOLLOWING,
+        'the analysis should render above the Full Screen Map section');
 
     const calls = polylineCalls.map(call => ({
         latLngs: JSON.parse(JSON.stringify(call.latLngs)),

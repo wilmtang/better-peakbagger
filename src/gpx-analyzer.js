@@ -388,6 +388,7 @@
         await BPB.init();
 
         const container = document.createElement('div');
+        container.id = 'bpb-gpx-analysis';
         Object.assign(container.style, { marginTop: '15px', padding: '10px', border: '1px solid #ccc', background: '#fafafa', borderRadius: '5px', maxWidth: '800px' });
 
         const headerBox = document.createElement('div');
@@ -423,7 +424,9 @@
         const canvas = document.createElement('canvas');
         canvasContainer.append(canvas);
         container.append(headerBox, canvasContainer);
-        gpxLink.after(container);
+        const fullScreenMapLink = Array.from(document.querySelectorAll('a')).find(a => a.textContent.includes('Full Screen Map'));
+        if (fullScreenMapLink) fullScreenMapLink.before(container);
+        else gpxLink.after(container);
 
         // Panel palette follows the current theme setting; re-applied on render.
         const panelPalette = () => PALETTES[effectiveTheme(BPB.get().theme)];
