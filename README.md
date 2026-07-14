@@ -61,8 +61,9 @@ time views, route metrics, grades, timing, and multi-day camping details. The
 map route is reinforced with a configurable line and casing (5 px red over
 9 px white by default) while Peakbagger's native route and markers remain on
 top. The map opens at full content width and can be resized from its lower-right
-corner. Hover over the chart to follow the same point on the map, or
-double-click a point to copy its coordinates.
+corner; an opt-in setting can restore the last selected basemap. Hover over the
+chart to follow the same point on the map, or double-click a point to copy its
+coordinates.
 
 ![Three-day GPX analysis with a high-contrast route and chart-synchronized Leaflet marker](store-assets/showcase-gpx-map-sync.gif)
 
@@ -399,6 +400,8 @@ The map integration works in three parts:
 
    The parent page wraps the iframe in an extension-owned, keyboard-accessible resize surface. Width is stored as 45–100% of the available content area and height as 240–720 px (100% × 450 px by default); neither dimension can overflow the parent. Dragging persists once the pointer is released, arrow keys provide smaller adjustments, and every change calls Leaflet's `invalidateSize(false)` so tiles and overlays reflow. Settings exposes both dimensions and a reset to the full-width default.
 
+   Map-layer memory is deliberately opt-in. When enabled, the analyzer listens to Peakbagger's native `#selmap` control, stores only a known layer ID, and replays that ID through the control's own `change` handler on later ascent maps. Missing controls, unknown IDs, and layers unavailable on a particular map leave Peakbagger's default untouched. Disabling the preference also clears the saved ID.
+
    The hovered chart point carries the original `{ lat, lon }` (stashed on each datum as `_raw`). Using the iframe's `L` and map instance, the analyzer also creates or moves a high-visibility `L.circleMarker` on the real map — red when hovering the distance line, blue for the time line:
    ```js
    const L = iframeWin.L, map = iframeWin.mapsPlaceholder;
@@ -521,6 +524,8 @@ Settings shape (`chrome.storage.sync`, key `bpbSettings`):
   mapRouteCasingColor: '#rrggbb', mapRouteCasingWidth: 3..20,
   mapViewportWidth: 45..100,       // percent of the parent content width
   mapViewportHeight: 240..720,     // pixels; default 450
+  rememberMapLayer: boolean,       // opt-in; default false
+  mapLastLayer: '' | known layer ID,
   betaTr: boolean,                  // "has beta" counts a trip report…
   betaTrMinWords: number,           //   …of at least this many words
   betaGps: boolean,                 // "has beta" counts a GPS track
@@ -559,7 +564,7 @@ the Peakbagger summit lookup and GPS Preview actions described below.
 
 ### Browser permissions
 
-- **`storage`** saves theme, units, chart, and beta-filter preferences in
+- **`storage`** saves theme, units, chart/map, and beta-filter preferences in
   `storage.sync`. It also keeps short-lived capture jobs and prepared drafts in
   `storage.session`; that data expires after 30 minutes.
 - **`activeTab`** grants temporary access to the one Garmin Connect or Strava

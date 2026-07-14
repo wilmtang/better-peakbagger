@@ -77,9 +77,15 @@ test('GPX analyzer adds a thick, segment-preserving route casing behind native L
     };
 
     const iframe = window.document.querySelector('iframe');
+    const layerSelect = window.document.createElement('select');
+    layerSelect.id = 'selmap';
+    layerSelect.innerHTML = '<option value="L_CT">CalTopo</option><option value="L_MT">MyTopo USA/Canada</option><option value="L_OT">Open Topo Map</option><option value="L_OS">Open Street Map</option>';
+    let nativeLayerChanges = 0;
+    layerSelect.addEventListener('change', () => { nativeLayerChanges++; });
+    const iframeDocument = { getElementById: id => id === 'selmap' ? layerSelect : null };
     Object.defineProperty(iframe, 'contentWindow', {
         configurable: true,
-        value: { mapsPlaceholder: map, L }
+        value: { mapsPlaceholder: map, L, document: iframeDocument }
     });
 
     window.matchMedia = () => ({ matches: false });
@@ -131,6 +137,12 @@ test('GPX analyzer adds a thick, segment-preserving route casing behind native L
     assert.equal(iframe.style.maxWidth, '100%');
     await waitFor(dom, () => map.invalidateCalls > 0);
 
+    layerSelect.value = 'L_MT';
+    layerSelect.dispatchEvent(new window.Event('change'));
+    await new Promise(resolve => window.setTimeout(resolve, 0));
+    assert.equal(sentPatches.some(patch => patch.mapLastLayer), false,
+        'the native layer control should remain unpersisted while the setting is off');
+
     const calls = polylineCalls.map(call => ({
         latLngs: JSON.parse(JSON.stringify(call.latLngs)),
         options: call.options,
@@ -154,15 +166,23 @@ test('GPX analyzer adds a thick, segment-preserving route casing behind native L
         units: 'imperial', theme: 'light', chartDefaultSeries: 'both',
         mapRouteColor: '#2457a7', mapRouteWidth: 7,
         mapRouteCasingColor: '#f1eadc', mapRouteCasingWidth: 13,
-        mapViewportWidth: 80, mapViewportHeight: 600
+        mapViewportWidth: 80, mapViewportHeight: 600,
+        rememberMapLayer: true, mapLastLayer: 'L_OT'
     });
     await waitFor(dom, () => polylineCalls.length === 4);
+    await waitFor(dom, () => layerSelect.value === 'L_OT');
     assert.deepEqual(polylineCalls.slice(-2).map(call => [call.options.color, call.options.weight]), [
         ['#f1eadc', 13],
         ['#2457a7', 7]
     ]);
     assert.equal(mapViewport.style.width, '80%');
     assert.equal(mapViewport.style.height, '618px');
+    assert.ok(nativeLayerChanges >= 2, 'the saved layer should be applied through the native change handler');
+
+    layerSelect.value = 'L_OS';
+    layerSelect.dispatchEvent(new window.Event('change'));
+    assert.equal(sentPatches.at(-1).mapLastLayer, 'L_OS');
+    assert.equal(polylineCalls.length, 4, 'changing the native basemap should not rebuild the route overlay');
 
     mapResizeHandle.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowDown' }));
     assert.equal(mapViewport.style.height, '628px');
@@ -200,7 +220,7 @@ test('GPX analyzer adds a thick, segment-preserving route casing behind native L
     const reloadedMap = makeMap();
     Object.defineProperty(iframe, 'contentWindow', {
         configurable: true,
-        value: { mapsPlaceholder: reloadedMap, L }
+        value: { mapsPlaceholder: reloadedMap, L, document: iframeDocument }
     });
     iframe.dispatchEvent(new window.Event('load'));
     await waitFor(dom, () => polylineCalls.length === 8);

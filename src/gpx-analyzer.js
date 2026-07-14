@@ -413,6 +413,7 @@
         if (!gpxLink) return;
 
         await BPB.init();
+        let appliedSettings = { ...BPB.get() };
 
         const mapIframe = document.querySelector('iframe[src*="MasterMap.aspx"], iframe[src*="mastermap.aspx"]');
         let mapViewport = null;
@@ -448,10 +449,13 @@
             scheduleMapInvalidate();
         };
 
-        const persistMapViewportSize = () => BPB.set({
-            mapViewportWidth: mapViewportSize.width,
-            mapViewportHeight: mapViewportSize.height
-        });
+        const persistMapViewportSize = () => {
+            BPB.set({
+                mapViewportWidth: mapViewportSize.width,
+                mapViewportHeight: mapViewportSize.height
+            });
+            appliedSettings = { ...BPB.get() };
+        };
 
         if (mapIframe && mapIframe.parentElement) {
             mapViewport = document.createElement('div');
@@ -684,7 +688,10 @@
         let hoverMarker = null;
         let routeOverlay = null;
         let boundMapIframe = null;
+        let boundMapLayerSelect = null;
+        let mapLayerChangeHandler = null;
         let mapRetryTimer = null;
+        let mapLayerRetryTimer = null;
 
         const findMapIframe = () => document.querySelector('iframe[src*="MasterMap.aspx"], iframe[src*="mastermap.aspx"]');
 
@@ -701,6 +708,56 @@
             if (!routeOverlay) return;
             removeOverlayLayers(routeOverlay.map, routeOverlay.layers);
             routeOverlay = null;
+        };
+
+        const findMapLayerSelect = () => {
+            try {
+                const iframe = findMapIframe();
+                const iframeWin = iframe && iframe.contentWindow;
+                const select = iframeWin && iframeWin.document && iframeWin.document.getElementById('selmap');
+                return select && select.tagName === 'SELECT' ? select : null;
+            } catch (e) {
+                return null;
+            }
+        };
+
+        const mapLayerExists = (select, value) =>
+            !!value && Array.from(select.options).some(option => option.value === value);
+
+        const syncMapLayerPreference = () => {
+            const select = findMapLayerSelect();
+            if (!select) return false;
+
+            if (select !== boundMapLayerSelect) {
+                if (boundMapLayerSelect && mapLayerChangeHandler) {
+                    try { boundMapLayerSelect.removeEventListener('change', mapLayerChangeHandler); } catch (e) { /* old frame discarded */ }
+                }
+                boundMapLayerSelect = select;
+                mapLayerChangeHandler = () => {
+                    const settings = BPB.get();
+                    if (!settings.rememberMapLayer || !mapLayerExists(select, select.value) || settings.mapLastLayer === select.value) return;
+                    BPB.set({ mapLastLayer: select.value });
+                    appliedSettings = { ...BPB.get() };
+                };
+                select.addEventListener('change', mapLayerChangeHandler);
+            }
+
+            const settings = BPB.get();
+            if (!settings.rememberMapLayer) return true;
+
+            if (mapLayerExists(select, settings.mapLastLayer)) {
+                if (select.value !== settings.mapLastLayer) {
+                    select.value = settings.mapLastLayer;
+                    const iframeWin = select.ownerDocument && select.ownerDocument.defaultView;
+                    const ChangeEvent = iframeWin && iframeWin.Event ? iframeWin.Event : window.Event;
+                    select.dispatchEvent(new ChangeEvent('change', { bubbles: true }));
+                    scheduleMapInvalidate();
+                }
+            } else if (mapLayerExists(select, select.value)) {
+                BPB.set({ mapLastLayer: select.value });
+                appliedSettings = { ...BPB.get() };
+            }
+            return true;
         };
 
         const ensureRouteOverlay = () => {
@@ -763,21 +820,39 @@
             }
         };
 
-        const handleMapIframeLoad = () => {
+        function handleMapIframeLoad() {
             hoverMarker = null;
             removeRouteOverlay();
             scheduleRouteOverlay();
-        };
+            scheduleMapLayerSync();
+        }
 
-        const scheduleRouteOverlay = () => {
-            if (!mapRouteSegments.length) return;
-
+        const bindMapIframeLoad = () => {
             const iframe = findMapIframe();
             if (iframe && iframe !== boundMapIframe) {
                 if (boundMapIframe) boundMapIframe.removeEventListener('load', handleMapIframeLoad);
                 boundMapIframe = iframe;
                 boundMapIframe.addEventListener('load', handleMapIframeLoad);
             }
+        };
+
+        function scheduleMapLayerSync() {
+            bindMapIframeLoad();
+            if (syncMapLayerPreference() || mapLayerRetryTimer) return;
+
+            let attempts = 0;
+            mapLayerRetryTimer = setInterval(() => {
+                attempts++;
+                if (syncMapLayerPreference() || attempts >= 20) {
+                    clearInterval(mapLayerRetryTimer);
+                    mapLayerRetryTimer = null;
+                }
+            }, 250);
+        }
+
+        function scheduleRouteOverlay() {
+            bindMapIframeLoad();
+            if (!mapRouteSegments.length) return;
 
             if (ensureRouteOverlay() || mapRetryTimer) return;
 
@@ -789,7 +864,7 @@
                     mapRetryTimer = null;
                 }
             }, 250);
-        };
+        }
 
         // 4. Chart & UI Renderer Engine
         const renderData = () => {
@@ -1037,11 +1112,13 @@
 
         unitSelect.addEventListener('change', () => {
             BPB.set({ units: unitSelect.value });
+            appliedSettings = { ...BPB.get() };
             renderData();
         });
 
         const bindRouteColor = (control, key) => control.input.addEventListener('change', () => {
             BPB.set({ [key]: control.input.value });
+            appliedSettings = { ...BPB.get() };
             syncRouteStyleControls();
             removeRouteOverlay();
             scheduleRouteOverlay();
@@ -1049,17 +1126,30 @@
         bindRouteColor(routeColorControl, 'mapRouteColor');
         bindRouteColor(routeCasingColorControl, 'mapRouteCasingColor');
 
-        // Live updates: re-unit / re-theme when settings change elsewhere.
-        BPB.subscribe(() => {
-            unitSelect.value = resolveUnits(BPB.get());
-            applyMapViewportSize(resolveMapViewportSize(BPB.get()));
-            syncRouteStyleControls();
-            removeRouteOverlay();
-            scheduleRouteOverlay();
-            if (chartInstance) renderData(); else applyPanelTheme();
+        // Live updates are scoped by setting owner. In particular, changing a
+        // map layer must not needlessly rebuild the chart or route overlay.
+        BPB.subscribe(settings => {
+            const previous = appliedSettings;
+            appliedSettings = { ...settings };
+            const changed = keys => keys.some(key => previous[key] !== settings[key]);
+
+            if (changed(['mapViewportWidth', 'mapViewportHeight'])) {
+                applyMapViewportSize(resolveMapViewportSize(settings));
+            }
+            if (changed(['mapRouteColor', 'mapRouteWidth', 'mapRouteCasingColor', 'mapRouteCasingWidth'])) {
+                syncRouteStyleControls();
+                removeRouteOverlay();
+                scheduleRouteOverlay();
+            }
+            if (changed(['rememberMapLayer', 'mapLastLayer'])) scheduleMapLayerSync();
+            if (changed(['units', 'theme', 'chartDefaultSeries'])) {
+                unitSelect.value = resolveUnits(settings);
+                if (chartInstance) renderData(); else applyPanelTheme();
+            }
         });
 
         // 5. Native DOM XML Extraction Engine
+        scheduleMapLayerSync();
         try {
             const xml = new DOMParser().parseFromString(await (await fetch(gpxLink.href)).text(), "text/xml");
             const trkpts = Array.from(xml.querySelectorAll('trkpt'));

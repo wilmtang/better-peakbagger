@@ -95,6 +95,22 @@ test('map viewport settings clamp unsafe sizes and reset to the full-width defau
     assert.equal(el(dom, 'status').textContent, 'Map size reset');
 });
 
+test('map layer memory is opt-in and disabling it forgets the saved layer', async () => {
+    const defaultDom = await loadOptions({});
+    assert.equal(el(defaultDom, 'remember-map-layer').checked, false);
+    const invalidDom = await loadOptions({ rememberMapLayer: true, mapLastLayer: 'javascript:bad' });
+    assert.equal((await invalidDom.window.BPBSettings.get()).mapLastLayer, '');
+
+    const dom = await loadOptions({ rememberMapLayer: true, mapLastLayer: 'L_OT' });
+    const checkbox = el(dom, 'remember-map-layer');
+    assert.equal(checkbox.checked, true);
+    checkbox.checked = false;
+    checkbox.dispatchEvent(new dom.window.Event('change'));
+    await new Promise(r => dom.window.setTimeout(r, 10));
+    assert.equal(dom.chrome._store.bpbSettings.rememberMapLayer, false);
+    assert.equal(dom.chrome._store.bpbSettings.mapLastLayer, '');
+});
+
 test('the removed "minimum trip-report words" control is gone', async () => {
     const dom = await loadOptions({});
     assert.equal(el(dom, 'minwords'), null);

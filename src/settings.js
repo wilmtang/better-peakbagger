@@ -13,6 +13,7 @@
 
     const api = (typeof browser !== 'undefined' && browser.storage) ? browser : chrome;
     const STORAGE_KEY = 'bpbSettings';
+    const MAP_LAYERS = new Set(['L_CT', 'L_MT', 'L_FS', 'L_3D', 'L_SN', 'L_AG', 'L_OT', 'L_OS', 'L_AI', 'L_XX', 'B_B1', 'G_SA']);
     const DEFAULTS = {
         units: 'auto', theme: 'system',
         // Which GPX-chart series is shown by default: 'both', or only
@@ -22,6 +23,7 @@
         mapRouteColor: '#d9483b', mapRouteWidth: 5,
         mapRouteCasingColor: '#ffffff', mapRouteCasingWidth: 9,
         mapViewportWidth: 100, mapViewportHeight: 450,
+        rememberMapLayer: false, mapLastLayer: '',
         // What the ascent filter's "Has beta" chip counts: an ascent
         // qualifies if it has any of the enabled signals.
         betaTr: true, betaTrMinWords: 1, betaGps: true, betaLink: true
@@ -52,6 +54,8 @@
         s.mapRouteCasingWidth = Math.max(s.mapRouteCasingWidth, s.mapRouteWidth + 2);
         s.mapViewportWidth = clampInteger(s.mapViewportWidth, 45, 100, DEFAULTS.mapViewportWidth);
         s.mapViewportHeight = clampInteger(s.mapViewportHeight, 240, 720, DEFAULTS.mapViewportHeight);
+        if (typeof s.rememberMapLayer !== 'boolean') s.rememberMapLayer = DEFAULTS.rememberMapLayer;
+        if (!MAP_LAYERS.has(s.mapLastLayer)) s.mapLastLayer = DEFAULTS.mapLastLayer;
         for (const key of ['betaTr', 'betaGps', 'betaLink']) {
             if (typeof s[key] !== 'boolean') s[key] = DEFAULTS[key];
         }

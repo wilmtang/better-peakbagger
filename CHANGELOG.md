@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- **Optional map-layer memory.** A new off-by-default setting remembers the
+  last layer chosen in Peakbagger's native map control and restores it on later
+  ascent maps. Unknown or unavailable layer IDs fail closed to the site default,
+  and disabling the preference forgets the saved layer.
 - **Resizable GPX maps.** Ascent maps now open at the full parent width and can
   be resized from a keyboard-accessible lower-right grip. Width and height are
   bounded, saved across ascent pages, editable in Settings, and resettable to

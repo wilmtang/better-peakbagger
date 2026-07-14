@@ -17,6 +17,7 @@
     const mapViewportWidthEl = document.getElementById('map-viewport-width');
     const mapViewportHeightEl = document.getElementById('map-viewport-height');
     const mapViewportResetEl = document.getElementById('map-viewport-reset');
+    const rememberMapLayerEl = document.getElementById('remember-map-layer');
     const betaTrEl = document.getElementById('beta-tr');
     const betaTrWordsEl = document.getElementById('beta-tr-words');
     const betaGpsEl = document.getElementById('beta-gps');
@@ -43,6 +44,7 @@
         mapRouteCasingWidthEl.value = String(settings.mapRouteCasingWidth);
         mapViewportWidthEl.value = String(settings.mapViewportWidth);
         mapViewportHeightEl.value = String(settings.mapViewportHeight);
+        rememberMapLayerEl.checked = settings.rememberMapLayer;
         betaTrEl.checked = settings.betaTr;
         betaTrWordsEl.value = String(settings.betaTrMinWords);
         betaTrWordsEl.disabled = !settings.betaTr;
@@ -76,6 +78,10 @@
             flash('Map size reset');
         });
     });
+    rememberMapLayerEl.addEventListener('change', () => save({
+        rememberMapLayer: rememberMapLayerEl.checked,
+        ...(!rememberMapLayerEl.checked && { mapLastLayer: '' })
+    }));
 
     // "Has beta" definition. An empty definition is never valid: block
     // unchecking the last signal instead of silently resetting later.
