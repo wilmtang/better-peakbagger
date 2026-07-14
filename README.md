@@ -1,5 +1,7 @@
 # Better Peakbagger
 
+> **This is a passion project.** Opinions, ideas, and feature requests are always welcome—[open an issue](https://github.com/wilmtang/better-peakbagger/issues) or [join the discussion board](https://github.com/wilmtang/better-peakbagger/discussions).
+
 A browser extension that makes [Peakbagger](https://www.peakbagger.com/) better for trip planning. It works on **Chrome** and **Firefox** (Manifest V3) and needs no userscript manager.
 
 Four things:
@@ -35,6 +37,7 @@ Open the settings from the extension's options (`chrome://extensions` → Detail
 
 - [Feature tour](#feature-tour)
 - [Architecture at a glance](#architecture-at-a-glance)
+- [Deep dive: Garmin/Strava activity capture](#deep-dive-garminstrava-activity-capture)
 - [Deep dive: content-script worlds](#deep-dive-content-script-worlds)
 - [Deep dive: the settings system and the bridge](#deep-dive-the-settings-system-and-the-bridge)
 - [Deep dive: the GPX Analyzer](#deep-dive-the-gpx-analyzer)
@@ -118,10 +121,106 @@ Changes apply live to any open Peakbagger tab.
                           └──────────────────────────────────────────────────────────┘
 ```
 
-Two ideas do most of the work:
+Activity capture is a separate, short-lived pipeline:
 
-1. **Content scripts run in two different JavaScript "worlds,"** and each feature is placed in the world it needs. The GPX Analyzer must run in the page's own world; everything else runs in the isolated extension world.
+```
+toolbar click (`activeTab`) ──▶ inject provider adapter in MAIN world
+                                      │
+                         ownership gate + Peakbagger login gate
+                                      │
+                         provider GPX parsed on the activity page
+                                      │  analysis fields only
+                                      ▼
+     Peakbagger corridor lookup ──▶ score encounters ──▶ reduce to ≤ 3,000 points
+                                                               │
+                                                    `storage.session` (30 min)
+                                                               │
+                                                               ▼
+                  grouped ascent tabs ◀── verified handshake ── fill + Preview once
+```
+
+Three boundaries do most of the work:
+
+1. **Content scripts run in two different JavaScript "worlds,"** and each feature is placed in the world it needs. The GPX Analyzer and the on-demand activity-provider adapter run in the page's own world; form filling and extension UI run in the isolated extension world.
 2. Because the MAIN-world analyzer can't touch `chrome.storage`, a tiny **bridge** relays settings across the world boundary over `window.postMessage`.
+3. Activity capture is a **gated transaction**, not a persistent provider integration: the extension receives temporary access only after a toolbar click, refuses ambiguous ownership, keeps only a privacy-reduced draft payload in session storage, and never activates Peakbagger's Save controls.
+
+---
+
+## Deep dive: Garmin/Strava activity capture
+
+The capture feature treats an activity track as sensitive data. Its pipeline is intentionally fail-closed: an uncertain ownership result, missing Peakbagger login, incomplete summit lookup, invalid draft identity, or changed Peakbagger form stops the operation instead of silently weakening a privacy or correctness check.
+
+### 1. On-demand access and ownership
+
+There are no permanent Garmin or Strava host permissions. Clicking the toolbar action grants `activeTab` access to that one page, and the background worker injects `src/provider-page.js` into the **MAIN world**. Running in the page realm lets the adapter inspect the signed-in page state and make the provider's authenticated, same-origin GPX export request without collecting provider credentials.
+
+Before requesting the GPX, the adapter requires two independent owner signals:
+
+1. The signed-in viewer profile ID must equal the activity-author profile ID.
+2. The page must expose that activity's owner-only edit control.
+
+Missing or changed DOM is not treated as proof of ownership. The popup reports signed-out, not-owner, and ownership-unavailable states separately; each ownership-gate failure also gets an action badge so closing the popup cannot hide it. The background then verifies the Peakbagger login and obtains the climber ID (`cid`) **before** asking the provider page for coordinates.
+
+Garmin and Strava remain isolated behind separate adapters because their page DOM and export requests are undocumented dependencies. For example, the current Garmin path uses its session-authenticated GPX download service plus the page's CSRF/app-version headers. If either provider changes, that adapter should fail with a provider-specific export error; it must not bypass the ownership gate.
+
+### 2. Two track representations, one privacy boundary
+
+The source XML never leaves the activity page and is never persisted. The parser ignores everything except ordered track points and segment boundaries, producing two successively narrower representations:
+
+| Representation | Fields | Lifetime and purpose |
+| --- | --- | --- |
+| Full-resolution analysis | latitude, longitude, optional elevation, optional timestamp, segment boundaries | In memory while validating the track, finding summits, and calculating ascent fields. |
+| Peakbagger upload | latitude, longitude, segment boundaries | Reduced to at most 3,000 original points, kept in `storage.session`, and uploaded only after **Open drafts**. |
+
+The upload serializer constructs new GPX rather than deleting selected nodes from the source. Its allowlist is deliberately tiny: `<gpx>`, `<trk>`, `<trkseg>`, and `<trkpt lat="…" lon="…">`. A second validator on the Peakbagger draft page rejects anything outside that shape, more than 3,000 points, or more than 50 segments before attaching the file. Names, descriptions, metadata, waypoints, routes, timestamps, elevation, device fields, heart rate, cadence, temperature, power, and all extensions therefore have no path into the upload.
+
+Timestamps and elevation are optional analysis inputs, not assumptions about a provider export. If timestamps are absent, the extension does not invent them: it uses the provider's displayed local start date when available, leaves the encounter time empty, calculates durations as zero, and lowers the track-quality evidence.
+
+### 3. Track validation and summit lookup
+
+Points are processed in recorded order; they are never sorted and gaps are never bridged. Invalid coordinates or timestamps create segment breaks. So do reversed clocks, implied speeds over 100 m/s, a gap over 10 minutes that also spans over 300 m, a spatial jump over 10 km, or an untimed jump over 1 km. Besides preventing invented straight lines across bad data, these breaks feed a track-quality score used by matching.
+
+The validated path is split into chunks whose path length and spatial span stay within 10 km, padded by 300 m, and converted into bounding-box requests to Peakbagger's nearby-summit endpoint. Requests run four at a time and retry once. The capture fails if any required box still fails: presenting a partial response as "no other peaks" would be misleading. Bounding boxes are used for discovery; the reduced coordinate track is not uploaded at this stage.
+
+Every returned summit is projected onto the original track segments. Nearby projections of the same summit are treated as one encounter unless they are separated by more than 300 m along the activity or five minutes in time.
+
+### 4. Confidence is evidence, not a claim of certainty
+
+The confidence percentage is a weighted score with smooth cubic decay between each full-credit and zero-credit distance:
+
+| Evidence | Weight | Full credit | Zero credit |
+| --- | ---: | ---: | ---: |
+| Horizontal proximity to the route | 50% | ≤ 10 m | ≥ 100 m |
+| Recorded vs. summit elevation | 20% | ≤ 10 m difference | ≥ 80 m difference |
+| Near a local high point | 15% | ≤ 5 m below it | ≥ 40 m below it |
+| Climb-before / descend-after shape | 10% | route-shape evidence | no evidence |
+| Track quality | 5% | clean track | degraded by breaks/missing time |
+
+A **Strong match** is at least 80% confidence and within 30 m of the route; it is selected by default. A **Probable match** is 60–79% and is opt-in. Possible (35–59%) and Weak results are intentionally hidden. A match without usable elevation is capped at 69%, and anything farther than 150 m is Weak. When several nearby summits describe the same encounter, they are capped at Probable unless the top candidate leads the runner-up by at least ten percentage points.
+
+The popup pairs the percentage with route distance, elevation difference when available, and track quality. The percentage ranks the evidence in this activity; it does not prove that the user stood on a summit, which is why saving remains manual.
+
+### 5. How the track is reduced to 3,000 points
+
+All dates, durations, distances, elevations, and gain are calculated from the full-resolution analysis track **before** reduction. Reduction affects only the privacy upload.
+
+The reducer is segment-aware and uses a globally prioritized Ramer–Douglas–Peucker-style process:
+
+1. Protect every segment's first and last point, its minimum and maximum elevation points, and the two original vertices that bracket each detected summit projection.
+2. Between protected points, find the original vertex with the greatest perpendicular path error and put that interval into a global max-heap.
+3. Repeatedly keep the highest-error vertex across *all* segments, split its interval, and enqueue the two new candidates until 3,000 points are retained or no candidates remain.
+4. Serialize retained points in their original segment and recording order, then measure the largest distance from every omitted point to its retained line segment.
+
+This global priority matters: a winding section receives more of the fixed budget than a nearly straight section, regardless of which segment appeared first. The reducer never invents or moves a coordinate and never connects separate segments. It reports original count, retained count, and maximum measured deviation. If protected anchors alone exceed 3,000—or the sanitized track exceeds Peakbagger's 50-segment limit—the capture fails instead of dropping a required point.
+
+### 6. Draft handoff and exactly-once Preview
+
+Ready jobs contain only the reduced GPX, public match evidence, calculated form values, selection state, and identifiers in `storage.session`, with a 30-minute expiry. Closing the popup does not cancel background work, and repeated clicks for the same activity reuse the in-flight or completed job.
+
+Selected matches are sorted by confidence and opened as inactive tabs in the **Peak Drafts** group. Each blank tab is assigned a private `{ jobId, tabId, pid, cid }` identity before navigation. On the ascent editor, `src/ascent-draft.js` sends a ready handshake; the background checks the sender tab plus `pid` and `cid` before returning any payload. The content script verifies the expected form and the coordinate-only GPX, fills both metric and imperial fields, attaches the file, records a Preview-start acknowledgement, and clicks `GPXPreview` exactly once.
+
+After Peakbagger reloads with the Preview result, the second handshake sees that Preview already started and shows a short-lived, dismissible Strong/Probable confidence notice instead of submitting again. When all drafts finish Preview, the background clears the stored GPX. No code path clicks either Save control: the user must review Peakbagger's result and save each ascent manually.
 
 ---
 
@@ -138,7 +237,9 @@ This split is the single most important design constraint in the extension. Here
 | --- | --- | --- |
 | `gpx-analyzer.js` | **MAIN** | Needs page-realm access: the map iframe's Leaflet globals (see below), the bundled `Chart` global, and page clipboard/`localStorage` semantics identical to a userscript. |
 | `chart.umd.min.js` | **MAIN** | Loaded immediately before the analyzer so the `Chart` UMD global lands in the same realm the analyzer reads. |
+| `provider-page.js` | **MAIN**, injected on demand | Needs the activity page's signed-in state and authenticated same-origin export; exposes only the narrow ownership/capture adapter to the background. |
 | `theme.js`, `bridge.js`, `ascent-filter.js`, `settings.js` | isolated | They only touch the DOM and `chrome.storage`; no page globals needed. |
+| `ascent-draft.js` | isolated | Uses extension messaging to verify a prepared draft, then fills the Peakbagger DOM and starts Preview. |
 
 A subtle point about **shared scope**: all content scripts from the *same* extension injected into the *same* frame and world share one global scope. That's why listing `["src/settings.js", "src/ascent-filter.js"]` in a single manifest entry lets `ascent-filter.js` use the `window.BPBSettings` object that `settings.js` defined — and why `settings.js` guards with `if (window.BPBSettings) return;`, since a page that matches several manifest entries will inject it more than once into that one shared world.
 
@@ -331,6 +432,11 @@ test/
   dark-contrast.test.mjs WCAG AA contrast guard for the dark theme
   theme-inject.test.mjs  dark-theme sheet-injection invariant
   options.test.mjs       options page end-to-end (populate/save/clean)
+  provider-page.test.mjs provider ownership/export adapters and privacy parsing
+  capture-core.test.mjs  track validation, scoring, metrics, and reduction
+  background-capture.test.mjs  session jobs, lookup, grouping, and handshakes
+  ascent-draft.test.mjs  form/privacy validation and exactly-once Preview
+  popup.test.mjs         confidence labels and selection defaults
   fixtures-privacy.test.mjs  fails if a fixture leaks the capturer's identity
 ```
 
@@ -359,7 +465,7 @@ npm run start:chromium  same for Chromium
 
 No build step for development — load the folder unpacked. `npm run build` just zips the shippable files (`manifest.json`, `src/`, `vendor/`, `icons/`, `options/`, README, LICENSE); `node_modules`, the lockfile, `CHANGELOG.md`, and `test/` are excluded.
 
-Peakbagger sits behind a Cloudflare challenge, so tests never hit the live site: `test/fixtures/peakascents/` holds raw captures (fetched from the Wayback Machine's unrewritten `id_` URLs) and the jsdom harness runs the real content scripts against them with a stubbed `chrome.storage`.
+Automated tests do not require live Garmin, Strava, or Peakbagger accounts. Peakbagger page features run against PII-masked captures in `test/fixtures/`; the capture pipeline uses synthetic provider DOM/GPX data, mocked network responses, and stubbed extension APIs. This makes the privacy and failure-path invariants repeatable, but current provider DOM/export behavior still needs manual browser verification before a release.
 
 ---
 
