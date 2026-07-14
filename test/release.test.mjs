@@ -68,6 +68,7 @@ async function makeReleaseZip(extraFiles = {}, omittedFiles = []) {
     "src/background.js": "background",
     "src/capture-core.js": "core",
     "src/terrain-map.css": "terrain css",
+    "src/terrain-cache.js": "terrain cache",
     "src/terrain-frame.js": "terrain frame",
     "src/terrain-map.js": "terrain",
     "terrain/terrain.html": "terrain document",

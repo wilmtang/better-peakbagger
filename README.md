@@ -90,10 +90,11 @@ by “has beta.” Sortable columns reorder instantly without reloading the page
 
 Use a site-wide dark theme that follows your system or stays light or dark.
 Shared settings also control units, the GPX chart's default view, route
-appearance, map size, optional map-layer memory, and which signals count as
-ascent beta. Activity-capture settings control waypoint retention plus
-automatic Trip Info and wilderness-night filling. Changes apply to open
-Peakbagger tabs immediately and to the next activity capture.
+appearance, map size, the best-effort 3D elevation cache, optional map-layer
+memory, and which signals count as ascent beta. Activity-capture settings
+control waypoint retention plus automatic Trip Info and wilderness-night
+filling. Changes apply to open Peakbagger tabs immediately and to the next
+activity capture.
 
 ![Better Peakbagger settings beside Peakbagger dark mode](store-assets/screenshot-3-dark-mode-settings.png)
 
@@ -431,11 +432,11 @@ The word “basemap” is easy to misread in a 3D renderer. Two independent rast
 sources do different jobs:
 
 1. **Mapterhorn is the height field.** The renderer reads Mapterhorn's public
-   [TileJSON endpoint](https://mapterhorn.com/data-access/) as a MapLibre
-   `raster-dem` source. The RGB values in each Terrarium pixel encode elevation
-   as `R × 256 + G + B ÷ 256 − 32768` metres. MapLibre decodes those pixels into
-   the mesh that moves vertices up and down. GPX elevations do not shape the
-   terrain.
+   [Terrarium tiles](https://mapterhorn.com/data-access/) through a bounded
+   local protocol as a MapLibre `raster-dem` source. The RGB values in each
+   Terrarium pixel encode elevation as `R × 256 + G + B ÷ 256 − 32768` metres.
+   MapLibre decodes those pixels into the mesh that moves vertices up and down.
+   GPX elevations do not shape the terrain.
 2. **The selected Peakbagger layer is the optional surface texture.** Just
    before 3D starts, the analyzer inspects Peakbagger's active Leaflet map. If
    the selected layer is a compatible XYZ/TMS raster `TileLayer`, the renderer
@@ -484,9 +485,9 @@ isolated extension world
               │
               ▼
 extension-owned document
-  terrain-frame.js + packaged MapLibre + packaged CSP worker
+  terrain-cache.js + terrain-frame.js + packaged MapLibre + CSP worker
   ├─ validates the route and raster descriptor again
-  ├─ requests DEM and optional map tiles
+  ├─ reuses or requests bounded DEM tiles and requests optional map tiles
   └─ reports "loaded" only after MapLibre is usable
 ```
 
@@ -545,6 +546,30 @@ layer, return to **2D map**, select it in Peakbagger, and open 3D again. This
 avoids synchronizing controls between two independent map engines and makes the
 chosen provider for each 3D session unambiguous.
 
+### Bounded DEM cache
+
+Mapterhorn currently marks its terrain responses as publicly cacheable for
+seven days, so the browser's ordinary HTTP cache already avoids many immediate
+re-downloads. Better Peakbagger also puts successful DEM responses behind a
+MapLibre custom protocol and stores them in a dedicated CacheStorage cache.
+This makes reuse explicit across short-lived 3D frames and gives it a predictable
+ceiling.
+
+The default limit is **256 MB**, configurable from 0–2048 MB in Settings; 0
+disables and clears the owned DEM cache on the next 3D load. An LRU index in
+`storage.local` tracks byte size and last use. Writes and eviction run off the
+render-critical network path, so cache bookkeeping cannot turn a usable tile
+into a rendering failure. The index is reconciled against CacheStorage when a
+new terrain frame starts, which handles browser eviction or partial storage
+cleanup without trusting stale metadata.
+
+This is deliberately **best-effort**, not persistent/offline-map storage. The
+extension never calls `navigator.storage.persist()`, so Chrome or Firefox may
+purge cached tiles under disk pressure or when the user clears site/extension
+data. A missing, evicted, corrupt, oversized, or quota-rejected entry simply
+returns to Mapterhorn. Only Mapterhorn DEM tiles are cached here; selected
+Leaflet basemap tiles continue to follow their provider's own cache policy.
+
 ### Privacy, failure, and teardown
 
 No 3D request occurs on page load or when the notice is merely opened. Only
@@ -554,6 +579,9 @@ for the viewed area plus ordinary request metadata under its
 selected map is used, its existing provider also receives a new set of tile
 requests for the 3D camera's view. Its tile template and attribution are relayed
 only for that renderer session and are not persisted by Better Peakbagger.
+Successful Mapterhorn DEM responses may remain in the bounded local cache
+described above; they contain terrain pixels addressed by tile coordinate, not
+the route or GPX.
 
 The route handoff remains coordinate-only: latitude, longitude, and segment
 boundaries, capped at 3,000 points and 1,500 segments. The renderer rejects
@@ -741,6 +769,7 @@ Settings shape (`chrome.storage.sync`, key `bpbSettings`):
   mapRouteCasingColor: '#rrggbb', mapRouteCasingWidth: 3..20, // defaults #ffffff / 9
   mapViewportWidth: 320..4096,     // pixels; default 450; capped by parent
   mapViewportHeight: 240..720,     // pixels; default 450; reset restores both
+  terrainCacheLimitMb: 0..2048,    // default 256; best-effort local DEM cache
   rememberMapLayer: boolean,       // opt-in; default false
   mapLastLayer: '' | known layer ID,
   betaTr: boolean,                  // "has beta" counts a trip report…
@@ -782,8 +811,10 @@ the Peakbagger summit lookup and GPS Preview actions described below.
 ### Browser permissions
 
 - **`storage`** saves theme, units, chart/map, and beta-filter preferences in
-  `storage.sync`. It also keeps short-lived capture jobs and prepared drafts in
-  `storage.session`; that data expires after 30 minutes.
+  `storage.sync`. It keeps the bounded DEM cache index in `storage.local`, and
+  short-lived capture jobs and prepared drafts in `storage.session`; that data
+  expires after 30 minutes. DEM response bytes live in browser-managed
+  CacheStorage and may be evicted under storage pressure.
 - **`activeTab`** grants temporary access to the one Garmin Connect or Strava
   activity page where you clicked the toolbar button. It replaces permanent
   provider host permissions.
@@ -825,7 +856,9 @@ the Peakbagger summit lookup and GPS Preview actions described below.
   compatible selected Leaflet provider also receives raster requests for the 3D
   camera's view. The renderer receives coordinate segments plus a bounded,
   transient tile-layer descriptor; it does not receive source GPX, time,
-  elevation, or activity metadata. Returning to 2D destroys the renderer.
+  elevation, or activity metadata. Successful DEM responses may be reused from
+  the bounded, best-effort local cache; returning to 2D destroys the renderer,
+  not the cache.
 - **Excluded source fields:** heart rate, cadence, power, temperature, device
   fields, descriptions, routes, waypoint elevation/time/symbols, extension
   elements, and each trackpoint's timestamp and elevation. The activity/track

@@ -38,6 +38,7 @@ test('3D terrain waits for the extension frame handshake before sending route co
         routeSegments: [[[48.7, -121.8], [48.71, -121.81]]],
         routeStyle: { color: '#d9483b' },
         theme: 'light',
+        cacheLimitMb: 512,
         basemap: {
             name: 'Open Topo Map',
             tiles: ['https://a.tile.example.com/{z}/{x}/{y}.png']
@@ -61,6 +62,7 @@ test('3D terrain waits for the extension frame handshake before sending route co
     assert.deepEqual(init.routeSegments, [[[48.7, -121.8], [48.71, -121.81]]]);
     assert.equal(init.routeStyle.color, '#347a3f');
     assert.equal(init.theme, 'dark');
+    assert.equal(init.cacheLimitMb, 512);
     assert.equal(init.basemap.name, 'Open Topo Map');
 
     window.dispatchEvent(new window.MessageEvent('message', {
@@ -87,6 +89,7 @@ test('3D terrain frame validates coordinate-only routes before loading public DE
     const { window } = dom;
     const messages = [];
     const maps = [];
+    const protocolHandlers = new Map();
     let workerUrl = '';
 
     class MapStub {
@@ -124,11 +127,19 @@ test('3D terrain frame validates coordinate-only routes before loading public DE
     }
 
     window.chrome = { runtime: { getURL: path => `chrome-extension://test-id/${path}` } };
+    window.BPBTerrainCache = {
+        PROTOCOL: 'bpb-dem',
+        create({ limitMb }) {
+            return { limitMb, load() {}, flush() { return Promise.resolve(); } };
+        }
+    };
     window.maplibregl = {
         Map: MapStub,
         NavigationControl: class NavigationControl {},
         ScaleControl: class ScaleControl {},
-        setWorkerUrl(url) { workerUrl = url; }
+        setWorkerUrl(url) { workerUrl = url; },
+        addProtocol(name, handler) { protocolHandlers.set(name, handler); },
+        removeProtocol(name) { protocolHandlers.delete(name); }
     };
     window.postMessage = message => { messages.push(message); };
     window.eval(terrainFrameSource);
@@ -157,6 +168,7 @@ test('3D terrain frame validates coordinate-only routes before loading public DE
         routeSegments,
         routeStyle: { color: '#2457a7', width: 7, casingColor: '#f1eadc', casingWidth: 13 },
         theme: 'dark',
+        cacheLimitMb: 384,
         basemap: {
             name: 'Open Topo Map',
             tiles: ['https://a.tile.example.com/{z}/{x}/{y}.png'],
@@ -172,8 +184,9 @@ test('3D terrain frame validates coordinate-only routes before loading public DE
     assert.equal(maps.length, 1);
     const map = maps[0];
     assert.equal(workerUrl, 'chrome-extension://test-id/vendor/maplibre-gl-csp-worker.js');
-    assert.equal(map.options.style.sources.terrain.url, 'https://tiles.mapterhorn.com/tilejson.json');
+    assert.deepEqual(JSON.parse(JSON.stringify(map.options.style.sources.terrain.tiles)), ['bpb-dem://{z}/{x}/{y}.webp']);
     assert.equal(map.options.style.sources.terrain.encoding, 'terrarium');
+    assert.ok(protocolHandlers.has('bpb-dem'));
     assert.equal(map.options.style.terrain.exaggeration, 1, 'terrain must not distort mountaineering geometry');
     assert.deepEqual(Object.keys(map.options.style.sources), ['terrain', 'basemap']);
     assert.deepEqual(JSON.parse(JSON.stringify(map.options.style.sources.basemap.tiles)), ['https://a.tile.example.com/{z}/{x}/{y}.png']);
@@ -212,6 +225,7 @@ test('3D terrain frame validates coordinate-only routes before loading public DE
 
     dispatch({ type: 'destroy' });
     assert.equal(map.removed, true);
+    assert.equal(protocolHandlers.has('bpb-dem'), false);
     assert.equal(window.document.getElementById('bpb-terrain-map'), null);
     assert.equal(messages.at(-1).type, 'destroyed');
 

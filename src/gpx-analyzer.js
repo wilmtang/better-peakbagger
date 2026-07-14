@@ -37,6 +37,7 @@
     const MAP_VIEWPORT_MAX_HEIGHT = 720;
     const MAP_RESIZE_RAIL_HEIGHT = 18;
     const TERRAIN_LOAD_TIMEOUT_MS = 17000;
+    const TERRAIN_CACHE_DEFAULT_MB = 256;
 
     const toRad = x => x * Math.PI / 180;
 
@@ -408,6 +409,10 @@
             height: integer(settings.mapViewportHeight, MAP_VIEWPORT_MIN_HEIGHT, MAP_VIEWPORT_MAX_HEIGHT, MAP_VIEWPORT_DEFAULT.height)
         };
     };
+    const resolveTerrainCacheLimitMb = settings => Number.isInteger(settings.terrainCacheLimitMb)
+        && settings.terrainCacheLimitMb >= 0 && settings.terrainCacheLimitMb <= 2048
+        ? settings.terrainCacheLimitMb
+        : TERRAIN_CACHE_DEFAULT_MB;
 
     const initChart = async () => {
         // 1. Locate GPX link and build UI
@@ -869,7 +874,8 @@
                 routeSegments: mapRouteSegments,
                 routeStyle: resolveMapRouteStyle(BPB.get()),
                 theme: effectiveTheme(BPB.get().theme),
-                basemap: getTerrainBasemap()
+                basemap: getTerrainBasemap(),
+                cacheLimitMb: resolveTerrainCacheLimitMb(BPB.get())
             });
             terrainLoadTimer = setTimeout(() => {
                 if (terrainState === 'loading') failTerrain('3D terrain took too long to load. The 2D map is unchanged.');

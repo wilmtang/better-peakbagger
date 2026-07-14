@@ -20,6 +20,7 @@
     const mapViewportWidthEl = document.getElementById('map-viewport-width');
     const mapViewportHeightEl = document.getElementById('map-viewport-height');
     const mapViewportResetEl = document.getElementById('map-viewport-reset');
+    const terrainCacheLimitEl = document.getElementById('terrain-cache-limit');
     const rememberMapLayerEl = document.getElementById('remember-map-layer');
     const betaTrEl = document.getElementById('beta-tr');
     const betaTrWordsEl = document.getElementById('beta-tr-words');
@@ -50,6 +51,7 @@
         mapRouteCasingWidthEl.value = String(settings.mapRouteCasingWidth);
         mapViewportWidthEl.value = String(settings.mapViewportWidth);
         mapViewportHeightEl.value = String(settings.mapViewportHeight);
+        terrainCacheLimitEl.value = String(settings.terrainCacheLimitMb);
         rememberMapLayerEl.checked = settings.rememberMapLayer;
         betaTrEl.checked = settings.betaTr;
         betaTrWordsEl.value = String(settings.betaTrMinWords);
@@ -82,6 +84,7 @@
     mapRouteCasingWidthEl.addEventListener('change', () => save({ mapRouteCasingWidth: mapRouteCasingWidthEl.value }).then(populate));
     mapViewportWidthEl.addEventListener('change', () => save({ mapViewportWidth: mapViewportWidthEl.value }).then(populate));
     mapViewportHeightEl.addEventListener('change', () => save({ mapViewportHeight: mapViewportHeightEl.value }).then(populate));
+    terrainCacheLimitEl.addEventListener('change', () => save({ terrainCacheLimitMb: terrainCacheLimitEl.value }).then(populate));
     mapViewportResetEl.addEventListener('click', () => {
         save({
             mapViewportWidth: S.DEFAULTS.mapViewportWidth,

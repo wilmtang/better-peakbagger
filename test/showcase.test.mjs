@@ -33,6 +33,7 @@ test('3D terrain showcase uses the production renderer with a synthetic route', 
     assert.doesNotMatch(terrainShowcase, /vendor\/maplibre-gl-csp\.js/,
         'MapLibre should load lazily inside the extension-owned frame');
     assert.match(terrainFrame, /vendor\/maplibre-gl-csp\.js/);
+    assert.match(terrainFrame, /src\/terrain-cache\.js/);
     assert.match(terrainFrame, /src\/terrain-frame\.js/);
     assert.match(terrainShowcase, /src\/gpx-analyzer\.js/);
     assert.match(terrainShowcase, /bpb-terrain-disclosure/);

@@ -230,7 +230,6 @@ try {
         };
     })()`);
     await delay(1200);
-    if (!terrainRequests.some(url => url.endsWith('/tilejson.json'))) throw new Error('The consented view did not request Mapterhorn TileJSON');
     if (!terrainRequests.some(url => url.endsWith('.webp'))) throw new Error('The consented view did not request terrain tiles');
     if (!basemapRequests.length) throw new Error(`The 3D view did not request the selected Leaflet raster layer (badge: ${ready.badge || 'missing'})`);
     if (!/Synthetic topographic map/.test(ready.badge || '')) throw new Error(`The selected layer was not retained: ${ready.badge}`);

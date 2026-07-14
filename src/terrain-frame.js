@@ -7,7 +7,7 @@
     'use strict';
 
     const FRAME_MESSAGE_TAG = '__bpbTerrainFrame';
-    const TERRAIN_TILEJSON_URL = 'https://tiles.mapterhorn.com/tilejson.json';
+    const TERRAIN_TILE_TEMPLATE = 'bpb-dem://{z}/{x}/{y}.webp';
     const MAX_ROUTE_POINTS = 3000;
     const MAX_ROUTE_SEGMENTS = 1500;
     const MAX_MERCATOR_LAT = 85.0511287;
@@ -43,6 +43,8 @@
     let activeBasemap = null;
     let basemapFailed = false;
     let badgeElement = null;
+    let terrainCache = null;
+    let terrainProtocolRegistered = false;
     let activeRouteStyle = { color: '#d9483b', width: 5, casingColor: '#ffffff', casingWidth: 9 };
 
     const post = (type, detail = {}) => {
@@ -72,6 +74,12 @@
             try { map.remove(); } catch (error) { /* The frame may already be unloading. */ }
             map = null;
         }
+        if (terrainProtocolRegistered && globalThis.maplibregl && typeof globalThis.maplibregl.removeProtocol === 'function') {
+            try { globalThis.maplibregl.removeProtocol(globalThis.BPBTerrainCache.PROTOCOL); } catch (error) { /* The frame may already be unloading. */ }
+        }
+        if (terrainCache) void terrainCache.flush();
+        terrainCache = null;
+        terrainProtocolRegistered = false;
         if (mapElement) {
             mapElement.remove();
             mapElement = null;
@@ -226,9 +234,11 @@
         const sources = {
             terrain: {
                 type: 'raster-dem',
-                url: TERRAIN_TILEJSON_URL,
+                tiles: [TERRAIN_TILE_TEMPLATE],
                 encoding: 'terrarium',
                 tileSize: 512,
+                minzoom: 0,
+                maxzoom: 18,
                 attribution: '<a href="https://mapterhorn.com/attribution" target="_blank" rel="noopener noreferrer">© Mapterhorn</a>'
             }
         };
@@ -332,7 +342,10 @@
         if (map || mapElement) return;
         const route = validateRoute(data.routeSegments);
         const maplibre = globalThis.maplibregl;
-        if (!route || !maplibre || !globalThis.chrome?.runtime?.getURL) {
+        const cacheLimitMb = Number.isInteger(data.cacheLimitMb) && data.cacheLimitMb >= 0 && data.cacheLimitMb <= 2048
+            ? data.cacheLimitMb
+            : 256;
+        if (!route || !maplibre || !globalThis.BPBTerrainCache || !globalThis.chrome?.runtime?.getURL) {
             fail('unavailable');
             return;
         }
@@ -363,6 +376,9 @@
 
         try {
             maplibre.setWorkerUrl(chrome.runtime.getURL('vendor/maplibre-gl-csp-worker.js'));
+            terrainCache = globalThis.BPBTerrainCache.create({ limitMb: cacheLimitMb });
+            maplibre.addProtocol(globalThis.BPBTerrainCache.PROTOCOL, terrainCache.load);
+            terrainProtocolRegistered = true;
             map = new maplibre.Map({
                 container: canvas,
                 style: terrainStyle(activeTheme, activeBasemap),
