@@ -63,7 +63,8 @@
         pendingInit = {
             routeSegments: data.routeSegments,
             routeStyle: data.routeStyle,
-            theme: data.theme
+            theme: data.theme,
+            basemap: data.basemap
         };
         terrainFrame.src = chrome.runtime.getURL('terrain/terrain.html');
         frame = terrainFrame;

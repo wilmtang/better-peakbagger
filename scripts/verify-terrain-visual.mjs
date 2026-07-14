@@ -20,7 +20,8 @@ const contentTypes = new Map([
     ['.gpx', 'application/gpx+xml; charset=utf-8'],
     ['.html', 'text/html; charset=utf-8'],
     ['.js', 'text/javascript; charset=utf-8'],
-    ['.png', 'image/png']
+    ['.png', 'image/png'],
+    ['.svg', 'image/svg+xml; charset=utf-8']
 ]);
 
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -38,9 +39,12 @@ const safeFile = async pathname => {
 const server = createServer(async (request, response) => {
     try {
         const url = new URL(request.url, 'http://127.0.0.1');
-        const pathname = url.pathname === '/climber/ascent.aspx'
+        let pathname = url.pathname === '/climber/ascent.aspx'
             ? '/scripts/showcase/terrain.html'
             : decodeURIComponent(url.pathname);
+        if (pathname.startsWith('/scripts/showcase/terrain-tiles/')) {
+            pathname = '/scripts/showcase/terrain-basemap-tile.png';
+        }
         const file = await safeFile(pathname);
         if (!file) {
             response.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' });
@@ -188,9 +192,11 @@ try {
     ]);
 
     const terrainRequests = [];
+    const basemapRequests = [];
     const runtimeErrors = [];
     cdp.on('Network.requestWillBeSent', ({ request }) => {
         if (/\.mapterhorn\.com\//.test(request.url)) terrainRequests.push(request.url);
+        if (/\/scripts\/showcase\/terrain-tiles\//.test(request.url)) basemapRequests.push(request.url);
     });
     cdp.on('Runtime.exceptionThrown', ({ exceptionDetails }) => {
         runtimeErrors.push(exceptionDetails.exception?.description || exceptionDetails.text || 'Unknown runtime exception');
@@ -203,7 +209,7 @@ try {
         return { ready: notice && notice.style.display === 'block', text: notice && notice.textContent };
     })()`);
     await delay(400);
-    if (terrainRequests.length) throw new Error('Terrain requests started before the consent action');
+    if (terrainRequests.length || basemapRequests.length) throw new Error('3D tile requests started before the consent action');
     await capture(cdp, path.join(outputDir, 'consent-default-450.png'));
 
     await navigate(cdp, `${baseUrl}?mode=terrain&map=wide`, 1280, 950);
@@ -216,6 +222,7 @@ try {
             ready: toggle && toggle.textContent === '2D map' && frame && frame.style.opacity === '1' && surface,
             toggle: toggle && toggle.textContent,
             message: message && message.textContent,
+            badge: surface && surface.querySelector('.bpb-terrain-badge') && surface.querySelector('.bpb-terrain-badge').textContent,
             canvas: surface && surface.querySelector('canvas') && {
                 width: surface.querySelector('canvas').width,
                 height: surface.querySelector('canvas').height
@@ -225,6 +232,8 @@ try {
     await delay(1200);
     if (!terrainRequests.some(url => url.endsWith('/tilejson.json'))) throw new Error('The consented view did not request Mapterhorn TileJSON');
     if (!terrainRequests.some(url => url.endsWith('.webp'))) throw new Error('The consented view did not request terrain tiles');
+    if (!basemapRequests.length) throw new Error(`The 3D view did not request the selected Leaflet raster layer (badge: ${ready.badge || 'missing'})`);
+    if (!/Synthetic topographic map/.test(ready.badge || '')) throw new Error(`The selected layer was not retained: ${ready.badge}`);
     if (runtimeErrors.length) throw new Error(`Runtime exception: ${runtimeErrors.join('\n')}`);
     await capture(cdp, path.join(outputDir, 'terrain-wide-800.png'));
 

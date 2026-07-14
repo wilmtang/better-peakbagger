@@ -11,6 +11,8 @@
     const MAX_ROUTE_POINTS = 3000;
     const MAX_ROUTE_SEGMENTS = 1500;
     const MAX_MERCATOR_LAT = 85.0511287;
+    const MAX_BASEMAP_URL_LENGTH = 2048;
+    const MAX_BASEMAP_ATTRIBUTION_LENGTH = 600;
     const TERRAIN_EXAGGERATION = 1;
     const MAP_LOAD_TIMEOUT_MS = 15000;
     const PEAKBAGGER_ORIGIN = /^https?:\/\/(?:www\.)?peakbagger\.com(?::\d+)?$/i;
@@ -38,6 +40,9 @@
     let loaded = false;
     let parentOrigin = null;
     let activeTheme = 'light';
+    let activeBasemap = null;
+    let basemapFailed = false;
+    let badgeElement = null;
     let activeRouteStyle = { color: '#d9483b', width: 5, casingColor: '#ffffff', casingWidth: 9 };
 
     const post = (type, detail = {}) => {
@@ -71,6 +76,9 @@
             mapElement.remove();
             mapElement = null;
         }
+        activeBasemap = null;
+        basemapFailed = false;
+        badgeElement = null;
         loaded = false;
     };
 
@@ -130,6 +138,78 @@
         };
     };
 
+    const isPublicHostname = hostname => {
+        const host = hostname.toLowerCase();
+        if (!host || host === 'localhost' || host.includes(':') || /^\d{1,3}(?:\.\d{1,3}){3}$/.test(host)) return false;
+        if (['.localhost', '.local', '.internal', '.test', '.invalid'].some(suffix => host.endsWith(suffix))) return false;
+        return host.includes('.');
+    };
+
+    const validateRemoteUrl = (value, allowTemplate = false) => {
+        if (typeof value !== 'string' || !value || value.length > MAX_BASEMAP_URL_LENGTH || /[\u0000-\u001f\u007f]/.test(value)) return null;
+        if (allowTemplate && !/^https?:\/\//i.test(value)) return null;
+
+        let parsed;
+        try { parsed = new URL(value, parentOrigin || undefined); } catch (error) { return null; }
+        if (parsed.username || parsed.password || parsed.hash) return null;
+
+        const samePeakbaggerOrigin = parsed.origin === parentOrigin;
+        if (parsed.protocol !== 'https:' && !samePeakbaggerOrigin) return null;
+        if (!samePeakbaggerOrigin && (!isPublicHostname(parsed.hostname) || (parsed.port && parsed.port !== '443'))) return null;
+
+        if (allowTemplate) {
+            const tokens = Array.from(value.matchAll(/\{([^{}]+)\}/g), match => match[1]);
+            if (!['z', 'x', 'y'].every(token => tokens.includes(token))
+                || tokens.some(token => !['z', 'x', 'y'].includes(token))) return null;
+        }
+        return allowTemplate ? value : parsed.href;
+    };
+
+    const escapeHtml = value => value.replace(/[&<>"']/g, character => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    })[character]);
+
+    const sanitizeAttribution = value => {
+        if (typeof value !== 'string' || value.length > MAX_BASEMAP_ATTRIBUTION_LENGTH) return '';
+        const parsed = new DOMParser().parseFromString(value, 'text/html');
+
+        const serialize = node => {
+            if (node.nodeType === Node.TEXT_NODE) return escapeHtml(node.textContent || '');
+            if (node.nodeType === Node.ELEMENT_NODE && ['SCRIPT', 'STYLE'].includes(node.tagName)) return '';
+            const children = Array.from(node.childNodes || [], serialize).join('');
+            if (node.nodeType !== Node.ELEMENT_NODE || node.tagName !== 'A') return children;
+            const href = validateRemoteUrl(node.getAttribute('href'));
+            return href
+                ? `<a href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer">${children}</a>`
+                : children;
+        };
+
+        return Array.from(parsed.body.childNodes, serialize).join('').trim();
+    };
+
+    const validateBasemap = value => {
+        if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+        const name = typeof value.name === 'string' ? value.name.trim() : '';
+        const tileUrl = Array.isArray(value.tiles) && value.tiles.length === 1
+            ? validateRemoteUrl(value.tiles[0], true)
+            : null;
+        if (!name || name.length > 80 || /[\u0000-\u001f\u007f]/.test(name) || !tileUrl) return null;
+
+        const integer = (candidate, min, max, fallback) =>
+            Number.isInteger(candidate) && candidate >= min && candidate <= max ? candidate : fallback;
+        const minzoom = integer(value.minzoom, 0, 22, 0);
+        const maxzoom = integer(value.maxzoom, minzoom, 24, Math.max(minzoom, 19));
+        return {
+            name,
+            tiles: [tileUrl],
+            tileSize: value.tileSize === 512 ? 512 : 256,
+            minzoom,
+            maxzoom,
+            scheme: value.scheme === 'tms' ? 'tms' : 'xyz',
+            attribution: sanitizeAttribution(value.attribution)
+        };
+    };
+
     const reliefExpression = palette => [
         'interpolate', ['linear'], ['elevation'],
         -100, palette.relief[0],
@@ -141,38 +221,75 @@
         5000, palette.relief[6]
     ];
 
-    const terrainStyle = theme => {
+    const terrainStyle = (theme, basemap) => {
         const palette = PALETTES[theme];
+        const sources = {
+            terrain: {
+                type: 'raster-dem',
+                url: TERRAIN_TILEJSON_URL,
+                encoding: 'terrarium',
+                tileSize: 512,
+                attribution: '<a href="https://mapterhorn.com/attribution" target="_blank" rel="noopener noreferrer">© Mapterhorn</a>'
+            }
+        };
+        const layers = [
+            { id: 'terrain-background', type: 'background', paint: { 'background-color': palette.background } },
+            {
+                id: 'terrain-relief', type: 'color-relief', source: 'terrain',
+                paint: { 'color-relief-color': reliefExpression(palette), 'color-relief-opacity': 1 }
+            }
+        ];
+
+        if (basemap) {
+            sources.basemap = {
+                type: 'raster',
+                tiles: basemap.tiles,
+                tileSize: basemap.tileSize,
+                minzoom: basemap.minzoom,
+                maxzoom: basemap.maxzoom,
+                scheme: basemap.scheme,
+                attribution: basemap.attribution
+            };
+            layers.push({
+                id: 'basemap', type: 'raster', source: 'basemap',
+                paint: { 'raster-opacity': 0.78, 'raster-fade-duration': 0, 'raster-resampling': 'linear' }
+            });
+        }
+
+        layers.push({
+            id: 'terrain-hillshade', type: 'hillshade', source: 'terrain',
+            paint: {
+                'hillshade-exaggeration': 0.48,
+                'hillshade-shadow-color': palette.hillShadow,
+                'hillshade-highlight-color': palette.hillHighlight,
+                'hillshade-accent-color': palette.hillAccent
+            }
+        });
+
         return {
             version: 8,
             name: 'Better Peakbagger terrain',
-            sources: {
-                terrain: {
-                    type: 'raster-dem',
-                    url: TERRAIN_TILEJSON_URL,
-                    encoding: 'terrarium',
-                    tileSize: 512,
-                    attribution: '<a href="https://mapterhorn.com/attribution" target="_blank" rel="noopener noreferrer">© Mapterhorn</a>'
-                }
-            },
-            layers: [
-                { id: 'terrain-background', type: 'background', paint: { 'background-color': palette.background } },
-                {
-                    id: 'terrain-relief', type: 'color-relief', source: 'terrain',
-                    paint: { 'color-relief-color': reliefExpression(palette), 'color-relief-opacity': 1 }
-                },
-                {
-                    id: 'terrain-hillshade', type: 'hillshade', source: 'terrain',
-                    paint: {
-                        'hillshade-exaggeration': 0.48,
-                        'hillshade-shadow-color': palette.hillShadow,
-                        'hillshade-highlight-color': palette.hillHighlight,
-                        'hillshade-accent-color': palette.hillAccent
-                    }
-                }
-            ],
+            sources,
+            layers,
             terrain: { source: 'terrain', exaggeration: TERRAIN_EXAGGERATION }
         };
+    };
+
+    const renderBadge = () => {
+        if (!badgeElement) return;
+        const caveat = document.createElement('span');
+        caveat.textContent = '· Not live conditions';
+        badgeElement.replaceChildren(document.createTextNode(activeBasemap ? `${activeBasemap.name} · 3D terrain` : 'Terrain only'), caveat);
+    };
+
+    const removeFailedBasemap = () => {
+        if (!map || !activeBasemap) return;
+        try {
+            if (typeof map.getLayer === 'function' && map.getLayer('basemap')) map.removeLayer('basemap');
+            if (map.getSource('basemap') && typeof map.removeSource === 'function') map.removeSource('basemap');
+        } catch (error) { /* A failed raster source may already be absent. */ }
+        activeBasemap = null;
+        renderBadge();
     };
 
     const setRoutePaint = routeStyle => {
@@ -222,6 +339,8 @@
 
         activeRouteStyle = validateStyle(data.routeStyle);
         activeTheme = data.theme === 'dark' ? 'dark' : 'light';
+        activeBasemap = validateBasemap(data.basemap);
+        basemapFailed = false;
 
         mapElement = document.createElement('div');
         mapElement.id = 'bpb-terrain-map';
@@ -233,10 +352,8 @@
         canvas.id = 'bpb-terrain-canvas';
         const badge = document.createElement('p');
         badge.className = 'bpb-terrain-badge';
-        badge.append('Terrain only');
-        const caveat = document.createElement('span');
-        caveat.textContent = '· Not live conditions';
-        badge.append(caveat);
+        badgeElement = badge;
+        renderBadge();
         const status = document.createElement('p');
         status.className = 'bpb-terrain-status';
         status.setAttribute('role', 'status');
@@ -248,7 +365,7 @@
             maplibre.setWorkerUrl(chrome.runtime.getURL('vendor/maplibre-gl-csp-worker.js'));
             map = new maplibre.Map({
                 container: canvas,
-                style: terrainStyle(activeTheme),
+                style: terrainStyle(activeTheme, activeBasemap),
                 center: [(route.bounds[0][0] + route.bounds[1][0]) / 2, (route.bounds[0][1] + route.bounds[1][1]) / 2],
                 zoom: 11,
                 pitch: 60,
@@ -262,7 +379,12 @@
             const terrainMap = map;
             terrainMap.addControl(new maplibre.NavigationControl({ visualizePitch: true }), 'top-right');
             terrainMap.addControl(new maplibre.ScaleControl({ maxWidth: 120, unit: 'metric' }), 'bottom-left');
-            terrainMap.on('error', () => {
+            terrainMap.on('error', event => {
+                if (event && event.sourceId === 'basemap') {
+                    basemapFailed = true;
+                    if (loaded && map === terrainMap) removeFailedBasemap();
+                    return;
+                }
                 if (!loaded && map === terrainMap) fail('maplibre');
             });
 
@@ -287,6 +409,7 @@
                 });
                 terrainMap.fitBounds(route.bounds, { padding: 46, maxZoom: 15.5, pitch: 60, bearing: 0, duration: 0 });
                 loaded = true;
+                if (basemapFailed) removeFailedBasemap();
                 setTheme(activeTheme);
                 status.remove();
                 mapElement.style.pointerEvents = 'auto';

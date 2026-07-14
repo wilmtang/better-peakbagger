@@ -650,7 +650,7 @@
             borderRadius: '6px', background: '#eef4fa', fontFamily: 'sans-serif', fontSize: '0.88em'
         });
         const terrainDisclosureText = document.createElement('span');
-        terrainDisclosureText.append('3D terrain requests elevation tiles from Mapterhorn. That service receives the viewed map area and request metadata. ');
+        terrainDisclosureText.append('3D terrain requests elevation tiles from Mapterhorn and may re-request your selected map layer from its provider. Those services receive the viewed map area and request metadata. ');
         const terrainPrivacyLink = document.createElement('a');
         terrainPrivacyLink.href = 'https://mapterhorn.com/privacy-policy/';
         terrainPrivacyLink.target = '_blank';
@@ -868,7 +868,8 @@
             postTerrain('init', {
                 routeSegments: mapRouteSegments,
                 routeStyle: resolveMapRouteStyle(BPB.get()),
-                theme: effectiveTheme(BPB.get().theme)
+                theme: effectiveTheme(BPB.get().theme),
+                basemap: getTerrainBasemap()
             });
             terrainLoadTimer = setTimeout(() => {
                 if (terrainState === 'loading') failTerrain('3D terrain took too long to load. The 2D map is unchanged.');
@@ -954,6 +955,76 @@
             } catch (e) {
                 return null;
             }
+        };
+
+        const expandLeafletTileUrl = (layer, iframeWin) => {
+            const options = layer && layer.options && typeof layer.options === 'object' ? layer.options : {};
+            if (!layer || typeof layer._url !== 'string' || !layer._url || layer.wmsParams
+                || options.zoomReverse === true || (Number.isFinite(options.zoomOffset) && options.zoomOffset !== 0)) return null;
+
+            let template = layer._url;
+            if (template.includes('{s}')) {
+                const subdomains = Array.isArray(options.subdomains)
+                    ? options.subdomains
+                    : typeof options.subdomains === 'string' ? options.subdomains.split('') : [];
+                const subdomain = subdomains.find(value => /^[a-z0-9-]{1,20}$/i.test(String(value)));
+                if (!subdomain) return null;
+                template = template.replaceAll('{s}', String(subdomain));
+            }
+            template = template.replaceAll('{r}', iframeWin.L && iframeWin.L.Browser && iframeWin.L.Browser.retina ? '@2x' : '');
+
+            const placeholders = { z: '__BPB_TILE_Z__', x: '__BPB_TILE_X__', y: '__BPB_TILE_Y__' };
+            const protectedUrl = template.replace(/\{([zxy])\}/g, (match, token) => placeholders[token]);
+            let absolute;
+            try { absolute = new URL(protectedUrl, iframeWin.location && iframeWin.location.href || location.href).href; } catch (error) { return null; }
+            template = absolute
+                .replaceAll(placeholders.z, '{z}')
+                .replaceAll(placeholders.x, '{x}')
+                .replaceAll(placeholders.y, '{y}');
+
+            const tokens = Array.from(template.matchAll(/\{([^{}]+)\}/g), match => match[1]);
+            return ['z', 'x', 'y'].every(token => tokens.includes(token))
+                && tokens.every(token => ['z', 'x', 'y'].includes(token))
+                ? template
+                : null;
+        };
+
+        const getTerrainBasemap = () => {
+            try {
+                const iframe = findMapIframe();
+                const iframeWin = iframe && iframe.contentWindow;
+                const map = iframeWin && iframeWin.mapsPlaceholder;
+                const select = iframeWin && iframeWin.document && iframeWin.document.getElementById('selmap');
+                const option = select && select.options && select.options[select.selectedIndex];
+                if (!map || !option) return null;
+
+                const selectedLayer = typeof select.value === 'string' ? iframeWin[select.value] : null;
+                const activeLayers = Object.values(map._layers || {})
+                    .sort((left, right) => (Number(left && left.options && left.options.zIndex) || 0)
+                        - (Number(right && right.options && right.options.zIndex) || 0));
+                const candidates = [selectedLayer, ...activeLayers]
+                    .filter(layer => layer && typeof layer._url === 'string'
+                        && (typeof map.hasLayer !== 'function' || map.hasLayer(layer)))
+                    .filter((layer, index, layers) => layers.indexOf(layer) === index);
+
+                for (const layer of candidates) {
+                    const tiles = expandLeafletTileUrl(layer, iframeWin);
+                    if (!tiles) continue;
+                    const options = layer.options || {};
+                    const minzoom = Number.isInteger(options.minZoom) ? Math.min(22, Math.max(0, options.minZoom)) : 0;
+                    const maxzoom = Number.isInteger(options.maxZoom) ? Math.min(24, Math.max(minzoom, options.maxZoom)) : 19;
+                    return {
+                        name: String(option.textContent || '').trim().slice(0, 80),
+                        tiles: [tiles],
+                        tileSize: Number(options.tileSize) === 512 ? 512 : 256,
+                        minzoom,
+                        maxzoom,
+                        scheme: options.tms === true ? 'tms' : 'xyz',
+                        attribution: typeof options.attribution === 'string' ? options.attribution.slice(0, 600) : ''
+                    };
+                }
+            } catch (error) { /* Peakbagger may replace or restrict its map frame. */ }
+            return null;
         };
 
         const mapLayerExists = (select, value) =>

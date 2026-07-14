@@ -68,6 +68,11 @@ html:has(.bpb-terrain-frame-body),
 
 #bpb-terrain-map .bpb-terrain-badge {
     top: 10px;
+    box-sizing: border-box;
+    max-width: calc(100% - 90px);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
     font-weight: 600;
 }
 

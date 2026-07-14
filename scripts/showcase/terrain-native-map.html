@@ -17,6 +17,9 @@
   </style>
 </head>
 <body>
+  <select id="selmap" hidden aria-hidden="true">
+    <option value="L_FIX" selected>Synthetic topographic map</option>
+  </select>
   <svg viewBox="0 0 800 450" preserveAspectRatio="none" aria-hidden="true">
     <path class="contour" d="M-20 390 C150 300 245 410 420 330 S690 240 840 315"/>
     <path class="contour" d="M-30 335 C145 245 270 355 430 275 S680 185 850 255"/>
@@ -27,5 +30,21 @@
   </svg>
   <span class="controls"><b>+</b><b>−</b></span>
   <span class="credit">Synthetic 2D fixture</span>
+  <script>
+    const basemap = {
+      _url: `${location.origin}/scripts/showcase/terrain-tiles/{z}/{x}/{y}.png`,
+      options: {
+        tileSize: 256,
+        minZoom: 0,
+        maxZoom: 18,
+        attribution: 'Synthetic topographic fixture'
+      }
+    };
+    window.L = { Browser: { retina: false } };
+    window.mapsPlaceholder = {
+      _layers: { basemap },
+      hasLayer: layer => layer === basemap
+    };
+  </script>
 </body>
 </html>
