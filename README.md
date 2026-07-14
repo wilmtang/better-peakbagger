@@ -42,7 +42,9 @@ are ready to open; Probable matches remain your choice.
 
 Selected ascents open together as prefilled Peakbagger drafts with GPS Preview
 already prepared. Review the details, make any corrections, and save when you
-are satisfied.
+are satisfied. If multiple selected summits fall on the same date, their drafts
+receive Peakbagger's `a`, `b`, … suffixes in track order so the ascents remain
+distinct.
 
 ![Garmin and Strava activity capture with privacy-reduced Peakbagger drafts](store-assets/showcase-activity-capture.gif)
 
@@ -55,15 +57,18 @@ shipped extension UI.
 ### Understand every mile of a GPS track
 
 Peakbagger ascent pages gain an interactive elevation chart with distance and
-time views, route metrics, grades, timing, and multi-day camping details. Hover
-over the chart to follow the same point on Peakbagger's map, or double-click a
-point to copy its coordinates.
+time views, route metrics, grades, timing, and multi-day camping details. The
+map route is reinforced with a 5 px red line over a 9 px white casing while
+Peakbagger's native route and markers remain on top. Hover over the chart to
+follow the same point on the map, or double-click a point to copy its
+coordinates.
 
-![Three-day GPX analysis with distance and time curves synchronized to the Peakbagger map](store-assets/showcase-gpx-map-sync.gif)
+![Three-day GPX analysis with a high-contrast route and chart-synchronized Leaflet marker](store-assets/showcase-gpx-map-sync.gif)
 
 This synthetic three-day track shows both elevation series, start/summit/end
 timing, car-to-car duration, overnight transitions, and the analyzer's live
-Leaflet marker without exposing a real trip.
+high-contrast Leaflet route and chart-position marker without exposing a real
+trip.
 
 ### Find useful ascent beta faster
 
@@ -277,7 +282,9 @@ This global priority matters: a winding section receives more of the fixed budge
 
 Ready jobs contain only the reduced GPX, public match evidence, calculated form values, selection state, and identifiers in `storage.session`, with a 30-minute expiry. Closing the popup does not cancel background work, and repeated clicks for the same activity reuse the in-flight or completed job.
 
-Selected matches are sorted by confidence and opened as inactive tabs in the **Peak Drafts** group. Each blank tab is assigned a private `{ jobId, tabId, pid, cid }` identity before navigation. On the ascent editor, `src/ascent-draft.js` sends a ready handshake; the background checks the sender tab plus `pid` and `cid` before returning any payload. The content script verifies the expected form and the coordinate-only GPX, fills both metric and imperial fields, attaches the file, records a Preview-start acknowledgement, and clicks `GPXPreview` exactly once.
+Before tabs open, only the selected matches are grouped by ascent date. A date with multiple selected summits receives alphabetical Peakbagger suffixes (`a`, `b`, …) in ascending route distance, which is their track-encounter order; a date with one selected summit keeps its suffix blank. The suffix is stored on the private draft before matches are sorted by confidence, so confidence-ranked tab order cannot change ascent identity.
+
+Selected matches then open as inactive tabs in the **Peak Drafts** group. Each blank tab is assigned a private `{ jobId, tabId, pid, cid }` identity before navigation. On the ascent editor, `src/ascent-draft.js` sends a ready handshake; the background checks the sender tab plus `pid` and `cid` before returning any payload. The content script verifies the expected form and the coordinate-only GPX, fills both metric and imperial fields plus the assigned suffix, attaches the file, records a Preview-start acknowledgement, and clicks `GPXPreview` exactly once. Encounter time remains analysis metadata and is never written into Peakbagger's suffix field.
 
 After Peakbagger reloads with the Preview result, the second handshake sees that Preview already started and shows a short-lived, dismissible Strong/Probable confidence notice instead of submitting again. When all drafts finish Preview, the background clears the stored GPX. No code path clicks either Save control: the user must review Peakbagger's result and save each ascent manually.
 
@@ -387,7 +394,7 @@ The map integration works in three parts:
    ```
    This only works because the analyzer runs in the **MAIN world**. An isolated content script can reach a same-origin iframe's *DOM*, but **not** the JavaScript globals (`mapsPlaceholder`, `L`) the iframe's own scripts defined — those live in that frame's page realm. Reading them requires being in the page realm ourselves. *This is the concrete reason the analyzer is a MAIN-world script.* (The iframe is same-origin — both are `peakbagger.com` — so the cross-frame property access is permitted; a cross-origin iframe would throw.)
 
-2. **Leaflet hooking.** Once the GPX and map are ready, the analyzer draws a non-interactive high-contrast route beneath Peakbagger's native markers: a 5 px red line over a 9 px white casing. It does not guess at or mutate Peakbagger's own route layer. Original GPX segment breaks are preserved, rendering is capped at 3,000 sampled points with every segment endpoint retained, and pathological tracks that cannot fit without dropping a segment fail closed to the native route.
+2. **Leaflet hooking.** Once the GPX and map are ready, the analyzer draws a non-interactive high-contrast route beneath Peakbagger's native markers and native route: a 5 px red line over a 9 px white casing. It does not guess at or mutate Peakbagger's own route layer. Original GPX segment breaks are preserved, rendering is capped at 3,000 sampled points with every segment endpoint retained, and pathological tracks that cannot fit without dropping a segment fail closed to the native route.
 
    The hovered chart point carries the original `{ lat, lon }` (stashed on each datum as `_raw`). Using the iframe's `L` and map instance, the analyzer also creates or moves a high-visibility `L.circleMarker` on the real map — red when hovering the distance line, blue for the time line:
    ```js

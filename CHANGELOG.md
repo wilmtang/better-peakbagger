@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+- **More visible GPX routes.** The ascent-page analyzer now draws a 5 px red
+  route over a 9 px white casing. The non-interactive, extension-owned layers
+  preserve GPX segment breaks, remain behind Peakbagger's native route and
+  markers, and are recreated after map-iframe reloads. Unsupported or
+  pathological tracks leave the native map unchanged.
+- **Correct same-day ascent suffixes.** Draft filling no longer writes encounter
+  time into Peakbagger's suffix field. Only selected summits sharing an ascent
+  date receive `a`, `b`, … in track-encounter order; singleton dates remain
+  blank, and suffixes stay stable even though draft tabs open by confidence.
+
 ## 1.4.0 — 2026-07-13
 
 - **Garmin/Strava activity capture.** Clicking the toolbar icon on an owned
