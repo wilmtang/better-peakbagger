@@ -23,6 +23,13 @@ test('Chrome and Firefox background declarations share the same fail-closed coor
     assert.deepEqual(manifest.browser_specific_settings.gecko.data_collection_permissions.required, ['locationInfo']);
 });
 
+test('settings are embedded in the browser add-on manager', () => {
+    assert.deepEqual(manifest.options_ui, {
+        page: 'options/options.html',
+        open_in_tab: false
+    });
+});
+
 test('ascent editor integration is isolated to Peakbagger and runtime code never names a Save control', async () => {
     const draftEntry = manifest.content_scripts.find(entry => entry.js.includes('src/ascent-draft.js'));
     assert.ok(draftEntry);
