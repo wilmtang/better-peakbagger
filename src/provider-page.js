@@ -167,24 +167,58 @@
         return { localStart, displayedLocalStart, utcOffsetMinutes };
     };
 
+    const garminExportRequest = activityId => {
+        const path = `/download-service/export/gpx/activity/${activityId}`;
+        const headers = {};
+        if (typeof globalThis.URL_BUST_VALUE === 'string' && globalThis.URL_BUST_VALUE) {
+            headers['X-app-ver'] = globalThis.URL_BUST_VALUE;
+        }
+        if (globalThis.USE_DI_SESSION === true) {
+            const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content')?.trim();
+            if (!csrfToken) throw new Error('Garmin session verification is unavailable. Reload the activity and try again.');
+            headers['Connect-Csrf-Token'] = csrfToken;
+            return { endpoint: `/gc-api${path}`, headers };
+        }
+        return { endpoint: path, headers };
+    };
+
     const capture = async () => {
         const ownership = inspectOwnership();
         if (!ownership.ok) return ownership;
-        const endpoint = ownership.provider === 'garmin'
-            ? `/download-service/export/gpx/activity/${ownership.activityId}`
-            : `/activities/${ownership.activityId}/export_gpx`;
-        const response = await fetch(endpoint, { credentials: 'include', redirect: 'follow' });
-        if (!response.ok) throw new Error(`GPX export failed with HTTP ${response.status}.`);
-        const text = await response.text();
-        const segments = parseGpxText(text);
-        return {
-            ...ownership,
-            segments,
-            metadata: activityMetadata(ownership.provider)
-        };
+        try {
+            const request = ownership.provider === 'garmin'
+                ? garminExportRequest(ownership.activityId)
+                : { endpoint: `/activities/${ownership.activityId}/export_gpx`, headers: {} };
+            const response = await fetch(request.endpoint, {
+                credentials: 'include',
+                redirect: 'follow',
+                headers: request.headers
+            });
+            if (!response.ok) {
+                const providerName = ownership.provider === 'garmin' ? 'Garmin' : 'Strava';
+                throw new Error(`${providerName} GPX export failed with HTTP ${response.status}. Reload the activity and try again.`);
+            }
+            const text = await response.text();
+            const segments = parseGpxText(text);
+            return {
+                ...ownership,
+                segments,
+                metadata: activityMetadata(ownership.provider)
+            };
+        } catch (error) {
+            return {
+                ok: false,
+                code: 'provider-export-failed',
+                provider: ownership.provider,
+                activityId: ownership.activityId,
+                message: typeof error?.message === 'string' && error.message
+                    ? error.message
+                    : 'The provider GPX export failed.'
+            };
+        }
     };
 
-    const API = { providerFromUrl, profileId, inspectOwnership, parseGpxText, capture };
+    const API = { providerFromUrl, profileId, inspectOwnership, parseGpxText, garminExportRequest, capture };
     globalThis.BPBProviderPage = API;
     if (typeof module !== 'undefined' && module.exports) module.exports = API;
 })();

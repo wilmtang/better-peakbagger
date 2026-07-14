@@ -24,6 +24,14 @@ const stravaPage = ({ viewer = '42', author = '42', edit = true } = {}) => `
   </main>
 </body>`;
 
+const garminPage = ({ csrfToken = 'csrf-123' } = {}) => `
+<!doctype html><html><head><meta name="csrf-token" content="${csrfToken}"></head><body>
+  <header class="header"><a href="/app/profile/ABC-123">Viewer</a></header>
+  <div class="ActivityHeaderContainer_headerContainer__hash"><a href="/app/profile/abc-123">Author</a>
+    <button aria-label="Edit an Activity"></button><h1>Mountain hike</h1>
+  </div>
+</body></html>`;
+
 test('Strava ownership requires matching profile IDs and the owner edit link', () => {
     const owned = load(stravaPage(), 'https://www.strava.com/activities/123');
     assert.deepEqual({ ...owned.window.BPBProviderPage.inspectOwnership() }, {
@@ -42,12 +50,7 @@ test('Strava ownership requires matching profile IDs and the owner edit link', (
 });
 
 test('Garmin ownership accepts matching UUID profiles only with Edit an Activity', () => {
-    const html = `<!doctype html><body>
-      <div><header class="header"><a href="/app/profile/ABC-123">Viewer</a></header></div>
-      <div class="ActivityHeaderContainer_headerContainer__hash"><a href="/app/profile/abc-123">Author</a>
-        <button aria-label="Edit an Activity"></button><h1>Mountain hike</h1>
-      </div></body>`;
-    const dom = load(html, 'https://connect.garmin.com/app/activity/777');
+    const dom = load(garminPage(), 'https://connect.garmin.com/app/activity/777');
     const result = dom.window.BPBProviderPage.inspectOwnership();
     assert.equal(result.ok, true);
     assert.equal(result.viewerId, 'abc-123');
@@ -100,4 +103,38 @@ test('successful capture fetches only the provider GPX endpoint', async () => {
     assert.deepEqual(requested, ['/activities/123/export_gpx']);
     assert.equal(capture.segments[0].length, 2);
     assert.equal(capture.metadata.displayedLocalStart, '2026-07-11T16:13:00');
+});
+
+test('Garmin current-session capture uses the gc-api route and same-page CSRF header', async () => {
+    const dom = load(garminPage(), 'https://connect.garmin.com/app/activity/777');
+    dom.window.USE_DI_SESSION = true;
+    dom.window.URL_BUST_VALUE = '5.26.1.1a';
+    const requested = [];
+    dom.window.fetch = async (url, options) => {
+        requested.push({ url, options });
+        return {
+            ok: true,
+            text: async () => '<gpx><trk><trkseg><trkpt lat="1" lon="2"/><trkpt lat="1.1" lon="2.1"/></trkseg></trk></gpx>'
+        };
+    };
+
+    const capture = await dom.window.BPBProviderPage.capture();
+    assert.equal(capture.ok, true);
+    assert.equal(requested.length, 1);
+    assert.equal(requested[0].url, '/gc-api/download-service/export/gpx/activity/777');
+    assert.equal(requested[0].options.headers['Connect-Csrf-Token'], 'csrf-123');
+    assert.equal(requested[0].options.headers['X-app-ver'], '5.26.1.1a');
+    assert.equal(requested[0].options.credentials, 'include');
+});
+
+test('Garmin export failures are returned explicitly instead of masquerading as ownership changes', async () => {
+    const dom = load(garminPage(), 'https://connect.garmin.com/app/activity/777');
+    dom.window.USE_DI_SESSION = true;
+    dom.window.fetch = async () => ({ ok: false, status: 404 });
+
+    const capture = await dom.window.BPBProviderPage.capture();
+    assert.equal(capture.ok, false);
+    assert.equal(capture.code, 'provider-export-failed');
+    assert.match(capture.message, /Garmin GPX export failed with HTTP 404/);
+    assert.doesNotMatch(capture.message, /ownership/i);
 });

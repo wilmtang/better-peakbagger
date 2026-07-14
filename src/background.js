@@ -154,7 +154,19 @@ if (typeof importScripts === 'function' && !globalThis.BPBCaptureCore) {
     const captureProvider = async tabId => {
         const results = await ext.scripting.executeScript({
             target: { tabId },
-            func: () => globalThis.BPBProviderPage.capture(),
+            func: async () => {
+                try {
+                    return await globalThis.BPBProviderPage.capture();
+                } catch (error) {
+                    return {
+                        ok: false,
+                        code: 'provider-export-failed',
+                        message: typeof error?.message === 'string' && error.message
+                            ? error.message
+                            : 'The activity page could not export its GPX.'
+                    };
+                }
+            },
             world: 'MAIN'
         });
         if (!results || !results[0]) throw new Error('The activity page returned no capture result.');
@@ -192,7 +204,17 @@ if (typeof importScripts === 'function' && !globalThis.BPBCaptureCore) {
 
             const capture = await captureProvider(tabId);
             if (!capture || !capture.ok) {
-                await failJob(tabId, capture?.code || 'capture-failed', 'Ownership changed before the GPX export was fetched. Nothing was captured.');
+                const messages = {
+                    'provider-signed-out': 'Sign in to the activity provider before capturing.',
+                    'not-owner': 'This activity was recorded by another account, so it cannot be captured.',
+                    'ownership-unverified': 'Ownership could not be verified from this activity page. Nothing was captured.',
+                    'provider-export-failed': 'The activity provider could not export this GPX. Reload the activity and try again.'
+                };
+                await failJob(
+                    tabId,
+                    capture?.code || 'capture-failed',
+                    capture?.message || messages[capture?.code] || 'The activity could not be captured.'
+                );
                 return;
             }
             await setBadge(tabId, '');

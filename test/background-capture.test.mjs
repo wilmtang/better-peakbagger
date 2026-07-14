@@ -16,7 +16,7 @@ const event = () => {
     return { listeners, addListener: listener => listeners.push(listener) };
 };
 
-const createHarness = ({ peakXml = null, captureResult = null } = {}) => {
+const createHarness = ({ peakXml = null, captureResult = null, ownershipResult = null } = {}) => {
     const values = {};
     const tabs = new Map([[1, {
         id: 1,
@@ -52,7 +52,12 @@ const createHarness = ({ peakXml = null, captureResult = null } = {}) => {
         },
         runtime: { onMessage: runtimeMessage },
         scripting: {
-            executeScript: async details => details.files ? [] : [{ result: structuredClone(capture) }]
+            executeScript: async details => {
+                if (details.files) return [];
+                const isOwnershipCheck = String(details.func).includes('inspectOwnership');
+                const result = isOwnershipCheck && ownershipResult ? ownershipResult : capture;
+                return [{ result: structuredClone(result) }];
+            }
         },
         action: {
             setBadgeBackgroundColor: async details => badgeCalls.push(['color', details]),
@@ -165,4 +170,22 @@ test('non-owned activities show the failure badge and never query coordinates', 
     assert.ok(harness.badgeCalls.some(([kind, details]) => kind === 'text' && details.text === '!'));
     assert.equal(harness.fetchCalls.length, 0, 'ownership must fail before any Peakbagger or GPS-coordinate request');
     assert.equal(harness.values.bpbCaptureJobs['1'].uploadGpx, undefined);
+});
+
+test('provider export failures preserve the real error instead of reporting an ownership change', async () => {
+    const harness = createHarness({
+        ownershipResult: { ok: true, provider: 'garmin', activityId: '777', viewerId: 'abc', authorId: 'abc' },
+        captureResult: {
+            ok: false,
+            code: 'provider-export-failed',
+            provider: 'garmin',
+            activityId: '777',
+            message: 'Garmin GPX export failed with HTTP 404. Reload the activity and try again.'
+        }
+    });
+    const result = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    assert.equal(result.phase, 'error');
+    assert.equal(result.error.code, 'provider-export-failed');
+    assert.equal(result.error.message, 'Garmin GPX export failed with HTTP 404. Reload the activity and try again.');
+    assert.doesNotMatch(result.error.message, /ownership changed/i);
 });
