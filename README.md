@@ -85,19 +85,38 @@ signals count as ascent beta. Changes apply to open Peakbagger tabs immediately.
 
 There is no Better Peakbagger account, analytics, or telemetry. The raw Garmin
 or Strava GPX is processed on the activity page and is never stored or sent to
-the extension developer. Peakbagger receives a reduced, coordinate-only track
-only after you choose **Open drafts**; health, device, timing, and elevation data
-are excluded.
+the extension developer. Peakbagger receives small corridor boxes for summit
+discovery and, only after you choose **Open drafts**, a reduced coordinate-only
+track for Preview. Source health and device fields plus each trackpoint's time
+and elevation are excluded; derived draft values remain yours to review.
 
 ## FAQ
 
 ### Why doesn't Better Peakbagger update Peakbagger automatically?
 
-Summit matching is strong evidence, not certainty, and an ascent log is your
-record. Automatically saving could publish the wrong summit, date, times, or
-notes without your knowledge. Better Peakbagger does the repetitive work—finding
-matches, filling fields, and running GPS Preview—then stops before Save so you
-can review every ascent.
+There is no safe, reliable hook for a small independent extension to receive new
+activities automatically. [Strava requires a subscription][strava-api] to
+create an API application, even in single-player mode where the developer reads
+only their own data. The [Garmin Connect Developer Program][garmin-api] is
+limited to approved business and enterprise integrations. Without those
+official APIs, an unattended service would have to rely on brittle login/session
+automation and keep credentials or session tokens on a server while it polls
+Garmin or Strava. That adds security risk, operational complexity, and another
+copy of sensitive activity data.
+
+Better Peakbagger instead works through the provider page you already opened
+and signed in to. A toolbar click grants temporary access to that one activity;
+the extension never receives your password or keeps permanent Garmin or Strava
+access.
+
+There is also an important correctness boundary: summit matching is strong
+evidence, not certainty, and an ascent log is your record. Automatically saving
+could publish the wrong summit, date, times, or notes without your knowledge.
+Better Peakbagger does the repetitive work—finding matches, filling fields, and
+running GPS Preview—then stops before Save so you can review every ascent.
+
+[strava-api]: https://developers.strava.com/docs/getting-started/
+[garmin-api]: https://developer.garmin.com/gc-developer-program/program-faq/
 
 ### Can it capture any Garmin or Strava activity?
 
@@ -516,19 +535,65 @@ Automated tests do not require live Garmin, Strava, or Peakbagger accounts. Peak
 
 ## Privacy
 
-No analytics or telemetry. The existing GPX Analyzer only fetches the GPX already linked on a Peakbagger ascent page.
+Better Peakbagger has no account, analytics, telemetry, advertising, or developer
+data server. It uses the data it handles only for the user-facing features
+described here, does not sell it, and does not use or transfer it for unrelated
+purposes or credit decisions. Captured activity data leaves the browser only for
+the Peakbagger summit lookup and GPS Preview actions described below.
 
-Activity capture verifies provider ownership before fetching the activity GPX.
-The raw GPX is parsed in the activity page and is never persisted. Peakbagger
-receives small track-corridor bounding boxes for summit discovery. Clicking
-**Open drafts** sends Peakbagger Preview a reduced GPX containing only latitude,
-longitude, and segment boundaries. Heart rate, cadence, power, temperature,
-timestamps, elevation, device metadata, routes, waypoints, names, and extensions
-are removed before session storage or transmission. Prepared data lives only in
-`storage.session` and expires after 30 minutes.
+### Browser permissions
 
-Preferences live in `chrome.storage.sync` (or page `localStorage` for filter
-chip state) and leave the browser only through the user's browser-sync account.
+- **`storage`** saves theme, units, chart, and beta-filter preferences in
+  `storage.sync`. It also keeps short-lived capture jobs and prepared drafts in
+  `storage.session`; that data expires after 30 minutes.
+- **`activeTab`** grants temporary access to the one Garmin Connect or Strava
+  activity page where you clicked the toolbar button. It replaces permanent
+  provider host permissions.
+- **`scripting`** injects the packaged provider adapter into that clicked tab's
+  page world so it can verify ownership and make the provider's authenticated,
+  same-origin GPX export request. It does not download or execute remote code.
+- **`tabGroups`** groups newly opened ascent drafts under **Peak Drafts** so they
+  can be reviewed together. It does not inspect or reorganize unrelated groups.
+- **`alarms`** runs cleanup every five minutes so expired capture jobs and draft
+  payloads are removed from session storage.
+- **Peakbagger host access** (`https://peakbagger.com/*` and
+  `https://www.peakbagger.com/*`) enables the GPX Analyzer, ascent filters and
+  sorting, theme, login and summit checks, and validated draft filling on
+  Peakbagger. There is no persistent Garmin Connect or Strava host access.
+- **Firefox `locationInfo` disclosure** reports that activity coordinates are
+  sent to Peakbagger for summit lookup and GPS Preview. It is a data-handling
+  disclosure, not permission to read the device's location.
+
+### Activity-data flow
+
+- **Ownership gate:** capture stops before reading GPS coordinates unless the
+  provider page gives an unambiguous signal that the signed-in user owns the
+  activity.
+- **On-page analysis:** the raw Garmin or Strava GPX is parsed in the activity
+  page. It is never persisted, sent to the extension developer, or forwarded as
+  source XML.
+- **Summit discovery:** Peakbagger receives small bounding boxes derived from the
+  track corridor. Every required lookup must succeed before results are shown.
+- **Prepared drafts:** derived ascent fields and a reduced coordinate track live
+  only in `storage.session`, are bound to the expected source and draft tabs,
+  and expire after 30 minutes.
+- **GPS Preview:** only after you choose **Open drafts**, Peakbagger receives a
+  newly serialized GPX containing latitude, longitude, and segment boundaries,
+  reduced to at most 3,000 existing trackpoints.
+- **Excluded source fields:** heart rate, cadence, power, temperature, device
+  fields, metadata, names, descriptions, routes, waypoints, extension elements,
+  and each trackpoint's timestamp and elevation. Derived form values such as the
+  activity date, ascent times, distance, and gain are retained for the prepared
+  draft; the source fields themselves are not.
+- **Manual publication:** Better Peakbagger can prepare GPS Preview, but no
+  extension path clicks either Peakbagger Save control. Review and publication
+  remain with you.
+
+The existing GPX Analyzer fetches only the GPX already linked from the current
+Peakbagger ascent page and processes it locally. Cross-page preferences live in
+`storage.sync` and may leave the device only through the user's browser-sync
+account. Page-specific filter state and the early theme mirror stay in
+Peakbagger's `localStorage`.
 
 ## License
 
