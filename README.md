@@ -1,41 +1,112 @@
 # Better Peakbagger
 
-> **This is a passion project.** Opinions, ideas, and feature requests are always welcome—[open an issue](https://github.com/wilmtang/better-peakbagger/issues) or [join the discussion board](https://github.com/wilmtang/better-peakbagger/discussions).
+**Spend less time wrestling with Peakbagger and more time planning the next summit.**
 
-A browser extension that makes [Peakbagger](https://www.peakbagger.com/) better for trip planning. It works on **Chrome** and **Firefox** (Manifest V3) and needs no userscript manager.
+Better Peakbagger turns your Garmin and Strava activities into review-ready
+ascent drafts, makes GPS tracks easier to understand, surfaces the trip reports
+that matter, and adds a polished dark mode to
+[Peakbagger](https://www.peakbagger.com/).
 
-Four things:
+[**Install for Chrome**](https://chromewebstore.google.com/detail/better-peakbagger/kndjohodnpdoejmjkiiakejfehoodedn)
+·
+[**Install for Firefox**](https://addons.mozilla.org/en-US/firefox/addon/better-peakbagger/)
 
-1. **Activity → ascent drafts** — on an owned Garmin Connect or Strava activity, detects confident summit encounters and opens prefilled Peakbagger ascent pages for review.
-2. **GPX Analyzer** — on an ascent page with a GPS track, injects a rich interactive elevation chart (by distance *and* time), adjusted route metrics, timing/camping stats, and a marker that follows your cursor on Peakbagger's own map.
-3. **Ascent Beta Filter** — on a peak's "Ascents of a Peak" list, adds a sticky, stackable filter bar so you can narrow hundreds of logged ascents down to the ones with a trip report, GPS track, or link. What "has beta" means is configurable, and the Ascent Date control flips the current peak or personal ascent list instantly in the DOM instead of round-tripping to the server.
-4. **Dark mode + centralized settings** — a site-wide dark theme and an options page for units, theme, and the filter's default word threshold, shared across every Peakbagger page.
+Works with Chrome, Edge, Brave, and Firefox. No userscript manager required.
+No analytics or telemetry.
 
-Analysis runs locally. Activity capture contacts Peakbagger to look up nearby summits and, only after the user clicks **Open drafts**, uploads a reduced coordinate-only track to Peakbagger Preview. No analytics or telemetry are used.
+![Better Peakbagger over a mountain landscape](store-assets/promo-marquee-1400x560.png)
 
 ---
 
 ## Install
 
-Not yet on the Chrome Web Store / AMO. Load it unpacked:
+Choose the official listing for your browser:
 
-### Chrome / Edge / Brave
-1. `chrome://extensions` → enable **Developer mode**.
-2. **Load unpacked** → select this folder (the one with `manifest.json`).
+- [Chrome Web Store](https://chromewebstore.google.com/detail/better-peakbagger/kndjohodnpdoejmjkiiakejfehoodedn) — Chrome, Edge, and Brave
+- [Firefox Add-ons](https://addons.mozilla.org/en-US/firefox/addon/better-peakbagger/) — Firefox
 
-### Firefox
-1. `about:debugging#/runtime/this-firefox` → **Load Temporary Add-on…**
-2. Select `manifest.json`.
-
-> Temporary add-ons are cleared on restart. A permanent install needs Mozilla signing (`web-ext sign` / AMO), or a Developer/Nightly build with `xpinstall.signatures.required = false`.
-
-Open the settings from the extension's options (`chrome://extensions` → Details → Extension options, or Firefox's add-on "Preferences").
+Most features appear automatically when you visit Peakbagger. To capture an
+activity, open an activity you own on Garmin Connect or Strava and click the
+Better Peakbagger icon. Settings are available from the extension's Details or
+Preferences page.
 
 ---
 
-## Table of contents
+## Feature tour
 
-- [Feature tour](#feature-tour)
+### Turn an activity into ascent drafts
+
+Open an activity you recorded on Garmin Connect or Strava, then click Better
+Peakbagger. The extension finds likely summit encounters and labels them
+**Strong** or **Probable** with the evidence behind each match. Strong matches
+are ready to open; Probable matches remain your choice.
+
+Selected ascents open together as prefilled Peakbagger drafts with GPS Preview
+already prepared. Review the details, make any corrections, and save when you
+are satisfied.
+
+### Understand every mile of a GPS track
+
+Peakbagger ascent pages gain an interactive elevation chart with distance and
+time views, route metrics, grades, timing, and multi-day camping details. Hover
+over the chart to follow the same point on Peakbagger's map, or double-click a
+point to copy its coordinates.
+
+![Interactive GPX analysis on a Peakbagger ascent](store-assets/screenshot-1-gpx-analyzer.png)
+
+### Find useful ascent beta faster
+
+Filter long ascent lists to trips with a report, GPS track, or external link.
+Filters combine naturally, show live result counts, and remember what you mean
+by “has beta.” Date sorting happens instantly without reloading the page.
+
+### Make Peakbagger easier on the eyes
+
+Use a site-wide dark theme that follows your system or stays light or dark.
+Shared settings also control units, the GPX chart's default view, and which
+signals count as ascent beta. Changes apply to open Peakbagger tabs immediately.
+
+## Privacy by design
+
+There is no Better Peakbagger account, analytics, or telemetry. The raw Garmin
+or Strava GPX is processed on the activity page and is never stored or sent to
+the extension developer. Peakbagger receives a reduced, coordinate-only track
+only after you choose **Open drafts**; health, device, timing, and elevation data
+are excluded.
+
+## FAQ
+
+### Why doesn't Better Peakbagger update Peakbagger automatically?
+
+Summit matching is strong evidence, not certainty, and an ascent log is your
+record. Automatically saving could publish the wrong summit, date, times, or
+notes without your knowledge. Better Peakbagger does the repetitive work—finding
+matches, filling fields, and running GPS Preview—then stops before Save so you
+can review every ascent.
+
+### Can it capture any Garmin or Strava activity?
+
+No. You must be signed in, the activity must belong to your account, and the
+page must provide unambiguous ownership signals. Better Peakbagger fails closed
+if it cannot verify those conditions. It also needs you to click the toolbar
+icon for each capture; it does not keep permanent access to Garmin or Strava.
+
+### What do Strong and Probable mean?
+
+They summarize how closely the recorded route, elevation, summit shape, and
+track quality support a summit encounter. Strong matches are selected by
+default. Probable matches are always opt-in, and both still require your review.
+
+### Is this an official Peakbagger extension?
+
+No. Better Peakbagger is an independent passion project. Ideas and bug reports
+are welcome in [GitHub Issues](https://github.com/wilmtang/better-peakbagger/issues)
+and the [discussion board](https://github.com/wilmtang/better-peakbagger/discussions).
+
+---
+
+## Developer guide
+
 - [Architecture at a glance](#architecture-at-a-glance)
 - [Deep dive: Garmin/Strava activity capture](#deep-dive-garminstrava-activity-capture)
 - [Deep dive: content-script worlds](#deep-dive-content-script-worlds)
@@ -49,53 +120,6 @@ Open the settings from the extension's options (`chrome://extensions` → Detail
 - [Development & packaging](#development--packaging)
 - [Privacy](#privacy)
 - [License](#license)
-
----
-
-## Feature tour
-
-### Garmin/Strava → Peakbagger drafts
-Open an activity recorded by the currently signed-in Garmin or Strava account,
-then click the extension icon. The popup verifies ownership before accessing the
-provider GPX, detects summit encounters from the full-resolution track, and
-lists only **Strong** and **Probable** matches with confidence evidence. Strong
-matches are selected by default; Probable matches are opt-in.
-
-Opening drafts creates a **Peak Drafts** browser tab group. Every selected
-Peakbagger ascent page is prefilled and automatically runs GPS Preview, but the
-extension never clicks Save. The reduced upload contains only latitude,
-longitude, and track-segment structure and never includes heart rate, cadence,
-power, temperature, timestamps, elevation, device metadata, routes, waypoints,
-or GPX extensions.
-
-### GPX Analyzer
-Runs on `climber/ascent.aspx`. When the page has a "Download this GPS track" link, it parses the GPX in-browser and renders a Chart.js chart.
-
-- **Dual-axis charting** — simultaneous **Elevation by Distance** and **Elevation by Time** lines; click a legend entry to isolate one. A setting picks which series loads by default (both / distance only / time only); a legend click still peeks at the hidden one without changing the setting.
-- **Interactive tooltips** — elevation, distance, grade, and timestamp for any trackpoint.
-- **Map synchronization** — hovering the chart drops a color-coded marker onto Peakbagger's native Leaflet map, in sync with your cursor.
-- **Adjusted metrics** — Haversine distance with confirmed-movement de-noising, hysteresis-based elevation gain, windowed grade — to get closer to Garmin/Strava-style totals. Raw-vs-adjusted deltas are shown when they matter.
-- **Multi-day + camping** — detects multi-day trips (adds "Day N" labels) and flags overnight camping coordinates.
-- **Double-click a point** copies its `lat, lon` to the clipboard.
-
-### Ascent Beta Filter
-Runs on `climber/PeakAscents.aspx` and personal `climber/ClimbListC.aspx` pages. Injects a sticky filter bar above the table and adds instant date sorting.
-
-- **Has beta** (on by default) — only ascents that have at least one of the signals *you* count as beta (settings: trip report with ≥ N words / GPS track / external link; default: any of the three).
-- **Trip report** — only ascents with a written report, with an adjustable **≥ N words** threshold.
-- **GPS track** / **Link** — only ascents with a GPS track / an external link.
-- Filters **stack** (AND), each chip shows its count, and there's a one-click **Show all**. Empty year separators collapse.
-- **Instant date sort** — one persistent **Ascent Date ▲/▼** control reorders the current rows in milliseconds instead of reloading from the server. Click the same place again to reverse direction.
-
-### Dark mode & settings
-The options page centralizes the preferences in `chrome.storage.sync`:
-
-- **Units** — Auto (match page) / Imperial / Metric.
-- **Theme** — Follow system / Light / Dark. Applies to the whole Peakbagger site and the extension's panels.
-- **GPX chart default series** — which elevation curve the chart shows on load (both / distance only / time only). A legend click can still reveal the other one for that view without changing the setting.
-- **"Has beta" means** — which signals the Has beta chip counts: trip report (with its own ≥ N words threshold), GPS track, external link. At least one must stay checked.
-
-Changes apply live to any open Peakbagger tab.
 
 ---
 
