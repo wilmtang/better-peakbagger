@@ -7,9 +7,9 @@
 // marker. Chart.js is bundled at vendor/chart.umd.min.js and loaded immediately
 // before this file, so the global `Chart` is available here.
 //
-// The MAIN world cannot read chrome.storage, so units + theme come from the
-// isolated-world bridge (src/bridge.js) over window.postMessage. The panel and
-// chart re-theme / re-unit live when settings change.
+// The MAIN world cannot read chrome.storage, so preferences come from the
+// isolated-world bridge (src/bridge.js) over window.postMessage. Affected map
+// and chart surfaces update live when settings change.
 
 (async () => {
     'use strict';
@@ -30,8 +30,9 @@
         color: '#d9483b', width: 5,
         casingColor: '#ffffff', casingWidth: 9
     };
-    const MAP_VIEWPORT_DEFAULT = { width: 100, height: 450 };
-    const MAP_VIEWPORT_MIN_WIDTH = 45;
+    const MAP_VIEWPORT_DEFAULT = { width: 450, height: 450 };
+    const MAP_VIEWPORT_MIN_WIDTH = 320;
+    const MAP_VIEWPORT_MAX_WIDTH = 4096;
     const MAP_VIEWPORT_MIN_HEIGHT = 240;
     const MAP_VIEWPORT_MAX_HEIGHT = 720;
     const MAP_RESIZE_RAIL_HEIGHT = 18;
@@ -402,7 +403,7 @@
     const resolveMapViewportSize = settings => {
         const integer = (value, min, max, fallback) => Number.isInteger(value) && value >= min && value <= max ? value : fallback;
         return {
-            width: integer(settings.mapViewportWidth, MAP_VIEWPORT_MIN_WIDTH, 100, MAP_VIEWPORT_DEFAULT.width),
+            width: integer(settings.mapViewportWidth, MAP_VIEWPORT_MIN_WIDTH, MAP_VIEWPORT_MAX_WIDTH, MAP_VIEWPORT_DEFAULT.width),
             height: integer(settings.mapViewportHeight, MAP_VIEWPORT_MIN_HEIGHT, MAP_VIEWPORT_MAX_HEIGHT, MAP_VIEWPORT_DEFAULT.height)
         };
     };
@@ -421,6 +422,17 @@
         let mapViewportSize = resolveMapViewportSize(BPB.get());
         let mapInvalidateFrame = null;
 
+        const renderedMapWidth = () => {
+            if (!mapViewport) return mapViewportSize.width;
+            const width = mapViewport.getBoundingClientRect().width;
+            return width > 0 ? Math.round(width) : mapViewportSize.width;
+        };
+
+        const syncMapResizeHandleLabel = () => {
+            if (!mapResizeHandle) return;
+            mapResizeHandle.setAttribute('aria-label', `Resize map. Current size ${renderedMapWidth()} pixels wide by ${mapViewportSize.height} pixels high. Use arrow keys for small steps.`);
+        };
+
         const scheduleMapInvalidate = () => {
             if (!mapIframe || mapInvalidateFrame !== null) return;
             const invalidate = () => {
@@ -437,15 +449,13 @@
 
         const applyMapViewportSize = size => {
             mapViewportSize = {
-                width: Math.min(100, Math.max(MAP_VIEWPORT_MIN_WIDTH, Math.round(size.width))),
+                width: Math.min(MAP_VIEWPORT_MAX_WIDTH, Math.max(MAP_VIEWPORT_MIN_WIDTH, Math.round(size.width))),
                 height: Math.min(MAP_VIEWPORT_MAX_HEIGHT, Math.max(MAP_VIEWPORT_MIN_HEIGHT, Math.round(size.height)))
             };
             if (!mapViewport) return;
-            mapViewport.style.width = `${mapViewportSize.width}%`;
+            mapViewport.style.width = `${mapViewportSize.width}px`;
             mapViewport.style.height = `${mapViewportSize.height + MAP_RESIZE_RAIL_HEIGHT}px`;
-            if (mapResizeHandle) {
-                mapResizeHandle.setAttribute('aria-label', `Resize map. Current size ${mapViewportSize.width}% wide by ${mapViewportSize.height} pixels high. Use arrow keys for small steps.`);
-            }
+            syncMapResizeHandleLabel();
             scheduleMapInvalidate();
         };
 
@@ -503,26 +513,34 @@
             let drag = null;
             mapResizeHandle.addEventListener('pointerdown', event => {
                 if (event.button !== 0) return;
-                const parentWidth = mapViewport.parentElement.getBoundingClientRect().width;
-                const viewportWidth = mapViewport.getBoundingClientRect().width;
+                const parentRect = mapViewport.parentElement.getBoundingClientRect();
+                const viewportRect = mapViewport.getBoundingClientRect();
+                const parentWidth = parentRect.width;
+                const viewportWidth = viewportRect.width;
                 if (!(parentWidth > 0) || !(viewportWidth > 0)) return;
+                const leftGap = viewportRect.left - parentRect.left;
+                const rightGap = parentRect.right - viewportRect.right;
                 drag = {
                     pointerId: event.pointerId,
                     startX: event.clientX,
                     startY: event.clientY,
                     startWidth: viewportWidth,
                     startHeight: mapViewportSize.height,
-                    parentWidth
+                    parentWidth,
+                    // Peakbagger centers its fixed-width map. In that layout a
+                    // 1 px pointer movement moves the right edge only 0.5 px
+                    // unless the requested width changes by 2 px.
+                    widthScale: Number.isFinite(leftGap) && Number.isFinite(rightGap) && Math.abs(leftGap - rightGap) <= 2 ? 2 : 1
                 };
                 if (mapResizeHandle.setPointerCapture) mapResizeHandle.setPointerCapture(event.pointerId);
                 event.preventDefault();
             });
             mapResizeHandle.addEventListener('pointermove', event => {
                 if (!drag || event.pointerId !== drag.pointerId) return;
-                const minWidth = Math.min(drag.parentWidth, Math.max(320, drag.parentWidth * MAP_VIEWPORT_MIN_WIDTH / 100));
-                const widthPx = Math.min(drag.parentWidth, Math.max(minWidth, drag.startWidth + event.clientX - drag.startX));
+                const minWidth = Math.min(drag.parentWidth, MAP_VIEWPORT_MIN_WIDTH);
+                const widthPx = Math.min(MAP_VIEWPORT_MAX_WIDTH, drag.parentWidth, Math.max(minWidth, drag.startWidth + (event.clientX - drag.startX) * drag.widthScale));
                 applyMapViewportSize({
-                    width: widthPx / drag.parentWidth * 100,
+                    width: widthPx,
                     height: drag.startHeight + event.clientY - drag.startY
                 });
             });
@@ -539,8 +557,8 @@
             mapResizeHandle.addEventListener('keydown', event => {
                 const largeStep = event.shiftKey;
                 let next = { ...mapViewportSize };
-                if (event.key === 'ArrowLeft') next.width -= largeStep ? 5 : 2;
-                else if (event.key === 'ArrowRight') next.width += largeStep ? 5 : 2;
+                if (event.key === 'ArrowLeft') next.width = renderedMapWidth() - (largeStep ? 50 : 10);
+                else if (event.key === 'ArrowRight') next.width = renderedMapWidth() + (largeStep ? 50 : 10);
                 else if (event.key === 'ArrowUp') next.height -= largeStep ? 50 : 10;
                 else if (event.key === 'ArrowDown') next.height += largeStep ? 50 : 10;
                 else return;
@@ -551,7 +569,10 @@
 
             applyMapViewportSize(mapViewportSize);
             window.addEventListener('resize', scheduleMapInvalidate);
-            if (typeof ResizeObserver === 'function') new ResizeObserver(scheduleMapInvalidate).observe(mapViewport);
+            if (typeof ResizeObserver === 'function') new ResizeObserver(() => {
+                syncMapResizeHandleLabel();
+                scheduleMapInvalidate();
+            }).observe(mapViewport);
         }
 
         const container = document.createElement('div');

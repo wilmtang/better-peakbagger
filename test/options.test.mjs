@@ -77,10 +77,16 @@ test('map route appearance populates, enforces a visible casing, and saves edits
     assert.equal(dom.chrome._store.bpbSettings.mapRouteCasingColor, '#efe8d5');
 });
 
-test('map viewport settings clamp unsafe sizes and reset to the full-width default', async () => {
-    const dom = await loadOptions({ mapViewportWidth: 20, mapViewportHeight: 2000 });
-    assert.equal(el(dom, 'map-viewport-width').value, '45');
+test('map viewport settings preserve and reset to Peakbagger\'s original size', async () => {
+    const dom = await loadOptions({ mapViewportWidth: 100, mapViewportHeight: 2000 });
+    assert.equal(el(dom, 'map-viewport-width').value, '450');
     assert.equal(el(dom, 'map-viewport-height').value, '720');
+
+    const width = el(dom, 'map-viewport-width');
+    width.value = '900';
+    width.dispatchEvent(new dom.window.Event('change'));
+    await new Promise(r => dom.window.setTimeout(r, 10));
+    assert.equal(dom.chrome._store.bpbSettings.mapViewportWidth, 900);
 
     const height = el(dom, 'map-viewport-height');
     height.value = '560';
@@ -90,7 +96,7 @@ test('map viewport settings clamp unsafe sizes and reset to the full-width defau
 
     el(dom, 'map-viewport-reset').dispatchEvent(new dom.window.Event('click'));
     await new Promise(r => dom.window.setTimeout(r, 10));
-    assert.equal(dom.chrome._store.bpbSettings.mapViewportWidth, 100);
+    assert.equal(dom.chrome._store.bpbSettings.mapViewportWidth, 450);
     assert.equal(dom.chrome._store.bpbSettings.mapViewportHeight, 450);
     assert.equal(el(dom, 'status').textContent, 'Map size reset');
 });

@@ -22,7 +22,7 @@
         chartDefaultSeries: 'both',
         mapRouteColor: '#d9483b', mapRouteWidth: 5,
         mapRouteCasingColor: '#ffffff', mapRouteCasingWidth: 9,
-        mapViewportWidth: 100, mapViewportHeight: 450,
+        mapViewportWidth: 450, mapViewportHeight: 450,
         rememberMapLayer: false, mapLastLayer: '',
         // What the ascent filter's "Has beta" chip counts: an ascent
         // qualifies if it has any of the enabled signals.
@@ -52,7 +52,15 @@
         s.mapRouteCasingColor = cleanColor(s.mapRouteCasingColor, DEFAULTS.mapRouteCasingColor);
         s.mapRouteCasingWidth = clampInteger(s.mapRouteCasingWidth, 3, 20, DEFAULTS.mapRouteCasingWidth);
         s.mapRouteCasingWidth = Math.max(s.mapRouteCasingWidth, s.mapRouteWidth + 2);
-        s.mapViewportWidth = clampInteger(s.mapViewportWidth, 45, 100, DEFAULTS.mapViewportWidth);
+        // Width is a pixel dimension so the default exactly preserves
+        // Peakbagger's original 450 px map. Values below the usable pixel
+        // minimum also cover the short-lived pre-release percentage schema;
+        // reset those to the original width instead of misreading 100% as
+        // 320 px.
+        const viewportWidth = parseInt(s.mapViewportWidth, 10);
+        s.mapViewportWidth = Number.isFinite(viewportWidth) && viewportWidth >= 320
+            ? Math.min(4096, viewportWidth)
+            : DEFAULTS.mapViewportWidth;
         s.mapViewportHeight = clampInteger(s.mapViewportHeight, 240, 720, DEFAULTS.mapViewportHeight);
         if (typeof s.rememberMapLayer !== 'boolean') s.rememberMapLayer = DEFAULTS.rememberMapLayer;
         if (!MAP_LAYERS.has(s.mapLastLayer)) s.mapLastLayer = DEFAULTS.mapLastLayer;

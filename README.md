@@ -60,11 +60,12 @@ Peakbagger ascent pages gain an interactive elevation chart with distance and
 time views, route metrics, grades, timing, and multi-day camping details. The
 map route is reinforced with a configurable line and casing (5 px red over
 9 px white by default) while Peakbagger's native route and markers remain on
-top. The map opens at full content width and can be resized from its lower-right
-corner; an opt-in setting can restore the last selected basemap. The chart sits
-immediately below the map, before Peakbagger's full-screen map and GPX-download
-links. Hover over the chart to follow the same point on the map, or double-click
-a point to copy its coordinates.
+top. The map keeps Peakbagger's original 450 × 450 px size until you resize it
+from its lower-right corner, with the page width as its upper bound; an opt-in
+setting can restore the last selected basemap. The chart sits immediately below
+the map, before Peakbagger's full-screen map and GPX-download links. Hover over
+the chart to follow the same point on the map, or double-click a point to copy
+its coordinates.
 
 ![Three-day GPX analysis with a high-contrast route and chart-synchronized Leaflet marker](store-assets/showcase-gpx-map-sync.gif)
 
@@ -406,7 +407,7 @@ The map integration works in three parts:
 
 2. **Leaflet hooking.** Once the GPX and map are ready, the analyzer draws a non-interactive high-contrast route beneath Peakbagger's native markers and native route: a configurable line and wider casing, defaulting to 5 px red over 9 px white. Colors can be changed beside the chart or in Settings; widths live in Settings, where validation keeps the casing at least 2 px wider. It does not guess at or mutate Peakbagger's own route layer. Original GPX segment breaks are preserved, rendering is capped at 3,000 sampled points with every segment endpoint retained, and pathological tracks that cannot fit without dropping a segment fail closed to the native route.
 
-   The parent page wraps the iframe in an extension-owned, keyboard-accessible resize surface. Width is stored as 45–100% of the available content area and height as 240–720 px (100% × 450 px by default); neither dimension can overflow the parent. Dragging persists once the pointer is released, arrow keys provide smaller adjustments, and every change calls Leaflet's `invalidateSize(false)` so tiles and overlays reflow. Settings exposes both dimensions and a reset to the full-width default.
+   The parent page wraps the iframe in an extension-owned, keyboard-accessible resize surface. Width is stored in pixels (320–4,096 px) but CSS caps the rendered map at 100% of the available content area; height is stored as 240–720 px. The 450 × 450 px default and reset value therefore preserve Peakbagger's original map without allowing it to overflow a narrower page. Dragging persists once the pointer is released, arrow keys provide smaller adjustments, and every change calls Leaflet's `invalidateSize(false)` so tiles and overlays reflow. Settings exposes both dimensions and a reset to the original size.
 
    Map-layer memory is deliberately opt-in. When enabled, the analyzer listens to Peakbagger's native `#selmap` control, stores only a known layer ID, and replays that ID through the control's own `change` handler on later ascent maps. Missing controls, unknown IDs, and layers unavailable on a particular map leave Peakbagger's default untouched. Disabling the preference also clears the saved ID.
 
@@ -530,7 +531,7 @@ Settings shape (`chrome.storage.sync`, key `bpbSettings`):
   chartDefaultSeries: 'both' | 'distance' | 'time',  // GPX chart's initial series
   mapRouteColor: '#rrggbb', mapRouteWidth: 1..12,        // defaults #d9483b / 5
   mapRouteCasingColor: '#rrggbb', mapRouteCasingWidth: 3..20, // defaults #ffffff / 9
-  mapViewportWidth: 45..100,       // percent; default 100
+  mapViewportWidth: 320..4096,     // pixels; default 450; capped by parent
   mapViewportHeight: 240..720,     // pixels; default 450; reset restores both
   rememberMapLayer: boolean,       // opt-in; default false
   mapLastLayer: '' | known layer ID,

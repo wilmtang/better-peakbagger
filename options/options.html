@@ -98,13 +98,13 @@
             <div class="row">
                 <div class="label">
                     <span class="title">Map viewport</span>
-                    <span class="desc">Default size for ascent-page maps. You can also drag the map’s lower-right corner; changes apply to every ascent page.</span>
+                    <span class="desc">By default, ascent maps use Peakbagger’s original 450 × 450 px size. Drag the lower-right corner up to the page width; changes apply to every ascent page.</span>
                 </div>
                 <fieldset class="control viewport-size" aria-label="Map viewport size">
                     <label class="viewport-size-row" for="map-viewport-width">
                         <span>Width</span>
-                        <input id="map-viewport-width" type="number" min="45" max="100" step="1" inputmode="numeric" aria-label="Map width percentage">
-                        <span>%</span>
+                        <input id="map-viewport-width" type="number" min="320" max="4096" step="10" inputmode="numeric" aria-label="Map width in pixels">
+                        <span>px</span>
                     </label>
                     <label class="viewport-size-row" for="map-viewport-height">
                         <span>Height</span>

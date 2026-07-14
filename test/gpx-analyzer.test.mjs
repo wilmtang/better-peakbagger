@@ -131,7 +131,8 @@ test('GPX analyzer adds a thick, segment-preserving route casing behind native L
 
     const mapViewport = window.document.getElementById('bpb-map-viewport');
     const mapResizeHandle = window.document.getElementById('bpb-map-resize-handle');
-    assert.equal(mapViewport.style.width, '100%');
+    assert.equal(mapViewport.style.width, '450px');
+    assert.equal(mapViewport.style.maxWidth, '100%');
     assert.equal(mapViewport.style.height, '468px');
     assert.equal(iframe.style.width, '100%');
     assert.equal(iframe.style.maxWidth, '100%');
@@ -166,7 +167,7 @@ test('GPX analyzer adds a thick, segment-preserving route casing behind native L
         units: 'imperial', theme: 'light', chartDefaultSeries: 'both',
         mapRouteColor: '#2457a7', mapRouteWidth: 7,
         mapRouteCasingColor: '#f1eadc', mapRouteCasingWidth: 13,
-        mapViewportWidth: 80, mapViewportHeight: 600,
+        mapViewportWidth: 700, mapViewportHeight: 600,
         rememberMapLayer: true, mapLastLayer: 'L_OT'
     });
     await waitFor(dom, () => polylineCalls.length === 4);
@@ -175,7 +176,7 @@ test('GPX analyzer adds a thick, segment-preserving route casing behind native L
         ['#f1eadc', 13],
         ['#2457a7', 7]
     ]);
-    assert.equal(mapViewport.style.width, '80%');
+    assert.equal(mapViewport.style.width, '700px');
     assert.equal(mapViewport.style.height, '618px');
     assert.ok(nativeLayerChanges >= 2, 'the saved layer should be applied through the native change handler');
 
@@ -188,19 +189,19 @@ test('GPX analyzer adds a thick, segment-preserving route casing behind native L
     assert.equal(mapViewport.style.height, '628px');
     assert.equal(sentPatches.at(-1).mapViewportHeight, 610);
 
-    mapViewport.parentElement.getBoundingClientRect = () => ({ width: 800 });
-    mapViewport.getBoundingClientRect = () => ({ width: 640 });
+    mapViewport.parentElement.getBoundingClientRect = () => ({ left: 0, right: 800, width: 800 });
+    mapViewport.getBoundingClientRect = () => ({ left: 80, right: 720, width: 640 });
     const dispatchPointer = (type, values) => {
         const event = new window.Event(type, { bubbles: true, cancelable: true });
         Object.defineProperties(event, Object.fromEntries(Object.entries(values).map(([key, value]) => [key, { value }])));
         mapResizeHandle.dispatchEvent(event);
     };
-    dispatchPointer('pointerdown', { button: 0, pointerId: 1, clientX: 0, clientY: 0 });
-    dispatchPointer('pointermove', { pointerId: 1, clientX: 160, clientY: 50 });
+    dispatchPointer('pointerdown', { button: 0, pointerId: 1, clientX: 720, clientY: 0 });
+    dispatchPointer('pointermove', { pointerId: 1, clientX: 800, clientY: 50 });
     dispatchPointer('pointerup', { pointerId: 1 });
-    assert.equal(mapViewport.style.width, '100%');
+    assert.equal(mapViewport.style.width, '800px');
     assert.equal(mapViewport.style.height, '678px');
-    assert.equal(sentPatches.at(-1).mapViewportWidth, 100);
+    assert.equal(sentPatches.at(-1).mapViewportWidth, 800);
     assert.equal(sentPatches.at(-1).mapViewportHeight, 660);
 
     const routeColor = window.document.getElementById('bpb-map-route-color');
