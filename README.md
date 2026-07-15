@@ -34,6 +34,20 @@ Preferences page.
 
 ## Feature tour
 
+### Open-source free 3D mapping
+
+![GPX analysis moving from a chart-synchronized 2D map into 3D terrain](store-assets/showcase-gpx-terrain.gif)
+
+User-uploaded GPX tracks on Peakbagger ascent pages become full 3D terrain
+views at true vertical scale. The elevation model comes from
+[Mapterhorn](https://mapterhorn.com/), an open-data elevation tile project;
+when Peakbagger's selected map layer is a compatible raster, it is draped over
+the terrain. The feature is opt-in: no tile requests occur until you choose
+**3D terrain** on an ascent map.
+
+> Special thanks to [Mapterhorn](https://mapterhorn.com/) for providing
+> free, open-access global elevation data that makes this possible.
+
 ### Turn an activity into ascent drafts
 
 Open an activity you recorded on Garmin Connect or Strava, then click Better
@@ -49,40 +63,15 @@ distinct.
 
 ![Garmin and Strava activity capture with privacy-reduced Peakbagger drafts](store-assets/showcase-activity-capture.gif)
 
-The provider page keeps the source activity's health, device, timing, and
-elevation fields. The popup makes the handoff visible: Preview receives only a
-newly serialized, reduced latitude/longitude track. The animation alternates
-synthetic Garmin and Strava activities; the popup itself is rendered from the
-shipped extension UI.
+### Chart-synced map and track customization
 
-### Understand every mile of a GPS track
+![Three-day GPX analysis with chart-synchronized map marker and custom route](store-assets/showcase-gpx-map-sync.gif)
 
-Peakbagger ascent pages gain an interactive elevation chart with distance and
-time views, route metrics, grades, timing, and multi-day camping details. The
-map route is reinforced with a configurable line and casing (5 px red over
-9 px white by default) while Peakbagger's native route and markers remain on
-top. The map keeps Peakbagger's original 450 × 450 px size until you resize it
-from its lower-right corner, with the page width as its upper bound; an opt-in
-setting can restore the last selected basemap. The chart sits immediately below
-the map, before Peakbagger's full-screen map and GPX-download links. Hover over
-the chart to follow the same point on the map, or double-click a point to copy
-its coordinates. Full Screen single-ascent and 10-track GPS maps also honor the
-route-width preference without changing Peakbagger's route colors, hover
-highlights, click details, or trip-report links. **3D terrain** opens an
-extension-owned MapLibre view of the same route at true vertical scale.
-Mapterhorn supplies the elevation model; when Peakbagger's selected Leaflet
-layer is a compatible raster layer, that same map is draped over the terrain.
-The experimental feature is off by default and appears only after you enable it
-in Settings, where its external requests are disclosed. Tile requests begin
-only when you choose **3D terrain** on an ascent map, and Peakbagger's 2D map
-remains the immediate fallback.
-
-![Three-day GPX analysis with a high-contrast route and chart-synchronized Leaflet marker](store-assets/showcase-gpx-map-sync.gif)
-
-This synthetic three-day track shows both elevation series, start/summit/end
-timing, car-to-car duration, overnight transitions, and the analyzer's live
-high-contrast Leaflet route and chart-position marker without exposing a real
-trip.
+Ascent pages gain an interactive elevation chart with distance and time views,
+route metrics, grades, timing, and multi-day camping details. Hover over the
+chart to follow the same point on the map. The map route uses a configurable
+line and casing while Peakbagger's native route and markers remain on top, and
+Full Screen GPS maps honor the same route-width preference.
 
 ### Find useful ascent beta faster
 
