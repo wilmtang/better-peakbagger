@@ -14,6 +14,16 @@
     const S = window.BPBSettings;
     if (!S) return;
 
+    // The page world may only write the settings the GPX Analyzer owns.
+    // Everything else — feature gates, capture privacy options, theme — stays
+    // writable solely from extension-owned surfaces (options page, popup).
+    const WRITABLE_KEYS = new Set([
+        'units',
+        'mapRouteColor', 'mapRouteCasingColor',
+        'mapViewportWidth', 'mapViewportHeight',
+        'mapLastLayer'
+    ]);
+
     const send = settings => window.postMessage({ __bpb: true, dir: 'toPage', settings }, location.origin);
 
     window.addEventListener('message', async event => {
@@ -23,8 +33,10 @@
 
         if (data.kind === 'get') {
             send(await S.get());
-        } else if (data.kind === 'set' && data.patch) {
-            await S.set(data.patch); // storage.onChanged -> subscribe -> pushes back to the page
+        } else if (data.kind === 'set' && data.patch && typeof data.patch === 'object') {
+            const patch = Object.fromEntries(Object.entries(data.patch)
+                .filter(([key]) => WRITABLE_KEYS.has(key)));
+            if (Object.keys(patch).length) await S.set(patch); // storage.onChanged -> subscribe -> pushes back to the page
         }
     });
 
