@@ -194,6 +194,29 @@ test('capture guard intercepts native header sort links but lets year links navi
     assert.equal(preventedByGuard, false);
 });
 
+test('sort clicks fall back to native navigation when initialization fails', async () => {
+    // Force a deterministic fault inside setupInstantTableSort. The JSDOM
+    // window has its own intrinsics, so this cannot leak into other tests.
+    const dom = await loadPage(RAINIER, {
+        url: RAINIER_URL,
+        prepare: page => page.window.eval(
+            'Intl.Collator = function () { throw new Error("forced Collator failure"); };')
+    });
+    await new Promise(resolve => setTimeout(resolve, 20));
+    assert.equal(bar(dom), null, 'the filter bar must not appear after the forced failure');
+
+    const header = dom.window.document.querySelector('th a[href*="sort="]');
+    assert.ok(header, 'the native sort links must remain in place');
+    let preventedByGuard = null;
+    header.addEventListener('click', event => {
+        preventedByGuard = event.defaultPrevented;
+        event.preventDefault(); // Keep jsdom from attempting a real navigation.
+    });
+    header.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, cancelable: true }));
+    assert.equal(preventedByGuard, false,
+        'a failed initialization must release sort clicks to native navigation');
+});
+
 test('a desc-served page starts with the ▼ indicator and reverses to asc', async () => {
     const dom = await loadPageWithBar('21500-y9998-sort-ascentdated.html', {
         url: 'https://www.peakbagger.com/climber/PeakAscents.aspx?pid=21500&u=ft&y=9998&sort=ascentdated'

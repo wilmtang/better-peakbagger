@@ -65,12 +65,14 @@ export const loadPage = async (fixture, {
     url,
     settings = {},
     scripts = ['src/settings.js', 'src/ascent-filter.js'],
-    fixtures = FIXTURES
+    fixtures = FIXTURES,
+    prepare = null
 } = {}) => {
     const html = await readFile(path.join(fixtures, fixture), 'utf8');
     const dom = new JSDOM(html, { url, runScripts: 'outside-only' });
     dom.chrome = makeChromeStub({ bpbSettings: settings });
     dom.window.chrome = dom.chrome;
+    if (prepare) prepare(dom);
     for (const rel of scripts) {
         dom.window.eval(await readFile(path.join(root, rel), 'utf8'));
     }

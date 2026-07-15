@@ -665,9 +665,16 @@
         }
     };
 
+    // Any unexpected failure after the click guard is installed must release
+    // held sort clicks back to native navigation instead of swallowing them.
+    const start = () => init().catch(error => {
+        optOutInstantSort();
+        console.error('Better Peakbagger ascent filter failed:', error);
+    });
+
     if (document.readyState === 'loading') {
-        window.addEventListener('DOMContentLoaded', init);
+        window.addEventListener('DOMContentLoaded', start);
     } else {
-        init();
+        start();
     }
 })();
