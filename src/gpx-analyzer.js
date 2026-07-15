@@ -609,7 +609,7 @@
         const statsContainer = document.createElement('div');
         const stats = document.createElement('div');
         Object.assign(stats.style, { fontFamily: 'sans-serif', fontWeight: 'bold' });
-        stats.innerText = "Analyzing GPX data...";
+        stats.textContent = "Analyzing GPX data...";
 
         const subStats = document.createElement('div');
         Object.assign(subStats.style, { fontFamily: 'sans-serif', fontSize: '0.9em', color: '#444', marginTop: '4px', fontStyle: 'italic' });
@@ -621,7 +621,13 @@
 
         const unitSelect = document.createElement('select');
         Object.assign(unitSelect.style, { padding: '2px 6px', borderRadius: '4px', border: '1px solid #ccc', cursor: 'pointer', outline: 'none' });
-        unitSelect.innerHTML = '<option value="imperial">Imperial</option><option value="metric">Metric</option>';
+        const unitOption = (value, label) => {
+            const option = document.createElement('option');
+            option.value = value;
+            option.textContent = label;
+            return option;
+        };
+        unitSelect.append(unitOption('imperial', 'Imperial'), unitOption('metric', 'Metric'));
 
         const terrainButton = document.createElement('button');
         terrainButton.id = 'bpb-terrain-toggle';
@@ -643,7 +649,7 @@
             Object.assign(label.style, { display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer' });
             label.htmlFor = id;
             const caption = document.createElement('span');
-            caption.innerText = text;
+            caption.textContent = text;
             const input = document.createElement('input');
             input.id = id;
             input.type = 'color';
@@ -659,7 +665,7 @@
 
         const hintText = document.createElement('div');
         Object.assign(hintText.style, { fontSize: '0.8em', color: '#888', marginTop: '4px', fontStyle: 'italic' });
-        hintText.innerText = "Double-click point to copy coordinates";
+        hintText.textContent = "Double-click point to copy coordinates";
 
         controlsContainer.append(terrainButton, unitSelect, routeStyleControls, hintText);
         headerBox.append(statsContainer, controlsContainer);
@@ -752,8 +758,11 @@
                 if (d && d.lat !== undefined && d.lon !== undefined) {
                     const text = `${d.lat.toFixed(5)}, ${d.lon.toFixed(5)}`;
                     navigator.clipboard.writeText(text).then(() => {
-                        hintText.innerHTML = `<span style="color: #2e8b57; font-weight: bold;">✓ Copied: ${text}</span>`;
-                        setTimeout(() => { hintText.innerText = "Double-click point to copy coordinates"; applyPanelTheme(); }, 2500);
+                        const copied = document.createElement('span');
+                        Object.assign(copied.style, { color: '#2e8b57', fontWeight: 'bold' });
+                        copied.textContent = `✓ Copied: ${text}`;
+                        hintText.replaceChildren(copied);
+                        setTimeout(() => { hintText.textContent = "Double-click point to copy coordinates"; applyPanelTheme(); }, 2500);
                     }).catch(err => console.error('Failed to copy', err));
                 }
             }
@@ -1245,27 +1254,33 @@
             const isMultiDay = hasTime && (getRelativeDay(endMs, startMs) > 1);
 
             // Format Stats Bar
+            const subLine = (text, styles) => {
+                const line = document.createElement('div');
+                Object.assign(line.style, styles);
+                line.textContent = text;
+                return line;
+            };
             let txt = `Interactive Stats: ${formatDistanceM(metrics.distanceM)} | ${formatElevationM(metrics.gainM)} gain`;
-            const subParts = [`<div style="color: ${p.muted}; font-size: 0.95em; margin-bottom: 2px;">${buildMetricNote()}</div>`];
+            const subLines = [subLine(buildMetricNote(), { color: p.muted, fontSize: '0.95em', marginBottom: '2px' })];
             if (hasTime) {
                 txt += ` | Time: ${fmtTime(totalMs)}`;
                 if (summitMs > startMs) {
                     const timeToSummit = summitMs - startMs;
                     const timeBack = endMs - summitMs;
-                    let campingHtml = "";
+                    subLines.push(subLine(
+                        `Start time: ${formatTimeStr(startMs, startMs, isMultiDay)} | Summit time: ${formatTimeStr(summitMs, startMs, isMultiDay)} | Back to car: ${formatTimeStr(endMs, startMs, isMultiDay)}`,
+                        { color: p.sub, marginBottom: '2px' }));
+                    subLines.push(subLine(
+                        `Time to summit: ${fmtTime(timeToSummit)} | Time back: ${fmtTime(timeBack)}`,
+                        { color: p.faint, fontSize: '0.95em' }));
                     if (campingSpots.length > 0) {
                         const spotStrs = campingSpots.map(s => `Day ${s.day} (${s.lat.toFixed(5)}, ${s.lon.toFixed(5)})`).join(' | ');
-                        campingHtml = `<div style="color: ${p.faint}; font-size: 0.95em; margin-top: 2px;">Possible Camping: ${spotStrs}</div>`;
+                        subLines.push(subLine(`Possible Camping: ${spotStrs}`, { color: p.faint, fontSize: '0.95em', marginTop: '2px' }));
                     }
-                    subParts.push(`
-                        <div style="color: ${p.sub}; margin-bottom: 2px;">Start time: ${formatTimeStr(startMs, startMs, isMultiDay)} | Summit time: ${formatTimeStr(summitMs, startMs, isMultiDay)} | Back to car: ${formatTimeStr(endMs, startMs, isMultiDay)}</div>
-                        <div style="color: ${p.faint}; font-size: 0.95em;">Time to summit: ${fmtTime(timeToSummit)} | Time back: ${fmtTime(timeBack)}</div>
-                        ${campingHtml}
-                    `);
                 }
             }
-            stats.innerHTML = `<span style="color:${p.text};">${txt}</span>`;
-            subStats.innerHTML = subParts.join('');
+            stats.textContent = txt;
+            subStats.replaceChildren(...subLines);
 
             // Map adjusted arrays
             const eleDistData = [], eleTimeData = [];
@@ -1523,7 +1538,7 @@
             if (!response.ok) return stats.textContent = `The GPS track download failed (HTTP ${response.status}).`;
             const xml = new DOMParser().parseFromString(await response.text(), "text/xml");
             const trkpts = Array.from(xml.querySelectorAll('trkpt'));
-            if (!trkpts.length) return stats.innerText = "No track points found.";
+            if (!trkpts.length) return stats.textContent = "No track points found.";
 
             mapRouteSegments = parseMapRouteSegments(xml);
             updateTerrainButton();
@@ -1543,7 +1558,7 @@
             });
 
             metrics = computeMetrics(parsedPoints);
-            if (!metrics.points.length) return stats.innerText = "No valid track points found.";
+            if (!metrics.points.length) return stats.textContent = "No valid track points found.";
 
             chartData = metrics.chartPoints;
             hasTime = metrics.hasTime;
@@ -1569,7 +1584,7 @@
             scheduleRouteOverlay();
 
         } catch (e) {
-            stats.innerText = "Error parsing GPX file.";
+            stats.textContent = "Error parsing GPX file.";
             console.error(e);
         }
     };
