@@ -2,6 +2,30 @@
 
 ## Unreleased
 
+## 2.0.0 — 2026-07-14
+
+- **Experimental 3D terrain maps.** An off-by-default General setting adds an
+  explicit 3D terrain choice to ascent maps. The route is rendered in an
+  extension-owned MapLibre frame, with a compatible selected Peakbagger map
+  draped over the terrain when its provider supports cross-origin WebGL tiles.
+  Loading 3D sends elevation-tile coordinates for the viewed area to
+  Mapterhorn, a third-party DEM service, and may send map-tile requests to the
+  selected map provider; no 3D request occurs until the user enables the
+  experiment and chooses **Load 3D terrain**.
+- **Bounded terrain caching.** Successful Mapterhorn DEM tiles use a dedicated,
+  best-effort on-device cache with a 512 MB default and a configurable
+  0–2,048 MB limit. Settings shows the current cache size and hides the cache
+  controls while experimental 3D maps are disabled. Browser eviction, quota
+  pressure, and corrupt entries safely fall back to the network.
+- **Peak planning links.** Peak pages now provide restrained shortcuts to Windy
+  weather and Copernicus satellite imagery for the displayed coordinates,
+  while malformed or ambiguous coordinates fail closed.
+- **Native Full Screen GPS tracks preserved.** Full Screen Maps keep
+  Peakbagger's original route colors, hover highlights, click details, and
+  multi-track behavior while applying the configured route width.
+- **No flash on dark Settings pages.** The options page now applies its cached
+  theme synchronously before its stylesheet loads, then reconciles with the
+  authoritative synchronized setting.
 - **Capture details, under user control.** New Activity capture settings can
   retain GPX waypoint coordinates and names (on by default), create and
   sequence Peakbagger Trip Info for multiple selected summits, and fill

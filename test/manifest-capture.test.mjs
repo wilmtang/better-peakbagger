@@ -8,7 +8,7 @@ import fs from 'node:fs/promises';
 const manifest = JSON.parse(await fs.readFile(new URL('../manifest.json', import.meta.url), 'utf8'));
 
 test('capture permissions are explicit and provider access remains activeTab-only', () => {
-    assert.equal(manifest.version, '1.4.0');
+    assert.equal(manifest.version, '2.0.0');
     for (const permission of ['activeTab', 'scripting', 'tabGroups', 'storage', 'alarms']) {
         assert.ok(manifest.permissions.includes(permission));
     }

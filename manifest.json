@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Better Peakbagger",
-  "version": "1.4.0",
+  "version": "2.0.0",
   "description": "Captures your Garmin and Strava activities into confidence-ranked Peakbagger drafts, plus GPX analysis, beta filters, and dark mode.",
   "homepage_url": "https://github.com/wilmtang/better-peakbagger",
   "icons": {
