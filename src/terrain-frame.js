@@ -41,7 +41,9 @@
     let parentOrigin = null;
     let activeTheme = 'light';
     let activeBasemap = null;
-    let basemapFailed = false;
+    let basemapErrored = false;
+    let basemapContentLoaded = false;
+    let basemapChecked = false;
     let badgeElement = null;
     let terrainCache = null;
     let terrainProtocolRegistered = false;
@@ -85,7 +87,9 @@
             mapElement = null;
         }
         activeBasemap = null;
-        basemapFailed = false;
+        basemapErrored = false;
+        basemapContentLoaded = false;
+        basemapChecked = false;
         badgeElement = null;
         loaded = false;
     };
@@ -353,7 +357,9 @@
         activeRouteStyle = validateStyle(data.routeStyle);
         activeTheme = data.theme === 'dark' ? 'dark' : 'light';
         activeBasemap = validateBasemap(data.basemap);
-        basemapFailed = false;
+        basemapErrored = false;
+        basemapContentLoaded = false;
+        basemapChecked = false;
 
         mapElement = document.createElement('div');
         mapElement.id = 'bpb-terrain-map';
@@ -397,11 +403,25 @@
             terrainMap.addControl(new maplibre.ScaleControl({ maxWidth: 120, unit: 'metric' }), 'bottom-left');
             terrainMap.on('error', event => {
                 if (event && event.sourceId === 'basemap') {
-                    basemapFailed = true;
-                    if (loaded && map === terrainMap) removeFailedBasemap();
+                    basemapErrored = true;
                     return;
                 }
                 if (!loaded && map === terrainMap) fail('maplibre');
+            });
+            // A raster tile that loads fires a 'source' data event carrying the
+            // tile. One such event proves the drape can render, so a handful of
+            // later tile failures must not tear the whole layer down.
+            terrainMap.on('data', event => {
+                if (map === terrainMap && event && event.sourceId === 'basemap'
+                    && event.dataType === 'source' && event.tile) basemapContentLoaded = true;
+            });
+            // Decide the drape's fate once, after the first full settle: drop it
+            // only when it errored and never loaded a single tile (an entire
+            // layer blocked by CORS), but keep it through partial coverage gaps.
+            terrainMap.on('idle', () => {
+                if (basemapChecked || map !== terrainMap || !loaded) return;
+                basemapChecked = true;
+                if (activeBasemap && basemapErrored && !basemapContentLoaded) removeFailedBasemap();
             });
 
             terrainMap.once('load', () => {
@@ -425,7 +445,6 @@
                 });
                 terrainMap.fitBounds(route.bounds, { padding: 46, maxZoom: 15.5, pitch: 60, bearing: 0, duration: 0 });
                 loaded = true;
-                if (basemapFailed) removeFailedBasemap();
                 setTheme(activeTheme);
                 status.remove();
                 mapElement.style.pointerEvents = 'auto';
