@@ -503,6 +503,7 @@
         // rounded to the whole hour from the start longitude, and the stats
         // bar labels that estimate. GPX timestamps are UTC; the fallback
         // shifts the epoch and formats in UTC to get the same wall clock.
+        // See docs/mountain-local-time.md.
         let mountainTimeZone = null;
         let mountainDayFormatter = null;
         let mountainOffsetMs = 0;

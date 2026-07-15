@@ -2,6 +2,34 @@
 
 ## Unreleased
 
+- **Chart times in the climb's local timezone.** The GPX analyzer's clock
+  times, `Day N` boundaries, and camping-spot days now use the mountain's
+  local time instead of the viewer's. The track's starting coordinate is
+  resolved to an IANA timezone by a bundled offline lookup — no coordinates
+  leave the page — and the stats bar names the zone: *"Times in the
+  mountain's local time (PDT)"*. If the lookup fails, times fall back to a
+  labelled solar-time estimate from the start longitude. See
+  [docs/mountain-local-time.md](docs/mountain-local-time.md).
+- **Capture follows the tab.** Starting a capture right after navigating the
+  same tab to a different Garmin or Strava activity no longer returns the
+  previous activity's results while the earlier capture is still finishing.
+- **Keyboard map resizing can no longer exhaust settings sync.** Arrow-key
+  resizing applies immediately but saves once, shortly after the last
+  keystroke, instead of writing to synchronized storage on every key repeat.
+- **Sort clicks are never lost.** If the ascent-list enhancement fails to
+  initialize, header sort clicks fall back to Peakbagger's native navigation
+  instead of being silently swallowed.
+- **Clearer GPX download failures.** An ascent page whose GPS-track download
+  returns an HTTP error now reports that status instead of the misleading
+  "No track points found."
+- **Tighter page-world settings bridge.** Page scripts can write only the six
+  GPX-analyzer-owned settings keys; feature gates, capture privacy options,
+  and the theme remain writable solely from extension-owned surfaces.
+- **Internals.** The pure GPX metrics pipeline moved to `src/gpx-metrics.js`
+  and is shared with the background capture core, so drafted and displayed
+  distance/gain math cannot diverge; analyzer UI text is built with DOM nodes
+  instead of dynamic `innerHTML`.
+
 ## 2.0.0 — 2026-07-14
 
 - **Experimental 3D terrain maps.** An off-by-default General setting adds an
