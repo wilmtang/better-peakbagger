@@ -36,6 +36,7 @@
     const MAP_VIEWPORT_MIN_HEIGHT = 240;
     const MAP_VIEWPORT_MAX_HEIGHT = 720;
     const MAP_RESIZE_RAIL_HEIGHT = 18;
+    const MAP_RESIZE_PERSIST_DELAY_MS = 400;
     const TERRAIN_LOAD_TIMEOUT_MS = 17000;
     const TERRAIN_CACHE_DEFAULT_MB = 512;
 
@@ -465,12 +466,29 @@
             scheduleMapInvalidate();
         };
 
+        let mapViewportPersistTimer = null;
         const persistMapViewportSize = () => {
+            if (mapViewportPersistTimer !== null) {
+                clearTimeout(mapViewportPersistTimer);
+                mapViewportPersistTimer = null;
+            }
             BPB.set({
                 mapViewportWidth: mapViewportSize.width,
                 mapViewportHeight: mapViewportSize.height
             });
             appliedSettings = { ...BPB.get() };
+        };
+
+        // Keyboard resize fires per key repeat; persisting each step would
+        // burn through chrome.storage.sync's write-per-minute quota and the
+        // final size could silently fail to stick. Persist once, shortly
+        // after the last keystroke.
+        const schedulePersistMapViewportSize = () => {
+            if (mapViewportPersistTimer !== null) clearTimeout(mapViewportPersistTimer);
+            mapViewportPersistTimer = setTimeout(() => {
+                mapViewportPersistTimer = null;
+                persistMapViewportSize();
+            }, MAP_RESIZE_PERSIST_DELAY_MS);
         };
 
         if (mapIframe && mapIframe.parentElement) {
@@ -570,7 +588,7 @@
                 else return;
                 event.preventDefault();
                 applyMapViewportSize(next);
-                persistMapViewportSize();
+                schedulePersistMapViewportSize();
             });
 
             applyMapViewportSize(mapViewportSize);

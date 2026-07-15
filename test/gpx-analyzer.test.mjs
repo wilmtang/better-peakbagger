@@ -266,7 +266,14 @@ test('GPX analyzer adds a thick, segment-preserving route casing behind native L
 
     mapResizeHandle.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowDown' }));
     assert.equal(mapViewport.style.height, '628px');
-    assert.equal(sentPatches.at(-1).mapViewportHeight, 610);
+    mapResizeHandle.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowDown' }));
+    assert.equal(mapViewport.style.height, '638px');
+    assert.equal(sentPatches.some(patch => 'mapViewportHeight' in patch), false,
+        'keyboard resize must not persist on every keystroke');
+    await waitFor(dom, () => sentPatches.some(patch => 'mapViewportHeight' in patch));
+    assert.equal(sentPatches.filter(patch => 'mapViewportHeight' in patch).length, 1,
+        'repeated keystrokes should persist once, after the last step');
+    assert.equal(sentPatches.at(-1).mapViewportHeight, 620);
 
     mapViewport.parentElement.getBoundingClientRect = () => ({ left: 0, right: 800, width: 800 });
     mapViewport.getBoundingClientRect = () => ({ left: 80, right: 720, width: 640 });
@@ -279,9 +286,9 @@ test('GPX analyzer adds a thick, segment-preserving route casing behind native L
     dispatchPointer('pointermove', { pointerId: 1, clientX: 800, clientY: 50 });
     dispatchPointer('pointerup', { pointerId: 1 });
     assert.equal(mapViewport.style.width, '800px');
-    assert.equal(mapViewport.style.height, '678px');
+    assert.equal(mapViewport.style.height, '688px');
     assert.equal(sentPatches.at(-1).mapViewportWidth, 800);
-    assert.equal(sentPatches.at(-1).mapViewportHeight, 660);
+    assert.equal(sentPatches.at(-1).mapViewportHeight, 670);
 
     const routeColor = window.document.getElementById('bpb-map-route-color');
     const casingColor = window.document.getElementById('bpb-map-route-casing-color');
