@@ -109,6 +109,22 @@
       ],
       "run_at": "document_start",
       "all_frames": false
+    },
+    {
+      "matches": [
+        "*://www.peakbagger.com/Peak.aspx*",
+        "*://www.peakbagger.com/peak.aspx*",
+        "*://peakbagger.com/Peak.aspx*",
+        "*://peakbagger.com/peak.aspx*"
+      ],
+      "css": [
+        "src/peak-links.css"
+      ],
+      "js": [
+        "src/peak-links.js"
+      ],
+      "run_at": "document_end",
+      "all_frames": false
     }
   ],
   "browser_specific_settings": {

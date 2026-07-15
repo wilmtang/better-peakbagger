@@ -41,3 +41,12 @@ test('ascent editor integration is isolated to Peakbagger and runtime code never
     ].map(path => fs.readFile(new URL(`../${path}`, import.meta.url), 'utf8')));
     assert.doesNotMatch(runtimeSource.join('\n'), /SaveButton|SaveButton2/);
 });
+
+test('peak planning links are isolated to Peak.aspx in the extension world', () => {
+    const peakLinks = manifest.content_scripts.find(entry => entry.js.includes('src/peak-links.js'));
+    assert.ok(peakLinks);
+    assert.deepEqual(peakLinks.css, ['src/peak-links.css']);
+    assert.equal(peakLinks.run_at, 'document_end');
+    assert.equal(peakLinks.world, undefined);
+    assert.ok(peakLinks.matches.every(pattern => /peakbagger\.com\/(?:P|p)eak\.aspx/.test(pattern)));
+});

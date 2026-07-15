@@ -4,7 +4,8 @@
 
 Better Peakbagger turns your Garmin and Strava activities into review-ready
 ascent drafts, makes GPS tracks easier to understand, surfaces the trip reports
-that matter, and adds a polished dark mode to
+that matter, adds location-aware forecast and satellite-imagery links, and
+provides a polished dark mode for
 [Peakbagger](https://www.peakbagger.com/).
 
 [![Chrome Web Store](https://img.shields.io/chrome-web-store/v/kndjohodnpdoejmjkiiakejfehoodedn?style=for-the-badge&logo=googlechrome&logoColor=white&label=Chrome%20Web%20Store&color=4285F4)](https://chromewebstore.google.com/detail/better-peakbagger/kndjohodnpdoejmjkiiakejfehoodedn)
@@ -81,6 +82,13 @@ Filters combine naturally, show live result counts, and remember what you mean
 by “has beta.” Sortable columns reorder instantly without reloading the page.
 
 ![Ascent beta filters and in-page sorting](store-assets/screenshot-2-beta-filter.png)
+
+### Check summit conditions and recent imagery
+
+Peak pages link directly to the summit's weather detail on Windy and the same
+location in Copernicus Browser. Copernicus opens with its date, dataset, and
+cloud-cover controls available, so you can choose a useful recent satellite
+scene instead of landing on a fixed, quickly stale image.
 
 ### Make Peakbagger easier on the eyes
 
