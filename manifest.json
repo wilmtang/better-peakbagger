@@ -87,6 +87,7 @@
       ],
       "js": [
         "vendor/chart.umd.min.js",
+        "vendor/tz-lookup.js",
         "src/gpx-metrics.js",
         "src/gpx-analyzer.js"
       ],

@@ -50,6 +50,18 @@ browser build, worker, and stylesheet under `vendor/`.
 - License: BSD 3-Clause
 - Packaged license text: [`vendor/maplibre-LICENSE.txt`](vendor/maplibre-LICENSE.txt)
 
+### tz-lookup
+
+Better Peakbagger distributes the unmodified @photostructure/tz-lookup 11.6.0
+coordinate-to-timezone lookup as `vendor/tz-lookup.js`. It resolves the summit
+coordinate to an IANA timezone entirely offline so GPX chart times can be
+shown in the mountain's local time.
+
+- Project: [@photostructure/tz-lookup](https://github.com/photostructure/tz-lookup)
+- Source: [@photostructure/tz-lookup v11.6.0](https://www.npmjs.com/package/@photostructure/tz-lookup/v/11.6.0)
+- License: CC0-1.0 (public-domain dedication)
+- Packaged license text: [`vendor/tz-lookup-LICENSE.txt`](vendor/tz-lookup-LICENSE.txt)
+
 ### Mapterhorn
 
 The optional 3D view requests elevation tiles from

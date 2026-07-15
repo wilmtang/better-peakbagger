@@ -83,6 +83,7 @@ async function makeReleaseZip(extraFiles = {}, omittedFiles = []) {
     "src/big-map-bridge.js": "big map bridge",
     "src/big-map.js": "big map",
     "src/capture-core.js": "core",
+    "src/gpx-metrics.js": "gpx metrics",
     "src/terrain-map.css": "terrain css",
     "src/terrain-cache.js": "terrain cache",
     "src/terrain-frame.js": "terrain frame",
@@ -93,6 +94,8 @@ async function makeReleaseZip(extraFiles = {}, omittedFiles = []) {
     "vendor/maplibre-gl-csp-worker.js": "maplibre worker",
     "vendor/maplibre-gl-csp.js": "maplibre",
     "vendor/maplibre-gl.css": "maplibre css",
+    "vendor/tz-lookup-LICENSE.txt": "tz-lookup license",
+    "vendor/tz-lookup.js": "tz-lookup",
     ...extraFiles,
   };
   for (const [name, contents] of Object.entries(files)) {

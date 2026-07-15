@@ -10,6 +10,7 @@ import { JSDOM } from 'jsdom';
 import { waitFor } from './helpers/load-page.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const tzLookupSource = await readFile(path.join(root, 'vendor', 'tz-lookup.js'), 'utf8');
 const metricsSource = await readFile(path.join(root, 'src', 'gpx-metrics.js'), 'utf8');
 const analyzerSource = await readFile(path.join(root, 'src', 'gpx-analyzer.js'), 'utf8');
 
@@ -316,6 +317,78 @@ test('GPX analyzer adds a thick, segment-preserving route casing behind native L
 
     assert.equal(map.layers.length, 0, 'layers from the discarded map should be removed');
     assert.equal(reloadedMap.layers.length, 2, 'route casing should be recreated on the new map');
+
+    dom.window.close();
+});
+
+// Hourly track at lat 48.7 / lon −121.8 (America/Vancouver, PDT in July;
+// solar-estimate fallback UTC−8) climbing 05:00Z–11:00Z: mountain-local
+// evening through the small hours of the next day. The route crosses the
+// mountain's local midnight but not UTC midnight, so the Day 2 labels and
+// the camping spot below only appear when day boundaries are computed in
+// the mountain's timezone — regardless of the machine running this test.
+const loadOvernightAnalyzer = async ({ withTzLookup }) => {
+    const elevations = [1000, 1200, 1400, 1600, 2000, 1600, 1200];
+    const points = elevations.map((ele, index) =>
+        `<trkpt lat="${(48.7 + index * 0.01).toFixed(2)}" lon="-121.8000"><ele>${ele}</ele>`
+        + `<time>2026-07-10T${String(5 + index).padStart(2, '0')}:00:00Z</time></trkpt>`).join('\n');
+    const overnightGpx = `<?xml version="1.0"?><gpx version="1.1"><trk><trkseg>${points}</trkseg></trk></gpx>`;
+
+    const dom = new JSDOM(`<!doctype html><body>
+      <p><a href="https://www.peakbagger.com/demo.gpx">Download this GPS track</a></p>
+    </body>`, {
+        url: 'https://www.peakbagger.com/climber/ascent.aspx?aid=1',
+        runScripts: 'outside-only',
+        pretendToBeVisual: true
+    });
+    const { window } = dom;
+    window.matchMedia = () => ({ matches: false });
+    window.HTMLCanvasElement.prototype.getContext = () => ({});
+    window.fetch = async () => ({ ok: true, text: async () => overnightGpx });
+    window.Chart = class ChartStub {
+        constructor(context, config) {
+            this.data = config.data;
+            this.options = config.options;
+        }
+        destroy() {}
+    };
+    window.postMessage = message => {
+        if (!message || message.dir !== 'toCS' || message.kind !== 'get') return;
+        window.queueMicrotask(() => window.dispatchEvent(new window.MessageEvent('message', {
+            source: window,
+            origin: window.location.origin,
+            data: { __bpb: true, dir: 'toPage', settings: { units: 'imperial', theme: 'light' } }
+        })));
+    };
+
+    Object.defineProperty(window.document, 'readyState', { configurable: true, value: 'complete' });
+    if (withTzLookup) window.eval(tzLookupSource);
+    window.eval(metricsSource);
+    window.eval(analyzerSource);
+    const analysisText = () => window.document.getElementById('bpb-gpx-analysis')?.textContent || '';
+    await waitFor(dom, () => analysisText().includes('Possible Camping'));
+    return { dom, analysisText };
+};
+
+test('chart times use the mountain’s IANA timezone, not the viewer’s', async () => {
+    const { dom, analysisText } = await loadOvernightAnalyzer({ withTzLookup: true });
+
+    assert.match(analysisText(), /Summit time: Day 2/,
+        'the summit after mountain-local midnight must be labelled Day 2');
+    assert.match(analysisText(), /Possible Camping: Day 1/);
+    assert.ok(analysisText().includes('Times in the mountain’s local time (PDT)'),
+        'the stats bar must name the mountain timezone resolved from the summit coordinate');
+
+    dom.window.close();
+});
+
+test('without the timezone raster, times fall back to a labelled longitude estimate', async () => {
+    const { dom, analysisText } = await loadOvernightAnalyzer({ withTzLookup: false });
+
+    assert.match(analysisText(), /Summit time: Day 2/);
+    assert.match(analysisText(), /Possible Camping: Day 1/);
+    assert.ok(analysisText().includes('Times in the mountain’s local time (UTC−8, estimated from longitude)'),
+        'the stats bar must disclose the estimated mountain timezone');
 
     dom.window.close();
 });

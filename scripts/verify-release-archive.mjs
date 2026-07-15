@@ -28,6 +28,7 @@ const REQUIRED_FILES = [
   "src/big-map-bridge.js",
   "src/big-map.js",
   "src/capture-core.js",
+  "src/gpx-metrics.js",
   "src/terrain-cache.js",
   "src/terrain-map.css",
   "src/terrain-frame.js",
@@ -38,6 +39,8 @@ const REQUIRED_FILES = [
   "vendor/maplibre-gl-csp-worker.js",
   "vendor/maplibre-gl-csp.js",
   "vendor/maplibre-gl.css",
+  "vendor/tz-lookup-LICENSE.txt",
+  "vendor/tz-lookup.js",
 ];
 
 const OPTIONS_PRESENTATION = {
