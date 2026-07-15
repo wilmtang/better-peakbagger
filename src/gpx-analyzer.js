@@ -764,6 +764,43 @@
             };
         };
 
+        // Peakbagger builds each 2D basemap on demand inside its MasterMap
+        // MapChange() switch, so there is no per-layer global to read and only
+        // the *active* layer is ever present on the map — reading globals could
+        // therefore only ever surface one layer. To mirror the full 2D menu in
+        // 3D we carry drape specs for the well-known layers that are plain
+        // {z}/{x}/{y} raster tiles AND serve CORS-clean tiles WebGL/MapLibre can
+        // sample. WMS layers, dynamic image exports, funky projections, and the
+        // Google/Bing layers cannot drape and are omitted; the live active layer
+        // (below) still covers national basemaps we carry no spec for. Codes
+        // match #selmap option values; any {s} is pre-resolved because a MapLibre
+        // raster source takes one fixed URL template.
+        const TERRAIN_DRAPE_LAYERS = {
+            L_CT: { tiles: 'https://caltopo.s3.amazonaws.com/topo/{z}/{x}/{y}.png?v=1', minzoom: 6, maxzoom: 16, attribution: '&copy; <a href="https://caltopo.com" target="_blank" rel="noopener noreferrer">CalTopo</a>' },
+            L_FS: { tiles: 'https://ctusfs.s3.amazonaws.com/fstopo/{z}/{x}/{y}.png', minzoom: 6, maxzoom: 16, attribution: '&copy; <a href="https://caltopo.com" target="_blank" rel="noopener noreferrer">CalTopo</a> / USFS' },
+            L_MT: { tiles: 'https://tileserver.trimbleoutdoors.com/SecureTile/TileHandler.ashx?mapType=Topo&partnerID=12153&hash=b19f07d8-6f01-4981-9146-40875a18d2fa&x={x}&y={y}&z={z}', minzoom: 9, maxzoom: 16, attribution: '&copy; <a href="https://mytopo.com" target="_blank" rel="noopener noreferrer">MyTopo</a>' },
+            L_OT: { tiles: 'https://a.tile.opentopomap.org/{z}/{x}/{y}.png', minzoom: 0, maxzoom: 15, attribution: '&copy; <a href="https://opentopomap.org" target="_blank" rel="noopener noreferrer">OpenTopoMap</a> (CC-BY-SA)' },
+            L_OS: { tiles: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png', minzoom: 0, maxzoom: 18, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap</a> contributors' },
+            L_AG: { tiles: 'https://services.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}', minzoom: 0, maxzoom: 19, attribution: '&copy; <a href="https://www.esri.com" target="_blank" rel="noopener noreferrer">Esri</a>' },
+            L_AI: { tiles: 'https://services.arcgisonline.com/arcgis/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', minzoom: 0, maxzoom: 19, attribution: '&copy; <a href="https://www.esri.com" target="_blank" rel="noopener noreferrer">Esri</a>' },
+            L_XX: { tiles: 'https://services.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}', minzoom: 0, maxzoom: 16, attribution: '&copy; <a href="https://www.esri.com" target="_blank" rel="noopener noreferrer">Esri</a>' },
+            L_AU: { tiles: 'https://services.arcgisonline.com/ArcGIS/rest/services/USA_Topo_Maps/MapServer/tile/{z}/{y}/{x}.png', minzoom: 0, maxzoom: 15, attribution: '&copy; <a href="https://www.esri.com" target="_blank" rel="noopener noreferrer">Esri</a>' }
+        };
+
+        const terrainDrapeFromCode = (code, name) => {
+            const spec = TERRAIN_DRAPE_LAYERS[code];
+            if (!spec) return null;
+            return {
+                name: String(name || '').trim().slice(0, 80) || code,
+                tiles: [spec.tiles],
+                tileSize: 256,
+                minzoom: spec.minzoom,
+                maxzoom: spec.maxzoom,
+                scheme: 'xyz',
+                attribution: spec.attribution
+            };
+        };
+
         const getTerrainBasemap = () => {
             try {
                 const iframe = findMapIframe();
@@ -773,6 +810,13 @@
                 const option = select && select.options && select.options[select.selectedIndex];
                 if (!map || !option) return null;
 
+                // A well-known active layer reuses its shared drape spec so it
+                // dedupes cleanly against the picker list.
+                const drape = terrainDrapeFromCode(select.value, option.textContent);
+                if (drape) return drape;
+
+                // Otherwise read the live Leaflet layer, so a national basemap we
+                // carry no spec for still drapes when it is the active choice.
                 const selectedLayer = typeof select.value === 'string' ? iframeWin[select.value] : null;
                 const activeLayers = Object.values(map._layers || {})
                     .sort((left, right) => (Number(left && left.options && left.options.zIndex) || 0)
@@ -790,28 +834,22 @@
             return null;
         };
 
-        // Every drape-able layer the native control lists, so the 3D view can
-        // offer the same choices. Each option's value names an iframe-global
-        // Leaflet layer; non-XYZ-raster layers (WMS, zoom-offset) are skipped.
+        // The same drape-able choices the native #selmap lists, so the 3D view
+        // mirrors the 2D layer menu. Only layers we carry a drape spec for are
+        // offered; the rest stay 2D-only because MapLibre cannot sample them.
         const enumerateTerrainBasemaps = () => {
             try {
-                const iframe = findMapIframe();
-                const iframeWin = iframe && iframe.contentWindow;
-                const map = iframeWin && iframeWin.mapsPlaceholder;
-                const select = iframeWin && iframeWin.document && iframeWin.document.getElementById('selmap');
-                if (!map || !select || !select.options) return [];
-
+                const select = findMapLayerSelect();
+                if (!select || !select.options) return [];
                 const basemaps = [];
                 const seen = new Set();
                 for (const option of Array.from(select.options)) {
-                    const value = typeof option.value === 'string' ? option.value : '';
-                    if (!value || seen.has(value)) continue;
-                    const layer = iframeWin[value];
-                    if (!layer || typeof layer._url !== 'string') continue;
-                    const basemap = readBasemapFromLayer(layer, option.textContent, iframeWin);
-                    if (basemap) {
-                        seen.add(value);
-                        basemaps.push(basemap);
+                    const code = typeof option.value === 'string' ? option.value : '';
+                    if (!code || seen.has(code)) continue;
+                    const drape = terrainDrapeFromCode(code, option.textContent);
+                    if (drape) {
+                        seen.add(code);
+                        basemaps.push(drape);
                     }
                 }
                 return basemaps;

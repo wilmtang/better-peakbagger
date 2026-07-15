@@ -8,12 +8,16 @@
   scroll-jack) is discoverable. MapLibre's momentary full-surface overlay is
   suppressed in favor of the persistent hint. Consistent in Chrome and Firefox.
 - **Switch the 3D drape from inside the view.** The 3D terrain view now has an
-  on-map layer picker listing every compatible Peakbagger raster layer, so you
-  can change the draped texture without dropping back to 2D. A layer the tile
-  provider blocks by CORS can't be draped; it is detected, disabled in the
-  picker with a short explanation, and the view falls back to terrain-only.
-  The redundant "Loading 3D terrain…" banner is also gone — the button's own
-  loading state is the single cue.
+  on-map layer picker mirroring the 2D basemap menu — CalTopo, MyTopo, CalTopo
+  USFS, ArcGIS World Topo / Imagery / Gray Canvas, OpenTopoMap, and OpenStreetMap
+  — so you can change the draped texture without dropping back to 2D. (Peakbagger
+  builds each basemap on demand with no reusable handle, so the picker offers the
+  well-known layers that render as CORS-clean tiles MapLibre can sample; WMS,
+  contour, and Google/Bing layers stay 2D-only, and your currently selected
+  national basemap still drapes when supported.) A layer the tile provider blocks
+  by CORS is detected, disabled in the picker with a short explanation, and the
+  view falls back to terrain-only. The redundant "Loading 3D terrain…" banner is
+  also gone — the button's own loading state is the single cue.
 - **Full Screen maps get the route casing.** Full Screen GPS maps
   (`BigMap.aspx`) now draw the configured white casing behind each native
   track and apply the configured width, matching the embedded ascent map.

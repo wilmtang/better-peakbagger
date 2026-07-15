@@ -41,9 +41,9 @@ Preferences page.
 User-uploaded GPX tracks on Peakbagger ascent pages become full 3D terrain
 views at true vertical scale. The elevation model comes from
 [Mapterhorn](https://mapterhorn.com/), an open-data elevation tile project;
-when Peakbagger's selected map layer is a compatible raster, it is draped over
-the terrain. The feature is opt-in: no tile requests occur until you choose
-**3D terrain** on an ascent map.
+Peakbagger's compatible 2D basemaps — CalTopo, ArcGIS, OpenTopoMap, and more —
+are offered in an on-map picker and draped over the terrain. The feature is
+opt-in: no tile requests occur until you choose **3D terrain** on an ascent map.
 
 > Special thanks to [Mapterhorn](https://mapterhorn.com/) for providing
 > free, open-access global elevation data that makes this possible.
@@ -452,14 +452,21 @@ sources do different jobs:
    Terrarium pixel encode elevation as `R × 256 + G + B ÷ 256 − 32768` metres.
    MapLibre decodes those pixels into the mesh that moves vertices up and down.
    GPX elevations do not shape the terrain.
-2. **A Peakbagger layer is the optional surface texture.** Just before 3D
-   starts, the analyzer enumerates every layer in Peakbagger's native map
-   control that resolves to a compatible XYZ/TMS raster `TileLayer`, sending
-   the whole list plus the currently-selected layer. The renderer drapes the
-   selected layer's tile template as a MapLibre `raster` source over the DEM,
+2. **A Peakbagger layer is the optional surface texture.** Peakbagger builds
+   each 2D basemap on demand inside its `MapChange()` switch, so there is no
+   reusable per-layer object to read and only the active layer is ever present
+   on the map. To mirror the 2D menu in 3D, the analyzer maps the layer codes in
+   Peakbagger's native control to a built-in table of drape specs for the
+   well-known layers that render as CORS-clean XYZ raster tiles MapLibre can
+   sample (CalTopo, CalTopo USFS, MyTopo, ArcGIS World Topo/Imagery/Gray Canvas,
+   OpenTopoMap, OpenStreetMap). It sends that list plus the active drape — the
+   shared spec when the selected layer has one, otherwise the live selected
+   layer read from Leaflet, so a supported national basemap still drapes. The
+   renderer drapes the active layer as a MapLibre `raster` source over the DEM
    and offers the rest in an on-map **drape picker** so you can switch the
-   texture (roads, contours, imagery) without leaving 3D. A layer whose tiles
-   are all blocked by the provider's cross-origin policy can't be draped; the
+   texture (roads, contours, imagery) without leaving 3D. WMS, dynamic-contour,
+   and Google/Bing layers cannot drape and stay 2D-only. A layer whose tiles are
+   all blocked by the provider's cross-origin policy can't be draped; the
    renderer detects that at the first idle (the source errored and never
    delivered a tile), disables that layer in the picker with a short notice,
    and falls back to terrain-only. Partial tile gaps are kept.
@@ -504,7 +511,7 @@ worlds, but each world has a narrow job:
 Peakbagger MAIN world
   gpx-analyzer.js
   ├─ reads the route already parsed for the chart
-  ├─ enumerates the compatible Leaflet TileLayers (selected + the rest)
+  ├─ maps the native layer menu to built-in drape specs (active + the rest)
   └─ sends a bounded init message after the 3D button is clicked
               │
               ▼
@@ -537,11 +544,11 @@ worker a stable extension origin and avoids the browser-specific worker sandbox
 encountered when WebGL was attempted directly from a content script. The
 manifest exposes only that packaged HTML entrypoint to Peakbagger.
 
-### Reusing the selected Leaflet layer safely
+### Offering drape layers safely
 
 The extension does not copy a Leaflet object or accept arbitrary MapLibre style
-JSON. `gpx-analyzer.js` finds an active layer with a normal `_url` tile template
-and creates a small, transient descriptor:
+JSON. Each drape is a small, transient descriptor built from the drape table (or,
+for a national active layer without a spec, from the live Leaflet layer's `_url`):
 
 ```js
 {
@@ -555,9 +562,10 @@ and creates a small, transient descriptor:
 }
 ```
 
-Leaflet's `{s}` subdomain and `{r}` retina placeholders are resolved before the
-handoff. The extension frame then independently requires all three `{z}`, `{x}`
-and `{y}` tokens, one tile template, bounded zooms and text lengths, no URL
+Built-in specs pre-resolve any `{s}` subdomain to a fixed value; the live-layer
+fallback resolves Leaflet's `{s}` subdomain and `{r}` retina placeholders before
+the handoff. The extension frame then independently requires all three `{z}`,
+`{x}` and `{y}` tokens, one tile template, bounded zooms and text lengths, no URL
 credentials or fragment, and an HTTPS public hostname (or Peakbagger's own
 origin). IP-literal, localhost, local/internal, unknown-placeholder, and malformed URLs
 are rejected. Attribution is reduced to text and safe HTTP(S) links before it
@@ -565,18 +573,18 @@ enters MapLibre's attribution control.
 
 Compatibility is deliberately narrower than Leaflet's full plugin ecosystem:
 
-| Selected Peakbagger layer | 3D result |
+| Peakbagger 2D layer | 3D result |
 | --- | --- |
-| Standard HTTPS XYZ or TMS `TileLayer`, with provider CORS support | Draped over the terrain. |
-| Standard layer using Leaflet `{s}` or `{r}` | Placeholders are resolved, then the layer is draped. |
-| WMS, custom `GridLayer`, reverse/offset zoom, or a layer without a reusable tile URL | Terrain-only color relief and hillshade. |
+| A well-known HTTPS XYZ layer with a built-in drape spec (CalTopo, ArcGIS, OpenTopoMap, OpenStreetMap, MyTopo, …) | Offered in the picker and draped over the terrain. |
+| A national basemap that is the active layer and resolves to a standard XYZ/TMS `TileLayer` with CORS support | Draped as the active layer via the live-layer fallback (not added to the picker list). |
+| WMS, dynamic-contour image export, Google/Bing, reverse/offset zoom, or a layer without a reusable tile URL | Terrain-only color relief and hillshade. |
 | IP-literal/local, malformed, or unsupported tile URL | Rejected; terrain-only rendering continues. |
 | Valid public tile URL whose provider denies cross-origin WebGL requests | The failed raster is removed; terrain-only rendering continues. |
 
-The layer is sampled when **3D terrain** is chosen. To use a different
-layer, return to **2D map**, select it in Peakbagger, and open 3D again. This
-avoids synchronizing controls between two independent map engines and makes the
-chosen provider for each 3D session unambiguous.
+The active layer drapes when **3D terrain** is chosen; the on-map picker then
+switches between the offered layers live, without returning to 2D. Each swap
+re-arms the one-shot CORS check so a newly chosen layer is judged on its own,
+keeping the provider for the current drape unambiguous.
 
 ### Bounded DEM cache
 

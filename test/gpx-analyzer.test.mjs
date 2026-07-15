@@ -60,8 +60,9 @@ test('GPX analyzer adds a thick, segment-preserving route casing behind native L
         _url: 'https://labels.example.com/{z}/{x}/{y}.png',
         options: { zIndex: -1, attribution: 'Labels' }
     };
-    // Extra drape-able layers so the terrain picker has real choices to
-    // enumerate; L_OS has no global, so it is skipped.
+    // Peakbagger builds basemaps on demand with no per-layer global, so the 3D
+    // picker mirrors the #selmap codes via built-in drape specs rather than
+    // reading globals; every code below maps to a spec, so all four are offered.
     const calTopoLayer = {
         _url: 'https://ct.example.com/{z}/{x}/{y}.png',
         options: { minZoom: 3, maxZoom: 16, attribution: 'CalTopo' }
@@ -210,27 +211,29 @@ test('GPX analyzer adds a thick, segment-preserving route casing behind native L
     assert.deepEqual(JSON.parse(JSON.stringify(terrainInit.routeSegments)), expectedSegments);
     assert.deepEqual(Object.keys(terrainInit).sort(), ['__bpbTerrain', 'basemap', 'basemaps', 'cacheLimitMb', 'dir', 'routeSegments', 'routeStyle', 'theme', 'type']);
     assert.equal(terrainInit.cacheLimitMb, 512);
+    // The active layer (the test selects L_MT above) drapes from its shared
+    // spec so it dedupes cleanly against the picker list.
     assert.deepEqual(JSON.parse(JSON.stringify(terrainInit.basemap)), {
         name: 'MyTopo USA/Canada',
-        tiles: ['https://a.tile.example.com/{z}/{x}/{y}.png'],
+        tiles: ['https://tileserver.trimbleoutdoors.com/SecureTile/TileHandler.ashx?mapType=Topo&partnerID=12153&hash=b19f07d8-6f01-4981-9146-40875a18d2fa&x={x}&y={y}&z={z}'],
         tileSize: 256,
-        minzoom: 2,
-        maxzoom: 17,
-        scheme: 'xyz',
-        attribution: '<a href="https://example.com/copyright">© Example Maps</a>'
-    });
-    // The picker's layer list mirrors the native #selmap options that resolve
-    // to a plain XYZ raster; L_OS has no global layer, so it is dropped.
-    assert.deepEqual(JSON.parse(JSON.stringify(terrainInit.basemaps.map(basemap => basemap.name))),
-        ['CalTopo', 'MyTopo USA/Canada', 'Open Topo Map']);
-    assert.deepEqual(JSON.parse(JSON.stringify(terrainInit.basemaps[0])), {
-        name: 'CalTopo',
-        tiles: ['https://ct.example.com/{z}/{x}/{y}.png'],
-        tileSize: 256,
-        minzoom: 3,
+        minzoom: 9,
         maxzoom: 16,
         scheme: 'xyz',
-        attribution: 'CalTopo'
+        attribution: '&copy; <a href="https://mytopo.com" target="_blank" rel="noopener noreferrer">MyTopo</a>'
+    });
+    // The picker mirrors the full native #selmap menu of drape-able layers,
+    // not just the one active layer — the core of the multi-layer picker fix.
+    assert.deepEqual(JSON.parse(JSON.stringify(terrainInit.basemaps.map(basemap => basemap.name))),
+        ['CalTopo', 'MyTopo USA/Canada', 'Open Topo Map', 'Open Street Map']);
+    assert.deepEqual(JSON.parse(JSON.stringify(terrainInit.basemaps[3])), {
+        name: 'Open Street Map',
+        tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
+        tileSize: 256,
+        minzoom: 0,
+        maxzoom: 18,
+        scheme: 'xyz',
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap</a> contributors'
     });
     assert.equal(JSON.stringify(terrainInit).includes('<gpx'), false);
     assert.equal(JSON.stringify(terrainInit).includes('2026-07-10'), false);
