@@ -306,9 +306,13 @@ test('3D terrain frame validates coordinate-only routes before loading public DE
     assert.ok(map.paint.some(call => call[0] === 'bpb-route' && call[1] === 'line-color' && call[2] === '#347a3f'));
     assert.equal(window.document.getElementById('bpb-terrain-map').dataset.theme, 'light');
 
+    // A drape that loaded at least one tile must survive sparse later tile
+    // failures: one error is no longer enough to tear the whole layer down.
+    map.handlers.get('data')({ sourceId: 'basemap', dataType: 'source', tile: {} });
     map.handlers.get('error')({ sourceId: 'basemap' });
-    assert.match(window.document.querySelector('.bpb-terrain-badge').textContent, /^Terrain only/,
-        'a selected layer that fails CORS must not take down the terrain renderer');
+    map.handlers.get('idle')();
+    assert.match(window.document.querySelector('.bpb-terrain-badge').textContent, /Open Topo Map · 3D terrain/,
+        'a drape that rendered a tile must not be removed over a few failed tiles');
 
     dispatch({ type: 'destroy' });
     assert.equal(map.removed, true);
@@ -327,6 +331,27 @@ test('3D terrain frame validates coordinate-only routes before loading public DE
     await new Promise(resolve => window.queueMicrotask(resolve));
     assert.deepEqual(Object.keys(maps[1].options.style.sources), ['terrain'],
         'the extension frame must reject private-network tile templates');
+
+    // A drape whose every tile fails (e.g. a whole layer blocked by CORS)
+    // loads no tile, so it is dropped to terrain-only at the first idle.
+    dispatch({ type: 'destroy' });
+    dispatch({
+        type: 'init',
+        routeSegments,
+        basemap: {
+            name: 'Blocked Layer',
+            tiles: ['https://a.tile.example.com/{z}/{x}/{y}.png']
+        }
+    });
+    await new Promise(resolve => window.queueMicrotask(resolve));
+    const blocked = maps[2];
+    assert.match(window.document.querySelector('.bpb-terrain-badge').textContent, /Blocked Layer · 3D terrain/,
+        'the drape badge starts on the layer name before any tile is attempted');
+    blocked.handlers.get('error')({ sourceId: 'basemap' });
+    blocked.handlers.get('error')({ sourceId: 'basemap' });
+    blocked.handlers.get('idle')();
+    assert.match(window.document.querySelector('.bpb-terrain-badge').textContent, /^Terrain only/,
+        'a drape whose every tile fails is dropped to terrain-only at the first idle');
 
     dom.window.close();
 });
