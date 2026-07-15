@@ -1519,7 +1519,9 @@
         // 5. Native DOM XML Extraction Engine
         scheduleMapLayerSync();
         try {
-            const xml = new DOMParser().parseFromString(await (await fetch(gpxLink.href)).text(), "text/xml");
+            const response = await fetch(gpxLink.href);
+            if (!response.ok) return stats.textContent = `The GPS track download failed (HTTP ${response.status}).`;
+            const xml = new DOMParser().parseFromString(await response.text(), "text/xml");
             const trkpts = Array.from(xml.querySelectorAll('trkpt'));
             if (!trkpts.length) return stats.innerText = "No track points found.";
 

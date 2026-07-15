@@ -108,7 +108,7 @@ test('GPX analyzer adds a thick, segment-preserving route casing behind native L
 
     window.matchMedia = () => ({ matches: false });
     window.HTMLCanvasElement.prototype.getContext = () => ({});
-    window.fetch = async () => ({ text: async () => gpx });
+    window.fetch = async () => ({ ok: true, text: async () => gpx });
     window.Chart = class ChartStub {
         constructor(context, config) {
             this.data = config.data;
@@ -314,6 +314,38 @@ test('GPX analyzer adds a thick, segment-preserving route casing behind native L
 
     assert.equal(map.layers.length, 0, 'layers from the discarded map should be removed');
     assert.equal(reloadedMap.layers.length, 2, 'route casing should be recreated on the new map');
+
+    dom.window.close();
+});
+
+test('a failed GPS track download reports the HTTP error instead of a parse message', async () => {
+    const dom = new JSDOM(`<!doctype html><body>
+      <p><a href="https://www.peakbagger.com/demo.gpx">Download this GPS track</a></p>
+    </body>`, {
+        url: 'https://www.peakbagger.com/climber/ascent.aspx?aid=1',
+        runScripts: 'outside-only',
+        pretendToBeVisual: true
+    });
+    const { window } = dom;
+    window.matchMedia = () => ({ matches: false });
+    window.HTMLCanvasElement.prototype.getContext = () => ({});
+    window.fetch = async () => ({ ok: false, status: 404, text: async () => 'not found' });
+    window.Chart = class ChartStub { destroy() {} };
+    window.postMessage = message => {
+        if (!message || message.dir !== 'toCS' || message.kind !== 'get') return;
+        window.queueMicrotask(() => window.dispatchEvent(new window.MessageEvent('message', {
+            source: window,
+            origin: window.location.origin,
+            data: { __bpb: true, dir: 'toPage', settings: { units: 'imperial', theme: 'light' } }
+        })));
+    };
+
+    Object.defineProperty(window.document, 'readyState', { configurable: true, value: 'complete' });
+    window.eval(analyzerSource);
+    const analysisText = () => window.document.getElementById('bpb-gpx-analysis')?.textContent || '';
+    await waitFor(dom, () => analysisText().includes('HTTP 404'));
+    assert.match(analysisText(), /The GPS track download failed \(HTTP 404\)\./);
+    assert.doesNotMatch(analysisText(), /No track points found/);
 
     dom.window.close();
 });
