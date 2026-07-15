@@ -86,6 +86,7 @@
       ],
       "js": [
         "vendor/chart.umd.min.js",
+        "src/gpx-metrics.js",
         "src/gpx-analyzer.js"
       ],
       "run_at": "document_end",
