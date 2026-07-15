@@ -116,6 +116,22 @@ test('every dark-theme text/background pair meets WCAG AA', () => {
     }
 });
 
+test('dark theme preserves the native mountain motif behind page content', () => {
+    const body = RULES.get(`${P} body`);
+    const motif = RULES.get(`${P} body::before`);
+
+    assert.equal(body['background-image'], 'none', 'the opaque native tile must not paint directly');
+    assert.equal(body.position, 'relative', 'the body must contain the decorative layer');
+    assert.equal(body['z-index'], '0', 'the body must isolate the negative decorative layer');
+    assert.equal(motif['background-image'], 'url("/image/mewallp.gif")');
+    assert.equal(motif['background-repeat'], 'repeat');
+    assert.match(motif.filter, /invert\(1\).*brightness\(4\)/);
+    assert.equal(motif['mix-blend-mode'], 'screen');
+    assert.ok(Number(motif.opacity) <= 0.1, 'the motif must remain subordinate to text');
+    assert.equal(motif['z-index'], '-1', 'the motif must paint behind page content');
+    assert.equal(motif['pointer-events'], 'none', 'the motif must never intercept input');
+});
+
 // The header banner sits on the untouched, light header.jpg photo. Its links
 // must stay dark, not the light-on-dark link color used elsewhere (which washed
 // out over the photo — the bug this guards against). A solid contrast target is

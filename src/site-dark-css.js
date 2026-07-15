@@ -23,9 +23,29 @@ html[data-bpb-theme="dark"] {
 }
 
 html[data-bpb-theme="dark"] body {
-    background: #181a1b !important;      /* overrides the mewallp.gif wallpaper */
+    position: relative;
+    z-index: 0;
+    background-color: #181a1b !important;
     background-image: none !important;
     color: #c7c1b8 !important;
+}
+
+/* Keep Peakbagger's mountain wallpaper as a quiet part of the site's identity.
+   The source GIF is an opaque white tile, so render a filtered copy behind all
+   page content: white becomes black (invisible with screen blending) while its
+   pale contour lines become a restrained highlight over the unchanged dark
+   base. The low opacity keeps the motif subordinate to text. */
+html[data-bpb-theme="dark"] body::before {
+    content: "";
+    position: absolute;
+    z-index: -1;
+    inset: 0;
+    background-image: url("/image/mewallp.gif");
+    background-repeat: repeat;
+    filter: invert(1) brightness(4);
+    mix-blend-mode: screen;
+    opacity: 0.1;
+    pointer-events: none;
 }
 
 /* Links (navy / purple -> readable on dark) */
