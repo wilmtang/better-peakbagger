@@ -577,7 +577,7 @@ MapLibre custom protocol and stores them in a dedicated CacheStorage cache.
 This makes reuse explicit across short-lived 3D frames and gives it a predictable
 ceiling.
 
-The default limit is **256 MB**, configurable from 0–2048 MB in Settings; 0
+The default limit is **512 MB**, configurable from 0–2048 MB in Settings; 0
 disables and clears the owned DEM cache on the next 3D load. An LRU index in
 `storage.local` tracks byte size and last use. Writes and eviction run off the
 render-critical network path, so cache bookkeeping cannot turn a usable tile
@@ -829,7 +829,7 @@ Settings shape (`chrome.storage.sync`, key `bpbSettings`):
   mapRouteCasingColor: '#rrggbb', mapRouteCasingWidth: 3..20, // defaults #ffffff / 9
   mapViewportWidth: 320..4096,     // pixels; default 450; capped by parent
   mapViewportHeight: 240..720,     // pixels; default 450; reset restores both
-  terrainCacheLimitMb: 0..2048,    // default 256; best-effort local DEM cache
+  terrainCacheLimitMb: 0..2048,    // default 512; best-effort local DEM cache
   rememberMapLayer: boolean,       // opt-in; default false
   mapLastLayer: '' | known layer ID,
   betaTr: boolean,                  // "has beta" counts a trip report…

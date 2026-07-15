@@ -186,14 +186,14 @@ test('map layer memory is opt-in and disabling it forgets the saved layer', asyn
 
 test('3D terrain cache has a bounded local-storage limit setting', async () => {
     const defaultDom = await loadOptions({});
-    assert.equal(el(defaultDom, 'terrain-cache-limit').value, '256');
+    assert.equal(el(defaultDom, 'terrain-cache-limit').value, '512');
 
     const invalidDom = await loadOptions({ terrainCacheLimitMb: 9000 });
     assert.equal(el(invalidDom, 'terrain-cache-limit').value, '2048');
 
-    const dom = await loadOptions({ terrainCacheLimitMb: 512 });
+    const dom = await loadOptions({ terrainCacheLimitMb: 768 });
     const limit = el(dom, 'terrain-cache-limit');
-    assert.equal(limit.value, '512');
+    assert.equal(limit.value, '768');
     limit.value = '0';
     limit.dispatchEvent(new dom.window.Event('change'));
     await new Promise(r => dom.window.setTimeout(r, 10));

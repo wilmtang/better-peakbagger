@@ -27,7 +27,7 @@
         mapRouteColor: '#d9483b', mapRouteWidth: 5,
         mapRouteCasingColor: '#ffffff', mapRouteCasingWidth: 9,
         mapViewportWidth: 450, mapViewportHeight: 450,
-        terrainCacheLimitMb: 256,
+        terrainCacheLimitMb: 512,
         rememberMapLayer: false, mapLastLayer: '',
         // What the ascent filter's "Has beta" chip counts: an ascent
         // qualifies if it has any of the enabled signals.

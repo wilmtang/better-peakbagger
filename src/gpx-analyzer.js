@@ -37,7 +37,7 @@
     const MAP_VIEWPORT_MAX_HEIGHT = 720;
     const MAP_RESIZE_RAIL_HEIGHT = 18;
     const TERRAIN_LOAD_TIMEOUT_MS = 17000;
-    const TERRAIN_CACHE_DEFAULT_MB = 256;
+    const TERRAIN_CACHE_DEFAULT_MB = 512;
 
     const toRad = x => x * Math.PI / 180;
 

@@ -199,7 +199,7 @@ test('GPX analyzer adds a thick, segment-preserving route casing behind native L
     const terrainInit = terrainMessages.find(message => message.type === 'init');
     assert.deepEqual(JSON.parse(JSON.stringify(terrainInit.routeSegments)), expectedSegments);
     assert.deepEqual(Object.keys(terrainInit).sort(), ['__bpbTerrain', 'basemap', 'cacheLimitMb', 'dir', 'routeSegments', 'routeStyle', 'theme', 'type']);
-    assert.equal(terrainInit.cacheLimitMb, 256);
+    assert.equal(terrainInit.cacheLimitMb, 512);
     assert.deepEqual(JSON.parse(JSON.stringify(terrainInit.basemap)), {
         name: 'MyTopo USA/Canada',
         tiles: ['https://a.tile.example.com/{z}/{x}/{y}.png'],
