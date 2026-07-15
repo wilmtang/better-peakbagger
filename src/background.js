@@ -332,7 +332,11 @@ if (typeof importScripts === 'function') {
         if (processes.has(tabId)) {
             await processes.get(tabId);
             const completed = (await readMap(JOBS_KEY))[tabId];
-            if (sameCapturePreferences(completed?.capturePreferences, capturePreferences)) return publicJob(completed);
+            const completedSameActivity = completed && completed.provider === activity.provider
+                && completed.activityId === activity.activityId;
+            if (completedSameActivity && sameCapturePreferences(completed.capturePreferences, capturePreferences)) {
+                return publicJob(completed);
+            }
         }
         const terminalPhases = new Set(['ready', 'no-matches', 'error', 'opened', 'previewed']);
         if (!message.force && sameActivity && sameCapturePreferences(current.capturePreferences, capturePreferences)

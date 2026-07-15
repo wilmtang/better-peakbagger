@@ -17,7 +17,7 @@ const event = () => {
     return { listeners, addListener: listener => listeners.push(listener) };
 };
 
-const createHarness = ({ peakXml = null, captureResult = null, ownershipResult = null, settings = {} } = {}) => {
+const createHarness = ({ peakXml = null, captureResult = null, ownershipResult = null, settings = {}, beforePeakFetch = null } = {}) => {
     const values = {};
     const syncValues = { bpbSettings: structuredClone(settings) };
     const tabs = new Map([[1, {
@@ -97,6 +97,7 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
             return { ok: true, text: async () => '<a href="climber/climber.aspx?cid=77">My Home Page</a>' };
         }
         if (value.includes('/Async/pllbb2.aspx')) {
+            if (beforePeakFetch) await beforePeakFetch();
             return {
                 ok: true,
                 text: async () => peakXml || '<p><t i="7" n="Test Peak" a="0" o="0" e="426.51" r="100" l="Test Range"/></p>'
@@ -162,6 +163,37 @@ test('background capture persists a private job, opens grouped drafts, and previ
 
     const duplicate = await harness.send({ type: 'DRAFT_PREVIEW_STARTED', jobId: apply.jobId, pid: 7, cid: 77 }, { tab: { id: 100 } });
     assert.equal(duplicate.ok, false);
+});
+
+test('a capture that finishes for a different activity is not reused after navigation', async () => {
+    let releasePeakFetch;
+    const peakFetchGate = new Promise(resolve => { releasePeakFetch = resolve; });
+    const harness = createHarness({ beforePeakFetch: () => peakFetchGate });
+    const until = async predicate => {
+        const deadline = Date.now() + 2000;
+        while (!predicate()) {
+            if (Date.now() > deadline) throw new Error('condition not reached');
+            await new Promise(resolve => setTimeout(resolve, 1));
+        }
+    };
+
+    // Hold the first capture at the summit lookup, navigate the tab to a
+    // different activity, then request a capture for the new activity. The
+    // second request must be parked on the still-pending first process before
+    // the lookup is released, or it would resolve through the (already
+    // guarded) same-activity fast path instead of the in-flight one.
+    const first = harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    await until(() => harness.fetchCalls.some(call => call.includes('/Async/pllbb2.aspx')));
+    harness.tabs.get(1).url = 'https://www.strava.com/activities/456';
+    const second = harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    await new Promise(resolve => setTimeout(resolve, 50));
+    releasePeakFetch();
+
+    const firstJob = await first;
+    const secondJob = await second;
+    assert.equal(firstJob.phase, 'ready');
+    assert.notEqual(secondJob.id, firstJob.id,
+        'the completed job for the previous activity must not answer a capture of the new activity');
 });
 
 test('same-day suffixes include only selected ascents and follow track order', async () => {
