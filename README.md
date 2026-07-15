@@ -750,7 +750,7 @@ Trade-offs, stated honestly:
 - **Coverage.** Peakbagger is a large, old-school site; the stylesheet targets the common structural elements (body, tables, links, headings, form controls, legacy `bgcolor` cells). A rarely-visited page may show a stray light element — file it and it's a one-line addition.
 - **Stacking with other dark extensions.** If you also run a global dark-mode extension (e.g. Dark Reader), whitelist Peakbagger there so the two don't double up.
 
-The options page themes itself with the same `data-bpb-theme` mechanism (CSS variables under `:root[data-bpb-theme="dark"]`).
+The options page themes itself with the same `data-bpb-theme` mechanism (CSS variables under `:root[data-bpb-theme="dark"]`). Its head loads `options/theme.js` before the stylesheet so a synchronous extension-origin `localStorage` mirror can set the theme before first paint; `chrome.storage.sync` remains authoritative and reconciles the mirror after load.
 
 ---
 
@@ -773,7 +773,8 @@ popup/                   activity capture, confidence list, and draft selection 
 options/
   options.html           settings UI
   options.css            themed via data-bpb-theme + CSS variables
-  options.js             load/save + self-theming
+  theme.js               synchronous pre-paint theme bootstrap
+  options.js             load/save + authoritative theme reconciliation
 src/
   settings.js            shared chrome.storage core (window.BPBSettings)
   theme.js               injects the dark <style> + sets data-bpb-theme on <html>

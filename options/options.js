@@ -8,7 +8,7 @@
     const S = window.BPBSettings;
     const TerrainCache = window.BPBTerrainCache;
     const extensionApi = (typeof browser !== 'undefined' && browser.storage) ? browser : chrome;
-    const root = document.documentElement;
+    const Theme = window.BPBOptionsTheme;
     const unitsEl = document.getElementById('units');
     const themeEl = document.getElementById('theme');
     const enable3dMapEl = document.getElementById('enable-3d-map');
@@ -33,7 +33,7 @@
     const betaLinkEl = document.getElementById('beta-link');
     const statusEl = document.getElementById('status');
 
-    const applyTheme = theme => root.setAttribute('data-bpb-theme', S.resolveTheme(theme));
+    const applyTheme = theme => Theme.apply(theme);
 
     let statusTimer = null;
     const flash = (msg = 'Saved') => {

@@ -36,23 +36,51 @@ const makeCacheStorage = (initial = {}) => {
     };
 };
 
-const loadOptions = async (settings = {}, { cacheStorage = makeCacheStorage(), local = {} } = {}) => {
+const loadOptions = async (settings = {}, {
+    cacheStorage = makeCacheStorage(),
+    local = {},
+    cachedTheme = null
+} = {}) => {
     const html = await readFile(path.join(root, 'options', 'options.html'), 'utf8');
     const dom = new JSDOM(html, {
-        url: 'chrome-extension://bpb/options/options.html',
+        // jsdom treats extension URLs as opaque origins, unlike real browsers,
+        // so use a stable test origin to exercise the synchronous theme mirror.
+        url: 'https://options.better-peakbagger.test/options/options.html',
         runScripts: 'outside-only'
     });
     dom.chrome = makeChromeStub({ bpbSettings: settings }, local);
     dom.window.chrome = dom.chrome;
     dom.window.caches = cacheStorage;
     dom.window.eval(await readFile(path.join(root, 'src', 'terrain-cache.js'), 'utf8'));
+    if (cachedTheme !== null) dom.window.localStorage.setItem('bpbThemePref', cachedTheme);
     dom.window.eval(await readFile(path.join(root, 'src', 'settings.js'), 'utf8'));
+    dom.window.eval(await readFile(path.join(root, 'options', 'theme.js'), 'utf8'));
+    dom.initialTheme = dom.window.document.documentElement.getAttribute('data-bpb-theme');
     dom.window.eval(await readFile(path.join(root, 'options', 'options.js'), 'utf8'));
     await new Promise(r => dom.window.setTimeout(r, 20)); // S.get().then(populate)
     return dom;
 };
 
 const el = (dom, id) => dom.window.document.getElementById(id);
+
+test('theme bootstrap loads before the options stylesheet', async () => {
+    const dom = await loadOptions({});
+    const resources = Array.from(dom.window.document.head.querySelectorAll('script[src], link[rel="stylesheet"]'))
+        .map(node => node.getAttribute('src') || node.getAttribute('href'));
+    assert.deepEqual(resources, ['../src/settings.js', 'theme.js', 'options.css']);
+});
+
+test('cached dark theme is applied before the asynchronous settings read', async () => {
+    const dom = await loadOptions({ theme: 'dark' }, { cachedTheme: 'dark' });
+    assert.equal(dom.initialTheme, 'dark');
+    assert.equal(dom.window.document.documentElement.getAttribute('data-bpb-theme'), 'dark');
+});
+
+test('the authoritative theme refreshes the pre-paint cache', async () => {
+    const dom = await loadOptions({ theme: 'dark' });
+    assert.equal(dom.window.document.documentElement.getAttribute('data-bpb-theme'), 'dark');
+    assert.equal(dom.window.localStorage.getItem('bpbThemePref'), 'dark');
+});
 
 test('settings are grouped by the surface they affect', async () => {
     const dom = await loadOptions({});
