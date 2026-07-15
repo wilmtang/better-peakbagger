@@ -9,6 +9,7 @@
     const root = document.documentElement;
     const unitsEl = document.getElementById('units');
     const themeEl = document.getElementById('theme');
+    const enable3dMapEl = document.getElementById('enable-3d-map');
     const retainWaypointsEl = document.getElementById('retain-waypoints');
     const fillTripInfoEl = document.getElementById('fill-trip-info');
     const fillWildernessNightsEl = document.getElementById('fill-wilderness-nights');
@@ -41,6 +42,7 @@
     const populate = settings => {
         unitsEl.value = settings.units;
         themeEl.value = settings.theme;
+        enable3dMapEl.checked = settings.enable3dMap;
         retainWaypointsEl.checked = settings.retainWaypoints;
         fillTripInfoEl.checked = settings.fillTripInfo;
         fillWildernessNightsEl.checked = settings.fillWildernessNights;
@@ -74,6 +76,7 @@
 
     unitsEl.addEventListener('change', () => save({ units: unitsEl.value }));
     themeEl.addEventListener('change', () => save({ theme: themeEl.value }));
+    enable3dMapEl.addEventListener('change', () => save({ enable3dMap: enable3dMapEl.checked }));
     retainWaypointsEl.addEventListener('change', () => save({ retainWaypoints: retainWaypointsEl.checked }));
     fillTripInfoEl.addEventListener('change', () => save({ fillTripInfo: fillTripInfoEl.checked }));
     fillWildernessNightsEl.addEventListener('change', () => save({ fillWildernessNights: fillWildernessNightsEl.checked }));

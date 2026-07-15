@@ -12,7 +12,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const terrainBridgeSource = await readFile(path.join(root, 'src', 'terrain-map.js'), 'utf8');
 const terrainFrameSource = await readFile(path.join(root, 'src', 'terrain-frame.js'), 'utf8');
 
-test('3D terrain waits for the extension frame handshake before sending route coordinates', () => {
+test('3D terrain waits for the extension frame handshake before sending route coordinates', async () => {
     const dom = new JSDOM(`<!doctype html><body>
       <div id="bpb-map-viewport">
         <iframe src="https://www.peakbagger.com/map/MasterMap.aspx"></iframe>
@@ -24,7 +24,12 @@ test('3D terrain waits for the extension frame handshake before sending route co
     const { window } = dom;
     const pageMessages = [];
     const frameMessages = [];
+    let settingsListener = null;
     window.chrome = { runtime: { getURL: path => `chrome-extension://test-id/${path}` } };
+    window.BPBSettings = {
+        get: async () => ({ enable3dMap: true }),
+        subscribe(listener) { settingsListener = listener; return () => {}; }
+    };
     window.postMessage = message => { pageMessages.push(message); };
     window.eval(terrainBridgeSource);
 
@@ -44,6 +49,7 @@ test('3D terrain waits for the extension frame handshake before sending route co
             tiles: ['https://a.tile.example.com/{z}/{x}/{y}.png']
         }
     });
+    await new Promise(resolve => window.setTimeout(resolve, 0));
 
     const frame = window.document.getElementById('bpb-terrain-frame');
     assert.ok(frame);
@@ -74,9 +80,90 @@ test('3D terrain waits for the extension frame handshake before sending route co
     assert.equal(frame.style.pointerEvents, 'auto');
     assert.equal(pageMessages.at(-1).type, 'loaded');
 
+    settingsListener({ enable3dMap: false });
+    assert.equal(window.document.getElementById('bpb-terrain-frame'), null);
+    assert.equal(pageMessages.at(-1).type, 'error');
+    assert.equal(pageMessages.at(-1).reason, 'unavailable');
+
     dispatchPage({ type: 'destroy' });
     assert.equal(window.document.getElementById('bpb-terrain-frame'), null);
     assert.equal(pageMessages.at(-1).type, 'destroyed');
+    dom.window.close();
+});
+
+test('3D terrain bridge refuses page requests unless the stored feature gate is enabled', async () => {
+    const dom = new JSDOM(`<!doctype html><body>
+      <div id="bpb-map-viewport">
+        <iframe src="https://www.peakbagger.com/map/MasterMap.aspx"></iframe>
+      </div>
+    </body>`, {
+        url: 'https://www.peakbagger.com/climber/ascent.aspx?aid=1',
+        runScripts: 'outside-only'
+    });
+    const { window } = dom;
+    const messages = [];
+    window.chrome = { runtime: { getURL: path => `chrome-extension://test-id/${path}` } };
+    window.BPBSettings = {
+        get: async () => ({ enable3dMap: false }),
+        subscribe() { return () => {}; }
+    };
+    window.postMessage = message => { messages.push(message); };
+    window.eval(terrainBridgeSource);
+
+    window.dispatchEvent(new window.MessageEvent('message', {
+        source: window,
+        origin: window.location.origin,
+        data: {
+            __bpbTerrain: true,
+            dir: 'toCS',
+            type: 'init',
+            routeSegments: [[[48.7, -121.8], [48.71, -121.81]]]
+        }
+    }));
+    await new Promise(resolve => window.setTimeout(resolve, 0));
+
+    assert.equal(window.document.getElementById('bpb-terrain-frame'), null);
+    assert.equal(messages.at(-1).type, 'error');
+    assert.equal(messages.at(-1).reason, 'unavailable');
+    dom.window.close();
+});
+
+test('a newer feature-gate push wins over a stale initial storage read', async () => {
+    const dom = new JSDOM(`<!doctype html><body>
+      <div id="bpb-map-viewport">
+        <iframe src="https://www.peakbagger.com/map/MasterMap.aspx"></iframe>
+      </div>
+    </body>`, {
+        url: 'https://www.peakbagger.com/climber/ascent.aspx?aid=1',
+        runScripts: 'outside-only'
+    });
+    const { window } = dom;
+    let resolveInitialSettings;
+    let settingsListener;
+    window.chrome = { runtime: { getURL: path => `chrome-extension://test-id/${path}` } };
+    window.BPBSettings = {
+        get: () => new Promise(resolve => { resolveInitialSettings = resolve; }),
+        subscribe(listener) { settingsListener = listener; return () => {}; }
+    };
+    window.postMessage = () => {};
+    window.eval(terrainBridgeSource);
+
+    settingsListener({ enable3dMap: true });
+    window.dispatchEvent(new window.MessageEvent('message', {
+        source: window,
+        origin: window.location.origin,
+        data: {
+            __bpbTerrain: true,
+            dir: 'toCS',
+            type: 'init',
+            routeSegments: [[[48.7, -121.8], [48.71, -121.81]]]
+        }
+    }));
+    resolveInitialSettings({ enable3dMap: false });
+    await new Promise(resolve => window.setTimeout(resolve, 0));
+
+    assert.ok(window.document.getElementById('bpb-terrain-frame'),
+        'the stale initial read must not undo the newer enabled setting');
     dom.window.close();
 });
 

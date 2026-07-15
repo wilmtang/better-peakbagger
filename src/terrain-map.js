@@ -14,6 +14,8 @@
 
     let frame = null;
     let pendingInit = null;
+    let terrainEnabled = false;
+    let settingsRevision = 0;
 
     const postToPage = (type, detail = {}) => window.postMessage({
         [PAGE_MESSAGE_TAG]: true,
@@ -44,8 +46,34 @@
         postToPage('error', { reason: ALLOWED_FAILURES.has(reason) ? reason : 'renderer' });
     };
 
-    const createFrame = data => {
+    const applySettings = settings => {
+        terrainEnabled = settings && settings.enable3dMap === true;
+        if (!terrainEnabled && frame) fail('unavailable');
+    };
+
+    const initialSettingsRevision = settingsRevision;
+    const settingsReady = globalThis.BPBSettings
+        ? globalThis.BPBSettings.get().then(settings => {
+            // A storage push can beat the initial async read. Never let that
+            // stale read override the newer feature-gate value.
+            if (settingsRevision === initialSettingsRevision) applySettings(settings);
+        }, () => {
+            if (settingsRevision === initialSettingsRevision) terrainEnabled = false;
+        })
+        : Promise.resolve();
+
+    if (globalThis.BPBSettings) globalThis.BPBSettings.subscribe(settings => {
+        settingsRevision++;
+        applySettings(settings);
+    });
+
+    const createFrame = async data => {
+        await settingsReady;
         if (frame) return;
+        if (!terrainEnabled) {
+            fail('unavailable');
+            return;
+        }
         const viewport = document.getElementById('bpb-map-viewport');
         const nativeMap = viewport && viewport.querySelector('iframe[src*="MasterMap.aspx" i]');
         if (!viewport || !nativeMap || !globalThis.chrome?.runtime?.getURL) {

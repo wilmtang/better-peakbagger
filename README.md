@@ -72,8 +72,9 @@ highlights, click details, or trip-report links. **3D terrain** opens an
 extension-owned MapLibre view of the same route at true vertical scale.
 Mapterhorn supplies the elevation model; when Peakbagger's selected Leaflet
 layer is a compatible raster layer, that same map is draped over the terrain.
-Tile requests begin only after a per-page privacy notice, and Peakbagger's 2D
-map remains the immediate fallback.
+The experimental feature is off by default and appears only after you enable it
+in Settings. Tile requests begin only after a per-page privacy notice, and
+Peakbagger's 2D map remains the immediate fallback.
 
 ![Three-day GPX analysis with a high-contrast route and chart-synchronized Leaflet marker](store-assets/showcase-gpx-map-sync.gif)
 
@@ -102,7 +103,8 @@ scene instead of landing on a fixed, quickly stale image.
 Use a site-wide dark theme that follows your system or stays light or dark.
 Shared settings also control units, the GPX chart's default view, route
 appearance, map size, the best-effort 3D elevation cache, optional map-layer
-memory, and which signals count as ascent beta. Activity-capture settings
+memory, the off-by-default experimental 3D map, and which signals count as
+ascent beta. Activity-capture settings
 control waypoint retention plus automatic Trip Info and wilderness-night
 filling. Changes apply to open Peakbagger tabs immediately and to the next
 activity capture.
@@ -483,7 +485,10 @@ horizontal metre. That restraint matters for route planning because the common
 
 ### Activation and browser boundaries
 
-The feature crosses three JavaScript worlds, but each world has a narrow job:
+The feature must first be enabled with **Enable experimental 3D map** in
+Settings. That stored preference only exposes the per-page 3D control; it does
+not request tiles. The feature then crosses three JavaScript worlds, but each
+world has a narrow job:
 
 ```text
 Peakbagger MAIN world
@@ -495,6 +500,7 @@ Peakbagger MAIN world
               ▼
 isolated extension world
   terrain-map.js
+  ├─ independently checks the stored feature gate
   ├─ creates terrain/terrain.html
   ├─ waits for the frame's explicit "ready" handshake
   └─ relays init, style, hover, and destroy messages
@@ -588,8 +594,9 @@ Leaflet basemap tiles continue to follow their provider's own cache policy.
 
 ### Privacy, failure, and teardown
 
-No 3D request occurs on page load or when the notice is merely opened. Only
-**Load 3D terrain** starts MapLibre. Mapterhorn then receives tile coordinates
+No 3D request occurs while the experimental setting is off, on page load, or
+when the notice is merely opened. Only **Load 3D terrain** starts MapLibre.
+Mapterhorn, a third-party elevation service, then receives DEM tile coordinates
 for the viewed area plus ordinary request metadata under its
 [privacy policy](https://mapterhorn.com/privacy-policy/). When a compatible
 selected map is used, its existing provider also receives a new set of tile
@@ -813,6 +820,7 @@ Settings shape (`chrome.storage.sync`, key `bpbSettings`):
 ```js
 { units: 'auto' | 'imperial' | 'metric',
   theme: 'system' | 'light' | 'dark',
+  enable3dMap: boolean,              // experimental; default false
   retainWaypoints: boolean,         // default true; allowlists waypoint coordinates/names
   fillTripInfo: boolean,            // default true; multiple selected peaks
   fillWildernessNights: boolean,    // default true; overnight single-peak capture
@@ -911,7 +919,8 @@ the Peakbagger summit lookup and GPS Preview actions described below.
 - **GPS Preview:** only after you choose **Open drafts**, Peakbagger receives a
   newly serialized GPX containing latitude, longitude, and segment boundaries,
   plus waypoint coordinates/names by default, reduced to at most 3,000 total points.
-- **3D terrain:** only after you choose **Load 3D terrain**, Mapterhorn receives
+- **3D terrain:** the feature is off by default. After you enable it in Settings
+  and choose **Load 3D terrain**, the third-party Mapterhorn service receives DEM
   tile requests covering the route area and subsequent map movements. A
   compatible selected Leaflet provider also receives raster requests for the 3D
   camera's view. The renderer receives coordinate segments plus a bounded,

@@ -351,7 +351,7 @@
 
     // Bridge client: swaps settings with the isolated-world bridge over postMessage.
     const BPB = (() => {
-        const FALLBACK = { units: 'auto', theme: 'system' };
+        const FALLBACK = { units: 'auto', theme: 'system', enable3dMap: false };
         let settings = null;
         const subs = new Set();
         let resolveReady;
@@ -820,6 +820,15 @@
 
         const updateTerrainButton = () => {
             const hasRoute = mapRouteSegments.length > 0;
+            if (BPB.get().enable3dMap !== true) {
+                terrainButton.disabled = true;
+                terrainButton.textContent = '3D terrain';
+                terrainButton.title = 'Enable the experimental 3D map in Better Peakbagger settings';
+                terrainButton.setAttribute('aria-pressed', 'false');
+                terrainButton.style.cursor = 'default';
+                terrainButton.style.opacity = '0.55';
+                return;
+            }
             if (terrainState === 'loading') {
                 terrainButton.disabled = true;
                 terrainButton.textContent = 'Loading 3D…';
@@ -865,7 +874,8 @@
         })[reason] || '3D terrain could not load. The 2D map is unchanged.';
 
         const startTerrain = () => {
-            if (terrainState !== 'idle' || !mapViewport || !mapIframe || !mapRouteSegments.length) return;
+            if (BPB.get().enable3dMap !== true
+                || terrainState !== 'idle' || !mapViewport || !mapIframe || !mapRouteSegments.length) return;
             terrainState = 'loading';
             terrainDisclosure.style.display = 'none';
             showTerrainMessage('Loading 3D terrain…');
@@ -888,6 +898,17 @@
             restoreNativeMap();
             postTerrain('destroy');
             showTerrainMessage('');
+            updateTerrainButton();
+        };
+
+        const syncTerrainAvailability = settings => {
+            const enabled = settings.enable3dMap === true;
+            terrainButton.hidden = !enabled;
+            if (!enabled) {
+                terrainDisclosure.style.display = 'none';
+                if (terrainState === 'loading' || terrainState === 'active') stopTerrain();
+                else showTerrainMessage('');
+            }
             updateTerrainButton();
         };
 
@@ -933,7 +954,7 @@
             }
         });
 
-        updateTerrainButton();
+        syncTerrainAvailability(BPB.get());
 
         const findMapIframe = () => document.querySelector('iframe[src*="MasterMap.aspx"], iframe[src*="mastermap.aspx"]');
 
@@ -1461,6 +1482,7 @@
                 removeRouteOverlay();
                 scheduleRouteOverlay();
             }
+            if (changed(['enable3dMap'])) syncTerrainAvailability(settings);
             if (terrainState === 'loading' || terrainState === 'active') {
                 if (changed(['mapRouteColor', 'mapRouteWidth', 'mapRouteCasingColor', 'mapRouteCasingWidth', 'theme'])) {
                     postTerrain('update', {

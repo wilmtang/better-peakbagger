@@ -136,7 +136,7 @@ test('GPX analyzer adds a thick, segment-preserving route casing behind native L
             return;
         }
         if (message.kind !== 'get') return;
-        sendSettings({ units: 'imperial', theme: 'light', chartDefaultSeries: 'both' });
+        sendSettings({ units: 'imperial', theme: 'light', chartDefaultSeries: 'both', enable3dMap: true });
     };
 
     Object.defineProperty(window.document, 'readyState', { configurable: true, value: 'complete' });
@@ -222,12 +222,15 @@ test('GPX analyzer adds a thick, segment-preserving route casing behind native L
     assert.equal(terrainToggle.textContent, '2D map');
     assert.equal(terrainToggle.getAttribute('aria-pressed'), 'true');
 
-    terrainToggle.click();
+    sendSettings({ units: 'imperial', theme: 'light', chartDefaultSeries: 'both', enable3dMap: false });
+    await waitFor(dom, () => terrainToggle.hidden);
     assert.equal(iframe.style.visibility, 'visible');
     assert.equal(iframe.hasAttribute('aria-hidden'), false);
     assert.equal(terrainMessages.at(-1).type, 'destroy');
     assert.equal(terrainToggle.textContent, '3D terrain');
 
+    sendSettings({ units: 'imperial', theme: 'light', chartDefaultSeries: 'both', enable3dMap: true });
+    await waitFor(dom, () => !terrainToggle.hidden);
     terrainToggle.click();
     await waitFor(dom, () => terrainMessages.filter(message => message.type === 'init').length === 2);
     window.dispatchEvent(new window.MessageEvent('message', {
@@ -244,7 +247,7 @@ test('GPX analyzer adds a thick, segment-preserving route casing behind native L
         mapRouteColor: '#2457a7', mapRouteWidth: 7,
         mapRouteCasingColor: '#f1eadc', mapRouteCasingWidth: 13,
         mapViewportWidth: 700, mapViewportHeight: 600,
-        rememberMapLayer: true, mapLastLayer: 'L_OT'
+        rememberMapLayer: true, mapLastLayer: 'L_OT', enable3dMap: true
     });
     await waitFor(dom, () => polylineCalls.length === 4);
     await waitFor(dom, () => layerSelect.value === 'L_OT');

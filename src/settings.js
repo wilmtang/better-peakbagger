@@ -16,6 +16,7 @@
     const MAP_LAYERS = new Set(['L_CT', 'L_MT', 'L_FS', 'L_3D', 'L_SN', 'L_AG', 'L_OT', 'L_OS', 'L_AI', 'L_XX', 'B_B1', 'G_SA']);
     const DEFAULTS = {
         units: 'auto', theme: 'system',
+        enable3dMap: false,
         retainWaypoints: true,
         fillTripInfo: true,
         fillWildernessNights: true,
@@ -50,7 +51,7 @@
         const s = { ...DEFAULTS, ...(raw && typeof raw === 'object' ? raw : {}) };
         if (!['auto', 'imperial', 'metric'].includes(s.units)) s.units = DEFAULTS.units;
         if (!['system', 'light', 'dark'].includes(s.theme)) s.theme = DEFAULTS.theme;
-        for (const key of ['retainWaypoints', 'fillTripInfo', 'fillWildernessNights']) {
+        for (const key of ['enable3dMap', 'retainWaypoints', 'fillTripInfo', 'fillWildernessNights']) {
             if (typeof s[key] !== 'boolean') s[key] = DEFAULTS[key];
         }
         if (!['both', 'distance', 'time'].includes(s.chartDefaultSeries)) s.chartDefaultSeries = DEFAULTS.chartDefaultSeries;

@@ -48,6 +48,7 @@ test('settings are grouped by the surface they affect', async () => {
         assert.equal(section.querySelectorAll(':scope > .card').length, 1);
     }
     assert.ok(general.querySelector('#theme'));
+    assert.ok(general.querySelector('#enable-3d-map'));
     assert.equal(general.querySelector('#units'), null);
     for (const id of ['retain-waypoints', 'fill-trip-info', 'fill-wilderness-nights']) {
         assert.ok(capture.querySelector(`#${id}`), `${id} should belong to Activity capture`);
@@ -58,6 +59,24 @@ test('settings are grouped by the surface they affect', async () => {
     for (const id of ['beta-tr', 'beta-tr-words', 'beta-gps', 'beta-link']) {
         assert.ok(beta.querySelector(`#${id}`), `${id} should belong to Ascent beta filters`);
     }
+});
+
+test('experimental 3D map is off by default and discloses third-party DEM requests', async () => {
+    const defaultDom = await loadOptions({});
+    const checkbox = el(defaultDom, 'enable-3d-map');
+    const row = checkbox.closest('.row');
+    assert.equal(checkbox.checked, false);
+    assert.match(row.querySelector('.title').textContent, /^Enable experimental 3D map$/);
+    assert.match(row.querySelector('.experimental-badge').textContent, /^Experimental$/);
+    assert.match(row.querySelector('.desc').textContent, /elevation \(DEM\) tile requests.*Mapterhorn.*third-party service/i);
+
+    const invalidDom = await loadOptions({ enable3dMap: 'yes' });
+    assert.equal(el(invalidDom, 'enable-3d-map').checked, false);
+
+    checkbox.checked = true;
+    checkbox.dispatchEvent(new defaultDom.window.Event('change'));
+    await new Promise(r => defaultDom.window.setTimeout(r, 10));
+    assert.equal(defaultDom.chrome._store.bpbSettings.enable3dMap, true);
 });
 
 test('activity capture settings have documented defaults and persist changes', async () => {

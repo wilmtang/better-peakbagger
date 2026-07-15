@@ -103,6 +103,7 @@
         "src/terrain-map.css"
       ],
       "js": [
+        "src/settings.js",
         "src/terrain-map.js"
       ],
       "run_at": "document_end",

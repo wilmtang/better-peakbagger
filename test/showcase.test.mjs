@@ -37,6 +37,7 @@ test('3D terrain showcase uses the production renderer with a synthetic route', 
     assert.match(terrainFrame, /src\/terrain-cache\.js/);
     assert.match(terrainFrame, /src\/terrain-frame\.js/);
     assert.match(terrainShowcase, /src\/gpx-analyzer\.js/);
+    assert.match(terrainShowcase, /enable3dMap:\s*true/);
     assert.match(terrainShowcase, /bpb-terrain-disclosure/);
     assert.match(terrainGpx, /Synthetic Mount Baker terrain check/);
     assert.doesNotMatch(terrainGpx, /<name>.*(?:Garmin|Strava|Alex|Zihao)/i);

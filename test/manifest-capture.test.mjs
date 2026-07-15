@@ -34,7 +34,7 @@ test('3D terrain is isolated from Peakbagger globals in an extension-owned frame
     const terrainEntry = manifest.content_scripts.find(entry => entry.js.includes('src/terrain-map.js'));
     assert.ok(terrainEntry);
     assert.equal(terrainEntry.world, undefined, 'terrain should run in the default isolated extension world');
-    assert.deepEqual(terrainEntry.js, ['src/terrain-map.js']);
+    assert.deepEqual(terrainEntry.js, ['src/settings.js', 'src/terrain-map.js']);
     assert.deepEqual(terrainEntry.css, ['src/terrain-map.css']);
     assert.ok(terrainEntry.matches.every(pattern => /peakbagger\.com\/climber\/(?:a|A)scent\.aspx/.test(pattern)));
 

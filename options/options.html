@@ -34,6 +34,22 @@
                         </select>
                     </div>
                 </div>
+
+                <div class="row">
+                    <div class="label">
+                        <span class="title-line">
+                            <span class="title">Enable experimental 3D map</span>
+                            <span class="experimental-badge">Experimental</span>
+                        </span>
+                        <span class="desc" id="enable-3d-map-desc">Shows a 3D terrain option on ascent maps. When you load it, elevation (DEM) tile requests for the viewed area go to <a href="https://mapterhorn.com/privacy-policy/" target="_blank" rel="noopener noreferrer">Mapterhorn</a>, a third-party service. The selected map provider may also receive tile requests.</span>
+                    </div>
+                    <div class="control">
+                        <label class="check" for="enable-3d-map">
+                            <input type="checkbox" id="enable-3d-map" aria-describedby="enable-3d-map-desc">
+                            <span>Enable 3D map</span>
+                        </label>
+                    </div>
+                </div>
             </div>
         </section>
 
