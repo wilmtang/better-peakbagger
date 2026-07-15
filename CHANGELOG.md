@@ -18,6 +18,12 @@
   by CORS is detected, disabled in the picker with a short explanation, and the
   view falls back to terrain-only. The redundant "Loading 3D terrain…" banner is
   also gone — the button's own loading state is the single cue.
+- **Faster 3D terrain loads.** Opening the 3D view now frames the camera on your
+  route as the map is created, instead of starting on a wide placeholder view and
+  re-framing only after loading — which previously fetched a throwaway tileset
+  and built the terrain mesh twice for a view you never saw. The bulk of the
+  load-time cost is gone; opening 3D is noticeably quicker, most visibly on
+  repeat views whose DEM tiles are already cached.
 - **Full Screen maps get the route casing.** Full Screen GPS maps
   (`BigMap.aspx`) now draw the configured white casing behind each native
   track and apply the configured width, matching the embedded ascent map.

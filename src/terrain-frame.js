@@ -506,11 +506,15 @@
             terrainCache = globalThis.BPBTerrainCache.create({ limitMb: cacheLimitMb });
             maplibre.addProtocol(globalThis.BPBTerrainCache.PROTOCOL, terrainCache.load);
             terrainProtocolRegistered = true;
+            // Start at the route's framed camera directly. Initialising at a
+            // placeholder zoom and fitting bounds only after 'load' would load a
+            // whole throwaway tileset (and rebuild the terrain mesh) for a view
+            // the user never sees; the constructor bounds skip that round trip.
             map = new maplibre.Map({
                 container: canvas,
                 style: terrainStyle(activeTheme, activeBasemap),
-                center: [(route.bounds[0][0] + route.bounds[1][0]) / 2, (route.bounds[0][1] + route.bounds[1][1]) / 2],
-                zoom: 11,
+                bounds: route.bounds,
+                fitBoundsOptions: { padding: 46, maxZoom: 15.5, pitch: 60, bearing: 0 },
                 pitch: 60,
                 bearing: 0,
                 maxPitch: 80,
@@ -564,7 +568,6 @@
                     id: 'bpb-highlight', type: 'circle', source: 'bpb-highlight',
                     paint: { 'circle-radius': 8, 'circle-color': '#ff3b30', 'circle-stroke-color': '#ffffff', 'circle-stroke-width': 2 }
                 });
-                terrainMap.fitBounds(route.bounds, { padding: 46, maxZoom: 15.5, pitch: 60, bearing: 0, duration: 0 });
                 loaded = true;
                 setTheme(activeTheme);
                 status.remove();

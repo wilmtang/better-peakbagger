@@ -300,7 +300,13 @@ test('3D terrain frame validates coordinate-only routes before loading public DE
             [[-121.82, 48.75], [-121.815, 48.76]]
         ]
     });
-    assert.deepEqual(JSON.parse(JSON.stringify(map.fitted.bounds)), [[-121.82, 48.7], [-121.8, 48.76]]);
+    // The camera is framed on the route at construction, not re-fitted after
+    // 'load' — fitting later would load a throwaway tileset for the placeholder
+    // view and rebuild the terrain mesh, the dominant chunk of load time.
+    assert.deepEqual(JSON.parse(JSON.stringify(map.options.bounds)), [[-121.82, 48.7], [-121.8, 48.76]]);
+    assert.equal(map.options.fitBoundsOptions.maxZoom, 15.5);
+    assert.equal(map.options.fitBoundsOptions.pitch, 60);
+    assert.equal(map.fitted, undefined, 'no redundant post-load fitBounds');
     assert.equal(window.document.getElementById('bpb-terrain-map').style.pointerEvents, 'auto');
     assert.equal(messages.at(-1).type, 'loaded');
 

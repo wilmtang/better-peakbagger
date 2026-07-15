@@ -492,6 +492,13 @@ Terrain exaggeration is exactly `1`: one rendered vertical metre equals one
 horizontal metre. That restraint matters for route planning because the common
 “dramatic terrain” setting makes slopes look steeper than they are.
 
+The camera is framed on the route as the map is created — through MapLibre's
+constructor `bounds`/`fitBoundsOptions` — rather than opening on a wide
+placeholder view and re-framing after load. Fitting after load would fetch a
+throwaway tileset and build the terrain mesh once for the placeholder view and
+again for the route; framing up front removes that duplicate work, the dominant
+part of load time.
+
 Gestures use cooperative mode so the page never scroll-jacks: drag pans,
 right-drag tilts, and zoom needs the platform modifier (`⌘` on macOS, `Ctrl`
 elsewhere) plus scroll. Because that requirement is not otherwise obvious, a
