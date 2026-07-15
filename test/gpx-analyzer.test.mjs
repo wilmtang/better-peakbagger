@@ -193,6 +193,9 @@ test('GPX analyzer adds a thick, segment-preserving route casing behind native L
     assert.equal(window.document.getElementById('bpb-terrain-disclosure'), null);
     terrainToggle.click();
     await waitFor(dom, () => terrainMessages.some(message => message.type === 'init'));
+    assert.equal(window.document.getElementById('bpb-terrain-message').textContent, '',
+        'the toggle button is the only loading cue; no separate loading banner');
+    assert.equal(window.document.getElementById('bpb-terrain-message').style.display, 'none');
     const terrainInit = terrainMessages.find(message => message.type === 'init');
     assert.deepEqual(JSON.parse(JSON.stringify(terrainInit.routeSegments)), expectedSegments);
     assert.deepEqual(Object.keys(terrainInit).sort(), ['__bpbTerrain', 'basemap', 'cacheLimitMb', 'dir', 'routeSegments', 'routeStyle', 'theme', 'type']);

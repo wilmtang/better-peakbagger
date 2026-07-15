@@ -622,7 +622,10 @@
             if (BPB.get().enable3dMap !== true
                 || terrainState !== 'idle' || !mapViewport || !mapIframe || !mapRouteSegments.length) return;
             terrainState = 'loading';
-            showTerrainMessage('Loading 3D terrain…');
+            // The toggle button's own "Loading 3D…" state is the loading cue;
+            // a second full-width banner would be redundant. The message box is
+            // reserved for errors and the drape-unsupported notice.
+            showTerrainMessage('');
             updateTerrainButton();
             postTerrain('init', {
                 routeSegments: mapRouteSegments,
