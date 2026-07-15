@@ -4,38 +4,18 @@
 // Guards that no committed fixture (or fixture doc) leaks the identity of the
 // account holder whose signed-in session the live captures came from.
 //
-// The banned identifiers are deliberately NOT stored here in plaintext — an
-// earlier version listed them verbatim, which published the very identity it
-// was guarding. Instead, every alphanumeric token in every fixture is salted-
-// hashed and looked up in a hash denylist. To ban a new identifier:
-//   node -e 'const c=require("node:crypto");console.log(c.createHash("sha256").update("bpb-privacy-v1:"+process.argv[1].toLowerCase()).digest("hex"))' '<identifier>'
+// The banned identifiers are deliberately not stored in plaintext. The shared
+// salted-hash scanner lives in scripts/privacy-guard.mjs and is also used by
+// the repository-local pre-commit hook.
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createHash } from 'node:crypto';
 import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { containsFixtureBannedIdentifier } from '../scripts/privacy-guard.mjs';
 
 const FIXTURES = path.resolve(path.dirname(fileURLToPath(import.meta.url)), 'fixtures');
-
-const SALT = 'bpb-privacy-v1';
-const hashToken = token => createHash('sha256').update(`${SALT}:${token}`).digest('hex');
-
-// Salted hashes of identifiers unique to the real account: name parts, the
-// real climber id, social handles/ids, the account's own ascent ids. See the
-// header comment for how to regenerate an entry.
-const BANNED_HASHES = new Set([
-    '78d003142abce7051585a991a3acdb87e1dec55937b0b25da13bc6b0b1d1a7d7',
-    '5f6b569748331a97dc61d2e980f542adfaf5e79962d66e2fe8344209665c7eab',
-    'a6d7a40e1ab361c0ae89d5db64dd766877237bb4467c3f77a52606e036594c43',
-    '185059837f13f25091909a431d3e061070f3b25ca172a88e3ac91dc00fad7c0b',
-    'edb535d0f4c1a8084395ad443fb5a39e82913b52a02373469e41e116f0517ca2',
-    '72bde7b7ce8e4e44bf6625ad102f7bd49cd06af0f443b50ff4d3295af344c0ca',
-    '046a89c3581897311e5986721cac8dc72bc2797d0994b7a75bb21fd83e7b7047',
-    '10c027b3a245d4bf0c3044d032dfbe6641eb493a5c37c383ce66722e878a59da',
-    '18833e56f98704d888a92abdd0d098e6a92c9b2b115fa5a934c6329ea7f7eac1'
-]);
 
 // Wayback captures of public peaks (other people's public data) legitimately
 // carry external links; every other .html fixture is a masked live capture.
@@ -69,11 +49,8 @@ test('no fixture or fixture doc contains a banned identifier', async () => {
     const leaks = [];
     for (const file of files) {
         const text = await readFile(file, 'utf8');
-        const tokens = new Set(text.toLowerCase().match(/[a-z0-9]+/g) ?? []);
-        for (const token of tokens) {
-            if (BANNED_HASHES.has(hashToken(token))) {
-                leaks.push(`${path.relative(FIXTURES, file)}: token "${token}"`);
-            }
+        if (containsFixtureBannedIdentifier(text)) {
+            leaks.push(path.relative(FIXTURES, file));
         }
     }
     assert.deepEqual(leaks, [], `PII found in fixtures:\n${leaks.join('\n')}`);

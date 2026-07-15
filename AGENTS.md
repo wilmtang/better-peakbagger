@@ -22,7 +22,7 @@ This is a build-free Manifest V3 browser extension for Chrome and Firefox. `mani
 
 ## Real-browser verification — do not interrupt the user (must follow)
 
-Real-browser checks must not steal focus, switch the user's Space, cover the user's working display, or reuse the user's normal browser window/profile. Follow the background harness pattern used by `/path/to/funkydict` and `/path/to/devdocs-desktop`:
+Real-browser checks must not steal focus, switch the user's Space, cover the user's working display, or reuse the user's normal browser window/profile:
 
 - Prefer fixtures and background browser control first. Use a hidden/headless/offscreen test profile plus CDP, WebDriver BiDi, or the browser's debugging protocol for DOM inspection, synthetic input, and page/window screenshots whenever that can verify the behavior. Capture the target page or window, never the whole display. Do not use Computer Use against the user's existing browser for routine verification when an isolated protocol-driven session can do the job.
 - Hidden verification does not prove native focus, window placement, browser chrome, menus, permission prompts, or other onscreen behavior. If one of those is the behavior under test, a visible window is allowed only in a dedicated test profile. When multiple displays are attached, place the entire test window on the built-in display before navigating or interacting and leave the external working display untouched. Avoid activating or raising the test window where the platform permits background launch and control.
