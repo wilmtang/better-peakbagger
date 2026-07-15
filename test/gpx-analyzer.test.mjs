@@ -60,6 +60,16 @@ test('GPX analyzer adds a thick, segment-preserving route casing behind native L
         _url: 'https://labels.example.com/{z}/{x}/{y}.png',
         options: { zIndex: -1, attribution: 'Labels' }
     };
+    // Extra drape-able layers so the terrain picker has real choices to
+    // enumerate; L_OS has no global, so it is skipped.
+    const calTopoLayer = {
+        _url: 'https://ct.example.com/{z}/{x}/{y}.png',
+        options: { minZoom: 3, maxZoom: 16, attribution: 'CalTopo' }
+    };
+    const openTopoLayer = {
+        _url: 'https://ot.example.com/{z}/{x}/{y}.png',
+        options: { attribution: 'OpenTopo' }
+    };
     const makeMap = () => ({
         layers: [],
         _layers: { labels: labelTileLayer, base: baseTileLayer },
@@ -105,7 +115,7 @@ test('GPX analyzer adds a thick, segment-preserving route casing behind native L
     const iframeDocument = { getElementById: id => id === 'selmap' ? layerSelect : null };
     Object.defineProperty(iframe, 'contentWindow', {
         configurable: true,
-        value: { mapsPlaceholder: map, L, L_MT: baseTileLayer, document: iframeDocument, location: { href: 'https://www.peakbagger.com/map/MasterMap.aspx' } }
+        value: { mapsPlaceholder: map, L, L_CT: calTopoLayer, L_MT: baseTileLayer, L_OT: openTopoLayer, document: iframeDocument, location: { href: 'https://www.peakbagger.com/map/MasterMap.aspx' } }
     });
 
     window.matchMedia = () => ({ matches: false });
@@ -198,7 +208,7 @@ test('GPX analyzer adds a thick, segment-preserving route casing behind native L
     assert.equal(window.document.getElementById('bpb-terrain-message').style.display, 'none');
     const terrainInit = terrainMessages.find(message => message.type === 'init');
     assert.deepEqual(JSON.parse(JSON.stringify(terrainInit.routeSegments)), expectedSegments);
-    assert.deepEqual(Object.keys(terrainInit).sort(), ['__bpbTerrain', 'basemap', 'cacheLimitMb', 'dir', 'routeSegments', 'routeStyle', 'theme', 'type']);
+    assert.deepEqual(Object.keys(terrainInit).sort(), ['__bpbTerrain', 'basemap', 'basemaps', 'cacheLimitMb', 'dir', 'routeSegments', 'routeStyle', 'theme', 'type']);
     assert.equal(terrainInit.cacheLimitMb, 512);
     assert.deepEqual(JSON.parse(JSON.stringify(terrainInit.basemap)), {
         name: 'MyTopo USA/Canada',
@@ -208,6 +218,19 @@ test('GPX analyzer adds a thick, segment-preserving route casing behind native L
         maxzoom: 17,
         scheme: 'xyz',
         attribution: '<a href="https://example.com/copyright">© Example Maps</a>'
+    });
+    // The picker's layer list mirrors the native #selmap options that resolve
+    // to a plain XYZ raster; L_OS has no global layer, so it is dropped.
+    assert.deepEqual(JSON.parse(JSON.stringify(terrainInit.basemaps.map(basemap => basemap.name))),
+        ['CalTopo', 'MyTopo USA/Canada', 'Open Topo Map']);
+    assert.deepEqual(JSON.parse(JSON.stringify(terrainInit.basemaps[0])), {
+        name: 'CalTopo',
+        tiles: ['https://ct.example.com/{z}/{x}/{y}.png'],
+        tileSize: 256,
+        minzoom: 3,
+        maxzoom: 16,
+        scheme: 'xyz',
+        attribution: 'CalTopo'
     });
     assert.equal(JSON.stringify(terrainInit).includes('<gpx'), false);
     assert.equal(JSON.stringify(terrainInit).includes('2026-07-10'), false);

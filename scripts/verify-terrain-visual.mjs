@@ -230,7 +230,10 @@ try {
             ready: toggle && toggle.textContent === '2D map' && frame && frame.style.opacity === '1' && surface,
             toggle: toggle && toggle.textContent,
             message: message && message.textContent,
-            badge: surface && surface.querySelector('.bpb-terrain-badge') && surface.querySelector('.bpb-terrain-badge').textContent,
+            badge: (() => {
+                const select = surface && surface.querySelector('.bpb-terrain-picker');
+                return select && select.selectedIndex >= 0 ? select.options[select.selectedIndex].textContent : '';
+            })(),
             canvas: surface && surface.querySelector('canvas') && {
                 width: surface.querySelector('canvas').width,
                 height: surface.querySelector('canvas').height

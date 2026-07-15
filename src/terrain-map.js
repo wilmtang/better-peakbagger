@@ -93,6 +93,7 @@
             routeStyle: data.routeStyle,
             theme: data.theme,
             basemap: data.basemap,
+            basemaps: data.basemaps,
             cacheLimitMb: data.cacheLimitMb
         };
         terrainFrame.src = chrome.runtime.getURL('terrain/terrain.html');

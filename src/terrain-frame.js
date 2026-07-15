@@ -41,10 +41,15 @@
     let parentOrigin = null;
     let activeTheme = 'light';
     let activeBasemap = null;
+    let availableBasemaps = [];
+    let activeBasemapIndex = -1;
+    const failedBasemaps = new Set();
     let basemapErrored = false;
     let basemapContentLoaded = false;
     let basemapChecked = false;
     let badgeElement = null;
+    let pickerElement = null;
+    let noticeElement = null;
     let terrainCache = null;
     let terrainProtocolRegistered = false;
     let activeRouteStyle = { color: '#d9483b', width: 5, casingColor: '#ffffff', casingWidth: 9 };
@@ -87,10 +92,15 @@
             mapElement = null;
         }
         activeBasemap = null;
+        availableBasemaps = [];
+        activeBasemapIndex = -1;
+        failedBasemaps.clear();
         basemapErrored = false;
         basemapContentLoaded = false;
         basemapChecked = false;
         badgeElement = null;
+        pickerElement = null;
+        noticeElement = null;
         loaded = false;
     };
 
@@ -289,21 +299,81 @@
         };
     };
 
+    // The caveat is static; the layer name lives in the picker's selected
+    // option so the drape is both labelled and switchable from one control.
     const renderBadge = () => {
-        if (!badgeElement) return;
-        const caveat = document.createElement('span');
-        caveat.textContent = '· Not live conditions';
-        badgeElement.replaceChildren(document.createTextNode(activeBasemap ? `${activeBasemap.name} · 3D terrain` : 'Terrain only'), caveat);
+        if (badgeElement) badgeElement.textContent = 'Not live conditions';
     };
 
-    const removeFailedBasemap = () => {
-        if (!map || !activeBasemap) return;
+    const renderPicker = () => {
+        if (!pickerElement) return;
+        const options = availableBasemaps.map((basemap, index) => {
+            const option = document.createElement('option');
+            option.value = String(index);
+            option.textContent = failedBasemaps.has(index)
+                ? `${basemap.name || `Layer ${index + 1}`} (unavailable)`
+                : (basemap.name || `Layer ${index + 1}`);
+            option.disabled = failedBasemaps.has(index);
+            return option;
+        });
+        const terrainOption = document.createElement('option');
+        terrainOption.value = 'terrain';
+        terrainOption.textContent = 'Terrain only';
+        pickerElement.replaceChildren(...options, terrainOption);
+        pickerElement.value = activeBasemapIndex >= 0 ? String(activeBasemapIndex) : 'terrain';
+    };
+
+    const showNotice = text => {
+        if (!noticeElement) return;
+        noticeElement.textContent = text;
+        noticeElement.hidden = !text;
+    };
+
+    const addBasemapLayer = basemap => {
+        map.addSource('basemap', {
+            type: 'raster',
+            tiles: basemap.tiles,
+            tileSize: basemap.tileSize,
+            minzoom: basemap.minzoom,
+            maxzoom: basemap.maxzoom,
+            scheme: basemap.scheme,
+            attribution: basemap.attribution
+        });
+        // Keep the drape beneath the hillshade so relief still reads through it.
+        map.addLayer({
+            id: 'basemap', type: 'raster', source: 'basemap',
+            paint: { 'raster-opacity': 0.78, 'raster-fade-duration': 0, 'raster-resampling': 'linear' }
+        }, typeof map.getLayer === 'function' && map.getLayer('terrain-hillshade') ? 'terrain-hillshade' : undefined);
+    };
+
+    const removeBasemapLayer = () => {
         try {
             if (typeof map.getLayer === 'function' && map.getLayer('basemap')) map.removeLayer('basemap');
             if (map.getSource('basemap') && typeof map.removeSource === 'function') map.removeSource('basemap');
         } catch (error) { /* A failed raster source may already be absent. */ }
-        activeBasemap = null;
-        renderBadge();
+    };
+
+    // Switch the draped layer live. index < 0 selects terrain-only. Each swap
+    // re-arms the one-shot CORS check so the new layer is judged on its own.
+    const swapBasemap = index => {
+        if (!map || !loaded) return;
+        removeBasemapLayer();
+        basemapErrored = false;
+        basemapContentLoaded = false;
+        basemapChecked = false;
+        activeBasemapIndex = index >= 0 && index < availableBasemaps.length && !failedBasemaps.has(index) ? index : -1;
+        activeBasemap = activeBasemapIndex >= 0 ? availableBasemaps[activeBasemapIndex] : null;
+        if (activeBasemap) addBasemapLayer(activeBasemap);
+        renderPicker();
+    };
+
+    // A whole layer blocked by CORS renders no tile. Disable it in the picker,
+    // remember it for the session, revert to terrain-only, and say why.
+    const markBasemapFailed = index => {
+        const name = index >= 0 && index < availableBasemaps.length ? availableBasemaps[index].name : '';
+        if (index >= 0) failedBasemaps.add(index);
+        swapBasemap(-1);
+        showNotice(`${name || 'That map layer'} can’t be draped here — the map provider blocks cross-origin tiles. Showing terrain only.`);
     };
 
     const setRoutePaint = routeStyle => {
@@ -356,7 +426,28 @@
 
         activeRouteStyle = validateStyle(data.routeStyle);
         activeTheme = data.theme === 'dark' ? 'dark' : 'light';
-        activeBasemap = validateBasemap(data.basemap);
+
+        // Build the switchable drape list from the layers the page offered,
+        // deduped by tile template, with the initially-selected layer as the
+        // active one (falling back to the first available, then terrain-only).
+        const initialBasemap = validateBasemap(data.basemap);
+        const offered = Array.isArray(data.basemaps) ? data.basemaps : [];
+        availableBasemaps = [];
+        const seenTiles = new Set();
+        // Keep the native control's order; append the initial layer only if the
+        // offered list somehow omitted it.
+        for (const candidate of [...offered.map(validateBasemap), initialBasemap]) {
+            if (!candidate) continue;
+            const key = candidate.tiles[0];
+            if (seenTiles.has(key)) continue;
+            seenTiles.add(key);
+            availableBasemaps.push(candidate);
+        }
+        activeBasemapIndex = initialBasemap
+            ? availableBasemaps.findIndex(basemap => basemap.tiles[0] === initialBasemap.tiles[0])
+            : -1;
+        activeBasemap = activeBasemapIndex >= 0 ? availableBasemaps[activeBasemapIndex] : null;
+        failedBasemaps.clear();
         basemapErrored = false;
         basemapContentLoaded = false;
         basemapChecked = false;
@@ -369,15 +460,36 @@
 
         const canvas = document.createElement('div');
         canvas.id = 'bpb-terrain-canvas';
+
+        const controls = document.createElement('div');
+        controls.className = 'bpb-terrain-controls';
+        if (availableBasemaps.length) {
+            pickerElement = document.createElement('select');
+            pickerElement.className = 'bpb-terrain-picker';
+            pickerElement.setAttribute('aria-label', 'Draped map layer');
+            pickerElement.addEventListener('change', () => {
+                showNotice('');
+                swapBasemap(pickerElement.value === 'terrain' ? -1 : Number(pickerElement.value));
+            });
+            controls.appendChild(pickerElement);
+        }
         const badge = document.createElement('p');
         badge.className = 'bpb-terrain-badge';
         badgeElement = badge;
         renderBadge();
+        const notice = document.createElement('p');
+        notice.className = 'bpb-terrain-notice';
+        notice.setAttribute('role', 'status');
+        notice.hidden = true;
+        noticeElement = notice;
+        controls.append(badge, notice);
+        renderPicker();
+
         const status = document.createElement('p');
         status.className = 'bpb-terrain-status';
         status.setAttribute('role', 'status');
         status.textContent = 'Loading terrain…';
-        mapElement.append(canvas, badge, status);
+        mapElement.append(canvas, controls, status);
         document.body.append(mapElement);
 
         try {
@@ -421,7 +533,7 @@
             terrainMap.on('idle', () => {
                 if (basemapChecked || map !== terrainMap || !loaded) return;
                 basemapChecked = true;
-                if (activeBasemap && basemapErrored && !basemapContentLoaded) removeFailedBasemap();
+                if (activeBasemap && basemapErrored && !basemapContentLoaded) markBasemapFailed(activeBasemapIndex);
             });
 
             terrainMap.once('load', () => {

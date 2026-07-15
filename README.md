@@ -452,12 +452,17 @@ sources do different jobs:
    Terrarium pixel encode elevation as `R × 256 + G + B ÷ 256 − 32768` metres.
    MapLibre decodes those pixels into the mesh that moves vertices up and down.
    GPX elevations do not shape the terrain.
-2. **The selected Peakbagger layer is the optional surface texture.** Just
-   before 3D starts, the analyzer inspects Peakbagger's active Leaflet map. If
-   the selected layer is a compatible XYZ/TMS raster `TileLayer`, the renderer
-   adds its tile template as a MapLibre `raster` source and drapes those pixels
-   over the DEM. Roads, contour lines, labels, and satellite imagery therefore
-   follow the 3D surface instead of floating in a flat pane.
+2. **A Peakbagger layer is the optional surface texture.** Just before 3D
+   starts, the analyzer enumerates every layer in Peakbagger's native map
+   control that resolves to a compatible XYZ/TMS raster `TileLayer`, sending
+   the whole list plus the currently-selected layer. The renderer drapes the
+   selected layer's tile template as a MapLibre `raster` source over the DEM,
+   and offers the rest in an on-map **drape picker** so you can switch the
+   texture (roads, contours, imagery) without leaving 3D. A layer whose tiles
+   are all blocked by the provider's cross-origin policy can't be draped; the
+   renderer detects that at the first idle (the source errored and never
+   delivered a tile), disables that layer in the picker with a short notice,
+   and falls back to terrain-only. Partial tile gaps are kept.
 
 Mapterhorn currently documents global 30 m coverage, 10 m coverage across the
 U.S., and finer coverage where it has incorporated public regional elevation
@@ -492,7 +497,7 @@ worlds, but each world has a narrow job:
 Peakbagger MAIN world
   gpx-analyzer.js
   ├─ reads the route already parsed for the chart
-  ├─ inspects the active Leaflet TileLayer
+  ├─ enumerates the compatible Leaflet TileLayers (selected + the rest)
   └─ sends a bounded init message after the 3D button is clicked
               │
               ▼

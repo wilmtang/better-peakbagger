@@ -632,6 +632,7 @@
                 routeStyle: resolveMapRouteStyle(BPB.get()),
                 theme: effectiveTheme(BPB.get().theme),
                 basemap: getTerrainBasemap(),
+                basemaps: enumerateTerrainBasemaps(),
                 cacheLimitMb: resolveTerrainCacheLimitMb(BPB.get())
             });
             terrainLoadTimer = setTimeout(() => {
@@ -746,6 +747,23 @@
                 : null;
         };
 
+        const readBasemapFromLayer = (layer, name, iframeWin) => {
+            const tiles = expandLeafletTileUrl(layer, iframeWin);
+            if (!tiles) return null;
+            const options = layer.options || {};
+            const minzoom = Number.isInteger(options.minZoom) ? Math.min(22, Math.max(0, options.minZoom)) : 0;
+            const maxzoom = Number.isInteger(options.maxZoom) ? Math.min(24, Math.max(minzoom, options.maxZoom)) : 19;
+            return {
+                name: String(name || '').trim().slice(0, 80),
+                tiles: [tiles],
+                tileSize: Number(options.tileSize) === 512 ? 512 : 256,
+                minzoom,
+                maxzoom,
+                scheme: options.tms === true ? 'tms' : 'xyz',
+                attribution: typeof options.attribution === 'string' ? options.attribution.slice(0, 600) : ''
+            };
+        };
+
         const getTerrainBasemap = () => {
             try {
                 const iframe = findMapIframe();
@@ -765,23 +783,40 @@
                     .filter((layer, index, layers) => layers.indexOf(layer) === index);
 
                 for (const layer of candidates) {
-                    const tiles = expandLeafletTileUrl(layer, iframeWin);
-                    if (!tiles) continue;
-                    const options = layer.options || {};
-                    const minzoom = Number.isInteger(options.minZoom) ? Math.min(22, Math.max(0, options.minZoom)) : 0;
-                    const maxzoom = Number.isInteger(options.maxZoom) ? Math.min(24, Math.max(minzoom, options.maxZoom)) : 19;
-                    return {
-                        name: String(option.textContent || '').trim().slice(0, 80),
-                        tiles: [tiles],
-                        tileSize: Number(options.tileSize) === 512 ? 512 : 256,
-                        minzoom,
-                        maxzoom,
-                        scheme: options.tms === true ? 'tms' : 'xyz',
-                        attribution: typeof options.attribution === 'string' ? options.attribution.slice(0, 600) : ''
-                    };
+                    const basemap = readBasemapFromLayer(layer, option.textContent, iframeWin);
+                    if (basemap) return basemap;
                 }
             } catch (error) { /* Peakbagger may replace or restrict its map frame. */ }
             return null;
+        };
+
+        // Every drape-able layer the native control lists, so the 3D view can
+        // offer the same choices. Each option's value names an iframe-global
+        // Leaflet layer; non-XYZ-raster layers (WMS, zoom-offset) are skipped.
+        const enumerateTerrainBasemaps = () => {
+            try {
+                const iframe = findMapIframe();
+                const iframeWin = iframe && iframe.contentWindow;
+                const map = iframeWin && iframeWin.mapsPlaceholder;
+                const select = iframeWin && iframeWin.document && iframeWin.document.getElementById('selmap');
+                if (!map || !select || !select.options) return [];
+
+                const basemaps = [];
+                const seen = new Set();
+                for (const option of Array.from(select.options)) {
+                    const value = typeof option.value === 'string' ? option.value : '';
+                    if (!value || seen.has(value)) continue;
+                    const layer = iframeWin[value];
+                    if (!layer || typeof layer._url !== 'string') continue;
+                    const basemap = readBasemapFromLayer(layer, option.textContent, iframeWin);
+                    if (basemap) {
+                        seen.add(value);
+                        basemaps.push(basemap);
+                    }
+                }
+                return basemaps;
+            } catch (error) { /* Peakbagger may replace or restrict its map frame. */ }
+            return [];
         };
 
         const mapLayerExists = (select, value) =>

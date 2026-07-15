@@ -281,7 +281,13 @@ test('3D terrain frame validates coordinate-only routes before loading public DE
     assert.match(map.options.style.sources.basemap.attribution, /https:\/\/example\.com\/copyright/);
     assert.doesNotMatch(map.options.style.sources.basemap.attribution, /script|alert/i);
     assert.equal(map.options.style.layers.find(layer => layer.id === 'basemap').paint['raster-opacity'], 0.78);
-    assert.match(window.document.querySelector('.bpb-terrain-badge').textContent, /Open Topo Map · 3D terrain/);
+    const picker = () => window.document.querySelector('.bpb-terrain-picker');
+    const notice = () => window.document.querySelector('.bpb-terrain-notice');
+    assert.ok(picker(), 'a drape picker is shown when a layer is offered');
+    assert.equal(picker().options[picker().selectedIndex].textContent, 'Open Topo Map',
+        'the picker labels and selects the active drape');
+    assert.ok(Array.from(picker().options).some(option => option.textContent === 'Terrain only'),
+        'the picker always offers a terrain-only choice');
     assert.deepEqual(JSON.parse(JSON.stringify(map.sources.get('bpb-route').data.geometry)), {
         type: 'MultiLineString',
         coordinates: [
@@ -311,8 +317,9 @@ test('3D terrain frame validates coordinate-only routes before loading public DE
     map.handlers.get('data')({ sourceId: 'basemap', dataType: 'source', tile: {} });
     map.handlers.get('error')({ sourceId: 'basemap' });
     map.handlers.get('idle')();
-    assert.match(window.document.querySelector('.bpb-terrain-badge').textContent, /Open Topo Map · 3D terrain/,
-        'a drape that rendered a tile must not be removed over a few failed tiles');
+    assert.equal(picker().value, '0', 'a drape that rendered a tile stays selected');
+    assert.equal(picker().options[0].disabled, false, 'a working drape is not disabled');
+    assert.equal(notice().hidden, true, 'no failure notice for a drape that rendered a tile');
 
     dispatch({ type: 'destroy' });
     assert.equal(map.removed, true);
@@ -345,13 +352,107 @@ test('3D terrain frame validates coordinate-only routes before loading public DE
     });
     await new Promise(resolve => window.queueMicrotask(resolve));
     const blocked = maps[2];
-    assert.match(window.document.querySelector('.bpb-terrain-badge').textContent, /Blocked Layer · 3D terrain/,
-        'the drape badge starts on the layer name before any tile is attempted');
+    assert.equal(picker().options[picker().selectedIndex].textContent, 'Blocked Layer',
+        'the picker starts on the layer name before any tile is attempted');
     blocked.handlers.get('error')({ sourceId: 'basemap' });
     blocked.handlers.get('error')({ sourceId: 'basemap' });
     blocked.handlers.get('idle')();
-    assert.match(window.document.querySelector('.bpb-terrain-badge').textContent, /^Terrain only/,
+    assert.equal(picker().value, 'terrain',
         'a drape whose every tile fails is dropped to terrain-only at the first idle');
+    assert.equal(picker().options[0].disabled, true, 'the blocked layer is disabled in the picker');
+    assert.equal(notice().hidden, false);
+    assert.match(notice().textContent, /Blocked Layer.*blocks cross-origin/,
+        'the notice names the blocked layer and explains why');
+
+    dom.window.close();
+});
+
+test('the 3D drape picker offers every layer and swaps the draped raster live', async () => {
+    const dom = new JSDOM('<!doctype html><body></body>', {
+        url: 'https://www.peakbagger.com/climber/ascent.aspx?aid=1',
+        runScripts: 'outside-only',
+        pretendToBeVisual: true
+    });
+    const { window } = dom;
+    const maps = [];
+
+    class MapStub {
+        constructor(options) {
+            this.options = options;
+            this.sources = new Map();
+            this.layers = [];
+            this.handlers = new Map();
+            maps.push(this);
+        }
+        addControl() {}
+        once(type, callback) { if (type === 'load') window.queueMicrotask(callback); }
+        on(type, callback) { this.handlers.set(type, callback); }
+        addSource(id, source) { this.sources.set(id, { ...source, setData() {} }); }
+        addLayer(layer) { this.layers.push(layer); }
+        getLayer(id) { return this.layers.find(layer => layer.id === id); }
+        removeLayer(id) { this.layers = this.layers.filter(layer => layer.id !== id); }
+        getSource(id) { return this.sources.get(id); }
+        removeSource(id) { this.sources.delete(id); }
+        setPaintProperty() {}
+        fitBounds() {}
+        resize() {}
+        remove() {}
+    }
+
+    window.chrome = { runtime: { getURL: path => `chrome-extension://test-id/${path}` } };
+    window.BPBTerrainCache = { PROTOCOL: 'bpb-dem', create: () => ({ load() {}, flush: () => Promise.resolve() }) };
+    window.maplibregl = {
+        Map: MapStub,
+        NavigationControl: class {},
+        ScaleControl: class {},
+        setWorkerUrl() {},
+        addProtocol() {},
+        removeProtocol() {}
+    };
+    window.postMessage = () => {};
+    window.eval(terrainFrameSource);
+
+    const routeSegments = [[[48.7, -121.8], [48.71, -121.81]]];
+    const layer = (name, host) => ({ name, tiles: [`https://${host}/{z}/{x}/{y}.png`] });
+    window.dispatchEvent(new window.MessageEvent('message', {
+        source: window,
+        origin: window.location.origin,
+        data: {
+            __bpbTerrainFrame: true, dir: 'toFrame', type: 'init', routeSegments,
+            basemap: layer('MyTopo', 'mt.example.com'),
+            basemaps: [layer('CalTopo', 'ct.example.com'), layer('MyTopo', 'mt.example.com'), layer('OpenTopo', 'ot.example.com')]
+        }
+    }));
+    await new Promise(resolve => window.queueMicrotask(resolve));
+
+    const picker = () => window.document.querySelector('.bpb-terrain-picker');
+    const map = maps[0];
+    assert.deepEqual(Array.from(picker().options, option => option.textContent),
+        ['CalTopo', 'MyTopo', 'OpenTopo', 'Terrain only'], 'the picker offers every layer plus terrain-only');
+    assert.equal(picker().options[picker().selectedIndex].textContent, 'MyTopo',
+        'the initially-selected native layer is preselected');
+
+    const swap = value => {
+        picker().value = value;
+        picker().dispatchEvent(new window.Event('change'));
+    };
+
+    swap('0');
+    assert.deepEqual(JSON.parse(JSON.stringify(map.getSource('basemap').tiles)),
+        ['https://ct.example.com/{z}/{x}/{y}.png'], 'selecting a layer re-drapes it live');
+
+    swap('terrain');
+    assert.equal(map.getSource('basemap'), undefined, 'terrain-only removes the drape');
+    assert.equal(map.getLayer('basemap'), undefined);
+
+    // Manually selecting a layer that then fails every tile disables it.
+    swap('2');
+    assert.equal(JSON.parse(JSON.stringify(map.getSource('basemap').tiles))[0], 'https://ot.example.com/{z}/{x}/{y}.png');
+    map.handlers.get('error')({ sourceId: 'basemap' });
+    map.handlers.get('idle')();
+    assert.equal(picker().value, 'terrain', 'a failed manual selection reverts to terrain-only');
+    assert.equal(picker().options[2].disabled, true, 'the failed layer is disabled');
+    assert.match(window.document.querySelector('.bpb-terrain-notice').textContent, /OpenTopo/);
 
     dom.window.close();
 });
