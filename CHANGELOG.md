@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **Snow and wildfire planning links.** Peak pages now add a NOAA NOHRSC
+  modeled snow-depth map framed on the summit, and an AirNow Fire and Smoke
+  Map centered nearby. Each link appears only where the service covers the
+  peak's nation — snow depth in the contiguous U.S. and Alaska, fire and smoke
+  across the United States, Canada, and Mexico — read from Peakbagger's own
+  "Nation" row and omitted otherwise.
 - **Chart times in the climb's local timezone.** The GPX analyzer's clock
   times, `Day N` boundaries, and camping-spot days now use the mountain's
   local time instead of the viewer's. The track's starting coordinate is

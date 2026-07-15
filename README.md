@@ -88,6 +88,11 @@ location in Copernicus Browser. Copernicus opens with its date, dataset, and
 cloud-cover controls available, so you can choose a useful recent satellite
 scene instead of landing on a fixed, quickly stale image.
 
+Where the service covers the peak's nation, two more links appear: NOAA's
+NOHRSC modeled snow depth, framed on the summit (contiguous U.S. and Alaska),
+and AirNow's Fire and Smoke Map centered nearby (United States, Canada, and
+Mexico).
+
 ### Make Peakbagger easier on the eyes
 
 Use a site-wide dark theme that follows your system or stays light or dark.

@@ -26,16 +26,20 @@ test('Peak.aspx gains location-specific Windy and Copernicus links', async () =>
         {
             fixture: 'peak-rainier.html',
             lat: '46.851731',
-            lon: '-121.760395'
+            lon: '-121.760395',
+            // United States: also gains the NOAA snow depth and AirNow links.
+            expectedLinks: 4
         },
         {
             fixture: 'peak-garibaldi.html',
             lat: '49.850562',
-            lon: '-123.004672'
+            lon: '-123.004672',
+            // Canada: AirNow covers it, but NOHRSC snow does not.
+            expectedLinks: 3
         }
     ];
 
-    for (const { fixture, lat, lon } of cases) {
+    for (const { fixture, lat, lon, expectedLinks } of cases) {
         const dom = await loadPeak(fixture);
         const { document } = dom.window;
         const panel = document.getElementById('bpb-peak-links');
@@ -45,7 +49,7 @@ test('Peak.aspx gains location-specific Windy and Copernicus links', async () =>
             panel.querySelector('.bpb-peak-links__heading').textContent,
             'Better Peakbagger links'
         );
-        assert.equal(panel.querySelectorAll('.bpb-peak-links__item').length, 2);
+        assert.equal(panel.querySelectorAll('.bpb-peak-links__item').length, expectedLinks);
 
         const windy = linkByText(document, 'Windy summit forecast');
         assert.equal(windy.href, `https://www.windy.com/${lat}/${lon}`);
@@ -56,7 +60,10 @@ test('Peak.aspx gains location-specific Windy and Copernicus links', async () =>
             `https://browser.dataspace.copernicus.eu/?zoom=13&lat=${lat}&lng=${lon}&themeId=DEFAULT-THEME`
         );
 
-        for (const anchor of [windy, copernicus]) {
+        const fireSmoke = linkByText(document, 'AirNow fire & smoke');
+        assert.equal(fireSmoke.href, `https://fire.airnow.gov/#9/${lat}/${lon}`);
+
+        for (const anchor of [windy, copernicus, fireSmoke]) {
             assert.equal(anchor.target, '_blank');
             assert.equal(anchor.rel, 'noopener noreferrer');
         }
@@ -64,6 +71,61 @@ test('Peak.aspx gains location-specific Windy and Copernicus links', async () =>
         const linksHeading = Array.from(panel.closest('td').querySelectorAll('b'))
             .find(element => element.textContent.trim() === 'Links');
         assert.ok(linksHeading.compareDocumentPosition(panel) & dom.window.Node.DOCUMENT_POSITION_FOLLOWING);
+    }
+});
+
+test('United States peaks gain a NOAA snow depth link with a summit-centered box', async () => {
+    const dom = await loadPeak('peak-rainier.html');
+    const { document } = dom.window;
+
+    const snow = linkByText(document, 'NOAA snow depth');
+    assert.ok(snow, 'Rainier should receive the NOAA snow depth link');
+    assert.equal(
+        snow.href,
+        'https://www.nohrsc.noaa.gov/interactive/html/map.html?var=ssm_depth'
+        + '&min_x=-122.2304&min_y=46.5877&max_x=-121.2904&max_y=47.1157'
+    );
+
+    // Canada is outside NOHRSC coverage: no snow link.
+    const canada = await loadPeak('peak-garibaldi.html');
+    assert.equal(linkByText(canada.window.document, 'NOAA snow depth'), undefined);
+});
+
+const renderNationPeak = nation => {
+    const nationRow = nation === null
+        ? ''
+        : `<tr><td valign="top">Nation</td><td>${nation}</td></tr>`;
+    const dom = new JSDOM(
+        '<!doctype html><table>'
+        + '<tr><td>Latitude/Longitude (WGS84)</td><td>40.0, -105.0 (Dec Deg)</td></tr>'
+        + nationRow
+        + '<tr><td colspan="2"><b>Links</b><br><br>Native links</td></tr>'
+        + '</table>',
+        { url: 'https://www.peakbagger.com/Peak.aspx?pid=1', runScripts: 'outside-only' }
+    );
+    dom.window.eval(source);
+    return dom.window.document;
+};
+
+test('country-specific links follow each service coverage area', () => {
+    const hasLink = (document, text) => Boolean(linkByText(document, text));
+
+    const usa = renderNationPeak('United States');
+    assert.ok(hasLink(usa, 'NOAA snow depth'), 'US peaks show snow depth');
+    assert.ok(hasLink(usa, 'AirNow fire & smoke'), 'US peaks show fire & smoke');
+
+    for (const nation of ['Canada', 'Mexico']) {
+        const document = renderNationPeak(nation);
+        assert.ok(!hasLink(document, 'NOAA snow depth'), `${nation} hides snow depth`);
+        assert.ok(hasLink(document, 'AirNow fire & smoke'), `${nation} shows fire & smoke`);
+    }
+
+    // Outside North America, and when the Nation row is missing, both hide.
+    for (const document of [renderNationPeak('France'), renderNationPeak(null)]) {
+        assert.ok(!hasLink(document, 'NOAA snow depth'));
+        assert.ok(!hasLink(document, 'AirNow fire & smoke'));
+        // The universal links are always present.
+        assert.ok(hasLink(document, 'Windy summit forecast'));
     }
 });
 

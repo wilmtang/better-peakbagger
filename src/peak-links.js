@@ -42,6 +42,12 @@
     // coordinate row. A generic bold "Links" elsewhere is not enough evidence.
     const peakTable = coordinateRow.closest('table');
     if (!peakTable) return;
+
+    // Read Peakbagger's own "Nation" row to gate country-specific services.
+    // Absent or unexpected values simply omit those links (fail closed).
+    const nationRow = Array.from(peakTable.querySelectorAll('tr')).find(row =>
+        row.cells.length >= 2 && normalize(row.cells[0].textContent).toLowerCase() === 'nation');
+    const nation = nationRow ? normalize(nationRow.cells[1].textContent).toLowerCase() : '';
     const linksHeadings = Array.from(peakTable.querySelectorAll('b, strong'))
         .filter(element => normalize(element.textContent).toLowerCase() === 'links');
     if (linksHeadings.length !== 1 || !linksHeadings[0].closest('td')) return;
@@ -88,6 +94,30 @@
         'Find fresh satelitte data by date and cloud cover',
         `https://browser.dataspace.copernicus.eu/?zoom=13&lat=${lat}&lng=${lon}&themeId=DEFAULT-THEME`
     );
+
+    // NOHRSC models snow only for the coterminous U.S. and Alaska. A degree box
+    // ~70 km wide, in the map's native 16:9 ratio, frames the peak's snowpack;
+    // omitting the date keeps it on the latest analysis.
+    if (nation === 'united states') {
+        const minX = (longitude - 0.47).toFixed(4);
+        const maxX = (longitude + 0.47).toFixed(4);
+        const minY = (latitude - 0.264).toFixed(4);
+        const maxY = (latitude + 0.264).toFixed(4);
+        addLink(
+            'NOAA snow depth',
+            'Modeled snowpack depth around this peak',
+            `https://www.nohrsc.noaa.gov/interactive/html/map.html?var=ssm_depth&min_x=${minX}&min_y=${minY}&max_x=${maxX}&max_y=${maxY}`
+        );
+    }
+
+    // AirNow's Fire and Smoke Map covers the United States, Canada, and Mexico.
+    if (nation === 'united states' || nation === 'canada' || nation === 'mexico') {
+        addLink(
+            'AirNow fire & smoke',
+            'Active wildfires and smoke near this peak',
+            `https://fire.airnow.gov/#9/${lat}/${lon}`
+        );
+    }
 
     section.appendChild(linkList);
 
