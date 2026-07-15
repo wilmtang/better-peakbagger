@@ -23,10 +23,10 @@ test('Chrome and Firefox background declarations share the same fail-closed coor
     assert.deepEqual(manifest.browser_specific_settings.gecko.data_collection_permissions.required, ['locationInfo']);
 });
 
-test('the canonical Firefox package embeds settings in the add-on manager', () => {
+test('the canonical unpacked extension opens Chrome settings in a full tab', () => {
     assert.deepEqual(manifest.options_ui, {
         page: 'options/options.html',
-        open_in_tab: false
+        open_in_tab: true
     });
 });
 

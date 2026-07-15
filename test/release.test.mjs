@@ -1,14 +1,18 @@
 import assert from "node:assert/strict";
+import { lstat, readFile } from "node:fs/promises";
+import path from "node:path";
 import { test } from "node:test";
 import JSZip from "jszip";
 
 import {
-  buildChromePackage,
+  buildFirefoxPackage,
+  createFirefoxManifest,
   requirePackagePaths,
-} from "../scripts/build-chrome-package.mjs";
+} from "../scripts/build-firefox-package.mjs";
 import { buildAmoMetadata } from "../scripts/create-amo-metadata.mjs";
 import { publishChrome } from "../scripts/publish-chrome.mjs";
 import { validateRelease } from "../scripts/release-check.mjs";
+import { prepareFirefoxSource } from "../scripts/run-firefox.mjs";
 import {
   requireArchiveArguments,
   verifyReleaseArchive,
@@ -67,7 +71,7 @@ async function makeReleaseZip(extraFiles = {}, omittedFiles = []) {
       version: "1.4.0",
       options_ui: {
         page: "options/options.html",
-        open_in_tab: false,
+        open_in_tab: true,
       },
     }),
     "icons/icon-128.png": "icon",
@@ -100,52 +104,76 @@ test("release archive rejects development and internal files", async () => {
   );
 });
 
-test("Chrome package opens options in a full tab without changing its source package", async () => {
+test("Firefox package embeds options without changing its canonical Chrome package", async () => {
   const sourceBytes = await makeReleaseZip();
-  const chromeBytes = await buildChromePackage(sourceBytes);
-  const [sourceArchive, chromeArchive] = await Promise.all([
+  const firefoxBytes = await buildFirefoxPackage(sourceBytes);
+  const [sourceArchive, firefoxArchive] = await Promise.all([
     JSZip.loadAsync(sourceBytes),
-    JSZip.loadAsync(chromeBytes),
+    JSZip.loadAsync(firefoxBytes),
   ]);
-  const [sourceManifest, chromeManifest] = await Promise.all([
+  const [sourceManifest, firefoxManifest] = await Promise.all([
     sourceArchive.file("manifest.json").async("string").then(JSON.parse),
-    chromeArchive.file("manifest.json").async("string").then(JSON.parse),
+    firefoxArchive.file("manifest.json").async("string").then(JSON.parse),
   ]);
 
-  assert.deepEqual(Object.keys(chromeArchive.files), Object.keys(sourceArchive.files));
+  assert.deepEqual(Object.keys(firefoxArchive.files), Object.keys(sourceArchive.files));
   for (const [name, sourceEntry] of Object.entries(sourceArchive.files)) {
     if (name === "manifest.json" || sourceEntry.dir) continue;
     assert.deepEqual(
-      await chromeArchive.file(name).async("uint8array"),
+      await firefoxArchive.file(name).async("uint8array"),
       await sourceEntry.async("uint8array"),
-      `${name} must be unchanged in the Chrome package`,
+      `${name} must be unchanged in the Firefox package`,
     );
   }
-  assert.equal(sourceManifest.options_ui.open_in_tab, false);
-  assert.equal(chromeManifest.options_ui.open_in_tab, true);
+  assert.equal(sourceManifest.options_ui.open_in_tab, true);
+  assert.equal(firefoxManifest.options_ui.open_in_tab, false);
   await assert.doesNotReject(
-    verifyReleaseArchive(sourceBytes, "1.4.0", "firefox"),
+    verifyReleaseArchive(sourceBytes, "1.4.0", "chrome"),
   );
   await assert.doesNotReject(
-    verifyReleaseArchive(chromeBytes, "1.4.0", "chrome"),
+    verifyReleaseArchive(firefoxBytes, "1.4.0", "firefox"),
   );
   await assert.rejects(
-    verifyReleaseArchive(sourceBytes, "1.4.0", "chrome"),
-    /chrome release options must open in a full tab/,
+    verifyReleaseArchive(sourceBytes, "1.4.0", "firefox"),
+    /firefox release options must open in the add-on manager/,
   );
 });
 
-test("Chrome package builder rejects non-inline source packages", async () => {
+test("Firefox package builder rejects a non-canonical source package", async () => {
   const sourceBytes = await makeReleaseZip({
     "manifest.json": JSON.stringify({
       version: "1.4.0",
       options_ui: {
         page: "options/options.html",
-        open_in_tab: true,
+        open_in_tab: false,
       },
     }),
   });
-  await assert.rejects(buildChromePackage(sourceBytes), /must declare an inline options_ui page/);
+  await assert.rejects(
+    buildFirefoxPackage(sourceBytes),
+    /Canonical manifest must declare a full-tab options_ui page/,
+  );
+});
+
+test("Firefox development source copies runtime files while overriding only the manifest", async () => {
+  const prepared = await prepareFirefoxSource();
+  try {
+    const manifest = JSON.parse(
+      await readFile(path.join(prepared.sourceDir, "manifest.json"), "utf8"),
+    );
+    const canonicalManifest = JSON.parse(
+      await readFile(new URL("../manifest.json", import.meta.url), "utf8"),
+    );
+    assert.deepEqual(manifest, createFirefoxManifest(canonicalManifest));
+    for (const directory of ["icons", "options", "popup", "src", "vendor"]) {
+      assert.equal(
+        (await lstat(path.join(prepared.sourceDir, directory))).isDirectory(),
+        true,
+      );
+    }
+  } finally {
+    await prepared.cleanup();
+  }
 });
 
 test("release archive requires third-party acknowledgements", async () => {
@@ -170,10 +198,10 @@ test("release archive verification requires an explicit browser", () => {
   );
 });
 
-test("Chrome package builder requires distinct input and output paths", () => {
-  assert.deepEqual(requirePackagePaths(["source.zip", "chrome.zip"]), {
+test("Firefox package builder requires distinct input and output paths", () => {
+  assert.deepEqual(requirePackagePaths(["source.zip", "firefox.zip"]), {
     sourcePath: "source.zip",
-    chromePath: "chrome.zip",
+    firefoxPath: "firefox.zip",
   });
   assert.throws(() => requirePackagePaths(["source.zip"]), /Usage:/);
   assert.throws(
