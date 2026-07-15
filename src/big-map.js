@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // Better Peakbagger — preserve Peakbagger's native Full Screen Map tracks and
-// interactions while applying the user's preferred base route width.
+// interactions while applying the user's preferred base route width, a matching
+// white casing, and (on single-ascent maps) the preferred route color.
 // Runs in MAIN world because the Leaflet map and layers are page-owned globals.
 
 (() => {
@@ -12,13 +13,32 @@
     const mapType = (params.get('t') || '').toUpperCase();
     if (!['A', 'G'].includes(mapType)) return;
 
-    const DEFAULT_WIDTH = 5;
+    // Single-ascent maps ('A') show one track, so it is safe to recolor it to
+    // the preferred route color. Group maps ('G') use color to tell climbers
+    // apart, so only the width and the casing are applied there.
+    const recolorTrack = mapType === 'A';
+
+    const DEFAULT_STYLE = { color: '#d9483b', width: 5, casingColor: '#ffffff', casingWidth: 9 };
     const enhancedLayers = new WeakSet();
-    let routeWidth = DEFAULT_WIDTH;
+    // Our own casing underlays, keyed by the native track they sit behind, so
+    // they are never mistaken for native tracks and are removed with them.
+    const casings = new WeakMap();
+    const casingLayers = new WeakSet();
+    let routeStyle = { ...DEFAULT_STYLE };
     let activeMap = null;
     let retryTimer = null;
 
-    const validWidth = value => Number.isInteger(value) && value >= 1 && value <= 12 ? value : DEFAULT_WIDTH;
+    const validColor = (value, fallback) =>
+        typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value) ? value : fallback;
+    const validWidth = value => Number.isInteger(value) && value >= 1 && value <= 12 ? value : DEFAULT_STYLE.width;
+    const validCasingWidth = (value, width) => Math.max(
+        Number.isInteger(value) && value >= 3 && value <= 20 ? value : DEFAULT_STYLE.casingWidth,
+        width + 2
+    );
+
+    const trackStyle = () => recolorTrack
+        ? { color: routeStyle.color, weight: routeStyle.width }
+        : { weight: routeStyle.width };
 
     const containsLine = latLngs => {
         if (!Array.isArray(latLngs) || !latLngs.length) return false;
@@ -45,25 +65,70 @@
         return true;
     };
 
-    const applyWidth = layer => {
+    // A white (configurable) underlay traced along the native track, sitting
+    // beneath it so the colored line reads as a cased route — the same effect
+    // the embedded ascent map builds with a second polyline.
+    const ensureCasing = layer => {
         const L = globalThis.L;
-        if (!activeMap || !L || !isNativeTrack(layer, L)) return;
-        try { layer.setStyle({ weight: routeWidth }); } catch (error) { return; }
+        if (!L || typeof L.Polyline !== 'function') return;
+        let casing = casings.get(layer);
+        if (casing) {
+            try { casing.setStyle({ color: routeStyle.casingColor, weight: routeStyle.casingWidth }); }
+            catch (error) { /* The casing may already have been removed. */ }
+            return;
+        }
+        try {
+            casing = new L.Polyline(layer.getLatLngs(), {
+                color: routeStyle.casingColor,
+                weight: routeStyle.casingWidth,
+                opacity: 0.92,
+                interactive: false,
+                lineCap: 'round',
+                lineJoin: 'round'
+            });
+        } catch (error) { return; }
+        casingLayers.add(casing);
+        casings.set(layer, casing);
+        try { activeMap.addLayer(casing); } catch (error) {
+            casings.delete(layer);
+            return;
+        }
+        // Keep every casing beneath the native tracks and markers.
+        if (typeof casing.bringToBack === 'function') {
+            try { casing.bringToBack(); } catch (error) { /* Pane not ready; render order still favors native tracks. */ }
+        }
+    };
+
+    const removeCasing = layer => {
+        const casing = casings.get(layer);
+        if (!casing) return;
+        casings.delete(layer);
+        if (activeMap && typeof activeMap.removeLayer === 'function') {
+            try { activeMap.removeLayer(casing); } catch (error) { /* Already discarded with its map. */ }
+        }
+    };
+
+    const applyStyle = layer => {
+        const L = globalThis.L;
+        // Never treat our own casing as a native track to widen or re-case.
+        if (!activeMap || !L || casingLayers.has(layer) || !isNativeTrack(layer, L)) return;
+        try { layer.setStyle(trackStyle()); } catch (error) { return; }
+        ensureCasing(layer);
         if (enhancedLayers.has(layer) || typeof layer.on !== 'function') return;
         enhancedLayers.add(layer);
 
         // Peakbagger temporarily changes route styling during hover. Restore
-        // only our base width after every native mouseout handler has run.
+        // our base style after every native mouseout handler has run.
         layer.on('mouseout', () => queueMicrotask(() => {
             if (layer._map === activeMap) {
-                try { layer.setStyle({ weight: routeWidth }); } catch (error) { /* The native layer may have been removed. */ }
+                try { layer.setStyle(trackStyle()); } catch (error) { /* The native layer may have been removed. */ }
             }
         }));
     };
 
-    const applyAllWidths = () => {
+    const applyAllStyles = () => {
         if (!activeMap || typeof activeMap.eachLayer !== 'function') return;
-        try { activeMap.eachLayer(applyWidth); } catch (error) { /* A live Leaflet layer collection can change during iteration. */ }
+        try { activeMap.eachLayer(applyStyle); } catch (error) { /* A live Leaflet layer collection can change during iteration. */ }
     };
 
     const findMap = () => {
@@ -81,9 +146,12 @@
         if (!candidate) return false;
         if (candidate !== activeMap) {
             activeMap = candidate;
-            candidate.on('layeradd', event => queueMicrotask(() => applyWidth(event && event.layer)));
+            candidate.on('layeradd', event => queueMicrotask(() => applyStyle(event && event.layer)));
+            if (typeof candidate.on === 'function') {
+                candidate.on('layerremove', event => removeCasing(event && event.layer));
+            }
         }
-        applyAllWidths();
+        applyAllStyles();
         return true;
     };
 
@@ -91,8 +159,14 @@
         if (event.source !== window || event.origin !== location.origin) return;
         const data = event.data;
         if (!data || data.__bpbBigMap !== true || data.dir !== 'toPage') return;
-        routeWidth = validWidth(data.routeWidth);
-        applyAllWidths();
+        const width = validWidth(data.routeWidth);
+        routeStyle = {
+            color: validColor(data.routeColor, DEFAULT_STYLE.color),
+            width,
+            casingColor: validColor(data.casingColor, DEFAULT_STYLE.casingColor),
+            casingWidth: validCasingWidth(data.casingWidth, width)
+        };
+        applyAllStyles();
     });
 
     window.postMessage({ __bpbBigMap: true, dir: 'toCS', type: 'get' }, location.origin);

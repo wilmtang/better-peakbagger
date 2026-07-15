@@ -57,14 +57,14 @@ const makeLeaflet = window => {
     return { Polyline, Polygon, MapStub };
 };
 
-const loadBigMap = async ({ type = 'G', width = 7 } = {}) => {
+const loadBigMap = async ({ type = 'G', width = 7, settings = {} } = {}) => {
     const dom = new JSDOM('<!doctype html><body><div id="map"></div></body>', {
         url: `https://www.peakbagger.com/Map/BigMap.aspx?t=${type}&d=2414&gt=rc`,
         runScripts: 'outside-only'
     });
     const { window } = dom;
     const messages = [];
-    window.chrome = makeChromeStub({ bpbSettings: { mapRouteWidth: width } });
+    window.chrome = makeChromeStub({ bpbSettings: { mapRouteWidth: width, ...settings } });
     const nativePostMessage = message => window.queueMicrotask(() => window.dispatchEvent(new window.MessageEvent('message', {
         source: window,
         origin: window.location.origin,
@@ -109,6 +109,14 @@ test('Full Screen recent-track maps preserve native colors, hover, and click beh
     assert.equal(hoverEffect.options.weight, 12, 'transient hover polylines must not be flattened to the base width');
     assert.equal(area.options.weight, 2, 'polygons are not GPS tracks');
 
+    // Each native track gains one white casing underlay; the hover effect and
+    // the polygon do not.
+    const casingsOf = () => window.mapsPlaceholder.layers.filter(layer =>
+        layer instanceof leaflet.Polyline && layer.options.interactive === false);
+    assert.equal(casingsOf().length, 2, 'each native track gains exactly one casing');
+    assert.ok(casingsOf().every(casing => casing.options.color === '#ffffff' && casing.options.weight === 9),
+        'casings use the configured casing color and width');
+
     routeA.fire('mouseover');
     assert.equal(routeA.options.weight, 11, 'native hover highlighting should remain visible');
     routeA.fire('click');
@@ -122,25 +130,39 @@ test('Full Screen recent-track maps preserve native colors, hover, and click beh
     lateRoute.on('click', () => {});
     window.mapsPlaceholder.addLayer(lateRoute);
     await waitFor(dom, () => lateRoute.options.weight === 7);
-    assert.equal(lateRoute.options.color, '#31a354');
+    assert.equal(lateRoute.options.color, '#31a354', 'group tracks keep their native color');
+    assert.equal(casingsOf().length, 3, 'a track added later also gains a casing');
 
     await window.BPBSettings.set({ mapRouteWidth: 9 });
     await waitFor(dom, () => routeA.options.weight === 9 && routeB.options.weight === 9 && lateRoute.options.weight === 9);
+    // mapRouteCasingWidth defaults to 9 but is clamped to width + 2 = 11.
+    await waitFor(dom, () => casingsOf().every(casing => casing.options.weight === 11));
+    assert.equal(casingsOf().length, 3, 're-applying the style must not duplicate casings');
 
     const bridgeReply = messages.find(message => message.__bpbBigMap === true && message.dir === 'toPage');
-    assert.deepEqual(Object.keys(bridgeReply).sort(), ['__bpbBigMap', 'dir', 'routeWidth']);
-    assert.equal(JSON.stringify(bridgeReply).includes('mapRouteColor'), false);
+    assert.deepEqual(Object.keys(bridgeReply).sort(),
+        ['__bpbBigMap', 'casingColor', 'casingWidth', 'dir', 'routeColor', 'routeWidth']);
+    // The bridge forwards validated style values, never the raw settings keys.
+    assert.equal(JSON.stringify(bridgeReply).includes('mapRoute'), false);
     dom.window.close();
 });
 
-test('Full Screen single-ascent maps can widen a non-interactive native track', async () => {
-    const fixture = await loadBigMap({ type: 'A', width: 6 });
+test('Full Screen single-ascent maps recolor the native track and add a casing', async () => {
+    const fixture = await loadBigMap({ type: 'A', width: 6, settings: {
+        mapRouteColor: '#112233', mapRouteCasingColor: '#eeddcc', mapRouteCasingWidth: 10
+    } });
     const { dom, window, leaflet } = fixture;
     const route = new leaflet.Polyline([{ lat: 44.15, lng: -121.78 }, { lat: 44.16, lng: -121.76 }], { color: '#d9483b', weight: 3 });
     window.map = new leaflet.MapStub([route]);
     fixture.evaluate();
     await waitFor(dom, () => route.options.weight === 6);
-    assert.equal(route.options.color, '#d9483b');
+    assert.equal(route.options.color, '#112233', 'the single track is recolored to the route color');
+
+    const casing = window.map.layers.find(layer =>
+        layer instanceof leaflet.Polyline && layer.options.interactive === false);
+    assert.ok(casing, 'a casing underlay is added behind the track');
+    assert.equal(casing.options.color, '#eeddcc');
+    assert.equal(casing.options.weight, 10, 'casing width honors the setting (>= route width + 2)');
     dom.window.close();
 });
 

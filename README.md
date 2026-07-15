@@ -71,7 +71,8 @@ Ascent pages gain an interactive elevation chart with distance and time views,
 route metrics, grades, timing, and multi-day camping details. Hover over the
 chart to follow the same point on the map. The map route uses a configurable
 line and casing while Peakbagger's native route and markers remain on top, and
-Full Screen GPS maps honor the same route-width preference.
+Full Screen GPS maps honor the same width and casing (and, on single-ascent
+maps, the route color).
 
 ### Find useful ascent beta faster
 
@@ -350,8 +351,8 @@ This split is the single most important design constraint in the extension. Here
 | `gpx-analyzer.js` | **MAIN** | Needs page-realm access: the map iframe's Leaflet globals (see below), the bundled `Chart` global, and page clipboard/`localStorage` semantics identical to a userscript. |
 | `chart.umd.min.js` | **MAIN** | Loaded immediately before the analyzer so the `Chart` UMD global lands in the same realm the analyzer reads. |
 | `provider-page.js` | **MAIN**, injected on demand | Needs the activity page's signed-in state and authenticated same-origin export; exposes only the narrow ownership/capture adapter to the background. |
-| `big-map.js` | **MAIN** | Reads the Full Screen page's own Leaflet map and changes only native GPS-polyline weight. |
-| `big-map-bridge.js` | isolated | Sends the MAIN-world BigMap enhancer only the validated route width; it has no settings-write path. |
+| `big-map.js` | **MAIN** | Reads the Full Screen page's own Leaflet map, applies the native GPS-polyline weight, adds a matching casing underlay, and recolors the single track on `t=A` maps. |
+| `big-map-bridge.js` | isolated | Sends the MAIN-world BigMap enhancer only the validated route style (color, width, casing); it has no settings-write path. |
 | `terrain-map.js` | isolated | Creates the extension-owned frame and relays only validated terrain messages between it and the analyzer. |
 | `terrain-frame.js`, MapLibre | extension document | Owns the WebGL terrain surface and packaged CSP worker. It has no access to Peakbagger globals and does not request tiles until the bridge sends a user-requested coordinate route plus an optional validated raster descriptor. |
 | `theme.js`, `bridge.js`, `ascent-filter.js`, `settings.js` | isolated | They only touch the DOM and `chrome.storage`; no page globals needed. |
@@ -677,23 +678,28 @@ The map integration works in three parts:
 GPS view) do not expose the ascent page's downloadable GPX to the analyzer.
 They already own the correct route layers, colors, hover state, popups, and trip
 report links. Redrawing those routes would duplicate geometry and break the
-meaning of the 10-track color palette, so `big-map.js` mutates one native style
-property instead: Leaflet `weight`.
+meaning of the 10-track color palette, so `big-map.js` restyles the native
+tracks in place and traces one non-interactive casing underlay behind each.
 
-The MAIN-world script accepts only the validated 1–12 px `mapRouteWidth` sent by
-a dedicated, read-only isolated-world bridge. On `t=G`, it requires a genuine
-`L.Polyline` with Peakbagger's native mouseover plus click/popup behavior. That
-extra gate excludes polygons, tile layers, markers, and transient line-shaped
-hover effects. On `t=A`, the single native route may be non-interactive, so the
-gate accepts a non-filled polyline with at least two valid Leaflet coordinates.
+The MAIN-world script accepts only the validated route style (color, 1–12 px
+width, casing color, casing width ≥ width + 2) sent by a dedicated, read-only
+isolated-world bridge. On `t=G`, it requires a genuine `L.Polyline` with
+Peakbagger's native mouseover plus click/popup behavior. That extra gate
+excludes polygons, tile layers, markers, and transient line-shaped hover
+effects. On `t=A`, the single native route may be non-interactive, so the gate
+accepts a non-filled polyline with at least two valid Leaflet coordinates.
 
-The enhancer calls `setStyle({ weight })`—never `color`, opacity, dash pattern,
-pane, z-order, or event replacement. Peakbagger's mouseover can therefore make
-a route wider or otherwise highlight it, and its click handler opens the same
-native details/trip-report popup. A small mouseout listener runs after the
-native synchronous handlers and restores the configured base width. Layers
-added after page load are handled through Leaflet's `layeradd` event; changing
-the preference in Settings updates open BigMap pages.
+On `t=G` the enhancer calls `setStyle({ weight })`—never touching `color`, so
+the 10-track palette that distinguishes climbers is preserved; on the single
+`t=A` track it also applies the route `color`. Under every native track it adds
+a `bringToBack()`-ed casing polyline (`interactive: false`) matching the track
+geometry, so the colored line reads as a cased route without intercepting hover
+or clicks. Peakbagger's mouseover can still widen or highlight a route, and its
+click handler opens the same native details/trip-report popup; a small mouseout
+listener runs after the native synchronous handlers and restores the configured
+style. Layers added after page load are handled through Leaflet's `layeradd`
+event and their casings are cleaned up on `layerremove`; changing the
+preference in Settings updates open BigMap pages.
 
 This is also fail-closed. Only the documented GPS URL modes are eligible, and
 the script looks for the same page-owned `L` plus `mapsPlaceholder`/`map`

@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **Full Screen maps get the route casing.** Full Screen GPS maps
+  (`BigMap.aspx`) now draw the configured white casing behind each native
+  track and apply the configured width, matching the embedded ascent map.
+  Single-ascent maps (`t=A`) also take the configured route color; group maps
+  (`t=G`) keep Peakbagger's per-climber track colors. The casing is a
+  non-interactive underlay, so native hover, clicks, and trip-report popups are
+  untouched.
 - **Snow and wildfire planning links.** Peak pages now add a NOAA NOHRSC
   modeled snow-depth map framed on the summit, and an AirNow Fire and Smoke
   Map centered nearby. Each link appears only where the service covers the

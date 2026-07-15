@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // Narrow read-only bridge for the MAIN-world BigMap enhancer. It exposes only
-// the validated route width, not the full settings object or a settings write
-// path.
+// the validated route style fields, not the full settings object or a settings
+// write path.
 
 (() => {
     'use strict';
@@ -13,7 +13,10 @@
     const send = settings => window.postMessage({
         __bpbBigMap: true,
         dir: 'toPage',
-        routeWidth: settings.mapRouteWidth
+        routeColor: settings.mapRouteColor,
+        routeWidth: settings.mapRouteWidth,
+        casingColor: settings.mapRouteCasingColor,
+        casingWidth: settings.mapRouteCasingWidth
     }, location.origin);
 
     window.addEventListener('message', async event => {
