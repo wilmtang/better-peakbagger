@@ -49,12 +49,13 @@
 
     const section = document.createElement('section');
     section.id = PANEL_ID;
-    section.setAttribute('aria-label', 'Better Peakbagger planning maps');
+    section.setAttribute('aria-labelledby', `${PANEL_ID}-heading`);
 
-    const brand = document.createElement('span');
-    brand.className = 'bpb-peak-links__brand';
-    brand.textContent = 'Better Peakbagger';
-    section.appendChild(brand);
+    const heading = document.createElement('div');
+    heading.id = `${PANEL_ID}-heading`;
+    heading.className = 'bpb-peak-links__heading';
+    heading.textContent = 'Better Peakbagger links';
+    section.appendChild(heading);
 
     const linkList = document.createElement('div');
     linkList.className = 'bpb-peak-links__list';

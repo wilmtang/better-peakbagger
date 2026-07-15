@@ -1,53 +1,35 @@
 /* Copyright (C) 2026 wilmtang <wilm.tang@outlook.com> */
 /* SPDX-License-Identifier: AGPL-3.0-or-later */
 
-/* A quiet extension-owned inset: distinct from Peakbagger's unboxed link
-   groups, but deliberately uses the site's typography and link treatment. */
+/* A quiet extension-owned inset. The heading and links intentionally inherit
+   Peakbagger's native type size; the slim rule is the only branded accent. */
 #bpb-peak-links {
     box-sizing: border-box;
     margin: 0 0 1.35em;
-    padding: .8em .9em .85em;
-    border: 1px solid #c8dbe7;
-    border-left: 3px solid #377aa2;
-    border-radius: 4px;
-    background: #f3f8fb;
-    color: #283944;
+    padding: .4em .75em .5em;
+    border-left: 2px solid #7da7bf;
+    background: #f8fafb;
+    color: inherit;
 }
 
-#bpb-peak-links .bpb-peak-links__brand {
-    display: inline-block;
-    padding: .16em .5em;
-    border-radius: 999px;
-    background: #dcebf4;
-    color: #285f7f;
-    font-size: .68em;
-    font-weight: bold;
-    letter-spacing: .045em;
-    line-height: 1.45;
-    text-transform: uppercase;
+#bpb-peak-links .bpb-peak-links__heading {
+    margin: 0 0 .35em;
+    color: inherit;
+    font-size: 1em;
+    font-weight: normal;
+    line-height: inherit;
 }
 
 #bpb-peak-links .bpb-peak-links__list {
-    display: flex;
-    flex-wrap: wrap;
-    gap: .75em 1.5em;
-    margin-top: .65em;
+    margin-left: 1.5em;
 }
 
 #bpb-peak-links .bpb-peak-links__item {
-    flex: 1 1 14em;
-    min-width: 0;
+    display: block;
 }
 
-#bpb-peak-links .bpb-peak-links__item a {
-    font-weight: bold;
-}
-
-#bpb-peak-links .bpb-peak-links__item a::after {
-    content: "\00a0\2197";
-    display: inline-block;
-    font-size: .78em;
-    text-decoration: none;
+#bpb-peak-links .bpb-peak-links__item + .bpb-peak-links__item {
+    margin-top: .55em;
 }
 
 #bpb-peak-links .bpb-peak-links__detail {
@@ -59,15 +41,8 @@
 }
 
 html[data-bpb-theme="dark"] #bpb-peak-links {
-    border-color: #40545f;
     border-left-color: #6eadd4;
-    background: #202a30;
-    color: #d8d4cc;
-}
-
-html[data-bpb-theme="dark"] #bpb-peak-links .bpb-peak-links__brand {
-    background: #2d4858;
-    color: #b8dbf0;
+    background: #22282c;
 }
 
 html[data-bpb-theme="dark"] #bpb-peak-links .bpb-peak-links__detail {
