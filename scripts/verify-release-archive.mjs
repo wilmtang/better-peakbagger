@@ -12,6 +12,7 @@ const ALLOWED_TOP_LEVEL = new Set([
   "options",
   "popup",
   "src",
+  "terrain",
   "vendor",
 ]);
 
@@ -24,8 +25,19 @@ const REQUIRED_FILES = [
   "options/options.html",
   "popup/popup.html",
   "src/background.js",
+  "src/big-map-bridge.js",
+  "src/big-map.js",
   "src/capture-core.js",
+  "src/terrain-cache.js",
+  "src/terrain-map.css",
+  "src/terrain-frame.js",
+  "src/terrain-map.js",
+  "terrain/terrain.html",
   "vendor/chart.umd.min.js",
+  "vendor/maplibre-LICENSE.txt",
+  "vendor/maplibre-gl-csp-worker.js",
+  "vendor/maplibre-gl-csp.js",
+  "vendor/maplibre-gl.css",
 ];
 
 const OPTIONS_PRESENTATION = {

@@ -36,6 +36,8 @@
     const MAP_VIEWPORT_MIN_HEIGHT = 240;
     const MAP_VIEWPORT_MAX_HEIGHT = 720;
     const MAP_RESIZE_RAIL_HEIGHT = 18;
+    const TERRAIN_LOAD_TIMEOUT_MS = 17000;
+    const TERRAIN_CACHE_DEFAULT_MB = 256;
 
     const toRad = x => x * Math.PI / 180;
 
@@ -407,6 +409,10 @@
             height: integer(settings.mapViewportHeight, MAP_VIEWPORT_MIN_HEIGHT, MAP_VIEWPORT_MAX_HEIGHT, MAP_VIEWPORT_DEFAULT.height)
         };
     };
+    const resolveTerrainCacheLimitMb = settings => Number.isInteger(settings.terrainCacheLimitMb)
+        && settings.terrainCacheLimitMb >= 0 && settings.terrainCacheLimitMb <= 2048
+        ? settings.terrainCacheLimitMb
+        : TERRAIN_CACHE_DEFAULT_MB;
 
     const initChart = async () => {
         // 1. Locate GPX link and build UI
@@ -599,6 +605,18 @@
         Object.assign(unitSelect.style, { padding: '2px 6px', borderRadius: '4px', border: '1px solid #ccc', cursor: 'pointer', outline: 'none' });
         unitSelect.innerHTML = '<option value="imperial">Imperial</option><option value="metric">Metric</option>';
 
+        const terrainButton = document.createElement('button');
+        terrainButton.id = 'bpb-terrain-toggle';
+        terrainButton.type = 'button';
+        terrainButton.disabled = true;
+        terrainButton.textContent = '3D terrain';
+        terrainButton.title = 'Available after the GPX route loads';
+        terrainButton.setAttribute('aria-pressed', 'false');
+        Object.assign(terrainButton.style, {
+            marginBottom: '7px', padding: '5px 10px', border: '1px solid transparent', borderRadius: '6px',
+            background: '#2457a7', color: '#ffffff', fontWeight: '600', cursor: 'pointer'
+        });
+
         const routeStyleControls = document.createElement('div');
         Object.assign(routeStyleControls.style, { display: 'flex', gap: '8px', marginTop: '7px', fontSize: '0.8em' });
 
@@ -625,15 +643,60 @@
         Object.assign(hintText.style, { fontSize: '0.8em', color: '#888', marginTop: '4px', fontStyle: 'italic' });
         hintText.innerText = "Double-click point to copy coordinates";
 
-        controlsContainer.append(unitSelect, routeStyleControls, hintText);
+        controlsContainer.append(terrainButton, unitSelect, routeStyleControls, hintText);
         headerBox.append(statsContainer, controlsContainer);
+
+        const terrainDisclosure = document.createElement('div');
+        terrainDisclosure.id = 'bpb-terrain-disclosure';
+        terrainDisclosure.setAttribute('role', 'group');
+        terrainDisclosure.setAttribute('aria-label', '3D terrain privacy notice');
+        Object.assign(terrainDisclosure.style, {
+            display: 'none', margin: '0 0 10px', padding: '9px 10px', border: '1px solid #b8c7d9',
+            borderRadius: '6px', background: '#eef4fa', fontFamily: 'sans-serif', fontSize: '0.88em'
+        });
+        const terrainDisclosureText = document.createElement('span');
+        terrainDisclosureText.append('3D terrain requests elevation tiles from Mapterhorn and may re-request your selected map layer from its provider. Those services receive the viewed map area and request metadata. ');
+        const terrainPrivacyLink = document.createElement('a');
+        terrainPrivacyLink.href = 'https://mapterhorn.com/privacy-policy/';
+        terrainPrivacyLink.target = '_blank';
+        terrainPrivacyLink.rel = 'noopener noreferrer';
+        terrainPrivacyLink.textContent = 'Privacy policy';
+        terrainDisclosureText.append(terrainPrivacyLink);
+
+        const terrainDisclosureActions = document.createElement('span');
+        Object.assign(terrainDisclosureActions.style, { display: 'inline-flex', gap: '6px', marginLeft: '10px' });
+        const terrainLoadButton = document.createElement('button');
+        terrainLoadButton.type = 'button';
+        terrainLoadButton.textContent = 'Load 3D terrain';
+        Object.assign(terrainLoadButton.style, {
+            padding: '4px 8px', border: '1px solid transparent', borderRadius: '5px',
+            background: '#2457a7', color: '#ffffff', fontWeight: '600', cursor: 'pointer'
+        });
+        const terrainCancelButton = document.createElement('button');
+        terrainCancelButton.type = 'button';
+        terrainCancelButton.textContent = 'Cancel';
+        Object.assign(terrainCancelButton.style, {
+            padding: '4px 8px', border: '1px solid #aab3bd', borderRadius: '5px',
+            background: '#ffffff', color: '#222222', cursor: 'pointer'
+        });
+        terrainDisclosureActions.append(terrainLoadButton, terrainCancelButton);
+        terrainDisclosure.append(terrainDisclosureText, terrainDisclosureActions);
+
+        const terrainMessage = document.createElement('div');
+        terrainMessage.id = 'bpb-terrain-message';
+        terrainMessage.setAttribute('role', 'status');
+        terrainMessage.setAttribute('aria-live', 'polite');
+        Object.assign(terrainMessage.style, {
+            display: 'none', margin: '0 0 10px', padding: '7px 9px', borderRadius: '6px',
+            fontFamily: 'sans-serif', fontSize: '0.88em'
+        });
 
         const canvasContainer = document.createElement('div');
         Object.assign(canvasContainer.style, { position: 'relative', height: '300px', width: '100%' });
 
         const canvas = document.createElement('canvas');
         canvasContainer.append(canvas);
-        container.append(headerBox, canvasContainer);
+        container.append(headerBox, terrainDisclosure, terrainMessage, canvasContainer);
         const fullScreenMapLink = Array.from(document.querySelectorAll('a')).find(a => a.textContent.includes('Full Screen Map'));
         if (fullScreenMapLink) fullScreenMapLink.before(container);
         else gpxLink.after(container);
@@ -644,6 +707,13 @@
             const p = panelPalette();
             Object.assign(container.style, { background: p.panelBg, borderColor: p.panelBorder, color: p.text });
             Object.assign(unitSelect.style, { background: p.inputBg, color: p.text, borderColor: p.selBorder });
+            Object.assign(terrainCancelButton.style, { background: p.inputBg, color: p.text, borderColor: p.selBorder });
+            Object.assign(terrainDisclosure.style, {
+                background: effectiveTheme(BPB.get().theme) === 'dark' ? '#202f3a' : '#eef4fa',
+                borderColor: effectiveTheme(BPB.get().theme) === 'dark' ? '#3e617a' : '#b8c7d9',
+                color: p.text
+            });
+            terrainPrivacyLink.style.color = effectiveTheme(BPB.get().theme) === 'dark' ? '#9fc7f5' : '#174f91';
             [routeColorControl, routeCasingColorControl].forEach(control => {
                 control.label.style.color = p.sub;
                 Object.assign(control.input.style, { background: p.inputBg, borderColor: p.selBorder });
@@ -713,6 +783,157 @@
         let mapLayerChangeHandler = null;
         let mapRetryTimer = null;
         let mapLayerRetryTimer = null;
+        let terrainState = 'idle';
+        let terrainConsentGranted = false;
+        let terrainLoadTimer = null;
+
+        const clearTerrainLoadTimer = () => {
+            if (terrainLoadTimer !== null) {
+                clearTimeout(terrainLoadTimer);
+                terrainLoadTimer = null;
+            }
+        };
+
+        const postTerrain = (type, detail = {}) => window.postMessage({
+            __bpbTerrain: true,
+            dir: 'toCS',
+            type,
+            ...detail
+        }, location.origin);
+
+        const showTerrainMessage = (text, tone = 'info') => {
+            if (!text) {
+                terrainMessage.style.display = 'none';
+                terrainMessage.textContent = '';
+                return;
+            }
+            const dark = effectiveTheme(BPB.get().theme) === 'dark';
+            const error = tone === 'error';
+            Object.assign(terrainMessage.style, {
+                display: 'block',
+                color: dark ? '#f1eee7' : '#222222',
+                background: error ? (dark ? '#43282a' : '#fff0f0') : (dark ? '#213546' : '#eef4fa'),
+                border: `1px solid ${error ? (dark ? '#885359' : '#dfb6b6') : (dark ? '#3e617a' : '#b8c7d9')}`
+            });
+            terrainMessage.textContent = text;
+        };
+
+        const updateTerrainButton = () => {
+            const hasRoute = mapRouteSegments.length > 0;
+            if (terrainState === 'loading') {
+                terrainButton.disabled = true;
+                terrainButton.textContent = 'Loading 3D…';
+                terrainButton.title = 'Loading terrain';
+                terrainButton.setAttribute('aria-pressed', 'false');
+            } else if (terrainState === 'active') {
+                terrainButton.disabled = false;
+                terrainButton.textContent = '2D map';
+                terrainButton.title = 'Return to the Peakbagger map';
+                terrainButton.setAttribute('aria-pressed', 'true');
+            } else {
+                terrainButton.disabled = !hasRoute;
+                terrainButton.textContent = '3D terrain';
+                terrainButton.title = hasRoute ? 'View this route on 3D terrain' : 'Available after the GPX route loads';
+                terrainButton.setAttribute('aria-pressed', 'false');
+            }
+            terrainButton.style.cursor = terrainButton.disabled ? 'default' : 'pointer';
+            terrainButton.style.opacity = terrainButton.disabled ? '0.55' : '1';
+        };
+
+        const restoreNativeMap = () => {
+            if (!mapIframe) return;
+            mapIframe.style.visibility = 'visible';
+            mapIframe.removeAttribute('aria-hidden');
+            scheduleMapInvalidate();
+        };
+
+        const failTerrain = message => {
+            clearTerrainLoadTimer();
+            terrainState = 'idle';
+            restoreNativeMap();
+            postTerrain('destroy');
+            updateTerrainButton();
+            showTerrainMessage(message, 'error');
+        };
+
+        const terrainFailureMessage = reason => ({
+            frame: '3D terrain could not start in this browser. The 2D map is unchanged.',
+            unavailable: '3D terrain is unavailable in this browser. The 2D map is unchanged.',
+            maplibre: 'Your browser could not render 3D terrain. The 2D map is unchanged.',
+            renderer: 'Your browser could not render 3D terrain. The 2D map is unchanged.',
+            timeout: '3D terrain took too long to load. The 2D map is unchanged.'
+        })[reason] || '3D terrain could not load. The 2D map is unchanged.';
+
+        const startTerrain = () => {
+            if (terrainState !== 'idle' || !mapViewport || !mapIframe || !mapRouteSegments.length) return;
+            terrainState = 'loading';
+            terrainDisclosure.style.display = 'none';
+            showTerrainMessage('Loading 3D terrain…');
+            updateTerrainButton();
+            postTerrain('init', {
+                routeSegments: mapRouteSegments,
+                routeStyle: resolveMapRouteStyle(BPB.get()),
+                theme: effectiveTheme(BPB.get().theme),
+                basemap: getTerrainBasemap(),
+                cacheLimitMb: resolveTerrainCacheLimitMb(BPB.get())
+            });
+            terrainLoadTimer = setTimeout(() => {
+                if (terrainState === 'loading') failTerrain('3D terrain took too long to load. The 2D map is unchanged.');
+            }, TERRAIN_LOAD_TIMEOUT_MS);
+        };
+
+        const stopTerrain = () => {
+            clearTerrainLoadTimer();
+            terrainState = 'idle';
+            restoreNativeMap();
+            postTerrain('destroy');
+            showTerrainMessage('');
+            updateTerrainButton();
+        };
+
+        terrainButton.addEventListener('click', () => {
+            if (terrainState === 'active') {
+                stopTerrain();
+                return;
+            }
+            if (terrainState !== 'idle') return;
+            if (terrainConsentGranted) {
+                startTerrain();
+                return;
+            }
+            showTerrainMessage('');
+            terrainDisclosure.style.display = 'block';
+            terrainLoadButton.focus();
+        });
+
+        terrainLoadButton.addEventListener('click', () => {
+            terrainConsentGranted = true;
+            startTerrain();
+        });
+
+        terrainCancelButton.addEventListener('click', () => {
+            terrainDisclosure.style.display = 'none';
+            terrainButton.focus();
+        });
+
+        window.addEventListener('message', event => {
+            if (event.source !== window || event.origin !== location.origin) return;
+            const data = event.data;
+            if (!data || data.__bpbTerrain !== true || data.dir !== 'toPage') return;
+
+            if (data.type === 'loaded' && terrainState === 'loading') {
+                clearTerrainLoadTimer();
+                terrainState = 'active';
+                mapIframe.style.visibility = 'hidden';
+                mapIframe.setAttribute('aria-hidden', 'true');
+                showTerrainMessage('');
+                updateTerrainButton();
+            } else if (data.type === 'error' && terrainState === 'loading') {
+                failTerrain(terrainFailureMessage(data.reason));
+            }
+        });
+
+        updateTerrainButton();
 
         const findMapIframe = () => document.querySelector('iframe[src*="MasterMap.aspx"], iframe[src*="mastermap.aspx"]');
 
@@ -740,6 +961,76 @@
             } catch (e) {
                 return null;
             }
+        };
+
+        const expandLeafletTileUrl = (layer, iframeWin) => {
+            const options = layer && layer.options && typeof layer.options === 'object' ? layer.options : {};
+            if (!layer || typeof layer._url !== 'string' || !layer._url || layer.wmsParams
+                || options.zoomReverse === true || (Number.isFinite(options.zoomOffset) && options.zoomOffset !== 0)) return null;
+
+            let template = layer._url;
+            if (template.includes('{s}')) {
+                const subdomains = Array.isArray(options.subdomains)
+                    ? options.subdomains
+                    : typeof options.subdomains === 'string' ? options.subdomains.split('') : [];
+                const subdomain = subdomains.find(value => /^[a-z0-9-]{1,20}$/i.test(String(value)));
+                if (!subdomain) return null;
+                template = template.replaceAll('{s}', String(subdomain));
+            }
+            template = template.replaceAll('{r}', iframeWin.L && iframeWin.L.Browser && iframeWin.L.Browser.retina ? '@2x' : '');
+
+            const placeholders = { z: '__BPB_TILE_Z__', x: '__BPB_TILE_X__', y: '__BPB_TILE_Y__' };
+            const protectedUrl = template.replace(/\{([zxy])\}/g, (match, token) => placeholders[token]);
+            let absolute;
+            try { absolute = new URL(protectedUrl, iframeWin.location && iframeWin.location.href || location.href).href; } catch (error) { return null; }
+            template = absolute
+                .replaceAll(placeholders.z, '{z}')
+                .replaceAll(placeholders.x, '{x}')
+                .replaceAll(placeholders.y, '{y}');
+
+            const tokens = Array.from(template.matchAll(/\{([^{}]+)\}/g), match => match[1]);
+            return ['z', 'x', 'y'].every(token => tokens.includes(token))
+                && tokens.every(token => ['z', 'x', 'y'].includes(token))
+                ? template
+                : null;
+        };
+
+        const getTerrainBasemap = () => {
+            try {
+                const iframe = findMapIframe();
+                const iframeWin = iframe && iframe.contentWindow;
+                const map = iframeWin && iframeWin.mapsPlaceholder;
+                const select = iframeWin && iframeWin.document && iframeWin.document.getElementById('selmap');
+                const option = select && select.options && select.options[select.selectedIndex];
+                if (!map || !option) return null;
+
+                const selectedLayer = typeof select.value === 'string' ? iframeWin[select.value] : null;
+                const activeLayers = Object.values(map._layers || {})
+                    .sort((left, right) => (Number(left && left.options && left.options.zIndex) || 0)
+                        - (Number(right && right.options && right.options.zIndex) || 0));
+                const candidates = [selectedLayer, ...activeLayers]
+                    .filter(layer => layer && typeof layer._url === 'string'
+                        && (typeof map.hasLayer !== 'function' || map.hasLayer(layer)))
+                    .filter((layer, index, layers) => layers.indexOf(layer) === index);
+
+                for (const layer of candidates) {
+                    const tiles = expandLeafletTileUrl(layer, iframeWin);
+                    if (!tiles) continue;
+                    const options = layer.options || {};
+                    const minzoom = Number.isInteger(options.minZoom) ? Math.min(22, Math.max(0, options.minZoom)) : 0;
+                    const maxzoom = Number.isInteger(options.maxZoom) ? Math.min(24, Math.max(minzoom, options.maxZoom)) : 19;
+                    return {
+                        name: String(option.textContent || '').trim().slice(0, 80),
+                        tiles: [tiles],
+                        tileSize: Number(options.tileSize) === 512 ? 512 : 256,
+                        minzoom,
+                        maxzoom,
+                        scheme: options.tms === true ? 'tms' : 'xyz',
+                        attribution: typeof options.attribution === 'string' ? options.attribution.slice(0, 600) : ''
+                    };
+                }
+            } catch (error) { /* Peakbagger may replace or restrict its map frame. */ }
+            return null;
         };
 
         const mapLayerExists = (select, value) =>
@@ -1001,44 +1292,52 @@
                         // the marker), so the chart itself is unaffected.
                         const mapIframe = document.querySelector('iframe[src*="MasterMap.aspx"], iframe[src*="mastermap.aspx"]');
                         const iframeWin = mapIframe ? mapIframe.contentWindow : null;
+                        let hoveredPoint = null;
+                        let fillColor = '#FF0000';
 
-                        if (activeElements.length > 0 && iframeWin && iframeWin.mapsPlaceholder && iframeWin.L) {
-                            ensureRouteOverlay();
+                        if (activeElements.length > 0) {
                             const datasetIndex = activeElements[0].datasetIndex;
                             const idx = activeElements[0].index;
                             const dataArray = datasetIndex === 0 ? eleDistData : eleTimeData;
-                            const d = dataArray[idx] ? dataArray[idx]._raw : null;
-                            const isRed = datasetIndex === 0;
-                            const fillColor = isRed ? '#FF0000' : '#0055FF';
+                            const candidate = dataArray[idx] ? dataArray[idx]._raw : null;
+                            fillColor = datasetIndex === 0 ? '#FF0000' : '#0055FF';
+                            if (candidate && Number.isFinite(candidate.lat) && Number.isFinite(candidate.lon)) hoveredPoint = candidate;
+                        }
 
-                            if (d && d.lat !== undefined && d.lon !== undefined) {
-                                const L = iframeWin.L;
-                                const map = iframeWin.mapsPlaceholder;
+                        if (terrainState === 'active') {
+                            postTerrain('highlight', {
+                                coordinates: hoveredPoint ? [hoveredPoint.lon, hoveredPoint.lat] : null
+                            });
+                        }
 
-                                // Recreate marker if it doesn't match the current map instance (e.g. iframe reloaded)
-                                if (hoverMarker) {
-                                    try {
-                                        if (hoverMarker._map !== map) {
-                                            hoverMarker = null;
-                                        }
-                                    } catch (e) {
+                        if (hoveredPoint && terrainState !== 'active' && iframeWin && iframeWin.mapsPlaceholder && iframeWin.L) {
+                            ensureRouteOverlay();
+                            const L = iframeWin.L;
+                            const map = iframeWin.mapsPlaceholder;
+
+                            // Recreate marker if it doesn't match the current map instance (e.g. iframe reloaded)
+                            if (hoverMarker) {
+                                try {
+                                    if (hoverMarker._map !== map) {
                                         hoverMarker = null;
                                     }
+                                } catch (e) {
+                                    hoverMarker = null;
                                 }
+                            }
 
-                                if (!hoverMarker) {
-                                    hoverMarker = L.circleMarker([d.lat, d.lon], {
-                                        radius: 9,
-                                        color: '#FFFFFF',
-                                        fillColor: fillColor,
-                                        fillOpacity: 1,
-                                        opacity: 1,
-                                        weight: 2
-                                    }).addTo(map);
-                                } else {
-                                    hoverMarker.setLatLng([d.lat, d.lon]);
-                                    hoverMarker.setStyle({ color: '#FFFFFF', fillColor: fillColor, opacity: 1, fillOpacity: 1 });
-                                }
+                            if (!hoverMarker) {
+                                hoverMarker = L.circleMarker([hoveredPoint.lat, hoveredPoint.lon], {
+                                    radius: 9,
+                                    color: '#FFFFFF',
+                                    fillColor: fillColor,
+                                    fillOpacity: 1,
+                                    opacity: 1,
+                                    weight: 2
+                                }).addTo(map);
+                            } else {
+                                hoverMarker.setLatLng([hoveredPoint.lat, hoveredPoint.lon]);
+                                hoverMarker.setStyle({ color: '#FFFFFF', fillColor: fillColor, opacity: 1, fillOpacity: 1 });
                             }
                         } else {
                             if (hoverMarker) {
@@ -1162,6 +1461,14 @@
                 removeRouteOverlay();
                 scheduleRouteOverlay();
             }
+            if (terrainState === 'loading' || terrainState === 'active') {
+                if (changed(['mapRouteColor', 'mapRouteWidth', 'mapRouteCasingColor', 'mapRouteCasingWidth', 'theme'])) {
+                    postTerrain('update', {
+                        routeStyle: resolveMapRouteStyle(settings),
+                        theme: effectiveTheme(settings.theme)
+                    });
+                }
+            }
             if (changed(['rememberMapLayer', 'mapLastLayer'])) scheduleMapLayerSync();
             if (changed(['units', 'theme', 'chartDefaultSeries'])) {
                 unitSelect.value = resolveUnits(settings);
@@ -1177,6 +1484,7 @@
             if (!trkpts.length) return stats.innerText = "No track points found.";
 
             mapRouteSegments = parseMapRouteSegments(xml);
+            updateTerrainButton();
 
             const parsedPoints = trkpts.map(pt => {
                 const eleNode = pt.querySelector('ele');

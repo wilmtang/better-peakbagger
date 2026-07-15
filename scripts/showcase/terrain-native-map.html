@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <style>
+    html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; }
+    body { position: relative; background: linear-gradient(145deg, #d4dfca, #ece5c9); }
+    svg { width: 100%; height: 100%; }
+    .contour { fill: none; stroke: rgba(91, 104, 75, .38); stroke-width: 1.2; }
+    .route-shadow, .route { fill: none; stroke-linecap: round; stroke-linejoin: round; }
+    .route-shadow { stroke: #fff; stroke-width: 9; }
+    .route { stroke: #d9483b; stroke-width: 5; }
+    .controls { position: absolute; top: 10px; left: 10px; display: grid; overflow: hidden; border: 1px solid #abb2a5; border-radius: 5px; background: #fff; box-shadow: 0 2px 6px rgb(0 0 0 / 16%); }
+    .controls b { width: 28px; height: 28px; text-align: center; font: 20px/27px Arial, sans-serif; }
+    .controls b + b { border-top: 1px solid #d2d6cf; }
+    .credit { position: absolute; right: 4px; bottom: 3px; padding: 2px 5px; background: rgb(255 255 255 / 80%); color: #465143; font: 9px Arial, sans-serif; }
+  </style>
+</head>
+<body>
+  <select id="selmap" hidden aria-hidden="true">
+    <option value="L_FIX" selected>Synthetic topographic map</option>
+  </select>
+  <svg viewBox="0 0 800 450" preserveAspectRatio="none" aria-hidden="true">
+    <path class="contour" d="M-20 390 C150 300 245 410 420 330 S690 240 840 315"/>
+    <path class="contour" d="M-30 335 C145 245 270 355 430 275 S680 185 850 255"/>
+    <path class="contour" d="M-35 275 C130 205 260 285 410 220 S675 130 850 185"/>
+    <path class="contour" d="M-30 215 C135 145 250 220 395 165 S650 72 835 115"/>
+    <path class="route-shadow" d="M385 420 C370 348 390 278 378 220 S392 92 401 35"/>
+    <path class="route" d="M385 420 C370 348 390 278 378 220 S392 92 401 35"/>
+  </svg>
+  <span class="controls"><b>+</b><b>−</b></span>
+  <span class="credit">Synthetic 2D fixture</span>
+  <script>
+    const basemap = {
+      _url: `${location.origin}/scripts/showcase/terrain-tiles/{z}/{x}/{y}.png`,
+      options: {
+        tileSize: 256,
+        minZoom: 0,
+        maxZoom: 18,
+        attribution: 'Synthetic topographic fixture'
+      }
+    };
+    window.L = { Browser: { retina: false } };
+    window.mapsPlaceholder = {
+      _layers: { basemap },
+      hasLayer: layer => layer === basemap
+    };
+  </script>
+</body>
+</html>

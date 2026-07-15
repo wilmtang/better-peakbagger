@@ -66,7 +66,14 @@ from its lower-right corner, with the page width as its upper bound; an opt-in
 setting can restore the last selected basemap. The chart sits immediately below
 the map, before Peakbagger's full-screen map and GPX-download links. Hover over
 the chart to follow the same point on the map, or double-click a point to copy
-its coordinates.
+its coordinates. Full Screen single-ascent and 10-track GPS maps also honor the
+route-width preference without changing Peakbagger's route colors, hover
+highlights, click details, or trip-report links. **3D terrain** opens an
+extension-owned MapLibre view of the same route at true vertical scale.
+Mapterhorn supplies the elevation model; when Peakbagger's selected Leaflet
+layer is a compatible raster layer, that same map is draped over the terrain.
+Tile requests begin only after a per-page privacy notice, and Peakbagger's 2D
+map remains the immediate fallback.
 
 ![Three-day GPX analysis with a high-contrast route and chart-synchronized Leaflet marker](store-assets/showcase-gpx-map-sync.gif)
 
@@ -94,10 +101,11 @@ scene instead of landing on a fixed, quickly stale image.
 
 Use a site-wide dark theme that follows your system or stays light or dark.
 Shared settings also control units, the GPX chart's default view, route
-appearance, map size, optional map-layer memory, and which signals count as
-ascent beta. Activity-capture settings control waypoint retention plus
-automatic Trip Info and wilderness-night filling. Changes apply to open
-Peakbagger tabs immediately and to the next activity capture.
+appearance, map size, the best-effort 3D elevation cache, optional map-layer
+memory, and which signals count as ascent beta. Activity-capture settings
+control waypoint retention plus automatic Trip Info and wilderness-night
+filling. Changes apply to open Peakbagger tabs immediately and to the next
+activity capture.
 
 ![Better Peakbagger settings beside Peakbagger dark mode](store-assets/screenshot-3-dark-mode-settings.png)
 
@@ -110,7 +118,10 @@ discovery and, only after you choose **Open drafts**, a reduced coordinate-only
 track for Preview. Waypoint coordinates and names are included by default and
 can be turned off in Settings. Source health and device fields plus each
 trackpoint's time and elevation are excluded; derived draft values remain yours
-to review.
+to review. The
+optional 3D terrain view makes a separate, explicit request to Mapterhorn for
+tiles covering the viewed map area and may re-request the selected Leaflet map
+layer from its existing provider. No 3D tile request occurs before consent.
 
 ## FAQ
 
@@ -168,7 +179,9 @@ and the [discussion board](https://github.com/wilmtang/better-peakbagger/discuss
 - [Deep dive: content-script worlds](#deep-dive-content-script-worlds)
 - [Deep dive: the settings system and the bridge](#deep-dive-the-settings-system-and-the-bridge)
 - [Deep dive: the GPX Analyzer](#deep-dive-the-gpx-analyzer)
+- [Deep dive: opt-in 3D terrain](#deep-dive-opt-in-3d-terrain)
 - [Deep dive: the Leaflet map-hover injection](#deep-dive-the-leaflet-map-hover-injection)
+- [Deep dive: native Full Screen GPS tracks](#deep-dive-native-full-screen-gps-tracks)
 - [Deep dive: the Ascent Beta Filter](#deep-dive-the-ascent-beta-filter)
 - [Deep dive: site-wide dark mode](#deep-dive-site-wide-dark-mode)
 - [Cross-browser notes](#cross-browser-notes)
@@ -192,6 +205,9 @@ and the [discussion board](https://github.com/wilmtang/better-peakbagger/discuss
                           │  settings.js  (shared)   │                             │
                           │  theme.js  → data-bpb-theme on <html>                  │
                           │  bridge.js  ←── postMessage ──┐                        │
+                          │  big-map-bridge.js (width only)│                        │
+                          │  terrain-map.js (frame bridge)◀┼── coordinates + safe  │
+                          │                                │   raster descriptor   │
                           │  ascent-filter.js             │                        │
                           └───────────────────────────────┼────────────────────────┘
                                                            │  window.postMessage
@@ -199,6 +215,12 @@ and the [discussion board](https://github.com/wilmtang/better-peakbagger/discuss
                           │  MAIN (page) world              ▼                        │
                           │  chart.umd.min.js  +  gpx-analyzer.js                    │
                           │  (needs page globals: map iframe, Chart, clipboard)      │
+                          │  big-map.js (native Full Screen Leaflet tracks)           │
+                          └──────────────────────────────────────────────────────────┘
+                                                           │ validated terrain input
+                                                           ▼
+                          ┌──────────────────────────────────────────────────────────┐
+                          │  extension frame: terrain-frame.js + packaged MapLibre   │
                           └──────────────────────────────────────────────────────────┘
 ```
 
@@ -220,11 +242,12 @@ toolbar click (`activeTab`) ──▶ inject provider adapter in MAIN world
                   grouped ascent tabs ◀── verified handshake ── fill + Preview once
 ```
 
-Three boundaries do most of the work:
+Four boundaries do most of the work:
 
 1. **Content scripts run in two different JavaScript "worlds,"** and each feature is placed in the world it needs. The GPX Analyzer and the on-demand activity-provider adapter run in the page's own world; form filling and extension UI run in the isolated extension world.
 2. Because the MAIN-world analyzer can't touch `chrome.storage`, a tiny **bridge** relays settings across the world boundary over `window.postMessage`.
-3. Activity capture is a **gated transaction**, not a persistent provider integration: the extension receives temporary access only after a toolbar click, refuses ambiguous ownership, keeps only a privacy-reduced draft payload in session storage, and never activates Peakbagger's Save controls.
+3. The optional MapLibre renderer stays **in an extension-owned frame and dormant** until the user accepts its per-page notice. The isolated bridge relays bounded coordinate segments plus an optional validated descriptor for Peakbagger's selected raster layer; the packaged renderer then requests tiles for that 3D view.
+4. Activity capture is a **gated transaction**, not a persistent provider integration: the extension receives temporary access only after a toolbar click, refuses ambiguous ownership, keeps only a privacy-reduced draft payload in session storage, and never activates Peakbagger's Save controls.
 
 ---
 
@@ -329,6 +352,10 @@ This split is the single most important design constraint in the extension. Here
 | `gpx-analyzer.js` | **MAIN** | Needs page-realm access: the map iframe's Leaflet globals (see below), the bundled `Chart` global, and page clipboard/`localStorage` semantics identical to a userscript. |
 | `chart.umd.min.js` | **MAIN** | Loaded immediately before the analyzer so the `Chart` UMD global lands in the same realm the analyzer reads. |
 | `provider-page.js` | **MAIN**, injected on demand | Needs the activity page's signed-in state and authenticated same-origin export; exposes only the narrow ownership/capture adapter to the background. |
+| `big-map.js` | **MAIN** | Reads the Full Screen page's own Leaflet map and changes only native GPS-polyline weight. |
+| `big-map-bridge.js` | isolated | Sends the MAIN-world BigMap enhancer only the validated route width; it has no settings-write path. |
+| `terrain-map.js` | isolated | Creates the extension-owned frame and relays only validated terrain messages between it and the analyzer. |
+| `terrain-frame.js`, MapLibre | extension document | Owns the WebGL terrain surface and packaged CSP worker. It has no access to Peakbagger globals and does not request tiles until the bridge sends a consented coordinate route plus an optional validated raster descriptor. |
 | `theme.js`, `bridge.js`, `ascent-filter.js`, `settings.js` | isolated | They only touch the DOM and `chrome.storage`; no page globals needed. |
 | `ascent-draft.js` | isolated | Uses extension messaging to verify a prepared draft, then fills the Peakbagger DOM and starts Preview. |
 
@@ -405,6 +432,199 @@ Theming is applied per-render: a `PALETTES[light|dark]` object (resolved from th
 
 ---
 
+## Deep dive: opt-in 3D terrain
+
+Leaflet remains the right tool for Peakbagger's native 2D map, but a Leaflet
+plugin would not provide a sound 3D boundary here: the extension would have to
+mutate a site-owned Leaflet instance and depend on plugin APIs Peakbagger does
+not ship. The 3D view instead uses packaged
+[MapLibre GL JS](https://maplibre.org/maplibre-gl-js/docs/examples/3d-terrain/)
+in a separate extension-owned surface. Peakbagger's iframe remains underneath
+and is hidden only after MapLibre reports a successful load.
+
+### Height and map imagery are separate
+
+The word “basemap” is easy to misread in a 3D renderer. Two independent raster
+sources do different jobs:
+
+1. **Mapterhorn is the height field.** The renderer reads Mapterhorn's public
+   [Terrarium tiles](https://mapterhorn.com/data-access/) through a bounded
+   local protocol as a MapLibre `raster-dem` source. The RGB values in each
+   Terrarium pixel encode elevation as `R × 256 + G + B ÷ 256 − 32768` metres.
+   MapLibre decodes those pixels into the mesh that moves vertices up and down.
+   GPX elevations do not shape the terrain.
+2. **The selected Peakbagger layer is the optional surface texture.** Just
+   before 3D starts, the analyzer inspects Peakbagger's active Leaflet map. If
+   the selected layer is a compatible XYZ/TMS raster `TileLayer`, the renderer
+   adds its tile template as a MapLibre `raster` source and drapes those pixels
+   over the DEM. Roads, contour lines, labels, and satellite imagery therefore
+   follow the 3D surface instead of floating in a flat pane.
+
+Mapterhorn currently documents global 30 m coverage, 10 m coverage across the
+U.S., and finer coverage where it has incorporated public regional elevation
+data. Resolution is still the resolution of the DEM, not the sharpness of the
+selected map image: a crisp 256 px topo tile cannot create a ridge absent from
+the elevation source.
+
+The style is assembled locally in this order:
+
+| Order | MapLibre layer | Purpose |
+| --- | --- | --- |
+| 1 | background | Fills areas outside available terrain. |
+| 2 | color relief | Converts DEM elevation into restrained hypsometric color. |
+| 3 | selected raster, when compatible | Drapes Peakbagger's selected 2D layer at 78% opacity. |
+| 4 | hillshade | Restores slope and aspect cues above the raster texture. |
+| 5 | route casing and route | Keeps the GPX line legible over light or dark maps. |
+| 6 | chart-hover point | Shows the chart's current coordinate on the 3D route. |
+
+Terrain exaggeration is exactly `1`: one rendered vertical metre equals one
+horizontal metre. That restraint matters for route planning because the common
+“dramatic terrain” setting makes slopes look steeper than they are.
+
+### Activation and browser boundaries
+
+The feature crosses three JavaScript worlds, but each world has a narrow job:
+
+```text
+Peakbagger MAIN world
+  gpx-analyzer.js
+  ├─ reads the route already parsed for the chart
+  ├─ inspects the active Leaflet TileLayer
+  └─ sends a bounded init message after consent
+              │
+              ▼
+isolated extension world
+  terrain-map.js
+  ├─ creates terrain/terrain.html
+  ├─ waits for the frame's explicit "ready" handshake
+  └─ relays init, style, hover, and destroy messages
+              │
+              ▼
+extension-owned document
+  terrain-cache.js + terrain-frame.js + packaged MapLibre + CSP worker
+  ├─ validates the route and raster descriptor again
+  ├─ reuses or requests bounded DEM tiles and requests optional map tiles
+  └─ reports "loaded" only after MapLibre is usable
+```
+
+The explicit `ready` handshake is important: Chromium can finish the iframe's
+load event before the frame script has installed its message listener. The
+bridge retains the initial route until the frame announces that it can receive
+it. The frame starts at `opacity: 0` rather than `visibility: hidden`; Chromium
+may suppress WebGL rendering and tile scheduling for a visibility-hidden frame.
+Only the `loaded` reply makes it opaque and interactive, then the analyzer hides
+the native map. The native map is never destroyed.
+
+MapLibre and its strict-CSP worker are checked into `vendor/`; no executable
+code is downloaded at runtime. Running them in `terrain/terrain.html` gives the
+worker a stable extension origin and avoids the browser-specific worker sandbox
+encountered when WebGL was attempted directly from a content script. The
+manifest exposes only that packaged HTML entrypoint to Peakbagger.
+
+### Reusing the selected Leaflet layer safely
+
+The extension does not copy a Leaflet object or accept arbitrary MapLibre style
+JSON. `gpx-analyzer.js` finds an active layer with a normal `_url` tile template
+and creates a small, transient descriptor:
+
+```js
+{
+  name: "Open Topo Map",
+  tiles: ["https://…/{z}/{x}/{y}.png"],
+  tileSize: 256,
+  minzoom: 0,
+  maxzoom: 17,
+  scheme: "xyz",
+  attribution: "…"
+}
+```
+
+Leaflet's `{s}` subdomain and `{r}` retina placeholders are resolved before the
+handoff. The extension frame then independently requires all three `{z}`, `{x}`
+and `{y}` tokens, one tile template, bounded zooms and text lengths, no URL
+credentials or fragment, and an HTTPS public hostname (or Peakbagger's own
+origin). IP-literal, localhost, local/internal, unknown-placeholder, and malformed URLs
+are rejected. Attribution is reduced to text and safe HTTP(S) links before it
+enters MapLibre's attribution control.
+
+Compatibility is deliberately narrower than Leaflet's full plugin ecosystem:
+
+| Selected Peakbagger layer | 3D result |
+| --- | --- |
+| Standard HTTPS XYZ or TMS `TileLayer`, with provider CORS support | Draped over the terrain. |
+| Standard layer using Leaflet `{s}` or `{r}` | Placeholders are resolved, then the layer is draped. |
+| WMS, custom `GridLayer`, reverse/offset zoom, or a layer without a reusable tile URL | Terrain-only color relief and hillshade. |
+| IP-literal/local, malformed, or unsupported tile URL | Rejected; terrain-only rendering continues. |
+| Valid public tile URL whose provider denies cross-origin WebGL requests | The failed raster is removed; terrain-only rendering continues. |
+
+The layer is sampled when **Load 3D terrain** is chosen. To use a different
+layer, return to **2D map**, select it in Peakbagger, and open 3D again. This
+avoids synchronizing controls between two independent map engines and makes the
+chosen provider for each 3D session unambiguous.
+
+### Bounded DEM cache
+
+Mapterhorn currently marks its terrain responses as publicly cacheable for
+seven days, so the browser's ordinary HTTP cache already avoids many immediate
+re-downloads. Better Peakbagger also puts successful DEM responses behind a
+MapLibre custom protocol and stores them in a dedicated CacheStorage cache.
+This makes reuse explicit across short-lived 3D frames and gives it a predictable
+ceiling.
+
+The default limit is **256 MB**, configurable from 0–2048 MB in Settings; 0
+disables and clears the owned DEM cache on the next 3D load. An LRU index in
+`storage.local` tracks byte size and last use. Writes and eviction run off the
+render-critical network path, so cache bookkeeping cannot turn a usable tile
+into a rendering failure. The index is reconciled against CacheStorage when a
+new terrain frame starts, which handles browser eviction or partial storage
+cleanup without trusting stale metadata.
+
+This is deliberately **best-effort**, not persistent/offline-map storage. The
+extension never calls `navigator.storage.persist()`, so Chrome or Firefox may
+purge cached tiles under disk pressure or when the user clears site/extension
+data. A missing, evicted, corrupt, oversized, or quota-rejected entry simply
+returns to Mapterhorn. Only Mapterhorn DEM tiles are cached here; selected
+Leaflet basemap tiles continue to follow their provider's own cache policy.
+
+### Privacy, failure, and teardown
+
+No 3D request occurs on page load or when the notice is merely opened. Only
+**Load 3D terrain** starts MapLibre. Mapterhorn then receives tile coordinates
+for the viewed area plus ordinary request metadata under its
+[privacy policy](https://mapterhorn.com/privacy-policy/). When a compatible
+selected map is used, its existing provider also receives a new set of tile
+requests for the 3D camera's view. Its tile template and attribution are relayed
+only for that renderer session and are not persisted by Better Peakbagger.
+Successful Mapterhorn DEM responses may remain in the bounded local cache
+described above; they contain terrain pixels addressed by tile coordinate, not
+the route or GPX.
+
+The route handoff remains coordinate-only: latitude, longitude, and segment
+boundaries, capped at 3,000 points and 1,500 segments. The renderer rejects
+extra per-point fields, invalid coordinates, and implausibly global bounds.
+Source GPX XML, timestamps, GPX elevations, health/device fields, and activity
+metadata do not enter the extension frame. The optional raster descriptor is
+map configuration, not activity data.
+
+Failure is layered rather than all-or-nothing:
+
+- An incompatible or failed selected raster falls back to Mapterhorn color
+  relief and hillshade while keeping 3D usable.
+- Missing WebGL, invalid route input, a missing renderer, a DEM failure, or the
+  renderer's 15-second load timeout removes the partial surface and leaves the
+  native 2D map visible. The analyzer has a slightly longer 17-second watchdog
+  for a lost frame reply.
+- Returning to 2D removes the MapLibre instance, frame, resize observer, and
+  load timer. This releases the WebGL context and stops that session's tile
+  activity.
+
+Chart hover follows the route in either map. This is still a terrain-shape view,
+not current conditions: a DEM and raster basemap cannot establish current snow
+bridges, crevasses, cornices, rockfall, vegetation, or route safety. The map
+therefore always labels itself **Not live conditions**.
+
+---
+
 ## Deep dive: the Leaflet map-hover injection
 
 This is the feature that forces the whole MAIN-world design, and the most fragile thing in the extension — documented here in full because it depends on Peakbagger internals we don't control.
@@ -442,6 +662,37 @@ The map integration works in three parts:
 3. **Real-time sync.** `onHover` fires continuously, so `setLatLng` moves the dot in lockstep with the cursor. When the cursor leaves the 40 px hit halo, `activeElements` is empty and the marker is faded to `opacity: 0`.
 
 **Why it's fragile, and how it fails.** `mapsPlaceholder` and `L` are undocumented Peakbagger internals. If Peakbagger renames them, restructures the iframe, changes origin, or removes the standard `L.polyline` API, the guards simply leave the native route alone and skip the affected enhancement. **The failure is closed**: the chart, tooltips, and every other feature keep working; you may lose the thicker route, the moving dot, or both. No exception, no console spam. That's the intended contract for a feature built on someone else's private globals.
+
+---
+
+## Deep dive: native Full Screen GPS tracks
+
+`BigMap.aspx?t=A` (one ascent) and `BigMap.aspx?t=G` (the recent/different-route
+GPS view) do not expose the ascent page's downloadable GPX to the analyzer.
+They already own the correct route layers, colors, hover state, popups, and trip
+report links. Redrawing those routes would duplicate geometry and break the
+meaning of the 10-track color palette, so `big-map.js` mutates one native style
+property instead: Leaflet `weight`.
+
+The MAIN-world script accepts only the validated 1–12 px `mapRouteWidth` sent by
+a dedicated, read-only isolated-world bridge. On `t=G`, it requires a genuine
+`L.Polyline` with Peakbagger's native mouseover plus click/popup behavior. That
+extra gate excludes polygons, tile layers, markers, and transient line-shaped
+hover effects. On `t=A`, the single native route may be non-interactive, so the
+gate accepts a non-filled polyline with at least two valid Leaflet coordinates.
+
+The enhancer calls `setStyle({ weight })`—never `color`, opacity, dash pattern,
+pane, z-order, or event replacement. Peakbagger's mouseover can therefore make
+a route wider or otherwise highlight it, and its click handler opens the same
+native details/trip-report popup. A small mouseout listener runs after the
+native synchronous handlers and restores the configured base width. Layers
+added after page load are handled through Leaflet's `layeradd` event; changing
+the preference in Settings updates open BigMap pages.
+
+This is also fail-closed. Only the documented GPS URL modes are eligible, and
+the script looks for the same page-owned `L` plus `mapsPlaceholder`/`map`
+globals Peakbagger currently uses. Missing globals, changed layer structure, or
+ambiguous group layers leave the Full Screen map entirely native.
 
 ---
 
@@ -498,10 +749,10 @@ The options page themes itself with the same `data-bpb-theme` mechanism (CSS var
 
 - **Manifest V3** for both engines. Chrome uses a service worker; Firefox uses the background-scripts fallback from the same source files.
 - **`"world": "MAIN"`** for the analyzer requires **Chrome 111+** and **Firefox 128+**.
-- **`browser_specific_settings.gecko`** provides the Firefox add-on `id`, `strict_min_version: "140.0"`, and the required `locationInfo` disclosure. This is a disclosure that activity coordinates are sent to Peakbagger for lookup/Preview, not permission to access device geolocation.
+- **`browser_specific_settings.gecko`** provides the Firefox add-on `id`, `strict_min_version: "140.0"`, and the required `locationInfo` disclosure. This is a data-handling disclosure for coordinates sent to Peakbagger and, only after the 3D notice is accepted, map-tile coordinates requested from Mapterhorn and a compatible selected map provider; it is not permission to access device geolocation.
 - **Storage promises.** `chrome.storage.*` returns promises in MV3 on both engines; `settings.js` also prefers `browser.*` when present, so it's native on Firefox and works via the `chrome.*` alias on Chromium.
-- **Match patterns.** `*://*.peakbagger.com/*` covers `www` and the bare host; the ascent/peak-ascent entries list both `ascent.aspx` and `Ascent.aspx` casings since match-pattern paths are case-sensitive.
-- **No remote code.** [Chart.js](https://www.chartjs.org/) 4.5.1 is vendored at `vendor/chart.umd.min.js` (MIT) rather than pulled from a CDN — required by MV3, and better for privacy and reliability.
+- **Match patterns.** `*://*.peakbagger.com/*` covers `www` and the bare host; page-specific entries list relevant filename casings (`ascent.aspx`/`Ascent.aspx` and `BigMap.aspx`/`bigmap.aspx`) because match-pattern paths are case-sensitive.
+- **No remote code.** [Chart.js](https://www.chartjs.org/) 4.5.1 and [MapLibre GL JS](https://maplibre.org/) 5.24.0 are vendored under `vendor/` rather than pulled from a CDN — required by MV3, and better for privacy and reliability. Mapterhorn supplies elevation data, never executable code.
 
 ---
 
@@ -520,6 +771,12 @@ src/
   site-dark-css.js       dark rules as a string (window.BPBDarkCSS), theme-scoped
   bridge.js              relays settings to the MAIN-world analyzer (postMessage)
   gpx-analyzer.js        elevation/time chart + map-hover (MAIN world)
+  big-map-bridge.js      read-only Full Screen route-width bridge
+  big-map.js             native Full Screen GPS track width (MAIN world)
+  terrain-map.js         isolated bridge for the extension-owned terrain frame
+  terrain-cache.js       bounded best-effort Mapterhorn DEM cache
+  terrain-frame.js       opt-in MapLibre terrain renderer (extension document)
+  terrain-map.css        scoped 3D surface and control styling
   ascent-filter.js       ascent-list filter and instant table sort (isolated world)
   provider-page.js       on-demand Garmin/Strava ownership + minimal GPX extraction
   capture-core.js        segment validation, summit scoring, metrics, GPX reduction
@@ -527,6 +784,11 @@ src/
   ascent-draft.js        fail-closed ascent form filling + one Preview submission
 vendor/
   chart.umd.min.js       Chart.js 4.5.1, bundled (MIT)
+  maplibre-gl-csp.js     MapLibre GL JS 5.24.0 strict-CSP build (BSD-3-Clause)
+  maplibre-gl-csp-worker.js  packaged MapLibre worker, loaded only for 3D
+  maplibre-gl.css        MapLibre controls and canvas styles
+terrain/
+  terrain.html           packaged renderer frame; loads only local code and CSS
 icons/                   16/32/48/128 px
 test/
   fixtures/peakascents/  PeakAscents.aspx captures, PII-masked (see its README)
@@ -537,6 +799,9 @@ test/
   theme-inject.test.mjs  dark-theme sheet-injection invariant
   options.test.mjs       options page end-to-end (populate/save/clean)
   provider-page.test.mjs provider ownership/export adapters and privacy parsing
+  terrain-map.test.mjs   DEM boundary, route validation, renderer lifecycle
+  terrain-cache.test.mjs CacheStorage reuse, eviction, and disable behavior
+  big-map.test.mjs       native GPS color/hover/click preservation
   capture-core.test.mjs  track validation, scoring, metrics, and reduction
   background-capture.test.mjs  session jobs, lookup, grouping, and handshakes
   ascent-draft.test.mjs  form/privacy validation and exactly-once Preview
@@ -556,6 +821,7 @@ Settings shape (`chrome.storage.sync`, key `bpbSettings`):
   mapRouteCasingColor: '#rrggbb', mapRouteCasingWidth: 3..20, // defaults #ffffff / 9
   mapViewportWidth: 320..4096,     // pixels; default 450; capped by parent
   mapViewportHeight: 240..720,     // pixels; default 450; reset restores both
+  terrainCacheLimitMb: 0..2048,    // default 256; best-effort local DEM cache
   rememberMapLayer: boolean,       // opt-in; default false
   mapLastLayer: '' | known layer ID,
   betaTr: boolean,                  // "has beta" counts a trip report…
@@ -605,8 +871,10 @@ the Peakbagger summit lookup and GPS Preview actions described below.
 ### Browser permissions
 
 - **`storage`** saves theme, units, chart/map, and beta-filter preferences in
-  `storage.sync`. It also keeps short-lived capture jobs and prepared drafts in
-  `storage.session`; that data expires after 30 minutes.
+  `storage.sync`. It keeps the bounded DEM cache index in `storage.local`, and
+  short-lived capture jobs and prepared drafts in `storage.session`; that data
+  expires after 30 minutes. DEM response bytes live in browser-managed
+  CacheStorage and may be evicted under storage pressure.
 - **`activeTab`** grants temporary access to the one Garmin Connect or Strava
   activity page where you clicked the toolbar button. It replaces permanent
   provider host permissions.
@@ -622,8 +890,10 @@ the Peakbagger summit lookup and GPS Preview actions described below.
   sorting, theme, login and summit checks, and validated draft filling on
   Peakbagger. There is no persistent Garmin Connect or Strava host access.
 - **Firefox `locationInfo` disclosure** reports that activity coordinates are
-  sent to Peakbagger for summit lookup and GPS Preview. It is a data-handling
-  disclosure, not permission to read the device's location.
+  sent to Peakbagger for summit lookup and GPS Preview and, after separate 3D
+  consent, that tile coordinates for the viewed area go to Mapterhorn and a
+  compatible selected map provider. It is a data-handling disclosure, not
+  permission to read the device's location.
 
 ### Activity-data flow
 
@@ -641,6 +911,14 @@ the Peakbagger summit lookup and GPS Preview actions described below.
 - **GPS Preview:** only after you choose **Open drafts**, Peakbagger receives a
   newly serialized GPX containing latitude, longitude, and segment boundaries,
   plus waypoint coordinates/names by default, reduced to at most 3,000 total points.
+- **3D terrain:** only after you choose **Load 3D terrain**, Mapterhorn receives
+  tile requests covering the route area and subsequent map movements. A
+  compatible selected Leaflet provider also receives raster requests for the 3D
+  camera's view. The renderer receives coordinate segments plus a bounded,
+  transient tile-layer descriptor; it does not receive source GPX, time,
+  elevation, or activity metadata. Successful DEM responses may be reused from
+  the bounded, best-effort local cache; returning to 2D destroys the renderer,
+  not the cache.
 - **Excluded source fields:** heart rate, cadence, power, temperature, device
   fields, descriptions, routes, waypoint elevation/time/symbols, extension
   elements, and each trackpoint's timestamp and elevation. The activity/track
@@ -652,8 +930,10 @@ the Peakbagger summit lookup and GPS Preview actions described below.
   extension path clicks either Peakbagger Save control. Review and publication
   remain with you.
 
-The existing GPX Analyzer fetches only the GPX already linked from the current
-Peakbagger ascent page and processes it locally. Cross-page preferences live in
+The GPX Analyzer fetches only the GPX already linked from the current
+Peakbagger ascent page and processes it locally. Its optional 3D view is the
+only analyzer path that contacts another service, and it does so only after the
+notice described above. Cross-page preferences live in
 `storage.sync` and may leave the device only through the user's browser-sync
 account. Page-specific filter state and the early theme mirror stay in
 Peakbagger's `localStorage`.

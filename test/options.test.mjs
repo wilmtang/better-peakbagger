@@ -52,7 +52,7 @@ test('settings are grouped by the surface they affect', async () => {
     for (const id of ['retain-waypoints', 'fill-trip-info', 'fill-wilderness-nights']) {
         assert.ok(capture.querySelector(`#${id}`), `${id} should belong to Activity capture`);
     }
-    for (const id of ['units', 'chart-series', 'map-route-color', 'remember-map-layer', 'map-viewport-width']) {
+    for (const id of ['units', 'chart-series', 'map-route-color', 'remember-map-layer', 'map-viewport-width', 'terrain-cache-limit']) {
         assert.ok(mapChart.querySelector(`#${id}`), `${id} should belong to Map & GPX chart`);
     }
     for (const id of ['beta-tr', 'beta-tr-words', 'beta-gps', 'beta-link']) {
@@ -163,6 +163,22 @@ test('map layer memory is opt-in and disabling it forgets the saved layer', asyn
     await new Promise(r => dom.window.setTimeout(r, 10));
     assert.equal(dom.chrome._store.bpbSettings.rememberMapLayer, false);
     assert.equal(dom.chrome._store.bpbSettings.mapLastLayer, '');
+});
+
+test('3D terrain cache has a bounded local-storage limit setting', async () => {
+    const defaultDom = await loadOptions({});
+    assert.equal(el(defaultDom, 'terrain-cache-limit').value, '256');
+
+    const invalidDom = await loadOptions({ terrainCacheLimitMb: 9000 });
+    assert.equal(el(invalidDom, 'terrain-cache-limit').value, '2048');
+
+    const dom = await loadOptions({ terrainCacheLimitMb: 512 });
+    const limit = el(dom, 'terrain-cache-limit');
+    assert.equal(limit.value, '512');
+    limit.value = '0';
+    limit.dispatchEvent(new dom.window.Event('change'));
+    await new Promise(r => dom.window.setTimeout(r, 10));
+    assert.equal(dom.chrome._store.bpbSettings.terrainCacheLimitMb, 0);
 });
 
 test('the removed "minimum trip-report words" control is gone', async () => {

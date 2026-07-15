@@ -115,7 +115,7 @@
                 <div class="row">
                     <div class="label">
                         <span class="title">Map route appearance</span>
-                        <span class="desc">Colors and widths for the GPX route drawn over the map. The casing stays at least 2 px wider so it remains visible.</span>
+                        <span class="desc">Style the ascent-page GPX overlay. Route width also applies to native GPS tracks on Full Screen Maps; their original colors, hover highlights, and click details remain unchanged.</span>
                     </div>
                     <fieldset class="control route-style" aria-label="Map route appearance">
                         <label class="route-style-row" for="map-route-color">
@@ -143,6 +143,17 @@
                             <input type="checkbox" id="remember-map-layer">
                             <span>Use last selected</span>
                         </label>
+                    </div>
+                </div>
+
+                <div class="row">
+                    <label class="label" for="terrain-cache-limit">
+                        <span class="title">3D terrain cache</span>
+                        <span class="desc">Keep elevation tiles on this device for faster repeat views. This is best-effort storage: your browser may purge it when disk space is tight. Set 0 to disable it.</span>
+                    </label>
+                    <div class="control cache-size">
+                        <input id="terrain-cache-limit" type="number" min="0" max="2048" step="64" inputmode="numeric" aria-label="3D terrain cache limit in megabytes">
+                        <span>MB</span>
                     </div>
                 </div>
 

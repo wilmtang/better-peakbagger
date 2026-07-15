@@ -43,9 +43,26 @@ test('GPX analyzer adds a thick, segment-preserving route casing behind native L
     const { window } = dom;
     const polylineCalls = [];
     const sentPatches = [];
+    const terrainMessages = [];
+    const baseTileLayer = {
+        _url: 'https://{s}.tile.example.com/{z}/{x}/{y}{r}.png',
+        options: {
+            subdomains: 'abc',
+            tileSize: 256,
+            minZoom: 2,
+            maxZoom: 17,
+            attribution: '<a href="https://example.com/copyright">© Example Maps</a>'
+        }
+    };
+    const labelTileLayer = {
+        _url: 'https://labels.example.com/{z}/{x}/{y}.png',
+        options: { zIndex: -1, attribution: 'Labels' }
+    };
     const makeMap = () => ({
         layers: [],
+        _layers: { labels: labelTileLayer, base: baseTileLayer },
         invalidateCalls: 0,
+        hasLayer(layer) { return layer === baseTileLayer || layer === labelTileLayer; },
         invalidateSize() { this.invalidateCalls++; },
         removeLayer(layer) {
             this.layers = this.layers.filter(candidate => candidate !== layer);
@@ -54,6 +71,7 @@ test('GPX analyzer adds a thick, segment-preserving route casing behind native L
     });
     const map = makeMap();
     const L = {
+        Browser: { retina: false },
         polyline(latLngs, options) {
             const layer = {
                 _map: null,
@@ -85,7 +103,7 @@ test('GPX analyzer adds a thick, segment-preserving route casing behind native L
     const iframeDocument = { getElementById: id => id === 'selmap' ? layerSelect : null };
     Object.defineProperty(iframe, 'contentWindow', {
         configurable: true,
-        value: { mapsPlaceholder: map, L, document: iframeDocument }
+        value: { mapsPlaceholder: map, L, L_MT: baseTileLayer, document: iframeDocument, location: { href: 'https://www.peakbagger.com/map/MasterMap.aspx' } }
     });
 
     window.matchMedia = () => ({ matches: false });
@@ -108,6 +126,10 @@ test('GPX analyzer adds a thick, segment-preserving route casing behind native L
         data: { __bpb: true, dir: 'toPage', settings }
     })));
     window.postMessage = message => {
+        if (message && message.__bpbTerrain === true) {
+            terrainMessages.push(message);
+            return;
+        }
         if (!message || message.dir !== 'toCS') return;
         if (message.kind === 'set') {
             sentPatches.push(message.patch);
@@ -162,6 +184,60 @@ test('GPX analyzer adds a thick, segment-preserving route casing behind native L
     ]);
     assert.ok(calls.every(call => call.options.interactive === false));
     assert.ok(calls.every(call => call.broughtToBack));
+
+    const terrainToggle = window.document.getElementById('bpb-terrain-toggle');
+    const terrainDisclosure = window.document.getElementById('bpb-terrain-disclosure');
+    assert.equal(terrainToggle.disabled, false);
+    terrainToggle.click();
+    assert.equal(terrainDisclosure.style.display, 'block');
+    assert.match(terrainDisclosure.textContent, /services receive the viewed map area and request metadata/i);
+    assert.equal(terrainMessages.some(message => message.type === 'init'), false,
+        'opening the privacy notice must not initialize terrain or request tiles');
+
+    window.document.querySelector('#bpb-terrain-disclosure button').click();
+    await waitFor(dom, () => terrainMessages.some(message => message.type === 'init'));
+    const terrainInit = terrainMessages.find(message => message.type === 'init');
+    assert.deepEqual(JSON.parse(JSON.stringify(terrainInit.routeSegments)), expectedSegments);
+    assert.deepEqual(Object.keys(terrainInit).sort(), ['__bpbTerrain', 'basemap', 'cacheLimitMb', 'dir', 'routeSegments', 'routeStyle', 'theme', 'type']);
+    assert.equal(terrainInit.cacheLimitMb, 256);
+    assert.deepEqual(JSON.parse(JSON.stringify(terrainInit.basemap)), {
+        name: 'MyTopo USA/Canada',
+        tiles: ['https://a.tile.example.com/{z}/{x}/{y}.png'],
+        tileSize: 256,
+        minzoom: 2,
+        maxzoom: 17,
+        scheme: 'xyz',
+        attribution: '<a href="https://example.com/copyright">© Example Maps</a>'
+    });
+    assert.equal(JSON.stringify(terrainInit).includes('<gpx'), false);
+    assert.equal(JSON.stringify(terrainInit).includes('2026-07-10'), false);
+
+    window.dispatchEvent(new window.MessageEvent('message', {
+        source: window,
+        origin: window.location.origin,
+        data: { __bpbTerrain: true, dir: 'toPage', type: 'loaded' }
+    }));
+    assert.equal(iframe.style.visibility, 'hidden');
+    assert.equal(iframe.getAttribute('aria-hidden'), 'true');
+    assert.equal(terrainToggle.textContent, '2D map');
+    assert.equal(terrainToggle.getAttribute('aria-pressed'), 'true');
+
+    terrainToggle.click();
+    assert.equal(iframe.style.visibility, 'visible');
+    assert.equal(iframe.hasAttribute('aria-hidden'), false);
+    assert.equal(terrainMessages.at(-1).type, 'destroy');
+    assert.equal(terrainToggle.textContent, '3D terrain');
+
+    terrainToggle.click();
+    await waitFor(dom, () => terrainMessages.filter(message => message.type === 'init').length === 2);
+    window.dispatchEvent(new window.MessageEvent('message', {
+        source: window,
+        origin: window.location.origin,
+        data: { __bpbTerrain: true, dir: 'toPage', type: 'error', reason: 'maplibre' }
+    }));
+    assert.equal(iframe.style.visibility, 'visible');
+    assert.equal(terrainToggle.textContent, '3D terrain');
+    assert.match(window.document.getElementById('bpb-terrain-message').textContent, /could not render 3D terrain/);
 
     sendSettings({
         units: 'imperial', theme: 'light', chartDefaultSeries: 'both',
@@ -221,7 +297,7 @@ test('GPX analyzer adds a thick, segment-preserving route casing behind native L
     const reloadedMap = makeMap();
     Object.defineProperty(iframe, 'contentWindow', {
         configurable: true,
-        value: { mapsPlaceholder: reloadedMap, L, document: iframeDocument }
+        value: { mapsPlaceholder: reloadedMap, L, L_MT: baseTileLayer, document: iframeDocument, location: { href: 'https://www.peakbagger.com/map/MasterMap.aspx' } }
     });
     iframe.dispatchEvent(new window.Event('load'));
     await waitFor(dom, () => polylineCalls.length === 8);

@@ -94,6 +94,22 @@
     },
     {
       "matches": [
+        "*://www.peakbagger.com/climber/ascent.aspx*",
+        "*://www.peakbagger.com/climber/Ascent.aspx*",
+        "*://peakbagger.com/climber/ascent.aspx*",
+        "*://peakbagger.com/climber/Ascent.aspx*"
+      ],
+      "css": [
+        "src/terrain-map.css"
+      ],
+      "js": [
+        "src/terrain-map.js"
+      ],
+      "run_at": "document_end",
+      "all_frames": false
+    },
+    {
+      "matches": [
         "*://www.peakbagger.com/climber/PeakAscents.aspx*",
         "*://www.peakbagger.com/climber/peakascents.aspx*",
         "*://www.peakbagger.com/climber/ClimbListC.aspx*",
@@ -125,6 +141,40 @@
       ],
       "run_at": "document_end",
       "all_frames": false
+    },
+    {
+      "matches": [
+        "*://*.peakbagger.com/*BigMap.aspx*",
+        "*://*.peakbagger.com/*bigmap.aspx*"
+      ],
+      "js": [
+        "src/settings.js",
+        "src/big-map-bridge.js"
+      ],
+      "run_at": "document_start",
+      "all_frames": false
+    },
+    {
+      "matches": [
+        "*://*.peakbagger.com/*BigMap.aspx*",
+        "*://*.peakbagger.com/*bigmap.aspx*"
+      ],
+      "js": [
+        "src/big-map.js"
+      ],
+      "run_at": "document_end",
+      "all_frames": false,
+      "world": "MAIN"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "terrain/terrain.html"
+      ],
+      "matches": [
+        "*://*.peakbagger.com/*"
+      ]
     }
   ],
   "browser_specific_settings": {

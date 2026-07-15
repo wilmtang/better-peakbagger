@@ -40,6 +40,25 @@ The following license notice applies to Chart.js:
 > OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 > SOFTWARE.
 
+### MapLibre GL JS
+
+Better Peakbagger distributes the unmodified MapLibre GL JS 5.24.0 strict-CSP
+browser build, worker, and stylesheet under `vendor/`.
+
+- Project: [MapLibre GL JS](https://maplibre.org/projects/gl-js/)
+- Source: [MapLibre GL JS v5.24.0](https://github.com/maplibre/maplibre-gl-js/tree/v5.24.0)
+- License: BSD 3-Clause
+- Packaged license text: [`vendor/maplibre-LICENSE.txt`](vendor/maplibre-LICENSE.txt)
+
+### Mapterhorn
+
+The optional 3D view requests elevation tiles from
+[Mapterhorn](https://mapterhorn.com/). Mapterhorn is an external open-data
+service, not bundled software or executable code. Its terrain-source
+attributions are available on the
+[Mapterhorn attribution page](https://mapterhorn.com/attribution/) and are also
+shown in the rendered map.
+
 ## Inspiration
 
 ### Peakbagger GPX Ascent Logger

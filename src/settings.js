@@ -26,6 +26,7 @@
         mapRouteColor: '#d9483b', mapRouteWidth: 5,
         mapRouteCasingColor: '#ffffff', mapRouteCasingWidth: 9,
         mapViewportWidth: 450, mapViewportHeight: 450,
+        terrainCacheLimitMb: 256,
         rememberMapLayer: false, mapLastLayer: '',
         // What the ascent filter's "Has beta" chip counts: an ascent
         // qualifies if it has any of the enabled signals.
@@ -68,6 +69,7 @@
             ? Math.min(4096, viewportWidth)
             : DEFAULTS.mapViewportWidth;
         s.mapViewportHeight = clampInteger(s.mapViewportHeight, 240, 720, DEFAULTS.mapViewportHeight);
+        s.terrainCacheLimitMb = clampInteger(s.terrainCacheLimitMb, 0, 2048, DEFAULTS.terrainCacheLimitMb);
         if (typeof s.rememberMapLayer !== 'boolean') s.rememberMapLayer = DEFAULTS.rememberMapLayer;
         if (!MAP_LAYERS.has(s.mapLastLayer)) s.mapLastLayer = DEFAULTS.mapLastLayer;
         for (const key of ['betaTr', 'betaGps', 'betaLink']) {
