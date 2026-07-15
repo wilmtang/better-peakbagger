@@ -40,8 +40,12 @@ test('Peak.aspx gains location-specific Windy and Copernicus links', async () =>
         const { document } = dom.window;
         const panel = document.getElementById('bpb-peak-links');
         assert.ok(panel, `${fixture} should receive the planning-links panel`);
-        assert.equal(panel.getAttribute('aria-label'), 'Better Peakbagger planning maps');
-        assert.equal(panel.querySelector('.bpb-peak-links__brand').textContent, 'Better Peakbagger');
+        assert.equal(panel.getAttribute('aria-labelledby'), 'bpb-peak-links-heading');
+        assert.equal(
+            panel.querySelector('.bpb-peak-links__heading').textContent,
+            'Better Peakbagger links'
+        );
+        assert.equal(panel.querySelectorAll('.bpb-peak-links__item').length, 2);
 
         const windy = linkByText(document, 'Windy summit forecast');
         assert.equal(windy.href, `https://www.windy.com/${lat}/${lon}`);
