@@ -288,6 +288,11 @@ test('3D terrain frame validates coordinate-only routes before loading public DE
         'the picker labels and selects the active drape');
     assert.ok(Array.from(picker().options).some(option => option.textContent === 'Terrain only'),
         'the picker always offers a terrain-only choice');
+    const hint = window.document.querySelector('.bpb-terrain-hint');
+    assert.ok(hint, 'a persistent gesture hint is shown');
+    assert.match(hint.textContent, /Drag to pan/);
+    assert.match(hint.textContent, /scroll to zoom/);
+    assert.match(hint.textContent, /right-drag to tilt/);
     assert.deepEqual(JSON.parse(JSON.stringify(map.sources.get('bpb-route').data.geometry)), {
         type: 'MultiLineString',
         coordinates: [

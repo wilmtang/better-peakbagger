@@ -120,6 +120,41 @@ html:has(.bpb-terrain-frame-body),
     z-index: 3;
 }
 
+/* An always-visible, unobtrusive gesture hint, centered above the attribution
+   line so it clears the scale (bottom-left) and navigation (top-right). */
+#bpb-terrain-map .bpb-terrain-hint {
+    position: absolute;
+    left: 50%;
+    bottom: 8px;
+    z-index: 3;
+    transform: translateX(-50%);
+    max-width: calc(100% - 24px);
+    margin: 0;
+    padding: 3px 8px;
+    border-radius: 7px;
+    background: rgb(250 249 245 / 82%);
+    color: #3a3f36;
+    box-shadow: 0 1px 4px rgb(0 0 0 / 14%);
+    backdrop-filter: blur(8px);
+    font-size: 0.82em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    pointer-events: none;
+}
+
+#bpb-terrain-map[data-theme="dark"] .bpb-terrain-hint {
+    background: rgb(31 35 33 / 82%);
+    color: #d7d3c9;
+    box-shadow: 0 1px 5px rgb(0 0 0 / 32%);
+}
+
+/* Suppress MapLibre's momentary full-surface "use Ctrl + scroll" overlay; the
+   persistent hint conveys the same thing without the flash. */
+#bpb-terrain-map .maplibregl-cooperative-gesture-screen {
+    display: none;
+}
+
 #bpb-terrain-map .maplibregl-ctrl-group {
     overflow: hidden;
     border: 1px solid rgb(53 58 49 / 20%);

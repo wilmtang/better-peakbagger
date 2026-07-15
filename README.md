@@ -485,6 +485,13 @@ Terrain exaggeration is exactly `1`: one rendered vertical metre equals one
 horizontal metre. That restraint matters for route planning because the common
 “dramatic terrain” setting makes slopes look steeper than they are.
 
+Gestures use cooperative mode so the page never scroll-jacks: drag pans,
+right-drag tilts, and zoom needs the platform modifier (`⌘` on macOS, `Ctrl`
+elsewhere) plus scroll. Because that requirement is not otherwise obvious, a
+small always-visible hint spells it out with the correct key for the viewer's
+OS, and MapLibre's momentary full-surface overlay is suppressed in favor of it.
+This works the same in Chrome and Firefox.
+
 ### Activation and browser boundaries
 
 The feature must first be enabled with **Enable experimental 3D map** in

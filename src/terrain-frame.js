@@ -485,11 +485,20 @@
         controls.append(badge, notice);
         renderPicker();
 
+        // Cooperative gestures keep the page from scroll-jacking, so zoom needs
+        // a modifier. Spell that out (and how to pan/tilt) with an OS-aware
+        // hint, since the requirement is not otherwise discoverable.
+        const isMacPlatform = /mac|iphone|ipad|ipod/i.test(
+            (navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || '');
+        const hint = document.createElement('p');
+        hint.className = 'bpb-terrain-hint';
+        hint.textContent = `Drag to pan · ${isMacPlatform ? '⌘' : 'Ctrl'} + scroll to zoom · right-drag to tilt`;
+
         const status = document.createElement('p');
         status.className = 'bpb-terrain-status';
         status.setAttribute('role', 'status');
         status.textContent = 'Loading terrain…';
-        mapElement.append(canvas, controls, status);
+        mapElement.append(canvas, controls, hint, status);
         document.body.append(mapElement);
 
         try {

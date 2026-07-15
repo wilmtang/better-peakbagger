@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **Clearer 3D map gestures.** The 3D terrain view now shows an always-visible,
+  OS-aware hint — *"Drag to pan · ⌘/Ctrl + scroll to zoom · right-drag to
+  tilt"* — so the modifier needed to zoom (kept so the page doesn't
+  scroll-jack) is discoverable. MapLibre's momentary full-surface overlay is
+  suppressed in favor of the persistent hint. Consistent in Chrome and Firefox.
 - **Switch the 3D drape from inside the view.** The 3D terrain view now has an
   on-map layer picker listing every compatible Peakbagger raster layer, so you
   can change the draped texture without dropping back to 2D. A layer the tile
