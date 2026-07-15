@@ -351,7 +351,7 @@ This split is the single most important design constraint in the extension. Here
 | `gpx-analyzer.js` | **MAIN** | Needs page-realm access: the map iframe's Leaflet globals (see below), the bundled `Chart` global, and page clipboard/`localStorage` semantics identical to a userscript. |
 | `chart.umd.min.js` | **MAIN** | Loaded immediately before the analyzer so the `Chart` UMD global lands in the same realm the analyzer reads. |
 | `provider-page.js` | **MAIN**, injected on demand | Needs the activity page's signed-in state and authenticated same-origin export; exposes only the narrow ownership/capture adapter to the background. |
-| `big-map.js` | **MAIN** | Reads the Full Screen page's own Leaflet map, applies the native GPS-polyline weight, adds a matching casing underlay, and recolors the single track on `t=A` maps. |
+| `big-map.js` | **MAIN** | Reaches into the Full Screen page's same-origin `MasterMap.aspx` child iframe (where the Leaflet map and tracks live), applies the native GPS-polyline weight, adds a matching casing underlay, and recolors the single track on `t=A` maps. |
 | `big-map-bridge.js` | isolated | Sends the MAIN-world BigMap enhancer only the validated route style (color, width, casing); it has no settings-write path. |
 | `terrain-map.js` | isolated | Creates the extension-owned frame and relays only validated terrain messages between it and the analyzer. |
 | `terrain-frame.js`, MapLibre | extension document | Owns the WebGL terrain surface and packaged CSP worker. It has no access to Peakbagger globals and does not request tiles until the bridge sends a user-requested coordinate route plus an optional validated raster descriptor. |
@@ -693,6 +693,12 @@ report links. Redrawing those routes would duplicate geometry and break the
 meaning of the 10-track color palette, so `big-map.js` restyles the native
 tracks in place and traces one non-interactive casing underlay behind each.
 
+`BigMap.aspx` is a shell page: the Leaflet map and its tracks live in a
+same-origin `MasterMap.aspx` child iframe, not the top window. `big-map.js` runs
+in the top frame's MAIN world and reaches into that child frame (falling back to
+this window for other layouts) so the casing is built in the frame that owns the
+tracks — checking only the top window would find no map at all.
+
 The MAIN-world script accepts only the validated route style (color, 1–12 px
 width, casing color, casing width ≥ width + 2) sent by a dedicated, read-only
 isolated-world bridge. On `t=G`, it requires a genuine `L.Polyline` with
@@ -714,9 +720,11 @@ event and their casings are cleaned up on `layerremove`; changing the
 preference in Settings updates open BigMap pages.
 
 This is also fail-closed. Only the documented GPS URL modes are eligible, and
-the script looks for the same page-owned `L` plus `mapsPlaceholder`/`map`
-globals Peakbagger currently uses. Missing globals, changed layer structure, or
-ambiguous group layers leave the Full Screen map entirely native.
+the script looks for the same page-owned `L` plus `mapsPlaceholder`/`map` globals
+Peakbagger currently uses — in the `MasterMap.aspx` child iframe first, then this
+window — and re-binds when that iframe reloads. Missing globals, a cross-origin
+or restructured frame, changed layer structure, or ambiguous group layers leave
+the Full Screen map entirely native.
 
 ---
 

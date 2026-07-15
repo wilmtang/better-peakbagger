@@ -26,6 +26,9 @@
     const casingLayers = new WeakSet();
     let routeStyle = { ...DEFAULT_STYLE };
     let activeMap = null;
+    // The Leaflet map (and its L) can live in a same-origin child iframe, so
+    // remember the window that owns them to build casings in the same realm.
+    let activeMapWin = null;
     let retryTimer = null;
 
     const validColor = (value, fallback) =>
@@ -69,7 +72,7 @@
     // beneath it so the colored line reads as a cased route — the same effect
     // the embedded ascent map builds with a second polyline.
     const ensureCasing = layer => {
-        const L = globalThis.L;
+        const L = activeMapWin && activeMapWin.L;
         if (!L || typeof L.Polyline !== 'function') return;
         let casing = casings.get(layer);
         if (casing) {
@@ -109,7 +112,7 @@
     };
 
     const applyStyle = layer => {
-        const L = globalThis.L;
+        const L = activeMapWin && activeMapWin.L;
         // Never treat our own casing as a native track to widen or re-case.
         if (!activeMap || !L || casingLayers.has(layer) || !isNativeTrack(layer, L)) return;
         try { layer.setStyle(trackStyle()); } catch (error) { return; }
@@ -131,25 +134,41 @@
         try { activeMap.eachLayer(applyStyle); } catch (error) { /* A live Leaflet layer collection can change during iteration. */ }
     };
 
-    const findMap = () => {
-        const L = globalThis.L;
-        if (!L) return null;
-        for (const candidate of [globalThis.mapsPlaceholder, globalThis.map]) {
-            if (!candidate || typeof candidate.eachLayer !== 'function' || typeof candidate.on !== 'function') continue;
-            if (typeof L.Map !== 'function' || candidate instanceof L.Map) return candidate;
+    // The Full Screen page (BigMap.aspx) is a shell whose Leaflet map and tracks
+    // live in a same-origin MasterMap.aspx child iframe; other layouts may keep
+    // them in this window. Return whichever context actually exposes the map so
+    // the casing is built in the frame that owns the tracks — the previous
+    // code only checked this window and so never found the Full Screen tracks.
+    const findMapIframe = () =>
+        document.querySelector('iframe#if, iframe[src*="MasterMap.aspx" i], iframe[src*="mastermap.aspx" i]');
+
+    const resolveMapContext = () => {
+        const candidates = [];
+        const iframe = findMapIframe();
+        try { if (iframe && iframe.contentWindow) candidates.push(iframe.contentWindow); }
+        catch (error) { /* A cross-origin frame is not ours to read. */ }
+        candidates.push(window);
+
+        for (const win of candidates) {
+            let L;
+            try { L = win.L; } catch (error) { continue; }
+            if (!L || typeof L.Map !== 'function') continue;
+            for (const map of [win.mapsPlaceholder, win.map]) {
+                if (map && typeof map.eachLayer === 'function' && typeof map.on === 'function'
+                    && map instanceof L.Map) return { win, map };
+            }
         }
         return null;
     };
 
     const bindMap = () => {
-        const candidate = findMap();
-        if (!candidate) return false;
-        if (candidate !== activeMap) {
-            activeMap = candidate;
-            candidate.on('layeradd', event => queueMicrotask(() => applyStyle(event && event.layer)));
-            if (typeof candidate.on === 'function') {
-                candidate.on('layerremove', event => removeCasing(event && event.layer));
-            }
+        const context = resolveMapContext();
+        if (!context) return false;
+        if (context.map !== activeMap) {
+            activeMap = context.map;
+            activeMapWin = context.win;
+            activeMap.on('layeradd', event => queueMicrotask(() => applyStyle(event && event.layer)));
+            activeMap.on('layerremove', event => removeCasing(event && event.layer));
         }
         applyAllStyles();
         return true;
@@ -169,15 +188,34 @@
         applyAllStyles();
     });
 
-    window.postMessage({ __bpbBigMap: true, dir: 'toCS', type: 'get' }, location.origin);
-    if (!bindMap()) {
+    // The map iframe loads and initialises Leaflet after this script runs, so
+    // poll until it is ready.
+    const startBinding = () => {
+        if (retryTimer || bindMap()) return;
         let attempts = 0;
         retryTimer = setInterval(() => {
             attempts++;
-            if (bindMap() || attempts >= 20) {
+            if (bindMap() || attempts >= 40) {
                 clearInterval(retryTimer);
                 retryTimer = null;
             }
         }, 250);
+    };
+
+    window.postMessage({ __bpbBigMap: true, dir: 'toCS', type: 'get' }, location.origin);
+    // Re-bind when the map iframe (re)loads so a freshly built Leaflet map is
+    // re-cased; the old map and its casings are discarded with the frame.
+    const mapFrame = findMapIframe();
+    if (mapFrame) {
+        mapFrame.addEventListener('load', () => {
+            if (retryTimer) {
+                clearInterval(retryTimer);
+                retryTimer = null;
+            }
+            activeMap = null;
+            activeMapWin = null;
+            startBinding();
+        });
     }
+    startBinding();
 })();

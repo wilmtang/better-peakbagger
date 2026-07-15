@@ -166,6 +166,54 @@ test('Full Screen single-ascent maps recolor the native track and add a casing',
     dom.window.close();
 });
 
+test('Full Screen maps case native tracks that live in the MasterMap child iframe', async () => {
+    // The real Full Screen page is a shell: its Leaflet map and GPS tracks live
+    // in a same-origin MasterMap.aspx child iframe, not the top window. The
+    // enhancer must reach into that frame — checking only the top window (the
+    // previous behavior) never found the tracks, so no casing was applied.
+    const dom = new JSDOM(
+        '<!doctype html><body><iframe id="if" src="MasterMap.aspx?t=G&d=1&l=L_CT"></iframe></body>',
+        { url: 'https://www.peakbagger.com/Map/BigMap.aspx?t=G&d=1&gt=rc', runScripts: 'outside-only' }
+    );
+    const { window } = dom;
+    window.chrome = makeChromeStub({ bpbSettings: { mapRouteWidth: 8 } });
+    window.postMessage = message => window.queueMicrotask(() => window.dispatchEvent(
+        new window.MessageEvent('message', { source: window, origin: window.location.origin, data: message })));
+
+    const iframe = window.document.getElementById('if');
+    const mapWin = iframe.contentWindow;
+    assert.ok(mapWin && mapWin !== window, 'the child iframe exposes its own contentWindow');
+    const leaflet = makeLeaflet(mapWin);
+    const track = new leaflet.Polyline(
+        [{ lat: 44.15, lng: -121.78 }, { lat: 44.16, lng: -121.76 }], { color: '#FF0000', weight: 2 });
+    track.on('mouseover', () => track.setStyle({ weight: 11 }));
+    track.on('click', () => {});
+    track._popup = { content: 'Native Peakbagger trip report' };
+    mapWin.mapsPlaceholder = new leaflet.MapStub([track]);
+
+    window.eval(settingsSource);
+    window.eval(bridgeSource);
+    window.eval(bigMapSource);
+
+    await waitFor(dom, () => track.options.weight === 8);
+    assert.equal(track.options.color, '#FF0000', 'group tracks keep their native color');
+    const casingsOf = () => mapWin.mapsPlaceholder.layers.filter(
+        layer => layer instanceof leaflet.Polyline && layer.options.interactive === false);
+    assert.equal(casingsOf().length, 1, 'the child-iframe track gains exactly one white casing');
+    assert.equal(casingsOf()[0].options.color, '#ffffff');
+
+    // A track added to the child map after binding is also cased.
+    const late = new leaflet.Polyline(
+        [{ lat: 44.14, lng: -121.77 }, { lat: 44.17, lng: -121.74 }], { color: '#0000FF', weight: 2 });
+    late.on('mouseover', () => {});
+    late.on('click', () => {});
+    late._popup = { content: 'report' };
+    mapWin.mapsPlaceholder.addLayer(late);
+    await waitFor(dom, () => late.options.weight === 8);
+    assert.equal(casingsOf().length, 2, 'a track added to the child map later also gains a casing');
+    dom.window.close();
+});
+
 test('non-GPS BigMap modes are left entirely native', async () => {
     const fixture = await loadBigMap({ type: 'P', width: 10 });
     const { dom, window, leaflet } = fixture;
