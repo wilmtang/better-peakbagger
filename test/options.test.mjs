@@ -11,18 +11,41 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { JSDOM } from 'jsdom';
-import { makeChromeStub } from './helpers/load-page.mjs';
+import { makeChromeStub, waitFor } from './helpers/load-page.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
-const loadOptions = async (settings = {}) => {
+const makeCacheStorage = (initial = {}) => {
+    const entries = new Map(Object.entries(initial));
+    const cache = {
+        async keys() { return Array.from(entries.keys(), url => ({ url })); },
+        async match(request) {
+            const size = entries.get(typeof request === 'string' ? request : request.url);
+            if (size === undefined) return undefined;
+            return { headers: { get: name => name === 'x-bpb-size' && size !== null ? String(size) : null } };
+        }
+    };
+    return {
+        entries,
+        keyCalls: 0,
+        async keys() {
+            this.keyCalls++;
+            return entries.size ? ['bpb-mapterhorn-dem-v1'] : [];
+        },
+        async open() { return cache; }
+    };
+};
+
+const loadOptions = async (settings = {}, { cacheStorage = makeCacheStorage(), local = {} } = {}) => {
     const html = await readFile(path.join(root, 'options', 'options.html'), 'utf8');
     const dom = new JSDOM(html, {
         url: 'chrome-extension://bpb/options/options.html',
         runScripts: 'outside-only'
     });
-    dom.chrome = makeChromeStub({ bpbSettings: settings });
+    dom.chrome = makeChromeStub({ bpbSettings: settings }, local);
     dom.window.chrome = dom.chrome;
+    dom.window.caches = cacheStorage;
+    dom.window.eval(await readFile(path.join(root, 'src', 'terrain-cache.js'), 'utf8'));
     dom.window.eval(await readFile(path.join(root, 'src', 'settings.js'), 'utf8'));
     dom.window.eval(await readFile(path.join(root, 'options', 'options.js'), 'utf8'));
     await new Promise(r => dom.window.setTimeout(r, 20)); // S.get().then(populate)
@@ -61,14 +84,15 @@ test('settings are grouped by the surface they affect', async () => {
     }
 });
 
-test('experimental 3D map is off by default and discloses third-party DEM requests', async () => {
+test('experimental 3D map is off by default and discloses external DEM requests', async () => {
     const defaultDom = await loadOptions({});
     const checkbox = el(defaultDom, 'enable-3d-map');
     const row = checkbox.closest('.row');
     assert.equal(checkbox.checked, false);
     assert.match(row.querySelector('.title').textContent, /^Enable experimental 3D map$/);
     assert.match(row.querySelector('.experimental-badge').textContent, /^Experimental$/);
-    assert.match(row.querySelector('.desc').textContent, /elevation \(DEM\) tile requests.*Mapterhorn.*third-party service/i);
+    assert.match(row.querySelector('.desc').textContent, /elevation \(DEM\) tile requests.*go to.*Mapterhorn/i);
+    assert.equal(new URL(row.querySelector('.desc a').href).hostname, 'mapterhorn.com');
 
     const invalidDom = await loadOptions({ enable3dMap: 'yes' });
     assert.equal(el(invalidDom, 'enable-3d-map').checked, false);
@@ -184,14 +208,51 @@ test('map layer memory is opt-in and disabling it forgets the saved layer', asyn
     assert.equal(dom.chrome._store.bpbSettings.mapLastLayer, '');
 });
 
-test('3D terrain cache has a bounded local-storage limit setting', async () => {
-    const defaultDom = await loadOptions({});
+test('3D terrain cache stays hidden until enabled and reports current device usage', async () => {
+    const css = await readFile(path.join(root, 'options', 'options.css'), 'utf8');
+    assert.match(css, /#terrain-cache-row\[hidden\]\s*{\s*display:\s*none;\s*}/);
+
+    const emptyCache = makeCacheStorage();
+    const defaultDom = await loadOptions({}, { cacheStorage: emptyCache });
+    const row = el(defaultDom, 'terrain-cache-row');
+    assert.equal(row.hidden, true);
+    assert.equal(emptyCache.keyCalls, 0, 'hidden cache settings should not inspect CacheStorage');
+
+    const enable = el(defaultDom, 'enable-3d-map');
+    enable.checked = true;
+    enable.dispatchEvent(new defaultDom.window.Event('change'));
+    await waitFor(defaultDom, () => el(defaultDom, 'terrain-cache-usage').textContent === 'Current cache: Empty');
+    assert.equal(row.hidden, false);
+
+    enable.checked = false;
+    enable.dispatchEvent(new defaultDom.window.Event('change'));
+    assert.equal(row.hidden, true, 'the cache row should hide immediately when 3D is disabled');
+
+    const firstUrl = 'https://tiles.mapterhorn.com/14/2651/5947.webp';
+    const secondUrl = 'https://tiles.mapterhorn.com/14/2651/5948.webp';
+    const cacheStorage = makeCacheStorage({
+        [firstUrl]: 1024 * 1024,
+        [secondUrl]: 512 * 1024
+    });
+    const usageDom = await loadOptions({ enable3dMap: true }, { cacheStorage });
+    await waitFor(usageDom, () => el(usageDom, 'terrain-cache-usage').textContent === 'Current cache: 1.5 MB');
+    assert.equal(el(usageDom, 'terrain-cache-row').hidden, false);
+    assert.match(usageDom.window.document.querySelector('.cache-limit').textContent, /Limit\s*MB/);
+    assert.equal(el(usageDom, 'terrain-cache-limit').value, '512');
+
+    cacheStorage.entries.set('https://tiles.mapterhorn.com/14/2651/5949.webp', 512 * 1024);
+    await usageDom.chrome.storage.local.set({ bpbMapterhornDemIndexV1: {} });
+    await waitFor(usageDom, () => el(usageDom, 'terrain-cache-usage').textContent === 'Current cache: 2.0 MB');
+});
+
+test('3D terrain cache limit remains bounded and persists edits', async () => {
+    const defaultDom = await loadOptions({ enable3dMap: true });
     assert.equal(el(defaultDom, 'terrain-cache-limit').value, '512');
 
-    const invalidDom = await loadOptions({ terrainCacheLimitMb: 9000 });
+    const invalidDom = await loadOptions({ enable3dMap: true, terrainCacheLimitMb: 9000 });
     assert.equal(el(invalidDom, 'terrain-cache-limit').value, '2048');
 
-    const dom = await loadOptions({ terrainCacheLimitMb: 768 });
+    const dom = await loadOptions({ enable3dMap: true, terrainCacheLimitMb: 768 });
     const limit = el(dom, 'terrain-cache-limit');
     assert.equal(limit.value, '768');
     limit.value = '0';

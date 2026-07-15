@@ -14,23 +14,37 @@ export const FIXTURES = path.join(root, 'test', 'fixtures', 'peakascents');
 export const PAGE_FIXTURES = path.join(root, 'test', 'fixtures', 'pages');
 
 // Minimal in-memory chrome.storage.sync + onChanged, enough for settings.js.
-export const makeChromeStub = (initial = {}) => {
+export const makeChromeStub = (initial = {}, localInitial = {}) => {
     const store = { ...initial };
+    const localStore = { ...localInitial };
     const listeners = new Set();
+    const makeStorageArea = (values, area) => ({
+        get: async key => ({ [key]: values[key] }),
+        set: async obj => {
+            const changes = {};
+            for (const [key, value] of Object.entries(obj)) {
+                changes[key] = { oldValue: values[key], newValue: value };
+                values[key] = value;
+            }
+            for (const fn of listeners) fn(changes, area);
+        },
+        remove: async key => {
+            const keys = Array.isArray(key) ? key : [key];
+            const changes = {};
+            for (const item of keys) {
+                if (!(item in values)) continue;
+                changes[item] = { oldValue: values[item], newValue: undefined };
+                delete values[item];
+            }
+            if (Object.keys(changes).length) for (const fn of listeners) fn(changes, area);
+        }
+    });
     return {
         _store: store,
+        _localStore: localStore,
         storage: {
-            sync: {
-                get: async key => ({ [key]: store[key] }),
-                set: async obj => {
-                    const changes = {};
-                    for (const [k, v] of Object.entries(obj)) {
-                        changes[k] = { oldValue: store[k], newValue: v };
-                        store[k] = v;
-                    }
-                    for (const fn of listeners) fn(changes, 'sync');
-                }
-            },
+            sync: makeStorageArea(store, 'sync'),
+            local: makeStorageArea(localStore, 'local'),
             onChanged: {
                 addListener: fn => listeners.add(fn),
                 removeListener: fn => listeners.delete(fn)

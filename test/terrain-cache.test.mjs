@@ -25,6 +25,7 @@ class MemoryCache {
 
 class MemoryCacheStorage {
     constructor() { this.named = new Map(); this.deletions = []; }
+    async keys() { return Array.from(this.named.keys()); }
     async open(name) {
         if (!this.named.has(name)) this.named.set(name, new MemoryCache());
         return this.named.get(name);
@@ -57,6 +58,40 @@ test('DEM protocol accepts only bounded Mapterhorn tile coordinates', () => {
     assert.equal(module.parseTileUrl('bpb-dem://14/16384/0.webp'), null);
     assert.equal(module.parseTileUrl('bpb-dem://19/1/1.webp'), null);
     assert.equal(module.parseTileUrl('https://tiles.mapterhorn.com/14/2651/5947.webp'), null);
+    dom.window.close();
+});
+
+test('DEM cache usage counts actual cached entries and ignores stale index rows', async () => {
+    const { dom, module } = loadCacheModule();
+    const cacheStorage = new MemoryCacheStorage();
+    const storageArea = makeStorageArea();
+    const cache = await cacheStorage.open(module.CACHE_NAME);
+    const firstUrl = 'https://tiles.mapterhorn.com/14/2651/5947.webp';
+    const secondUrl = 'https://tiles.mapterhorn.com/14/2651/5948.webp';
+    const unknownUrl = 'https://tiles.mapterhorn.com/14/2651/5949.webp';
+    const staleUrl = 'https://tiles.mapterhorn.com/14/2651/5950.webp';
+    await cache.put(firstUrl, new Response(new Uint8Array([1]), {
+        headers: { 'x-bpb-size': '600', 'x-bpb-used': '1' }
+    }));
+    await cache.put(secondUrl, new Response(new Uint8Array([2]), {
+        headers: { 'x-bpb-used': '2' }
+    }));
+    await cache.put(unknownUrl, new Response(new Uint8Array([3])));
+    storageArea.values[module.INDEX_KEY] = {
+        [secondUrl]: { size: 400, used: 2 },
+        [staleUrl]: { size: 9000, used: 3 }
+    };
+
+    const usage = await module.getUsage({ cacheStorage, storageArea });
+    assert.equal(usage.bytes, 1000);
+    assert.equal(usage.entries, 3);
+    assert.equal(usage.unmeasuredEntries, 1);
+
+    const emptyStorage = new MemoryCacheStorage();
+    const empty = await module.getUsage({ cacheStorage: emptyStorage, storageArea });
+    assert.equal(empty.bytes, 0);
+    assert.equal(empty.entries, 0);
+    assert.equal(emptyStorage.named.size, 0, 'inspecting an empty cache must not create one');
     dom.window.close();
 });
 

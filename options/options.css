@@ -130,8 +130,12 @@ input[type="number"].route-width { min-width: 0; width: 58px; padding: 5px 7px; 
 .viewport-size { border: 0; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
 .viewport-size-row { display: grid; grid-template-columns: 48px 70px 18px; align-items: center; gap: 7px; }
 .viewport-size-row input[type="number"] { min-width: 0; width: 70px; padding: 5px 7px; }
+.cache-usage { color: var(--text); font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.cache-limit { display: flex; align-items: center; gap: 10px; color: var(--sub); font-size: 12.5px; }
 .cache-size { display: flex; align-items: center; gap: 7px; }
 .cache-size input[type="number"] { min-width: 0; width: 86px; padding: 5px 7px; }
+#terrain-cache-row[hidden] { display: none; }
+#terrain-cache-row .label { cursor: default; }
 button.secondary {
     align-self: flex-end;
     font: inherit;
@@ -165,4 +169,5 @@ input[type="number"].mini { min-width: 0; width: 72px; padding: 4px 8px; }
     .row { flex-direction: column; align-items: stretch; }
     .control { width: 100%; }
     select, input[type="number"] { width: 100%; }
+    .cache-limit { justify-content: space-between; }
 }
