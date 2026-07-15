@@ -23,7 +23,7 @@ test('Chrome and Firefox background declarations share the same fail-closed coor
     assert.deepEqual(manifest.browser_specific_settings.gecko.data_collection_permissions.required, ['locationInfo']);
 });
 
-test('settings are embedded in the browser add-on manager', () => {
+test('the canonical Firefox package embeds settings in the add-on manager', () => {
     assert.deepEqual(manifest.options_ui, {
         page: 'options/options.html',
         open_in_tab: false

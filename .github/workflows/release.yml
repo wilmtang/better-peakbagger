@@ -40,22 +40,26 @@ jobs:
       - name: Lint extension
         run: npm run lint
 
-      - name: Build store package
-        run: npm run build
+      - name: Build store packages
+        run: |
+          npm run build
+          firefox_archive="web-ext-artifacts/better_peakbagger-${GITHUB_REF_NAME#v}.zip"
+          chrome_archive="${firefox_archive%.zip}-chrome.zip"
+          npm run build:chrome -- "$firefox_archive" "$chrome_archive"
 
       - name: Verify store package contents
-        id: release-package
         run: |
-          archive="web-ext-artifacts/better_peakbagger-${GITHUB_REF_NAME#v}.zip"
-          npm run release:verify-archive -- "$archive"
-          echo "path=$archive" >> "$GITHUB_OUTPUT"
+          firefox_archive="web-ext-artifacts/better_peakbagger-${GITHUB_REF_NAME#v}.zip"
+          chrome_archive="${firefox_archive%.zip}-chrome.zip"
+          npm run release:verify-archive -- "$firefox_archive" firefox
+          npm run release:verify-archive -- "$chrome_archive" chrome
 
-      - name: Preserve verified store package
+      - name: Preserve verified store packages
         # actions/upload-artifact v7.0.1
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: browser-extension-${{ github.ref_name }}
-          path: ${{ steps.release-package.outputs.path }}
+          path: web-ext-artifacts/*.zip
           if-no-files-found: error
           compression-level: 0
           retention-days: 30
@@ -117,7 +121,7 @@ jobs:
           CHROME_WEBSTORE_TOKEN: ${{ steps.google-auth.outputs.access_token }}
           CHROME_PUBLISHER_ID: ${{ vars.CHROME_PUBLISHER_ID }}
           CHROME_EXTENSION_ID: ${{ vars.CHROME_EXTENSION_ID }}
-        run: node scripts/publish-chrome.mjs release-package/*.zip
+        run: node scripts/publish-chrome.mjs release-package/*-chrome.zip
 
   firefox:
     name: Submit Firefox Add-ons

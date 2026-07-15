@@ -571,12 +571,19 @@ Settings shape (`chrome.storage.sync`, key `bpbSettings`):
 ```
 npm test                fixture-driven tests (jsdom, no network needed)
 npm run lint            web-ext lint (0 errors expected)
-npm run build           zip to web-ext-artifacts/ for Chrome Web Store / AMO
+npm run build           build the Firefox package with inline Preferences
+npm run build:chrome -- SOURCE.zip CHROME.zip
+                        derive the Chrome package with full-tab Options
 npm run start:firefox   launch a temp Firefox with the extension
 npm run start:chromium  same for Chromium
 ```
 
-No build step for development — load the folder unpacked. `npm run build` just zips the shippable files (`manifest.json`, `src/`, `vendor/`, `icons/`, `popup/`, `options/`, README, LICENSE, and ACKNOWLEDGEMENTS); `node_modules`, the lockfile, `CHANGELOG.md`, and `test/` are excluded.
+No build step is required for development. `manifest.json` is the canonical
+Firefox source and keeps settings embedded in Firefox's Add-ons Manager.
+Chrome store packaging changes only `options_ui.open_in_tab` so Chrome's
+Options entry opens the same page in a full tab. Shippable archives include
+`manifest.json`, `src/`, `vendor/`, `icons/`, `popup/`, `options/`, README,
+LICENSE, and ACKNOWLEDGEMENTS; development files are excluded.
 
 Version tags submit verified packages to both browser stores after their one-time
 publisher setup. See [Browser store releases](docs/releasing.md) for credentials,

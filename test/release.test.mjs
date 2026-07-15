@@ -2,11 +2,15 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import JSZip from "jszip";
 
+import {
+  buildChromePackage,
+  requirePackagePaths,
+} from "../scripts/build-chrome-package.mjs";
 import { buildAmoMetadata } from "../scripts/create-amo-metadata.mjs";
 import { publishChrome } from "../scripts/publish-chrome.mjs";
 import { validateRelease } from "../scripts/release-check.mjs";
 import {
-  requireSingleArchivePath,
+  requireArchiveArguments,
   verifyReleaseArchive,
 } from "../scripts/verify-release-archive.mjs";
 
@@ -59,7 +63,13 @@ async function makeReleaseZip(extraFiles = {}, omittedFiles = []) {
     "ACKNOWLEDGEMENTS.md": "acknowledgements",
     LICENSE: "license",
     "README.md": "readme",
-    "manifest.json": JSON.stringify({ version: "1.4.0" }),
+    "manifest.json": JSON.stringify({
+      version: "1.4.0",
+      options_ui: {
+        page: "options/options.html",
+        open_in_tab: false,
+      },
+    }),
     "icons/icon-128.png": "icon",
     "options/options.html": "options",
     "popup/popup.html": "popup",
@@ -90,6 +100,54 @@ test("release archive rejects development and internal files", async () => {
   );
 });
 
+test("Chrome package opens options in a full tab without changing its source package", async () => {
+  const sourceBytes = await makeReleaseZip();
+  const chromeBytes = await buildChromePackage(sourceBytes);
+  const [sourceArchive, chromeArchive] = await Promise.all([
+    JSZip.loadAsync(sourceBytes),
+    JSZip.loadAsync(chromeBytes),
+  ]);
+  const [sourceManifest, chromeManifest] = await Promise.all([
+    sourceArchive.file("manifest.json").async("string").then(JSON.parse),
+    chromeArchive.file("manifest.json").async("string").then(JSON.parse),
+  ]);
+
+  assert.deepEqual(Object.keys(chromeArchive.files), Object.keys(sourceArchive.files));
+  for (const [name, sourceEntry] of Object.entries(sourceArchive.files)) {
+    if (name === "manifest.json" || sourceEntry.dir) continue;
+    assert.deepEqual(
+      await chromeArchive.file(name).async("uint8array"),
+      await sourceEntry.async("uint8array"),
+      `${name} must be unchanged in the Chrome package`,
+    );
+  }
+  assert.equal(sourceManifest.options_ui.open_in_tab, false);
+  assert.equal(chromeManifest.options_ui.open_in_tab, true);
+  await assert.doesNotReject(
+    verifyReleaseArchive(sourceBytes, "1.4.0", "firefox"),
+  );
+  await assert.doesNotReject(
+    verifyReleaseArchive(chromeBytes, "1.4.0", "chrome"),
+  );
+  await assert.rejects(
+    verifyReleaseArchive(sourceBytes, "1.4.0", "chrome"),
+    /chrome release options must open in a full tab/,
+  );
+});
+
+test("Chrome package builder rejects non-inline source packages", async () => {
+  const sourceBytes = await makeReleaseZip({
+    "manifest.json": JSON.stringify({
+      version: "1.4.0",
+      options_ui: {
+        page: "options/options.html",
+        open_in_tab: true,
+      },
+    }),
+  });
+  await assert.rejects(buildChromePackage(sourceBytes), /must declare an inline options_ui page/);
+});
+
 test("release archive requires third-party acknowledgements", async () => {
   await assert.rejects(
     verifyReleaseArchive(
@@ -100,12 +158,27 @@ test("release archive requires third-party acknowledgements", async () => {
   );
 });
 
-test("release archive verification rejects ambiguous archive paths", () => {
-  assert.equal(requireSingleArchivePath(["release.zip"]), "release.zip");
-  assert.throws(() => requireSingleArchivePath([]), /Usage:/);
+test("release archive verification requires an explicit browser", () => {
+  assert.deepEqual(requireArchiveArguments(["release.zip", "firefox"]), {
+    archivePath: "release.zip",
+    browser: "firefox",
+  });
+  assert.throws(() => requireArchiveArguments(["release.zip"]), /Usage:/);
   assert.throws(
-    () => requireSingleArchivePath(["old.zip", "release.zip"]),
+    () => requireArchiveArguments(["release.zip", "safari"]),
     /Usage:/,
+  );
+});
+
+test("Chrome package builder requires distinct input and output paths", () => {
+  assert.deepEqual(requirePackagePaths(["source.zip", "chrome.zip"]), {
+    sourcePath: "source.zip",
+    chromePath: "chrome.zip",
+  });
+  assert.throws(() => requirePackagePaths(["source.zip"]), /Usage:/);
+  assert.throws(
+    () => requirePackagePaths(["source.zip", "./source.zip"]),
+    /must differ/,
   );
 });
 

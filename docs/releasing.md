@@ -1,8 +1,10 @@
 # Browser store releases
 
 Pushing an exact `vMAJOR.MINOR.PATCH` tag starts `.github/workflows/release.yml`.
-The workflow verifies the tagged source and Chrome package, then submits that
-version independently to the Chrome Web Store and Firefox Add-ons (AMO). Store
+The workflow verifies separate Firefox and Chrome packages, then submits that
+version independently to the Chrome Web Store and Firefox Add-ons (AMO). The
+Firefox package keeps settings inline in the Add-ons Manager; the Chrome
+package differs only by opening the same settings page in a full tab. Store
 review is asynchronous; a successful workflow means both stores accepted the
 submissions, not that review has completed.
 
@@ -23,8 +25,9 @@ can upload only a new version of an existing item. It cannot perform this
 project's first dashboard upload. For the initial Chrome release:
 
 1. Enable two-step verification on the publisher account.
-2. Run `npm ci`, `npm test`, `npm run lint`, and `npm run build` locally.
-3. Upload the ZIP from `web-ext-artifacts/` in the Developer Dashboard. Complete
+2. Run the build and verification commands in the release checklist locally.
+3. Upload the `*-chrome.zip` archive from `web-ext-artifacts/` in the Developer
+   Dashboard. Complete
    the Listing, Privacy, Distribution, and reviewer-instructions fields, then
    publish that first version manually.
 4. Do not tag that same version for automated Chrome submission. The first
@@ -90,7 +93,9 @@ visible in the AMO Developer Hub.
    npm test
    npm run lint
    npm run build
-   npm run release:verify-archive -- web-ext-artifacts/better_peakbagger-X.Y.Z.zip
+   npm run build:chrome -- web-ext-artifacts/better_peakbagger-X.Y.Z.zip web-ext-artifacts/better_peakbagger-X.Y.Z-chrome.zip
+   npm run release:verify-archive -- web-ext-artifacts/better_peakbagger-X.Y.Z.zip firefox
+   npm run release:verify-archive -- web-ext-artifacts/better_peakbagger-X.Y.Z-chrome.zip chrome
    npm run release:check -- vX.Y.Z
    ```
 

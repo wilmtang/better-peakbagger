@@ -13,6 +13,7 @@
   "scripts": {
     "lint": "web-ext lint",
     "build": "web-ext build --overwrite-dest",
+    "build:chrome": "node scripts/build-chrome-package.mjs",
     "release:check": "node scripts/release-check.mjs",
     "release:metadata:firefox": "node scripts/create-amo-metadata.mjs web-ext-artifacts/amo-metadata.json",
     "release:sign:firefox": "web-ext sign --channel=listed --amo-metadata=web-ext-artifacts/amo-metadata.json --approval-timeout=0 --timeout=600000 --no-input",
@@ -37,12 +38,15 @@
       "docs/**",
       "package.json",
       "package-lock.json",
+      "ROADMAP.md",
       "scripts",
       "scripts/**",
       "store-assets",
       "store-assets/**",
       "test",
-      "test/**"
+      "test/**",
+      "tmp",
+      "tmp/**"
     ]
   }
 }

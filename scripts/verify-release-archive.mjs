@@ -28,7 +28,12 @@ const REQUIRED_FILES = [
   "vendor/chart.umd.min.js",
 ];
 
-export async function verifyReleaseArchive(archiveBytes, expectedVersion) {
+const OPTIONS_PRESENTATION = {
+  firefox: false,
+  chrome: true,
+};
+
+export async function verifyReleaseArchive(archiveBytes, expectedVersion, browser) {
   const archive = await JSZip.loadAsync(archiveBytes);
   const entries = Object.keys(archive.files);
 
@@ -54,22 +59,44 @@ export async function verifyReleaseArchive(archiveBytes, expectedVersion) {
     );
   }
 
+  if (browser !== undefined) {
+    if (!Object.hasOwn(OPTIONS_PRESENTATION, browser)) {
+      throw new Error(`Unknown release browser: ${browser}`);
+    }
+    const expectedOpenInTab = OPTIONS_PRESENTATION[browser];
+    if (archivedManifest.options_ui?.open_in_tab !== expectedOpenInTab) {
+      const presentation = expectedOpenInTab ? "a full tab" : "the add-on manager";
+      throw new Error(
+        `${browser} release options must open in ${presentation}`,
+      );
+    }
+  }
+
   return entries;
 }
 
-export function requireSingleArchivePath(archivePaths) {
-  if (archivePaths.length !== 1) {
-    throw new Error("Usage: node scripts/verify-release-archive.mjs ARCHIVE_PATH");
+export function requireArchiveArguments(args) {
+  if (
+    args.length !== 2
+    || !Object.hasOwn(OPTIONS_PRESENTATION, args[1])
+  ) {
+    throw new Error(
+      "Usage: node scripts/verify-release-archive.mjs ARCHIVE_PATH firefox|chrome",
+    );
   }
-  return archivePaths[0];
+  return { archivePath: args[0], browser: args[1] };
 }
 
 async function main() {
-  const archivePath = requireSingleArchivePath(process.argv.slice(2));
+  const { archivePath, browser } = requireArchiveArguments(process.argv.slice(2));
 
   const packageJson = JSON.parse(await readFile("package.json", "utf8"));
-  const entries = await verifyReleaseArchive(await readFile(archivePath), packageJson.version);
-  console.log(`Verified ${archivePath} (${entries.length} archive entries).`);
+  const entries = await verifyReleaseArchive(
+    await readFile(archivePath),
+    packageJson.version,
+    browser,
+  );
+  console.log(`Verified ${browser} package ${archivePath} (${entries.length} archive entries).`);
 }
 
 const isCli = process.argv[1]
