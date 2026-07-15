@@ -98,7 +98,36 @@ From the terrain frame the tile URL is *always* cross-origin: the frame's
 origin is `chrome-extension://<id>`, and the tiles are `https://<provider>/…`.
 So MapLibre always opts into CORS, and any provider that omits ACAO fails.
 
-### 4. Why the same tiles work in Peakbagger's 2D map
+### 4. Who asks to read, and who permits it
+
+`crossOrigin` is easy to misattribute, so to be precise: it is a **client-side
+DOM attribute** on the `<img>`, set by whatever JavaScript creates the image.
+It is not a network message, and not something the tile server or the hosting
+page emits. It is the client declaring intent — *"I mean to read this image's
+pixels, so make this a CORS request and only give it to me if the server
+allows."* A cross-origin read needs **both** halves, and they are set by two
+different actors:
+
+| Half | Set by | Meaning |
+| --- | --- | --- |
+| `crossOrigin="anonymous"` | the **client** library creating the `<img>`/fetch | opt *into* CORS mode ("I want to read the pixels") |
+| `Access-Control-Allow-Origin` | the tile **server** | opt *into* being read ("cross-origin reads allowed") |
+
+Mapping that onto the actors here:
+
+- **The tile server** never sets `crossOrigin`; its only lever is whether it
+  sends `Access-Control-Allow-Origin`.
+- **Leaflet** creates the `<img>` but leaves `crossOrigin` unset by default, so
+  its tiles are plain display-only loads.
+- **MapLibre** sets `crossOrigin="anonymous"` for cross-origin tiles (the
+  `_t()` logic above), because it must read the pixels for WebGL.
+- **peakbagger.com** instantiates Leaflet but passes no `crossOrigin` option, so
+  it stays unset.
+
+MapLibre is the only actor asking to read, which is why it is the only one told
+"no."
+
+### 5. Why the same tiles work in Peakbagger's 2D map
 
 Leaflet runs on Peakbagger's own origin and creates plain
 `<img src="https://provider/…">` with **no** `crossOrigin` attribute. The
@@ -108,7 +137,15 @@ the identical tile server is blank in the 3D map yet visible in the 2D map —
 not because the server changed, but because Leaflet never asks to read what
 MapLibre is forced to read.
 
-### 5. Why the DEM terrain is immune
+This also pins down the diagnosis without a network trace: the 2D map works, so
+Peakbagger's tiles are being loaded without `crossOrigin` (display only). If
+those servers *did* send ACAO, MapLibre's `crossOrigin="anonymous"` request
+would succeed too and the drape would not be failing. The drape failing while
+the 2D map works is therefore direct evidence that both (a) Leaflet omits
+`crossOrigin` and (b) the servers omit ACAO — MapLibre is simply the only one
+of the three asking to read.
+
+### 6. Why the DEM terrain is immune
 
 The DEM never touches an `<img>`. It is fetched through the `bpb-dem://`
 custom protocol whose handler does its own `fetch()` and returns raw
@@ -151,6 +188,33 @@ assert.match(window.document.querySelector('.bpb-terrain-badge').textContent, /^
 The team knew these layers fail CORS and built the terrain-only fallback. The
 user simply hits that fallback most of the time.
 
+## Why not co-locate the origins?
+
+A natural first instinct is to sidestep CORS by making the terrain document
+share Peakbagger's origin. It does not work, for two independent reasons.
+
+**You cannot relabel the frame's origin.** A resource served via
+`chrome.runtime.getURL('terrain/terrain.html')` is permanently on the origin
+`chrome-extension://<id>` (origin = scheme + host + port; the scheme is
+`chrome-extension:`). There is no API that lets an extension-served document
+claim `https://www.peakbagger.com` — that relabeling is precisely what the
+same-origin policy exists to prevent. The frame is on the extension origin on
+purpose, so MapLibre and its worker run with extension privileges rather than a
+content-script sandbox (`src/terrain-map.js:4-6`).
+
+**Even if you could, it would fix nothing.** The CORS check compares the *tile
+server's* origin against the *document's* origin — not the frame against
+Peakbagger. The tiles come from third-party providers (USGS, ESRI,
+OpenTopoMap, …), which are cross-origin relative to `www.peakbagger.com` just as
+much as to `chrome-extension://<id>`. Running MapLibre directly inside the
+Peakbagger page (a MAIN-world content script, genuinely on Peakbagger's origin)
+would still make `_t()` classify `https://provider/…` as cross-origin, still
+set `crossOrigin="anonymous"`, and still require ACAO — while additionally
+inheriting Peakbagger's CSP, which would likely block MapLibre's worker. The
+only tiles co-location helps are the ones Peakbagger serves from its own domain,
+a minority. **No origin you can give the terrain document makes third-party
+tiles same-origin.**
+
 ## The hard platform constraint
 
 There is **no way** to drape a non-CORS third-party tile onto a WebGL map
@@ -176,12 +240,23 @@ bypassable `fetch`, and (b) obtain host permission for the (dynamic) tile hosts.
 
 ## Proposed fix
 
-### Tier 1 — stop nuking the drape on sparse errors (small, no new permissions)
+### Tier 1 — stop nuking the drape on sparse errors (small, no new permissions) — *done*
 
-Change the error handling in `src/terrain-frame.js:398-428` so a few failed
-tiles don't remove the whole layer — fall back to terrain-only only when the
-basemap yields *zero* successful tiles. This alone makes every CORS-capable
-provider drape reliably and fully, and ships independently of Tier 2.
+**Implemented.** The error handler no longer strips the drape on the first
+failed tile. Instead the frame tracks two facts as MapLibre events arrive: a
+successful raster tile fires a `data` event of `dataType: 'source'` carrying a
+`tile` (→ `basemapContentLoaded`), and a non-404 tile failure fires an `error`
+with `sourceId: 'basemap'` (→ `basemapErrored`). The keep/drop decision is made
+exactly once, at the first map `idle` (which fires only after every requested
+tile has settled): the drape is removed **only** when it errored and loaded
+zero tiles — a whole layer blocked by CORS — and is otherwise kept through
+partial coverage gaps. The design is fail-safe: removal requires a real error,
+so a fully working layer is never dropped even if success detection misses.
+
+This makes every CORS-capable provider drape reliably and fully. It does not
+help the non-CORS majority — that is Tier 2. See `src/terrain-frame.js`
+(`basemapErrored` / `basemapContentLoaded` / `basemapChecked` and the
+`error`/`data`/`idle` handlers), covered by `test/terrain-map.test.mjs`.
 
 ### Tier 2 — make non-CORS providers work (the actual feature fix)
 
@@ -226,11 +301,12 @@ real browser against a known non-CORS Peakbagger layer.
 | --- | --- |
 | Terrain scene / layer stack | `src/terrain-frame.js:245-286` |
 | `basemap` raster source built from raw https tiles | `src/terrain-frame.js:253-267` |
-| Basemap error → strip drape | `src/terrain-frame.js:398-405`, `:428` |
+| Basemap keep/drop decision (Tier 1: error/data/idle handlers) | `src/terrain-frame.js:404-425` |
 | `removeFailedBasemap` / "Terrain only" badge | `src/terrain-frame.js:295-303`, `:292` |
 | DEM via custom protocol (the working path) | `src/terrain-frame.js:378-381`, `src/terrain-cache.js:189-206` |
 | Tile URL extraction from Leaflet | `src/gpx-analyzer.js:808-844`, `:776-806` |
 | Consent gesture to gate a permission request | `src/gpx-analyzer.js:719-722` |
 | MapLibre `crossOrigin` / same-origin test | `vendor/maplibre-gl-csp.js` (`_t`) |
 | Test acknowledging CORS failure | `test/terrain-map.test.mjs:309-311` |
+| Extension-origin rationale for the frame | `src/terrain-map.js:4-6` |
 | Host permissions (peakbagger only) | `manifest.json:20-23` |
