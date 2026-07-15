@@ -24,11 +24,29 @@
     const PAUSE_RESET_SECONDS = 300;
     const MAX_MAP_ROUTE_POINTS = 3000;
 
+    const EARTH_RADIUS_M = 6371008.8;
+
     const toRad = x => x * Math.PI / 180;
 
-    const calcDistMeters = (l1, n1, l2, n2) => {
-        const a = Math.sin(toRad(l2 - l1) / 2) ** 2 + Math.cos(toRad(l1)) * Math.cos(toRad(l2)) * Math.sin(toRad(n2 - n1) / 2) ** 2;
-        return 6371008.8 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    const normalizeLonDelta = delta => {
+        let result = delta;
+        while (result > 180) result -= 360;
+        while (result < -180) result += 360;
+        return result;
+    };
+
+    // Canonical haversine shared with src/capture-core.js (exported as
+    // `distanceM`). Longitude deltas are normalized so antimeridian-crossing
+    // edges measure the short way. Named to avoid shadowing by the local
+    // cumulative-distance variables below.
+    const haversineDistanceM = (a, b) => {
+        const latDelta = toRad(b.lat - a.lat);
+        const lonDelta = toRad(normalizeLonDelta(b.lon - a.lon));
+        const lat1 = toRad(a.lat);
+        const lat2 = toRad(b.lat);
+        const h = Math.sin(latDelta / 2) ** 2
+            + Math.cos(lat1) * Math.cos(lat2) * Math.sin(lonDelta / 2) ** 2;
+        return EARTH_RADIUS_M * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
     };
 
     const median = values => {
@@ -132,7 +150,7 @@
 
         for (let i = 1; i < points.length; i++) {
             const current = points[i];
-            const stepM = calcDistMeters(prev.lat, prev.lon, current.lat, current.lon);
+            const stepM = haversineDistanceM(prev, current);
             const elapsedSeconds = hasTime ? (current.ms - prev.ms) / 1000 : 0;
             const isBadJump = elapsedSeconds > 0 && stepM > DIST_CONFIRM_M && stepM / elapsedSeconds > MAX_REASONABLE_SPEED_MPS;
 
@@ -154,7 +172,7 @@
             pendingSteps.push(stepM);
             pendingIndices.push(i);
 
-            const pendingDisplacementM = calcDistMeters(anchor.lat, anchor.lon, current.lat, current.lon);
+            const pendingDisplacementM = haversineDistanceM(anchor, current);
             const isLongPauseNoise = elapsedSeconds >= PAUSE_RESET_SECONDS && pendingDisplacementM < DIST_CONFIRM_M;
 
             if (isLongPauseNoise) {
@@ -295,6 +313,7 @@
     const API = {
         ELEVATION_GAIN_THRESHOLD_M,
         MAX_MAP_ROUTE_POINTS,
+        distanceM: haversineDistanceM,
         calculatePositiveGainM,
         calculateConfirmedGainM,
         computeMetrics,

@@ -28,6 +28,7 @@
   "background": {
     "service_worker": "src/background.js",
     "scripts": [
+      "src/gpx-metrics.js",
       "src/capture-core.js",
       "src/settings.js",
       "src/background.js"

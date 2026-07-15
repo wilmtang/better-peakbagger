@@ -2,10 +2,18 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // Pure capture/detection helpers shared by the MV3 background worker and tests.
-// This file intentionally has no DOM or extension-API dependency.
+// This file intentionally has no DOM or extension-API dependency. Geometry and
+// gain primitives shared with the GPX Analyzer live in src/gpx-metrics.js,
+// which must be loaded first (manifest background scripts / importScripts).
 
 (() => {
     'use strict';
+
+    if (typeof module !== 'undefined' && module.exports && !globalThis.BPBGpxMetrics) {
+        require('./gpx-metrics.js');
+    }
+    const Metrics = globalThis.BPBGpxMetrics;
+    if (!Metrics) return; // background.js fails closed when BPBCaptureCore is missing.
 
     const EARTH_RADIUS_M = 6371008.8;
     const FEET_PER_METER = 3.28084;
@@ -16,7 +24,6 @@
     const QUERY_CHUNK_M = 10000;
     const ENCOUNTER_WINDOW_M = 300;
     const ENCOUNTER_WINDOW_MS = 5 * 60 * 1000;
-    const ELEVATION_GAIN_THRESHOLD_M = 3;
 
     const toRad = value => value * Math.PI / 180;
     const toDeg = value => value * 180 / Math.PI;
@@ -39,15 +46,7 @@
         return result;
     };
 
-    const distanceM = (a, b) => {
-        const latDelta = toRad(b.lat - a.lat);
-        const lonDelta = toRad(normalizeLonDelta(b.lon - a.lon));
-        const lat1 = toRad(a.lat);
-        const lat2 = toRad(b.lat);
-        const h = Math.sin(latDelta / 2) ** 2
-            + Math.cos(lat1) * Math.cos(lat2) * Math.sin(lonDelta / 2) ** 2;
-        return EARTH_RADIUS_M * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
-    };
+    const distanceM = Metrics.distanceM;
 
     // Local tangent-plane projection is stable for the short GPX edges used here
     // and handles the antimeridian by normalizing longitude deltas first.
@@ -658,32 +657,7 @@
             + `${waypointBody}<trk>${body}</trk></gpx>`;
     };
 
-    const calculateConfirmedGainM = elevations => {
-        if (elevations.length < 2) return 0;
-        let gainM = 0;
-        let valley = elevations[0];
-        let peak = elevations[0];
-        let rising = false;
-        for (const elevation of elevations) {
-            if (rising) {
-                if (elevation > peak) peak = elevation;
-                else if (peak - elevation >= ELEVATION_GAIN_THRESHOLD_M) {
-                    gainM += peak - valley;
-                    rising = false;
-                    valley = elevation;
-                    peak = elevation;
-                }
-            } else if (elevation < valley) {
-                valley = elevation;
-                peak = elevation;
-            } else if (elevation - valley >= ELEVATION_GAIN_THRESHOLD_M) {
-                rising = true;
-                peak = elevation;
-            }
-        }
-        if (rising) gainM += peak - valley;
-        return gainM;
-    };
+    const calculateConfirmedGainM = Metrics.calculateConfirmedGainM;
 
     const firstFinite = (segments, key, reverse = false) => {
         const outer = reverse ? segments.slice().reverse() : segments;

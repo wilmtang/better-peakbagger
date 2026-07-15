@@ -5,6 +5,7 @@
 // privacy upload and derived ascent values, and lives in storage.session.
 
 if (typeof importScripts === 'function') {
+    if (!globalThis.BPBGpxMetrics) importScripts('gpx-metrics.js');
     if (!globalThis.BPBCaptureCore) importScripts('capture-core.js');
     if (!globalThis.BPBSettings) importScripts('settings.js');
 }
