@@ -578,7 +578,9 @@ This makes reuse explicit across short-lived 3D frames and gives it a predictabl
 ceiling.
 
 The default limit is **512 MB**, configurable from 0–2048 MB in Settings; 0
-disables and clears the owned DEM cache on the next 3D load. An LRU index in
+disables and clears the owned DEM cache on the next 3D load. Settings shows the
+current on-device cache size beside that limit, and hides both controls while
+the experimental 3D map is off. An LRU index in
 `storage.local` tracks byte size and last use. Writes and eviction run off the
 render-critical network path, so cache bookkeeping cannot turn a usable tile
 into a rendering failure. The index is reconciled against CacheStorage when a

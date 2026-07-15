@@ -14,6 +14,35 @@
     const REMOTE_TILE_ORIGIN = 'https://tiles.mapterhorn.com';
     const MAX_ZOOM = 18;
 
+    const cleanIndex = raw => {
+        const index = {};
+        if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return index;
+        for (const [url, entry] of Object.entries(raw)) {
+            if (!url.startsWith(`${REMOTE_TILE_ORIGIN}/`) || !entry || typeof entry !== 'object') continue;
+            const size = Number(entry.size), used = Number(entry.used);
+            if (Number.isFinite(size) && size > 0 && Number.isFinite(used) && used > 0) {
+                index[url] = { size: Math.floor(size), used: Math.floor(used) };
+            }
+        }
+        return index;
+    };
+
+    const resolveStorageArea = storageArea => {
+        if (storageArea) return storageArea;
+        const api = typeof browser !== 'undefined' && browser.storage ? browser : globalThis.chrome;
+        return api && api.storage && api.storage.local;
+    };
+
+    const readStoredIndex = async storageArea => {
+        if (!storageArea || typeof storageArea.get !== 'function') return {};
+        try {
+            const stored = await storageArea.get(INDEX_KEY);
+            return cleanIndex(stored && stored[INDEX_KEY]);
+        } catch (error) {
+            return {};
+        }
+    };
+
     const parseTileUrl = value => {
         const match = typeof value === 'string' && value.match(/^bpb-dem:\/\/(\d{1,2})\/(\d+)\/(\d+)\.webp$/);
         if (!match) return null;
@@ -28,38 +57,12 @@
     const create = ({ limitMb, cacheStorage, storageArea, fetchFn, ResponseCtor, now = Date.now }) => {
         const limitBytes = Math.max(0, Math.floor(limitMb)) * 1024 * 1024;
         const cacheApi = cacheStorage || globalThis.caches;
-        const local = storageArea || (() => {
-            const api = typeof browser !== 'undefined' && browser.storage ? browser : globalThis.chrome;
-            return api && api.storage && api.storage.local;
-        })();
+        const local = resolveStorageArea(storageArea);
         const request = fetchFn || globalThis.fetch.bind(globalThis);
         const CachedResponse = ResponseCtor || globalThis.Response;
         let statePromise = null;
         let writeQueue = Promise.resolve();
         let saveTimer = null;
-
-        const cleanIndex = raw => {
-            const index = {};
-            if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return index;
-            for (const [url, entry] of Object.entries(raw)) {
-                if (!url.startsWith(`${REMOTE_TILE_ORIGIN}/`) || !entry || typeof entry !== 'object') continue;
-                const size = Number(entry.size), used = Number(entry.used);
-                if (Number.isFinite(size) && size > 0 && Number.isFinite(used) && used > 0) {
-                    index[url] = { size: Math.floor(size), used: Math.floor(used) };
-                }
-            }
-            return index;
-        };
-
-        const readStoredIndex = async () => {
-            if (!local || typeof local.get !== 'function') return {};
-            try {
-                const stored = await local.get(INDEX_KEY);
-                return cleanIndex(stored && stored[INDEX_KEY]);
-            } catch (error) {
-                return {};
-            }
-        };
 
         const saveIndex = async state => {
             if (!local || typeof local.set !== 'function' || !state) return;
@@ -93,7 +96,7 @@
                 return null;
             }
 
-            const [cache, storedIndex] = await Promise.all([cacheApi.open(CACHE_NAME), readStoredIndex()]);
+            const [cache, storedIndex] = await Promise.all([cacheApi.open(CACHE_NAME), readStoredIndex(local)]);
             const requests = await cache.keys();
             const actualUrls = new Set(requests.map(item => item.url));
             const index = Object.fromEntries(Object.entries(storedIndex).filter(([url]) => actualUrls.has(url)));
@@ -215,5 +218,40 @@
         return { load, flush };
     };
 
-    globalThis.BPBTerrainCache = { CACHE_NAME, INDEX_KEY, PROTOCOL, create, parseTileUrl };
+    const getUsage = async ({ cacheStorage, storageArea } = {}) => {
+        const cacheApi = cacheStorage || globalThis.caches;
+        if (!cacheApi || typeof cacheApi.keys !== 'function' || typeof cacheApi.open !== 'function') return null;
+
+        try {
+            const cacheNames = await cacheApi.keys();
+            if (!cacheNames.includes(CACHE_NAME)) return { bytes: 0, entries: 0, unmeasuredEntries: 0 };
+
+            const local = resolveStorageArea(storageArea);
+            const [cache, storedIndex] = await Promise.all([
+                cacheApi.open(CACHE_NAME),
+                readStoredIndex(local)
+            ]);
+            const requests = await cache.keys();
+            let bytes = 0, entries = 0, unmeasuredEntries = 0;
+
+            for (const request of requests) {
+                const response = await cache.match(request);
+                if (!response) continue;
+                entries++;
+                const url = typeof request === 'string' ? request : request.url;
+                const headerSize = Number(response.headers && response.headers.get('x-bpb-size'));
+                const size = Number.isFinite(headerSize) && headerSize > 0
+                    ? headerSize
+                    : Number(storedIndex[url] && storedIndex[url].size);
+                if (Number.isFinite(size) && size > 0) bytes += Math.floor(size);
+                else unmeasuredEntries++;
+            }
+
+            return { bytes, entries, unmeasuredEntries };
+        } catch (error) {
+            return null;
+        }
+    };
+
+    globalThis.BPBTerrainCache = { CACHE_NAME, INDEX_KEY, PROTOCOL, create, getUsage, parseTileUrl };
 })();

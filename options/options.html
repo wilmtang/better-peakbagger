@@ -162,14 +162,20 @@
                     </div>
                 </div>
 
-                <div class="row">
-                    <label class="label" for="terrain-cache-limit">
+                <div class="row" id="terrain-cache-row" hidden>
+                    <div class="label">
                         <span class="title">3D terrain cache</span>
-                        <span class="desc">Keep elevation tiles on this device for faster repeat views. This is best-effort storage: your browser may purge it when disk space is tight. Set 0 to disable it.</span>
-                    </label>
-                    <div class="control cache-size">
-                        <input id="terrain-cache-limit" type="number" min="0" max="2048" step="64" inputmode="numeric" aria-label="3D terrain cache limit in megabytes">
-                        <span>MB</span>
+                        <span class="desc">Keep elevation tiles on this device for faster repeat views. Your browser may remove them when space is tight.</span>
+                        <span class="cache-usage" id="terrain-cache-usage" role="status" aria-live="polite">Checking current cache…</span>
+                    </div>
+                    <div class="control">
+                        <label class="cache-limit" for="terrain-cache-limit">
+                            <span>Limit</span>
+                            <span class="cache-size">
+                                <input id="terrain-cache-limit" type="number" min="0" max="2048" step="64" inputmode="numeric" aria-label="3D terrain cache limit in megabytes">
+                                <span>MB</span>
+                            </span>
+                        </label>
                     </div>
                 </div>
 
@@ -226,6 +232,7 @@
         <p class="status" id="status" role="status" aria-live="polite"></p>
     </main>
 
+    <script src="../src/terrain-cache.js"></script>
     <script src="../src/settings.js"></script>
     <script src="options.js"></script>
 </body>

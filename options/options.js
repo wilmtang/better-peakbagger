@@ -6,6 +6,8 @@
 (() => {
     'use strict';
     const S = window.BPBSettings;
+    const TerrainCache = window.BPBTerrainCache;
+    const extensionApi = (typeof browser !== 'undefined' && browser.storage) ? browser : chrome;
     const root = document.documentElement;
     const unitsEl = document.getElementById('units');
     const themeEl = document.getElementById('theme');
@@ -21,7 +23,9 @@
     const mapViewportWidthEl = document.getElementById('map-viewport-width');
     const mapViewportHeightEl = document.getElementById('map-viewport-height');
     const mapViewportResetEl = document.getElementById('map-viewport-reset');
+    const terrainCacheRowEl = document.getElementById('terrain-cache-row');
     const terrainCacheLimitEl = document.getElementById('terrain-cache-limit');
+    const terrainCacheUsageEl = document.getElementById('terrain-cache-usage');
     const rememberMapLayerEl = document.getElementById('remember-map-layer');
     const betaTrEl = document.getElementById('beta-tr');
     const betaTrWordsEl = document.getElementById('beta-tr-words');
@@ -39,6 +43,40 @@
         statusTimer = setTimeout(() => statusEl.classList.remove('show'), 1200);
     };
 
+    const formatCacheBytes = bytes => {
+        if (bytes < 1024) return `${Math.max(0, Math.floor(bytes))} B`;
+        if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+        const megabytes = bytes / (1024 * 1024);
+        return `${megabytes < 100 ? megabytes.toFixed(1) : Math.round(megabytes)} MB`;
+    };
+
+    let cacheUsageRevision = 0;
+    const refreshCacheUsage = async () => {
+        const revision = ++cacheUsageRevision;
+        terrainCacheUsageEl.textContent = 'Checking current cache…';
+        const usage = TerrainCache && typeof TerrainCache.getUsage === 'function'
+            ? await TerrainCache.getUsage()
+            : null;
+        if (revision !== cacheUsageRevision || terrainCacheRowEl.hidden) return;
+
+        if (!usage || (usage.unmeasuredEntries > 0 && usage.bytes === 0)) {
+            terrainCacheUsageEl.textContent = 'Current cache size unavailable';
+        } else if (usage.bytes === 0) {
+            terrainCacheUsageEl.textContent = 'Current cache: Empty';
+        } else {
+            const qualifier = usage.unmeasuredEntries > 0 ? 'at least ' : '';
+            terrainCacheUsageEl.textContent = `Current cache: ${qualifier}${formatCacheBytes(usage.bytes)}`;
+        }
+    };
+
+    const syncTerrainCacheVisibility = enabled => {
+        const show = enabled === true;
+        const becameVisible = show && terrainCacheRowEl.hidden;
+        terrainCacheRowEl.hidden = !show;
+        if (becameVisible) void refreshCacheUsage();
+        else if (!show) cacheUsageRevision++;
+    };
+
     const populate = settings => {
         unitsEl.value = settings.units;
         themeEl.value = settings.theme;
@@ -54,6 +92,7 @@
         mapViewportWidthEl.value = String(settings.mapViewportWidth);
         mapViewportHeightEl.value = String(settings.mapViewportHeight);
         terrainCacheLimitEl.value = String(settings.terrainCacheLimitMb);
+        syncTerrainCacheVisibility(settings.enable3dMap);
         rememberMapLayerEl.checked = settings.rememberMapLayer;
         betaTrEl.checked = settings.betaTr;
         betaTrWordsEl.value = String(settings.betaTrMinWords);
@@ -76,7 +115,10 @@
 
     unitsEl.addEventListener('change', () => save({ units: unitsEl.value }));
     themeEl.addEventListener('change', () => save({ theme: themeEl.value }));
-    enable3dMapEl.addEventListener('change', () => save({ enable3dMap: enable3dMapEl.checked }));
+    enable3dMapEl.addEventListener('change', () => {
+        syncTerrainCacheVisibility(enable3dMapEl.checked);
+        save({ enable3dMap: enable3dMapEl.checked });
+    });
     retainWaypointsEl.addEventListener('change', () => save({ retainWaypoints: retainWaypointsEl.checked }));
     fillTripInfoEl.addEventListener('change', () => save({ fillTripInfo: fillTripInfoEl.checked }));
     fillWildernessNightsEl.addEventListener('change', () => save({ fillWildernessNights: fillWildernessNightsEl.checked }));
@@ -124,6 +166,19 @@
 
     // Keep in sync if changed elsewhere (another tab / an inline control).
     S.subscribe(settings => populate(settings));
+    if (extensionApi.storage && extensionApi.storage.onChanged && TerrainCache) {
+        extensionApi.storage.onChanged.addListener((changes, area) => {
+            if (area === 'local' && changes[TerrainCache.INDEX_KEY] && !terrainCacheRowEl.hidden) {
+                void refreshCacheUsage();
+            }
+        });
+    }
+    window.addEventListener('focus', () => {
+        if (!terrainCacheRowEl.hidden) void refreshCacheUsage();
+    });
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible' && !terrainCacheRowEl.hidden) void refreshCacheUsage();
+    });
 
     // Reflect the system theme live while "Follow system" is selected.
     if (window.matchMedia) {
