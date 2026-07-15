@@ -53,9 +53,9 @@ browser build, worker, and stylesheet under `vendor/`.
 ### tz-lookup
 
 Better Peakbagger distributes the unmodified @photostructure/tz-lookup 11.6.0
-coordinate-to-timezone lookup as `vendor/tz-lookup.js`. It resolves the summit
-coordinate to an IANA timezone entirely offline so GPX chart times can be
-shown in the mountain's local time.
+coordinate-to-timezone lookup as `vendor/tz-lookup.js`. It resolves the GPX
+track's starting coordinate to an IANA timezone entirely offline so chart
+times can be shown in the climb's local time.
 
 - Project: [@photostructure/tz-lookup](https://github.com/photostructure/tz-lookup)
 - Source: [@photostructure/tz-lookup v11.6.0](https://www.npmjs.com/package/@photostructure/tz-lookup/v/11.6.0)

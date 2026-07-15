@@ -495,12 +495,12 @@
         });
 
         // 2. Formatting Helpers
-        // Clock times and day boundaries use the mountain's local time, not
-        // the viewer's. The summit coordinate resolves to an IANA zone via
-        // the bundled offline tz-lookup raster (vendor/tz-lookup.js), so
+        // Clock times and day boundaries use the climb's local time, not the
+        // viewer's. The track's starting coordinate resolves to an IANA zone
+        // via the bundled offline tz-lookup raster (vendor/tz-lookup.js), so
         // Intl applies the political zone and DST rules for the trip's date.
         // If the lookup is unavailable the offset falls back to solar time
-        // rounded to the whole hour from the summit longitude, and the stats
+        // rounded to the whole hour from the start longitude, and the stats
         // bar labels that estimate. GPX timestamps are UTC; the fallback
         // shifts the epoch and formats in UTC to get the same wall clock.
         let mountainTimeZone = null;
@@ -1324,17 +1324,23 @@
             metrics = GpxMetrics.computeMetrics(parsedPoints);
             if (!metrics.points.length) return stats.textContent = "No valid track points found.";
 
-            const summitPoint = metrics.points.reduce((best, point) => point.eleM > best.eleM ? point : best, metrics.points[0]);
-            mountainOffsetMs = Math.round(summitPoint.lon / 15) * 3600000;
+            // The climb's timezone comes from the track's starting point: the
+            // trailhead decides which side of a zone border (or of a border
+            // peak) the trip's civil time belongs to.
+            const startPoint = metrics.points[0];
+            mountainOffsetMs = Math.round(startPoint.lon / 15) * 3600000;
             try {
                 if (typeof globalThis.tzlookup === 'function') {
-                    mountainTimeZone = globalThis.tzlookup(summitPoint.lat, summitPoint.lon);
+                    mountainTimeZone = globalThis.tzlookup(startPoint.lat, startPoint.lon);
                     mountainDayFormatter = new Intl.DateTimeFormat('en-CA', {
                         timeZone: mountainTimeZone, year: 'numeric', month: '2-digit', day: '2-digit'
                     });
                 }
             } catch (e) {
-                // An unexpected lookup or zone failure keeps the solar estimate.
+                // Reachable: malformed GPX can carry finite out-of-range
+                // coordinates (tzlookup throws on |lat| > 90), and a zone id
+                // from the raster may be unknown to this browser's ICU after
+                // a tzdata rename. Both keep the labelled solar estimate.
                 mountainTimeZone = null;
                 mountainDayFormatter = null;
             }

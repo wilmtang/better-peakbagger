@@ -377,7 +377,7 @@ test('chart times use the mountain’s IANA timezone, not the viewer’s', async
         'the summit after mountain-local midnight must be labelled Day 2');
     assert.match(analysisText(), /Possible Camping: Day 1/);
     assert.ok(analysisText().includes('Times in the mountain’s local time (PDT)'),
-        'the stats bar must name the mountain timezone resolved from the summit coordinate');
+        'the stats bar must name the timezone resolved from the track start');
 
     dom.window.close();
 });
