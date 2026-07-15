@@ -189,15 +189,9 @@ test('GPX analyzer adds a thick, segment-preserving route casing behind native L
     assert.ok(calls.every(call => call.broughtToBack));
 
     const terrainToggle = window.document.getElementById('bpb-terrain-toggle');
-    const terrainDisclosure = window.document.getElementById('bpb-terrain-disclosure');
     assert.equal(terrainToggle.disabled, false);
+    assert.equal(window.document.getElementById('bpb-terrain-disclosure'), null);
     terrainToggle.click();
-    assert.equal(terrainDisclosure.style.display, 'block');
-    assert.match(terrainDisclosure.textContent, /services receive the viewed map area and request metadata/i);
-    assert.equal(terrainMessages.some(message => message.type === 'init'), false,
-        'opening the privacy notice must not initialize terrain or request tiles');
-
-    window.document.querySelector('#bpb-terrain-disclosure button').click();
     await waitFor(dom, () => terrainMessages.some(message => message.type === 'init'));
     const terrainInit = terrainMessages.find(message => message.type === 'init');
     assert.deepEqual(JSON.parse(JSON.stringify(terrainInit.routeSegments)), expectedSegments);

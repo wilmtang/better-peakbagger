@@ -52,6 +52,7 @@
   </main>
 
   <script src="/vendor/chart.umd.min.js"></script>
+  <script src="/src/gpx-metrics.js"></script>
   <script src="/src/terrain-map.js"></script>
   <script src="/src/gpx-analyzer.js"></script>
   <script>
@@ -62,8 +63,7 @@
         attempts++;
         const toggle = document.getElementById('bpb-terrain-toggle');
         if (toggle && !toggle.disabled) {
-          toggle.click();
-          if (mode === 'terrain') document.querySelector('#bpb-terrain-disclosure button').click();
+          if (mode === 'terrain') toggle.click();
           clearInterval(timer);
         } else if (attempts >= 50) {
           clearInterval(timer);

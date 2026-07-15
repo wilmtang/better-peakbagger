@@ -22,6 +22,10 @@
 - **Clearer GPX download failures.** An ascent page whose GPS-track download
   returns an HTTP error now reports that status instead of the misleading
   "No track points found."
+- **One-click 3D terrain.** The redundant per-map privacy confirmation is gone:
+  after the experimental feature is enabled, choosing **3D terrain** loads the
+  view immediately. The General setting now carries the complete Mapterhorn,
+  selected-provider, viewed-area, and request-metadata disclosure.
 - **Tighter page-world settings bridge.** Page scripts can write only the six
   GPX-analyzer-owned settings keys; feature gates, capture privacy options,
   and the theme remain writable solely from extension-owned surfaces.
@@ -39,7 +43,7 @@
   Loading 3D sends elevation-tile coordinates for the viewed area to
   Mapterhorn, a third-party DEM service, and may send map-tile requests to the
   selected map provider; no 3D request occurs until the user enables the
-  experiment and chooses **Load 3D terrain**.
+  experiment and chooses **3D terrain**.
 - **Bounded terrain caching.** Successful Mapterhorn DEM tiles use a dedicated,
   best-effort on-device cache with a 512 MB default and a configurable
   0–2,048 MB limit. Settings shows the current cache size and hides the cache

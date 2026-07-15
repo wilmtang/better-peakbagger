@@ -269,7 +269,7 @@ help the non-CORS majority — that is Tier 2. See `src/terrain-frame.js`
    basemap tiles too.)
 2. The handler's `fetch()` still needs cross-origin permission, so add
    `optional_host_permissions` and request it at runtime, gated behind the
-   existing "Load 3D terrain" consent gesture (`src/gpx-analyzer.js:719-722`).
+   explicit **3D terrain** activation action.
    Fall back to Tier-1 terrain-only if the user declines or a provider still
    fails.
 
@@ -284,7 +284,7 @@ help the non-CORS majority — that is Tier 2. See `src/terrain-frame.js`
   brittle: breaks whenever a layer uses an unlisted host.
 
 Recommendation: ship Tier 1 now (pure win, no permission question), and do
-Tier 2 with a **broad optional** permission requested only at consent time —
+Tier 2 with a **broad optional** permission requested only at activation time —
 the only approach that reliably delivers the feature as designed, while keeping
 today's safe default for anyone who declines.
 

@@ -47,7 +47,7 @@ export function buildAmoMetadata(licenseText) {
         "",
         "vendor/tz-lookup.js is the unmodified @photostructure/tz-lookup 11.6.0 distribution (CC0-1.0), an offline coordinate-to-IANA-timezone raster used to show GPX chart times in the climb's local timezone, resolved from the track's starting coordinate. Original package: https://www.npmjs.com/package/@photostructure/tz-lookup/v/11.6.0 ; readable source: https://github.com/photostructure/tz-lookup",
         "",
-        "The optional 3D view loads elevation data (not code) from https://tiles.mapterhorn.com only after an in-page notice and explicit Load 3D terrain action. It sends tile coordinates for the viewed area. Returning to 2D destroys the renderer.",
+        "The optional 3D view is off by default. Its General setting discloses external tile requests; after it is enabled, an explicit 3D terrain action loads elevation data (not code) from https://tiles.mapterhorn.com and may re-request the selected map layer from its provider. Those services receive the viewed area and request metadata. Returning to 2D destroys the renderer.",
         "",
         "Automated tests use synthetic data and masked Peakbagger fixtures. Live Garmin/Strava capture requires the reviewer to use an activity owned by their signed-in provider account; ambiguous ownership fails closed.",
       ].join("\n"),

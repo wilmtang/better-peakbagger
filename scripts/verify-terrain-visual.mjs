@@ -61,6 +61,8 @@ const server = createServer(async (request, response) => {
     globalThis.chrome = { runtime: { getURL: resource => new URL('/' + resource, location.origin).href } };
   </script>
 </head>`));
+        } else if (url.pathname === '/options/options.html' && url.searchParams.get('visual') === '1') {
+            contents = Buffer.from(contents.toString('utf8').replace('    <script src="options.js"></script>\n', ''));
         }
         response.end(contents);
     } catch (error) {
@@ -203,14 +205,20 @@ try {
     });
 
     const baseUrl = `http://www.peakbagger.com:${serverPort}/climber/ascent.aspx`;
-    await navigate(cdp, `${baseUrl}?mode=notice`, 1000, 900);
+    await navigate(cdp, `${baseUrl}?mode=idle`, 1000, 900);
     await waitForPageState(cdp, `(() => {
-        const notice = document.getElementById('bpb-terrain-disclosure');
-        return { ready: notice && notice.style.display === 'block', text: notice && notice.textContent };
+        const toggle = document.getElementById('bpb-terrain-toggle');
+        return {
+            ready: toggle && !toggle.disabled,
+            disclosureExists: Boolean(document.getElementById('bpb-terrain-disclosure'))
+        };
     })()`);
     await delay(400);
-    if (terrainRequests.length || basemapRequests.length) throw new Error('3D tile requests started before the consent action');
-    await capture(cdp, path.join(outputDir, 'consent-default-450.png'));
+    if (await evaluate(cdp, 'Boolean(document.getElementById("bpb-terrain-disclosure"))')) {
+        throw new Error('The removed in-map privacy notice is still present');
+    }
+    if (terrainRequests.length || basemapRequests.length) throw new Error('3D tile requests started before the map button was clicked');
+    await capture(cdp, path.join(outputDir, 'map-default-450.png'));
 
     await navigate(cdp, `${baseUrl}?mode=terrain&map=wide`, 1280, 950);
     const ready = await waitForPageState(cdp, `(() => {
@@ -230,7 +238,7 @@ try {
         };
     })()`);
     await delay(1200);
-    if (!terrainRequests.some(url => url.endsWith('.webp'))) throw new Error('The consented view did not request terrain tiles');
+    if (!terrainRequests.some(url => url.endsWith('.webp'))) throw new Error('The 3D view did not request terrain tiles');
     if (!basemapRequests.length) throw new Error(`The 3D view did not request the selected Leaflet raster layer (badge: ${ready.badge || 'missing'})`);
     if (!/Synthetic topographic map/.test(ready.badge || '')) throw new Error(`The selected layer was not retained: ${ready.badge}`);
     if (runtimeErrors.length) throw new Error(`Runtime exception: ${runtimeErrors.join('\n')}`);
@@ -253,6 +261,24 @@ try {
     await delay(800);
     if (runtimeErrors.length) throw new Error(`Runtime exception: ${runtimeErrors.join('\n')}`);
     await capture(cdp, path.join(outputDir, 'terrain-dark-450.png'));
+
+    const optionsUrl = `http://127.0.0.1:${serverPort}/options/options.html?visual=1`;
+    await navigate(cdp, optionsUrl, 1000, 700);
+    const disclosure = await waitForPageState(cdp, `(() => {
+        const description = document.getElementById('enable-3d-map-desc');
+        return {
+            ready: Boolean(description),
+            text: description && description.textContent,
+            link: description && description.querySelector('a') && description.querySelector('a').href
+        };
+    })()`);
+    if (!/viewed map area and request metadata/i.test(disclosure.text || '')
+        || !/selected map layer from its provider/i.test(disclosure.text || '')
+        || !/^https:\/\/mapterhorn\.com\/privacy-policy\/$/.test(disclosure.link || '')) {
+        throw new Error(`The General setting is missing the 3D privacy disclosure: ${JSON.stringify(disclosure)}`);
+    }
+    await delay(400);
+    await capture(cdp, path.join(outputDir, 'options-general.png'));
 
     console.log(`Hidden Chrome visual verification passed (${ready.canvas.width}x${ready.canvas.height} wide, ${darkReady.canvas.width}x${darkReady.canvas.height} default).`);
     console.log(`Screenshots: ${outputDir}`);

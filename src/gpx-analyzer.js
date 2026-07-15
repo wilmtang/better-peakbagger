@@ -396,42 +396,6 @@
         controlsContainer.append(terrainButton, unitSelect, routeStyleControls, hintText);
         headerBox.append(statsContainer, controlsContainer);
 
-        const terrainDisclosure = document.createElement('div');
-        terrainDisclosure.id = 'bpb-terrain-disclosure';
-        terrainDisclosure.setAttribute('role', 'group');
-        terrainDisclosure.setAttribute('aria-label', '3D terrain privacy notice');
-        Object.assign(terrainDisclosure.style, {
-            display: 'none', margin: '0 0 10px', padding: '9px 10px', border: '1px solid #b8c7d9',
-            borderRadius: '6px', background: '#eef4fa', fontFamily: 'sans-serif', fontSize: '0.88em'
-        });
-        const terrainDisclosureText = document.createElement('span');
-        terrainDisclosureText.append('3D terrain requests elevation tiles from Mapterhorn and may re-request your selected map layer from its provider. Those services receive the viewed map area and request metadata. ');
-        const terrainPrivacyLink = document.createElement('a');
-        terrainPrivacyLink.href = 'https://mapterhorn.com/privacy-policy/';
-        terrainPrivacyLink.target = '_blank';
-        terrainPrivacyLink.rel = 'noopener noreferrer';
-        terrainPrivacyLink.textContent = 'Privacy policy';
-        terrainDisclosureText.append(terrainPrivacyLink);
-
-        const terrainDisclosureActions = document.createElement('span');
-        Object.assign(terrainDisclosureActions.style, { display: 'inline-flex', gap: '6px', marginLeft: '10px' });
-        const terrainLoadButton = document.createElement('button');
-        terrainLoadButton.type = 'button';
-        terrainLoadButton.textContent = 'Load 3D terrain';
-        Object.assign(terrainLoadButton.style, {
-            padding: '4px 8px', border: '1px solid transparent', borderRadius: '5px',
-            background: '#2457a7', color: '#ffffff', fontWeight: '600', cursor: 'pointer'
-        });
-        const terrainCancelButton = document.createElement('button');
-        terrainCancelButton.type = 'button';
-        terrainCancelButton.textContent = 'Cancel';
-        Object.assign(terrainCancelButton.style, {
-            padding: '4px 8px', border: '1px solid #aab3bd', borderRadius: '5px',
-            background: '#ffffff', color: '#222222', cursor: 'pointer'
-        });
-        terrainDisclosureActions.append(terrainLoadButton, terrainCancelButton);
-        terrainDisclosure.append(terrainDisclosureText, terrainDisclosureActions);
-
         const terrainMessage = document.createElement('div');
         terrainMessage.id = 'bpb-terrain-message';
         terrainMessage.setAttribute('role', 'status');
@@ -446,7 +410,7 @@
 
         const canvas = document.createElement('canvas');
         canvasContainer.append(canvas);
-        container.append(headerBox, terrainDisclosure, terrainMessage, canvasContainer);
+        container.append(headerBox, terrainMessage, canvasContainer);
         const fullScreenMapLink = Array.from(document.querySelectorAll('a')).find(a => a.textContent.includes('Full Screen Map'));
         if (fullScreenMapLink) fullScreenMapLink.before(container);
         else gpxLink.after(container);
@@ -457,13 +421,6 @@
             const p = panelPalette();
             Object.assign(container.style, { background: p.panelBg, borderColor: p.panelBorder, color: p.text });
             Object.assign(unitSelect.style, { background: p.inputBg, color: p.text, borderColor: p.selBorder });
-            Object.assign(terrainCancelButton.style, { background: p.inputBg, color: p.text, borderColor: p.selBorder });
-            Object.assign(terrainDisclosure.style, {
-                background: effectiveTheme(BPB.get().theme) === 'dark' ? '#202f3a' : '#eef4fa',
-                borderColor: effectiveTheme(BPB.get().theme) === 'dark' ? '#3e617a' : '#b8c7d9',
-                color: p.text
-            });
-            terrainPrivacyLink.style.color = effectiveTheme(BPB.get().theme) === 'dark' ? '#9fc7f5' : '#174f91';
             [routeColorControl, routeCasingColorControl].forEach(control => {
                 control.label.style.color = p.sub;
                 Object.assign(control.input.style, { background: p.inputBg, borderColor: p.selBorder });
@@ -573,7 +530,6 @@
         let mapRetryTimer = null;
         let mapLayerRetryTimer = null;
         let terrainState = 'idle';
-        let terrainConsentGranted = false;
         let terrainLoadTimer = null;
 
         const clearTerrainLoadTimer = () => {
@@ -666,7 +622,6 @@
             if (BPB.get().enable3dMap !== true
                 || terrainState !== 'idle' || !mapViewport || !mapIframe || !mapRouteSegments.length) return;
             terrainState = 'loading';
-            terrainDisclosure.style.display = 'none';
             showTerrainMessage('Loading 3D terrain…');
             updateTerrainButton();
             postTerrain('init', {
@@ -694,7 +649,6 @@
             const enabled = settings.enable3dMap === true;
             terrainButton.hidden = !enabled;
             if (!enabled) {
-                terrainDisclosure.style.display = 'none';
                 if (terrainState === 'loading' || terrainState === 'active') stopTerrain();
                 else showTerrainMessage('');
             }
@@ -707,23 +661,7 @@
                 return;
             }
             if (terrainState !== 'idle') return;
-            if (terrainConsentGranted) {
-                startTerrain();
-                return;
-            }
-            showTerrainMessage('');
-            terrainDisclosure.style.display = 'block';
-            terrainLoadButton.focus();
-        });
-
-        terrainLoadButton.addEventListener('click', () => {
-            terrainConsentGranted = true;
             startTerrain();
-        });
-
-        terrainCancelButton.addEventListener('click', () => {
-            terrainDisclosure.style.display = 'none';
-            terrainButton.focus();
         });
 
         window.addEventListener('message', event => {
