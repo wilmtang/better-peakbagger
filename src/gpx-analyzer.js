@@ -355,17 +355,19 @@
         };
         unitSelect.append(unitOption('imperial', 'Imperial'), unitOption('metric', 'Metric'));
 
+        // A floating control on the map itself (top-left, clear of the native
+        // basemap selector and zoom), styled by src/terrain-map.css. Clicking
+        // flips the map between 2D and 3D in place. Placed into the map viewport
+        // below so it overlays both the native map and the terrain frame.
         const terrainButton = document.createElement('button');
         terrainButton.id = 'bpb-terrain-toggle';
+        terrainButton.className = 'bpb-map-3d-toggle';
         terrainButton.type = 'button';
         terrainButton.disabled = true;
-        terrainButton.textContent = '3D terrain';
+        terrainButton.textContent = '3D';
         terrainButton.title = 'Available after the GPX route loads';
+        terrainButton.setAttribute('aria-label', '3D terrain available after the route loads');
         terrainButton.setAttribute('aria-pressed', 'false');
-        Object.assign(terrainButton.style, {
-            marginBottom: '7px', padding: '5px 10px', border: '1px solid transparent', borderRadius: '6px',
-            background: '#2457a7', color: '#ffffff', fontWeight: '600', cursor: 'pointer'
-        });
 
         const routeStyleControls = document.createElement('div');
         Object.assign(routeStyleControls.style, { display: 'flex', gap: '8px', marginTop: '7px', fontSize: '0.8em' });
@@ -393,8 +395,12 @@
         Object.assign(hintText.style, { fontSize: '0.8em', color: '#888', marginTop: '4px', fontStyle: 'italic' });
         hintText.textContent = "Double-click point to copy coordinates";
 
-        controlsContainer.append(terrainButton, unitSelect, routeStyleControls, hintText);
+        controlsContainer.append(unitSelect, routeStyleControls, hintText);
         headerBox.append(statsContainer, controlsContainer);
+        // The 3D/2D toggle floats over the map, not in the panel below it. If
+        // there is no map viewport there is no native map to overlay, so the
+        // control simply stays out of the DOM (terrain is unavailable anyway).
+        if (mapViewport) mapViewport.append(terrainButton);
 
         const terrainMessage = document.createElement('div');
         terrainMessage.id = 'bpb-terrain-message';
@@ -419,6 +425,9 @@
         const panelPalette = () => PALETTES[effectiveTheme(BPB.get().theme)];
         const applyPanelTheme = () => {
             const p = panelPalette();
+            // The floating toggle is styled by CSS; steer its light/dark variant
+            // with the extension theme, mirroring the terrain frame.
+            terrainButton.dataset.theme = effectiveTheme(BPB.get().theme);
             Object.assign(container.style, { background: p.panelBg, borderColor: p.panelBorder, color: p.text });
             Object.assign(unitSelect.style, { background: p.inputBg, color: p.text, borderColor: p.selBorder });
             [routeColorControl, routeCasingColorControl].forEach(control => {
@@ -565,33 +574,39 @@
 
         const updateTerrainButton = () => {
             const hasRoute = mapRouteSegments.length > 0;
+            // The compact glyph ('3D'/'2D') is the label; the full intent lives
+            // in the title/aria-label. A spinner class covers the load.
+            terrainButton.classList.remove('bpb-map-3d-toggle-loading');
+            terrainButton.removeAttribute('aria-busy');
             if (BPB.get().enable3dMap !== true) {
                 terrainButton.disabled = true;
-                terrainButton.textContent = '3D terrain';
+                terrainButton.textContent = '3D';
                 terrainButton.title = 'Enable the experimental 3D map in Better Peakbagger settings';
+                terrainButton.setAttribute('aria-label', 'Enable 3D terrain in Better Peakbagger settings');
                 terrainButton.setAttribute('aria-pressed', 'false');
-                terrainButton.style.cursor = 'default';
-                terrainButton.style.opacity = '0.55';
                 return;
             }
             if (terrainState === 'loading') {
                 terrainButton.disabled = true;
-                terrainButton.textContent = 'Loading 3D…';
-                terrainButton.title = 'Loading terrain';
+                terrainButton.textContent = '3D';
+                terrainButton.classList.add('bpb-map-3d-toggle-loading');
+                terrainButton.setAttribute('aria-busy', 'true');
+                terrainButton.title = 'Loading 3D terrain…';
+                terrainButton.setAttribute('aria-label', 'Loading 3D terrain');
                 terrainButton.setAttribute('aria-pressed', 'false');
             } else if (terrainState === 'active') {
                 terrainButton.disabled = false;
-                terrainButton.textContent = '2D map';
-                terrainButton.title = 'Return to the Peakbagger map';
+                terrainButton.textContent = '2D';
+                terrainButton.title = 'Return to the 2D map';
+                terrainButton.setAttribute('aria-label', 'Return to the 2D map');
                 terrainButton.setAttribute('aria-pressed', 'true');
             } else {
                 terrainButton.disabled = !hasRoute;
-                terrainButton.textContent = '3D terrain';
+                terrainButton.textContent = '3D';
                 terrainButton.title = hasRoute ? 'View this route on 3D terrain' : 'Available after the GPX route loads';
+                terrainButton.setAttribute('aria-label', hasRoute ? 'Show 3D terrain' : '3D terrain available after the route loads');
                 terrainButton.setAttribute('aria-pressed', 'false');
             }
-            terrainButton.style.cursor = terrainButton.disabled ? 'default' : 'pointer';
-            terrainButton.style.opacity = terrainButton.disabled ? '0.55' : '1';
         };
 
         const restoreNativeMap = () => {

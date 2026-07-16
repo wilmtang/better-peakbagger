@@ -16,6 +16,95 @@
     pointer-events: none;
 }
 
+/* Floating 2D/3D toggle, top-left of the map viewport. It clears the native
+   basemap selector (top-right) and zoom (bottom-right) in both states, and
+   sits above the terrain frame (z-index 2). Lives in the host page document,
+   so it is themed via a data-theme attribute rather than the frame's. */
+.bpb-map-3d-toggle {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    z-index: 3;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    min-width: 42px;
+    min-height: 30px;
+    padding: 5px 11px;
+    border: 1px solid rgb(53 58 49 / 20%);
+    border-radius: 8px;
+    background: rgb(250 249 245 / 92%);
+    color: #252821;
+    box-shadow: 0 1px 4px rgb(0 0 0 / 18%);
+    backdrop-filter: blur(8px);
+    font: 600 13px/1 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    letter-spacing: 0.02em;
+    cursor: pointer;
+    -webkit-user-select: none;
+    user-select: none;
+}
+
+.bpb-map-3d-toggle[data-theme="dark"] {
+    border-color: rgb(255 255 255 / 16%);
+    background: rgb(31 35 33 / 90%);
+    color: #f1eee7;
+    box-shadow: 0 1px 5px rgb(0 0 0 / 38%);
+}
+
+.bpb-map-3d-toggle:hover:not(:disabled) {
+    background: rgb(255 255 255 / 98%);
+}
+
+.bpb-map-3d-toggle[data-theme="dark"]:hover:not(:disabled) {
+    background: rgb(40 45 42 / 96%);
+}
+
+.bpb-map-3d-toggle:focus-visible {
+    outline: 2px solid #2f6fd0;
+    outline-offset: 2px;
+}
+
+.bpb-map-3d-toggle:disabled {
+    cursor: default;
+    opacity: 0.55;
+}
+
+/* While loading, hide the glyph and spin a ring in its place. */
+.bpb-map-3d-toggle-loading {
+    color: transparent;
+}
+
+.bpb-map-3d-toggle-loading::after {
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    box-sizing: border-box;
+    width: 15px;
+    height: 15px;
+    margin: -7.5px 0 0 -7.5px;
+    border-radius: 50%;
+    border: 2px solid rgb(53 58 49 / 25%);
+    border-top-color: #2f6fd0;
+    animation: bpb-map-3d-spin 0.7s linear infinite;
+}
+
+.bpb-map-3d-toggle[data-theme="dark"].bpb-map-3d-toggle-loading::after {
+    border-color: rgb(255 255 255 / 25%);
+    border-top-color: #7fb0ff;
+}
+
+@keyframes bpb-map-3d-spin {
+    to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .bpb-map-3d-toggle-loading::after {
+        animation: none;
+    }
+}
+
 html:has(.bpb-terrain-frame-body),
 .bpb-terrain-frame-body {
     width: 100%;

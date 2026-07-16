@@ -245,15 +245,17 @@ test('GPX analyzer adds a thick, segment-preserving route casing behind native L
     }));
     assert.equal(iframe.style.visibility, 'hidden');
     assert.equal(iframe.getAttribute('aria-hidden'), 'true');
-    assert.equal(terrainToggle.textContent, '2D map');
+    assert.equal(terrainToggle.textContent, '2D');
     assert.equal(terrainToggle.getAttribute('aria-pressed'), 'true');
+    // The floating toggle overlays the map, not the panel below it.
+    assert.equal(terrainToggle.parentElement.id, 'bpb-map-viewport');
 
     sendSettings({ units: 'imperial', theme: 'light', chartDefaultSeries: 'both', enable3dMap: false });
     await waitFor(dom, () => terrainToggle.hidden);
     assert.equal(iframe.style.visibility, 'visible');
     assert.equal(iframe.hasAttribute('aria-hidden'), false);
     assert.equal(terrainMessages.at(-1).type, 'destroy');
-    assert.equal(terrainToggle.textContent, '3D terrain');
+    assert.equal(terrainToggle.textContent, '3D');
 
     sendSettings({ units: 'imperial', theme: 'light', chartDefaultSeries: 'both', enable3dMap: true });
     await waitFor(dom, () => !terrainToggle.hidden);
@@ -265,7 +267,7 @@ test('GPX analyzer adds a thick, segment-preserving route casing behind native L
         data: { __bpbTerrain: true, dir: 'toPage', type: 'error', reason: 'maplibre' }
     }));
     assert.equal(iframe.style.visibility, 'visible');
-    assert.equal(terrainToggle.textContent, '3D terrain');
+    assert.equal(terrainToggle.textContent, '3D');
     assert.match(window.document.getElementById('bpb-terrain-message').textContent, /could not render 3D terrain/);
 
     sendSettings({

@@ -227,7 +227,7 @@ try {
         const surface = frame && frame.contentDocument && frame.contentDocument.getElementById('bpb-terrain-map');
         const message = document.getElementById('bpb-terrain-message');
         return {
-            ready: toggle && toggle.textContent === '2D map' && frame && frame.style.opacity === '1' && surface,
+            ready: toggle && toggle.textContent === '2D' && frame && frame.style.opacity === '1' && surface,
             toggle: toggle && toggle.textContent,
             message: message && message.textContent,
             badge: (() => {
@@ -253,7 +253,7 @@ try {
         const frame = document.getElementById('bpb-terrain-frame');
         const surface = frame && frame.contentDocument && frame.contentDocument.getElementById('bpb-terrain-map');
         return {
-            ready: toggle && toggle.textContent === '2D map' && frame && frame.style.opacity === '1'
+            ready: toggle && toggle.textContent === '2D' && frame && frame.style.opacity === '1'
                 && surface && surface.dataset.theme === 'dark',
             canvas: surface && surface.querySelector('canvas') && {
                 width: surface.querySelector('canvas').width,
