@@ -92,6 +92,7 @@
         }, { once: true });
         pendingInit = {
             routeSegments: data.routeSegments,
+            routeColors: data.routeColors,
             routeStyle: data.routeStyle,
             theme: data.theme,
             basemap: data.basemap,

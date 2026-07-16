@@ -15,8 +15,10 @@
   Full Screen maps (`BigMap.aspx`), not just ascent pages. It lifts the route off
   the native 2D map onto MapLibre terrain, draping the layer you had selected, and
   restores the 2D map when you toggle back. Single-ascent maps (`t=A`) show one
-  route; group maps (`t=G`) draw every track in the route color. Off by default
-  with the rest of the experimental 3D map; markers and peaks stay 2D-only.
+  route in your preferred color; group maps (`t=G`) keep each track's own color
+  so climbers stay distinguishable in 3D just like the 2D map, both with a
+  matching casing. Off by default with the rest of the experimental 3D map;
+  markers and peaks stay 2D-only.
 - **Clearer 3D map gestures.** The 3D terrain view now shows an always-visible,
   OS-aware hint — *"Drag to pan · ⌘/Ctrl + scroll to zoom · right-drag to
   tilt"* — so the modifier needed to zoom (kept so the page doesn't

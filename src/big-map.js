@@ -33,6 +33,19 @@
 
     const validColor = (value, fallback) =>
         typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value) ? value : fallback;
+    // Peakbagger colors each group-map track to tell climbers apart. Read that
+    // native color as #rrggbb so the 3D view can keep tracks distinct; #rgb and
+    // rgb() forms are normalized, anything else returns null (frame falls back).
+    const nativeTrackColor = layer => {
+        const raw = layer && layer.options && typeof layer.options.color === 'string' ? layer.options.color.trim() : '';
+        if (/^#[0-9a-f]{6}$/i.test(raw)) return raw.toLowerCase();
+        if (/^#[0-9a-f]{3}$/i.test(raw)) return '#' + raw.slice(1).split('').map(c => c + c).join('').toLowerCase();
+        const rgb = raw.match(/^rgb\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*\)$/i);
+        if (rgb && rgb.slice(1).every(n => Number(n) <= 255)) {
+            return '#' + rgb.slice(1, 4).map(n => Number(n).toString(16).padStart(2, '0')).join('');
+        }
+        return null;
+    };
     const validWidth = value => Number.isInteger(value) && value >= 1 && value <= 12 ? value : DEFAULT_STYLE.width;
     const validCasingWidth = (value, width) => Math.max(
         Number.isInteger(value) && value >= 3 && value <= 20 ? value : DEFAULT_STYLE.casingWidth,
@@ -180,8 +193,9 @@
     // analyzer. The route geometry comes from the native Leaflet tracks; the
     // renderer, drape specs, and DEM cache are shared with the ascent page via
     // the extension-owned terrain frame (src/terrain-map.js + terrain/). Group
-    // maps draw every native track in one route color (the frame renders a
-    // single route style); markers/peaks are not carried into 3D.
+    // maps carry each track's native color into 3D so climbers stay
+    // distinguishable (single-ascent maps use one preferred color); the shared
+    // width and casing apply to both. Markers/peaks are not carried into 3D.
     const TERRAIN_LOAD_TIMEOUT_MS = 17000;
     const TERRAIN_CACHE_DEFAULT_MB = 512;
     let terrainEnabled = false;
@@ -261,27 +275,35 @@
     };
 
     // Native GPS tracks (single-ascent: one; group: up to ten) flattened into
-    // [[lat, lon], …] segments, reduced to the shared point/segment budget.
-    const collectRouteSegments = () => {
-        if (!activeMap || !activeMapWin || typeof activeMap.eachLayer !== 'function') return [];
+    // [[lat, lon], …] segments, reduced to the shared point/segment budget. On
+    // group maps each segment carries its track's native color (parallel to
+    // segments) so 3D can keep climbers apart the way the 2D map does; single-
+    // ascent maps recolor to the preferred color, so colors stay null there.
+    const collectRoute = () => {
+        if (!activeMap || !activeMapWin || typeof activeMap.eachLayer !== 'function') return { segments: [], colors: [] };
         const L = activeMapWin.L;
-        if (!L) return [];
+        if (!L) return { segments: [], colors: [] };
         const segments = [];
-        const pushLatLngs = latLngs => {
+        const colors = [];
+        const pushLatLngs = (latLngs, color) => {
             if (!Array.isArray(latLngs) || !latLngs.length) return;
             if (latLngs.every(point => point && Number.isFinite(point.lat) && Number.isFinite(point.lng))) {
-                if (latLngs.length >= 2) segments.push(latLngs.map(point => [point.lat, point.lng]));
+                if (latLngs.length >= 2) { segments.push(latLngs.map(point => [point.lat, point.lng])); colors.push(color); }
                 return;
             }
-            latLngs.forEach(pushLatLngs);
+            latLngs.forEach(part => pushLatLngs(part, color));
         };
         try {
             activeMap.eachLayer(layer => {
                 if (casingLayers.has(layer) || !isNativeTrack(layer, L)) return;
-                try { pushLatLngs(layer.getLatLngs()); } catch (error) { /* layer may be mid-removal */ }
+                const color = mapType === 'G' ? nativeTrackColor(layer) : null;
+                try { pushLatLngs(layer.getLatLngs(), color); } catch (error) { /* layer may be mid-removal */ }
             });
         } catch (error) { /* a live Leaflet layer collection can change during iteration */ }
-        return globalThis.BPBGpxMetrics ? globalThis.BPBGpxMetrics.limitMapRouteSegments(segments) : segments;
+        const limited = globalThis.BPBGpxMetrics ? globalThis.BPBGpxMetrics.limitMapRouteSegments(segments) : segments;
+        // The reducer keeps segment order 1:1, or returns [] when it drops the
+        // whole overlay; only then do the parallel colors fall out of alignment.
+        return limited.length === segments.length ? { segments: limited, colors } : { segments: limited, colors: [] };
     };
 
     const terrainBasemaps = () => {
@@ -340,7 +362,7 @@
             terrainToggle.setAttribute('aria-label', 'Return to the 2D map');
             terrainToggle.setAttribute('aria-pressed', 'true');
         } else {
-            const hasRoute = collectRouteSegments().length > 0;
+            const hasRoute = collectRoute().segments.length > 0;
             terrainToggle.disabled = !hasRoute;
             terrainToggle.textContent = '3D';
             terrainToggle.title = hasRoute ? 'View this route on 3D terrain' : 'Available once the map has a GPS track';
@@ -360,13 +382,14 @@
 
     const startTerrain = () => {
         if (!terrainEnabled || terrainState !== 'idle') return;
-        const routeSegments = collectRouteSegments();
+        const { segments: routeSegments, colors: routeColors } = collectRoute();
         if (!routeSegments.length) return;
         terrainState = 'loading';
         updateTerrainToggle();
         const { basemap, basemaps } = terrainBasemaps();
         postTerrain('init', {
             routeSegments,
+            routeColors,
             routeStyle: { ...routeStyle },
             theme: effectiveTheme(),
             basemap,

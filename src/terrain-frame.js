@@ -52,6 +52,9 @@
     let terrainCache = null;
     let terrainProtocolRegistered = false;
     let activeRouteStyle = { color: '#d9483b', width: 5, casingColor: '#ffffff', casingWidth: 9 };
+    // True when the route carries per-track colors (group maps), so the route
+    // line is painted data-driven from each feature instead of one flat color.
+    let routeHasFeatureColors = false;
 
     const post = (type, detail = {}) => {
         if (!parentOrigin) return;
@@ -102,6 +105,7 @@
         activeBasemap = null;
         availableBasemaps = [];
         activeBasemapIndex = -1;
+        routeHasFeatureColors = false;
         failedBasemaps.clear();
         basemapErrored = false;
         basemapContentLoaded = false;
@@ -116,14 +120,18 @@
         post('error', { reason });
     };
 
-    const validateRoute = segments => {
+    const validateRoute = (segments, colors) => {
         if (!Array.isArray(segments) || !segments.length || segments.length > MAX_ROUTE_SEGMENTS) return null;
+        const colorList = Array.isArray(colors) ? colors : [];
+        const hexColor = value => typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value) ? value : null;
 
         let pointCount = 0;
         let minLat = Infinity, minLon = Infinity, maxLat = -Infinity, maxLon = -Infinity;
-        const coordinates = [];
+        const features = [];
+        let hasFeatureColors = false;
 
-        for (const segment of segments) {
+        for (let index = 0; index < segments.length; index++) {
+            const segment = segments[index];
             if (!Array.isArray(segment) || segment.length < 2) return null;
             const converted = [];
             for (const point of segment) {
@@ -140,18 +148,21 @@
                 pointCount++;
                 if (pointCount > MAX_ROUTE_POINTS) return null;
             }
-            coordinates.push(converted);
+            const color = hexColor(colorList[index]);
+            if (color) hasFeatureColors = true;
+            features.push({
+                type: 'Feature',
+                properties: color ? { color } : {},
+                geometry: { type: 'LineString', coordinates: converted }
+            });
         }
 
         if (maxLon - minLon >= 180) return null;
 
         return {
-            geojson: {
-                type: 'Feature',
-                properties: {},
-                geometry: { type: 'MultiLineString', coordinates }
-            },
-            bounds: [[minLon, minLat], [maxLon, maxLat]]
+            geojson: { type: 'FeatureCollection', features },
+            bounds: [[minLon, minLat], [maxLon, maxLat]],
+            hasFeatureColors
         };
     };
 
@@ -384,13 +395,19 @@
         showNotice(`${name || 'That map layer'} can’t be draped here — the map provider blocks cross-origin tiles. Showing terrain only.`);
     };
 
+    // Group maps paint each track its own color (falling back to the preferred
+    // color for any track without one); single tracks use one flat color.
+    const routeLineColor = style => routeHasFeatureColors
+        ? ['coalesce', ['get', 'color'], style.color]
+        : style.color;
+
     const setRoutePaint = routeStyle => {
         const style = validateStyle(routeStyle);
         activeRouteStyle = style;
         if (!map || !loaded) return;
         map.setPaintProperty('bpb-route-casing', 'line-color', style.casingColor);
         map.setPaintProperty('bpb-route-casing', 'line-width', style.casingWidth);
-        map.setPaintProperty('bpb-route', 'line-color', style.color);
+        map.setPaintProperty('bpb-route', 'line-color', routeLineColor(style));
         map.setPaintProperty('bpb-route', 'line-width', style.width);
     };
 
@@ -422,7 +439,8 @@
 
     const createTerrain = data => {
         if (map || mapElement) return;
-        const route = validateRoute(data.routeSegments);
+        const route = validateRoute(data.routeSegments, data.routeColors);
+        routeHasFeatureColors = Boolean(route && route.hasFeatureColors);
         const maplibre = globalThis.maplibregl;
         const cacheLimitMb = Number.isInteger(data.cacheLimitMb) && data.cacheLimitMb >= 0 && data.cacheLimitMb <= 2048
             ? data.cacheLimitMb
@@ -572,7 +590,7 @@
                 terrainMap.addLayer({
                     id: 'bpb-route', type: 'line', source: 'bpb-route',
                     layout: { 'line-join': 'round', 'line-cap': 'round' },
-                    paint: { 'line-color': activeRouteStyle.color, 'line-width': activeRouteStyle.width }
+                    paint: { 'line-color': routeLineColor(activeRouteStyle), 'line-width': activeRouteStyle.width }
                 });
                 terrainMap.addSource('bpb-highlight', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
                 terrainMap.addLayer({

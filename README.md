@@ -748,8 +748,10 @@ native tracks' `getLatLngs()`, reduces them to the shared 3,000-point budget, an
 draws them on the extension-owned MapLibre terrain in a full-bleed overlay,
 hiding the native 2D map until you toggle back. It drapes the layer selected in
 the native `#selmap` control via the shared `terrain-basemap.js` specs. Group
-maps (`t=G`) render every track in the single route color the frame draws;
-markers and peaks are not carried into 3D. The renderer, DEM cache, privacy
+maps (`t=G`) carry each track's native color (parallel to the segments) so the
+frame paints them data-driven and climbers stay distinguishable, matching the 2D
+map; single-ascent maps use the one preferred color. Markers and peaks are not
+carried into 3D. The renderer, DEM cache, privacy
 boundary, and off-by-default gate are exactly those of the ascent 3D view below.
 
 ---

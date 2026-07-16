@@ -294,11 +294,11 @@ test('3D terrain frame validates coordinate-only routes before loading public DE
     assert.match(hint.textContent, /Drag to pan/);
     assert.match(hint.textContent, /scroll to zoom/);
     assert.match(hint.textContent, /right-drag to tilt/);
-    assert.deepEqual(JSON.parse(JSON.stringify(map.sources.get('bpb-route').data.geometry)), {
-        type: 'MultiLineString',
-        coordinates: [
-            [[-121.8, 48.7], [-121.81, 48.71]],
-            [[-121.82, 48.75], [-121.815, 48.76]]
+    assert.deepEqual(JSON.parse(JSON.stringify(map.sources.get('bpb-route').data)), {
+        type: 'FeatureCollection',
+        features: [
+            { type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: [[-121.8, 48.7], [-121.81, 48.71]] } },
+            { type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: [[-121.82, 48.75], [-121.815, 48.76]] } }
         ]
     });
     // The camera is framed on the route at construction, not re-fitted after
@@ -351,6 +351,26 @@ test('3D terrain frame validates coordinate-only routes before loading public DE
     assert.deepEqual(Object.keys(maps[1].options.style.sources), ['terrain'],
         'the extension frame must reject private-network tile templates');
 
+    // Group maps hand the frame a native color per track; each stays distinct
+    // instead of collapsing to the single preferred route color.
+    dispatch({ type: 'destroy' });
+    dispatch({
+        type: 'init',
+        routeSegments,
+        routeColors: ['#e34a33', '#3182bd'],
+        routeStyle: { color: '#2457a7', width: 7, casingColor: '#ffffff', casingWidth: 12 }
+    });
+    await new Promise(resolve => window.queueMicrotask(resolve));
+    const grouped = maps.at(-1);
+    assert.deepEqual(
+        JSON.parse(JSON.stringify(grouped.sources.get('bpb-route').data.features.map(feature => feature.properties.color))),
+        ['#e34a33', '#3182bd'],
+        'each group-map track keeps its own native color');
+    assert.deepEqual(
+        JSON.parse(JSON.stringify(grouped.layers.find(layer => layer.id === 'bpb-route').paint['line-color'])),
+        ['coalesce', ['get', 'color'], '#2457a7'],
+        'the route line is painted from each track color, not one flat color');
+
     // A drape whose every tile fails (e.g. a whole layer blocked by CORS)
     // loads no tile, so it is dropped to terrain-only at the first idle.
     dispatch({ type: 'destroy' });
@@ -363,7 +383,7 @@ test('3D terrain frame validates coordinate-only routes before loading public DE
         }
     });
     await new Promise(resolve => window.queueMicrotask(resolve));
-    const blocked = maps[2];
+    const blocked = maps.at(-1);
     assert.equal(picker().options[picker().selectedIndex].textContent, 'Blocked Layer',
         'the picker starts on the layer name before any tile is attempted');
     blocked.handlers.get('error')({ sourceId: 'basemap' });

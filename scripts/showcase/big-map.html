@@ -94,6 +94,15 @@
       { lat: 48.7780, lng: -121.8110 },
       { lat: 48.7840, lng: -121.8080 }
     ];
+    // A second, geographically distinct track so the group-map 3D view shows two
+    // separately-colored routes (not one line drawn twice).
+    const pointsB = [
+      { lat: 48.7560, lng: -121.8180 },
+      { lat: 48.7630, lng: -121.8090 },
+      { lat: 48.7700, lng: -121.8020 },
+      { lat: 48.7775, lng: -121.7960 },
+      { lat: 48.7850, lng: -121.7920 }
+    ];
     // A code with no built-in drape spec, backed by a live Leaflet layer that
     // points at the harness's synthetic tiles, so the 3D drape resolves to a
     // local raster (no network) via the shared basemap module's live-layer path.
@@ -102,7 +111,7 @@
       options: { minZoom: 0, maxZoom: 16, attribution: 'Synthetic 2D fixture' }
     };
     window.routeA = new Polyline(points, { color: '#e34a33', weight: 3 }, document.getElementById('route-a'));
-    window.routeB = new Polyline(points, { color: '#3182bd', weight: 3 }, document.getElementById('route-b'));
+    window.routeB = new Polyline(pointsB, { color: '#3182bd', weight: 3 }, document.getElementById('route-b'));
     window.hoverEffect = new Polyline(points, { color: '#ffd92f', weight: 12 }, document.getElementById('hover-effect'));
     for (const route of [routeA, routeB]) {
       route.on('mouseover', () => route.setStyle({ weight: 11 }));
