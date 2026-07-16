@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 2.1.0 — 2026-07-15
 
 - **The 3D map is a one-tap toggle on the map.** The 3D/2D control now floats in
   the bottom-right corner, stacked just above the zoom controls — the way map

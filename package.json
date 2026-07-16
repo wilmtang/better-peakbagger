@@ -1,6 +1,6 @@
 {
   "name": "better-peakbagger",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "Captures your Garmin and Strava activities into confidence-ranked Peakbagger drafts, plus GPX analysis, beta filters, and dark mode.",
   "private": true,
   "license": "AGPL-3.0-or-later",
@@ -35,6 +35,7 @@
     "ignoreFiles": [
       "AGENTS.md",
       "CHANGELOG.md",
+      "CLAUDE.md",
       "docs",
       "docs/**",
       "package.json",
