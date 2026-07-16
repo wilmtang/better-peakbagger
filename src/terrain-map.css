@@ -261,12 +261,6 @@ html:has(.bpb-terrain-frame-body),
     box-shadow: 0 1px 5px rgb(0 0 0 / 32%);
 }
 
-/* Suppress MapLibre's momentary full-surface "use Ctrl + scroll" overlay; the
-   persistent hint conveys the same thing without the flash. */
-#bpb-terrain-map .maplibregl-cooperative-gesture-screen {
-    display: none;
-}
-
 #bpb-terrain-map .maplibregl-ctrl-group {
     overflow: hidden;
     border: 1px solid rgb(53 58 49 / 20%);

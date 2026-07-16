@@ -19,11 +19,12 @@
   so climbers stay distinguishable in 3D just like the 2D map, both with a
   matching casing. Off by default with the rest of the experimental 3D map;
   markers and peaks stay 2D-only.
-- **Clearer 3D map gestures.** The 3D terrain view now shows an always-visible,
-  OS-aware hint — *"Drag to pan · ⌘/Ctrl + scroll to zoom · right-drag to
-  tilt"* — so the modifier needed to zoom (kept so the page doesn't
-  scroll-jack) is discoverable. MapLibre's momentary full-surface overlay is
-  suppressed in favor of the persistent hint. Consistent in Chrome and Firefox.
+- **Scroll zooms the 3D map directly.** The 3D terrain view now zooms on plain
+  scroll, exactly like the native 2D map it replaces — no more ⌘/Ctrl modifier —
+  on ascent pages and both Full Screen map types. An always-visible hint —
+  *"Drag to pan · scroll to zoom · right-drag to tilt"* — keeps the remaining
+  gestures discoverable. MapLibre's momentary full-surface overlay is suppressed
+  in favor of the persistent hint. Consistent in Chrome and Firefox.
 - **Steadier 3D shading.** The 3D hillshade is now anchored to the map instead of
   the camera, so a small tilt or rotate no longer swings the light across the
   terrain and flips the shading — the viewpoint moves, but the lit slopes stay put.

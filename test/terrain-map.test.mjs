@@ -296,6 +296,10 @@ test('3D terrain frame validates coordinate-only routes before loading public DE
     assert.match(hint.textContent, /Drag to pan/);
     assert.match(hint.textContent, /scroll to zoom/);
     assert.match(hint.textContent, /right-drag to tilt/);
+    assert.doesNotMatch(hint.textContent, /⌘|Ctrl/,
+        'plain scroll zooms — the hint must not demand a modifier key');
+    assert.ok(!map.options.cooperativeGestures,
+        'cooperative gestures would require a modifier to scroll-zoom, unlike the 2D map');
     assert.deepEqual(JSON.parse(JSON.stringify(map.sources.get('bpb-route').data)), {
         type: 'FeatureCollection',
         features: [
