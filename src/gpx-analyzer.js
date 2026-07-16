@@ -671,6 +671,32 @@
             timeout: '3D terrain took too long to load. The 2D map is unchanged.'
         })[reason] || '3D terrain could not load. The 2D map is unchanged.';
 
+        // The ascent page names its peak in the "Peak:" details row (a link to
+        // peak.aspx); the "Ascent of <peak> on <date>" heading is the fallback.
+        const getAscentPeakName = () => {
+            const peakLabel = Array.from(document.querySelectorAll('td > b'))
+                .find(label => label.textContent.trim() === 'Peak:');
+            const row = peakLabel && peakLabel.closest('tr');
+            const link = row && row.querySelector('a[href*="peak.aspx" i]');
+            const linked = link ? link.textContent.trim() : '';
+            if (linked) return linked.slice(0, 80);
+            const heading = document.querySelector('h1');
+            const match = heading && heading.textContent.match(/^\s*Ascent of (.+) on \d{4}/);
+            return match ? match[1].trim().slice(0, 80) : '';
+        };
+
+        // The labelled peak for the 3D view. The page carries no peak
+        // coordinates, so the track's highest (smoothed) point stands in for
+        // the summit — on a summit ascent they coincide to within GPS noise
+        // (see docs/3d-peak-labels-plan.md for the real-coordinate follow-up).
+        const getTerrainPeak = () => {
+            const name = getAscentPeakName();
+            const points = metrics && Array.isArray(metrics.points) ? metrics.points : [];
+            if (!name || !points.length) return null;
+            const summit = points.reduce((best, point) => point.eleM > best.eleM ? point : best);
+            return { name, coordinates: [summit.lon, summit.lat] };
+        };
+
         const startTerrain = () => {
             if (BPB.get().enable3dMap !== true
                 || terrainState !== 'idle' || !mapViewport || !mapIframe || !mapRouteSegments.length) return;
@@ -686,6 +712,7 @@
                 theme: effectiveTheme(BPB.get().theme),
                 basemap: getTerrainBasemap(),
                 basemaps: enumerateTerrainBasemaps(),
+                peak: getTerrainPeak(),
                 cacheLimitMb: resolveTerrainCacheLimitMb(BPB.get())
             });
             terrainLoadTimer = setTimeout(() => {

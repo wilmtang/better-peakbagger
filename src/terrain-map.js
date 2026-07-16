@@ -97,6 +97,7 @@
             theme: data.theme,
             basemap: data.basemap,
             basemaps: data.basemaps,
+            peak: data.peak,
             cacheLimitMb: data.cacheLimitMb
         };
         terrainFrame.src = chrome.runtime.getURL('terrain/terrain.html');

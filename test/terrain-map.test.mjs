@@ -47,7 +47,8 @@ test('3D terrain waits for the extension frame handshake before sending route co
         basemap: {
             name: 'Open Topo Map',
             tiles: ['https://a.tile.example.com/{z}/{x}/{y}.png']
-        }
+        },
+        peak: { name: 'Sample Peak', coordinates: [-121.81, 48.71] }
     });
     await new Promise(resolve => window.setTimeout(resolve, 0));
 
@@ -70,6 +71,7 @@ test('3D terrain waits for the extension frame handshake before sending route co
     assert.equal(init.theme, 'dark');
     assert.equal(init.cacheLimitMb, 512);
     assert.equal(init.basemap.name, 'Open Topo Map');
+    assert.deepEqual(init.peak, { name: 'Sample Peak', coordinates: [-121.81, 48.71] });
 
     window.dispatchEvent(new window.MessageEvent('message', {
         source: frame.contentWindow,
@@ -265,7 +267,8 @@ test('3D terrain frame validates coordinate-only routes before loading public DE
             maxzoom: 17,
             scheme: 'xyz',
             attribution: '<a href="https://example.com/copyright">© Example Maps</a><script>alert(1)</script>'
-        }
+        },
+        peak: { name: 'Mount Sefrit', coordinates: [-121.81, 48.71] }
     });
     await new Promise(resolve => window.queueMicrotask(resolve));
 
@@ -307,6 +310,22 @@ test('3D terrain frame validates coordinate-only routes before loading public DE
             { type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: [[-121.82, 48.75], [-121.815, 48.76]] } }
         ]
     });
+    // The peak label: glyphs resolve inside the extension package (no font
+    // CDN), and the symbol layer billboards its text against the viewport so
+    // the name stays upright and screen-facing at any camera pitch/rotation.
+    assert.equal(map.options.style.glyphs, 'chrome-extension://test-id/vendor/glyphs/{fontstack}/{range}.pbf');
+    assert.deepEqual(JSON.parse(JSON.stringify(map.sources.get('bpb-peak').data)), {
+        type: 'Feature',
+        properties: { name: 'Mount Sefrit' },
+        geometry: { type: 'Point', coordinates: [-121.81, 48.71] }
+    });
+    const peakLabel = map.layers.find(layer => layer.id === 'bpb-peak-label');
+    assert.equal(peakLabel.type, 'symbol');
+    assert.deepEqual(JSON.parse(JSON.stringify(peakLabel.layout['text-field'])), ['get', 'name']);
+    assert.equal(peakLabel.layout['text-rotation-alignment'], 'viewport');
+    assert.equal(peakLabel.layout['text-pitch-alignment'], 'viewport');
+    assert.ok(map.layers.find(layer => layer.id === 'bpb-peak-dot'),
+        'a small dot pins the floating name to the summit');
     // The camera is framed on the route at construction, not re-fitted after
     // 'load' — fitting later would load a throwaway tileset for the placeholder
     // view and rebuild the terrain mesh, the dominant chunk of load time.
@@ -351,11 +370,14 @@ test('3D terrain frame validates coordinate-only routes before loading public DE
         basemap: {
             name: 'Unsafe local layer',
             tiles: ['https://127.0.0.1/{z}/{x}/{y}.png']
-        }
+        },
+        peak: { name: 'Out of range', coordinates: [200, 91] }
     });
     await new Promise(resolve => window.queueMicrotask(resolve));
     assert.deepEqual(Object.keys(maps[1].options.style.sources), ['terrain'],
         'the extension frame must reject private-network tile templates');
+    assert.equal(maps[1].sources.has('bpb-peak'), false,
+        'a malformed peak drops the label only — the terrain still loads');
 
     // Group maps hand the frame a native color per track; each stays distinct
     // instead of collapsing to the single preferred route color.

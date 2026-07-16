@@ -10,6 +10,12 @@
     const TERRAIN_TILE_TEMPLATE = 'bpb-dem://{z}/{x}/{y}.webp';
     const MAX_ROUTE_POINTS = 3000;
     const MAX_ROUTE_SEGMENTS = 1500;
+    const MAX_PEAK_NAME_LENGTH = 80;
+    // Glyph ranges vendored into the extension package (vendor/glyphs-LICENSE.txt),
+    // so label text costs no font-CDN request. The stack name must match the
+    // vendored directory; coverage is U+0000–U+01FF (Latin + Latin Extended-A).
+    const GLYPHS_TEMPLATE = 'vendor/glyphs/{fontstack}/{range}.pbf';
+    const PEAK_LABEL_FONT = 'Open-Sans-Semibold';
     const MAX_MERCATOR_LAT = 85.0511287;
     const MAX_BASEMAP_URL_LENGTH = 2048;
     const MAX_BASEMAP_ATTRIBUTION_LENGTH = 600;
@@ -22,14 +28,18 @@
             relief: ['#607f75', '#7f9879', '#a8ad82', '#b6a47f', '#9c8875', '#cac5b8', '#f2f0ea'],
             hillShadow: '#312d26',
             hillHighlight: '#ffffff',
-            hillAccent: '#6d6657'
+            hillAccent: '#6d6657',
+            peakText: '#312d26',
+            peakHalo: '#f7f6f1'
         },
         dark: {
             background: '#252a27',
             relief: ['#263a38', '#35493b', '#555946', '#665b49', '#65564b', '#77746d', '#a7a59f'],
             hillShadow: '#080b0a',
             hillHighlight: '#c9c6bc',
-            hillAccent: '#111512'
+            hillAccent: '#111512',
+            peakText: '#f1efe8',
+            peakHalo: '#181c19'
         }
     };
 
@@ -52,6 +62,7 @@
     let terrainCache = null;
     let terrainProtocolRegistered = false;
     let activeRouteStyle = { color: '#d9483b', width: 5, casingColor: '#ffffff', casingWidth: 9 };
+    let activePeak = null;
     // True when the route carries per-track colors (group maps), so the route
     // line is painted data-driven from each feature instead of one flat color.
     let routeHasFeatureColors = false;
@@ -105,6 +116,7 @@
         activeBasemap = null;
         availableBasemaps = [];
         activeBasemapIndex = -1;
+        activePeak = null;
         routeHasFeatureColors = false;
         failedBasemaps.clear();
         basemapErrored = false;
@@ -250,6 +262,20 @@
         };
     };
 
+    // The labelled peak: a display name plus a [lon, lat] anchor. Anything
+    // malformed drops the label only — never the terrain view itself.
+    const validatePeak = value => {
+        if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+        const name = typeof value.name === 'string' ? value.name.trim() : '';
+        if (!name || name.length > MAX_PEAK_NAME_LENGTH || /[\u0000-\u001f\u007f]/.test(name)) return null;
+        const coordinates = value.coordinates;
+        if (!Array.isArray(coordinates) || coordinates.length !== 2) return null;
+        const [lon, lat] = coordinates;
+        if (!Number.isFinite(lon) || Math.abs(lon) > 180
+            || !Number.isFinite(lat) || Math.abs(lat) > MAX_MERCATOR_LAT) return null;
+        return { name, coordinates: [lon, lat] };
+    };
+
     const reliefExpression = palette => [
         'interpolate', ['linear'], ['elevation'],
         -100, palette.relief[0],
@@ -318,6 +344,9 @@
         return {
             version: 8,
             name: 'Better Peakbagger terrain',
+            // Symbol layers refuse to render text without a glyphs endpoint;
+            // ours resolves inside the extension package (no remote origin).
+            glyphs: chrome.runtime.getURL(GLYPHS_TEMPLATE),
             sources,
             layers,
             terrain: { source: 'terrain', exaggeration: TERRAIN_EXAGGERATION }
@@ -423,6 +452,12 @@
         map.setPaintProperty('terrain-hillshade', 'hillshade-shadow-color', palette.hillShadow);
         map.setPaintProperty('terrain-hillshade', 'hillshade-highlight-color', palette.hillHighlight);
         map.setPaintProperty('terrain-hillshade', 'hillshade-accent-color', palette.hillAccent);
+        if (typeof map.getLayer === 'function' && map.getLayer('bpb-peak-label')) {
+            map.setPaintProperty('bpb-peak-dot', 'circle-color', palette.peakText);
+            map.setPaintProperty('bpb-peak-dot', 'circle-stroke-color', palette.peakHalo);
+            map.setPaintProperty('bpb-peak-label', 'text-color', palette.peakText);
+            map.setPaintProperty('bpb-peak-label', 'text-halo-color', palette.peakHalo);
+        }
     };
 
     const setHighlight = coordinates => {
@@ -441,6 +476,7 @@
         if (map || mapElement) return;
         const route = validateRoute(data.routeSegments, data.routeColors);
         routeHasFeatureColors = Boolean(route && route.hasFeatureColors);
+        activePeak = validatePeak(data.peak);
         const maplibre = globalThis.maplibregl;
         const cacheLimitMb = Number.isInteger(data.cacheLimitMb) && data.cacheLimitMb >= 0 && data.cacheLimitMb <= 2048
             ? data.cacheLimitMb
@@ -593,6 +629,49 @@
                     id: 'bpb-highlight', type: 'circle', source: 'bpb-highlight',
                     paint: { 'circle-radius': 8, 'circle-color': '#ff3b30', 'circle-stroke-color': '#ffffff', 'circle-stroke-width': 2 }
                 });
+                if (activePeak) {
+                    const palette = PALETTES[activeTheme];
+                    terrainMap.addSource('bpb-peak', {
+                        type: 'geojson',
+                        data: {
+                            type: 'Feature',
+                            properties: { name: activePeak.name },
+                            geometry: { type: 'Point', coordinates: activePeak.coordinates }
+                        }
+                    });
+                    // A small dot pins the floating name to the summit itself,
+                    // so the label stays legible over any draped basemap.
+                    terrainMap.addLayer({
+                        id: 'bpb-peak-dot', type: 'circle', source: 'bpb-peak',
+                        paint: {
+                            'circle-radius': 3,
+                            'circle-color': palette.peakText,
+                            'circle-stroke-color': palette.peakHalo,
+                            'circle-stroke-width': 1.5
+                        }
+                    });
+                    terrainMap.addLayer({
+                        id: 'bpb-peak-label', type: 'symbol', source: 'bpb-peak',
+                        layout: {
+                            'text-field': ['get', 'name'],
+                            'text-font': [PEAK_LABEL_FONT],
+                            'text-size': 13,
+                            'text-anchor': 'bottom',
+                            'text-offset': [0, -0.7],
+                            // Billboarding: pin the glyphs to the screen plane so
+                            // the name stays upright and readable at any camera
+                            // pitch or rotation, unlike the raster drape's baked-in
+                            // text, which tilts and rotates with the terrain.
+                            'text-rotation-alignment': 'viewport',
+                            'text-pitch-alignment': 'viewport'
+                        },
+                        paint: {
+                            'text-color': palette.peakText,
+                            'text-halo-color': palette.peakHalo,
+                            'text-halo-width': 1.4
+                        }
+                    });
+                }
                 loaded = true;
                 setTheme(activeTheme);
                 status.remove();

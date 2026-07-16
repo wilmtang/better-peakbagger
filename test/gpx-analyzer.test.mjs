@@ -31,6 +31,8 @@ const gpx = `<?xml version="1.0"?>
 
 test('GPX analyzer adds a thick, segment-preserving route casing behind native Leaflet layers', async () => {
     const dom = new JSDOM(`<!doctype html><body>
+      <h1>Ascent of Katahdin on 2018-10-12</h1>
+      <table><tr><td valign=top><b>Peak:</b></td><td><a href="../peak.aspx?pid=6820">Katahdin</a></td></tr></table>
       <p>
         <iframe src="https://www.peakbagger.com/map/MasterMap.aspx"></iframe><br>
         GPS Waypoints - Hover or click to see name and lat/long<br>
@@ -211,8 +213,14 @@ test('GPX analyzer adds a thick, segment-preserving route casing behind native L
     assert.equal(window.document.getElementById('bpb-terrain-message').style.display, 'none');
     const terrainInit = terrainMessages.find(message => message.type === 'init');
     assert.deepEqual(JSON.parse(JSON.stringify(terrainInit.routeSegments)), expectedSegments);
-    assert.deepEqual(Object.keys(terrainInit).sort(), ['__bpbTerrain', 'basemap', 'basemaps', 'cacheLimitMb', 'dir', 'routeSegments', 'routeStyle', 'theme', 'type']);
+    assert.deepEqual(Object.keys(terrainInit).sort(), ['__bpbTerrain', 'basemap', 'basemaps', 'cacheLimitMb', 'dir', 'peak', 'routeSegments', 'routeStyle', 'theme', 'type']);
     assert.equal(terrainInit.cacheLimitMb, 512);
+    // The labelled peak: the "Peak:" row names it; the page carries no peak
+    // coordinates, so the track's highest point stands in for the summit.
+    assert.deepEqual(JSON.parse(JSON.stringify(terrainInit.peak)), {
+        name: 'Katahdin',
+        coordinates: [-121.815, 48.76]
+    });
     // The active layer (the test selects L_MT above) drapes from its shared
     // spec so it dedupes cleanly against the picker list.
     assert.deepEqual(JSON.parse(JSON.stringify(terrainInit.basemap)), {
