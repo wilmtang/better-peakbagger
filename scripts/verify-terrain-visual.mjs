@@ -389,8 +389,11 @@ const chrome = spawn(chromePath, [
     '--disable-component-update',
     '--disable-default-apps',
     '--disable-sync',
-    '--enable-unsafe-swiftshader',
-    '--use-angle=swiftshader',
+    // Headless Chrome still reaches the real GPU (Metal on macOS, and the
+    // platform default elsewhere), so no ANGLE override belongs here. Forcing
+    // SwiftShader would software-render MapLibre's terrain — minutes of pegged
+    // CPU, an 8192 texture cap, and a renderer the users never run. The
+    // hardware renderer is asserted below rather than assumed.
     '--host-resolver-rules=MAP www.peakbagger.com 127.0.0.1',
     '--remote-debugging-port=0',
     `--user-data-dir=${profile}`,
@@ -411,6 +414,23 @@ try {
         cdp.call('Runtime.enable'),
         cdp.call('Network.enable')
     ]);
+
+    // A software renderer would still paint plausible-looking screenshots, so a
+    // silent fall back to SwiftShader could pass this suite while proving
+    // nothing about what users see. Fail closed, and report the renderer.
+    const renderer = await evaluate(cdp, `(() => {
+        const canvas = document.createElement('canvas');
+        const gl = canvas.getContext('webgl2') || canvas.getContext('webgl');
+        if (!gl) return null;
+        const info = gl.getExtension('WEBGL_debug_renderer_info');
+        return String(info ? gl.getParameter(info.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER));
+    })()`);
+    if (!renderer) throw new Error('No WebGL context: this suite cannot verify the 3D map');
+    if (/swiftshader|software|llvmpipe/i.test(renderer)) {
+        throw new Error(`Refusing to verify the 3D map on a software renderer (${renderer}). `
+            + 'MapLibre terrain must be checked on the GPU users actually render with.');
+    }
+    console.log(`Renderer: ${renderer} (headless, GPU)`);
 
     const terrainRequests = [];
     const basemapRequests = [];

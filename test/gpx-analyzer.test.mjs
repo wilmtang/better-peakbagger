@@ -237,6 +237,7 @@ test('GPX analyzer adds a thick, segment-preserving route casing behind native L
         minzoom: 9,
         maxzoom: 16,
         scheme: 'xyz',
+        stockLod: false,
         attribution: '&copy; <a href="https://mytopo.com" target="_blank" rel="noopener noreferrer">MyTopo</a>'
     });
     // The picker mirrors the full native #selmap menu of drape-able layers,
@@ -250,6 +251,7 @@ test('GPX analyzer adds a thick, segment-preserving route casing behind native L
         minzoom: 0,
         maxzoom: 18,
         scheme: 'xyz',
+        stockLod: false,
         attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap</a> contributors'
     });
     assert.equal(JSON.stringify(terrainInit).includes('<gpx'), false);
