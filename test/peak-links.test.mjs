@@ -83,6 +83,7 @@ test('United States peaks gain a NOAA snow depth link with a summit-centered box
     assert.equal(
         snow.href,
         'https://www.nohrsc.noaa.gov/interactive/html/map.html?var=ssm_depth'
+        + '&bgvar=dem&shdvar=shading'
         + '&min_x=-122.2304&min_y=46.5877&max_x=-121.2904&max_y=47.1157'
     );
 
