@@ -59,13 +59,26 @@
   <script src="/src/settings-schema.js"></script>
   <script src="/src/gpx-analyzer.js"></script>
   <script>
+    // The toggle enables as soon as the GPX parses, but the drape is read from
+    // the MasterMap iframe's Leaflet globals, which load independently. Clicking
+    // on the toggle alone races that: when the GPX wins, getTerrainBasemap()
+    // sees no map, and the frame legitimately falls back to "Terrain only".
+    // A real user clicks seconds later, so wait for the map the way they do.
     window.addEventListener('load', () => {
       const mode = new URLSearchParams(location.search).get('mode');
+      const nativeMapReady = () => {
+        const iframe = document.querySelector('iframe[src*="MasterMap.aspx" i]');
+        try {
+          return Boolean(iframe && iframe.contentWindow && iframe.contentWindow.mapsPlaceholder);
+        } catch (error) {
+          return false;
+        }
+      };
       let attempts = 0;
       const timer = setInterval(() => {
         attempts++;
         const toggle = document.getElementById('bpb-terrain-toggle');
-        if (toggle && !toggle.disabled) {
+        if (toggle && !toggle.disabled && nativeMapReady()) {
           if (mode === 'terrain') toggle.click();
           clearInterval(timer);
         } else if (attempts >= 50) {

@@ -41,13 +41,25 @@
   <script src="/src/settings-schema.js"></script>
   <script src="/src/big-map.js"></script>
   <script>
+    // Same race as the ascent showcase: the toggle enables from the native
+    // tracks, but the drape is read from the MasterMap child frame's layer
+    // menu. Clicking before that frame is up yields a legitimate "Terrain only"
+    // fallback. Wait for the frame, the way a real user's timing does.
     window.addEventListener('load', () => {
       if (new URLSearchParams(location.search).get('mode3d') !== '1') return;
+      const nativeMapReady = () => {
+        const iframe = document.querySelector('iframe#if, iframe[src*="MasterMap.aspx" i]');
+        try {
+          return Boolean(iframe && iframe.contentWindow && iframe.contentWindow.mapsPlaceholder);
+        } catch (error) {
+          return false;
+        }
+      };
       let attempts = 0;
       const timer = setInterval(() => {
         attempts++;
         const toggle = document.getElementById('bpb-terrain-toggle');
-        if (toggle && !toggle.disabled) { toggle.click(); clearInterval(timer); }
+        if (toggle && !toggle.disabled && nativeMapReady()) { toggle.click(); clearInterval(timer); }
         else if (attempts >= 60) clearInterval(timer);
       }, 100);
     });

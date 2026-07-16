@@ -161,6 +161,20 @@ const evaluate = async (cdp, expression) => {
     return result.result.value;
 };
 
+// Poll a Node-side condition (network requests recorded off CDP events) instead
+// of sleeping a fixed span and hoping. A sleep that is long enough on an idle
+// machine is not long enough on a loaded one, and the failure reads as a
+// product bug rather than a slow tick.
+const waitForCondition = async (predicate, describe, timeoutMs = 15000) => {
+    const deadline = Date.now() + timeoutMs;
+    for (;;) {
+        // await: an async predicate returns a Promise, which is always truthy.
+        if (await predicate()) return;
+        if (Date.now() >= deadline) throw new Error(await describe());
+        await delay(100);
+    }
+};
+
 const waitForPageState = async (cdp, expression, timeoutMs = 30000) => {
     const deadline = Date.now() + timeoutMs;
     let lastValue;
@@ -452,10 +466,21 @@ try {
             }
         };
     })()`);
-    await delay(1200);
-    if (!terrainRequests.some(url => url.endsWith('.webp'))) throw new Error('The 3D view did not request terrain tiles');
-    if (!basemapRequests.length) throw new Error(`The 3D view did not request the selected Leaflet raster layer (badge: ${ready.badge || 'missing'})`);
-    if (!/Synthetic topographic map/.test(ready.badge || '')) throw new Error(`The selected layer was not retained: ${ready.badge}`);
+    // Read the picker fresh rather than trusting the snapshot taken the instant
+    // the frame surfaced: the drape is applied a beat later, so that snapshot
+    // reported "Terrain only" on a loaded machine and failed a working build.
+    const activeBadge = () => evaluate(cdp, `(() => {
+        const frame = document.getElementById('bpb-terrain-frame');
+        const surface = frame && frame.contentDocument && frame.contentDocument.getElementById('bpb-terrain-map');
+        const select = surface && surface.querySelector('.bpb-terrain-picker');
+        return select && select.selectedIndex >= 0 ? select.options[select.selectedIndex].textContent : '';
+    })()`);
+    await waitForCondition(() => terrainRequests.some(url => url.endsWith('.webp')),
+        () => 'The 3D view did not request terrain tiles');
+    await waitForCondition(() => basemapRequests.length,
+        async () => `The 3D view did not request the selected Leaflet raster layer (badge: ${await activeBadge() || 'missing'})`);
+    await waitForCondition(async () => /Synthetic topographic map/.test(await activeBadge()),
+        async () => `The selected layer was not retained: ${await activeBadge()}`);
     if (runtimeErrors.length) throw new Error(`Runtime exception: ${runtimeErrors.join('\n')}`);
     const ascentMetrics = await measureToggleGap(cdp);
     if (ascentMetrics.gap < 0) throw new Error(`Ascent 3D toggle overlaps the zoom controls (gap ${ascentMetrics.gap}px)`);
@@ -568,11 +593,12 @@ try {
             fullBleed: Boolean(frame && frame.parentElement && frame.parentElement.classList.contains('bpb-terrain-mount-fullscreen'))
         };
     })()`);
-    await delay(1200);
     if (bigMap3d.mount !== 'bpb-map-viewport') throw new Error('BigMap terrain frame did not mount in the shared viewport');
     if (!bigMap3d.fullBleed) throw new Error('BigMap terrain frame is not full-bleed');
-    if (!terrainRequests.some(url => url.endsWith('.webp'))) throw new Error('BigMap 3D did not request terrain tiles');
-    if (basemapRequests.length <= bigMapBasemapBefore) throw new Error('BigMap 3D did not drape the synthetic layer read from the native map');
+    await waitForCondition(() => terrainRequests.some(url => url.endsWith('.webp')),
+        () => 'BigMap 3D did not request terrain tiles');
+    await waitForCondition(() => basemapRequests.length > bigMapBasemapBefore,
+        () => 'BigMap 3D did not drape the synthetic layer read from the native map');
     if (runtimeErrors.length) throw new Error(`Runtime exception: ${runtimeErrors.join('\n')}`);
     const bigMapMetrics = await measureToggleGap(cdp);
     if (bigMapMetrics.gap < 0) throw new Error(`BigMap 3D toggle overlaps the zoom controls (gap ${bigMapMetrics.gap}px)`);
