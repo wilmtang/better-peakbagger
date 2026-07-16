@@ -9,6 +9,7 @@ const gpxShowcase = await readFile(new URL('../scripts/showcase/gpx.html', impor
 const mapShowcase = await readFile(new URL('../scripts/showcase/map.html', import.meta.url), 'utf8');
 const terrainShowcase = await readFile(new URL('../scripts/showcase/terrain.html', import.meta.url), 'utf8');
 const bigMapShowcase = await readFile(new URL('../scripts/showcase/big-map.html', import.meta.url), 'utf8');
+const bigMapNativeShowcase = await readFile(new URL('../scripts/showcase/big-map-native.html', import.meta.url), 'utf8');
 const terrainFrame = await readFile(new URL('../terrain/terrain.html', import.meta.url), 'utf8');
 const terrainGpx = await readFile(new URL('../scripts/showcase/terrain.gpx', import.meta.url), 'utf8');
 
@@ -46,7 +47,12 @@ test('3D terrain showcase uses the production renderer with a synthetic route', 
 
 test('BigMap showcase contains only synthetic multi-route interaction data', () => {
     assert.match(bigMapShowcase, /Synthetic recent GPS tracks/);
-    assert.match(bigMapShowcase, /mouseover/);
-    assert.match(bigMapShowcase, /trip-report link/);
+    // The Full Screen shell hosts the native Leaflet map in a same-origin
+    // MasterMap child iframe (mirroring production); the tracks and their native
+    // interactions live in that sub-fixture.
+    assert.match(bigMapShowcase, /iframe id="if"[^>]*MasterMap\.aspx/);
+    assert.match(bigMapNativeShowcase, /mouseover/);
+    assert.match(bigMapNativeShowcase, /trip-report link/);
     assert.doesNotMatch(bigMapShowcase, /(?:Garmin|Strava|Zihao|Wilm Tang)/i);
+    assert.doesNotMatch(bigMapNativeShowcase, /(?:Garmin|Strava|Zihao|Wilm Tang)/i);
 });

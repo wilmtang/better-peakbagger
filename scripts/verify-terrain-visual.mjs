@@ -180,15 +180,18 @@ const measureNative2dGap = cdp => evaluate(cdp, `(() => {
     return { toggleBottom: Math.round(tr.bottom), zoomTop: Math.round(ir.top + zr.top), gap: Math.round((ir.top + zr.top) - tr.bottom) };
 })()`);
 
-// Full Screen keeps its Leaflet map (and zoom) in the top document, so the
-// toggle and zoom share one coordinate space.
+// Full Screen keeps its Leaflet map (and zoom) in the same-origin #if MasterMap
+// iframe, so the native zoom is measured through the iframe (offset included),
+// exercising the iframe branch of the extension's toggle placement.
 const measureBigMap2dGap = cdp => evaluate(cdp, `(() => {
     const toggle = document.getElementById('bpb-terrain-toggle');
-    const zoom = document.querySelector('#map .leaflet-control-zoom');
+    const iframe = document.querySelector('iframe#if, iframe[src*="MasterMap.aspx" i]');
+    const zoom = iframe && iframe.contentDocument && iframe.contentDocument.querySelector('.leaflet-control-zoom');
     if (!toggle || !zoom) return { gap: NaN };
     const tr = toggle.getBoundingClientRect();
+    const ir = iframe.getBoundingClientRect();
     const zr = zoom.getBoundingClientRect();
-    return { toggleBottom: Math.round(tr.bottom), zoomTop: Math.round(zr.top), gap: Math.round(zr.top - tr.bottom) };
+    return { toggleBottom: Math.round(tr.bottom), zoomTop: Math.round(ir.top + zr.top), gap: Math.round((ir.top + zr.top) - tr.bottom) };
 })()`);
 
 const navigate = async (cdp, url, width, height) => {
@@ -337,7 +340,9 @@ try {
         const toggle = document.getElementById('bpb-terrain-toggle');
         const frame = document.getElementById('bpb-terrain-frame');
         const surface = frame && frame.contentDocument && frame.contentDocument.getElementById('bpb-terrain-map');
-        const nativeMap = document.getElementById('map');
+        // Full Screen hides the native MasterMap #if iframe (not a top-page #map)
+        // behind the full-bleed terrain when 3D is active.
+        const nativeMap = document.getElementById('if');
         return {
             ready: toggle && toggle.textContent === '2D' && frame && frame.style.opacity === '1'
                 && surface && nativeMap && nativeMap.style.visibility === 'hidden',
