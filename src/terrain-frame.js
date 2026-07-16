@@ -14,7 +14,11 @@
     // Glyph ranges vendored into the extension package (vendor/glyphs-LICENSE.txt),
     // so label text costs no font-CDN request. The stack name must match the
     // vendored directory; coverage is U+0000–U+01FF (Latin + Latin Extended-A).
-    const GLYPHS_TEMPLATE = 'vendor/glyphs/{fontstack}/{range}.pbf';
+    // The {fontstack}/{range} tail must be appended AFTER getURL: the real
+    // chrome.runtime.getURL normalizes through the URL parser, which
+    // percent-encodes braces and breaks MapLibre's placeholder substitution.
+    const GLYPHS_DIRECTORY = 'vendor/glyphs/';
+    const GLYPHS_TEMPLATE = '{fontstack}/{range}.pbf';
     const PEAK_LABEL_FONT = 'Open-Sans-Semibold';
     const MAX_MERCATOR_LAT = 85.0511287;
     const MAX_BASEMAP_URL_LENGTH = 2048;
@@ -346,7 +350,7 @@
             name: 'Better Peakbagger terrain',
             // Symbol layers refuse to render text without a glyphs endpoint;
             // ours resolves inside the extension package (no remote origin).
-            glyphs: chrome.runtime.getURL(GLYPHS_TEMPLATE),
+            glyphs: chrome.runtime.getURL(GLYPHS_DIRECTORY) + GLYPHS_TEMPLATE,
             sources,
             layers,
             terrain: { source: 'terrain', exaggeration: TERRAIN_EXAGGERATION }

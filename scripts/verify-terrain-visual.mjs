@@ -60,10 +60,10 @@ const server = createServer(async (request, response) => {
         let contents = await readFile(file);
         if (url.pathname === '/terrain/terrain.html') {
             contents = Buffer.from(contents.toString('utf8').replace('</head>', `  <script>
-    // Plain concatenation like the real chrome.runtime.getURL — new URL() would
-    // percent-encode the {fontstack}/{range} braces in the style's glyph
-    // template and break MapLibre's placeholder substitution.
-    globalThis.chrome = { runtime: { getURL: resource => location.origin + '/' + resource } };
+    // Mirror the real chrome.runtime.getURL, which normalizes through the URL
+    // parser and percent-encodes {} braces — the packaged-extension behavior
+    // any URL template built via getURL must survive.
+    globalThis.chrome = { runtime: { getURL: resource => new URL(resource, location.origin + '/').href } };
   </script>
 </head>`));
         } else if (url.pathname === '/options/options.html' && url.searchParams.get('visual') === '1') {

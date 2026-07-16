@@ -44,9 +44,12 @@ provider.
   the analyzer's peak extraction/summit anchor
   (`test/gpx-analyzer.test.mjs`). The hidden-Chrome visual check
   (`scripts/verify-terrain-visual.mjs`) now asserts the vendored glyph range
-  is fetched with `{fontstack}`/`{range}` substituted; its `getURL` shim was
-  fixed to plain concatenation because `new URL()` percent-encoded the braces
-  (a harness-only bug — the real `chrome.runtime.getURL` never encodes).
+  is fetched with `{fontstack}`/`{range}` substituted. The real
+  `chrome.runtime.getURL` percent-encodes braces (verified in a packaged
+  extension on Chrome for Testing 150), so the style appends the
+  `{fontstack}/{range}.pbf` tail after `getURL`; the harness shim and test
+  stubs mirror the encoding behavior so a template passed through `getURL`
+  can never pass verification again.
 
 ## Known limitations
 

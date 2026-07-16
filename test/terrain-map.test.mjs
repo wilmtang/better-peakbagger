@@ -25,7 +25,7 @@ test('3D terrain waits for the extension frame handshake before sending route co
     const pageMessages = [];
     const frameMessages = [];
     let settingsListener = null;
-    window.chrome = { runtime: { getURL: path => `chrome-extension://test-id/${path}` } };
+    window.chrome = { runtime: { getURL: path => new URL(path, 'chrome-extension://test-id/').href } };
     window.BPBSettings = {
         get: async () => ({ enable3dMap: true }),
         subscribe(listener) { settingsListener = listener; return () => {}; }
@@ -104,7 +104,7 @@ test('3D terrain bridge refuses page requests unless the stored feature gate is 
     });
     const { window } = dom;
     const messages = [];
-    window.chrome = { runtime: { getURL: path => `chrome-extension://test-id/${path}` } };
+    window.chrome = { runtime: { getURL: path => new URL(path, 'chrome-extension://test-id/').href } };
     window.BPBSettings = {
         get: async () => ({ enable3dMap: false }),
         subscribe() { return () => {}; }
@@ -142,7 +142,7 @@ test('a newer feature-gate push wins over a stale initial storage read', async (
     const { window } = dom;
     let resolveInitialSettings;
     let settingsListener;
-    window.chrome = { runtime: { getURL: path => `chrome-extension://test-id/${path}` } };
+    window.chrome = { runtime: { getURL: path => new URL(path, 'chrome-extension://test-id/').href } };
     window.BPBSettings = {
         get: () => new Promise(resolve => { resolveInitialSettings = resolve; }),
         subscribe(listener) { settingsListener = listener; return () => {}; }
@@ -215,7 +215,7 @@ test('3D terrain frame validates coordinate-only routes before loading public DE
         remove() { this.removed = true; }
     }
 
-    window.chrome = { runtime: { getURL: path => `chrome-extension://test-id/${path}` } };
+    window.chrome = { runtime: { getURL: path => new URL(path, 'chrome-extension://test-id/').href } };
     window.BPBTerrainCache = {
         PROTOCOL: 'bpb-dem',
         create({ limitMb }) {
@@ -313,6 +313,8 @@ test('3D terrain frame validates coordinate-only routes before loading public DE
     // The peak label: glyphs resolve inside the extension package (no font
     // CDN), and the symbol layer billboards its text against the viewport so
     // the name stays upright and screen-facing at any camera pitch/rotation.
+    // The stubbed getURL percent-encodes braces like the real API, so literal
+    // {fontstack}/{range} here proves the template survives packaging.
     assert.equal(map.options.style.glyphs, 'chrome-extension://test-id/vendor/glyphs/{fontstack}/{range}.pbf');
     assert.deepEqual(JSON.parse(JSON.stringify(map.sources.get('bpb-peak').data)), {
         type: 'Feature',
@@ -459,7 +461,7 @@ test('the 3D drape picker offers every layer and swaps the draped raster live', 
         remove() {}
     }
 
-    window.chrome = { runtime: { getURL: path => `chrome-extension://test-id/${path}` } };
+    window.chrome = { runtime: { getURL: path => new URL(path, 'chrome-extension://test-id/').href } };
     window.BPBTerrainCache = { PROTOCOL: 'bpb-dem', create: () => ({ load() {}, flush: () => Promise.resolve() }) };
     window.maplibregl = {
         Map: MapStub,
