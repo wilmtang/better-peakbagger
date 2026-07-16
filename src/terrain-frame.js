@@ -290,6 +290,13 @@
         layers.push({
             id: 'terrain-hillshade', type: 'hillshade', source: 'terrain',
             paint: {
+                // Anchor the light to the map's north, not the viewport. The
+                // default 'viewport' pins the light to the top of the screen, so
+                // a small right-drag (which rotates as well as tilts) swings the
+                // light across the terrain and the shading flips dramatically.
+                // 'map' keeps the sun fixed as the camera moves.
+                'hillshade-illumination-anchor': 'map',
+                'hillshade-illumination-direction': 335,
                 'hillshade-exaggeration': 0.48,
                 'hillshade-shadow-color': palette.hillShadow,
                 'hillshade-highlight-color': palette.hillHighlight,
