@@ -84,20 +84,28 @@ visible in the AMO Developer Hub.
    browser families. Automated fixtures cannot establish that live provider
    DOM and export flows still work.
 2. Update the same version in `manifest.json`, `package.json`, and both root
-   version fields in `package-lock.json`.
+   version fields in `package-lock.json`. The simplest way is
+   `npm version X.Y.Z --no-git-tag-version`, which updates both package files,
+   then set `manifest.json` by hand.
 3. Add a matching `## X.Y.Z` heading to `CHANGELOG.md`.
 4. Run:
 
    ```sh
    npm ci
+   npm run release:check -- vX.Y.Z
    npm test
    npm run lint
    npm run build
    npm run build:firefox -- web-ext-artifacts/better_peakbagger-X.Y.Z.zip web-ext-artifacts/better_peakbagger-X.Y.Z-firefox.zip
    npm run release:verify-archive -- web-ext-artifacts/better_peakbagger-X.Y.Z.zip chrome
    npm run release:verify-archive -- web-ext-artifacts/better_peakbagger-X.Y.Z-firefox.zip firefox
-   npm run release:check -- vX.Y.Z
    ```
+
+   Run `release:check` first so version mismatches fail before the slower test
+   suite. The `release:verify-archive` step rejects any file that isn't a
+   shipped runtime entry — if a new root-level file was added since the last
+   release (documentation, tooling config, etc.), add it to the `ignoreFiles`
+   list in the `webExt` section of `package.json` before building.
 
 5. Commit the release metadata, merge it to the release branch, create an
    annotated tag on that exact commit, and push the tag:
