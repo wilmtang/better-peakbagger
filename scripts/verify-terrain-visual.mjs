@@ -39,9 +39,11 @@ const safeFile = async pathname => {
 const server = createServer(async (request, response) => {
     try {
         const url = new URL(request.url, 'http://127.0.0.1');
-        let pathname = url.pathname === '/climber/ascent.aspx'
-            ? '/scripts/showcase/terrain.html'
-            : decodeURIComponent(url.pathname);
+        const showcaseRoutes = {
+            '/climber/ascent.aspx': '/scripts/showcase/terrain.html',
+            '/map/bigmap.aspx': '/scripts/showcase/big-map.html'
+        };
+        let pathname = showcaseRoutes[url.pathname] || decodeURIComponent(url.pathname);
         if (pathname.startsWith('/scripts/showcase/terrain-tiles/')) {
             pathname = '/scripts/showcase/terrain-basemap-tile.png';
         }
@@ -151,6 +153,47 @@ const capture = async (cdp, file) => {
     await writeFile(file, Buffer.from(data, 'base64'));
 };
 
+// The vertical gap between the floating toggle's bottom and the 3D zoom stack's
+// top, in page pixels. Negative means the toggle overlaps (covers) the zoom.
+const measureToggleGap = cdp => evaluate(cdp, `(() => {
+    const toggle = document.getElementById('bpb-terrain-toggle');
+    const frame = document.getElementById('bpb-terrain-frame');
+    const nav = frame && frame.contentDocument && frame.contentDocument.querySelector('.maplibregl-ctrl-bottom-right .maplibregl-ctrl-group');
+    if (!toggle || !nav) return { gap: NaN };
+    const fr = frame.getBoundingClientRect();
+    const tr = toggle.getBoundingClientRect();
+    const nr = nav.getBoundingClientRect();
+    return { toggleBottom: Math.round(tr.bottom), navTop: Math.round(fr.top + nr.top), gap: Math.round((fr.top + nr.top) - tr.bottom) };
+})()`);
+
+// Same, for the 2D state: the toggle's bottom against the native Leaflet zoom
+// (inside the same-origin MasterMap iframe). This exercises the same live
+// measurement the extension uses to anchor the toggle in 2D.
+const measureNative2dGap = cdp => evaluate(cdp, `(() => {
+    const toggle = document.getElementById('bpb-terrain-toggle');
+    const iframe = document.querySelector('iframe[src*="MasterMap.aspx" i]');
+    const zoom = iframe && iframe.contentDocument && iframe.contentDocument.querySelector('.leaflet-control-zoom');
+    if (!toggle || !zoom) return { gap: NaN };
+    const tr = toggle.getBoundingClientRect();
+    const ir = iframe.getBoundingClientRect();
+    const zr = zoom.getBoundingClientRect();
+    return { toggleBottom: Math.round(tr.bottom), zoomTop: Math.round(ir.top + zr.top), gap: Math.round((ir.top + zr.top) - tr.bottom) };
+})()`);
+
+// Full Screen keeps its Leaflet map (and zoom) in the same-origin #if MasterMap
+// iframe, so the native zoom is measured through the iframe (offset included),
+// exercising the iframe branch of the extension's toggle placement.
+const measureBigMap2dGap = cdp => evaluate(cdp, `(() => {
+    const toggle = document.getElementById('bpb-terrain-toggle');
+    const iframe = document.querySelector('iframe#if, iframe[src*="MasterMap.aspx" i]');
+    const zoom = iframe && iframe.contentDocument && iframe.contentDocument.querySelector('.leaflet-control-zoom');
+    if (!toggle || !zoom) return { gap: NaN };
+    const tr = toggle.getBoundingClientRect();
+    const ir = iframe.getBoundingClientRect();
+    const zr = zoom.getBoundingClientRect();
+    return { toggleBottom: Math.round(tr.bottom), zoomTop: Math.round(ir.top + zr.top), gap: Math.round((ir.top + zr.top) - tr.bottom) };
+})()`);
+
 const navigate = async (cdp, url, width, height) => {
     await cdp.call('Emulation.setDeviceMetricsOverride', {
         width, height, deviceScaleFactor: 1, mobile: false
@@ -218,6 +261,10 @@ try {
         throw new Error('The removed in-map privacy notice is still present');
     }
     if (terrainRequests.length || basemapRequests.length) throw new Error('3D tile requests started before the map button was clicked');
+    const ascent2dMetrics = await measureNative2dGap(cdp);
+    if (!Number.isFinite(ascent2dMetrics.gap)) throw new Error('Could not measure the 2D toggle against the native zoom');
+    if (ascent2dMetrics.gap < 0) throw new Error(`Ascent 2D toggle overlaps the native zoom (gap ${ascent2dMetrics.gap}px)`);
+    if (ascent2dMetrics.gap > 40) throw new Error(`Ascent 2D toggle floats too far above the native zoom (gap ${ascent2dMetrics.gap}px)`);
     await capture(cdp, path.join(outputDir, 'map-default-450.png'));
 
     await navigate(cdp, `${baseUrl}?mode=terrain&map=wide`, 1280, 950);
@@ -227,7 +274,7 @@ try {
         const surface = frame && frame.contentDocument && frame.contentDocument.getElementById('bpb-terrain-map');
         const message = document.getElementById('bpb-terrain-message');
         return {
-            ready: toggle && toggle.textContent === '2D map' && frame && frame.style.opacity === '1' && surface,
+            ready: toggle && toggle.textContent === '2D' && frame && frame.style.opacity === '1' && surface,
             toggle: toggle && toggle.textContent,
             message: message && message.textContent,
             badge: (() => {
@@ -245,6 +292,9 @@ try {
     if (!basemapRequests.length) throw new Error(`The 3D view did not request the selected Leaflet raster layer (badge: ${ready.badge || 'missing'})`);
     if (!/Synthetic topographic map/.test(ready.badge || '')) throw new Error(`The selected layer was not retained: ${ready.badge}`);
     if (runtimeErrors.length) throw new Error(`Runtime exception: ${runtimeErrors.join('\n')}`);
+    const ascentMetrics = await measureToggleGap(cdp);
+    if (ascentMetrics.gap < 0) throw new Error(`Ascent 3D toggle overlaps the zoom controls (gap ${ascentMetrics.gap}px)`);
+    if (ascentMetrics.gap > 40) throw new Error(`Ascent 3D toggle floats too far above the zoom controls (gap ${ascentMetrics.gap}px)`);
     await capture(cdp, path.join(outputDir, 'terrain-wide-800.png'));
 
     await navigate(cdp, `${baseUrl}?mode=terrain&theme=dark`, 1000, 900);
@@ -253,7 +303,7 @@ try {
         const frame = document.getElementById('bpb-terrain-frame');
         const surface = frame && frame.contentDocument && frame.contentDocument.getElementById('bpb-terrain-map');
         return {
-            ready: toggle && toggle.textContent === '2D map' && frame && frame.style.opacity === '1'
+            ready: toggle && toggle.textContent === '2D' && frame && frame.style.opacity === '1'
                 && surface && surface.dataset.theme === 'dark',
             canvas: surface && surface.querySelector('canvas') && {
                 width: surface.querySelector('canvas').width,
@@ -264,6 +314,52 @@ try {
     await delay(800);
     if (runtimeErrors.length) throw new Error(`Runtime exception: ${runtimeErrors.join('\n')}`);
     await capture(cdp, path.join(outputDir, 'terrain-dark-450.png'));
+
+    // Full Screen BigMap: the floating toggle sits over the native map in 2D…
+    const bigMapUrl = `http://www.peakbagger.com:${serverPort}/map/bigmap.aspx`;
+    await navigate(cdp, `${bigMapUrl}?t=G`, 1000, 760);
+    const bigMap2d = await waitForPageState(cdp, `(() => {
+        const toggle = document.getElementById('bpb-terrain-toggle');
+        return {
+            ready: Boolean(toggle) && toggle.disabled === false && toggle.textContent === '3D',
+            mount: toggle && toggle.parentElement && toggle.parentElement.id
+        };
+    })()`);
+    if (bigMap2d.mount !== 'bpb-map-viewport') throw new Error(`BigMap toggle is not in the shared mount: ${bigMap2d.mount}`);
+    await delay(300);
+    const bigMap2dMetrics = await measureBigMap2dGap(cdp);
+    if (!Number.isFinite(bigMap2dMetrics.gap)) throw new Error('Could not measure the BigMap 2D toggle against the native zoom');
+    if (bigMap2dMetrics.gap < 0) throw new Error(`BigMap 2D toggle overlaps the native zoom (gap ${bigMap2dMetrics.gap}px)`);
+    if (bigMap2dMetrics.gap > 40) throw new Error(`BigMap 2D toggle floats too far above the native zoom (gap ${bigMap2dMetrics.gap}px)`);
+    await capture(cdp, path.join(outputDir, 'bigmap-2d.png'));
+
+    // …and flips the full-bleed 3D terrain over it, hiding the native map, when clicked.
+    const bigMapBasemapBefore = basemapRequests.length;
+    await navigate(cdp, `${bigMapUrl}?t=G&mode3d=1`, 1000, 760);
+    const bigMap3d = await waitForPageState(cdp, `(() => {
+        const toggle = document.getElementById('bpb-terrain-toggle');
+        const frame = document.getElementById('bpb-terrain-frame');
+        const surface = frame && frame.contentDocument && frame.contentDocument.getElementById('bpb-terrain-map');
+        // Full Screen hides the native MasterMap #if iframe (not a top-page #map)
+        // behind the full-bleed terrain when 3D is active.
+        const nativeMap = document.getElementById('if');
+        return {
+            ready: toggle && toggle.textContent === '2D' && frame && frame.style.opacity === '1'
+                && surface && nativeMap && nativeMap.style.visibility === 'hidden',
+            mount: frame && frame.parentElement && frame.parentElement.id,
+            fullBleed: Boolean(frame && frame.parentElement && frame.parentElement.classList.contains('bpb-terrain-mount-fullscreen'))
+        };
+    })()`);
+    await delay(1200);
+    if (bigMap3d.mount !== 'bpb-map-viewport') throw new Error('BigMap terrain frame did not mount in the shared viewport');
+    if (!bigMap3d.fullBleed) throw new Error('BigMap terrain frame is not full-bleed');
+    if (!terrainRequests.some(url => url.endsWith('.webp'))) throw new Error('BigMap 3D did not request terrain tiles');
+    if (basemapRequests.length <= bigMapBasemapBefore) throw new Error('BigMap 3D did not drape the synthetic layer read from the native map');
+    if (runtimeErrors.length) throw new Error(`Runtime exception: ${runtimeErrors.join('\n')}`);
+    const bigMapMetrics = await measureToggleGap(cdp);
+    if (bigMapMetrics.gap < 0) throw new Error(`BigMap 3D toggle overlaps the zoom controls (gap ${bigMapMetrics.gap}px)`);
+    if (bigMapMetrics.gap > 40) throw new Error(`BigMap 3D toggle floats too far above the zoom controls (gap ${bigMapMetrics.gap}px)`);
+    await capture(cdp, path.join(outputDir, 'bigmap-3d.png'));
 
     const optionsUrl = `http://127.0.0.1:${serverPort}/options/options.html?visual=1`;
     await navigate(cdp, optionsUrl, 1000, 700);

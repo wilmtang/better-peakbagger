@@ -56,9 +56,20 @@ test('Full Screen GPS maps get a narrow read-only bridge and a MAIN-world Leafle
     assert.deepEqual(bridgeEntry.js, ['src/settings.js', 'src/big-map-bridge.js']);
     assert.equal(bridgeEntry.world, undefined);
     assert.ok(pageEntry);
-    assert.deepEqual(pageEntry.js, ['src/big-map.js']);
+    // The MAIN-world enhancer also loads the shared metrics + basemap modules the
+    // 3D coordinator depends on, before big-map.js.
+    assert.deepEqual(pageEntry.js, ['src/gpx-metrics.js', 'src/terrain-basemap.js', 'src/big-map.js']);
     assert.equal(pageEntry.world, 'MAIN');
     assert.ok(pageEntry.matches.every(pattern => /bigmap/i.test(pattern)));
+
+    // The shared 3D terrain bridge is injected on BigMap too (isolated world,
+    // with the terrain stylesheet) so the Full Screen map can flip to 3D.
+    const bigMapTerrain = manifest.content_scripts.find(entry =>
+        entry.js.includes('src/terrain-map.js') && entry.matches.every(pattern => /bigmap/i.test(pattern)));
+    assert.ok(bigMapTerrain, 'BigMap should inject the terrain bridge');
+    assert.deepEqual(bigMapTerrain.js, ['src/settings.js', 'src/terrain-map.js']);
+    assert.deepEqual(bigMapTerrain.css, ['src/terrain-map.css']);
+    assert.equal(bigMapTerrain.world, undefined);
 });
 
 test('ascent editor integration is isolated to Peakbagger and runtime code never names a Save control', async () => {

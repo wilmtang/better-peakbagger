@@ -174,6 +174,9 @@
                     const map = mapIframe.contentWindow && mapIframe.contentWindow.mapsPlaceholder;
                     if (map && typeof map.invalidateSize === 'function') map.invalidateSize(false);
                 } catch (e) { /* Peakbagger may replace or discard its map while resizing. */ }
+                // Re-anchor the floating toggle: the native zoom's position (2D)
+                // and the viewport size can change as the map settles or resizes.
+                positionTerrainToggle();
             };
             mapInvalidateFrame = typeof requestAnimationFrame === 'function'
                 ? requestAnimationFrame(invalidate)
@@ -355,17 +358,19 @@
         };
         unitSelect.append(unitOption('imperial', 'Imperial'), unitOption('metric', 'Metric'));
 
+        // A floating control on the map itself (bottom-right, stacked just above
+        // the zoom controls), styled by src/terrain-map.css. Clicking flips the
+        // map between 2D and 3D in place. Placed into the map viewport below so
+        // it overlays both the native map and the terrain frame.
         const terrainButton = document.createElement('button');
         terrainButton.id = 'bpb-terrain-toggle';
+        terrainButton.className = 'bpb-map-3d-toggle';
         terrainButton.type = 'button';
         terrainButton.disabled = true;
-        terrainButton.textContent = '3D terrain';
+        terrainButton.textContent = '3D';
         terrainButton.title = 'Available after the GPX route loads';
+        terrainButton.setAttribute('aria-label', '3D terrain available after the route loads');
         terrainButton.setAttribute('aria-pressed', 'false');
-        Object.assign(terrainButton.style, {
-            marginBottom: '7px', padding: '5px 10px', border: '1px solid transparent', borderRadius: '6px',
-            background: '#2457a7', color: '#ffffff', fontWeight: '600', cursor: 'pointer'
-        });
 
         const routeStyleControls = document.createElement('div');
         Object.assign(routeStyleControls.style, { display: 'flex', gap: '8px', marginTop: '7px', fontSize: '0.8em' });
@@ -393,8 +398,12 @@
         Object.assign(hintText.style, { fontSize: '0.8em', color: '#888', marginTop: '4px', fontStyle: 'italic' });
         hintText.textContent = "Double-click point to copy coordinates";
 
-        controlsContainer.append(terrainButton, unitSelect, routeStyleControls, hintText);
+        controlsContainer.append(unitSelect, routeStyleControls, hintText);
         headerBox.append(statsContainer, controlsContainer);
+        // The 3D/2D toggle floats over the map, not in the panel below it. If
+        // there is no map viewport there is no native map to overlay, so the
+        // control simply stays out of the DOM (terrain is unavailable anyway).
+        if (mapViewport) mapViewport.append(terrainButton);
 
         const terrainMessage = document.createElement('div');
         terrainMessage.id = 'bpb-terrain-message';
@@ -419,6 +428,9 @@
         const panelPalette = () => PALETTES[effectiveTheme(BPB.get().theme)];
         const applyPanelTheme = () => {
             const p = panelPalette();
+            // The floating toggle is styled by CSS; steer its light/dark variant
+            // with the extension theme, mirroring the terrain frame.
+            terrainButton.dataset.theme = effectiveTheme(BPB.get().theme);
             Object.assign(container.style, { background: p.panelBg, borderColor: p.panelBorder, color: p.text });
             Object.assign(unitSelect.style, { background: p.inputBg, color: p.text, borderColor: p.selBorder });
             [routeColorControl, routeCasingColorControl].forEach(control => {
@@ -531,6 +543,40 @@
         let mapLayerRetryTimer = null;
         let terrainState = 'idle';
         let terrainLoadTimer = null;
+        let terrainNavTop = null;
+
+        // Float the toggle just above the zoom stack in whichever map is showing:
+        // the 3D frame reports its stack height (it is cross-origin), while the
+        // native 2D zoom is same-origin and measured directly. A null result
+        // leaves the CSS fallback offset in place.
+        const TERRAIN_TOGGLE_GAP = 8;
+        const measureNative2dZoomTop = () => {
+            try {
+                if (!mapViewport || !mapIframe) return null;
+                const doc = mapIframe.contentWindow && mapIframe.contentWindow.document;
+                const zoom = doc && doc.querySelector('.leaflet-control-zoom');
+                const zoomRect = zoom && zoom.getBoundingClientRect();
+                if (!zoomRect || !(zoomRect.height > 0)) return null;
+                const iframeRect = mapIframe.getBoundingClientRect();
+                const viewportRect = mapViewport.getBoundingClientRect();
+                return viewportRect.bottom - (iframeRect.top + zoomRect.top);
+            } catch (e) {
+                return null;
+            }
+        };
+        const positionTerrainToggle = () => {
+            let bottom = null;
+            if (terrainState === 'active') {
+                const frame = document.getElementById('bpb-terrain-frame');
+                if (frame && mapViewport && terrainNavTop != null) {
+                    const inset = Math.max(0, mapViewport.getBoundingClientRect().bottom - frame.getBoundingClientRect().bottom);
+                    bottom = inset + terrainNavTop;
+                }
+            } else {
+                bottom = measureNative2dZoomTop();
+            }
+            terrainButton.style.bottom = bottom != null && bottom > 0 ? `${Math.round(bottom + TERRAIN_TOGGLE_GAP)}px` : '';
+        };
 
         const clearTerrainLoadTimer = () => {
             if (terrainLoadTimer !== null) {
@@ -565,33 +611,40 @@
 
         const updateTerrainButton = () => {
             const hasRoute = mapRouteSegments.length > 0;
+            // The compact glyph ('3D'/'2D') is the label; the full intent lives
+            // in the title/aria-label. A spinner class covers the load.
+            terrainButton.classList.remove('bpb-map-3d-toggle-loading');
+            terrainButton.removeAttribute('aria-busy');
             if (BPB.get().enable3dMap !== true) {
                 terrainButton.disabled = true;
-                terrainButton.textContent = '3D terrain';
+                terrainButton.textContent = '3D';
                 terrainButton.title = 'Enable the experimental 3D map in Better Peakbagger settings';
+                terrainButton.setAttribute('aria-label', 'Enable 3D terrain in Better Peakbagger settings');
                 terrainButton.setAttribute('aria-pressed', 'false');
-                terrainButton.style.cursor = 'default';
-                terrainButton.style.opacity = '0.55';
                 return;
             }
             if (terrainState === 'loading') {
                 terrainButton.disabled = true;
-                terrainButton.textContent = 'Loading 3D…';
-                terrainButton.title = 'Loading terrain';
+                terrainButton.textContent = '3D';
+                terrainButton.classList.add('bpb-map-3d-toggle-loading');
+                terrainButton.setAttribute('aria-busy', 'true');
+                terrainButton.title = 'Loading 3D terrain…';
+                terrainButton.setAttribute('aria-label', 'Loading 3D terrain');
                 terrainButton.setAttribute('aria-pressed', 'false');
             } else if (terrainState === 'active') {
                 terrainButton.disabled = false;
-                terrainButton.textContent = '2D map';
-                terrainButton.title = 'Return to the Peakbagger map';
+                terrainButton.textContent = '2D';
+                terrainButton.title = 'Return to the 2D map';
+                terrainButton.setAttribute('aria-label', 'Return to the 2D map');
                 terrainButton.setAttribute('aria-pressed', 'true');
             } else {
                 terrainButton.disabled = !hasRoute;
-                terrainButton.textContent = '3D terrain';
+                terrainButton.textContent = '3D';
                 terrainButton.title = hasRoute ? 'View this route on 3D terrain' : 'Available after the GPX route loads';
+                terrainButton.setAttribute('aria-label', hasRoute ? 'Show 3D terrain' : '3D terrain available after the route loads');
                 terrainButton.setAttribute('aria-pressed', 'false');
             }
-            terrainButton.style.cursor = terrainButton.disabled ? 'default' : 'pointer';
-            terrainButton.style.opacity = terrainButton.disabled ? '0.55' : '1';
+            positionTerrainToggle();
         };
 
         const restoreNativeMap = () => {
@@ -676,10 +729,14 @@
             if (data.type === 'loaded' && terrainState === 'loading') {
                 clearTerrainLoadTimer();
                 terrainState = 'active';
+                terrainNavTop = Number.isFinite(data.navTop) ? data.navTop : null;
                 mapIframe.style.visibility = 'hidden';
                 mapIframe.setAttribute('aria-hidden', 'true');
                 showTerrainMessage('');
                 updateTerrainButton();
+            } else if (data.type === 'metrics' && terrainState === 'active') {
+                if (Number.isFinite(data.navTop)) terrainNavTop = data.navTop;
+                positionTerrainToggle();
             } else if (data.type === 'error' && terrainState === 'loading') {
                 failTerrain(terrainFailureMessage(data.reason));
             }
@@ -715,146 +772,26 @@
             }
         };
 
-        const expandLeafletTileUrl = (layer, iframeWin) => {
-            const options = layer && layer.options && typeof layer.options === 'object' ? layer.options : {};
-            if (!layer || typeof layer._url !== 'string' || !layer._url || layer.wmsParams
-                || options.zoomReverse === true || (Number.isFinite(options.zoomOffset) && options.zoomOffset !== 0)) return null;
-
-            let template = layer._url;
-            if (template.includes('{s}')) {
-                const subdomains = Array.isArray(options.subdomains)
-                    ? options.subdomains
-                    : typeof options.subdomains === 'string' ? options.subdomains.split('') : [];
-                const subdomain = subdomains.find(value => /^[a-z0-9-]{1,20}$/i.test(String(value)));
-                if (!subdomain) return null;
-                template = template.replaceAll('{s}', String(subdomain));
-            }
-            template = template.replaceAll('{r}', iframeWin.L && iframeWin.L.Browser && iframeWin.L.Browser.retina ? '@2x' : '');
-
-            const placeholders = { z: '__BPB_TILE_Z__', x: '__BPB_TILE_X__', y: '__BPB_TILE_Y__' };
-            const protectedUrl = template.replace(/\{([zxy])\}/g, (match, token) => placeholders[token]);
-            let absolute;
-            try { absolute = new URL(protectedUrl, iframeWin.location && iframeWin.location.href || location.href).href; } catch (error) { return null; }
-            template = absolute
-                .replaceAll(placeholders.z, '{z}')
-                .replaceAll(placeholders.x, '{x}')
-                .replaceAll(placeholders.y, '{y}');
-
-            const tokens = Array.from(template.matchAll(/\{([^{}]+)\}/g), match => match[1]);
-            return ['z', 'x', 'y'].every(token => tokens.includes(token))
-                && tokens.every(token => ['z', 'x', 'y'].includes(token))
-                ? template
-                : null;
-        };
-
-        const readBasemapFromLayer = (layer, name, iframeWin) => {
-            const tiles = expandLeafletTileUrl(layer, iframeWin);
-            if (!tiles) return null;
-            const options = layer.options || {};
-            const minzoom = Number.isInteger(options.minZoom) ? Math.min(22, Math.max(0, options.minZoom)) : 0;
-            const maxzoom = Number.isInteger(options.maxZoom) ? Math.min(24, Math.max(minzoom, options.maxZoom)) : 19;
-            return {
-                name: String(name || '').trim().slice(0, 80),
-                tiles: [tiles],
-                tileSize: Number(options.tileSize) === 512 ? 512 : 256,
-                minzoom,
-                maxzoom,
-                scheme: options.tms === true ? 'tms' : 'xyz',
-                attribution: typeof options.attribution === 'string' ? options.attribution.slice(0, 600) : ''
-            };
-        };
-
-        // Peakbagger builds each 2D basemap on demand inside its MasterMap
-        // MapChange() switch, so there is no per-layer global to read and only
-        // the *active* layer is ever present on the map — reading globals could
-        // therefore only ever surface one layer. To mirror the full 2D menu in
-        // 3D we carry drape specs for the well-known layers that are plain
-        // {z}/{x}/{y} raster tiles AND serve CORS-clean tiles WebGL/MapLibre can
-        // sample. WMS layers, dynamic image exports, funky projections, and the
-        // Google/Bing layers cannot drape and are omitted; the live active layer
-        // (below) still covers national basemaps we carry no spec for. Codes
-        // match #selmap option values; any {s} is pre-resolved because a MapLibre
-        // raster source takes one fixed URL template.
-        const TERRAIN_DRAPE_LAYERS = {
-            L_CT: { tiles: 'https://caltopo.s3.amazonaws.com/topo/{z}/{x}/{y}.png?v=1', minzoom: 6, maxzoom: 16, attribution: '&copy; <a href="https://caltopo.com" target="_blank" rel="noopener noreferrer">CalTopo</a>' },
-            L_FS: { tiles: 'https://ctusfs.s3.amazonaws.com/fstopo/{z}/{x}/{y}.png', minzoom: 6, maxzoom: 16, attribution: '&copy; <a href="https://caltopo.com" target="_blank" rel="noopener noreferrer">CalTopo</a> / USFS' },
-            L_MT: { tiles: 'https://tileserver.trimbleoutdoors.com/SecureTile/TileHandler.ashx?mapType=Topo&partnerID=12153&hash=b19f07d8-6f01-4981-9146-40875a18d2fa&x={x}&y={y}&z={z}', minzoom: 9, maxzoom: 16, attribution: '&copy; <a href="https://mytopo.com" target="_blank" rel="noopener noreferrer">MyTopo</a>' },
-            L_OT: { tiles: 'https://a.tile.opentopomap.org/{z}/{x}/{y}.png', minzoom: 0, maxzoom: 15, attribution: '&copy; <a href="https://opentopomap.org" target="_blank" rel="noopener noreferrer">OpenTopoMap</a> (CC-BY-SA)' },
-            L_OS: { tiles: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png', minzoom: 0, maxzoom: 18, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap</a> contributors' },
-            L_AG: { tiles: 'https://services.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}', minzoom: 0, maxzoom: 19, attribution: '&copy; <a href="https://www.esri.com" target="_blank" rel="noopener noreferrer">Esri</a>' },
-            L_AI: { tiles: 'https://services.arcgisonline.com/arcgis/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', minzoom: 0, maxzoom: 19, attribution: '&copy; <a href="https://www.esri.com" target="_blank" rel="noopener noreferrer">Esri</a>' },
-            L_XX: { tiles: 'https://services.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}', minzoom: 0, maxzoom: 16, attribution: '&copy; <a href="https://www.esri.com" target="_blank" rel="noopener noreferrer">Esri</a>' },
-            L_AU: { tiles: 'https://services.arcgisonline.com/ArcGIS/rest/services/USA_Topo_Maps/MapServer/tile/{z}/{y}/{x}.png', minzoom: 0, maxzoom: 15, attribution: '&copy; <a href="https://www.esri.com" target="_blank" rel="noopener noreferrer">Esri</a>' }
-        };
-
-        const terrainDrapeFromCode = (code, name) => {
-            const spec = TERRAIN_DRAPE_LAYERS[code];
-            if (!spec) return null;
-            return {
-                name: String(name || '').trim().slice(0, 80) || code,
-                tiles: [spec.tiles],
-                tileSize: 256,
-                minzoom: spec.minzoom,
-                maxzoom: spec.maxzoom,
-                scheme: 'xyz',
-                attribution: spec.attribution
-            };
-        };
-
+        // Drape/basemap logic is shared with the Full Screen BigMap via
+        // src/terrain-basemap.js (globalThis.BPBTerrainBasemap) so the 2D layer
+        // menu and the 3D drape picker cannot diverge. These wrappers only
+        // resolve the Ascent page's MasterMap frame and delegate.
         const getTerrainBasemap = () => {
+            const B = globalThis.BPBTerrainBasemap;
+            if (!B) return null;
             try {
                 const iframe = findMapIframe();
                 const iframeWin = iframe && iframe.contentWindow;
                 const map = iframeWin && iframeWin.mapsPlaceholder;
                 const select = iframeWin && iframeWin.document && iframeWin.document.getElementById('selmap');
-                const option = select && select.options && select.options[select.selectedIndex];
-                if (!map || !option) return null;
-
-                // A well-known active layer reuses its shared drape spec so it
-                // dedupes cleanly against the picker list.
-                const drape = terrainDrapeFromCode(select.value, option.textContent);
-                if (drape) return drape;
-
-                // Otherwise read the live Leaflet layer, so a national basemap we
-                // carry no spec for still drapes when it is the active choice.
-                const selectedLayer = typeof select.value === 'string' ? iframeWin[select.value] : null;
-                const activeLayers = Object.values(map._layers || {})
-                    .sort((left, right) => (Number(left && left.options && left.options.zIndex) || 0)
-                        - (Number(right && right.options && right.options.zIndex) || 0));
-                const candidates = [selectedLayer, ...activeLayers]
-                    .filter(layer => layer && typeof layer._url === 'string'
-                        && (typeof map.hasLayer !== 'function' || map.hasLayer(layer)))
-                    .filter((layer, index, layers) => layers.indexOf(layer) === index);
-
-                for (const layer of candidates) {
-                    const basemap = readBasemapFromLayer(layer, option.textContent, iframeWin);
-                    if (basemap) return basemap;
-                }
+                return B.active(iframeWin, map, select);
             } catch (error) { /* Peakbagger may replace or restrict its map frame. */ }
             return null;
         };
 
-        // The same drape-able choices the native #selmap lists, so the 3D view
-        // mirrors the 2D layer menu. Only layers we carry a drape spec for are
-        // offered; the rest stay 2D-only because MapLibre cannot sample them.
         const enumerateTerrainBasemaps = () => {
-            try {
-                const select = findMapLayerSelect();
-                if (!select || !select.options) return [];
-                const basemaps = [];
-                const seen = new Set();
-                for (const option of Array.from(select.options)) {
-                    const code = typeof option.value === 'string' ? option.value : '';
-                    if (!code || seen.has(code)) continue;
-                    const drape = terrainDrapeFromCode(code, option.textContent);
-                    if (drape) {
-                        seen.add(code);
-                        basemaps.push(drape);
-                    }
-                }
-                return basemaps;
-            } catch (error) { /* Peakbagger may replace or restrict its map frame. */ }
-            return [];
+            const B = globalThis.BPBTerrainBasemap;
+            return B ? B.enumerate(findMapLayerSelect()) : [];
         };
 
         const mapLayerExists = (select, value) =>

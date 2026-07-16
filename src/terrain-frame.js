@@ -47,12 +47,14 @@
     let basemapErrored = false;
     let basemapContentLoaded = false;
     let basemapChecked = false;
-    let badgeElement = null;
     let pickerElement = null;
     let noticeElement = null;
     let terrainCache = null;
     let terrainProtocolRegistered = false;
     let activeRouteStyle = { color: '#d9483b', width: 5, casingColor: '#ffffff', casingWidth: 9 };
+    // True when the route carries per-track colors (group maps), so the route
+    // line is painted data-driven from each feature instead of one flat color.
+    let routeHasFeatureColors = false;
 
     const post = (type, detail = {}) => {
         if (!parentOrigin) return;
@@ -62,6 +64,15 @@
             type,
             ...detail
         }, parentOrigin);
+    };
+
+    // Distance from the frame's bottom edge to the top of the bottom-right zoom
+    // stack, so the host page can float its 2D/3D toggle just above it — this
+    // frame is cross-origin, so the page cannot measure the stack itself.
+    const measureNavTop = () => {
+        const group = mapElement && mapElement.querySelector('.maplibregl-ctrl-bottom-right .maplibregl-ctrl-group');
+        if (!group) return 0;
+        return Math.max(0, Math.round(window.innerHeight - group.getBoundingClientRect().top));
     };
 
     const removeLoadTimer = () => {
@@ -94,11 +105,11 @@
         activeBasemap = null;
         availableBasemaps = [];
         activeBasemapIndex = -1;
+        routeHasFeatureColors = false;
         failedBasemaps.clear();
         basemapErrored = false;
         basemapContentLoaded = false;
         basemapChecked = false;
-        badgeElement = null;
         pickerElement = null;
         noticeElement = null;
         loaded = false;
@@ -109,14 +120,18 @@
         post('error', { reason });
     };
 
-    const validateRoute = segments => {
+    const validateRoute = (segments, colors) => {
         if (!Array.isArray(segments) || !segments.length || segments.length > MAX_ROUTE_SEGMENTS) return null;
+        const colorList = Array.isArray(colors) ? colors : [];
+        const hexColor = value => typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value) ? value : null;
 
         let pointCount = 0;
         let minLat = Infinity, minLon = Infinity, maxLat = -Infinity, maxLon = -Infinity;
-        const coordinates = [];
+        const features = [];
+        let hasFeatureColors = false;
 
-        for (const segment of segments) {
+        for (let index = 0; index < segments.length; index++) {
+            const segment = segments[index];
             if (!Array.isArray(segment) || segment.length < 2) return null;
             const converted = [];
             for (const point of segment) {
@@ -133,18 +148,21 @@
                 pointCount++;
                 if (pointCount > MAX_ROUTE_POINTS) return null;
             }
-            coordinates.push(converted);
+            const color = hexColor(colorList[index]);
+            if (color) hasFeatureColors = true;
+            features.push({
+                type: 'Feature',
+                properties: color ? { color } : {},
+                geometry: { type: 'LineString', coordinates: converted }
+            });
         }
 
         if (maxLon - minLon >= 180) return null;
 
         return {
-            geojson: {
-                type: 'Feature',
-                properties: {},
-                geometry: { type: 'MultiLineString', coordinates }
-            },
-            bounds: [[minLon, minLat], [maxLon, maxLat]]
+            geojson: { type: 'FeatureCollection', features },
+            bounds: [[minLon, minLat], [maxLon, maxLat]],
+            hasFeatureColors
         };
     };
 
@@ -283,6 +301,13 @@
         layers.push({
             id: 'terrain-hillshade', type: 'hillshade', source: 'terrain',
             paint: {
+                // Anchor the light to the map's north, not the viewport. The
+                // default 'viewport' pins the light to the top of the screen, so
+                // a small right-drag (which rotates as well as tilts) swings the
+                // light across the terrain and the shading flips dramatically.
+                // 'map' keeps the sun fixed as the camera moves.
+                'hillshade-illumination-anchor': 'map',
+                'hillshade-illumination-direction': 335,
                 'hillshade-exaggeration': 0.48,
                 'hillshade-shadow-color': palette.hillShadow,
                 'hillshade-highlight-color': palette.hillHighlight,
@@ -297,12 +322,6 @@
             layers,
             terrain: { source: 'terrain', exaggeration: TERRAIN_EXAGGERATION }
         };
-    };
-
-    // The caveat is static; the layer name lives in the picker's selected
-    // option so the drape is both labelled and switchable from one control.
-    const renderBadge = () => {
-        if (badgeElement) badgeElement.textContent = 'Not live conditions';
     };
 
     const renderPicker = () => {
@@ -376,13 +395,19 @@
         showNotice(`${name || 'That map layer'} can’t be draped here — the map provider blocks cross-origin tiles. Showing terrain only.`);
     };
 
+    // Group maps paint each track its own color (falling back to the preferred
+    // color for any track without one); single tracks use one flat color.
+    const routeLineColor = style => routeHasFeatureColors
+        ? ['coalesce', ['get', 'color'], style.color]
+        : style.color;
+
     const setRoutePaint = routeStyle => {
         const style = validateStyle(routeStyle);
         activeRouteStyle = style;
         if (!map || !loaded) return;
         map.setPaintProperty('bpb-route-casing', 'line-color', style.casingColor);
         map.setPaintProperty('bpb-route-casing', 'line-width', style.casingWidth);
-        map.setPaintProperty('bpb-route', 'line-color', style.color);
+        map.setPaintProperty('bpb-route', 'line-color', routeLineColor(style));
         map.setPaintProperty('bpb-route', 'line-width', style.width);
     };
 
@@ -414,7 +439,8 @@
 
     const createTerrain = data => {
         if (map || mapElement) return;
-        const route = validateRoute(data.routeSegments);
+        const route = validateRoute(data.routeSegments, data.routeColors);
+        routeHasFeatureColors = Boolean(route && route.hasFeatureColors);
         const maplibre = globalThis.maplibregl;
         const cacheLimitMb = Number.isInteger(data.cacheLimitMb) && data.cacheLimitMb >= 0 && data.cacheLimitMb <= 2048
             ? data.cacheLimitMb
@@ -473,16 +499,12 @@
             });
             controls.appendChild(pickerElement);
         }
-        const badge = document.createElement('p');
-        badge.className = 'bpb-terrain-badge';
-        badgeElement = badge;
-        renderBadge();
         const notice = document.createElement('p');
         notice.className = 'bpb-terrain-notice';
         notice.setAttribute('role', 'status');
         notice.hidden = true;
         noticeElement = notice;
-        controls.append(badge, notice);
+        controls.append(notice);
         renderPicker();
 
         // Cooperative gestures keep the page from scroll-jacking, so zoom needs
@@ -519,12 +541,19 @@
                 bearing: 0,
                 maxPitch: 80,
                 maxZoom: 18,
-                attributionControl: true,
+                attributionControl: false,
                 cooperativeGestures: true,
                 fadeDuration: 0
             });
             const terrainMap = map;
-            terrainMap.addControl(new maplibre.NavigationControl({ visualizePitch: true }), 'top-right');
+            // Bottom-right, matching the native 2D map's zoom: a compact
+            // attribution ("ⓘ") first so it can't wrap and shove the zoom upward,
+            // then a zoom-only control (no compass) so the stack is the same
+            // two-button height as the 2D zoom and the floating toggle lines up
+            // the same way in both. Returning to 2D reframes the route, so the
+            // compass's reset role is covered.
+            terrainMap.addControl(new maplibre.AttributionControl({ compact: true }), 'bottom-right');
+            terrainMap.addControl(new maplibre.NavigationControl({ showCompass: false }), 'bottom-right');
             terrainMap.addControl(new maplibre.ScaleControl({ maxWidth: 120, unit: 'metric' }), 'bottom-left');
             terrainMap.on('error', event => {
                 if (event && event.sourceId === 'basemap') {
@@ -561,7 +590,7 @@
                 terrainMap.addLayer({
                     id: 'bpb-route', type: 'line', source: 'bpb-route',
                     layout: { 'line-join': 'round', 'line-cap': 'round' },
-                    paint: { 'line-color': activeRouteStyle.color, 'line-width': activeRouteStyle.width }
+                    paint: { 'line-color': routeLineColor(activeRouteStyle), 'line-width': activeRouteStyle.width }
                 });
                 terrainMap.addSource('bpb-highlight', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
                 terrainMap.addLayer({
@@ -572,12 +601,16 @@
                 setTheme(activeTheme);
                 status.remove();
                 mapElement.style.pointerEvents = 'auto';
-                post('loaded');
+                post('loaded', { navTop: measureNavTop() });
             });
 
             loadTimer = setTimeout(() => fail('timeout'), MAP_LOAD_TIMEOUT_MS);
             if (typeof ResizeObserver === 'function') {
-                resizeObserver = new ResizeObserver(() => { if (map) map.resize(); });
+                resizeObserver = new ResizeObserver(() => {
+                    if (!map) return;
+                    map.resize();
+                    if (loaded) post('metrics', { navTop: measureNavTop() });
+                });
                 resizeObserver.observe(mapElement);
             }
         } catch (error) {
