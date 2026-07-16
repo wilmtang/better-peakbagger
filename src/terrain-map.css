@@ -78,6 +78,14 @@
     bottom: 94px;
 }
 
+/* The rule above sets `display`, which is an author declaration and therefore
+   beats the UA stylesheet's `[hidden] { display: none }`. Without this the
+   toggle stays on screen, greyed, whenever the 3D feature is switched off —
+   the same trap `.bpb-terrain-mount-fullscreen[hidden]` already avoids. */
+.bpb-map-3d-toggle[hidden] {
+    display: none;
+}
+
 .bpb-map-3d-toggle[data-theme="dark"] {
     border-color: rgb(255 255 255 / 16%);
     background: rgb(31 35 33 / 90%);
