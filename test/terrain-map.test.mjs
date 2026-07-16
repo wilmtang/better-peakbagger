@@ -467,7 +467,8 @@ test('the 3D drape picker offers every layer and swaps the draped raster live', 
     const picker = () => window.document.querySelector('.bpb-terrain-picker');
     const map = maps[0];
     assert.deepEqual(Array.from(picker().options, option => option.textContent),
-        ['CalTopo', 'MyTopo', 'OpenTopo', 'Terrain only'], 'the picker offers every layer plus terrain-only');
+        ['CalTopo', 'MyTopo', 'OpenTopo', 'OSM Vector (beta)', 'Terrain only'],
+        'the picker offers every layer plus the vector entry and terrain-only');
     assert.equal(picker().options[picker().selectedIndex].textContent, 'MyTopo',
         'the initially-selected native layer is preselected');
 
@@ -492,6 +493,141 @@ test('the 3D drape picker offers every layer and swaps the draped raster live', 
     assert.equal(picker().value, 'terrain', 'a failed manual selection reverts to terrain-only');
     assert.equal(picker().options[2].disabled, true, 'the failed layer is disabled');
     assert.match(window.document.querySelector('.bpb-terrain-notice').textContent, /OpenTopo/);
+
+    dom.window.close();
+});
+
+test('the extension-provided vector entry grafts the provider style under the extension layers', async () => {
+    const dom = new JSDOM('<!doctype html><body></body>', {
+        url: 'https://www.peakbagger.com/climber/ascent.aspx?aid=1',
+        runScripts: 'outside-only',
+        pretendToBeVisual: true
+    });
+    const { window } = dom;
+    const maps = [];
+
+    class MapStub {
+        constructor(options) {
+            this.options = options;
+            this.sources = new Map(Object.entries(options.style.sources).map(([id, source]) => [id, { ...source }]));
+            this.layers = options.style.layers.map(layer => ({ ...layer }));
+            this.handlers = new Map();
+            this.glyphs = null;
+            this.sprite = null;
+            maps.push(this);
+        }
+        addControl() {}
+        once(type, callback) { if (type === 'load') window.queueMicrotask(callback); }
+        on(type, callback) { this.handlers.set(type, callback); }
+        addSource(id, source) { this.sources.set(id, { ...source, setData() {} }); }
+        addLayer(layer, before) {
+            const index = before ? this.layers.findIndex(existing => existing.id === before) : -1;
+            if (index >= 0) this.layers.splice(index, 0, layer);
+            else this.layers.push(layer);
+        }
+        getLayer(id) { return this.layers.find(layer => layer.id === id); }
+        removeLayer(id) { this.layers = this.layers.filter(layer => layer.id !== id); }
+        getSource(id) { return this.sources.get(id); }
+        removeSource(id) { this.sources.delete(id); }
+        setGlyphs(url) { this.glyphs = url; }
+        setSprite(url) { this.sprite = url; }
+        setPaintProperty() {}
+        fitBounds() {}
+        resize() {}
+        remove() {}
+    }
+
+    const providerStyle = {
+        version: 8,
+        glyphs: 'https://tiles.openfreemap.org/fonts/{fontstack}/{range}.pbf',
+        sprite: 'https://tiles.openfreemap.org/sprites/ofm_f384/ofm',
+        sources: { openmaptiles: { type: 'vector', url: 'https://tiles.openfreemap.org/planet' } },
+        layers: [
+            { id: 'land', type: 'fill', source: 'openmaptiles', 'source-layer': 'landcover' },
+            { id: 'road', type: 'line', source: 'openmaptiles', 'source-layer': 'transportation' },
+            { id: 'place-label', type: 'symbol', source: 'openmaptiles', 'source-layer': 'place' }
+        ]
+    };
+    const fetches = [];
+    let failFetch = true;
+    window.fetch = url => {
+        fetches.push(url);
+        if (failFetch) return Promise.reject(new Error('offline'));
+        return Promise.resolve({ ok: true, json: () => Promise.resolve(providerStyle) });
+    };
+    window.chrome = { runtime: { getURL: path => `chrome-extension://test-id/${path}` } };
+    window.BPBTerrainCache = { PROTOCOL: 'bpb-dem', create: () => ({ load() {}, flush: () => Promise.resolve() }) };
+    window.maplibregl = {
+        Map: MapStub,
+        NavigationControl: class {},
+        ScaleControl: class {},
+        AttributionControl: class {},
+        setWorkerUrl() {},
+        addProtocol() {},
+        removeProtocol() {}
+    };
+    window.postMessage = () => {};
+    window.eval(terrainFrameSource);
+
+    // No page-offered raster layers: the vector entry must exist regardless.
+    window.dispatchEvent(new window.MessageEvent('message', {
+        source: window,
+        origin: window.location.origin,
+        data: {
+            __bpbTerrainFrame: true, dir: 'toFrame', type: 'init',
+            routeSegments: [[[48.7, -121.8], [48.71, -121.81]]]
+        }
+    }));
+    await new Promise(resolve => window.queueMicrotask(resolve));
+
+    const picker = () => window.document.querySelector('.bpb-terrain-picker');
+    const map = maps[0];
+    assert.deepEqual(Array.from(picker().options, option => option.textContent),
+        ['OSM Vector (beta)', 'Terrain only'],
+        'the vector entry and terrain-only are offered even without page layers');
+    assert.equal(picker().value, 'terrain', 'terrain-only stays the default — vector is opt-in');
+    assert.equal(fetches.length, 0, 'no provider traffic before the user selects the vector entry');
+
+    // A failed style fetch reverts to terrain-only with a visible reason and
+    // is forgotten, so the next selection retries instead of staying broken.
+    picker().value = 'vector';
+    picker().dispatchEvent(new window.Event('change'));
+    await new Promise(resolve => window.setTimeout(resolve, 0));
+    assert.deepEqual(fetches, ['https://tiles.openfreemap.org/styles/liberty'],
+        'selecting the entry requests the provider style');
+    assert.equal(picker().value, 'terrain', 'a failed style fetch reverts to terrain-only');
+    assert.match(window.document.querySelector('.bpb-terrain-notice').textContent, /OSM Vector \(beta\) is unavailable/);
+
+    failFetch = false;
+    picker().value = 'vector';
+    picker().dispatchEvent(new window.Event('change'));
+    await new Promise(resolve => window.setTimeout(resolve, 0));
+
+    assert.equal(fetches.length, 2, 'a failed fetch is retried, not cached');
+    assert.equal(map.glyphs, providerStyle.glyphs, 'the provider glyphs are installed');
+    assert.equal(map.sprite, providerStyle.sprite, 'the provider sprite is installed');
+    assert.ok(map.getSource('bpb-vector:openmaptiles'), 'provider sources are added under prefixed ids');
+    const ids = map.layers.map(layer => layer.id);
+    assert.ok(ids.indexOf('bpb-vector:land') < ids.indexOf('terrain-hillshade'),
+        'ground geometry sits below the extension hillshade');
+    assert.ok(ids.indexOf('bpb-vector:place-label') > ids.indexOf('bpb-route'),
+        'labels sit above the route so text stays readable');
+    assert.ok(ids.indexOf('bpb-vector:place-label') < ids.indexOf('bpb-highlight'),
+        'labels stay below the hover highlight');
+    assert.equal(map.layers.find(layer => layer.id === 'bpb-vector:land').source, 'bpb-vector:openmaptiles',
+        'grafted layers point at the prefixed source');
+
+    picker().value = 'terrain';
+    picker().dispatchEvent(new window.Event('change'));
+    assert.equal(map.getSource('bpb-vector:openmaptiles'), undefined, 'terrain-only removes the vector sources');
+    assert.ok(!map.layers.some(layer => layer.id.startsWith('bpb-vector:')), 'terrain-only removes every vector layer');
+
+    // Re-selecting reuses the cached style without another fetch.
+    picker().value = 'vector';
+    picker().dispatchEvent(new window.Event('change'));
+    await new Promise(resolve => window.setTimeout(resolve, 0));
+    assert.equal(fetches.length, 2, 'a successful style fetch is cached for the frame lifetime');
+    assert.ok(map.getSource('bpb-vector:openmaptiles'), 'the cached style is re-grafted');
 
     dom.window.close();
 });
