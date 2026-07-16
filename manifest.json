@@ -172,22 +172,6 @@
         "*://*.peakbagger.com/*BigMap.aspx*",
         "*://*.peakbagger.com/*bigmap.aspx*"
       ],
-      "css": [
-        "src/terrain-map.css"
-      ],
-      "js": [
-        "src/settings-schema.js",
-        "src/settings.js",
-        "src/terrain-map.js"
-      ],
-      "run_at": "document_end",
-      "all_frames": false
-    },
-    {
-      "matches": [
-        "*://*.peakbagger.com/*BigMap.aspx*",
-        "*://*.peakbagger.com/*bigmap.aspx*"
-      ],
       "js": [
         "src/gpx-metrics.js",
         "src/terrain-basemap.js",
@@ -198,6 +182,22 @@
       "run_at": "document_end",
       "all_frames": false,
       "world": "MAIN"
+    },
+    {
+      "matches": [
+        "*://*.peakbagger.com/*BigMap.aspx*",
+        "*://*.peakbagger.com/*bigmap.aspx*"
+      ],
+      "css": [
+        "src/terrain-map.css"
+      ],
+      "js": [
+        "src/settings-schema.js",
+        "src/settings.js",
+        "src/terrain-map.js"
+      ],
+      "run_at": "document_end",
+      "all_frames": false
     }
   ],
   "web_accessible_resources": [

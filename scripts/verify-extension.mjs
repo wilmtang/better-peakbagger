@@ -49,21 +49,48 @@ const ascentHtml = `<!doctype html><html><head><title>Ascent</title></head><body
 <a href="/map/BigMap.aspx?t=A">Full Screen Map</a>
 </body></html>`;
 
+const bigMapHtml = `<!doctype html><html><head><title>Full Screen Map</title></head><body>
+<iframe id="if" src="/map/MasterMap.aspx?t=A&d=2296&c=900001&hj=300"></iframe>
+</body></html>`;
+
 // Enough of Peakbagger's frame for the analyzer's overlay and layer sync to
 // bind. Its Leaflet globals are page-owned, exactly as on the live site.
 const masterMapHtml = `<!doctype html><html><body>
 <select id="selmap"><option value="L_CT">Topo</option></select>
 <div class="leaflet-control-zoom" style="position:absolute;bottom:10px;right:10px;width:30px;height:60px"></div>
 <script>
-  const layer = () => ({ addTo() { return this; }, bringToBack() {}, setStyle() {}, _map: window.mapsPlaceholder });
-  window.L = { polyline: layer, circleMarker: layer };
-  window.mapsPlaceholder = { invalidateSize() {}, eachLayer() {}, on() {}, removeLayer() {} };
+  class Polyline {
+    constructor(latLngs = [], options = {}) { this.latLngs = latLngs; this.options = options; this.events = {}; }
+    addTo(map) { map.addLayer(this); return this; }
+    bringToBack() { return this; }
+    getLatLngs() { return this.latLngs; }
+    setStyle(style) { Object.assign(this.options, style); return this; }
+    on(type, handler) { (this.events[type] ||= []).push(handler); return this; }
+  }
+  class Polygon extends Polyline {}
+  class MapStub {
+    constructor(layers = []) { this.layers = []; this.events = {}; layers.forEach(layer => this.addLayer(layer)); }
+    addLayer(layer) { layer._map = this; this.layers.push(layer); for (const fn of this.events.layeradd || []) fn({ layer }); return this; }
+    eachLayer(callback) { this.layers.slice().forEach(callback); }
+    invalidateSize() {}
+    on(type, handler) { (this.events[type] ||= []).push(handler); return this; }
+    removeLayer(layer) { this.layers = this.layers.filter(candidate => candidate !== layer); layer._map = null; }
+  }
+  window.L = {
+    Polyline, Polygon, Map: MapStub,
+    polyline: (latLngs, options) => new Polyline(latLngs, options),
+    circleMarker: (latLng, options) => new Polyline([latLng], options)
+  };
+  window.mapsPlaceholder = new MapStub([
+    new Polyline([{ lat: 46.85, lng: -121.76 }, { lat: 46.87, lng: -121.74 }], { color: '#d9483b', weight: 3 })
+  ]);
 </script></body></html>`;
 
 const server = createServer((request, response) => {
     const url = new URL(request.url, 'http://x');
     const send = (type, body) => { response.writeHead(200, { 'content-type': type }); response.end(body); };
     if (/ascent\.aspx/i.test(url.pathname)) return send('text/html; charset=utf-8', ascentHtml);
+    if (/bigmap\.aspx/i.test(url.pathname)) return send('text/html; charset=utf-8', bigMapHtml);
     if (/mastermap\.aspx/i.test(url.pathname)) return send('text/html; charset=utf-8', masterMapHtml);
     if (/track\.gpx/i.test(url.pathname)) return send('application/gpx+xml', gpx);
     response.writeHead(404); response.end('not found');
@@ -80,6 +107,7 @@ try {
     context = await chromium.launchPersistentContext(profile, {
         channel: 'chromium',
         headless: true,
+        viewport: { width: 1000, height: 760 },
         args: [
             `--disable-extensions-except=${root}`,
             `--load-extension=${root}`,
@@ -159,6 +187,46 @@ try {
         check(on.disabled === false,
             `the toggle should enable once the route parses, but stayed greyed: title=${JSON.stringify(on.title)}`);
         await onPage.close();
+
+        const bigMapPage = await context.newPage();
+        const bigMapErrors = [];
+        bigMapPage.on('pageerror', error => bigMapErrors.push(String(error)));
+        const bigMapCdp = await context.newCDPSession(bigMapPage);
+        await bigMapCdp.send('Runtime.enable');
+        bigMapCdp.on('Runtime.exceptionThrown', event => {
+            bigMapErrors.push(event.exceptionDetails?.exception?.description || event.exceptionDetails?.text || 'unknown exception');
+        });
+        await bigMapPage.goto(`http://www.peakbagger.com:${port}/map/BigMap.aspx?t=A&d=2296`, { waitUntil: 'load' });
+        const bigMapToggle = await bigMapPage.waitForFunction(() => {
+            const button = document.getElementById('bpb-terrain-toggle');
+            if (!button) return false;
+            const rect = button.getBoundingClientRect();
+            const state = {
+                visible: rect.width > 0 && rect.height > 0,
+                disabled: button.disabled,
+                display: getComputedStyle(button).display
+            };
+            return state.visible && !state.disabled ? state : false;
+        }, null, { timeout: 10000 }).then(handle => handle.jsonValue()).catch(() => null);
+        const bigMapState = await bigMapPage.evaluate(() => {
+            const iframe = document.getElementById('if');
+            return {
+                url: location.href,
+                metricsReady: !!window.BPBGpxMetrics,
+                basemapReady: !!window.BPBTerrainBasemap,
+                peakMarkersReady: !!window.BPBPeakMarkers,
+                schemaReady: !!window.BPBSettingsSchema,
+                mountExists: !!document.getElementById('bpb-map-viewport'),
+                iframeMapReady: !!iframe?.contentWindow?.mapsPlaceholder,
+                iframeLeafletReady: !!iframe?.contentWindow?.L,
+                stylesheets: [...document.styleSheets].map(sheet => sheet.href)
+            };
+        });
+        check(bigMapToggle?.visible === true,
+            `with 3D enabled the BigMap toggle must be visible (toggle=${JSON.stringify(bigMapToggle)}, page=${JSON.stringify(bigMapState)}, errors=${JSON.stringify(bigMapErrors)})`);
+        check(bigMapToggle?.disabled === false,
+            `the BigMap toggle should enable once its native route is ready (state=${JSON.stringify(bigMapToggle)})`);
+        await bigMapPage.close();
     }
 } finally {
     if (context) await context.close();
@@ -176,3 +244,4 @@ console.log('  - the MV3 service worker boots and answers messages (capture is a
 console.log('  - settings.js initialises in the isolated world and the bridge answers');
 console.log('  - the GPX analyzer renders stats from the real manifest load order');
 console.log('  - the 3D toggle is hidden when disabled and enabled when the route parses');
+console.log('  - the Full Screen BigMap receives settings and shows an enabled 3D toggle');
