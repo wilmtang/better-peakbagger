@@ -90,6 +90,7 @@
         "vendor/tz-lookup.js",
         "src/gpx-metrics.js",
         "src/terrain-basemap.js",
+        "src/peak-markers.js",
         "src/gpx-analyzer.js"
       ],
       "run_at": "document_end",
@@ -182,6 +183,7 @@
       "js": [
         "src/gpx-metrics.js",
         "src/terrain-basemap.js",
+        "src/peak-markers.js",
         "src/big-map.js"
       ],
       "run_at": "document_end",

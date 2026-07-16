@@ -12,6 +12,7 @@ import { makeChromeStub, waitFor } from './helpers/load-page.mjs';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const settingsSource = await readFile(path.join(root, 'src', 'settings.js'), 'utf8');
 const bridgeSource = await readFile(path.join(root, 'src', 'big-map-bridge.js'), 'utf8');
+const peakMarkersSource = await readFile(path.join(root, 'src', 'peak-markers.js'), 'utf8');
 const bigMapSource = await readFile(path.join(root, 'src', 'big-map.js'), 'utf8');
 
 const makeLeaflet = window => {
@@ -268,6 +269,92 @@ test('Full Screen maps offer a 3D toggle that carries the native tracks into the
     assert.equal(window.document.getElementById('map').style.visibility, 'visible');
     assert.equal(toggle.textContent, '3D');
     // Let the queued postMessage dispatches drain before closing the window.
+    await new Promise(resolve => window.setTimeout(resolve, 0));
+    dom.window.close();
+});
+
+test('Full Screen 3D maps serve peak-dot requests from the native PLLBB feed', async () => {
+    const fixture = await loadBigMap({ type: 'A', width: 6, settings: { enable3dMap: true } });
+    const { dom, window, messages, leaflet } = fixture;
+    window.document.body.insertAdjacentHTML('beforeend',
+        '<iframe id="if" src="https://www.peakbagger.com/map/MasterMap.aspx?cy=44.16&cx=-121.76&z=14&t=A&d=2414&c=900001&hj=0"></iframe>');
+    const route = new leaflet.Polyline([{ lat: 44.15, lng: -121.78 }, { lat: 44.16, lng: -121.76 }], { color: '#d9483b', weight: 3 });
+    window.map = new leaflet.MapStub([route]);
+    const feedRequests = [];
+    window.fetch = async url => {
+        feedRequests.push(String(url));
+        return {
+            ok: true,
+            text: async () => `<ts><t i="58603" n="Iron Mountain" a="44.155" o="-121.77" c="1" r="246"/></ts>`
+        };
+    };
+    window.eval(peakMarkersSource);
+    fixture.evaluate();
+
+    await waitFor(dom, () => route.options.weight === 6);
+    const toggle = window.document.getElementById('bpb-terrain-toggle');
+    await waitFor(dom, () => toggle.disabled === false);
+    toggle.click();
+    await waitFor(dom, () => messages.some(message => message.__bpbTerrain === true && message.type === 'init'));
+
+    const dispatchToPage = data => window.dispatchEvent(new window.MessageEvent('message', {
+        source: window,
+        origin: window.location.origin,
+        data: { __bpbTerrain: true, dir: 'toPage', ...data }
+    }));
+    dispatchToPage({ type: 'loaded' });
+    dispatchToPage({
+        type: 'peaksRequest',
+        requestId: 7,
+        bounds: { miny: 44.1, maxy: 44.2, minx: -121.85, maxx: -121.7 }
+    });
+    await waitFor(dom, () => messages.some(message => message.__bpbTerrain === true && message.type === 'peaks'));
+
+    assert.deepEqual(feedRequests, [
+        'https://www.peakbagger.com/Async/PLLBB.aspx?miny=44.1&maxy=44.2&minx=-121.85&maxx=-121.7&t=A&cid=900001'
+    ], 'the feed request mirrors the native query built from the MasterMap iframe URL');
+    const reply = messages.find(message => message.__bpbTerrain === true && message.type === 'peaks');
+    assert.equal(reply.requestId, 7);
+    assert.notEqual(reply.unavailable, true);
+    assert.deepEqual(reply.peaks, [{ id: 58603, name: 'Iron Mountain', lat: 44.155, lon: -121.77, state: 'climbed' }]);
+    await new Promise(resolve => window.setTimeout(resolve, 0));
+    dom.window.close();
+});
+
+test('Full Screen 3D group maps answer peak-dot requests as unavailable, like the native map', async () => {
+    const fixture = await loadBigMap({ type: 'G', width: 6, settings: { enable3dMap: true } });
+    const { dom, window, messages, leaflet } = fixture;
+    window.document.body.insertAdjacentHTML('beforeend',
+        '<iframe id="if" src="https://www.peakbagger.com/map/MasterMap.aspx?cy=44.16&cx=-121.76&z=14&t=G&d=2414&c=900001"></iframe>');
+    const route = new leaflet.Polyline([{ lat: 44.15, lng: -121.78 }, { lat: 44.16, lng: -121.76 }], {
+        color: '#3388ff', weight: 3,
+        // Group-map tracks need native hover/click handlers to be recognized.
+    });
+    route.on('mouseover', () => {});
+    route.on('click', () => {});
+    window.map = new leaflet.MapStub([route]);
+    window.fetch = async () => { throw new Error('a group map must never hit the peak feed'); };
+    window.eval(peakMarkersSource);
+    fixture.evaluate();
+
+    await waitFor(dom, () => route.options.weight === 6);
+    const toggle = window.document.getElementById('bpb-terrain-toggle');
+    await waitFor(dom, () => toggle.disabled === false);
+    toggle.click();
+    await waitFor(dom, () => messages.some(message => message.__bpbTerrain === true && message.type === 'init'));
+
+    window.dispatchEvent(new window.MessageEvent('message', {
+        source: window,
+        origin: window.location.origin,
+        data: {
+            __bpbTerrain: true, dir: 'toPage', type: 'peaksRequest',
+            requestId: 1, bounds: { miny: 44.1, maxy: 44.2, minx: -121.85, maxx: -121.7 }
+        }
+    }));
+    await waitFor(dom, () => messages.some(message => message.__bpbTerrain === true && message.type === 'peaks'));
+    const reply = messages.find(message => message.__bpbTerrain === true && message.type === 'peaks');
+    assert.equal(reply.unavailable, true);
+    assert.deepEqual(reply.peaks, []);
     await new Promise(resolve => window.setTimeout(resolve, 0));
     dom.window.close();
 });

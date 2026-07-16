@@ -409,12 +409,44 @@
         updateTerrainToggle();
     };
 
+    // The 3D frame asks for Peakbagger's peak dots as its camera settles; the
+    // request is served by the same-origin PLLBB feed the native 2D map uses,
+    // with the parameters read from the MasterMap iframe URL. Group maps have
+    // no peak feed natively, so they answer `unavailable` once and the frame
+    // stops asking.
+    let peaksClient = null;
+    let peaksClientResolved = false;
+    const answerPeaksRequest = data => {
+        const requestId = data.requestId;
+        if (!Number.isFinite(requestId)) return;
+        if (!peaksClientResolved) {
+            peaksClientResolved = true;
+            const iframe = findMapIframe();
+            peaksClient = globalThis.BPBPeakMarkers && iframe
+                ? globalThis.BPBPeakMarkers.createClient(iframe.src)
+                : null;
+        }
+        if (!peaksClient) {
+            postTerrain('peaks', { requestId, peaks: [], unavailable: true });
+            return;
+        }
+        peaksClient.request(data.bounds).then(peaks => {
+            // A superseded request resolves null and stays silent; the newer
+            // request answers instead.
+            if (peaks) postTerrain('peaks', { requestId, peaks });
+        });
+    };
+
     // Replies from the extension-owned terrain frame (via the isolated-world
     // bridge). Same protocol as the ascent page.
     window.addEventListener('message', event => {
         if (event.source !== window || event.origin !== location.origin) return;
         const data = event.data;
         if (!data || data.__bpbTerrain !== true || data.dir !== 'toPage') return;
+        if (data.type === 'peaksRequest' && terrainState !== 'idle') {
+            answerPeaksRequest(data);
+            return;
+        }
         if (data.type === 'loaded' && terrainState === 'loading') {
             clearTerrainLoadTimer();
             terrainState = 'active';

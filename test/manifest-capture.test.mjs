@@ -57,9 +57,9 @@ test('Full Screen GPS maps get a narrow read-only bridge and a MAIN-world Leafle
     assert.deepEqual(bridgeEntry.js, ['src/settings.js', 'src/big-map-bridge.js']);
     assert.equal(bridgeEntry.world, undefined);
     assert.ok(pageEntry);
-    // The MAIN-world enhancer also loads the shared metrics + basemap modules the
-    // 3D coordinator depends on, before big-map.js.
-    assert.deepEqual(pageEntry.js, ['src/gpx-metrics.js', 'src/terrain-basemap.js', 'src/big-map.js']);
+    // The MAIN-world enhancer also loads the shared metrics + basemap +
+    // peak-feed modules the 3D coordinator depends on, before big-map.js.
+    assert.deepEqual(pageEntry.js, ['src/gpx-metrics.js', 'src/terrain-basemap.js', 'src/peak-markers.js', 'src/big-map.js']);
     assert.equal(pageEntry.world, 'MAIN');
     assert.ok(pageEntry.matches.every(pattern => /bigmap/i.test(pattern)));
 

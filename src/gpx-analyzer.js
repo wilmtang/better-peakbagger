@@ -721,6 +721,33 @@
             startTerrain();
         });
 
+        // The 3D frame asks for Peakbagger's peak dots as its camera settles;
+        // the request is served by the same-origin PLLBB feed the native 2D
+        // map uses, with the parameters read from the MasterMap iframe URL. A
+        // surface without a usable feed answers `unavailable` once so the
+        // frame stops asking.
+        let peaksClient = null;
+        let peaksClientResolved = false;
+        const answerPeaksRequest = data => {
+            const requestId = data.requestId;
+            if (!Number.isFinite(requestId)) return;
+            if (!peaksClientResolved) {
+                peaksClientResolved = true;
+                peaksClient = globalThis.BPBPeakMarkers && mapIframe
+                    ? globalThis.BPBPeakMarkers.createClient(mapIframe.src)
+                    : null;
+            }
+            if (!peaksClient) {
+                postTerrain('peaks', { requestId, peaks: [], unavailable: true });
+                return;
+            }
+            peaksClient.request(data.bounds).then(peaks => {
+                // A superseded request resolves null and stays silent; the
+                // newer request answers instead.
+                if (peaks) postTerrain('peaks', { requestId, peaks });
+            });
+        };
+
         window.addEventListener('message', event => {
             if (event.source !== window || event.origin !== location.origin) return;
             const data = event.data;
@@ -737,6 +764,8 @@
             } else if (data.type === 'metrics' && terrainState === 'active') {
                 if (Number.isFinite(data.navTop)) terrainNavTop = data.navTop;
                 positionTerrainToggle();
+            } else if (data.type === 'peaksRequest' && terrainState !== 'idle') {
+                answerPeaksRequest(data);
             } else if (data.type === 'error' && terrainState === 'loading') {
                 failTerrain(terrainFailureMessage(data.reason));
             }

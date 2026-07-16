@@ -13,6 +13,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const tzLookupSource = await readFile(path.join(root, 'vendor', 'tz-lookup.js'), 'utf8');
 const metricsSource = await readFile(path.join(root, 'src', 'gpx-metrics.js'), 'utf8');
 const basemapSource = await readFile(path.join(root, 'src', 'terrain-basemap.js'), 'utf8');
+const peakMarkersSource = await readFile(path.join(root, 'src', 'peak-markers.js'), 'utf8');
 const analyzerSource = await readFile(path.join(root, 'src', 'gpx-analyzer.js'), 'utf8');
 
 const gpx = `<?xml version="1.0"?>
@@ -32,7 +33,7 @@ const gpx = `<?xml version="1.0"?>
 test('GPX analyzer adds a thick, segment-preserving route casing behind native Leaflet layers', async () => {
     const dom = new JSDOM(`<!doctype html><body>
       <p>
-        <iframe src="https://www.peakbagger.com/map/MasterMap.aspx"></iframe><br>
+        <iframe src="https://www.peakbagger.com/map/MasterMap.aspx?cy=48.7&cx=-121.8&z=14&t=A&d=1&c=900001&hj=0"></iframe><br>
         GPS Waypoints - Hover or click to see name and lat/long<br>
         <a href="https://www.peakbagger.com/map/BigMap.aspx">Click Here for a Full Screen Map</a><br>
         <span>Note: GPS Tracks may not be accurate.</span>
@@ -122,7 +123,18 @@ test('GPX analyzer adds a thick, segment-preserving route casing behind native L
 
     window.matchMedia = () => ({ matches: false });
     window.HTMLCanvasElement.prototype.getContext = () => ({});
-    window.fetch = async () => ({ ok: true, text: async () => gpx });
+    const peakFeedRequests = [];
+    const peakFeedXml = `<?xml version='1.0' encoding='UTF-8'?><ts>`
+        + `<t i="58603" n="Iron Mountain" a="48.72" o="-121.79" c="1" r="246"/>`
+        + `<t i="-114297" n="Peak 5000 (Prov)" a="48.74" o="-121.82" c="2" r="10"/>`
+        + `</ts>`;
+    window.fetch = async url => {
+        if (String(url).includes('/Async/PLLBB.aspx')) {
+            peakFeedRequests.push(String(url));
+            return { ok: true, text: async () => peakFeedXml };
+        }
+        return { ok: true, text: async () => gpx };
+    };
     window.Chart = class ChartStub {
         constructor(context, config) {
             this.data = config.data;
@@ -156,6 +168,7 @@ test('GPX analyzer adds a thick, segment-preserving route casing behind native L
     Object.defineProperty(window.document, 'readyState', { configurable: true, value: 'complete' });
     window.eval(metricsSource);
     window.eval(basemapSource);
+    window.eval(peakMarkersSource);
     window.eval(analyzerSource);
     await waitFor(dom, () => polylineCalls.length === 2);
 
@@ -251,6 +264,28 @@ test('GPX analyzer adds a thick, segment-preserving route casing behind native L
     assert.equal(terrainToggle.getAttribute('aria-pressed'), 'true');
     // The floating toggle overlays the map, not the panel below it.
     assert.equal(terrainToggle.parentElement.id, 'bpb-map-viewport');
+
+    // The frame asks for peak dots; the analyzer serves them from the same
+    // PLLBB feed the native map uses, parameterized from the iframe URL.
+    window.dispatchEvent(new window.MessageEvent('message', {
+        source: window,
+        origin: window.location.origin,
+        data: {
+            __bpbTerrain: true, dir: 'toPage', type: 'peaksRequest',
+            requestId: 1, bounds: { miny: 48.65, maxy: 48.8, minx: -121.9, maxx: -121.7 }
+        }
+    }));
+    await waitFor(dom, () => terrainMessages.some(message => message.type === 'peaks'));
+    assert.deepEqual(peakFeedRequests, [
+        'https://www.peakbagger.com/Async/PLLBB.aspx?miny=48.65&maxy=48.8&minx=-121.9&maxx=-121.7&t=A&cid=900001'
+    ], 'the feed request mirrors the native query: type and climber id, no pid on ascent maps');
+    const peaksReply = terrainMessages.find(message => message.type === 'peaks');
+    assert.equal(peaksReply.requestId, 1);
+    assert.notEqual(peaksReply.unavailable, true);
+    assert.deepEqual(JSON.parse(JSON.stringify(peaksReply.peaks)), [
+        { id: 58603, name: 'Iron Mountain', lat: 48.72, lon: -121.79, state: 'climbed' },
+        { id: -114297, name: 'Peak 5000 (Prov)', lat: 48.74, lon: -121.82, state: 'unknown' }
+    ]);
 
     sendSettings({ units: 'imperial', theme: 'light', chartDefaultSeries: 'both', enable3dMap: false });
     await waitFor(dom, () => terrainToggle.hidden);
