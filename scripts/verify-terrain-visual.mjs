@@ -8,6 +8,7 @@ import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import zlib from 'node:zlib';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const chromePath = process.env.CHROME_BIN || ({
@@ -39,11 +40,40 @@ const safeFile = async pathname => {
 const server = createServer(async (request, response) => {
     try {
         const url = new URL(request.url, 'http://127.0.0.1');
+        // Peakbagger's own peak-marker feed: answer like /Async/PLLBB.aspx,
+        // with synthetic peaks placed inside whatever box was requested so a
+        // dot always lands near the camera center.
+        if (url.pathname.toLowerCase() === '/async/pllbb.aspx') {
+            const bounds = ['miny', 'maxy', 'minx', 'maxx'].map(name => Number(url.searchParams.get(name)));
+            if (bounds.some(value => !Number.isFinite(value))) {
+                response.writeHead(400, { 'content-type': 'text/plain; charset=utf-8' });
+                response.end('Bad bounds');
+                return;
+            }
+            const [miny, maxy, minx, maxx] = bounds;
+            const cy = (miny + maxy) / 2;
+            const cx = (minx + maxx) / 2;
+            const dy = (maxy - miny) / 8;
+            const dx = (maxx - minx) / 8;
+            response.writeHead(200, { 'content-type': 'text/xml; charset=utf-8', 'cache-control': 'no-store' });
+            response.end(`<?xml version='1.0' encoding='UTF-8'?><ts>`
+                + `<t i="58603" n="Iron Mountain" a="${cy}" o="${cx}" c="1" r="246"/>`
+                + `<t i="38375" n="Peak 6057" a="${cy + dy}" o="${cx + dx}" c="0" r="137"/>`
+                + `<t i="-114297" n="Peak 5000 (Prov)" a="${cy - dy}" o="${cx - dx}" c="2" r="10"/>`
+                + `</ts>`);
+            return;
+        }
         const showcaseRoutes = {
             '/climber/ascent.aspx': '/scripts/showcase/terrain.html',
-            '/map/bigmap.aspx': '/scripts/showcase/big-map.html'
+            '/map/bigmap.aspx': '/scripts/showcase/big-map.html',
+            // The synthetic MasterMap pages are served at a real MasterMap.aspx
+            // path so the peak-feed client can read its parameters from the
+            // iframe URL exactly as it does on the live site.
+            '/map/mastermap.aspx': url.searchParams.get('big') === '1'
+                ? '/scripts/showcase/big-map-native.html'
+                : '/scripts/showcase/terrain-native-map.html'
         };
-        let pathname = showcaseRoutes[url.pathname] || decodeURIComponent(url.pathname);
+        let pathname = showcaseRoutes[url.pathname.toLowerCase()] || decodeURIComponent(url.pathname);
         if (pathname.startsWith('/scripts/showcase/terrain-tiles/')) {
             pathname = '/scripts/showcase/terrain-basemap-tile.png';
         }
@@ -144,13 +174,107 @@ const waitForPageState = async (cdp, expression, timeoutMs = 30000) => {
     throw new Error(`Timed out waiting for page state: ${JSON.stringify(lastValue)}`);
 };
 
-const capture = async (cdp, file) => {
+const captureBuffer = async cdp => {
     const { data } = await cdp.call('Page.captureScreenshot', {
         format: 'png',
         fromSurface: true,
         captureBeyondViewport: false
     });
-    await writeFile(file, Buffer.from(data, 'base64'));
+    return Buffer.from(data, 'base64');
+};
+
+const capture = async (cdp, file) => {
+    await writeFile(file, await captureBuffer(cdp));
+};
+
+// Minimal decoder for the 8-bit non-interlaced RGB(A) PNGs Chrome emits, so
+// WebGL output (which DOM queries cannot see) can be asserted by pixel color.
+const decodePng = buffer => {
+    let offset = 8;
+    const idat = [];
+    let width = 0, height = 0, bitDepth = 8, colorType = 6, interlace = 0;
+    while (offset < buffer.length) {
+        const length = buffer.readUInt32BE(offset);
+        const type = buffer.toString('ascii', offset + 4, offset + 8);
+        const data = buffer.subarray(offset + 8, offset + 8 + length);
+        if (type === 'IHDR') {
+            width = data.readUInt32BE(0);
+            height = data.readUInt32BE(4);
+            bitDepth = data[8];
+            colorType = data[9];
+            interlace = data[12];
+        } else if (type === 'IDAT') idat.push(data);
+        else if (type === 'IEND') break;
+        offset += 12 + length;
+    }
+    if (bitDepth !== 8 || (colorType !== 6 && colorType !== 2) || interlace !== 0) {
+        throw new Error(`Unsupported screenshot PNG (depth ${bitDepth}, color ${colorType}, interlace ${interlace})`);
+    }
+    const bpp = colorType === 6 ? 4 : 3;
+    const stride = width * bpp;
+    const raw = zlib.inflateSync(Buffer.concat(idat));
+    const pixels = Buffer.alloc(height * stride);
+    for (let y = 0; y < height; y++) {
+        const filter = raw[y * (stride + 1)];
+        const row = raw.subarray(y * (stride + 1) + 1, (y + 1) * (stride + 1));
+        const out = pixels.subarray(y * stride, (y + 1) * stride);
+        const prev = y > 0 ? pixels.subarray((y - 1) * stride, y * stride) : null;
+        for (let x = 0; x < stride; x++) {
+            const left = x >= bpp ? out[x - bpp] : 0;
+            const up = prev ? prev[x] : 0;
+            const upLeft = prev && x >= bpp ? prev[x - bpp] : 0;
+            let value = row[x];
+            if (filter === 1) value += left;
+            else if (filter === 2) value += up;
+            else if (filter === 3) value += Math.floor((left + up) / 2);
+            else if (filter === 4) {
+                const p = left + up - upLeft;
+                const pa = Math.abs(p - left), pb = Math.abs(p - up), pc = Math.abs(p - upLeft);
+                value += pa <= pb && pa <= pc ? left : pb <= pc ? up : upLeft;
+            }
+            out[x] = value & 0xff;
+        }
+    }
+    return { width, height, bpp, pixels };
+};
+
+// Centroid of the pixels matching a color predicate — used to find a rendered
+// peak ring on the composited screenshot and to prove it disappears.
+const findColorCluster = (png, matches) => {
+    let count = 0, sumX = 0, sumY = 0;
+    for (let y = 0; y < png.height; y++) {
+        for (let x = 0; x < png.width; x++) {
+            const i = (y * png.width + x) * png.bpp;
+            if (matches(png.pixels[i], png.pixels[i + 1], png.pixels[i + 2])) {
+                count++;
+                sumX += x;
+                sumY += y;
+            }
+        }
+    }
+    return count ? { count, x: Math.round(sumX / count), y: Math.round(sumY / count) } : { count: 0, x: NaN, y: NaN };
+};
+
+// The climbed ring paints pure #00ff00 at 0.95 opacity — nothing in the
+// terrain palette, drape fixture, or controls comes near this.
+const isClimbedRingGreen = (r, g, b) => g > 220 && r < 110 && b < 110;
+
+const findClimbedRing = async cdp => findColorCluster(decodePng(await captureBuffer(cdp)), isClimbedRingGreen);
+
+const waitForClimbedRing = async (cdp, { present, label, timeoutMs = 12000 }) => {
+    const deadline = Date.now() + timeoutMs;
+    let cluster = { count: 0 };
+    while (Date.now() < deadline) {
+        cluster = await findClimbedRing(cdp);
+        if (present ? cluster.count >= 15 : cluster.count <= 2) return cluster;
+        await delay(400);
+    }
+    throw new Error(`${label}: expected the climbed peak ring to be ${present ? 'visible' : 'gone'} (matched ${cluster.count} pixels)`);
+};
+
+const clickAt = async (cdp, x, y) => {
+    await cdp.call('Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'left', clickCount: 1 });
+    await cdp.call('Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button: 'left', clickCount: 1 });
 };
 
 // The vertical gap between the floating toggle's bottom and the 3D zoom stack's
@@ -276,10 +400,12 @@ try {
 
     const terrainRequests = [];
     const basemapRequests = [];
+    const peakFeedRequests = [];
     const runtimeErrors = [];
     cdp.on('Network.requestWillBeSent', ({ request }) => {
         if (/\.mapterhorn\.com\//.test(request.url)) terrainRequests.push(request.url);
         if (/\/scripts\/showcase\/terrain-tiles\//.test(request.url)) basemapRequests.push(request.url);
+        if (/\/Async\/PLLBB\.aspx\?/i.test(request.url)) peakFeedRequests.push(request.url);
     });
     cdp.on('Runtime.exceptionThrown', ({ exceptionDetails }) => {
         runtimeErrors.push(exceptionDetails.exception?.description || exceptionDetails.text || 'Unknown runtime exception');
@@ -299,6 +425,7 @@ try {
         throw new Error('The removed in-map privacy notice is still present');
     }
     if (terrainRequests.length || basemapRequests.length) throw new Error('3D tile requests started before the map button was clicked');
+    if (peakFeedRequests.length) throw new Error('The peak feed was queried while the 2D map was still native');
     const ascent2dMetrics = await measureNative2dGap(cdp);
     if (!Number.isFinite(ascent2dMetrics.gap)) throw new Error('Could not measure the 2D toggle against the native zoom');
     if (ascent2dMetrics.gap < 0) throw new Error(`Ascent 2D toggle overlaps the native zoom (gap ${ascent2dMetrics.gap}px)`);
@@ -334,7 +461,58 @@ try {
     if (ascentMetrics.gap < 0) throw new Error(`Ascent 3D toggle overlaps the zoom controls (gap ${ascentMetrics.gap}px)`);
     if (ascentMetrics.gap > 40) throw new Error(`Ascent 3D toggle floats too far above the zoom controls (gap ${ascentMetrics.gap}px)`);
     await capture(cdp, path.join(outputDir, 'terrain-wide-800.png'));
+
+    // Peak dots: the 3D camera settle must query the native feed with the
+    // parameters from the MasterMap iframe URL (ascent map: type + climber
+    // id, no subject pid), render the rings, open the name-link popup on
+    // click, and drop everything once the view widens past the native cutoff.
+    if (!peakFeedRequests.length) throw new Error('The 3D view did not ask the peak feed after settling');
+    const feedUrl = new URL(peakFeedRequests[0]);
+    if (feedUrl.searchParams.get('t') !== 'A' || feedUrl.searchParams.get('cid') !== '900001'
+        || feedUrl.searchParams.get('pid') !== null) {
+        throw new Error(`Peak feed query does not mirror the native map: ${peakFeedRequests[0]}`);
+    }
+    const ring = await waitForClimbedRing(cdp, { present: true, label: 'Ascent 3D peaks' });
+    await clickAt(cdp, ring.x, ring.y);
+    const peakPopup = await waitForPageState(cdp, `(() => {
+        const frame = document.getElementById('bpb-terrain-frame');
+        const link = frame && frame.contentDocument
+            && frame.contentDocument.querySelector('.maplibregl-popup .bpb-peak-popup a');
+        return {
+            ready: Boolean(link),
+            href: link && link.href,
+            text: link && link.textContent,
+            target: link && link.target,
+            rel: link && link.rel
+        };
+    })()`, 8000).catch(() => {
+        throw new Error(`Ascent 3D peaks: clicking the rendered ring at ${ring.x},${ring.y} opened no popup`);
+    });
+    if (!/\/peak\.aspx\?pid=58603$/.test(peakPopup.href) || peakPopup.text !== 'Iron Mountain'
+        || peakPopup.target !== '_blank' || !/noopener/.test(peakPopup.rel || '')) {
+        throw new Error(`Peak popup is wrong: ${JSON.stringify(peakPopup)}`);
+    }
+    await capture(cdp, path.join(outputDir, 'terrain-peaks-popup.png'));
+
     await assertPlainScrollZooms(cdp, 'Ascent 3D');
+
+    // Zoom far out: the dots and any open popup must clear, exactly like the
+    // native map when it covers too big an area.
+    const scrollTarget = { x: Math.round(1280 / 2), y: Math.round(950 / 2) };
+    for (let tick = 0; tick < 14; tick++) {
+        await cdp.call('Input.dispatchMouseEvent', {
+            type: 'mouseWheel', x: scrollTarget.x, y: scrollTarget.y, deltaX: 0, deltaY: 240
+        });
+        await delay(120);
+    }
+    await waitForClimbedRing(cdp, { present: false, label: 'Ascent 3D zoomed out' });
+    const orphanPopup = await evaluate(cdp, `(() => {
+        const frame = document.getElementById('bpb-terrain-frame');
+        return Boolean(frame && frame.contentDocument && frame.contentDocument.querySelector('.maplibregl-popup'));
+    })()`);
+    if (orphanPopup) throw new Error('The peak popup outlived its cleared dot after zooming out');
+    await capture(cdp, path.join(outputDir, 'terrain-peaks-zoomed-out.png'));
+    if (runtimeErrors.length) throw new Error(`Runtime exception: ${runtimeErrors.join('\n')}`);
 
     await navigate(cdp, `${baseUrl}?mode=terrain&theme=dark`, 1000, 900);
     const darkReady = await waitForPageState(cdp, `(() => {
@@ -355,6 +533,7 @@ try {
     await capture(cdp, path.join(outputDir, 'terrain-dark-450.png'));
 
     // Full Screen BigMap: the floating toggle sits over the native map in 2D…
+    const peakFeedBeforeBigMap = peakFeedRequests.length;
     const bigMapUrl = `http://www.peakbagger.com:${serverPort}/map/bigmap.aspx`;
     await navigate(cdp, `${bigMapUrl}?t=G`, 1000, 760);
     const bigMap2d = await waitForPageState(cdp, `(() => {
@@ -400,6 +579,9 @@ try {
     if (bigMapMetrics.gap > 40) throw new Error(`BigMap 3D toggle floats too far above the zoom controls (gap ${bigMapMetrics.gap}px)`);
     await capture(cdp, path.join(outputDir, 'bigmap-3d.png'));
     await assertPlainScrollZooms(cdp, 'BigMap 3D (group tracks)');
+    if (peakFeedRequests.length !== peakFeedBeforeBigMap) {
+        throw new Error('A group map queried the peak feed — the native map never shows other peaks there');
+    }
 
     const optionsUrl = `http://127.0.0.1:${serverPort}/options/options.html?visual=1`;
     await navigate(cdp, optionsUrl, 1000, 700);
