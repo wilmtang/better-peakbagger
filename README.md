@@ -909,6 +909,9 @@ Settings shape (`chrome.storage.sync`, key `bpbSettings`):
 ```
 npm test                fixture-driven tests (jsdom, no network needed)
 npm run lint            web-ext lint (0 errors expected)
+npm run verify:extension
+                        load the real unpacked extension in hidden Chrome
+npm run terrain:verify  hidden Chrome visual check of the 3D renderer
 npm run build           build the canonical Chrome package
 npm run build:firefox -- SOURCE.zip FIREFOX.zip
                         derive Firefox's inline-Preferences package
@@ -928,9 +931,23 @@ the staged index, so it only protects commits made after the config above is
 set. `test/fixtures-privacy.test.mjs` re-checks the committed fixtures under
 `npm test` and runs in CI, so it backstops the hook rather than replacing it.
 
-Every push and pull request to `main` runs `npm test` and `npm run lint`
-(`.github/workflows/test.yml`); version tags additionally build, verify, and
-submit the store packages (`.github/workflows/release.yml`).
+Every push and pull request to `main` runs `npm test`, `npm run lint`, and
+`npm run verify:extension` (`.github/workflows/test.yml`); version tags
+additionally build, verify, and submit the store packages
+(`.github/workflows/release.yml`).
+
+`npm test` evals the sources by hand, so it cannot see what the manifest
+decides: script order, execution worlds, or the fact that Chrome ignores
+`background.scripts` and resolves the service worker through `background.js`'s
+own `importScripts`. `npm run verify:extension` loads the real unpacked
+extension in hidden Chrome and drives a local Peakbagger stand-in, covering
+those blind spots — including `src/settings.js` and `src/bridge.js`, which the
+terrain showcase stubs out. Two regressions have already hidden there.
+
+It needs Chrome for Testing (`npx playwright install chromium`). Chrome stable
+137+ refuses `--load-extension`, and Playwright's default headless mode is
+`chrome-headless-shell`, which cannot load extensions at all; the script uses
+`channel: 'chromium'` with new headless, which can.
 
 No build step is required for development. `manifest.json` is the canonical
 Chrome/unpacked source, so Chrome's Options entry opens the settings page in a
