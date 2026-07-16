@@ -24,6 +24,9 @@
   tilt"* — so the modifier needed to zoom (kept so the page doesn't
   scroll-jack) is discoverable. MapLibre's momentary full-surface overlay is
   suppressed in favor of the persistent hint. Consistent in Chrome and Firefox.
+- **Steadier 3D shading.** The 3D hillshade is now anchored to the map instead of
+  the camera, so a small tilt or rotate no longer swings the light across the
+  terrain and flips the shading — the viewpoint moves, but the lit slopes stay put.
 - **Switch the 3D drape from inside the view.** The 3D terrain view now has an
   on-map layer picker mirroring the 2D basemap menu — CalTopo, MyTopo, CalTopo
   USFS, ArcGIS World Topo / Imagery / Gray Canvas, OpenTopoMap, and OpenStreetMap

@@ -14,8 +14,9 @@ draped topo/aerial layer (what the user selected in Peakbagger's 2D map) is
 missing. It works for *some* layers, which is what makes it look flaky rather
 than broken.
 
-The badge in the corner reads **"Terrain only"** in the failing case
-(`src/terrain-frame.js:292`) instead of `"<layer name> · 3D terrain"`.
+In the failing case the drape picker falls back to **"Terrain only"** and a
+short notice explains why (`markBasemapFailed` in `src/terrain-frame.js`),
+instead of keeping the selected layer name.
 
 ## What the pieces are
 
@@ -27,7 +28,8 @@ worker run with a real extension origin. The scene stacks four things
 1. `terrain-background` — a flat background color.
 2. `terrain-relief` — color-relief computed from the DEM.
 3. `basemap` — the raster **drape**: the topo/aerial tiles, at 0.78 opacity.
-4. `terrain-hillshade` — hillshade computed from the DEM.
+4. `terrain-hillshade` — hillshade computed from the DEM, lit from the map's
+   north (not the camera) so tilting/rotating never swings the shading.
 
 The "bare base map" the user sees is items 1, 2, and 4 — the terrain surface
 itself. The missing piece is item 3, the `basemap` drape.
@@ -302,7 +304,7 @@ real browser against a known non-CORS Peakbagger layer.
 | Terrain scene / layer stack | `src/terrain-frame.js:245-286` |
 | `basemap` raster source built from raw https tiles | `src/terrain-frame.js:253-267` |
 | Basemap keep/drop decision (Tier 1: error/data/idle handlers) | `src/terrain-frame.js:404-425` |
-| `removeFailedBasemap` / "Terrain only" badge | `src/terrain-frame.js:295-303`, `:292` |
+| `markBasemapFailed` / "Terrain only" fallback + notice | `src/terrain-frame.js` |
 | DEM via custom protocol (the working path) | `src/terrain-frame.js:378-381`, `src/terrain-cache.js:189-206` |
 | Tile URL extraction from Leaflet | `src/gpx-analyzer.js:808-844`, `:776-806` |
 | Consent gesture to gate a permission request | `src/gpx-analyzer.js:719-722` |

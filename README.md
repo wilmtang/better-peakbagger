@@ -485,8 +485,8 @@ The style is assembled locally in this order:
 | 1 | background | Fills areas outside available terrain. |
 | 2 | color relief | Converts DEM elevation into restrained hypsometric color. |
 | 3 | selected raster, when compatible | Drapes Peakbagger's selected 2D layer at 78% opacity. |
-| 4 | hillshade | Restores slope and aspect cues above the raster texture. |
-| 5 | route casing and route | Keeps the GPX line legible over light or dark maps. |
+| 4 | hillshade | Restores slope and aspect cues above the raster texture; its light is anchored to the map, not the camera. |
+| 5 | route casing and route | Keeps the GPX line legible over light or dark maps; group Full Screen maps keep each track's own color. |
 | 6 | chart-hover point | Shows the chart's current coordinate on the 3D route. |
 
 Terrain exaggeration is exactly `1`: one rendered vertical metre equals one
@@ -506,6 +506,17 @@ elsewhere) plus scroll. Because that requirement is not otherwise obvious, a
 small always-visible hint spells it out with the correct key for the viewer's
 OS, and MapLibre's momentary full-surface overlay is suppressed in favor of it.
 This works the same in Chrome and Firefox.
+
+The on-map controls track the native 2D map so nothing jumps corners when you
+toggle: the layer picker stays top-right, and the **2D**/**3D** button floats
+bottom-right just above the zoom. It anchors itself by measuring the live zoom
+stack — the native Leaflet control in 2D, and the terrain frame's own control in
+3D (which reports its height across the origin boundary) — so it keeps a
+consistent gap above either. The 3D zoom is a two-button control matching the
+native one; returning to 2D reframes the route, which covers a compass's reset
+role. Because the hillshade is anchored to the map rather than the viewport,
+tilting or rotating the camera changes only the viewpoint — never which slopes
+are lit.
 
 ### Activation and browser boundaries
 
