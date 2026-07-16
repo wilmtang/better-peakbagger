@@ -351,9 +351,10 @@ This split is the single most important design constraint in the extension. Here
 | `gpx-analyzer.js` | **MAIN** | Needs page-realm access: the map iframe's Leaflet globals (see below), the bundled `Chart` global, and page clipboard/`localStorage` semantics identical to a userscript. |
 | `chart.umd.min.js` | **MAIN** | Loaded immediately before the analyzer so the `Chart` UMD global lands in the same realm the analyzer reads. |
 | `provider-page.js` | **MAIN**, injected on demand | Needs the activity page's signed-in state and authenticated same-origin export; exposes only the narrow ownership/capture adapter to the background. |
-| `big-map.js` | **MAIN** | Reaches into the Full Screen page's same-origin `MasterMap.aspx` child iframe (where the Leaflet map and tracks live), applies the native GPS-polyline weight, adds a matching casing underlay, and recolors the single track on `t=A` maps. |
-| `big-map-bridge.js` | isolated | Sends the MAIN-world BigMap enhancer only the validated route style (color, width, casing); it has no settings-write path. |
-| `terrain-map.js` | isolated | Creates the extension-owned frame and relays only validated terrain messages between it and the analyzer. |
+| `big-map.js` | **MAIN** | Reaches into the Full Screen page's same-origin `MasterMap.aspx` child iframe (where the Leaflet map and tracks live), applies the native GPS-polyline weight, adds a matching casing underlay, and recolors the single track on `t=A` maps. Also hosts the Full Screen 3D coordinator: it extracts route geometry from the native tracks and drives the shared terrain frame. |
+| `big-map-bridge.js` | isolated | Sends the MAIN-world BigMap enhancer only the validated route style (color, width, casing) plus the 3D feature gate, theme, and cache budget; it has no settings-write path. |
+| `terrain-basemap.js` | **MAIN** | Pure helpers shared by the ascent analyzer and the Full Screen coordinator that turn Peakbagger's Leaflet basemap layers into MapLibre drape specs, so the 2D layer menu and the 3D picker cannot diverge. |
+| `terrain-map.js` | isolated | Creates the extension-owned frame and relays only validated terrain messages between it and the ascent analyzer or the Full Screen coordinator. |
 | `terrain-frame.js`, MapLibre | extension document | Owns the WebGL terrain surface and packaged CSP worker. It has no access to Peakbagger globals and does not request tiles until the bridge sends a user-requested coordinate route plus an optional validated raster descriptor. |
 | `theme.js`, `bridge.js`, `ascent-filter.js`, `settings.js` | isolated | They only touch the DOM and `chrome.storage`; no page globals needed. |
 | `ascent-draft.js` | isolated | Uses extension messaging to verify a prepared draft, then fills the Peakbagger DOM and starts Preview. |
@@ -484,8 +485,8 @@ The style is assembled locally in this order:
 | 1 | background | Fills areas outside available terrain. |
 | 2 | color relief | Converts DEM elevation into restrained hypsometric color. |
 | 3 | selected raster, when compatible | Drapes Peakbagger's selected 2D layer at 78% opacity. |
-| 4 | hillshade | Restores slope and aspect cues above the raster texture. |
-| 5 | route casing and route | Keeps the GPX line legible over light or dark maps. |
+| 4 | hillshade | Restores slope and aspect cues above the raster texture; its light is anchored to the map, not the camera. |
+| 5 | route casing and route | Keeps the GPX line legible over light or dark maps; group Full Screen maps keep each track's own color. |
 | 6 | chart-hover point | Shows the chart's current coordinate on the 3D route. |
 
 Terrain exaggeration is exactly `1`: one rendered vertical metre equals one
@@ -506,13 +507,24 @@ small always-visible hint spells it out with the correct key for the viewer's
 OS, and MapLibre's momentary full-surface overlay is suppressed in favor of it.
 This works the same in Chrome and Firefox.
 
+The on-map controls track the native 2D map so nothing jumps corners when you
+toggle: the layer picker stays top-right, and the **2D**/**3D** button floats
+bottom-right just above the zoom. It anchors itself by measuring the live zoom
+stack — the native Leaflet control in 2D, and the terrain frame's own control in
+3D (which reports its height across the origin boundary) — so it keeps a
+consistent gap above either. The 3D zoom is a two-button control matching the
+native one; returning to 2D reframes the route, which covers a compass's reset
+role. Because the hillshade is anchored to the map rather than the viewport,
+tilting or rotating the camera changes only the viewpoint — never which slopes
+are lit.
+
 ### Activation and browser boundaries
 
 The feature must first be enabled with **Enable experimental 3D map** in
 Settings. That setting discloses the external tile requests and only exposes
-the per-page 3D control; it does not request tiles. Choosing **3D terrain** on
-an ascent map starts the renderer. The feature then crosses three JavaScript
-worlds, but each world has a narrow job:
+the per-page 3D control; it does not request tiles. Tapping the floating **3D**
+toggle on an ascent or Full Screen map starts the renderer. The feature then
+crosses three JavaScript worlds, but each world has a narrow job:
 
 ```text
 Peakbagger MAIN world
@@ -654,8 +666,7 @@ Failure is layered rather than all-or-nothing:
 
 Chart hover follows the route in either map. This is still a terrain-shape view,
 not current conditions: a DEM and raster basemap cannot establish current snow
-bridges, crevasses, cornices, rockfall, vegetation, or route safety. The map
-therefore always labels itself **Not live conditions**.
+bridges, crevasses, cornices, rockfall, vegetation, or route safety.
 
 ---
 
@@ -741,6 +752,19 @@ window — and re-binds when that iframe reloads. Missing globals, a cross-origi
 or restructured frame, changed layer structure, or ambiguous group layers leave
 the Full Screen map entirely native.
 
+When the experimental 3D map is enabled, Full Screen maps also get the same
+floating **3D**/**2D** toggle as ascent pages (bottom-right, above the zoom). The Full
+Screen coordinator reuses the map context it already resolved: it reads the
+native tracks' `getLatLngs()`, reduces them to the shared 3,000-point budget, and
+draws them on the extension-owned MapLibre terrain in a full-bleed overlay,
+hiding the native 2D map until you toggle back. It drapes the layer selected in
+the native `#selmap` control via the shared `terrain-basemap.js` specs. Group
+maps (`t=G`) carry each track's native color (parallel to the segments) so the
+frame paints them data-driven and climbers stay distinguishable, matching the 2D
+map; single-ascent maps use the one preferred color. Markers and peaks are not
+carried into 3D. The renderer, DEM cache, privacy
+boundary, and off-by-default gate are exactly those of the ascent 3D view below.
+
 ---
 
 ## Deep dive: the Ascent Beta Filter
@@ -819,8 +843,9 @@ src/
   site-dark-css.js       dark rules as a string (window.BPBDarkCSS), theme-scoped
   bridge.js              relays settings to the MAIN-world analyzer (postMessage)
   gpx-analyzer.js        elevation/time chart + map-hover (MAIN world)
-  big-map-bridge.js      read-only Full Screen route-width bridge
-  big-map.js             native Full Screen GPS track width (MAIN world)
+  big-map-bridge.js      read-only Full Screen route-style + 3D-gate bridge
+  big-map.js             native Full Screen GPS track width + 3D coordinator (MAIN world)
+  terrain-basemap.js     shared Leaflet-layer-to-MapLibre drape specs (MAIN world)
   terrain-map.js         isolated bridge for the extension-owned terrain frame
   terrain-cache.js       bounded best-effort Mapterhorn DEM cache
   terrain-frame.js       opt-in MapLibre terrain renderer (extension document)
