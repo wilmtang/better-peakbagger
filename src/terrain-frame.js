@@ -16,6 +16,16 @@
     const TERRAIN_EXAGGERATION = 1;
     const MAP_LOAD_TIMEOUT_MS = 15000;
     const PEAKBAGGER_ORIGIN = /^https?:\/\/(?:www\.)?peakbagger\.com(?::\d+)?$/i;
+    // Extension-provided vector basemap (not mirrored from Peakbagger's 2D
+    // Leaflet menu): OpenFreeMap's keyless, CORS-clean OpenStreetMap tiles,
+    // grafted into the live style so labels billboard upright over the
+    // terrain instead of rotating with a raster drape. Selecting it contacts
+    // tiles.openfreemap.org — see docs/3d-vector-basemap-investigation.md.
+    const VECTOR_BASEMAP = {
+        name: 'OSM Vector (beta)',
+        styleUrl: 'https://tiles.openfreemap.org/styles/liberty'
+    };
+    const VECTOR_PREFIX = 'bpb-vector:';
     const PALETTES = {
         light: {
             background: '#d9ded2',
@@ -52,6 +62,11 @@
     let terrainCache = null;
     let terrainProtocolRegistered = false;
     let activeRouteStyle = { color: '#d9483b', width: 5, casingColor: '#ffffff', casingWidth: 9 };
+    let vectorActive = false;
+    let vectorStylePromise = null;
+    let vectorSwapToken = 0;
+    let vectorLayerIds = [];
+    let vectorSourceIds = [];
     // True when the route carries per-track colors (group maps), so the route
     // line is painted data-driven from each feature instead of one flat color.
     let routeHasFeatureColors = false;
@@ -106,6 +121,10 @@
         availableBasemaps = [];
         activeBasemapIndex = -1;
         routeHasFeatureColors = false;
+        vectorActive = false;
+        vectorSwapToken++;
+        vectorLayerIds = [];
+        vectorSourceIds = [];
         failedBasemaps.clear();
         basemapErrored = false;
         basemapContentLoaded = false;
@@ -335,11 +354,16 @@
             option.disabled = failedBasemaps.has(index);
             return option;
         });
+        const vectorOption = document.createElement('option');
+        vectorOption.value = 'vector';
+        vectorOption.textContent = VECTOR_BASEMAP.name;
         const terrainOption = document.createElement('option');
         terrainOption.value = 'terrain';
         terrainOption.textContent = 'Terrain only';
-        pickerElement.replaceChildren(...options, terrainOption);
-        pickerElement.value = activeBasemapIndex >= 0 ? String(activeBasemapIndex) : 'terrain';
+        pickerElement.replaceChildren(...options, vectorOption, terrainOption);
+        pickerElement.value = vectorActive
+            ? 'vector'
+            : activeBasemapIndex >= 0 ? String(activeBasemapIndex) : 'terrain';
     };
 
     const showNotice = text => {
@@ -372,14 +396,100 @@
         } catch (error) { /* A failed raster source may already be absent. */ }
     };
 
-    // Switch the draped layer live. index < 0 selects terrain-only. Each swap
-    // re-arms the one-shot CORS check so the new layer is judged on its own.
-    const swapBasemap = index => {
+    // Fetch the provider's style once per frame lifetime; a failed fetch is
+    // forgotten so the entry can be retried instead of staying broken.
+    const fetchVectorStyle = () => {
+        if (!vectorStylePromise) {
+            vectorStylePromise = fetch(VECTOR_BASEMAP.styleUrl, { credentials: 'omit', referrerPolicy: 'no-referrer' })
+                .then(response => {
+                    if (!response.ok) throw new Error(`Vector style request failed (${response.status})`);
+                    return response.json();
+                })
+                .then(style => {
+                    if (!style || style.version !== 8 || !style.sources
+                        || typeof style.sources !== 'object' || !Array.isArray(style.layers)) {
+                        throw new Error('Unexpected vector style shape');
+                    }
+                    return style;
+                });
+            vectorStylePromise.catch(() => { vectorStylePromise = null; });
+        }
+        return vectorStylePromise;
+    };
+
+    // Graft the provider style into the live inline style instead of
+    // map.setStyle, so the Mapterhorn terrain mesh, hillshade, and route
+    // layers survive untouched. Everything is added under prefixed ids so it
+    // can be removed wholesale and can never collide with extension layers.
+    const addVectorBasemap = style => {
+        if (typeof style.glyphs === 'string' && typeof map.setGlyphs === 'function') map.setGlyphs(style.glyphs);
+        if (typeof style.sprite === 'string' && typeof map.setSprite === 'function') map.setSprite(style.sprite);
+        for (const [id, source] of Object.entries(style.sources)) {
+            const prefixed = `${VECTOR_PREFIX}${id}`;
+            map.addSource(prefixed, source);
+            vectorSourceIds.push(prefixed);
+        }
+        const hasLayer = id => typeof map.getLayer === 'function' && map.getLayer(id);
+        for (const layer of style.layers) {
+            const copy = { ...layer, id: `${VECTOR_PREFIX}${layer.id}` };
+            if (typeof copy.source === 'string') copy.source = `${VECTOR_PREFIX}${copy.source}`;
+            // Ground geometry slides under the hillshade so relief keeps
+            // shading the map exactly as it does raster drapes; labels go
+            // above the route (below the hover highlight) so text stays
+            // crisp, upright, and readable over both terrain and track.
+            const before = layer.type === 'symbol'
+                ? (hasLayer('bpb-highlight') ? 'bpb-highlight' : undefined)
+                : (hasLayer('terrain-hillshade') ? 'terrain-hillshade' : undefined);
+            map.addLayer(copy, before);
+            vectorLayerIds.push(copy.id);
+        }
+    };
+
+    const removeVectorBasemap = () => {
+        try {
+            for (const id of vectorLayerIds) {
+                if (typeof map.getLayer === 'function' && map.getLayer(id)) map.removeLayer(id);
+            }
+            for (const id of vectorSourceIds) {
+                if (map.getSource(id) && typeof map.removeSource === 'function') map.removeSource(id);
+            }
+        } catch (error) { /* A partially-added style may already be absent. */ }
+        vectorLayerIds = [];
+        vectorSourceIds = [];
+        vectorActive = false;
+    };
+
+    // Switch the draped layer live. index < 0 selects terrain-only, 'vector'
+    // selects the extension-provided vector basemap. Each swap re-arms the
+    // one-shot CORS check so the new layer is judged on its own.
+    const swapBasemap = selection => {
         if (!map || !loaded) return;
         removeBasemapLayer();
+        removeVectorBasemap();
+        vectorSwapToken++;
         basemapErrored = false;
         basemapContentLoaded = false;
         basemapChecked = false;
+        activeBasemapIndex = -1;
+        activeBasemap = null;
+        if (selection === 'vector') {
+            vectorActive = true;
+            renderPicker();
+            const token = vectorSwapToken;
+            fetchVectorStyle()
+                .then(style => {
+                    if (!map || !loaded || token !== vectorSwapToken) return;
+                    addVectorBasemap(style);
+                })
+                .catch(() => {
+                    if (!map || !loaded || token !== vectorSwapToken) return;
+                    vectorActive = false;
+                    renderPicker();
+                    showNotice(`${VECTOR_BASEMAP.name} is unavailable right now. Showing terrain only.`);
+                });
+            return;
+        }
+        const index = selection;
         activeBasemapIndex = index >= 0 && index < availableBasemaps.length && !failedBasemaps.has(index) ? index : -1;
         activeBasemap = activeBasemapIndex >= 0 ? availableBasemaps[activeBasemapIndex] : null;
         if (activeBasemap) addBasemapLayer(activeBasemap);
@@ -489,16 +599,18 @@
 
         const controls = document.createElement('div');
         controls.className = 'bpb-terrain-controls';
-        if (availableBasemaps.length) {
-            pickerElement = document.createElement('select');
-            pickerElement.className = 'bpb-terrain-picker';
-            pickerElement.setAttribute('aria-label', 'Draped map layer');
-            pickerElement.addEventListener('change', () => {
-                showNotice('');
-                swapBasemap(pickerElement.value === 'terrain' ? -1 : Number(pickerElement.value));
-            });
-            controls.appendChild(pickerElement);
-        }
+        // Always offered: the extension-provided vector entry and terrain-only
+        // exist even when the page offers no drape-able raster layer.
+        pickerElement = document.createElement('select');
+        pickerElement.className = 'bpb-terrain-picker';
+        pickerElement.setAttribute('aria-label', 'Draped map layer');
+        pickerElement.addEventListener('change', () => {
+            showNotice('');
+            swapBasemap(pickerElement.value === 'terrain'
+                ? -1
+                : pickerElement.value === 'vector' ? 'vector' : Number(pickerElement.value));
+        });
+        controls.appendChild(pickerElement);
         const notice = document.createElement('p');
         notice.className = 'bpb-terrain-notice';
         notice.setAttribute('role', 'status');
