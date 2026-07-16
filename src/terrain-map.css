@@ -16,14 +16,16 @@
     pointer-events: none;
 }
 
-/* Floating 2D/3D toggle, top-left of the map viewport. It clears the native
-   basemap selector (top-right) and zoom (bottom-right) in both states, and
-   sits above the terrain frame (z-index 2). Lives in the host page document,
-   so it is themed via a data-theme attribute rather than the frame's. */
+/* Floating 2D/3D toggle, bottom-right of the map viewport, stacked just above
+   the zoom controls (native 2D zoom, or the 3D frame's nav group) the way map
+   apps like Gaia place it. The bottom offset clears the taller 3D nav stack;
+   the shorter 2D zoom sits a little further below. It stays above the terrain
+   frame (z-index 2) and, living in the host page document, is themed via a
+   data-theme attribute rather than the frame's. */
 .bpb-map-3d-toggle {
     position: absolute;
-    top: 10px;
-    left: 10px;
+    right: 10px;
+    bottom: 132px;
     z-index: 3;
     display: inline-flex;
     align-items: center;
@@ -66,6 +68,12 @@
     height: 100%;
     border: 0;
     border-radius: 0;
+}
+
+/* Full Screen has no 18px resize rail under the frame, so the zoom stack sits
+   lower — nudge the toggle down to keep it just above it. */
+.bpb-terrain-mount-fullscreen .bpb-map-3d-toggle {
+    bottom: 114px;
 }
 
 .bpb-map-3d-toggle[data-theme="dark"] {

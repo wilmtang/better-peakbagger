@@ -355,10 +355,10 @@
         };
         unitSelect.append(unitOption('imperial', 'Imperial'), unitOption('metric', 'Metric'));
 
-        // A floating control on the map itself (top-left, clear of the native
-        // basemap selector and zoom), styled by src/terrain-map.css. Clicking
-        // flips the map between 2D and 3D in place. Placed into the map viewport
-        // below so it overlays both the native map and the terrain frame.
+        // A floating control on the map itself (bottom-right, stacked just above
+        // the zoom controls), styled by src/terrain-map.css. Clicking flips the
+        // map between 2D and 3D in place. Placed into the map viewport below so
+        // it overlays both the native map and the terrain frame.
         const terrainButton = document.createElement('button');
         terrainButton.id = 'bpb-terrain-toggle';
         terrainButton.className = 'bpb-map-3d-toggle';

@@ -743,7 +743,7 @@ or restructured frame, changed layer structure, or ambiguous group layers leave
 the Full Screen map entirely native.
 
 When the experimental 3D map is enabled, Full Screen maps also get the same
-floating **3D**/**2D** toggle as ascent pages (top-left, over the map). The Full
+floating **3D**/**2D** toggle as ascent pages (bottom-right, above the zoom). The Full
 Screen coordinator reuses the map context it already resolved: it reads the
 native tracks' `getLatLngs()`, reduces them to the shared 3,000-point budget, and
 draws them on the extension-owned MapLibre terrain in a full-bleed overlay,
