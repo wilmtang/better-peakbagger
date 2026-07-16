@@ -167,12 +167,205 @@
         if (context.map !== activeMap) {
             activeMap = context.map;
             activeMapWin = context.win;
-            activeMap.on('layeradd', event => queueMicrotask(() => applyStyle(event && event.layer)));
-            activeMap.on('layerremove', event => removeCasing(event && event.layer));
+            activeMap.on('layeradd', event => queueMicrotask(() => { applyStyle(event && event.layer); updateTerrainToggle(); }));
+            activeMap.on('layerremove', event => { removeCasing(event && event.layer); updateTerrainToggle(); });
         }
         applyAllStyles();
+        updateTerrainToggle();
         return true;
     };
+
+    // === 3D terrain (Full Screen) ===
+    // A floating 3D/2D toggle over the native map, mirroring the ascent GPX
+    // analyzer. The route geometry comes from the native Leaflet tracks; the
+    // renderer, drape specs, and DEM cache are shared with the ascent page via
+    // the extension-owned terrain frame (src/terrain-map.js + terrain/). Group
+    // maps draw every native track in one route color (the frame renders a
+    // single route style); markers/peaks are not carried into 3D.
+    const TERRAIN_LOAD_TIMEOUT_MS = 17000;
+    const TERRAIN_CACHE_DEFAULT_MB = 512;
+    let terrainEnabled = false;
+    let terrainThemePref = 'system';
+    let terrainCacheLimitMb = TERRAIN_CACHE_DEFAULT_MB;
+    let terrainState = 'idle';
+    let terrainMount = null;
+    let terrainToggle = null;
+    let terrainLoadTimer = null;
+
+    const prefersDark = () => !!(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    const effectiveTheme = () => (terrainThemePref === 'light' || terrainThemePref === 'dark')
+        ? terrainThemePref
+        : (prefersDark() ? 'dark' : 'light');
+
+    const postTerrain = (type, detail = {}) => window.postMessage({
+        __bpbTerrain: true, dir: 'toCS', type, ...detail
+    }, location.origin);
+
+    const clearTerrainLoadTimer = () => {
+        if (terrainLoadTimer !== null) {
+            clearTimeout(terrainLoadTimer);
+            terrainLoadTimer = null;
+        }
+    };
+
+    // The element that shows the native 2D map: the same-origin MasterMap child
+    // iframe when the map lives there, else the top-window map container.
+    const nativeMapElement = () =>
+        (activeMapWin && activeMapWin !== window && findMapIframe())
+        || document.getElementById('map')
+        || findMapIframe();
+
+    const restoreNativeMap = () => {
+        const element = nativeMapElement();
+        if (!element) return;
+        element.style.visibility = 'visible';
+        element.removeAttribute('aria-hidden');
+    };
+
+    // Native GPS tracks (single-ascent: one; group: up to ten) flattened into
+    // [[lat, lon], …] segments, reduced to the shared point/segment budget.
+    const collectRouteSegments = () => {
+        if (!activeMap || !activeMapWin || typeof activeMap.eachLayer !== 'function') return [];
+        const L = activeMapWin.L;
+        if (!L) return [];
+        const segments = [];
+        const pushLatLngs = latLngs => {
+            if (!Array.isArray(latLngs) || !latLngs.length) return;
+            if (latLngs.every(point => point && Number.isFinite(point.lat) && Number.isFinite(point.lng))) {
+                if (latLngs.length >= 2) segments.push(latLngs.map(point => [point.lat, point.lng]));
+                return;
+            }
+            latLngs.forEach(pushLatLngs);
+        };
+        try {
+            activeMap.eachLayer(layer => {
+                if (casingLayers.has(layer) || !isNativeTrack(layer, L)) return;
+                try { pushLatLngs(layer.getLatLngs()); } catch (error) { /* layer may be mid-removal */ }
+            });
+        } catch (error) { /* a live Leaflet layer collection can change during iteration */ }
+        return globalThis.BPBGpxMetrics ? globalThis.BPBGpxMetrics.limitMapRouteSegments(segments) : segments;
+    };
+
+    const terrainBasemaps = () => {
+        const B = globalThis.BPBTerrainBasemap;
+        if (!B) return { basemap: null, basemaps: [] };
+        let select = null;
+        try { select = activeMapWin && activeMapWin.document && activeMapWin.document.getElementById('selmap'); }
+        catch (error) { select = null; }
+        return { basemap: B.active(activeMapWin, activeMap, select), basemaps: B.enumerate(select) };
+    };
+
+    const ensureTerrainToggle = () => {
+        if (terrainToggle) return;
+        // The mount is a fixed overlay that hosts the toggle (always clickable)
+        // and, once activated, the full-bleed terrain frame; clicks otherwise
+        // pass through to the native 2D map. The bridge mounts the frame here.
+        terrainMount = document.createElement('div');
+        terrainMount.id = 'bpb-map-viewport';
+        terrainMount.className = 'bpb-terrain-mount-fullscreen';
+        terrainToggle = document.createElement('button');
+        terrainToggle.id = 'bpb-terrain-toggle';
+        terrainToggle.className = 'bpb-map-3d-toggle';
+        terrainToggle.type = 'button';
+        terrainToggle.setAttribute('aria-pressed', 'false');
+        terrainToggle.addEventListener('click', () => {
+            if (terrainState === 'active') { stopTerrain(); return; }
+            if (terrainState === 'idle') startTerrain();
+        });
+        terrainMount.append(terrainToggle);
+        document.body.append(terrainMount);
+    };
+
+    const updateTerrainToggle = () => {
+        if (!terrainEnabled) {
+            if (terrainState !== 'idle') stopTerrain();
+            if (terrainMount) terrainMount.hidden = true;
+            return;
+        }
+        ensureTerrainToggle();
+        terrainMount.hidden = false;
+        terrainToggle.dataset.theme = effectiveTheme();
+        terrainToggle.classList.remove('bpb-map-3d-toggle-loading');
+        terrainToggle.removeAttribute('aria-busy');
+        if (terrainState === 'loading') {
+            terrainToggle.disabled = true;
+            terrainToggle.textContent = '3D';
+            terrainToggle.classList.add('bpb-map-3d-toggle-loading');
+            terrainToggle.setAttribute('aria-busy', 'true');
+            terrainToggle.title = 'Loading 3D terrain…';
+            terrainToggle.setAttribute('aria-label', 'Loading 3D terrain');
+            terrainToggle.setAttribute('aria-pressed', 'false');
+        } else if (terrainState === 'active') {
+            terrainToggle.disabled = false;
+            terrainToggle.textContent = '2D';
+            terrainToggle.title = 'Return to the 2D map';
+            terrainToggle.setAttribute('aria-label', 'Return to the 2D map');
+            terrainToggle.setAttribute('aria-pressed', 'true');
+        } else {
+            const hasRoute = collectRouteSegments().length > 0;
+            terrainToggle.disabled = !hasRoute;
+            terrainToggle.textContent = '3D';
+            terrainToggle.title = hasRoute ? 'View this route on 3D terrain' : 'Available once the map has a GPS track';
+            terrainToggle.setAttribute('aria-label', hasRoute ? 'Show 3D terrain' : '3D terrain available once the map has a GPS track');
+            terrainToggle.setAttribute('aria-pressed', 'false');
+        }
+    };
+
+    const failTerrain = () => {
+        clearTerrainLoadTimer();
+        terrainState = 'idle';
+        restoreNativeMap();
+        postTerrain('destroy');
+        updateTerrainToggle();
+    };
+
+    const startTerrain = () => {
+        if (!terrainEnabled || terrainState !== 'idle') return;
+        const routeSegments = collectRouteSegments();
+        if (!routeSegments.length) return;
+        terrainState = 'loading';
+        updateTerrainToggle();
+        const { basemap, basemaps } = terrainBasemaps();
+        postTerrain('init', {
+            routeSegments,
+            routeStyle: { ...routeStyle },
+            theme: effectiveTheme(),
+            basemap,
+            basemaps,
+            cacheLimitMb: Number.isInteger(terrainCacheLimitMb) && terrainCacheLimitMb >= 0 && terrainCacheLimitMb <= 2048
+                ? terrainCacheLimitMb
+                : TERRAIN_CACHE_DEFAULT_MB
+        });
+        terrainLoadTimer = setTimeout(() => { if (terrainState === 'loading') failTerrain(); }, TERRAIN_LOAD_TIMEOUT_MS);
+    };
+
+    const stopTerrain = () => {
+        clearTerrainLoadTimer();
+        terrainState = 'idle';
+        restoreNativeMap();
+        postTerrain('destroy');
+        updateTerrainToggle();
+    };
+
+    // Replies from the extension-owned terrain frame (via the isolated-world
+    // bridge). Same protocol as the ascent page.
+    window.addEventListener('message', event => {
+        if (event.source !== window || event.origin !== location.origin) return;
+        const data = event.data;
+        if (!data || data.__bpbTerrain !== true || data.dir !== 'toPage') return;
+        if (data.type === 'loaded' && terrainState === 'loading') {
+            clearTerrainLoadTimer();
+            terrainState = 'active';
+            const element = nativeMapElement();
+            if (element) {
+                element.style.visibility = 'hidden';
+                element.setAttribute('aria-hidden', 'true');
+            }
+            updateTerrainToggle();
+        } else if (data.type === 'error' && terrainState === 'loading') {
+            failTerrain();
+        }
+    });
 
     window.addEventListener('message', event => {
         if (event.source !== window || event.origin !== location.origin) return;
@@ -185,7 +378,13 @@
             casingColor: validColor(data.casingColor, DEFAULT_STYLE.casingColor),
             casingWidth: validCasingWidth(data.casingWidth, width)
         };
+        terrainEnabled = data.enable3dMap === true;
+        terrainThemePref = data.theme;
+        if (Number.isInteger(data.terrainCacheLimitMb)) terrainCacheLimitMb = data.terrainCacheLimitMb;
         applyAllStyles();
+        // Keep an open 3D view in sync with a live style/theme change.
+        if (terrainState === 'active') postTerrain('update', { routeStyle: { ...routeStyle }, theme: effectiveTheme() });
+        updateTerrainToggle();
     });
 
     // The map iframe loads and initialises Leaflet after this script runs, so

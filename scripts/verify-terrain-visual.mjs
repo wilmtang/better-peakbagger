@@ -39,9 +39,11 @@ const safeFile = async pathname => {
 const server = createServer(async (request, response) => {
     try {
         const url = new URL(request.url, 'http://127.0.0.1');
-        let pathname = url.pathname === '/climber/ascent.aspx'
-            ? '/scripts/showcase/terrain.html'
-            : decodeURIComponent(url.pathname);
+        const showcaseRoutes = {
+            '/climber/ascent.aspx': '/scripts/showcase/terrain.html',
+            '/map/bigmap.aspx': '/scripts/showcase/big-map.html'
+        };
+        let pathname = showcaseRoutes[url.pathname] || decodeURIComponent(url.pathname);
         if (pathname.startsWith('/scripts/showcase/terrain-tiles/')) {
             pathname = '/scripts/showcase/terrain-basemap-tile.png';
         }
@@ -264,6 +266,43 @@ try {
     await delay(800);
     if (runtimeErrors.length) throw new Error(`Runtime exception: ${runtimeErrors.join('\n')}`);
     await capture(cdp, path.join(outputDir, 'terrain-dark-450.png'));
+
+    // Full Screen BigMap: the floating toggle sits over the native map in 2D…
+    const bigMapUrl = `http://www.peakbagger.com:${serverPort}/map/bigmap.aspx`;
+    await navigate(cdp, `${bigMapUrl}?t=G`, 1000, 760);
+    const bigMap2d = await waitForPageState(cdp, `(() => {
+        const toggle = document.getElementById('bpb-terrain-toggle');
+        return {
+            ready: Boolean(toggle) && toggle.disabled === false && toggle.textContent === '3D',
+            mount: toggle && toggle.parentElement && toggle.parentElement.id
+        };
+    })()`);
+    if (bigMap2d.mount !== 'bpb-map-viewport') throw new Error(`BigMap toggle is not in the shared mount: ${bigMap2d.mount}`);
+    await delay(300);
+    await capture(cdp, path.join(outputDir, 'bigmap-2d.png'));
+
+    // …and flips the full-bleed 3D terrain over it, hiding the native map, when clicked.
+    const bigMapBasemapBefore = basemapRequests.length;
+    await navigate(cdp, `${bigMapUrl}?t=G&mode3d=1`, 1000, 760);
+    const bigMap3d = await waitForPageState(cdp, `(() => {
+        const toggle = document.getElementById('bpb-terrain-toggle');
+        const frame = document.getElementById('bpb-terrain-frame');
+        const surface = frame && frame.contentDocument && frame.contentDocument.getElementById('bpb-terrain-map');
+        const nativeMap = document.getElementById('map');
+        return {
+            ready: toggle && toggle.textContent === '2D' && frame && frame.style.opacity === '1'
+                && surface && nativeMap && nativeMap.style.visibility === 'hidden',
+            mount: frame && frame.parentElement && frame.parentElement.id,
+            fullBleed: Boolean(frame && frame.parentElement && frame.parentElement.classList.contains('bpb-terrain-mount-fullscreen'))
+        };
+    })()`);
+    await delay(1200);
+    if (bigMap3d.mount !== 'bpb-map-viewport') throw new Error('BigMap terrain frame did not mount in the shared viewport');
+    if (!bigMap3d.fullBleed) throw new Error('BigMap terrain frame is not full-bleed');
+    if (!terrainRequests.some(url => url.endsWith('.webp'))) throw new Error('BigMap 3D did not request terrain tiles');
+    if (basemapRequests.length <= bigMapBasemapBefore) throw new Error('BigMap 3D did not drape the synthetic layer read from the native map');
+    if (runtimeErrors.length) throw new Error(`Runtime exception: ${runtimeErrors.join('\n')}`);
+    await capture(cdp, path.join(outputDir, 'bigmap-3d.png'));
 
     const optionsUrl = `http://127.0.0.1:${serverPort}/options/options.html?visual=1`;
     await navigate(cdp, optionsUrl, 1000, 700);

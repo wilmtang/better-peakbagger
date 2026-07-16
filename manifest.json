@@ -164,7 +164,24 @@
         "*://*.peakbagger.com/*BigMap.aspx*",
         "*://*.peakbagger.com/*bigmap.aspx*"
       ],
+      "css": [
+        "src/terrain-map.css"
+      ],
       "js": [
+        "src/settings.js",
+        "src/terrain-map.js"
+      ],
+      "run_at": "document_end",
+      "all_frames": false
+    },
+    {
+      "matches": [
+        "*://*.peakbagger.com/*BigMap.aspx*",
+        "*://*.peakbagger.com/*bigmap.aspx*"
+      ],
+      "js": [
+        "src/gpx-metrics.js",
+        "src/terrain-basemap.js",
         "src/big-map.js"
       ],
       "run_at": "document_end",

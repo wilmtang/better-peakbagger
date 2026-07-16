@@ -74,9 +74,11 @@
             fail('unavailable');
             return;
         }
+        // The MAIN-world coordinator (ascent GPX analyzer or Full Screen BigMap)
+        // owns the map viewport element and only sends 'init' once it has a real
+        // route to draw, so the bridge just needs the shared mount to exist.
         const viewport = document.getElementById('bpb-map-viewport');
-        const nativeMap = viewport && viewport.querySelector('iframe[src*="MasterMap.aspx" i]');
-        if (!viewport || !nativeMap || !globalThis.chrome?.runtime?.getURL) {
+        if (!viewport || !globalThis.chrome?.runtime?.getURL) {
             fail('unavailable');
             return;
         }

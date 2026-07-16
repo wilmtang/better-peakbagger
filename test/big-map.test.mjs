@@ -141,8 +141,9 @@ test('Full Screen recent-track maps preserve native colors, hover, and click beh
 
     const bridgeReply = messages.find(message => message.__bpbBigMap === true && message.dir === 'toPage');
     assert.deepEqual(Object.keys(bridgeReply).sort(),
-        ['__bpbBigMap', 'casingColor', 'casingWidth', 'dir', 'routeColor', 'routeWidth']);
-    // The bridge forwards validated style values, never the raw settings keys.
+        ['__bpbBigMap', 'casingColor', 'casingWidth', 'dir', 'enable3dMap', 'routeColor', 'routeWidth', 'terrainCacheLimitMb', 'theme']);
+    // The bridge forwards validated style values plus the 3D gate/theme/cache
+    // budget, never the raw settings keys or a write path.
     assert.equal(JSON.stringify(bridgeReply).includes('mapRoute'), false);
     dom.window.close();
 });
@@ -223,5 +224,66 @@ test('non-GPS BigMap modes are left entirely native', async () => {
     await new Promise(resolve => window.setTimeout(resolve, 20));
     assert.equal(line.options.weight, 2);
     assert.equal(line.styleCalls.length, 0);
+    dom.window.close();
+});
+
+test('Full Screen maps offer a 3D toggle that carries the native tracks into the shared terrain view', async () => {
+    const fixture = await loadBigMap({ type: 'A', width: 6, settings: { enable3dMap: true } });
+    const { dom, window, messages, leaflet } = fixture;
+    const points = [{ lat: 44.15, lng: -121.78 }, { lat: 44.16, lng: -121.76 }, { lat: 44.17, lng: -121.75 }];
+    const route = new leaflet.Polyline(points, { color: '#d9483b', weight: 3 });
+    window.map = new leaflet.MapStub([route]);
+    fixture.evaluate();
+
+    await waitFor(dom, () => route.options.weight === 6);
+    const toggle = window.document.getElementById('bpb-terrain-toggle');
+    assert.ok(toggle, 'a floating 3D toggle appears once the feature is enabled');
+    assert.equal(toggle.parentElement.id, 'bpb-map-viewport');
+    assert.ok(toggle.parentElement.classList.contains('bpb-terrain-mount-fullscreen'));
+    await waitFor(dom, () => toggle.disabled === false);
+    assert.equal(toggle.textContent, '3D');
+
+    toggle.click();
+    await waitFor(dom, () => messages.some(message => message.__bpbTerrain === true && message.type === 'init'));
+    const init = messages.find(message => message.__bpbTerrain === true && message.type === 'init');
+    assert.equal(init.dir, 'toCS');
+    // The native Leaflet track becomes the 3D route, lat/lon order preserved.
+    assert.deepEqual(init.routeSegments, [[[44.15, -121.78], [44.16, -121.76], [44.17, -121.75]]]);
+    assert.equal(toggle.textContent, '3D');
+    assert.equal(toggle.getAttribute('aria-busy'), 'true', 'the toggle shows a loading state while the frame loads');
+
+    // Simulate the extension frame reporting it is ready.
+    window.dispatchEvent(new window.MessageEvent('message', {
+        source: window,
+        origin: window.location.origin,
+        data: { __bpbTerrain: true, dir: 'toPage', type: 'loaded' }
+    }));
+    assert.equal(toggle.textContent, '2D');
+    assert.equal(toggle.getAttribute('aria-pressed'), 'true');
+    assert.equal(window.document.getElementById('map').style.visibility, 'hidden');
+
+    // Toggling back destroys the renderer and restores the native 2D map.
+    toggle.click();
+    assert.equal(messages.at(-1).type, 'destroy');
+    assert.equal(window.document.getElementById('map').style.visibility, 'visible');
+    assert.equal(toggle.textContent, '3D');
+    // Let the queued postMessage dispatches drain before closing the window.
+    await new Promise(resolve => window.setTimeout(resolve, 0));
+    dom.window.close();
+});
+
+test('Full Screen maps show no 3D toggle when the feature is disabled', async () => {
+    const fixture = await loadBigMap({ type: 'A', width: 6 });
+    const { dom, window, messages, leaflet } = fixture;
+    const route = new leaflet.Polyline([{ lat: 44.15, lng: -121.78 }, { lat: 44.16, lng: -121.76 }], { color: '#d9483b', weight: 3 });
+    window.map = new leaflet.MapStub([route]);
+    fixture.evaluate();
+
+    await waitFor(dom, () => route.options.weight === 6);
+    // The bridge forwarded enable3dMap:false, so no toggle and no terrain init.
+    assert.equal(window.document.getElementById('bpb-terrain-toggle'), null);
+    assert.equal(window.document.getElementById('bpb-map-viewport'), null);
+    assert.equal(messages.some(message => message.__bpbTerrain === true), false);
+    await new Promise(resolve => window.setTimeout(resolve, 0));
     dom.window.close();
 });

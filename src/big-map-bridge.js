@@ -16,7 +16,13 @@
         routeColor: settings.mapRouteColor,
         routeWidth: settings.mapRouteWidth,
         casingColor: settings.mapRouteCasingColor,
-        casingWidth: settings.mapRouteCasingWidth
+        casingWidth: settings.mapRouteCasingWidth,
+        // Read-only fields the MAIN-world 3D coordinator needs: the feature gate,
+        // the resolved theme preference, and the terrain tile cache budget. Still
+        // a narrow allowlist — no full settings object and no write path.
+        enable3dMap: settings.enable3dMap === true,
+        theme: settings.theme,
+        terrainCacheLimitMb: settings.terrainCacheLimitMb
     }, location.origin);
 
     window.addEventListener('message', async event => {
