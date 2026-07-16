@@ -134,17 +134,19 @@ html:has(.bpb-terrain-frame-body),
     inset: 0;
 }
 
-/* Stacked drape controls (layer picker, caveat, CORS notice) sit top-left. */
+/* Stacked drape controls (layer picker, caveat, CORS notice) sit top-right,
+   matching the native 2D basemap selector so the control keeps its corner when
+   the map flips between 2D and 3D. */
 #bpb-terrain-map .bpb-terrain-controls {
     position: absolute;
     top: 10px;
-    left: 10px;
+    right: 10px;
     z-index: 3;
     display: flex;
     flex-direction: column;
-    align-items: flex-start;
+    align-items: flex-end;
     gap: 6px;
-    max-width: calc(100% - 90px);
+    max-width: calc(100% - 20px);
 }
 
 #bpb-terrain-map .bpb-terrain-badge,
@@ -210,7 +212,7 @@ html:has(.bpb-terrain-frame-body),
 }
 
 /* An always-visible, unobtrusive gesture hint, centered above the attribution
-   line so it clears the scale (bottom-left) and navigation (top-right). */
+   line so it clears the scale (bottom-left) and navigation (bottom-right). */
 #bpb-terrain-map .bpb-terrain-hint {
     position: absolute;
     left: 50%;

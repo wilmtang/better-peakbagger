@@ -524,7 +524,9 @@
                 fadeDuration: 0
             });
             const terrainMap = map;
-            terrainMap.addControl(new maplibre.NavigationControl({ visualizePitch: true }), 'top-right');
+            // Zoom/tilt sit bottom-right to match the native 2D map's zoom
+            // control; the drape picker holds the top-right corner (2D selector).
+            terrainMap.addControl(new maplibre.NavigationControl({ visualizePitch: true }), 'bottom-right');
             terrainMap.addControl(new maplibre.ScaleControl({ maxWidth: 120, unit: 'metric' }), 'bottom-left');
             terrainMap.on('error', event => {
                 if (event && event.sourceId === 'basemap') {
