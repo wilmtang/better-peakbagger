@@ -2,9 +2,12 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
-export function buildAmoMetadata(licenseText) {
+export function buildAmoMetadata({ licenseText, description }) {
   if (typeof licenseText !== "string" || licenseText.trim() === "") {
     throw new Error("LICENSE must contain the full project license text");
+  }
+  if (typeof description !== "string" || description.trim() === "") {
+    throw new Error("store-assets/description.txt must contain the listing description");
   }
 
   return {
@@ -12,13 +15,7 @@ export function buildAmoMetadata(licenseText) {
       "en-US": "Capture activities into Peakbagger drafts, with GPX analysis, ascent filters, and dark mode.",
     },
     description: {
-      "en-US": [
-        "Better Peakbagger streamlines trip planning and ascent logging on Peakbagger.",
-        "",
-        "It can turn an owned Garmin or Strava activity into confidence-ranked Peakbagger drafts, analyze ascent GPX tracks in 3D terrain, filter and sort ascent lists, and apply a site-wide dark theme. Drafts always stop for manual review before Save.",
-        "",
-        "Raw provider GPX stays on the activity page. When the user explicitly starts capture, small coordinate corridor boxes are sent to Peakbagger to find nearby summits. If the user opens drafts, a newly serialized, reduced coordinate GPX is sent to Peakbagger Preview. Waypoint coordinates and names are included by default and can be turned off; all other waypoint fields remain excluded",
-      ].join("\n"),
+      "en-US": description.trim(),
     },
     homepage: {
       "en-US": "https://github.com/wilmtang/better-peakbagger",
@@ -61,7 +58,11 @@ async function main() {
     throw new Error("Usage: node scripts/create-amo-metadata.mjs OUTPUT_PATH");
   }
 
-  const metadata = buildAmoMetadata(await readFile("LICENSE", "utf8"));
+  const [licenseText, description] = await Promise.all([
+    readFile("LICENSE", "utf8"),
+    readFile("store-assets/description.txt", "utf8"),
+  ]);
+  const metadata = buildAmoMetadata({ licenseText, description });
   await mkdir(path.dirname(outputPath), { recursive: true });
   await writeFile(outputPath, `${JSON.stringify(metadata, null, 2)}\n`);
   console.log(`Wrote Firefox listing metadata to ${outputPath}.`);

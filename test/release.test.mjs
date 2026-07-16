@@ -49,7 +49,10 @@ test("release metadata requires an exact tag and synchronized versions", () => {
 });
 
 test("Firefox metadata preserves the project's or-later license grant", () => {
-  const metadata = buildAmoMetadata("GNU AFFERO GENERAL PUBLIC LICENSE\nVersion 3");
+  const metadata = buildAmoMetadata({
+    licenseText: "GNU AFFERO GENERAL PUBLIC LICENSE\nVersion 3",
+    description: "Better Peakbagger streamlines trip planning.\n\ncoordinate corridor boxes\nWaypoint coordinates and names are included by default",
+  });
   assert.deepEqual(metadata.categories, ["other"]);
   assert.deepEqual(metadata.version.compatibility, ["firefox"]);
   assert.match(metadata.version.custom_license.name["en-US"], /or later/);

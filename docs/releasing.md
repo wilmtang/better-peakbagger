@@ -120,3 +120,11 @@ then run independently because the stores have no shared transaction. If one
 store job fails after the other succeeds, use GitHub's **Re-run failed jobs**
 action. Do not rerun all jobs: the successful store may reject the duplicate
 version.
+
+## Store listing description
+
+`store-assets/description.txt` is the single source of truth for the "About
+this extension" text on both stores. The Firefox workflow reads it automatically
+via `scripts/create-amo-metadata.mjs`. The Chrome Web Store API does not
+support updating listing metadata, so after editing `description.txt`, paste
+the new text into the Chrome Developer Dashboard manually.
