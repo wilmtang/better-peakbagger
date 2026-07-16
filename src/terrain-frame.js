@@ -649,6 +649,13 @@
         if (source && typeof source.setData === 'function') {
             source.setData({ type: 'FeatureCollection', features });
         }
+        // The native map rebuilds its markers on every settle, which closes
+        // any open marker popup; mirror that so a popup never outlives the
+        // dot it points at.
+        if (peakPopup) {
+            try { peakPopup.remove(); } catch (error) { /* Already detached. */ }
+            peakPopup = null;
+        }
     };
 
     // The visible bounds, clamped to boundsFactor × the straight-down viewport

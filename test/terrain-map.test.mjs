@@ -858,6 +858,14 @@ test('3D peak markers request Peakbagger dots on camera settle and render only v
     assert.equal(link.rel, 'noopener noreferrer');
     assert.deepEqual(JSON.parse(JSON.stringify(popups[0].lngLat)), [-121.79, 48.72]);
 
+    dispatch({
+        type: 'peaks',
+        requestId: 1,
+        peaks: [{ id: 7, name: 'Fresh Peak', lat: 48.71, lon: -121.81, state: 'unclimbed' }]
+    });
+    assert.equal(popups[0].removedPopup, true,
+        'refreshing the dots closes an open popup, like the native marker rebuild');
+
     const beforeZoomOut = messages.filter(message => message.type === 'peaksRequest').length;
     camera.zoom = 9;
     map.handlers.get('moveend')();
