@@ -10,6 +10,7 @@ import { JSDOM } from 'jsdom';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const terrainBridgeSource = await readFile(path.join(root, 'src', 'terrain-map.js'), 'utf8');
+const schemaSource = await readFile(path.join(root, 'src', 'settings-schema.js'), 'utf8');
 const terrainFrameSource = await readFile(path.join(root, 'src', 'terrain-frame.js'), 'utf8');
 
 test('3D terrain waits for the extension frame handshake before sending route coordinates', async () => {
@@ -230,6 +231,7 @@ test('3D terrain frame validates coordinate-only routes before loading public DE
         removeProtocol(name) { protocolHandlers.delete(name); }
     };
     window.postMessage = message => { messages.push(message); };
+    window.eval(schemaSource);
     window.eval(terrainFrameSource);
 
     const dispatch = data => window.dispatchEvent(new window.MessageEvent('message', {
@@ -449,6 +451,7 @@ test('the 3D drape picker offers every layer and swaps the draped raster live', 
         removeProtocol() {}
     };
     window.postMessage = () => {};
+    window.eval(schemaSource);
     window.eval(terrainFrameSource);
 
     const routeSegments = [[[48.7, -121.8], [48.71, -121.81]]];
@@ -567,6 +570,7 @@ test('the extension-provided vector entry grafts the provider style under the ex
         removeProtocol() {}
     };
     window.postMessage = () => {};
+    window.eval(schemaSource);
     window.eval(terrainFrameSource);
 
     // No page-offered raster layers: the vector entry must exist regardless.
@@ -775,6 +779,7 @@ test('3D peak markers request Peakbagger dots on camera settle and render only v
         removeProtocol() {}
     };
     window.postMessage = message => { messages.push(message); };
+    window.eval(schemaSource);
     window.eval(terrainFrameSource);
 
     const dispatch = data => window.dispatchEvent(new window.MessageEvent('message', {

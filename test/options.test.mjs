@@ -53,6 +53,7 @@ const loadOptions = async (settings = {}, {
     dom.window.caches = cacheStorage;
     dom.window.eval(await readFile(path.join(root, 'src', 'terrain-cache.js'), 'utf8'));
     if (cachedTheme !== null) dom.window.localStorage.setItem('bpbThemePref', cachedTheme);
+    dom.window.eval(await readFile(path.join(root, 'src', 'settings-schema.js'), 'utf8'));
     dom.window.eval(await readFile(path.join(root, 'src', 'settings.js'), 'utf8'));
     dom.window.eval(await readFile(path.join(root, 'options', 'theme.js'), 'utf8'));
     dom.initialTheme = dom.window.document.documentElement.getAttribute('data-bpb-theme');
@@ -67,7 +68,7 @@ test('theme bootstrap loads before the options stylesheet', async () => {
     const dom = await loadOptions({});
     const resources = Array.from(dom.window.document.head.querySelectorAll('script[src], link[rel="stylesheet"]'))
         .map(node => node.getAttribute('src') || node.getAttribute('href'));
-    assert.deepEqual(resources, ['../src/settings.js', 'theme.js', 'options.css']);
+    assert.deepEqual(resources, ['../src/settings-schema.js', '../src/settings.js', 'theme.js', 'options.css']);
 });
 
 test('cached dark theme is applied before the asynchronous settings read', async () => {

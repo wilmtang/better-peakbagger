@@ -9,6 +9,9 @@
 (() => {
     'use strict';
 
+    const Schema = globalThis.BPBSettingsSchema;
+    if (!Schema) return;
+
     const params = new URLSearchParams(location.search);
     const mapType = (params.get('t') || '').toUpperCase();
     if (!['A', 'G'].includes(mapType)) return;
@@ -18,7 +21,7 @@
     // apart, so only the width and the casing are applied there.
     const recolorTrack = mapType === 'A';
 
-    const DEFAULT_STYLE = { color: '#d9483b', width: 5, casingColor: '#ffffff', casingWidth: 9 };
+    const DEFAULT_STYLE = Schema.ROUTE_STYLE;
     const enhancedLayers = new WeakSet();
     // Our own casing underlays, keyed by the native track they sit behind, so
     // they are never mistaken for native tracks and are removed with them.
@@ -31,8 +34,6 @@
     let activeMapWin = null;
     let retryTimer = null;
 
-    const validColor = (value, fallback) =>
-        typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value) ? value : fallback;
     // Peakbagger colors each group-map track to tell climbers apart. Read that
     // native color as #rrggbb so the 3D view can keep tracks distinct; #rgb and
     // rgb() forms are normalized, anything else returns null (frame falls back).
@@ -46,11 +47,6 @@
         }
         return null;
     };
-    const validWidth = value => Number.isInteger(value) && value >= 1 && value <= 12 ? value : DEFAULT_STYLE.width;
-    const validCasingWidth = (value, width) => Math.max(
-        Number.isInteger(value) && value >= 3 && value <= 20 ? value : DEFAULT_STYLE.casingWidth,
-        width + 2
-    );
 
     const trackStyle = () => recolorTrack
         ? { color: routeStyle.color, weight: routeStyle.width }
@@ -197,10 +193,9 @@
     // distinguishable (single-ascent maps use one preferred color); the shared
     // width and casing apply to both. Markers/peaks are not carried into 3D.
     const TERRAIN_LOAD_TIMEOUT_MS = 17000;
-    const TERRAIN_CACHE_DEFAULT_MB = 512;
     let terrainEnabled = false;
     let terrainThemePref = 'system';
-    let terrainCacheLimitMb = TERRAIN_CACHE_DEFAULT_MB;
+    let terrainCacheLimitMb = Schema.DEFAULTS.terrainCacheLimitMb;
     let terrainState = 'idle';
     let terrainMount = null;
     let terrainToggle = null;
@@ -394,9 +389,7 @@
             theme: effectiveTheme(),
             basemap,
             basemaps,
-            cacheLimitMb: Number.isInteger(terrainCacheLimitMb) && terrainCacheLimitMb >= 0 && terrainCacheLimitMb <= 2048
-                ? terrainCacheLimitMb
-                : TERRAIN_CACHE_DEFAULT_MB
+            cacheLimitMb: Schema.terrainCacheLimitMb(terrainCacheLimitMb)
         });
         terrainLoadTimer = setTimeout(() => { if (terrainState === 'loading') failTerrain(); }, TERRAIN_LOAD_TIMEOUT_MS);
     };
@@ -471,13 +464,14 @@
         if (event.source !== window || event.origin !== location.origin) return;
         const data = event.data;
         if (!data || data.__bpbBigMap !== true || data.dir !== 'toPage') return;
-        const width = validWidth(data.routeWidth);
-        routeStyle = {
-            color: validColor(data.routeColor, DEFAULT_STYLE.color),
-            width,
-            casingColor: validColor(data.casingColor, DEFAULT_STYLE.casingColor),
-            casingWidth: validCasingWidth(data.casingWidth, width)
-        };
+        // The bridge's wire shape, re-validated through the shared schema: this
+        // message crosses into the page world, so the sender is not trusted.
+        routeStyle = Schema.routeStyle({
+            color: data.routeColor,
+            width: data.routeWidth,
+            casingColor: data.casingColor,
+            casingWidth: data.casingWidth
+        });
         terrainEnabled = data.enable3dMap === true;
         terrainThemePref = data.theme;
         if (Number.isInteger(data.terrainCacheLimitMb)) terrainCacheLimitMb = data.terrainCacheLimitMb;

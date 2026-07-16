@@ -20,7 +20,7 @@ test('capture permissions are explicit and provider access remains activeTab-onl
 
 test('Chrome and Firefox background declarations share the same fail-closed coordinator', () => {
     assert.equal(manifest.background.service_worker, 'src/background.js');
-    assert.deepEqual(manifest.background.scripts, ['src/gpx-metrics.js', 'src/capture-core.js', 'src/settings.js', 'src/background.js']);
+    assert.deepEqual(manifest.background.scripts, ['src/gpx-metrics.js', 'src/capture-core.js', 'src/settings-schema.js', 'src/settings.js', 'src/background.js']);
     assert.deepEqual(manifest.browser_specific_settings.gecko.data_collection_permissions.required, ['locationInfo']);
 });
 
@@ -35,7 +35,7 @@ test('3D terrain is isolated from Peakbagger globals in an extension-owned frame
     const terrainEntry = manifest.content_scripts.find(entry => entry.js.includes('src/terrain-map.js'));
     assert.ok(terrainEntry);
     assert.equal(terrainEntry.world, undefined, 'terrain should run in the default isolated extension world');
-    assert.deepEqual(terrainEntry.js, ['src/settings.js', 'src/terrain-map.js']);
+    assert.deepEqual(terrainEntry.js, ['src/settings-schema.js', 'src/settings.js', 'src/terrain-map.js']);
     assert.deepEqual(terrainEntry.css, ['src/terrain-map.css']);
     assert.ok(terrainEntry.matches.every(pattern => /peakbagger\.com\/climber\/(?:a|A)scent\.aspx/.test(pattern)));
 
@@ -54,12 +54,12 @@ test('Full Screen GPS maps get a narrow read-only bridge and a MAIN-world Leafle
     const bridgeEntry = manifest.content_scripts.find(entry => entry.js.includes('src/big-map-bridge.js'));
     const pageEntry = manifest.content_scripts.find(entry => entry.js.includes('src/big-map.js'));
     assert.ok(bridgeEntry);
-    assert.deepEqual(bridgeEntry.js, ['src/settings.js', 'src/big-map-bridge.js']);
+    assert.deepEqual(bridgeEntry.js, ['src/settings-schema.js', 'src/settings.js', 'src/big-map-bridge.js']);
     assert.equal(bridgeEntry.world, undefined);
     assert.ok(pageEntry);
     // The MAIN-world enhancer also loads the shared metrics + basemap +
     // peak-feed modules the 3D coordinator depends on, before big-map.js.
-    assert.deepEqual(pageEntry.js, ['src/gpx-metrics.js', 'src/terrain-basemap.js', 'src/peak-markers.js', 'src/big-map.js']);
+    assert.deepEqual(pageEntry.js, ['src/gpx-metrics.js', 'src/terrain-basemap.js', 'src/peak-markers.js', 'src/settings-schema.js', 'src/big-map.js']);
     assert.equal(pageEntry.world, 'MAIN');
     assert.ok(pageEntry.matches.every(pattern => /bigmap/i.test(pattern)));
 
@@ -68,7 +68,7 @@ test('Full Screen GPS maps get a narrow read-only bridge and a MAIN-world Leafle
     const bigMapTerrain = manifest.content_scripts.find(entry =>
         entry.js.includes('src/terrain-map.js') && entry.matches.every(pattern => /bigmap/i.test(pattern)));
     assert.ok(bigMapTerrain, 'BigMap should inject the terrain bridge');
-    assert.deepEqual(bigMapTerrain.js, ['src/settings.js', 'src/terrain-map.js']);
+    assert.deepEqual(bigMapTerrain.js, ['src/settings-schema.js', 'src/settings.js', 'src/terrain-map.js']);
     assert.deepEqual(bigMapTerrain.css, ['src/terrain-map.css']);
     assert.equal(bigMapTerrain.world, undefined);
 });

@@ -16,23 +16,18 @@
     'use strict';
 
     const GpxMetrics = globalThis.BPBGpxMetrics;
-    if (!GpxMetrics) return;
+    const Schema = globalThis.BPBSettingsSchema;
+    if (!GpxMetrics || !Schema) return;
 
     const METERS_PER_MILE = 1609.344;
     const FEET_PER_METER = 3.28084;
-    const DEFAULT_MAP_ROUTE_STYLE = {
-        color: '#d9483b', width: 5,
-        casingColor: '#ffffff', casingWidth: 9
-    };
-    const MAP_VIEWPORT_DEFAULT = { width: 450, height: 450 };
-    const MAP_VIEWPORT_MIN_WIDTH = 320;
-    const MAP_VIEWPORT_MAX_WIDTH = 4096;
-    const MAP_VIEWPORT_MIN_HEIGHT = 240;
-    const MAP_VIEWPORT_MAX_HEIGHT = 720;
+    const MAP_VIEWPORT_MIN_WIDTH = Schema.BOUNDS.viewportWidth.min;
+    const MAP_VIEWPORT_MAX_WIDTH = Schema.BOUNDS.viewportWidth.max;
+    const MAP_VIEWPORT_MIN_HEIGHT = Schema.BOUNDS.viewportHeight.min;
+    const MAP_VIEWPORT_MAX_HEIGHT = Schema.BOUNDS.viewportHeight.max;
     const MAP_RESIZE_RAIL_HEIGHT = 18;
     const MAP_RESIZE_PERSIST_DELAY_MS = 400;
     const TERRAIN_LOAD_TIMEOUT_MS = 17000;
-    const TERRAIN_CACHE_DEFAULT_MB = 512;
 
     const parseMapRouteSegments = xml => {
         const segments = [];
@@ -118,28 +113,12 @@
     // setting; the legend's own click handler toggles visibility for the current
     // view without writing it back, so a temporary peek never changes the pref.
     const resolveChartSeries = s => (s.chartDefaultSeries === 'distance' || s.chartDefaultSeries === 'time') ? s.chartDefaultSeries : 'both';
-    const resolveMapRouteStyle = settings => {
-        const color = value => typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value);
-        const integer = (value, min, max, fallback) => Number.isInteger(value) && value >= min && value <= max ? value : fallback;
-        const width = integer(settings.mapRouteWidth, 1, 12, DEFAULT_MAP_ROUTE_STYLE.width);
-        return {
-            color: color(settings.mapRouteColor) ? settings.mapRouteColor : DEFAULT_MAP_ROUTE_STYLE.color,
-            width,
-            casingColor: color(settings.mapRouteCasingColor) ? settings.mapRouteCasingColor : DEFAULT_MAP_ROUTE_STYLE.casingColor,
-            casingWidth: Math.max(integer(settings.mapRouteCasingWidth, 3, 20, DEFAULT_MAP_ROUTE_STYLE.casingWidth), width + 2)
-        };
-    };
-    const resolveMapViewportSize = settings => {
-        const integer = (value, min, max, fallback) => Number.isInteger(value) && value >= min && value <= max ? value : fallback;
-        return {
-            width: integer(settings.mapViewportWidth, MAP_VIEWPORT_MIN_WIDTH, MAP_VIEWPORT_MAX_WIDTH, MAP_VIEWPORT_DEFAULT.width),
-            height: integer(settings.mapViewportHeight, MAP_VIEWPORT_MIN_HEIGHT, MAP_VIEWPORT_MAX_HEIGHT, MAP_VIEWPORT_DEFAULT.height)
-        };
-    };
-    const resolveTerrainCacheLimitMb = settings => Number.isInteger(settings.terrainCacheLimitMb)
-        && settings.terrainCacheLimitMb >= 0 && settings.terrainCacheLimitMb <= 2048
-        ? settings.terrainCacheLimitMb
-        : TERRAIN_CACHE_DEFAULT_MB;
+    // Settings arrive over postMessage, so they are re-validated here rather
+    // than trusted; the shared schema keeps those checks identical to the ones
+    // src/settings.js applies on the way into storage.
+    const resolveMapRouteStyle = Schema.routeStyleFromSettings;
+    const resolveMapViewportSize = Schema.viewportSizeFromSettings;
+    const resolveTerrainCacheLimitMb = settings => Schema.terrainCacheLimitMb(settings.terrainCacheLimitMb);
 
     const initChart = async () => {
         // 1. Locate GPX link and build UI

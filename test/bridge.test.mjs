@@ -23,6 +23,7 @@ const loadBridge = async () => {
     });
     dom.chrome = makeChromeStub();
     dom.window.chrome = dom.chrome;
+    dom.window.eval(await readFile(path.join(root, 'src', 'settings-schema.js'), 'utf8'));
     dom.window.eval(await readFile(path.join(root, 'src', 'settings.js'), 'utf8'));
     dom.window.eval(await readFile(path.join(root, 'src', 'bridge.js'), 'utf8'));
     return dom;

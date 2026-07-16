@@ -64,7 +64,7 @@ export const waitFor = async (dom, predicate, ms = 5000) => {
 export const loadPage = async (fixture, {
     url,
     settings = {},
-    scripts = ['src/settings.js', 'src/ascent-filter.js'],
+    scripts = ['src/settings-schema.js', 'src/settings.js', 'src/ascent-filter.js'],
     fixtures = FIXTURES,
     prepare = null
 } = {}) => {

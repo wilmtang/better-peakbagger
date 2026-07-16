@@ -92,7 +92,7 @@
     let noticeElement = null;
     let terrainCache = null;
     let terrainProtocolRegistered = false;
-    let activeRouteStyle = { color: '#d9483b', width: 5, casingColor: '#ffffff', casingWidth: 9 };
+    let activeRouteStyle = { ...globalThis.BPBSettingsSchema.ROUTE_STYLE };
     let vectorActive = false;
     let vectorStylePromise = null;
     let vectorSwapToken = 0;
@@ -232,17 +232,10 @@
         };
     };
 
-    const validateStyle = style => {
-        const color = value => typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value);
-        const integer = (value, min, max, fallback) => Number.isInteger(value) && value >= min && value <= max ? value : fallback;
-        const width = integer(style && style.width, 1, 12, 5);
-        return {
-            color: color(style && style.color) ? style.color : '#d9483b',
-            width,
-            casingColor: color(style && style.casingColor) ? style.casingColor : '#ffffff',
-            casingWidth: Math.max(integer(style && style.casingWidth, 3, 20, 9), width + 2)
-        };
-    };
+    // The host page is cross-origin to this frame, so its style is untrusted;
+    // the shared schema keeps this check identical to the page-world and
+    // storage-side ones.
+    const validateStyle = style => globalThis.BPBSettingsSchema.routeStyle(style);
 
     const isPublicHostname = hostname => {
         const host = hostname.toLowerCase();
@@ -760,9 +753,7 @@
         const route = validateRoute(data.routeSegments, data.routeColors);
         routeHasFeatureColors = Boolean(route && route.hasFeatureColors);
         const maplibre = globalThis.maplibregl;
-        const cacheLimitMb = Number.isInteger(data.cacheLimitMb) && data.cacheLimitMb >= 0 && data.cacheLimitMb <= 2048
-            ? data.cacheLimitMb
-            : 256;
+        const cacheLimitMb = globalThis.BPBSettingsSchema.terrainCacheLimitMb(data.cacheLimitMb);
         if (!route || !maplibre || !globalThis.BPBTerrainCache || !globalThis.chrome?.runtime?.getURL) {
             fail('unavailable');
             return;

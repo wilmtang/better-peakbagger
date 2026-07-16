@@ -10,6 +10,7 @@ import { JSDOM } from 'jsdom';
 import { makeChromeStub, waitFor } from './helpers/load-page.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const schemaSource = await readFile(path.join(root, 'src', 'settings-schema.js'), 'utf8');
 const settingsSource = await readFile(path.join(root, 'src', 'settings.js'), 'utf8');
 const bridgeSource = await readFile(path.join(root, 'src', 'big-map-bridge.js'), 'utf8');
 const peakMarkersSource = await readFile(path.join(root, 'src', 'peak-markers.js'), 'utf8');
@@ -77,6 +78,7 @@ const loadBigMap = async ({ type = 'G', width = 7, settings = {} } = {}) => {
     };
     const leaflet = makeLeaflet(window);
     return { dom, window, messages, leaflet, evaluate: () => {
+        window.eval(schemaSource);
         window.eval(settingsSource);
         window.eval(bridgeSource);
         window.eval(bigMapSource);
@@ -193,6 +195,7 @@ test('Full Screen maps case native tracks that live in the MasterMap child ifram
     track._popup = { content: 'Native Peakbagger trip report' };
     mapWin.mapsPlaceholder = new leaflet.MapStub([track]);
 
+    window.eval(schemaSource);
     window.eval(settingsSource);
     window.eval(bridgeSource);
     window.eval(bigMapSource);

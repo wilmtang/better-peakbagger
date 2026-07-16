@@ -26,7 +26,7 @@ const loadTheme = async (settings = {}) => {
     });
     dom.chrome = makeChromeStub({ bpbSettings: settings });
     dom.window.chrome = dom.chrome;
-    for (const rel of ['src/settings.js', 'src/site-dark-css.js', 'src/theme.js']) {
+    for (const rel of ['src/settings-schema.js', 'src/settings.js', 'src/site-dark-css.js', 'src/theme.js']) {
         dom.window.eval(await readFile(path.join(root, rel), 'utf8'));
     }
     // Let S.get().then(apply) reconcile.

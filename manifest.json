@@ -30,6 +30,7 @@
     "scripts": [
       "src/gpx-metrics.js",
       "src/capture-core.js",
+      "src/settings-schema.js",
       "src/settings.js",
       "src/background.js"
     ]
@@ -57,6 +58,7 @@
         "*://*.peakbagger.com/*"
       ],
       "js": [
+        "src/settings-schema.js",
         "src/settings.js",
         "src/site-dark-css.js",
         "src/theme.js"
@@ -72,6 +74,7 @@
         "*://peakbagger.com/climber/Ascent.aspx*"
       ],
       "js": [
+        "src/settings-schema.js",
         "src/settings.js",
         "src/bridge.js"
       ],
@@ -91,6 +94,7 @@
         "src/gpx-metrics.js",
         "src/terrain-basemap.js",
         "src/peak-markers.js",
+        "src/settings-schema.js",
         "src/gpx-analyzer.js"
       ],
       "run_at": "document_end",
@@ -108,6 +112,7 @@
         "src/terrain-map.css"
       ],
       "js": [
+        "src/settings-schema.js",
         "src/settings.js",
         "src/terrain-map.js"
       ],
@@ -126,6 +131,7 @@
         "*://peakbagger.com/climber/climblistc.aspx*"
       ],
       "js": [
+        "src/settings-schema.js",
         "src/settings.js",
         "src/ascent-filter.js"
       ],
@@ -154,6 +160,7 @@
         "*://*.peakbagger.com/*bigmap.aspx*"
       ],
       "js": [
+        "src/settings-schema.js",
         "src/settings.js",
         "src/big-map-bridge.js"
       ],
@@ -169,6 +176,7 @@
         "src/terrain-map.css"
       ],
       "js": [
+        "src/settings-schema.js",
         "src/settings.js",
         "src/terrain-map.js"
       ],
@@ -184,6 +192,7 @@
         "src/gpx-metrics.js",
         "src/terrain-basemap.js",
         "src/peak-markers.js",
+        "src/settings-schema.js",
         "src/big-map.js"
       ],
       "run_at": "document_end",
