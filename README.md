@@ -916,6 +916,22 @@ npm run start:firefox   launch Firefox with a temporary inline manifest
 npm run start:chromium  same for Chromium
 ```
 
+Clone once, then enable the repository's own hooks:
+
+```
+git config core.hooksPath .githooks
+```
+
+The `pre-commit` hook runs `scripts/privacy-guard.mjs`, which blocks a commit
+whose staged paths or contents match the private-identifier denylist. It scans
+the staged index, so it only protects commits made after the config above is
+set. `test/fixtures-privacy.test.mjs` re-checks the committed fixtures under
+`npm test` and runs in CI, so it backstops the hook rather than replacing it.
+
+Every push and pull request to `main` runs `npm test` and `npm run lint`
+(`.github/workflows/test.yml`); version tags additionally build, verify, and
+submit the store packages (`.github/workflows/release.yml`).
+
 No build step is required for development. `manifest.json` is the canonical
 Chrome/unpacked source, so Chrome's Options entry opens the settings page in a
 full tab. The Firefox launcher and store packaging copy that manifest and
