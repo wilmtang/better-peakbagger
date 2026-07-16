@@ -305,8 +305,28 @@
             minzoom,
             maxzoom,
             scheme: value.scheme === 'tms' ? 'tms' : 'xyz',
+            stockLod: value.stockLod === true,
             attribution: sanitizeAttribution(value.attribution)
         };
+    };
+
+    // With terrain on, MapLibre picks a per-tile zoom for every source from a
+    // pitch-sensitive heuristic. At its stock setting a ~2 degree tilt can drop
+    // the drape under the camera a whole level, which halves the topo's
+    // resolution across most of the frame in one step and snaps back when the
+    // tilt is undone. Tightening the spread to 4 zoom levels holds the drape
+    // beneath the camera at full resolution through the pitches the 3D view
+    // actually uses, at the cost of roughly 2-3x more tile requests — so it is
+    // opt-out per layer (see stockLod) and never applied to the terrain source,
+    // whose tiles are 2048px render targets rather than cheap images.
+    const DRAPE_LOD_ZOOM_LEVELS_ON_SCREEN = 4;
+    const DRAPE_LOD_TILE_COUNT_RATIO = 3;
+
+    const applyBasemapLod = basemap => {
+        if (!basemap || basemap.stockLod || typeof map.setSourceTileLodParams !== 'function') return;
+        try {
+            map.setSourceTileLodParams(DRAPE_LOD_ZOOM_LEVELS_ON_SCREEN, DRAPE_LOD_TILE_COUNT_RATIO, 'basemap');
+        } catch (error) { /* An older MapLibre or a source that already went away. */ }
     };
 
     const reliefExpression = palette => [
@@ -427,6 +447,7 @@
             id: 'basemap', type: 'raster', source: 'basemap',
             paint: { 'raster-opacity': 0.78, 'raster-fade-duration': 0, 'raster-resampling': 'linear' }
         }, typeof map.getLayer === 'function' && map.getLayer('terrain-hillshade') ? 'terrain-hillshade' : undefined);
+        applyBasemapLod(basemap);
     };
 
     const removeBasemapLayer = () => {
@@ -888,6 +909,9 @@
             terrainMap.once('load', () => {
                 if (map !== terrainMap || !mapElement) return;
                 removeLoadTimer();
+                // The constructor style already carries the drape source, so it
+                // needs the same LOD treatment addBasemapLayer() gives later picks.
+                applyBasemapLod(activeBasemap);
                 terrainMap.addSource('bpb-route', { type: 'geojson', data: route.geojson });
                 terrainMap.addLayer({
                     id: 'bpb-route-casing', type: 'line', source: 'bpb-route',
