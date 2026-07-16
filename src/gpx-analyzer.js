@@ -668,7 +668,7 @@
                 cacheLimitMb: resolveTerrainCacheLimitMb(BPB.get())
             });
             terrainLoadTimer = setTimeout(() => {
-                if (terrainState === 'loading') failTerrain('3D terrain took too long to load. The 2D map is unchanged.');
+                if (terrainState === 'loading') failTerrain(terrainFailureMessage('timeout'));
             }, TERRAIN_LOAD_TIMEOUT_MS);
         };
 
