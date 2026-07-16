@@ -60,7 +60,10 @@ const server = createServer(async (request, response) => {
         let contents = await readFile(file);
         if (url.pathname === '/terrain/terrain.html') {
             contents = Buffer.from(contents.toString('utf8').replace('</head>', `  <script>
-    globalThis.chrome = { runtime: { getURL: resource => new URL('/' + resource, location.origin).href } };
+    // Plain concatenation like the real chrome.runtime.getURL — new URL() would
+    // percent-encode the {fontstack}/{range} braces in the style's glyph
+    // template and break MapLibre's placeholder substitution.
+    globalThis.chrome = { runtime: { getURL: resource => location.origin + '/' + resource } };
   </script>
 </head>`));
         } else if (url.pathname === '/options/options.html' && url.searchParams.get('visual') === '1') {
@@ -276,10 +279,12 @@ try {
 
     const terrainRequests = [];
     const basemapRequests = [];
+    const glyphRequests = [];
     const runtimeErrors = [];
     cdp.on('Network.requestWillBeSent', ({ request }) => {
         if (/\.mapterhorn\.com\//.test(request.url)) terrainRequests.push(request.url);
         if (/\/scripts\/showcase\/terrain-tiles\//.test(request.url)) basemapRequests.push(request.url);
+        if (/\/vendor\/glyphs\//.test(request.url)) glyphRequests.push(request.url);
     });
     cdp.on('Runtime.exceptionThrown', ({ exceptionDetails }) => {
         runtimeErrors.push(exceptionDetails.exception?.description || exceptionDetails.text || 'Unknown runtime exception');
@@ -329,6 +334,12 @@ try {
     if (!terrainRequests.some(url => url.endsWith('.webp'))) throw new Error('The 3D view did not request terrain tiles');
     if (!basemapRequests.length) throw new Error(`The 3D view did not request the selected Leaflet raster layer (badge: ${ready.badge || 'missing'})`);
     if (!/Synthetic topographic map/.test(ready.badge || '')) throw new Error(`The selected layer was not retained: ${ready.badge}`);
+    // The peak label fetched its vendored glyph range with the {fontstack} and
+    // {range} placeholders substituted (never percent-encoded away).
+    if (!glyphRequests.some(url => /\/vendor\/glyphs\/Open-Sans-Semibold\/\d+-\d+\.pbf$/.test(url))) {
+        throw new Error(`The 3D view did not fetch a vendored glyph range for the peak label (saw: ${glyphRequests.join(', ') || 'none'})`);
+    }
+    if (glyphRequests.some(url => /%7B|\{/.test(url))) throw new Error(`Glyph template placeholders were not substituted: ${glyphRequests.join(', ')}`);
     if (runtimeErrors.length) throw new Error(`Runtime exception: ${runtimeErrors.join('\n')}`);
     const ascentMetrics = await measureToggleGap(cdp);
     if (ascentMetrics.gap < 0) throw new Error(`Ascent 3D toggle overlaps the zoom controls (gap ${ascentMetrics.gap}px)`);
