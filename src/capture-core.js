@@ -15,9 +15,7 @@
     const Metrics = globalThis.BPBGpxMetrics;
     if (!Metrics) return; // background.js fails closed when BPBCaptureCore is missing.
 
-    const EARTH_RADIUS_M = 6371008.8;
     const FEET_PER_METER = 3.28084;
-    const METERS_PER_MILE = 1609.344;
     const MAX_UPLOAD_POINTS = 3000;
     const MAX_TRACK_SEGMENTS = 50;
     const QUERY_PADDING_M = 300;
@@ -25,28 +23,17 @@
     const ENCOUNTER_WINDOW_M = 300;
     const ENCOUNTER_WINDOW_MS = 5 * 60 * 1000;
 
-    const toRad = value => value * Math.PI / 180;
+    // Geometry primitives come from the shared pure module so the corridor
+    // boxes and the analyzer's chart cannot measure the same track differently.
+    const { EARTH_RADIUS_M, toRad, normalizeLonDelta, distanceM } = Metrics;
+    // A longitude past the antimeridian wraps by the same rule as a delta.
+    const normalizeLon = normalizeLonDelta;
+
     const toDeg = value => value * 180 / Math.PI;
     const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
     const finiteOrNull = value => value === null || value === undefined || value === ''
         ? null
         : (Number.isFinite(Number(value)) ? Number(value) : null);
-
-    const normalizeLonDelta = delta => {
-        let result = delta;
-        while (result > 180) result -= 360;
-        while (result < -180) result += 360;
-        return result;
-    };
-
-    const normalizeLon = lon => {
-        let result = lon;
-        while (result > 180) result -= 360;
-        while (result < -180) result += 360;
-        return result;
-    };
-
-    const distanceM = Metrics.distanceM;
 
     // Local tangent-plane projection is stable for the short GPX edges used here
     // and handles the antimeridian by normalizing longitude deltas first.
@@ -821,14 +808,11 @@
 
     const API = {
         FEET_PER_METER,
-        METERS_PER_MILE,
         MAX_UPLOAD_POINTS,
         MAX_TRACK_SEGMENTS,
         distanceM,
-        pointSegmentDistanceM,
         sanitizeTrack,
         sanitizeWaypoints,
-        buildTrackIndex,
         buildQueryBoxes,
         parsePeakbaggerPeaks,
         detectPeaks,
@@ -838,8 +822,7 @@
         calculateNightsOut,
         assignDraftSuffixes,
         publicMatch,
-        formatEncounterDateTime,
-        cubicDecay
+        formatEncounterDateTime
     };
 
     globalThis.BPBCaptureCore = API;

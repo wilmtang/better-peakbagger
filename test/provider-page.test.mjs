@@ -80,7 +80,7 @@ test('GPX extraction selects only analysis fields and preserves segments', () =>
       <trkseg><trkpt lat="47" lon="-121"><ele>100</ele><time>2026-07-01T15:00:00Z</time>
       <extensions><gpxtpx:TrackPointExtension><gpxtpx:hr>175</gpxtpx:hr><gpxtpx:cad>92</gpxtpx:cad></gpxtpx:TrackPointExtension></extensions>
       </trkpt></trkseg><trkseg><trkpt lat="48" lon="-122"><time>bad</time></trkpt></trkseg></trk></gpx>`;
-    const segments = dom.window.BPBProviderPage.parseGpxText(gpx);
+    const segments = dom.window.BPBProviderPage.parseGpxData(gpx).segments;
     assert.equal(segments.length, 2);
     assert.deepEqual(Object.keys(segments[0][0]).sort(), ['ele', 'invalidTime', 'lat', 'lon', 'time']);
     assert.equal(segments[0][0].ele, 100);

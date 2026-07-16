@@ -311,10 +311,12 @@
     };
 
     const API = {
-        ELEVATION_GAIN_THRESHOLD_M,
-        MAX_MAP_ROUTE_POINTS,
+        // Geometry primitives shared with src/capture-core.js, which loads
+        // after this module in the background worker.
+        EARTH_RADIUS_M,
+        toRad,
+        normalizeLonDelta,
         distanceM: haversineDistanceM,
-        calculatePositiveGainM,
         calculateConfirmedGainM,
         computeMetrics,
         limitMapRouteSegments

@@ -154,9 +154,6 @@
         return { segments, waypoints, trackName };
     };
 
-    // Kept for tests and callers that only need the established analysis shape.
-    const parseGpxText = text => parseGpxData(text).segments;
-
     const activityMetadata = provider => {
         const main = document.querySelector('main') || document.body;
         const timeElement = main.querySelector('time[datetime]');
@@ -247,7 +244,7 @@
         }
     };
 
-    const API = { providerFromUrl, profileId, inspectOwnership, parseGpxData, parseGpxText, garminExportRequest, capture };
+    const API = { providerFromUrl, profileId, inspectOwnership, parseGpxData, garminExportRequest, capture };
     globalThis.BPBProviderPage = API;
     if (typeof module !== 'undefined' && module.exports) module.exports = API;
 })();
