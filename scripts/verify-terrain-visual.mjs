@@ -194,6 +194,44 @@ const measureBigMap2dGap = cdp => evaluate(cdp, `(() => {
     return { toggleBottom: Math.round(tr.bottom), zoomTop: Math.round(ir.top + zr.top), gap: Math.round((ir.top + zr.top) - tr.bottom) };
 })()`);
 
+// Plain scroll must zoom the 3D map directly — the same gesture the native 2D
+// map answers, with no ⌘/Ctrl modifier. The MapLibre scale control is the
+// observable: its displayed distance changes when the zoom actually changes.
+const assertPlainScrollZooms = async (cdp, label) => {
+    const target = await evaluate(cdp, `(() => {
+        const frame = document.getElementById('bpb-terrain-frame');
+        const doc = frame && frame.contentDocument;
+        const scale = doc && doc.querySelector('.maplibregl-ctrl-scale');
+        if (!frame || !scale) return null;
+        if (doc.querySelector('.maplibregl-cooperative-gesture-screen')) return { cooperative: true };
+        const rect = frame.getBoundingClientRect();
+        return {
+            x: Math.round(rect.left + rect.width / 2),
+            y: Math.round(rect.top + rect.height / 2),
+            scale: scale.textContent
+        };
+    })()`);
+    if (!target) throw new Error(`${label}: terrain frame or scale control missing before the scroll-zoom check`);
+    if (target.cooperative) throw new Error(`${label}: cooperative-gesture overlay present — plain scroll would demand a modifier`);
+    for (let tick = 0; tick < 4; tick++) {
+        await cdp.call('Input.dispatchMouseEvent', {
+            type: 'mouseWheel', x: target.x, y: target.y, deltaX: 0, deltaY: -240
+        });
+        await delay(120);
+    }
+    await waitForPageState(cdp, `(() => {
+        const frame = document.getElementById('bpb-terrain-frame');
+        const scale = frame && frame.contentDocument
+            && frame.contentDocument.querySelector('.maplibregl-ctrl-scale');
+        return {
+            ready: Boolean(scale) && scale.textContent !== ${JSON.stringify(target.scale)},
+            scale: scale && scale.textContent
+        };
+    })()`, 8000).catch(() => {
+        throw new Error(`${label}: plain scroll did not zoom the 3D map (scale stuck at "${target.scale}")`);
+    });
+};
+
 const navigate = async (cdp, url, width, height) => {
     await cdp.call('Emulation.setDeviceMetricsOverride', {
         width, height, deviceScaleFactor: 1, mobile: false
@@ -296,6 +334,7 @@ try {
     if (ascentMetrics.gap < 0) throw new Error(`Ascent 3D toggle overlaps the zoom controls (gap ${ascentMetrics.gap}px)`);
     if (ascentMetrics.gap > 40) throw new Error(`Ascent 3D toggle floats too far above the zoom controls (gap ${ascentMetrics.gap}px)`);
     await capture(cdp, path.join(outputDir, 'terrain-wide-800.png'));
+    await assertPlainScrollZooms(cdp, 'Ascent 3D');
 
     await navigate(cdp, `${baseUrl}?mode=terrain&theme=dark`, 1000, 900);
     const darkReady = await waitForPageState(cdp, `(() => {
@@ -360,6 +399,7 @@ try {
     if (bigMapMetrics.gap < 0) throw new Error(`BigMap 3D toggle overlaps the zoom controls (gap ${bigMapMetrics.gap}px)`);
     if (bigMapMetrics.gap > 40) throw new Error(`BigMap 3D toggle floats too far above the zoom controls (gap ${bigMapMetrics.gap}px)`);
     await capture(cdp, path.join(outputDir, 'bigmap-3d.png'));
+    await assertPlainScrollZooms(cdp, 'BigMap 3D (group tracks)');
 
     const optionsUrl = `http://127.0.0.1:${serverPort}/options/options.html?visual=1`;
     await navigate(cdp, optionsUrl, 1000, 700);

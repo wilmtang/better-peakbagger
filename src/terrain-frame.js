@@ -507,14 +507,11 @@
         controls.append(notice);
         renderPicker();
 
-        // Cooperative gestures keep the page from scroll-jacking, so zoom needs
-        // a modifier. Spell that out (and how to pan/tilt) with an OS-aware
-        // hint, since the requirement is not otherwise discoverable.
-        const isMacPlatform = /mac|iphone|ipad|ipod/i.test(
-            (navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || '');
+        // Scroll zooms directly, matching the native 2D map. Pan and tilt are
+        // still not discoverable, so keep a persistent hint for those.
         const hint = document.createElement('p');
         hint.className = 'bpb-terrain-hint';
-        hint.textContent = `Drag to pan · ${isMacPlatform ? '⌘' : 'Ctrl'} + scroll to zoom · right-drag to tilt`;
+        hint.textContent = 'Drag to pan · scroll to zoom · right-drag to tilt';
 
         const status = document.createElement('p');
         status.className = 'bpb-terrain-status';
@@ -542,7 +539,6 @@
                 maxPitch: 80,
                 maxZoom: 18,
                 attributionControl: false,
-                cooperativeGestures: true,
                 fadeDuration: 0
             });
             const terrainMap = map;

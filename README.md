@@ -500,12 +500,10 @@ throwaway tileset and build the terrain mesh once for the placeholder view and
 again for the route; framing up front removes that duplicate work, the dominant
 part of load time.
 
-Gestures use cooperative mode so the page never scroll-jacks: drag pans,
-right-drag tilts, and zoom needs the platform modifier (`⌘` on macOS, `Ctrl`
-elsewhere) plus scroll. Because that requirement is not otherwise obvious, a
-small always-visible hint spells it out with the correct key for the viewer's
-OS, and MapLibre's momentary full-surface overlay is suppressed in favor of it.
-This works the same in Chrome and Firefox.
+Gestures match the native 2D map the view replaces: plain scroll zooms, drag
+pans, and right-drag tilts — no modifier key. Pan and tilt are not otherwise
+obvious, so a small always-visible hint spells out all three gestures. This
+works the same in Chrome and Firefox.
 
 ### Activation and browser boundaries
 
