@@ -74,6 +74,13 @@ test('Full Screen GPS maps get a narrow read-only bridge and a MAIN-world Leafle
     assert.deepEqual(bigMapTerrain.js, ['src/settings-schema.js', 'src/settings.js', 'src/terrain-map.js']);
     assert.deepEqual(bigMapTerrain.css, ['src/terrain-map.css']);
     assert.equal(bigMapTerrain.world, undefined);
+
+    // Both document_end bundles name settings-schema.js, but in different
+    // worlds. Chrome skipped it from the later MAIN bundle when the isolated
+    // terrain bundle came first, so big-map.js hit its fail-closed guard and
+    // never created the toggle. Match the working ascent-page order.
+    assert.ok(manifest.content_scripts.indexOf(pageEntry) < manifest.content_scripts.indexOf(bigMapTerrain),
+        'the BigMap MAIN bundle must run before the isolated terrain bundle');
 });
 
 test('ascent editor integration is isolated to Peakbagger and runtime code never names a Save control', async () => {
