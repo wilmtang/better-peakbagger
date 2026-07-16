@@ -12,6 +12,11 @@
     path { fill: none; stroke-linecap: round; stroke-linejoin: round; }
     #trip-details { display: none; position: absolute; top: 24px; left: 24px; padding: 10px 12px; border-radius: 8px; background: #fff; box-shadow: 0 2px 10px #0003; }
     #selmap { position: absolute; top: 24px; right: 24px; }
+    /* Full Screen's native Leaflet map keeps its zoom bottom-right; mirror that
+       (class and all) so the floating toggle's 2D measurement has a target. */
+    .leaflet-control-zoom { position: absolute; right: 10px; bottom: 22px; display: grid; overflow: hidden; border: 1px solid #abb2a5; border-radius: 5px; background: #fff; box-shadow: 0 2px 6px rgb(0 0 0 / 16%); }
+    .leaflet-control-zoom b { width: 28px; height: 28px; text-align: center; font: 20px/27px Arial, sans-serif; }
+    .leaflet-control-zoom b + b { border-top: 1px solid #d2d6cf; }
   </style>
   <link rel="stylesheet" href="/src/terrain-map.css">
   <script>
@@ -40,6 +45,7 @@
     </svg>
     <div id="trip-details">Synthetic route A · native trip-report link</div>
     <select id="selmap"><option value="L_LOCAL">Synthetic topographic map</option></select>
+    <div class="leaflet-control-zoom leaflet-bar"><b>+</b><b>−</b></div>
   </div>
   <script>
     class Polyline {
