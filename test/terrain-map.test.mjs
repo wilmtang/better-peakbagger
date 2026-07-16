@@ -224,6 +224,7 @@ test('3D terrain frame validates coordinate-only routes before loading public DE
         Map: MapStub,
         NavigationControl: class NavigationControl {},
         ScaleControl: class ScaleControl {},
+        AttributionControl: class AttributionControl {},
         setWorkerUrl(url) { workerUrl = url; },
         addProtocol(name, handler) { protocolHandlers.set(name, handler); },
         removeProtocol(name) { protocolHandlers.delete(name); }
@@ -416,6 +417,7 @@ test('the 3D drape picker offers every layer and swaps the draped raster live', 
         Map: MapStub,
         NavigationControl: class {},
         ScaleControl: class {},
+        AttributionControl: class {},
         setWorkerUrl() {},
         addProtocol() {},
         removeProtocol() {}

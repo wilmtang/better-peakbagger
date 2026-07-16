@@ -134,7 +134,9 @@
             pendingInit = null;
             frame.style.opacity = '1';
             frame.style.pointerEvents = 'auto';
-            postToPage('loaded');
+            postToPage('loaded', { navTop: data.navTop });
+        } else if (data.type === 'metrics') {
+            postToPage('metrics', { navTop: data.navTop });
         } else if (data.type === 'error') {
             fail(data.reason);
         }

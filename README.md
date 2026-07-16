@@ -655,8 +655,7 @@ Failure is layered rather than all-or-nothing:
 
 Chart hover follows the route in either map. This is still a terrain-shape view,
 not current conditions: a DEM and raster basemap cannot establish current snow
-bridges, crevasses, cornices, rockfall, vegetation, or route safety. The map
-therefore always labels itself **Not live conditions**.
+bridges, crevasses, cornices, rockfall, vegetation, or route safety.
 
 ---
 

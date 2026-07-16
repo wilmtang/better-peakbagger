@@ -153,6 +153,19 @@ const capture = async (cdp, file) => {
     await writeFile(file, Buffer.from(data, 'base64'));
 };
 
+// The vertical gap between the floating toggle's bottom and the 3D zoom stack's
+// top, in page pixels. Negative means the toggle overlaps (covers) the zoom.
+const measureToggleGap = cdp => evaluate(cdp, `(() => {
+    const toggle = document.getElementById('bpb-terrain-toggle');
+    const frame = document.getElementById('bpb-terrain-frame');
+    const nav = frame && frame.contentDocument && frame.contentDocument.querySelector('.maplibregl-ctrl-bottom-right .maplibregl-ctrl-group');
+    if (!toggle || !nav) return { gap: NaN };
+    const fr = frame.getBoundingClientRect();
+    const tr = toggle.getBoundingClientRect();
+    const nr = nav.getBoundingClientRect();
+    return { toggleBottom: Math.round(tr.bottom), navTop: Math.round(fr.top + nr.top), gap: Math.round((fr.top + nr.top) - tr.bottom) };
+})()`);
+
 const navigate = async (cdp, url, width, height) => {
     await cdp.call('Emulation.setDeviceMetricsOverride', {
         width, height, deviceScaleFactor: 1, mobile: false
@@ -247,6 +260,9 @@ try {
     if (!basemapRequests.length) throw new Error(`The 3D view did not request the selected Leaflet raster layer (badge: ${ready.badge || 'missing'})`);
     if (!/Synthetic topographic map/.test(ready.badge || '')) throw new Error(`The selected layer was not retained: ${ready.badge}`);
     if (runtimeErrors.length) throw new Error(`Runtime exception: ${runtimeErrors.join('\n')}`);
+    const ascentMetrics = await measureToggleGap(cdp);
+    if (ascentMetrics.gap < 0) throw new Error(`Ascent 3D toggle overlaps the zoom controls (gap ${ascentMetrics.gap}px)`);
+    if (ascentMetrics.gap > 40) throw new Error(`Ascent 3D toggle floats too far above the zoom controls (gap ${ascentMetrics.gap}px)`);
     await capture(cdp, path.join(outputDir, 'terrain-wide-800.png'));
 
     await navigate(cdp, `${baseUrl}?mode=terrain&theme=dark`, 1000, 900);
@@ -302,6 +318,9 @@ try {
     if (!terrainRequests.some(url => url.endsWith('.webp'))) throw new Error('BigMap 3D did not request terrain tiles');
     if (basemapRequests.length <= bigMapBasemapBefore) throw new Error('BigMap 3D did not drape the synthetic layer read from the native map');
     if (runtimeErrors.length) throw new Error(`Runtime exception: ${runtimeErrors.join('\n')}`);
+    const bigMapMetrics = await measureToggleGap(cdp);
+    if (bigMapMetrics.gap < 0) throw new Error(`BigMap 3D toggle overlaps the zoom controls (gap ${bigMapMetrics.gap}px)`);
+    if (bigMapMetrics.gap > 40) throw new Error(`BigMap 3D toggle floats too far above the zoom controls (gap ${bigMapMetrics.gap}px)`);
     await capture(cdp, path.join(outputDir, 'bigmap-3d.png'));
 
     const optionsUrl = `http://127.0.0.1:${serverPort}/options/options.html?visual=1`;

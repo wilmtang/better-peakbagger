@@ -47,7 +47,6 @@
     let basemapErrored = false;
     let basemapContentLoaded = false;
     let basemapChecked = false;
-    let badgeElement = null;
     let pickerElement = null;
     let noticeElement = null;
     let terrainCache = null;
@@ -62,6 +61,15 @@
             type,
             ...detail
         }, parentOrigin);
+    };
+
+    // Distance from the frame's bottom edge to the top of the bottom-right zoom
+    // stack, so the host page can float its 2D/3D toggle just above it — this
+    // frame is cross-origin, so the page cannot measure the stack itself.
+    const measureNavTop = () => {
+        const group = mapElement && mapElement.querySelector('.maplibregl-ctrl-bottom-right .maplibregl-ctrl-group');
+        if (!group) return 0;
+        return Math.max(0, Math.round(window.innerHeight - group.getBoundingClientRect().top));
     };
 
     const removeLoadTimer = () => {
@@ -98,7 +106,6 @@
         basemapErrored = false;
         basemapContentLoaded = false;
         basemapChecked = false;
-        badgeElement = null;
         pickerElement = null;
         noticeElement = null;
         loaded = false;
@@ -299,12 +306,6 @@
         };
     };
 
-    // The caveat is static; the layer name lives in the picker's selected
-    // option so the drape is both labelled and switchable from one control.
-    const renderBadge = () => {
-        if (badgeElement) badgeElement.textContent = 'Not live conditions';
-    };
-
     const renderPicker = () => {
         if (!pickerElement) return;
         const options = availableBasemaps.map((basemap, index) => {
@@ -473,16 +474,12 @@
             });
             controls.appendChild(pickerElement);
         }
-        const badge = document.createElement('p');
-        badge.className = 'bpb-terrain-badge';
-        badgeElement = badge;
-        renderBadge();
         const notice = document.createElement('p');
         notice.className = 'bpb-terrain-notice';
         notice.setAttribute('role', 'status');
         notice.hidden = true;
         noticeElement = notice;
-        controls.append(badge, notice);
+        controls.append(notice);
         renderPicker();
 
         // Cooperative gestures keep the page from scroll-jacking, so zoom needs
@@ -519,14 +516,19 @@
                 bearing: 0,
                 maxPitch: 80,
                 maxZoom: 18,
-                attributionControl: true,
+                attributionControl: false,
                 cooperativeGestures: true,
                 fadeDuration: 0
             });
             const terrainMap = map;
-            // Zoom/tilt sit bottom-right to match the native 2D map's zoom
-            // control; the drape picker holds the top-right corner (2D selector).
-            terrainMap.addControl(new maplibre.NavigationControl({ visualizePitch: true }), 'bottom-right');
+            // Bottom-right, matching the native 2D map's zoom: a compact
+            // attribution ("ⓘ") first so it can't wrap and shove the zoom upward,
+            // then a zoom-only control (no compass) so the stack is the same
+            // two-button height as the 2D zoom and the floating toggle lines up
+            // the same way in both. Returning to 2D reframes the route, so the
+            // compass's reset role is covered.
+            terrainMap.addControl(new maplibre.AttributionControl({ compact: true }), 'bottom-right');
+            terrainMap.addControl(new maplibre.NavigationControl({ showCompass: false }), 'bottom-right');
             terrainMap.addControl(new maplibre.ScaleControl({ maxWidth: 120, unit: 'metric' }), 'bottom-left');
             terrainMap.on('error', event => {
                 if (event && event.sourceId === 'basemap') {
@@ -574,12 +576,16 @@
                 setTheme(activeTheme);
                 status.remove();
                 mapElement.style.pointerEvents = 'auto';
-                post('loaded');
+                post('loaded', { navTop: measureNavTop() });
             });
 
             loadTimer = setTimeout(() => fail('timeout'), MAP_LOAD_TIMEOUT_MS);
             if (typeof ResizeObserver === 'function') {
-                resizeObserver = new ResizeObserver(() => { if (map) map.resize(); });
+                resizeObserver = new ResizeObserver(() => {
+                    if (!map) return;
+                    map.resize();
+                    if (loaded) post('metrics', { navTop: measureNavTop() });
+                });
                 resizeObserver.observe(mapElement);
             }
         } catch (error) {

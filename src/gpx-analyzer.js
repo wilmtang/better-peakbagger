@@ -174,6 +174,9 @@
                     const map = mapIframe.contentWindow && mapIframe.contentWindow.mapsPlaceholder;
                     if (map && typeof map.invalidateSize === 'function') map.invalidateSize(false);
                 } catch (e) { /* Peakbagger may replace or discard its map while resizing. */ }
+                // Re-anchor the floating toggle: the native zoom's position (2D)
+                // and the viewport size can change as the map settles or resizes.
+                positionTerrainToggle();
             };
             mapInvalidateFrame = typeof requestAnimationFrame === 'function'
                 ? requestAnimationFrame(invalidate)
@@ -540,6 +543,40 @@
         let mapLayerRetryTimer = null;
         let terrainState = 'idle';
         let terrainLoadTimer = null;
+        let terrainNavTop = null;
+
+        // Float the toggle just above the zoom stack in whichever map is showing:
+        // the 3D frame reports its stack height (it is cross-origin), while the
+        // native 2D zoom is same-origin and measured directly. A null result
+        // leaves the CSS fallback offset in place.
+        const TERRAIN_TOGGLE_GAP = 8;
+        const measureNative2dZoomTop = () => {
+            try {
+                if (!mapViewport || !mapIframe) return null;
+                const doc = mapIframe.contentWindow && mapIframe.contentWindow.document;
+                const zoom = doc && doc.querySelector('.leaflet-control-zoom');
+                const zoomRect = zoom && zoom.getBoundingClientRect();
+                if (!zoomRect || !(zoomRect.height > 0)) return null;
+                const iframeRect = mapIframe.getBoundingClientRect();
+                const viewportRect = mapViewport.getBoundingClientRect();
+                return viewportRect.bottom - (iframeRect.top + zoomRect.top);
+            } catch (e) {
+                return null;
+            }
+        };
+        const positionTerrainToggle = () => {
+            let bottom = null;
+            if (terrainState === 'active') {
+                const frame = document.getElementById('bpb-terrain-frame');
+                if (frame && mapViewport && terrainNavTop != null) {
+                    const inset = Math.max(0, mapViewport.getBoundingClientRect().bottom - frame.getBoundingClientRect().bottom);
+                    bottom = inset + terrainNavTop;
+                }
+            } else {
+                bottom = measureNative2dZoomTop();
+            }
+            terrainButton.style.bottom = bottom != null && bottom > 0 ? `${Math.round(bottom + TERRAIN_TOGGLE_GAP)}px` : '';
+        };
 
         const clearTerrainLoadTimer = () => {
             if (terrainLoadTimer !== null) {
@@ -607,6 +644,7 @@
                 terrainButton.setAttribute('aria-label', hasRoute ? 'Show 3D terrain' : '3D terrain available after the route loads');
                 terrainButton.setAttribute('aria-pressed', 'false');
             }
+            positionTerrainToggle();
         };
 
         const restoreNativeMap = () => {
@@ -691,10 +729,14 @@
             if (data.type === 'loaded' && terrainState === 'loading') {
                 clearTerrainLoadTimer();
                 terrainState = 'active';
+                terrainNavTop = Number.isFinite(data.navTop) ? data.navTop : null;
                 mapIframe.style.visibility = 'hidden';
                 mapIframe.setAttribute('aria-hidden', 'true');
                 showTerrainMessage('');
                 updateTerrainButton();
+            } else if (data.type === 'metrics' && terrainState === 'active') {
+                if (Number.isFinite(data.navTop)) terrainNavTop = data.navTop;
+                positionTerrainToggle();
             } else if (data.type === 'error' && terrainState === 'loading') {
                 failTerrain(terrainFailureMessage(data.reason));
             }

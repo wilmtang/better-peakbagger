@@ -191,6 +191,44 @@
     let terrainMount = null;
     let terrainToggle = null;
     let terrainLoadTimer = null;
+    let terrainNavTop = null;
+    const TERRAIN_TOGGLE_GAP = 8;
+
+    // Float the toggle just above the zoom stack of whichever map is showing:
+    // the 3D frame reports its stack height (cross-origin), the native 2D zoom is
+    // measured directly. A null result leaves the CSS fallback offset in place.
+    const measureNative2dZoomTop = () => {
+        try {
+            const doc = activeMapWin && activeMapWin.document;
+            const zoom = doc && doc.querySelector('.leaflet-control-zoom');
+            const zoomRect = zoom && zoom.getBoundingClientRect();
+            if (!zoomRect || !(zoomRect.height > 0)) return null;
+            let top = zoomRect.top;
+            if (activeMapWin !== window) {
+                const iframe = findMapIframe();
+                if (iframe) top += iframe.getBoundingClientRect().top;
+            }
+            return window.innerHeight - top;
+        } catch (error) {
+            return null;
+        }
+    };
+    const positionTerrainToggle = () => {
+        if (!terrainToggle) return;
+        let bottom = null;
+        if (terrainState === 'active') {
+            const frame = document.getElementById('bpb-terrain-frame');
+            if (frame && terrainNavTop != null) {
+                // The mount is a full-viewport fixed overlay, so the frame bottom
+                // is the viewport bottom and navTop is viewport-relative already.
+                const inset = Math.max(0, window.innerHeight - frame.getBoundingClientRect().bottom);
+                bottom = inset + terrainNavTop;
+            }
+        } else {
+            bottom = measureNative2dZoomTop();
+        }
+        terrainToggle.style.bottom = bottom != null && bottom > 0 ? `${Math.round(bottom + TERRAIN_TOGGLE_GAP)}px` : '';
+    };
 
     const prefersDark = () => !!(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
     const effectiveTheme = () => (terrainThemePref === 'light' || terrainThemePref === 'dark')
@@ -309,6 +347,7 @@
             terrainToggle.setAttribute('aria-label', hasRoute ? 'Show 3D terrain' : '3D terrain available once the map has a GPS track');
             terrainToggle.setAttribute('aria-pressed', 'false');
         }
+        positionTerrainToggle();
     };
 
     const failTerrain = () => {
@@ -356,16 +395,22 @@
         if (data.type === 'loaded' && terrainState === 'loading') {
             clearTerrainLoadTimer();
             terrainState = 'active';
+            terrainNavTop = Number.isFinite(data.navTop) ? data.navTop : null;
             const element = nativeMapElement();
             if (element) {
                 element.style.visibility = 'hidden';
                 element.setAttribute('aria-hidden', 'true');
             }
             updateTerrainToggle();
+        } else if (data.type === 'metrics' && terrainState === 'active') {
+            if (Number.isFinite(data.navTop)) terrainNavTop = data.navTop;
+            positionTerrainToggle();
         } else if (data.type === 'error' && terrainState === 'loading') {
             failTerrain();
         }
     });
+
+    window.addEventListener('resize', () => positionTerrainToggle());
 
     window.addEventListener('message', event => {
         if (event.source !== window || event.origin !== location.origin) return;

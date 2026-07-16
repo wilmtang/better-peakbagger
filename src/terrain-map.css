@@ -17,15 +17,17 @@
 }
 
 /* Floating 2D/3D toggle, bottom-right of the map viewport, stacked just above
-   the zoom controls (native 2D zoom, or the 3D frame's nav group) the way map
-   apps like Gaia place it. The bottom offset clears the taller 3D nav stack;
-   the shorter 2D zoom sits a little further below. It stays above the terrain
-   frame (z-index 2) and, living in the host page document, is themed via a
-   data-theme attribute rather than the frame's. */
+   the zoom controls the way map apps like Gaia place it. The exact bottom is set
+   inline by JS to sit right above whichever zoom stack is showing — the 3D frame
+   reports its stack height (it is cross-origin) and the native 2D zoom is
+   measured directly. This value is only the fallback when neither measurement is
+   available. It stays above the terrain frame (z-index 2) and, living in the
+   host page document, is themed via a data-theme attribute rather than the
+   frame's. */
 .bpb-map-3d-toggle {
     position: absolute;
     right: 10px;
-    bottom: 132px;
+    bottom: 112px;
     z-index: 3;
     display: inline-flex;
     align-items: center;
@@ -73,7 +75,7 @@
 /* Full Screen has no 18px resize rail under the frame, so the zoom stack sits
    lower — nudge the toggle down to keep it just above it. */
 .bpb-terrain-mount-fullscreen .bpb-map-3d-toggle {
-    bottom: 114px;
+    bottom: 94px;
 }
 
 .bpb-map-3d-toggle[data-theme="dark"] {
@@ -180,7 +182,6 @@ html:has(.bpb-terrain-frame-body),
     max-width: calc(100% - 20px);
 }
 
-#bpb-terrain-map .bpb-terrain-badge,
 #bpb-terrain-map .bpb-terrain-status,
 #bpb-terrain-map .bpb-terrain-picker,
 #bpb-terrain-map .bpb-terrain-notice {
@@ -197,7 +198,6 @@ html:has(.bpb-terrain-frame-body),
     font: inherit;
 }
 
-#bpb-terrain-map[data-theme="dark"] .bpb-terrain-badge,
 #bpb-terrain-map[data-theme="dark"] .bpb-terrain-status,
 #bpb-terrain-map[data-theme="dark"] .bpb-terrain-picker,
 #bpb-terrain-map[data-theme="dark"] .bpb-terrain-notice {
@@ -212,16 +212,6 @@ html:has(.bpb-terrain-frame-body),
     font-weight: 600;
     cursor: pointer;
     appearance: menulist;
-}
-
-#bpb-terrain-map .bpb-terrain-badge {
-    color: #5f655a;
-    font-size: 0.92em;
-    white-space: nowrap;
-}
-
-#bpb-terrain-map[data-theme="dark"] .bpb-terrain-badge {
-    color: #bbb8ae;
 }
 
 #bpb-terrain-map .bpb-terrain-notice {

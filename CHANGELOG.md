@@ -5,9 +5,12 @@
 - **The 3D map is a one-tap toggle on the map.** The 3D/2D control now floats in
   the bottom-right corner, stacked just above the zoom controls — the way map
   apps like Gaia place it — and flips the view in place instead of sitting in the
-  panel below. In 3D, the layer picker stays in the top-right corner and the
-  zoom/tilt controls in the bottom-right, matching the native 2D map so no
-  control jumps corners when you toggle.
+  panel below. It lines up precisely above the zoom in both 2D and 3D (the toggle
+  measures the map's zoom stack rather than guessing), and the 3D zoom is a
+  two-button control matching the native 2D zoom. In 3D, the layer picker stays
+  in the top-right corner so no control jumps corners when you toggle. The
+  redundant "Not live conditions" caption is gone (the map still shows terrain
+  shape, not live conditions — noted where it matters).
 - **3D terrain on Full Screen maps.** The same floating **3D** toggle is now on
   Full Screen maps (`BigMap.aspx`), not just ascent pages. It lifts the route off
   the native 2D map onto MapLibre terrain, draping the layer you had selected, and

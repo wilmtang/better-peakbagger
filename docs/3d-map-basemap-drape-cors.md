@@ -179,10 +179,10 @@ The behavior is deliberate graceful degradation, not an accidental crash. The
 existing test asserts it by name:
 
 ```js
-// test/terrain-map.test.mjs:309-311
-map.handlers.get('error')({ sourceId: 'basemap' });
-assert.match(window.document.querySelector('.bpb-terrain-badge').textContent, /^Terrain only/,
-    'a selected layer that fails CORS must not take down the terrain renderer');
+// test/terrain-map.test.mjs — a layer that fails CORS reverts to terrain-only
+// and explains why in the notice, without taking down the terrain renderer.
+assert.equal(picker().options[picker().selectedIndex].textContent, 'Terrain only');
+assert.match(window.document.querySelector('.bpb-terrain-notice').textContent, /can’t be draped/);
 ```
 
 The team knew these layers fail CORS and built the terrain-only fallback. The
