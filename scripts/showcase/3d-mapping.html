@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>3D mapping showcase</title>
+  <link rel="stylesheet" href="/scripts/showcase/showcase.css">
+  <style>
+    .map-screenshot {
+      display: block;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      object-position: bottom;
+    }
+    .provider-stage {
+      padding: 0;
+    }
+  </style>
+</head>
+<body>
+  <main class="showcase">
+    <header class="showcase-head">
+      <span class="showcase-logo" aria-hidden="true"></span>
+      <div>
+        <h1>Drape tracks over 3D terrain</h1>
+        <p class="showcase-subtitle">Interactive 3D mapping rendered entirely in your browser, no external tracking required.</p>
+      </div>
+    </header>
+
+    <section class="browser">
+      <div class="browser-bar">
+        <span class="traffic-lights"><i></i><i></i><i></i></span>
+        <div class="address" id="address">peakbagger.com/map/BigMap.aspx</div>
+      </div>
+      <div class="provider-stage">
+        <img class="map-screenshot" src="/store-assets/raw-3d-map.png" alt="3D Terrain Map">
+      </div>
+    </section>
+  </main>
+</body>
+</html>

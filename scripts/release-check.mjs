@@ -35,6 +35,7 @@ export function validateRelease({
     packageLock.packages?.[""]?.version,
     version,
   );
+  requireEqual("package.json description", packageJson.description, manifest.description);
 
   const geckoId = manifest.browser_specific_settings?.gecko?.id;
   if (typeof geckoId !== "string" || geckoId.trim() === "") {

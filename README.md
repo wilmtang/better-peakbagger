@@ -36,7 +36,7 @@ Preferences page.
 
 ### Open-source free 3D mapping
 
-![GPX analysis moving from a chart-synchronized 2D map into 3D terrain](store-assets/showcase-gpx-terrain.gif)
+![GPX analysis moving from a chart-synchronized 2D map into 3D terrain](store-assets/screenshot-gpx-terrain.gif)
 
 User-uploaded GPX tracks on Peakbagger ascent pages become full 3D terrain
 views at true vertical scale. The elevation model comes from
@@ -80,7 +80,7 @@ Filter long ascent lists to trips with a report, GPS track, or external link.
 Filters combine naturally, show live result counts, and remember what you mean
 by “has beta.” Sortable columns reorder instantly without reloading the page.
 
-![Ascent beta filters and in-page sorting](store-assets/screenshot-2-beta-filter.png)
+![Ascent beta filters and in-page sorting](store-assets/showcase-2-beta-filter.png)
 
 ### Check summit conditions and recent imagery
 
@@ -105,7 +105,7 @@ control waypoint retention plus automatic Trip Info and wilderness-night
 filling. Changes apply to open Peakbagger tabs immediately and to the next
 activity capture.
 
-![Better Peakbagger settings beside Peakbagger dark mode](store-assets/screenshot-3-dark-mode-settings.png)
+![Better Peakbagger settings beside Peakbagger dark mode](store-assets/showcase-3-dark-mode-settings.png)
 
 ## Privacy by design
 

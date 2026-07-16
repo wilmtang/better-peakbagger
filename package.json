@@ -1,7 +1,7 @@
 {
   "name": "better-peakbagger",
   "version": "2.1.0",
-  "description": "Captures your Garmin and Strava activities into confidence-ranked Peakbagger drafts, plus GPX analysis, beta filters, and dark mode.",
+  "description": "Captures Garmin and Strava into Peakbagger drafts, plus 3D maps, GPX analysis, beta filters, dark mode, and more.",
   "private": true,
   "license": "AGPL-3.0-or-later",
   "author": "wilmtang",
