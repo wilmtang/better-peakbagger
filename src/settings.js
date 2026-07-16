@@ -24,7 +24,15 @@
 
     const api = (typeof browser !== 'undefined' && browser.storage) ? browser : chrome;
     const STORAGE_KEY = 'bpbSettings';
-    const { DEFAULTS, clean, resolveTheme } = Schema;
+    const { DEFAULTS, clean } = Schema;
+
+    // Resolve a theme preference to a concrete 'light' | 'dark'. This reads
+    // matchMedia, so it stays out of the pure schema; only isolated-world and
+    // extension-page surfaces use it, and they all reach it through here.
+    const resolveTheme = theme => {
+        if (theme === 'light' || theme === 'dark') return theme;
+        return (globalThis.matchMedia && globalThis.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light';
+    };
 
     const get = async () => {
         try {

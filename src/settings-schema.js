@@ -148,12 +148,6 @@
         return s;
     };
 
-    // Resolve a theme preference to a concrete 'light' | 'dark'.
-    const resolveTheme = theme => {
-        if (theme === 'light' || theme === 'dark') return theme;
-        return (globalThis.matchMedia && globalThis.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light';
-    };
-
     const API = {
         MAP_LAYERS,
         ROUTE_STYLE,
@@ -161,7 +155,6 @@
         BOUNDS,
         DEFAULTS,
         clean,
-        resolveTheme,
         routeColor,
         routeCasingColor,
         routeWidth,
