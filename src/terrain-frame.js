@@ -42,6 +42,37 @@
             hillAccent: '#111512'
         }
     };
+    // Peak markers: Peakbagger's own dot feed, relayed by the host page on
+    // request as the camera settles. Every visual and behavioral knob lives in
+    // this one spec so restyling the markers — swapping the hollow rings for
+    // solid dots, recoloring states, resizing, or replacing the layer type
+    // wholesale in buildPeakLayers() — is a single-place change.
+    const PEAK_MARKERS = {
+        sourceId: 'bpb-peaks',
+        layerId: 'bpb-peaks-ring',
+        // The native 2D map hides its dots below Leaflet z12; MapLibre's z11
+        // shows the same ground area (512px vs 256px tiles), so this is the
+        // same "no dots when the map covers too big an area" rule.
+        minZoom: 11,
+        debounceMs: 250,
+        maxCount: 400,
+        // Ask for at most this multiple of the straight-down viewport around
+        // the camera center: a pitched camera's raw bounds stretch to the
+        // horizon, where dots would be sub-pixel clutter anyway.
+        boundsFactor: 3,
+        // Peakbagger's native ring colors (image/GreenCircle16.gif,
+        // PinkCircle16.gif, SmallOrangeCircle.gif). 'unknown' is what the
+        // feed reports when nobody is signed in.
+        states: {
+            climbed: { color: '#00ff00' },
+            unclimbed: { color: '#ff6699' },
+            unknown: { color: '#ffcc33' }
+        },
+        fallbackState: 'unknown',
+        // Hollow ring like the 16x16 2D marker gifs: transparent fill keeps
+        // the terrain visible through the center.
+        ring: { radius: 6, strokeWidth: 2.5, opacity: 0.95 }
+    };
 
     let map = null;
     let mapElement = null;
@@ -70,6 +101,11 @@
     // True when the route carries per-track colors (group maps), so the route
     // line is painted data-driven from each feature instead of one flat color.
     let routeHasFeatureColors = false;
+    let peakPopup = null;
+    let peaksRequestId = 0;
+    let peaksDebounceTimer = null;
+    let peaksUnavailable = false;
+    let lastPeaksBoundsKey = null;
 
     const post = (type, detail = {}) => {
         if (!parentOrigin) return;
@@ -103,6 +139,17 @@
             resizeObserver.disconnect();
             resizeObserver = null;
         }
+        if (peaksDebounceTimer !== null) {
+            clearTimeout(peaksDebounceTimer);
+            peaksDebounceTimer = null;
+        }
+        if (peakPopup) {
+            try { peakPopup.remove(); } catch (error) { /* Already detached with its map. */ }
+            peakPopup = null;
+        }
+        peaksRequestId = 0;
+        peaksUnavailable = false;
+        lastPeaksBoundsKey = null;
         if (map) {
             try { map.remove(); } catch (error) { /* The frame may already be unloading. */ }
             map = null;
@@ -547,6 +594,160 @@
         } : { type: 'FeatureCollection', features: [] });
     };
 
+    // === Peak markers ===
+    // The frame owns when to ask (camera settle, zoom cutoff) and how to draw;
+    // the host page owns the actual same-origin feed request. Everything the
+    // page sends back is re-validated here — a bad batch renders no dots, and
+    // the terrain view never fails because of them.
+
+    const peakStateColor = () => {
+        const expression = ['match', ['get', 'state']];
+        for (const [state, style] of Object.entries(PEAK_MARKERS.states)) expression.push(state, style.color);
+        expression.push(PEAK_MARKERS.states[PEAK_MARKERS.fallbackState].color);
+        return expression;
+    };
+
+    // The single place that decides what a peak marker looks like.
+    const buildPeakLayers = () => [{
+        id: PEAK_MARKERS.layerId, type: 'circle', source: PEAK_MARKERS.sourceId,
+        paint: {
+            'circle-radius': PEAK_MARKERS.ring.radius,
+            'circle-color': 'rgba(0, 0, 0, 0)',
+            'circle-stroke-width': PEAK_MARKERS.ring.strokeWidth,
+            'circle-stroke-color': peakStateColor(),
+            'circle-stroke-opacity': PEAK_MARKERS.ring.opacity
+        }
+    }];
+
+    // All-or-nothing like validateRoute: one malformed row drops the batch.
+    const validatePeaks = value => {
+        if (!Array.isArray(value) || value.length > PEAK_MARKERS.maxCount) return null;
+        const features = [];
+        for (const peak of value) {
+            if (!peak || typeof peak !== 'object') return null;
+            const { id, name, lat, lon, state } = peak;
+            if (!Number.isInteger(id) || id === 0 || Math.abs(id) > 1e9) return null;
+            if (typeof name !== 'string' || !name || name.length > 120
+                || /[\u0000-\u001f\u007f]/.test(name)) return null;
+            if (!Number.isFinite(lat) || Math.abs(lat) > MAX_MERCATOR_LAT
+                || !Number.isFinite(lon) || Math.abs(lon) > 180) return null;
+            features.push({
+                type: 'Feature',
+                properties: {
+                    id,
+                    name,
+                    state: Object.hasOwn(PEAK_MARKERS.states, state) ? state : PEAK_MARKERS.fallbackState
+                },
+                geometry: { type: 'Point', coordinates: [lon, lat] }
+            });
+        }
+        return features;
+    };
+
+    const setPeakData = features => {
+        const source = map && map.getSource(PEAK_MARKERS.sourceId);
+        if (source && typeof source.setData === 'function') {
+            source.setData({ type: 'FeatureCollection', features });
+        }
+    };
+
+    // The visible bounds, clamped to boundsFactor × the straight-down viewport
+    // around the camera center so a pitched camera never asks for the horizon.
+    const peakRequestBounds = () => {
+        const rawBounds = map.getBounds();
+        const center = map.getCenter();
+        const canvas = typeof map.getCanvas === 'function' ? map.getCanvas() : null;
+        const width = canvas ? (canvas.clientWidth || canvas.width) : 0;
+        const height = canvas ? (canvas.clientHeight || canvas.height) : 0;
+        if (!rawBounds || !center || !(width > 0) || !(height > 0)) return null;
+        const degreesPerPixel = 360 / (512 * Math.pow(2, map.getZoom()));
+        const halfLon = (width * degreesPerPixel * PEAK_MARKERS.boundsFactor) / 2;
+        const halfLat = (height * degreesPerPixel * PEAK_MARKERS.boundsFactor) / 2
+            * Math.cos(center.lat * Math.PI / 180);
+        const round = value => Math.round(value * 1e4) / 1e4;
+        const bounds = {
+            miny: round(Math.max(rawBounds.getSouth(), center.lat - halfLat)),
+            maxy: round(Math.min(rawBounds.getNorth(), center.lat + halfLat)),
+            minx: round(Math.max(rawBounds.getWest(), center.lng - halfLon)),
+            maxx: round(Math.min(rawBounds.getEast(), center.lng + halfLon))
+        };
+        return bounds.miny < bounds.maxy && bounds.minx < bounds.maxx ? bounds : null;
+    };
+
+    const requestPeaks = () => {
+        if (!map || !loaded || peaksUnavailable) return;
+        try {
+            if (map.getZoom() < PEAK_MARKERS.minZoom) {
+                lastPeaksBoundsKey = null;
+                setPeakData([]);
+                return;
+            }
+            const bounds = peakRequestBounds();
+            if (!bounds) return;
+            const key = JSON.stringify(bounds);
+            if (key === lastPeaksBoundsKey) return;
+            lastPeaksBoundsKey = key;
+            peaksRequestId++;
+            post('peaksRequest', { requestId: peaksRequestId, bounds });
+        } catch (error) { /* Peak dots are an overlay; the terrain view never fails for them. */ }
+    };
+
+    const schedulePeaksRequest = () => {
+        if (peaksDebounceTimer !== null) clearTimeout(peaksDebounceTimer);
+        peaksDebounceTimer = setTimeout(() => {
+            peaksDebounceTimer = null;
+            requestPeaks();
+        }, PEAK_MARKERS.debounceMs);
+    };
+
+    const applyPeaks = data => {
+        if (!map || !loaded) return;
+        if (data.unavailable === true) {
+            // This surface has no peak feed (e.g. group maps): stop asking.
+            peaksUnavailable = true;
+            setPeakData([]);
+            return;
+        }
+        // Only the newest request may answer; stale replies are dropped.
+        if (data.requestId !== peaksRequestId) return;
+        setPeakData(validatePeaks(data.peaks) || []);
+    };
+
+    // The same white name-link bubble the 2D markers open, rebuilt from
+    // validated fields only: the link target is derived from the integer peak
+    // id, never from received markup.
+    const showPeakPopup = feature => {
+        const maplibre = globalThis.maplibregl;
+        const properties = (feature && feature.properties) || {};
+        const id = properties.id;
+        const name = properties.name;
+        const coordinates = feature && feature.geometry && feature.geometry.coordinates;
+        if (!Number.isInteger(id) || id === 0 || typeof name !== 'string' || !name
+            || !Array.isArray(coordinates) || !parentOrigin
+            || !maplibre || typeof maplibre.Popup !== 'function') return;
+        if (peakPopup) {
+            try { peakPopup.remove(); } catch (error) { /* Already detached. */ }
+            peakPopup = null;
+        }
+        const content = document.createElement('div');
+        content.className = 'bpb-peak-popup';
+        const link = document.createElement('a');
+        link.href = `${parentOrigin}/peak.aspx?pid=${id}`;
+        link.target = '_blank';
+        link.rel = 'noopener noreferrer';
+        link.textContent = name;
+        content.append(link);
+        peakPopup = new maplibre.Popup({
+            closeButton: true,
+            closeOnClick: true,
+            maxWidth: '280px',
+            offset: PEAK_MARKERS.ring.radius + PEAK_MARKERS.ring.strokeWidth
+        })
+            .setLngLat([coordinates[0], coordinates[1]])
+            .setDOMContent(content)
+            .addTo(map);
+    };
+
     const createTerrain = data => {
         if (map || mapElement) return;
         const route = validateRoute(data.routeSegments, data.routeColors);
@@ -700,16 +901,32 @@
                     layout: { 'line-join': 'round', 'line-cap': 'round' },
                     paint: { 'line-color': routeLineColor(activeRouteStyle), 'line-width': activeRouteStyle.width }
                 });
+                terrainMap.addSource(PEAK_MARKERS.sourceId, { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+                for (const layer of buildPeakLayers()) terrainMap.addLayer(layer);
+                terrainMap.on('click', PEAK_MARKERS.layerId, event => {
+                    const feature = event && event.features && event.features[0];
+                    if (feature) showPeakPopup(feature);
+                });
+                terrainMap.on('mouseenter', PEAK_MARKERS.layerId, () => {
+                    if (typeof terrainMap.getCanvas === 'function') terrainMap.getCanvas().style.cursor = 'pointer';
+                });
+                terrainMap.on('mouseleave', PEAK_MARKERS.layerId, () => {
+                    if (typeof terrainMap.getCanvas === 'function') terrainMap.getCanvas().style.cursor = '';
+                });
                 terrainMap.addSource('bpb-highlight', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
                 terrainMap.addLayer({
                     id: 'bpb-highlight', type: 'circle', source: 'bpb-highlight',
                     paint: { 'circle-radius': 8, 'circle-color': '#ff3b30', 'circle-stroke-color': '#ffffff', 'circle-stroke-width': 2 }
+                });
+                terrainMap.on('moveend', () => {
+                    if (map === terrainMap) schedulePeaksRequest();
                 });
                 loaded = true;
                 setTheme(activeTheme);
                 status.remove();
                 mapElement.style.pointerEvents = 'auto';
                 post('loaded', { navTop: measureNavTop() });
+                schedulePeaksRequest();
             });
 
             loadTimer = setTimeout(() => fail('timeout'), MAP_LOAD_TIMEOUT_MS);
@@ -737,6 +954,7 @@
             removeTerrain();
             post('destroyed');
         } else if (data.type === 'highlight') setHighlight(data.coordinates);
+        else if (data.type === 'peaks') applyPeaks(data);
         else if (data.type === 'update') {
             setRoutePaint(data.routeStyle);
             setTheme(data.theme);

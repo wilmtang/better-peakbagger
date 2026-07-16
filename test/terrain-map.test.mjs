@@ -631,3 +631,249 @@ test('the extension-provided vector entry grafts the provider style under the ex
 
     dom.window.close();
 });
+
+test('the bridge forwards peak-feed requests to the page and replies to the frame', async () => {
+    const dom = new JSDOM(`<!doctype html><body>
+      <div id="bpb-map-viewport">
+        <iframe src="https://www.peakbagger.com/map/MasterMap.aspx"></iframe>
+      </div>
+    </body>`, {
+        url: 'https://www.peakbagger.com/climber/ascent.aspx?aid=1',
+        runScripts: 'outside-only'
+    });
+    const { window } = dom;
+    const pageMessages = [];
+    const frameMessages = [];
+    window.chrome = { runtime: { getURL: path => `chrome-extension://test-id/${path}` } };
+    window.BPBSettings = {
+        get: async () => ({ enable3dMap: true }),
+        subscribe() { return () => {}; }
+    };
+    window.postMessage = message => { pageMessages.push(message); };
+    window.eval(terrainBridgeSource);
+
+    window.dispatchEvent(new window.MessageEvent('message', {
+        source: window,
+        origin: window.location.origin,
+        data: {
+            __bpbTerrain: true, dir: 'toCS', type: 'init',
+            routeSegments: [[[48.7, -121.8], [48.71, -121.81]]]
+        }
+    }));
+    await new Promise(resolve => window.setTimeout(resolve, 0));
+    const frame = window.document.getElementById('bpb-terrain-frame');
+    frame.contentWindow.postMessage = message => { frameMessages.push(message); };
+
+    window.dispatchEvent(new window.MessageEvent('message', {
+        source: frame.contentWindow,
+        origin: 'chrome-extension://test-id',
+        data: {
+            __bpbTerrainFrame: true, dir: 'toParent', type: 'peaksRequest',
+            requestId: 3, bounds: { miny: 48.6, maxy: 48.8, minx: -121.9, maxx: -121.7 }
+        }
+    }));
+    const request = pageMessages.at(-1);
+    assert.equal(request.type, 'peaksRequest');
+    assert.equal(request.dir, 'toPage');
+    assert.equal(request.requestId, 3);
+    assert.deepEqual(request.bounds, { miny: 48.6, maxy: 48.8, minx: -121.9, maxx: -121.7 });
+
+    window.dispatchEvent(new window.MessageEvent('message', {
+        source: window,
+        origin: window.location.origin,
+        data: {
+            __bpbTerrain: true, dir: 'toCS', type: 'peaks',
+            requestId: 3,
+            peaks: [{ id: 58603, name: 'Iron Mountain', lat: 48.72, lon: -121.79, state: 'climbed' }]
+        }
+    }));
+    const reply = frameMessages.at(-1);
+    assert.equal(reply.type, 'peaks');
+    assert.equal(reply.dir, 'toFrame');
+    assert.equal(reply.requestId, 3);
+    assert.deepEqual(reply.peaks, [{ id: 58603, name: 'Iron Mountain', lat: 48.72, lon: -121.79, state: 'climbed' }]);
+    dom.window.close();
+});
+
+test('3D peak markers request Peakbagger dots on camera settle and render only validated batches', async () => {
+    const dom = new JSDOM('<!doctype html><body></body>', {
+        url: 'https://www.peakbagger.com/climber/ascent.aspx?aid=1',
+        runScripts: 'outside-only',
+        pretendToBeVisual: true
+    });
+    const { window } = dom;
+    const messages = [];
+    const maps = [];
+    const popups = [];
+    const camera = {
+        zoom: 13,
+        center: { lng: -121.805, lat: 48.73 },
+        bounds: { south: 48.6, north: 48.86, west: -121.95, east: -121.66 }
+    };
+
+    class MapStub {
+        constructor(options) {
+            this.options = options;
+            this.sources = new Map();
+            this.layers = [];
+            this.paint = [];
+            this.handlers = new Map();
+            this.canvas = { clientWidth: 800, clientHeight: 600, style: {} };
+            maps.push(this);
+        }
+        addControl() {}
+        once(type, callback) { if (type === 'load') window.queueMicrotask(callback); }
+        on(type, layerOrCallback, maybeCallback) {
+            const key = typeof layerOrCallback === 'string' ? `${type}:${layerOrCallback}` : type;
+            this.handlers.set(key, typeof layerOrCallback === 'function' ? layerOrCallback : maybeCallback);
+        }
+        addSource(id, source) {
+            this.sources.set(id, { ...source, setData(data) { this.data = data; } });
+        }
+        addLayer(layer) { this.layers.push(layer); }
+        getLayer(id) { return this.layers.find(layer => layer.id === id); }
+        removeLayer(id) { this.layers = this.layers.filter(layer => layer.id !== id); }
+        getSource(id) { return this.sources.get(id); }
+        removeSource(id) { this.sources.delete(id); }
+        setPaintProperty(...args) { this.paint.push(args); }
+        getZoom() { return camera.zoom; }
+        getCenter() { return camera.center; }
+        getBounds() {
+            const box = camera.bounds;
+            return {
+                getSouth: () => box.south,
+                getNorth: () => box.north,
+                getWest: () => box.west,
+                getEast: () => box.east
+            };
+        }
+        getCanvas() { return this.canvas; }
+        resize() {}
+        remove() { this.removed = true; }
+    }
+    class PopupStub {
+        constructor(options) { this.options = options; popups.push(this); }
+        setLngLat(lngLat) { this.lngLat = lngLat; return this; }
+        setDOMContent(node) { this.node = node; return this; }
+        addTo(target) { this.target = target; return this; }
+        remove() { this.removedPopup = true; }
+    }
+
+    window.chrome = { runtime: { getURL: path => `chrome-extension://test-id/${path}` } };
+    window.BPBTerrainCache = {
+        PROTOCOL: 'bpb-dem',
+        create() { return { load() {}, flush() { return Promise.resolve(); } }; }
+    };
+    window.maplibregl = {
+        Map: MapStub,
+        Popup: PopupStub,
+        NavigationControl: class {},
+        ScaleControl: class {},
+        AttributionControl: class {},
+        setWorkerUrl() {},
+        addProtocol() {},
+        removeProtocol() {}
+    };
+    window.postMessage = message => { messages.push(message); };
+    window.eval(terrainFrameSource);
+
+    const dispatch = data => window.dispatchEvent(new window.MessageEvent('message', {
+        source: window,
+        origin: window.location.origin,
+        data: { __bpbTerrainFrame: true, dir: 'toFrame', ...data }
+    }));
+    const settle = () => new Promise(resolve => window.setTimeout(resolve, 320));
+
+    dispatch({ type: 'init', routeSegments: [[[48.7, -121.8], [48.71, -121.81]]] });
+    await new Promise(resolve => window.queueMicrotask(resolve));
+    const map = maps[0];
+    assert.ok(map.getLayer('bpb-peaks-ring'), 'the peak ring layer exists');
+    assert.ok(map.getSource('bpb-peaks'), 'the peak source exists');
+    const ringPaint = map.getLayer('bpb-peaks-ring').paint;
+    assert.deepEqual(JSON.parse(JSON.stringify(ringPaint['circle-stroke-color'])),
+        ['match', ['get', 'state'], 'climbed', '#00ff00', 'unclimbed', '#ff6699', 'unknown', '#ffcc33', '#ffcc33'],
+        'ring colors are data-driven from the marker spec');
+
+    await settle();
+    const request = messages.at(-1);
+    assert.equal(request.type, 'peaksRequest', 'the frame asks for dots after load settles');
+    assert.equal(request.requestId, 1);
+    const bounds = request.bounds;
+    assert.ok(bounds.miny > camera.bounds.south && bounds.maxy < camera.bounds.north,
+        'the request is clamped inside the raw view latitudes');
+    assert.ok(bounds.minx > camera.bounds.west && bounds.maxx < camera.bounds.east,
+        'the request is clamped inside the raw view longitudes');
+    assert.ok(bounds.miny < camera.center.lat && camera.center.lat < bounds.maxy);
+    assert.ok(bounds.minx < camera.center.lng && camera.center.lng < bounds.maxx);
+
+    dispatch({
+        type: 'peaks',
+        requestId: 1,
+        peaks: [
+            { id: 58603, name: 'Iron Mountain', lat: 48.72, lon: -121.79, state: 'climbed' },
+            { id: -114297, name: 'Peak 5000 (Prov)', lat: 48.74, lon: -121.82, state: 'unknown' },
+            { id: 12, name: 'Weird State', lat: 48.75, lon: -121.83, state: 'purple' }
+        ]
+    });
+    const rendered = () => JSON.parse(JSON.stringify(map.getSource('bpb-peaks').data.features));
+    assert.equal(rendered().length, 3);
+    assert.deepEqual(rendered()[0], {
+        type: 'Feature',
+        properties: { id: 58603, name: 'Iron Mountain', state: 'climbed' },
+        geometry: { type: 'Point', coordinates: [-121.79, 48.72] }
+    });
+    assert.equal(rendered()[2].properties.state, 'unknown', 'an unrecognized state falls back safely');
+
+    dispatch({
+        type: 'peaks',
+        requestId: 999,
+        peaks: [{ id: 1, name: 'Stale Peak', lat: 48.7, lon: -121.8, state: 'climbed' }]
+    });
+    assert.equal(rendered().length, 3, 'a reply for a different request is ignored');
+
+    dispatch({
+        type: 'peaks',
+        requestId: 1,
+        peaks: [
+            { id: 5, name: 'Fine Peak', lat: 48.7, lon: -121.8, state: 'climbed' },
+            { id: 6, name: 'Broken Peak', lat: 99, lon: -121.8, state: 'climbed' }
+        ]
+    });
+    assert.equal(rendered().length, 0, 'one malformed row drops the whole batch');
+
+    const click = map.handlers.get('click:bpb-peaks-ring');
+    assert.ok(click, 'the ring layer is clickable');
+    click({
+        features: [{
+            properties: { id: 58603, name: 'Iron <b>&</b> Mountain', state: 'climbed' },
+            geometry: { type: 'Point', coordinates: [-121.79, 48.72] }
+        }]
+    });
+    assert.equal(popups.length, 1, 'a popup opens for the clicked dot');
+    const link = popups[0].node.querySelector('a');
+    assert.equal(link.href, 'https://www.peakbagger.com/peak.aspx?pid=58603',
+        'the link is built from the integer peak id only');
+    assert.equal(link.textContent, 'Iron <b>&</b> Mountain', 'the name renders as text, never as markup');
+    assert.equal(link.target, '_blank');
+    assert.equal(link.rel, 'noopener noreferrer');
+    assert.deepEqual(JSON.parse(JSON.stringify(popups[0].lngLat)), [-121.79, 48.72]);
+
+    const beforeZoomOut = messages.filter(message => message.type === 'peaksRequest').length;
+    camera.zoom = 9;
+    map.handlers.get('moveend')();
+    await settle();
+    assert.equal(messages.filter(message => message.type === 'peaksRequest').length, beforeZoomOut,
+        'no request below the native zoom cutoff');
+    assert.equal(rendered().length, 0, 'dots are cleared when the map covers too big an area');
+
+    camera.zoom = 13;
+    dispatch({ type: 'peaks', unavailable: true });
+    map.handlers.get('moveend')();
+    await settle();
+    assert.equal(messages.filter(message => message.type === 'peaksRequest').length, beforeZoomOut,
+        'a surface without a peak feed is never asked again');
+
+    dispatch({ type: 'destroy' });
+    assert.equal(map.removed, true);
+    dom.window.close();
+});

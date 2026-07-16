@@ -116,6 +116,8 @@
                 postToPage('destroyed');
             } else if (data.type === 'highlight') {
                 postToFrame('highlight', { coordinates: data.coordinates });
+            } else if (data.type === 'peaks') {
+                postToFrame('peaks', { requestId: data.requestId, peaks: data.peaks, unavailable: data.unavailable });
             } else if (data.type === 'update') {
                 if (pendingInit) {
                     pendingInit.routeStyle = data.routeStyle;
@@ -138,6 +140,8 @@
             postToPage('loaded', { navTop: data.navTop });
         } else if (data.type === 'metrics') {
             postToPage('metrics', { navTop: data.navTop });
+        } else if (data.type === 'peaksRequest') {
+            postToPage('peaksRequest', { requestId: data.requestId, bounds: data.bounds });
         } else if (data.type === 'error') {
             fail(data.reason);
         }

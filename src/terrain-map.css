@@ -295,6 +295,37 @@ html:has(.bpb-terrain-frame-body),
     color: #aad0ff;
 }
 
+/* Peak-marker popup: the same white name-link bubble the 2D markers open. */
+#bpb-terrain-map .bpb-peak-popup {
+    font-family: arial, sans-serif;
+    font-size: 13px;
+    line-height: 1.35;
+    padding: 2px 10px 2px 2px;
+}
+
+#bpb-terrain-map .maplibregl-popup-content {
+    border-radius: 8px;
+    box-shadow: 0 1px 6px rgb(0 0 0 / 24%);
+}
+
+#bpb-terrain-map[data-theme="dark"] .maplibregl-popup-content {
+    color: #e2ded5;
+    background: #272c29;
+}
+
+#bpb-terrain-map[data-theme="dark"] .maplibregl-popup-tip {
+    border-top-color: #272c29;
+    border-bottom-color: #272c29;
+}
+
+#bpb-terrain-map[data-theme="dark"] .maplibregl-popup-close-button {
+    color: #e2ded5;
+}
+
+#bpb-terrain-map[data-theme="dark"] .bpb-peak-popup a {
+    color: #aad0ff;
+}
+
 @media (prefers-reduced-motion: reduce) {
     #bpb-terrain-map * {
         scroll-behavior: auto !important;
