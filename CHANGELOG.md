@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- **The 3D map is a one-tap toggle on the map.** The 3D/2D control now floats in
+  the top-left corner of the map — the way other map apps do it — and flips the
+  view in place instead of sitting in the panel below. In 3D, the layer picker
+  stays in the top-right corner and the zoom/tilt controls in the bottom-right,
+  matching the native 2D map so no control jumps corners when you toggle.
+- **3D terrain on Full Screen maps.** The same floating **3D** toggle is now on
+  Full Screen maps (`BigMap.aspx`), not just ascent pages. It lifts the route off
+  the native 2D map onto MapLibre terrain, draping the layer you had selected, and
+  restores the 2D map when you toggle back. Single-ascent maps (`t=A`) show one
+  route; group maps (`t=G`) draw every track in the route color. Off by default
+  with the rest of the experimental 3D map; markers and peaks stay 2D-only.
 - **Clearer 3D map gestures.** The 3D terrain view now shows an always-visible,
   OS-aware hint — *"Drag to pan · ⌘/Ctrl + scroll to zoom · right-drag to
   tilt"* — so the modifier needed to zoom (kept so the page doesn't
