@@ -4,7 +4,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
+import { readFileSync } from 'node:fs';
+import vm from 'node:vm';
 
+const readFile = fs.readFile;
 const manifest = JSON.parse(await fs.readFile(new URL('../manifest.json', import.meta.url), 'utf8'));
 const packageJson = JSON.parse(await fs.readFile(new URL('../package.json', import.meta.url), 'utf8'));
 
@@ -92,4 +95,47 @@ test('peak planning links are isolated to Peak.aspx in the extension world', () 
     assert.equal(peakLinks.run_at, 'document_end');
     assert.equal(peakLinks.world, undefined);
     assert.ok(peakLinks.matches.every(pattern => /peakbagger\.com\/(?:P|p)eak\.aspx/.test(pattern)));
+});
+
+// Chrome runs src/background.js as the MV3 service worker and ignores
+// manifest.background.scripts (web-ext lint reports the property as
+// Firefox-unsupported). Asserting that list therefore proves nothing about
+// Chrome: the worker resolves its dependencies through its own importScripts.
+// Boot the worker the way Chrome does and require that it comes up.
+test('the Chrome service worker boots from its own importScripts and registers its listener', async () => {
+    const context = vm.createContext({
+        console, Math, Date, URL, URLSearchParams, structuredClone,
+        fetch: async () => ({ ok: true, text: async () => '' })
+    });
+    context.globalThis = context;
+    let registeredListener = false;
+    context.chrome = {
+        storage: { sync: { get: async () => ({}) }, session: { get: async () => ({}) } },
+        runtime: { onMessage: { addListener: () => { registeredListener = true; } } },
+        tabs: { onRemoved: { addListener: () => {} } },
+        action: {},
+        alarms: { create: () => {}, onAlarm: { addListener: () => {} } }
+    };
+    const srcDir = new URL('../src/', import.meta.url);
+    context.importScripts = (...files) => {
+        for (const file of files) {
+            vm.runInContext(readFileSync(new URL(file, srcDir), 'utf8'), context, { filename: file });
+        }
+    };
+    vm.runInContext(readFileSync(new URL('background.js', srcDir), 'utf8'), context, { filename: 'background.js' });
+
+    assert.equal(typeof context.BPBSettings, 'object',
+        'settings.js bailed out — the worker is missing one of its importScripts');
+    assert.equal(typeof context.BPBCaptureCore, 'object', 'capture-core.js bailed out');
+    assert.ok(registeredListener,
+        'the worker never registered its message listener, so capture is dead in Chrome');
+});
+
+// The Firefox list and the Chrome imports must not drift apart.
+test('manifest background.scripts matches the worker importScripts order', async () => {
+    const background = await readFile(new URL('../src/background.js', import.meta.url), 'utf8');
+    const imported = [...background.matchAll(/importScripts\('([^']+)'\)/g)].map(match => `src/${match[1]}`);
+    const declared = manifest.background.scripts.filter(script => script !== 'src/background.js');
+    assert.deepEqual(imported, declared,
+        'Firefox loads background.scripts and Chrome loads importScripts; they must list the same modules in the same order');
 });

@@ -4,9 +4,13 @@
 // Garmin/Strava capture coordinator. Long-lived state contains only the reduced
 // privacy upload and derived ascent values, and lives in storage.session.
 
+// Chrome runs this file as the MV3 service worker and ignores the manifest's
+// background.scripts list, so these imports — not that list — are what actually
+// resolve the worker's dependencies. Keep the two in the same order.
 if (typeof importScripts === 'function') {
     if (!globalThis.BPBGpxMetrics) importScripts('gpx-metrics.js');
     if (!globalThis.BPBCaptureCore) importScripts('capture-core.js');
+    if (!globalThis.BPBSettingsSchema) importScripts('settings-schema.js');
     if (!globalThis.BPBSettings) importScripts('settings.js');
 }
 
