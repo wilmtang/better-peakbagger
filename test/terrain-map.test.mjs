@@ -282,6 +282,8 @@ test('3D terrain frame validates coordinate-only routes before loading public DE
     assert.match(map.options.style.sources.basemap.attribution, /https:\/\/example\.com\/copyright/);
     assert.doesNotMatch(map.options.style.sources.basemap.attribution, /script|alert/i);
     assert.equal(map.options.style.layers.find(layer => layer.id === 'basemap').paint['raster-opacity'], 0.78);
+    assert.equal(map.options.style.layers.find(layer => layer.id === 'terrain-hillshade').paint['hillshade-illumination-anchor'], 'map',
+        'hillshade is anchored to the map, so rotating/tilting the camera does not swing the light and flip the shading');
     const picker = () => window.document.querySelector('.bpb-terrain-picker');
     const notice = () => window.document.querySelector('.bpb-terrain-notice');
     assert.ok(picker(), 'a drape picker is shown when a layer is offered');
