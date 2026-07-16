@@ -12,6 +12,7 @@ import { waitFor } from './helpers/load-page.mjs';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const tzLookupSource = await readFile(path.join(root, 'vendor', 'tz-lookup.js'), 'utf8');
 const metricsSource = await readFile(path.join(root, 'src', 'gpx-metrics.js'), 'utf8');
+const basemapSource = await readFile(path.join(root, 'src', 'terrain-basemap.js'), 'utf8');
 const analyzerSource = await readFile(path.join(root, 'src', 'gpx-analyzer.js'), 'utf8');
 
 const gpx = `<?xml version="1.0"?>
@@ -154,6 +155,7 @@ test('GPX analyzer adds a thick, segment-preserving route casing behind native L
 
     Object.defineProperty(window.document, 'readyState', { configurable: true, value: 'complete' });
     window.eval(metricsSource);
+    window.eval(basemapSource);
     window.eval(analyzerSource);
     await waitFor(dom, () => polylineCalls.length === 2);
 
@@ -389,6 +391,7 @@ const loadOvernightAnalyzer = async ({ withTzLookup }) => {
     Object.defineProperty(window.document, 'readyState', { configurable: true, value: 'complete' });
     if (withTzLookup) window.eval(tzLookupSource);
     window.eval(metricsSource);
+    window.eval(basemapSource);
     window.eval(analyzerSource);
     const analysisText = () => window.document.getElementById('bpb-gpx-analysis')?.textContent || '';
     await waitFor(dom, () => analysisText().includes('Possible Camping'));
@@ -442,6 +445,7 @@ test('a failed GPS track download reports the HTTP error instead of a parse mess
 
     Object.defineProperty(window.document, 'readyState', { configurable: true, value: 'complete' });
     window.eval(metricsSource);
+    window.eval(basemapSource);
     window.eval(analyzerSource);
     const analysisText = () => window.document.getElementById('bpb-gpx-analysis')?.textContent || '';
     await waitFor(dom, () => analysisText().includes('HTTP 404'));
