@@ -10,10 +10,10 @@ import { JSDOM } from 'jsdom';
 import { makeChromeStub, waitFor } from './helpers/load-page.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const schemaSource = await readFile(path.join(root, 'src', 'settings-schema.js'), 'utf8');
-const settingsSource = await readFile(path.join(root, 'src', 'settings.js'), 'utf8');
-const bridgeSource = await readFile(path.join(root, 'src', 'peak-map-bridge.js'), 'utf8');
-const peakMapSource = await readFile(path.join(root, 'src', 'peak-map.js'), 'utf8');
+// The Peak page loads the isolated settings-bridge bundle and the MAIN-world
+// coordinator bundle. Evaluate both, as the browser does.
+const bridgeBundle = await readFile(path.join(root, 'dist', 'content', 'peak-map-bridge.js'), 'utf8');
+const peakMapBundle = await readFile(path.join(root, 'dist', 'content', 'peak-map.js'), 'utf8');
 
 const peakHtml = ({ mapPid = 2829, mapType = 'P', includeCoordinates = true,
     fullMapOrigin = 'https://www.peakbagger.com' } = {}) => `<!doctype html><body>
@@ -43,10 +43,6 @@ const loadPeakMap = ({ enabled = true, mapPid = 2829, mapType = 'P',
         terrainCacheLimitMb: 384
     } });
     window.matchMedia = () => ({ matches: false, addEventListener() {}, removeEventListener() {} });
-    window.BPBTerrainBasemap = {
-        active: () => null,
-        enumerate: () => [{ name: 'CalTopo', tiles: ['https://example.com/{z}/{x}/{y}.png'] }]
-    };
     const postMessage = message => {
         messages.push(structuredClone(message));
         window.queueMicrotask(() => window.dispatchEvent(new window.MessageEvent('message', {
@@ -56,10 +52,8 @@ const loadPeakMap = ({ enabled = true, mapPid = 2829, mapType = 'P',
         })));
     };
     window.postMessage = postMessage;
-    window.eval(schemaSource);
-    window.eval(settingsSource);
-    window.eval(bridgeSource);
-    window.eval(peakMapSource);
+    window.eval(bridgeBundle);
+    window.eval(peakMapBundle);
     return { dom, window, messages };
 };
 
@@ -96,7 +90,10 @@ test('Peak pages wrap the Dynamic Map with a 3D toggle and open a validated summ
     });
     assert.equal(init.theme, 'dark');
     assert.equal(init.cacheLimitMb, 384);
-    assert.deepEqual(init.basemaps, [{ name: 'CalTopo', tiles: ['https://example.com/{z}/{x}/{y}.png'] }]);
+    // The coordinator forwards the drape basemaps enumerated from the native
+    // layer select; this fixture models no such select, so the list is empty.
+    // terrain-basemap.test.mjs covers enumerate()'s code→drape mapping.
+    assert.ok(Array.isArray(init.basemaps));
     assert.equal('routeSegments' in init, false, 'Peak pages do not invent a fake GPX route');
 
     window.dispatchEvent(new window.MessageEvent('message', {
