@@ -11,5 +11,7 @@ living docs in [`docs/`](../).
 - [3D map: the layer drape usually fails to load](3d-map-basemap-drape-cors.md) —
   why a draped 2D layer often falls back to terrain-only in 3D (cross-origin tile
   restrictions).
+- [3D drape resolution and GPU verification](3d-drape-resolution-and-gpu-verification.md) —
+  investigation into blurry drapes at high tilt and MapLibre LOD tuning.
 - [Peakbagger GPX Ascent Logger](peakbagger-gpx-ascent-detection-research.md) —
   research note on ascent/summit detection.

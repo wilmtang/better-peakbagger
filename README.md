@@ -184,6 +184,7 @@ and the [discussion board](https://github.com/wilmtang/better-peakbagger/discuss
 - [Deep dive: the settings system and the bridge](#deep-dive-the-settings-system-and-the-bridge)
 - [Deep dive: the GPX Analyzer](#deep-dive-the-gpx-analyzer)
 - [Deep dive: opt-in 3D terrain](#deep-dive-opt-in-3d-terrain)
+- [Deep dive: 3D peak markers](#deep-dive-3d-peak-markers)
 - [Deep dive: the Leaflet map-hover injection](#deep-dive-the-leaflet-map-hover-injection)
 - [Deep dive: native Full Screen GPS tracks](#deep-dive-native-full-screen-gps-tracks)
 - [Deep dive: the Ascent Beta Filter](#deep-dive-the-ascent-beta-filter)
@@ -687,6 +688,38 @@ Failure is layered rather than all-or-nothing:
 Chart hover follows the route in either map. This is still a terrain-shape view,
 not current conditions: a DEM and raster basemap cannot establish current snow
 bridges, crevasses, cornices, rockfall, vegetation, or route safety.
+
+---
+
+## Deep dive: 3D peak markers
+
+The native 2D map draws colored ring markers (green climbed, pink unclimbed,
+orange anonymous) from a server feed on every pan/zoom settle. The 3D view
+mirrors this end to end — same feed, same parameters, same colors, same
+click-for-name-link popup — without the extension frame ever contacting
+Peakbagger directly. The page-world coordinator issues the identical request
+the native 2D map would make for the current view and relays the response
+through the bridge; the frame validates all-or-nothing and renders hollow rings
+as a MapLibre circle layer.
+
+Clicking a dot on a tilted camera required bypassing MapLibre's built-in layer
+events. With terrain enabled, the library resolves a click to the ground point
+under the cursor, but billboarded rings float above that surface — at high
+pitch the resolved point lands far behind the peak and the click goes dead. The
+frame instead hit-tests every click and hover itself in screen space: it
+projects each rendered anchor through `map.project()`, compares pixel distance
+against the ring spec, and picks the nearest hit. `circle-pitch-scale:
+'viewport'` keeps the rings at a constant screen size so a constant pixel
+radius is exact at every pitch.
+
+Because DEM resolution smooths and shifts sharp summits, each dot is snapped
+uphill on the rendered terrain to its local DEM maximum, leashed to prevent
+running onto a neighboring mountain's flank. Verdicts are cached per peak and
+re-opened only at a higher integer zoom level where finer terrain may be
+available.
+
+Full detail — the native feed protocol, privacy model, snapping algorithm, and
+known limitations — is in [`docs/3d-peak-markers.md`](docs/3d-peak-markers.md).
 
 ---
 
