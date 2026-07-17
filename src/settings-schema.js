@@ -4,7 +4,7 @@
 // Better Peakbagger — pure settings schema: defaults, bounds, and validators.
 // This file intentionally has no DOM or extension-API dependency, so unlike
 // src/settings.js it can also load in the page MAIN world (the GPX analyzer and
-// the Full Screen BigMap) and in the extension-owned terrain frame.
+// Full Screen/Peak map coordinators) and in the extension-owned terrain frame.
 //
 // Those surfaces receive settings over window.postMessage, which crosses a
 // trust boundary, so they must re-validate rather than trust the sender. They

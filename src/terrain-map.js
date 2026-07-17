@@ -222,9 +222,10 @@
             fail('unavailable');
             return;
         }
-        // The MAIN-world coordinator (ascent GPX analyzer or Full Screen BigMap)
-        // owns the map viewport element and only sends 'init' once it has a real
-        // route to draw, so the bridge just needs the shared mount to exist.
+        // The MAIN-world coordinator (ascent GPX analyzer, Full Screen BigMap,
+        // or a Peak page) owns the map viewport element and only sends 'init'
+        // once it has a validated route or summit focus to draw, so the bridge
+        // just needs the shared mount to exist.
         const viewport = document.getElementById('bpb-map-viewport');
         if (!viewport || !globalThis.chrome?.runtime?.getURL) {
             fail('unavailable');
@@ -241,6 +242,9 @@
         pendingInit = {
             routeSegments: data.routeSegments,
             routeColors: data.routeColors,
+            focus: data.focus,
+            focusZoom: data.focusZoom,
+            focusPeak: data.focusPeak,
             routeStyle: data.routeStyle,
             theme: data.theme,
             basemap: data.basemap,

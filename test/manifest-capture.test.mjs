@@ -104,6 +104,32 @@ test('peak planning links are isolated to Peak.aspx in the extension world', () 
     assert.ok(peakLinks.matches.every(pattern => /peakbagger\.com\/(?:P|p)eak\.aspx/.test(pattern)));
 });
 
+test('Peak-page 3D uses a narrow settings bridge, MAIN coordinator, and isolated renderer bridge', () => {
+    const settingsBridge = manifest.content_scripts.find(entry => entry.js.includes('src/peak-map-bridge.js'));
+    const pageCoordinator = manifest.content_scripts.find(entry => entry.js.includes('src/peak-map.js'));
+    const terrainBridge = manifest.content_scripts.find(entry =>
+        entry.js.includes('src/terrain-map.js')
+        && entry.matches.every(pattern => /peakbagger\.com\/(?:P|p)eak\.aspx/.test(pattern)));
+
+    assert.ok(settingsBridge);
+    assert.deepEqual(settingsBridge.js, ['src/settings-schema.js', 'src/settings.js', 'src/peak-map-bridge.js']);
+    assert.equal(settingsBridge.run_at, 'document_start');
+    assert.equal(settingsBridge.world, undefined);
+
+    assert.ok(pageCoordinator);
+    assert.deepEqual(pageCoordinator.js,
+        ['src/terrain-basemap.js', 'src/peak-markers.js', 'src/settings-schema.js', 'src/peak-map.js']);
+    assert.equal(pageCoordinator.run_at, 'document_end');
+    assert.equal(pageCoordinator.world, 'MAIN');
+
+    assert.ok(terrainBridge);
+    assert.deepEqual(terrainBridge.css, ['src/terrain-map.css']);
+    assert.deepEqual(terrainBridge.js, ['src/settings-schema.js', 'src/settings.js', 'src/terrain-map.js']);
+    assert.equal(terrainBridge.world, undefined);
+    assert.ok(manifest.content_scripts.indexOf(pageCoordinator) < manifest.content_scripts.indexOf(terrainBridge),
+        'the Peak MAIN coordinator must run before the isolated terrain bundle');
+});
+
 // Chrome runs src/background.js as the MV3 service worker and ignores
 // manifest.background.scripts (web-ext lint reports the property as
 // Firefox-unsupported). Asserting that list therefore proves nothing about

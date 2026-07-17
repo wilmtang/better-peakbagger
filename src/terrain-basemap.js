@@ -3,9 +3,9 @@
 //
 // Better Peakbagger — shared MAIN-world helpers that turn Peakbagger's Leaflet
 // basemap layers into MapLibre raster "drape" specs for the 3D terrain view.
-// Used by both the ascent GPX analyzer and the Full Screen BigMap so the 2D
-// layer menu and the 3D drape picker cannot diverge. Pure with respect to the
-// extension: it only reads the same-origin page/frame that owns the Leaflet map.
+// Used by the ascent GPX analyzer, Full Screen BigMap, and Peak-page map so the
+// 2D layer menu and the 3D drape picker cannot diverge. Pure with respect to
+// the extension: it only reads the same-origin page/frame that owns Leaflet.
 
 (() => {
     'use strict';

@@ -42,6 +42,9 @@ test('3D terrain waits for the extension frame handshake before sending route co
     dispatchPage({
         type: 'init',
         routeSegments: [[[48.7, -121.8], [48.71, -121.81]]],
+        focus: [48.83115, -121.60214],
+        focusZoom: 13,
+        focusPeak: { id: 2829, name: 'Mount Shuksan', lat: 48.83115, lon: -121.60214, state: 'unclimbed' },
         routeStyle: { color: '#d9483b' },
         theme: 'light',
         cacheLimitMb: 512,
@@ -67,6 +70,10 @@ test('3D terrain waits for the extension frame handshake before sending route co
     const init = frameMessages.find(message => message.type === 'init');
     assert.ok(init);
     assert.deepEqual(init.routeSegments, [[[48.7, -121.8], [48.71, -121.81]]]);
+    assert.deepEqual(init.focus, [48.83115, -121.60214]);
+    assert.equal(init.focusZoom, 13);
+    assert.deepEqual(init.focusPeak,
+        { id: 2829, name: 'Mount Shuksan', lat: 48.83115, lon: -121.60214, state: 'unclimbed' });
     assert.equal(init.routeStyle.color, '#347a3f');
     assert.equal(init.theme, 'dark');
     assert.equal(init.cacheLimitMb, 512);
@@ -325,6 +332,10 @@ test('3D terrain frame validates coordinate-only routes before loading public DE
     assert.equal(maps.length, 0, 'routes above the 3,000-point privacy and rendering cap must fail closed');
     assert.equal(messages.at(-1).type, 'error');
 
+    dispatch({ type: 'init', focus: [99, -121.8] });
+    assert.equal(maps.length, 0, 'an invalid summit focus must fail before public DEM tiles can load');
+    assert.equal(messages.at(-1).type, 'error');
+
     const routeSegments = [
         [[48.7, -121.8], [48.71, -121.81]],
         [[48.75, -121.82], [48.76, -121.815]]
@@ -522,6 +533,39 @@ test('3D terrain frame validates coordinate-only routes before loading public DE
     assert.equal(notice().hidden, false);
     assert.match(notice().textContent, /Blocked Layer.*blocks cross-origin/,
         'the notice names the blocked layer and explains why');
+
+    // Peak pages have no GPX route. They initialize the same renderer around
+    // one summit, with an explicit subject marker that must survive a nearby-
+    // peak feed reporting itself unavailable (t=P feeds may exclude it).
+    dispatch({ type: 'destroy' });
+    dispatch({
+        type: 'init',
+        focus: [48.83115, -121.60214],
+        focusZoom: 13,
+        focusPeak: {
+            id: 2829,
+            name: 'Mount Shuksan',
+            lat: 48.83115,
+            lon: -121.60214,
+            state: 'unclimbed'
+        }
+    });
+    await new Promise(resolve => window.queueMicrotask(resolve));
+    const focused = maps.at(-1);
+    assert.deepEqual(JSON.parse(JSON.stringify(focused.options.center)), [-121.60214, 48.83115]);
+    assert.equal(focused.options.zoom, 13);
+    assert.equal(focused.options.bounds, undefined, 'a summit view does not synthesize route bounds');
+    assert.deepEqual(JSON.parse(JSON.stringify(focused.getSource('bpb-route').data)), {
+        type: 'FeatureCollection', features: []
+    }, 'a summit view carries an honest empty route source');
+    const focusedPeaks = () => JSON.parse(JSON.stringify(focused.getSource('bpb-peaks').data.features));
+    assert.deepEqual(focusedPeaks(), [{
+        type: 'Feature',
+        properties: { id: 2829, name: 'Mount Shuksan', state: 'unclimbed' },
+        geometry: { type: 'Point', coordinates: [-121.60214, 48.83115] }
+    }]);
+    dispatch({ type: 'peaks', unavailable: true });
+    assert.equal(focusedPeaks().length, 1, 'the subject peak remains when the nearby feed is unavailable');
 
     dom.window.close();
 });

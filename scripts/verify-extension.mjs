@@ -53,6 +53,19 @@ const bigMapHtml = `<!doctype html><html><head><title>Full Screen Map</title></h
 <iframe id="if" src="/map/MasterMap.aspx?t=A&d=2296&c=900001&hj=300"></iframe>
 </body></html>`;
 
+const peakHtml = `<!doctype html><html><head><title>Mount Shuksan</title></head><body>
+<h1>Mount Shuksan, Washington</h1>
+<table style="width:760px"><tr><td style="text-align:center">
+<b>Dynamic Map</b><br>
+<iframe id="Gmap" src="/map/MasterMap.aspx?cy=48.83115&cx=-121.60214&z=14&t=P&d=2829&c=0&hj=300"
+  width="100%" height="425px"></iframe><br>
+<img src="/image/MainPeakPinkCircle.gif">&nbsp;Mount Shuksan&nbsp;(Unclimbed!)<br>
+<a href="/map/BigMap.aspx?cy=48.83115&cx=-121.60214&z=14&l=L_CT|L_OT&t=P&d=2829&c=0&hj=300">
+  Click Here for a Full Screen Map
+</a>
+</td></tr></table>
+</body></html>`;
+
 // Enough of Peakbagger's frame for the analyzer's overlay and layer sync to
 // bind. Its Leaflet globals are page-owned, exactly as on the live site.
 const masterMapHtml = `<!doctype html><html><body>
@@ -90,6 +103,7 @@ const server = createServer((request, response) => {
     const url = new URL(request.url, 'http://x');
     const send = (type, body) => { response.writeHead(200, { 'content-type': type }); response.end(body); };
     if (/ascent\.aspx/i.test(url.pathname)) return send('text/html; charset=utf-8', ascentHtml);
+    if (/peak\.aspx/i.test(url.pathname)) return send('text/html; charset=utf-8', peakHtml);
     if (/bigmap\.aspx/i.test(url.pathname)) return send('text/html; charset=utf-8', bigMapHtml);
     if (/mastermap\.aspx/i.test(url.pathname)) return send('text/html; charset=utf-8', masterMapHtml);
     if (/track\.gpx/i.test(url.pathname)) return send('application/gpx+xml', gpx);
@@ -265,6 +279,61 @@ try {
         check(bigMapToggle?.disabled === false,
             `the BigMap toggle should enable once its native route is ready (state=${JSON.stringify(bigMapToggle)})`);
         await bigMapPage.close();
+
+        const peakPage = await context.newPage();
+        const peakErrors = [];
+        peakPage.on('pageerror', error => peakErrors.push(String(error)));
+        await peakPage.goto(`http://www.peakbagger.com:${port}/Peak.aspx?pid=2829`, { waitUntil: 'load' });
+        const peakState = await peakPage.waitForFunction(() => {
+            const button = document.getElementById('bpb-terrain-toggle');
+            const mount = document.getElementById('bpb-map-viewport');
+            const iframe = document.getElementById('Gmap');
+            if (!button || !mount || !iframe) return false;
+            const rect = button.getBoundingClientRect();
+            return rect.width > 0 && rect.height > 0 && !button.disabled ? {
+                text: button.textContent,
+                mountClass: mount.className,
+                mountHeight: mount.getBoundingClientRect().height,
+                iframePreserved: iframe.parentElement === mount,
+                basemapReady: !!window.BPBTerrainBasemap,
+                peakMarkersReady: !!window.BPBPeakMarkers,
+                schemaReady: !!window.BPBSettingsSchema,
+                isolatedWorldReady: document.documentElement.getAttribute('data-bpb-theme') !== null
+            } : false;
+        }, null, { timeout: 10000 }).then(handle => handle.jsonValue()).catch(() => null);
+        check(peakState?.text === '3D',
+            `the Peak page must show an enabled 3D toggle (state=${JSON.stringify(peakState)}, errors=${JSON.stringify(peakErrors)})`);
+        check(peakState?.mountClass === 'bpb-terrain-mount-peak' && peakState?.iframePreserved === true,
+            `the Peak map wrapper must preserve the native iframe (state=${JSON.stringify(peakState)})`);
+        check(peakState?.mountHeight === 425,
+            `the Peak map wrapper must preserve the native 425px height (state=${JSON.stringify(peakState)})`);
+        check(peakState?.basemapReady && peakState?.peakMarkersReady && peakState?.schemaReady && peakState?.isolatedWorldReady,
+            `the Peak MAIN/isolated bundles did not all initialize (state=${JSON.stringify(peakState)})`);
+        if (process.env.BPB_VERIFY_PEAK_SCREENSHOT) {
+            await peakPage.screenshot({ path: process.env.BPB_VERIFY_PEAK_SCREENSHOT, fullPage: true });
+        }
+        await peakPage.evaluate(() => {
+            window.__bpbPeakTerrainInit = null;
+            window.addEventListener('message', event => {
+                const data = event.data;
+                if (event.source === window && data?.__bpbTerrain === true
+                    && data.dir === 'toCS' && data.type === 'init') {
+                    window.__bpbPeakTerrainInit = data;
+                }
+            });
+        });
+        await peakPage.locator('#bpb-terrain-toggle').click();
+        const peakInit = await peakPage.waitForFunction(() => window.__bpbPeakTerrainInit, null, { timeout: 5000 })
+            .then(handle => handle.jsonValue()).catch(() => null);
+        check(JSON.stringify(peakInit?.focus) === JSON.stringify([48.83115, -121.60214])
+            && peakInit?.focusZoom === 13
+            && peakInit?.focusPeak?.id === 2829
+            && !Object.hasOwn(peakInit || {}, 'routeSegments'),
+            `the real Peak-page click did not start a route-free summit view (init=${JSON.stringify(peakInit)})`);
+        const peakFrameCreated = await peakPage.locator('#bpb-terrain-frame').waitFor({ state: 'attached', timeout: 3000 })
+            .then(() => true).catch(() => false);
+        check(peakFrameCreated, 'the isolated terrain bridge did not create a frame for the Peak-page summit view');
+        await peakPage.close();
     }
 } finally {
     if (context) await context.close();
@@ -284,3 +353,5 @@ console.log('  - the GPX analyzer renders stats from the real manifest load orde
 console.log('  - the 3D toggle stays visible when disabled and opens the provider/privacy confirmation');
 console.log('  - trusted confirmation persists the feature gate without contacting tile providers');
 console.log('  - the Full Screen BigMap receives settings and shows an enabled 3D toggle');
+console.log('  - the Peak Dynamic Map preserves its native frame and shows an enabled 3D toggle');
+console.log('  - clicking Peak 3D creates the isolated frame with a route-free summit focus');

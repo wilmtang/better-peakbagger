@@ -38,14 +38,16 @@ Preferences page.
 
 ![GPX analysis moving from a chart-synchronized 2D map into 3D terrain](store-assets/screenshot-gpx-terrain.gif)
 
-User-uploaded GPX tracks on Peakbagger ascent pages become full 3D terrain
-views at true vertical scale. The elevation model comes from
+User-uploaded GPX tracks on Peakbagger ascent pages and Full Screen GPS maps
+become full 3D terrain views at true vertical scale. Peak pages get the same
+toggle on their Dynamic Map, centered on the summit even when no GPX track is
+present. The elevation model comes from
 [Mapterhorn](https://mapterhorn.com/), an open-data elevation tile project;
 Peakbagger's compatible 2D basemaps — CalTopo, ArcGIS, OpenTopoMap, and more —
 are offered in an on-map picker and draped over the terrain; an experimental
 OpenFreeMap vector style built from OpenStreetMap data is available there too.
-The feature is opt-in: no tile requests occur until you choose **3D terrain**
-on an ascent map and accept the first-use confirmation.
+The feature is opt-in: no tile requests occur until you choose **3D** on a
+supported map and accept the first-use confirmation.
 
 > Special thanks to [Mapterhorn](https://mapterhorn.com/) for providing
 > free, open-access global elevation data that makes this possible.
@@ -248,7 +250,7 @@ Four boundaries do most of the work:
 
 1. **Content scripts run in two different JavaScript "worlds,"** and each feature is placed in the world it needs. The GPX Analyzer and the on-demand activity-provider adapter run in the page's own world; form filling and extension UI run in the isolated extension world.
 2. Because the MAIN-world analyzer can't touch `chrome.storage`, a tiny **bridge** relays settings across the world boundary over `window.postMessage`.
-3. The optional MapLibre renderer stays **in an extension-owned frame and dormant** until the user chooses the 3D view. The isolated bridge relays bounded coordinate segments plus an optional validated descriptor for Peakbagger's selected raster layer; the packaged renderer then requests tiles for that 3D view.
+3. The optional MapLibre renderer stays **in an extension-owned frame and dormant** until the user chooses the 3D view. The isolated bridge relays bounded coordinate segments or a validated summit focus, plus an optional descriptor for Peakbagger's selected raster layer; the packaged renderer then requests tiles for that 3D view.
 4. Activity capture is a **gated transaction**, not a persistent provider integration: the extension receives temporary access only after a toolbar click, refuses ambiguous ownership, keeps only a privacy-reduced draft payload in session storage, and never activates Peakbagger's Save controls.
 
 ---
@@ -356,9 +358,11 @@ This split is the single most important design constraint in the extension. Here
 | `provider-page.js` | **MAIN**, injected on demand | Needs the activity page's signed-in state and authenticated same-origin export; exposes only the narrow ownership/capture adapter to the background. |
 | `big-map.js` | **MAIN** | Reaches into the Full Screen page's same-origin `MasterMap.aspx` child iframe (where the Leaflet map and tracks live), applies the native GPS-polyline weight, adds a matching casing underlay, and recolors the single track on `t=A` maps. Also hosts the Full Screen 3D coordinator: it extracts route geometry from the native tracks and drives the shared terrain frame. |
 | `big-map-bridge.js` | isolated | Sends the MAIN-world BigMap enhancer only the validated route style (color, width, casing) plus the 3D feature gate, theme, and cache budget; it has no settings-write path. |
-| `terrain-basemap.js` | **MAIN** | Pure helpers shared by the ascent analyzer and the Full Screen coordinator that turn Peakbagger's Leaflet basemap layers into MapLibre drape specs, so the 2D layer menu and the 3D picker cannot diverge. |
-| `terrain-map.js` | isolated | Creates the extension-owned frame and relays only validated terrain messages between it and the ascent analyzer or the Full Screen coordinator. |
-| `terrain-frame.js`, MapLibre | extension document | Owns the WebGL terrain surface and packaged CSP worker. It has no access to Peakbagger globals and does not request tiles until the bridge sends a user-requested coordinate route plus an optional validated raster descriptor. |
+| `peak-map.js` | **MAIN** | Validates a Peak page's subject id and Dynamic Map coordinates, preserves the native iframe, and drives a summit-focused 3D view with an explicit subject marker. |
+| `peak-map-bridge.js` | isolated | Sends the Peak-page coordinator only the 3D feature gate, theme, and cache budget; it has no settings-write path. |
+| `terrain-basemap.js` | **MAIN** | Pure helpers shared by all three map coordinators that turn Peakbagger's Leaflet basemap layers into MapLibre drape specs, so the 2D layer menu and the 3D picker cannot diverge. |
+| `terrain-map.js` | isolated | Creates the extension-owned frame and relays only validated terrain messages between it and the ascent, Full Screen, or Peak coordinator. |
+| `terrain-frame.js`, MapLibre | extension document | Owns the WebGL terrain surface and packaged CSP worker. It has no access to Peakbagger globals and does not request tiles until the bridge sends a user-requested coordinate route or summit focus plus an optional validated raster descriptor. |
 | `theme.js`, `bridge.js`, `ascent-filter.js`, `settings.js` | isolated | They only touch the DOM and `chrome.storage`; no page globals needed. |
 | `ascent-draft.js` | isolated | Uses extension messaging to verify a prepared draft, then fills the Peakbagger DOM and starts Preview. |
 
@@ -496,19 +500,19 @@ The style is assembled locally in this order:
 | 2 | color relief | Converts DEM elevation into restrained hypsometric color. |
 | 3 | selected raster, when compatible | Drapes Peakbagger's selected 2D layer at 78% opacity. |
 | 4 | hillshade | Restores slope and aspect cues above the raster texture; its light is anchored to the map, not the camera. |
-| 5 | route casing and route | Keeps the GPX line legible over light or dark maps; group Full Screen maps keep each track's own color. |
-| 6 | chart-hover point | Shows the chart's current coordinate on the 3D route. |
+| 5 | route casing and route, when present | Keeps the GPX line legible over light or dark maps; group Full Screen maps keep each track's own color. |
+| 6 | peak rings | Mirrors Peakbagger's climbed/unclimbed/anonymous markers; Peak pages retain their subject explicitly. |
+| 7 | chart-hover point | Shows the chart's current coordinate on the 3D route. |
 
 Terrain exaggeration is exactly `1`: one rendered vertical metre equals one
 horizontal metre. That restraint matters for route planning because the common
 “dramatic terrain” setting makes slopes look steeper than they are.
 
-The camera is framed on the route as the map is created — through MapLibre's
-constructor `bounds`/`fitBoundsOptions` — rather than opening on a wide
-placeholder view and re-framing after load. Fitting after load would fetch a
-throwaway tileset and build the terrain mesh once for the placeholder view and
-again for the route; framing up front removes that duplicate work, the dominant
-part of load time.
+The final camera is set as the map is created — route views use MapLibre's
+constructor `bounds`/`fitBoundsOptions`, while Peak pages use the validated
+summit center and equivalent zoom — rather than opening on a placeholder view
+and moving after load. Moving after load would fetch a throwaway tileset and
+build the terrain mesh twice; starting at the final camera removes that work.
 
 Gestures match the native 2D map the view replaces: plain scroll zooms, drag
 pans, and right-drag tilts — no modifier key. Ctrl-drag is also supported as an
@@ -530,8 +534,8 @@ are lit.
 
 ### Activation and browser boundaries
 
-The floating **3D** control is visible on every supported ascent or Full Screen
-map. If the experimental feature is off, tapping it first shows an
+The floating **3D** control is visible on every supported ascent, Full Screen,
+or Peak map. If the experimental feature is off, tapping it first shows an
 extension-owned confirmation with privacy links; **Not now** leaves the setting
 unchanged, while **Enable and open 3D** turns it on and continues into the
 requested view. The same setting remains available in Settings. No tile request
@@ -540,8 +544,8 @@ crosses three JavaScript worlds, but each world has a narrow job:
 
 ```text
 Peakbagger MAIN world
-  gpx-analyzer.js
-  ├─ reads the route already parsed for the chart
+  gpx-analyzer.js / big-map.js / peak-map.js
+  ├─ reads a real route or validates the page's summit focus
   ├─ maps the native layer menu to built-in drape specs (active + the rest)
   └─ sends a bounded init message after the 3D button is clicked
               │
@@ -556,14 +560,14 @@ isolated extension world
               ▼
 extension-owned document
   terrain-cache.js + terrain-frame.js + packaged MapLibre + CSP worker
-  ├─ validates the route and raster descriptor again
+  ├─ validates the route or summit focus and raster descriptor again
   ├─ reuses or requests bounded DEM tiles and requests optional map tiles
   └─ reports "loaded" only after MapLibre is usable
 ```
 
 The explicit `ready` handshake is important: Chromium can finish the iframe's
 load event before the frame script has installed its message listener. The
-bridge retains the initial route until the frame announces that it can receive
+bridge retains the initial view until the frame announces that it can receive
 it. The frame starts at `opacity: 0` rather than `visibility: hidden`; Chromium
 may suppress WebGL rendering and tile scheduling for a visibility-hidden frame.
 Only the `loaded` reply makes it opaque and interactive, then the analyzer hides
@@ -777,9 +781,10 @@ hiding the native 2D map until you toggle back. It drapes the layer selected in
 the native `#selmap` control via the shared `terrain-basemap.js` specs. Group
 maps (`t=G`) carry each track's native color (parallel to the segments) so the
 frame paints them data-driven and climbers stay distinguishable, matching the 2D
-map; single-ascent maps use the one preferred color. Markers and peaks are not
-carried into 3D. The renderer, DEM cache, privacy
-boundary, and off-by-default gate are exactly those of the ascent 3D view below.
+map; single-ascent maps use the one preferred color. Nearby peak rings come
+from the same Peakbagger feed used by the native map. The renderer, DEM cache,
+privacy boundary, and off-by-default gate are exactly those of the ascent 3D
+view below.
 
 ---
 
@@ -861,6 +866,8 @@ src/
   gpx-analyzer.js        elevation/time chart + map-hover (MAIN world)
   big-map-bridge.js      read-only Full Screen route-style + 3D-gate bridge
   big-map.js             native Full Screen GPS track width + 3D coordinator (MAIN world)
+  peak-map-bridge.js     read-only Peak-page 3D settings bridge
+  peak-map.js            summit-focused Peak-page 3D coordinator (MAIN world)
   terrain-basemap.js     shared Leaflet-layer-to-MapLibre drape specs (MAIN world)
   terrain-map.js         isolated bridge for the extension-owned terrain frame
   terrain-cache.js       bounded best-effort Mapterhorn DEM cache

@@ -123,6 +123,10 @@
     // The currently rendered peak features, kept for the screen-space hit
     // test, and the pointer's last position for the frame-throttled hover.
     let peakFeatures = [];
+    // Peak pages pass their subject explicitly because Peakbagger's `t=P`
+    // nearby-marker feed may exclude that same peak. Keep it independent of
+    // each replace-style feed response so the summit never disappears.
+    let focusPeakFeature = null;
     let peakPointerPoint = null;
     let peakPointerFrame = null;
     // Summit-snap verdicts by peak, recency-ordered so the least-recently used
@@ -175,6 +179,7 @@
         lastPeaksBoundsKey = null;
         peakSnapCache.clear();
         peakFeatures = [];
+        focusPeakFeature = null;
         peakPointerPoint = null;
         if (peakPointerFrame !== null) {
             cancelAnimationFrame(peakPointerFrame);
@@ -260,6 +265,17 @@
             bounds: [[minLon, minLat], [maxLon, maxLat]],
             hasFeatureColors
         };
+    };
+
+    const validateFocus = (value, requestedZoom) => {
+        if (!Array.isArray(value) || value.length !== 2) return null;
+        const [lat, lon] = value;
+        if (!Number.isFinite(lat) || Math.abs(lat) > MAX_MERCATOR_LAT
+            || !Number.isFinite(lon) || Math.abs(lon) > 180) return null;
+        const zoom = Number.isFinite(requestedZoom) && requestedZoom >= 0 && requestedZoom <= 18
+            ? requestedZoom
+            : 13;
+        return { center: [lon, lat], zoom };
     };
 
     // The host page is cross-origin to this frame, so its style is untrusted;
@@ -876,7 +892,12 @@
     };
 
     const setPeakData = features => {
-        peakFeatures = features.map(snapToLocalSummit);
+        const merged = focusPeakFeature
+            ? [focusPeakFeature, ...features
+                .filter(feature => feature.properties.id !== focusPeakFeature.properties.id)
+                .slice(0, PEAK_MARKERS.maxCount - 1)]
+            : features;
+        peakFeatures = merged.map(snapToLocalSummit);
         const source = map && map.getSource(PEAK_MARKERS.sourceId);
         if (source && typeof source.setData === 'function') {
             source.setData({ type: 'FeatureCollection', features: peakFeatures });
@@ -993,13 +1014,21 @@
     const createTerrain = data => {
         if (map || mapElement) return;
         const route = validateRoute(data.routeSegments, data.routeColors);
+        const focus = validateFocus(data.focus, data.focusZoom);
         routeHasFeatureColors = Boolean(route && route.hasFeatureColors);
         const maplibre = globalThis.maplibregl;
         const cacheLimitMb = globalThis.BPBSettingsSchema.terrainCacheLimitMb(data.cacheLimitMb);
-        if (!route || !maplibre || !globalThis.BPBTerrainCache || !globalThis.chrome?.runtime?.getURL) {
+        if ((!route && !focus) || !maplibre || !globalThis.BPBTerrainCache || !globalThis.chrome?.runtime?.getURL) {
             fail('unavailable');
             return;
         }
+
+        const focusPeak = focus ? validatePeaks([data.focusPeak]) : null;
+        focusPeakFeature = focusPeak && focusPeak.length === 1
+            && Math.abs(focusPeak[0].geometry.coordinates[0] - focus.center[0]) < 1e-6
+            && Math.abs(focusPeak[0].geometry.coordinates[1] - focus.center[1]) < 1e-6
+            ? focusPeak[0]
+            : null;
 
         activeRouteStyle = validateStyle(data.routeStyle);
         activeTheme = data.theme === 'dark' ? 'dark' : 'light';
@@ -1079,15 +1108,20 @@
             terrainCache = globalThis.BPBTerrainCache.create({ limitMb: cacheLimitMb });
             maplibre.addProtocol(globalThis.BPBTerrainCache.PROTOCOL, terrainCache.load);
             terrainProtocolRegistered = true;
-            // Start at the route's framed camera directly. Initialising at a
-            // placeholder zoom and fitting bounds only after 'load' would load a
-            // whole throwaway tileset (and rebuild the terrain mesh) for a view
-            // the user never sees; the constructor bounds skip that round trip.
+            // Start at the final camera directly. Route views frame the track;
+            // Peak pages center on their summit. Initialising at a placeholder
+            // camera and moving only after 'load' would fetch and mesh a whole
+            // throwaway tileset for a view the user never sees.
+            const initialCamera = route
+                ? {
+                    bounds: route.bounds,
+                    fitBoundsOptions: { padding: 46, maxZoom: 15.5, pitch: 60, bearing: 0 }
+                }
+                : { center: focus.center, zoom: focus.zoom };
             map = new maplibre.Map({
                 container: canvas,
                 style: terrainStyle(activeTheme, activeBasemap),
-                bounds: route.bounds,
-                fitBoundsOptions: { padding: 46, maxZoom: 15.5, pitch: 60, bearing: 0 },
+                ...initialCamera,
                 pitch: 60,
                 bearing: 0,
                 maxPitch: 80,
@@ -1134,7 +1168,10 @@
                 // The constructor style already carries the drape source, so it
                 // needs the same LOD treatment addBasemapLayer() gives later picks.
                 applyBasemapLod(activeBasemap);
-                terrainMap.addSource('bpb-route', { type: 'geojson', data: route.geojson });
+                terrainMap.addSource('bpb-route', {
+                    type: 'geojson',
+                    data: route ? route.geojson : { type: 'FeatureCollection', features: [] }
+                });
                 terrainMap.addLayer({
                     id: 'bpb-route-casing', type: 'line', source: 'bpb-route',
                     layout: { 'line-join': 'round', 'line-cap': 'round' },
@@ -1147,6 +1184,7 @@
                 });
                 terrainMap.addSource(PEAK_MARKERS.sourceId, { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
                 for (const layer of buildPeakLayers()) terrainMap.addLayer(layer);
+                setPeakData([]);
                 // Click and hover go through the screen-space hit test —
                 // never layer-scoped events, which die on a pitched terrain
                 // camera (see peakFeatureAt).

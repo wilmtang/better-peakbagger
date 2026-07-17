@@ -8,7 +8,7 @@
 // make the *same* request with the same parameters, so 3D dots stay
 // personalized (climbed state) and filtered (prominence cutoff) exactly like
 // the 2D map, with no new origin and no request the native map would not make.
-// Used by both the ascent GPX analyzer and the Full Screen BigMap.
+// Used by the ascent GPX analyzer, Full Screen BigMap, and Peak-page map.
 //
 // Native semantics mirrored here (from MasterMap.aspx):
 //   GET ../Async/PLLBB.aspx?miny&maxy&minx&maxx&t=<mapType>[&pid=][&cid=]

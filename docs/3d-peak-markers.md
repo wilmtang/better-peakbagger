@@ -5,7 +5,9 @@ climbed, pink for unclimbed, orange when nobody is signed in — and reloads
 them from a server feed on every pan/zoom settle. The 3D terrain view now
 mirrors that behavior end to end: the same feed, the same request parameters,
 the same zoom cutoff, the same ring colors, and the same click-for-name-link
-popup, on both the ascent page and the Full Screen BigMap.
+popup, on ascent pages, Full Screen BigMaps, and Peak pages. Peak pages also
+pass their subject explicitly because the native `t=P` feed asks the server to
+exclude that same peak; feed refreshes must never make the summit disappear.
 
 ## The native mechanism (discovered from MasterMap.aspx)
 
@@ -56,7 +58,8 @@ the extension-origin frame never contacts peakbagger.com itself:
    the straight-down viewport around the camera center.
 2. **Bridge** (`src/terrain-map.js`): forwards `peaksRequest` to the page and
    the `peaks` reply back — nothing else.
-3. **Coordinators** (`src/gpx-analyzer.js`, `src/big-map.js`): answer via the
+3. **Coordinators** (`src/gpx-analyzer.js`, `src/big-map.js`,
+   `src/peak-map.js`): answer via the
    shared `src/peak-markers.js` client, which reads `t`/`d`/`c`/`hj` from the
    same-origin MasterMap iframe URL and issues the *identical* request the
    native 2D map would make (single-flight: a newer camera position aborts
@@ -68,8 +71,9 @@ the extension-origin frame never contacts peakbagger.com itself:
    integer id only. Clicks and hover are hit-tested by the frame in screen
    space (see below), never via MapLibre's layer-scoped events. Refreshing
    the dots closes an open popup, matching the native marker rebuild.
-   Everything fails closed to "no dots" — the terrain view never breaks
-   because of markers.
+   The validated Peak-page subject is merged back after each replace-style
+   feed reply; everything else fails closed to "no dots" — the terrain view
+   never breaks because of markers.
 
 ### Clicking a dot on a pitched camera
 
