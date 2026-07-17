@@ -36,7 +36,7 @@ Preferences page.
 
 ### Open-source free 3D mapping
 
-![GPX analysis moving from a chart-synchronized 2D map into 3D terrain](store-assets/screenshot-gpx-terrain.gif)
+<video src="store-assets/screenshot-3D-map-sync-resize-billboard-1.5x.mp4" width="100%" autoplay loop muted playsinline></video>
 
 User-uploaded GPX tracks on Peakbagger ascent pages and Full Screen GPS maps
 become full 3D terrain views at true vertical scale. Peak pages get the same
@@ -65,11 +65,11 @@ are satisfied. If multiple selected summits fall on the same date, their drafts
 receive Peakbagger's `a`, `b`, … suffixes in track order so the ascents remain
 distinct.
 
-![Garmin and Strava activity capture with privacy-reduced Peakbagger drafts](store-assets/showcase-activity-capture.gif)
+<video src="store-assets/showcase-activity-capture.mp4" width="100%" autoplay loop muted playsinline></video>
 
 ### Chart-synced map and track customization
 
-![Three-day GPX analysis with chart-synchronized map marker and custom route](store-assets/showcase-gpx-map-sync.gif)
+<video src="store-assets/showcase-gpx-map-sync.mp4" width="100%" autoplay loop muted playsinline></video>
 
 Ascent pages gain an interactive elevation chart with distance and time views,
 route metrics, grades, timing, and multi-day camping details. Hover over the
