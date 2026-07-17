@@ -152,6 +152,15 @@ keep the constant-size + shared-spec invariant either way.
    it is rejected. Two dots within one leash of the same apex can stack;
    the nearest-center hit test still separates their clicks. The popup
    anchors at the snapped point; the link and name are untouched data.
+   Verdicts are cached per peak (bounded, least-recently-used, cleared with
+   the map): `queryTerrainElevation` reads whatever terrain tiles are
+   loaded, and tilting the camera can change their resolution — on a
+   knife-edge ridge the coarser DEM's apex sits somewhere else entirely,
+   so an uncached dot wandered with every tilt. A verdict is re-opened only
+   after crossing into a higher integer zoom level, where a finer terrain
+   sample may be available. That also makes every settle after a readable
+   verdict free of climbing; an unreadable start is missing data, not a
+   verdict, and retries on the next batch.
 1. **The clamped far field.** At high pitch, dots load for roughly 3× the
    straight-down viewport around the camera center, not all the way to the
    horizon (where they would be sub-pixel anyway). Panning re-requests, so
@@ -178,9 +187,11 @@ keep the constant-size + shared-spec invariant either way.
   wins, hover cursor set and restored, constant `circle-pitch-scale`
   pinned, and no layer-scoped handlers ever registered); summit snapping
   (a dot near a synthetic cone's apex lands on it, a dot on a relentless
-  ramp and a dot on unreadable DEM both keep the feed coordinates); bridge
-  forwarding; both coordinators end-to-end with a stubbed feed (ascent:
-  `t=A&cid=…`, no `pid`; group: `unavailable`).
+  ramp and a dot on unreadable DEM both keep the feed coordinates, a
+  changed DEM at an unchanged zoom neither moves a dot nor re-climbs,
+  zooming in re-opens the verdict, and an unreadable dot snaps as soon as
+  its terrain loads); bridge forwarding; both coordinators end-to-end with
+  a stubbed feed (ascent: `t=A&cid=…`, no `pid`; group: `unavailable`).
 - Hidden real-browser check (`scripts/verify-terrain-visual.mjs`, headless
   Chrome on the real GPU — the renderer is asserted and a software fallback
   refused — synthetic Peakbagger + synthetic PLLBB feed): feed queried with

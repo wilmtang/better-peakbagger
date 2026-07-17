@@ -125,6 +125,10 @@
     let peakFeatures = [];
     let peakPointerPoint = null;
     let peakPointerFrame = null;
+    // Summit-snap verdicts by peak, recency-ordered so the least-recently used
+    // entry trims first. ~10 dense screenfuls; a long pan session stays bounded.
+    const peakSnapCache = new Map();
+    const PEAK_SNAP_CACHE_LIMIT = 4000;
 
     const post = (type, detail = {}) => {
         if (!parentOrigin) return;
@@ -169,6 +173,7 @@
         peaksRequestId = 0;
         peaksUnavailable = false;
         lastPeaksBoundsKey = null;
+        peakSnapCache.clear();
         peakFeatures = [];
         peakPointerPoint = null;
         if (peakPointerFrame !== null) {
@@ -753,13 +758,21 @@
     // - A resting point must be a genuine local maximum: if the ground keeps
     //   rising in some direction just past it (a leash-length slope), the dot
     //   is on a neighboring, bigger mountain's flank — not its own summit.
-    const snapToLocalSummit = feature => {
-        if (!map || typeof map.queryTerrainElevation !== 'function') return feature;
+    //
+    // A verdict is cached per peak and reused until the camera crosses into a
+    // higher integer zoom level. queryTerrainElevation reads whatever terrain
+    // tiles happen to be loaded, and tilting the camera can change their
+    // resolution — on a knife-edge ridge the coarser DEM's apex sits somewhere
+    // else entirely, so an uncached dot wandered with every tilt. A higher
+    // integer zoom is the only event allowed to adopt a potentially finer DEM
+    // sample; it also leaves every settle after a readable verdict free of
+    // climbing.
+    const climbToLocalSummit = feature => {
         const { leashM, strideM, finestStrideM } = PEAK_MARKERS.snap;
         const [feedLon, feedLat] = feature.geometry.coordinates;
         const metersPerDegreeLat = 111320;
         const metersPerDegreeLon = metersPerDegreeLat * Math.cos(feedLat * Math.PI / 180);
-        if (!(metersPerDegreeLon > 0)) return feature;
+        if (!(metersPerDegreeLon > 0)) return null;
         const elevationAt = (lon, lat) => {
             try {
                 const elevation = map.queryTerrainElevation([lon, lat]);
@@ -771,7 +784,7 @@
         const metersFromFeed = (lon, lat) =>
             Math.hypot((lon - feedLon) * metersPerDegreeLon, (lat - feedLat) * metersPerDegreeLat);
         let best = elevationAt(feedLon, feedLat);
-        if (!(best > 0)) return feature;
+        if (!(best > 0)) return null;
         let lon = feedLon;
         let lat = feedLat;
         for (let stride = strideM; stride >= finestStrideM; stride /= 2) {
@@ -791,13 +804,40 @@
                 }
             }
         }
-        if (lon === feedLon && lat === feedLat) return feature;
-        for (const [east, north] of COMPASS_STEPS) {
-            const beyondLon = lon + east * finestStrideM / metersPerDegreeLon;
-            const beyondLat = lat + north * finestStrideM / metersPerDegreeLat;
-            if (elevationAt(beyondLon, beyondLat) > best) return feature;
+        if (lon !== feedLon || lat !== feedLat) {
+            for (const [east, north] of COMPASS_STEPS) {
+                const beyondLon = lon + east * finestStrideM / metersPerDegreeLon;
+                const beyondLat = lat + north * finestStrideM / metersPerDegreeLat;
+                if (elevationAt(beyondLon, beyondLat) > best) return { lon: feedLon, lat: feedLat };
+            }
         }
-        return { ...feature, geometry: { type: 'Point', coordinates: [lon, lat] } };
+        return { lon, lat };
+    };
+
+    const snapToLocalSummit = feature => {
+        if (!map || typeof map.queryTerrainElevation !== 'function'
+            || typeof map.getZoom !== 'function') return feature;
+        const [feedLon, feedLat] = feature.geometry.coordinates;
+        const zoom = Math.floor(map.getZoom());
+        const cacheKey = `${feature.properties.id}:${feedLon}:${feedLat}`;
+        let verdict = peakSnapCache.get(cacheKey);
+        if (!verdict || verdict.zoom < zoom) {
+            const climbed = climbToLocalSummit(feature);
+            // An unreadable start is missing data, not a verdict — leave the
+            // dot at the feed position and let the next batch try again.
+            if (!climbed) return feature;
+            verdict = { zoom, lon: climbed.lon, lat: climbed.lat };
+        }
+        // Delete-then-set refreshes recency: the cache trims from the oldest
+        // end, and dots still on screen must never be the ones trimmed.
+        peakSnapCache.delete(cacheKey);
+        peakSnapCache.set(cacheKey, verdict);
+        while (peakSnapCache.size > PEAK_SNAP_CACHE_LIMIT) {
+            peakSnapCache.delete(peakSnapCache.keys().next().value);
+        }
+        return verdict.lon === feedLon && verdict.lat === feedLat
+            ? feature
+            : { ...feature, geometry: { type: 'Point', coordinates: [verdict.lon, verdict.lat] } };
     };
 
     const setPeakData = features => {

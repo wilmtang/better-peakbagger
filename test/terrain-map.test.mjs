@@ -981,17 +981,25 @@ test('3D peak dots snap uphill to the local DEM summit, and only to a genuine on
         (a[1] - b[1]) * METERS_PER_DEG_LAT
     );
     const conePeakFeed = [-121.79, 48.72];
-    const coneApex = [
-        conePeakFeed[0] + 28 / (METERS_PER_DEG_LAT * Math.cos(conePeakFeed[1] * Math.PI / 180)),
-        conePeakFeed[1] + 28 / METERS_PER_DEG_LAT
+    const apexOffsetM = (offsetM, from = conePeakFeed) => [
+        from[0] + offsetM / (METERS_PER_DEG_LAT * Math.cos(from[1] * Math.PI / 180)),
+        from[1] + offsetM / METERS_PER_DEG_LAT
     ];
+    let coneApex = apexOffsetM(28);
     const rampPeakFeed = [-121.82, 48.74];
+    const voidPeakFeed = [-121.83, 48.75];
+    let voidPeakElevation = 0;
+    let elevationQueries = 0;
     const elevationOf = ([lng, lat]) => {
+        elevationQueries += 1;
         if (metersBetween([lng, lat], conePeakFeed) < 500) {
             return 3000 - 2 * metersBetween([lng, lat], coneApex);
         }
         if (metersBetween([lng, lat], rampPeakFeed) < 500) {
             return 1000 + 10 * (lng - rampPeakFeed[0]) * METERS_PER_DEG_LAT * Math.cos(lat * Math.PI / 180);
+        }
+        if (metersBetween([lng, lat], voidPeakFeed) < 500 && voidPeakElevation > 0) {
+            return voidPeakElevation - 2 * metersBetween([lng, lat], apexOffsetM(20, voidPeakFeed));
         }
         return 0;
     };
@@ -1060,25 +1068,57 @@ test('3D peak dots snap uphill to the local DEM summit, and only to a genuine on
     dispatch({ type: 'init', routeSegments: [[[48.7, -121.8], [48.71, -121.81]]] });
     await new Promise(resolve => window.queueMicrotask(resolve));
     await new Promise(resolve => window.setTimeout(resolve, 320));
-    dispatch({
+    const sendBatch = () => dispatch({
         type: 'peaks',
         requestId: 1,
         peaks: [
             { id: 1, name: 'Cone Peak', lat: conePeakFeed[1], lon: conePeakFeed[0], state: 'climbed' },
             { id: 2, name: 'Ramp Peak', lat: rampPeakFeed[1], lon: rampPeakFeed[0], state: 'unclimbed' },
-            { id: 3, name: 'Void Peak', lat: 48.75, lon: -121.83, state: 'climbed' }
+            { id: 3, name: 'Void Peak', lat: voidPeakFeed[1], lon: voidPeakFeed[0], state: 'climbed' }
         ]
     });
+    const rendered = () => JSON.parse(JSON.stringify(maps[0].getSource('bpb-peaks').data.features));
 
-    const rendered = JSON.parse(JSON.stringify(maps[0].getSource('bpb-peaks').data.features));
-    assert.equal(rendered.length, 3);
-    assert.ok(metersBetween(rendered[0].geometry.coordinates, coneApex) < 5,
-        `a dot near a local summit snaps onto it (landed ${metersBetween(rendered[0].geometry.coordinates, coneApex).toFixed(1)} m away)`);
-    assert.ok(metersBetween(rendered[0].geometry.coordinates, conePeakFeed) > 20,
+    sendBatch();
+    let features = rendered();
+    assert.equal(features.length, 3);
+    const firstSnap = features[0].geometry.coordinates;
+    assert.ok(metersBetween(firstSnap, coneApex) < 5,
+        `a dot near a local summit snaps onto it (landed ${metersBetween(firstSnap, coneApex).toFixed(1)} m away)`);
+    assert.ok(metersBetween(firstSnap, conePeakFeed) > 20,
         'the snapped dot really moved off the database coordinate');
-    assert.deepEqual(rendered[1].geometry.coordinates, rampPeakFeed,
+    assert.deepEqual(features[1].geometry.coordinates, rampPeakFeed,
         'a dot on ground that keeps rising past the leash keeps the feed coordinates — that is a neighboring slope, not its summit');
-    assert.deepEqual(rendered[2].geometry.coordinates, [-121.83, 48.75],
+    assert.deepEqual(features[2].geometry.coordinates, voidPeakFeed,
         'a dot whose DEM reads 0 (tile not loaded / the sea) keeps the feed coordinates');
+
+    // Simulate a tilt changing the loaded DEM resolution without changing the
+    // zoom. A cached verdict must hold: the dot must not wander between
+    // settles, and must not re-climb at all.
+    coneApex = apexOffsetM(50);
+    elevationQueries = 0;
+    sendBatch();
+    features = rendered();
+    assert.deepEqual(features[0].geometry.coordinates, firstSnap,
+        'at an unchanged zoom the dot stays where the first verdict put it, whatever the DEM now reads');
+    assert.deepEqual(features[1].geometry.coordinates, rampPeakFeed, 'a kept-at-feed verdict is cached too');
+    assert.ok(elevationQueries <= 40,
+        `cached verdicts skip the climbs; only the unreadable dot retries (${elevationQueries} queries)`);
+
+    // Crossing into a higher integer zoom level is the one event allowed to
+    // adopt a potentially finer terrain sample and re-open the verdict.
+    camera.zoom = 15;
+    sendBatch();
+    features = rendered();
+    assert.ok(metersBetween(features[0].geometry.coordinates, apexOffsetM(50)) < 5,
+        'a higher zoom level re-climbs on the new terrain sample and refines the dot');
+
+    // An unreadable start was missing data, not a verdict: once its DEM
+    // loads, the dot snaps without waiting for a zoom change.
+    voidPeakElevation = 2000;
+    sendBatch();
+    assert.ok(metersBetween(rendered()[2].geometry.coordinates, apexOffsetM(20, voidPeakFeed)) < 5,
+        'a dot whose DEM was unreadable snaps as soon as its terrain loads, without a zoom change');
+
     dom.window.close();
 });

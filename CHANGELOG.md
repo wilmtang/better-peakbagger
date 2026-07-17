@@ -18,7 +18,10 @@
   dot now walks uphill on the rendered terrain to the nearby local summit,
   and stays exactly at Peakbagger's coordinates whenever no genuine summit
   is within reach (so a dot never migrates onto a neighboring, bigger
-  mountain).
+  mountain). A dot's position is remembered between camera settles:
+  tilting or panning never moves it (it used to wander on sharp ridges as
+  the terrain detail level changed with the view), and crossing into a
+  higher zoom level is the only time a finer terrain sample may refine it.
 - **No more flicker when resizing the 3D map.** Dragging the map's resize
   handle while the 3D view is open used to blink on every step — each size
   change cleared the canvas and the repaint waited for the next frame. The
