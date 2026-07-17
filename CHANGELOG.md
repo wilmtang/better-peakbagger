@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased
+
+- **OSM Vector (beta) 3D map layer.** Added a new GPU-rendered vector basemap option for the 3D terrain view. Labels stay crisp and upright when the camera is tilted, sitting above the route so text remains readable.
+- **Peak dots on the 3D map.** Peakbagger's native peak dots now render directly on the 3D terrain view, reusing the same data feed as the 2D map.
+- **3D peak dots stay clickable at any tilt.** Tilting the 3D terrain camera
+  no longer shrinks the dots' click area — near-horizontal views used to make
+  them all but unclickable, because clicks were resolved through the terrain
+  surface behind each dot rather than the dot itself. Clicks and the pointer
+  cursor now follow exactly where each ring is drawn, at every pitch, and the
+  rings keep a constant screen size like the 2D map's markers instead of
+  shrinking into the distance.
+- **Crisper 3D drapes.** The draped map texture no longer drops in resolution and blurs during small camera tilts.
+- **Fixed 3D toggle on Full Screen maps.** Restored the 3D toggle button on Full Screen GPS maps, which was failing to appear in Chrome due to a script-injection order issue.
+- **Fixed 3D toggle visibility.** The 3D toggle is now correctly hidden when the experimental 3D terrain feature is turned off in settings.
+- **Fixed peak popups.** An open peak popup is now safely closed when the map's peak dots refresh.
+
 ## 2.1.0 — 2026-07-15
 
 - **The 3D map is a one-tap toggle on the map.** The 3D/2D control now floats in

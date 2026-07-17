@@ -286,6 +286,24 @@ const waitForClimbedRing = async (cdp, { present, label, timeoutMs = 12000 }) =>
     throw new Error(`${label}: expected the climbed peak ring to be ${present ? 'visible' : 'gone'} (matched ${cluster.count} pixels)`);
 };
 
+// Wait until the climbed ring is not just present but resting: two successive
+// screenshots agreeing on its centroid, so a click aimed at it cannot race a
+// dots refresh that moves the synthetic peaks.
+const waitForStableClimbedRing = async (cdp, label, timeoutMs = 20000) => {
+    const deadline = Date.now() + timeoutMs;
+    let previous = null;
+    for (;;) {
+        const cluster = await findClimbedRing(cdp);
+        if (cluster.count >= 15 && previous
+            && Math.abs(cluster.x - previous.x) <= 1 && Math.abs(cluster.y - previous.y) <= 1) return cluster;
+        if (Date.now() >= deadline) {
+            throw new Error(`${label}: no stable climbed ring (last ${JSON.stringify(cluster)})`);
+        }
+        previous = cluster.count >= 15 ? cluster : null;
+        await delay(300);
+    }
+};
+
 const clickAt = async (cdp, x, y) => {
     await cdp.call('Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'left', clickCount: 1 });
     await cdp.call('Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button: 'left', clickCount: 1 });
@@ -540,6 +558,61 @@ try {
     await capture(cdp, path.join(outputDir, 'terrain-peaks-popup.png'));
 
     await assertPlainScrollZooms(cdp, 'Ascent 3D');
+
+    // Regression: the dots must stay hoverable and clickable with the camera
+    // tilted toward horizontal. MapLibre's layer-scoped events resolve the
+    // cursor through the terrain surface behind the ring — at high pitch that
+    // lands kilometers past the peak (or in the sky), so the dots went dead;
+    // the frame now hit-tests the billboarded rings in screen space. Right-
+    // drag far past the 80° pitch clamp, then hover and click the ring.
+    const peakFeedBeforeTilt = peakFeedRequests.length;
+    const tilt = { x: 640, y: 600 };
+    await cdp.call('Input.dispatchMouseEvent', {
+        type: 'mousePressed', x: tilt.x, y: tilt.y, button: 'right', buttons: 2, clickCount: 1
+    });
+    for (let step = 1; step <= 5; step++) {
+        await cdp.call('Input.dispatchMouseEvent', {
+            type: 'mouseMoved', x: tilt.x, y: tilt.y - step * 60, buttons: 2
+        });
+        await delay(60);
+    }
+    await cdp.call('Input.dispatchMouseEvent', {
+        type: 'mouseReleased', x: tilt.x, y: tilt.y - 300, button: 'right', buttons: 2, clickCount: 1
+    });
+    // A pitch change alone re-keys the clamped view bounds, so the settle must
+    // produce a fresh feed request — its absence means the gesture never
+    // registered and the tilted checks below would silently re-test pitch 60.
+    await waitForCondition(() => peakFeedRequests.length > peakFeedBeforeTilt,
+        () => 'Tilting the camera settled into no new peak-feed request — the right-drag pitch gesture did not register');
+    const tiltedRing = await waitForStableClimbedRing(cdp, 'Ascent 3D tilted peaks');
+    await cdp.call('Input.dispatchMouseEvent', { type: 'mouseMoved', x: tiltedRing.x, y: tiltedRing.y });
+    await waitForPageState(cdp, `(() => {
+        const frame = document.getElementById('bpb-terrain-frame');
+        const canvas = frame && frame.contentDocument && frame.contentDocument.querySelector('.maplibregl-canvas');
+        return { ready: Boolean(canvas) && canvas.style.cursor === 'pointer', cursor: canvas ? canvas.style.cursor : 'no-canvas' };
+    })()`, 8000).catch(() => {
+        throw new Error(`Ascent 3D tilted peaks: hovering the ring at ${tiltedRing.x},${tiltedRing.y} showed no pointer cursor`);
+    });
+    const stalePopup = await evaluate(cdp, `(() => {
+        const frame = document.getElementById('bpb-terrain-frame');
+        return Boolean(frame && frame.contentDocument && frame.contentDocument.querySelector('.maplibregl-popup'));
+    })()`);
+    if (stalePopup) throw new Error('A stale popup is already open before the tilted-ring click');
+    // Click the upper half of the ring — the pixels whose behind-the-billboard
+    // terrain is farthest away (or sky), where the old path failed hardest.
+    await clickAt(cdp, tiltedRing.x, tiltedRing.y - 5);
+    const tiltedPopup = await waitForPageState(cdp, `(() => {
+        const frame = document.getElementById('bpb-terrain-frame');
+        const link = frame && frame.contentDocument
+            && frame.contentDocument.querySelector('.maplibregl-popup .bpb-peak-popup a');
+        return { ready: Boolean(link), href: link && link.href, text: link && link.textContent };
+    })()`, 8000).catch(() => {
+        throw new Error(`Ascent 3D tilted peaks: clicking the rendered ring at ${tiltedRing.x},${tiltedRing.y - 5} opened no popup`);
+    });
+    if (!/\/peak\.aspx\?pid=58603$/.test(tiltedPopup.href) || tiltedPopup.text !== 'Iron Mountain') {
+        throw new Error(`Tilted peak popup is wrong: ${JSON.stringify(tiltedPopup)}`);
+    }
+    await capture(cdp, path.join(outputDir, 'terrain-peaks-tilted-popup.png'));
 
     // Zoom far out: the dots and any open popup must clear, exactly like the
     // native map when it covers too big an area.

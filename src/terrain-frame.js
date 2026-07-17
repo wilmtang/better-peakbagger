@@ -71,7 +71,11 @@
         fallbackState: 'unknown',
         // Hollow ring like the 16x16 2D marker gifs: transparent fill keeps
         // the terrain visible through the center.
-        ring: { radius: 6, strokeWidth: 2.5, opacity: 0.95 }
+        ring: { radius: 6, strokeWidth: 2.5, opacity: 0.95 },
+        // Extra pixels beyond the drawn ring edge that still count as a hit —
+        // a small touch allowance that also absorbs the slight offset between
+        // the shader's terrain sample and map.project()'s at high pitch.
+        hitSlopPx: 4
     };
 
     let map = null;
@@ -106,6 +110,11 @@
     let peaksDebounceTimer = null;
     let peaksUnavailable = false;
     let lastPeaksBoundsKey = null;
+    // The currently rendered peak features, kept for the screen-space hit
+    // test, and the pointer's last position for the frame-throttled hover.
+    let peakFeatures = [];
+    let peakPointerPoint = null;
+    let peakPointerFrame = null;
 
     const post = (type, detail = {}) => {
         if (!parentOrigin) return;
@@ -150,6 +159,12 @@
         peaksRequestId = 0;
         peaksUnavailable = false;
         lastPeaksBoundsKey = null;
+        peakFeatures = [];
+        peakPointerPoint = null;
+        if (peakPointerFrame !== null) {
+            cancelAnimationFrame(peakPointerFrame);
+            peakPointerFrame = null;
+        }
         if (map) {
             try { map.remove(); } catch (error) { /* The frame may already be unloading. */ }
             map = null;
@@ -621,12 +636,17 @@
         return expression;
     };
 
-    // The single place that decides what a peak marker looks like.
+    // The single place that decides what a peak marker looks like. The rings
+    // billboard at a constant screen size ('circle-pitch-scale': 'viewport'),
+    // like the native map's fixed 16px gifs — which also keeps the drawn
+    // extent identical to peakFeatureAt()'s screen-space hit radius at every
+    // camera pitch and distance.
     const buildPeakLayers = () => [{
         id: PEAK_MARKERS.layerId, type: 'circle', source: PEAK_MARKERS.sourceId,
         paint: {
             'circle-radius': PEAK_MARKERS.ring.radius,
             'circle-color': 'rgba(0, 0, 0, 0)',
+            'circle-pitch-scale': 'viewport',
             'circle-stroke-width': PEAK_MARKERS.ring.strokeWidth,
             'circle-stroke-color': peakStateColor(),
             'circle-stroke-opacity': PEAK_MARKERS.ring.opacity
@@ -658,7 +678,61 @@
         return features;
     };
 
+    // The drawn extent of a ring in screen pixels (MapLibre strokes outward
+    // from the fill radius), plus the spec's touch allowance.
+    const PEAK_HIT_RADIUS = PEAK_MARKERS.ring.radius + PEAK_MARKERS.ring.strokeWidth + PEAK_MARKERS.hitSlopPx;
+
+    // Screen-space hit test against the rendered rings. MapLibre's own
+    // layer-scoped events cannot be used here: with terrain enabled the
+    // library resolves the cursor through the terrain surface behind the
+    // pixel, so a click on a ring billboarded over a summit "lands" wherever
+    // the grazing ray strikes ground — kilometers past the peak, or in the
+    // sky — the peak's tile is never queried, and the dots go dead as the
+    // camera tilts toward horizontal (see docs/3d-peak-markers.md). The rings
+    // are drawn as fixed-size billboards around a terrain-elevated anchor,
+    // and map.project() returns exactly that anchor in screen pixels, so a
+    // pixel-distance test against the ring spec reproduces the drawn shape at
+    // any pitch. Nearest hit wins; anything unprojectable is a miss.
+    const peakFeatureAt = point => {
+        if (!map || !loaded || typeof map.project !== 'function'
+            || !point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) return null;
+        let best = null;
+        let bestDistance = PEAK_HIT_RADIUS;
+        try {
+            for (const feature of peakFeatures) {
+                const coordinates = feature.geometry.coordinates;
+                const projected = map.project([coordinates[0], coordinates[1]]);
+                if (!projected || !Number.isFinite(projected.x) || !Number.isFinite(projected.y)) continue;
+                const distance = Math.hypot(projected.x - point.x, projected.y - point.y);
+                if (distance <= bestDistance) {
+                    best = feature;
+                    bestDistance = distance;
+                }
+            }
+        } catch (error) {
+            return null;
+        }
+        return best;
+    };
+
+    const updatePeakCursor = point => {
+        const canvas = map && typeof map.getCanvas === 'function' ? map.getCanvas() : null;
+        if (canvas) canvas.style.cursor = peakFeatureAt(point) ? 'pointer' : '';
+    };
+
+    // Hover hit tests are deferred to the next animation frame so a fast
+    // pointer costs at most one scan of the (≤400) dots per painted frame.
+    const schedulePeakCursorUpdate = point => {
+        peakPointerPoint = point;
+        if (peakPointerFrame !== null) return;
+        peakPointerFrame = requestAnimationFrame(() => {
+            peakPointerFrame = null;
+            if (peakPointerPoint) updatePeakCursor(peakPointerPoint);
+        });
+    };
+
     const setPeakData = features => {
+        peakFeatures = features;
         const source = map && map.getSource(PEAK_MARKERS.sourceId);
         if (source && typeof source.setData === 'function') {
             source.setData({ type: 'FeatureCollection', features });
@@ -670,6 +744,9 @@
             try { peakPopup.remove(); } catch (error) { /* Already detached. */ }
             peakPopup = null;
         }
+        // Keep the hover cursor honest when the dots refresh or clear under a
+        // resting pointer.
+        if (peakPointerPoint) updatePeakCursor(peakPointerPoint);
     };
 
     // The visible bounds, clamped to boundsFactor × the straight-down viewport
@@ -925,15 +1002,22 @@
                 });
                 terrainMap.addSource(PEAK_MARKERS.sourceId, { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
                 for (const layer of buildPeakLayers()) terrainMap.addLayer(layer);
-                terrainMap.on('click', PEAK_MARKERS.layerId, event => {
-                    const feature = event && event.features && event.features[0];
+                // Click and hover go through the screen-space hit test —
+                // never layer-scoped events, which die on a pitched terrain
+                // camera (see peakFeatureAt).
+                terrainMap.on('click', event => {
+                    if (map !== terrainMap || !event) return;
+                    const feature = peakFeatureAt(event.point);
                     if (feature) showPeakPopup(feature);
                 });
-                terrainMap.on('mouseenter', PEAK_MARKERS.layerId, () => {
-                    if (typeof terrainMap.getCanvas === 'function') terrainMap.getCanvas().style.cursor = 'pointer';
+                terrainMap.on('mousemove', event => {
+                    if (map === terrainMap && event && event.point) schedulePeakCursorUpdate(event.point);
                 });
-                terrainMap.on('mouseleave', PEAK_MARKERS.layerId, () => {
-                    if (typeof terrainMap.getCanvas === 'function') terrainMap.getCanvas().style.cursor = '';
+                terrainMap.on('mouseout', () => {
+                    if (map !== terrainMap) return;
+                    peakPointerPoint = null;
+                    const canvas = typeof terrainMap.getCanvas === 'function' ? terrainMap.getCanvas() : null;
+                    if (canvas) canvas.style.cursor = '';
                 });
                 terrainMap.addSource('bpb-highlight', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
                 terrainMap.addLayer({

@@ -714,6 +714,9 @@ test('3D peak markers request Peakbagger dots on camera settle and render only v
         center: { lng: -121.805, lat: 48.73 },
         bounds: { south: 48.6, north: 48.86, west: -121.95, east: -121.66 }
     };
+    // Screen positions the stubbed map.project reports per 'lon,lat' key, like
+    // a pitched terrain camera would; unlisted peaks project far off-screen.
+    const projections = new Map();
 
     class MapStub {
         constructor(options) {
@@ -752,6 +755,9 @@ test('3D peak markers request Peakbagger dots on camera settle and render only v
             };
         }
         getCanvas() { return this.canvas; }
+        project([lng, lat]) {
+            return projections.get(`${lng},${lat}`) || { x: -10000, y: -10000 };
+        }
         resize() {}
         remove() { this.removed = true; }
     }
@@ -798,6 +804,8 @@ test('3D peak markers request Peakbagger dots on camera settle and render only v
     assert.deepEqual(JSON.parse(JSON.stringify(ringPaint['circle-stroke-color'])),
         ['match', ['get', 'state'], 'climbed', '#00ff00', 'unclimbed', '#ff6699', 'unknown', '#ffcc33', '#ffcc33'],
         'ring colors are data-driven from the marker spec');
+    assert.equal(ringPaint['circle-pitch-scale'], 'viewport',
+        'rings keep a constant screen size so the drawn extent matches the screen-space hit radius');
 
     await settle();
     const request = messages.at(-1);
@@ -846,29 +854,62 @@ test('3D peak markers request Peakbagger dots on camera settle and render only v
     });
     assert.equal(rendered().length, 0, 'one malformed row drops the whole batch');
 
-    const click = map.handlers.get('click:bpb-peaks-ring');
-    assert.ok(click, 'the ring layer is clickable');
-    click({
-        features: [{
-            properties: { id: 58603, name: 'Iron <b>&</b> Mountain', state: 'climbed' },
-            geometry: { type: 'Point', coordinates: [-121.79, 48.72] }
-        }]
+    // Clicks and hover are hit-tested in screen space against map.project —
+    // MapLibre's layer-scoped events resolve the cursor through the terrain
+    // surface behind the pixel and go dead when the camera pitches toward
+    // horizontal, so they must never come back.
+    assert.ok(!map.handlers.get('click:bpb-peaks-ring'), 'no layer-scoped click handler exists');
+    assert.ok(!map.handlers.get('mouseenter:bpb-peaks-ring'), 'no layer-scoped hover handler exists');
+    const click = map.handlers.get('click');
+    assert.ok(click, 'the map hit-tests clicks itself');
+    dispatch({
+        type: 'peaks',
+        requestId: 1,
+        peaks: [
+            { id: 58603, name: 'Iron <b>&</b> Mountain', lat: 48.72, lon: -121.79, state: 'climbed' },
+            { id: 38375, name: 'Near Miss', lat: 48.74, lon: -121.82, state: 'unclimbed' }
+        ]
     });
-    assert.equal(popups.length, 1, 'a popup opens for the clicked dot');
-    const link = popups[0].node.querySelector('a');
+    projections.set('-121.79,48.72', { x: 400, y: 300 });
+    projections.set('-121.82,48.74', { x: 418, y: 300 });
+
+    click({ point: { x: 431, y: 300 } });
+    assert.equal(popups.length, 0, 'a click just past a ring\'s edge opens nothing');
+    click({ point: { x: 410, y: 301 } });
+    assert.equal(popups.length, 1, 'a click within a drawn ring opens its popup');
+    assert.deepEqual(JSON.parse(JSON.stringify(popups[0].lngLat)), [-121.82, 48.74],
+        'overlapping rings resolve to the nearest center');
+
+    click({ point: { x: 403, y: 297 } });
+    assert.equal(popups.length, 2, 'a pitched-camera ring is clickable wherever it is drawn');
+    const link = popups[1].node.querySelector('a');
     assert.equal(link.href, 'https://www.peakbagger.com/peak.aspx?pid=58603',
         'the link is built from the integer peak id only');
     assert.equal(link.textContent, 'Iron <b>&</b> Mountain', 'the name renders as text, never as markup');
     assert.equal(link.target, '_blank');
     assert.equal(link.rel, 'noopener noreferrer');
-    assert.deepEqual(JSON.parse(JSON.stringify(popups[0].lngLat)), [-121.79, 48.72]);
+    assert.deepEqual(JSON.parse(JSON.stringify(popups[1].lngLat)), [-121.79, 48.72]);
+
+    // The hover cursor runs through the same hit test, one frame behind the
+    // pointer.
+    const nextFrame = () => new Promise(resolve => window.requestAnimationFrame(resolve));
+    map.handlers.get('mousemove')({ point: { x: 401, y: 299 } });
+    await nextFrame();
+    assert.equal(map.canvas.style.cursor, 'pointer', 'hovering a ring shows the pointer cursor');
+    map.handlers.get('mousemove')({ point: { x: 500, y: 500 } });
+    await nextFrame();
+    assert.equal(map.canvas.style.cursor, '', 'leaving the ring restores the default cursor');
+    map.handlers.get('mousemove')({ point: { x: 401, y: 299 } });
+    await nextFrame();
+    map.handlers.get('mouseout')();
+    assert.equal(map.canvas.style.cursor, '', 'leaving the map restores the default cursor');
 
     dispatch({
         type: 'peaks',
         requestId: 1,
         peaks: [{ id: 7, name: 'Fresh Peak', lat: 48.71, lon: -121.81, state: 'unclimbed' }]
     });
-    assert.equal(popups[0].removedPopup, true,
+    assert.equal(popups.at(-1).removedPopup, true,
         'refreshing the dots closes an open popup, like the native marker rebuild');
 
     const beforeZoomOut = messages.filter(message => message.type === 'peaksRequest').length;
