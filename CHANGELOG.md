@@ -12,6 +12,10 @@
   rings keep a constant screen size like the 2D map's markers instead of
   shrinking into the distance.
 - **Crisper 3D drapes.** The draped map texture no longer drops in resolution and blurs during small camera tilts.
+- **No more flicker when resizing the 3D map.** Dragging the map's resize
+  handle while the 3D view is open used to blink on every step — each size
+  change cleared the canvas and the repaint waited for the next frame. The
+  view now repaints in the same instant it is resized.
 - **Fixed 3D toggle on Full Screen maps.** Restored the 3D toggle button on Full Screen GPS maps, which was failing to appear in Chrome due to a script-injection order issue.
 - **Fixed 3D toggle visibility.** The 3D toggle is now correctly hidden when the experimental 3D terrain feature is turned off in settings.
 - **Fixed peak popups.** An open peak popup is now safely closed when the map's peak dots refresh.

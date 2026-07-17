@@ -189,6 +189,7 @@ test('3D terrain frame validates coordinate-only routes before loading public DE
             this.controls = [];
             this.handlers = new Map();
             this.removed = false;
+            this.renderCalls = [];
             maps.push(this);
         }
         addControl(control, position) { this.controls.push({ control, position }); }
@@ -210,9 +211,21 @@ test('3D terrain frame validates coordinate-only routes before loading public DE
         removeSource(id) { this.sources.delete(id); }
         setPaintProperty(...args) { this.paint.push(args); }
         fitBounds(bounds, options) { this.fitted = { bounds, options }; }
-        resize() { this.resizeCalled = true; }
+        resize() { this.renderCalls.push('resize'); }
+        redraw() { this.renderCalls.push('redraw'); }
         remove() { this.removed = true; }
     }
+
+    const resizeObservers = [];
+    window.ResizeObserver = class {
+        constructor(callback) {
+            this.callback = callback;
+            this.observed = [];
+            resizeObservers.push(this);
+        }
+        observe(element) { this.observed.push(element); }
+        disconnect() { this.disconnected = true; }
+    };
 
     window.chrome = { runtime: { getURL: path => `chrome-extension://test-id/${path}` } };
     window.BPBTerrainCache = {
@@ -318,6 +331,18 @@ test('3D terrain frame validates coordinate-only routes before loading public DE
     assert.equal(map.fitted, undefined, 'no redundant post-load fitBounds');
     assert.equal(window.document.getElementById('bpb-terrain-map').style.pointerEvents, 'auto');
     assert.equal(messages.at(-1).type, 'loaded');
+
+    // Dragging the host page's resize handle reshapes the frame many times per
+    // second. Each map.resize() re-allocates the canvas backing store, which
+    // the browser clears, and MapLibre's own repaint waits for the next
+    // animation frame — one blank composited frame per drag step, a visible 3D
+    // flicker. The observer callback must redraw synchronously, before paint.
+    const frameObserver = resizeObservers[0];
+    assert.ok(frameObserver, 'the frame watches its own element for size changes');
+    assert.ok(frameObserver.observed.includes(window.document.getElementById('bpb-terrain-map')));
+    frameObserver.callback();
+    assert.deepEqual(map.renderCalls, ['resize', 'redraw'],
+        'a resize repaints in the same task so the cleared canvas is never composited');
 
     dispatch({ type: 'highlight', coordinates: [-121.81, 48.71] });
     assert.deepEqual(JSON.parse(JSON.stringify(map.sources.get('bpb-highlight').data.geometry)), {

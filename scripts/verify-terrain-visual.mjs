@@ -630,6 +630,88 @@ try {
     })()`);
     if (orphanPopup) throw new Error('The peak popup outlived its cleared dot after zooming out');
     await capture(cdp, path.join(outputDir, 'terrain-peaks-zoomed-out.png'));
+
+    // Regression: dragging the host page's resize handle reshapes the frame
+    // many times per second. Every map.resize() re-allocates the canvas
+    // backing store, which the browser clears — and MapLibre's own repaint
+    // waits for the next animation frame, so each drag step composited one
+    // blank frame and the 3D view flickered. The frame must redraw
+    // synchronously inside its ResizeObserver callback, before the browser
+    // paints. Probe: arm when the map canvas's backing store is re-allocated;
+    // if no WebGL draw has landed by the next animation frame, a cleared
+    // canvas reached the compositor.
+    const probeInstalled = await evaluate(cdp, `(() => {
+        const frame = document.getElementById('bpb-terrain-frame');
+        const win = frame && frame.contentWindow;
+        const canvas = frame && frame.contentDocument
+            && frame.contentDocument.querySelector('.maplibregl-canvas');
+        if (!win || !canvas) return false;
+        const probe = win.__bpbResizeProbe = { resizes: 0, blankFrames: 0, cleared: false, canvas };
+        const descriptor = win.Object.getOwnPropertyDescriptor(win.HTMLCanvasElement.prototype, 'width');
+        win.Object.defineProperty(win.HTMLCanvasElement.prototype, 'width', {
+            configurable: true,
+            get() { return descriptor.get.call(this); },
+            set(value) {
+                descriptor.set.call(this, value);
+                if (this !== probe.canvas) return;
+                probe.resizes += 1;
+                probe.cleared = true;
+                win.requestAnimationFrame(() => { if (probe.cleared) probe.blankFrames += 1; });
+            }
+        });
+        for (const contextType of ['WebGLRenderingContext', 'WebGL2RenderingContext']) {
+            const proto = win[contextType] && win[contextType].prototype;
+            if (!proto) continue;
+            for (const method of ['drawArrays', 'drawElements']) {
+                const original = proto[method];
+                proto[method] = function (...args) { probe.cleared = false; return original.apply(this, args); };
+            }
+        }
+        return true;
+    })()`);
+    if (!probeInstalled) throw new Error('Could not instrument the terrain frame for the resize-flicker probe');
+    // Resize through the handle's keyboard path: it funnels into the same
+    // applyMapViewportSize → iframe resize → frame ResizeObserver chain as the
+    // pointer drag, and the flicker mechanism is input-agnostic. (A synthetic
+    // CDP pointer drag is not retargeted by setPointerCapture once the cursor
+    // crosses the iframe, so the mouse gesture cannot be scripted reliably.)
+    const handleFocused = await evaluate(cdp, `(() => {
+        const handle = document.getElementById('bpb-map-resize-handle');
+        if (!handle) return false;
+        handle.focus();
+        return document.activeElement === handle;
+    })()`);
+    if (!handleFocused) throw new Error('The map resize handle is missing or unfocusable while 3D is active');
+    for (const key of ['ArrowUp', 'ArrowLeft', 'ArrowUp', 'ArrowLeft', 'ArrowUp', 'ArrowLeft']) {
+        const keyCode = key === 'ArrowUp' ? 38 : 37;
+        await cdp.call('Input.dispatchKeyEvent', {
+            type: 'rawKeyDown', key, code: key, windowsVirtualKeyCode: keyCode, modifiers: 8
+        });
+        await cdp.call('Input.dispatchKeyEvent', {
+            type: 'keyUp', key, code: key, windowsVirtualKeyCode: keyCode, modifiers: 8
+        });
+        await delay(80);
+    }
+    await waitForPageState(cdp, `(() => {
+        const frame = document.getElementById('bpb-terrain-frame');
+        const probe = frame && frame.contentWindow && frame.contentWindow.__bpbResizeProbe;
+        return { ready: Boolean(probe) && probe.resizes > 0, resizes: probe && probe.resizes };
+    })()`, 8000).catch(() => {
+        throw new Error('Resizing via the handle never resized the 3D canvas — the frame ResizeObserver did not run');
+    });
+    // Two frame-local animation frames flush every armed verdict before reading.
+    const resizeVerdict = await evaluate(cdp, `(() => {
+        const win = document.getElementById('bpb-terrain-frame').contentWindow;
+        return new Promise(resolve => win.requestAnimationFrame(() => win.requestAnimationFrame(() => {
+            resolve({ resizes: win.__bpbResizeProbe.resizes, blankFrames: win.__bpbResizeProbe.blankFrames });
+        })));
+    })()`);
+    if (resizeVerdict.blankFrames > 0) {
+        throw new Error(`Resizing the 3D view composited ${resizeVerdict.blankFrames} cleared frame(s) across `
+            + `${resizeVerdict.resizes} canvas resizes — the resize flicker is back`);
+    }
+    console.log(`Resize-flicker probe: ${resizeVerdict.resizes} canvas resizes, 0 blank frames.`);
+    await capture(cdp, path.join(outputDir, 'terrain-resized.png'));
     if (runtimeErrors.length) throw new Error(`Runtime exception: ${runtimeErrors.join('\n')}`);
 
     await navigate(cdp, `${baseUrl}?mode=terrain&theme=dark`, 1000, 900);

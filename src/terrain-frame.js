@@ -1040,6 +1040,14 @@
                 resizeObserver = new ResizeObserver(() => {
                     if (!map) return;
                     map.resize();
+                    // resize() re-allocates the canvas backing store, which the
+                    // browser clears to transparent, and MapLibre only repaints
+                    // on the next animation frame — so every drag step of the
+                    // host page's resize handle would composite one blank frame
+                    // and the 3D view flickers. ResizeObserver callbacks run
+                    // before paint, so a synchronous redraw here refills the
+                    // canvas before the browser ever shows it.
+                    if (typeof map.redraw === 'function') map.redraw();
                     if (loaded) post('metrics', { navTop: measureNavTop() });
                 });
                 resizeObserver.observe(mapElement);
