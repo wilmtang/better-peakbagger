@@ -16,19 +16,20 @@ import { loadPage, waitFor, PAGE_FIXTURES } from './helpers/load-page.mjs';
 const FIXTURE = 'climber-ascentedit.html';
 const URL = 'https://www.peakbagger.com/climber/ascentedit.aspx?cid=900001';
 const DRAFT_KEY = 'bpbReportDraft:900001:new';
-const SCRIPTS = [
-    'src/settings-schema.js',
-    'src/settings.js',
+// The ascentedit page loads the theme bundle (which carries settings) and,
+// after the Markdown vendor script, the ascent-editor bundle (draft filling +
+// report markup + editor). Mirror that so report-editor.js sees its settings.
+const BUNDLES = [
+    'content/theme.js',
     'vendor/marked.umd.js',
-    'src/report-markup.js',
-    'src/report-editor.js'
+    'content/ascent-editor.js'
 ];
 
 const loadEditor = async ({ settings = {}, report = '', drafts = {}, url = URL } = {}) => {
     const dom = await loadPage(FIXTURE, {
         url,
         settings,
-        scripts: SCRIPTS,
+        bundles: BUNDLES,
         fixtures: PAGE_FIXTURES,
         prepare: d => {
             d.window.document.getElementById('JournalText').value = report;

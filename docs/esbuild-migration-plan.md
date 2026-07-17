@@ -24,7 +24,7 @@ modules as real ES modules (zero `globalThis.BPB*`), vendor via npm, docs + dev 
 | # | Step | Status |
 |---|------|--------|
 | 0 | Plan file | ✅ done |
-| 1 | Test harness → eval built bundles (`load-page.mjs` + feature jsdom tests) | ⬜ todo |
+| 1 | Test harness → eval built bundles (`load-page.mjs` + feature jsdom tests) | 🟡 in progress |
 | 2 | Convert pure leaves: `settings-schema`, `gpx-metrics`, `capture-core` (+ unit tests) | ⬜ todo |
 | 3 | Convert shared leaves: `terrain-basemap`, `peak-markers`, `terrain-cache`, `site-dark-css`, `report-markup`, `provider-page` | ⬜ todo |
 | 4 | Convert `settings`, `theme`, `bridge`, `big-map-bridge`, `peak-map-bridge` | ⬜ todo |
@@ -39,6 +39,11 @@ modules as real ES modules (zero `globalThis.BPB*`), vendor via npm, docs + dev 
 
 ## Log
 
+- **Step 1a** — `load-page.mjs` now evals built bundles (`evalBundle`, `bundles:` option);
+  `makeChromeStub` grew a `runtime` stub (a bundle carries idle sibling modules). Migrated:
+  `ascent-filter`, `peak-links`, `report-editor`, `bridge`, `ascent-draft`, `popup`,
+  `dark-contrast` (loader). Remaining feature tests: `peak-map`, `terrain-map`, `big-map`,
+  `gpx-analyzer`, `theme-inject`, `background-capture`. 240 tests green.
 - **Step 0** — plan file created.
 - _(prior, already committed)_ `build: add esbuild pipeline producing dist/` — esbuild
   bundler, `build-config.mjs`, manifest/HTML/tests repointed to `dist/`. 240 tests green;

@@ -1,8 +1,12 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
-// Test helper: load an ascent-list fixture into jsdom, stub chrome.storage,
-// and eval the extension's isolated-world content scripts against it.
+// Test helper: load a Peakbagger fixture into jsdom, stub chrome.storage, and
+// run the extension against it by evaluating the *built* content-script bundles
+// (dist/…) — the same self-contained IIFE files the browser loads. Evaluating
+// the shipped bundle keeps the harness faithful across the ES-module migration:
+// bundle output is an IIFE whether the source modules are IIFEs or ES modules,
+// so a test names the page's bundles rather than a hand-kept list of src files.
 
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -12,6 +16,16 @@ import { JSDOM } from 'jsdom';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 export const FIXTURES = path.join(root, 'test', 'fixtures', 'peakascents');
 export const PAGE_FIXTURES = path.join(root, 'test', 'fixtures', 'pages');
+export const DIST = path.join(root, 'dist');
+
+// Evaluate one or more built bundles (dist-relative paths) into a window or
+// vm-style context, in order. `npm test` runs `npm run build` first (pretest),
+// so dist/ is always current.
+export const evalBundle = async (target, ...bundles) => {
+    for (const rel of bundles) {
+        target.eval(await readFile(path.join(DIST, rel), 'utf8'));
+    }
+};
 
 // Minimal in-memory chrome.storage.sync + onChanged, enough for settings.js.
 export const makeChromeStub = (initial = {}, localInitial = {}) => {
@@ -49,6 +63,14 @@ export const makeChromeStub = (initial = {}, localInitial = {}) => {
                 addListener: fn => listeners.add(fn),
                 removeListener: fn => listeners.delete(fn)
             }
+        },
+        // A built content-script bundle carries every module the page injects,
+        // so idle siblings (e.g. ascent-draft) touch chrome.runtime at load even
+        // when the test only drives one feature. Mirror the page's full chrome.
+        runtime: {
+            id: 'test-extension',
+            sendMessage: async () => undefined,
+            onMessage: { addListener: () => {}, removeListener: () => {} }
         }
     };
 };
@@ -64,7 +86,7 @@ export const waitFor = async (dom, predicate, ms = 5000) => {
 export const loadPage = async (fixture, {
     url,
     settings = {},
-    scripts = ['src/settings-schema.js', 'src/settings.js', 'src/ascent-filter.js'],
+    bundles = ['content/ascent-filter.js'],
     fixtures = FIXTURES,
     prepare = null
 } = {}) => {
@@ -73,9 +95,7 @@ export const loadPage = async (fixture, {
     dom.chrome = makeChromeStub({ bpbSettings: settings });
     dom.window.chrome = dom.chrome;
     if (prepare) prepare(dom);
-    for (const rel of scripts) {
-        dom.window.eval(await readFile(path.join(root, rel), 'utf8'));
-    }
+    await evalBundle(dom.window, ...bundles);
     return dom;
 };
 
