@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **3D terrain on peak pages.** The 3D terrain toggle is now available on individual peak maps (`Peak.aspx`), joining ascent maps and Full Screen maps.
+- **Activity capture enhancements.** GPX drafts now preserve elevation and timestamps. Added support for coordinate-only and trackless captures, improved handling of Peakbagger preview failures, and added a cached capture reset action.
+- **First-use consent for 3D maps.** Added an explicit first-use consent flow before the 3D map feature fetches external elevation and map tile data.
+- **Firefox fixes.** Fixed the initialization of isolated settings consumers and normalized the Control-drag gesture for 3D terrain tilt.
+- **Fixed 3D time-series chaser color.**
 - **Trip report editor.** The ascent form's trip report box is now a rich
   text editor with a GitHub-flavored Markdown mode and structural preview.
   Headings, quotes, emphasis/strike, links, real nested lists, tables, inline

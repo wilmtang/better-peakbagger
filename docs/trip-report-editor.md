@@ -147,3 +147,68 @@ always shows the exact bracket source.
   Testing and exercises real typing, formatting, Markdown conversion/preview,
   expanded semantic blocks, and draft restoration against the masked ascent
   form fixture.
+
+## Peakbagger render test
+```
+=== BETTER PEAKBAGGER TAG TEST ===
+
+--- Emphasis ---
+Bold b: [b]bold[/b]
+Strong: [strong]strong[/strong]
+Italic i: [i]italic[/i]
+Emphasis em: [em]emphasis[/em]
+Underline u: [u]underline[/u]
+Strike s: [s]strike[/s]
+Strike strike: [strike]strike[/strike]
+Strike del: [del]deleted[/del]
+Small: [small]small[/small]
+Mark: [mark]highlight[/mark]
+Sub: H[sub]2[/sub]O
+Sup: x[sup]2[/sup]
+Code: [code]inline_code()[/code]
+
+--- Headings ---
+[h1]Heading 1[/h1]
+[h2]Heading 2[/h2]
+[h3]Heading 3[/h3]
+[h4]Heading 4[/h4]
+[h5]Heading 5[/h5]
+[h6]Heading 6[/h6]
+
+--- Quotes ---
+[blockquote]Block quote line.[/blockquote]
+Inline q: [q]quoted[/q]
+
+--- Links ---
+Link: [a href="https://www.peakbagger.com/"]Peakbagger[/a]
+Link new tab: [a href="https://www.peakbagger.com/" target="_blank"]new tab[/a]
+
+--- Images ---
+Image: [img src="https://www.peakbagger.com/image/header.jpg" alt="test"]
+Image sized: [img src="https://www.peakbagger.com/image/header.jpg" width="120"]
+
+--- Video / embeds ---
+Iframe: [iframe width="320" height="180" src="https://www.youtube.com/embed/aqz-KE-bpKQ"][/iframe]
+Video: [video src="https://file-examples.com/storage/fee96acbae6a5a8fda1faee/2017/04/file_example_MP4_480_1_5MG.mp4" controls][/video]
+
+--- Lists ---
+[ul][li]bullet one[/li][li]bullet two[/li][/ul]
+[ol][li]number one[/li][li]number two[/li][/ol]
+
+--- Table ---
+[table border="1"][tr][th]Peak[/th][th]Elev[/th][/tr][tr][td]Rainier[/td][td]14411[/td][/tr][tr][td]Baker[/td][td]10781[/td][/tr][/table]
+
+--- Structure / misc ---
+Rule below: [hr]
+Preformatted: [pre]two   spaces
+new line[/pre]
+Div: [div]div content[/div]
+Span color: [span style="color:red"]red[/span]
+Font color: [font color="green"]green[/font]
+
+--- Warned-against (test anyway) ---
+Paragraph: [p]paragraph[/p]
+Break here[br]after break
+
+=== END TEST ===
+```
