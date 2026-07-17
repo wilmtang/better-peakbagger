@@ -511,9 +511,11 @@ again for the route; framing up front removes that duplicate work, the dominant
 part of load time.
 
 Gestures match the native 2D map the view replaces: plain scroll zooms, drag
-pans, and right-drag tilts — no modifier key. Pan and tilt are not otherwise
-obvious, so a small always-visible hint spells out all three gestures. This
-works the same in Chrome and Firefox.
+pans, and right-drag tilts — no modifier key. Ctrl-drag is also supported as an
+alternative, including on macOS Firefox where the browser reports that gesture
+as a mismatched secondary-button press followed by primary-button movement.
+Pan and tilt are not otherwise obvious, so a small always-visible hint spells
+out the three primary gestures.
 
 The on-map controls track the native 2D map so nothing jumps corners when you
 toggle: the layer picker stays top-right, and the **2D**/**3D** button floats

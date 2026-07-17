@@ -626,6 +626,41 @@
         map.setPaintProperty('terrain-hillshade', 'hillshade-accent-color', palette.hillAccent);
     };
 
+    // MapLibre supports Ctrl + primary-button drag as an alternative to a
+    // secondary-button drag. On macOS Firefox, however, the browser rewrites
+    // that mousedown as button=2 while leaving buttons=1. MapLibre records the
+    // inconsistent secondary-button start, then rejects the primary-button
+    // move events that follow, so the camera never tilts. Normalize only that
+    // impossible physical-button combination into the Chrome-shaped event;
+    // real secondary-button drags report buttons=2 and pass through untouched.
+    const normalizeControlPrimaryDrag = container => {
+        container.addEventListener('mousedown', event => {
+            if (!event.ctrlKey || event.button !== 2 || event.buttons !== 1) return;
+            const target = event.target;
+            if (!target || typeof target.dispatchEvent !== 'function') return;
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            target.dispatchEvent(new MouseEvent('mousedown', {
+                bubbles: true,
+                cancelable: true,
+                composed: true,
+                view: window,
+                detail: event.detail,
+                screenX: event.screenX,
+                screenY: event.screenY,
+                clientX: event.clientX,
+                clientY: event.clientY,
+                ctrlKey: true,
+                shiftKey: event.shiftKey,
+                altKey: event.altKey,
+                metaKey: event.metaKey,
+                button: 0,
+                buttons: 1,
+                relatedTarget: event.relatedTarget
+            }));
+        }, true);
+    };
+
     const setHighlight = coordinates => {
         if (!map || !loaded) return;
         const source = map.getSource('bpb-highlight');
@@ -1002,6 +1037,7 @@
 
         const canvas = document.createElement('div');
         canvas.id = 'bpb-terrain-canvas';
+        normalizeControlPrimaryDrag(canvas);
 
         const controls = document.createElement('div');
         controls.className = 'bpb-terrain-controls';

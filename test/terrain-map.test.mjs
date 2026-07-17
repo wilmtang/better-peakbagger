@@ -395,6 +395,37 @@ test('3D terrain frame validates coordinate-only routes before loading public DE
     assert.equal(window.document.getElementById('bpb-terrain-map').style.pointerEvents, 'auto');
     assert.equal(messages.at(-1).type, 'loaded');
 
+    // macOS Firefox rewrites Ctrl + primary-button mousedown to button=2 but
+    // leaves buttons=1. MapLibre cannot continue that internally inconsistent
+    // gesture when the following moves arrive as primary-button events.
+    const canvas = window.document.getElementById('bpb-terrain-canvas');
+    const gestureTarget = window.document.createElement('span');
+    canvas.append(gestureTarget);
+    const starts = [];
+    canvas.addEventListener('mousedown', event => starts.push({
+        button: event.button,
+        buttons: event.buttons,
+        ctrlKey: event.ctrlKey
+    }));
+    gestureTarget.dispatchEvent(new window.MouseEvent('mousedown', {
+        bubbles: true,
+        cancelable: true,
+        ctrlKey: true,
+        button: 2,
+        buttons: 1
+    }));
+    assert.deepEqual(starts, [{ button: 0, buttons: 1, ctrlKey: true }],
+        'the Firefox-shaped Ctrl + primary start reaches MapLibre as a primary-button start');
+    gestureTarget.dispatchEvent(new window.MouseEvent('mousedown', {
+        bubbles: true,
+        cancelable: true,
+        ctrlKey: true,
+        button: 2,
+        buttons: 2
+    }));
+    assert.deepEqual(starts.at(-1), { button: 2, buttons: 2, ctrlKey: true },
+        'a real Ctrl + secondary-button start must not be rewritten');
+
     // Dragging the host page's resize handle reshapes the frame many times per
     // second. Each map.resize() re-allocates the canvas backing store, which
     // the browser clears, and MapLibre's own repaint waits for the next
