@@ -68,7 +68,7 @@ test('theme bootstrap loads before the options stylesheet', async () => {
     const dom = await loadOptions({});
     const resources = Array.from(dom.window.document.head.querySelectorAll('script[src], link[rel="stylesheet"]'))
         .map(node => node.getAttribute('src') || node.getAttribute('href'));
-    assert.deepEqual(resources, ['../src/settings-schema.js', '../src/settings.js', 'theme.js', 'options.css']);
+    assert.deepEqual(resources, ['options-head.js', 'options.css']);
 });
 
 test('cached dark theme is applied before the asynchronous settings read', async () => {

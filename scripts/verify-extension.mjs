@@ -27,6 +27,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+// The unpacked extension is the built bundle tree, not the source root.
+const dist = path.join(root, 'dist');
 
 let chromium;
 try {
@@ -130,8 +132,8 @@ try {
         headless: true,
         viewport: { width: 1000, height: 760 },
         args: [
-            `--disable-extensions-except=${root}`,
-            `--load-extension=${root}`,
+            `--disable-extensions-except=${dist}`,
+            `--load-extension=${dist}`,
             '--host-resolver-rules=MAP www.peakbagger.com 127.0.0.1'
         ]
     });

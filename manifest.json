@@ -26,13 +26,9 @@
     "default_popup": "popup/popup.html"
   },
   "background": {
-    "service_worker": "src/background.js",
+    "service_worker": "background.js",
     "scripts": [
-      "src/gpx-metrics.js",
-      "src/capture-core.js",
-      "src/settings-schema.js",
-      "src/settings.js",
-      "src/background.js"
+      "background.js"
     ]
   },
   "options_ui": {
@@ -48,13 +44,11 @@
         "*://peakbagger.com/climber/AscentEdit.aspx*"
       ],
       "css": [
-        "src/report-editor.css"
+        "css/report-editor.css"
       ],
       "js": [
-        "src/ascent-draft.js",
         "vendor/marked.umd.js",
-        "src/report-markup.js",
-        "src/report-editor.js"
+        "content/ascent-editor.js"
       ],
       "run_at": "document_end",
       "all_frames": false
@@ -64,10 +58,7 @@
         "*://*.peakbagger.com/*"
       ],
       "js": [
-        "src/settings-schema.js",
-        "src/settings.js",
-        "src/site-dark-css.js",
-        "src/theme.js"
+        "content/theme.js"
       ],
       "run_at": "document_start",
       "all_frames": false
@@ -80,9 +71,7 @@
         "*://peakbagger.com/climber/Ascent.aspx*"
       ],
       "js": [
-        "src/settings-schema.js",
-        "src/settings.js",
-        "src/bridge.js"
+        "content/ascent-bridge.js"
       ],
       "run_at": "document_start",
       "all_frames": false
@@ -97,11 +86,7 @@
       "js": [
         "vendor/chart.umd.min.js",
         "vendor/tz-lookup.js",
-        "src/gpx-metrics.js",
-        "src/terrain-basemap.js",
-        "src/peak-markers.js",
-        "src/settings-schema.js",
-        "src/gpx-analyzer.js"
+        "content/gpx-analyzer.js"
       ],
       "run_at": "document_end",
       "all_frames": false,
@@ -115,12 +100,10 @@
         "*://peakbagger.com/climber/Ascent.aspx*"
       ],
       "css": [
-        "src/terrain-map.css"
+        "css/terrain-map.css"
       ],
       "js": [
-        "src/settings-schema.js",
-        "src/settings.js",
-        "src/terrain-map.js"
+        "content/terrain-map.js"
       ],
       "run_at": "document_end",
       "all_frames": false
@@ -137,9 +120,7 @@
         "*://peakbagger.com/climber/climblistc.aspx*"
       ],
       "js": [
-        "src/settings-schema.js",
-        "src/settings.js",
-        "src/ascent-filter.js"
+        "content/ascent-filter.js"
       ],
       "run_at": "document_start",
       "all_frames": false
@@ -152,9 +133,7 @@
         "*://peakbagger.com/peak.aspx*"
       ],
       "js": [
-        "src/settings-schema.js",
-        "src/settings.js",
-        "src/peak-map-bridge.js"
+        "content/peak-map-bridge.js"
       ],
       "run_at": "document_start",
       "all_frames": false
@@ -167,10 +146,10 @@
         "*://peakbagger.com/peak.aspx*"
       ],
       "css": [
-        "src/peak-links.css"
+        "css/peak-links.css"
       ],
       "js": [
-        "src/peak-links.js"
+        "content/peak-links.js"
       ],
       "run_at": "document_end",
       "all_frames": false
@@ -183,10 +162,7 @@
         "*://peakbagger.com/peak.aspx*"
       ],
       "js": [
-        "src/terrain-basemap.js",
-        "src/peak-markers.js",
-        "src/settings-schema.js",
-        "src/peak-map.js"
+        "content/peak-map.js"
       ],
       "run_at": "document_end",
       "all_frames": false,
@@ -200,12 +176,10 @@
         "*://peakbagger.com/peak.aspx*"
       ],
       "css": [
-        "src/terrain-map.css"
+        "css/terrain-map.css"
       ],
       "js": [
-        "src/settings-schema.js",
-        "src/settings.js",
-        "src/terrain-map.js"
+        "content/terrain-map.js"
       ],
       "run_at": "document_end",
       "all_frames": false
@@ -216,9 +190,7 @@
         "*://*.peakbagger.com/*bigmap.aspx*"
       ],
       "js": [
-        "src/settings-schema.js",
-        "src/settings.js",
-        "src/big-map-bridge.js"
+        "content/big-map-bridge.js"
       ],
       "run_at": "document_start",
       "all_frames": false
@@ -229,11 +201,7 @@
         "*://*.peakbagger.com/*bigmap.aspx*"
       ],
       "js": [
-        "src/gpx-metrics.js",
-        "src/terrain-basemap.js",
-        "src/peak-markers.js",
-        "src/settings-schema.js",
-        "src/big-map.js"
+        "content/big-map.js"
       ],
       "run_at": "document_end",
       "all_frames": false,
@@ -245,12 +213,10 @@
         "*://*.peakbagger.com/*bigmap.aspx*"
       ],
       "css": [
-        "src/terrain-map.css"
+        "css/terrain-map.css"
       ],
       "js": [
-        "src/settings-schema.js",
-        "src/settings.js",
-        "src/terrain-map.js"
+        "content/terrain-map.js"
       ],
       "run_at": "document_end",
       "all_frames": false

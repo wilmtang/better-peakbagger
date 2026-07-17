@@ -1,0 +1,84 @@
+// Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
+// SPDX-License-Identifier: AGPL-3.0-or-later
+//
+// Better Peakbagger — build configuration (single source of truth).
+//
+// This module is the authority on how the extension is assembled: which source
+// modules go into which bundle, in what order, and which static assets are
+// copied. scripts/build.mjs consumes it to produce dist/, and the test suite
+// imports it to assert bundle composition, load order, and execution world
+// without re-encoding the layout in each test.
+//
+// Order matters within a bundle: modules run top-to-bottom, so a dependency
+// must precede its consumers. Vendor globals (Chart, tzlookup, marked,
+// maplibregl) are still delivered as separate copied scripts loaded ahead of
+// the bundle that reads them — see the manifest and terrain.html — so they are
+// not listed as bundle sources here.
+
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+export const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+export const distDir = path.join(root, 'dist');
+export const srcFile = f => path.join(root, 'src', f);
+
+// Page bundles (options, popup) mix shared src/ modules with page-local files.
+// Page-local names resolve here; every other name falls back to src/.
+const PAGE_LOCAL = {
+    'options-theme.js': path.join(root, 'options', 'theme.js'),
+    'options-main.js': path.join(root, 'options', 'options.js'),
+    'popup-main.js': path.join(root, 'popup', 'popup.js'),
+};
+export function resolvePageSource(name) {
+    return PAGE_LOCAL[name] || srcFile(name);
+}
+
+// One record per bundle. `out` is the dist-relative output path; `sources` are
+// the modules bundled into it, in execution order.
+export const ENTRIES = [
+    { out: 'background.js', sources: ['gpx-metrics.js', 'capture-core.js', 'settings-schema.js', 'settings.js', 'background.js'] },
+    { out: 'provider-page.js', sources: ['provider-page.js'] },
+
+    { out: 'content/ascent-editor.js', sources: ['ascent-draft.js', 'report-markup.js', 'report-editor.js'] },
+    { out: 'content/theme.js', sources: ['settings-schema.js', 'settings.js', 'site-dark-css.js', 'theme.js'] },
+    { out: 'content/ascent-bridge.js', sources: ['settings-schema.js', 'settings.js', 'bridge.js'] },
+    { out: 'content/gpx-analyzer.js', sources: ['gpx-metrics.js', 'terrain-basemap.js', 'peak-markers.js', 'settings-schema.js', 'gpx-analyzer.js'] },
+    { out: 'content/terrain-map.js', sources: ['settings-schema.js', 'settings.js', 'terrain-map.js'] },
+    { out: 'content/ascent-filter.js', sources: ['settings-schema.js', 'settings.js', 'ascent-filter.js'] },
+    { out: 'content/peak-map-bridge.js', sources: ['settings-schema.js', 'settings.js', 'peak-map-bridge.js'] },
+    { out: 'content/peak-links.js', sources: ['peak-links.js'] },
+    { out: 'content/peak-map.js', sources: ['terrain-basemap.js', 'peak-markers.js', 'settings-schema.js', 'peak-map.js'] },
+    { out: 'content/big-map-bridge.js', sources: ['settings-schema.js', 'settings.js', 'big-map-bridge.js'] },
+    { out: 'content/big-map.js', sources: ['gpx-metrics.js', 'terrain-basemap.js', 'peak-markers.js', 'settings-schema.js', 'big-map.js'] },
+
+    { out: 'terrain/terrain-frame.js', sources: ['settings-schema.js', 'terrain-cache.js', 'terrain-frame.js'] },
+    // The options page keeps its head/tail split: the head bundle applies the
+    // theme before first paint, the tail bundle runs the settings UI.
+    { out: 'options/options-head.js', sources: ['settings-schema.js', 'settings.js', 'options-theme.js'], page: true },
+    { out: 'options/options.js', sources: ['terrain-cache.js', 'options-main.js'], page: true },
+    { out: 'popup/popup.js', sources: ['popup-main.js'], page: true },
+];
+
+// Absolute source paths for one entry's bundle, in order.
+export function entrySources(entry) {
+    const resolve = entry.page ? resolvePageSource : srcFile;
+    return entry.sources.map(resolve);
+}
+
+// Static files copied verbatim into dist. [from (root-relative), to (dist-relative)].
+export const COPY_FILES = [
+    ['manifest.json', 'manifest.json'],
+    ['src/report-editor.css', 'css/report-editor.css'],
+    ['src/terrain-map.css', 'css/terrain-map.css'],
+    ['src/peak-links.css', 'css/peak-links.css'],
+    ['terrain/terrain.html', 'terrain/terrain.html'],
+    ['options/options.html', 'options/options.html'],
+    ['options/options.css', 'options/options.css'],
+    ['popup/popup.html', 'popup/popup.html'],
+    ['popup/popup.css', 'popup/popup.css'],
+];
+
+export const COPY_DIRS = [
+    ['icons', 'icons'],
+    ['vendor', 'vendor'],
+];

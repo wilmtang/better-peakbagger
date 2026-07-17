@@ -11,21 +11,26 @@
     "url": "https://github.com/wilmtang/better-peakbagger.git"
   },
   "scripts": {
-    "lint": "web-ext lint",
-    "build": "web-ext build --overwrite-dest",
+    "build": "node scripts/build.mjs",
+    "build:release": "node scripts/build.mjs --minify",
+    "watch": "node scripts/build.mjs --watch",
+    "lint": "npm run build && web-ext lint --source-dir dist",
+    "package": "npm run build:release && web-ext build --source-dir dist --overwrite-dest",
     "build:firefox": "node scripts/build-firefox-package.mjs",
     "release:check": "node scripts/release-check.mjs",
     "release:metadata:firefox": "node scripts/create-amo-metadata.mjs web-ext-artifacts/amo-metadata.json",
     "release:sign:firefox": "web-ext sign --source-dir=web-ext-artifacts/firefox-source --channel=listed --amo-metadata=web-ext-artifacts/amo-metadata.json --approval-timeout=0 --timeout=600000 --no-input",
     "release:verify-archive": "node scripts/verify-release-archive.mjs",
+    "pretest": "npm run build",
     "showcase:render": "node scripts/render-showcase.mjs",
     "terrain:verify": "node scripts/verify-terrain-visual.mjs",
     "start:firefox": "node scripts/run-firefox.mjs",
-    "start:chromium": "web-ext run --source-dir . --target chromium",
+    "start:chromium": "npm run build && web-ext run --source-dir dist --target chromium",
     "test": "node --test \"test/**/*.test.mjs\"",
-    "verify:extension": "node scripts/verify-extension.mjs"
+    "verify:extension": "npm run build && node scripts/verify-extension.mjs"
   },
   "devDependencies": {
+    "esbuild": "^0.28.1",
     "jsdom": "^29.1.1",
     "jszip": "^3.10.1",
     "playwright": "^1.61.1",

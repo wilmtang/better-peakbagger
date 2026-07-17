@@ -176,7 +176,7 @@ if (typeof importScripts === 'function') {
 
     const injectProvider = tabId => ext.scripting.executeScript({
         target: { tabId },
-        files: ['src/provider-page.js'],
+        files: ['provider-page.js'],
         world: 'MAIN'
     });
 
