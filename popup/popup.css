@@ -77,6 +77,8 @@ button.primary {
   background: #175cd3;
 }
 
+button.secondary { width: 100%; }
+
 .state-card button + button { margin-left: 8px; }
 
 button:disabled { cursor: not-allowed; opacity: .55; }

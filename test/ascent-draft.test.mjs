@@ -230,6 +230,9 @@ test('a queued draft waits persistently and starts when the background releases 
     await waitForCondition(() => previewClicks === 1);
     assert.equal(readyCalls, 2);
     assert.equal(previewClicks, 1);
+
+    dispatchRuntimeMessage({ type: 'DRAFT_CLEARED' });
+    assert.match(dom.window.document.getElementById('bpb-draft-banner').textContent, /no longer connected/);
     dom.window.close();
 });
 

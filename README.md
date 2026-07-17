@@ -356,6 +356,8 @@ Selected matches then open as inactive tabs in the **Peak Drafts** group. Each b
 
 After Peakbagger reloads, the second handshake reads `GPXStatusLabel`. Only Peakbagger's explicit success message completes that draft and releases the next queued Preview. An error or missing confirmation keeps the GPX in private session storage and shows a persistent, actionable retry notice; it is never presented as success. When all remaining drafts confirm Preview, the background clears the stored GPX. No code path clicks either Save control: the user must review Peakbagger's result and save each ascent manually.
 
+While a reduced GPX remains cached, the activity popup offers **Discard cached capture**. It deletes the entire session job plus its prepared draft identities before offering **Capture again**; existing draft tabs remain open but are explicitly disconnected instead of being closed or silently reusing stale data.
+
 ---
 
 ## Deep dive: content-script worlds

@@ -77,6 +77,7 @@ if (typeof importScripts === 'function') {
 
     const publicJob = job => job ? {
         ...job,
+        hasCachedGpx: typeof job.uploadGpx === 'string' && job.uploadGpx.length > 0,
         uploadGpx: undefined,
         capturePreferences: undefined,
         tripName: undefined,
@@ -371,6 +372,46 @@ if (typeof importScripts === 'function') {
         return publicJob((await readMap(JOBS_KEY))[tabId]);
     };
 
+    const clearCapture = async message => {
+        const tabId = Number(message.tabId);
+        if (!Number.isInteger(tabId)) throw new Error('Activity tab identity is unavailable.');
+        if (processes.has(tabId)) throw new Error('Wait for the current capture to finish before discarding it.');
+        const tab = await ext.tabs.get(tabId);
+        const activity = activityFromUrl(tab.url);
+        if (!activity) throw new Error('Open the captured Garmin or Strava activity before discarding it.');
+
+        const jobs = await readMap(JOBS_KEY);
+        const job = jobs[tabId];
+        if (!job) return { ok: true, removedGpx: false, removedDraftCount: 0 };
+        if (job.provider !== activity.provider || job.activityId !== activity.activityId) {
+            throw new Error('The cached capture belongs to a different activity. Reopen the popup and try again.');
+        }
+
+        let removedGpx = false;
+        await mutateMap(JOBS_KEY, map => {
+            const current = map[tabId];
+            if (!current || current.id !== job.id) return;
+            removedGpx = typeof current.uploadGpx === 'string' && current.uploadGpx.length > 0;
+            delete map[tabId];
+        });
+        const removedDraftTabIds = await mutateMap(DRAFTS_KEY, drafts => {
+            const tabIds = Object.values(drafts)
+                .filter(draft => draft.jobId === job.id)
+                .map(draft => draft.tabId);
+            tabIds.forEach(draftTabId => { delete drafts[draftTabId]; });
+            return tabIds;
+        });
+        await Promise.all(removedDraftTabIds.map(async draftTabId => {
+            try {
+                await ext.tabs.sendMessage?.(draftTabId, { type: 'DRAFT_CLEARED' });
+            } catch (_error) {
+                // Closed or still-loading draft tabs need no further cleanup.
+            }
+        }));
+        await setBadge(tabId, '');
+        return { ok: true, removedGpx, removedDraftCount: removedDraftTabIds.length };
+    };
+
     const updateSelection = async message => {
         const tabId = Number(message.tabId);
         return mutateMap(JOBS_KEY, jobs => {
@@ -607,6 +648,7 @@ if (typeof importScripts === 'function') {
                 const jobs = await readMap(JOBS_KEY);
                 return publicJob(jobs[Number(message.tabId)] || null);
             }
+            case 'CAPTURE_CLEAR': return clearCapture(message);
             case 'CAPTURE_SELECTION': return publicJob(await updateSelection(message));
             case 'CAPTURE_OPEN_DRAFTS': return openDrafts(message);
             case 'DRAFT_READY': return draftReady(message, sender);

@@ -10,6 +10,7 @@
     const list = document.getElementById('peak-list');
     const summary = document.getElementById('track-summary');
     const openButton = document.getElementById('open-drafts');
+    const clearCaptureButton = document.getElementById('clear-capture');
     const selectionCount = document.getElementById('selection-count');
     const providerLabel = document.getElementById('provider-label');
     let activeTab = null;
@@ -18,9 +19,10 @@
 
     const clear = element => { while (element.firstChild) element.firstChild.remove(); };
 
-    const button = (label, onClick) => {
+    const button = (label, onClick, className = '') => {
         const element = document.createElement('button');
         element.type = 'button';
+        element.className = className;
         element.textContent = label;
         element.addEventListener('click', onClick);
         return element;
@@ -44,7 +46,7 @@
         paragraph.textContent = detail;
         card.append(heading, paragraph);
         const actions = options.actions || (options.action ? [options.action] : []);
-        actions.forEach(action => card.append(button(action.label, action.onClick)));
+        actions.forEach(action => card.append(button(action.label, action.onClick, action.primary ? 'primary' : '')));
         state.append(card);
     };
 
@@ -113,6 +115,9 @@
         results.hidden = false;
         const track = job.trackSummary;
         clear(summary);
+        clearCaptureButton.hidden = !job.hasCachedGpx;
+        clearCaptureButton.disabled = false;
+        clearCaptureButton.textContent = 'Discard cached capture';
         const counts = document.createElement('strong');
         counts.textContent = `${track.originalPointCount.toLocaleString()} → ${track.retainedPointCount.toLocaleString()} points`;
         summary.append(counts, document.createTextNode(` · max deviation ${track.maxDeviationM.toFixed(1)} m · health/device metadata removed`));
@@ -181,6 +186,28 @@
             .catch(error => errorState({ message: error.message }));
         void poll();
     };
+
+    clearCaptureButton.addEventListener('click', async () => {
+        clearTimeout(pollTimer);
+        openButton.disabled = true;
+        clearCaptureButton.disabled = true;
+        clearCaptureButton.textContent = 'Discarding…';
+        try {
+            const response = await ext.runtime.sendMessage({ type: 'CAPTURE_CLEAR', tabId: activeTab.id });
+            if (!response?.ok) throw new Error(response?.error?.message || 'The cached capture could not be discarded.');
+            currentJob = null;
+            stateCard(
+                'Cached capture removed',
+                'The reduced GPX and any prepared draft handoffs were deleted. Existing draft tabs were left open but disconnected.',
+                { action: { label: 'Capture again', primary: true, onClick: () => beginCapture(false) } }
+            );
+        } catch (error) {
+            stateCard('Couldn’t discard capture', error.message, {
+                kind: 'error',
+                action: { label: 'Back to results', onClick: () => renderResults(currentJob) }
+            });
+        }
+    });
 
     openButton.addEventListener('click', async () => {
         openButton.disabled = true;

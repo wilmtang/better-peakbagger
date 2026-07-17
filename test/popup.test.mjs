@@ -8,6 +8,11 @@ import { JSDOM } from 'jsdom';
 
 const html = await fs.readFile(new URL('../popup/popup.html', import.meta.url), 'utf8');
 const source = await fs.readFile(new URL('../popup/popup.js', import.meta.url), 'utf8');
+const waitFor = async condition => {
+    for (let attempt = 0; attempt < 50 && !condition(); attempt++) {
+        await new Promise(resolve => setTimeout(resolve, 10));
+    }
+};
 
 test('popup explains both match class and confidence percentage', async () => {
     const dom = new JSDOM(html, {
@@ -17,6 +22,7 @@ test('popup explains both match class and confidence percentage', async () => {
     const job = {
         phase: 'ready',
         provider: 'garmin',
+        hasCachedGpx: true,
         selectedIds: [1],
         trackSummary: {
             originalPointCount: 6200,
@@ -57,5 +63,55 @@ test('popup explains both match class and confidence percentage', async () => {
         [...dom.window.document.querySelectorAll('.confidence')].map(element => element.textContent),
         ['Strong match · 96% confidence', 'Probable match · 72% confidence']
     );
+    assert.equal(dom.window.document.getElementById('clear-capture').hidden, false);
+    assert.match(dom.window.document.querySelector('.privacy-note').textContent, /coordinates, elevation, and time/);
+    dom.window.close();
+});
+
+test('popup discards the cached GPX before offering a fresh capture', async () => {
+    const dom = new JSDOM(html, {
+        url: 'chrome-extension://better-peakbagger/popup/popup.html',
+        runScripts: 'outside-only'
+    });
+    const job = {
+        phase: 'ready', provider: 'garmin', hasCachedGpx: true, selectedIds: [1],
+        trackSummary: { originalPointCount: 6200, retainedPointCount: 3000, maxDeviationM: 2.4 },
+        matches: [{
+            id: 1, name: 'Strong Peak', classification: 'strong', confidence: 96,
+            evidence: { distanceM: 8, elevationDeltaM: 4, trackQuality: 0.98 }
+        }]
+    };
+    const messages = [];
+    let captureStarts = 0;
+    dom.window.chrome = {
+        tabs: { query: async () => [{ id: 9 }] },
+        runtime: {
+            sendMessage: async message => {
+                messages.push(message);
+                if (message.type === 'CAPTURE_START') {
+                    captureStarts++;
+                    return job;
+                }
+                if (message.type === 'CAPTURE_STATUS') return job;
+                if (message.type === 'CAPTURE_CLEAR') return { ok: true, removedGpx: true, removedDraftCount: 1 };
+                return { ok: true };
+            }
+        }
+    };
+
+    dom.window.eval(source);
+    await waitFor(() => !dom.window.document.getElementById('clear-capture').hidden);
+    dom.window.document.getElementById('clear-capture').click();
+    await waitFor(() => /Cached capture removed/.test(dom.window.document.getElementById('state').textContent));
+
+    assert.ok(messages.some(message => message.type === 'CAPTURE_CLEAR' && message.tabId === 9));
+    assert.equal(dom.window.document.getElementById('results').hidden, true);
+    const captureAgain = [...dom.window.document.querySelectorAll('#state button')]
+        .find(element => element.textContent === 'Capture again');
+    assert.ok(captureAgain);
+    captureAgain.click();
+    await waitFor(() => captureStarts === 2 && !dom.window.document.getElementById('results').hidden);
+    await new Promise(resolve => setTimeout(resolve, 30));
+    assert.equal(captureStarts, 2);
     dom.window.close();
 });

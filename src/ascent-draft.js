@@ -372,6 +372,9 @@
 
     ext.runtime.onMessage?.addListener(message => {
         if (message?.type === 'DRAFT_PROCEED') void initialize();
+        if (message?.type === 'DRAFT_CLEARED') {
+            showBanner('error', 'The cached capture was discarded. This draft is no longer connected; return to the activity to capture again.');
+        }
     });
 
     void initialize();

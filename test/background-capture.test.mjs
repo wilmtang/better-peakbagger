@@ -141,6 +141,7 @@ test('background capture persists a private job, opens grouped drafts, and previ
     assert.equal(ready.matches[0].classification, 'strong');
     assert.equal(ready.matches[0].selected, true);
     assert.equal(ready.uploadGpx, undefined, 'GPX must not be exposed to the popup response');
+    assert.equal(ready.hasCachedGpx, true);
 
     const storedJob = harness.values.bpbCaptureJobs['1'];
     assert.match(storedJob.uploadGpx,
@@ -209,6 +210,27 @@ test('a failed Peakbagger Preview keeps the GPX and permits an explicit retry', 
     assert.equal(unconfirmed.action, 'preview-error');
     assert.match(unconfirmed.message, /did not confirm/);
     assert.match(harness.values.bpbCaptureJobs['1'].uploadGpx, /<gpx/);
+});
+
+test('discarding a cached capture removes its GPX and draft identities before recapture', async () => {
+    const harness = createHarness();
+    await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    const firstJobId = harness.values.bpbCaptureJobs['1'].id;
+    await harness.send({ type: 'CAPTURE_OPEN_DRAFTS', tabId: 1, selectedIds: [7] });
+    assert.match(harness.values.bpbCaptureJobs['1'].uploadGpx, /<gpx/);
+    assert.equal(harness.values.bpbDraftTabs['100'].jobId, firstJobId);
+
+    const cleared = await harness.send({ type: 'CAPTURE_CLEAR', tabId: 1 });
+    assert.deepEqual({ ...cleared }, { ok: true, removedGpx: true, removedDraftCount: 1 });
+    assert.equal(harness.values.bpbCaptureJobs['1'], undefined);
+    assert.equal(harness.values.bpbDraftTabs['100'], undefined);
+    assert.deepEqual(harness.tabMessages, [{ tabId: 100, message: { type: 'DRAFT_CLEARED' } }]);
+    assert.equal(await harness.send({ type: 'CAPTURE_STATUS', tabId: 1 }), null);
+
+    const recaptured = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    assert.equal(recaptured.phase, 'ready');
+    assert.equal(recaptured.hasCachedGpx, true);
+    assert.notEqual(harness.values.bpbCaptureJobs['1'].id, firstJobId);
 });
 
 test('a capture that finishes for a different activity is not reused after navigation', async () => {
