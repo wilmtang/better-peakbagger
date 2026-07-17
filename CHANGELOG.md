@@ -3,13 +3,16 @@
 ## Unreleased
 
 - **Trip report editor.** The ascent form's trip report box is now a rich
-  text editor with a Markdown mode and preview. Both convert to Peakbagger's
-  square-bracket format on the fly ([b]/[i]/[u]/[a href], blank-line
-  paragraphs, never [p] or [br]); existing reports open back up in the
-  editor, and unknown markup passes through untouched. Reports autosave as
-  local drafts on your device (offered back after a lost save, cleared on
-  Save Ascent, expired after two weeks), and a Plain mode restores the
-  original textarea. Can be turned off in settings.
+  text editor with a GitHub-flavored Markdown mode and structural preview.
+  Headings, quotes, emphasis/strike, links, real nested lists, tables, inline
+  and preformatted code, rules, HTTPS images, and the useful Peakbagger inline
+  tags all convert through one allowlisted model to the site's square-bracket
+  format. Legacy line-based lists still import; `[p]`/`[div]`/`[br]` normalize
+  to Peakbagger's newline convention. Unsupported embeds and unsafe HTML become
+  visible text after an edit, while untouched server values and Plain mode stay
+  verbatim. Reports autosave as local drafts on your device (offered back after
+  a lost save, cleared on Save Ascent, expired after two weeks). Can be turned
+  off in settings.
 
 - **OSM Vector (beta) 3D map layer.** Added a new GPU-rendered vector basemap option for the 3D terrain view. Labels stay crisp and upright when the camera is tilted, sitting above the route so text remains readable.
 - **Peak dots on the 3D map.** Peakbagger's native peak dots now render directly on the 3D terrain view, reusing the same data feed as the 2D map.

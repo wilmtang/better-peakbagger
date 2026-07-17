@@ -90,13 +90,14 @@ by “has beta.” Sortable columns reorder instantly without reloading the page
 ### Write trip reports, not bracket tags
 
 The ascent form's trip report box becomes a real editor. Write in rich text
-(bold, italic, underline, links, lists — with the usual keyboard shortcuts) or
-in Markdown with a preview of exactly what Peakbagger will render. Either way,
-saving produces Peakbagger's own square-bracket format — `[b]…[/b]`,
-blank-line paragraphs, never the `[p]`/`[br]` tags the site warns against —
-and existing reports open right back up in the editor. Everything you type
-also autosaves as a draft on your device, offered back if the page is closed
-or a save is lost; a Plain mode keeps the original textarea one click away.
+(headings, quotes, emphasis, links, real lists, tables, code, rules, and images)
+or in GitHub-flavored Markdown with a structural preview. Either way, saving
+produces Peakbagger's own square-bracket format — semantic tags where the site
+supports them and newline paragraphs instead of the `[p]`/`[br]` tags it warns
+against — and existing reports open right back up in the editor. Everything
+you type also autosaves as a draft on your device, offered back if the page is
+closed or a save is lost; Plain mode keeps the exact native textarea one click
+away. See the [supported syntax and safety contract](docs/trip-report-editor.md).
 
 ### Check summit conditions and recent imagery
 
@@ -193,6 +194,7 @@ and the [discussion board](https://github.com/wilmtang/better-peakbagger/discuss
 - [Architecture at a glance](#architecture-at-a-glance)
 - [Deep dive: Garmin/Strava activity capture](#deep-dive-garminstrava-activity-capture)
 - [Deep dive: content-script worlds](#deep-dive-content-script-worlds)
+- [Deep dive: the trip-report editor](#deep-dive-the-trip-report-editor)
 - [Deep dive: the settings system and the bridge](#deep-dive-the-settings-system-and-the-bridge)
 - [Deep dive: the GPX Analyzer](#deep-dive-the-gpx-analyzer)
 - [Deep dive: opt-in 3D terrain](#deep-dive-opt-in-3d-terrain)
@@ -378,11 +380,44 @@ This split is the single most important design constraint in the extension. Here
 | `terrain-frame.js`, MapLibre | extension document | Owns the WebGL terrain surface and packaged CSP worker. It has no access to Peakbagger globals and does not request tiles until the bridge sends a user-requested coordinate route or summit focus plus an optional validated raster descriptor. |
 | `theme.js`, `bridge.js`, `ascent-filter.js`, `settings.js` | isolated | They only touch the DOM and `chrome.storage`; no page globals needed. |
 | `ascent-draft.js` | isolated | Uses extension messaging to verify a prepared draft, then fills the Peakbagger DOM and starts Preview. |
-| `report-markup.js`, `report-editor.js` | isolated | The trip-report editor edits the ascent form's DOM and stores drafts in `chrome.storage.local`; the native `JournalText` textarea stays in the form as the submitted source of truth. |
+| Marked, `report-markup.js`, `report-editor.js` | isolated | The trip-report editor tokenizes GFM locally, edits the ascent form's DOM, and stores drafts in `chrome.storage.local`; the native `JournalText` textarea stays in the form as the submitted source of truth. |
 
 A subtle point about **shared scope**: all content scripts from the *same* extension injected into the *same* frame and world share one global scope. That's why listing `["src/settings.js", "src/ascent-filter.js"]` in a single manifest entry lets `ascent-filter.js` use the `window.BPBSettings` object that `settings.js` defined — and why `settings.js` guards with `if (window.BPBSettings) return;`, since a page that matches several manifest entries will inject it more than once into that one shared world.
 
 The heritage here matters: these two features started as Tampermonkey userscripts (`@grant none`, i.e. running in the page's MAIN world). Porting the analyzer to a MAIN-world content script preserves its behavior *exactly*; the map-hover trick below is why "just run it in the isolated world" was never an option.
+
+---
+
+## Deep dive: the trip-report editor
+
+Peakbagger stores trip reports in `JournalText` using square brackets as HTML
+delimiters, then replaces remaining newlines with `<br>` when rendering. The
+native textarea therefore stays inside Peakbagger's original form and remains
+the only submitted source of truth. Rich and Markdown modes synchronize into
+it before every submit, control click, ASP.NET postback, and page exit; the
+extension never clicks Save.
+
+The converter uses one allowlisted AST for bracket imports, editor DOM,
+Markdown, preview HTML, and saved bracket markup. A vendored
+[Marked](https://marked.js.org/) parser supplies GFM tokens for headings,
+quotes, nested lists, tables, strikethrough, code, rules, links, and images.
+Better Peakbagger maps those tokens itself and never uses Marked's unsanitized
+HTML renderer. This is why a focused Markdown dependency is a better fit than
+replacing the editor with a large framework that would still need the same
+Peakbagger serializer.
+
+Useful server-confirmed tags are supported; executable embeds, raw Markdown
+HTML, event attributes, arbitrary styles, and unsafe URLs are not. An untouched
+server report is never normalized merely because a mode was opened. After an
+actual Rich or Markdown edit, unsupported tag-like text is entity-escaped so
+Peakbagger displays it literally. Plain mode is the deliberate verbatim escape
+hatch. HTTPS images are supported, but readers' browsers will naturally request
+the image from its host when the final Peakbagger report is viewed.
+
+Preview is structurally faithful, while Peakbagger's own legacy stylesheet
+still decides final heading colors, alignment, and spacing. The complete tag
+matrix, Markdown examples, normalization rules, security boundary, and tests
+are in [Trip-report editor: markup, Markdown, and safety](docs/trip-report-editor.md).
 
 ---
 
@@ -890,7 +925,11 @@ The options page themes itself with the same `data-bpb-theme` mechanism (CSS var
 - **`browser_specific_settings.gecko`** provides the Firefox add-on `id`, `strict_min_version: "140.0"`, and the required `locationInfo` disclosure. This is a data-handling disclosure for coordinates sent to Peakbagger and, only when the user loads the 3D view, map-tile coordinates requested from Mapterhorn, OpenFreeMap when OSM Vector is selected, and a compatible selected map provider; it is not permission to access device geolocation.
 - **Storage promises.** `chrome.storage.*` returns promises in MV3 on both engines; `settings.js` also prefers `browser.*` when present, so it's native on Firefox and works via the `chrome.*` alias on Chromium.
 - **Match patterns.** `*://*.peakbagger.com/*` covers `www` and the bare host; page-specific entries list relevant filename casings (`ascent.aspx`/`Ascent.aspx` and `BigMap.aspx`/`bigmap.aspx`) because match-pattern paths are case-sensitive.
-- **No remote code.** [Chart.js](https://www.chartjs.org/) 4.5.1 and [MapLibre GL JS](https://maplibre.org/) 5.24.0 are vendored under `vendor/` rather than pulled from a CDN — required by MV3, and better for privacy and reliability. Mapterhorn supplies elevation data, never executable code.
+- **No remote code.** [Chart.js](https://www.chartjs.org/) 4.5.1,
+  [Marked](https://marked.js.org/) 18.0.6, and
+  [MapLibre GL JS](https://maplibre.org/) 5.24.0 are vendored under `vendor/`
+  rather than pulled from a CDN — required by MV3, and better for privacy and
+  reliability. Mapterhorn supplies elevation data, never executable code.
 
 ---
 
@@ -924,11 +963,12 @@ src/
   capture-core.js        segment validation, summit scoring, metrics, GPX reduction
   background.js          session jobs, Peakbagger lookup, draft tabs and grouping
   ascent-draft.js        fail-closed ascent form filling + one Preview submission
-  report-markup.js       pure bracket ↔ editor-DOM ↔ markdown conversions (one AST)
+  report-markup.js       allowlisted bracket ↔ editor-DOM ↔ Markdown conversions
   report-editor.js       rich text / markdown trip-report editor with local drafts
   report-editor.css      trip-report editor styling, light and dark
 vendor/
   chart.umd.min.js       Chart.js 4.5.1, bundled (MIT)
+  marked.umd.js          Marked 18.0.6 GFM tokenizer, bundled (MIT)
   maplibre-gl-csp.js     MapLibre GL JS 5.24.0 strict-CSP build (BSD-3-Clause)
   maplibre-gl-csp-worker.js  packaged MapLibre worker, loaded only for 3D
   maplibre-gl.css        MapLibre controls and canvas styles

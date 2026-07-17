@@ -27,6 +27,17 @@ browser build, worker, and stylesheet under `vendor/`.
 - License: BSD 3-Clause
 - Packaged license text: [`vendor/maplibre-LICENSE.txt`](vendor/maplibre-LICENSE.txt)
 
+### Marked
+
+Better Peakbagger distributes the unmodified Marked 18.0.6 UMD browser build
+as `vendor/marked.umd.js`. The trip-report converter consumes its Markdown
+token stream and does not use its HTML renderer.
+
+- Project: [Marked](https://marked.js.org/)
+- Source: [Marked v18.0.6](https://github.com/markedjs/marked/tree/v18.0.6)
+- License: MIT
+- Packaged license text: [`vendor/marked-LICENSE.txt`](vendor/marked-LICENSE.txt)
+
 ### tz-lookup
 
 Better Peakbagger distributes the unmodified @photostructure/tz-lookup 11.6.0

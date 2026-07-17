@@ -1,11 +1,10 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
-// The trip-report conversions all pass through one AST, and the saved value
-// is Peakbagger's own square-bracket dialect: [b]/[i]/[u]/[a href] inline,
-// blank line = paragraph, single newline = line break, never [p] or [br].
-// These tests pin that output contract, the conservative import behavior
-// (unknown or unsafe markup stays literal), and the DOM serializer.
+// The trip-report conversions all pass through one allowlisted AST, and the
+// saved value is Peakbagger's own square-bracket dialect. These tests pin the
+// expanded semantic output, newline convention, legacy imports, unsafe-markup
+// neutralization, and the DOM serializer.
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
