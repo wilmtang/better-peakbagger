@@ -11,7 +11,7 @@
 // (options page, another tab), so the chart re-themes / re-units live.
 
 (() => {
-    const S = window.BPBSettings;
+    const S = globalThis.BPBSettings;
     if (!S) return;
 
     // The page world may only write the settings the GPX Analyzer owns.

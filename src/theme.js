@@ -23,7 +23,10 @@
 // See docs/dark-mode-flash.md.
 
 (() => {
-    const S = window.BPBSettings;
+    // Firefox content scripts have a global scope that inherits from `window`
+    // but is not the same object. Shared extension modules publish on
+    // globalThis, so reading them back through window silently misses them.
+    const S = globalThis.BPBSettings;
     if (!S) return;
     const root = document.documentElement;
 
@@ -42,10 +45,10 @@
     // (the GPX chart) dark on an otherwise-light page. `<head>` doesn't exist at
     // document_start, so fall back to `<html>`; once it exists we prefer it.
     const ensureSheet = () => {
-        if (!window.BPBDarkCSS || document.getElementById(STYLE_ID)) return;
+        if (!globalThis.BPBDarkCSS || document.getElementById(STYLE_ID)) return;
         const style = document.createElement('style');
         style.id = STYLE_ID;
-        style.textContent = window.BPBDarkCSS;
+        style.textContent = globalThis.BPBDarkCSS;
         (document.head || root).appendChild(style);
     };
     ensureSheet();

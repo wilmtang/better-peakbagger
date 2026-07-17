@@ -15,8 +15,8 @@
 // borders, Tahoma. Images and the map iframe are left untouched.
 
 (() => {
-    if (window.BPBDarkCSS) return;
-    window.BPBDarkCSS = `
+    if (globalThis.BPBDarkCSS) return;
+    globalThis.BPBDarkCSS = `
 html[data-bpb-theme="dark"] {
     color-scheme: dark;
     background: #181a1b !important;

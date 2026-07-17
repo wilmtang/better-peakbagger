@@ -12,7 +12,7 @@
     // Chip on/off states and the Trip report word-count threshold are per-page
     // UI state kept in page localStorage (below). The shared extension settings
     // (chrome.storage) own only the cross-cutting "has beta" definition.
-    const S = window.BPBSettings;
+    const S = globalThis.BPBSettings;
 
     const STORAGE_KEY = 'pbAscentBetaFilter.v1';
     const DEFAULT_STATE = { beta: true, tr: false, minWords: 1, gps: false, link: false };

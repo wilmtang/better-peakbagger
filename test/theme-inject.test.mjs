@@ -11,6 +11,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import vm from 'node:vm';
 import { JSDOM } from 'jsdom';
 import { makeChromeStub } from './helpers/load-page.mjs';
 
@@ -66,4 +67,35 @@ test('theme=light sets the attribute but the inert sheet is still present', asyn
     // The sheet is scoped under [data-bpb-theme="dark"], so it is inert in light
     // mode — but injecting it up front is what makes later toggles flash-free.
     assert.ok(sheet(dom));
+});
+
+test('Firefox isolated-world globals still initialize the site theme', async () => {
+    const dom = new JSDOM('<!DOCTYPE html><html><head></head><body></body></html>', {
+        url: 'https://www.peakbagger.com/',
+        runScripts: 'outside-only'
+    });
+    const chrome = makeChromeStub({ bpbSettings: { theme: 'dark' } });
+
+    // Firefox content scripts have one shared global scope per extension and
+    // frame, but globalThis is a distinct object that inherits from the page's
+    // Xray-wrapped window. A window lookup therefore cannot see a module that
+    // another content script published on globalThis.
+    const isolatedWorld = vm.createContext({
+        window: dom.window,
+        document: dom.window.document,
+        localStorage: dom.window.localStorage,
+        chrome,
+        URL,
+        console
+    });
+    for (const rel of ['src/settings-schema.js', 'src/settings.js', 'src/site-dark-css.js', 'src/theme.js']) {
+        vm.runInContext(await readFile(path.join(root, rel), 'utf8'), isolatedWorld, { filename: rel });
+    }
+    await new Promise(resolve => setTimeout(resolve, 20));
+
+    assert.ok(isolatedWorld.BPBSettings, 'settings publish on the isolated global');
+    assert.equal(dom.window.BPBSettings, undefined, 'the page window remains a distinct object');
+    assert.equal(attr(dom), 'dark');
+    assert.ok(sheet(dom), 'the theme must read its dependencies from the isolated global');
+    dom.window.close();
 });
