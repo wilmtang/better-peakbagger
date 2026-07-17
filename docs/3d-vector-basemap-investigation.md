@@ -166,7 +166,7 @@ if OpenFreeMap's posture changes — the prototype's merge code is
 provider-shaped, not hardcoded to Liberty's contents, so swapping the style
 URL (plus small multi-sprite handling) would be a contained change.
 
-## Privacy surface (maintainer decision required)
+## Privacy surface
 
 Selecting `OSM Vector (experimental)` makes the terrain frame contact **exactly one
 new third-party origin, `https://tiles.openfreemap.org`**, for six request
@@ -186,11 +186,20 @@ carry no Peakbagger identity.
   visible in the disclosure rather than silently privileged.
 - Traffic starts only when the user explicitly picks the entry — never by
   default — matching how raster drapes behave today.
-- Before this leaves "beta": the options-page 3D disclosure and README
-  privacy section should name OpenFreeMap alongside Mapterhorn, and the
-  Firefox `locationInfo` data-collection wording ("selected map layer from
-  its provider") should be re-read — this layer is extension-offered, not
-  Peakbagger-mirrored.
+- The options page, first-use 3D confirmation, and README privacy section name
+  OpenFreeMap alongside Mapterhorn. The UI identifies OpenFreeMap—not
+  OpenStreetMap—as the service receiving vector requests; OpenStreetMap is the
+  underlying data source.
+
+### Why it is not in the native 2D picker
+
+OpenFreeMap's supported public interface is a MapLibre style plus vector tiles,
+glyphs, and sprites. Its documentation shows a MapLibre-to-Leaflet binding for
+2D use, but publishes no supported raster tile endpoint. Peakbagger's native 2D
+selector creates Leaflet raster layers from URL templates and does not ship that
+binding. Adding this entry there would therefore require a second WebGL renderer
+and lifecycle integration, not a safe endpoint substitution. Peakbagger's
+existing OpenStreetMap raster layer remains available in 2D.
 
 ## Prototype notes (what `OSM Vector (experimental)` does)
 
@@ -222,8 +231,6 @@ carry no Peakbagger identity.
 
 - **Dark theme:** load `styles/dark` (or Fiord) when the frame theme is
   dark, and re-graft on theme switch. Today the entry always uses Liberty.
-- **Disclosure copy:** options page, README privacy section, Firefox
-  `locationInfo` wording (see above) before shipping beyond beta.
 - **Peak labels:** add an extension-owned symbol layer over the tileset's
   `mountain_peak` source-layer (name + elevation) — high value for this
   audience and free with the same tiles.

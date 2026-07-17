@@ -42,8 +42,10 @@ User-uploaded GPX tracks on Peakbagger ascent pages become full 3D terrain
 views at true vertical scale. The elevation model comes from
 [Mapterhorn](https://mapterhorn.com/), an open-data elevation tile project;
 Peakbagger's compatible 2D basemaps — CalTopo, ArcGIS, OpenTopoMap, and more —
-are offered in an on-map picker and draped over the terrain. The feature is
-opt-in: no tile requests occur until you choose **3D terrain** on an ascent map.
+are offered in an on-map picker and draped over the terrain; an experimental
+OpenFreeMap vector style built from OpenStreetMap data is available there too.
+The feature is opt-in: no tile requests occur until you choose **3D terrain**
+on an ascent map and accept the first-use confirmation.
 
 > Special thanks to [Mapterhorn](https://mapterhorn.com/) for providing
 > free, open-access global elevation data that makes this possible.
@@ -118,9 +120,10 @@ can be turned off in Settings. Source health and device fields plus each
 trackpoint's time and elevation are excluded; derived draft values remain yours
 to review. The
 optional 3D terrain view makes a separate, explicit request to Mapterhorn for
-tiles covering the viewed map area and may re-request the selected Leaflet map
-layer from its existing provider. No 3D tile request occurs before you choose
-the 3D view.
+tiles covering the viewed map area. Choosing OSM Vector requests tiles from
+OpenFreeMap; another selected Leaflet map layer may be re-requested from its
+existing provider. No 3D tile request occurs before you choose the 3D view and
+accept the first-use confirmation.
 
 ## FAQ
 
@@ -472,6 +475,13 @@ sources do different jobs:
    delivered a tile), disables that layer in the picker with a short notice,
    and falls back to terrain-only. Partial tile gaps are kept.
 
+The 3D picker also offers **OSM Vector (experimental)**, an extension-provided
+OpenFreeMap style built from OpenStreetMap data. OpenFreeMap publishes vector
+tiles and documents MapLibre integrations, but no supported raster endpoint,
+so this entry cannot be added to Peakbagger's native 2D raster selector as a
+simple tile-template swap. The native **Open Street Map** raster layer remains
+available in 2D.
+
 Mapterhorn currently documents global 30 m coverage, 10 m coverage across the
 U.S., and finer coverage where it has incorporated public regional elevation
 data. Resolution is still the resolution of the DEM, not the sharpness of the
@@ -518,10 +528,12 @@ are lit.
 
 ### Activation and browser boundaries
 
-The feature must first be enabled with **Enable experimental 3D map** in
-Settings. That setting discloses the external tile requests and only exposes
-the per-page 3D control; it does not request tiles. Tapping the floating **3D**
-toggle on an ascent or Full Screen map starts the renderer. The feature then
+The floating **3D** control is visible on every supported ascent or Full Screen
+map. If the experimental feature is off, tapping it first shows an
+extension-owned confirmation with privacy links; **Not now** leaves the setting
+unchanged, while **Enable and open 3D** turns it on and continues into the
+requested view. The same setting remains available in Settings. No tile request
+occurs until confirmation succeeds and the renderer starts. The feature then
 crosses three JavaScript worlds, but each world has a narrow job:
 
 ```text
@@ -631,14 +643,18 @@ Leaflet basemap tiles continue to follow their provider's own cache policy.
 
 ### Privacy, failure, and teardown
 
-No 3D request occurs while the experimental setting is off or on page load.
-Only choosing **3D terrain** on the map starts MapLibre.
+No third-party tile request occurs while the experimental setting is off or on
+page load. Choosing **3D** while it is off first shows the local confirmation;
+only accepting it starts MapLibre.
 Mapterhorn, a third-party elevation service, then receives DEM tile coordinates
 for the viewed area plus ordinary request metadata under its
-[privacy policy](https://mapterhorn.com/privacy-policy/). When a compatible
-selected map is used, its existing provider also receives a new set of tile
-requests for the 3D camera's view. Its tile template and attribution are relayed
-only for that renderer session and are not persisted by Better Peakbagger.
+[privacy policy](https://mapterhorn.com/privacy-policy/). Selecting **OSM Vector
+(experimental)** requests tiles from [OpenFreeMap](https://openfreemap.org/privacy/),
+the service that hosts the OpenStreetMap-derived vector map; OpenStreetMap is the
+data source, not the recipient of those requests. When another compatible
+selected map is used, its named provider also receives a new set of tile requests
+for the 3D camera's view. Tile descriptors and attribution are relayed only for
+that renderer session and are not persisted by Better Peakbagger.
 Successful Mapterhorn DEM responses may remain in the bounded local cache
 described above; they contain terrain pixels addressed by tile coordinate, not
 the route or GPX.
@@ -818,7 +834,7 @@ The options page themes itself with the same `data-bpb-theme` mechanism (CSS var
 
 - **Manifest V3** for both engines. Chrome uses a service worker; Firefox uses the background-scripts fallback from the same source files.
 - **`"world": "MAIN"`** for the analyzer requires **Chrome 111+** and **Firefox 128+**.
-- **`browser_specific_settings.gecko`** provides the Firefox add-on `id`, `strict_min_version: "140.0"`, and the required `locationInfo` disclosure. This is a data-handling disclosure for coordinates sent to Peakbagger and, only when the user loads the 3D view, map-tile coordinates requested from Mapterhorn and a compatible selected map provider; it is not permission to access device geolocation.
+- **`browser_specific_settings.gecko`** provides the Firefox add-on `id`, `strict_min_version: "140.0"`, and the required `locationInfo` disclosure. This is a data-handling disclosure for coordinates sent to Peakbagger and, only when the user loads the 3D view, map-tile coordinates requested from Mapterhorn, OpenFreeMap when OSM Vector is selected, and a compatible selected map provider; it is not permission to access device geolocation.
 - **Storage promises.** `chrome.storage.*` returns promises in MV3 on both engines; `settings.js` also prefers `browser.*` when present, so it's native on Firefox and works via the `chrome.*` alias on Chromium.
 - **Match patterns.** `*://*.peakbagger.com/*` covers `www` and the bare host; page-specific entries list relevant filename casings (`ascent.aspx`/`Ascent.aspx` and `BigMap.aspx`/`bigmap.aspx`) because match-pattern paths are case-sensitive.
 - **No remote code.** [Chart.js](https://www.chartjs.org/) 4.5.1 and [MapLibre GL JS](https://maplibre.org/) 5.24.0 are vendored under `vendor/` rather than pulled from a CDN — required by MV3, and better for privacy and reliability. Mapterhorn supplies elevation data, never executable code.
@@ -996,9 +1012,10 @@ the Peakbagger summit lookup and GPS Preview actions described below.
   Peakbagger. There is no persistent Garmin Connect or Strava host access.
 - **Firefox `locationInfo` disclosure** reports that activity coordinates are
   sent to Peakbagger for summit lookup and GPS Preview and, when the user loads
-  the 3D view, that tile coordinates for the viewed area go to Mapterhorn and a
-  compatible selected map provider. It is a data-handling disclosure, not
-  permission to read the device's location.
+  the 3D view, that tile coordinates for the viewed area go to Mapterhorn,
+  OpenFreeMap when OSM Vector is selected, and a compatible selected map
+  provider. It is a data-handling disclosure, not permission to read the
+  device's location.
 
 ### Activity-data flow
 
@@ -1016,11 +1033,14 @@ the Peakbagger summit lookup and GPS Preview actions described below.
 - **GPS Preview:** only after you choose **Open drafts**, Peakbagger receives a
   newly serialized GPX containing latitude, longitude, and segment boundaries,
   plus waypoint coordinates/names by default, reduced to at most 3,000 total points.
-- **3D terrain:** the feature is off by default. After you enable it in Settings
-  and choose **3D terrain**, the third-party Mapterhorn service receives DEM
-  tile requests covering the route area and subsequent map movements. A
-  compatible selected Leaflet provider also receives raster requests for the 3D
-  camera's view. The renderer receives coordinate segments plus a bounded,
+- **3D terrain:** the feature is off by default, but its **3D** control remains
+  visible. The first click shows an extension-owned provider/privacy confirmation;
+  declining keeps the feature off, and it can still be enabled later in Settings.
+  After confirmation, the third-party Mapterhorn service receives DEM tile
+  requests covering the route area and subsequent map movements. Selecting OSM
+  Vector sends tile requests to OpenFreeMap, which hosts the OpenStreetMap-derived
+  style; another compatible selected Leaflet provider receives raster requests
+  for the 3D camera's view. The renderer receives coordinate segments plus a bounded,
   transient tile-layer descriptor; it does not receive source GPX, time,
   elevation, or activity metadata. Successful DEM responses may be reused from
   the bounded, best-effort local cache; returning to 2D destroys the renderer,

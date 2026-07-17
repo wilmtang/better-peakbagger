@@ -129,6 +129,69 @@ test('3D terrain bridge refuses page requests unless the stored feature gate is 
     dom.window.close();
 });
 
+test('3D terrain consent is extension-owned, discloses the actual providers, and rejects scripted acceptance', async () => {
+    const dom = new JSDOM('<!doctype html><body><button id="bpb-terrain-toggle">3D</button><div id="bpb-map-viewport"></div></body>', {
+        url: 'https://www.peakbagger.com/climber/ascent.aspx?aid=1',
+        runScripts: 'outside-only',
+        pretendToBeVisual: true
+    });
+    const { window } = dom;
+    const messages = [];
+    const patches = [];
+    let stored = { enable3dMap: false, theme: 'light' };
+    window.chrome = { runtime: { getURL: path => `chrome-extension://test-id/${path}` } };
+    window.BPBSettings = {
+        get: async () => ({ ...stored }),
+        set: async patch => {
+            patches.push({ ...patch });
+            stored = { ...stored, ...patch };
+            return { ...stored };
+        },
+        subscribe() { return () => {}; },
+        resolveTheme: theme => theme === 'dark' ? 'dark' : 'light'
+    };
+    window.postMessage = message => { messages.push(message); };
+    window.eval(terrainBridgeSource);
+
+    const requestConsent = () => window.dispatchEvent(new window.MessageEvent('message', {
+        source: window,
+        origin: window.location.origin,
+        data: { __bpbTerrain: true, dir: 'toCS', type: 'requestConsent' }
+    }));
+    requestConsent();
+    await new Promise(resolve => window.setTimeout(resolve, 0));
+
+    let dialog = window.document.querySelector('[role="dialog"]');
+    assert.ok(dialog, 'the isolated-world bridge should own the confirmation UI');
+    assert.equal(dialog.getAttribute('aria-modal'), 'true');
+    assert.match(dialog.textContent, /Mapterhorn/);
+    assert.match(dialog.textContent, /OpenFreeMap/);
+    assert.match(dialog.textContent, /OSM vector tiles, when selected/);
+    assert.match(dialog.textContent, /selected 2D map layer.*provider named/i);
+    assert.match(dialog.textContent, /enable them later in Better Peakbagger Settings/i);
+    assert.deepEqual(Array.from(dialog.querySelectorAll('a'), link => [link.textContent, new URL(link.href).hostname]), [
+        ['Privacy notice', 'mapterhorn.com'],
+        ['Privacy notice', 'openfreemap.org']
+    ]);
+    assert.equal(patches.length, 0, 'opening the confirmation must not change the setting');
+
+    dialog.querySelector('.bpb-terrain-consent-secondary').click();
+    assert.equal(window.document.querySelector('[role="dialog"]'), null);
+    assert.equal(messages.at(-1).type, 'consentResult');
+    assert.equal(messages.at(-1).enabled, false);
+    assert.equal(patches.length, 0, 'declining must keep the feature off');
+
+    requestConsent();
+    await new Promise(resolve => window.setTimeout(resolve, 0));
+    dialog = window.document.querySelector('[role="dialog"]');
+    dialog.querySelector('.bpb-terrain-consent-primary').click();
+    await new Promise(resolve => window.setTimeout(resolve, 0));
+    assert.deepEqual(patches, [], 'host-page script must not enable an extension feature through DOM click()');
+    assert.ok(window.document.querySelector('[role="dialog"]'), 'scripted acceptance must leave the confirmation open');
+    dialog.querySelector('.bpb-terrain-consent-secondary').click();
+    dom.window.close();
+});
+
 test('a newer feature-gate push wins over a stale initial storage read', async () => {
     const dom = new JSDOM(`<!doctype html><body>
       <div id="bpb-map-viewport">

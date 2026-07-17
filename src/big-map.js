@@ -197,6 +197,7 @@
     let terrainThemePref = 'system';
     let terrainCacheLimitMb = Schema.DEFAULTS.terrainCacheLimitMb;
     let terrainState = 'idle';
+    let terrainConsentPending = false;
     let terrainMount = null;
     let terrainToggle = null;
     let terrainLoadTimer = null;
@@ -325,18 +326,20 @@
         terrainToggle.setAttribute('aria-pressed', 'false');
         terrainToggle.addEventListener('click', () => {
             if (terrainState === 'active') { stopTerrain(); return; }
-            if (terrainState === 'idle') startTerrain();
+            if (terrainState !== 'idle') return;
+            if (!terrainEnabled) {
+                if (terrainConsentPending || !collectRoute().segments.length) return;
+                terrainConsentPending = true;
+                postTerrain('requestConsent');
+                return;
+            }
+            startTerrain();
         });
         terrainMount.append(terrainToggle);
         document.body.append(terrainMount);
     };
 
     const updateTerrainToggle = () => {
-        if (!terrainEnabled) {
-            if (terrainState !== 'idle') stopTerrain();
-            if (terrainMount) terrainMount.hidden = true;
-            return;
-        }
         ensureTerrainToggle();
         terrainMount.hidden = false;
         terrainToggle.dataset.theme = effectiveTheme();
@@ -375,8 +378,8 @@
         updateTerrainToggle();
     };
 
-    const startTerrain = () => {
-        if (!terrainEnabled || terrainState !== 'idle') return;
+    const startTerrain = (consentGranted = false) => {
+        if ((!consentGranted && !terrainEnabled) || terrainState !== 'idle') return;
         const { segments: routeSegments, colors: routeColors } = collectRoute();
         if (!routeSegments.length) return;
         terrainState = 'loading';
@@ -436,6 +439,11 @@
         if (event.source !== window || event.origin !== location.origin) return;
         const data = event.data;
         if (!data || data.__bpbTerrain !== true || data.dir !== 'toPage') return;
+        if (data.type === 'consentResult' && terrainConsentPending) {
+            terrainConsentPending = false;
+            if (data.enabled === true) startTerrain(true);
+            return;
+        }
         if (data.type === 'peaksRequest' && terrainState !== 'idle') {
             answerPeaksRequest(data);
             return;
@@ -476,9 +484,14 @@
         terrainThemePref = data.theme;
         if (Number.isInteger(data.terrainCacheLimitMb)) terrainCacheLimitMb = data.terrainCacheLimitMb;
         applyAllStyles();
+        if (!terrainEnabled && (terrainState === 'loading' || terrainState === 'active')) stopTerrain();
         // Keep an open 3D view in sync with a live style/theme change.
         if (terrainState === 'active') postTerrain('update', { routeStyle: { ...routeStyle }, theme: effectiveTheme() });
         updateTerrainToggle();
+        if (terrainEnabled && terrainConsentPending && terrainState === 'idle') {
+            terrainConsentPending = false;
+            startTerrain();
+        }
     });
 
     // The map iframe loads and initialises Leaflet after this script runs, so

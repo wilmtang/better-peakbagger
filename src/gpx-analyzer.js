@@ -521,6 +521,7 @@
         let mapRetryTimer = null;
         let mapLayerRetryTimer = null;
         let terrainState = 'idle';
+        let terrainConsentPending = false;
         let terrainLoadTimer = null;
         let terrainNavTop = null;
 
@@ -594,14 +595,6 @@
             // in the title/aria-label. A spinner class covers the load.
             terrainButton.classList.remove('bpb-map-3d-toggle-loading');
             terrainButton.removeAttribute('aria-busy');
-            if (BPB.get().enable3dMap !== true) {
-                terrainButton.disabled = true;
-                terrainButton.textContent = '3D';
-                terrainButton.title = 'Enable the experimental 3D map in Better Peakbagger settings';
-                terrainButton.setAttribute('aria-label', 'Enable 3D terrain in Better Peakbagger settings');
-                terrainButton.setAttribute('aria-pressed', 'false');
-                return;
-            }
             if (terrainState === 'loading') {
                 terrainButton.disabled = true;
                 terrainButton.textContent = '3D';
@@ -650,8 +643,8 @@
             timeout: '3D terrain took too long to load. The 2D map is unchanged.'
         })[reason] || '3D terrain could not load. The 2D map is unchanged.';
 
-        const startTerrain = () => {
-            if (BPB.get().enable3dMap !== true
+        const startTerrain = (consentGranted = false) => {
+            if ((!consentGranted && BPB.get().enable3dMap !== true)
                 || terrainState !== 'idle' || !mapViewport || !mapIframe || !mapRouteSegments.length) return;
             terrainState = 'loading';
             // The toggle button's own "Loading 3D…" state is the loading cue;
@@ -683,12 +676,15 @@
 
         const syncTerrainAvailability = settings => {
             const enabled = settings.enable3dMap === true;
-            terrainButton.hidden = !enabled;
             if (!enabled) {
                 if (terrainState === 'loading' || terrainState === 'active') stopTerrain();
                 else showTerrainMessage('');
             }
             updateTerrainButton();
+            if (enabled && terrainConsentPending && terrainState === 'idle') {
+                terrainConsentPending = false;
+                startTerrain();
+            }
         };
 
         terrainButton.addEventListener('click', () => {
@@ -697,6 +693,12 @@
                 return;
             }
             if (terrainState !== 'idle') return;
+            if (BPB.get().enable3dMap !== true) {
+                if (terrainConsentPending || !mapRouteSegments.length) return;
+                terrainConsentPending = true;
+                postTerrain('requestConsent');
+                return;
+            }
             startTerrain();
         });
 
@@ -732,7 +734,10 @@
             const data = event.data;
             if (!data || data.__bpbTerrain !== true || data.dir !== 'toPage') return;
 
-            if (data.type === 'loaded' && terrainState === 'loading') {
+            if (data.type === 'consentResult' && terrainConsentPending) {
+                terrainConsentPending = false;
+                if (data.enabled === true) startTerrain(true);
+            } else if (data.type === 'loaded' && terrainState === 'loading') {
                 clearTerrainLoadTimer();
                 terrainState = 'active';
                 terrainNavTop = Number.isFinite(data.navTop) ? data.navTop : null;

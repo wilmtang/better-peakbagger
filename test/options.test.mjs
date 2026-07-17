@@ -120,8 +120,11 @@ test('experimental 3D map is off by default and discloses external DEM requests'
     assert.equal(checkbox.checked, false);
     assert.match(row.querySelector('.title').textContent, /^Enable experimental 3D map$/);
     assert.match(row.querySelector('.experimental-badge').textContent, /^Experimental$/);
-    assert.match(row.querySelector('.desc').textContent, /Mapterhorn.*selected map layer.*provider.*viewed map area and request metadata/i);
-    assert.equal(new URL(row.querySelector('.desc a').href).hostname, 'mapterhorn.com');
+    assert.match(row.querySelector('.desc').textContent, /Mapterhorn.*OpenFreeMap.*OpenStreetMap data.*selected map layer.*provider.*viewed map area and request metadata/i);
+    assert.deepEqual(Array.from(row.querySelectorAll('.desc a'), link => new URL(link.href).hostname), [
+        'mapterhorn.com',
+        'openfreemap.org'
+    ]);
 
     const invalidDom = await loadOptions({ enable3dMap: 'yes' });
     assert.equal(el(invalidDom, 'enable-3d-map').checked, false);

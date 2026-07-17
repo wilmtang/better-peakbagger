@@ -160,15 +160,53 @@ try {
         };
     });
 
-    // --- 3D off (the default): the toggle must not be on the map -------------
+    // --- 3D off (the default): the toggle stays available but gates traffic --
     const offPage = await openAscent();
     const off = await readToggle(offPage);
     check(off.isolatedWorldReady !== null,
         'settings.js did not initialise in the isolated world (the bridge would be silent)');
     check(off.analyzerPanel, 'the GPX analyzer panel never rendered');
     check(/Interactive Stats/.test(off.stats), `the analyzer never produced stats: ${off.stats.slice(0, 80)}`);
-    check(off.visible === false,
-        `with 3D disabled the toggle must be hidden, but display=${off.display} visible=${off.visible}`);
+    check(off.visible === true,
+        `with 3D disabled the toggle must remain visible, but display=${off.display} visible=${off.visible}`);
+    check(off.disabled === false,
+        `the disabled feature's toggle should still be actionable after the route parses: title=${JSON.stringify(off.title)}`);
+    await offPage.locator('#bpb-terrain-toggle').click();
+    const consent = await offPage.locator('#bpb-terrain-consent').waitFor({ state: 'visible', timeout: 5000 })
+        .then(async () => offPage.evaluate(() => {
+            const dialog = document.querySelector('#bpb-terrain-consent [role="dialog"]');
+            return {
+                text: dialog?.textContent || '',
+                modal: dialog?.getAttribute('aria-modal'),
+                links: Array.from(dialog?.querySelectorAll('a') || [], link => link.href)
+            };
+        })).catch(() => null);
+    check(consent?.modal === 'true', `the first-use 3D confirmation did not render as a modal: ${JSON.stringify(consent)}`);
+    check(/Mapterhorn/.test(consent?.text || '') && /OpenFreeMap/.test(consent?.text || ''),
+        `the first-use confirmation did not name both providers: ${JSON.stringify(consent)}`);
+    check(consent?.links.some(link => link === 'https://mapterhorn.com/privacy-policy/')
+        && consent?.links.some(link => link === 'https://openfreemap.org/privacy/'),
+        `the first-use confirmation is missing provider privacy links: ${JSON.stringify(consent)}`);
+    await offPage.locator('.bpb-terrain-consent-secondary').click();
+    check(await offPage.locator('#bpb-terrain-consent').count() === 0,
+        'declining the first-use confirmation did not close it');
+
+    // Re-open and accept through a real protocol-driven pointer event. HTTPS
+    // is intercepted so this verifies the privileged setting write and
+    // continuation without contacting any tile provider.
+    await context.route('https://**', route => route.abort());
+    await offPage.locator('#bpb-terrain-toggle').click();
+    await offPage.locator('#bpb-terrain-consent').waitFor({ state: 'visible', timeout: 5000 });
+    await offPage.locator('.bpb-terrain-consent-primary').click();
+    await offPage.locator('#bpb-terrain-consent').waitFor({ state: 'detached', timeout: 5000 });
+    if (extensionId) {
+        const consentCheckPage = await context.newPage();
+        await consentCheckPage.goto(`chrome-extension://${extensionId}/options/options.html`);
+        const enabledByConsent = await consentCheckPage.evaluate(async () =>
+            (await chrome.storage.sync.get('bpbSettings')).bpbSettings?.enable3dMap === true);
+        check(enabledByConsent, 'trusted confirmation did not persist enable3dMap');
+        await consentCheckPage.close();
+    }
     await offPage.close();
 
     // --- 3D on: the toggle appears and enables once the route parses ---------
@@ -243,5 +281,6 @@ console.log('Real-extension verification passed (hidden Chrome for Testing, new 
 console.log('  - the MV3 service worker boots and answers messages (capture is alive)');
 console.log('  - settings.js initialises in the isolated world and the bridge answers');
 console.log('  - the GPX analyzer renders stats from the real manifest load order');
-console.log('  - the 3D toggle is hidden when disabled and enabled when the route parses');
+console.log('  - the 3D toggle stays visible when disabled and opens the provider/privacy confirmation');
+console.log('  - trusted confirmation persists the feature gate without contacting tile providers');
 console.log('  - the Full Screen BigMap receives settings and shows an enabled 3D toggle');

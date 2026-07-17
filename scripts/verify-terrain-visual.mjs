@@ -791,12 +791,14 @@ try {
         return {
             ready: Boolean(description),
             text: description && description.textContent,
-            link: description && description.querySelector('a') && description.querySelector('a').href
+            links: description && Array.from(description.querySelectorAll('a'), link => link.href)
         };
     })()`);
     if (!/viewed map area and request metadata/i.test(disclosure.text || '')
-        || !/selected map layer from its provider/i.test(disclosure.text || '')
-        || !/^https:\/\/mapterhorn\.com\/privacy-policy\/$/.test(disclosure.link || '')) {
+        || !/OpenFreeMap.*OpenStreetMap data/i.test(disclosure.text || '')
+        || !/selected map layer.*named provider/i.test(disclosure.text || '')
+        || !disclosure.links?.includes('https://mapterhorn.com/privacy-policy/')
+        || !disclosure.links?.includes('https://openfreemap.org/privacy/')) {
         throw new Error(`The General setting is missing the 3D privacy disclosure: ${JSON.stringify(disclosure)}`);
     }
     await delay(400);

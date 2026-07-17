@@ -292,14 +292,26 @@ test('GPX analyzer adds a thick, segment-preserving route casing behind native L
     ]);
 
     sendSettings({ units: 'imperial', theme: 'light', chartDefaultSeries: 'both', enable3dMap: false });
-    await waitFor(dom, () => terrainToggle.hidden);
+    await waitFor(dom, () => terrainMessages.at(-1).type === 'destroy');
+    assert.equal(terrainToggle.hidden, false, 'the 3D entry point stays visible while the feature is off');
+    assert.equal(terrainToggle.disabled, false);
     assert.equal(iframe.style.visibility, 'visible');
     assert.equal(iframe.hasAttribute('aria-hidden'), false);
     assert.equal(terrainMessages.at(-1).type, 'destroy');
     assert.equal(terrainToggle.textContent, '3D');
 
+    const initCountBeforeConsent = terrainMessages.filter(message => message.type === 'init').length;
+    terrainToggle.click();
+    assert.equal(terrainMessages.at(-1).type, 'requestConsent');
+    assert.equal(terrainMessages.filter(message => message.type === 'init').length, initCountBeforeConsent,
+        'clicking while disabled must request confirmation, not start external tile requests');
+    window.dispatchEvent(new window.MessageEvent('message', {
+        source: window,
+        origin: window.location.origin,
+        data: { __bpbTerrain: true, dir: 'toPage', type: 'consentResult', enabled: false }
+    }));
+
     sendSettings({ units: 'imperial', theme: 'light', chartDefaultSeries: 'both', enable3dMap: true });
-    await waitFor(dom, () => !terrainToggle.hidden);
     terrainToggle.click();
     await waitFor(dom, () => terrainMessages.filter(message => message.type === 'init').length === 2);
     window.dispatchEvent(new window.MessageEvent('message', {

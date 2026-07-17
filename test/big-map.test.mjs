@@ -362,7 +362,7 @@ test('Full Screen 3D group maps answer peak-dot requests as unavailable, like th
     dom.window.close();
 });
 
-test('Full Screen maps show no 3D toggle when the feature is disabled', async () => {
+test('Full Screen maps keep the 3D toggle visible and request consent when the feature is disabled', async () => {
     const fixture = await loadBigMap({ type: 'A', width: 6 });
     const { dom, window, messages, leaflet } = fixture;
     const route = new leaflet.Polyline([{ lat: 44.15, lng: -121.78 }, { lat: 44.16, lng: -121.76 }], { color: '#d9483b', weight: 3 });
@@ -370,10 +370,22 @@ test('Full Screen maps show no 3D toggle when the feature is disabled', async ()
     fixture.evaluate();
 
     await waitFor(dom, () => route.options.weight === 6);
-    // The bridge forwarded enable3dMap:false, so no toggle and no terrain init.
-    assert.equal(window.document.getElementById('bpb-terrain-toggle'), null);
-    assert.equal(window.document.getElementById('bpb-map-viewport'), null);
-    assert.equal(messages.some(message => message.__bpbTerrain === true), false);
+    const toggle = window.document.getElementById('bpb-terrain-toggle');
+    assert.ok(toggle);
+    assert.equal(toggle.disabled, false);
+    assert.ok(window.document.getElementById('bpb-map-viewport'));
+    toggle.click();
+    assert.equal(messages.at(-1).type, 'requestConsent');
+    assert.equal(messages.some(message => message.__bpbTerrain === true && message.type === 'init'), false,
+        'the page must not start terrain before the isolated-world confirmation succeeds');
+
+    window.dispatchEvent(new window.MessageEvent('message', {
+        source: window,
+        origin: window.location.origin,
+        data: { __bpbTerrain: true, dir: 'toPage', type: 'consentResult', enabled: true }
+    }));
+    assert.ok(messages.some(message => message.__bpbTerrain === true && message.type === 'init'),
+        'the confirmed action should continue directly into the requested 3D view');
     await new Promise(resolve => window.setTimeout(resolve, 0));
     dom.window.close();
 });

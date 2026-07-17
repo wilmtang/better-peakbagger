@@ -78,14 +78,6 @@
     bottom: 94px;
 }
 
-/* The rule above sets `display`, which is an author declaration and therefore
-   beats the UA stylesheet's `[hidden] { display: none }`. Without this the
-   toggle stays on screen, greyed, whenever the 3D feature is switched off —
-   the same trap `.bpb-terrain-mount-fullscreen[hidden]` already avoids. */
-.bpb-map-3d-toggle[hidden] {
-    display: none;
-}
-
 .bpb-map-3d-toggle[data-theme="dark"] {
     border-color: rgb(255 255 255 / 16%);
     background: rgb(31 35 33 / 90%);
@@ -109,6 +101,224 @@
 .bpb-map-3d-toggle:disabled {
     cursor: default;
     opacity: 0.55;
+}
+
+/* Extension-owned confirmation for the off-by-default 3D feature. It lives in
+   the isolated world so the page can request the prompt but cannot write the
+   feature gate. The full-page scrim also works on Full Screen Maps, whose map
+   mount otherwise sits above normal Peakbagger chrome. */
+.bpb-terrain-consent-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 2147483646;
+    display: grid;
+    place-items: center;
+    box-sizing: border-box;
+    padding: 20px;
+    background: rgb(15 20 18 / 48%);
+    backdrop-filter: blur(3px);
+    font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.bpb-terrain-consent-dialog {
+    box-sizing: border-box;
+    width: min(440px, 100%);
+    max-height: calc(100vh - 40px);
+    overflow: auto;
+    margin: 0;
+    padding: 22px;
+    border: 1px solid rgb(33 39 35 / 16%);
+    border-radius: 16px;
+    background: #fbfaf7;
+    color: #20231f;
+    box-shadow: 0 18px 60px rgb(0 0 0 / 30%);
+    text-align: left;
+}
+
+.bpb-terrain-consent-backdrop[data-theme="dark"] .bpb-terrain-consent-dialog {
+    border-color: rgb(255 255 255 / 14%);
+    background: #252a27;
+    color: #f1eee7;
+    box-shadow: 0 20px 64px rgb(0 0 0 / 55%);
+}
+
+.bpb-terrain-consent-dialog h2 {
+    margin: 3px 0 10px;
+    color: inherit;
+    font: 650 22px/1.2 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    letter-spacing: -0.015em;
+}
+
+.bpb-terrain-consent-dialog p {
+    margin: 0 0 14px;
+    color: inherit;
+    font: inherit;
+}
+
+.bpb-terrain-consent-dialog .bpb-terrain-consent-eyebrow {
+    margin: 0;
+    color: #55705f;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.bpb-terrain-consent-backdrop[data-theme="dark"] .bpb-terrain-consent-eyebrow {
+    color: #9fc2aa;
+}
+
+.bpb-terrain-consent-providers {
+    display: grid;
+    gap: 8px;
+    margin: 0 0 14px;
+    padding: 0;
+    list-style: none;
+}
+
+.bpb-terrain-consent-providers li {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    box-sizing: border-box;
+    padding: 10px 12px;
+    border: 1px solid rgb(33 39 35 / 11%);
+    border-radius: 10px;
+    background: rgb(255 255 255 / 70%);
+}
+
+.bpb-terrain-consent-backdrop[data-theme="dark"] .bpb-terrain-consent-providers li {
+    border-color: rgb(255 255 255 / 11%);
+    background: rgb(255 255 255 / 5%);
+}
+
+.bpb-terrain-consent-providers li > span {
+    display: grid;
+    min-width: 0;
+}
+
+.bpb-terrain-consent-providers strong {
+    color: inherit;
+    font-weight: 650;
+}
+
+.bpb-terrain-consent-providers li > span > span {
+    color: #667068;
+    font-size: 12px;
+}
+
+.bpb-terrain-consent-backdrop[data-theme="dark"] .bpb-terrain-consent-providers li > span > span {
+    color: #acb5ae;
+}
+
+.bpb-terrain-consent-dialog a {
+    flex: none;
+    color: #1f63b5;
+    font-weight: 600;
+    text-decoration: none;
+}
+
+.bpb-terrain-consent-backdrop[data-theme="dark"] .bpb-terrain-consent-dialog a {
+    color: #87b7f1;
+}
+
+.bpb-terrain-consent-dialog a:hover {
+    text-decoration: underline;
+}
+
+.bpb-terrain-consent-dialog .bpb-terrain-consent-detail,
+.bpb-terrain-consent-dialog .bpb-terrain-consent-later {
+    color: #5c655f;
+    font-size: 12px;
+}
+
+.bpb-terrain-consent-backdrop[data-theme="dark"] .bpb-terrain-consent-detail,
+.bpb-terrain-consent-backdrop[data-theme="dark"] .bpb-terrain-consent-later {
+    color: #b2bab4;
+}
+
+.bpb-terrain-consent-dialog .bpb-terrain-consent-later {
+    margin-bottom: 0;
+}
+
+.bpb-terrain-consent-dialog .bpb-terrain-consent-error {
+    min-height: 0;
+    margin: 10px 0 0;
+    color: #a53131;
+    font-size: 12px;
+}
+
+.bpb-terrain-consent-error:empty {
+    display: none;
+}
+
+.bpb-terrain-consent-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 18px;
+}
+
+.bpb-terrain-consent-actions button {
+    box-sizing: border-box;
+    min-height: 36px;
+    margin: 0;
+    padding: 8px 14px;
+    border: 1px solid transparent;
+    border-radius: 9px;
+    font: 650 13px/1 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    cursor: pointer;
+}
+
+.bpb-terrain-consent-secondary {
+    border-color: rgb(33 39 35 / 16%) !important;
+    background: transparent;
+    color: inherit;
+}
+
+.bpb-terrain-consent-primary {
+    background: #2867bd;
+    color: #ffffff;
+}
+
+.bpb-terrain-consent-actions button:hover:not(:disabled) {
+    filter: brightness(1.06);
+}
+
+.bpb-terrain-consent-actions button:disabled {
+    cursor: default;
+    opacity: 0.6;
+}
+
+.bpb-terrain-consent-dialog a:focus-visible,
+.bpb-terrain-consent-actions button:focus-visible {
+    outline: 2px solid #2f6fd0;
+    outline-offset: 2px;
+}
+
+@media (max-width: 480px) {
+    .bpb-terrain-consent-backdrop {
+        padding: 12px;
+    }
+
+    .bpb-terrain-consent-dialog {
+        max-height: calc(100vh - 24px);
+        padding: 18px;
+        border-radius: 13px;
+    }
+
+    .bpb-terrain-consent-providers li {
+        align-items: flex-start;
+    }
+
+    .bpb-terrain-consent-actions {
+        flex-direction: column-reverse;
+    }
+
+    .bpb-terrain-consent-actions button {
+        width: 100%;
+    }
 }
 
 /* While loading, hide the glyph and spin a ring in its place. */
