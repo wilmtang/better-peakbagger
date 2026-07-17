@@ -131,6 +131,21 @@ keep the constant-size + shared-spec invariant either way.
 
 ## Known limitations
 
+0. **A dot marks Peakbagger's database coordinates, not the rendered
+   summit.** The feed's features carry only lat/lon — no elevation is ever
+   set by this extension. MapLibre elevates each billboard in the circle
+   shader (`get_elevation`) by sampling the same Mapterhorn DEM the
+   mountains are drawn from, at exactly that point, with exaggeration 1. A
+   ring therefore always sits on the rendered ground at its own coordinates
+   and cannot float — but nothing places it on the mountain's apex. Three
+   "summits" can disagree: the database coordinate, the DEM's rendered high
+   point (finite DEM resolution smooths and shifts sharp peaks), and the
+   true summit where a GPS track converges. When the database coordinate is
+   some tens of meters off, the ring lands visibly downslope at high zoom
+   and pitch. The 2D map draws the identical data at the identical spot —
+   flat tiles just cannot betray the offset. Snapping dots to a local DEM
+   maximum would misrepresent the data (and could grab a neighboring bump),
+   so they stay at the feed's coordinates.
 1. **The clamped far field.** At high pitch, dots load for roughly 3× the
    straight-down viewport around the camera center, not all the way to the
    horizon (where they would be sub-pixel anyway). Panning re-requests, so
