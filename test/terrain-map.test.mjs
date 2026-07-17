@@ -495,7 +495,7 @@ test('the 3D drape picker offers every layer and swaps the draped raster live', 
     const picker = () => window.document.querySelector('.bpb-terrain-picker');
     const map = maps[0];
     assert.deepEqual(Array.from(picker().options, option => option.textContent),
-        ['CalTopo', 'MyTopo', 'OpenTopo', 'OSM Vector (beta)', 'Terrain only'],
+        ['CalTopo', 'MyTopo', 'OpenTopo', 'OSM Vector (experimental)', 'Terrain only'],
         'the picker offers every layer plus the vector entry and terrain-only');
     assert.equal(picker().options[picker().selectedIndex].textContent, 'MyTopo',
         'the initially-selected native layer is preselected');
@@ -612,7 +612,7 @@ test('the extension-provided vector entry grafts the provider style under the ex
     const picker = () => window.document.querySelector('.bpb-terrain-picker');
     const map = maps[0];
     assert.deepEqual(Array.from(picker().options, option => option.textContent),
-        ['OSM Vector (beta)', 'Terrain only'],
+        ['OSM Vector (experimental)', 'Terrain only'],
         'the vector entry and terrain-only are offered even without page layers');
     assert.equal(picker().value, 'terrain', 'terrain-only stays the default — vector is opt-in');
     assert.equal(fetches.length, 0, 'no provider traffic before the user selects the vector entry');
@@ -625,7 +625,7 @@ test('the extension-provided vector entry grafts the provider style under the ex
     assert.deepEqual(fetches, ['https://tiles.openfreemap.org/styles/liberty'],
         'selecting the entry requests the provider style');
     assert.equal(picker().value, 'terrain', 'a failed style fetch reverts to terrain-only');
-    assert.match(window.document.querySelector('.bpb-terrain-notice').textContent, /OSM Vector \(beta\) is unavailable/);
+    assert.match(window.document.querySelector('.bpb-terrain-notice').textContent, /OSM Vector \(experimental\) is unavailable/);
 
     failFetch = false;
     picker().value = 'vector';

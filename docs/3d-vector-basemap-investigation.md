@@ -13,7 +13,7 @@ with the ground.
 
 This document evaluates third-party vector-tile providers the extension could
 use for that, records the facts verified while evaluating them (July 2026),
-and explains the recommendation the `OSM Vector (beta)` prototype implements.
+and explains the recommendation the `OSM Vector (experimental)` prototype implements.
 
 ## What a provider must offer
 
@@ -158,7 +158,7 @@ obvious choices for a hosted web app.
 ## Recommendation
 
 **OpenFreeMap, Liberty style**, as a single extension-provided entry in the
-3D drape picker (`OSM Vector (beta)`). It is the only candidate that is
+3D drape picker (`OSM Vector (experimental)`). It is the only candidate that is
 simultaneously keyless, CORS-clean on every request class, single-origin,
 explicitly unlimited and commercial-use-friendly, OpenMapTiles-rich (peaks!),
 and self-hostable as an escape hatch. VersaTiles is the designated fallback
@@ -168,7 +168,7 @@ URL (plus small multi-sprite handling) would be a contained change.
 
 ## Privacy surface (maintainer decision required)
 
-Selecting `OSM Vector (beta)` makes the terrain frame contact **exactly one
+Selecting `OSM Vector (experimental)` makes the terrain frame contact **exactly one
 new third-party origin, `https://tiles.openfreemap.org`**, for six request
 classes: style JSON, TileJSON, vector tiles, glyph ranges, sprite JSON+PNG,
 and low-zoom Natural Earth raster tiles. As with Mapterhorn and raster
@@ -192,7 +192,7 @@ carry no Peakbagger identity.
   its provider") should be re-read — this layer is extension-offered, not
   Peakbagger-mirrored.
 
-## Prototype notes (what `OSM Vector (beta)` does)
+## Prototype notes (what `OSM Vector (experimental)` does)
 
 - The entry lives in `src/terrain-frame.js` (`VECTOR_BASEMAP`), not in
   `src/terrain-basemap.js` — it is extension-provided, not mirrored from
