@@ -4,7 +4,8 @@
 
 Better Peakbagger turns your Garmin and Strava activities into review-ready
 ascent drafts, makes GPS tracks easier to understand, surfaces the trip reports
-that matter, adds location-aware forecast and satellite-imagery links, and
+that matter, lets you write trip reports in rich text or Markdown with local
+draft autosave, adds location-aware forecast and satellite-imagery links, and
 provides a polished dark mode for
 [Peakbagger](https://www.peakbagger.com/).
 
@@ -86,6 +87,17 @@ by “has beta.” Sortable columns reorder instantly without reloading the page
 
 ![Ascent beta filters and in-page sorting](store-assets/showcase-2-beta-filter.png)
 
+### Write trip reports, not bracket tags
+
+The ascent form's trip report box becomes a real editor. Write in rich text
+(bold, italic, underline, links, lists — with the usual keyboard shortcuts) or
+in Markdown with a preview of exactly what Peakbagger will render. Either way,
+saving produces Peakbagger's own square-bracket format — `[b]…[/b]`,
+blank-line paragraphs, never the `[p]`/`[br]` tags the site warns against —
+and existing reports open right back up in the editor. Everything you type
+also autosaves as a draft on your device, offered back if the page is closed
+or a save is lost; a Plain mode keeps the original textarea one click away.
+
 ### Check summit conditions and recent imagery
 
 Peak pages link directly to the summit's weather detail on Windy and the same
@@ -103,8 +115,8 @@ Mexico).
 Use a site-wide dark theme that follows your system or stays light or dark.
 Shared settings also control units, the GPX chart's default view, route
 appearance, map size, the best-effort 3D elevation cache, optional map-layer
-memory, the off-by-default experimental 3D map, and which signals count as
-ascent beta. Activity-capture settings
+memory, the off-by-default experimental 3D map, the trip report editor, and
+which signals count as ascent beta. Activity-capture settings
 control waypoint retention plus automatic Trip Info and wilderness-night
 filling. Changes apply to open Peakbagger tabs immediately and to the next
 activity capture.
@@ -366,6 +378,7 @@ This split is the single most important design constraint in the extension. Here
 | `terrain-frame.js`, MapLibre | extension document | Owns the WebGL terrain surface and packaged CSP worker. It has no access to Peakbagger globals and does not request tiles until the bridge sends a user-requested coordinate route or summit focus plus an optional validated raster descriptor. |
 | `theme.js`, `bridge.js`, `ascent-filter.js`, `settings.js` | isolated | They only touch the DOM and `chrome.storage`; no page globals needed. |
 | `ascent-draft.js` | isolated | Uses extension messaging to verify a prepared draft, then fills the Peakbagger DOM and starts Preview. |
+| `report-markup.js`, `report-editor.js` | isolated | The trip-report editor edits the ascent form's DOM and stores drafts in `chrome.storage.local`; the native `JournalText` textarea stays in the form as the submitted source of truth. |
 
 A subtle point about **shared scope**: all content scripts from the *same* extension injected into the *same* frame and world share one global scope. That's why listing `["src/settings.js", "src/ascent-filter.js"]` in a single manifest entry lets `ascent-filter.js` use the `window.BPBSettings` object that `settings.js` defined — and why `settings.js` guards with `if (window.BPBSettings) return;`, since a page that matches several manifest entries will inject it more than once into that one shared world.
 
@@ -911,6 +924,9 @@ src/
   capture-core.js        segment validation, summit scoring, metrics, GPX reduction
   background.js          session jobs, Peakbagger lookup, draft tabs and grouping
   ascent-draft.js        fail-closed ascent form filling + one Preview submission
+  report-markup.js       pure bracket ↔ editor-DOM ↔ markdown conversions (one AST)
+  report-editor.js       rich text / markdown trip-report editor with local drafts
+  report-editor.css      trip-report editor styling, light and dark
 vendor/
   chart.umd.min.js       Chart.js 4.5.1, bundled (MIT)
   maplibre-gl-csp.js     MapLibre GL JS 5.24.0 strict-CSP build (BSD-3-Clause)
@@ -947,6 +963,8 @@ Settings shape (`chrome.storage.sync`, key `bpbSettings`):
   fillTripInfo: boolean,            // default true; multiple selected peaks
   fillWildernessNights: boolean,    // default true; overnight single-peak capture
   chartDefaultSeries: 'both' | 'distance' | 'time',  // GPX chart's initial series
+  enableReportEditor: boolean,      // default true; trip-report editor on the ascent form
+  reportEditorMode: 'rich' | 'markdown' | 'plain',   // last-used editor mode
   mapRouteColor: '#rrggbb', mapRouteWidth: 1..12,        // defaults #d9483b / 5
   mapRouteCasingColor: '#rrggbb', mapRouteCasingWidth: 3..20, // defaults #ffffff / 9
   mapViewportWidth: 320..4096,     // pixels; default 450; capped by parent
