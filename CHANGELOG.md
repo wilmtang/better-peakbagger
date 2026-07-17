@@ -12,6 +12,13 @@
   rings keep a constant screen size like the 2D map's markers instead of
   shrinking into the distance.
 - **Crisper 3D drapes.** The draped map texture no longer drops in resolution and blurs during small camera tilts.
+- **3D peak dots sit on the summit.** Peakbagger's coordinates for a peak
+  are often a few dozen meters off the mountain's rendered apex — invisible
+  on the flat 2D map, but glaring downslope once the 3D camera tilts. Each
+  dot now walks uphill on the rendered terrain to the nearby local summit,
+  and stays exactly at Peakbagger's coordinates whenever no genuine summit
+  is within reach (so a dot never migrates onto a neighboring, bigger
+  mountain).
 - **No more flicker when resizing the 3D map.** Dragging the map's resize
   handle while the 3D view is open used to blink on every step — each size
   change cleared the canvas and the repaint waited for the next frame. The

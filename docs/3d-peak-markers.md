@@ -131,21 +131,27 @@ keep the constant-size + shared-spec invariant either way.
 
 ## Known limitations
 
-0. **A dot marks Peakbagger's database coordinates, not the rendered
-   summit.** The feed's features carry only lat/lon — no elevation is ever
-   set by this extension. MapLibre elevates each billboard in the circle
-   shader (`get_elevation`) by sampling the same Mapterhorn DEM the
-   mountains are drawn from, at exactly that point, with exaggeration 1. A
-   ring therefore always sits on the rendered ground at its own coordinates
-   and cannot float — but nothing places it on the mountain's apex. Three
+0. **A dot's height is never computed here — and its position is snapped to
+   the rendered summit.** The feed's features carry only lat/lon; MapLibre
+   elevates each billboard in the circle shader (`get_elevation`) by
+   sampling the same Mapterhorn DEM the mountains are drawn from, at
+   exactly that point, with exaggeration 1 — so a ring always sits on the
+   rendered ground at its own coordinates and cannot float. But three
    "summits" can disagree: the database coordinate, the DEM's rendered high
    point (finite DEM resolution smooths and shifts sharp peaks), and the
-   true summit where a GPS track converges. When the database coordinate is
-   some tens of meters off, the ring lands visibly downslope at high zoom
-   and pitch. The 2D map draws the identical data at the identical spot —
-   flat tiles just cannot betray the offset. Snapping dots to a local DEM
-   maximum would misrepresent the data (and could grab a neighboring bump),
-   so they stay at the feed's coordinates.
+   true summit where a GPS track converges. A database coordinate a few
+   dozen meters off lands the ring visibly downslope at high zoom and pitch
+   (the 2D map draws the identical data — flat tiles just cannot betray
+   the offset). So `snapToLocalSummit()` walks each dot uphill on the
+   rendered terrain (`map.queryTerrainElevation`, shrinking compass
+   strides) to the local DEM maximum, leashed by `PEAK_MARKERS.snap`.
+   Everything fails closed to the feed's coordinates: an unreadable start
+   (MapLibre reports 0 for an unloaded DEM tile, indistinguishable from the
+   sea) never climbs, and a resting point that the ground keeps rising past
+   is a neighboring, bigger mountain's flank — not this dot's summit — so
+   it is rejected. Two dots within one leash of the same apex can stack;
+   the nearest-center hit test still separates their clicks. The popup
+   anchors at the snapped point; the link and name are untouched data.
 1. **The clamped far field.** At high pitch, dots load for roughly 3× the
    straight-down viewport around the camera center, not all the way to the
    horizon (where they would be sub-pixel anyway). Panning re-requests, so
@@ -165,14 +171,16 @@ keep the constant-size + shared-spec invariant either way.
 
 ## Verified
 
-- 178/178 unit tests, including: the shared client's URL/context/XML
+- 179/179 unit tests, including: the shared client's URL/context/XML
   semantics against the archived response shape; frame validation,
   stale-reply rejection, zoom cutoff, popup safety (name as text, link from
   integer id); the screen-space hit test (edge miss, nearest-of-overlapping
   wins, hover cursor set and restored, constant `circle-pitch-scale`
-  pinned, and no layer-scoped handlers ever registered); bridge forwarding;
-  both coordinators end-to-end with a stubbed feed (ascent: `t=A&cid=…`, no
-  `pid`; group: `unavailable`).
+  pinned, and no layer-scoped handlers ever registered); summit snapping
+  (a dot near a synthetic cone's apex lands on it, a dot on a relentless
+  ramp and a dot on unreadable DEM both keep the feed coordinates); bridge
+  forwarding; both coordinators end-to-end with a stubbed feed (ascent:
+  `t=A&cid=…`, no `pid`; group: `unavailable`).
 - Hidden real-browser check (`scripts/verify-terrain-visual.mjs`, headless
   Chrome on the real GPU — the renderer is asserted and a software fallback
   refused — synthetic Peakbagger + synthetic PLLBB feed): feed queried with

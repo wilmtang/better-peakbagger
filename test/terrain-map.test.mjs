@@ -956,3 +956,129 @@ test('3D peak markers request Peakbagger dots on camera settle and render only v
     assert.equal(map.removed, true);
     dom.window.close();
 });
+
+test('3D peak dots snap uphill to the local DEM summit, and only to a genuine one', async () => {
+    const dom = new JSDOM('<!doctype html><body></body>', {
+        url: 'https://www.peakbagger.com/climber/ascent.aspx?aid=1',
+        runScripts: 'outside-only',
+        pretendToBeVisual: true
+    });
+    const { window } = dom;
+    const maps = [];
+    const camera = {
+        zoom: 13,
+        center: { lng: -121.805, lat: 48.73 },
+        bounds: { south: 48.6, north: 48.86, west: -121.95, east: -121.66 }
+    };
+
+    // Synthetic terrain in meters around three feed coordinates:
+    // - a cone whose apex sits ~40 m northeast of Cone Peak's database point,
+    // - a relentless eastward ramp under Ramp Peak (no summit within reach),
+    // - nothing (elevation 0, MapLibre's "tile not loaded") under Void Peak.
+    const METERS_PER_DEG_LAT = 111320;
+    const metersBetween = (a, b) => Math.hypot(
+        (a[0] - b[0]) * METERS_PER_DEG_LAT * Math.cos(b[1] * Math.PI / 180),
+        (a[1] - b[1]) * METERS_PER_DEG_LAT
+    );
+    const conePeakFeed = [-121.79, 48.72];
+    const coneApex = [
+        conePeakFeed[0] + 28 / (METERS_PER_DEG_LAT * Math.cos(conePeakFeed[1] * Math.PI / 180)),
+        conePeakFeed[1] + 28 / METERS_PER_DEG_LAT
+    ];
+    const rampPeakFeed = [-121.82, 48.74];
+    const elevationOf = ([lng, lat]) => {
+        if (metersBetween([lng, lat], conePeakFeed) < 500) {
+            return 3000 - 2 * metersBetween([lng, lat], coneApex);
+        }
+        if (metersBetween([lng, lat], rampPeakFeed) < 500) {
+            return 1000 + 10 * (lng - rampPeakFeed[0]) * METERS_PER_DEG_LAT * Math.cos(lat * Math.PI / 180);
+        }
+        return 0;
+    };
+
+    class MapStub {
+        constructor() {
+            this.sources = new Map();
+            this.layers = [];
+            this.handlers = new Map();
+            this.canvas = { clientWidth: 800, clientHeight: 600, style: {} };
+            maps.push(this);
+        }
+        addControl() {}
+        once(type, callback) { if (type === 'load') window.queueMicrotask(callback); }
+        on(type, callback) { this.handlers.set(type, callback); }
+        addSource(id, source) { this.sources.set(id, { ...source, setData(data) { this.data = data; } }); }
+        addLayer(layer) { this.layers.push(layer); }
+        getLayer(id) { return this.layers.find(layer => layer.id === id); }
+        removeLayer(id) { this.layers = this.layers.filter(layer => layer.id !== id); }
+        getSource(id) { return this.sources.get(id); }
+        removeSource(id) { this.sources.delete(id); }
+        setPaintProperty() {}
+        getZoom() { return camera.zoom; }
+        getCenter() { return camera.center; }
+        getBounds() {
+            const box = camera.bounds;
+            return {
+                getSouth: () => box.south,
+                getNorth: () => box.north,
+                getWest: () => box.west,
+                getEast: () => box.east
+            };
+        }
+        getCanvas() { return this.canvas; }
+        project() { return { x: -10000, y: -10000 }; }
+        queryTerrainElevation(lngLat) { return elevationOf(lngLat); }
+        resize() {}
+        remove() {}
+    }
+
+    window.chrome = { runtime: { getURL: path => `chrome-extension://test-id/${path}` } };
+    window.BPBTerrainCache = {
+        PROTOCOL: 'bpb-dem',
+        create() { return { load() {}, flush() { return Promise.resolve(); } }; }
+    };
+    window.maplibregl = {
+        Map: MapStub,
+        Popup: class { remove() {} },
+        NavigationControl: class {},
+        ScaleControl: class {},
+        AttributionControl: class {},
+        setWorkerUrl() {},
+        addProtocol() {},
+        removeProtocol() {}
+    };
+    window.postMessage = () => {};
+    window.eval(schemaSource);
+    window.eval(terrainFrameSource);
+
+    const dispatch = data => window.dispatchEvent(new window.MessageEvent('message', {
+        source: window,
+        origin: window.location.origin,
+        data: { __bpbTerrainFrame: true, dir: 'toFrame', ...data }
+    }));
+
+    dispatch({ type: 'init', routeSegments: [[[48.7, -121.8], [48.71, -121.81]]] });
+    await new Promise(resolve => window.queueMicrotask(resolve));
+    await new Promise(resolve => window.setTimeout(resolve, 320));
+    dispatch({
+        type: 'peaks',
+        requestId: 1,
+        peaks: [
+            { id: 1, name: 'Cone Peak', lat: conePeakFeed[1], lon: conePeakFeed[0], state: 'climbed' },
+            { id: 2, name: 'Ramp Peak', lat: rampPeakFeed[1], lon: rampPeakFeed[0], state: 'unclimbed' },
+            { id: 3, name: 'Void Peak', lat: 48.75, lon: -121.83, state: 'climbed' }
+        ]
+    });
+
+    const rendered = JSON.parse(JSON.stringify(maps[0].getSource('bpb-peaks').data.features));
+    assert.equal(rendered.length, 3);
+    assert.ok(metersBetween(rendered[0].geometry.coordinates, coneApex) < 5,
+        `a dot near a local summit snaps onto it (landed ${metersBetween(rendered[0].geometry.coordinates, coneApex).toFixed(1)} m away)`);
+    assert.ok(metersBetween(rendered[0].geometry.coordinates, conePeakFeed) > 20,
+        'the snapped dot really moved off the database coordinate');
+    assert.deepEqual(rendered[1].geometry.coordinates, rampPeakFeed,
+        'a dot on ground that keeps rising past the leash keeps the feed coordinates — that is a neighboring slope, not its summit');
+    assert.deepEqual(rendered[2].geometry.coordinates, [-121.83, 48.75],
+        'a dot whose DEM reads 0 (tile not loaded / the sea) keeps the feed coordinates');
+    dom.window.close();
+});

@@ -75,8 +75,18 @@
         // Extra pixels beyond the drawn ring edge that still count as a hit —
         // a small touch allowance that also absorbs the slight offset between
         // the shader's terrain sample and map.project()'s at high pitch.
-        hitSlopPx: 4
+        hitSlopPx: 4,
+        // Peakbagger's database coordinate is commonly a few dozen meters off
+        // the DEM's rendered apex, which a pitched camera turns into a ring
+        // sitting visibly downslope. Each dot is walked uphill on the rendered
+        // terrain to the nearest local summit — but never further than the
+        // leash, and never onto ground that keeps rising past it (that is a
+        // neighboring, bigger mountain, not this dot's summit).
+        snap: { leashM: 100, strideM: 24, finestStrideM: 3 }
     };
+
+    // The eight compass directions a snap step can move in.
+    const COMPASS_STEPS = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
 
     let map = null;
     let mapElement = null;
@@ -731,11 +741,70 @@
         });
     };
 
+    // Walk one dot uphill on the rendered terrain to the local summit near
+    // its database coordinates, so it reads as "on top" once relief exists to
+    // betray a few dozen meters of coordinate error. The climb queries the
+    // same DEM the mountains are drawn from, in shrinking compass strides,
+    // leashed to snap.leashM. Everything fails closed to the feed's own
+    // coordinates:
+    // - MapLibre reports elevation 0 for a DEM tile it has not loaded, which
+    //   is indistinguishable from the sea — an unreadable start must not
+    //   "climb" toward whatever ground happens to be loaded nearby.
+    // - A resting point must be a genuine local maximum: if the ground keeps
+    //   rising in some direction just past it (a leash-length slope), the dot
+    //   is on a neighboring, bigger mountain's flank — not its own summit.
+    const snapToLocalSummit = feature => {
+        if (!map || typeof map.queryTerrainElevation !== 'function') return feature;
+        const { leashM, strideM, finestStrideM } = PEAK_MARKERS.snap;
+        const [feedLon, feedLat] = feature.geometry.coordinates;
+        const metersPerDegreeLat = 111320;
+        const metersPerDegreeLon = metersPerDegreeLat * Math.cos(feedLat * Math.PI / 180);
+        if (!(metersPerDegreeLon > 0)) return feature;
+        const elevationAt = (lon, lat) => {
+            try {
+                const elevation = map.queryTerrainElevation([lon, lat]);
+                return Number.isFinite(elevation) ? elevation : 0;
+            } catch (error) {
+                return 0;
+            }
+        };
+        const metersFromFeed = (lon, lat) =>
+            Math.hypot((lon - feedLon) * metersPerDegreeLon, (lat - feedLat) * metersPerDegreeLat);
+        let best = elevationAt(feedLon, feedLat);
+        if (!(best > 0)) return feature;
+        let lon = feedLon;
+        let lat = feedLat;
+        for (let stride = strideM; stride >= finestStrideM; stride /= 2) {
+            for (let moved = true; moved;) {
+                moved = false;
+                for (const [east, north] of COMPASS_STEPS) {
+                    const stepLon = lon + east * stride / metersPerDegreeLon;
+                    const stepLat = lat + north * stride / metersPerDegreeLat;
+                    if (metersFromFeed(stepLon, stepLat) > leashM) continue;
+                    const elevation = elevationAt(stepLon, stepLat);
+                    if (elevation > best) {
+                        best = elevation;
+                        lon = stepLon;
+                        lat = stepLat;
+                        moved = true;
+                    }
+                }
+            }
+        }
+        if (lon === feedLon && lat === feedLat) return feature;
+        for (const [east, north] of COMPASS_STEPS) {
+            const beyondLon = lon + east * finestStrideM / metersPerDegreeLon;
+            const beyondLat = lat + north * finestStrideM / metersPerDegreeLat;
+            if (elevationAt(beyondLon, beyondLat) > best) return feature;
+        }
+        return { ...feature, geometry: { type: 'Point', coordinates: [lon, lat] } };
+    };
+
     const setPeakData = features => {
-        peakFeatures = features;
+        peakFeatures = features.map(snapToLocalSummit);
         const source = map && map.getSource(PEAK_MARKERS.sourceId);
         if (source && typeof source.setData === 'function') {
-            source.setData({ type: 'FeatureCollection', features });
+            source.setData({ type: 'FeatureCollection', features: peakFeatures });
         }
         // The native map rebuilds its markers on every settle, which closes
         // any open marker popup; mirror that so a popup never outlives the
