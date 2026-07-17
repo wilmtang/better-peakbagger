@@ -1,0 +1,901 @@
+<!DOCTYPE html><html><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+        <!-- Google tag (gtag.js) -->
+        
+        
+
+		<title>Ascent Editor - Peakbagger.com</title>
+        <style type="text/css">
+/* pb.css inlined from https://web.archive.org/web/20260709051120id_/https://peakbagger.com/pb.css */
+body 
+{
+background-image:url("image/mewallp.gif");
+font-size:small;
+font-family: Tahoma, Geneva, sans-serif;
+margin-left: 0px;
+margin-top: 0px;
+padding: 0;
+}
+
+h1 {font-family: Arial, Helvetica, sans-serif; font-size: 20pt; color: maroon; text-align: center}
+
+h2 {font-family: Arial, Helvetica, sans-serif; font-size:medium; color: navy; text-align: center}
+h3 {font-family: Arial, Helvetica, sans-serif; font-size:medium; color: navy; text-align: left}
+
+h4 {font-family: Arial, Helvetica, sans-serif; font-size:small; color: maroon; text-align: center; font-weight: bold}
+h5 {font-family: Arial, Helvetica, sans-serif; font-size:small; color: maroon; text-align: left;   font-weight: bold}
+
+h6 {font-size:small;color: navy; text-align: center; font-weight: bold}
+
+hr {color:navy}
+p {font-size:small}
+td.courier {font-family: Courier}
+td.gray {border-style:solid; border-collapse:collapse; border-color:#D3D3D3; border-width:2px}
+th.gray {border-style:solid; border-collapse:collapse; border-color:#D3D3D3; border-width:2px}
+td.std {border-style:none}
+td.mainbanner {font-size:24px; font-weight:bolder}
+td.mainmenu {font-size:16px; font-weight:bolder}
+td.maroon {font-size:small; color: maroon; text-align: center; font-weight: bold}
+a:link     {color:navy}
+a:visited  {color:purple}
+a.override {color:Black; font-style:normal}
+a.white {color:White}
+
+table.gray {border-style:solid; border-collapse:collapse; border-color:#D3D3D3; border-width:2px}
+table.gray td {border-style:solid; border-collapse:collapse; border-color:#D3D3D3; border-width:2px}
+table.gray th {border-style:solid; border-collapse:collapse; border-color:#D3D3D3; border-width:2px}
+
+table.ae {border-style:solid; border-collapse:collapse; border-color:#D3D3D3; border-width:1px}
+table.ae td {border-style:solid; border-collapse:collapse; border-color:#D3D3D3; border-width:1px; border-left-style:none; border-right-style:none}
+
+table.std {border-style:none}
+table.std td {border-style:none}
+
+table.screencont {width:100%; border:0; margin:0; padding:0;  }
+
+.gridlines td, .gridlines td  {border:2px solid #000000;}
+
+.nobr {white-space: nowrap;}
+
+/**********************************SHADOW STUFF***********************************/
+.shadow {
+	text-shadow: #FFFFFF 5px 5px 5px;
+}
+
+.shadow {
+	height: 1.2em;
+	filter: Shadow(Color=#FFFFFF, 
+			Direction=135, 
+			Strength=10);
+}
+
+
+/*********************** AutoComplete Stuff *****************************/
+.AutoCompleteExtender_CompletionList 
+{
+background-color : window;
+color : windowtext;
+padding : 1px;
+font-size: small;
+background-color:Gray;
+/*creates border with
+autocomplete_completionListElement
+background-color*/
+ }
+ 
+/*AutoComplete flyout */
+.AutoCompleteExtender_CompletionListItem 
+{ 
+text-align : left;
+background-color:White;
+ }
+ 
+/* AutoComplete highlighted item */
+.AutoCompleteExtender_HighlightedItem
+ {
+background-color: Silver;
+color: windowtext;
+font-weight:bold;
+font-size: small;
+ }
+</style>
+        
+	    
+	</head>
+	<body>
+		<form name="Form1" method="post" action="https://www.peakbagger.com/climber/ascentedit.aspx?cid=900001" id="Form1" enctype="multipart/form-data">
+<div>
+
+
+
+
+
+</div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div>
+
+	
+	
+	
+	
+</div>
+			
+
+
+
+<table cellpadding="0" cellspacing="0" border="0" style="background-image:url(../image/header.jpg); height:60px" width="100%">
+<tbody><tr style="height:30px">
+    <td colspan="7" class="mainbanner">
+        <a href="https://www.peakbagger.com/Default.aspx" style="font-family: Arial, Helvetica, sans-serif; text-decoration:none; color:black">&nbsp;Peakbagger.com</a>
+    </td>
+    <td class="mainmenu" style="width:29.5%" align="right">        
+        <input type="text" id="QuickSearchTB" name="QuickSearchTB" style="width:100px; font-size:x-small">
+        <input type="button" title="Quick Search" id="QSButton" style="width:auto; font-size:x-small" value="Quick Search">
+    </td>
+</tr>
+
+<tr style="height:30px">
+    <td class="mainmenu" align="center" style="width:11.5%"><a href="https://www.peakbagger.com/ListIndx.aspx" style="font-family: Arial, Helvetica, sans-serif; text-decoration:none; color:black">Peak Lists</a></td>
+    <td class="mainmenu" align="center" style="width:10.5%"><a href="https://www.peakbagger.com/ClimbIndx.aspx" style="font-family: Arial, Helvetica, sans-serif; text-decoration:none; color:black">Climbers</a></td>
+    <td class="mainmenu" align="center" style="width:10.5%"><a href="https://www.peakbagger.com/RangIndx.aspx" style="font-family: Arial, Helvetica, sans-serif; text-decoration:none; color:black">Ranges</a></td>
+    <td class="mainmenu" align="center" style="width:11.5%"><a href="https://www.peakbagger.com/PBGeog/GeogIndx.aspx" style="font-family: Arial, Helvetica, sans-serif; text-decoration:none; color:black">Geography</a></td>
+    <td class="mainmenu" align="center" style="width:8%"><a href="https://www.peakbagger.com/Help/Help.aspx" style="font-family: Arial, Helvetica, sans-serif; text-decoration:none; color:black">Help</a></td>
+    <td class="mainmenu" align="center" style="width:10.5%"><a href="https://www.peakbagger.com/Search.aspx" style="font-family: Arial, Helvetica, sans-serif; text-decoration:none; color:black">Search</a></td>
+    <td class="mainmenu" align="center" style="width:6%"><a href="https://www.peakbagger.com/Climber/Login.aspx" style="font-family: Arial, Helvetica, sans-serif; text-decoration:none; color:black">Log In</a></td>
+    <td class="mainmenu" align="right" style="width:31.5%; font-size:x-small">
+        
+        
+        
+        
+        
+        
+    </td>
+</tr>
+</tbody></table>
+<table cellpadding="0" cellspacing="0" border="0" width="100%">
+<tbody><tr><td><div style="color:navy">&nbsp;Logged in: Alex Doe&nbsp;&nbsp;|&nbsp;&nbsp;<a href="https://www.peakbagger.com/climber/climber.aspx?cid=900001">My Home Page</a>&nbsp;&nbsp;|&nbsp;&nbsp;<a href="https://www.peakbagger.com/climber/climberedit.aspx?cid=900001">Edit Account</a>&nbsp;&nbsp;|&nbsp;&nbsp;<a href="https://www.peakbagger.com/climber/ascentedit.aspx?cid=900001">Add Ascent</a>&nbsp;&nbsp;|&nbsp;&nbsp;<a href="https://www.peakbagger.com/climber/climblistc.aspx?cid=900001">My Ascents</a>&nbsp;&nbsp;|&nbsp;&nbsp;<a href="https://www.peakbagger.com/listindx.aspx?cid=900001&amp;sort=PctClimb">My List of Lists</a>&nbsp;&nbsp;|&nbsp;&nbsp;<a href="https://www.peakbagger.com/climber/addpeak.aspx?cid=900001">Add Peak to DB</a>&nbsp;&nbsp;|&nbsp;&nbsp;<a href="https://www.peakbagger.com/climber/ClimberPeakList.aspx?cid=900001">My Peaks</a>&nbsp;&nbsp;|&nbsp;&nbsp;<a href="https://www.peakbagger.com/query.aspx?cid=900001">Query</a>&nbsp;&nbsp;|&nbsp;&nbsp;<a href="https://www.peakbagger.com/climber/querylist.aspx?lcid=900001&amp;cid=900001">Personal Lists</a></div></td></tr></tbody></table>
+
+			<table cellpadding="10" width="99%">	            
+				<tbody><tr>
+					<td>		    
+						<div id="UpdatePanelAE">
+	
+                                <h1><span id="PageTitle">New Ascent by Alex Doe</span></h1>
+      	        			    <h2><span id="SubTitle"></span></h2>
+                            
+</div>                        
+                        
+						<table class="gray" cellspacing="0">
+							<tbody><tr>
+								<td class="gray">
+									<h3>Required Fields</h3>
+								</td>
+								<td align="center" colspan="2" class="gray">
+									<p style="text-align:center"><input type="submit" name="SaveButton" value="Save Ascent" id="SaveButton" style="width:120px;">&nbsp;&nbsp;&nbsp;&nbsp;
+										&nbsp;&nbsp;&nbsp;&nbsp;
+										<input type="submit" name="CancelButton" value="Cancel" id="CancelButton" style="width:120px;">&nbsp;&nbsp;&nbsp;&nbsp;
+										</p>
+								</td>
+							</tr>
+							<tr>
+								<td align="center" style="width:33%; height:236px"><b>Ascent Date (yyyy-mm-dd)</b><br><span style="font-size:x-small; color:Navy">Enter 0000 for Unknown Year</span>
+								    <table class="std"><tbody><tr><td>
+									<input name="DateText" type="text" id="DateText" style="width:80px;">Suffix:&nbsp;<input name="SuffixText" type="text" id="SuffixText" style="width:48px;">
+									</td></tr><tr><td>
+									<table class="std"><tbody><tr><td>
+									<table id="CalendarMS" cellspacing="0" cellpadding="2" title="Calendar" border="0" style="border-width:1px;border-style:solid;font-size:X-Small;height:128px;width:184px;border-collapse:collapse;">
+	<tbody><tr><td colspan="7" style="background-color:Silver;"><table cellspacing="0" border="0" style="font-size:X-Small;width:100%;border-collapse:collapse;">
+		<tbody><tr><td style="width:15%;"><a style="color:Black" title="Go to the previous month">&lt;</a></td><td align="center" style="width:70%;">July 2026</td><td align="right" style="width:15%;"><a style="color:Black" title="Go to the next month">&gt;</a></td></tr>
+	</tbody></table></td></tr><tr><th align="center" abbr="Sunday" scope="col">Sun</th><th align="center" abbr="Monday" scope="col">Mon</th><th align="center" abbr="Tuesday" scope="col">Tue</th><th align="center" abbr="Wednesday" scope="col">Wed</th><th align="center" abbr="Thursday" scope="col">Thu</th><th align="center" abbr="Friday" scope="col">Fri</th><th align="center" abbr="Saturday" scope="col">Sat</th></tr><tr><td align="center" style="width:14%;"><a style="color:Black" title="June 28">28</a></td><td align="center" style="width:14%;"><a style="color:Black" title="June 29">29</a></td><td align="center" style="width:14%;"><a style="color:Black" title="June 30">30</a></td><td align="center" style="width:14%;"><a style="color:Black" title="July 1">1</a></td><td align="center" style="width:14%;"><a style="color:Black" title="July 2">2</a></td><td align="center" style="width:14%;"><a style="color:Black" title="July 3">3</a></td><td align="center" style="width:14%;"><a style="color:Black" title="July 4">4</a></td></tr><tr><td align="center" style="width:14%;"><a style="color:Black" title="July 5">5</a></td><td align="center" style="width:14%;"><a style="color:Black" title="July 6">6</a></td><td align="center" style="width:14%;"><a style="color:Black" title="July 7">7</a></td><td align="center" style="width:14%;"><a style="color:Black" title="July 8">8</a></td><td align="center" style="width:14%;"><a style="color:Black" title="July 9">9</a></td><td align="center" style="width:14%;"><a style="color:Black" title="July 10">10</a></td><td align="center" style="width:14%;"><a style="color:Black" title="July 11">11</a></td></tr><tr><td align="center" style="width:14%;"><a style="color:Black" title="July 12">12</a></td><td align="center" style="width:14%;"><a style="color:Black" title="July 13">13</a></td><td align="center" style="width:14%;"><a style="color:Black" title="July 14">14</a></td><td align="center" style="width:14%;"><a style="color:Black" title="July 15">15</a></td><td align="center" style="width:14%;"><a style="color:Black" title="July 16">16</a></td><td align="center" style="width:14%;"><a style="color:Black" title="July 17">17</a></td><td align="center" style="width:14%;"><a style="color:Black" title="July 18">18</a></td></tr><tr><td align="center" style="width:14%;"><a style="color:Black" title="July 19">19</a></td><td align="center" style="width:14%;"><a style="color:Black" title="July 20">20</a></td><td align="center" style="width:14%;"><a style="color:Black" title="July 21">21</a></td><td align="center" style="width:14%;"><a style="color:Black" title="July 22">22</a></td><td align="center" style="width:14%;"><a style="color:Black" title="July 23">23</a></td><td align="center" style="width:14%;"><a style="color:Black" title="July 24">24</a></td><td align="center" style="width:14%;"><a style="color:Black" title="July 25">25</a></td></tr><tr><td align="center" style="width:14%;"><a style="color:Black" title="July 26">26</a></td><td align="center" style="width:14%;"><a style="color:Black" title="July 27">27</a></td><td align="center" style="width:14%;"><a style="color:Black" title="July 28">28</a></td><td align="center" style="width:14%;"><a style="color:Black" title="July 29">29</a></td><td align="center" style="width:14%;"><a style="color:Black" title="July 30">30</a></td><td align="center" style="width:14%;"><a style="color:Black" title="July 31">31</a></td><td align="center" style="width:14%;"><a style="color:Black" title="August 1">1</a></td></tr><tr><td align="center" style="width:14%;"><a style="color:Black" title="August 2">2</a></td><td align="center" style="width:14%;"><a style="color:Black" title="August 3">3</a></td><td align="center" style="width:14%;"><a style="color:Black" title="August 4">4</a></td><td align="center" style="width:14%;"><a style="color:Black" title="August 5">5</a></td><td align="center" style="width:14%;"><a style="color:Black" title="August 6">6</a></td><td align="center" style="width:14%;"><a style="color:Black" title="August 7">7</a></td><td align="center" style="width:14%;"><a style="color:Black" title="August 8">8</a></td></tr>
+</tbody></table></td></tr></tbody></table>
+									</td></tr><tr><td align="center" style="font-size:x-small">
+										Quick Calendar Move:<br>
+									Month:<input name="MonthGoto" type="text" id="MonthGoto" style="width:24px;">&nbsp;Year:
+									
+									<input name="YearGoto" type="text" id="YearGoto" style="width:48px;">&nbsp;
+									<input type="submit" name="CalendarGo" value="Goto" id="CalendarGo" style="font-size:X-Small;">
+									</td></tr><tr><td>
+                                        <span id="RegularExpressionValidator1" style="color:Red;visibility:hidden;">**Date fomat must be yyyy-mm-dd</span>
+										</td></tr></tbody></table></td>										
+								<td style="WIDTH: 33%; height: 236px"><table class="std"><tbody><tr><td><b>Ascent Type:</b><br>
+									<br>
+									<table id="AscentTypeRBL" border="0" style="width:301px;">
+	<tbody><tr>
+		<td><input id="AscentTypeRBL_0" type="radio" name="AscentTypeRBL" value="S" checked="checked"><label for="AscentTypeRBL_0">Successful Ascent (stood on the summit)</label></td>
+	</tr><tr>
+		<td><input id="AscentTypeRBL_1" type="radio" name="AscentTypeRBL" value="U"><label for="AscentTypeRBL_1">Unsuccessful Attempt (turned back)</label></td>
+	</tr><tr>
+		<td><input id="AscentTypeRBL_2" type="radio" name="AscentTypeRBL" value="N"><label for="AscentTypeRBL_2">No Summit Goal (trip to crag, lake, pass, etc.)</label></td>
+	</tr>
+</tbody></table><br>
+									Elevation:&nbsp;<input name="PointFt" type="text" id="PointFt" style="WIDTH: 48px" size="1" value="0"> &nbsp;ft&nbsp;/&nbsp; <input name="PointM" type="text" id="PointM" style="WIDTH: 48px" size="1" value="0"> m
+									<br>
+									&nbsp;
+									<br>
+									&nbsp;
+									</td></tr></tbody></table>
+								</td>
+								<td style="height: 236px" class="gray"><strong>Add/Change&nbsp;Peak</strong>:
+									<br>
+									<p style="font-size:small; color:Navy">Enter a search string&nbsp;and click&nbsp;"Search" to display a list of 
+									selectable peaks. Then click on a peak in the list.</p>
+									&nbsp;
+									<input name="PeakText" type="text" id="PeakText" tabindex="1" style="width:200px;">&nbsp;&nbsp;<input type="submit" name="PeakSearch" value="Search" id="PeakSearch" tabindex="2" style="width:64px;"><br>
+									&nbsp;
+									<select size="4" name="PeakListBox" id="PeakListBox" style="height:116px;width:292px;">
+
+</select><br>
+									<span id="SearchError" style="color:Red;"></span>
+									<br><a href="https://www.peakbagger.com/climber/AddPeak.aspx?cid=900001"><b>Peak not found?<br>  Click here to add a peak to the database.</b></a>
+									
+									</td>
+							</tr>
+							<tr>
+								<td colspan="3" class="gray">
+									<h3>Optional Fields</h3>
+								</td>
+							</tr>
+							<tr>
+								<td colspan="2"><b>Trip Report:</b><br>
+									<textarea name="JournalText" rows="2" cols="20" id="JournalText" style="height:200px;width:99%;"></textarea><br>
+									<span style="font-size:x-small; color:Navy">Hints: To enter&nbsp;HTML tags, use&nbsp;the square 
+										brackets [ ] instead of&nbsp;&lt; &gt;.&nbsp; For example,&nbsp;[b]Bolded 
+										Text[/b].&nbsp; Also,&nbsp;to make a new paragraph, hit Enter twice.&nbsp; For 
+										best results, do not use the [p] or [br] tags.<br>
+                                    </span>
+                                    <b>URL Link to External Trip Report:</b> <input name="URLTB" type="text" id="URLTB" style="width:500px;">
+                                    <br>
+								</td>
+								<td class="gray">
+									<p style="font-size:small; color:Navy"><b>Help for the Ascent Editing Page</b>&nbsp;&nbsp;<a href="https://www.peakbagger.com/help/helpascentedit.aspx" target="_blank">More 
+											Help</a><br>
+										<br>
+										You can enter information about your ascent on this page. The only required 
+										items are in the top row:
+										</p>
+                                    <p style="font-size:small; color:Navy">
+                                        &nbsp;</p>
+									<ul style="font-size:small; color:Navy">
+										<li>
+										A date (just the year if that's all you know)
+										</li>
+										<li>
+										If you were successful (default=yes)
+										</li>
+										<li>
+											The name of the peak you climbed.
+										</li>
+									</ul>
+									<p style="font-size:small; color:Navy">All other information is optional--enter as much (or as little) as you like. 
+										Once you save this ascent, it will appear in the various lists on this site.</p>
+								</td>
+							</tr>
+							<tr>
+								<td>
+									<table class="ae" cellspacing="1" cellpadding="1" width="100%">
+										<tbody><tr>
+											<td align="center" colspan="3" style="height: 30px"><b>Up (To Peak)</b>&nbsp;&nbsp;&nbsp;&nbsp;<span id="RefMapLink"></span></td>
+										</tr>
+										<tr>
+										<td>Net Gain</td>
+										<td><input name="GainFt" type="text" id="GainFt" style="WIDTH: 48px" size="1">&nbsp;ft&nbsp;/&nbsp; 
+										    <input name="GainM" type="text" id="GainM" style="WIDTH: 48px" size="1">&nbsp;m
+										</td>
+										</tr>
+										<tr>
+											<td>Start&nbsp;Trailhead</td>
+											<td><input name="StartPt" type="text" id="StartPt" style="WIDTH: 200px" size="25">
+											</td>
+											<td></td>
+										</tr>
+										<tr>
+											<td>Start&nbsp;Elevation</td>
+											<td><input name="StartFt" type="text" id="StartFt" style="WIDTH: 48px" size="1">&nbsp;ft&nbsp;/&nbsp; <input name="StartM" type="text" id="StartM" style="WIDTH: 48px" size="1">&nbsp;m
+											</td>
+											<td></td>
+										</tr>
+										<tr>
+											<td>Route&nbsp;Up</td>
+											<td><input name="RouteUp" type="text" id="RouteUp" style="WIDTH: 200px" size="1">
+											</td>
+											<td></td>
+										</tr>
+										<tr>
+											<td>Extra&nbsp;Elevation on&nbsp;Ascent</td>
+											<td><input name="ExUpFt" type="text" id="ExUpFt" style="WIDTH: 48px" size="1">&nbsp;ft&nbsp;/&nbsp; <input name="ExUpM" type="text" id="ExUpM" style="WIDTH: 48px" size="1">&nbsp;m
+											</td>
+											<td></td>
+										</tr>
+										<tr>
+											<td>Distance&nbsp;Up</td>
+											<td><input name="UpMi" type="text" id="UpMi" style="WIDTH: 48px" size="1">&nbsp;mi&nbsp;/&nbsp; <input name="UpKm" type="text" id="UpKm" style="WIDTH: 48px" size="1">&nbsp;km
+											</td>
+											<td></td>
+										</tr>
+										<tr>
+											<td>Time&nbsp;Up</td>
+											<td><input name="UpDay" type="text" id="UpDay" style="WIDTH: 25px" size="1">&nbsp;Days&nbsp;<input name="UpHr" type="text" id="UpHr" style="WIDTH: 25px" size="1">&nbsp;Hrs&nbsp;<input name="UpMin" type="text" id="UpMin" style="WIDTH: 25px" size="1">&nbsp;Min
+											</td>
+											<td></td>
+										</tr>
+									</tbody></table>
+								</td>
+								<td>
+									<table class="ae" width="100%" cellspacing="1" cellpadding="1">
+										<tbody><tr>
+											<td align="center" colspan="3" style="height: 30px"><b>Down (From Peak)</b>&nbsp;&nbsp;&nbsp;&nbsp; <input style="WIDTH: 96px; HEIGHT: 25px" type="button" value="Out and Back"></td>
+										</tr>
+										<tr>
+										<td>Net Loss</td>
+										<td><input name="LossFt" type="text" id="LossFt" style="WIDTH: 48px" size="1">&nbsp;ft&nbsp;/&nbsp; 
+										    <input name="LossM" type="text" id="LossM" style="WIDTH: 48px" size="1">&nbsp;m
+										</td>
+										</tr>
+                                        <tr>
+											<td>End&nbsp;Trailhead</td>
+											<td><input name="EndPt" type="text" id="EndPt" style="WIDTH: 200px" size="25">
+											</td>
+											<td></td>
+										</tr>
+										<tr>
+											<td>End&nbsp;Elevation</td>
+											<td><input name="EndFt" type="text" id="EndFt" style="WIDTH: 48px" size="1"> &nbsp;ft&nbsp;/&nbsp; <input name="EndM" type="text" id="EndM" style="WIDTH: 48px" size="1"> m
+											</td>
+											<td></td>
+										</tr>
+										<tr>
+											<td>Route&nbsp;Down</td>
+											<td><input name="RouteDn" type="text" id="RouteDn" style="WIDTH: 200px" size="1">
+											</td>
+											<td></td>
+										</tr>
+										<tr>
+											<td>Extra&nbsp;Elevation on&nbsp;Descent</td>
+											<td><input name="ExDnFt" type="text" id="ExDnFt" style="WIDTH: 48px" size="1">&nbsp;ft / <input name="ExDnM" type="text" id="ExDnM" style="WIDTH: 48px" size="3">&nbsp;m
+											</td>
+											<td></td>
+										</tr>
+										<tr>
+											<td>Distance&nbsp;Down</td>
+											<td><input name="DnMi" type="text" id="DnMi" style="WIDTH: 48px" size="1">&nbsp;mi&nbsp;/&nbsp; <input name="DnKm" type="text" id="DnKm" style="WIDTH: 48px" size="1">&nbsp;km
+											</td>
+											<td></td>
+										</tr>
+										<tr>
+											<td>Time&nbsp;Down</td>
+											<td><input name="DnDay" type="text" id="DnDay" style="WIDTH: 25px" size="1">&nbsp;Days&nbsp;
+												<input name="DnHr" type="text" id="DnHr" style="WIDTH: 25px" size="1">&nbsp;Hrs&nbsp;
+												<input name="DnMin" type="text" id="DnMin" style="WIDTH: 25px" size="1">&nbsp;Min
+											</td>
+											<td></td>
+										</tr>
+									</tbody></table>
+								</td>
+								<td rowspan="4" class="gray">
+									<table class="std" border="0">
+										<tbody><tr>
+											<td style="WIDTH: 160px" rowspan="3"><b>Route Aspects</b><br>
+												<table id="RouteCheckBoxList" border="0" style="font-size:Small;">
+	<tbody><tr>
+		<td><input id="RouteCheckBoxList_0" type="checkbox" name="RouteCheckBoxList$0"><label for="RouteCheckBoxList_0"><img alt="Road Hike" src="https://www.peakbagger.com/image/RouteGear/r1.gif" width="10" height="16">&nbsp;Road Hike</label></td>
+	</tr><tr>
+		<td><input id="RouteCheckBoxList_1" type="checkbox" name="RouteCheckBoxList$1"><label for="RouteCheckBoxList_1"><img alt="Maintained Trail" src="https://www.peakbagger.com/image/RouteGear/r2.gif" width="10" height="16">&nbsp;Maintained Trail</label></td>
+	</tr><tr>
+		<td><input id="RouteCheckBoxList_2" type="checkbox" name="RouteCheckBoxList$2"><label for="RouteCheckBoxList_2"><img alt="Unmaintained Trail" src="https://www.peakbagger.com/image/RouteGear/r3.gif" width="10" height="16">&nbsp;Unmaintained Trail</label></td>
+	</tr><tr>
+		<td><input id="RouteCheckBoxList_3" type="checkbox" name="RouteCheckBoxList$3"><label for="RouteCheckBoxList_3"><img alt="Open Country" src="https://www.peakbagger.com/image/RouteGear/r4.gif" width="10" height="16">&nbsp;Open Country</label></td>
+	</tr><tr>
+		<td><input id="RouteCheckBoxList_4" type="checkbox" name="RouteCheckBoxList$4"><label for="RouteCheckBoxList_4"><img alt="Bushwhack" src="https://www.peakbagger.com/image/RouteGear/r5.gif" width="10" height="16">&nbsp;Bushwhack</label></td>
+	</tr><tr>
+		<td><input id="RouteCheckBoxList_5" type="checkbox" name="RouteCheckBoxList$5"><label for="RouteCheckBoxList_5"><img alt="Stream Ford" src="https://www.peakbagger.com/image/RouteGear/r6.gif" width="10" height="16">&nbsp;Stream Ford</label></td>
+	</tr><tr>
+		<td><input id="RouteCheckBoxList_6" type="checkbox" name="RouteCheckBoxList$6"><label for="RouteCheckBoxList_6"><img alt="Mud/Swamp" src="https://www.peakbagger.com/image/RouteGear/r7.gif" width="10" height="16">&nbsp;Mud/Swamp</label></td>
+	</tr><tr>
+		<td><input id="RouteCheckBoxList_7" type="checkbox" name="RouteCheckBoxList$7"><label for="RouteCheckBoxList_7"><img alt="Snow on Ground" src="https://www.peakbagger.com/image/RouteGear/r8.gif" width="10" height="16">&nbsp;Snow on Ground</label></td>
+	</tr><tr>
+		<td><input id="RouteCheckBoxList_8" type="checkbox" name="RouteCheckBoxList$8"><label for="RouteCheckBoxList_8"><img alt="Scramble" src="https://www.peakbagger.com/image/RouteGear/r9.gif" width="10" height="16">&nbsp;Scramble</label></td>
+	</tr><tr>
+		<td><input id="RouteCheckBoxList_9" type="checkbox" name="RouteCheckBoxList$9"><label for="RouteCheckBoxList_9"><img alt="Exposed Scramble" src="https://www.peakbagger.com/image/RouteGear/r10.gif" width="10" height="16">&nbsp;Exposed Scramble</label></td>
+	</tr><tr>
+		<td><input id="RouteCheckBoxList_10" type="checkbox" name="RouteCheckBoxList$10"><label for="RouteCheckBoxList_10"><img alt="Rock Climb" src="https://www.peakbagger.com/image/RouteGear/r11.gif" width="10" height="16">&nbsp;Rock Climb</label></td>
+	</tr><tr>
+		<td><input id="RouteCheckBoxList_11" type="checkbox" name="RouteCheckBoxList$11"><label for="RouteCheckBoxList_11"><img alt="Snow Climb" src="https://www.peakbagger.com/image/RouteGear/r12.gif" width="10" height="16">&nbsp;Snow Climb</label></td>
+	</tr><tr>
+		<td><input id="RouteCheckBoxList_12" type="checkbox" name="RouteCheckBoxList$12"><label for="RouteCheckBoxList_12"><img alt="Glacier Climb" src="https://www.peakbagger.com/image/RouteGear/r13.gif" width="10" height="16">&nbsp;Glacier Climb</label></td>
+	</tr><tr>
+		<td><input id="RouteCheckBoxList_13" type="checkbox" name="RouteCheckBoxList$13"><label for="RouteCheckBoxList_13"><img alt="Ice Climb" src="https://www.peakbagger.com/image/RouteGear/r14.gif" width="11" height="16">&nbsp;Ice Climb</label></td>
+	</tr><tr>
+		<td><input id="RouteCheckBoxList_14" type="checkbox" name="RouteCheckBoxList$14"><label for="RouteCheckBoxList_14"><img alt="Aid Climb" src="https://www.peakbagger.com/image/RouteGear/r15.gif" width="10" height="16">&nbsp;Aid Climb</label></td>
+	</tr>
+</tbody></table></td>
+											<td valign="top"><b>Gear/Help Used</b><br>
+												<table id="GearCheckBoxList" border="0" style="font-size:Small;width:130px;">
+	<tbody><tr>
+		<td><input id="GearCheckBoxList_0" type="checkbox" name="GearCheckBoxList$0"><label for="GearCheckBoxList_0"><img alt="Bicycle" src="https://www.peakbagger.com/image/RouteGear/g1.gif" width="10" height="16">&nbsp;Bicycle</label></td>
+	</tr><tr>
+		<td><input id="GearCheckBoxList_1" type="checkbox" name="GearCheckBoxList$1"><label for="GearCheckBoxList_1"><img alt="Ice Axe" src="https://www.peakbagger.com/image/RouteGear/g2.gif" width="10" height="16">&nbsp;Ice Axe</label></td>
+	</tr><tr>
+		<td><input id="GearCheckBoxList_2" type="checkbox" name="GearCheckBoxList$2"><label for="GearCheckBoxList_2"><img alt="Crampons" src="https://www.peakbagger.com/image/RouteGear/g3.gif" width="12" height="16">&nbsp;Crampons</label></td>
+	</tr><tr>
+		<td><input id="GearCheckBoxList_3" type="checkbox" name="GearCheckBoxList$3"><label for="GearCheckBoxList_3"><img alt="Rope" src="https://www.peakbagger.com/image/RouteGear/g4.gif" width="10" height="16">&nbsp;Rope</label></td>
+	</tr><tr>
+		<td><input id="GearCheckBoxList_4" type="checkbox" name="GearCheckBoxList$4"><label for="GearCheckBoxList_4"><img alt="Headlamp" src="https://www.peakbagger.com/image/RouteGear/g5.gif" width="8" height="16">&nbsp;Headlamp</label></td>
+	</tr><tr>
+		<td><input id="GearCheckBoxList_5" type="checkbox" name="GearCheckBoxList$5"><label for="GearCheckBoxList_5"><img alt="Skis" src="https://www.peakbagger.com/image/RouteGear/g6.gif" width="9" height="16">&nbsp;Skis</label></td>
+	</tr><tr>
+		<td><input id="GearCheckBoxList_6" type="checkbox" name="GearCheckBoxList$6"><label for="GearCheckBoxList_6"><img alt="Poles" src="https://www.peakbagger.com/image/RouteGear/g7.gif" width="7" height="16">&nbsp;Poles</label></td>
+	</tr><tr>
+		<td><input id="GearCheckBoxList_7" type="checkbox" name="GearCheckBoxList$7"><label for="GearCheckBoxList_7"><img alt="Snowshoes" src="https://www.peakbagger.com/image/RouteGear/g8.gif" width="8" height="16">&nbsp;Snowshoes</label></td>
+	</tr><tr>
+		<td><input id="GearCheckBoxList_8" type="checkbox" name="GearCheckBoxList$8"><label for="GearCheckBoxList_8"><img alt="Oxygen" src="https://www.peakbagger.com/image/RouteGear/g9.gif" width="9" height="16">&nbsp;Oxygen</label></td>
+	</tr><tr>
+		<td><input id="GearCheckBoxList_9" type="checkbox" name="GearCheckBoxList$9"><label for="GearCheckBoxList_9"><img alt="Guide" src="https://www.peakbagger.com/image/RouteGear/g10.gif" width="11" height="16">&nbsp;Guide</label></td>
+	</tr><tr>
+		<td><input id="GearCheckBoxList_10" type="checkbox" name="GearCheckBoxList$10"><label for="GearCheckBoxList_10"><img alt="Porters" src="https://www.peakbagger.com/image/RouteGear/g11.gif" width="11" height="16">&nbsp;Porters</label></td>
+	</tr><tr>
+		<td><input id="GearCheckBoxList_11" type="checkbox" name="GearCheckBoxList$11"><label for="GearCheckBoxList_11"><img alt="Animal/Pet" src="https://www.peakbagger.com/image/RouteGear/g12.gif" width="15" height="16">&nbsp;Animal/Pet</label></td>
+	</tr><tr>
+		<td><input id="GearCheckBoxList_12" type="checkbox" name="GearCheckBoxList$12"><label for="GearCheckBoxList_12"><img alt="Hut Camp" src="https://www.peakbagger.com/image/RouteGear/g13.gif" width="11" height="16">&nbsp;Hut/Cabin</label></td>
+	</tr><tr>
+		<td><input id="GearCheckBoxList_13" type="checkbox" name="GearCheckBoxList$13"><label for="GearCheckBoxList_13"><img alt="Tent Camp" src="https://www.peakbagger.com/image/RouteGear/g14.gif" width="12" height="16">&nbsp;Tent Camp</label></td>
+	</tr><tr>
+		<td><input id="GearCheckBoxList_14" type="checkbox" name="GearCheckBoxList$14"><label for="GearCheckBoxList_14"><img alt="Bivouac" src="https://www.peakbagger.com/image/RouteGear/g15.gif" width="10" height="16">&nbsp;Bivouac</label></td>
+	</tr>
+</tbody></table></td>
+										</tr>
+									</tbody></table>
+								</td>
+							</tr>
+                            <tr>
+                                <td colspan="2" style="text-align:center">
+                                    <b>Totals for Entire Ascent:</b>&nbsp;
+                                    <span id="GainSpan"></span>
+                                </td>
+                            </tr>
+							<tr>
+								<td style="height: 58px" class="gray">
+									<strong>Grade:&nbsp;</strong>
+									<input name="GradeText" type="text" id="GradeText" style="width:131px;">
+									<p style="font-size:x-small; color:Navy">For example, Class 2, Grade IV, YDS 5.7, PD+, 
+									or anything else.</p>
+								</td>
+								<td style="height: 58px" class="gray">
+									<strong>Machine To Summit:&nbsp;</strong>
+									<select name="MachineDD" id="MachineDD" style="width:147px;">
+	<option selected="selected" value="Z"> </option>
+	<option value="4">4x4 Vehicle</option>
+	<option value="P">Airplane</option>
+	<option value="V">ATV</option>
+	<option value="K">Bicycle</option>
+	<option value="B">Boat</option>
+	<option value="U">Bus</option>
+	<option value="A">Car</option>
+	<option value="L">Carpool</option>
+	<option value="D">Dirtbike</option>
+	<option value="I">Electric Bike</option>
+	<option value="G">Hang Glider</option>
+	<option value="R">Helicopter</option>
+	<option value="2">Hi-Clearance Vehicle</option>
+	<option value="H">Hitchhiking</option>
+	<option value="M">Motorcycle</option>
+	<option value="N">Parachute</option>
+	<option value="O">Scooter</option>
+	<option value="S">Ski Lift</option>
+	<option value="W">Snowmobile</option>
+	<option value="E">Start at Home</option>
+	<option value="X">Taxicab</option>
+	<option value="T">Train</option>
+	<option value="C">Tram</option>
+
+</select>
+									<p style="font-size:x-small; color:Navy">If you attained summit on your own power, leave blank.</p>
+								</td>
+							</tr>
+							<tr>
+							    <td class="gray">
+									<b>Ascent Quality:</b>&nbsp;
+									<select name="AscentQuality" id="AscentQuality" style="width:51px;">
+	<option value="0">-</option>
+	<option value="1">1</option>
+	<option value="2">2</option>
+	<option value="3">3</option>
+	<option value="4">4</option>
+	<option value="5">5</option>
+	<option value="6">6</option>
+	<option value="7">7</option>
+	<option value="8">8</option>
+	<option value="9">9</option>
+	<option value="10">10</option>
+
+</select>
+									<p style="font-size:x-small; color:Navy">A subjective measure of a climb's quality on a scale of 1 to 10. 
+									A "10" is a challenging, high-quality ascent; a "1" is a trivial hike.</p>
+								</td>
+								<td class="gray">
+   									<strong>Machine to Trailhead:</strong>&nbsp;
+    								<select name="MachineDD2" id="MachineDD2" style="width:147px;">
+	<option value="Z"> </option>
+	<option value="4">4x4 Vehicle</option>
+	<option value="P">Airplane</option>
+	<option value="V">ATV</option>
+	<option value="K">Bicycle</option>
+	<option value="B">Boat</option>
+	<option value="U">Bus</option>
+	<option value="A">Car</option>
+	<option value="L">Carpool</option>
+	<option value="D">Dirtbike</option>
+	<option value="I">Electric Bike</option>
+	<option value="G">Hang Glider</option>
+	<option value="R">Helicopter</option>
+	<option value="2">Hi-Clearance Vehicle</option>
+	<option value="H">Hitchhiking</option>
+	<option value="M">Motorcycle</option>
+	<option value="N">Parachute</option>
+	<option value="O">Scooter</option>
+	<option value="S">Ski Lift</option>
+	<option value="W">Snowmobile</option>
+	<option value="E">Start at Home</option>
+	<option value="X">Taxicab</option>
+	<option value="T">Train</option>
+	<option value="C">Tram</option>
+
+</select>
+                                    <p style="font-size:x-small; color:Navy">The motorized transport used <b>before</b> you started walking/climbing.</p>    									
+								</td>
+							</tr>
+							<tr>
+								<td style="vertical-align:top">
+									<table class="std">
+										<tbody><tr>
+											<td><b>Weather</b></td>
+										</tr>
+										<tr>
+											<td>Precipitation</td>
+											<td><select name="PrecipDD" id="PrecipDD">
+	<option value="0">0</option>
+	<option value="1">No Precipitation</option>
+	<option value="2">Drizzle</option>
+	<option value="3">Raining</option>
+	<option value="4">Snowing</option>
+	<option value="5">Thunderstorm</option>
+
+</select></td>
+										</tr>
+										<tr>
+											<td>Temperature</td>
+											<td><select name="TempDD" id="TempDD">
+	<option value="0">0</option>
+	<option value="1">Pleasant</option>
+	<option value="2">Hot</option>
+	<option value="3">Cool</option>
+	<option value="4">Cold</option>
+	<option value="5">Frigid</option>
+
+</select></td>
+										</tr>
+										<tr>
+											<td style="HEIGHT: 6px">Wind</td>
+											<td style="HEIGHT: 6px"><select name="WindDD" id="WindDD">
+	<option value="0">0</option>
+	<option value="1">Calm</option>
+	<option value="2">Breezy</option>
+	<option value="3">Windy</option>
+	<option value="4">Very Windy</option>
+	<option value="5">Extremely Windy</option>
+
+</select></td>
+										</tr>
+										<tr>
+											<td>Visibility</td>
+											<td><select name="VisDD" id="VisDD">
+	<option value="0">0</option>
+	<option value="1">Clear</option>
+	<option value="2">Partly Cloudy</option>
+	<option value="3">Overcast</option>
+	<option value="4">Low Clouds</option>
+	<option value="5">Whiteout/Fog</option>
+
+</select></td>
+										</tr>
+										<tr><td colspan="2"><p><span style="font-size:x-small; color:Navy">Use the dropdowns to enter the weather conditions when you were at the summit.  Free-from weather comments can be added below.</span></p></td></tr>
+									</tbody></table>
+									<p>Weather Description:&nbsp;<input name="WeatherText" type="text" id="WeatherText" style="width:176px;"></p>
+								</td>
+								<td class="gray" style="vertical-align:top">
+									<b>Add Companions to Table Below</b>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span id="BuddyError" style="color:red"></span>
+                                    <table class="std">
+                                        <tbody><tr>
+                                            <td>My Buddies:</td>
+                                            <td><select name="BuddyList" id="BuddyList" style="width:208px">
+	<option value="0">--Select from Buddy List</option>
+	<option value="900101">Doe, Jan</option>
+	<option value="900102">Doe, Robin</option>
+	<option value="900103">Peak, Pat 🏔️</option>
+	<option value="900104">Summit, Sam</option>
+</select></td>
+                                            <td><select name="OT1" id="OT1"><option value="0"></option><option value="+">Went Ahead</option><option value="-">Stayed Behind</option><option value="*">Guide</option></select></td>
+                                            <td><input type="button" id="AB1" name="AB1" value="Add"></td>
+                                        </tr>
+                                        <tr>
+                                            <td>Other&nbsp;Climbers:</td>
+                                            <td><input name="OthersText" type="text" id="OthersText" placeholder="Type last name to search" style="width:200px;" autocomplete="off">
+                                                </td>
+                                            <td><select name="OT2" id="OT2"><option value="0"></option><option value="+">Went Ahead</option><option value="-">Stayed Behind</option><option value="*">Guide</option></select></td>
+                                            <td><input type="button" value="Add"></td>
+                                        </tr>
+                                    </tbody></table>
+                                    <span style="font-size:x-small; color:Navy">Other Climbers: To search for a Peakbagger.com user, enter first letters of last name and select from list.  
+                                        To add anyone else, type in any names or text, ignore the pop-up list, and click "Add" to finish.</span>
+                                    <br><br>                                    
+                                    <div id="OthersDiv" style="overflow-y:auto; height:80px; width:95%">
+                                    <table id="OthersTable" class="gray" style="width:95%">
+	<tbody><tr>
+		<td colspan="2"><b>Others In Party</b></td>
+	</tr>
+</tbody></table>
+
+                                    </div>
+
+                                    <br>
+
+                                    <input id="SoloCB" type="checkbox" name="SoloCB"><label for="SoloCB">Solo Ascent</label>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<input id="OnlyPartyCB" type="checkbox" name="OnlyPartyCB"><label for="OnlyPartyCB">Only Party on Mountain</label>
+								</td>
+								<td class="gray" style="vertical-align:top">
+									<table class="std">
+										<tbody><tr>
+											<td colspan="2"><b>Trip Info</b></td>
+										</tr>
+										<tr>
+											<td>Trip:</td>
+											<td><select name="TripDD" id="TripDD" style="width:148px;">
+	<option value="0">**Single Ascent Trip</option>
+	<option value="-1">**Add New Trip</option>
+	<option value="-2">**Update Trip Name/Nights</option>
+
+</select></td>
+										</tr>
+										<tr>
+											<td>Sequence in Trip:</td>
+											<td><input name="TripSeqText" type="text" id="TripSeqText" style="width:38px;"></td>
+										</tr>
+										<tr>
+											<td>New Trip Name:</td>
+											<td><input name="TripNameText" type="text" id="TripNameText">&nbsp;</td>
+										</tr>
+										<tr>
+											<td>New Trip Nights Out:</td>
+											<td><input name="TripNightsText" type="text" id="TripNightsText" style="width:57px;">&nbsp;</td>
+										</tr>
+									</tbody></table>
+									<p style="font-size:x-small; color:Navy">A "Trip" is a group of "Ascents" with no motorized travel between them, such as a 
+									traverse hike of a range where several peaks are climbed.</p>
+								</td>
+							</tr>
+							<tr>
+								<td class="gray">
+									<p style="text-align:center">
+									    <input type="submit" name="SaveButton2" value="Save Ascent" id="SaveButton2" style="width:120px;"><br>
+										<br>
+										<input type="submit" name="CancelButton2" value="Cancel" id="CancelButton2" style="width:120px;"><br>
+										</p>
+								</td>
+     							<td colspan="2" rowspan="3" class="gray">
+    							    <table class="std">
+    							        <tbody><tr>
+    							            <td colspan="2">
+               							        <b>GPS Track:</b>&nbsp;&nbsp;<input type="file" name="GPXUpload" id="GPXUpload" style="width:319px;">&nbsp;&nbsp;
+										        <span id="GPXUploadValidator" style="color:Red;visibility:hidden;">Only GPX Files can be uploaded!</span>                                        
+               							    </td>
+               							</tr>
+               							<tr>
+               							    <td width="35%">               							    
+										        <p>
+										        <input type="submit" name="GPXPreview" value="Preview" id="GPXPreview">&nbsp;&nbsp;&nbsp;
+										        <input type="submit" name="GPXRemove" value="Remove" id="GPXRemove">
+										        <br>
+                                                <span id="GPXStatusLabel" style="font-weight:normal;">No GPS Data for this Ascent</span></p>
+                                                
+                                                <p><span style="color: Navy">You can upload a GPX file that shows your ascent route.</span></p>
+                                                <ul>
+                                                <li><span style="color: Navy">Select a file, then click the preview button to make sure the file shows what you expect.</span></li>
+                                                <li><span style="color: Navy">If the preview map looks good, then your tracks and waypoints will automatically be saved with your ascent.</span></li>
+                                                <li><span style="color: Navy">There is a limit of 3000 total points per file, so GPX files over that limit must be subset.  There are other restrictions, too--see the help link below for more info.</span></li>
+                                                <li><span style="color: Navy"><a href="https://www.peakbagger.com/Help/HelpGPS.aspx" target="_blank">Click here for help on GPS data upload.</a></span></li>
+                                                </ul>
+                                            </td>
+                                            <td width="65%" class="gray">
+                                                <span id="GPXMapLabel"><table class="gray" width="350px" height="350px" align="center" style="background-color:LightGrey"><tbody><tr><td>&nbsp;</td></tr></tbody></table></span>
+                                            </td>
+                                        </tr>
+                                    </tbody></table>
+	    						</td>
+							</tr>
+							<tr>
+							    <td class="gray">
+        							<p><b>Data Privacy</b><br><br><input id="ShowCheckBox" type="checkbox" name="ShowCheckBox"><label for="ShowCheckBox">Hide this Ascent</label></p>
+									<p style="font-size:x-small; color:Navy">Hide this ascent from the public--only you, and 'buddies' you select, will be able to see this ascent. <a href="https://www.peakbagger.com/Help/HelpPrivacy.aspx">More Info Here</a></p>
+							    </td>
+							</tr>
+							<tr>
+								<td align="center" class="gray">
+        							<p>Wilderness Nights out on Single Ascent Trip:&nbsp;
+                                        <select name="AscentNightsDD" id="AscentNightsDD">
+	<option selected="selected" value="0">0</option>
+	<option value="1">1</option>
+	<option value="2">2</option>
+	<option value="3">3</option>
+	<option value="4">4</option>
+	<option value="5">5</option>
+	<option value="6">6</option>
+	<option value="7">7</option>
+	<option value="8">8</option>
+	<option value="9">9</option>
+	<option value="10">10</option>
+	<option value="11">11</option>
+	<option value="12">12</option>
+	<option value="13">13</option>
+	<option value="14">14</option>
+	<option value="15">15</option>
+	<option value="16">16</option>
+	<option value="17">17</option>
+	<option value="18">18</option>
+	<option value="19">19</option>
+	<option value="20">20</option>
+	<option value="21">21</option>
+	<option value="22">22</option>
+	<option value="23">23</option>
+	<option value="24">24</option>
+	<option value="25">25</option>
+	<option value="26">26</option>
+	<option value="27">27</option>
+	<option value="28">28</option>
+	<option value="29">29</option>
+	<option value="30">30</option>
+	<option value="31">31</option>
+	<option value="32">32</option>
+	<option value="33">33</option>
+	<option value="34">34</option>
+	<option value="35">35</option>
+	<option value="36">36</option>
+	<option value="37">37</option>
+	<option value="38">38</option>
+	<option value="39">39</option>
+	<option value="40">40</option>
+	<option value="41">41</option>
+	<option value="42">42</option>
+	<option value="43">43</option>
+	<option value="44">44</option>
+	<option value="45">45</option>
+	<option value="46">46</option>
+	<option value="47">47</option>
+	<option value="48">48</option>
+	<option value="49">49</option>
+	<option value="50">50</option>
+	<option value="51">51</option>
+	<option value="52">52</option>
+	<option value="53">53</option>
+	<option value="54">54</option>
+	<option value="55">55</option>
+	<option value="56">56</option>
+	<option value="57">57</option>
+	<option value="58">58</option>
+	<option value="59">59</option>
+	<option value="60">60</option>
+	<option value="61">61</option>
+	<option value="62">62</option>
+	<option value="63">63</option>
+	<option value="64">64</option>
+	<option value="65">65</option>
+	<option value="66">66</option>
+	<option value="67">67</option>
+	<option value="68">68</option>
+	<option value="69">69</option>
+	<option value="70">70</option>
+	<option value="71">71</option>
+	<option value="72">72</option>
+	<option value="73">73</option>
+	<option value="74">74</option>
+	<option value="75">75</option>
+	<option value="76">76</option>
+	<option value="77">77</option>
+	<option value="78">78</option>
+	<option value="79">79</option>
+	<option value="80">80</option>
+	<option value="81">81</option>
+	<option value="82">82</option>
+	<option value="83">83</option>
+	<option value="84">84</option>
+	<option value="85">85</option>
+	<option value="86">86</option>
+	<option value="87">87</option>
+	<option value="88">88</option>
+	<option value="89">89</option>
+	<option value="90">90</option>
+	<option value="91">91</option>
+	<option value="92">92</option>
+	<option value="93">93</option>
+	<option value="94">94</option>
+	<option value="95">95</option>
+	<option value="96">96</option>
+	<option value="97">97</option>
+	<option value="98">98</option>
+	<option value="99">99</option>
+	<option value="100">100</option>
+
+</select> 
+                                         </p>
+									<p style="font-size:x-small; color:Navy">
+                                        If a single ascent took more than a day, you can optionally enter the number of nights you camped out here.<br>
+                                        Additionally, if you enter a number above, a grid of day-by-day statistics will appear below.  
+                                        You then have the option of entering as much data as you want about each day of your ascent.  
+									</p>
+								</td>
+							</tr>
+                            <tr>
+                                <td colspan="3">
+                                    
+                                    
+                                        
+                                    
+                                </td>
+                            </tr>
+						</tbody></table>
+
+						
+                        
+                        
+                        
+                        <span id="FromDateStore"></span>
+                        <span id="ToDateStore"></span>
+                        
+                        
+                        
+                        
+                        
+                        
+						<br clear="left">
+<br clear="right">
+<hr>
+<address>
+    <table class="std" style="width:100%">
+        <tbody><tr>
+            <td style="text-align:left" width="33%">
+                Copyright © 1987-2026 by Peakbagger.com. All Rights Reserved.
+            </td>
+            <td style="text-align:center" width="34%">
+                Questions/Comments/Corrections?  See the <a href="https://www.peakbagger.com/contact.aspx">Contact Page</a>
+            </td>
+            <td style="text-align:right" width="33%">
+                <a href="https://www.peakbagger.com/help/TermsOfService.aspx">Terms of Service/Privacy Policy</a>
+            </td>
+        </tr>
+    </tbody></table>
+</address>
+</td>
+
+					
+				</tr>
+			</tbody></table>
+		
+
+
+
+
+
+
+</form>
+	<iframe height="1" width="1" style="position: absolute; top: 0px; left: 0px; border-width: medium; border-style: none; border-color: currentcolor; border-image: none; visibility: hidden;"></iframe>
+
+
+<ul id="OthersText_AutoCompleteExtender_completionListElem" style="text-align: left; visibility: hidden; cursor: default; list-style: none; padding: 0px; border: 1px solid gray; background-color: white; color: black; position: absolute;"></ul></body></html>

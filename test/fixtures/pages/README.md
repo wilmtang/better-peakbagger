@@ -38,6 +38,7 @@ MHTML `cid:` stylesheet leftovers are dropped.
 | `peak-garibaldi.html` | `peak.aspx?pid=875` (Mount Garibaldi) | A second peak home page, for cross-checking site chrome across peaks. |
 | `climber-home.html` | `climber.aspx?cid=…` (personal home page) | A climber's personal home/stats page, fully genericized. |
 | `climber-ascents.html` | `ClimbListC.aspx?cid=…` (personal ascent list) | A climber's own ascent list (`ClimbListC.aspx`), fully genericized (peaks → `Sample Peak N`, dates → `2020-01-01`, etc.). |
+| `climber-ascentedit.html` | `climber/ascentedit.aspx?cid=…` (Ascent Editor, new-ascent form) | The signed-in **ascent add/edit form**: `Form1` with the `JournalText` trip-report textarea plus its square-bracket hints row, `URLTB`, save/cancel buttons, GPX upload block, and dropdowns. Grounds the trip-report editor. Additional masking: the personal **BuddyList** (real names + climber ids of third parties) is replaced by four generic `Doe/Peak/Summit` entries, and the `jsDatePick_ltr.min.css` link is dropped for self-containment. The calendar tables are frozen at the July 2026 capture date. |
 
 ## Structural notes (shared site chrome)
 
