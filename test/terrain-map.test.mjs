@@ -1109,10 +1109,15 @@ test('3D peak dots snap uphill to the local DEM summit, and only to a genuine on
         bounds: { south: 48.6, north: 48.86, west: -121.95, east: -121.66 }
     };
 
-    // Synthetic terrain in meters around three feed coordinates:
-    // - a cone whose apex sits ~40 m northeast of Cone Peak's database point,
+    // Synthetic terrain in meters around four feed coordinates:
+    // - a 45° cone whose apex sits ~40 m northeast of Cone Peak's database
+    //   point — the realistic smoothed-DEM envelope, whose gain must stay
+    //   under the rise leash even for the zoom-15 re-climb (~71 m),
     // - a relentless eastward ramp under Ramp Peak (no summit within reach),
-    // - nothing (elevation 0, MapLibre's "tile not loaded") under Void Peak.
+    // - nothing (elevation 0, MapLibre's "tile not loaded") under Void Peak,
+    // - a 79° tower wall ~280 m above Flank Peak's database point, with its
+    //   own genuine apex inside the horizontal leash (a taller neighbor, not
+    //   a plausible coordinate correction).
     const METERS_PER_DEG_LAT = 111320;
     const metersBetween = (a, b) => Math.hypot(
         (a[0] - b[0]) * METERS_PER_DEG_LAT * Math.cos(b[1] * Math.PI / 180),
@@ -1126,19 +1131,24 @@ test('3D peak dots snap uphill to the local DEM summit, and only to a genuine on
     let coneApex = apexOffsetM(28);
     const rampPeakFeed = [-121.82, 48.74];
     const voidPeakFeed = [-121.83, 48.75];
+    const flankPeakFeed = [-121.84, 48.76];
+    const towerApex = apexOffsetM(40, flankPeakFeed);
     let voidPeakElevation = 0;
     let coneReadable = true;
     let elevationQueries = 0;
     const elevationOf = ([lng, lat]) => {
         elevationQueries += 1;
         if (coneReadable && metersBetween([lng, lat], conePeakFeed) < 500) {
-            return 3000 - 2 * metersBetween([lng, lat], coneApex);
+            return 3000 - metersBetween([lng, lat], coneApex);
         }
         if (metersBetween([lng, lat], rampPeakFeed) < 500) {
             return 1000 + 10 * (lng - rampPeakFeed[0]) * METERS_PER_DEG_LAT * Math.cos(lat * Math.PI / 180);
         }
         if (metersBetween([lng, lat], voidPeakFeed) < 500 && voidPeakElevation > 0) {
             return voidPeakElevation - 2 * metersBetween([lng, lat], apexOffsetM(20, voidPeakFeed));
+        }
+        if (metersBetween([lng, lat], flankPeakFeed) < 500) {
+            return Math.max(0, 2600 - 5 * metersBetween([lng, lat], towerApex));
         }
         return 0;
     };
@@ -1213,14 +1223,15 @@ test('3D peak dots snap uphill to the local DEM summit, and only to a genuine on
         peaks: [
             { id: 1, name: 'Cone Peak', lat: conePeakFeed[1], lon: conePeakFeed[0], state: 'climbed' },
             { id: 2, name: 'Ramp Peak', lat: rampPeakFeed[1], lon: rampPeakFeed[0], state: 'unclimbed' },
-            { id: 3, name: 'Void Peak', lat: voidPeakFeed[1], lon: voidPeakFeed[0], state: 'climbed' }
+            { id: 3, name: 'Void Peak', lat: voidPeakFeed[1], lon: voidPeakFeed[0], state: 'climbed' },
+            { id: 4, name: 'Flank Peak', lat: flankPeakFeed[1], lon: flankPeakFeed[0], state: 'unclimbed' }
         ]
     });
     const rendered = () => JSON.parse(JSON.stringify(maps[0].getSource('bpb-peaks').data.features));
 
     sendBatch();
     let features = rendered();
-    assert.equal(features.length, 3);
+    assert.equal(features.length, 4);
     const firstSnap = features[0].geometry.coordinates;
     assert.ok(metersBetween(firstSnap, coneApex) < 5,
         `a dot near a local summit snaps onto it (landed ${metersBetween(firstSnap, coneApex).toFixed(1)} m away)`);
@@ -1230,6 +1241,8 @@ test('3D peak dots snap uphill to the local DEM summit, and only to a genuine on
         'a dot on ground that keeps rising past the leash keeps the feed coordinates — that is a neighboring slope, not its summit');
     assert.deepEqual(features[2].geometry.coordinates, voidPeakFeed,
         'a dot whose DEM reads 0 (tile not loaded / the sea) keeps the feed coordinates');
+    assert.deepEqual(features[3].geometry.coordinates, flankPeakFeed,
+        'a climb gaining more than the rise leash summited a taller neighbor inside the horizontal leash — the dot keeps the feed coordinates');
 
     // Simulate a tilt changing the loaded DEM resolution without changing the
     // zoom. A cached verdict must hold: the dot must not wander between

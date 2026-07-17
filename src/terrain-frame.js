@@ -80,9 +80,15 @@
         // the DEM's rendered apex, which a pitched camera turns into a ring
         // sitting visibly downslope. Each dot is walked uphill on the rendered
         // terrain to the nearest local summit — but never further than the
-        // leash, and never onto ground that keeps rising past it (that is a
-        // neighboring, bigger mountain, not this dot's summit).
-        snap: { leashM: 100, strideM: 24, finestStrideM: 3 }
+        // leash, never onto ground that keeps rising past it (that is a
+        // neighboring, bigger mountain, not this dot's summit), and never up
+        // more than the rise leash: matching the horizontal leash, 100 m of
+        // gain exceeds any plausible coordinate error times any plausible
+        // smoothed-DEM slope, so such a "summit" is a taller neighbor whose
+        // own apex sits inside the horizontal leash, or a DEM artifact. The
+        // feed carries no peak elevation, so gain above the feed point's own
+        // terrain is the only vertical reference available.
+        snap: { leashM: 100, riseM: 100, strideM: 24, finestStrideM: 3 }
     };
 
     // The eight compass directions a snap step can move in.
@@ -809,6 +815,9 @@
     // - A resting point must be a genuine local maximum: if the ground keeps
     //   rising in some direction just past it (a leash-length slope), the dot
     //   is on a neighboring, bigger mountain's flank — not its own summit.
+    // - The climb may not gain more than snap.riseM: within one leash, that
+    //   much height is a taller neighboring feature's own summit (or a DEM
+    //   spike), never a plausible correction of the feed coordinate.
     //
     // A verdict is cached per peak and reused until the camera crosses into a
     // higher integer zoom level. queryTerrainElevation reads whatever terrain
@@ -823,7 +832,7 @@
     // retries on the next batch (see docs/3d-peak-markers.md, "Known
     // limitations").
     const climbToLocalSummit = feature => {
-        const { leashM, strideM, finestStrideM } = PEAK_MARKERS.snap;
+        const { leashM, riseM, strideM, finestStrideM } = PEAK_MARKERS.snap;
         const [feedLon, feedLat] = feature.geometry.coordinates;
         const metersPerDegreeLat = 111320;
         const metersPerDegreeLon = metersPerDegreeLat * Math.cos(feedLat * Math.PI / 180);
@@ -840,6 +849,7 @@
             Math.hypot((lon - feedLon) * metersPerDegreeLon, (lat - feedLat) * metersPerDegreeLat);
         let best = elevationAt(feedLon, feedLat);
         if (!(best > 0)) return null;
+        const startElevation = best;
         let lon = feedLon;
         let lat = feedLat;
         for (let stride = strideM; stride >= finestStrideM; stride /= 2) {
@@ -859,6 +869,10 @@
                 }
             }
         }
+        // Gaining more than the rise leash means the walk summited a taller
+        // neighboring feature inside the horizontal leash, or a DEM spike —
+        // a few dozen meters of database error never buys this much height.
+        if (best - startElevation > riseM) return { lon: feedLon, lat: feedLat };
         if (lon !== feedLon || lat !== feedLat) {
             for (const [east, north] of COMPASS_STEPS) {
                 const beyondLon = lon + east * finestStrideM / metersPerDegreeLon;

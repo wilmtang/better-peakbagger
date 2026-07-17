@@ -135,6 +135,13 @@ keep the constant-size + shared-spec invariant either way.
 
 ## Known limitations
 
+A convenient real-world test case for items 0 and 1 is
+[Silver Tooth, WA](https://www.peakbagger.com/peak.aspx?pid=36344): a
+serrated ridge of tightly clustered spires whose knife-edge relief makes
+DEM zoom levels disagree hard about every apex. Its Peak-page 3D view is
+where the marker-motion reports came from that led to the held-verdict
+behavior and the rise leash below.
+
 0. **A dot's height is never computed here — and its position is snapped to
    the rendered summit.** The feed's features carry only lat/lon; MapLibre
    elevates each billboard in the circle shader (`get_elevation`) by
@@ -153,7 +160,18 @@ keep the constant-size + shared-spec invariant either way.
    (MapLibre reports 0 for an unloaded DEM tile, indistinguishable from the
    sea) never climbs, and a resting point that the ground keeps rising past
    is a neighboring, bigger mountain's flank — not this dot's summit — so
-   it is rejected. Two dots within one leash of the same apex can stack;
+   it is rejected. The leash is two-dimensional: horizontal
+   (`snap.leashM`, 100 m from the feed coordinate) and vertical
+   (`snap.riseM`, 100 m of gain above the feed point's own terrain — the
+   feed carries no peak elevation, so that is the only vertical reference
+   there is). The vertical leash closes the case the keeps-rising guard
+   cannot see: a taller neighboring spire whose own genuine apex sits
+   *inside* the horizontal leash. The monotone-uphill walk can never cross
+   a col, but a feed coordinate landing on such a neighbor's flank would
+   legitimately summit it — and no plausible coordinate error times any
+   plausible smoothed-DEM slope gains 100 m, so that climb (or a DEM
+   spike) is rejected to the feed coordinates instead. Two dots within
+   one leash of the same apex can still stack at similar heights;
    the nearest-center hit test still separates their clicks. The popup
    anchors at the snapped point; the link and name are untouched data.
    Verdicts are cached per peak (bounded, least-recently-used, cleared with
@@ -214,7 +232,9 @@ keep the constant-size + shared-spec invariant either way.
   wins, hover cursor set and restored, constant `circle-pitch-scale`
   pinned, and no layer-scoped handlers ever registered); summit snapping
   (a dot near a synthetic cone's apex lands on it, a dot on a relentless
-  ramp and a dot on unreadable DEM both keep the feed coordinates, a
+  ramp and a dot on unreadable DEM both keep the feed coordinates, a dot
+  whose climb gains more than the rise leash — a taller neighbor's own
+  apex inside the horizontal leash — keeps the feed coordinates, a
   changed DEM at an unchanged zoom neither moves a dot nor re-climbs,
   zooming in re-opens the verdict, a zoom-in that outruns the DEM stream
   holds the last verdict instead of hopping to the feed coordinates and

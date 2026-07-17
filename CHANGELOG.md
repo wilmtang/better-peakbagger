@@ -17,8 +17,9 @@
   on the flat 2D map, but glaring downslope once the 3D camera tilts. Each
   dot now walks uphill on the rendered terrain to the nearby local summit,
   and stays exactly at Peakbagger's coordinates whenever no genuine summit
-  is within reach (so a dot never migrates onto a neighboring, bigger
-  mountain). A dot's position is remembered between camera settles:
+  is within reach — the walk is leashed both horizontally and vertically,
+  so a dot never migrates onto a neighboring, bigger mountain, not even
+  one whose own summit is close enough to reach. A dot's position is remembered between camera settles:
   tilting or panning never moves it (it used to wander on sharp ridges as
   the terrain detail level changed with the view), and crossing into a
   higher zoom level is the only time a finer terrain sample may refine it —
