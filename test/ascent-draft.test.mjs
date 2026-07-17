@@ -16,6 +16,7 @@ const formHtml = `<!doctype html><body><form>
   <select id="TripDD"><option value="existing">Existing Trip</option><option value="new">**Add New Trip</option></select>
   <input id="TripSeqText"><input id="TripNameText"><input id="TripNightsText">
   <select id="AscentNightsDD">${Array.from({ length: 101 }, (_, value) => `<option value="${value}">${value}</option>`).join('')}</select>
+  <span id="GPXStatusLabel">No GPS Data for this Ascent</span>
   <button id="GPXPreview" type="button">Preview</button><button id="SaveButton" type="button">Save</button>
 </form></body>`;
 
@@ -26,18 +27,21 @@ const waitForCondition = async condition => {
     }
 };
 
-const loadDraft = responseFactory => {
+const loadDraft = (responseFactory, { statusText = 'No GPS Data for this Ascent' } = {}) => {
     const dom = new JSDOM(formHtml, {
         url: 'https://peakbagger.com/climber/ascentedit.aspx?pid=12&cid=34',
         runScripts: 'outside-only'
     });
     const messages = [];
+    const runtimeListeners = [];
+    dom.window.document.getElementById('GPXStatusLabel').textContent = statusText;
     dom.window.chrome = {
         runtime: {
             sendMessage: async message => {
                 messages.push(message);
                 return responseFactory(message);
-            }
+            },
+            onMessage: { addListener: listener => runtimeListeners.push(listener) }
         }
     };
     class DataTransferMock {
@@ -51,7 +55,8 @@ const loadDraft = responseFactory => {
         value: [], writable: true, configurable: true
     });
     dom.window.eval(source);
-    return { dom, messages };
+    const dispatchRuntimeMessage = message => runtimeListeners.forEach(listener => listener(message));
+    return { dom, messages, dispatchRuntimeMessage };
 };
 
 test('fills the expected fields, attaches reduced GPX with elevation and time, previews once, and never saves', async () => {
@@ -138,12 +143,17 @@ test('fills single-ascent wilderness nights without firing Peakbagger’s AutoPo
 });
 
 test('a post-preview reload shows a dismissible, short-lived confidence toast without another submission', async () => {
-    const { dom, messages } = loadDraft(() => ({ action: 'banner', classification: 'probable', confidence: 71 }));
+    const { dom, messages } = loadDraft(
+        () => ({ action: 'banner', classification: 'probable', confidence: 71 }),
+        { statusText: 'Your file is now successfully uploaded.' });
     let previewClicks = 0;
     dom.window.document.getElementById('GPXPreview').addEventListener('click', () => { previewClicks++; });
     await waitForAsync();
     assert.equal(previewClicks, 0);
     assert.equal(messages.length, 1);
+    assert.deepEqual({ ...messages[0].previewResult }, {
+        state: 'success', message: 'Your file is now successfully uploaded.'
+    });
     const banner = dom.window.document.getElementById('bpb-draft-banner');
     assert.match(banner.textContent, /Probable match · 71% confidence/);
     assert.match(banner.textContent, /Preview is ready/);
@@ -153,6 +163,73 @@ test('a post-preview reload shows a dismissible, short-lived confidence toast wi
     assert.ok(dismiss);
     dismiss.click();
     assert.equal(dom.window.document.getElementById('bpb-draft-banner'), null);
+    dom.window.close();
+});
+
+test('a rejected Preview reports Peakbagger’s error and retries only after the user asks', async () => {
+    let readyCalls = 0;
+    let previewClicks = 0;
+    const payload = {
+        action: 'apply', jobId: 'job', pid: '12', cid: '34', classification: 'strong', confidence: 91,
+        fields: {
+            date: '2026-07-01', suffix: '', startElevationM: 1000, endElevationM: 900,
+            upDistanceM: 5000, downDistanceM: 6000, upGainM: 1200, downGainM: 80,
+            upDuration: { days: 0, hours: 2, minutes: 5 },
+            downDuration: { days: 0, hours: 1, minutes: 55 }
+        },
+        gpx: '<gpx><trk><trkseg><trkpt lat="47" lon="-121"><ele>1000</ele><time>2026-07-01T15:45:00Z</time></trkpt></trkseg></trk></gpx>'
+    };
+    const { dom, messages } = loadDraft(message => {
+        if (message.type !== 'DRAFT_READY') return { ok: true };
+        readyCalls++;
+        return readyCalls === 1
+            ? { action: 'preview-error', message: 'Peakbagger rejected GPS Preview: Invalid GPX file. The GPX and draft were kept.' }
+            : payload;
+    }, { statusText: 'Invalid GPX file.' });
+    dom.window.document.getElementById('GPXPreview').addEventListener('click', () => { previewClicks++; });
+    await waitForCondition(() => dom.window.document.getElementById('bpb-draft-banner'));
+
+    assert.deepEqual({ ...messages[0].previewResult }, { state: 'error', message: 'Invalid GPX file.' });
+    assert.equal(previewClicks, 0);
+    const retry = [...dom.window.document.querySelectorAll('#bpb-draft-banner button')]
+        .find(button => button.textContent === 'Retry GPS Preview');
+    assert.ok(retry);
+    retry.click();
+    await waitForCondition(() => previewClicks === 1);
+    assert.deepEqual(messages.map(message => message.type),
+        ['DRAFT_READY', 'DRAFT_READY', 'DRAFT_PREVIEW_STARTED']);
+    assert.equal(previewClicks, 1);
+    dom.window.close();
+});
+
+test('a queued draft waits persistently and starts when the background releases it', async () => {
+    let readyCalls = 0;
+    let previewClicks = 0;
+    const payload = {
+        action: 'apply', jobId: 'job', pid: '12', cid: '34', classification: 'probable', confidence: 71,
+        fields: {
+            date: '2026-07-01', suffix: 'b', startElevationM: 1000, endElevationM: 900,
+            upDistanceM: 5000, downDistanceM: 6000, upGainM: 1200, downGainM: 80,
+            upDuration: { days: 0, hours: 2, minutes: 5 },
+            downDuration: { days: 0, hours: 1, minutes: 55 }
+        },
+        gpx: '<gpx><trk><trkseg><trkpt lat="47" lon="-121"></trkpt></trkseg></trk></gpx>'
+    };
+    const { dom, dispatchRuntimeMessage } = loadDraft(message => {
+        if (message.type !== 'DRAFT_READY') return { ok: true };
+        readyCalls++;
+        return readyCalls === 1
+            ? { action: 'wait', message: 'Waiting for the previous GPS Preview to finish.' }
+            : payload;
+    });
+    dom.window.document.getElementById('GPXPreview').addEventListener('click', () => { previewClicks++; });
+    await waitForCondition(() => /Waiting/.test(dom.window.document.getElementById('bpb-draft-banner')?.textContent || ''));
+    assert.equal(dom.window.document.getElementById('bpb-draft-banner').dataset.autoDismissMs, undefined);
+
+    dispatchRuntimeMessage({ type: 'DRAFT_PROCEED' });
+    await waitForCondition(() => previewClicks === 1);
+    assert.equal(readyCalls, 2);
+    assert.equal(previewClicks, 1);
     dom.window.close();
 });
 

@@ -1,8 +1,8 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
-// Fills a prepared Peakbagger ascent editor and submits Preview exactly once.
-// Final Save remains a deliberate user action.
+// Fills a prepared Peakbagger ascent editor and submits each acknowledged
+// Preview once. A failed Preview can be retried explicitly; Save stays manual.
 
 (() => {
     'use strict';
@@ -20,7 +20,8 @@
         return { pid: params.get('pid'), cid: params.get('cid') };
     };
 
-    const showBanner = (kind, message) => {
+    const showBanner = (kind, message, options = {}) => {
+        const { actionLabel = '', onAction = null, persistent = false } = options;
         const existing = document.getElementById(BANNER_ID);
         if (existing) existing.remove();
         const banner = document.createElement('div');
@@ -30,6 +31,7 @@
         const colors = {
             strong: ['#067647', '#ecfdf3', '#a6f4c5'],
             probable: ['#93370d', '#fffaeb', '#fedf89'],
+            waiting: ['#175cd3', '#eff8ff', '#b2ddff'],
             error: ['#b42318', '#fef3f2', '#fecdca']
         };
         const [color, background, border] = colors[kind] || colors.probable;
@@ -99,9 +101,38 @@
         dismissButton.addEventListener('focus', () => { dismissButton.style.outlineColor = color; });
         dismissButton.addEventListener('blur', () => { dismissButton.style.outlineColor = 'transparent'; });
         dismissButton.addEventListener('click', () => dismiss(true));
-        banner.append(text, dismissButton);
+        banner.append(text);
+        if (actionLabel && typeof onAction === 'function') {
+            const actionButton = document.createElement('button');
+            actionButton.type = 'button';
+            actionButton.textContent = actionLabel;
+            Object.assign(actionButton.style, {
+                all: 'initial',
+                flex: '0 0 auto',
+                boxSizing: 'border-box',
+                padding: '4px 8px',
+                color,
+                background: '#fff',
+                border: `1px solid ${border}`,
+                borderRadius: '6px',
+                font: '600 12px/1.4 system-ui, sans-serif',
+                whiteSpace: 'nowrap',
+                cursor: 'pointer',
+                outline: '2px solid transparent',
+                outlineOffset: '1px'
+            });
+            actionButton.addEventListener('focus', () => { actionButton.style.outlineColor = color; });
+            actionButton.addEventListener('blur', () => { actionButton.style.outlineColor = 'transparent'; });
+            actionButton.addEventListener('click', () => {
+                actionButton.disabled = true;
+                dismiss(true);
+                void Promise.resolve().then(onAction);
+            });
+            banner.append(actionButton);
+        }
+        banner.append(dismissButton);
         (document.body || document.documentElement).prepend(banner);
-        if (kind !== 'error') {
+        if (kind !== 'error' && !persistent) {
             banner.dataset.autoDismissMs = String(BANNER_DISMISS_MS);
             dismissTimer = globalThis.setTimeout(() => dismiss(false), BANNER_DISMISS_MS);
         }
@@ -157,6 +188,19 @@
         && document.getElementById('GPXPreview')
         && (document.getElementById('StartFt') || document.getElementById('StartM'))
     );
+
+    const readPreviewResult = () => {
+        const message = (document.getElementById('GPXStatusLabel')?.textContent || '')
+            .replace(/\s+/g, ' ').trim().slice(0, 200);
+        if (!message) return { state: 'unknown', message: '' };
+        if (/\b(?:no gps data|invalid|error|failed|failure|rejected|could not|unable|too many|only gpx)\b/i.test(message)) {
+            return { state: 'error', message };
+        }
+        if (/\b(?:success|successful|successfully|accepted|uploaded|preview is ready)\b/i.test(message)) {
+            return { state: 'success', message };
+        }
+        return { state: 'unknown', message };
+    };
 
     const fillForm = async fields => {
         if (!formIsReady()) throw new Error('Peakbagger’s ascent form has changed or did not load completely.');
@@ -281,11 +325,15 @@
         preview.click();
     };
 
-    const initialize = async () => {
+    const runInitialize = async () => {
         const ids = pageIds();
         if (!ids.pid || !ids.cid) return;
         try {
-            const response = await ext.runtime.sendMessage({ type: 'DRAFT_READY', ...ids });
+            const response = await ext.runtime.sendMessage({
+                type: 'DRAFT_READY',
+                ...ids,
+                previewResult: readPreviewResult()
+            });
             if (response?.action === 'ignore') return;
             if (!response || response.action === 'error') {
                 showBanner('error', response?.message || 'This ascent draft could not be prepared.');
@@ -297,11 +345,34 @@
                     `${label} match · ${response.confidence}% confidence. Preview is ready—review Peakbagger’s result before saving.`);
                 return;
             }
+            if (response.action === 'wait') {
+                showBanner('waiting', response.message || 'Waiting for the previous GPS Preview to finish.', {
+                    persistent: true
+                });
+                return;
+            }
+            if (response.action === 'preview-error') {
+                showBanner('error', response.message || 'Peakbagger did not accept GPS Preview. The draft was kept.', {
+                    actionLabel: 'Retry GPS Preview',
+                    onAction: () => initialize()
+                });
+                return;
+            }
             if (response.action === 'apply') await applyAndPreview(response);
         } catch (error) {
             showBanner('error', `Draft preparation stopped: ${error.message}`);
         }
     };
+
+    let initializationQueue = Promise.resolve();
+    const initialize = () => {
+        initializationQueue = initializationQueue.then(runInitialize, runInitialize);
+        return initializationQueue;
+    };
+
+    ext.runtime.onMessage?.addListener(message => {
+        if (message?.type === 'DRAFT_PROCEED') void initialize();
+    });
 
     void initialize();
 })();

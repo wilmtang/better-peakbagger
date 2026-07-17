@@ -439,6 +439,7 @@ if (typeof importScripts === 'function') {
                     nightsOut: Number.isInteger(job.nightsOut) ? job.nightsOut : null
                 } : null,
                 wildernessNightsOut: useWildernessNights ? job.nightsOut : null,
+                previewOrder: index,
                 previewStarted: false,
                 complete: false,
                 focusOnReady: index === 0,
@@ -467,6 +468,31 @@ if (typeof importScripts === 'function') {
     const validateDraftPage = (draft, message) => String(draft.pid) === String(message.pid)
         && String(draft.cid) === String(message.cid);
 
+    const draftOrder = draft => Number.isInteger(draft.previewOrder) ? draft.previewOrder : Number(draft.tabId);
+    const compareDraftOrder = (left, right) => draftOrder(left) - draftOrder(right);
+    const orderedDrafts = (drafts, jobId) => Object.values(drafts)
+        .filter(candidate => candidate.jobId === jobId)
+        .sort(compareDraftOrder);
+    const firstPendingDraft = (drafts, jobId) => orderedDrafts(drafts, jobId)
+        .find(candidate => !candidate.complete) || null;
+
+    const notifyDraftToProceed = async draft => {
+        if (!draft || !ext.tabs.sendMessage) return;
+        try {
+            await ext.tabs.sendMessage(draft.tabId, { type: 'DRAFT_PROCEED' });
+        } catch (_error) {
+            // A tab still loading will run its own ready handshake shortly.
+        }
+    };
+
+    const normalizedPreviewResult = value => {
+        const state = value?.state === 'success' || value?.state === 'error' ? value.state : 'unknown';
+        const message = typeof value?.message === 'string'
+            ? value.message.replace(/\s+/g, ' ').trim().slice(0, 200)
+            : '';
+        return { state, message };
+    };
+
     const draftReady = async (message, sender) => {
         const tabId = sender.tab?.id;
         if (!Number.isInteger(tabId)) return { action: 'error', message: 'Draft tab identity is unavailable.' };
@@ -482,16 +508,41 @@ if (typeof importScripts === 'function') {
         const match = job.matches.find(candidate => candidate.id === draft.pid);
         if (!match) return { action: 'error', message: 'The selected peak is no longer available.' };
 
+        if (draft.complete) {
+            return { action: 'banner', classification: draft.classification, confidence: draft.confidence };
+        }
+
         if (draft.previewStarted) {
+            const result = normalizedPreviewResult(message.previewResult);
+            if (result.state !== 'success') {
+                await mutateMap(DRAFTS_KEY, map => {
+                    if (!map[tabId]) return;
+                    map[tabId].previewStarted = false;
+                    map[tabId].previewError = result.message || 'Peakbagger returned no success confirmation.';
+                });
+                const explanation = result.state === 'error' && result.message
+                    ? `Peakbagger rejected GPS Preview: ${result.message}`
+                    : 'Peakbagger did not confirm that GPS Preview succeeded.';
+                return {
+                    action: 'preview-error',
+                    message: `${explanation} The GPX and draft were kept.`
+                };
+            }
             await mutateMap(DRAFTS_KEY, map => {
-                if (map[tabId]) map[tabId].complete = true;
+                if (!map[tabId]) return;
+                map[tabId].complete = true;
+                map[tabId].previewError = null;
             });
             const currentDrafts = await readMap(DRAFTS_KEY);
-            const allComplete = Object.values(currentDrafts)
-                .filter(candidate => candidate.jobId === draft.jobId)
-                .every(candidate => candidate.complete);
-            if (allComplete) await updateJob(draft.sourceTabId, { phase: 'previewed', uploadGpx: null });
+            const nextDraft = firstPendingDraft(currentDrafts, draft.jobId);
+            if (nextDraft) await notifyDraftToProceed(nextDraft);
+            else await updateJob(draft.sourceTabId, { phase: 'previewed', uploadGpx: null });
             return { action: 'banner', classification: draft.classification, confidence: draft.confidence };
+        }
+
+        const currentDraft = firstPendingDraft(drafts, draft.jobId);
+        if (!currentDraft || currentDraft.tabId !== tabId) {
+            return { action: 'wait', message: 'Waiting for the previous GPS Preview to finish.' };
         }
 
         if (draft.focusOnReady) {
@@ -520,7 +571,9 @@ if (typeof importScripts === 'function') {
         const tabId = sender.tab?.id;
         return mutateMap(DRAFTS_KEY, drafts => {
             const draft = drafts[tabId];
-            if (!draft || draft.jobId !== message.jobId || !validateDraftPage(draft, message) || draft.previewStarted) {
+            const currentDraft = draft ? firstPendingDraft(drafts, draft.jobId) : null;
+            if (!draft || currentDraft?.tabId !== tabId || draft.jobId !== message.jobId
+                || !validateDraftPage(draft, message) || draft.previewStarted || draft.complete) {
                 return { ok: false };
             }
             draft.previewStarted = true;
@@ -576,6 +629,11 @@ if (typeof importScripts === 'function') {
                 return value;
             });
             const remainingDrafts = await readMap(DRAFTS_KEY);
+            const nextDraft = removedDraft && !removedDraft.complete
+                && !orderedDrafts(remainingDrafts, removedDraft.jobId)
+                    .some(candidate => !candidate.complete && compareDraftOrder(candidate, removedDraft) < 0)
+                ? firstPendingDraft(remainingDrafts, removedDraft.jobId)
+                : null;
             await mutateMap(JOBS_KEY, jobs => {
                 if (jobs[tabId]) {
                     const job = jobs[tabId];
@@ -596,6 +654,7 @@ if (typeof importScripts === 'function') {
                     }
                 }
             });
+            await notifyDraftToProceed(nextDraft);
         })();
     });
 

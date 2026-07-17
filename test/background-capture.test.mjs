@@ -35,6 +35,7 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
     const groupUpdates = [];
     const badgeCalls = [];
     const scriptCalls = [];
+    const tabMessages = [];
     const capture = captureResult || {
         ok: true,
         provider: 'strava',
@@ -83,6 +84,10 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
                 Object.assign(tabs.get(tabId), patch);
                 return structuredClone(tabs.get(tabId));
             },
+            sendMessage: async (tabId, message) => {
+                tabMessages.push({ tabId, message: structuredClone(message) });
+                return true;
+            },
             group: async details => { grouped.push(structuredClone(details)); return 3; },
             onRemoved: tabRemoved
         },
@@ -125,7 +130,7 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
     const send = (message, sender = {}) => new Promise(resolve => {
         assert.equal(listener(message, sender, resolve), true);
     });
-    return { send, values, syncValues, tabs, grouped, groupUpdates, badgeCalls, fetchCalls, scriptCalls };
+    return { send, values, syncValues, tabs, grouped, groupUpdates, badgeCalls, fetchCalls, scriptCalls, tabMessages };
 };
 
 test('background capture persists a private job, opens grouped drafts, and previews idempotently', async () => {
@@ -159,13 +164,51 @@ test('background capture persists a private job, opens grouped drafts, and previ
     assert.match(apply.gpx, /<gpx/);
     assert.equal(await harness.send({ type: 'DRAFT_PREVIEW_STARTED', jobId: apply.jobId, pid: 7, cid: 77 }, { tab: { id: 100 } }).then(value => value.ok), true);
 
-    const banner = await harness.send({ type: 'DRAFT_READY', pid: '7', cid: '77' }, { tab: { id: 100 } });
+    const banner = await harness.send({
+        type: 'DRAFT_READY', pid: '7', cid: '77',
+        previewResult: { state: 'success', message: 'Your file is now successfully uploaded.' }
+    }, { tab: { id: 100 } });
     assert.equal(banner.action, 'banner');
     assert.equal(harness.values.bpbCaptureJobs['1'].phase, 'previewed');
     assert.equal(harness.values.bpbCaptureJobs['1'].uploadGpx, null);
 
     const duplicate = await harness.send({ type: 'DRAFT_PREVIEW_STARTED', jobId: apply.jobId, pid: 7, cid: 77 }, { tab: { id: 100 } });
     assert.equal(duplicate.ok, false);
+});
+
+test('a failed Peakbagger Preview keeps the GPX and permits an explicit retry', async () => {
+    const harness = createHarness();
+    await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    await harness.send({ type: 'CAPTURE_OPEN_DRAFTS', tabId: 1, selectedIds: [7] });
+    const apply = await harness.send({ type: 'DRAFT_READY', pid: '7', cid: '77' }, { tab: { id: 100 } });
+    assert.equal(await harness.send({
+        type: 'DRAFT_PREVIEW_STARTED', jobId: apply.jobId, pid: 7, cid: 77
+    }, { tab: { id: 100 } }).then(value => value.ok), true);
+
+    const failure = await harness.send({
+        type: 'DRAFT_READY', pid: '7', cid: '77',
+        previewResult: { state: 'error', message: 'Invalid GPX file.' }
+    }, { tab: { id: 100 } });
+    assert.equal(failure.action, 'preview-error');
+    assert.match(failure.message, /Invalid GPX file/);
+    assert.equal(harness.values.bpbCaptureJobs['1'].phase, 'opened');
+    assert.match(harness.values.bpbCaptureJobs['1'].uploadGpx, /<gpx/);
+    assert.equal(harness.values.bpbDraftTabs['100'].previewStarted, false);
+    assert.equal(harness.values.bpbDraftTabs['100'].complete, false);
+
+    const retry = await harness.send({ type: 'DRAFT_READY', pid: '7', cid: '77' }, { tab: { id: 100 } });
+    assert.equal(retry.action, 'apply');
+    assert.match(retry.gpx, /<ele>100<\/ele><time>2026-07-01T15:00:00Z<\/time>/);
+    assert.equal(await harness.send({
+        type: 'DRAFT_PREVIEW_STARTED', jobId: retry.jobId, pid: 7, cid: 77
+    }, { tab: { id: 100 } }).then(value => value.ok), true);
+    const unconfirmed = await harness.send({
+        type: 'DRAFT_READY', pid: '7', cid: '77',
+        previewResult: { state: 'unknown', message: 'Processing GPS data.' }
+    }, { tab: { id: 100 } });
+    assert.equal(unconfirmed.action, 'preview-error');
+    assert.match(unconfirmed.message, /did not confirm/);
+    assert.match(harness.values.bpbCaptureJobs['1'].uploadGpx, /<gpx/);
 });
 
 test('a capture that finishes for a different activity is not reused after navigation', async () => {
@@ -214,8 +257,9 @@ test('same-day suffixes include only selected ascents and follow track order', a
     const later = await harness.send({ type: 'DRAFT_READY', pid: '7', cid: '77' }, { tab: { id: 100 } });
     const earlier = await harness.send({ type: 'DRAFT_READY', pid: '9', cid: '77' }, { tab: { id: 101 } });
 
-    assert.equal(earlier.fields.suffix, 'a');
     assert.equal(later.fields.suffix, 'b');
+    assert.equal(earlier.action, 'wait');
+    assert.equal(harness.values.bpbDraftTabs['101'].suffix, 'a');
 });
 
 test('retained waypoints share the 3,000-point budget and multi-peak drafts receive one sequenced trip', async () => {
@@ -249,12 +293,41 @@ test('retained waypoints share the 3,000-point budget and multi-peak drafts rece
 
     await harness.send({ type: 'CAPTURE_OPEN_DRAFTS', tabId: 1, selectedIds: [7, 8] });
     const first = await harness.send({ type: 'DRAFT_READY', pid: '8', cid: '77' }, { tab: { id: 100 } });
-    const second = await harness.send({ type: 'DRAFT_READY', pid: '7', cid: '77' }, { tab: { id: 101 } });
+    const waiting = await harness.send({ type: 'DRAFT_READY', pid: '7', cid: '77' }, { tab: { id: 101 } });
     assert.equal(first.allowWaypoints, true);
     assert.deepEqual({ ...first.fields.tripInfo }, { sequence: 1, name: 'Afternoon Hike', nightsOut: 2 });
+    assert.equal(waiting.action, 'wait');
+    assert.equal(await harness.send({
+        type: 'DRAFT_PREVIEW_STARTED', jobId: first.jobId, pid: 7, cid: 77
+    }, { tab: { id: 101 } }).then(value => value.ok), false,
+    'a queued draft must not start a concurrent Preview');
+
+    assert.equal(await harness.send({
+        type: 'DRAFT_PREVIEW_STARTED', jobId: first.jobId, pid: 8, cid: 77
+    }, { tab: { id: 100 } }).then(value => value.ok), true);
+    const confirmed = await harness.send({
+        type: 'DRAFT_READY', pid: '8', cid: '77',
+        previewResult: { state: 'success', message: 'GPX file successfully uploaded.' }
+    }, { tab: { id: 100 } });
+    assert.equal(confirmed.action, 'banner');
+    assert.deepEqual(harness.tabMessages, [{ tabId: 101, message: { type: 'DRAFT_PROCEED' } }]);
+    assert.equal(harness.values.bpbCaptureJobs['1'].phase, 'opened');
+    assert.match(harness.values.bpbCaptureJobs['1'].uploadGpx, /<gpx/);
+
+    const second = await harness.send({ type: 'DRAFT_READY', pid: '7', cid: '77' }, { tab: { id: 101 } });
     assert.deepEqual({ ...second.fields.tripInfo }, { sequence: 2, name: 'Afternoon Hike', nightsOut: 2 });
     assert.equal(first.fields.wildernessNightsOut, null);
     assert.equal(second.fields.wildernessNightsOut, null);
+    assert.equal(await harness.send({
+        type: 'DRAFT_PREVIEW_STARTED', jobId: second.jobId, pid: 7, cid: 77
+    }, { tab: { id: 101 } }).then(value => value.ok), true);
+    const finished = await harness.send({
+        type: 'DRAFT_READY', pid: '7', cid: '77',
+        previewResult: { state: 'success', message: 'GPX file successfully uploaded.' }
+    }, { tab: { id: 101 } });
+    assert.equal(finished.action, 'banner');
+    assert.equal(harness.values.bpbCaptureJobs['1'].phase, 'previewed');
+    assert.equal(harness.values.bpbCaptureJobs['1'].uploadGpx, null);
 });
 
 test('waypoints cannot crowd a usable track out of Peakbagger’s total-point limit', async () => {
