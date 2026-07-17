@@ -272,7 +272,7 @@
                 removeFrame();
                 postToPage('destroyed');
             } else if (data.type === 'highlight') {
-                postToFrame('highlight', { coordinates: data.coordinates });
+                postToFrame('highlight', { coordinates: data.coordinates, series: data.series });
             } else if (data.type === 'peaks') {
                 postToFrame('peaks', { requestId: data.requestId, peaks: data.peaks, unavailable: data.unavailable });
             } else if (data.type === 'update') {

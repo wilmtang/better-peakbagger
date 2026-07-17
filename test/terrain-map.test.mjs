@@ -88,6 +88,15 @@ test('3D terrain waits for the extension frame handshake before sending route co
     assert.equal(frame.style.pointerEvents, 'auto');
     assert.equal(pageMessages.at(-1).type, 'loaded');
 
+    dispatchPage({ type: 'highlight', coordinates: [-121.81, 48.71], series: 'time' });
+    assert.deepEqual(JSON.parse(JSON.stringify(frameMessages.at(-1))), {
+        __bpbTerrainFrame: true,
+        dir: 'toFrame',
+        type: 'highlight',
+        coordinates: [-121.81, 48.71],
+        series: 'time'
+    }, 'the isolated-world bridge preserves the series discriminator');
+
     settingsListener({ enable3dMap: false });
     assert.equal(window.document.getElementById('bpb-terrain-frame'), null);
     assert.equal(pageMessages.at(-1).type, 'error');
@@ -449,10 +458,17 @@ test('3D terrain frame validates coordinate-only routes before loading public DE
     assert.deepEqual(map.renderCalls, ['resize', 'redraw'],
         'a resize repaints in the same task so the cleared canvas is never composited');
 
-    dispatch({ type: 'highlight', coordinates: [-121.81, 48.71] });
+    dispatch({ type: 'highlight', coordinates: [-121.81, 48.71], series: 'time' });
     assert.deepEqual(JSON.parse(JSON.stringify(map.sources.get('bpb-highlight').data.geometry)), {
         type: 'Point', coordinates: [-121.81, 48.71]
     });
+    assert.ok(map.paint.some(call => call[0] === 'bpb-highlight'
+        && call[1] === 'circle-color' && call[2] === '#0055ff'),
+        'the time-series chaser is blue in 3D');
+
+    dispatch({ type: 'highlight', coordinates: [-121.81, 48.71], series: 'unsupported' });
+    assert.deepEqual(map.paint.at(-1), ['bpb-highlight', 'circle-color', '#ff3b30'],
+        'the terrain frame does not treat an unknown series as a color');
 
     dispatch({
         type: 'update',

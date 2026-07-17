@@ -49,6 +49,7 @@ test('GPX analyzer adds a thick, segment-preserving route casing behind native L
     const polylineCalls = [];
     const sentPatches = [];
     const terrainMessages = [];
+    let chartConfig = null;
     const baseTileLayer = {
         _url: 'https://{s}.tile.example.com/{z}/{x}/{y}{r}.png',
         options: {
@@ -138,6 +139,7 @@ test('GPX analyzer adds a thick, segment-preserving route casing behind native L
     };
     window.Chart = class ChartStub {
         constructor(context, config) {
+            chartConfig = config;
             this.data = config.data;
             this.options = config.options;
         }
@@ -163,7 +165,7 @@ test('GPX analyzer adds a thick, segment-preserving route casing behind native L
             return;
         }
         if (message.kind !== 'get') return;
-        sendSettings({ units: 'imperial', theme: 'light', chartDefaultSeries: 'both', enable3dMap: true });
+        sendSettings({ units: 'imperial', theme: 'light', chartDefaultSeries: 'time', enable3dMap: true });
     };
 
     Object.defineProperty(window.document, 'readyState', { configurable: true, value: 'complete' });
@@ -268,6 +270,17 @@ test('GPX analyzer adds a thick, segment-preserving route casing behind native L
     assert.equal(terrainToggle.getAttribute('aria-pressed'), 'true');
     // The floating toggle overlays the map, not the panel below it.
     assert.equal(terrainToggle.parentElement.id, 'bpb-map-viewport');
+
+    assert.equal(chartConfig.data.datasets[0].hidden, true);
+    assert.equal(chartConfig.data.datasets[1].hidden, false);
+    chartConfig.options.onHover(null, [{ datasetIndex: 1, index: 0 }]);
+    assert.deepEqual(JSON.parse(JSON.stringify(terrainMessages.at(-1))), {
+        __bpbTerrain: true,
+        dir: 'toCS',
+        type: 'highlight',
+        coordinates: [-121.8, 48.7],
+        series: 'time'
+    }, 'hovering the blue time series identifies it to the 3D chaser');
 
     // The frame asks for peak dots; the analyzer serves them from the same
     // PLLBB feed the native map uses, parameterized from the iframe URL.

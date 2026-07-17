@@ -1077,6 +1077,7 @@
                         const iframeWin = mapIframe ? mapIframe.contentWindow : null;
                         let hoveredPoint = null;
                         let fillColor = '#FF0000';
+                        let hoverSeries = 'distance';
 
                         if (activeElements.length > 0) {
                             const datasetIndex = activeElements[0].datasetIndex;
@@ -1084,12 +1085,14 @@
                             const dataArray = datasetIndex === 0 ? eleDistData : eleTimeData;
                             const candidate = dataArray[idx] ? dataArray[idx]._raw : null;
                             fillColor = datasetIndex === 0 ? '#FF0000' : '#0055FF';
+                            hoverSeries = datasetIndex === 0 ? 'distance' : 'time';
                             if (candidate && Number.isFinite(candidate.lat) && Number.isFinite(candidate.lon)) hoveredPoint = candidate;
                         }
 
                         if (terrainState === 'active') {
                             postTerrain('highlight', {
-                                coordinates: hoveredPoint ? [hoveredPoint.lon, hoveredPoint.lat] : null
+                                coordinates: hoveredPoint ? [hoveredPoint.lon, hoveredPoint.lat] : null,
+                                series: hoverSeries
                             });
                         }
 

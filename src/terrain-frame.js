@@ -15,6 +15,7 @@
     const MAX_BASEMAP_ATTRIBUTION_LENGTH = 600;
     const TERRAIN_EXAGGERATION = 1;
     const MAP_LOAD_TIMEOUT_MS = 15000;
+    const HIGHLIGHT_COLORS = Object.freeze({ distance: '#ff3b30', time: '#0055ff' });
     const PEAKBAGGER_ORIGIN = /^https?:\/\/(?:www\.)?peakbagger\.com(?::\d+)?$/i;
     // Extension-provided vector basemap (not mirrored from Peakbagger's 2D
     // Leaflet menu): OpenFreeMap's keyless, CORS-clean OpenStreetMap tiles,
@@ -683,13 +684,19 @@
         }, true);
     };
 
-    const setHighlight = coordinates => {
+    const setHighlight = (coordinates, series) => {
         if (!map || !loaded) return;
         const source = map.getSource('bpb-highlight');
         if (!source || typeof source.setData !== 'function') return;
         const valid = Array.isArray(coordinates) && coordinates.length === 2
             && Number.isFinite(coordinates[0]) && Math.abs(coordinates[0]) <= 180
             && Number.isFinite(coordinates[1]) && Math.abs(coordinates[1]) <= MAX_MERCATOR_LAT;
+        if (valid) {
+            const color = Object.hasOwn(HIGHLIGHT_COLORS, series)
+                ? HIGHLIGHT_COLORS[series]
+                : HIGHLIGHT_COLORS.distance;
+            map.setPaintProperty('bpb-highlight', 'circle-color', color);
+        }
         source.setData(valid ? {
             type: 'Feature', properties: {}, geometry: { type: 'Point', coordinates }
         } : { type: 'FeatureCollection', features: [] });
@@ -1230,7 +1237,7 @@
                 terrainMap.addSource('bpb-highlight', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
                 terrainMap.addLayer({
                     id: 'bpb-highlight', type: 'circle', source: 'bpb-highlight',
-                    paint: { 'circle-radius': 8, 'circle-color': '#ff3b30', 'circle-stroke-color': '#ffffff', 'circle-stroke-width': 2 }
+                    paint: { 'circle-radius': 8, 'circle-color': HIGHLIGHT_COLORS.distance, 'circle-stroke-color': '#ffffff', 'circle-stroke-width': 2 }
                 });
                 terrainMap.on('moveend', () => {
                     if (map === terrainMap) schedulePeaksRequest();
@@ -1275,7 +1282,7 @@
         else if (data.type === 'destroy') {
             removeTerrain();
             post('destroyed');
-        } else if (data.type === 'highlight') setHighlight(data.coordinates);
+        } else if (data.type === 'highlight') setHighlight(data.coordinates, data.series);
         else if (data.type === 'peaks') applyPeaks(data);
         else if (data.type === 'update') {
             setRoutePaint(data.routeStyle);
