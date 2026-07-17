@@ -817,7 +817,11 @@
     // else entirely, so an uncached dot wandered with every tilt. A higher
     // integer zoom is the only event allowed to adopt a potentially finer DEM
     // sample; it also leaves every settle after a readable verdict free of
-    // climbing.
+    // climbing. When the zoom crossing outruns the DEM stream and the climb
+    // is unreadable, the previous verdict keeps rendering at its old zoom —
+    // never an interim hop back to the feed coordinates — and the re-climb
+    // retries on the next batch (see docs/3d-peak-markers.md, "Known
+    // limitations").
     const climbToLocalSummit = feature => {
         const { leashM, strideM, finestStrideM } = PEAK_MARKERS.snap;
         const [feedLon, feedLat] = feature.geometry.coordinates;
@@ -874,10 +878,17 @@
         let verdict = peakSnapCache.get(cacheKey);
         if (!verdict || verdict.zoom < zoom) {
             const climbed = climbToLocalSummit(feature);
-            // An unreadable start is missing data, not a verdict — leave the
-            // dot at the feed position and let the next batch try again.
-            if (!climbed) return feature;
-            verdict = { zoom, lon: climbed.lon, lat: climbed.lat };
+            if (climbed) {
+                verdict = { zoom, lon: climbed.lon, lat: climbed.lat };
+            } else if (!verdict) {
+                // An unreadable start is missing data, not a verdict — leave
+                // the dot at the feed position and let the next batch retry.
+                return feature;
+            }
+            // An unreadable climb with a stale verdict means zooming in outran
+            // the finer DEM tile: hold the stale verdict (its zoom stays old,
+            // so the next batch re-climbs once the tile loads) rather than
+            // hopping to the feed coordinates and back off the summit.
         }
         // Delete-then-set refreshes recency: the cache trims from the oldest
         // end, and dots still on screen must never be the ones trimmed.

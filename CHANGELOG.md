@@ -21,7 +21,10 @@
   mountain). A dot's position is remembered between camera settles:
   tilting or panning never moves it (it used to wander on sharp ridges as
   the terrain detail level changed with the view), and crossing into a
-  higher zoom level is the only time a finer terrain sample may refine it.
+  higher zoom level is the only time a finer terrain sample may refine it —
+  in one hop, even when the zoom outruns the terrain download (the dot
+  used to hop back to the raw database coordinate and off the summit for
+  a beat whenever the finer terrain had not streamed in yet).
 - **No more flicker when resizing the 3D map.** Dragging the map's resize
   handle while the 3D view is open used to blink on every step — each size
   change cleared the canvas and the repaint waited for the next frame. The

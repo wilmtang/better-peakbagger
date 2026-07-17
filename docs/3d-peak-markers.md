@@ -162,29 +162,52 @@ keep the constant-size + shared-spec invariant either way.
    knife-edge ridge the coarser DEM's apex sits somewhere else entirely,
    so an uncached dot wandered with every tilt. A verdict is re-opened only
    after crossing into a higher integer zoom level, where a finer terrain
-   sample may be available. That also makes every settle after a readable
-   verdict free of climbing; an unreadable start is missing data, not a
-   verdict, and retries on the next batch.
-1. **The clamped far field.** At high pitch, dots load for roughly 3× the
+   sample may be available. When that crossing outruns the DEM stream and
+   the re-climb starts unreadable, the previous verdict keeps rendering
+   (at its old zoom, so the next batch retries) — it used to fall back to
+   the raw feed coordinates, hopping the dot off the summit and back
+   across two settles on every zoom-in. That caching also makes every
+   settle after a readable verdict free of climbing; an unreadable start
+   with no prior verdict is missing data, not a verdict, and retries on
+   the next batch.
+1. **A dot can still slide on screen during a tilt or zoom — its height is
+   the terrain's.** The snap cache pins a dot's geographic anchor: panning
+   and tilting never change its lat/lon, and only a higher integer zoom may
+   refine it (one deliberate hop onto the finer DEM's apex, delivered with
+   the next feed batch). What cannot be pinned is the anchor's *rendered
+   elevation*: MapLibre re-samples it in the circle shader from whatever
+   DEM tiles are currently loaded, and the terrain source keeps MapLibre's
+   stock pitch-sensitive LOD — the tightened drape LOD is deliberately not
+   applied to 2048px DEM render targets (see the `stockLod` notes in
+   `src/terrain-frame.js`). A small tilt or a zoom can therefore swap the
+   DEM under a peak a whole level; the mountain reshapes, the ring is
+   re-elevated with it, and on a pitched camera that height change projects
+   as a slide across the screen — most visible on knife-edge ridges, where
+   DEM resolutions disagree the most. The ring and the terrain move
+   together (a ring can never float), but relative to the previous frame's
+   summit it can appear to jump. Eliminating this would mean pinning the
+   terrain source's LOD, multiplying DEM fetch and meshing cost for every
+   view; it is a known, accepted artifact of streamed terrain.
+2. **The clamped far field.** At high pitch, dots load for roughly 3× the
    straight-down viewport around the camera center, not all the way to the
    horizon (where they would be sub-pixel anyway). Panning re-requests, so
    the near field is always populated.
-2. **No terrain occlusion.** Circle layers draw over terrain, so a ring
+3. **No terrain occlusion.** Circle layers draw over terrain, so a ring
    behind a ridge is still visible (the native 2D map has no equivalent
    situation) — and, consistently, still clickable where it is drawn.
    Switching to a symbol layer in `buildPeakLayers()` would opt into
    MapLibre's terrain occlusion if wanted.
-3. **A capped feed keeps the most prominent peaks.** The native map renders
+4. **A capped feed keeps the most prominent peaks.** The native map renders
    everything the feed returns; the 3D view caps at 400 markers (prominence
    priority) as a defensive budget, same spirit as the route point budget.
-4. **Group BigMaps show no dots** — deliberate native parity, not a gap.
-5. The billboarded peak-name **labels** PoC (vendored glyphs, symbol layer)
+5. **Group BigMaps show no dots** — deliberate native parity, not a gap.
+6. The billboarded peak-name **labels** PoC (vendored glyphs, symbol layer)
    lives on `feat/3d-peak-labels-poc` and is complementary: dots + popup here
    are DOM/circle-based and need no glyphs.
 
 ## Verified
 
-- 179/179 unit tests, including: the shared client's URL/context/XML
+- 185/185 unit tests, including: the shared client's URL/context/XML
   semantics against the archived response shape; frame validation,
   stale-reply rejection, zoom cutoff, popup safety (name as text, link from
   integer id); the screen-space hit test (edge miss, nearest-of-overlapping
@@ -193,9 +216,12 @@ keep the constant-size + shared-spec invariant either way.
   (a dot near a synthetic cone's apex lands on it, a dot on a relentless
   ramp and a dot on unreadable DEM both keep the feed coordinates, a
   changed DEM at an unchanged zoom neither moves a dot nor re-climbs,
-  zooming in re-opens the verdict, and an unreadable dot snaps as soon as
-  its terrain loads); bridge forwarding; both coordinators end-to-end with
-  a stubbed feed (ascent: `t=A&cid=…`, no `pid`; group: `unavailable`).
+  zooming in re-opens the verdict, a zoom-in that outruns the DEM stream
+  holds the last verdict instead of hopping to the feed coordinates and
+  then adopts the finer sample on the next batch, and an unreadable dot
+  snaps as soon as its terrain loads); bridge forwarding; both
+  coordinators end-to-end with a stubbed feed (ascent: `t=A&cid=…`, no
+  `pid`; group: `unavailable`).
 - Hidden real-browser check (`scripts/verify-terrain-visual.mjs`, headless
   Chrome on the real GPU — the renderer is asserted and a software fallback
   refused — synthetic Peakbagger + synthetic PLLBB feed): feed queried with

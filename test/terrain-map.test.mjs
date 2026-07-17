@@ -1127,10 +1127,11 @@ test('3D peak dots snap uphill to the local DEM summit, and only to a genuine on
     const rampPeakFeed = [-121.82, 48.74];
     const voidPeakFeed = [-121.83, 48.75];
     let voidPeakElevation = 0;
+    let coneReadable = true;
     let elevationQueries = 0;
     const elevationOf = ([lng, lat]) => {
         elevationQueries += 1;
-        if (metersBetween([lng, lat], conePeakFeed) < 500) {
+        if (coneReadable && metersBetween([lng, lat], conePeakFeed) < 500) {
             return 3000 - 2 * metersBetween([lng, lat], coneApex);
         }
         if (metersBetween([lng, lat], rampPeakFeed) < 500) {
@@ -1257,6 +1258,25 @@ test('3D peak dots snap uphill to the local DEM summit, and only to a genuine on
     sendBatch();
     assert.ok(metersBetween(rendered()[2].geometry.coordinates, apexOffsetM(20, voidPeakFeed)) < 5,
         'a dot whose DEM was unreadable snaps as soon as its terrain loads, without a zoom change');
+
+    // The reverse race: a higher integer zoom re-opens the verdict, but the
+    // finer DEM tile may not have streamed in yet. The held verdict must keep
+    // rendering — the dot used to fall back to the raw feed coordinates here,
+    // so every zoom-in hopped it off the summit and back across two settles.
+    const zoom15Snap = rendered()[0].geometry.coordinates;
+    camera.zoom = 17;
+    coneReadable = false;
+    sendBatch();
+    assert.deepEqual(rendered()[0].geometry.coordinates, zoom15Snap,
+        'zooming in ahead of the DEM stream holds the last verdict, never the feed coordinates');
+
+    // The held verdict kept its old zoom, so it stays re-openable: the finer
+    // sample is adopted on the next batch after its tile loads.
+    coneApex = apexOffsetM(60);
+    coneReadable = true;
+    sendBatch();
+    assert.ok(metersBetween(rendered()[0].geometry.coordinates, apexOffsetM(60)) < 5,
+        'the finer DEM is adopted on the next batch after it streams in, without another zoom change');
 
     dom.window.close();
 });
