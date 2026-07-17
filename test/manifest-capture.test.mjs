@@ -87,6 +87,12 @@ test('ascent editor integration is isolated to Peakbagger and runtime code never
     const draftEntry = manifest.content_scripts.find(entry => entry.js.includes('src/ascent-draft.js'));
     assert.ok(draftEntry);
     assert.ok(draftEntry.matches.every(pattern => pattern.includes('peakbagger.com/climber/')));
+    assert.deepEqual(draftEntry.js, [
+        'src/ascent-draft.js',
+        'vendor/marked.umd.js',
+        'src/report-markup.js',
+        'src/report-editor.js'
+    ], 'the Markdown parser must load before the conversion and editor scripts');
     const runtimeSource = await Promise.all([
         'src/ascent-draft.js',
         'src/background.js',

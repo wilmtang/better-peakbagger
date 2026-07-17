@@ -9,8 +9,16 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
+import vm from 'node:vm';
 import { JSDOM } from 'jsdom';
+
+const browserDom = new JSDOM('');
+globalThis.DOMParser = browserDom.window.DOMParser;
+const markedContext = vm.createContext({});
+vm.runInContext(await readFile(new URL('../vendor/marked.umd.js', import.meta.url), 'utf8'), markedContext);
+globalThis.marked = markedContext.marked;
 
 const require = createRequire(import.meta.url);
 const Markup = require('../src/report-markup.js');
@@ -34,16 +42,14 @@ test('markdown converts to Peakbagger bracket markup', () => {
     ].join('\n');
 
     assert.equal(Markup.markdownToBracket(markdown), [
-        '[b]Mount Baker via Easton Glacier[/b]',
+        '[h1]Mount Baker via Easton Glacier[/h1]',
         '',
         'We started [b]before dawn[/b] and the crevasses were [i]barely[/i] bridged.',
         'Second line of the same paragraph.',
         '',
-        '- ice axe',
-        '- crampons',
+        '[ul][li]ice axe[/li][li]crampons[/li][/ul]',
         '',
-        '1. park at Schreibers Meadow',
-        '2. camp at the railroad grade',
+        '[ol][li]park at Schreibers Meadow[/li][li]camp at the railroad grade[/li][/ol]',
         '',
         'Photos: [a href="https://example.com/album"]album[/a] and [a href="https://example.com/map"]https://example.com/map[/a].'
     ].join('\n'));
@@ -61,7 +67,7 @@ test('markdown link targets are sanitized, with https assumed for bare domains',
         '[a href="https://example.com/a"]x[/a]');
     // javascript: never becomes a link — the text stays literal.
     assert.equal(Markup.markdownToBracket('[x](javascript:alert(1))'),
-        '[x](javascript:alert(1))');
+        '&#91;x&#93;(javascript:alert(1))');
     assert.equal(Markup.markdownToBracket('mail me: [me](mailto:a@b.example)'),
         'mail me: [a href="mailto:a@b.example"]me[/a]');
 });
@@ -79,9 +85,66 @@ test('underscores inside words never become emphasis', () => {
     assert.equal(Markup.markdownToBracket('_lead_ measured'), '[i]lead[/i] measured');
 });
 
+test('GFM blocks and inline syntax map to server-confirmed Peakbagger tags', () => {
+    const markdown = [
+        '## Route notes',
+        '',
+        '> Wind on the ridge with **spindrift**.',
+        '',
+        '- axe',
+        '  - leash',
+        '- rope',
+        '',
+        '| Peak | Elev |',
+        '| --- | ---: |',
+        '| Baker | 10781 |',
+        '',
+        '~~retreat~~ and `inline_code()`',
+        '',
+        '![Topo](https://example.com/map.jpg)',
+        '',
+        '```',
+        'two   spaces',
+        'new line',
+        '```',
+        '',
+        '---'
+    ].join('\n');
+    const bracket = Markup.markdownToBracket(markdown);
+
+    assert.match(bracket, /^\[h2\]Route notes\[\/h2\]/);
+    assert.match(bracket, /\[blockquote\]Wind on the ridge with \[b\]spindrift\[\/b\]\.\[\/blockquote\]/);
+    assert.match(bracket, /\[ul\]\[li\]axe\[ul\]\[li\]leash\[\/li\]\[\/ul\]\[\/li\]\[li\]rope\[\/li\]\[\/ul\]/);
+    assert.match(bracket, /\[table border="1"\]\[tr\]\[th\]Peak\[\/th\]\[th\]Elev\[\/th\]\[\/tr\]/);
+    assert.match(bracket, /\[s\]retreat\[\/s\] and \[code\]inline_code\(\)\[\/code\]/);
+    assert.match(bracket, /\[img src="https:\/\/example\.com\/map\.jpg" alt="Topo"\]/);
+    assert.match(bracket, /\[pre\]two   spaces\nnew line\[\/pre\]/);
+    assert.match(bracket, /\[hr\]$/);
+});
+
+test('safe bracket extensions cover Markdown features without standard syntax', () => {
+    const markdown = '[u]under[/u] [mark]marked[/mark] H[sub]2[/sub]O x[sup]2[/sup] '
+        + '[small]aside[/small] [q]quoted[/q] [span style="color:red"]red[/span]';
+    assert.equal(Markup.markdownToBracket(markdown), markdown);
+});
+
+test('images require HTTPS and raw Markdown HTML stays inert', () => {
+    assert.equal(Markup.markdownToBracket('![safe](https://example.com/a.jpg)'),
+        '[img src="https://example.com/a.jpg" alt="safe"]');
+    assert.doesNotMatch(Markup.markdownToBracket('![mixed](http://example.com/a.jpg)'), /\[img /);
+    assert.doesNotMatch(Markup.markdownToBracket('![data](data:image/png;base64,AAAA)'), /\[img /);
+
+    const raw = '<iframe src="https://example.com"></iframe>\n\n<script>alert(1)</script>';
+    const bracket = Markup.markdownToBracket(raw);
+    const preview = Markup.markdownToPreviewHtml(raw);
+    assert.doesNotMatch(bracket, /\[(?:iframe|script)\b/i);
+    assert.doesNotMatch(preview, /<(?:iframe|script)\b/i);
+    assert.match(preview, /&lt;iframe/);
+});
+
 // ---- bracket import ---------------------------------------------------------
 
-test('existing bracket reports parse and re-serialize unchanged (idempotent)', () => {
+test('legacy plain-text lists import and normalize to real Peakbagger lists', () => {
     const report = [
         'Day one was [b]long[/b] but [i]scenic[/i], with [u]new snow[/u].',
         'We used [a href="https://example.com/topo"]this topo[/a].',
@@ -89,7 +152,12 @@ test('existing bracket reports parse and re-serialize unchanged (idempotent)', (
         '- water at the second switchback',
         '- camp on the col'
     ].join('\n');
-    assert.equal(Markup.astToBracket(Markup.parseBracket(report)), report);
+    assert.equal(Markup.astToBracket(Markup.parseBracket(report)), [
+        'Day one was [b]long[/b] but [i]scenic[/i], with [u]new snow[/u].',
+        'We used [a href="https://example.com/topo"]this topo[/a].',
+        '',
+        '[ul][li]water at the second switchback[/li][li]camp on the col[/li][/ul]'
+    ].join('\n'));
 });
 
 test('angle-bracket forms are accepted on import and normalized to brackets', () => {
@@ -101,16 +169,52 @@ test('angle-bracket forms are accepted on import and normalized to brackets', ()
         '[a href="https://example.com"]x[/a]');
 });
 
-test('unknown tags, unclosed tags, and unsafe links stay literal text', () => {
-    for (const literal of [
-        'reached the ridge at [13:45] sharp',
-        'an [unknown]tag[/unknown] here',
-        'an unclosed [b]bold run',
-        '[a href="javascript:alert(1)"]click[/a]',
-        'math like 3 < 4 and a > b'
-    ]) {
-        assert.equal(Markup.astToBracket(Markup.parseBracket(literal)), literal,
-            `should stay literal: ${literal}`);
+test('server-confirmed inline aliases normalize without losing semantics', () => {
+    const source = '[strong]strong[/strong] [em]emphasis[/em] [strike]old[/strike] '
+        + '[del]gone[/del] [small]small[/small] [mark]mark[/mark] H[sub]2[/sub]O '
+        + 'x[sup]2[/sup] [code]x()[/code] [q]quote[/q] [font color="green"]green[/font]';
+    assert.equal(Markup.astToBracket(Markup.parseBracket(source)),
+        '[b]strong[/b] [i]emphasis[/i] [s]old[/s] [s]gone[/s] [small]small[/small] '
+        + '[mark]mark[/mark] H[sub]2[/sub]O x[sup]2[/sup] [code]x()[/code] '
+        + '[q]quote[/q] [span style="color:green"]green[/span]');
+});
+
+test('headings, quotes, tables, preformatted text, rules, and images round-trip', () => {
+    const source = [
+        '[h2]Heading[/h2]',
+        '',
+        '[blockquote]Block [q]quote[/q].[/blockquote]',
+        '',
+        '[table border="1"][tr][th]Peak[/th][th]Elev[/th][/tr][tr][td]Baker[/td][td]10781[/td][/tr][/table]',
+        '',
+        '[pre]two   spaces\nnew line[/pre]',
+        '',
+        '[hr]',
+        '',
+        '[img src="https://example.com/a.jpg" alt="Topo" width="120"]'
+    ].join('\n');
+    const ast = Markup.parseBracket(source);
+    assert.equal(Markup.astToBracket(ast), source);
+    const html = Markup.astToHtml(ast);
+    assert.match(html, /<h2>Heading<\/h2>/);
+    assert.match(html, /<blockquote><p>Block <q>quote<\/q>\.<\/p><\/blockquote>/);
+    assert.match(html, /<table>.*<th>Peak<\/th>.*<td>Baker<\/td>.*<\/table>/);
+    assert.match(html, /<pre><code>two   spaces\nnew line<\/code><\/pre>/);
+    assert.match(html, /<hr>/);
+    assert.match(html, /<img [^>]*width="120"/);
+});
+
+test('unknown, unclosed, and unsafe tags become visible inert text', () => {
+    const cases = new Map([
+        ['reached the ridge at [13:45] sharp', 'reached the ridge at [13:45] sharp'],
+        ['an [unknown]tag[/unknown] here', 'an &#91;unknown&#93;tag&#91;/unknown&#93; here'],
+        ['an unclosed [b]bold run', 'an unclosed &#91;b&#93;bold run'],
+        ['[a href="javascript:alert(1)"]click[/a]',
+            '&#91;a href="javascript:alert(1)"&#93;click&#91;/a&#93;'],
+        ['math like 3 < 4 and a > b', 'math like 3 &lt; 4 and a &gt; b']
+    ]);
+    for (const [source, expected] of cases) {
+        assert.equal(Markup.astToBracket(Markup.parseBracket(source)), expected);
     }
 });
 
@@ -147,7 +251,13 @@ test('bracket ↔ markdown mode switching round-trips the supported formatting',
         '- rope',
         '- pickets'
     ].join('\n'));
-    assert.equal(Markup.markdownToBracket(markdown), bracket);
+    assert.equal(Markup.markdownToBracket(markdown), [
+        '[b]Summit day[/b]',
+        '',
+        'Went [b]up[/b] the [i]north[/i] side with [u]screws[/u], see [a href="https://example.com"]beta[/a].',
+        '',
+        '[ul][li]rope[/li][li]pickets[/li][/ul]'
+    ].join('\n'));
 });
 
 // ---- editor DOM → bracket ----------------------------------------------------
@@ -170,10 +280,9 @@ test('contenteditable DOM serializes to bracket markup', () => {
         '',
         'Line one\nline two',
         '',
-        '- alpha',
-        '- beta',
+        '[ul][li]alpha[/li][li]beta[/li][/ul]',
         '',
-        '1. uno',
+        '[ol][li]uno[/li][/ol]',
         '',
         '[a href="https://example.com/a"]link[/a]'
     ].join('\n'));
@@ -188,13 +297,14 @@ test('style-based formatting from paste (span font-weight etc.) is recognized', 
     assert.equal(Markup.domToBracket(root), '[b]heavy[/b] and [i]slanted[/i] and [u]lined[/u]');
 });
 
-test('unsafe or unknown DOM is flattened to its text', () => {
+test('unsafe DOM is dropped while supported table structure is retained', () => {
     const root = body(
         '<p><a href="javascript:alert(1)">not a link</a></p>'
         + '<p><script>alert(1)</script>plain</p>'
         + '<table><tr><td>cell one</td></tr></table>'
     );
-    assert.equal(Markup.domToBracket(root), 'not a link\n\nplain\n\ncell one');
+    assert.equal(Markup.domToBracket(root),
+        'not a link\n\nplain\n\n[table border="1"][tr][td]cell one[/td][/tr][/table]');
 });
 
 test('empty editor states serialize to an empty report', () => {
@@ -218,5 +328,12 @@ test('editor round-trip: bracket → editor HTML → DOM → bracket is stable',
         '- two'
     ].join('\n');
     const root = body(Markup.bracketToEditorHtml(bracket));
-    assert.equal(Markup.domToBracket(root), bracket);
+    assert.equal(Markup.domToBracket(root), [
+        '[b]Header[/b]',
+        '',
+        'Some [i]notes[/i] with a [a href="https://example.com"]link[/a].',
+        'Second line.',
+        '',
+        '[ul][li]one[/li][li]two[/li][/ul]'
+    ].join('\n'));
 });

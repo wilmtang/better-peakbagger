@@ -410,6 +410,53 @@ try {
                     && restored.value === 'Summit day was [b]windy[/b].\n\nSecond paragraph.',
                 `restoring the draft did not bring back content and mode (state=${JSON.stringify(restored)})`);
             }
+
+            // Exercise the broader Marked-token pipeline through the real
+            // manifest order, not just the unit-test loader.
+            await editorPage.locator('#bpb-report-editor').getByRole('button', { name: 'Write', exact: true }).click();
+            await editorPage.locator('.bpb-re-md').fill([
+                '## Route notes',
+                '',
+                '> Windy ~~retreat~~.',
+                '',
+                '| Peak | Elev |',
+                '| --- | ---: |',
+                '| Baker | 10781 |',
+                '',
+                '`inline_code()`',
+                '',
+                '---'
+            ].join('\n'));
+            const expandedSync = await editorPage.waitForFunction(() => {
+                const value = document.getElementById('JournalText').value;
+                return value.includes('[h2]Route notes[/h2]')
+                    && value.includes('[blockquote]Windy [s]retreat[/s].[/blockquote]')
+                    && value.includes('[table border="1"]')
+                    && value.includes('[code]inline_code()[/code]')
+                    && value.endsWith('[hr]');
+            }, null, { timeout: 5000 }).then(() => true).catch(() => false);
+            check(expandedSync, `expanded Markdown did not reach JournalText (value=${
+                JSON.stringify(await editorPage.evaluate(() => document.getElementById('JournalText').value))})`);
+            await editorPage.locator('#bpb-report-editor').getByRole('button', { name: 'Preview', exact: true }).click();
+            const expandedPreview = await editorPage.evaluate(() => {
+                const preview = document.querySelector('.bpb-re-preview');
+                return ['H2', 'BLOCKQUOTE', 'TABLE', 'S', 'CODE', 'HR']
+                    .every(tag => preview.querySelector(tag));
+            });
+            check(expandedPreview, 'expanded Markdown preview omitted a supported semantic element');
+            if (process.env.BPB_VERIFY_EDITOR_SCREENSHOT) {
+                await editorPage.locator('#bpb-report-editor').screenshot({
+                    path: process.env.BPB_VERIFY_EDITOR_SCREENSHOT
+                });
+            }
+            if (process.env.BPB_VERIFY_EDITOR_RICH_SCREENSHOT) {
+                await editorPage.locator('#bpb-report-editor').getByRole('button', {
+                    name: 'Rich text', exact: true
+                }).click();
+                await editorPage.locator('#bpb-report-editor').screenshot({
+                    path: process.env.BPB_VERIFY_EDITOR_RICH_SCREENSHOT
+                });
+            }
             check(editorErrors.length === 0, `the editor page threw: ${JSON.stringify(editorErrors)}`);
         }
         await editorPage.close();
@@ -436,4 +483,5 @@ console.log('  - the Peak Dynamic Map preserves its native frame and shows an en
 console.log('  - clicking Peak 3D creates the isolated frame with a route-free summit focus');
 console.log('  - the trip-report editor mounts on the captured ascent form, real typing and');
 console.log('    Ctrl/Cmd+B sync bracket markup into JournalText, markdown mode + preview');
-console.log('    convert the same content, and a reloaded page offers and restores the draft');
+console.log('    convert headings, quotes, tables, strike, code, and rules, and a reloaded');
+console.log('    page offers and restores the draft');

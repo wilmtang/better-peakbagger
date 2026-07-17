@@ -40,6 +40,25 @@
     gap: 2px;
 }
 
+.bpb-re-format {
+    box-sizing: border-box;
+    height: 24px;
+    max-width: 112px;
+    margin-right: 3px;
+    padding: 0 22px 0 7px;
+    border: 1px solid #b9b9b9;
+    border-radius: 4px;
+    background: #fff;
+    color: #333;
+    font: inherit;
+    font-size: 12px;
+}
+
+.bpb-re-format:focus-visible {
+    outline: 2px solid #3b76c4;
+    outline-offset: -1px;
+}
+
 .bpb-re-modes {
     display: flex;
     align-items: center;
@@ -185,6 +204,110 @@
     padding-left: 1.6em;
 }
 
+.bpb-re-surface li > p,
+.bpb-re-preview li > p {
+    margin: 0;
+}
+
+.bpb-re-surface h1,
+.bpb-re-surface h2,
+.bpb-re-surface h3,
+.bpb-re-surface h4,
+.bpb-re-surface h5,
+.bpb-re-surface h6,
+.bpb-re-preview h1,
+.bpb-re-preview h2,
+.bpb-re-preview h3,
+.bpb-re-preview h4,
+.bpb-re-preview h5,
+.bpb-re-preview h6 {
+    margin: 0.85em 0 0.35em;
+    color: inherit;
+    line-height: 1.25;
+    text-align: left;
+}
+
+.bpb-re-surface h1:first-child,
+.bpb-re-surface h2:first-child,
+.bpb-re-surface h3:first-child,
+.bpb-re-preview h1:first-child,
+.bpb-re-preview h2:first-child,
+.bpb-re-preview h3:first-child {
+    margin-top: 0;
+}
+
+.bpb-re-surface h1,
+.bpb-re-preview h1 { font-size: 1.65em; }
+.bpb-re-surface h2,
+.bpb-re-preview h2 { font-size: 1.45em; }
+.bpb-re-surface h3,
+.bpb-re-preview h3 { font-size: 1.28em; }
+.bpb-re-surface h4,
+.bpb-re-preview h4 { font-size: 1.15em; }
+.bpb-re-surface h5,
+.bpb-re-preview h5 { font-size: 1.05em; }
+.bpb-re-surface h6,
+.bpb-re-preview h6 { font-size: 1em; }
+
+.bpb-re-surface blockquote,
+.bpb-re-preview blockquote {
+    margin: 0.5em 0 0.8em;
+    padding: 0.15em 0 0.15em 0.9em;
+    border-left: 3px solid #aeb8c6;
+    color: #4f5660;
+}
+
+.bpb-re-surface pre,
+.bpb-re-preview pre {
+    margin: 0.55em 0 0.8em;
+    padding: 7px 9px;
+    overflow-x: auto;
+    border-radius: 4px;
+    background: #f2f3f5;
+    white-space: pre-wrap;
+}
+
+.bpb-re-surface code,
+.bpb-re-preview code {
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 0.94em;
+}
+
+.bpb-re-surface :not(pre) > code,
+.bpb-re-preview :not(pre) > code {
+    padding: 1px 3px;
+    border-radius: 3px;
+    background: #f2f3f5;
+}
+
+.bpb-re-surface table,
+.bpb-re-preview table {
+    margin: 0.55em 0 0.8em;
+    border-collapse: collapse;
+}
+
+.bpb-re-surface th,
+.bpb-re-surface td,
+.bpb-re-preview th,
+.bpb-re-preview td {
+    padding: 3px 7px;
+    border: 1px solid #aeb3ba;
+    text-align: left;
+}
+
+.bpb-re-surface img,
+.bpb-re-preview img {
+    max-width: 100%;
+    height: auto;
+}
+
+.bpb-re-surface hr,
+.bpb-re-preview hr {
+    margin: 0.85em 0;
+    border: 0;
+    border-top: 1px solid #aeb3ba;
+}
+
 .bpb-re-empty::before {
     content: attr(data-placeholder);
     color: #8a8a86;
@@ -271,6 +394,12 @@ html[data-bpb-theme="dark"] .bpb-re button {
     color: #c7c1b8;
 }
 
+html[data-bpb-theme="dark"] .bpb-re-format {
+    background: #181a1b;
+    border-color: #3a3f45;
+    color: #c7c1b8;
+}
+
 html[data-bpb-theme="dark"] .bpb-re-tool:hover,
 html[data-bpb-theme="dark"] .bpb-re-tab:hover,
 html[data-bpb-theme="dark"] .bpb-re-mode:hover,
@@ -309,6 +438,28 @@ html[data-bpb-theme="dark"] .bpb-re-preview-empty {
 
 html[data-bpb-theme="dark"] .bpb-re-foot {
     color: #8f8a81;
+}
+
+html[data-bpb-theme="dark"] .bpb-re-surface blockquote,
+html[data-bpb-theme="dark"] .bpb-re-preview blockquote {
+    border-color: #59616b;
+    color: #a9a39a;
+}
+
+html[data-bpb-theme="dark"] .bpb-re-surface pre,
+html[data-bpb-theme="dark"] .bpb-re-preview pre,
+html[data-bpb-theme="dark"] .bpb-re-surface :not(pre) > code,
+html[data-bpb-theme="dark"] .bpb-re-preview :not(pre) > code {
+    background: #24272a;
+}
+
+html[data-bpb-theme="dark"] .bpb-re-surface th,
+html[data-bpb-theme="dark"] .bpb-re-surface td,
+html[data-bpb-theme="dark"] .bpb-re-preview th,
+html[data-bpb-theme="dark"] .bpb-re-preview td,
+html[data-bpb-theme="dark"] .bpb-re-surface hr,
+html[data-bpb-theme="dark"] .bpb-re-preview hr {
+    border-color: #4b5158;
 }
 
 html[data-bpb-theme="dark"] .bpb-re-draft {

@@ -55,8 +55,10 @@
     const state = {
         mode: null,
         mdSource: null,      // authoritative markdown text while in markdown mode
+        mdDirty: false,      // do not normalize an untouched server report
         mdTab: 'write',
         savedRange: null,    // rich-text selection kept across the link popover
+        richDirty: false,    // preserve untouched unsupported server markup verbatim
         syncTimer: null,
         autosaveTimer: null
     };
@@ -92,18 +94,34 @@
     bar.setAttribute('aria-label', 'Trip report formatting');
 
     const tools = el('div', 'bpb-re-tools');
+    const blockFormat = el('select', 'bpb-re-format');
+    blockFormat.setAttribute('aria-label', 'Block style');
+    blockFormat.title = 'Block style';
+    for (const [value, label] of [
+        ['p', 'Paragraph'],
+        ['h1', 'Heading 1'], ['h2', 'Heading 2'], ['h3', 'Heading 3'],
+        ['h4', 'Heading 4'], ['h5', 'Heading 5'], ['h6', 'Heading 6'],
+        ['blockquote', 'Quote'], ['pre', 'Preformatted']
+    ]) {
+        const option = el('option', null, label);
+        option.value = value;
+        blockFormat.append(option);
+    }
     const toolButtons = {
         bold: button('bpb-re-tool', 'B', 'Bold (Ctrl+B)', '<b>B</b>'),
         italic: button('bpb-re-tool', 'I', 'Italic (Ctrl+I)', '<i>I</i>'),
         underline: button('bpb-re-tool', 'U', 'Underline (Ctrl+U)', '<u>U</u>'),
+        strikeThrough: button('bpb-re-tool', 'S', 'Strikethrough', '<s>S</s>'),
         link: button('bpb-re-tool', 'Link', 'Link (Ctrl+K)',
             '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" d="M6.5 9.5l3-3M5.7 7.2L4 8.9a2.5 2.5 0 003.5 3.5l1.7-1.7M10.3 8.8L12 7.1a2.5 2.5 0 00-3.5-3.5L6.8 5.3"/></svg>'),
         insertUnorderedList: button('bpb-re-tool', 'Bulleted list', 'Bulleted list',
             '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><g fill="currentColor"><circle cx="3" cy="4" r="1.3"/><circle cx="3" cy="8" r="1.3"/><circle cx="3" cy="12" r="1.3"/></g><g stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M6.5 4h6.5M6.5 8h6.5M6.5 12h6.5"/></g></svg>'),
         insertOrderedList: button('bpb-re-tool', 'Numbered list', 'Numbered list',
-            '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><g fill="currentColor" font-size="5.5" font-family="Tahoma, sans-serif"><text x="1" y="6">1</text><text x="1" y="14">2</text></g><g stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M6.5 4h6.5M6.5 12h6.5"/></g></svg>')
+            '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><g fill="currentColor" font-size="5.5" font-family="Tahoma, sans-serif"><text x="1" y="6">1</text><text x="1" y="14">2</text></g><g stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M6.5 4h6.5M6.5 12h6.5"/></g></svg>'),
+        insertHorizontalRule: button('bpb-re-tool', 'Rule', 'Horizontal rule',
+            '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M2 8h12" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>')
     };
-    tools.append(...Object.values(toolButtons));
+    tools.append(blockFormat, ...Object.values(toolButtons));
 
     const mdTabs = el('div', 'bpb-re-mdtabs');
     const writeTab = button('bpb-re-tab', 'Write');
@@ -152,7 +170,7 @@
     const status = el('span', 'bpb-re-status');
     status.setAttribute('role', 'status');
     status.setAttribute('aria-live', 'polite');
-    const mdHint = el('span', 'bpb-re-hint', '**bold**  *italic*  [link](url)  - list · blank line starts a paragraph');
+    const mdHint = el('span', 'bpb-re-hint', '# heading  > quote  ~~strike~~  `code`  [link](url)  ![image](url)  | table |');
     foot.append(status, mdHint);
 
     ui.append(draftBar, bar, linkBox, surface, mdArea, preview, foot);
@@ -169,13 +187,15 @@
             globalThis.clearTimeout(state.syncTimer);
             state.syncTimer = null;
         }
-        if (state.mode === 'rich') {
+        if (state.mode === 'rich' && state.richDirty) {
             textarea.value = Markup.domToBracket(surface);
             state.mdSource = null;
+            state.richDirty = false;
             updatePlaceholder();
-        } else if (state.mode === 'markdown') {
+        } else if (state.mode === 'markdown' && state.mdDirty) {
             state.mdSource = mdArea.value;
             textarea.value = Markup.markdownToBracket(mdArea.value);
+            state.mdDirty = false;
         }
         // plain mode: the textarea IS the editor; nothing to do.
     };
@@ -314,6 +334,7 @@
     const exec = (command, value = null) => {
         surface.focus();
         if (document.execCommand) document.execCommand(command, false, value);
+        state.richDirty = true;
         scheduleSync();
     };
 
@@ -361,6 +382,16 @@
         return true;
     };
 
+    blockFormat.addEventListener('mousedown', () => {
+        const range = selectionAnchor();
+        state.savedRange = range ? range.cloneRange() : null;
+    });
+    blockFormat.addEventListener('change', () => {
+        if (state.savedRange) restoreSelection();
+        exec('formatBlock', blockFormat.value);
+        state.savedRange = null;
+    });
+
     const applyLink = () => {
         const href = Markup.resolveLinkTarget(linkInput.value);
         if (!href) {
@@ -385,6 +416,7 @@
             document.execCommand('createLink', false, href);
         }
         closeLinkBox();
+        state.richDirty = true;
         scheduleSync();
     };
 
@@ -400,6 +432,7 @@
         }
         if (document.execCommand) document.execCommand('unlink', false, null);
         closeLinkBox();
+        state.richDirty = true;
         scheduleSync();
     };
 
@@ -427,7 +460,10 @@
         else if (key === 'k') { event.preventDefault(); openLinkBox(); }
     });
 
-    surface.addEventListener('input', scheduleSync);
+    surface.addEventListener('input', () => {
+        state.richDirty = true;
+        scheduleSync();
+    });
 
     // Paste lands as the canonical subset, so the editor never shows styling
     // that would silently vanish from the saved report.
@@ -443,6 +479,7 @@
             const plain = event.clipboardData.getData('text/plain');
             if (plain) document.execCommand('insertText', false, plain);
         }
+        state.richDirty = true;
         scheduleSync();
     });
 
@@ -464,7 +501,10 @@
     };
     writeTab.addEventListener('click', () => setMdTab('write'));
     previewTab.addEventListener('click', () => setMdTab('preview'));
-    mdArea.addEventListener('input', scheduleSync);
+    mdArea.addEventListener('input', () => {
+        state.mdDirty = true;
+        scheduleSync();
+    });
 
     // ---- Modes -------------------------------------------------------------------
 
@@ -501,10 +541,12 @@
 
         if (rich) {
             surface.innerHTML = Markup.bracketToEditorHtml(textarea.value);
+            state.richDirty = false;
             updatePlaceholder();
         } else if (markdown) {
             mdArea.value = state.mdSource ?? Markup.bracketToMarkdown(textarea.value);
             state.mdSource = mdArea.value;
+            state.mdDirty = false;
             setMdTab('write');
         }
 

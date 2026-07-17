@@ -19,6 +19,7 @@ const DRAFT_KEY = 'bpbReportDraft:900001:new';
 const SCRIPTS = [
     'src/settings-schema.js',
     'src/settings.js',
+    'vendor/marked.umd.js',
     'src/report-markup.js',
     'src/report-editor.js'
 ];
@@ -62,6 +63,14 @@ test('the editor mounts on the ascent form and hides the native textarea', async
     // The site's bracket-syntax hint is superseded while the editor is active.
     const hints = [...doc.querySelectorAll('span')].find(s => /Hints:/.test(s.textContent));
     assert.ok(hints.classList.contains('bpb-re-hidden'), 'native hints should be hidden');
+
+    const blockStyle = ui.querySelector('.bpb-re-format');
+    assert.deepEqual([...blockStyle.options].map(option => option.textContent), [
+        'Paragraph', 'Heading 1', 'Heading 2', 'Heading 3', 'Heading 4',
+        'Heading 5', 'Heading 6', 'Quote', 'Preformatted'
+    ]);
+    assert.ok(ui.querySelector('[aria-label="Strikethrough"]'));
+    assert.ok(ui.querySelector('[aria-label="Horizontal rule"]'));
 });
 
 test('rich edits sync into the hidden textarea as bracket markup', async () => {
@@ -72,7 +81,7 @@ test('rich edits sync into the hidden textarea as bracket markup', async () => {
     typeRich(dom, '<p>Summit day was <b>windy</b> and <i>cold</i>.</p><ul><li>axe</li><li>rope</li></ul>');
     await waitFor(dom, () => doc.getElementById('JournalText').value.includes('[b]'));
     assert.equal(doc.getElementById('JournalText').value,
-        'Summit day was [b]windy[/b] and [i]cold[/i].\n\n- axe\n- rope');
+        'Summit day was [b]windy[/b] and [i]cold[/i].\n\n[ul][li]axe[/li][li]rope[/li][/ul]');
 });
 
 test('an existing bracket report renders into the rich editor', async () => {
@@ -106,15 +115,15 @@ test('markdown mode converts to bracket markup and its preview shows the final r
     mdArea.value = '# Day 1\n\nWe went **up**.\n\n- tent\n- stove';
     mdArea.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
 
-    await waitFor(dom, () => doc.getElementById('JournalText').value.includes('[b]Day 1[/b]'));
+    await waitFor(dom, () => doc.getElementById('JournalText').value.includes('[h1]Day 1[/h1]'));
     assert.equal(doc.getElementById('JournalText').value,
-        '[b]Day 1[/b]\n\nWe went [b]up[/b].\n\n- tent\n- stove');
+        '[h1]Day 1[/h1]\n\nWe went [b]up[/b].\n\n[ul][li]tent[/li][li]stove[/li][/ul]');
 
     const previewButton = [...doc.querySelectorAll('.bpb-re-tab')].find(b => b.textContent === 'Preview');
     previewButton.click();
     const preview = doc.querySelector('.bpb-re-preview');
     assert.equal(preview.hidden, false);
-    assert.match(preview.innerHTML, /<b>Day 1<\/b>/);
+    assert.match(preview.innerHTML, /<h1>Day 1<\/h1>/);
     assert.match(preview.innerHTML, /<li>tent<\/li>/);
 
     // The chosen mode is remembered for next time.
@@ -135,6 +144,31 @@ test('switching rich → markdown → rich keeps the content through the canonic
     assert.equal(doc.getElementById('JournalText').value, 'A [b]bold[/b] start.');
 });
 
+test('expanded rich DOM syncs headings, quotes, tables, code, rules, and images', async () => {
+    const dom = await loadEditor();
+    await editorReady(dom);
+    const doc = dom.window.document;
+
+    typeRich(dom, '<h2>Route</h2><blockquote><p>Windy <s>retreat</s></p></blockquote>'
+        + '<table><thead><tr><th>Peak</th></tr></thead><tbody><tr><td>Baker</td></tr></tbody></table>'
+        + '<pre><code>two   spaces\nnew line</code></pre><hr>'
+        + '<p><img src="https://example.com/map.jpg" alt="Topo" width="120"></p>');
+    await waitFor(dom, () => doc.getElementById('JournalText').value.includes('[table'));
+    assert.equal(doc.getElementById('JournalText').value, [
+        '[h2]Route[/h2]',
+        '',
+        '[blockquote]Windy [s]retreat[/s][/blockquote]',
+        '',
+        '[table border="1"][tr][th]Peak[/th][/tr][tr][td]Baker[/td][/tr][/table]',
+        '',
+        '[pre]two   spaces\nnew line[/pre]',
+        '',
+        '[hr]',
+        '',
+        '[img src="https://example.com/map.jpg" alt="Topo" width="120"]'
+    ].join('\n'));
+});
+
 test('plain mode is the untouched native textarea, hints restored', async () => {
     const dom = await loadEditor({ report: 'raw [whatever] text' });
     await editorReady(dom);
@@ -146,6 +180,31 @@ test('plain mode is the untouched native textarea, hints restored', async () => 
     assert.equal(textarea.value, 'raw [whatever] text');
     const hints = [...doc.querySelectorAll('span')].find(s => /Hints:/.test(s.textContent));
     assert.equal(hints.classList.contains('bpb-re-hidden'), false);
+});
+
+test('visiting Markdown mode does not rewrite an untouched server report', async () => {
+    const report = '[iframe src="https://example.com"][/iframe]';
+    const dom = await loadEditor({ report });
+    await editorReady(dom);
+    const doc = dom.window.document;
+    const mode = label => [...doc.querySelectorAll('.bpb-re-mode')].find(button => button.textContent === label);
+
+    mode('Markdown').click();
+    mode('Plain').click();
+    assert.equal(doc.getElementById('JournalText').value, report);
+});
+
+test('editing in rich mode neutralizes unsupported embed markup before submission', async () => {
+    const dom = await loadEditor({ report: '[iframe src="https://example.com"][/iframe]' });
+    await editorReady(dom);
+    const doc = dom.window.document;
+    const surface = doc.querySelector('.bpb-re-surface');
+    surface.append(' edited');
+    surface.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+    await waitFor(dom, () => /edited/.test(doc.getElementById('JournalText').value));
+    const submitted = doc.getElementById('JournalText').value;
+    assert.doesNotMatch(submitted, /\[iframe\b/i);
+    assert.match(submitted, /&#91;iframe/);
 });
 
 test('edits autosave a local draft keyed to this climber and form', async () => {

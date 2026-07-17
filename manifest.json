@@ -52,6 +52,7 @@
       ],
       "js": [
         "src/ascent-draft.js",
+        "vendor/marked.umd.js",
         "src/report-markup.js",
         "src/report-editor.js"
       ],
