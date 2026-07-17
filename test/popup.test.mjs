@@ -115,3 +115,43 @@ test('popup discards the cached GPX before offering a fresh capture', async () =
     assert.equal(captureStarts, 2);
     dom.window.close();
 });
+
+test('popup presents a trackless manual activity as a neutral retryable state', async () => {
+    const dom = new JSDOM(html, {
+        url: 'chrome-extension://better-peakbagger/popup/popup.html',
+        runScripts: 'outside-only'
+    });
+    const job = {
+        id: 'no-gps-job',
+        phase: 'no-gps',
+        provider: 'strava',
+        hasCachedGpx: false,
+        message: 'This activity has no recorded route to capture. Manually created activities need recorded track data before a GPX can be generated.'
+    };
+    const captureStarts = [];
+    dom.window.chrome = {
+        tabs: { query: async () => [{ id: 9 }] },
+        runtime: {
+            sendMessage: async message => {
+                if (message.type === 'CAPTURE_START') captureStarts.push(message);
+                return job;
+            }
+        }
+    };
+
+    dom.window.eval(source);
+    await waitFor(() => /No GPS track on this activity/.test(dom.window.document.getElementById('state').textContent));
+
+    const card = dom.window.document.querySelector('.state-card');
+    assert.equal(card.classList.contains('error'), false);
+    assert.equal(dom.window.document.getElementById('results').hidden, true);
+    assert.match(card.textContent, /Manually created activities/);
+    const checkAgain = [...card.querySelectorAll('button')].find(element => element.textContent === 'Check again');
+    assert.ok(checkAgain);
+    assert.equal(checkAgain.classList.contains('primary'), true);
+    checkAgain.click();
+    await waitFor(() => captureStarts.length === 2);
+    assert.equal(captureStarts[1].force, true);
+    await new Promise(resolve => setTimeout(resolve, 30));
+    dom.window.close();
+});

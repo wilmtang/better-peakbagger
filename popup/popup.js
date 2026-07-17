@@ -156,6 +156,14 @@
         currentJob = job;
         providerLabel.textContent = job.provider === 'garmin' ? 'Garmin Connect activity' : 'Strava activity';
         if (job.phase === 'error') return errorState(job.error);
+        if (job.phase === 'no-gps') {
+            stateCard(
+                'No GPS track on this activity',
+                job.message || 'This activity has no recorded route to capture. Manually created activities need recorded track data before a GPX can be generated.',
+                { action: { label: 'Check again', primary: true, onClick: retry } }
+            );
+            return;
+        }
         if (job.phase === 'no-matches') {
             stateCard('No confident summit matches', 'Possible and weak results are intentionally hidden. Nothing was opened or uploaded.');
             return;
@@ -170,7 +178,7 @@
         try {
             const job = await ext.runtime.sendMessage({ type: 'CAPTURE_STATUS', tabId: activeTab.id });
             if (job) render(job);
-            if (!job || !['ready', 'no-matches', 'error', 'opened', 'previewed'].includes(job.phase)) {
+            if (!job || !['ready', 'no-matches', 'no-gps', 'error', 'opened', 'previewed'].includes(job.phase)) {
                 pollTimer = setTimeout(poll, 450);
             }
         } catch (error) {

@@ -177,6 +177,46 @@ test('background capture persists a private job, opens grouped drafts, and previ
     assert.equal(duplicate.ok, false);
 });
 
+test('coordinate-only provider GPX still produces a valid Peakbagger draft', async () => {
+    const harness = createHarness({
+        captureResult: {
+            ok: true,
+            provider: 'strava',
+            activityId: '123',
+            metadata: { displayedLocalStart: '2026-07-01T08:00:00', utcOffsetMinutes: null },
+            segments: [[
+                { lat: 0, lon: -0.001, ele: null, time: null },
+                { lat: 0, lon: 0, ele: null, time: null },
+                { lat: 0, lon: 0.001, ele: null, time: null }
+            ]]
+        }
+    });
+
+    const ready = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    assert.equal(ready.phase, 'ready');
+    assert.equal(ready.matches[0].classification, 'probable');
+    assert.equal(ready.matches[0].confidence, 69);
+    assert.deepEqual([...ready.selectedIds], []);
+    assert.equal(ready.hasCachedGpx, true);
+
+    const storedJob = harness.values.bpbCaptureJobs['1'];
+    assert.equal((storedJob.uploadGpx.match(/<trkpt /g) || []).length, 3);
+    assert.doesNotMatch(storedJob.uploadGpx, /<(?:ele|time)>/);
+    assert.equal(storedJob.trackSummary.breakCounts.missingElevation, 3);
+    assert.equal(storedJob.trackSummary.breakCounts.missingTime, 3);
+    assert.equal(storedJob.matches[0].draftFields.date, '2026-07-01');
+    assert.equal(storedJob.matches[0].draftFields.time, '');
+    assert.equal(storedJob.matches[0].draftFields.startElevationM, null);
+    assert.equal(storedJob.matches[0].draftFields.endElevationM, null);
+
+    await harness.send({ type: 'CAPTURE_OPEN_DRAFTS', tabId: 1, selectedIds: [7] });
+    const apply = await harness.send({ type: 'DRAFT_READY', pid: '7', cid: '77' }, { tab: { id: 100 } });
+    assert.equal(apply.action, 'apply');
+    assert.doesNotMatch(apply.gpx, /<(?:ele|time)>/);
+    assert.deepEqual({ ...apply.fields.upDuration }, { days: 0, hours: 0, minutes: 0 });
+    assert.deepEqual({ ...apply.fields.downDuration }, { days: 0, hours: 0, minutes: 0 });
+});
+
 test('a failed Peakbagger Preview keeps the GPX and permits an explicit retry', async () => {
     const harness = createHarness();
     await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
@@ -460,4 +500,55 @@ test('provider export failures preserve the real error instead of reporting an o
     assert.equal(result.error.code, 'provider-export-failed');
     assert.equal(result.error.message, 'Garmin GPX export failed with HTTP 404. Reload the activity and try again.');
     assert.doesNotMatch(result.error.message, /ownership changed/i);
+});
+
+test('an activity without a provider GPX ends in a neutral, reusable no-GPS state', async () => {
+    const harness = createHarness({
+        ownershipResult: { ok: true, provider: 'strava', activityId: '123', viewerId: '42', authorId: '42' },
+        captureResult: {
+            ok: false,
+            code: 'no-gps-data',
+            provider: 'strava',
+            activityId: '123',
+            message: 'This activity has no recorded route to capture.'
+        }
+    });
+
+    const result = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    assert.equal(result.phase, 'no-gps');
+    assert.equal(result.error, null);
+    assert.equal(result.message, 'This activity has no recorded route to capture.');
+    assert.equal(result.hasCachedGpx, false);
+    assert.equal(harness.values.bpbCaptureJobs['1'].uploadGpx, null);
+    assert.equal(harness.fetchCalls.filter(url => url.includes('/Async/pllbb2.aspx')).length, 0);
+    assert.equal(harness.badgeCalls.some(([kind, details]) => kind === 'text' && details.text === '!'), false);
+
+    const firstJobId = result.id;
+    const captureCalls = () => harness.scriptCalls.filter(call => call.args).length;
+    assert.equal(captureCalls(), 1);
+    const reused = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    assert.equal(reused.id, firstJobId);
+    assert.equal(captureCalls(), 1);
+    const checkedAgain = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: true });
+    assert.notEqual(checkedAgain.id, firstJobId);
+    assert.equal(checkedAgain.phase, 'no-gps');
+    assert.equal(captureCalls(), 2);
+});
+
+test('a nominally successful export with no usable points also ends without an error', async () => {
+    const harness = createHarness({
+        captureResult: {
+            ok: true,
+            provider: 'strava',
+            activityId: '123',
+            metadata: {},
+            segments: [[]]
+        }
+    });
+
+    const result = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    assert.equal(result.phase, 'no-gps');
+    assert.equal(result.error, null);
+    assert.equal(result.hasCachedGpx, false);
+    assert.equal(harness.fetchCalls.filter(url => url.includes('/Async/pllbb2.aspx')).length, 0);
 });

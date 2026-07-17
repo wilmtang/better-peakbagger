@@ -301,6 +301,8 @@ The upload serializer constructs new GPX rather than deleting selected nodes fro
 
 Timestamps and elevation are optional analysis inputs, not assumptions about a provider export. If timestamps are absent, the extension does not invent them: it uses the provider's displayed local start date when available, leaves the encounter time empty, calculates durations as zero, and lowers the track-quality evidence.
 
+If the provider reports that no GPX is available, returns an empty or trackless GPX, or the track contains no usable coordinates, the popup stops in a neutral **No GPS track** state and retains no upload. This covers manually created activities without conflating them with malformed GPX or provider-server failures; **Check again** performs a fresh capture after track data is added.
+
 ### 3. Track validation and summit lookup
 
 Points are processed in recorded order; they are never sorted and gaps are never bridged. Invalid coordinates or timestamps create segment breaks. So do reversed clocks, implied speeds over 100 m/s, a gap over 10 minutes that also spans over 300 m, a spatial jump over 10 km, or an untimed jump over 1 km. Besides preventing invented straight lines across bad data, these breaks feed a track-quality score used by matching.

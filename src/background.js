@@ -102,6 +102,20 @@ if (typeof importScripts === 'function') {
         return updateJob(tabId, { phase: 'error', error: { code, message } });
     };
 
+    const finishWithoutGps = async (tabId, message) => {
+        await setBadge(tabId, '');
+        return updateJob(tabId, {
+            phase: 'no-gps',
+            matches: [],
+            selectedIds: [],
+            trackSummary: null,
+            uploadGpx: null,
+            error: null,
+            message: message || 'This activity has no recorded route to capture.',
+            expiresAt: now() + JOB_TTL_MS
+        });
+    };
+
     const peakbaggerLogin = async () => {
         let response;
         try {
@@ -233,6 +247,10 @@ if (typeof importScripts === 'function') {
 
             const capture = await captureProvider(tabId, capturePreferences);
             if (!capture || !capture.ok) {
+                if (capture?.code === 'no-gps-data') {
+                    await finishWithoutGps(tabId, capture.message);
+                    return;
+                }
                 const messages = {
                     'provider-signed-out': 'Sign in to the activity provider before capturing.',
                     'not-owner': 'This activity was recorded by another account, so it cannot be captured.',
@@ -254,6 +272,10 @@ if (typeof importScripts === 'function') {
                 ? Core.sanitizeWaypoints(capture.waypoints)
                 : [];
             const pointCount = sanitized.segments.reduce((sum, segment) => sum + segment.length, 0);
+            if (pointCount === 0) {
+                await finishWithoutGps(tabId, 'The exported activity contains no usable route coordinates.');
+                return;
+            }
             if (pointCount < 2) throw new Error('The exported GPX contains fewer than two usable track points.');
             if (sanitized.segments.length > Core.MAX_TRACK_SEGMENTS) {
                 throw new Error(`The sanitized track has ${sanitized.segments.length} segments; Peakbagger allows 50.`);
@@ -344,7 +366,7 @@ if (typeof importScripts === 'function') {
                 return publicJob(completed);
             }
         }
-        const terminalPhases = new Set(['ready', 'no-matches', 'error', 'opened', 'previewed']);
+        const terminalPhases = new Set(['ready', 'no-matches', 'no-gps', 'error', 'opened', 'previewed']);
         if (!message.force && sameActivity && sameCapturePreferences(current.capturePreferences, capturePreferences)
             && current.expiresAt > now() && terminalPhases.has(current.phase)) {
             return publicJob(current);

@@ -131,6 +131,11 @@ test('successful capture fetches only the provider GPX endpoint', async () => {
     assert.equal(capture.ok, true);
     assert.deepEqual(requested, ['/activities/123/export_gpx']);
     assert.equal(capture.segments[0].length, 2);
+    assert.deepEqual(
+        JSON.parse(JSON.stringify(capture.segments[0].map(point => [point.ele, point.time, point.invalidTime]))),
+        [[null, null, false], [null, null, false]],
+        'coordinate-only GPX must remain a successful capture'
+    );
     assert.deepEqual([...capture.waypoints], []);
     assert.equal(capture.metadata.title, undefined);
     assert.equal(capture.metadata.displayedLocalStart, '2026-07-11T16:13:00');
@@ -174,11 +179,32 @@ test('Garmin current-session capture uses the gc-api route and same-page CSRF he
 test('Garmin export failures are returned explicitly instead of masquerading as ownership changes', async () => {
     const dom = load(garminPage(), 'https://connect.garmin.com/app/activity/777');
     dom.window.USE_DI_SESSION = true;
-    dom.window.fetch = async () => ({ ok: false, status: 404 });
+    dom.window.fetch = async () => ({ ok: false, status: 503 });
 
     const capture = await dom.window.BPBProviderPage.capture();
     assert.equal(capture.ok, false);
     assert.equal(capture.code, 'provider-export-failed');
-    assert.match(capture.message, /Garmin GPX export failed with HTTP 404/);
+    assert.match(capture.message, /Garmin GPX export failed with HTTP 503/);
     assert.doesNotMatch(capture.message, /ownership/i);
+});
+
+test('an unavailable or trackless provider export is reported as no GPS data', async t => {
+    const cases = [
+        { name: 'not found', response: { ok: false, status: 404 } },
+        { name: 'no content', response: { ok: true, status: 204 } },
+        { name: 'empty body', response: { ok: true, status: 200, text: async () => '  ' } },
+        { name: 'GPX without trackpoints', response: { ok: true, status: 200, text: async () => '<gpx><trk><trkseg/></trk></gpx>' } }
+    ];
+
+    for (const item of cases) {
+        await t.test(item.name, async () => {
+            const dom = load(stravaPage(), 'https://www.strava.com/activities/123');
+            dom.window.fetch = async () => item.response;
+
+            const capture = await dom.window.BPBProviderPage.capture();
+            assert.equal(capture.ok, false);
+            assert.equal(capture.code, 'no-gps-data');
+            assert.match(capture.message, /no recorded route to capture/i);
+        });
+    }
 });

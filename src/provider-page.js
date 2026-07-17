@@ -116,6 +116,12 @@
         ? value.replace(/\s+/g, ' ').trim().slice(0, 200)
         : '';
 
+    const noGpsError = () => {
+        const error = new Error('This activity has no recorded route to capture. Manually created activities need recorded track data before a GPX can be generated.');
+        error.code = 'no-gps-data';
+        return error;
+    };
+
     const parseGpxData = (text, options = {}) => {
         const xml = new DOMParser().parseFromString(text, 'application/xml');
         if (elementsByLocalName(xml, 'parsererror').length) throw new Error('The provider returned invalid GPX XML.');
@@ -135,7 +141,7 @@
                 invalidTime: !!timeElement && !Number.isFinite(parsedTime)
             };
         }));
-        if (!segments.length) throw new Error('The provider GPX contains no track segments.');
+        if (!segments.length || !segments.some(segment => segment.length)) throw noGpsError();
         const waypoints = options.retainWaypoints
             ? elementsByLocalName(xml, 'wpt').map(waypoint => {
                 const latText = waypoint.getAttribute('lat');
@@ -214,11 +220,13 @@
                 redirect: 'follow',
                 headers: request.headers
             });
+            if (response.status === 204 || response.status === 404) throw noGpsError();
             if (!response.ok) {
                 const providerName = ownership.provider === 'garmin' ? 'Garmin' : 'Strava';
                 throw new Error(`${providerName} GPX export failed with HTTP ${response.status}. Reload the activity and try again.`);
             }
             const text = await response.text();
+            if (!text.trim()) throw noGpsError();
             const parsed = parseGpxData(text, options);
             const metadata = activityMetadata(ownership.provider);
             if (options.includeTripName) {
@@ -234,7 +242,7 @@
         } catch (error) {
             return {
                 ok: false,
-                code: 'provider-export-failed',
+                code: error?.code === 'no-gps-data' ? 'no-gps-data' : 'provider-export-failed',
                 provider: ownership.provider,
                 activityId: ownership.activityId,
                 message: typeof error?.message === 'string' && error.message
