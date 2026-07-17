@@ -126,6 +126,16 @@ no-referrer policy. A remote image in the final saved report is still loaded by
 Peakbagger and therefore makes a request to that image host when someone reads
 the report.
 
+## Local drafts and cache limits
+
+Drafts autosave to extension-local storage every time you pause typing, and also save synchronously on page exit. They never leave your device. 
+To prevent storage unbounded growth and accidental overwrites, drafts have specific lifecycle rules:
+- **Identity:** Drafts are uniquely keyed by the climber ID and the ascent ID (or peak ID, for a new ascent).
+- **TTL:** Drafts expire after **14 days**.
+- **Limit:** The extension keeps a maximum of **30 drafts** globally. Excess drafts are pruned (oldest first).
+- **Restoration:** When you return to an ascent page, the extension compares its saved draft against the text the server just rendered. If they differ, it presents a banner offering to restore the draft. The extension **never silently applies** a draft; you must explicitly click "Restore draft". 
+- **Clearance:** A draft is permanently cleared when you click either Peakbagger Save button, click "Delete draft", or if you delete all text and it autosaves an empty state.
+
 ## Preview fidelity
 
 Preview shows the exact semantic structure the converter will save, with the
