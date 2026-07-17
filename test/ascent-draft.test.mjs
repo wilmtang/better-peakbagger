@@ -54,7 +54,7 @@ const loadDraft = responseFactory => {
     return { dom, messages };
 };
 
-test('fills the expected fields, attaches coordinate-only GPX, previews once, and never saves', async () => {
+test('fills the expected fields, attaches reduced GPX with elevation and time, previews once, and never saves', async () => {
     let previewClicks = 0;
     let saveClicks = 0;
     const payload = {
@@ -65,7 +65,7 @@ test('fills the expected fields, attaches coordinate-only GPX, previews once, an
             upDuration: { days: 0, hours: 2, minutes: 5 },
             downDuration: { days: 0, hours: 1, minutes: 55 }
         },
-        gpx: '<?xml version="1.0"?><gpx><trk><trkseg><trkpt lat="47" lon="-121"></trkpt></trkseg></trk></gpx>'
+        gpx: '<?xml version="1.0"?><gpx><trk><trkseg><trkpt lat="47" lon="-121"><ele>1000.5</ele><time>2026-07-01T15:45:00Z</time></trkpt></trkseg></trk></gpx>'
     };
     const { dom, messages } = loadDraft(message => message.type === 'DRAFT_READY' ? payload : { ok: true });
     dom.window.document.getElementById('GPXPreview').addEventListener('click', () => { previewClicks++; });
@@ -165,7 +165,7 @@ test('ordinary Peakbagger editor tabs are left completely untouched', async () =
     dom.window.close();
 });
 
-test('privacy guard blocks a payload containing time, elevation, or extensions', async () => {
+test('privacy guard still blocks non-allowlisted GPX extensions', async () => {
     const { dom, messages } = loadDraft(message => message.type === 'DRAFT_READY' ? {
         action: 'apply', jobId: 'job', pid: '12', cid: '34', classification: 'strong', confidence: 90,
         fields: {
@@ -173,7 +173,7 @@ test('privacy guard blocks a payload containing time, elevation, or extensions',
             upDistanceM: 1, downDistanceM: 1, upGainM: 1, downGainM: 0,
             upDuration: { days: 0, hours: 0, minutes: 0 }, downDuration: { days: 0, hours: 0, minutes: 0 }
         },
-        gpx: '<gpx><trk><trkseg><trkpt lat="1" lon="2"><time>private</time></trkpt></trkseg></trk></gpx>'
+        gpx: '<gpx><trk><trkseg><trkpt lat="1" lon="2"><ele>1</ele><time>2026-01-01T00:00:00Z</time><extensions><hr>120</hr></extensions></trkpt></trkseg></trk></gpx>'
     } : { ok: true });
     await waitForCondition(() => dom.window.document.getElementById('bpb-draft-banner'));
     assert.deepEqual(messages.map(message => message.type), ['DRAFT_READY']);

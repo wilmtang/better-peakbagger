@@ -138,14 +138,18 @@ test('tracks at the limit are unchanged and mandatory overflow fails closed', ()
     );
 });
 
-test('privacy upload contains only track geometry and segment structure', () => {
+test('privacy upload retains reduced track elevation and time without unrelated source fields', () => {
+    const start = Date.UTC(2026, 6, 1, 15, 0);
     const gpx = Core.serializeUploadGpx([
-        [point(1, 2, 300, Date.now()), point(3, 4, 400, Date.now())],
-        [point(5, 6, 500, Date.now())]
+        [point(1, 2, 300, start), point(3, 4, 400, start + 1000)],
+        [point(5, 6, null, null)]
     ]);
-    assert.match(gpx, /<trkseg><trkpt lat="1" lon="2"><\/trkpt>/);
+    assert.match(gpx, /<trkseg><trkpt lat="1" lon="2"><ele>300<\/ele><time>2026-07-01T15:00:00Z<\/time><\/trkpt>/);
+    assert.match(gpx, /<trkpt lat="5" lon="6"><\/trkpt>/);
     assert.equal((gpx.match(/<trkseg>/g) || []).length, 2);
-    assert.doesNotMatch(gpx, /<(?:ele|time|extensions|wpt|rte|name)(?:\s|>)/i);
+    assert.equal((gpx.match(/<ele>/g) || []).length, 2);
+    assert.equal((gpx.match(/<time>/g) || []).length, 2);
+    assert.doesNotMatch(gpx, /<(?:extensions|wpt|rte|name)(?:\s|>)/i);
 });
 
 test('retained waypoints are validated, bounded, escaped, and limited to coordinates plus name', () => {
@@ -157,7 +161,8 @@ test('retained waypoints are validated, bounded, escaped, and limited to coordin
 
     const gpx = Core.serializeUploadGpx([[point(1, 2), point(3, 4)]], waypoints);
     assert.match(gpx, /<wpt lat="47\.1" lon="-121\.2"><name>Camp &amp; &lt;Water&gt;<\/name><\/wpt>/);
-    assert.doesNotMatch(gpx, /999|private|<(?:ele|time|desc|sym|extensions)(?:\s|>)/i);
+    assert.doesNotMatch(gpx, /999|private|<(?:desc|sym|extensions)(?:\s|>)/i);
+    assert.doesNotMatch(gpx.match(/<wpt[\s\S]*?<\/wpt>/i)[0], /<(?:ele|time)>/i);
 });
 
 test('draft fields use full-resolution distance, gains, durations, and activity offset', () => {

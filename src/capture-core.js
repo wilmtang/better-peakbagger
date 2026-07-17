@@ -635,8 +635,15 @@
             return `<wpt lat="${waypoint.lat}" lon="${waypoint.lon}">${name}</wpt>`;
         }).join('');
         const body = segments.map(segment => {
-            const points = segment.map(point =>
-                `<trkpt lat="${point.lat}" lon="${point.lon}"></trkpt>`).join('');
+            const points = segment.map(point => {
+                const elevation = Number.isFinite(point.ele) ? `<ele>${point.ele}</ele>` : '';
+                const date = Number.isFinite(point.time) ? new Date(point.time) : null;
+                const isoTime = date && Number.isFinite(date.getTime()) ? date.toISOString() : '';
+                const time = isoTime
+                    ? `<time>${isoTime.endsWith('.000Z') ? isoTime.slice(0, -5) + 'Z' : isoTime}</time>`
+                    : '';
+                return `<trkpt lat="${point.lat}" lon="${point.lon}">${elevation}${time}</trkpt>`;
+            }).join('');
             return `<trkseg>${points}</trkseg>`;
         }).join('');
         return `<?xml version="1.0" encoding="UTF-8"?>`

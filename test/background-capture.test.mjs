@@ -138,8 +138,9 @@ test('background capture persists a private job, opens grouped drafts, and previ
     assert.equal(ready.uploadGpx, undefined, 'GPX must not be exposed to the popup response');
 
     const storedJob = harness.values.bpbCaptureJobs['1'];
-    assert.match(storedJob.uploadGpx, /<trkpt lat="0" lon="-0.001">/);
-    assert.doesNotMatch(storedJob.uploadGpx, /<(?:ele|time|extensions)(?:\s|>)/i);
+    assert.match(storedJob.uploadGpx,
+        /<trkpt lat="0" lon="-0.001"><ele>100<\/ele><time>2026-07-01T15:00:00Z<\/time><\/trkpt>/);
+    assert.doesNotMatch(storedJob.uploadGpx, /<extensions(?:\s|>)/i);
     assert.equal(JSON.stringify(storedJob).includes('heart'), false);
     assert.deepEqual(harness.scriptCalls.find(call => call.args)?.args, [{
         retainWaypoints: true,

@@ -129,11 +129,12 @@ activity capture.
 There is no Better Peakbagger account, analytics, or telemetry. The raw Garmin
 or Strava GPX is processed on the activity page and is never stored or sent to
 the extension developer. Peakbagger receives small corridor boxes for summit
-discovery and, only after you choose **Open drafts**, a reduced coordinate-only
-track for Preview. Waypoint coordinates and names are included by default and
-can be turned off in Settings. Source health and device fields plus each
-trackpoint's time and elevation are excluded; derived draft values remain yours
-to review. The
+discovery and, only after you choose **Open drafts**, a reduced track for
+Preview. The retained trackpoints keep their coordinates, elevation, and
+timestamp so Peakbagger downloads remain useful to Interactive Stats. Waypoint
+coordinates and names are included by default and can be turned off in
+Settings. Source health, device, and extension fields remain excluded; derived
+draft values remain yours to review. The
 optional 3D terrain view makes a separate, explicit request to Mapterhorn for
 tiles covering the viewed map area. Choosing OSM Vector requests tiles from
 OpenFreeMap; another selected Leaflet map layer may be re-requested from its
@@ -294,9 +295,9 @@ The source XML never leaves the activity page and is never persisted. With defau
 | Representation | Fields | Lifetime and purpose |
 | --- | --- | --- |
 | Full-resolution analysis | latitude, longitude, optional elevation, optional timestamp, segment boundaries | In memory while validating the track, finding summits, and calculating ascent fields. |
-| Peakbagger upload | track latitude/longitude and segment boundaries; optional waypoint latitude/longitude/name | Reduced to at most 3,000 total trackpoints and waypoints, kept in `storage.session`, and uploaded only after **Open drafts**. |
+| Peakbagger upload | track latitude/longitude plus optional elevation/timestamp and segment boundaries; optional waypoint latitude/longitude/name | Reduced to at most 3,000 total trackpoints and waypoints, kept in `storage.session`, and uploaded only after **Open drafts**. |
 
-The upload serializer constructs new GPX rather than deleting selected nodes from the source. Its allowlist is deliberately tiny: `<gpx>`, `<trk>`, `<trkseg>`, `<trkpt lat="…" lon="…">`, and—when waypoint retention is enabled—`<wpt lat="…" lon="…"><name>…</name></wpt>`. A second validator on the Peakbagger draft page enforces the setting and rejects anything outside that shape, more than 3,000 total points, or more than 50 segments before attaching the file. Descriptions, metadata, routes, timestamps, elevation, symbols, device fields, heart rate, cadence, temperature, power, and all extensions have no path into the upload.
+The upload serializer constructs new GPX rather than deleting selected nodes from the source. Its allowlist is deliberately tiny: `<gpx>`, `<trk>`, `<trkseg>`, `<trkpt lat="…" lon="…"><ele>…</ele><time>…</time></trkpt>`, and—when waypoint retention is enabled—`<wpt lat="…" lon="…"><name>…</name></wpt>`. Elevation and time remain optional per point. A second validator on the Peakbagger draft page enforces the setting and rejects anything outside that shape, more than 3,000 total points, or more than 50 segments before attaching the file. Descriptions, metadata, routes, symbols, device fields, heart rate, cadence, temperature, power, and all extensions have no path into the upload.
 
 Timestamps and elevation are optional analysis inputs, not assumptions about a provider export. If timestamps are absent, the extension does not invent them: it uses the provider's displayed local start date when available, leaves the encounter time empty, calculates durations as zero, and lowers the track-quality evidence.
 
@@ -326,7 +327,7 @@ The popup pairs the percentage with route distance, elevation difference when av
 
 ### 5. How the track is reduced to 3,000 points
 
-All dates, durations, distances, elevations, and gain are calculated from the full-resolution analysis track **before** reduction. Reduction affects only the privacy upload.
+All dates, durations, distances, elevations, and gain are calculated from the full-resolution analysis track **before** reduction. The reduced upload retains elevation and timestamps only for the selected trackpoints.
 
 The reducer is segment-aware and uses a globally prioritized Ramer–Douglas–Peucker-style process:
 
@@ -1127,12 +1128,13 @@ the Peakbagger summit lookup and GPS Preview actions described below.
   source XML.
 - **Summit discovery:** Peakbagger receives small bounding boxes derived from the
   track corridor. Every required lookup must succeed before results are shown.
-- **Prepared drafts:** derived ascent fields and a reduced coordinate track live
+- **Prepared drafts:** derived ascent fields and a reduced track live
   only in `storage.session`, are bound to the expected source and draft tabs,
   and expire after 30 minutes.
 - **GPS Preview:** only after you choose **Open drafts**, Peakbagger receives a
-  newly serialized GPX containing latitude, longitude, and segment boundaries,
-  plus waypoint coordinates/names by default, reduced to at most 3,000 total points.
+  newly serialized GPX containing trackpoint latitude, longitude, optional
+  elevation and timestamp, and segment boundaries, plus waypoint
+  coordinates/names by default, reduced to at most 3,000 total points.
 - **3D terrain:** the feature is off by default, but its **3D** control remains
   visible. The first click shows an extension-owned provider/privacy confirmation;
   declining keeps the feature off, and it can still be enabled later in Settings.
@@ -1146,10 +1148,10 @@ the Peakbagger summit lookup and GPS Preview actions described below.
   the bounded, best-effort local cache; returning to 2D destroys the renderer,
   not the cache.
 - **Excluded source fields:** heart rate, cadence, power, temperature, device
-  fields, descriptions, routes, waypoint elevation/time/symbols, extension
-  elements, and each trackpoint's timestamp and elevation. The activity/track
-  name is retained only for enabled multi-peak Trip Info; waypoint coordinates
-  and names are retained unless disabled. Derived form values such
+  fields, descriptions, routes, waypoint elevation/time/symbols, and extension
+  elements. The activity/track name is retained only for enabled multi-peak
+  Trip Info; trackpoint elevation and timestamps accompany the reduced route;
+  waypoint coordinates and names are retained unless disabled. Derived form values such
   as the activity date, ascent times, distance, gain, and nights out are retained
   for the prepared draft; the other source fields are not.
 - **Manual publication:** Better Peakbagger can prepare GPS Preview, but no

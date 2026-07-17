@@ -205,11 +205,13 @@
         const xml = new DOMParser().parseFromString(gpx, 'application/xml');
         if (xml.getElementsByTagName('parsererror').length) return false;
         const elements = [...xml.getElementsByTagName('*')];
-        const allowed = new Set(['gpx', 'wpt', 'name', 'trk', 'trkseg', 'trkpt']);
+        const allowed = new Set(['gpx', 'wpt', 'name', 'trk', 'trkseg', 'trkpt', 'ele', 'time']);
         if (elements.some(element => !allowed.has(element.localName))) return false;
         const points = elements.filter(element => element.localName === 'trkpt');
         const waypoints = elements.filter(element => element.localName === 'wpt');
         const names = elements.filter(element => element.localName === 'name');
+        const elevations = elements.filter(element => element.localName === 'ele');
+        const times = elements.filter(element => element.localName === 'time');
         const segments = elements.filter(element => element.localName === 'trkseg');
         if ((!allowWaypoints && waypoints.length) || points.length + waypoints.length > 3000 || segments.length > 50) return false;
         const validCoordinate = point => {
@@ -224,7 +226,25 @@
             return Number.isFinite(lat) && lat >= -90 && lat <= 90
                 && Number.isFinite(lon) && lon >= -180 && lon <= 180;
         };
-        return points.every(point => validCoordinate(point) && point.children.length === 0 && !(point.textContent || '').trim())
+        const validLeaf = element => element.attributes.length === 0
+            && element.children.length === 0
+            && !!(element.textContent || '').trim();
+        const validTime = element => {
+            if (!validLeaf(element)) return false;
+            const value = element.textContent.trim();
+            const parsed = Date.parse(value);
+            if (!Number.isFinite(parsed)) return false;
+            const canonical = new Date(parsed).toISOString();
+            return value === canonical || value === canonical.replace('.000Z', 'Z');
+        };
+        return points.every(point => validCoordinate(point)
+                && [...point.children].every(child => child.localName === 'ele' || child.localName === 'time')
+                && [...point.children].filter(child => child.localName === 'ele').length <= 1
+                && [...point.children].filter(child => child.localName === 'time').length <= 1
+                && [...point.childNodes].every(node => node.nodeType === 1 || !(node.textContent || '').trim()))
+            && elevations.every(elevation => elevation.parentElement?.localName === 'trkpt'
+                && validLeaf(elevation) && Number.isFinite(Number(elevation.textContent.trim())))
+            && times.every(time => time.parentElement?.localName === 'trkpt' && validTime(time))
             && waypoints.every(waypoint => waypoint.parentElement?.localName === 'gpx'
                 && validCoordinate(waypoint)
                 && [...waypoint.children].every(child => child.localName === 'name')
