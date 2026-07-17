@@ -44,6 +44,10 @@
         // 'distance' / 'time'. A legend click can still reveal the hidden one
         // for the current view without changing this preference.
         chartDefaultSeries: 'both',
+        // Trip-report editor on the ascent add/edit form, and the last mode
+        // the user wrote in ('plain' is the untouched native textarea).
+        enableReportEditor: true,
+        reportEditorMode: 'rich',
         mapRouteColor: ROUTE_STYLE.color, mapRouteWidth: ROUTE_STYLE.width,
         mapRouteCasingColor: ROUTE_STYLE.casingColor, mapRouteCasingWidth: ROUTE_STYLE.casingWidth,
         mapViewportWidth: VIEWPORT.width, mapViewportHeight: VIEWPORT.height,
@@ -124,10 +128,11 @@
         const s = { ...DEFAULTS, ...(raw && typeof raw === 'object' ? raw : {}) };
         if (!['auto', 'imperial', 'metric'].includes(s.units)) s.units = DEFAULTS.units;
         if (!['system', 'light', 'dark'].includes(s.theme)) s.theme = DEFAULTS.theme;
-        for (const key of ['enable3dMap', 'retainWaypoints', 'fillTripInfo', 'fillWildernessNights']) {
+        for (const key of ['enable3dMap', 'retainWaypoints', 'fillTripInfo', 'fillWildernessNights', 'enableReportEditor']) {
             if (typeof s[key] !== 'boolean') s[key] = DEFAULTS[key];
         }
         if (!['both', 'distance', 'time'].includes(s.chartDefaultSeries)) s.chartDefaultSeries = DEFAULTS.chartDefaultSeries;
+        if (!['rich', 'markdown', 'plain'].includes(s.reportEditorMode)) s.reportEditorMode = DEFAULTS.reportEditorMode;
         s.mapRouteColor = routeColor(s.mapRouteColor);
         s.mapRouteWidth = routeWidth(s.mapRouteWidth);
         s.mapRouteCasingColor = routeCasingColor(s.mapRouteCasingColor);

@@ -99,9 +99,16 @@ const masterMapHtml = `<!doctype html><html><body>
   ]);
 </script></body></html>`;
 
+// The ascent editor is exercised against the real captured form, so the
+// content script meets Peakbagger's actual DOM (JournalText, hints row, the
+// Save/Preview controls) rather than a hand-written stand-in.
+const ascentEditHtml = await readFile(
+    path.join(root, 'test', 'fixtures', 'pages', 'climber-ascentedit.html'), 'utf8');
+
 const server = createServer((request, response) => {
     const url = new URL(request.url, 'http://x');
     const send = (type, body) => { response.writeHead(200, { 'content-type': type }); response.end(body); };
+    if (/ascentedit\.aspx/i.test(url.pathname)) return send('text/html; charset=utf-8', ascentEditHtml);
     if (/ascent\.aspx/i.test(url.pathname)) return send('text/html; charset=utf-8', ascentHtml);
     if (/peak\.aspx/i.test(url.pathname)) return send('text/html; charset=utf-8', peakHtml);
     if (/bigmap\.aspx/i.test(url.pathname)) return send('text/html; charset=utf-8', bigMapHtml);
@@ -335,6 +342,78 @@ try {
         check(peakFrameCreated, 'the isolated terrain bridge did not create a frame for the Peak-page summit view');
         await peakPage.close();
     }
+
+    // --- Trip-report editor on the real ascent form --------------------------
+    // Real typing and real execCommand formatting, which jsdom cannot cover.
+    {
+        const modifier = process.platform === 'darwin' ? 'Meta' : 'Control';
+        const editorUrl = `http://www.peakbagger.com:${port}/climber/ascentedit.aspx?cid=900001`;
+        const editorPage = await context.newPage();
+        const editorErrors = [];
+        editorPage.on('pageerror', error => editorErrors.push(String(error)));
+        await editorPage.goto(editorUrl, { waitUntil: 'load' });
+
+        const mounted = await editorPage.locator('#bpb-report-editor').waitFor({ state: 'visible', timeout: 10000 })
+            .then(() => true).catch(() => false);
+        check(mounted, `the trip-report editor never mounted on the real form (errors=${JSON.stringify(editorErrors)})`);
+
+        if (mounted) {
+            const nativeHidden = await editorPage.evaluate(() => {
+                const textarea = document.getElementById('JournalText');
+                return getComputedStyle(textarea).display === 'none' && !!textarea.form;
+            });
+            check(nativeHidden, 'the native textarea should be hidden but still inside the form');
+
+            await editorPage.locator('.bpb-re-surface').click();
+            await editorPage.keyboard.type('Summit day was ');
+            await editorPage.keyboard.press(`${modifier}+b`);
+            await editorPage.keyboard.type('windy');
+            await editorPage.keyboard.press(`${modifier}+b`);
+            await editorPage.keyboard.type('.');
+            await editorPage.keyboard.press('Enter');
+            await editorPage.keyboard.type('Second paragraph.');
+
+            const synced = await editorPage.waitForFunction(() =>
+                document.getElementById('JournalText').value
+                === 'Summit day was [b]windy[/b].\n\nSecond paragraph.', null, { timeout: 5000 })
+                .then(() => true).catch(() => false);
+            check(synced, `real typing + Ctrl/Cmd+B did not sync bracket markup into JournalText (value=${
+                JSON.stringify(await editorPage.evaluate(() => document.getElementById('JournalText').value))})`);
+
+            const savedStatus = await editorPage.waitForFunction(() =>
+                /Draft saved on this device/.test(document.querySelector('.bpb-re-status')?.textContent || ''),
+            null, { timeout: 5000 }).then(() => true).catch(() => false);
+            check(savedStatus, 'the local-draft autosave status never appeared');
+
+            await editorPage.locator('#bpb-report-editor').getByRole('button', { name: 'Markdown', exact: true }).click();
+            const markdownValue = await editorPage.evaluate(() => document.querySelector('.bpb-re-md').value);
+            check(markdownValue === 'Summit day was **windy**.\n\nSecond paragraph.',
+                `switching to markdown did not convert the content (value=${JSON.stringify(markdownValue)})`);
+            await editorPage.locator('#bpb-report-editor').getByRole('button', { name: 'Preview', exact: true }).click();
+            const previewHtml = await editorPage.evaluate(() => document.querySelector('.bpb-re-preview').innerHTML);
+            check(/<b>windy<\/b>/.test(previewHtml),
+                `the markdown preview did not render the final formatting (html=${JSON.stringify(previewHtml)})`);
+
+            // A reload serves the pristine form again; the draft must be
+            // offered back and restore into the mode it was written in.
+            await editorPage.reload({ waitUntil: 'load' });
+            const offered = await editorPage.locator('.bpb-re-draft').waitFor({ state: 'visible', timeout: 10000 })
+                .then(() => true).catch(() => false);
+            check(offered, 'a differing local draft was not offered after reload');
+            if (offered) {
+                await editorPage.locator('#bpb-report-editor').getByRole('button', { name: 'Restore draft', exact: true }).click();
+                const restored = await editorPage.evaluate(() => ({
+                    mode: document.getElementById('bpb-report-editor').dataset.mode,
+                    value: document.getElementById('JournalText').value
+                }));
+                check(restored.mode === 'markdown'
+                    && restored.value === 'Summit day was [b]windy[/b].\n\nSecond paragraph.',
+                `restoring the draft did not bring back content and mode (state=${JSON.stringify(restored)})`);
+            }
+            check(editorErrors.length === 0, `the editor page threw: ${JSON.stringify(editorErrors)}`);
+        }
+        await editorPage.close();
+    }
 } finally {
     if (context) await context.close();
     server.close();
@@ -355,3 +434,6 @@ console.log('  - trusted confirmation persists the feature gate without contacti
 console.log('  - the Full Screen BigMap receives settings and shows an enabled 3D toggle');
 console.log('  - the Peak Dynamic Map preserves its native frame and shows an enabled 3D toggle');
 console.log('  - clicking Peak 3D creates the isolated frame with a route-free summit focus');
+console.log('  - the trip-report editor mounts on the captured ascent form, real typing and');
+console.log('    Ctrl/Cmd+B sync bracket markup into JournalText, markdown mode + preview');
+console.log('    convert the same content, and a reloaded page offers and restores the draft');

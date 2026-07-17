@@ -47,8 +47,13 @@
         "*://peakbagger.com/climber/ascentedit.aspx*",
         "*://peakbagger.com/climber/AscentEdit.aspx*"
       ],
+      "css": [
+        "src/report-editor.css"
+      ],
       "js": [
-        "src/ascent-draft.js"
+        "src/ascent-draft.js",
+        "src/report-markup.js",
+        "src/report-editor.js"
       ],
       "run_at": "document_end",
       "all_frames": false

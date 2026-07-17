@@ -409,6 +409,7 @@
 
     const API = {
         sanitizeHref,
+        resolveLinkTarget,
         parseBracket,
         parseMarkdown,
         domToAst,

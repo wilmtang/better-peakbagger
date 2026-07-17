@@ -19,7 +19,7 @@ export const makeChromeStub = (initial = {}, localInitial = {}) => {
     const localStore = { ...localInitial };
     const listeners = new Set();
     const makeStorageArea = (values, area) => ({
-        get: async key => ({ [key]: values[key] }),
+        get: async key => (key === null ? { ...values } : { [key]: values[key] }),
         set: async obj => {
             const changes = {};
             for (const [key, value] of Object.entries(obj)) {

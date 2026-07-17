@@ -1,0 +1,328 @@
+/* Copyright (C) 2026 wilmtang <wilm.tang@outlook.com> */
+/* SPDX-License-Identifier: AGPL-3.0-or-later */
+/*
+ * Trip-report editor on the ascent add/edit form. Matches the page's own
+ * typography (Tahoma small) and stays quiet: one bordered writing surface,
+ * one slim toolbar. Dark mode keys off the extension's html[data-bpb-theme]
+ * attribute, the same hook as the site-wide dark stylesheet.
+ */
+
+.bpb-re {
+    margin: 2px 0 6px;
+    font-family: Tahoma, Geneva, sans-serif;
+    font-size: small;
+    max-width: 99%;
+}
+
+.bpb-re-hidden,
+.bpb-re [hidden] {
+    display: none !important;
+}
+
+/* --- toolbar ------------------------------------------------------------- */
+
+.bpb-re-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    padding: 4px 6px;
+    border: 1px solid #b9b9b9;
+    border-bottom: none;
+    border-radius: 6px 6px 0 0;
+    background: #f2f2f0;
+}
+
+.bpb-re-tools,
+.bpb-re-mdtabs {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+}
+
+.bpb-re-modes {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    margin-left: auto;
+    border: 1px solid #b9b9b9;
+    border-radius: 5px;
+    overflow: hidden;
+}
+
+.bpb-re button {
+    box-sizing: border-box;
+    border: none;
+    background: transparent;
+    color: #333;
+    font: inherit;
+    cursor: pointer;
+    border-radius: 4px;
+}
+
+.bpb-re button:focus-visible {
+    outline: 2px solid #3b76c4;
+    outline-offset: -2px;
+}
+
+.bpb-re-tool {
+    min-width: 26px;
+    height: 24px;
+    padding: 0 5px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+}
+
+.bpb-re-tool:hover {
+    background: #e2e2df;
+}
+
+.bpb-re-tab,
+.bpb-re-mode {
+    height: 24px;
+    padding: 0 9px;
+    font-size: 12px;
+}
+
+.bpb-re-mode {
+    border-radius: 0;
+}
+
+.bpb-re-tab:hover,
+.bpb-re-mode:hover {
+    background: #e2e2df;
+}
+
+.bpb-re-tab[aria-pressed="true"],
+.bpb-re-mode[aria-pressed="true"] {
+    background: #d8dee9;
+    color: #1e2f49;
+    font-weight: bold;
+}
+
+/* --- link popover ---------------------------------------------------------- */
+
+.bpb-re-linkbox {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px;
+    border: 1px solid #b9b9b9;
+    border-bottom: none;
+    background: #fbfbf9;
+}
+
+.bpb-re-linkbox input {
+    flex: 1;
+    min-width: 120px;
+    font: inherit;
+    padding: 3px 6px;
+    border: 1px solid #b9b9b9;
+    border-radius: 4px;
+    background: #fff;
+    color: inherit;
+}
+
+.bpb-re-linkbox input.bpb-re-invalid {
+    border-color: #b42318;
+    outline: 1px solid #b42318;
+}
+
+.bpb-re-linkbox button {
+    padding: 3px 8px;
+    border: 1px solid #b9b9b9;
+    background: #f2f2f0;
+    font-size: 12px;
+}
+
+.bpb-re-linkbox button:hover {
+    background: #e2e2df;
+}
+
+/* --- writing surfaces -------------------------------------------------------- */
+
+.bpb-re-surface,
+.bpb-re-md,
+.bpb-re-preview {
+    box-sizing: border-box;
+    width: 100%;
+    min-height: 200px;
+    max-height: 60vh;
+    overflow-y: auto;
+    padding: 8px 10px;
+    border: 1px solid #b9b9b9;
+    border-radius: 0 0 6px 6px;
+    background: #fff;
+    color: #1c1c1c;
+    font-size: small;
+    line-height: 1.5;
+}
+
+.bpb-re-surface:focus,
+.bpb-re-md:focus {
+    outline: 2px solid #3b76c4;
+    outline-offset: -1px;
+}
+
+.bpb-re-surface p,
+.bpb-re-preview p {
+    margin: 0 0 0.7em;
+    font-size: inherit;
+}
+
+.bpb-re-surface p:last-child,
+.bpb-re-preview p:last-child {
+    margin-bottom: 0;
+}
+
+.bpb-re-surface ul,
+.bpb-re-surface ol,
+.bpb-re-preview ul,
+.bpb-re-preview ol {
+    margin: 0 0 0.7em;
+    padding-left: 1.6em;
+}
+
+.bpb-re-empty::before {
+    content: attr(data-placeholder);
+    color: #8a8a86;
+    pointer-events: none;
+    position: absolute;
+}
+
+.bpb-re-surface {
+    position: relative;
+}
+
+.bpb-re-md {
+    display: block;
+    resize: vertical;
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 12px;
+    white-space: pre-wrap;
+}
+
+.bpb-re-preview-empty {
+    color: #8a8a86;
+    font-style: italic;
+}
+
+/* --- footer / draft bar -------------------------------------------------------- */
+
+.bpb-re-foot {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 12px;
+    padding: 3px 2px 0;
+    font-size: x-small;
+    color: #6a6a66;
+    min-height: 1.2em;
+}
+
+.bpb-re-hint {
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.bpb-re-draft {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: 0 0 5px;
+    padding: 6px 10px;
+    border: 1px solid #f0d48a;
+    border-radius: 6px;
+    background: #fffaeb;
+    color: #93370d;
+}
+
+.bpb-re-draft-text {
+    flex: 1;
+    min-width: 180px;
+}
+
+.bpb-re-draft button {
+    padding: 3px 9px;
+    border: 1px solid #e0b94f;
+    background: #fff;
+    color: #93370d;
+    font-size: 12px;
+}
+
+.bpb-re-draft button:hover {
+    background: #fdf3d7;
+}
+
+/* --- dark theme ------------------------------------------------------------------ */
+
+html[data-bpb-theme="dark"] .bpb-re-bar,
+html[data-bpb-theme="dark"] .bpb-re-linkbox {
+    background: #202224;
+    border-color: #3a3f45;
+}
+
+html[data-bpb-theme="dark"] .bpb-re button {
+    color: #c7c1b8;
+}
+
+html[data-bpb-theme="dark"] .bpb-re-tool:hover,
+html[data-bpb-theme="dark"] .bpb-re-tab:hover,
+html[data-bpb-theme="dark"] .bpb-re-mode:hover,
+html[data-bpb-theme="dark"] .bpb-re-linkbox button:hover {
+    background: #2c3036;
+}
+
+html[data-bpb-theme="dark"] .bpb-re-tab[aria-pressed="true"],
+html[data-bpb-theme="dark"] .bpb-re-mode[aria-pressed="true"] {
+    background: #33415c;
+    color: #dbe4f5;
+}
+
+html[data-bpb-theme="dark"] .bpb-re-modes {
+    border-color: #3a3f45;
+}
+
+html[data-bpb-theme="dark"] .bpb-re-surface,
+html[data-bpb-theme="dark"] .bpb-re-md,
+html[data-bpb-theme="dark"] .bpb-re-preview,
+html[data-bpb-theme="dark"] .bpb-re-linkbox input {
+    background: #181a1b;
+    border-color: #3a3f45;
+    color: #c7c1b8;
+}
+
+html[data-bpb-theme="dark"] .bpb-re-linkbox button {
+    background: #202224;
+    border-color: #3a3f45;
+}
+
+html[data-bpb-theme="dark"] .bpb-re-empty::before,
+html[data-bpb-theme="dark"] .bpb-re-preview-empty {
+    color: #7d786f;
+}
+
+html[data-bpb-theme="dark"] .bpb-re-foot {
+    color: #8f8a81;
+}
+
+html[data-bpb-theme="dark"] .bpb-re-draft {
+    background: #2b2416;
+    border-color: #6b5518;
+    color: #e8c56a;
+}
+
+html[data-bpb-theme="dark"] .bpb-re-draft button {
+    background: #202224;
+    border-color: #6b5518;
+    color: #e8c56a;
+}
+
+html[data-bpb-theme="dark"] .bpb-re-draft button:hover {
+    background: #35301f;
+}
