@@ -20,6 +20,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { JSDOM } from 'jsdom';
 import { loadPageWithBar } from './helpers/load-page.mjs';
+import { darkCss } from '../src/site-dark-css.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -40,10 +41,7 @@ const contrast = (a, b) => {
 };
 
 // --- Parse the shipped dark stylesheet into { exact selector -> declarations } ---
-const cssSource = await readFile(path.join(root, 'src', 'site-dark-css.js'), 'utf8');
-const isolatedGlobal = {};
-new Function('globalThis', cssSource)(isolatedGlobal); // the IIFE sets globalThis.BPBDarkCSS
-const CSS = isolatedGlobal.BPBDarkCSS.replace(/\/\*[\s\S]*?\*\//g, '');   // strip comments
+const CSS = darkCss.replace(/\/\*[\s\S]*?\*\//g, '');   // strip comments
 
 const RULES = new Map();
 for (const [, selText, declText] of CSS.matchAll(/([^{}]+)\{([^}]*)\}/g)) {
@@ -159,7 +157,7 @@ test('header banner links stay dark enough for the light header.jpg photo', () =
 test('legacy inline navy text is fixed without flattening other inline colors', () => {
     const dom = new JSDOM(`<!doctype html>
         <html data-bpb-theme="dark">
-        <head><style>${isolatedGlobal.BPBDarkCSS}</style></head>
+        <head><style>${darkCss}</style></head>
         <body>
             <span id="start-spaced" style="color: Navy">Help</span>
             <span id="start-tight" style="color:navy">Help</span>
@@ -193,7 +191,7 @@ test('legacy inline navy text is fixed without flattening other inline colors', 
 test('legacy inline maroon labels use the dark-theme semantic red', () => {
     const dom = new JSDOM(`<!doctype html>
         <html data-bpb-theme="dark">
-        <head><style>${isolatedGlobal.BPBDarkCSS}</style></head>
+        <head><style>${darkCss}</style></head>
         <body>
             <span id="start" style="color:maroon">Highest Priority Lists</span>
             <span id="middle" style="font-size:small; color: maroon; font-weight:bold">Most Complete Lists</span>

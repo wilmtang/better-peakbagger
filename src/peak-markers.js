@@ -20,8 +20,6 @@
 //   - c="1" is climbed (green), c="2" is unknown/anonymous (orange), anything
 //     else is unclimbed (pink); peak ids can be negative (provisional peaks).
 
-(() => {
-    'use strict';
 
     // The native 2D map hides all peak markers below this zoom ("the map
     // covers too big an area"). The 3D view mirrors the same cutoff.
@@ -164,5 +162,7 @@
         };
     };
 
-    globalThis.BPBPeakMarkers = { MIN_PEAK_ZOOM, MAX_PEAKS, contextFrom, requestUrl, parsePeaks, createClient };
-})();
+    export const peakMarkers = { MIN_PEAK_ZOOM, MAX_PEAKS, contextFrom, requestUrl, parsePeaks, createClient };
+
+    // Transitional global bridge; removed in Step 8.
+    globalThis.BPBPeakMarkers = peakMarkers;

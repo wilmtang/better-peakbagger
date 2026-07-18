@@ -26,7 +26,7 @@ modules as real ES modules (zero `globalThis.BPB*`), vendor via npm, docs + dev 
 | 0 | Plan file | ✅ done |
 | 1 | Test harness → eval built bundles (`load-page.mjs` + feature jsdom tests) | ✅ done |
 | 2 | Convert pure leaves: `settings-schema`, `gpx-metrics`, `capture-core` (+ unit tests) | ✅ done |
-| 3 | Convert shared leaves: `terrain-basemap`, `peak-markers`, `terrain-cache`, `site-dark-css`, `report-markup`, `provider-page` | ⬜ todo |
+| 3 | Convert shared leaves: `terrain-basemap`, `peak-markers`, `terrain-cache`, `site-dark-css`, `report-markup`, `provider-page` | ✅ done |
 | 4 | Convert `settings`, `theme`, `bridge`, `big-map-bridge`, `peak-map-bridge` | ⬜ todo |
 | 5 | Convert feature modules: `ascent-filter`, `peak-links`, `gpx-analyzer`, `peak-map`, `big-map`, `terrain-map`, `terrain-frame` | ⬜ todo |
 | 6 | Convert editor: `ascent-draft`, `report-editor` | ⬜ todo |
@@ -39,6 +39,11 @@ modules as real ES modules (zero `globalThis.BPB*`), vendor via npm, docs + dev 
 
 ## Log
 
+- **Step 3 done** — `terrain-basemap`, `peak-markers`, `terrain-cache`, `site-dark-css`,
+  `report-markup`, `provider-page` are ES modules (named export + bridge; report-markup keeps
+  its `globalThis.marked` vendor read). Unit tests: pure modules import directly (setting
+  ambient `DOMParser`/`location`/`fetch` where the module reads them); `provider-page`
+  (document-coupled) evals its built bundle in each page's jsdom. 240 green; verify:extension ok.
 - **Step 2 done** — `settings-schema`, `gpx-metrics`, `capture-core` are ES modules (named
   export + transitional `globalThis` bridge); `capture-core` imports `{ gpxMetrics }`. Unit
   tests (`settings-schema`, `capture-core`) and `background-capture` import them; the worker

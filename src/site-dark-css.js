@@ -14,9 +14,7 @@
 // body, navy links, purple visited, maroon h1, navy h2, light-gray table.gray
 // borders, Tahoma. Images and the map iframe are left untouched.
 
-(() => {
-    if (globalThis.BPBDarkCSS) return;
-    globalThis.BPBDarkCSS = `
+export const darkCss = `
 html[data-bpb-theme="dark"] {
     color-scheme: dark;
     background: #181a1b !important;
@@ -172,4 +170,6 @@ html[data-bpb-theme="dark"] button.pbaf-date-sort {
 }
 html[data-bpb-theme="dark"] button.pbaf-date-sort:hover { color: #9ecbff !important; }
 `;
-})();
+
+// Transitional global bridge; removed in Step 8.
+globalThis.BPBDarkCSS = darkCss;
