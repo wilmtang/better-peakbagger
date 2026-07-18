@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 2.2.0 — 2026-07-17
 
 - **3D terrain on peak pages.** The 3D terrain toggle is now available on individual peak maps (`Peak.aspx`), joining ascent maps and Full Screen maps.
 - **Activity capture enhancements.** GPX drafts now preserve elevation and timestamps. Added support for coordinate-only and trackless captures, improved handling of Peakbagger preview failures, and added a cached capture reset action.
