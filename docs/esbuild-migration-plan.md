@@ -29,7 +29,7 @@ modules as real ES modules (zero `globalThis.BPB*`), vendor via npm, docs + dev 
 | 3 | Convert shared leaves: `terrain-basemap`, `peak-markers`, `terrain-cache`, `site-dark-css`, `report-markup`, `provider-page` | ✅ done |
 | 4 | Convert `settings`, `theme`, `bridge`, `big-map-bridge`, `peak-map-bridge` | ✅ done |
 | 5 | Convert feature modules: `ascent-filter`, `peak-links`, `gpx-analyzer`, `peak-map`, `big-map`, `terrain-map`, `terrain-frame` | ✅ done |
-| 6 | Convert editor: `ascent-draft`, `report-editor` | ⬜ todo |
+| 6 | Convert editor: `ascent-draft`, `report-editor` | ✅ done |
 | 7 | Convert entry roots: `background`, `options`, `popup` | ⬜ todo |
 | 8 | Strip all transitional bridges; assert no `globalThis.BPB*` remains | ⬜ todo |
 | 9 | Vendor → npm (`marked`/`chart.js`/`tz-lookup` bundled, `maplibre` copied); delete `vendor/` | ⬜ todo |
@@ -39,6 +39,10 @@ modules as real ES modules (zero `globalThis.BPB*`), vendor via npm, docs + dev 
 
 ## Log
 
+- **Step 6 done** — `report-editor` imports `{ settings }` and `{ reportMarkup }` (thin IIFE
+  kept for early-exit); `ascent-draft` has no deps/exports and stays a self-contained IIFE.
+  No test changes needed (report-editor.test already evals the ascent-editor bundle, now
+  self-contained). 240 green; verify:extension ok.
 - **Step 5 done** — `ascent-filter`, `gpx-analyzer`, `peak-map`, `big-map`, `terrain-map`,
   `terrain-frame` import their deps (Chart/tzlookup/maplibre stay vendor globals); modules with
   early-exit guards keep a thin IIFE for control flow only. `peak-links` (no deps/exports)

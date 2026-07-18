@@ -19,13 +19,16 @@
 // Clicking either Save Ascent control clears the draft; the posted value
 // itself still round-trips through the form if the save fails server-side.
 
+import { settings as Settings } from './settings.js';
+import { reportMarkup as Markup } from './report-markup.js';
+
+// Kept as an IIFE for early-exit control flow (no editor form → nothing to do);
+// dependencies are ES imports and no globals are published.
 (() => {
     'use strict';
 
     const ext = globalThis.browser || globalThis.chrome;
-    const Settings = globalThis.BPBSettings;
-    const Markup = globalThis.BPBReportMarkup;
-    if (!ext || !ext.storage || !Settings || !Markup) return;
+    if (!ext || !ext.storage) return;
 
     const textarea = document.getElementById('JournalText');
     const form = textarea && textarea.form;
