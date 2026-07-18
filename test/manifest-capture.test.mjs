@@ -55,7 +55,7 @@ test('3D terrain is isolated from Peakbagger globals in an extension-owned frame
     assert.equal(terrainEntry.world, undefined, 'terrain should run in the default isolated extension world');
     assert.deepEqual(terrainEntry.js, ['content/terrain-map.js']);
     assert.deepEqual(terrainEntry.css, ['css/terrain-map.css']);
-    assert.deepEqual(bundleSources('content/terrain-map.js'), ['settings-schema.js', 'settings.js', 'terrain-map.js']);
+    assert.deepEqual(bundleSources('content/terrain-map.js'), ['terrain-camera.js', 'settings-schema.js', 'settings.js', 'terrain-map.js']);
     assert.ok(terrainEntry.matches.every(pattern => /peakbagger\.com\/climber\/(?:a|A)scent\.aspx/.test(pattern)));
 
     assert.deepEqual(manifest.web_accessible_resources, [{
@@ -63,11 +63,11 @@ test('3D terrain is isolated from Peakbagger globals in an extension-owned frame
         matches: ['*://*.peakbagger.com/*']
     }]);
     // The frame loads MapLibre (a copied vendor script) then the frame bundle,
-    // which composes settings-schema + terrain-cache + terrain-frame in order.
+    // which composes the shared camera/schema helpers, terrain cache, and frame.
     const terrainFrame = await fs.readFile(new URL('../terrain/terrain.html', import.meta.url), 'utf8');
     assert.match(terrainFrame, /vendor\/maplibre-gl-csp\.js/);
     assert.match(terrainFrame, /terrain-frame\.js/);
-    assert.deepEqual(bundleSources('terrain/terrain-frame.js'), ['settings-schema.js', 'terrain-cache.js', 'terrain-frame.js']);
+    assert.deepEqual(bundleSources('terrain/terrain-frame.js'), ['terrain-camera.js', 'settings-schema.js', 'terrain-cache.js', 'terrain-frame.js']);
     assert.ok(manifest.host_permissions.every(pattern => !pattern.includes('mapterhorn.com')),
         'public CORS tiles must not broaden persistent extension host access');
 });
@@ -85,7 +85,7 @@ test('Full Screen GPS maps get a narrow read-only bridge and a MAIN-world Leafle
     assert.deepEqual(pageEntry.js, ['content/big-map.js']);
     assert.equal(pageEntry.world, 'MAIN');
     assert.deepEqual(bundleSources('content/big-map.js'),
-        ['gpx-metrics.js', 'terrain-basemap.js', 'peak-markers.js', 'settings-schema.js', 'big-map.js']);
+        ['gpx-metrics.js', 'terrain-basemap.js', 'terrain-camera.js', 'peak-markers.js', 'settings-schema.js', 'big-map.js']);
     assert.ok(pageEntry.matches.every(pattern => /bigmap/i.test(pattern)));
 
     // The shared 3D terrain bridge is injected on BigMap too (isolated world,
@@ -143,7 +143,7 @@ test('Peak-page 3D uses a narrow settings bridge, MAIN coordinator, and isolated
     assert.ok(pageCoordinator);
     assert.deepEqual(pageCoordinator.js, ['content/peak-map.js']);
     assert.deepEqual(bundleSources('content/peak-map.js'),
-        ['terrain-basemap.js', 'peak-markers.js', 'settings-schema.js', 'peak-map.js']);
+        ['terrain-basemap.js', 'terrain-camera.js', 'peak-markers.js', 'settings-schema.js', 'peak-map.js']);
     assert.equal(pageCoordinator.run_at, 'document_end');
     assert.equal(pageCoordinator.world, 'MAIN');
 

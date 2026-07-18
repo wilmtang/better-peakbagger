@@ -49,6 +49,7 @@ test('3D terrain waits for the extension frame handshake before sending route co
     dispatchPage({
         type: 'init',
         routeSegments: [[[48.7, -121.8], [48.71, -121.81]]],
+        camera: { center: [48.72, -121.79], zoom: 12.5 },
         focus: [48.83115, -121.60214],
         focusZoom: 13,
         focusPeak: { id: 2829, name: 'Mount Shuksan', lat: 48.83115, lon: -121.60214, state: 'unclimbed' },
@@ -77,6 +78,7 @@ test('3D terrain waits for the extension frame handshake before sending route co
     const init = frameMessages.find(message => message.type === 'init');
     assert.ok(init);
     assert.deepEqual(init.routeSegments, [[[48.7, -121.8], [48.71, -121.81]]]);
+    assert.deepEqual(JSON.parse(JSON.stringify(init.camera)), { center: [48.72, -121.79], zoom: 12.5 });
     assert.deepEqual(init.focus, [48.83115, -121.60214]);
     assert.equal(init.focusZoom, 13);
     assert.deepEqual(init.focusPeak,
@@ -89,11 +91,51 @@ test('3D terrain waits for the extension frame handshake before sending route co
     window.dispatchEvent(new window.MessageEvent('message', {
         source: frame.contentWindow,
         origin: 'chrome-extension://test-id',
-        data: { __bpbTerrainFrame: true, dir: 'toParent', type: 'loaded' }
+        data: {
+            __bpbTerrainFrame: true,
+            dir: 'toParent',
+            type: 'loaded',
+            camera: { center: [48.73, -121.78], zoom: 13.25 }
+        }
     }));
     assert.equal(frame.style.opacity, '1');
     assert.equal(frame.style.pointerEvents, 'auto');
     assert.equal(pageMessages.at(-1).type, 'loaded');
+    assert.deepEqual(JSON.parse(JSON.stringify(pageMessages.at(-1).camera)), { center: [48.73, -121.78], zoom: 13.25 });
+
+    window.dispatchEvent(new window.MessageEvent('message', {
+        source: frame.contentWindow,
+        origin: 'chrome-extension://test-id',
+        data: {
+            __bpbTerrainFrame: true,
+            dir: 'toParent',
+            type: 'camera',
+            camera: { center: [48.74, -121.77], zoom: 14 }
+        }
+    }));
+    assert.equal(pageMessages.at(-1).type, 'camera');
+    assert.deepEqual(JSON.parse(JSON.stringify(pageMessages.at(-1).camera)), { center: [48.74, -121.77], zoom: 14 });
+
+    dispatchPage({ type: 'cameraRequest', requestId: 7 });
+    assert.deepEqual(JSON.parse(JSON.stringify(frameMessages.at(-1))), {
+        __bpbTerrainFrame: true,
+        dir: 'toFrame',
+        type: 'cameraRequest',
+        requestId: 7
+    });
+    window.dispatchEvent(new window.MessageEvent('message', {
+        source: frame.contentWindow,
+        origin: 'chrome-extension://test-id',
+        data: {
+            __bpbTerrainFrame: true,
+            dir: 'toParent',
+            type: 'camera',
+            requestId: 7,
+            camera: { center: [48.75, -121.76], zoom: 14.25 }
+        }
+    }));
+    assert.equal(pageMessages.at(-1).requestId, 7,
+        'the bridge preserves the request identity so an older camera event cannot win the switch race');
 
     dispatchPage({ type: 'highlight', coordinates: [-121.81, 48.71], series: 'time' });
     assert.deepEqual(JSON.parse(JSON.stringify(frameMessages.at(-1))), {
@@ -285,6 +327,14 @@ test('3D terrain frame validates coordinate-only routes before loading public DE
         removeSource(id) { this.sources.delete(id); }
         setPaintProperty(...args) { this.paint.push(args); }
         fitBounds(bounds, options) { this.fitted = { bounds, options }; }
+        getCenter() {
+            const center = this.cameraCenter || this.options.center || [
+                (this.options.bounds[0][0] + this.options.bounds[1][0]) / 2,
+                (this.options.bounds[0][1] + this.options.bounds[1][1]) / 2
+            ];
+            return { lng: center[0], lat: center[1] };
+        }
+        getZoom() { return this.cameraZoom ?? this.options.zoom ?? 12; }
         resize() { this.renderCalls.push('resize'); }
         redraw() { this.renderCalls.push('redraw'); }
         remove() { this.removed = true; }
@@ -503,10 +553,15 @@ test('3D terrain frame validates coordinate-only routes before loading public DE
         type: 'init',
         routeSegments,
         routeColors: ['#e34a33', '#3182bd'],
+        camera: { center: [47.61, -122.33], zoom: 12.25 },
         routeStyle: { color: '#2457a7', width: 7, casingColor: '#ffffff', casingWidth: 12 }
     });
     await new Promise(resolve => window.queueMicrotask(resolve));
     const grouped = maps.at(-1);
+    assert.deepEqual(JSON.parse(JSON.stringify(grouped.options.center)), [-122.33, 47.61],
+        'a validated 2D camera overrides the route-wide initial framing');
+    assert.equal(grouped.options.zoom, 12.25);
+    assert.equal(grouped.options.bounds, undefined);
     assert.deepEqual(
         JSON.parse(JSON.stringify(grouped.sources.get('bpb-route').data.features.map(feature => feature.properties.color))),
         ['#e34a33', '#3182bd'],
@@ -515,6 +570,23 @@ test('3D terrain frame validates coordinate-only routes before loading public DE
         JSON.parse(JSON.stringify(grouped.layers.find(layer => layer.id === 'bpb-route').paint['line-color'])),
         ['coalesce', ['get', 'color'], '#2457a7'],
         'the route line is painted from each track color, not one flat color');
+    grouped.cameraCenter = [-122.29, 47.64];
+    grouped.cameraZoom = 13.5;
+    grouped.handlers.get('moveend')();
+    assert.deepEqual(JSON.parse(JSON.stringify(messages.at(-1))), {
+        __bpbTerrainFrame: true,
+        dir: 'toParent',
+        type: 'camera',
+        camera: { center: [47.64, -122.29], zoom: 13.5 }
+    }, 'the terrain frame reports each settled camera for the return to 2D');
+    dispatch({ type: 'cameraRequest', requestId: 11 });
+    assert.deepEqual(JSON.parse(JSON.stringify(messages.at(-1))), {
+        __bpbTerrainFrame: true,
+        dir: 'toParent',
+        type: 'camera',
+        requestId: 11,
+        camera: { center: [47.64, -122.29], zoom: 13.5 }
+    }, 'an explicit switch request reads the live camera instead of relying on event timing');
 
     // A drape whose every tile fails (e.g. a whole layer blocked by CORS)
     // loads no tile, so it is dropped to terrain-only at the first idle.

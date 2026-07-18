@@ -78,7 +78,17 @@ test('GPX analyzer adds a thick, segment-preserving route casing behind native L
         layers: [],
         _layers: { labels: labelTileLayer, base: baseTileLayer },
         invalidateCalls: 0,
+        center: { lat: 48.72, lng: -121.79 },
+        zoom: 15,
+        setViewCalls: [],
         hasLayer(layer) { return layer === baseTileLayer || layer === labelTileLayer; },
+        getCenter() { return this.center; },
+        getZoom() { return this.zoom; },
+        setView(center, zoom, options) {
+            this.center = { lat: center[0], lng: center[1] };
+            this.zoom = zoom;
+            this.setViewCalls.push({ center: [...center], zoom, options: { ...options } });
+        },
         invalidateSize() { this.invalidateCalls++; },
         removeLayer(layer) {
             this.layers = this.layers.filter(candidate => candidate !== layer);
@@ -223,7 +233,8 @@ test('GPX analyzer adds a thick, segment-preserving route casing behind native L
     assert.equal(window.document.getElementById('bpb-terrain-message').style.display, 'none');
     const terrainInit = terrainMessages.find(message => message.type === 'init');
     assert.deepEqual(JSON.parse(JSON.stringify(terrainInit.routeSegments)), expectedSegments);
-    assert.deepEqual(Object.keys(terrainInit).sort(), ['__bpbTerrain', 'basemap', 'basemaps', 'cacheLimitMb', 'dir', 'routeSegments', 'routeStyle', 'theme', 'type']);
+    assert.deepEqual(Object.keys(terrainInit).sort(), ['__bpbTerrain', 'basemap', 'basemaps', 'cacheLimitMb', 'camera', 'dir', 'routeSegments', 'routeStyle', 'theme', 'type']);
+    assert.deepEqual(JSON.parse(JSON.stringify(terrainInit.camera)), { center: [48.72, -121.79], zoom: 14 });
     assert.equal(terrainInit.cacheLimitMb, 512);
     // The active layer (the test selects L_MT above) drapes from its shared
     // spec so it dedupes cleanly against the picker list.
@@ -299,8 +310,36 @@ test('GPX analyzer adds a thick, segment-preserving route casing behind native L
         { id: -114297, name: 'Peak 5000 (Prov)', lat: 48.74, lon: -121.82, state: 'unknown' }
     ]);
 
+    window.dispatchEvent(new window.MessageEvent('message', {
+        source: window,
+        origin: window.location.origin,
+        data: {
+            __bpbTerrain: true,
+            dir: 'toPage',
+            type: 'camera',
+            camera: { center: [48.8, -121.7], zoom: 13.75 }
+        }
+    }));
     sendSettings({ units: 'imperial', theme: 'light', chartDefaultSeries: 'both', enable3dMap: false });
+    await waitFor(dom, () => terrainMessages.at(-1).type === 'cameraRequest');
+    const cameraRequestId = terrainMessages.at(-1).requestId;
+    window.dispatchEvent(new window.MessageEvent('message', {
+        source: window,
+        origin: window.location.origin,
+        data: {
+            __bpbTerrain: true,
+            dir: 'toPage',
+            type: 'camera',
+            requestId: cameraRequestId,
+            camera: { center: [48.8, -121.7], zoom: 13.75 }
+        }
+    }));
     await waitFor(dom, () => terrainMessages.at(-1).type === 'destroy');
+    assert.deepEqual(JSON.parse(JSON.stringify(map.setViewCalls)), [{
+        center: [48.8, -121.7],
+        zoom: 14.75,
+        options: { animate: false }
+    }], 'the current terrain camera is applied before the native ascent map returns');
     assert.equal(terrainToggle.hidden, false, 'the 3D entry point stays visible while the feature is off');
     assert.equal(terrainToggle.disabled, false);
     assert.equal(iframe.style.visibility, 'visible');

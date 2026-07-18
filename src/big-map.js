@@ -10,6 +10,7 @@ import { settingsSchema as Schema } from './settings-schema.js';
 import { gpxMetrics } from './gpx-metrics.js';
 import { terrainBasemap } from './terrain-basemap.js';
 import { peakMarkers } from './peak-markers.js';
+import { terrainCamera as TerrainCamera } from './terrain-camera.js';
 
 // Kept as an IIFE for early-exit control flow (non-Full-Screen-Map pages);
 // dependencies are ES imports and the module publishes no globals.
@@ -197,6 +198,7 @@ import { peakMarkers } from './peak-markers.js';
     // distinguishable (single-ascent maps use one preferred color); the shared
     // width and casing apply to both. Markers/peaks are not carried into 3D.
     const TERRAIN_LOAD_TIMEOUT_MS = 17000;
+    const TERRAIN_CAMERA_TIMEOUT_MS = 1000;
     let terrainEnabled = false;
     let terrainThemePref = 'system';
     let terrainCacheLimitMb = Schema.DEFAULTS.terrainCacheLimitMb;
@@ -206,6 +208,9 @@ import { peakMarkers } from './peak-markers.js';
     let terrainToggle = null;
     let terrainLoadTimer = null;
     let terrainNavTop = null;
+    let terrainViewCamera = null;
+    let terrainStopPending = false;
+    let terrainCameraRequestId = 0;
     const TERRAIN_TOGGLE_GAP = 8;
 
     // Float the toggle just above the zoom stack of whichever map is showing:
@@ -349,7 +354,13 @@ import { peakMarkers } from './peak-markers.js';
         terrainToggle.dataset.theme = effectiveTheme();
         terrainToggle.classList.remove('bpb-map-3d-toggle-loading');
         terrainToggle.removeAttribute('aria-busy');
-        if (terrainState === 'loading') {
+        if (terrainStopPending) {
+            terrainToggle.disabled = true;
+            terrainToggle.textContent = '2D';
+            terrainToggle.title = 'Returning to the 2D map…';
+            terrainToggle.setAttribute('aria-label', 'Returning to the 2D map');
+            terrainToggle.setAttribute('aria-pressed', 'true');
+        } else if (terrainState === 'loading') {
             terrainToggle.disabled = true;
             terrainToggle.textContent = '3D';
             terrainToggle.classList.add('bpb-map-3d-toggle-loading');
@@ -377,6 +388,8 @@ import { peakMarkers } from './peak-markers.js';
     const failTerrain = () => {
         clearTerrainLoadTimer();
         terrainState = 'idle';
+        terrainViewCamera = null;
+        terrainStopPending = false;
         restoreNativeMap();
         postTerrain('destroy');
         updateTerrainToggle();
@@ -389,6 +402,7 @@ import { peakMarkers } from './peak-markers.js';
         terrainState = 'loading';
         updateTerrainToggle();
         const { basemap, basemaps } = terrainBasemaps();
+        terrainViewCamera = TerrainCamera.fromLeaflet(activeMap);
         postTerrain('init', {
             routeSegments,
             routeColors,
@@ -396,17 +410,37 @@ import { peakMarkers } from './peak-markers.js';
             theme: effectiveTheme(),
             basemap,
             basemaps,
-            cacheLimitMb: Schema.terrainCacheLimitMb(terrainCacheLimitMb)
+            cacheLimitMb: Schema.terrainCacheLimitMb(terrainCacheLimitMb),
+            ...(terrainViewCamera ? { camera: terrainViewCamera } : {})
         });
         terrainLoadTimer = setTimeout(() => { if (terrainState === 'loading') failTerrain(); }, TERRAIN_LOAD_TIMEOUT_MS);
     };
 
-    const stopTerrain = () => {
+    const finishTerrainStop = () => {
         clearTerrainLoadTimer();
+        if (terrainState === 'active' && terrainViewCamera) {
+            TerrainCamera.applyToLeaflet(activeMap, terrainViewCamera);
+        }
         terrainState = 'idle';
+        terrainViewCamera = null;
+        terrainStopPending = false;
         restoreNativeMap();
         postTerrain('destroy');
         updateTerrainToggle();
+    };
+
+    const stopTerrain = () => {
+        if (terrainState !== 'active') {
+            finishTerrainStop();
+            return;
+        }
+        if (terrainStopPending) return;
+        clearTerrainLoadTimer();
+        terrainStopPending = true;
+        updateTerrainToggle();
+        terrainCameraRequestId++;
+        postTerrain('cameraRequest', { requestId: terrainCameraRequestId });
+        terrainLoadTimer = setTimeout(finishTerrainStop, TERRAIN_CAMERA_TIMEOUT_MS);
     };
 
     // The 3D frame asks for Peakbagger's peak dots as its camera settles; the
@@ -454,6 +488,8 @@ import { peakMarkers } from './peak-markers.js';
         }
         if (data.type === 'loaded' && terrainState === 'loading') {
             clearTerrainLoadTimer();
+            const camera = TerrainCamera.clean(data.camera);
+            if (camera) terrainViewCamera = camera;
             terrainState = 'active';
             terrainNavTop = Number.isFinite(data.navTop) ? data.navTop : null;
             const element = nativeMapElement();
@@ -465,6 +501,10 @@ import { peakMarkers } from './peak-markers.js';
         } else if (data.type === 'metrics' && terrainState === 'active') {
             if (Number.isFinite(data.navTop)) terrainNavTop = data.navTop;
             positionTerrainToggle();
+        } else if (data.type === 'camera' && terrainState === 'active') {
+            const camera = TerrainCamera.clean(data.camera);
+            if (camera) terrainViewCamera = camera;
+            if (terrainStopPending && data.requestId === terrainCameraRequestId) finishTerrainStop();
         } else if (data.type === 'error' && terrainState === 'loading') {
             failTerrain();
         }

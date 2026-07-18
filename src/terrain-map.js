@@ -6,6 +6,7 @@
 // real extension origin instead of a browser-specific content-script sandbox.
 
 import { settings } from './settings.js';
+import { terrainCamera } from './terrain-camera.js';
 
 // Kept as an IIFE for scoping; dependencies are ES imports, no globals published.
 (() => {
@@ -245,6 +246,7 @@ import { settings } from './settings.js';
         pendingInit = {
             routeSegments: data.routeSegments,
             routeColors: data.routeColors,
+            camera: terrainCamera.clean(data.camera),
             focus: data.focus,
             focusZoom: data.focusZoom,
             focusPeak: data.focusPeak,
@@ -276,6 +278,10 @@ import { settings } from './settings.js';
                 postToPage('destroyed');
             } else if (data.type === 'highlight') {
                 postToFrame('highlight', { coordinates: data.coordinates, series: data.series });
+            } else if (data.type === 'cameraRequest') {
+                if (Number.isSafeInteger(data.requestId) && data.requestId > 0) {
+                    postToFrame('cameraRequest', { requestId: data.requestId });
+                }
             } else if (data.type === 'peaks') {
                 postToFrame('peaks', { requestId: data.requestId, peaks: data.peaks, unavailable: data.unavailable });
             } else if (data.type === 'update') {
@@ -297,7 +303,15 @@ import { settings } from './settings.js';
             pendingInit = null;
             frame.style.opacity = '1';
             frame.style.pointerEvents = 'auto';
-            postToPage('loaded', { navTop: data.navTop });
+            postToPage('loaded', { navTop: data.navTop, camera: terrainCamera.clean(data.camera) });
+        } else if (data.type === 'camera') {
+            const camera = terrainCamera.clean(data.camera);
+            if (camera) postToPage('camera', {
+                camera,
+                ...(Number.isSafeInteger(data.requestId) && data.requestId > 0
+                    ? { requestId: data.requestId }
+                    : {})
+            });
         } else if (data.type === 'metrics') {
             postToPage('metrics', { navTop: data.navTop });
         } else if (data.type === 'peaksRequest') {

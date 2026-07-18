@@ -43,10 +43,21 @@ const makeLeaflet = window => {
         constructor(layers = []) {
             this.layers = [];
             this.events = {};
+            this.center = { lat: 44.155, lng: -121.765 };
+            this.zoom = 14;
+            this.setViewCalls = [];
             layers.forEach(layer => this.addLayer(layer));
         }
         eachLayer(callback) { this.layers.slice().forEach(callback); }
         on(type, handler) { (this.events[type] ||= []).push(handler); return this; }
+        getCenter() { return this.center; }
+        getZoom() { return this.zoom; }
+        setView(center, zoom, options) {
+            this.center = { lat: center[0], lng: center[1] };
+            this.zoom = zoom;
+            this.setViewCalls.push({ center: [...center], zoom, options: { ...options } });
+            return this;
+        }
         addLayer(layer) {
             layer._map = this;
             this.layers.push(layer);
@@ -250,6 +261,8 @@ test('Full Screen maps offer a 3D toggle that carries the native tracks into the
     assert.equal(init.dir, 'toCS');
     // The native Leaflet track becomes the 3D route, lat/lon order preserved.
     assert.deepEqual(init.routeSegments, [[[44.15, -121.78], [44.16, -121.76], [44.17, -121.75]]]);
+    assert.deepEqual(init.camera, { center: [44.155, -121.765], zoom: 13 },
+        'the current 2D center and equivalent zoom seed the terrain camera');
     assert.equal(toggle.textContent, '3D');
     assert.equal(toggle.getAttribute('aria-busy'), 'true', 'the toggle shows a loading state while the frame loads');
 
@@ -263,9 +276,38 @@ test('Full Screen maps offer a 3D toggle that carries the native tracks into the
     assert.equal(toggle.getAttribute('aria-pressed'), 'true');
     assert.equal(window.document.getElementById('map').style.visibility, 'hidden');
 
-    // Toggling back destroys the renderer and restores the native 2D map.
+    window.dispatchEvent(new window.MessageEvent('message', {
+        source: window,
+        origin: window.location.origin,
+        data: {
+            __bpbTerrain: true,
+            dir: 'toPage',
+            type: 'camera',
+            camera: { center: [44.22, -121.69], zoom: 14.5 }
+        }
+    }));
+
+    // Toggling back applies the settled terrain camera before revealing 2D.
     toggle.click();
+    assert.equal(messages.at(-1).type, 'cameraRequest');
+    const cameraRequestId = messages.at(-1).requestId;
+    window.dispatchEvent(new window.MessageEvent('message', {
+        source: window,
+        origin: window.location.origin,
+        data: {
+            __bpbTerrain: true,
+            dir: 'toPage',
+            type: 'camera',
+            requestId: cameraRequestId,
+            camera: { center: [44.22, -121.69], zoom: 14.5 }
+        }
+    }));
     assert.equal(messages.at(-1).type, 'destroy');
+    assert.deepEqual(window.map.setViewCalls, [{
+        center: [44.22, -121.69],
+        zoom: 15.5,
+        options: { animate: false }
+    }]);
     assert.equal(window.document.getElementById('map').style.visibility, 'visible');
     assert.equal(toggle.textContent, '3D');
     // Let the queued postMessage dispatches drain before closing the window.
