@@ -9,11 +9,11 @@
 // imports it to assert bundle composition, load order, and execution world
 // without re-encoding the layout in each test.
 //
-// Order matters within a bundle: modules run top-to-bottom, so a dependency
-// must precede its consumers. Vendor globals (Chart, tzlookup, marked,
-// maplibregl) are still delivered as separate copied scripts loaded ahead of
-// the bundle that reads them — see the manifest and terrain.html — so they are
-// not listed as bundle sources here.
+// ES imports define dependency evaluation order. The order here remains
+// significant for independent side-effect roots, and is pinned by tests.
+// Vendor globals (Chart, tzlookup, marked, maplibregl) are still delivered as
+// separate copied scripts loaded ahead of the bundle that reads them — see the
+// manifest and terrain.html — so they are not listed as bundle sources here.
 
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -34,7 +34,7 @@ export function resolvePageSource(name) {
 }
 
 // One record per bundle. `out` is the dist-relative output path; `sources` are
-// the modules bundled into it, in execution order.
+// its explicit roots, ordered where sibling side effects depend on that order.
 export const ENTRIES = [
     { out: 'background.js', sources: ['gpx-metrics.js', 'capture-core.js', 'settings-schema.js', 'settings.js', 'background.js'] },
     { out: 'provider-page.js', sources: ['provider-page.js'] },

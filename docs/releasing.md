@@ -95,17 +95,23 @@ visible in the AMO Developer Hub.
    npm run release:check -- vX.Y.Z
    npm test
    npm run lint
-   npm run build
+   npm run verify:extension
+   npm run terrain:verify
+   npm run package
    npm run build:firefox -- web-ext-artifacts/better_peakbagger-X.Y.Z.zip web-ext-artifacts/better_peakbagger-X.Y.Z-firefox.zip
    npm run release:verify-archive -- web-ext-artifacts/better_peakbagger-X.Y.Z.zip chrome
    npm run release:verify-archive -- web-ext-artifacts/better_peakbagger-X.Y.Z-firefox.zip firefox
    ```
 
    Run `release:check` first so version mismatches fail before the slower test
-   suite. The `release:verify-archive` step rejects any file that isn't a
-   shipped runtime entry — if a new root-level file was added since the last
-   release (documentation, tooling config, etc.), add it to the `ignoreFiles`
-   list in the `webExt` section of `package.json` before building.
+   suite. `package` creates a minified, sourcemap-free `dist/` and the canonical
+   Chrome ZIP; the Firefox command derives its ZIP from those exact bytes and
+   changes only the options-page presentation. The archive verifier derives
+   required runtime files from `scripts/build-config.mjs` and rejects missing
+   bundles, assets, or packaged licenses. If a new root-level development file
+   is copied into `dist/` intentionally, update the build config and archive
+   policy together rather than relying on web-ext's old repository-root ignore
+   list.
 
 5. Commit the release metadata, merge it to the release branch, create an
    annotated tag on that exact commit, and push the tag:

@@ -8,9 +8,9 @@
 // which reaches settings through the bridge (src/bridge.js) instead.
 //
 // The schema itself — defaults, bounds, and validators — lives in the pure
-// src/settings-schema.js, which must load first (manifest script order /
-// importScripts) and which the MAIN world loads directly. This file adds only
-// chrome.storage access on top of it.
+// src/settings-schema.js. ES-module imports carry it into this module and into
+// the MAIN-world bundles that validate settings without storage access. This
+// file adds only chrome.storage access on top of it.
 
 import { settingsSchema as Schema } from './settings-schema.js';
 
@@ -55,4 +55,3 @@ import { settingsSchema as Schema } from './settings-schema.js';
     };
 
     export const settings = { STORAGE_KEY, DEFAULTS, clean, get, set, subscribe, resolveTheme };
-

@@ -3,7 +3,9 @@
 Branch: `esbuild-migration` (worktree). Living tracker — updated as each step lands.
 
 **Goal:** build-free IIFE + hand-vendored scripts → esbuild `dist/` build, all `src/`
-modules as real ES modules (zero `globalThis.BPB*`), vendor via npm, docs + dev guide.
+modules as real ES modules (zero cross-module `globalThis.BPB*` dependencies), vendor
+via npm, docs + dev guide. The provider adapter's narrow page-world API remains the
+intentional worker→page boundary.
 
 **Ground rules:** every step ends green (`npm test`) and, for steps touching runtime
 `src/`, passes `npm run verify:extension` against `dist/`. Commit every step.
@@ -31,14 +33,24 @@ modules as real ES modules (zero `globalThis.BPB*`), vendor via npm, docs + dev 
 | 5 | Convert feature modules: `ascent-filter`, `peak-links`, `gpx-analyzer`, `peak-map`, `big-map`, `terrain-map`, `terrain-frame` | ✅ done |
 | 6 | Convert editor: `ascent-draft`, `report-editor` | ✅ done |
 | 7 | Convert entry roots: `background`, `options`, `popup` | ✅ done |
-| 8 | Strip all transitional bridges; assert no `globalThis.BPB*` remains | ✅ done |
+| 8 | Strip all transitional module bridges; retain only the provider boundary | ✅ done |
 | 9 | Vendor → npm; delete committed `vendor/` | ✅ done |
 | 10 | Repoint showcase / terrain-verify / firefox packaging scripts to ESM+dist | ✅ done |
-| 11 | Docs + dev guide (`docs/development.md`, `AGENTS.md`, `README.md`, `CHANGELOG`) | ⬜ todo |
+| 11 | Docs + dev guide (`docs/development.md`, `AGENTS.md`, `README.md`, `CHANGELOG`) | ✅ done |
 | 12 | Final verification (`npm test` + `npm run verify:extension`) | ⬜ todo |
 
 ## Log
 
+- **Step 11 done** — added `docs/development.md` as the canonical workflow for installing,
+  building/watching, loading `dist/`, adding modules/assets/dependencies, choosing tests, and
+  rehearsing releases. Updated AGENTS/README/architecture notes, dark-mode/timezone docs,
+  release instructions, acknowledgements, AMO review metadata, and changelog to describe ESM,
+  npm-sourced vendors, and generated bundles rather than the deleted build-free/global model.
+- **Step 10 release follow-up** — the original migration changed `npm run build` from web-ext
+  packaging to dist generation but left the tag workflow calling it as if it still created a
+  ZIP. The workflow now calls `npm run package`; Firefox development always builds first; legal
+  files ship in `dist/`; archive requirements derive from `build-config.mjs` rather than the
+  deleted raw `src/` package layout. Real Chrome and Firefox archives were built and verified.
 - **Step 10 done** — showcase pages load the built dist bundles + dist/vendor (script lists
   collapse to one bundle each); their inline stubs feed real settings via a chrome.storage stub
   and point getURL at /dist/. `showcase:render` and `terrain:verify` build dist first;

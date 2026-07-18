@@ -192,6 +192,7 @@ and the [discussion board](https://github.com/wilmtang/better-peakbagger/discuss
 
 ## Developer guide
 
+- [Daily development workflow](docs/development.md)
 - [Architecture at a glance](#architecture-at-a-glance)
 - [Deep dive: Garmin/Strava activity capture](#deep-dive-garminstrava-activity-capture)
 - [Deep dive: content-script worlds](#deep-dive-content-script-worlds)
@@ -277,7 +278,7 @@ The capture feature treats an activity track as sensitive data. Its pipeline is 
 
 ### 1. On-demand access and ownership
 
-There are no permanent Garmin or Strava host permissions. Clicking the toolbar action grants `activeTab` access to that one page, and the background worker injects `src/provider-page.js` into the **MAIN world**. Running in the page realm lets the adapter inspect the signed-in page state and make the provider's authenticated, same-origin GPX export request without collecting provider credentials.
+There are no permanent Garmin or Strava host permissions. Clicking the toolbar action grants `activeTab` access to that one page, and the background worker injects the bundle built from `src/provider-page.js` into the **MAIN world**. Running in the page realm lets the adapter inspect the signed-in page state and make the provider's authenticated, same-origin GPX export request without collecting provider credentials.
 
 Before requesting the GPX, the adapter requires two independent owner signals:
 
@@ -387,7 +388,14 @@ This split is the single most important design constraint in the extension. Here
 | `ascent-draft.js` | isolated | Uses extension messaging to verify a prepared draft, then fills the Peakbagger DOM and starts Preview. |
 | Marked, `report-markup.js`, `report-editor.js` | isolated | The trip-report editor tokenizes GFM locally, edits the ascent form's DOM, and stores drafts in `chrome.storage.local`; the native `JournalText` textarea stays in the form as the submitted source of truth. |
 
-A subtle point about **shared scope**: all content scripts from the *same* extension injected into the *same* frame and world share one global scope. That's why listing `["src/settings.js", "src/ascent-filter.js"]` in a single manifest entry lets `ascent-filter.js` use the `window.BPBSettings` object that `settings.js` defined — and why `settings.js` guards with `if (window.BPBSettings) return;`, since a page that matches several manifest entries will inject it more than once into that one shared world.
+Extension modules communicate through ES imports, not through the shared page or
+content-script global. `scripts/build-config.mjs` composes each browser-facing
+entry into one self-contained IIFE under `dist/`; esbuild includes and
+deduplicates its imported dependencies inside that bundle. The separately
+loaded third-party UMD files still expose their documented globals, and the
+provider adapter deliberately exposes one narrow page-world API because an
+injected worker callback cannot import across that execution boundary. No
+other Better Peakbagger module publishes a `globalThis.BPB*` API.
 
 The heritage here matters: these two features started as Tampermonkey userscripts (`@grant none`, i.e. running in the page's MAIN world). Porting the analyzer to a MAIN-world content script preserves its behavior *exactly*; the map-hover trick below is why "just run it in the isolated world" was never an option.
 
@@ -403,8 +411,8 @@ it before every submit, control click, ASP.NET postback, and page exit; the
 extension never clicks Save.
 
 The converter uses one allowlisted AST for bracket imports, editor DOM,
-Markdown, preview HTML, and saved bracket markup. A vendored
-[Marked](https://marked.js.org/) parser supplies GFM tokens for headings,
+Markdown, preview HTML, and saved bracket markup. The npm-sourced, locally
+packaged [Marked](https://marked.js.org/) parser supplies GFM tokens for headings,
 quotes, nested lists, tables, strikethrough, code, rules, links, and images.
 Better Peakbagger maps those tokens itself and never uses Marked's unsanitized
 HTML renderer. This is why a focused Markdown dependency is a better fit than
@@ -430,7 +438,9 @@ are in [Trip-report editor: markup, Markdown, and safety](docs/trip-report-edito
 
 Settings live in **`chrome.storage.sync`** under a single key (`bpbSettings`). `sync` means they roam across a signed-in user's browsers; the payload is a handful of fields, far under the quota.
 
-`src/settings.js` is the shared core, loaded into the background worker, every isolated content script, and the options page. It exposes `globalThis.BPBSettings` with:
+`src/settings.js` is the shared storage core, imported by the background
+worker, isolated-world entries, and the options page. It exports `settings`
+with:
 
 - `get()` / `set(patch)` — promise-based, with input **sanitisation** (`clean()`), so a corrupt or partial stored object can never crash a consumer; unknown values fall back to defaults (`{ units: 'auto', theme: 'system', … }`).
 - `subscribe(cb)` — wraps `chrome.storage.onChanged` so any context is notified when settings change in another (the options page, another tab).
@@ -627,11 +637,12 @@ may suppress WebGL rendering and tile scheduling for a visibility-hidden frame.
 Only the `loaded` reply makes it opaque and interactive, then the analyzer hides
 the native map. The native map is never destroyed.
 
-MapLibre and its strict-CSP worker are checked into `vendor/`; no executable
-code is downloaded at runtime. Running them in `terrain/terrain.html` gives the
-worker a stable extension origin and avoids the browser-specific worker sandbox
-encountered when WebGL was attempted directly from a content script. The
-manifest exposes only that packaged HTML entrypoint to Peakbagger.
+MapLibre and its strict-CSP worker come from the locked npm dependency and are
+copied into `dist/vendor/` at build time; no executable code is downloaded at
+runtime. Running them in `terrain/terrain.html` gives the worker a stable
+extension origin and avoids the browser-specific worker sandbox encountered
+when WebGL was attempted directly from a content script. The manifest exposes
+only that packaged HTML entrypoint to Peakbagger.
 
 ### Offering drape layers safely
 
@@ -905,8 +916,8 @@ Development against this table doesn't touch the live site: `test/fixtures/peaka
 
 Dark mode is delivered by a **stylesheet plus an attribute toggle**, both injected synchronously at `document_start` — the way Dark Reader does it, so there's no flash of the native light page:
 
-- `src/site-dark-css.js` holds the dark rules as a string (`window.BPBDarkCSS`); every rule is scoped under `html[data-bpb-theme="dark"]`, so it's **inert** until that attribute exists.
-- `src/theme.js` (isolated, `document_start`) injects that string as a `<style>` straight into `<html>` (which exists this early; `<head>` doesn't yet) and sets `data-bpb-theme` — **both in one synchronous tick**. It resolves `'system'` via `matchMedia`, and re-applies on `storage.onChanged` and on OS light/dark changes (while following the system). See [`docs/dark-mode-flash.md`](docs/dark-mode-flash.md) for why this beats a manifest `css` entry.
+- `src/site-dark-css.js` exports the dark rules as a string; every rule is scoped under `html[data-bpb-theme="dark"]`, so it's **inert** until that attribute exists.
+- `src/theme.js` imports those rules into the isolated `document_start` bundle, injects them as a `<style>` straight into `<html>` (which exists this early; `<head>` doesn't yet), and sets `data-bpb-theme` — **both in one synchronous tick**. It resolves `'system'` via `matchMedia`, and re-applies on `storage.onChanged` and on OS light/dark changes (while following the system). See [`docs/dark-mode-flash.md`](docs/dark-mode-flash.md) for why this beats a manifest `css` entry.
 
 The dark palette is derived from Peakbagger's native `pb.css` (navy links, purple visited, maroon `h1`, navy `h2`, `table.gray` borders, and the `mewallp.gif` body wallpaper) and maps each to a readable dark equivalent, plus higher-specificity overrides for the filter bar (`html[data-bpb-theme="dark"] #pbaf-bar …`, which outrank the bar's own `#pbaf-bar` rules). The mountain wallpaper is retained as a very low-contrast, non-interactive layer behind the page; its opaque white field is filtered out before the linework is blended into the dark base. Other images and the map iframe are left untouched so photos and topo maps render normally (the theme script uses `all_frames: false`, so it never darkens the map iframe).
 
@@ -919,22 +930,23 @@ Trade-offs, stated honestly:
 - **Coverage.** Peakbagger is a large, old-school site; the stylesheet targets the common structural elements (body, tables, links, headings, form controls, legacy `bgcolor` cells). A rarely-visited page may show a stray light element — file it and it's a one-line addition.
 - **Stacking with other dark extensions.** If you also run a global dark-mode extension (e.g. Dark Reader), whitelist Peakbagger there so the two don't double up.
 
-The options page themes itself with the same `data-bpb-theme` mechanism (CSS variables under `:root[data-bpb-theme="dark"]`). Its head loads `options/theme.js` before the stylesheet so a synchronous extension-origin `localStorage` mirror can set the theme before first paint; `chrome.storage.sync` remains authoritative and reconciles the mirror after load.
+The options page themes itself with the same `data-bpb-theme` mechanism (CSS variables under `:root[data-bpb-theme="dark"]`). Its head loads the generated `options-head.js` bundle before the stylesheet so the `options/theme.js` source can use a synchronous extension-origin `localStorage` mirror before first paint; `chrome.storage.sync` remains authoritative and reconciles the mirror after load.
 
 ---
 
 ## Cross-browser notes
 
-- **Manifest V3** for both engines. Chrome uses a service worker; Firefox uses the background-scripts fallback from the same source files.
+- **Manifest V3** for both engines. Chrome uses `background.service_worker` and Firefox uses the `background.scripts` fallback; both point to the same generated `background.js` bundle.
 - **`"world": "MAIN"`** for the analyzer requires **Chrome 111+** and **Firefox 128+**.
 - **`browser_specific_settings.gecko`** provides the Firefox add-on `id`, `strict_min_version: "140.0"`, and the required `locationInfo` disclosure. This is a data-handling disclosure for coordinates sent to Peakbagger and, only when the user loads the 3D view, map-tile coordinates requested from Mapterhorn, OpenFreeMap when OSM Vector is selected, and a compatible selected map provider; it is not permission to access device geolocation.
 - **Storage promises.** `chrome.storage.*` returns promises in MV3 on both engines; `settings.js` also prefers `browser.*` when present, so it's native on Firefox and works via the `chrome.*` alias on Chromium.
 - **Match patterns.** `*://*.peakbagger.com/*` covers `www` and the bare host; page-specific entries list relevant filename casings (`ascent.aspx`/`Ascent.aspx` and `BigMap.aspx`/`bigmap.aspx`) because match-pattern paths are case-sensitive.
 - **No remote code.** [Chart.js](https://www.chartjs.org/) 4.5.1,
   [Marked](https://marked.js.org/) 18.0.6, and
-  [MapLibre GL JS](https://maplibre.org/) 5.24.0 are vendored under `vendor/`
-  rather than pulled from a CDN — required by MV3, and better for privacy and
-  reliability. Mapterhorn supplies elevation data, never executable code.
+  [MapLibre GL JS](https://maplibre.org/) 5.24.0 are installed through npm and
+  copied from `node_modules` into `dist/vendor/` rather than pulled from a CDN
+  at runtime — required by MV3, and better for privacy and reliability.
+  Mapterhorn supplies elevation data, never executable code.
 
 ---
 
@@ -942,6 +954,9 @@ The options page themes itself with the same `data-bpb-theme` mechanism (CSS var
 
 ```
 manifest.json            MV3 manifest (permissions, options_ui, content scripts)
+scripts/
+  build-config.mjs       bundle composition and copied-asset source of truth
+  build.mjs              esbuild development/release/watch driver
 popup/                   activity capture, confidence list, and draft selection UI
 options/
   options.html           settings UI
@@ -949,9 +964,9 @@ options/
   theme.js               synchronous pre-paint theme bootstrap
   options.js             load/save + authoritative theme reconciliation
 src/
-  settings.js            shared chrome.storage core (window.BPBSettings)
+  settings.js            shared chrome.storage ES module
   theme.js               injects the dark <style> + sets data-bpb-theme on <html>
-  site-dark-css.js       dark rules as a string (window.BPBDarkCSS), theme-scoped
+  site-dark-css.js       exported dark rules string, theme-scoped
   bridge.js              relays settings to the MAIN-world analyzer (postMessage)
   gpx-analyzer.js        elevation/time chart + map-hover (MAIN world)
   big-map-bridge.js      read-only Full Screen route-style + 3D-gate bridge
@@ -971,15 +986,13 @@ src/
   report-markup.js       allowlisted bracket ↔ editor-DOM ↔ Markdown conversions
   report-editor.js       rich text / markdown trip-report editor with local drafts
   report-editor.css      trip-report editor styling, light and dark
-vendor/
-  chart.umd.min.js       Chart.js 4.5.1, bundled (MIT)
-  marked.umd.js          Marked 18.0.6 GFM tokenizer, bundled (MIT)
-  maplibre-gl-csp.js     MapLibre GL JS 5.24.0 strict-CSP build (BSD-3-Clause)
-  maplibre-gl-csp-worker.js  packaged MapLibre worker, loaded only for 3D
-  maplibre-gl.css        MapLibre controls and canvas styles
 terrain/
-  terrain.html           packaged renderer frame; loads only local code and CSS
+  terrain.html           renderer-frame source; build points it at dist assets
 icons/                   16/32/48/128 px
+dist/                    generated unpacked extension; never edit by hand
+  background.js          bundled worker used by Chrome and Firefox
+  content/               bundled content-script entries
+  vendor/                npm-sourced browser builds + packaged license texts
 test/
   fixtures/peakascents/  PeakAscents.aspx captures, PII-masked (see its README)
   fixtures/pages/        whole-page captures (home, peaks, climber), masked (see its README)
@@ -1028,17 +1041,25 @@ Settings shape (`chrome.storage.sync`, key `bpbSettings`):
 ## Development & packaging
 
 ```
-npm test                fixture-driven tests (jsdom, no network needed)
-npm run lint            web-ext lint (0 errors expected)
+npm run build           create the development dist/ (source maps included)
+npm run watch           rebuild dist/ while developing
+npm test                build + fixture-driven jsdom/module tests
+npm run lint            build + web-ext lint against dist/
 npm run verify:extension
-                        load the real unpacked extension in hidden Chrome
+                        load the real dist/ in hidden Chrome for Testing
 npm run terrain:verify  hidden Chrome visual check of the 3D renderer
-npm run build           build the canonical Chrome package
+npm run package         minify dist/ and create the canonical Chrome ZIP
 npm run build:firefox -- SOURCE.zip FIREFOX.zip
                         derive Firefox's inline-Preferences package
-npm run start:firefox   launch Firefox with a temporary inline manifest
-npm run start:chromium  same for Chromium
+npm run start:firefox   build and launch Firefox with a temporary manifest
+npm run start:chromium  build and launch Chromium from dist/
 ```
+
+Install locked dependencies with `npm ci`, then load `dist/`—not the repository
+root—as the unpacked extension. `dist/` is generated and ignored; change the ES
+modules and assets in the source tree, then rebuild. The complete daily
+workflow, bundle/dependency rules, test boundaries, and release commands live
+in [the development guide](docs/development.md).
 
 Clone once, then enable the repository's own hooks:
 
@@ -1057,25 +1078,27 @@ Every push and pull request to `main` runs `npm test`, `npm run lint`, and
 additionally build, verify, and submit the store packages
 (`.github/workflows/release.yml`).
 
-`npm test` evals the sources by hand, so it cannot see what the manifest
-decides: script order, execution worlds, or the fact that Chrome ignores
-`background.scripts` and resolves the service worker through `background.js`'s
-own `importScripts`. `npm run verify:extension` loads the real unpacked
-extension in hidden Chrome and drives a local Peakbagger stand-in, covering
-those blind spots — including `src/settings.js` and `src/bridge.js`, which the
-terrain showcase stubs out. Two regressions have already hidden there.
+`npm test` builds first and evaluates the shipped IIFE bundles in jsdom, so it
+still cannot see how a browser interprets manifest execution worlds,
+separately loaded script order, or the service-worker lifecycle. `npm run
+verify:extension` loads the real unpacked `dist/` in hidden Chrome and drives a
+local Peakbagger stand-in, covering those blind spots—including the real
+settings bridge that the terrain showcase replaces with protocol stubs. Two
+regressions have already hidden there.
 
 It needs Chrome for Testing (`npx playwright install chromium`). Chrome stable
 137+ refuses `--load-extension`, and Playwright's default headless mode is
 `chrome-headless-shell`, which cannot load extensions at all; the script uses
 `channel: 'chromium'` with new headless, which can.
 
-No build step is required for development. `manifest.json` is the canonical
-Chrome/unpacked source, so Chrome's Options entry opens the settings page in a
-full tab. The Firefox launcher and store packaging copy that manifest and
-change only `options_ui.open_in_tab`, preserving Firefox's embedded Preferences
-tab. Shippable archives include `manifest.json`, `src/`, `vendor/`, `icons/`,
-`popup/`, `options/`, README, LICENSE, and ACKNOWLEDGEMENTS; development files
+The repository-root `manifest.json` remains the canonical permission, world,
+and entrypoint declaration, but its JavaScript paths refer to outputs that
+exist only after the build copies the manifest into `dist/`. Chrome's Options
+entry opens settings in a full tab. The Firefox launcher and store packaging
+copy the built runtime and change only `options_ui.open_in_tab`, preserving
+Firefox's embedded Preferences tab. Shippable archives contain the generated
+bundles, copied HTML/CSS/icons, npm-sourced vendor browser files and licenses,
+plus README, LICENSE, and ACKNOWLEDGEMENTS; raw source and development tooling
 are excluded.
 
 Version tags submit verified packages to both browser stores after their one-time

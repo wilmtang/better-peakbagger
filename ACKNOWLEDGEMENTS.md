@@ -15,7 +15,7 @@ Better Peakbagger distributes the unmodified Chart.js 4.5.1 UMD build as
 - Project: [Chart.js](https://www.chartjs.org/)
 - Source: [Chart.js v4.5.1](https://github.com/chartjs/Chart.js/tree/v4.5.1)
 - License: MIT
-- Packaged license text: [`vendor/chart-LICENSE.txt`](vendor/chart-LICENSE.txt)
+- Packaged license text: `vendor/chart-LICENSE.txt` (copied from the npm package at build time)
 
 ### MapLibre GL JS
 
@@ -25,7 +25,7 @@ browser build, worker, and stylesheet under `vendor/`.
 - Project: [MapLibre GL JS](https://maplibre.org/projects/gl-js/)
 - Source: [MapLibre GL JS v5.24.0](https://github.com/maplibre/maplibre-gl-js/tree/v5.24.0)
 - License: BSD 3-Clause
-- Packaged license text: [`vendor/maplibre-LICENSE.txt`](vendor/maplibre-LICENSE.txt)
+- Packaged license text: `vendor/maplibre-LICENSE.txt` (copied from the npm package at build time)
 
 ### Marked
 
@@ -36,7 +36,7 @@ token stream and does not use its HTML renderer.
 - Project: [Marked](https://marked.js.org/)
 - Source: [Marked v18.0.6](https://github.com/markedjs/marked/tree/v18.0.6)
 - License: MIT
-- Packaged license text: [`vendor/marked-LICENSE.txt`](vendor/marked-LICENSE.txt)
+- Packaged license text: `vendor/marked-LICENSE.txt` (copied from the npm package at build time)
 
 ### tz-lookup
 
@@ -49,7 +49,7 @@ shown in the climb's local time.
 - Project: [tz-lookup](https://github.com/darkskyapp/tz-lookup)
 - Source: [tz-lookup 6.1.25](https://www.npmjs.com/package/tz-lookup/v/6.1.25)
 - License: CC0-1.0 (public-domain dedication)
-- Packaged license text: [`vendor/tz-lookup-LICENSE.txt`](vendor/tz-lookup-LICENSE.txt)
+- Packaged license text: `vendor/tz-lookup-LICENSE.txt` (copied from the npm package at build time)
 
 ### Mapterhorn
 

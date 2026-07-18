@@ -12,9 +12,10 @@ bar discloses it: *"Times in the mountain's local time (PDT)"*.
 ## Where the timezone comes from
 
 The track's **starting coordinate** is resolved to an IANA timezone by
-[`@photostructure/tz-lookup`](https://github.com/photostructure/tz-lookup)
-(`vendor/tz-lookup.js`, vendored unmodified), a dependency-free ~73 KB raster
-that answers entirely offline.
+[`tz-lookup` 6.1.25](https://www.npmjs.com/package/tz-lookup/v/6.1.25), a
+dependency-free ~73 KB raster that answers entirely offline. The locked npm
+package ships CommonJS, so the build wraps it with esbuild as
+`dist/vendor/tz-lookup.js`; the coordinate data and lookup logic are unchanged.
 
 - **Why not an accurate polygon library?** `geo-tz` carries ~100 MB of
   boundary data and needs Node file access — unusable in a content script.

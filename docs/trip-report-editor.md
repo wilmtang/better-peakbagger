@@ -21,9 +21,9 @@ headings, quotes, lists, tables, code, images, and more.
 Replacing `contenteditable` with ProseMirror, TipTap, Quill, or another editor
 framework would not remove the hard part: every document would still need a
 Peakbagger-specific, security-aware serializer. It would also add a second
-document model and a much larger runtime to a build-free extension.
+document model and a much larger runtime to the extension.
 
-The extension instead vendors
+The extension instead installs through npm and packages
 [Marked 18.0.6](https://github.com/markedjs/marked/tree/v18.0.6), a small
 MIT-licensed GFM parser. Better Peakbagger consumes Marked's token tree and maps
 only known token types into its own allowlisted AST. It **never uses Marked's

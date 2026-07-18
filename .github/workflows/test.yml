@@ -40,9 +40,9 @@ jobs:
       - name: Lint extension
         run: npm run lint
 
-      # npm test evals sources by hand and cannot see manifest order, worlds, or
-      # the service worker's importScripts. This loads the real unpacked
-      # extension, which is where two regressions have already hidden.
+      # npm test evaluates built bundles in jsdom and cannot see how a browser
+      # interprets manifest order/worlds or boots the worker. This loads the real
+      # unpacked dist/, which is where two regressions have already hidden.
       - name: Install Chrome for Testing
         run: npx playwright install --with-deps chromium
 

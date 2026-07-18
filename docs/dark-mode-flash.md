@@ -44,9 +44,10 @@ the stylesheet from JavaScript at `document_start`, in the **same synchronous
 tick** that sets the attribute, so the parser and renderer can't get ahead of
 either one:
 
-1. `src/site-dark-css.js` (a content script loaded before `theme.js`) exposes
-   the dark rules as a string, `window.BPBDarkCSS`.
-2. `src/theme.js`, at `document_start`, creates a `<style>` with that text and
+1. `src/site-dark-css.js` exports the dark rules as a string, and
+   `src/theme.js` imports them. esbuild puts both ES modules in the single
+   `content/theme.js` bundle that the manifest runs at `document_start`.
+2. `src/theme.js` creates a `<style>` with that text and
    appends it to `document.documentElement`. `<html>` exists this early even
    though `<head>` does not yet; a `<style>` in `<html>` applies fine, and its
    `!important` author rules outrank the site's own sheets regardless of order.
