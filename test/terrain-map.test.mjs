@@ -9,9 +9,13 @@ import { fileURLToPath } from 'node:url';
 import { JSDOM } from 'jsdom';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const terrainBridgeSource = await readFile(path.join(root, 'src', 'terrain-map.js'), 'utf8');
-const schemaSource = await readFile(path.join(root, 'src', 'settings-schema.js'), 'utf8');
-const terrainFrameSource = await readFile(path.join(root, 'src', 'terrain-frame.js'), 'utf8');
+// The isolated in-page 3D bridge bundle, and the extension-owned terrain frame
+// bundle (settings-schema + terrain-cache + terrain-frame). maplibre and the
+// terrain cache are stubbed per test; the cache stub is applied *after* the
+// frame bundle evaluates, since the bundle carries the real terrain-cache and
+// terrain-frame reads globalThis.BPBTerrainCache lazily when it builds the map.
+const bridgeBundle = await readFile(path.join(root, 'dist', 'content', 'terrain-map.js'), 'utf8');
+const frameBundle = await readFile(path.join(root, 'dist', 'terrain', 'terrain-frame.js'), 'utf8');
 
 test('3D terrain waits for the extension frame handshake before sending route coordinates', async () => {
     const dom = new JSDOM(`<!doctype html><body>
@@ -32,7 +36,7 @@ test('3D terrain waits for the extension frame handshake before sending route co
         subscribe(listener) { settingsListener = listener; return () => {}; }
     };
     window.postMessage = message => { pageMessages.push(message); };
-    window.eval(terrainBridgeSource);
+    window.eval(bridgeBundle);
 
     const dispatchPage = data => window.dispatchEvent(new window.MessageEvent('message', {
         source: window,
@@ -125,7 +129,7 @@ test('3D terrain bridge refuses page requests unless the stored feature gate is 
         subscribe() { return () => {}; }
     };
     window.postMessage = message => { messages.push(message); };
-    window.eval(terrainBridgeSource);
+    window.eval(bridgeBundle);
 
     window.dispatchEvent(new window.MessageEvent('message', {
         source: window,
@@ -167,7 +171,7 @@ test('3D terrain consent is extension-owned, discloses the actual providers, and
         resolveTheme: theme => theme === 'dark' ? 'dark' : 'light'
     };
     window.postMessage = message => { messages.push(message); };
-    window.eval(terrainBridgeSource);
+    window.eval(bridgeBundle);
 
     const requestConsent = () => window.dispatchEvent(new window.MessageEvent('message', {
         source: window,
@@ -226,7 +230,7 @@ test('a newer feature-gate push wins over a stale initial storage read', async (
         subscribe(listener) { settingsListener = listener; return () => {}; }
     };
     window.postMessage = () => {};
-    window.eval(terrainBridgeSource);
+    window.eval(bridgeBundle);
 
     settingsListener({ enable3dMap: true });
     window.dispatchEvent(new window.MessageEvent('message', {
@@ -323,8 +327,9 @@ test('3D terrain frame validates coordinate-only routes before loading public DE
         removeProtocol(name) { protocolHandlers.delete(name); }
     };
     window.postMessage = message => { messages.push(message); };
-    window.eval(schemaSource);
-    window.eval(terrainFrameSource);
+    const cacheStub = window.BPBTerrainCache;
+    window.eval(frameBundle);
+    window.BPBTerrainCache = cacheStub; // restore the per-test cache mock the bundle's real cache overwrote
 
     const dispatch = data => window.dispatchEvent(new window.MessageEvent('message', {
         source: window,
@@ -630,8 +635,9 @@ test('the 3D drape picker offers every layer and swaps the draped raster live', 
         removeProtocol() {}
     };
     window.postMessage = () => {};
-    window.eval(schemaSource);
-    window.eval(terrainFrameSource);
+    const cacheStub = window.BPBTerrainCache;
+    window.eval(frameBundle);
+    window.BPBTerrainCache = cacheStub; // restore the per-test cache mock the bundle's real cache overwrote
 
     const routeSegments = [[[48.7, -121.8], [48.71, -121.81]]];
     const layer = (name, host) => ({ name, tiles: [`https://${host}/{z}/{x}/{y}.png`] });
@@ -749,8 +755,9 @@ test('the extension-provided vector entry grafts the provider style under the ex
         removeProtocol() {}
     };
     window.postMessage = () => {};
-    window.eval(schemaSource);
-    window.eval(terrainFrameSource);
+    const cacheStub = window.BPBTerrainCache;
+    window.eval(frameBundle);
+    window.BPBTerrainCache = cacheStub; // restore the per-test cache mock the bundle's real cache overwrote
 
     // No page-offered raster layers: the vector entry must exist regardless.
     window.dispatchEvent(new window.MessageEvent('message', {
@@ -833,7 +840,7 @@ test('the bridge forwards peak-feed requests to the page and replies to the fram
         subscribe() { return () => {}; }
     };
     window.postMessage = message => { pageMessages.push(message); };
-    window.eval(terrainBridgeSource);
+    window.eval(bridgeBundle);
 
     window.dispatchEvent(new window.MessageEvent('message', {
         source: window,
@@ -964,8 +971,9 @@ test('3D peak markers request Peakbagger dots on camera settle and render only v
         removeProtocol() {}
     };
     window.postMessage = message => { messages.push(message); };
-    window.eval(schemaSource);
-    window.eval(terrainFrameSource);
+    const cacheStub = window.BPBTerrainCache;
+    window.eval(frameBundle);
+    window.BPBTerrainCache = cacheStub; // restore the per-test cache mock the bundle's real cache overwrote
 
     const dispatch = data => window.dispatchEvent(new window.MessageEvent('message', {
         source: window,
@@ -1221,8 +1229,9 @@ test('3D peak dots snap uphill to the local DEM summit, and only to a genuine on
         removeProtocol() {}
     };
     window.postMessage = () => {};
-    window.eval(schemaSource);
-    window.eval(terrainFrameSource);
+    const cacheStub = window.BPBTerrainCache;
+    window.eval(frameBundle);
+    window.BPBTerrainCache = cacheStub; // restore the per-test cache mock the bundle's real cache overwrote
 
     const dispatch = data => window.dispatchEvent(new window.MessageEvent('message', {
         source: window,
