@@ -32,13 +32,19 @@ modules as real ES modules (zero `globalThis.BPB*`), vendor via npm, docs + dev 
 | 6 | Convert editor: `ascent-draft`, `report-editor` | ✅ done |
 | 7 | Convert entry roots: `background`, `options`, `popup` | ✅ done |
 | 8 | Strip all transitional bridges; assert no `globalThis.BPB*` remains | ✅ done |
-| 9 | Vendor → npm (`marked`/`chart.js`/`tz-lookup` bundled, `maplibre` copied); delete `vendor/` | ⬜ todo |
+| 9 | Vendor → npm; delete committed `vendor/` | ✅ done |
 | 10 | Repoint showcase / terrain-verify / firefox packaging scripts to ESM+dist | ⬜ todo |
 | 11 | Docs + dev guide (`docs/development.md`, `AGENTS.md`, `README.md`, `CHANGELOG`) | ⬜ todo |
 | 12 | Final verification (`npm test` + `npm run verify:extension`) | ⬜ todo |
 
 ## Log
 
+- **Step 9 done** — vendor libs come from npm at pinned versions (marked 18.0.6, chart.js
+  4.5.1, maplibre-gl 5.24.0, tz-lookup 6.1.25). The build copies marked/chart/maplibre browser
+  builds + LICENSEs from node_modules (byte-identical to the old hand-copied files) and
+  esbuild-wraps tz-lookup's CommonJS into a `tzlookup` global. Committed `vendor/` deleted;
+  Firefox packaging (`run-firefox.mjs`) now copies `dist/` and overrides only the manifest.
+  240 green; verify:extension passes.
 - **Step 8 done** — all transitional `globalThis.BPB*` bridges removed; only
   `provider-page`'s deliberate page-world API remains. Fixed fallout: worker-boot test asserts
   only the registered listener; big-map/options tests poke settings via chrome.storage / schema

@@ -14,10 +14,12 @@ import { createFirefoxManifest } from "./build-firefox-package.mjs";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const defaultProjectRoot = path.resolve(scriptDir, "..");
-const RUNTIME_DIRECTORIES = ["icons", "options", "popup", "src", "vendor"];
+const defaultDistDir = path.join(defaultProjectRoot, "dist");
 
+// The Firefox dev source is the built extension (dist/) with only its manifest
+// overridden with Firefox-specific fields. Run `npm run build` first.
 export async function prepareFirefoxSource({
-  projectRoot = defaultProjectRoot,
+  distDir = defaultDistDir,
   temporaryRoot = tmpdir(),
 } = {}) {
   const sourceDir = await mkdtemp(
@@ -25,18 +27,14 @@ export async function prepareFirefoxSource({
   );
 
   try {
+    await cp(distDir, sourceDir, { recursive: true });
     const manifest = createFirefoxManifest(
-      JSON.parse(await readFile(path.join(projectRoot, "manifest.json"), "utf8")),
+      JSON.parse(await readFile(path.join(distDir, "manifest.json"), "utf8")),
     );
     await writeFile(
       path.join(sourceDir, "manifest.json"),
       `${JSON.stringify(manifest, null, 2)}\n`,
     );
-    await Promise.all(RUNTIME_DIRECTORIES.map(directory => cp(
-      path.join(projectRoot, directory),
-      path.join(sourceDir, directory),
-      { recursive: true },
-    )));
   } catch (error) {
     await rm(sourceDir, { recursive: true, force: true });
     throw error;

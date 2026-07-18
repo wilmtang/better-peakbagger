@@ -80,5 +80,25 @@ export const COPY_FILES = [
 
 export const COPY_DIRS = [
     ['icons', 'icons'],
-    ['vendor', 'vendor'],
 ];
+
+export const nodeModule = f => path.join(root, 'node_modules', f);
+
+// Vendor browser builds sourced from npm into dist/vendor. marked, Chart.js, and
+// MapLibre ship browser-ready UMD/global builds (byte-identical to the files that
+// were previously hand-copied into vendor/). [from (node_modules), to (dist)].
+export const VENDOR_COPY = [
+    ['marked/lib/marked.umd.js', 'vendor/marked.umd.js'],
+    ['chart.js/dist/chart.umd.min.js', 'vendor/chart.umd.min.js'],
+    ['maplibre-gl/dist/maplibre-gl-csp.js', 'vendor/maplibre-gl-csp.js'],
+    ['maplibre-gl/dist/maplibre-gl-csp-worker.js', 'vendor/maplibre-gl-csp-worker.js'],
+    ['maplibre-gl/dist/maplibre-gl.css', 'vendor/maplibre-gl.css'],
+    ['marked/LICENSE', 'vendor/marked-LICENSE.txt'],
+    ['chart.js/LICENSE.md', 'vendor/chart-LICENSE.txt'],
+    ['maplibre-gl/LICENSE.txt', 'vendor/maplibre-LICENSE.txt'],
+    ['tz-lookup/LICENSE', 'vendor/tz-lookup-LICENSE.txt'],
+];
+
+// tz-lookup ships CommonJS only, so esbuild wraps it into a browser global
+// (var tzlookup = …) that the MAIN-world GPX analyzer reads as globalThis.tzlookup.
+export const VENDOR_TZ = { entry: 'tz-lookup/tz.js', out: 'vendor/tz-lookup.js', globalName: 'tzlookup' };

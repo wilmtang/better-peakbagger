@@ -16,7 +16,7 @@ import { reportMarkup as Markup } from '../src/report-markup.js';
 const browserDom = new JSDOM('');
 globalThis.DOMParser = browserDom.window.DOMParser;
 const markedContext = vm.createContext({});
-vm.runInContext(await readFile(new URL('../vendor/marked.umd.js', import.meta.url), 'utf8'), markedContext);
+vm.runInContext(await readFile(new URL('../node_modules/marked/lib/marked.umd.js', import.meta.url), 'utf8'), markedContext);
 globalThis.marked = markedContext.marked;
 
 // ---- markdown → bracket ----------------------------------------------------

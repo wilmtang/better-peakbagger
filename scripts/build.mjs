@@ -22,7 +22,7 @@ import { build, context } from 'esbuild';
 import { readdir, mkdir, rm, copyFile } from 'node:fs/promises';
 import { existsSync, watch as fsWatch } from 'node:fs';
 import path from 'node:path';
-import { ENTRIES, COPY_FILES, COPY_DIRS, entrySources, root, distDir } from './build-config.mjs';
+import { ENTRIES, COPY_FILES, COPY_DIRS, VENDOR_COPY, VENDOR_TZ, nodeModule, entrySources, root, distDir } from './build-config.mjs';
 
 const args = new Set(process.argv.slice(2));
 const MINIFY = args.has('--minify');
@@ -48,6 +48,22 @@ async function copyAssets() {
         const source = path.join(root, from);
         if (existsSync(source)) await copyDir(source, path.join(distDir, to));
     }
+    // Vendor browser builds come from npm (node_modules), not a committed dir.
+    for (const [from, to] of VENDOR_COPY) {
+        const dest = path.join(distDir, to);
+        await mkdir(path.dirname(dest), { recursive: true });
+        await copyFile(nodeModule(from), dest);
+    }
+    await build({
+        entryPoints: [nodeModule(VENDOR_TZ.entry)],
+        outfile: path.join(distDir, VENDOR_TZ.out),
+        bundle: true,
+        format: 'iife',
+        globalName: VENDOR_TZ.globalName,
+        minify: true,
+        legalComments: 'none',
+        logLevel: 'warning',
+    });
 }
 
 // esbuild takes one entry file per output. For a multi-module bundle we feed it

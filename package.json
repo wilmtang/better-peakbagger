@@ -30,10 +30,14 @@
     "verify:extension": "npm run build && node scripts/verify-extension.mjs"
   },
   "devDependencies": {
+    "chart.js": "^4.5.1",
     "esbuild": "^0.28.1",
     "jsdom": "^29.1.1",
     "jszip": "^3.10.1",
+    "maplibre-gl": "^5.24.0",
+    "marked": "^18.0.6",
     "playwright": "^1.61.1",
+    "tz-lookup": "^6.1.25",
     "web-ext": "^10.4.0"
   },
   "webExt": {

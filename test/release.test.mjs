@@ -184,7 +184,7 @@ test("Firefox development source copies runtime files while overriding only the 
       await readFile(new URL("../manifest.json", import.meta.url), "utf8"),
     );
     assert.deepEqual(manifest, createFirefoxManifest(canonicalManifest));
-    for (const directory of ["icons", "options", "popup", "src", "vendor"]) {
+    for (const directory of ["content", "css", "icons", "options", "popup", "terrain", "vendor"]) {
       assert.equal(
         (await lstat(path.join(prepared.sourceDir, directory))).isDirectory(),
         true,
