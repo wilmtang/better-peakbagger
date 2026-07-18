@@ -345,7 +345,9 @@ try {
     }
 
     // --- Trip-report editor on the real ascent form --------------------------
-    // Real typing and real execCommand formatting, which jsdom cannot cover.
+    // Real typing, real keyboard shortcuts, and real input rules against the
+    // TipTap surface and the CodeMirror markdown pane, which jsdom cannot
+    // cover with fidelity.
     {
         const modifier = process.platform === 'darwin' ? 'Meta' : 'Control';
         const editorUrl = `http://www.peakbagger.com:${port}/climber/ascentedit.aspx?cid=900001`;
@@ -373,13 +375,24 @@ try {
             await editorPage.keyboard.type('.');
             await editorPage.keyboard.press('Enter');
             await editorPage.keyboard.type('Second paragraph.');
+            // "1. " at the start of a fresh paragraph is a markdown input rule
+            // and must become a real ordered list, not literal text.
+            await editorPage.keyboard.press('Enter');
+            await editorPage.keyboard.type('1. rope');
 
             const synced = await editorPage.waitForFunction(() =>
                 document.getElementById('JournalText').value
-                === 'Summit day was [b]windy[/b].\n\nSecond paragraph.', null, { timeout: 5000 })
+                === 'Summit day was [b]windy[/b].\n\nSecond paragraph.\n\n[ol][li]rope[/li][/ol]',
+            null, { timeout: 5000 })
                 .then(() => true).catch(() => false);
-            check(synced, `real typing + Ctrl/Cmd+B did not sync bracket markup into JournalText (value=${
+            check(synced, `real typing + Ctrl/Cmd+B + the "1. " input rule did not sync bracket markup into JournalText (value=${
                 JSON.stringify(await editorPage.evaluate(() => document.getElementById('JournalText').value))})`);
+
+            const listActive = await editorPage.evaluate(() =>
+                document.querySelector('#bpb-report-editor [aria-label="Numbered list"]')
+                    ?.getAttribute('aria-pressed'));
+            check(listActive === 'true',
+                `the toolbar did not track the caret's ordered list (aria-pressed=${JSON.stringify(listActive)})`);
 
             const savedStatus = await editorPage.waitForFunction(() =>
                 /Draft saved on this device/.test(document.querySelector('.bpb-re-status')?.textContent || ''),
@@ -387,13 +400,30 @@ try {
             check(savedStatus, 'the local-draft autosave status never appeared');
 
             await editorPage.locator('#bpb-report-editor').getByRole('button', { name: 'Markdown', exact: true }).click();
-            const markdownValue = await editorPage.evaluate(() => document.querySelector('.bpb-re-md').value);
-            check(markdownValue === 'Summit day was **windy**.\n\nSecond paragraph.',
+            const markdownValue = await editorPage.evaluate(() =>
+                [...document.querySelectorAll('.bpb-re-mdpane .cm-line')]
+                    .map(line => line.textContent).join('\n'));
+            check(markdownValue === 'Summit day was **windy**.\n\nSecond paragraph.\n\n1. rope',
                 `switching to markdown did not convert the content (value=${JSON.stringify(markdownValue)})`);
-            await editorPage.locator('#bpb-report-editor').getByRole('button', { name: 'Preview', exact: true }).click();
-            const previewHtml = await editorPage.evaluate(() => document.querySelector('.bpb-re-preview').innerHTML);
-            check(/<b>windy<\/b>/.test(previewHtml),
-                `the markdown preview did not render the final formatting (html=${JSON.stringify(previewHtml)})`);
+
+            // The split pane: source and live preview visible together, no tab
+            // to click, and the preview already shows the saved rendering.
+            const split = await editorPage.evaluate(() => {
+                const source = document.querySelector('.bpb-re-mdpane .cm-editor');
+                const preview = document.querySelector('.bpb-re-mdsplit .bpb-re-preview');
+                if (!source || !preview) return null;
+                const a = source.getBoundingClientRect();
+                const b = preview.getBoundingClientRect();
+                return {
+                    bothVisible: a.width > 0 && a.height > 0 && b.width > 0 && b.height > 0,
+                    disjoint: b.left >= a.right - 1 || b.top >= a.bottom - 1,
+                    previewHtml: preview.innerHTML
+                };
+            });
+            check(split?.bothVisible === true && split?.disjoint === true,
+                `markdown mode did not show source and live preview as a split (state=${JSON.stringify(split && { ...split, previewHtml: undefined })})`);
+            check(/<b>windy<\/b>/.test(split?.previewHtml || '') && /<ol><li>rope<\/li><\/ol>/.test(split?.previewHtml || ''),
+                `the live preview did not render the final formatting (html=${JSON.stringify(split?.previewHtml)})`);
 
             // A reload serves the pristine form again; the draft must be
             // offered back and restore into the mode it was written in.
@@ -408,14 +438,16 @@ try {
                     value: document.getElementById('JournalText').value
                 }));
                 check(restored.mode === 'markdown'
-                    && restored.value === 'Summit day was [b]windy[/b].\n\nSecond paragraph.',
+                    && restored.value === 'Summit day was [b]windy[/b].\n\nSecond paragraph.\n\n[ol][li]rope[/li][/ol]',
                 `restoring the draft did not bring back content and mode (state=${JSON.stringify(restored)})`);
             }
 
             // Exercise the broader Marked-token pipeline through the real
-            // manifest order, not just the unit-test loader.
-            await editorPage.locator('#bpb-report-editor').getByRole('button', { name: 'Write', exact: true }).click();
-            await editorPage.locator('.bpb-re-md').fill([
+            // manifest order, not just the unit-test loader: replace the
+            // CodeMirror document with real keyboard input.
+            await editorPage.locator('.bpb-re-mdpane .cm-content').click();
+            await editorPage.keyboard.press(`${modifier}+a`);
+            await editorPage.keyboard.insertText([
                 '## Route notes',
                 '',
                 '> Windy ~~retreat~~.',
@@ -438,18 +470,37 @@ try {
             }, null, { timeout: 5000 }).then(() => true).catch(() => false);
             check(expandedSync, `expanded Markdown did not reach JournalText (value=${
                 JSON.stringify(await editorPage.evaluate(() => document.getElementById('JournalText').value))})`);
-            await editorPage.locator('#bpb-report-editor').getByRole('button', { name: 'Preview', exact: true }).click();
-            const expandedPreview = await editorPage.evaluate(() => {
+            const expandedPreview = await editorPage.waitForFunction(() => {
                 const preview = document.querySelector('.bpb-re-preview');
                 return ['H2', 'BLOCKQUOTE', 'TABLE', 'S', 'CODE', 'HR']
-                    .every(tag => preview.querySelector(tag));
-            });
-            check(expandedPreview, 'expanded Markdown preview omitted a supported semantic element');
+                    .every(tag => preview && preview.querySelector(tag));
+            }, null, { timeout: 5000 }).then(() => true).catch(() => false);
+            check(expandedPreview, 'the live preview omitted a supported semantic element');
             if (process.env.BPB_VERIFY_EDITOR_SCREENSHOT) {
                 await editorPage.locator('#bpb-report-editor').screenshot({
                     path: process.env.BPB_VERIFY_EDITOR_SCREENSHOT
                 });
             }
+
+            // The contextual table controls on the TipTap surface: insert a
+            // table from the toolbar, then grow it by one row.
+            await editorPage.locator('#bpb-report-editor').getByRole('button', { name: 'Rich text', exact: true }).click();
+            const rowsBefore = await editorPage.evaluate(() =>
+                (document.getElementById('JournalText').value.match(/\[tr\]/g) || []).length);
+            await editorPage.locator('#bpb-report-editor [aria-label="Insert table"]').click();
+            const tableBarShown = await editorPage.locator('.bpb-re-tablebar').waitFor({ state: 'visible', timeout: 5000 })
+                .then(() => true).catch(() => false);
+            check(tableBarShown, 'inserting a table did not reveal the contextual table controls');
+            const inserted = await editorPage.waitForFunction(before =>
+                (document.getElementById('JournalText').value.match(/\[tr\]/g) || []).length === before + 3,
+            rowsBefore, { timeout: 5000 }).then(() => true).catch(() => false);
+            check(inserted, `the toolbar table insert did not produce a 3-row table (value=${
+                JSON.stringify(await editorPage.evaluate(() => document.getElementById('JournalText').value.slice(0, 400)))})`);
+            await editorPage.locator('#bpb-report-editor').getByRole('button', { name: 'Add row below', exact: true }).click();
+            const grew = await editorPage.waitForFunction(before =>
+                (document.getElementById('JournalText').value.match(/\[tr\]/g) || []).length === before + 4,
+            rowsBefore, { timeout: 5000 }).then(() => true).catch(() => false);
+            check(grew, 'Add row below did not grow the table by one row');
             if (process.env.BPB_VERIFY_EDITOR_RICH_SCREENSHOT) {
                 await editorPage.locator('#bpb-report-editor').getByRole('button', {
                     name: 'Rich text', exact: true
@@ -482,7 +533,9 @@ console.log('  - trusted confirmation persists the feature gate without contacti
 console.log('  - the Full Screen BigMap receives settings and shows an enabled 3D toggle');
 console.log('  - the Peak Dynamic Map preserves its native frame and shows an enabled 3D toggle');
 console.log('  - clicking Peak 3D creates the isolated frame with a route-free summit focus');
-console.log('  - the trip-report editor mounts on the captured ascent form, real typing and');
-console.log('    Ctrl/Cmd+B sync bracket markup into JournalText, markdown mode + preview');
-console.log('    convert headings, quotes, tables, strike, code, and rules, and a reloaded');
-console.log('    page offers and restores the draft');
+console.log('  - the trip-report editor mounts on the captured ascent form; real typing,');
+console.log('    Ctrl/Cmd+B, and the "1. " input rule sync bracket markup into JournalText');
+console.log('    with live toolbar states; markdown mode shows a CodeMirror source beside a');
+console.log('    live preview that renders headings, quotes, tables, strike, code, and rules;');
+console.log('    the toolbar inserts and grows tables; and a reloaded page offers and');
+console.log('    restores the draft');
