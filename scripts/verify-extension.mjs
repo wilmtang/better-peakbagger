@@ -534,6 +534,15 @@ try {
                     path: process.env.BPB_VERIFY_EDITOR_SCREENSHOT
                 });
             }
+            if (process.env.BPB_VERIFY_EDITOR_PAGE_SCREENSHOT) {
+                await editorPage.setViewportSize({ width: 1280, height: 800 });
+                await editorPage.locator('#bpb-report-editor').scrollIntoViewIfNeeded();
+                await editorPage.evaluate(() => {
+                    const top = document.getElementById('bpb-report-editor').getBoundingClientRect().top;
+                    window.scrollBy(0, Math.max(0, top - 110));
+                });
+                await editorPage.screenshot({ path: process.env.BPB_VERIFY_EDITOR_PAGE_SCREENSHOT });
+            }
 
             // The contextual table controls on the TipTap surface: insert a
             // table from the toolbar, then grow it by one row.
@@ -561,6 +570,69 @@ try {
                 await editorPage.locator('#bpb-report-editor').screenshot({
                     path: process.env.BPB_VERIFY_EDITOR_RICH_SCREENSHOT
                 });
+            }
+            // A store capture must come from the shipped editor, not a drawn
+            // facsimile. These opt-in frames use the real rich and Markdown
+            // conversion paths, with an intercepted local mountain image so
+            // the capture remains offline and repeatable.
+            const richShowcasePath = process.env.BPB_VERIFY_EDITOR_SHOWCASE_RICH_SCREENSHOT;
+            const markdownShowcasePath = process.env.BPB_VERIFY_EDITOR_SHOWCASE_MARKDOWN_SCREENSHOT;
+            if (richShowcasePath || markdownShowcasePath) {
+                const mountainUrl = 'https://better-peakbagger.test/showcase-alpine-ridge.png';
+                const mountain = await readFile(path.join(root, 'store-assets', 'showcase-trip-report-mountain.png'));
+                await editorPage.route(mountainUrl, route => route.fulfill({
+                    contentType: 'image/png',
+                    body: mountain
+                }));
+                const richSource = [
+                    '[h2]Alpine dawn[/h2]',
+                    '',
+                    'The ridge caught the first light as the valley filled with cloud.',
+                    '',
+                    `[img src="${mountainUrl}" alt="Sunrise over an alpine ridge" width="440"]`,
+                    '',
+                    '[b]Route notes:[/b] Dry rock, shaded snow, and a calm descent.'
+                ].join('\n');
+                await editorPage.locator('#bpb-report-editor').getByRole('button', {
+                    name: 'Plain', exact: true
+                }).click();
+                await editorPage.locator('#JournalText').fill(richSource);
+                await editorPage.locator('#bpb-report-editor').getByRole('button', {
+                    name: 'Rich text', exact: true
+                }).click();
+                const richImageLoaded = await editorPage.waitForFunction(() => {
+                    const image = document.querySelector('#bpb-report-editor .bpb-re-surface img');
+                    return image?.complete && image.naturalWidth > 0;
+                }, null, { timeout: 5000 }).then(() => true).catch(() => false);
+                check(richImageLoaded, 'the rich-text showcase image did not load');
+                if (richShowcasePath) {
+                    await editorPage.locator('#bpb-report-editor').screenshot({ path: richShowcasePath });
+                }
+                await editorPage.locator('#bpb-report-editor').getByRole('button', {
+                    name: 'Plain', exact: true
+                }).click();
+                await editorPage.locator('#JournalText').fill('');
+                await editorPage.locator('#bpb-report-editor').getByRole('button', {
+                    name: 'Markdown', exact: true
+                }).click();
+                await editorPage.locator('#bpb-report-editor .cm-content').click();
+                await editorPage.keyboard.insertText([
+                    '## Alpine dawn',
+                    '',
+                    'The ridge caught the first light as the valley filled with cloud.',
+                    '',
+                    `![Sunrise over an alpine ridge](${mountainUrl})`,
+                    '',
+                    '**Route notes:** Dry rock, shaded snow, and a calm descent.'
+                ].join('\n'));
+                const markdownImageLoaded = await editorPage.waitForFunction(() => {
+                    const image = document.querySelector('#bpb-report-editor .bpb-re-preview img');
+                    return image?.complete && image.naturalWidth > 0;
+                }, null, { timeout: 5000 }).then(() => true).catch(() => false);
+                check(markdownImageLoaded, 'the Markdown showcase image preview did not load');
+                if (markdownShowcasePath) {
+                    await editorPage.locator('#bpb-report-editor').screenshot({ path: markdownShowcasePath });
+                }
             }
             check(editorErrors.length === 0, `the editor page threw: ${JSON.stringify(editorErrors)}`);
         }

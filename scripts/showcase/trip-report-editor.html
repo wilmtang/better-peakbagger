@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Trip report editor showcase</title>
+    <style>
+        :root {
+            color: #173c2d;
+            background: #f8f5eb;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        }
+
+        * { box-sizing: border-box; }
+
+        body {
+            width: 1280px;
+            height: 800px;
+            margin: 0;
+            overflow: hidden;
+            background:
+                radial-gradient(circle at 76% 18%, rgba(222, 239, 215, 0.9), transparent 38%),
+                linear-gradient(115deg, #f8f5eb 0%, #eef4e8 100%);
+        }
+
+        .showcase {
+            padding: 63px 64px 44px;
+        }
+
+        .headline {
+            display: flex;
+            align-items: center;
+            gap: 18px;
+            height: 110px;
+        }
+
+        .headline img {
+            width: 60px;
+            height: 60px;
+            filter: drop-shadow(0 7px 10px rgba(29, 68, 47, 0.16));
+        }
+
+        h1 {
+            margin: 0 0 5px;
+            color: #153b2b;
+            font-size: 39px;
+            line-height: 1.05;
+            letter-spacing: -1.6px;
+        }
+
+        .headline p {
+            margin: 0;
+            color: #526b5f;
+            font-size: 18px;
+            line-height: 1.35;
+        }
+
+        .browser {
+            height: 553px;
+            overflow: hidden;
+            border: 1px solid #cfd8ce;
+            border-radius: 20px;
+            background: #fff;
+            box-shadow: 0 20px 40px rgba(29, 66, 45, 0.18);
+        }
+
+        .browser-bar {
+            display: flex;
+            align-items: center;
+            gap: 9px;
+            height: 46px;
+            padding: 0 17px;
+            border-bottom: 1px solid #e3e5e0;
+            background: #f8f8f6;
+        }
+
+        .dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+        }
+
+        .red { background: #e87970; }
+        .yellow { background: #e9b94d; }
+        .green { background: #63bd86; }
+
+        .address {
+            flex: 1;
+            margin-left: 14px;
+            padding: 7px 18px;
+            border-radius: 15px;
+            background: #fff;
+            color: #829087;
+            font-size: 14px;
+        }
+
+        .workspace {
+            padding: 18px 20px 16px;
+        }
+
+        .editor-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 18px;
+        }
+
+        .editor-card {
+            min-width: 0;
+        }
+
+        .mode-label {
+            display: inline-flex;
+            align-items: center;
+            height: 25px;
+            margin: 0 0 8px;
+            padding: 0 10px;
+            border-radius: 99px;
+            background: #e8f0e6;
+            color: #315846;
+            font-size: 12px;
+            font-weight: 700;
+        }
+
+        .editor-card:nth-child(2) .mode-label {
+            background: #e7eef8;
+            color: #36526e;
+        }
+
+        .editor-card img {
+            display: block;
+            width: 100%;
+            border: 1px solid #d7dbd4;
+            border-radius: 7px;
+            background: #fff;
+        }
+
+        .caption {
+            margin: 8px 2px 0;
+            color: #59675e;
+            font-size: 13px;
+            line-height: 1.35;
+        }
+
+        .recovery-note {
+            display: flex;
+            align-items: center;
+            gap: 9px;
+            margin-top: 13px;
+            padding: 10px 12px;
+            border: 1px solid #d8e5d0;
+            border-radius: 8px;
+            background: #f4f9ef;
+            color: #496253;
+            font-size: 13px;
+        }
+
+        .check {
+            display: grid;
+            width: 18px;
+            height: 18px;
+            place-items: center;
+            border-radius: 50%;
+            background: #4f8c61;
+            color: #fff;
+            font-size: 12px;
+            font-weight: 800;
+        }
+    </style>
+</head>
+<body>
+    <main class="showcase">
+        <header class="headline">
+            <img src="../../icons/icon-128.png" alt="">
+            <div>
+                <h1>Write trip reports your way.</h1>
+                <p>Rich text with photos, Markdown with live preview, and local draft recovery.</p>
+            </div>
+        </header>
+
+        <section class="browser" aria-label="Trip report editor">
+            <div class="browser-bar" aria-hidden="true">
+                <span class="dot red"></span><span class="dot yellow"></span><span class="dot green"></span>
+                <span class="address">peakbagger.com/climber/ascentedit.aspx</span>
+            </div>
+            <div class="workspace">
+                <div class="editor-grid">
+                    <article class="editor-card">
+                        <span class="mode-label">Rich text</span>
+                        <img src="../../store-assets/showcase-trip-report-rich-source.png" alt="Rich text trip report editor with an alpine mountain photo">
+                        <p class="caption">Format a polished story and add photos without writing bracket tags.</p>
+                    </article>
+                    <article class="editor-card">
+                        <span class="mode-label">Markdown + live preview</span>
+                        <img src="../../store-assets/showcase-trip-report-markdown-source.png" alt="Markdown trip report editor beside a live preview">
+                        <p class="caption">Write GitHub-flavored Markdown and see the saved report as you go.</p>
+                    </article>
+                </div>
+                <div class="recovery-note"><span class="check">✓</span>Draft restored locally — your report stays available after a lost page or reload.</div>
+            </div>
+        </section>
+    </main>
+</body>
+</html>
