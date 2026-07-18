@@ -1050,10 +1050,10 @@ const run = async () => {
                     subLines.push(subLine(
                         `Time to summit: ${fmtTime(timeToSummit)} | Time back: ${fmtTime(timeBack)}`,
                         { color: p.faint, fontSize: '0.95em' }));
-                    if (campingSpots.length > 0) {
-                        const spotStrs = campingSpots.map(s => `Day ${s.day} (${s.lat.toFixed(5)}, ${s.lon.toFixed(5)})`).join(' | ');
-                        subLines.push(subLine(`Possible Camping: ${spotStrs}`, { color: p.faint, fontSize: '0.95em', marginTop: '2px' }));
-                    }
+                }
+                if (campingSpots.length > 0) {
+                    const spotStrs = campingSpots.map(s => `Day ${s.day} (${s.lat.toFixed(5)}, ${s.lon.toFixed(5)})`).join(' | ');
+                    subLines.push(subLine(`Possible Camping: ${spotStrs}`, { color: p.faint, fontSize: '0.95em', marginTop: '2px' }));
                 }
                 subLines.push(subLine(
                     `Times in the mountain’s local time (${mountainZoneLabel(startMs)})`,

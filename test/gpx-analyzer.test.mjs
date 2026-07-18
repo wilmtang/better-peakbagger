@@ -452,8 +452,7 @@ test('GPX analyzer adds a thick, segment-preserving route casing behind native L
 // mountain's local midnight but not UTC midnight, so the Day 2 labels and
 // the camping spot below only appear when day boundaries are computed in
 // the mountain's timezone — regardless of the machine running this test.
-const loadOvernightAnalyzer = async ({ withTzLookup }) => {
-    const elevations = [1000, 1200, 1400, 1600, 2000, 1600, 1200];
+const loadOvernightAnalyzer = async ({ withTzLookup, elevations = [1000, 1200, 1400, 1600, 2000, 1600, 1200] }) => {
     const points = elevations.map((ele, index) =>
         `<trkpt lat="${(48.7 + index * 0.01).toFixed(2)}" lon="-121.8000"><ele>${ele}</ele>`
         + `<time>2026-07-10T${String(5 + index).padStart(2, '0')}:00:00Z</time></trkpt>`).join('\n');
@@ -513,6 +512,20 @@ test('without the timezone raster, times fall back to a labelled longitude estim
     assert.match(analysisText(), /Possible Camping: Day 1/);
     assert.ok(analysisText().includes('Times in the mountain’s local time (UTC−8, estimated from longitude)'),
         'the stats bar must disclose the estimated mountain timezone');
+
+    dom.window.close();
+});
+
+test('overnight camping remains visible when the track starts at its highest point', async () => {
+    const { dom, analysisText } = await loadOvernightAnalyzer({
+        withTzLookup: true,
+        elevations: [2200, 2000, 1800, 1600, 1400, 1200, 1000]
+    });
+
+    assert.doesNotMatch(analysisText(), /Summit time:/,
+        'a summit-time breakdown is not meaningful when the summit is the first sample');
+    assert.match(analysisText(), /Possible Camping: Day 1/,
+        'camping is a day-boundary result and must not depend on summit timing');
 
     dom.window.close();
 });
