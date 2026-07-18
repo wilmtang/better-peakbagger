@@ -1,5 +1,14 @@
-Better Peakbagger streamlines trip planning and ascent logging on Peakbagger.
+Upgrade your Peakbagger.com experience.
 
-It can turn an owned Garmin or Strava activity into confidence-ranked Peakbagger drafts, analyze ascent GPX tracks in 3D terrain, filter and sort ascent lists, and apply a site-wide dark theme. Drafts always stop for manual review before Save.
+Better Peakbagger seamlessly captures your Garmin and Strava activities, turning them into confidence-ranked ascent drafts—so you can spend less time logging data and more time in the mountains.
 
-Raw provider GPX stays on the activity page. When the user explicitly starts capture, small coordinate corridor boxes are sent to Peakbagger to find nearby summits. If the user opens drafts, a newly serialized, reduced coordinate GPX is sent to Peakbagger Preview. Waypoint coordinates and names are included by default and can be turned off; all other waypoint fields remain excluded
+Features:
+• One-Click Logging: Instantly convert Garmin Connect and Strava activities into review-ready Peakbagger drafts.
+• 3D Terrain Maps: View peaks and routes in gorgeous, free 3D (powered by open-source Mapterhorn).
+• Advanced GPX Analyzer: Get interactive elevation profiles (by distance or time), detailed route metrics, and Strava-style chart-to-map hover tracking.
+• Beta Filters: Filter and sort ascent lists instantly by trip reports, GPS tracks, or external links.
+• Built for You: A beautiful Dark Mode, plus shared settings for themes, units, and beta signals.
+
+Strictly Private:
+No analytics. No telemetry. No ads. No developer data servers. Ever.
+Read our privacy policy: https://github.com/wilmtang/better-peakbagger#privacy
