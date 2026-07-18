@@ -1,6 +1,6 @@
 # esbuild + ES-module migration — plan & progress
 
-Branch: `esbuild-migration` (worktree). Living tracker — updated as each step lands.
+Archived completed migration tracker for the `esbuild-migration` branch.
 
 **Goal:** build-free IIFE + hand-vendored scripts → esbuild `dist/` build, all `src/`
 modules as real ES modules (zero cross-module `globalThis.BPB*` dependencies), vendor

@@ -15,3 +15,7 @@ living docs in [`docs/`](../).
   investigation into blurry drapes at high tilt and MapLibre LOD tuning.
 - [Peakbagger GPX Ascent Logger](peakbagger-gpx-ascent-detection-research.md) —
   research note on ascent/summit detection.
+- [Vector basemaps for the 3D terrain view](3d-vector-basemap-investigation.md) —
+  July 2026 provider evaluation that led to the experimental OpenFreeMap style.
+- [esbuild + ES-module migration](esbuild-migration-plan.md) — completed plan
+  and step-by-step migration log.

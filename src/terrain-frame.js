@@ -26,7 +26,8 @@ import { terrainCache as TerrainCache } from './terrain-cache.js';
     // Leaflet menu): OpenFreeMap's keyless, CORS-clean OpenStreetMap tiles,
     // grafted into the live style so labels billboard upright over the
     // terrain instead of rotating with a raster drape. Selecting it contacts
-    // tiles.openfreemap.org — see docs/3d-vector-basemap-investigation.md.
+    // tiles.openfreemap.org — see the dated provider evaluation in
+    // docs/archive/3d-vector-basemap-investigation.md.
     const VECTOR_BASEMAP = {
         name: 'OSM Vector (experimental)',
         styleUrl: 'https://tiles.openfreemap.org/styles/liberty'

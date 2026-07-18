@@ -176,8 +176,9 @@ and [releasing.md](releasing.md) for exact workflows.
 - [3D peak markers](3d-peak-markers.md)
 - [Mountain-local chart time](mountain-local-time.md)
 - [Dark-mode startup](dark-mode-flash.md)
-- [Vector basemap provider evaluation](3d-vector-basemap-investigation.md)
 
 These documents explain feature-specific decisions. Completed or
-point-in-time research is kept under [archive/](archive/) and is not a source of
-current runtime behavior.
+point-in-time research, including the
+[vector-basemap provider evaluation](archive/3d-vector-basemap-investigation.md),
+is kept under [archive/](archive/) and is not a source of current runtime
+behavior.

@@ -225,23 +225,11 @@ behavior and the rise leash below.
 
 ## Verified
 
-- 185/185 unit tests, including: the shared client's URL/context/XML
-  semantics against the archived response shape; frame validation,
-  stale-reply rejection, zoom cutoff, popup safety (name as text, link from
-  integer id); the screen-space hit test (edge miss, nearest-of-overlapping
-  wins, hover cursor set and restored, constant `circle-pitch-scale`
-  pinned, and no layer-scoped handlers ever registered); summit snapping
-  (a dot near a synthetic cone's apex lands on it, a dot on a relentless
-  ramp and a dot on unreadable DEM both keep the feed coordinates, a dot
-  whose climb gains more than the rise leash — a taller neighbor's own
-  apex inside the horizontal leash — keeps the feed coordinates, a
-  changed DEM at an unchanged zoom neither moves a dot nor re-climbs,
-  zooming in re-opens the verdict, a zoom-in that outruns the DEM stream
-  holds the last verdict instead of hopping to the feed coordinates and
-  then adopts the finer sample on the next batch, and an unreadable dot
-  snaps as soon as its terrain loads); bridge forwarding; both
-  coordinators end-to-end with a stubbed feed (ascent: `t=A&cid=…`, no
-  `pid`; group: `unavailable`).
+- Unit coverage pins the shared client's URL, context, and XML semantics; frame
+  validation and stale-reply rejection; zoom cutoff and popup safety;
+  screen-space hit testing; summit snapping and held-verdict behavior; bridge
+  forwarding; and coordinator behavior for ascent and group maps. The current
+  suite result belongs in CI, not this design note.
 - Hidden real-browser check (`scripts/verify-terrain-visual.mjs`, headless
   Chrome on the real GPU — the renderer is asserted and a software fallback
   refused — synthetic Peakbagger + synthetic PLLBB feed): feed queried with
@@ -253,5 +241,5 @@ behavior and the rise leash below.
   behind-the-billboard terrain is farthest away, where layer-scoped events
   failed hardest. Zooming out clears dots and popup, and a group BigMap
   never queries the feed.
-- Packaged-extension load smoke check on Chrome for Testing 150 (manifest
-  with the new content script loads).
+- `npm run verify:extension` covers the packaged manifest and content-script
+  load. See [development.md](development.md) for what each check can establish.

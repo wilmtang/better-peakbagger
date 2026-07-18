@@ -32,7 +32,7 @@ therefore needs:
    plain cross-origin `fetch`es and each must carry
    `Access-Control-Allow-Origin: *`. (This is the same constraint that
    already decides which 2D layers can drape — see
-   `docs/archive/3d-map-basemap-drape-cors.md`.)
+   `3d-map-basemap-drape-cors.md`.)
 3. **Terms that allow a free client-side app** with attribution, at hobbyist
    traffic levels, without a bandwidth contract.
 4. **A usable outdoor story.** Peaks, water, land cover, trails/paths, place
