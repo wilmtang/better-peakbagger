@@ -204,8 +204,8 @@ import { createMarkdownEditor } from './report-md-editor.js';
         small: button('bpb-re-tool', 'Small text', 'Small text', '<small>Aa</small>'),
         inlineQuote: button('bpb-re-tool', 'Inline quote', 'Inline quote', '<q>ab</q>')
     };
-    // Named CSS colors only: reading a hex color back from an inline style
-    // yields rgb(...), which sanitizeColor rejects; keywords round-trip as-is.
+    // Named CSS colors only — hex does not survive the style read-back; see
+    // "Colors and the DOM read-back" in docs/trip-report-editor.md.
     const PALETTE = [
         ['firebrick', 'Red'], ['chocolate', 'Orange'], ['olive', 'Olive'],
         ['seagreen', 'Green'], ['steelblue', 'Blue'], ['rebeccapurple', 'Purple'], ['gray', 'Gray']

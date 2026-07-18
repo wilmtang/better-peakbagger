@@ -59,6 +59,80 @@ parses or renders the saved report: TipTap documents are serialized through
 image source, color, and dimension is still validated by the converter on the
 way out.
 
+## From keystroke to saved bracket markup
+
+JournalText receives a freshly printed value on every edit (debounced while
+typing, synchronous before any submit or postback). What happens between the
+editing surface and that value differs by mode, but both paths meet in the
+same allowlisted AST.
+
+Rich mode:
+
+1. TipTap holds the report as a schema-constrained document. The schema is
+   the first filter: typing, pasting, and dropping can only introduce nodes
+   and marks that exist in the allowlist, because nothing else is
+   representable in the document model.
+2. `getHTML()` serializes that document to clean HTML — the schema's own
+   rendering, not the live contenteditable DOM with its cursor scaffolding.
+3. That HTML string is parsed into a *detached* document. Detached means
+   inert: it is never inserted into the page and nothing in it can execute.
+4. `domToBracket` folds the detached DOM into the AST. This is the second,
+   authoritative filter: aliases normalize (`strong`→`b`, `em`→`i`,
+   `del`→`s`), every link, image source, color, and dimension re-passes its
+   sanitizer, and an element outside the allowlist contributes nothing but
+   its visible text.
+5. The AST prints as bracket markup. Ordinary text that merely *looks* like
+   a tag is entity-escaped here, so Peakbagger renders it as visible text
+   instead of interpreting it.
+
+Markdown mode:
+
+1. CodeMirror holds plain text and plays no part in conversion.
+2. The text runs through the vendored Marked *lexer* only; Marked's HTML
+   renderer is never used.
+3. Known token types map into the same AST; raw-HTML tokens are kept as
+   literal text.
+4. The AST prints two ways: as bracket markup for JournalText, and as safe
+   HTML for the live preview — which is why the preview cannot drift from
+   what will be saved.
+
+Loading is those paths in reverse: the bracket source is tokenized, only
+balanced tags that pass the allowlist become real elements in a detached
+DOM, and the resulting AST prints as TipTap's editor HTML or as Markdown
+source text.
+
+One report in all four representations:
+
+```text
+Markdown source    We climbed **Baker** under [span style="color:steelblue"]blue[/span] skies.
+Rich document      <p>We climbed <strong>Baker</strong> under <span style="color: steelblue;">blue</span> skies.</p>
+Saved JournalText  We climbed [b]Baker[/b] under [span style="color:steelblue"]blue[/span] skies.
+Preview HTML       <p>We climbed <b>Baker</b> under <span style="color:steelblue">blue</span> skies.</p>
+```
+
+### Colors and the DOM read-back
+
+Step 4 of the rich path does not read a color out of the attribute text; it
+reads the parsed style declaration, `element.style.color`. CSSOM serializes
+that read-back, and the serialization is lossy for numeric forms: a color
+specified as `#2471a3` reads back as `rgb(36, 113, 163)`, while a keyword
+such as `steelblue` reads back unchanged. This is specified CSSOM behavior,
+identical in Chrome, Firefox, and the test harness's jsdom.
+
+`sanitizeColor` accepts exactly two shapes — a hex literal or a short
+alphabetic keyword — and `rgb(…)` is neither, so a hex color entering the
+rich path is dropped at the sanitizer. The toolbar palette therefore applies
+named CSS colors, which survive the round trip byte-for-byte and match the
+only color forms verified against Peakbagger's own renderer (the render test
+below uses `red` and `green`).
+
+Hex colors remain valid input in Markdown and Plain mode, whose values are
+handled as strings and never re-read through a style declaration. The
+corresponding restriction: a saved report containing a hex color keeps it
+while merely viewed, but an actual rich-mode edit re-serializes the document
+and loses that color (its text is kept). Re-apply a palette color, or make
+the edit in Markdown or Plain mode.
+
 ## Supported Markdown
 
 Markdown mode supports the GFM structures that have a useful, verified
