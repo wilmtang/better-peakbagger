@@ -5,12 +5,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import vm from 'node:vm';
-import { createRequire } from 'node:module';
+import { captureCore as Core } from '../src/capture-core.js';
+import { settingsSchema } from '../src/settings-schema.js';
 
-const require = createRequire(import.meta.url);
-const Core = require('../src/capture-core.js');
 const source = await fs.readFile(new URL('../src/background.js', import.meta.url), 'utf8');
-const schemaSource = await fs.readFile(new URL('../src/settings-schema.js', import.meta.url), 'utf8');
 const settingsSource = await fs.readFile(new URL('../src/settings.js', import.meta.url), 'utf8');
 
 const event = () => {
@@ -123,7 +121,7 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
         console,
         structuredClone
     });
-    vm.runInContext(schemaSource, context, { filename: 'settings-schema.js' });
+    context.BPBSettingsSchema = settingsSchema; // ESM module injected onto the worker's isolated global
     vm.runInContext(settingsSource, context, { filename: 'settings.js' });
     vm.runInContext(source, context, { filename: 'background.js' });
     const listener = runtimeMessage.listeners[0];

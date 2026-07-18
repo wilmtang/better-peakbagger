@@ -3,10 +3,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createRequire } from 'node:module';
-
-const require = createRequire(import.meta.url);
-const Core = require('../src/capture-core.js');
+import { captureCore as Core } from '../src/capture-core.js';
 
 const point = (lat, lon, ele = 100, time = null) => ({ lat, lon, ele, time });
 

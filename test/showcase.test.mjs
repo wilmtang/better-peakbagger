@@ -72,7 +72,7 @@ const REQUIRES = {
     'src/gpx-analyzer.js': ['BPBGpxMetrics', 'BPBSettingsSchema'],
     'src/big-map.js': ['BPBSettingsSchema'],
     'src/terrain-frame.js': ['BPBSettingsSchema', 'BPBTerrainCache'],
-    'src/capture-core.js': ['BPBGpxMetrics'],
+    // capture-core, gpx-metrics, settings-schema now use ES imports, not globals.
     'src/settings.js': ['BPBSettingsSchema'],
     'src/bridge.js': ['BPBSettings'],
     'src/big-map-bridge.js': ['BPBSettings'],

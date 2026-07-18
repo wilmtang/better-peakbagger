@@ -11,7 +11,7 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { JSDOM } from 'jsdom';
-import { makeChromeStub, waitFor } from './helpers/load-page.mjs';
+import { makeChromeStub, waitFor, evalBundle } from './helpers/load-page.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -51,13 +51,12 @@ const loadOptions = async (settings = {}, {
     dom.chrome = makeChromeStub({ bpbSettings: settings }, local);
     dom.window.chrome = dom.chrome;
     dom.window.caches = cacheStorage;
-    dom.window.eval(await readFile(path.join(root, 'src', 'terrain-cache.js'), 'utf8'));
     if (cachedTheme !== null) dom.window.localStorage.setItem('bpbThemePref', cachedTheme);
-    dom.window.eval(await readFile(path.join(root, 'src', 'settings-schema.js'), 'utf8'));
-    dom.window.eval(await readFile(path.join(root, 'src', 'settings.js'), 'utf8'));
-    dom.window.eval(await readFile(path.join(root, 'options', 'theme.js'), 'utf8'));
+    // The options page loads the head bundle (settings + theme, pre-paint) then
+    // the tail bundle (terrain-cache + the settings UI), as options.html does.
+    await evalBundle(dom.window, 'options/options-head.js');
     dom.initialTheme = dom.window.document.documentElement.getAttribute('data-bpb-theme');
-    dom.window.eval(await readFile(path.join(root, 'options', 'options.js'), 'utf8'));
+    await evalBundle(dom.window, 'options/options.js');
     await new Promise(r => dom.window.setTimeout(r, 20)); // S.get().then(populate)
     return dom;
 };

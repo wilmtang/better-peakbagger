@@ -3,17 +3,9 @@
 //
 // Pure capture/detection helpers shared by the MV3 background worker and tests.
 // This file intentionally has no DOM or extension-API dependency. Geometry and
-// gain primitives shared with the GPX Analyzer live in src/gpx-metrics.js,
-// which must be loaded first (manifest background scripts / importScripts).
+// gain primitives shared with the GPX Analyzer live in src/gpx-metrics.js.
 
-(() => {
-    'use strict';
-
-    if (typeof module !== 'undefined' && module.exports && !globalThis.BPBGpxMetrics) {
-        require('./gpx-metrics.js');
-    }
-    const Metrics = globalThis.BPBGpxMetrics;
-    if (!Metrics) return; // background.js fails closed when BPBCaptureCore is missing.
+import { gpxMetrics as Metrics } from './gpx-metrics.js';
 
     const FEET_PER_METER = 3.28084;
     const MAX_UPLOAD_POINTS = 3000;
@@ -832,6 +824,8 @@
         formatEncounterDateTime
     };
 
+    export const captureCore = API;
+
+    // Transitional global bridge; removed once background.js imports
+    // { captureCore } directly.
     globalThis.BPBCaptureCore = API;
-    if (typeof module !== 'undefined' && module.exports) module.exports = API;
-})();

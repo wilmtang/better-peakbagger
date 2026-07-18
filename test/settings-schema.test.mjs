@@ -15,10 +15,8 @@ import assert from 'node:assert/strict';
 import { readFile, readdir } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createRequire } from 'node:module';
+import { settingsSchema as Schema } from '../src/settings-schema.js';
 
-const require = createRequire(import.meta.url);
-const Schema = require('../src/settings-schema.js');
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 test('clean() clamps oversized values but resets a sub-minimum viewport width to the default', () => {

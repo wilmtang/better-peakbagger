@@ -6,12 +6,6 @@
 // tests. This file intentionally has no DOM or extension-API dependency:
 // input is parsed track points, output is adjusted distances, smoothed
 // elevations, confirmed gain, grades, and bounded map-route sampling.
-// Idempotent: safe to inject more than once into the same global.
-
-(() => {
-    'use strict';
-
-    if (globalThis.BPBGpxMetrics) return;
 
     const DIST_CONFIRM_M = 5;
     const ELEVATION_GAIN_THRESHOLD_M = 3;
@@ -322,6 +316,8 @@
         limitMapRouteSegments
     };
 
+    export const gpxMetrics = API;
+
+    // Transitional global bridge; removed once every consumer imports
+    // { gpxMetrics } directly.
     globalThis.BPBGpxMetrics = API;
-    if (typeof module !== 'undefined' && module.exports) module.exports = API;
-})();
