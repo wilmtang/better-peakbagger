@@ -227,7 +227,7 @@ normalizations become the new `JournalText`. Before Preview, Save, any ASP.NET
 postback, or page exit, a pending dirty edit is flushed synchronously rather
 than waiting for the typing debounce.
 
-## Known conversion defect
+## Known issues
 
 ### Hex colors are lost outside Plain mode
 
@@ -247,6 +247,33 @@ Merely visiting Rich or Markdown still leaves the original `JournalText`
 untouched. Making any edit in either mode serializes the whole reduced document
 and makes the lost color permanent. This is a converter invariant bug, not a
 loss of the semantic color by the browser.
+
+The accepted repair is raw-token preservation, as recorded in the
+[color-conversion spike](archive/trip-report-color-conversion-spike.md). It is
+not implemented yet. The converter should use a private, color-specific helper
+that reads the last raw inline `color` declaration, then validates that value
+against the existing narrow contract. An invalid final declaration must remove
+the color rather than fall back to CSSOM or an earlier declaration. Initially,
+Rich and Markdown should accept only three- and six-digit hex plus the existing
+short alphabetic tokens; alpha hex, functional colors, variables, and arbitrary
+CSS remain out of scope until separately verified against Peakbagger.
+
+### Lossy imports are not surfaced before the first edit
+
+Rich and Markdown deliberately omit, unwrap, or neutralize markup outside the
+allowlisted report AST. Dirty flags protect an untouched server report when the
+user merely visits those modes. They do not protect it after the first real
+edit: serializing the active view rewrites the entire report, so an unrelated
+change can make unsupported existing markup permanently inert.
+
+Plain mode avoids that conversion, but the editor does not currently detect a
+lossy import or direct the user to Plain before editing. This is a UX guardrail
+gap rather than a reason to weaken sanitization. The recommended follow-up is
+for the bracket parser to return explicit diagnostics when source is dropped or
+neutralized. A report with those diagnostics should start in Plain and require
+an intentional action before conversion to Rich or Markdown. Do not infer loss
+by comparing serialized strings: supported aliases, legacy structure, and
+whitespace are intentionally normalized and would create false positives.
 
 ## Supported Markdown
 
@@ -362,8 +389,12 @@ shows the exact bracket source.
 
 ## Regression boundaries
 
-- The known conversion defect above describes current behavior, not the
-  intended contract, and does not yet have focused regression coverage.
+- The hex-color defect above describes current behavior, not the intended
+  contract, and does not yet have focused regression coverage.
+- Existing tests pin unsupported-markup neutralization after an edit, but there
+  is no parser diagnostic or mode-level guardrail for a lossy import. A future
+  guardrail must distinguish actual dropped or neutralized source from allowed
+  canonical normalization.
 - `test/report-markup.test.mjs` pins Markdown tokens, bracket aliases, DOM
   import, canonical output, unsafe-input neutralization, and round trips.
 - `test/report-editor.test.mjs` pins the native-textarea source of truth,
