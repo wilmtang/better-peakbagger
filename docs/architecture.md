@@ -133,7 +133,10 @@ or send coordinates to a timezone service. See
 - `src/ascent-draft.js`: validated draft filling and exactly-once Preview.
 - `src/report-markup.js`: allowlisted bracket, editor-DOM, and Markdown
   conversions.
-- `src/report-editor.js`: trip-report editing and local draft lifecycle.
+- `src/report-editor.js`: trip-report editing orchestration and local draft
+  lifecycle.
+- `src/report-rich-editor.js`: the schema-locked TipTap surface for rich mode.
+- `src/report-md-editor.js`: the CodeMirror source pane for Markdown mode.
 - `src/theme.js`: synchronous site theme startup and reconciliation.
 - `src/peak-links.js`: user-invoked external conditions and imagery links.
 

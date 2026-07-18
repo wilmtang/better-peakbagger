@@ -11,19 +11,10 @@ over that value; neither replaces the form or submits an ascent. The extension
 flushes the active view synchronously before Preview, Save, an ASP.NET postback,
 or page exit.
 
-## Why a Markdown parser, not a new editor framework
+## One converter, two editing surfaces
 
-The first editor used a hand-written inline Markdown parser and represented
-only paragraphs, bold, italic, underline, links, and visual list-like lines.
-That model was the limiting factor. Peakbagger itself renders semantic
-headings, quotes, lists, tables, code, images, and more.
-
-Replacing `contenteditable` with ProseMirror, TipTap, Quill, or another editor
-framework would not remove the hard part: every document would still need a
-Peakbagger-specific, security-aware serializer. It would also add a second
-document model and a much larger runtime to the extension.
-
-The extension instead installs through npm and packages
+The converter is the heart of the feature, and it is deliberately
+editor-agnostic. The extension installs through npm and packages
 [Marked 18.0.6](https://github.com/markedjs/marked/tree/v18.0.6), a small
 MIT-licensed GFM parser. Better Peakbagger consumes Marked's token tree and maps
 only known token types into its own allowlisted AST. It **never uses Marked's
@@ -37,6 +28,36 @@ Markdown ── Marked tokens ──┐
 bracket markup ── safe DOM ─┘                            ├── Peakbagger bracket markup
 rich editor DOM ─────────────────────────────────────────┘── Markdown
 ```
+
+The *input surfaces* on top of that path are established open-source editors,
+adopted after the first release:
+
+- **Rich mode is a [TipTap](https://tiptap.dev) (ProseMirror) editor**
+  (`src/report-rich-editor.js`). Its schema is locked to exactly the
+  allowlisted node and mark set — including small custom marks for
+  Peakbagger's `[small]` and `[q]` — so nothing typed, pasted, or dropped can
+  enter the document unless the converter has a bracket equivalent for it.
+  The model provides what `document.execCommand` never could: reliable undo
+  and IME handling, markdown-style input rules (`**bold**`, `# `, `1. ` as
+  you type), toolbar active states, and real table editing.
+- **Markdown mode is a [CodeMirror 6](https://codemirror.net) source pane**
+  (`src/report-md-editor.js`) beside a live preview. CodeMirror contributes
+  GFM syntax highlighting, list continuation on Enter, and history; it renders
+  nothing. The preview is produced by this extension's own converter, so what
+  it shows is exactly what will be saved.
+
+An earlier revision of this document rejected editor frameworks because they
+"would not remove the hard part": the Peakbagger-specific, security-aware
+serializer. That was true, and it is why the serializer was built first,
+standalone. With the converter in place the calculus reversed — the frameworks
+now slot in as input surfaces only, the schema enforcement *adds* a safety
+layer on top of serialization-time sanitizing, and the added bundle weight
+(the editor bundle is ~1 MB minified, loaded only on the ascent add/edit
+form) was judged acceptable for the editing quality. Neither library ever
+parses or renders the saved report: TipTap documents are serialized through
+`domToBracket`, CodeMirror text through the Marked pipeline, and every href,
+image source, color, and dimension is still validated by the converter on the
+way out.
 
 ## Supported Markdown
 
@@ -95,9 +116,12 @@ Peakbagger's report page.
 
 The rich toolbar exposes the common actions without becoming a wall of
 controls: block style (paragraph, six heading levels, quote, preformatted),
-bold, italic, underline, strikethrough, link, both list types, and horizontal
-rule. Existing tables and images are preserved in rich mode and can be removed;
-Markdown is the clearer insertion surface for those less frequent structures.
+bold, italic, underline, strikethrough, link, image, table, both list types,
+horizontal rule, and undo/redo, with live active states that follow the caret.
+Less-frequent inline formats — inline code, highlight, sub/superscript, small,
+inline quote, and a named-color text palette — sit one click away behind the
+"Aa" control. While the caret is inside a table, a contextual row offers
+add/delete row and column, header-row toggle, and table removal.
 
 ## Deliberate restrictions
 
@@ -138,25 +162,31 @@ To prevent storage unbounded growth and accidental overwrites, drafts have speci
 
 ## Preview fidelity
 
-Preview shows the exact semantic structure the converter will save, with the
-extension's compact editor styles. Peakbagger's report page owns the final
-colors, heading alignment, font sizes, and margins, so the preview intentionally
-does not claim pixel-for-pixel fidelity with that legacy stylesheet. Plain mode
-always shows the exact bracket source.
+Markdown mode renders its preview live in a split pane beside the source
+(stacked below it when the form column is narrow), re-rendering as you pause
+typing and following the source pane's scroll position. The preview shows the
+exact semantic structure the converter will save, with the extension's compact
+editor styles. Peakbagger's report page owns the final colors, heading
+alignment, font sizes, and margins, so the preview intentionally does not
+claim pixel-for-pixel fidelity with that legacy stylesheet. Plain mode always
+shows the exact bracket source.
 
 ## Regression boundaries
 
 - `test/report-markup.test.mjs` pins Markdown tokens, bracket aliases, DOM
   import, canonical output, unsafe-input neutralization, and round trips.
 - `test/report-editor.test.mjs` pins the native-textarea source of truth,
-  untouched-value preservation, expanded rich DOM, mode switching, local
-  drafts, and pre-postback flushing.
+  untouched-value preservation, expanded rich DOM, toolbar active states,
+  image-source validation, undo isolation across mode switches, mode
+  switching, local drafts, and pre-postback flushing, driving the TipTap and
+  CodeMirror instances through the mount's test handle.
 - `test/manifest-capture.test.mjs` pins the vendored parser before the converter
   and editor in the real content-script list.
 - `npm run verify:extension` loads the unpacked extension in hidden Chrome for
-  Testing and exercises real typing, formatting, Markdown conversion/preview,
-  expanded semantic blocks, and draft restoration against the masked ascent
-  form fixture.
+  Testing and exercises real typing, Ctrl/Cmd+B, the `1. ` input rule, live
+  toolbar states, the CodeMirror source pane with its live split preview,
+  toolbar table insertion and growth, and draft restoration against the masked
+  ascent form fixture.
 
 ## Peakbagger render test
 ```
