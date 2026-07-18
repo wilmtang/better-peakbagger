@@ -33,12 +33,18 @@ modules as real ES modules (zero `globalThis.BPB*`), vendor via npm, docs + dev 
 | 7 | Convert entry roots: `background`, `options`, `popup` | ✅ done |
 | 8 | Strip all transitional bridges; assert no `globalThis.BPB*` remains | ✅ done |
 | 9 | Vendor → npm; delete committed `vendor/` | ✅ done |
-| 10 | Repoint showcase / terrain-verify / firefox packaging scripts to ESM+dist | ⬜ todo |
+| 10 | Repoint showcase / terrain-verify / firefox packaging scripts to ESM+dist | ✅ done |
 | 11 | Docs + dev guide (`docs/development.md`, `AGENTS.md`, `README.md`, `CHANGELOG`) | ⬜ todo |
 | 12 | Final verification (`npm test` + `npm run verify:extension`) | ⬜ todo |
 
 ## Log
 
+- **Step 10 done** — showcase pages load the built dist bundles + dist/vendor (script lists
+  collapse to one bundle each); their inline stubs feed real settings via a chrome.storage stub
+  and point getURL at /dist/. `showcase:render` and `terrain:verify` build dist first;
+  `verify-terrain-visual.mjs` serves the frame from /dist/terrain/terrain.html. The terrain
+  showcase loads terrain-map before gpx-analyzer (the original relative order) so the peak-feed
+  relay fires. **`npm run terrain:verify` passes on the real GPU (ANGLE Metal).** 240 green.
 - **Step 9 done** — vendor libs come from npm at pinned versions (marked 18.0.6, chart.js
   4.5.1, maplibre-gl 5.24.0, tz-lookup 6.1.25). The build copies marked/chart/maplibre browser
   builds + LICENSEs from node_modules (byte-identical to the old hand-copied files) and

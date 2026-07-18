@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>3D terrain showcase</title>
   <link rel="stylesheet" href="/scripts/showcase/showcase.css">
-  <link rel="stylesheet" href="/src/terrain-map.css">
+  <link rel="stylesheet" href="/dist/css/terrain-map.css">
   <style>
     body { overflow: auto; }
     .terrain-check { width: 860px; margin: 28px auto; padding: 22px 30px 34px; background: #f7f5ef; }
@@ -16,10 +16,14 @@
     .terrain-check .analyzer-shell > a { color: #174d82; font-size: 11px; }
   </style>
   <script>
-    window.chrome = { runtime: { getURL: path => `/${path}` } };
-    window.BPBSettings = {
-      get: async () => ({ enable3dMap: true }),
-      subscribe: () => () => {}
+    // Extension resources live under dist/; the isolated 3D bridge reads real
+    // settings from chrome.storage (it imports settings now, not a page global).
+    window.chrome = {
+      runtime: { getURL: path => `/dist/${path}` },
+      storage: {
+        sync: { get: async () => ({ bpbSettings: { enable3dMap: true } }) },
+        onChanged: { addListener: () => {}, removeListener: () => {} }
+      }
     };
     window.addEventListener('message', event => {
       if (event.source !== window || !event.data || event.data.__bpb !== true || event.data.dir !== 'toCS') return;
@@ -51,13 +55,9 @@
     <a href="/map/BigMap.aspx">Click Here for a Full Screen Map</a>
   </main>
 
-  <script src="/vendor/chart.umd.min.js"></script>
-  <script src="/src/gpx-metrics.js"></script>
-  <script src="/src/terrain-basemap.js"></script>
-  <script src="/src/peak-markers.js"></script>
-  <script src="/src/terrain-map.js"></script>
-  <script src="/src/settings-schema.js"></script>
-  <script src="/src/gpx-analyzer.js"></script>
+  <script src="/dist/vendor/chart.umd.min.js"></script>
+  <script src="/dist/content/terrain-map.js"></script>
+  <script src="/dist/content/gpx-analyzer.js"></script>
   <script>
     // The toggle enables as soon as the GPX parses, but the drape is read from
     // the MasterMap iframe's Leaflet globals, which load independently. Clicking

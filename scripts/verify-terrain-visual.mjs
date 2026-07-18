@@ -88,12 +88,14 @@ const server = createServer(async (request, response) => {
             'cache-control': 'no-store'
         });
         let contents = await readFile(file);
-        if (url.pathname === '/terrain/terrain.html') {
+        if (url.pathname === '/dist/terrain/terrain.html') {
+            // The extension resources live under dist/; map getURL('x') to /dist/x
+            // so the frame's MapLibre worker and the frame bundle resolve there.
             contents = Buffer.from(contents.toString('utf8').replace('</head>', `  <script>
-    globalThis.chrome = { runtime: { getURL: resource => new URL('/' + resource, location.origin).href } };
+    globalThis.chrome = { runtime: { getURL: resource => new URL('/dist/' + resource, location.origin).href } };
   </script>
 </head>`));
-        } else if (url.pathname === '/options/options.html' && url.searchParams.get('visual') === '1') {
+        } else if (url.pathname === '/dist/options/options.html' && url.searchParams.get('visual') === '1') {
             contents = Buffer.from(contents.toString('utf8').replace('    <script src="options.js"></script>\n', ''));
         }
         response.end(contents);

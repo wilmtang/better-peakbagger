@@ -31,15 +31,16 @@ test('GPX showcase map is privacy-safe and credits its basemap', () => {
 });
 
 test('3D terrain showcase uses the production renderer with a synthetic route', () => {
-    assert.match(terrainShowcase, /src\/terrain-map\.js/);
+    // The showcase loads the built bundles (the isolated 3D bridge and the
+    // MAIN-world analyzer); MapLibre loads lazily inside the extension frame.
+    assert.match(terrainShowcase, /dist\/content\/terrain-map\.js/);
     assert.doesNotMatch(terrainShowcase, /vendor\/maplibre-gl-csp\.js/,
         'MapLibre should load lazily inside the extension-owned frame');
     assert.match(terrainFrame, /vendor\/maplibre-gl-csp\.js/);
     // terrain-cache and settings-schema are bundled into the frame bundle now;
     // bundle composition is asserted in manifest-capture.test.mjs.
     assert.match(terrainFrame, /terrain-frame\.js/);
-    assert.match(terrainShowcase, /src\/gpx-metrics\.js/);
-    assert.match(terrainShowcase, /src\/gpx-analyzer\.js/);
+    assert.match(terrainShowcase, /dist\/content\/gpx-analyzer\.js/);
     assert.match(terrainShowcase, /enable3dMap:\s*true/);
     assert.doesNotMatch(terrainShowcase, /bpb-terrain-disclosure/);
     assert.match(terrainGpx, /Synthetic Mount Baker terrain check/);
