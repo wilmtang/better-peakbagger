@@ -270,6 +270,23 @@ test('bracket ↔ markdown mode switching round-trips the supported formatting',
     ].join('\n'));
 });
 
+test('table cell line breaks stay inside one Markdown row', () => {
+    const bracket = '[table border="1"][tr][th]Peak[/th][th]Notes[/th][/tr]'
+        + '[tr][td]Baker[/td][td]snow[br]ice[/td][/tr][/table]';
+    const markdown = [
+        '| Peak | Notes |',
+        '| --- | --- |',
+        '| Baker | snow[br]ice |'
+    ].join('\n');
+
+    assert.equal(Markup.bracketToMarkdown(bracket), markdown);
+    const normalizedBracket = Markup.markdownToBracket(markdown);
+    assert.equal(normalizedBracket,
+        '[table border="1"][tr][th]Peak[/th][th]Notes[/th][/tr]'
+        + '[tr][td]Baker[/td][td]snow\nice[/td][/tr][/table]');
+    assert.equal(Markup.bracketToMarkdown(normalizedBracket), markdown);
+});
+
 // ---- editor DOM → bracket ----------------------------------------------------
 
 const body = html => {

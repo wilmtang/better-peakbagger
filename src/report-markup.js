@@ -698,7 +698,9 @@
         const first = sourceRows[0];
         const header = first.header ? first : { header: true, cells: first.cells.map(() => []) };
         const body = first.header ? sourceRows.slice(1) : sourceRows;
-        const row = cells => `| ${cells.map(cell => inlinesToMarkdown(cell).replace(/\|/g, '\\|')).join(' | ')} |`;
+        const row = cells => `| ${cells.map(cell => inlinesToMarkdown(cell)
+            .replace(/\n/g, '[br]')
+            .replace(/\|/g, '\\|')).join(' | ')} |`;
         return [row(header.cells), `| ${header.cells.map(() => '---').join(' | ')} |`,
             ...body.map(item => row(item.cells))].join('\n');
     };
