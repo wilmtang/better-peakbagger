@@ -55,6 +55,14 @@ test('Peakbagger XML parsing decodes metadata and ignores malformed peaks', () =
     assert.equal(Math.round(peaks[0].elevationM * Core.FEET_PER_METER), 5000);
 });
 
+test('Peakbagger XML parsing decodes each entity only once', () => {
+    const [peak] = Core.parsePeakbaggerPeaks(
+        '<t i="13" n="A &#38;lt; B &amp;gt; C &#x110000;" a="47.1" o="-121.2"/>'
+    );
+
+    assert.equal(peak.name, 'A &lt; B &gt; C &#x110000;');
+});
+
 test('full-resolution segment projection detects a sparse summit crossing', () => {
     const segments = [[point(0, -0.001, 100), point(0, 0.001, 100)]];
     const matches = Core.detectPeaks(segments, [{ id: 1, name: 'Sparse Peak', location: '', lat: 0, lon: 0, elevationM: 100 }], 1);

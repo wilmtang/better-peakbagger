@@ -245,14 +245,19 @@ import { gpxMetrics as Metrics } from './gpx-metrics.js';
         });
     };
 
-    const decodeXml = value => String(value || '')
-        .replace(/&#x([0-9a-f]+);/gi, (_match, code) => String.fromCodePoint(parseInt(code, 16)))
-        .replace(/&#(\d+);/g, (_match, code) => String.fromCodePoint(parseInt(code, 10)))
-        .replace(/&quot;/g, '"')
-        .replace(/&apos;/g, "'")
-        .replace(/&lt;/g, '<')
-        .replace(/&gt;/g, '>')
-        .replace(/&amp;/g, '&');
+    const XML_NAMED_ENTITIES = Object.freeze({
+        quot: '"', apos: "'", lt: '<', gt: '>', amp: '&'
+    });
+    const decodeXml = value => String(value || '').replace(
+        /&#[xX]([0-9a-fA-F]+);|&#(\d+);|&(quot|apos|lt|gt|amp);/g,
+        (match, hex, decimal, named) => {
+            if (named) return XML_NAMED_ENTITIES[named];
+            const codePoint = Number.parseInt(hex ?? decimal, hex === undefined ? 10 : 16);
+            return codePoint <= 0x10FFFF && !(codePoint >= 0xD800 && codePoint <= 0xDFFF)
+                ? String.fromCodePoint(codePoint)
+                : match;
+        }
+    );
 
     const parsePeakbaggerPeaks = text => {
         const peaks = [];
