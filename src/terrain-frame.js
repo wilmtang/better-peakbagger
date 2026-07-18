@@ -126,6 +126,7 @@ import { terrainCamera } from './terrain-camera.js';
     let vectorSwapToken = 0;
     let vectorLayerIds = [];
     let vectorSourceIds = [];
+    let vectorStyleResources = null;
     // True when the route carries per-track colors (group maps), so the route
     // line is painted data-driven from each feature instead of one flat color.
     let routeHasFeatureColors = false;
@@ -543,6 +544,14 @@ import { terrainCamera } from './terrain-camera.js';
     // layers survive untouched. Everything is added under prefixed ids so it
     // can be removed wholesale and can never collide with extension layers.
     const addVectorBasemap = style => {
+        const currentStyle = typeof map.getStyle === 'function' ? map.getStyle() : null;
+        const currentSprite = currentStyle?.sprite;
+        vectorStyleResources = {
+            glyphs: typeof currentStyle?.glyphs === 'string' ? currentStyle.glyphs : null,
+            sprite: typeof currentSprite === 'string'
+                ? currentSprite
+                : Array.isArray(currentSprite) ? currentSprite.map(item => ({ ...item })) : null
+        };
         if (typeof style.glyphs === 'string' && typeof map.setGlyphs === 'function') map.setGlyphs(style.glyphs);
         if (typeof style.sprite === 'string' && typeof map.setSprite === 'function') map.setSprite(style.sprite);
         for (const [id, source] of Object.entries(style.sources)) {
@@ -567,6 +576,7 @@ import { terrainCamera } from './terrain-camera.js';
     };
 
     const removeVectorBasemap = () => {
+        const previousResources = vectorStyleResources;
         try {
             for (const id of vectorLayerIds) {
                 if (typeof map.getLayer === 'function' && map.getLayer(id)) map.removeLayer(id);
@@ -575,8 +585,17 @@ import { terrainCamera } from './terrain-camera.js';
                 if (map.getSource(id) && typeof map.removeSource === 'function') map.removeSource(id);
             }
         } catch (error) { /* A partially-added style may already be absent. */ }
+        if (previousResources) {
+            try {
+                if (typeof map.setGlyphs === 'function') map.setGlyphs(previousResources.glyphs);
+            } catch (error) { /* The style may be tearing down. */ }
+            try {
+                if (typeof map.setSprite === 'function') map.setSprite(previousResources.sprite);
+            } catch (error) { /* The style may be tearing down. */ }
+        }
         vectorLayerIds = [];
         vectorSourceIds = [];
+        vectorStyleResources = null;
         vectorActive = false;
     };
 

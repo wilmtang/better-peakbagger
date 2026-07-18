@@ -775,6 +775,13 @@ test('the extension-provided vector entry grafts the provider style under the ex
         removeLayer(id) { this.layers = this.layers.filter(layer => layer.id !== id); }
         getSource(id) { return this.sources.get(id); }
         removeSource(id) { this.sources.delete(id); }
+        getStyle() {
+            return {
+                ...this.options.style,
+                ...(this.glyphs ? { glyphs: this.glyphs } : {}),
+                ...(this.sprite ? { sprite: this.sprite } : {})
+            };
+        }
         setGlyphs(url) { this.glyphs = url; }
         setSprite(url) { this.sprite = url; }
         setPaintProperty() {}
@@ -829,6 +836,10 @@ test('the extension-provided vector entry grafts the provider style under the ex
 
     const picker = () => window.document.querySelector('.bpb-terrain-picker');
     const map = maps[0];
+    const frameGlyphs = 'chrome-extension://test-id/fonts/{fontstack}/{range}.pbf';
+    const frameSprite = 'chrome-extension://test-id/sprites/terrain';
+    map.glyphs = frameGlyphs;
+    map.sprite = frameSprite;
     assert.deepEqual(Array.from(picker().options, option => option.textContent),
         ['OSM Vector (experimental)', 'Terrain only'],
         'the vector entry and terrain-only are offered even without page layers');
@@ -868,6 +879,8 @@ test('the extension-provided vector entry grafts the provider style under the ex
     picker().dispatchEvent(new window.Event('change'));
     assert.equal(map.getSource('bpb-vector:openmaptiles'), undefined, 'terrain-only removes the vector sources');
     assert.ok(!map.layers.some(layer => layer.id.startsWith('bpb-vector:')), 'terrain-only removes every vector layer');
+    assert.equal(map.glyphs, frameGlyphs, 'terrain-only restores the frame glyph configuration');
+    assert.equal(map.sprite, frameSprite, 'terrain-only restores the frame sprite configuration');
 
     // Re-selecting reuses the cached style without another fetch.
     picker().value = 'vector';
