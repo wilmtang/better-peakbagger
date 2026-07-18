@@ -5,6 +5,11 @@
  * typography (Tahoma small) and stays quiet: one bordered writing surface,
  * one slim toolbar. Dark mode keys off the extension's html[data-bpb-theme]
  * attribute, the same hook as the site-wide dark stylesheet.
+ *
+ * The rich surface is the TipTap/ProseMirror contenteditable (it carries the
+ * bpb-re-surface class); the Markdown pane is a CodeMirror editor styled here
+ * through .cm-* and the bpb-md-* highlight classes, so both follow the same
+ * light/dark themes as the rest of the extension.
  */
 
 .bpb-re {
@@ -12,6 +17,7 @@
     font-family: Tahoma, Geneva, sans-serif;
     font-size: small;
     max-width: 99%;
+    container-type: inline-size;
 }
 
 .bpb-re-hidden,
@@ -33,11 +39,11 @@
     background: #f2f2f0;
 }
 
-.bpb-re-tools,
-.bpb-re-mdtabs {
+.bpb-re-tools {
     display: flex;
     align-items: center;
     gap: 2px;
+    flex-wrap: wrap;
 }
 
 .bpb-re-format {
@@ -98,42 +104,51 @@
     background: #e2e2df;
 }
 
-.bpb-re-tab,
+.bpb-re-tool[aria-pressed="true"] {
+    background: #d8dee9;
+    color: #1e2f49;
+}
+
+.bpb-re-tool:disabled {
+    opacity: 0.4;
+    cursor: default;
+}
+
+.bpb-re-tool:disabled:hover {
+    background: transparent;
+}
+
 .bpb-re-mode {
     height: 24px;
     padding: 0 9px;
     font-size: 12px;
-}
-
-.bpb-re-mode {
     border-radius: 0;
 }
 
-.bpb-re-tab:hover,
 .bpb-re-mode:hover {
     background: #e2e2df;
 }
 
-.bpb-re-tab[aria-pressed="true"],
 .bpb-re-mode[aria-pressed="true"] {
     background: #d8dee9;
     color: #1e2f49;
     font-weight: bold;
 }
 
-/* --- link popover ---------------------------------------------------------- */
+/* --- popover rows (link, image, more formats, table) ----------------------- */
 
-.bpb-re-linkbox {
+.bpb-re-box {
     display: flex;
     align-items: center;
     gap: 6px;
+    flex-wrap: wrap;
     padding: 6px;
     border: 1px solid #b9b9b9;
     border-bottom: none;
     background: #fbfbf9;
 }
 
-.bpb-re-linkbox input {
+.bpb-re-box input {
     flex: 1;
     min-width: 120px;
     font: inherit;
@@ -144,26 +159,52 @@
     color: inherit;
 }
 
-.bpb-re-linkbox input.bpb-re-invalid {
+.bpb-re-box input.bpb-re-invalid {
     border-color: #b42318;
     outline: 1px solid #b42318;
 }
 
-.bpb-re-linkbox button {
+.bpb-re-box .bpb-re-linkapply,
+.bpb-re-box .bpb-re-linkremove,
+.bpb-re-box .bpb-re-tablebtn {
     padding: 3px 8px;
     border: 1px solid #b9b9b9;
     background: #f2f2f0;
     font-size: 12px;
 }
 
-.bpb-re-linkbox button:hover {
+.bpb-re-box .bpb-re-linkapply:hover,
+.bpb-re-box .bpb-re-linkremove:hover,
+.bpb-re-box .bpb-re-tablebtn:hover {
     background: #e2e2df;
+}
+
+.bpb-re-swatches {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin-left: 6px;
+    padding-left: 10px;
+    border-left: 1px solid #d9d9d5;
+}
+
+.bpb-re-swatches .bpb-re-swatch {
+    width: 16px;
+    height: 16px;
+    min-width: 0;
+    padding: 0;
+    border-radius: 4px;
+    border: 1px solid rgba(0, 0, 0, 0.3);
+}
+
+.bpb-re-swatch[aria-pressed="true"] {
+    outline: 2px solid #3b76c4;
+    outline-offset: 1px;
 }
 
 /* --- writing surfaces -------------------------------------------------------- */
 
 .bpb-re-surface,
-.bpb-re-md,
 .bpb-re-preview {
     box-sizing: border-box;
     width: 100%;
@@ -179,10 +220,44 @@
     line-height: 1.5;
 }
 
-.bpb-re-surface:focus,
-.bpb-re-md:focus {
+.bpb-re-surface {
+    position: relative;
+}
+
+.bpb-re-surface:focus {
     outline: 2px solid #3b76c4;
     outline-offset: -1px;
+}
+
+/* TipTap's placeholder decoration on the first empty paragraph. */
+.bpb-re-surface p.is-editor-empty:first-child::before {
+    content: attr(data-placeholder);
+    float: left;
+    height: 0;
+    color: #8a8a86;
+    pointer-events: none;
+}
+
+.bpb-re-surface .ProseMirror-selectednode {
+    outline: 2px solid #3b76c4;
+    outline-offset: 1px;
+}
+
+.bpb-re-surface .tableWrapper {
+    overflow-x: auto;
+}
+
+.bpb-re-surface td,
+.bpb-re-surface th {
+    position: relative;
+}
+
+.bpb-re-surface .selectedCell::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: rgba(59, 118, 196, 0.14);
+    pointer-events: none;
 }
 
 .bpb-re-surface p,
@@ -295,6 +370,12 @@
     text-align: left;
 }
 
+/* Freshly inserted (empty) cells must stay a comfortable click target. */
+.bpb-re-surface th,
+.bpb-re-surface td {
+    min-width: 2.5em;
+}
+
 .bpb-re-surface img,
 .bpb-re-preview img {
     max-width: 100%;
@@ -308,29 +389,90 @@
     border-top: 1px solid #aeb3ba;
 }
 
-.bpb-re-empty::before {
-    content: attr(data-placeholder);
-    color: #8a8a86;
-    pointer-events: none;
-    position: absolute;
-}
-
-.bpb-re-surface {
-    position: relative;
-}
-
-.bpb-re-md {
-    display: block;
-    resize: vertical;
-    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-    font-size: 12px;
-    white-space: pre-wrap;
-}
-
 .bpb-re-preview-empty {
     color: #8a8a86;
     font-style: italic;
 }
+
+/* --- markdown split pane -------------------------------------------------- */
+
+.bpb-re-mdsplit {
+    display: flex;
+    align-items: stretch;
+    border: 1px solid #b9b9b9;
+    border-radius: 0 0 6px 6px;
+    background: #fff;
+    overflow: hidden;
+}
+
+.bpb-re-mdpane {
+    flex: 1 1 50%;
+    min-width: 0;
+    border-right: 1px solid #e0e0dc;
+}
+
+.bpb-re-mdsplit .bpb-re-preview {
+    flex: 1 1 50%;
+    min-width: 0;
+    border: none;
+    border-radius: 0;
+}
+
+/* Stack the panes when the form column is too narrow for two of them. */
+@container (max-width: 660px) {
+    .bpb-re-mdsplit {
+        flex-direction: column;
+    }
+
+    .bpb-re-mdpane {
+        border-right: none;
+        border-bottom: 1px solid #e0e0dc;
+    }
+}
+
+.bpb-re-mdpane .cm-editor {
+    height: 100%;
+    min-height: 200px;
+    max-height: 60vh;
+    background: transparent;
+}
+
+.bpb-re-mdpane .cm-editor.cm-focused {
+    outline: 2px solid #3b76c4;
+    outline-offset: -1px;
+}
+
+.bpb-re-mdpane .cm-scroller {
+    overflow-y: auto;
+    max-height: 60vh;
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 12px;
+    line-height: 1.5;
+}
+
+.bpb-re-mdpane .cm-content {
+    padding: 8px 10px;
+    caret-color: #1c1c1c;
+}
+
+.bpb-re-mdpane .cm-line {
+    padding: 0;
+}
+
+.bpb-re-mdpane .cm-placeholder {
+    color: #8a8a86;
+}
+
+/* Markdown token classes from src/report-md-editor.js's highlight style. */
+.bpb-md-heading { color: #1e2f49; font-weight: bold; }
+.bpb-md-strong { font-weight: bold; }
+.bpb-md-em { font-style: italic; }
+.bpb-md-strike { text-decoration: line-through; }
+.bpb-md-code { background: #f2f3f5; border-radius: 3px; }
+.bpb-md-quote { color: #4f5660; }
+.bpb-md-link { color: #2471a3; }
+.bpb-md-url { color: #2471a3; text-decoration: underline; }
+.bpb-md-marker { color: #98988f; }
 
 /* --- footer / draft bar -------------------------------------------------------- */
 
@@ -385,7 +527,7 @@
 /* --- dark theme ------------------------------------------------------------------ */
 
 html[data-bpb-theme="dark"] .bpb-re-bar,
-html[data-bpb-theme="dark"] .bpb-re-linkbox {
+html[data-bpb-theme="dark"] .bpb-re-box {
     background: #202224;
     border-color: #3a3f45;
 }
@@ -401,13 +543,18 @@ html[data-bpb-theme="dark"] .bpb-re-format {
 }
 
 html[data-bpb-theme="dark"] .bpb-re-tool:hover,
-html[data-bpb-theme="dark"] .bpb-re-tab:hover,
 html[data-bpb-theme="dark"] .bpb-re-mode:hover,
-html[data-bpb-theme="dark"] .bpb-re-linkbox button:hover {
+html[data-bpb-theme="dark"] .bpb-re-box .bpb-re-linkapply:hover,
+html[data-bpb-theme="dark"] .bpb-re-box .bpb-re-linkremove:hover,
+html[data-bpb-theme="dark"] .bpb-re-box .bpb-re-tablebtn:hover {
     background: #2c3036;
 }
 
-html[data-bpb-theme="dark"] .bpb-re-tab[aria-pressed="true"],
+html[data-bpb-theme="dark"] .bpb-re-tool:disabled:hover {
+    background: transparent;
+}
+
+html[data-bpb-theme="dark"] .bpb-re-tool[aria-pressed="true"],
 html[data-bpb-theme="dark"] .bpb-re-mode[aria-pressed="true"] {
     background: #33415c;
     color: #dbe4f5;
@@ -418,22 +565,41 @@ html[data-bpb-theme="dark"] .bpb-re-modes {
 }
 
 html[data-bpb-theme="dark"] .bpb-re-surface,
-html[data-bpb-theme="dark"] .bpb-re-md,
 html[data-bpb-theme="dark"] .bpb-re-preview,
-html[data-bpb-theme="dark"] .bpb-re-linkbox input {
+html[data-bpb-theme="dark"] .bpb-re-mdsplit,
+html[data-bpb-theme="dark"] .bpb-re-box input {
     background: #181a1b;
     border-color: #3a3f45;
     color: #c7c1b8;
 }
 
-html[data-bpb-theme="dark"] .bpb-re-linkbox button {
+html[data-bpb-theme="dark"] .bpb-re-mdpane {
+    border-color: #3a3f45;
+}
+
+html[data-bpb-theme="dark"] .bpb-re-box .bpb-re-linkapply,
+html[data-bpb-theme="dark"] .bpb-re-box .bpb-re-linkremove,
+html[data-bpb-theme="dark"] .bpb-re-box .bpb-re-tablebtn {
     background: #202224;
     border-color: #3a3f45;
 }
 
-html[data-bpb-theme="dark"] .bpb-re-empty::before,
+html[data-bpb-theme="dark"] .bpb-re-swatches {
+    border-color: #3a3f45;
+}
+
+html[data-bpb-theme="dark"] .bpb-re-swatches .bpb-re-swatch {
+    border-color: rgba(255, 255, 255, 0.35);
+}
+
+html[data-bpb-theme="dark"] .bpb-re-surface p.is-editor-empty:first-child::before,
+html[data-bpb-theme="dark"] .bpb-re-mdpane .cm-placeholder,
 html[data-bpb-theme="dark"] .bpb-re-preview-empty {
     color: #7d786f;
+}
+
+html[data-bpb-theme="dark"] .bpb-re-mdpane .cm-content {
+    caret-color: #c7c1b8;
 }
 
 html[data-bpb-theme="dark"] .bpb-re-foot {
@@ -461,6 +627,13 @@ html[data-bpb-theme="dark"] .bpb-re-surface hr,
 html[data-bpb-theme="dark"] .bpb-re-preview hr {
     border-color: #4b5158;
 }
+
+html[data-bpb-theme="dark"] .bpb-md-heading { color: #dbe4f5; }
+html[data-bpb-theme="dark"] .bpb-md-code { background: #24272a; }
+html[data-bpb-theme="dark"] .bpb-md-quote { color: #a9a39a; }
+html[data-bpb-theme="dark"] .bpb-md-link,
+html[data-bpb-theme="dark"] .bpb-md-url { color: #7fb2e5; }
+html[data-bpb-theme="dark"] .bpb-md-marker { color: #7d786f; }
 
 html[data-bpb-theme="dark"] .bpb-re-draft {
     background: #2b2416;

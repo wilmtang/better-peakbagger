@@ -91,7 +91,17 @@ export const loadPage = async (fixture, {
     prepare = null
 } = {}) => {
     const html = await readFile(path.join(fixtures, fixture), 'utf8');
-    const dom = new JSDOM(html, { url, runScripts: 'outside-only' });
+    // pretendToBeVisual provides requestAnimationFrame, which the bundled
+    // editor libraries (ProseMirror, CodeMirror) schedule their work through.
+    const dom = new JSDOM(html, { url, runScripts: 'outside-only', pretendToBeVisual: true });
+    // The same libraries measure the DOM through layout APIs jsdom does not
+    // implement; zero-size answers are fine because no test asserts geometry.
+    const zeroRect = () => ({ x: 0, y: 0, top: 0, left: 0, right: 0, bottom: 0, width: 0, height: 0 });
+    dom.window.Range.prototype.getClientRects = () => [];
+    dom.window.Range.prototype.getBoundingClientRect = zeroRect;
+    if (!dom.window.document.elementFromPoint) {
+        dom.window.document.elementFromPoint = () => null;
+    }
     dom.chrome = makeChromeStub({ bpbSettings: settings });
     dom.window.chrome = dom.chrome;
     if (prepare) prepare(dom);

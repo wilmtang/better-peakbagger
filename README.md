@@ -84,8 +84,10 @@ by “has beta.” Sortable columns reorder instantly without reloading the page
 
 ### Write trip reports, not bracket tags
 
-The ascent form's trip report box becomes a real editor. Write in rich text or
-GitHub-flavored Markdown with a structural preview. Saving produces
+The ascent form's trip report box becomes a real editor. Write in rich text —
+with live formatting states, tables, images, and markdown-style typing
+shortcuts — or in GitHub-flavored Markdown with syntax highlighting and a live
+side-by-side preview. Saving produces
 Peakbagger's square-bracket format, while local draft autosave offers your work
 back if the page is closed or a save is lost. Plain mode keeps the exact native
 textarea one click away. See the

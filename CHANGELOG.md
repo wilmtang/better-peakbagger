@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- **Trip-report editor rebuilt on established editors.** Rich text mode now
+  runs on TipTap (ProseMirror) with a schema locked to the supported
+  Peakbagger tags: live toolbar states, undo/redo, markdown-style typing
+  shortcuts (`**bold**`, `# `, `1. `), table insertion with contextual
+  row/column controls, an image popover, and a "more formats" panel for
+  inline code, highlight, sub/superscript, small, inline quote, and text
+  color. Markdown mode is now a CodeMirror source pane with GFM syntax
+  highlighting beside a live preview — no more Write/Preview tabs — with
+  synced scrolling, stacking vertically on narrow windows. Everything still
+  converts through the same allowlisted model to Peakbagger's square-bracket
+  format, and the preview remains the extension's own rendering of exactly
+  what will be saved.
+
 - **ES-module build and development workflow.** Runtime source now uses ES
   imports and esbuild produces the unpacked `dist/` extension; browser vendor
   libraries come from locked npm dependencies instead of committed copies.

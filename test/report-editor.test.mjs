@@ -5,9 +5,11 @@
 // editor page: the native JournalText textarea stays the submitted source of
 // truth (synced live, flushed before any submit/postback), drafts autosave to
 // extension-local storage and are offered — never silently applied — and
-// 'plain' mode hands back the untouched native form. Formatting commands go
-// through execCommand, which jsdom lacks; those are covered by the
-// real-browser check in scripts/verify-extension.mjs.
+// 'plain' mode hands back the untouched native form. The rich surface is a
+// TipTap editor and the Markdown pane is CodeMirror beside a live preview;
+// jsdom drives both through the editor instances on the mount's _bpbEditors
+// handle (real typing and keyboard shortcuts are covered by the real-browser
+// check in scripts/verify-extension.mjs).
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -44,12 +46,23 @@ const editorReady = async dom => {
     return dom.window.document.getElementById('bpb-report-editor');
 };
 
+const editors = dom => dom.window.document.getElementById('bpb-report-editor')._bpbEditors;
+
+// Replace the rich document as an *edit* (emitUpdate) so the dirty/sync path
+// runs exactly as it does for typing.
 const typeRich = (dom, html) => {
-    const surface = dom.window.document.querySelector('.bpb-re-surface');
-    surface.innerHTML = html;
-    surface.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
-    return surface;
+    editors(dom).rich.commands.setContent(html, { emitUpdate: true });
 };
+
+// Replace the markdown source through a CodeMirror transaction, the same
+// dispatch typing goes through.
+const typeMarkdown = (dom, text) => {
+    const { view } = editors(dom).markdown;
+    view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: text } });
+};
+
+const modeButton = (doc, label) =>
+    [...doc.querySelectorAll('.bpb-re-mode')].find(button => button.textContent === label);
 
 test('the editor mounts on the ascent form and hides the native textarea', async () => {
     const dom = await loadEditor();
@@ -70,8 +83,13 @@ test('the editor mounts on the ascent form and hides the native textarea', async
         'Paragraph', 'Heading 1', 'Heading 2', 'Heading 3', 'Heading 4',
         'Heading 5', 'Heading 6', 'Quote', 'Preformatted'
     ]);
-    assert.ok(ui.querySelector('[aria-label="Strikethrough"]'));
-    assert.ok(ui.querySelector('[aria-label="Horizontal rule"]'));
+    for (const label of ['Strikethrough', 'Horizontal rule', 'Insert table', 'Insert image',
+        'More formats', 'Undo (Ctrl+Z)', 'Redo (Ctrl+Shift+Z)']) {
+        assert.ok(ui.querySelector(`[aria-label="${label}"]`), `missing toolbar control: ${label}`);
+    }
+    assert.ok(ui.querySelector('.bpb-re-surface'), 'the rich surface should be mounted');
+    assert.equal(ui.querySelector('[aria-label="Undo (Ctrl+Z)"]').disabled, true,
+        'undo starts disabled with an empty history');
 });
 
 test('rich edits sync into the hidden textarea as bracket markup', async () => {
@@ -88,8 +106,12 @@ test('rich edits sync into the hidden textarea as bracket markup', async () => {
 test('an existing bracket report renders into the rich editor', async () => {
     const dom = await loadEditor({ report: 'Went [b]up high[/b].\r\n\r\n- snow to 6k' });
     await editorReady(dom);
-    const surface = dom.window.document.querySelector('.bpb-re-surface');
-    assert.equal(surface.innerHTML, '<p>Went <b>up high</b>.</p><ul><li>snow to 6k</li></ul>');
+    // TipTap canonical form: strong for bold, list items wrap a paragraph,
+    // and the trailing-node extension keeps a final empty paragraph so there
+    // is always somewhere to click below block content (the converter drops
+    // it on serialization).
+    assert.equal(editors(dom).rich.getHTML(),
+        '<p>Went <strong>up high</strong>.</p><ul><li><p>snow to 6k</p></li></ul><p></p>');
 });
 
 test('a pending rich edit is flushed synchronously when any submit control is clicked', async () => {
@@ -97,33 +119,28 @@ test('a pending rich edit is flushed synchronously when any submit control is cl
     await editorReady(dom);
     const doc = dom.window.document;
 
-    // Type and immediately click GPS Preview — inside the debounce window.
+    // Edit and immediately click GPS Preview — inside the debounce window.
     typeRich(dom, '<p>typed right before preview</p>');
     doc.getElementById('GPXPreview').click();
     assert.equal(doc.getElementById('JournalText').value, 'typed right before preview');
 });
 
-test('markdown mode converts to bracket markup and its preview shows the final rendering', async () => {
+test('markdown mode converts to bracket markup and the live preview shows the final rendering', async () => {
     const dom = await loadEditor();
     await editorReady(dom);
     const doc = dom.window.document;
 
-    const markdownButton = [...doc.querySelectorAll('.bpb-re-mode')].find(b => b.textContent === 'Markdown');
-    markdownButton.click();
+    modeButton(doc, 'Markdown').click();
+    assert.equal(doc.querySelector('.bpb-re-mdsplit').hidden, false,
+        'the split pane should be visible in markdown mode');
 
-    const mdArea = doc.querySelector('.bpb-re-md');
-    assert.equal(mdArea.hidden, false);
-    mdArea.value = '# Day 1\n\nWe went **up**.\n\n- tent\n- stove';
-    mdArea.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
-
+    typeMarkdown(dom, '# Day 1\n\nWe went **up**.\n\n- tent\n- stove');
     await waitFor(dom, () => doc.getElementById('JournalText').value.includes('[h1]Day 1[/h1]'));
     assert.equal(doc.getElementById('JournalText').value,
         '[h1]Day 1[/h1]\n\nWe went [b]up[/b].\n\n[ul][li]tent[/li][li]stove[/li][/ul]');
 
-    const previewButton = [...doc.querySelectorAll('.bpb-re-tab')].find(b => b.textContent === 'Preview');
-    previewButton.click();
+    // No tab to click: the preview pane re-renders beside the source.
     const preview = doc.querySelector('.bpb-re-preview');
-    assert.equal(preview.hidden, false);
     assert.match(preview.innerHTML, /<h1>Day 1<\/h1>/);
     assert.match(preview.innerHTML, /<li>tent<\/li>/);
 
@@ -135,14 +152,30 @@ test('switching rich → markdown → rich keeps the content through the canonic
     const dom = await loadEditor({ report: 'A [b]bold[/b] start.' });
     await editorReady(dom);
     const doc = dom.window.document;
-    const modeButton = label => [...doc.querySelectorAll('.bpb-re-mode')].find(b => b.textContent === label);
 
-    modeButton('Markdown').click();
-    assert.equal(doc.querySelector('.bpb-re-md').value, 'A **bold** start.');
+    modeButton(doc, 'Markdown').click();
+    assert.equal(editors(dom).markdown.getValue(), 'A **bold** start.');
 
-    modeButton('Rich text').click();
-    assert.equal(doc.querySelector('.bpb-re-surface').innerHTML, '<p>A <b>bold</b> start.</p>');
+    modeButton(doc, 'Rich text').click();
+    assert.equal(editors(dom).rich.getHTML(), '<p>A <strong>bold</strong> start.</p>');
     assert.equal(doc.getElementById('JournalText').value, 'A [b]bold[/b] start.');
+});
+
+test('undo cannot cross a mode switch and resurrect the pre-switch document', async () => {
+    const dom = await loadEditor({ report: 'first version' });
+    await editorReady(dom);
+    const doc = dom.window.document;
+
+    typeRich(dom, '<p>second version</p>');
+    await waitFor(dom, () => doc.getElementById('JournalText').value === 'second version');
+
+    modeButton(doc, 'Markdown').click();
+    modeButton(doc, 'Rich text').click();
+    const rich = editors(dom).rich;
+    assert.equal(rich.can().undo(), false, 're-entering rich mode must start a fresh history');
+    rich.chain().focus().undo().run();
+    doc.getElementById('GPXPreview').click();   // flush anything a rogue undo produced
+    assert.equal(doc.getElementById('JournalText').value, 'second version');
 });
 
 test('expanded rich DOM syncs headings, quotes, tables, code, rules, and images', async () => {
@@ -170,12 +203,85 @@ test('expanded rich DOM syncs headings, quotes, tables, code, rules, and images'
     ].join('\n'));
 });
 
+test('the toolbar reflects the caret: active marks, block style, and table controls', async () => {
+    const dom = await loadEditor({ report: '[h2]Route[/h2]\n\n[b]bold text[/b]' });
+    const ui = await editorReady(dom);
+    const rich = editors(dom).rich;
+
+    const posOf = needle => {
+        let hit = null;
+        rich.state.doc.descendants((node, pos) => {
+            if (hit === null && node.isText && node.text.includes(needle)) hit = pos + 1;
+            return hit === null;
+        });
+        return hit;
+    };
+
+    rich.chain().focus().setTextSelection(posOf('Route')).run();
+    assert.equal(ui.querySelector('.bpb-re-format').value, 'h2');
+    assert.equal(ui.querySelector('[aria-label="Bold (Ctrl+B)"]').getAttribute('aria-pressed'), 'false');
+
+    rich.chain().focus().setTextSelection(posOf('bold text')).run();
+    assert.equal(ui.querySelector('.bpb-re-format').value, 'p');
+    assert.equal(ui.querySelector('[aria-label="Bold (Ctrl+B)"]').getAttribute('aria-pressed'), 'true');
+
+    assert.equal(ui.querySelector('.bpb-re-tablebar').hidden, true);
+    ui.querySelector('[aria-label="Insert table"]').click();
+    assert.equal(ui.querySelector('.bpb-re-tablebar').hidden, false,
+        'table controls should appear while the caret is inside a table');
+    await waitFor(dom, () => dom.window.document.getElementById('JournalText').value.includes('[table border="1"]'));
+});
+
+test('more formats and named text colors serialize through the allowlist', async () => {
+    const dom = await loadEditor();
+    const ui = await editorReady(dom);
+    const doc = dom.window.document;
+
+    typeRich(dom, '<p>peak</p>');
+    editors(dom).rich.chain().focus().selectAll().run();
+
+    ui.querySelector('[aria-label="More formats"]').click();
+    assert.equal(ui.querySelector('.bpb-re-morebox').hidden, false);
+    ui.querySelector('[aria-label="Highlight (Ctrl+Shift+H)"]').click();
+    await waitFor(dom, () => doc.getElementById('JournalText').value.includes('[mark]'));
+
+    editors(dom).rich.chain().focus().selectAll().run();
+    ui.querySelector('[aria-label="More formats"]').click();
+    ui.querySelector('[aria-label="Text color: Blue"]').click();
+    await waitFor(dom, () => doc.getElementById('JournalText').value.includes('color:steelblue'));
+    assert.equal(doc.getElementById('JournalText').value,
+        '[span style="color:steelblue"][mark]peak[/mark][/span]');
+});
+
+test('the image popover validates the source and inserts alt text', async () => {
+    const dom = await loadEditor();
+    const ui = await editorReady(dom);
+    const doc = dom.window.document;
+
+    ui.querySelector('[aria-label="Insert image"]').click();
+    assert.equal(ui.querySelector('.bpb-re-imagebox').hidden, false);
+    const src = ui.querySelector('[aria-label="Image URL (HTTPS)"]');
+    const alt = ui.querySelector('[aria-label="Image description"]');
+
+    src.value = 'javascript:alert(1)';
+    ui.querySelector('.bpb-re-imagebox .bpb-re-linkapply').click();
+    assert.ok(src.classList.contains('bpb-re-invalid'), 'an unsafe URL must be rejected');
+    assert.equal(doc.getElementById('JournalText').value, '');
+
+    src.value = 'https://example.com/topo.jpg';
+    alt.value = 'Topo';
+    ui.querySelector('.bpb-re-imagebox .bpb-re-linkapply').click();
+    await waitFor(dom, () => doc.getElementById('JournalText').value.includes('[img'));
+    assert.equal(doc.getElementById('JournalText').value,
+        '[img src="https://example.com/topo.jpg" alt="Topo"]');
+});
+
 test('plain mode is the untouched native textarea, hints restored', async () => {
     const dom = await loadEditor({ report: 'raw [whatever] text' });
     await editorReady(dom);
     const doc = dom.window.document;
 
-    [...doc.querySelectorAll('.bpb-re-mode')].find(b => b.textContent === 'Plain').click();
+    modeButton(doc, 'Plain').click();
     const textarea = doc.getElementById('JournalText');
     assert.equal(textarea.classList.contains('bpb-re-hidden'), false);
     assert.equal(textarea.value, 'raw [whatever] text');
@@ -188,10 +294,9 @@ test('visiting Markdown mode does not rewrite an untouched server report', async
     const dom = await loadEditor({ report });
     await editorReady(dom);
     const doc = dom.window.document;
-    const mode = label => [...doc.querySelectorAll('.bpb-re-mode')].find(button => button.textContent === label);
 
-    mode('Markdown').click();
-    mode('Plain').click();
+    modeButton(doc, 'Markdown').click();
+    modeButton(doc, 'Plain').click();
     assert.equal(doc.getElementById('JournalText').value, report);
 });
 
@@ -199,9 +304,8 @@ test('editing in rich mode neutralizes unsupported embed markup before submissio
     const dom = await loadEditor({ report: '[iframe src="https://example.com"][/iframe]' });
     await editorReady(dom);
     const doc = dom.window.document;
-    const surface = doc.querySelector('.bpb-re-surface');
-    surface.append(' edited');
-    surface.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+
+    editors(dom).rich.chain().focus('end').insertContent(' edited').run();
     await waitFor(dom, () => /edited/.test(doc.getElementById('JournalText').value));
     const submitted = doc.getElementById('JournalText').value;
     assert.doesNotMatch(submitted, /\[iframe\b/i);
@@ -242,7 +346,7 @@ test('a differing stored draft is offered, and Restore applies it in its saved m
 
     [...draftBar.querySelectorAll('button')].find(b => b.textContent === 'Restore draft').click();
     assert.equal(doc.getElementById('bpb-report-editor').dataset.mode, 'markdown');
-    assert.equal(doc.querySelector('.bpb-re-md').value, 'draft copy with **md**');
+    assert.equal(editors(dom).markdown.getValue(), 'draft copy with **md**');
     assert.equal(doc.getElementById('JournalText').value, 'draft copy with **md**');
 });
 
@@ -277,8 +381,8 @@ test('a draft equal to the server copy is not offered; its markdown source is ad
     const doc = dom.window.document;
     assert.equal(doc.querySelector('.bpb-re-draft').hidden, true);
 
-    [...doc.querySelectorAll('.bpb-re-mode')].find(b => b.textContent === 'Markdown').click();
-    assert.equal(doc.querySelector('.bpb-re-md').value, 'Same **content**.\n\n- item');
+    modeButton(doc, 'Markdown').click();
+    assert.equal(editors(dom).markdown.getValue(), 'Same **content**.\n\n- item');
 });
 
 test('clicking Save Ascent clears the draft', async () => {

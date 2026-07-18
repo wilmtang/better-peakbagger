@@ -3,15 +3,16 @@
 //
 // Better Peakbagger — trip-report editor for the ascent add/edit form.
 //
-// Replaces the bare JournalText textarea with a rich-text surface (or a
-// markdown source view with preview), converting everything through
-// src/report-markup.js into Peakbagger's square-bracket markup. The native
-// textarea never leaves the form: it is the single submitted source of truth,
-// kept in sync on every edit and flushed synchronously before any submit or
-// postback, so Save, Cancel, GPS Preview, and ASP.NET autopostbacks always
-// post exactly what the editor shows. 'Plain' mode is the untouched native
-// textarea — the escape hatch, and where unsupported markup can be edited
-// verbatim.
+// Replaces the bare JournalText textarea with a rich-text surface (TipTap,
+// schema-locked in src/report-rich-editor.js) or a Markdown source pane
+// (CodeMirror, src/report-md-editor.js) beside a live preview, converting
+// everything through src/report-markup.js into Peakbagger's square-bracket
+// markup. The native textarea never leaves the form: it is the single
+// submitted source of truth, kept in sync on every edit and flushed
+// synchronously before any submit or postback, so Save, Cancel, GPS Preview,
+// and ASP.NET autopostbacks always post exactly what the editor shows.
+// 'Plain' mode is the untouched native textarea — the escape hatch, and where
+// unsupported markup can be edited verbatim.
 //
 // Drafts autosave to extension-local storage keyed by climber/ascent identity.
 // They never leave the device, expire after two weeks, and are offered back —
@@ -21,6 +22,8 @@
 
 import { settings as Settings } from './settings.js';
 import { reportMarkup as Markup } from './report-markup.js';
+import { createRichEditor, richCommands, richState } from './report-rich-editor.js';
+import { createMarkdownEditor } from './report-md-editor.js';
 
 // Kept as an IIFE for early-exit control flow (no editor form → nothing to do);
 // dependencies are ES imports and no globals are published.
@@ -59,12 +62,13 @@ import { reportMarkup as Markup } from './report-markup.js';
         mode: null,
         mdSource: null,      // authoritative markdown text while in markdown mode
         mdDirty: false,      // do not normalize an untouched server report
-        mdTab: 'write',
-        savedRange: null,    // rich-text selection kept across the link popover
         richDirty: false,    // preserve untouched unsupported server markup verbatim
         syncTimer: null,
         autosaveTimer: null
     };
+
+    let richEditor = null;   // created in initialize(), only when enabled
+    let mdEditor = null;
 
     // ---- DOM ----------------------------------------------------------------
 
@@ -110,26 +114,32 @@ import { reportMarkup as Markup } from './report-markup.js';
         option.value = value;
         blockFormat.append(option);
     }
+
+    const svg = paths => `<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">${paths}</svg>`;
     const toolButtons = {
         bold: button('bpb-re-tool', 'B', 'Bold (Ctrl+B)', '<b>B</b>'),
         italic: button('bpb-re-tool', 'I', 'Italic (Ctrl+I)', '<i>I</i>'),
         underline: button('bpb-re-tool', 'U', 'Underline (Ctrl+U)', '<u>U</u>'),
-        strikeThrough: button('bpb-re-tool', 'S', 'Strikethrough', '<s>S</s>'),
+        strike: button('bpb-re-tool', 'S', 'Strikethrough', '<s>S</s>'),
+        more: button('bpb-re-tool', 'Aa', 'More formats'),
         link: button('bpb-re-tool', 'Link', 'Link (Ctrl+K)',
-            '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" d="M6.5 9.5l3-3M5.7 7.2L4 8.9a2.5 2.5 0 003.5 3.5l1.7-1.7M10.3 8.8L12 7.1a2.5 2.5 0 00-3.5-3.5L6.8 5.3"/></svg>'),
-        insertUnorderedList: button('bpb-re-tool', 'Bulleted list', 'Bulleted list',
-            '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><g fill="currentColor"><circle cx="3" cy="4" r="1.3"/><circle cx="3" cy="8" r="1.3"/><circle cx="3" cy="12" r="1.3"/></g><g stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M6.5 4h6.5M6.5 8h6.5M6.5 12h6.5"/></g></svg>'),
-        insertOrderedList: button('bpb-re-tool', 'Numbered list', 'Numbered list',
-            '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><g fill="currentColor" font-size="5.5" font-family="Tahoma, sans-serif"><text x="1" y="6">1</text><text x="1" y="14">2</text></g><g stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M6.5 4h6.5M6.5 12h6.5"/></g></svg>'),
-        insertHorizontalRule: button('bpb-re-tool', 'Rule', 'Horizontal rule',
-            '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M2 8h12" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>')
+            svg('<path fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" d="M6.5 9.5l3-3M5.7 7.2L4 8.9a2.5 2.5 0 003.5 3.5l1.7-1.7M10.3 8.8L12 7.1a2.5 2.5 0 00-3.5-3.5L6.8 5.3"/>')),
+        image: button('bpb-re-tool', 'Image', 'Insert image',
+            svg('<rect x="1.5" y="2.5" width="13" height="11" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.4"/><circle cx="5.2" cy="6" r="1.2" fill="currentColor"/><path d="M3 12.5l3.2-3.4 2.2 2.2 2.6-3 2.5 4.2" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>')),
+        insertTable: button('bpb-re-tool', 'Table', 'Insert table',
+            svg('<rect x="1.5" y="2.5" width="13" height="11" rx="1" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M1.5 6.5h13M6 2.5v11M10.5 2.5v11" fill="none" stroke="currentColor" stroke-width="1.2"/>')),
+        bulletList: button('bpb-re-tool', 'Bulleted list', 'Bulleted list',
+            svg('<g fill="currentColor"><circle cx="3" cy="4" r="1.3"/><circle cx="3" cy="8" r="1.3"/><circle cx="3" cy="12" r="1.3"/></g><g stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M6.5 4h6.5M6.5 8h6.5M6.5 12h6.5"/></g>')),
+        orderedList: button('bpb-re-tool', 'Numbered list', 'Numbered list',
+            svg('<g fill="currentColor" font-size="5.5" font-family="Tahoma, sans-serif"><text x="1" y="6">1</text><text x="1" y="14">2</text></g><g stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M6.5 4h6.5M6.5 12h6.5"/></g>')),
+        horizontalRule: button('bpb-re-tool', 'Rule', 'Horizontal rule',
+            svg('<path d="M2 8h12" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>')),
+        undo: button('bpb-re-tool', 'Undo', 'Undo (Ctrl+Z)',
+            svg('<path d="M6.5 3.5L3 7l3.5 3.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M3.5 7H9a3.5 3.5 0 010 7H7.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>')),
+        redo: button('bpb-re-tool', 'Redo', 'Redo (Ctrl+Shift+Z)',
+            svg('<path d="M9.5 3.5L13 7l-3.5 3.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M12.5 7H7a3.5 3.5 0 000 7h1.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>'))
     };
     tools.append(blockFormat, ...Object.values(toolButtons));
-
-    const mdTabs = el('div', 'bpb-re-mdtabs');
-    const writeTab = button('bpb-re-tab', 'Write');
-    const previewTab = button('bpb-re-tab', 'Preview');
-    mdTabs.append(writeTab, previewTab);
 
     const modes = el('div', 'bpb-re-modes');
     modes.setAttribute('role', 'group');
@@ -142,9 +152,24 @@ import { reportMarkup as Markup } from './report-markup.js';
     modeButtons.plain.title = 'Edit Peakbagger’s bracket markup directly';
     modes.append(...Object.values(modeButtons));
 
-    bar.append(tools, mdTabs, modes);
+    bar.append(tools, modes);
 
-    const linkBox = el('div', 'bpb-re-linkbox');
+    // Contextual table controls, shown only while the caret is inside a table.
+    const tableBar = el('div', 'bpb-re-box bpb-re-tablebar');
+    tableBar.setAttribute('role', 'toolbar');
+    tableBar.setAttribute('aria-label', 'Table editing');
+    tableBar.hidden = true;
+    const tableButtons = {
+        addRowAfter: button('bpb-re-tablebtn', '+ Row', 'Add row below'),
+        addColumnAfter: button('bpb-re-tablebtn', '+ Column', 'Add column right'),
+        deleteRow: button('bpb-re-tablebtn', '− Row', 'Delete row'),
+        deleteColumn: button('bpb-re-tablebtn', '− Column', 'Delete column'),
+        toggleHeaderRow: button('bpb-re-tablebtn', 'Header row', 'Toggle header row'),
+        deleteTable: button('bpb-re-tablebtn', 'Remove table', 'Remove table')
+    };
+    tableBar.append(...Object.values(tableButtons));
+
+    const linkBox = el('div', 'bpb-re-box bpb-re-linkbox');
     linkBox.hidden = true;
     const linkInput = el('input');
     linkInput.type = 'text';
@@ -154,20 +179,58 @@ import { reportMarkup as Markup } from './report-markup.js';
     const linkRemove = button('bpb-re-linkremove', 'Remove link');
     linkBox.append(linkInput, linkApply, linkRemove);
 
-    const surface = el('div', 'bpb-re-surface');
-    surface.contentEditable = 'true';
-    surface.setAttribute('role', 'textbox');
-    surface.setAttribute('aria-multiline', 'true');
-    surface.setAttribute('aria-label', 'Trip report');
-    surface.dataset.placeholder = 'Write your trip report…';
+    const imageBox = el('div', 'bpb-re-box bpb-re-imagebox');
+    imageBox.hidden = true;
+    const imageSrcInput = el('input');
+    imageSrcInput.type = 'text';
+    imageSrcInput.placeholder = 'https://example.com/photo.jpg';
+    imageSrcInput.setAttribute('aria-label', 'Image URL (HTTPS)');
+    const imageAltInput = el('input');
+    imageAltInput.type = 'text';
+    imageAltInput.placeholder = 'Description (alt text)';
+    imageAltInput.setAttribute('aria-label', 'Image description');
+    const imageApply = button('bpb-re-linkapply', 'Add image');
+    imageBox.append(imageSrcInput, imageAltInput, imageApply);
 
-    const mdArea = el('textarea', 'bpb-re-md');
-    mdArea.rows = 12;
-    mdArea.setAttribute('aria-label', 'Trip report in Markdown');
-    mdArea.placeholder = 'Write your trip report in Markdown…';
+    // Less-frequent inline formats live one click away instead of widening the
+    // main bar: code, highlight, sub/sup, small, inline quote, and text color.
+    const moreBox = el('div', 'bpb-re-box bpb-re-morebox');
+    moreBox.hidden = true;
+    const moreButtons = {
+        code: button('bpb-re-tool', 'Code', 'Inline code (Ctrl+E)', '<code>&lt;/&gt;</code>'),
+        highlight: button('bpb-re-tool', 'Highlight', 'Highlight (Ctrl+Shift+H)', '<mark>ab</mark>'),
+        subscript: button('bpb-re-tool', 'Subscript', 'Subscript', 'x<sub>2</sub>'),
+        superscript: button('bpb-re-tool', 'Superscript', 'Superscript', 'x<sup>2</sup>'),
+        small: button('bpb-re-tool', 'Small text', 'Small text', '<small>Aa</small>'),
+        inlineQuote: button('bpb-re-tool', 'Inline quote', 'Inline quote', '<q>ab</q>')
+    };
+    // Named CSS colors only: reading a hex color back from an inline style
+    // yields rgb(...), which sanitizeColor rejects; keywords round-trip as-is.
+    const PALETTE = [
+        ['firebrick', 'Red'], ['chocolate', 'Orange'], ['olive', 'Olive'],
+        ['seagreen', 'Green'], ['steelblue', 'Blue'], ['rebeccapurple', 'Purple'], ['gray', 'Gray']
+    ];
+    const swatches = el('span', 'bpb-re-swatches');
+    swatches.setAttribute('role', 'group');
+    swatches.setAttribute('aria-label', 'Text color');
+    const swatchButtons = PALETTE.map(([color, label]) => {
+        const control = button('bpb-re-swatch', label, `Text color: ${label}`);
+        control.textContent = '';
+        control.dataset.color = color;
+        control.style.background = color;
+        return control;
+    });
+    const swatchClear = button('bpb-re-tool', 'Auto', 'Default text color');
+    swatches.append(...swatchButtons, swatchClear);
+    moreBox.append(...Object.values(moreButtons), swatches);
 
+    const richWrap = el('div', 'bpb-re-richwrap');
+
+    const mdSplit = el('div', 'bpb-re-mdsplit');
+    const mdPane = el('div', 'bpb-re-mdpane');
     const preview = el('div', 'bpb-re-preview');
-    preview.setAttribute('aria-label', 'Preview of the saved trip report');
+    preview.setAttribute('aria-label', 'Live preview of the saved trip report');
+    mdSplit.append(mdPane, preview);
 
     const foot = el('div', 'bpb-re-foot');
     const status = el('span', 'bpb-re-status');
@@ -176,13 +239,29 @@ import { reportMarkup as Markup } from './report-markup.js';
     const mdHint = el('span', 'bpb-re-hint', '# heading  > quote  ~~strike~~  `code`  [link](url)  ![image](url)  | table |');
     foot.append(status, mdHint);
 
-    ui.append(draftBar, bar, linkBox, surface, mdArea, preview, foot);
+    ui.append(draftBar, bar, tableBar, linkBox, imageBox, moreBox, richWrap, mdSplit, foot);
+
+    const boxes = [linkBox, imageBox, moreBox];
+    const closeBoxes = () => { for (const box of boxes) box.hidden = true; };
+    const toggleBox = box => {
+        const wasOpen = !box.hidden;
+        closeBoxes();
+        box.hidden = wasOpen;
+    };
 
     // ---- Native textarea sync (the submitted source of truth) ---------------
 
-    const updatePlaceholder = () => {
-        const empty = !surface.textContent.trim() && !surface.querySelector('li, a');
-        surface.classList.toggle('bpb-re-empty', empty);
+    // The TipTap view DOM carries editor scaffolding (trailing breaks, gap
+    // cursors), so serialization reads the schema's clean HTML instead, parsed
+    // detached and folded through the same domToBracket path as pasted DOM.
+    const richBracket = () => {
+        const parsed = new DOMParser().parseFromString(richEditor.getHTML(), 'text/html');
+        return Markup.domToBracket(parsed.body);
+    };
+
+    const renderPreview = () => {
+        preview.innerHTML = Markup.markdownToPreviewHtml(mdEditor.getValue())
+            || '<p class="bpb-re-preview-empty">Nothing to preview yet.</p>';
     };
 
     const flushSync = () => {
@@ -191,14 +270,14 @@ import { reportMarkup as Markup } from './report-markup.js';
             state.syncTimer = null;
         }
         if (state.mode === 'rich' && state.richDirty) {
-            textarea.value = Markup.domToBracket(surface);
+            textarea.value = richBracket();
             state.mdSource = null;
             state.richDirty = false;
-            updatePlaceholder();
         } else if (state.mode === 'markdown' && state.mdDirty) {
-            state.mdSource = mdArea.value;
-            textarea.value = Markup.markdownToBracket(mdArea.value);
+            state.mdSource = mdEditor.getValue();
+            textarea.value = Markup.markdownToBracket(state.mdSource);
             state.mdDirty = false;
+            renderPreview();
         }
         // plain mode: the textarea IS the editor; nothing to do.
     };
@@ -216,6 +295,14 @@ import { reportMarkup as Markup } from './report-markup.js';
     form.addEventListener('click', flushSync, true);
     form.addEventListener('change', flushSync, true);
     globalThis.addEventListener('pagehide', () => { flushSync(); void saveDraftNow(); });
+
+    // The source pane drives the preview's scroll position, proportionally.
+    const syncPreviewScroll = () => {
+        const scroller = mdEditor.view.scrollDOM;
+        const sourceMax = scroller.scrollHeight - scroller.clientHeight;
+        const ratio = sourceMax > 0 ? scroller.scrollTop / sourceMax : 0;
+        preview.scrollTop = ratio * Math.max(0, preview.scrollHeight - preview.clientHeight);
+    };
 
     // ---- Local drafts ---------------------------------------------------------
 
@@ -243,7 +330,7 @@ import { reportMarkup as Markup } from './report-markup.js';
                 return;
             }
             const record = { text: textarea.value, mode: state.mode, savedAt: Date.now() };
-            if (state.mode === 'markdown') record.source = mdArea.value;
+            if (state.mode === 'markdown') record.source = mdEditor.getValue();
             await localStore.set({ [draftKey]: record });
             status.textContent = `Draft saved on this device · ${timeLabel(record.savedAt)}`;
         } catch (error) { /* storage unavailable — the form value is still live */ }
@@ -332,68 +419,43 @@ import { reportMarkup as Markup } from './report-markup.js';
         } catch (error) { /* best effort */ }
     };
 
-    // ---- Rich-text commands ---------------------------------------------------
+    // ---- Rich toolbar ---------------------------------------------------------
 
-    const exec = (command, value = null) => {
-        surface.focus();
-        if (document.execCommand) document.execCommand(command, false, value);
-        state.richDirty = true;
-        scheduleSync();
-    };
-
-    const selectionAnchor = () => {
-        const selection = globalThis.getSelection && globalThis.getSelection();
-        if (!selection || !selection.rangeCount) return null;
-        const range = selection.getRangeAt(0);
-        return surface.contains(range.commonAncestorContainer) ? range : null;
-    };
-
-    const enclosingLink = range => {
-        if (!range) return null;
-        let node = range.commonAncestorContainer;
-        while (node && node !== surface) {
-            if (node.nodeType === 1 && node.tagName === 'A') return node;
-            node = node.parentNode;
+    // Painted from a richState snapshot on every editor transaction, so active
+    // states, the block dropdown, undo/redo, and the table bar always reflect
+    // the caret position.
+    const refreshToolbar = () => {
+        if (state.mode !== 'rich' || !richEditor) return;
+        const snapshot = richState(richEditor);
+        blockFormat.value = snapshot.block;
+        for (const name of ['bold', 'italic', 'underline', 'strike']) {
+            toolButtons[name].setAttribute('aria-pressed', String(snapshot.marks[name]));
         }
-        return null;
-    };
-
-    const closeLinkBox = () => {
-        linkBox.hidden = true;
-        state.savedRange = null;
+        for (const [name, control] of Object.entries(moreButtons)) {
+            control.setAttribute('aria-pressed', String(snapshot.marks[name]));
+        }
+        toolButtons.bulletList.setAttribute('aria-pressed', String(snapshot.bulletList));
+        toolButtons.orderedList.setAttribute('aria-pressed', String(snapshot.orderedList));
+        toolButtons.link.setAttribute('aria-pressed', String(snapshot.linkActive));
+        toolButtons.undo.disabled = !snapshot.canUndo;
+        toolButtons.redo.disabled = !snapshot.canRedo;
+        for (const control of swatchButtons) {
+            control.setAttribute('aria-pressed', String(snapshot.color === control.dataset.color));
+        }
+        tableBar.hidden = !snapshot.inTable;
     };
 
     const openLinkBox = () => {
-        const range = selectionAnchor();
-        if (!range) { surface.focus(); return; }
-        state.savedRange = range.cloneRange();
-        const link = enclosingLink(range);
-        linkInput.value = link ? link.getAttribute('href') : '';
-        linkRemove.hidden = !link;
-        linkApply.textContent = link ? 'Update link' : 'Add link';
+        if (state.mode !== 'rich' || !richEditor) return;
+        const snapshot = richState(richEditor);
+        closeBoxes();
+        linkInput.value = snapshot.linkHref;
+        linkRemove.hidden = !snapshot.linkActive;
+        linkApply.textContent = snapshot.linkActive ? 'Update link' : 'Add link';
         linkBox.hidden = false;
         linkInput.focus();
         linkInput.select();
     };
-
-    const restoreSelection = () => {
-        const selection = globalThis.getSelection && globalThis.getSelection();
-        if (!selection || !state.savedRange) return false;
-        surface.focus();
-        selection.removeAllRanges();
-        selection.addRange(state.savedRange);
-        return true;
-    };
-
-    blockFormat.addEventListener('mousedown', () => {
-        const range = selectionAnchor();
-        state.savedRange = range ? range.cloneRange() : null;
-    });
-    blockFormat.addEventListener('change', () => {
-        if (state.savedRange) restoreSelection();
-        exec('formatBlock', blockFormat.value);
-        state.savedRange = null;
-    });
 
     const applyLink = () => {
         const href = Markup.resolveLinkTarget(linkInput.value);
@@ -403,111 +465,76 @@ import { reportMarkup as Markup } from './report-markup.js';
             return;
         }
         linkInput.classList.remove('bpb-re-invalid');
-        if (!restoreSelection()) { closeLinkBox(); return; }
-        const range = selectionAnchor();
-        const existing = enclosingLink(range);
-        if (existing) {
-            existing.setAttribute('href', href);
-        } else if (range && range.collapsed) {
-            const anchor = document.createElement('a');
-            anchor.setAttribute('href', href);
-            anchor.textContent = href;
-            range.insertNode(anchor);
-            range.setStartAfter(anchor);
-            range.collapse(true);
-        } else if (document.execCommand) {
-            document.execCommand('createLink', false, href);
+        // With nothing selected and no link under the caret, insert the URL as
+        // its own linked text rather than silently doing nothing.
+        if (richEditor.state.selection.empty && !richEditor.isActive('link')) {
+            richEditor.chain().focus()
+                .insertContent({ type: 'text', text: href, marks: [{ type: 'link', attrs: { href } }] })
+                .run();
+        } else {
+            richCommands.setLink(richEditor, href);
         }
-        closeLinkBox();
-        state.richDirty = true;
-        scheduleSync();
+        closeBoxes();
     };
 
     const removeLink = () => {
-        if (!restoreSelection()) { closeLinkBox(); return; }
-        const link = enclosingLink(selectionAnchor());
-        if (link) {
-            const selection = globalThis.getSelection();
-            const range = document.createRange();
-            range.selectNodeContents(link);
-            selection.removeAllRanges();
-            selection.addRange(range);
-        }
-        if (document.execCommand) document.execCommand('unlink', false, null);
-        closeLinkBox();
-        state.richDirty = true;
-        scheduleSync();
+        richCommands.unsetLink(richEditor);
+        closeBoxes();
     };
 
-    for (const [command, control] of Object.entries(toolButtons)) {
+    const openImageBox = () => {
+        closeBoxes();
+        imageSrcInput.value = '';
+        imageAltInput.value = '';
+        imageSrcInput.classList.remove('bpb-re-invalid');
+        imageBox.hidden = false;
+        imageSrcInput.focus();
+    };
+
+    const applyImage = () => {
+        const src = Markup.sanitizeImageSrc(imageSrcInput.value.trim());
+        if (!src) {
+            imageSrcInput.classList.add('bpb-re-invalid');
+            imageSrcInput.focus();
+            return;
+        }
+        imageSrcInput.classList.remove('bpb-re-invalid');
+        richCommands.insertImage(richEditor, { src, alt: imageAltInput.value.trim() });
+        closeBoxes();
+    };
+
+    for (const [name, control] of Object.entries({ ...toolButtons, ...moreButtons, ...tableButtons })) {
         // mousedown would steal the selection the command needs.
         control.addEventListener('mousedown', event => event.preventDefault());
         control.addEventListener('click', () => {
-            if (command === 'link') openLinkBox();
-            else exec(command);
+            if (name === 'more') return toggleBox(moreBox);
+            if (name === 'link') return openLinkBox();
+            if (name === 'image') return openImageBox();
+            richCommands[name](richEditor);
         });
     }
+    for (const control of swatchButtons) {
+        control.addEventListener('mousedown', event => event.preventDefault());
+        control.addEventListener('click', () => richCommands.setColor(richEditor, control.dataset.color));
+    }
+    swatchClear.addEventListener('mousedown', event => event.preventDefault());
+    swatchClear.addEventListener('click', () => richCommands.unsetColor(richEditor));
+
+    blockFormat.addEventListener('change', () => richCommands.setBlock(richEditor, blockFormat.value));
+
     linkApply.addEventListener('click', applyLink);
     linkRemove.addEventListener('click', removeLink);
     linkInput.addEventListener('keydown', event => {
         if (event.key === 'Enter') { event.preventDefault(); applyLink(); }
-        if (event.key === 'Escape') { event.preventDefault(); closeLinkBox(); surface.focus(); }
+        if (event.key === 'Escape') { event.preventDefault(); closeBoxes(); richEditor.commands.focus(); }
     });
-
-    surface.addEventListener('keydown', event => {
-        if (!(event.metaKey || event.ctrlKey) || event.altKey) return;
-        const key = event.key.toLowerCase();
-        if (key === 'b') { event.preventDefault(); exec('bold'); }
-        else if (key === 'i') { event.preventDefault(); exec('italic'); }
-        else if (key === 'u') { event.preventDefault(); exec('underline'); }
-        else if (key === 'k') { event.preventDefault(); openLinkBox(); }
-    });
-
-    surface.addEventListener('input', () => {
-        state.richDirty = true;
-        scheduleSync();
-    });
-
-    // Paste lands as the canonical subset, so the editor never shows styling
-    // that would silently vanish from the saved report.
-    surface.addEventListener('paste', event => {
-        const html = event.clipboardData && event.clipboardData.getData('text/html');
-        if (!html || !document.execCommand) return;
-        event.preventDefault();
-        const parsed = new DOMParser().parseFromString(html, 'text/html');
-        const bracket = Markup.domToBracket(parsed.body);
-        const safe = Markup.bracketToPreviewHtml(bracket);
-        if (safe) document.execCommand('insertHTML', false, safe);
-        else {
-            const plain = event.clipboardData.getData('text/plain');
-            if (plain) document.execCommand('insertText', false, plain);
-        }
-        state.richDirty = true;
-        scheduleSync();
-    });
-
-    // ---- Markdown mode ---------------------------------------------------------
-
-    const setMdTab = tab => {
-        state.mdTab = tab;
-        const showPreview = tab === 'preview';
-        if (showPreview) {
-            flushSync();
-            preview.innerHTML = Markup.markdownToPreviewHtml(mdArea.value)
-                || '<p class="bpb-re-preview-empty">Nothing to preview yet.</p>';
-        }
-        mdArea.hidden = showPreview;
-        preview.hidden = !showPreview;
-        writeTab.setAttribute('aria-pressed', String(!showPreview));
-        previewTab.setAttribute('aria-pressed', String(showPreview));
-        if (!showPreview && state.mode === 'markdown') mdArea.focus();
-    };
-    writeTab.addEventListener('click', () => setMdTab('write'));
-    previewTab.addEventListener('click', () => setMdTab('preview'));
-    mdArea.addEventListener('input', () => {
-        state.mdDirty = true;
-        scheduleSync();
-    });
+    imageApply.addEventListener('click', applyImage);
+    for (const input of [imageSrcInput, imageAltInput]) {
+        input.addEventListener('keydown', event => {
+            if (event.key === 'Enter') { event.preventDefault(); applyImage(); }
+            if (event.key === 'Escape') { event.preventDefault(); closeBoxes(); richEditor.commands.focus(); }
+        });
+    }
 
     // ---- Modes -------------------------------------------------------------------
 
@@ -517,23 +544,34 @@ import { reportMarkup as Markup } from './report-markup.js';
         if (nativeHints) nativeHints.classList.toggle('bpb-re-hidden', !visible);
     };
 
+    const mountRichEditor = () => {
+        if (richEditor) richEditor.destroy();
+        richEditor = createRichEditor({
+            element: richWrap,
+            placeholder: 'Write your trip report…',
+            ariaLabel: 'Trip report',
+            onUpdate: () => { state.richDirty = true; scheduleSync(); },
+            onStateChange: () => refreshToolbar(),
+            shortcuts: { 'Mod-k': openLinkBox }
+        });
+    };
+
     const setMode = (mode, { persist = true, flush = true } = {}) => {
         if (flush) flushSync();   // capture the outgoing mode's content first
         else if (state.syncTimer !== null) {
             globalThis.clearTimeout(state.syncTimer);
             state.syncTimer = null;
         }
-        closeLinkBox();
+        closeBoxes();
         state.mode = mode;
         ui.dataset.mode = mode;
 
         const rich = mode === 'rich';
         const markdown = mode === 'markdown';
         tools.hidden = !rich;
-        mdTabs.hidden = !markdown;
-        surface.hidden = !rich;
-        mdArea.hidden = !markdown;
-        preview.hidden = true;
+        richWrap.hidden = !rich;
+        mdSplit.hidden = !markdown;
+        tableBar.hidden = true;
         mdHint.hidden = !markdown;
         foot.hidden = mode === 'plain';
         showNative(mode === 'plain');
@@ -543,19 +581,33 @@ import { reportMarkup as Markup } from './report-markup.js';
         }
 
         if (rich) {
-            surface.innerHTML = Markup.bracketToEditorHtml(textarea.value);
+            // A fresh editor per rich-mode entry: undo must never cross a mode
+            // switch and resurrect a pre-switch document into the form, and
+            // ProseMirror's history cannot be trusted to drop rebased steps
+            // over a whole-document replace. The markdown pane resets its
+            // history the same way (setValue builds a fresh state).
+            mountRichEditor();
+            // On this fresh history, addToHistory: false keeps the initial
+            // fill unrecorded, so undo starts empty instead of offering to
+            // blank the document.
+            richEditor.chain()
+                .setMeta('addToHistory', false)
+                .setContent(Markup.bracketToEditorHtml(textarea.value), { emitUpdate: false })
+                .run();
             state.richDirty = false;
-            updatePlaceholder();
+            refreshToolbar();
         } else if (markdown) {
-            mdArea.value = state.mdSource ?? Markup.bracketToMarkdown(textarea.value);
-            state.mdSource = mdArea.value;
+            mdEditor.setValue(state.mdSource ?? Markup.bracketToMarkdown(textarea.value));
+            state.mdSource = mdEditor.getValue();
             state.mdDirty = false;
-            setMdTab('write');
+            renderPreview();
         }
 
         if (persist) {
             void Settings.set({ reportEditorMode: mode });
-            (rich ? surface : markdown ? mdArea : textarea).focus();
+            if (rich) richEditor.commands.focus();
+            else if (markdown) mdEditor.focus();
+            else textarea.focus();
         }
     };
 
@@ -569,10 +621,20 @@ import { reportMarkup as Markup } from './report-markup.js';
         const settings = await Settings.get();
         if (!settings.enableReportEditor) return;
 
-        if (document.execCommand && document.queryCommandSupported
-            && document.queryCommandSupported('defaultParagraphSeparator')) {
-            document.execCommand('defaultParagraphSeparator', false, 'p');
-        }
+        mdEditor = createMarkdownEditor({
+            parent: mdPane,
+            placeholder: 'Write your trip report in Markdown…',
+            ariaLabel: 'Trip report in Markdown',
+            onDocChanged: () => { state.mdDirty = true; scheduleSync(); }
+        });
+        mdEditor.view.scrollDOM.addEventListener('scroll', syncPreviewScroll);
+
+        // Test-only handle. Content scripts run in an isolated world, so page
+        // scripts on Peakbagger can never observe this expando; the jsdom
+        // harness (one shared world) drives the editors through it instead of
+        // synthesizing keystrokes. `rich` is a getter because rich-mode entry
+        // rebuilds its editor.
+        ui._bpbEditors = { get rich() { return richEditor; }, markdown: mdEditor };
 
         textarea.before(ui);
         await checkDraft();               // may adopt a markdown source pre-render
@@ -585,6 +647,8 @@ import { reportMarkup as Markup } from './report-markup.js';
             if (!next.enableReportEditor && ui.isConnected) {
                 flushSync();
                 showNative(true);
+                if (richEditor) richEditor.destroy();
+                mdEditor.destroy();
                 ui.remove();
             }
         });
