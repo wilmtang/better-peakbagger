@@ -430,6 +430,16 @@ test('a draft equal to the server copy is not offered; its markdown source is ad
     assert.equal(editors(dom).markdown.getValue(), 'Same **content**.\n\n- item');
 });
 
+test('a whitespace-only stored draft is deleted instead of silently retained', async () => {
+    const dom = await loadEditor({
+        drafts: { [DRAFT_KEY]: { text: ' \r\n\t ', mode: 'rich', savedAt: Date.now() - 1000 } }
+    });
+    await editorReady(dom);
+
+    await waitFor(dom, () => !dom.chrome._localStore[DRAFT_KEY]);
+    assert.equal(dom.window.document.querySelector('.bpb-re-draft').hidden, true);
+});
+
 test('clicking Save Ascent clears the draft', async () => {
     const dom = await loadEditor({
         drafts: { [DRAFT_KEY]: { text: 'about to be saved', mode: 'rich', savedAt: Date.now() } }

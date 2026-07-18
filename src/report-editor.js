@@ -395,7 +395,9 @@ import { createMarkdownEditor } from './report-md-editor.js';
         } catch (error) { return; }
         if (!stored || typeof stored.text !== 'string' || typeof stored.savedAt !== 'number') return;
         if (Date.now() - stored.savedAt > DRAFT_TTL_MS) { clearDraft(); return; }
-        if (normalized(stored.text) === normalized(textarea.value)) {
+        const storedText = normalized(stored.text);
+        if (!storedText) { clearDraft(); return; }
+        if (storedText === normalized(textarea.value)) {
             // Same content the server rendered — keep the markdown source so a
             // postback doesn't cost the user their original markdown.
             if (stored.mode === 'markdown' && typeof stored.source === 'string') {
@@ -403,7 +405,7 @@ import { createMarkdownEditor } from './report-md-editor.js';
             }
             return;
         }
-        if (normalized(stored.text)) offerDraft(stored);
+        offerDraft(stored);
     };
 
     // Expired or excess drafts (other ascents included) are pruned here so the
