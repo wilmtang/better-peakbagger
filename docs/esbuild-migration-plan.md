@@ -27,7 +27,7 @@ modules as real ES modules (zero `globalThis.BPB*`), vendor via npm, docs + dev 
 | 1 | Test harness → eval built bundles (`load-page.mjs` + feature jsdom tests) | ✅ done |
 | 2 | Convert pure leaves: `settings-schema`, `gpx-metrics`, `capture-core` (+ unit tests) | ✅ done |
 | 3 | Convert shared leaves: `terrain-basemap`, `peak-markers`, `terrain-cache`, `site-dark-css`, `report-markup`, `provider-page` | ✅ done |
-| 4 | Convert `settings`, `theme`, `bridge`, `big-map-bridge`, `peak-map-bridge` | ⬜ todo |
+| 4 | Convert `settings`, `theme`, `bridge`, `big-map-bridge`, `peak-map-bridge` | ✅ done |
 | 5 | Convert feature modules: `ascent-filter`, `peak-links`, `gpx-analyzer`, `peak-map`, `big-map`, `terrain-map`, `terrain-frame` | ⬜ todo |
 | 6 | Convert editor: `ascent-draft`, `report-editor` | ⬜ todo |
 | 7 | Convert entry roots: `background`, `options`, `popup` | ⬜ todo |
@@ -39,6 +39,13 @@ modules as real ES modules (zero `globalThis.BPB*`), vendor via npm, docs + dev 
 
 ## Log
 
+- **Step 4 done** — `settings` (imports `{ settingsSchema }`), `theme` (imports settings +
+  darkCss), `bridge`, `big-map-bridge`, `peak-map-bridge` are ES modules. `background-capture`
+  now boots the built worker bundle in a vm context. `settings`' transitional bridge is
+  *conditional* (won't clobber a pre-set stub) so the map/terrain tests that stub
+  `globalThis.BPBSettings` keep control until their consumers import settings in Step 5 (then
+  those tests move to a real chrome.storage stub). showcase REQUIRES trimmed. 240 green;
+  verify:extension ok.
 - **Step 3 done** — `terrain-basemap`, `peak-markers`, `terrain-cache`, `site-dark-css`,
   `report-markup`, `provider-page` are ES modules (named export + bridge; report-markup keeps
   its `globalThis.marked` vendor read). Unit tests: pure modules import directly (setting

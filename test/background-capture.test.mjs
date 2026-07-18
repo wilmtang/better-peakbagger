@@ -5,11 +5,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import vm from 'node:vm';
-import { captureCore as Core } from '../src/capture-core.js';
-import { settingsSchema } from '../src/settings-schema.js';
 
-const source = await fs.readFile(new URL('../src/background.js', import.meta.url), 'utf8');
-const settingsSource = await fs.readFile(new URL('../src/settings.js', import.meta.url), 'utf8');
+// The worker ships as one bundle (gpx-metrics + capture-core + settings-schema
+// + settings + background). Boot the built bundle in a worker-like vm context,
+// exactly as the service worker runs it.
+const workerBundle = await fs.readFile(new URL('../dist/background.js', import.meta.url), 'utf8');
 
 const event = () => {
     const listeners = [];
@@ -112,7 +112,6 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
 
     const context = vm.createContext({
         browser,
-        BPBCaptureCore: Core,
         fetch,
         URL,
         URLSearchParams,
@@ -121,9 +120,9 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
         console,
         structuredClone
     });
-    context.BPBSettingsSchema = settingsSchema; // ESM module injected onto the worker's isolated global
-    vm.runInContext(settingsSource, context, { filename: 'settings.js' });
-    vm.runInContext(source, context, { filename: 'background.js' });
+    context.globalThis = context;
+    context.self = context;
+    vm.runInContext(workerBundle, context, { filename: 'dist/background.js' });
     const listener = runtimeMessage.listeners[0];
     const send = (message, sender = {}) => new Promise(resolve => {
         assert.equal(listener(message, sender, resolve), true);

@@ -69,14 +69,11 @@ test('BigMap showcase contains only synthetic multi-route interaction data', () 
 // behind null checks and degrade gracefully, so a page may legitimately omit
 // those (scripts/showcase/gpx.html is chart-only and does).
 const REQUIRES = {
+    // Only modules that still read globals via the transitional bridge remain;
+    // converted modules import their deps and drop out of this map.
     'src/gpx-analyzer.js': ['BPBGpxMetrics', 'BPBSettingsSchema'],
     'src/big-map.js': ['BPBSettingsSchema'],
-    'src/terrain-frame.js': ['BPBSettingsSchema', 'BPBTerrainCache'],
-    // capture-core, gpx-metrics, settings-schema now use ES imports, not globals.
-    'src/settings.js': ['BPBSettingsSchema'],
-    'src/bridge.js': ['BPBSettings'],
-    'src/big-map-bridge.js': ['BPBSettings'],
-    'src/theme.js': ['BPBSettings', 'BPBDarkCSS']
+    'src/terrain-frame.js': ['BPBSettingsSchema', 'BPBTerrainCache']
 };
 
 const providerOf = async () => {

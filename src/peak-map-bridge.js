@@ -5,10 +5,7 @@
 // coordinator. The page receives only the feature gate, theme preference, and
 // terrain cache budget it needs; storage and write access stay isolated.
 
-(() => {
-    'use strict';
-    const S = globalThis.BPBSettings;
-    if (!S) return;
+import { settings as S } from './settings.js';
 
     const send = settings => window.postMessage({
         __bpbPeakMap: true,
@@ -26,4 +23,3 @@
     });
 
     S.subscribe(send);
-})();

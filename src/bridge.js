@@ -10,9 +10,7 @@
 // The bridge also pushes updated settings to the page whenever storage changes
 // (options page, another tab), so the chart re-themes / re-units live.
 
-(() => {
-    const S = globalThis.BPBSettings;
-    if (!S) return;
+import { settings as S } from './settings.js';
 
     // The page world may only write the settings the GPX Analyzer owns.
     // Everything else — feature gates, capture privacy options, theme — stays
@@ -41,4 +39,3 @@
     });
 
     S.subscribe(settings => send(settings));
-})();

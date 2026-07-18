@@ -11,16 +11,8 @@
 // src/settings-schema.js, which must load first (manifest script order /
 // importScripts) and which the MAIN world loads directly. This file adds only
 // chrome.storage access on top of it.
-// Idempotent: safe to inject more than once into the same global.
 
-(() => {
-    if (globalThis.BPBSettings) return;
-
-    if (typeof module !== 'undefined' && module.exports && !globalThis.BPBSettingsSchema) {
-        require('./settings-schema.js');
-    }
-    const Schema = globalThis.BPBSettingsSchema;
-    if (!Schema) return; // Callers fail closed when BPBSettings is missing.
+import { settingsSchema as Schema } from './settings-schema.js';
 
     const api = (typeof browser !== 'undefined' && browser.storage) ? browser : chrome;
     const STORAGE_KEY = 'bpbSettings';
@@ -62,5 +54,10 @@
         return () => api.storage.onChanged.removeListener(handler);
     };
 
-    globalThis.BPBSettings = { STORAGE_KEY, DEFAULTS, clean, get, set, subscribe, resolveTheme };
-})();
+    export const settings = { STORAGE_KEY, DEFAULTS, clean, get, set, subscribe, resolveTheme };
+
+    // Transitional global bridge; removed in Step 8 once every consumer imports
+    // { settings } directly. Does not clobber an existing binding so tests that
+    // still stub globalThis.BPBSettings (map/terrain consumers, converted in
+    // Step 5) keep control until those consumers import settings.
+    if (!globalThis.BPBSettings) globalThis.BPBSettings = settings;
