@@ -6,19 +6,11 @@
 // used for analysis leave by default; an explicit capture setting may also
 // allowlist waypoint coordinates/names and the track name used for Trip Info.
 
+import { providerFromUrl } from './provider-url.js';
 
     const PROFILE_PATTERNS = {
         garmin: /\/(?:modern\/)?profile\/([^/?#]+)/i,
         strava: /\/athletes\/(\d+)(?:[/?#]|$)/i
-    };
-
-    const providerFromUrl = urlValue => {
-        const url = new URL(urlValue);
-        let match = /^\/app\/activity\/(\d+)(?:[/?#]|$)/i.exec(url.pathname);
-        if (url.hostname === 'connect.garmin.com' && match) return { provider: 'garmin', activityId: match[1] };
-        match = /^\/activities\/(\d+)(?:[/?#]|$)/i.exec(url.pathname);
-        if (/(^|\.)strava\.com$/i.test(url.hostname) && match) return { provider: 'strava', activityId: match[1] };
-        return null;
     };
 
     const profileId = (href, provider) => {

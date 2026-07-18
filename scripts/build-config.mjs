@@ -36,8 +36,8 @@ export function resolvePageSource(name) {
 // One record per bundle. `out` is the dist-relative output path; `sources` are
 // its explicit roots, ordered where sibling side effects depend on that order.
 export const ENTRIES = [
-    { out: 'background.js', sources: ['gpx-metrics.js', 'capture-core.js', 'settings-schema.js', 'settings.js', 'background.js'] },
-    { out: 'provider-page.js', sources: ['provider-page.js'] },
+    { out: 'background.js', sources: ['gpx-metrics.js', 'capture-core.js', 'provider-url.js', 'settings-schema.js', 'settings.js', 'background.js'] },
+    { out: 'provider-page.js', sources: ['provider-url.js', 'provider-page.js'] },
 
     { out: 'content/ascent-editor.js', sources: ['ascent-draft.js', 'report-markup.js', 'report-editor.js'] },
     { out: 'content/theme.js', sources: ['settings-schema.js', 'settings.js', 'site-dark-css.js', 'theme.js'] },

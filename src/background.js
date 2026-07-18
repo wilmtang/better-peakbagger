@@ -7,6 +7,7 @@
 // The worker ships as one bundle; capture-core and settings (and their own
 // transitive deps: gpx-metrics, settings-schema) resolve through these imports.
 import { captureCore as Core } from './capture-core.js';
+import { providerFromUrl } from './provider-url.js';
 import { settings as Settings } from './settings.js';
 
 (() => {
@@ -55,19 +56,6 @@ import { settings as Settings } from './settings.js';
         });
         mutationQueue = operation.catch(() => {});
         return operation;
-    };
-
-    const activityFromUrl = urlValue => {
-        try {
-            const url = new URL(urlValue);
-            let match = /^\/app\/activity\/(\d+)(?:[/?#]|$)/i.exec(url.pathname);
-            if (url.hostname === 'connect.garmin.com' && match) return { provider: 'garmin', activityId: match[1] };
-            match = /^\/activities\/(\d+)(?:[/?#]|$)/i.exec(url.pathname);
-            if (/(^|\.)strava\.com$/i.test(url.hostname) && match) return { provider: 'strava', activityId: match[1] };
-        } catch (_error) {
-            // Unsupported/malformed URLs are represented as null.
-        }
-        return null;
     };
 
     const publicJob = job => job ? {
@@ -349,7 +337,7 @@ import { settings as Settings } from './settings.js';
         const tabId = Number(message.tabId);
         const tab = await ext.tabs.get(tabId);
         const capturePreferences = await readCapturePreferences();
-        const activity = activityFromUrl(tab.url);
+        const activity = providerFromUrl(tab.url);
         if (!activity) {
             await setBadge(tabId, '');
             return { phase: 'error', error: { code: 'unsupported', message: 'Open a Garmin Connect or Strava activity first.' } };
@@ -399,7 +387,7 @@ import { settings as Settings } from './settings.js';
         if (!Number.isInteger(tabId)) throw new Error('Activity tab identity is unavailable.');
         if (processes.has(tabId)) throw new Error('Wait for the current capture to finish before discarding it.');
         const tab = await ext.tabs.get(tabId);
-        const activity = activityFromUrl(tab.url);
+        const activity = providerFromUrl(tab.url);
         if (!activity) throw new Error('Open the captured Garmin or Strava activity before discarding it.');
 
         const jobs = await readMap(JOBS_KEY);

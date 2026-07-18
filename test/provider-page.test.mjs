@@ -34,6 +34,28 @@ const garminPage = ({ csrfToken = 'csrf-123' } = {}) => `
   </div>
 </body></html>`;
 
+test('provider activity URL parsing is canonical and fails closed', () => {
+    const dom = load(stravaPage(), 'https://www.strava.com/activities/123');
+    const parse = dom.window.BPBProviderPage.providerFromUrl;
+
+    assert.deepEqual({ ...parse('https://connect.garmin.com/app/activity/777?foo=bar') }, {
+        provider: 'garmin', activityId: '777'
+    });
+    assert.deepEqual({ ...parse('https://m.strava.com/activities/456/overview') }, {
+        provider: 'strava', activityId: '456'
+    });
+    for (const value of [
+        'not a URL',
+        '/activities/123',
+        'https://connect.garmin.com/app/activity/not-a-number',
+        'https://connect.garmin.com.evil.example/app/activity/777',
+        'https://www.strava.com.evil.example/activities/123',
+        'https://www.strava.com/athletes/123'
+    ]) {
+        assert.equal(parse(value), null, value);
+    }
+});
+
 test('Strava ownership requires matching profile IDs and the owner edit link', () => {
     const owned = load(stravaPage(), 'https://www.strava.com/activities/123');
     assert.deepEqual({ ...owned.window.BPBProviderPage.inspectOwnership() }, {
