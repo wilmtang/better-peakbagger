@@ -171,5 +171,3 @@ html[data-bpb-theme="dark"] button.pbaf-date-sort {
 html[data-bpb-theme="dark"] button.pbaf-date-sort:hover { color: #9ecbff !important; }
 `;
 
-// Transitional global bridge; removed in Step 8.
-globalThis.BPBDarkCSS = darkCss;

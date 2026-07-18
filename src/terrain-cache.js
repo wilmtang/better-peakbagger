@@ -253,5 +253,3 @@
 
     export const terrainCache = { CACHE_NAME, INDEX_KEY, PROTOCOL, create, getUsage, parseTileUrl };
 
-    // Transitional global bridge; removed in Step 8.
-    globalThis.BPBTerrainCache = terrainCache;

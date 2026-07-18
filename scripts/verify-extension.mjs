@@ -273,10 +273,8 @@ try {
             const iframe = document.getElementById('if');
             return {
                 url: location.href,
-                metricsReady: !!window.BPBGpxMetrics,
-                basemapReady: !!window.BPBTerrainBasemap,
-                peakMarkersReady: !!window.BPBPeakMarkers,
-                schemaReady: !!window.BPBSettingsSchema,
+                // Bundle readiness is proven by the toggle (checked below); no
+                // module publishes a global anymore.
                 mountExists: !!document.getElementById('bpb-map-viewport'),
                 iframeMapReady: !!iframe?.contentWindow?.mapsPlaceholder,
                 iframeLeafletReady: !!iframe?.contentWindow?.L,
@@ -304,9 +302,10 @@ try {
                 mountClass: mount.className,
                 mountHeight: mount.getBoundingClientRect().height,
                 iframePreserved: iframe.parentElement === mount,
-                basemapReady: !!window.BPBTerrainBasemap,
-                peakMarkersReady: !!window.BPBPeakMarkers,
-                schemaReady: !!window.BPBSettingsSchema,
+                // The MAIN-world coordinator bundle self-contains basemap,
+                // peak-markers, and schema via ES imports, so its toggle existing
+                // (this state being truthy) proves those loaded. The isolated
+                // theme bundle is confirmed separately by the theme attribute.
                 isolatedWorldReady: document.documentElement.getAttribute('data-bpb-theme') !== null
             } : false;
         }, null, { timeout: 10000 }).then(handle => handle.jsonValue()).catch(() => null);
@@ -316,8 +315,8 @@ try {
             `the Peak map wrapper must preserve the native iframe (state=${JSON.stringify(peakState)})`);
         check(peakState?.mountHeight === 425,
             `the Peak map wrapper must preserve the native 425px height (state=${JSON.stringify(peakState)})`);
-        check(peakState?.basemapReady && peakState?.peakMarkersReady && peakState?.schemaReady && peakState?.isolatedWorldReady,
-            `the Peak MAIN/isolated bundles did not all initialize (state=${JSON.stringify(peakState)})`);
+        check(peakState?.isolatedWorldReady,
+            `the Peak isolated-world theme bundle did not initialize (state=${JSON.stringify(peakState)})`);
         if (process.env.BPB_VERIFY_PEAK_SCREENSHOT) {
             await peakPage.screenshot({ path: process.env.BPB_VERIFY_PEAK_SCREENSHOT, fullPage: true });
         }

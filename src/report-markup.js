@@ -734,5 +734,3 @@
 
     export const reportMarkup = API;
 
-    // Transitional global bridge; removed in Step 8.
-    globalThis.BPBReportMarkup = API;

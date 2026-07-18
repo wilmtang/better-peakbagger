@@ -164,5 +164,3 @@
 
     export const peakMarkers = { MIN_PEAK_ZOOM, MAX_PEAKS, contextFrom, requestUrl, parsePeaks, createClient };
 
-    // Transitional global bridge; removed in Step 8.
-    globalThis.BPBPeakMarkers = peakMarkers;

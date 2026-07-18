@@ -31,7 +31,7 @@ modules as real ES modules (zero `globalThis.BPB*`), vendor via npm, docs + dev 
 | 5 | Convert feature modules: `ascent-filter`, `peak-links`, `gpx-analyzer`, `peak-map`, `big-map`, `terrain-map`, `terrain-frame` | ✅ done |
 | 6 | Convert editor: `ascent-draft`, `report-editor` | ✅ done |
 | 7 | Convert entry roots: `background`, `options`, `popup` | ✅ done |
-| 8 | Strip all transitional bridges; assert no `globalThis.BPB*` remains | ⬜ todo |
+| 8 | Strip all transitional bridges; assert no `globalThis.BPB*` remains | ✅ done |
 | 9 | Vendor → npm (`marked`/`chart.js`/`tz-lookup` bundled, `maplibre` copied); delete `vendor/` | ⬜ todo |
 | 10 | Repoint showcase / terrain-verify / firefox packaging scripts to ESM+dist | ⬜ todo |
 | 11 | Docs + dev guide (`docs/development.md`, `AGENTS.md`, `README.md`, `CHANGELOG`) | ⬜ todo |
@@ -39,6 +39,12 @@ modules as real ES modules (zero `globalThis.BPB*`), vendor via npm, docs + dev 
 
 ## Log
 
+- **Step 8 done** — all transitional `globalThis.BPB*` bridges removed; only
+  `provider-page`'s deliberate page-world API remains. Fixed fallout: worker-boot test asserts
+  only the registered listener; big-map/options tests poke settings via chrome.storage / schema
+  instead of the removed page global; `verify-extension.mjs` readiness probes switched from
+  `window.BPB*` to real DOM signals (the rendered toggle proves the bundle initialized). 240
+  green; verify:extension passes. **Zero-globals ESM achieved.**
 - **Step 7 done** — `background` drops its `importScripts` block and imports `{ captureCore }`
   + `{ settings }`; `options/theme.js` exports `optionsTheme` (was `window.BPBOptionsTheme`);
   `options.js` imports settings + terrainCache + optionsTheme; `popup.js` (no deps) unchanged.

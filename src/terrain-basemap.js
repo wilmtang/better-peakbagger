@@ -158,5 +158,3 @@
 
     export const terrainBasemap = { TERRAIN_DRAPE_LAYERS, drapeFromCode, fromLayer, enumerate, active };
 
-    // Transitional global bridge; removed in Step 8.
-    globalThis.BPBTerrainBasemap = terrainBasemap;

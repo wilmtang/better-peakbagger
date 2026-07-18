@@ -826,6 +826,3 @@ import { gpxMetrics as Metrics } from './gpx-metrics.js';
 
     export const captureCore = API;
 
-    // Transitional global bridge; removed once background.js imports
-    // { captureCore } directly.
-    globalThis.BPBCaptureCore = API;

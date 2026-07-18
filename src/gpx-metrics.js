@@ -318,6 +318,3 @@
 
     export const gpxMetrics = API;
 
-    // Transitional global bridge; removed once every consumer imports
-    // { gpxMetrics } directly.
-    globalThis.BPBGpxMetrics = API;

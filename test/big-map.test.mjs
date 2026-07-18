@@ -133,7 +133,9 @@ test('Full Screen recent-track maps preserve native colors, hover, and click beh
     assert.equal(lateRoute.options.color, '#31a354', 'group tracks keep their native color');
     assert.equal(casingsOf().length, 3, 'a track added later also gains a casing');
 
-    await window.BPBSettings.set({ mapRouteWidth: 9 });
+    // Change the stored width; the bridge's storage.onChanged listener pushes it
+    // to the MAIN-world enhancer (settings is no longer a page global).
+    await window.chrome.storage.sync.set({ bpbSettings: { ...window.chrome._store.bpbSettings, mapRouteWidth: 9 } });
     await waitFor(dom, () => routeA.options.weight === 9 && routeB.options.weight === 9 && lateRoute.options.weight === 9);
     // mapRouteCasingWidth defaults to 9 but is clamped to width + 2 = 11.
     await waitFor(dom, () => casingsOf().every(casing => casing.options.weight === 11));

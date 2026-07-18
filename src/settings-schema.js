@@ -168,7 +168,3 @@
 
     export const settingsSchema = API;
 
-    // Transitional global bridge: read by consumers still written as IIFEs that
-    // reach settings-schema through globalThis. Removed in the final ESM commit
-    // once every consumer imports { settingsSchema } directly.
-    globalThis.BPBSettingsSchema = API;

@@ -56,8 +56,3 @@ import { settingsSchema as Schema } from './settings-schema.js';
 
     export const settings = { STORAGE_KEY, DEFAULTS, clean, get, set, subscribe, resolveTheme };
 
-    // Transitional global bridge; removed in Step 8 once every consumer imports
-    // { settings } directly. Does not clobber an existing binding so tests that
-    // still stub globalThis.BPBSettings (map/terrain consumers, converted in
-    // Step 5) keep control until those consumers import settings.
-    if (!globalThis.BPBSettings) globalThis.BPBSettings = settings;

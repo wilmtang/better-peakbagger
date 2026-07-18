@@ -12,6 +12,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { JSDOM } from 'jsdom';
 import { makeChromeStub, waitFor, evalBundle } from './helpers/load-page.mjs';
+import { settingsSchema } from '../src/settings-schema.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -228,7 +229,7 @@ test('map layer memory is opt-in and disabling it forgets the saved layer', asyn
     const defaultDom = await loadOptions({});
     assert.equal(el(defaultDom, 'remember-map-layer').checked, false);
     const invalidDom = await loadOptions({ rememberMapLayer: true, mapLastLayer: 'javascript:bad' });
-    assert.equal((await invalidDom.window.BPBSettings.get()).mapLastLayer, '');
+    assert.equal(settingsSchema.clean(invalidDom.chrome._store.bpbSettings).mapLastLayer, '');
 
     const dom = await loadOptions({ rememberMapLayer: true, mapLastLayer: 'L_OT' });
     const checkbox = el(dom, 'remember-map-layer');

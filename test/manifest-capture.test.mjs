@@ -197,8 +197,8 @@ test('the bundled service worker boots and registers its listener', async () => 
     };
     vm.runInContext(bundleSource, context, { filename: 'dist/background.js' });
 
-    assert.equal(typeof context.BPBSettings, 'object', 'settings.js did not run in the worker bundle');
-    assert.equal(typeof context.BPBCaptureCore, 'object', 'capture-core.js did not run in the worker bundle');
+    // The bundle publishes no globals (zero-globals ESM); the worker is alive iff
+    // it registered its capture message listener.
     assert.ok(registeredListener,
         'the worker never registered its message listener, so capture is dead');
 });
