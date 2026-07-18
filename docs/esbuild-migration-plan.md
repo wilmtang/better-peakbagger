@@ -37,10 +37,17 @@ intentional worker→page boundary.
 | 9 | Vendor → npm; delete committed `vendor/` | ✅ done |
 | 10 | Repoint showcase / terrain-verify / firefox packaging scripts to ESM+dist | ✅ done |
 | 11 | Docs + dev guide (`docs/development.md`, `AGENTS.md`, `README.md`, `CHANGELOG`) | ✅ done |
-| 12 | Final verification (`npm test` + `npm run verify:extension`) | ⬜ todo |
+| 12 | Final verification (`npm test` + `npm run verify:extension`) | ✅ done |
 
 ## Log
 
+- **Step 12 done** — the full `npm test` suite and `npm run verify:extension` pass from
+  the committed migration state. The real extension ran hidden in Chrome for Testing (new
+  headless, 1000×760) and exercised the bundled worker, settings bridge, analyzer, 3D gates,
+  Full Screen/Peak coordinators, and report editor. The additional hidden GPU terrain check
+  passes at 798×448 and 448×448 on ANGLE Metal (Apple M3 Pro), including 12 resize probes with
+  zero blank frames. Live provider DOM/export behavior remains the documented manual release
+  check.
 - **Step 11 done** — added `docs/development.md` as the canonical workflow for installing,
   building/watching, loading `dist/`, adding modules/assets/dependencies, choosing tests, and
   rehearsing releases. Updated AGENTS/README/architecture notes, dark-mode/timezone docs,
