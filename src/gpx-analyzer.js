@@ -1330,18 +1330,24 @@ const run = async () => {
                 const eleNode = pt.querySelector('ele');
                 const timeNode = pt.querySelector('time');
                 const parsedMs = timeNode ? new Date(timeNode.textContent).getTime() : 0;
-                const rawEleM = eleNode ? parseFloat(eleNode.textContent) : 0;
+                const rawEleM = eleNode ? parseFloat(eleNode.textContent) : Number.NaN;
 
                 return {
                     lat: parseFloat(pt.getAttribute('lat')),
                     lon: parseFloat(pt.getAttribute('lon')),
-                    rawEleM: Number.isFinite(rawEleM) ? rawEleM : 0,
+                    rawEleM,
                     ms: Number.isFinite(parsedMs) ? parsedMs : 0
                 };
             });
 
             metrics = GpxMetrics.computeMetrics(parsedPoints);
-            if (!metrics.points.length) return stats.textContent = "No valid track points found.";
+            if (!metrics.points.length) {
+                const hasValidCoordinates = parsedPoints.some(point =>
+                    Number.isFinite(point.lat) && Number.isFinite(point.lon));
+                return stats.textContent = hasValidCoordinates
+                    ? "This GPS track has no usable elevation data."
+                    : "No valid track points found.";
+            }
 
             // The climb's timezone comes from the track's starting point: the
             // trailhead decides which side of a zone border (or of a border

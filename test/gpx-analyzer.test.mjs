@@ -548,3 +548,73 @@ test('a failed GPS track download reports the HTTP error instead of a parse mess
 
     dom.window.close();
 });
+
+const loadElevationAnalyzer = async gpxSource => {
+    const dom = new JSDOM(`<!doctype html><body>
+      <p><a href="https://www.peakbagger.com/demo.gpx">Download this GPS track</a></p>
+    </body>`, {
+        url: 'https://www.peakbagger.com/climber/ascent.aspx?aid=1',
+        runScripts: 'outside-only',
+        pretendToBeVisual: true
+    });
+    const { window } = dom;
+    let chartConfig = null;
+    window.matchMedia = () => ({ matches: false });
+    window.HTMLCanvasElement.prototype.getContext = () => ({});
+    window.fetch = async () => ({ ok: true, text: async () => gpxSource });
+    window.Chart = class ChartStub {
+        constructor(context, config) {
+            chartConfig = config;
+            this.data = config.data;
+            this.options = config.options;
+        }
+        destroy() {}
+    };
+    window.postMessage = message => {
+        if (!message || message.dir !== 'toCS' || message.kind !== 'get') return;
+        window.queueMicrotask(() => window.dispatchEvent(new window.MessageEvent('message', {
+            source: window,
+            origin: window.location.origin,
+            data: { __bpb: true, dir: 'toPage', settings: { units: 'metric', theme: 'light' } }
+        })));
+    };
+
+    Object.defineProperty(window.document, 'readyState', { configurable: true, value: 'complete' });
+    window.eval(analyzerBundle);
+    const analysisText = () => window.document.getElementById('bpb-gpx-analysis')?.textContent || '';
+    return { dom, analysisText, chartConfig: () => chartConfig };
+};
+
+test('GPX analyzer drops points whose elevation is missing or invalid', async () => {
+    const source = `<?xml version="1.0"?><gpx><trk><trkseg>
+      <trkpt lat="47" lon="-121"><ele>100</ele></trkpt>
+      <trkpt lat="47" lon="-121.001"></trkpt>
+      <trkpt lat="47" lon="-121.002"><ele>unknown</ele></trkpt>
+      <trkpt lat="47" lon="-121.003"></trkpt>
+      <trkpt lat="47" lon="-121.004"><ele>110</ele></trkpt>
+    </trkseg></trk></gpx>`;
+    const { dom, chartConfig } = await loadElevationAnalyzer(source);
+
+    await waitFor(dom, () => chartConfig() !== null);
+    const chartPoints = chartConfig().data.datasets[0].data;
+    assert.deepEqual(Array.from(chartPoints, point => point._raw.rawEleM), [100, 110]);
+    assert.ok(chartPoints.every(point => point.y > 0),
+        'missing elevation must not become a charted dip to sea level');
+
+    dom.window.close();
+});
+
+test('GPX analyzer labels a track with no usable elevation instead of reporting zero gain', async () => {
+    const source = `<?xml version="1.0"?><gpx><trk><trkseg>
+      <trkpt lat="47" lon="-121"></trkpt>
+      <trkpt lat="47" lon="-121.001"><ele>unknown</ele></trkpt>
+    </trkseg></trk></gpx>`;
+    const { dom, analysisText, chartConfig } = await loadElevationAnalyzer(source);
+
+    await waitFor(dom, () => analysisText().includes('no usable elevation data'));
+    assert.match(analysisText(), /This GPS track has no usable elevation data\./);
+    assert.doesNotMatch(analysisText(), /0 (?:m|ft) gain/);
+    assert.equal(chartConfig(), null);
+
+    dom.window.close();
+});
