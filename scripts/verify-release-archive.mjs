@@ -3,45 +3,30 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 import JSZip from "jszip";
 
-const ALLOWED_TOP_LEVEL = new Set([
-  "ACKNOWLEDGEMENTS.md",
-  "LICENSE",
-  "README.md",
-  "icons",
-  "manifest.json",
-  "options",
-  "popup",
-  "src",
-  "terrain",
-  "vendor",
-]);
+import {
+  COPY_DIRS,
+  COPY_FILES,
+  ENTRIES,
+  VENDOR_COPY,
+  VENDOR_TZ,
+} from "./build-config.mjs";
 
-const REQUIRED_FILES = [
-  "ACKNOWLEDGEMENTS.md",
-  "LICENSE",
-  "README.md",
-  "manifest.json",
+// Release archives are built from dist/, so derive their required runtime files
+// from the same config that assembles dist rather than pinning the old src/
+// layout here. COPY_DIRS is recursive; pin one icon below so an empty copied
+// directory cannot satisfy verification.
+const REQUIRED_FILES = [...new Set([
+  ...ENTRIES.map(({ out }) => out),
+  ...COPY_FILES.map(([, to]) => to),
+  ...VENDOR_COPY.map(([, to]) => to),
+  VENDOR_TZ.out,
   "icons/icon-128.png",
-  "options/options.html",
-  "popup/popup.html",
-  "src/background.js",
-  "src/big-map-bridge.js",
-  "src/big-map.js",
-  "src/capture-core.js",
-  "src/gpx-metrics.js",
-  "src/terrain-cache.js",
-  "src/terrain-map.css",
-  "src/terrain-frame.js",
-  "src/terrain-map.js",
-  "terrain/terrain.html",
-  "vendor/chart.umd.min.js",
-  "vendor/maplibre-LICENSE.txt",
-  "vendor/maplibre-gl-csp-worker.js",
-  "vendor/maplibre-gl-csp.js",
-  "vendor/maplibre-gl.css",
-  "vendor/tz-lookup-LICENSE.txt",
-  "vendor/tz-lookup.js",
-];
+])];
+
+const ALLOWED_TOP_LEVEL = new Set([
+  ...REQUIRED_FILES.map(file => file.split("/", 1)[0]),
+  ...COPY_DIRS.map(([, to]) => to.split("/", 1)[0]),
+]);
 
 const OPTIONS_PRESENTATION = {
   firefox: false,

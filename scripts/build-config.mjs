@@ -67,6 +67,9 @@ export function entrySources(entry) {
 
 // Static files copied verbatim into dist. [from (root-relative), to (dist-relative)].
 export const COPY_FILES = [
+    ['ACKNOWLEDGEMENTS.md', 'ACKNOWLEDGEMENTS.md'],
+    ['LICENSE', 'LICENSE'],
+    ['README.md', 'README.md'],
     ['manifest.json', 'manifest.json'],
     ['src/report-editor.css', 'css/report-editor.css'],
     ['src/terrain-map.css', 'css/terrain-map.css'],
