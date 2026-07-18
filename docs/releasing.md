@@ -83,16 +83,22 @@ visible in the AMO Developer Hub.
 1. Manually verify current Garmin, Strava, and Peakbagger behavior in both
    browser families. Automated fixtures cannot establish that live provider
    DOM and export flows still work.
-2. Update the same version in `manifest.json`, `package.json`, and both root
-   version fields in `package-lock.json`. The simplest way is
-   `npm version X.Y.Z --no-git-tag-version`, which updates both package files,
-   then set `manifest.json` by hand.
-3. Add a matching `## X.Y.Z` heading to `CHANGELOG.md`.
-4. Run:
+2. Bump the version, stamp the changelog, and create the tag:
+
+   ```sh
+   npm run release:bump X.Y.Z
+   ```
+
+   This updates `manifest.json`, `package.json`, `package-lock.json`, and
+   stamps the `## Unreleased` heading in `CHANGELOG.md` with the version and
+   today's date. It runs `release:check` internally before writing, so version
+   mismatches or a missing changelog heading fail before any file is touched.
+   The script commits all four files and creates a lightweight `vX.Y.Z` tag.
+
+3. Run the verification suite:
 
    ```sh
    npm ci
-   npm run release:check -- vX.Y.Z
    npm test
    npm run lint
    npm run build
@@ -101,18 +107,15 @@ visible in the AMO Developer Hub.
    npm run release:verify-archive -- web-ext-artifacts/better_peakbagger-X.Y.Z-firefox.zip firefox
    ```
 
-   Run `release:check` first so version mismatches fail before the slower test
-   suite. The `release:verify-archive` step rejects any file that isn't a
+   The `release:verify-archive` step rejects any file that isn't a
    shipped runtime entry — if a new root-level file was added since the last
    release (documentation, tooling config, etc.), add it to the `ignoreFiles`
    list in the `webExt` section of `package.json` before building.
 
-5. Commit the release metadata, merge it to the release branch, create an
-   annotated tag on that exact commit, and push the tag:
+4. Push the release:
 
    ```sh
-   git tag -a vX.Y.Z -m "Release X.Y.Z"
-   git push origin vX.Y.Z
+   git push origin main --tags
    ```
 
 The verification job must finish before either store job starts. The store jobs

@@ -14,6 +14,7 @@
     "lint": "web-ext lint",
     "build": "web-ext build --overwrite-dest",
     "build:firefox": "node scripts/build-firefox-package.mjs",
+    "release:bump": "node scripts/release-bump.mjs",
     "release:check": "node scripts/release-check.mjs",
     "release:metadata:firefox": "node scripts/create-amo-metadata.mjs web-ext-artifacts/amo-metadata.json",
     "release:sign:firefox": "web-ext sign --source-dir=web-ext-artifacts/firefox-source --channel=listed --amo-metadata=web-ext-artifacts/amo-metadata.json --approval-timeout=0 --timeout=600000 --no-input",
