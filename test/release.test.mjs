@@ -101,14 +101,21 @@ async function makeReleaseZip(extraFiles = {}, omittedFiles = []) {
   return zip.generateAsync({ type: "uint8array" });
 }
 
-test("release and Firefox development commands build the dist extension", async () => {
+test("release and browser development commands use the dist build", async () => {
   const [packageJson, workflow] = await Promise.all([
     readFile(new URL("../package.json", import.meta.url), "utf8").then(JSON.parse),
     readFile(new URL("../.github/workflows/release.yml", import.meta.url), "utf8"),
   ]);
 
   assert.match(packageJson.scripts.package, /build:release.*--source-dir dist/);
-  assert.match(packageJson.scripts["start:firefox"], /^npm run build && /);
+  assert.equal(
+    packageJson.scripts["start:firefox"],
+    "node scripts/run-development.mjs firefox",
+  );
+  assert.equal(
+    packageJson.scripts["start:chromium"],
+    "node scripts/run-development.mjs chromium",
+  );
   assert.match(
     workflow,
     /- name: Build store packages[\s\S]*?npm run package[\s\S]*?chrome_archive=/,

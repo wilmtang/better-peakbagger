@@ -19,14 +19,17 @@
 //   node scripts/build.mjs --watch    rebuild on source/asset change
 
 import { build, context } from 'esbuild';
-import { readdir, mkdir, rm, copyFile } from 'node:fs/promises';
+import { readdir, mkdir, rm, copyFile, writeFile } from 'node:fs/promises';
 import { existsSync, watch as fsWatch } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { ENTRIES, COPY_FILES, COPY_DIRS, VENDOR_COPY, VENDOR_TZ, nodeModule, entrySources, root, distDir } from './build-config.mjs';
 
 const args = new Set(process.argv.slice(2));
 const MINIFY = args.has('--minify');
 const WATCH = args.has('--watch');
+
+export const RELOAD_SIGNAL = '.better-peakbagger-reload';
 
 async function copyDir(from, to) {
     await mkdir(to, { recursive: true });
@@ -68,7 +71,7 @@ async function copyAssets() {
 
 // esbuild takes one entry file per output. For a multi-module bundle we feed it
 // a generated stub that imports each source in order.
-function esbuildOptions(entry) {
+function esbuildOptions(entry, { minify = MINIFY } = {}) {
     const imports = entrySources(entry).map(f => `import ${JSON.stringify(f)};`).join('\n');
     return {
         stdin: {
@@ -83,34 +86,124 @@ function esbuildOptions(entry) {
         target: ['chrome110', 'firefox115'],
         platform: 'browser',
         legalComments: 'none',
-        minify: MINIFY,
-        sourcemap: MINIFY ? false : 'linked',
+        minify,
+        sourcemap: minify ? false : 'linked',
         logLevel: 'warning',
     };
 }
 
-async function buildOnce() {
+export async function buildOnce({ minify = MINIFY } = {}) {
     await rm(distDir, { recursive: true, force: true });
     await mkdir(distDir, { recursive: true });
-    await Promise.all(ENTRIES.map(e => build(esbuildOptions(e))));
+    await Promise.all(ENTRIES.map(e => build(esbuildOptions(e, { minify }))));
     await copyAssets();
-    console.log(`Built ${ENTRIES.length} bundles into dist/${MINIFY ? ' (minified)' : ''}`);
+    console.log(`Built ${ENTRIES.length} bundles into dist/${minify ? ' (minified)' : ''}`);
 }
 
-async function watchAll() {
+function watchDirectories() {
+    const directories = new Set([
+        ...ENTRIES.flatMap(entry => entrySources(entry).map(file => path.dirname(file))),
+        ...COPY_FILES
+            .map(([file]) => path.dirname(path.join(root, file)))
+            .filter(directory => directory !== root),
+        ...COPY_DIRS.map(([directory]) => path.join(root, directory)),
+    ]);
+    return [...directories].filter(existsSync);
+}
+
+// Watch mode rebuilds every bundle as one transaction. A shared module can
+// feed several independent esbuild contexts; reloading after the first context
+// finishes would expose a mixed runtime tree. The signal file is therefore
+// written only after every bundle and copied asset has completed successfully.
+export async function watchAll({
+    reloadFile = path.join(distDir, RELOAD_SIGNAL),
+    afterBuild = async () => {},
+    debounceMs = 80,
+} = {}) {
     await rm(distDir, { recursive: true, force: true });
     await mkdir(distDir, { recursive: true });
-    const contexts = await Promise.all(ENTRIES.map(e => context(esbuildOptions(e))));
-    await Promise.all(contexts.map(c => c.watch()));
-    await copyAssets();
-    let queued = null;
-    const recopy = () => { clearTimeout(queued); queued = setTimeout(() => copyAssets().catch(console.error), 80); };
-    for (const dir of ['icons', 'vendor', 'terrain', 'options', 'popup']) {
-        if (existsSync(path.join(root, dir))) fsWatch(path.join(root, dir), { recursive: true }, recopy);
+    const contexts = await Promise.all(ENTRIES.map(e => context(esbuildOptions(e, { minify: false }))));
+    const watchers = [];
+    let sequence = 0;
+    let timer = null;
+    let building = null;
+    let pending = false;
+    let closed = false;
+
+    const rebuild = async () => {
+        const nextSequence = sequence + 1;
+        await Promise.all(contexts.map(buildContext => buildContext.rebuild()));
+        await copyAssets();
+        await afterBuild({ sequence: nextSequence });
+        await writeFile(reloadFile, `${nextSequence}\n`);
+        sequence = nextSequence;
+        console.log(`Rebuilt ${ENTRIES.length} bundles (development reload ${sequence})`);
+    };
+
+    const drain = async () => {
+        if (building || closed) return building;
+        building = (async () => {
+            do {
+                pending = false;
+                try {
+                    await rebuild();
+                } catch (error) {
+                    console.error('Rebuild failed; keeping the currently loaded extension:', error);
+                }
+            } while (pending && !closed);
+        })().finally(() => {
+            building = null;
+        });
+        return building;
+    };
+
+    const requestRebuild = () => {
+        if (closed) return;
+        pending = true;
+        clearTimeout(timer);
+        timer = setTimeout(() => void drain(), debounceMs);
+    };
+
+    try {
+        // Fail startup rather than launching a browser with a partial build.
+        await rebuild();
+
+        for (const directory of watchDirectories()) {
+            watchers.push(fsWatch(directory, { recursive: true }, requestRebuild));
+        }
+        const rootFiles = new Set(
+            COPY_FILES
+                .map(([file]) => path.join(root, file))
+                .filter(file => path.dirname(file) === root)
+                .map(file => path.basename(file)),
+        );
+        watchers.push(fsWatch(root, (_event, filename) => {
+            if (filename && rootFiles.has(filename)) requestRebuild();
+        }));
+    } catch (error) {
+        await Promise.all(contexts.map(buildContext => buildContext.dispose()));
+        throw error;
     }
-    fsWatch(root, (_e, f) => { if (f === 'manifest.json') recopy(); });
+
     console.log('Watching for changes… (Ctrl+C to stop)');
+
+    return {
+        reloadFile,
+        async close() {
+            if (closed) return;
+            closed = true;
+            clearTimeout(timer);
+            for (const watcher of watchers) watcher.close();
+            if (building) await building;
+            await Promise.all(contexts.map(buildContext => buildContext.dispose()));
+        },
+    };
 }
 
-const run = WATCH ? watchAll : buildOnce;
-run().catch(err => { console.error(err); process.exit(1); });
+const isCli = process.argv[1]
+    && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+
+if (isCli) {
+    const run = WATCH ? watchAll : buildOnce;
+    run().catch(err => { console.error(err); process.exit(1); });
+}
