@@ -19,8 +19,8 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const themeBundle = await readFile(path.join(root, 'dist', 'content', 'theme.js'), 'utf8');
 const STYLE_ID = 'bpb-site-dark';
 
-// Load the site-wide content scripts (settings -> site-dark-css -> theme) into a
-// fresh jsdom, in manifest order, with the given stored settings.
+// Load the bundled site-wide theme entry into a fresh jsdom with the given
+// stored settings.
 const loadTheme = async (settings = {}) => {
     const dom = new JSDOM('<!DOCTYPE html><html><head></head><body></body></html>', {
         url: 'https://www.peakbagger.com/',
@@ -68,17 +68,16 @@ test('theme=light sets the attribute but the inert sheet is still present', asyn
     assert.ok(sheet(dom));
 });
 
-test('Firefox isolated-world globals still initialize the site theme', async () => {
+test('the bundled theme initializes in a Firefox-like isolated-world context', async () => {
     const dom = new JSDOM('<!DOCTYPE html><html><head></head><body></body></html>', {
         url: 'https://www.peakbagger.com/',
         runScripts: 'outside-only'
     });
     const chrome = makeChromeStub({ bpbSettings: { theme: 'dark' } });
 
-    // Firefox content scripts have one shared global scope per extension and
-    // frame, but globalThis is a distinct object that inherits from the page's
-    // Xray-wrapped window. A window lookup therefore cannot see a module that
-    // another content script published on globalThis.
+    // Firefox's isolated global is distinct from the page's Xray-wrapped
+    // window. The self-contained bundle must work without publishing anything
+    // onto the page global.
     const isolatedWorld = vm.createContext({
         window: dom.window,
         document: dom.window.document,

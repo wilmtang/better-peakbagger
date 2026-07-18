@@ -10,19 +10,17 @@ import { JSDOM } from 'jsdom';
 import { makeChromeStub } from './helpers/load-page.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-// The bridge imports settings now, so a globalThis.BPBSettings stub is ignored.
-// Give tests a real chrome.storage the settings module reads from, plus the
-// getURL the bridge needs. Push updates with chrome.storage.sync.set(...).
+// The bridge imports settings, so tests provide the real chrome.storage shape
+// that module reads from, plus the getURL the bridge needs. Push updates with
+// chrome.storage.sync.set(...).
 const chromeWith = settings => {
     const chrome = makeChromeStub({ bpbSettings: settings });
     chrome.runtime.getURL = path => `chrome-extension://test-id/${path}`;
     return chrome;
 };
 // The isolated in-page 3D bridge bundle, and the extension-owned terrain frame
-// bundle (settings-schema + terrain-cache + terrain-frame). maplibre and the
-// terrain cache are stubbed per test; the cache stub is applied *after* the
-// frame bundle evaluates, since the bundle carries the real terrain-cache and
-// terrain-frame reads globalThis.BPBTerrainCache lazily when it builds the map.
+// bundle (settings-schema + terrain-cache + terrain-frame). MapLibre is stubbed
+// per test; the bundled terrain cache binds the supplied fetch stub.
 const bridgeBundle = await readFile(path.join(root, 'dist', 'content', 'terrain-map.js'), 'utf8');
 const frameBundle = await readFile(path.join(root, 'dist', 'terrain', 'terrain-frame.js'), 'utf8');
 
@@ -129,11 +127,7 @@ test('3D terrain bridge refuses page requests unless the stored feature gate is 
     });
     const { window } = dom;
     const messages = [];
-    window.chrome = { runtime: { getURL: path => `chrome-extension://test-id/${path}` } };
-    window.BPBSettings = {
-        get: async () => ({ enable3dMap: false }),
-        subscribe() { return () => {}; }
-    };
+    window.chrome = chromeWith({ enable3dMap: false });
     window.postMessage = message => { messages.push(message); };
     window.eval(bridgeBundle);
 
@@ -163,19 +157,7 @@ test('3D terrain consent is extension-owned, discloses the actual providers, and
     });
     const { window } = dom;
     const messages = [];
-    const patches = [];
-    let stored = { enable3dMap: false, theme: 'light' };
-    window.chrome = { runtime: { getURL: path => `chrome-extension://test-id/${path}` } };
-    window.BPBSettings = {
-        get: async () => ({ ...stored }),
-        set: async patch => {
-            patches.push({ ...patch });
-            stored = { ...stored, ...patch };
-            return { ...stored };
-        },
-        subscribe() { return () => {}; },
-        resolveTheme: theme => theme === 'dark' ? 'dark' : 'light'
-    };
+    window.chrome = chromeWith({ enable3dMap: false, theme: 'light' });
     window.postMessage = message => { messages.push(message); };
     window.eval(bridgeBundle);
 
@@ -199,20 +181,23 @@ test('3D terrain consent is extension-owned, discloses the actual providers, and
         ['Privacy notice', 'mapterhorn.com'],
         ['Privacy notice', 'openfreemap.org']
     ]);
-    assert.equal(patches.length, 0, 'opening the confirmation must not change the setting');
+    const featureEnabled = async () =>
+        (await window.chrome.storage.sync.get('bpbSettings')).bpbSettings.enable3dMap;
+    assert.equal(await featureEnabled(), false, 'opening the confirmation must not change the setting');
 
     dialog.querySelector('.bpb-terrain-consent-secondary').click();
     assert.equal(window.document.querySelector('[role="dialog"]'), null);
     assert.equal(messages.at(-1).type, 'consentResult');
     assert.equal(messages.at(-1).enabled, false);
-    assert.equal(patches.length, 0, 'declining must keep the feature off');
+    assert.equal(await featureEnabled(), false, 'declining must keep the feature off');
 
     requestConsent();
     await new Promise(resolve => window.setTimeout(resolve, 0));
     dialog = window.document.querySelector('[role="dialog"]');
     dialog.querySelector('.bpb-terrain-consent-primary').click();
     await new Promise(resolve => window.setTimeout(resolve, 0));
-    assert.deepEqual(patches, [], 'host-page script must not enable an extension feature through DOM click()');
+    assert.equal(await featureEnabled(), false,
+        'host-page script must not enable an extension feature through DOM click()');
     assert.ok(window.document.querySelector('[role="dialog"]'), 'scripted acceptance must leave the confirmation open');
     dialog.querySelector('.bpb-terrain-consent-secondary').click();
     dom.window.close();
@@ -317,12 +302,6 @@ test('3D terrain frame validates coordinate-only routes before loading public DE
     };
 
     window.chrome = { runtime: { getURL: path => `chrome-extension://test-id/${path}` } };
-    window.BPBTerrainCache = {
-        PROTOCOL: 'bpb-dem',
-        create({ limitMb }) {
-            return { limitMb, load() {}, flush() { return Promise.resolve(); } };
-        }
-    };
     window.maplibregl = {
         Map: MapStub,
         NavigationControl: class NavigationControl {},
@@ -631,7 +610,6 @@ test('the 3D drape picker offers every layer and swaps the draped raster live', 
     }
 
     window.chrome = { runtime: { getURL: path => `chrome-extension://test-id/${path}` } };
-    window.BPBTerrainCache = { PROTOCOL: 'bpb-dem', create: () => ({ load() {}, flush: () => Promise.resolve() }) };
     window.maplibregl = {
         Map: MapStub,
         NavigationControl: class {},
@@ -960,10 +938,6 @@ test('3D peak markers request Peakbagger dots on camera settle and render only v
     }
 
     window.chrome = { runtime: { getURL: path => `chrome-extension://test-id/${path}` } };
-    window.BPBTerrainCache = {
-        PROTOCOL: 'bpb-dem',
-        create() { return { load() {}, flush() { return Promise.resolve(); } }; }
-    };
     window.maplibregl = {
         Map: MapStub,
         Popup: PopupStub,
@@ -1219,10 +1193,6 @@ test('3D peak dots snap uphill to the local DEM summit, and only to a genuine on
     }
 
     window.chrome = { runtime: { getURL: path => `chrome-extension://test-id/${path}` } };
-    window.BPBTerrainCache = {
-        PROTOCOL: 'bpb-dem',
-        create() { return { load() {}, flush() { return Promise.resolve(); } }; }
-    };
     window.maplibregl = {
         Map: MapStub,
         Popup: class { remove() {} },
