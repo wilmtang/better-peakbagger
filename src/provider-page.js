@@ -253,5 +253,8 @@
     const API = { providerFromUrl, profileId, inspectOwnership, parseGpxData, garminExportRequest, capture };
     export const providerPage = API;
 
-    // Transitional global bridge; removed in Step 8.
+    // Deliberate page-world global (NOT a transitional bridge): background.js
+    // injects this file with scripting.executeScript, then injects inline funcs
+    // that call globalThis.BPBProviderPage across the worker→page boundary,
+    // where ES imports cannot reach. Kept permanently.
     globalThis.BPBProviderPage = API;

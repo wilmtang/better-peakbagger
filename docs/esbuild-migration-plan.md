@@ -30,7 +30,7 @@ modules as real ES modules (zero `globalThis.BPB*`), vendor via npm, docs + dev 
 | 4 | Convert `settings`, `theme`, `bridge`, `big-map-bridge`, `peak-map-bridge` | ✅ done |
 | 5 | Convert feature modules: `ascent-filter`, `peak-links`, `gpx-analyzer`, `peak-map`, `big-map`, `terrain-map`, `terrain-frame` | ✅ done |
 | 6 | Convert editor: `ascent-draft`, `report-editor` | ✅ done |
-| 7 | Convert entry roots: `background`, `options`, `popup` | ⬜ todo |
+| 7 | Convert entry roots: `background`, `options`, `popup` | ✅ done |
 | 8 | Strip all transitional bridges; assert no `globalThis.BPB*` remains | ⬜ todo |
 | 9 | Vendor → npm (`marked`/`chart.js`/`tz-lookup` bundled, `maplibre` copied); delete `vendor/` | ⬜ todo |
 | 10 | Repoint showcase / terrain-verify / firefox packaging scripts to ESM+dist | ⬜ todo |
@@ -39,6 +39,12 @@ modules as real ES modules (zero `globalThis.BPB*`), vendor via npm, docs + dev 
 
 ## Log
 
+- **Step 7 done** — `background` drops its `importScripts` block and imports `{ captureCore }`
+  + `{ settings }`; `options/theme.js` exports `optionsTheme` (was `window.BPBOptionsTheme`);
+  `options.js` imports settings + terrainCache + optionsTheme; `popup.js` (no deps) unchanged.
+  NOTE: `provider-page`'s `globalThis.BPBProviderPage` is a **permanent** page-world API (not a
+  bridge) — background injects the file then calls it via inline `scripting.executeScript` funcs
+  across the worker→page boundary, where imports can't reach. 240 green; verify:extension ok.
 - **Step 6 done** — `report-editor` imports `{ settings }` and `{ reportMarkup }` (thin IIFE
   kept for early-exit); `ascent-draft` has no deps/exports and stays a self-contained IIFE.
   No test changes needed (report-editor.test already evals the ascent-editor bundle, now

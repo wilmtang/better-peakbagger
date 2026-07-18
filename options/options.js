@@ -3,12 +3,13 @@
 //
 // Better Peakbagger — options page controller.
 
+import { settings as S } from '../src/settings.js';
+import { terrainCache as TerrainCache } from '../src/terrain-cache.js';
+import { optionsTheme as Theme } from './theme.js';
+
 (() => {
     'use strict';
-    const S = window.BPBSettings;
-    const TerrainCache = window.BPBTerrainCache;
     const extensionApi = (typeof browser !== 'undefined' && browser.storage) ? browser : chrome;
-    const Theme = window.BPBOptionsTheme;
     const unitsEl = document.getElementById('units');
     const themeEl = document.getElementById('theme');
     const enable3dMapEl = document.getElementById('enable-3d-map');
