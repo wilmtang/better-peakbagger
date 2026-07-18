@@ -175,6 +175,20 @@ test('server-confirmed inline aliases normalize without losing semantics', () =>
         + '[q]quote[/q] [span style="color:green"]green[/span]');
 });
 
+test('hex colors survive every bracket, Markdown, editor, and preview conversion path', () => {
+    for (const color of ['#abc', '#2471a3']) {
+        const source = `[span style="color:${color}"]blue[/span]`;
+        assert.equal(Markup.astToBracket(Markup.parseBracket(source)), source);
+        assert.equal(Markup.bracketToMarkdown(source), source);
+        assert.equal(Markup.markdownToBracket(source), source);
+        assert.equal(Markup.domToBracket(body(Markup.bracketToEditorHtml(source))), source);
+        assert.ok(Markup.bracketToPreviewHtml(source)
+            .includes(`<span style="color:${color}">blue</span>`));
+    }
+    assert.equal(Markup.astToBracket(Markup.parseBracket('[font color="#ABC"]blue[/font]')),
+        '[span style="color:#abc"]blue[/span]');
+});
+
 test('headings, quotes, tables, preformatted text, rules, and images round-trip', () => {
     const source = [
         '[h2]Heading[/h2]',
@@ -291,6 +305,46 @@ test('style-based formatting from paste (span font-weight etc.) is recognized', 
         + '<span style="text-decoration:underline">lined</span></div>'
     );
     assert.equal(Markup.domToBracket(root), '[b]heavy[/b] and [i]slanted[/i] and [u]lined[/u]');
+});
+
+test('pasted color reads only the last raw declaration and fails closed', () => {
+    assert.equal(Markup.domToBracket(body(
+        '<p><span style="background:gold; color:#ABC; font-weight:700">safe</span></p>'
+    )), '[b][span style="color:#abc"]safe[/span][/b]');
+    assert.equal(Markup.domToBracket(body(
+        '<p><span style="color:red; color:#2471A3">last</span></p>'
+    )), '[span style="color:#2471a3"]last[/span]');
+
+    for (const style of [
+        'color:red;color:#12345',
+        'color:red;color:rgb(1, 2, 3)',
+        'color:hsl(0, 100%, 50%)',
+        'color:var(--trip-color)',
+        'color:url(https://example.com/color)',
+        'color:"red"',
+        'background-color:#abc'
+    ]) {
+        const root = body('<p><span>plain</span></p>');
+        root.querySelector('span').setAttribute('style', style);
+        assert.equal(Markup.domToBracket(root), 'plain', `style should stay inert: ${style}`);
+    }
+});
+
+test('Rich serialization revalidates the preserved token instead of CSSOM rgb', () => {
+    assert.equal(Markup.domToBracket(body(
+        '<p><span style="color:rgb(36, 113, 163)" data-bpb-report-color="#2471a3">blue</span></p>'
+    )), '[span style="color:#2471a3"]blue[/span]');
+    assert.equal(Markup.domToBracket(body(
+        '<p><span style="color:red" data-bpb-report-color="rgb(255, 0, 0)">plain</span></p>'
+    )), 'plain');
+});
+
+test('unsupported hex lengths stay inert in bracket and Markdown input', () => {
+    for (const color of ['#abcd', '#12345', '#1234567', '#2471a380']) {
+        const source = `[span style="color:${color}"]plain[/span]`;
+        assert.doesNotMatch(Markup.astToBracket(Markup.parseBracket(source)), /\[span\b/);
+        assert.doesNotMatch(Markup.markdownToBracket(source), /\[span\b/);
+    }
 });
 
 test('unsafe DOM is dropped while supported table structure is retained', () => {

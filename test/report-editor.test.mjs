@@ -253,6 +253,34 @@ test('more formats and named text colors serialize through the allowlist', async
         '[span style="color:steelblue"][mark]peak[/mark][/span]');
 });
 
+test('an unrelated rich edit preserves an existing hex text color', async () => {
+    const source = 'Under [span style="color:#2471a3"]blue[/span] skies.';
+    const dom = await loadEditor({ report: source });
+    await editorReady(dom);
+    const rich = editors(dom).rich;
+    const colored = rich.view.dom.querySelector('span[style]');
+    assert.equal(colored?.getAttribute('data-bpb-report-color'), '#2471a3');
+
+    rich.chain().focus('end').insertContent(' Clear weather.').run();
+    await waitFor(dom, () => dom.window.document.getElementById('JournalText').value.endsWith('Clear weather.'));
+    assert.equal(dom.window.document.getElementById('JournalText').value,
+        `${source} Clear weather.`);
+});
+
+test('an unrelated Markdown edit preserves hex color in source, form, and preview', async () => {
+    const source = 'Under [span style="color:#2471a3"]blue[/span] skies.';
+    const dom = await loadEditor({ report: source });
+    const ui = await editorReady(dom);
+    const doc = dom.window.document;
+
+    modeButton(doc, 'Markdown').click();
+    assert.equal(editors(dom).markdown.getValue(), source);
+    typeMarkdown(dom, `${source} Clear weather.`);
+    await waitFor(dom, () => doc.getElementById('JournalText').value.endsWith('Clear weather.'));
+    assert.equal(doc.getElementById('JournalText').value, `${source} Clear weather.`);
+    assert.equal(ui.querySelector('.bpb-re-preview span')?.getAttribute('style'), 'color:#2471a3');
+});
+
 test('the image popover validates the source and inserts alt text', async () => {
     const dom = await loadEditor();
     const ui = await editorReady(dom);

@@ -367,6 +367,59 @@ try {
             });
             check(nativeHidden, 'the native textarea should be hidden but still inside the form');
 
+            // Existing hex colors must survive the real TipTap/DOM boundary.
+            // CSSOM exposes rgb(), so assert the raw color token that the
+            // converter is required to preserve.
+            const hexSource = 'Under [span style="color:#2471a3"]blue[/span] skies.';
+            await editorPage.locator('#bpb-report-editor').getByRole('button', {
+                name: 'Plain', exact: true
+            }).click();
+            await editorPage.locator('#JournalText').fill(hexSource);
+            await editorPage.locator('#bpb-report-editor').getByRole('button', {
+                name: 'Rich text', exact: true
+            }).click();
+            const richHex = await editorPage.evaluate(() => {
+                const span = document.querySelector('.bpb-re-surface span[style]');
+                return span && {
+                    text: span.textContent,
+                    style: span.getAttribute('style'),
+                    token: span.getAttribute('data-bpb-report-color')
+                };
+            });
+            check(richHex?.text === 'blue' && richHex?.token === '#2471a3',
+                `Rich mode did not preserve the raw hex color (state=${JSON.stringify(richHex)})`);
+
+            await editorPage.locator('.bpb-re-surface').click();
+            await editorPage.keyboard.press('End');
+            await editorPage.keyboard.type(' Clear weather.');
+            const richHexSynced = await editorPage.waitForFunction(expected =>
+                document.getElementById('JournalText').value === `${expected} Clear weather.`,
+            hexSource, { timeout: 5000 }).then(() => true).catch(() => false);
+            check(richHexSynced, `an unrelated Rich edit lost the hex color (value=${
+                JSON.stringify(await editorPage.evaluate(() => document.getElementById('JournalText').value))})`);
+
+            await editorPage.locator('#bpb-report-editor').getByRole('button', {
+                name: 'Markdown', exact: true
+            }).click();
+            const markdownHex = await editorPage.evaluate(() => ({
+                source: [...document.querySelectorAll('.bpb-re-mdpane .cm-line')]
+                    .map(line => line.textContent).join('\n'),
+                previewStyle: document.querySelector('.bpb-re-preview span[style]')?.getAttribute('style')
+            }));
+            check(markdownHex.source === `${hexSource} Clear weather.`
+                && /#2471a3/i.test(markdownHex.previewStyle || ''),
+            `Markdown mode lost the hex source or preview color (state=${JSON.stringify(markdownHex)})`);
+
+            // Reset through Plain so the existing real-typing scenario still
+            // starts from the fixture's empty report and invalidates mdSource.
+            await editorPage.locator('#bpb-report-editor').getByRole('button', {
+                name: 'Plain', exact: true
+            }).click();
+            await editorPage.locator('#JournalText').fill('');
+            await editorPage.locator('#bpb-report-editor').getByRole('button', {
+                name: 'Rich text', exact: true
+            }).click();
+
             await editorPage.locator('.bpb-re-surface').click();
             await editorPage.keyboard.type('Summit day was ');
             await editorPage.keyboard.press(`${modifier}+b`);
@@ -537,5 +590,5 @@ console.log('  - the trip-report editor mounts on the captured ascent form; real
 console.log('    Ctrl/Cmd+B, and the "1. " input rule sync bracket markup into JournalText');
 console.log('    with live toolbar states; markdown mode shows a CodeMirror source beside a');
 console.log('    live preview that renders headings, quotes, tables, strike, code, and rules;');
-console.log('    the toolbar inserts and grows tables; and a reloaded page offers and');
-console.log('    restores the draft');
+console.log('    hex colors survive Rich edits and Markdown preview; the toolbar inserts');
+console.log('    and grows tables; and a reloaded page offers and restores the draft');

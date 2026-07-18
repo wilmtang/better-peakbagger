@@ -14,7 +14,7 @@
 // editor exclusively through richCommands/richState so the TipTap API surface
 // stays contained in one file.
 
-import { Editor, Extension, Mark } from '@tiptap/core';
+import { Editor, Extension, Mark, getStyleProperty } from '@tiptap/core';
 import StarterKit from '@tiptap/starter-kit';
 import { Table, TableRow, TableHeader, TableCell } from '@tiptap/extension-table';
 import Image from '@tiptap/extension-image';
@@ -23,6 +23,31 @@ import Superscript from '@tiptap/extension-superscript';
 import Highlight from '@tiptap/extension-highlight';
 import { TextStyle, Color } from '@tiptap/extension-text-style';
 import { Placeholder } from '@tiptap/extensions';
+
+// TipTap parses a raw hex token correctly, but its DOM serializer can still
+// canonicalize the rendered style to rgb(). Carry the parsed token in an
+// extension-owned data attribute so report-markup.js can revalidate and
+// serialize the original accepted form after a Rich edit.
+const ReportColor = Color.extend({
+    addGlobalAttributes() {
+        return [{
+            types: this.options.types,
+            attributes: {
+                color: {
+                    default: null,
+                    parseHTML: element => {
+                        const value = getStyleProperty(element, 'color') ?? element.style.color;
+                        return value?.replace(/['"]+/g, '');
+                    },
+                    renderHTML: attributes => attributes.color ? {
+                        style: `color: ${attributes.color}`,
+                        'data-bpb-report-color': attributes.color
+                    } : {}
+                }
+            }
+        }];
+    }
+});
 
 // Peakbagger renders [small] and [q]; TipTap has no stock mark for either.
 const Small = Mark.create({
@@ -70,7 +95,7 @@ export const createRichEditor = ({ element, placeholder, ariaLabel, onUpdate, on
             Table.configure({ resizable: false }), TableRow, TableHeader, TableCell,
             ReportImage.configure({ inline: true }),
             Subscript, Superscript, Highlight,
-            TextStyle, Color,
+            TextStyle, ReportColor,
             Small, InlineQuote,
             Placeholder.configure({ placeholder }),
             shortcutExtension(shortcuts)

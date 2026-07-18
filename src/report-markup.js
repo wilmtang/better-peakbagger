@@ -93,7 +93,7 @@
         if (typeof raw !== 'string') return null;
         const color = raw.trim().toLowerCase();
         const named = /^[a-z]{3,}$/.test(color) && color.length <= 20;
-        return /^(?:#[0-9a-f]{3,8})$/.test(color) || named ? color : null;
+        return /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/.test(color) || named ? color : null;
     };
 
     const sanitizeDimension = raw => {
@@ -263,10 +263,30 @@
         return out.filter(node => node.t !== 'text' || node.text);
     };
 
+    // Preserve an accepted color token instead of reading it through CSSOM,
+    // which canonicalizes hex into rgb(). This is intentionally not a general
+    // style parser: sanitizeColor rejects every value form that could contain
+    // a declaration separator, function, quote, escape, or comment.
+    const rawInlineColor = element => {
+        const style = element.getAttribute('style');
+        if (!style) return null;
+        const declarations = style.split(';');
+        for (let index = declarations.length - 1; index >= 0; index -= 1) {
+            const declaration = declarations[index];
+            const colon = declaration.indexOf(':');
+            if (colon < 0) continue;
+            if (declaration.slice(0, colon).trim().toLowerCase() === 'color') {
+                return declaration.slice(colon + 1).trim();
+            }
+        }
+        return null;
+    };
+
     const colorFromElement = element => {
+        const preserved = element.getAttribute('data-bpb-report-color');
         const raw = element.tagName === 'FONT'
             ? element.getAttribute('color')
-            : element.style && element.style.color;
+            : preserved !== null ? preserved : rawInlineColor(element);
         return sanitizeColor(raw);
     };
 
