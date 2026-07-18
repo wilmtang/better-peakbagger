@@ -173,7 +173,9 @@ user keystrokes ↔ JournalText bracket string → Peakbagger form submission
 
 That makes Plain mode the verbatim escape hatch, including for markup the Rich
 and Markdown converters do not support. It also means Plain mode provides none
-of their safety filtering.
+of their safety filtering. Editing the native textarea invalidates the exact
+Markdown-source sidecar, so a later switch to Markdown regenerates its source
+from the current `JournalText` value.
 
 ## What sanitizes, and what only normalizes
 
@@ -216,7 +218,7 @@ Important normalization examples include:
 | Markdown → Rich → Markdown, with no Rich edit | Nothing is rewritten by Rich | The exact `mdSource` string is restored |
 | Rich or Markdown → Plain | Dirty outgoing editor is flushed first | The actual `JournalText` string |
 | Plain → Rich | Nothing is flushed by Plain | Rich document regenerated from the current `JournalText` string |
-| Plain → Markdown | Nothing is flushed by Plain | Normally Markdown regenerated from `JournalText`; see the stale-sidecar defect below |
+| Plain → Markdown | Nothing is flushed by Plain; Plain input has already cleared `mdSource` | Markdown regenerated from the current `JournalText` |
 
 Dirty flags are deliberate. Merely opening Rich or Markdown may normalize or
 omit unsupported content in that view, but does not overwrite the server value.
@@ -225,7 +227,7 @@ normalizations become the new `JournalText`. Before Preview, Save, any ASP.NET
 postback, or page exit, a pending dirty edit is flushed synchronously rather
 than waiting for the typing debounce.
 
-## Known conversion defects
+## Known conversion defect
 
 ### Hex colors are lost outside Plain mode
 
@@ -245,21 +247,6 @@ Merely visiting Rich or Markdown still leaves the original `JournalText`
 untouched. Making any edit in either mode serializes the whole reduced document
 and makes the lost color permanent. This is a converter invariant bug, not a
 loss of the semantic color by the browser.
-
-### Plain edits can leave the Markdown sidecar stale
-
-`state.mdSource` deliberately preserves exact Markdown across a no-op visit to
-Rich mode. Plain mode, however, currently has no input listener that clears
-that sidecar. This sequence is unsafe:
-
-1. Visit Markdown mode, which creates or restores `state.mdSource`.
-2. Switch to Plain and edit `JournalText` directly.
-3. Return to Markdown.
-
-The Markdown pane can reuse the stale sidecar instead of regenerating from the
-new Plain value. A later Markdown edit can then overwrite the Plain edit. Until
-the implementation invalidates `mdSource` on Plain input, do not mix Plain
-edits with Markdown in the same page session.
 
 ## Supported Markdown
 
@@ -375,15 +362,15 @@ shows the exact bracket source.
 
 ## Regression boundaries
 
-- The two known conversion defects above describe current behavior, not the
-  intended contract. Neither has focused regression coverage yet; each fix
-  should add a mode-level test before removing its warning from this document.
+- The known conversion defect above describes current behavior, not the
+  intended contract, and does not yet have focused regression coverage.
 - `test/report-markup.test.mjs` pins Markdown tokens, bracket aliases, DOM
   import, canonical output, unsafe-input neutralization, and round trips.
 - `test/report-editor.test.mjs` pins the native-textarea source of truth,
   untouched-value preservation, expanded rich DOM, toolbar active states,
   image-source validation, undo isolation across mode switches, mode
-  switching, local drafts, and pre-postback flushing, driving the TipTap and
+  switching (including invalidation of stale Markdown source after a Plain
+  edit), local drafts, and pre-postback flushing, driving the TipTap and
   CodeMirror instances through the mount's test handle.
 - `test/manifest-capture.test.mjs` pins the vendored parser before the converter
   and editor in the real content-script list.

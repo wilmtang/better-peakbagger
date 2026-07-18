@@ -289,6 +289,23 @@ test('plain mode is the untouched native textarea, hints restored', async () => 
     assert.equal(hints.classList.contains('bpb-re-hidden'), false);
 });
 
+test('editing Plain invalidates the exact Markdown sidecar', async () => {
+    const dom = await loadEditor({ report: 'Original [b]report[/b].' });
+    await editorReady(dom);
+    const doc = dom.window.document;
+
+    modeButton(doc, 'Markdown').click();
+    assert.equal(editors(dom).markdown.getValue(), 'Original **report**.');
+
+    modeButton(doc, 'Plain').click();
+    const textarea = doc.getElementById('JournalText');
+    textarea.value = 'Replacement [i]source[/i].';
+    textarea.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+
+    modeButton(doc, 'Markdown').click();
+    assert.equal(editors(dom).markdown.getValue(), 'Replacement *source*.');
+});
+
 test('visiting Markdown mode does not rewrite an untouched server report', async () => {
     const report = '[iframe src="https://example.com"][/iframe]';
     const dom = await loadEditor({ report });

@@ -294,6 +294,9 @@ import { createMarkdownEditor } from './report-md-editor.js';
     form.addEventListener('submit', flushSync, true);
     form.addEventListener('click', flushSync, true);
     form.addEventListener('change', flushSync, true);
+    textarea.addEventListener('input', () => {
+        if (state.mode === 'plain') state.mdSource = null;
+    });
     globalThis.addEventListener('pagehide', () => { flushSync(); void saveDraftNow(); });
 
     // The source pane drives the preview's scroll position, proportionally.
