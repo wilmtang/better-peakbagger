@@ -60,11 +60,11 @@ exception is an exact Markdown-source sidecar described below.
 One report can therefore have several equivalent spellings:
 
 ```text
-Markdown source    We climbed **Baker** under [span style="color:steelblue"]blue[/span] skies.
-Rich getHTML()     <p>We climbed <strong>Baker</strong> under <span style="color: steelblue;">blue</span> skies.</p>
-Report AST         paragraph(text, bold(text), text, color("steelblue", text), text)
-Saved JournalText  We climbed [b]Baker[/b] under [span style="color:steelblue"]blue[/span] skies.
-Preview HTML       <p>We climbed <b>Baker</b> under <span style="color:steelblue">blue</span> skies.</p>
+Markdown source    We climbed **Baker** under [span style="color:#2471a3"]blue[/span] skies.
+Rich getHTML()     <p>We climbed <strong>Baker</strong> under <span style="color: rgb(36, 113, 163);" data-bpb-report-color="#2471a3">blue</span> skies.</p>
+Report AST         paragraph(text, bold(text), text, color("#2471a3", text), text)
+Saved JournalText  We climbed [b]Baker[/b] under [span style="color:#2471a3"]blue[/span] skies.
+Preview HTML       <p>We climbed <b>Baker</b> under <span style="color:#2471a3">blue</span> skies.</p>
 ```
 
 These values are semantically related, not byte-for-byte mirrors. Only
@@ -119,7 +119,10 @@ TipTap ProseMirror document
 The schema is an early structural filter, but it is not trusted as the final
 security boundary. The DOM-to-AST conversion validates the content again. A
 Rich edit clears the Markdown-source sidecar because that old Markdown no
-longer describes the document.
+longer describes the document. TipTap may serialize a hex `style` value through
+CSSOM as `rgb(…)`, so the Rich schema also carries its originally parsed color
+token in `data-bpb-report-color`. The DOM converter revalidates that token; the
+internal attribute never reaches `JournalText` or preview HTML.
 
 ### Loading Markdown mode
 
@@ -185,12 +188,12 @@ canonical spelling or structure. Several components do only one of those jobs:
 
 | Component | Sanitizes? | Normalizes? | What it actually does |
 | --- | --- | --- | --- |
-| TipTap schema | Partial, structural first pass | Yes | Refuses nodes and marks its schema cannot represent; turns editing operations and pasted content into a ProseMirror document |
+| TipTap schema | Partial, structural first pass | Yes | Refuses nodes and marks its schema cannot represent; turns editing operations and pasted content into a ProseMirror document, carrying the parsed color token across CSSOM serialization |
 | CodeMirror | No | No | Stores a string, highlights syntax, continues lists, and manages Markdown undo history |
 | Marked lexer | No | No | Tokenizes GFM syntax; Better Peakbagger, not Marked, decides which token types enter the AST |
 | Markdown-token-to-AST mapper | Yes | Yes | Accepts known token types, validates links and images, sends bracket extensions through the bracket parser, and keeps raw HTML inert as visible text |
 | Bracket-source parser | Yes | Yes | Requires balanced allowlisted tags, validates attributes, neutralizes unsupported tag-like source, and builds inert safe HTML |
-| DOM-to-AST parser | Yes, authoritative for DOM input | Yes | Drops dangerous DOM nodes, unwraps unsupported elements to safe visible content where appropriate, and revalidates links, image sources, dimensions, and colors |
+| DOM-to-AST parser | Yes, authoritative for DOM input | Yes | Drops dangerous DOM nodes, unwraps unsupported elements to safe visible content where appropriate, and revalidates links, image sources, dimensions, raw inline colors, and TipTap-preserved color tokens |
 | AST-to-bracket printer | No new validation | Yes | Serializes the already-validated AST, emitting canonical Peakbagger tags and escaping ordinary text that resembles HTML or bracket tags |
 | AST-to-HTML printer | No new validation | Yes | Serializes the already-validated AST into allowlisted preview/editor elements with escaped text and attributes |
 | AST-to-Markdown printer | No new validation | Yes | Serializes the already-validated AST into canonical Markdown plus bracket extensions for features with no standard Markdown form |
@@ -227,36 +230,25 @@ normalizations become the new `JournalText`. Before Preview, Save, any ASP.NET
 postback, or page exit, a pending dirty edit is flushed synchronously rather
 than waiting for the typing debounce.
 
-## Known issues
+## Color conversion boundary
 
-### Hex colors are lost outside Plain mode
+Color conversion follows the raw-token decision recorded in the archived
+[color-conversion spike](archive/trip-report-color-conversion-spike.md). For
+ordinary DOM input, the converter reads the last raw inline `color` declaration
+instead of `element.style.color`, then validates the token. For Rich output,
+TipTap's internal `data-bpb-report-color` attribute preserves the parsed token
+across its CSSOM-backed DOM serialization; the converter applies the same
+validation again before constructing a color AST node.
 
-The bracket parser initially accepts a color such as `#2471a3`, creates a
-detached `<span>`, and later reads the parsed declaration through
-`element.style.color`. CSSOM returns the equivalent `rgb(36, 113, 163)`.
-`sanitizeColor` accepts hex literals and short alphabetic keywords, but not the
-`rgb(…)` spelling, so the second validation drops the color wrapper and keeps
-its text.
+Rich and Markdown accept three- and six-digit hex plus alphabetic tokens from
+three through twenty characters. Accepted values are lowercased. An invalid
+final declaration removes the color rather than falling back to CSSOM or an
+earlier declaration. Four- and eight-digit alpha hex, five- and seven-digit
+malformed hex, `rgb()`/`rgba()`, HSL, variables, URLs, quotes, and arbitrary CSS
+remain inert or unstyled. Plain mode continues to preserve every spelling
+verbatim because it performs no conversion.
 
-This affects both Rich and Markdown. Markdown bracket extensions pass through
-the same detached-DOM parser; CodeMirror does not keep them away from it. The
-toolbar therefore uses named colors such as `steelblue`, which survive the
-round trip. Plain mode preserves hex markup because it invokes no converter.
-
-Merely visiting Rich or Markdown still leaves the original `JournalText`
-untouched. Making any edit in either mode serializes the whole reduced document
-and makes the lost color permanent. This is a converter invariant bug, not a
-loss of the semantic color by the browser.
-
-The accepted repair is raw-token preservation, as recorded in the
-[color-conversion spike](archive/trip-report-color-conversion-spike.md). It is
-not implemented yet. The converter should use a private, color-specific helper
-that reads the last raw inline `color` declaration, then validates that value
-against the existing narrow contract. An invalid final declaration must remove
-the color rather than fall back to CSSOM or an earlier declaration. Initially,
-Rich and Markdown should accept only three- and six-digit hex plus the existing
-short alphabetic tokens; alpha hex, functional colors, variables, and arbitrary
-CSS remain out of scope until separately verified against Peakbagger.
+## Known issue
 
 ### Lossy imports are not surfaced before the first edit
 
@@ -308,8 +300,8 @@ H[sub]2[/sub]O and x[sup]2[/sup]
 ```
 
 The extension accepts only a single safe `color` declaration on `span` (or the
-equivalent legacy `[font color="…"]` on import). It does not accept arbitrary
-CSS.
+equivalent legacy `[font color="…"]` on import): three- or six-digit hex, or a
+short alphabetic token. It does not accept arbitrary CSS.
 
 ## Supported Peakbagger markup
 
@@ -389,27 +381,27 @@ shows the exact bracket source.
 
 ## Regression boundaries
 
-- The hex-color defect above describes current behavior, not the intended
-  contract, and does not yet have focused regression coverage.
 - Existing tests pin unsupported-markup neutralization after an edit, but there
   is no parser diagnostic or mode-level guardrail for a lossy import. A future
   guardrail must distinguish actual dropped or neutralized source from allowed
   canonical normalization.
 - `test/report-markup.test.mjs` pins Markdown tokens, bracket aliases, DOM
-  import, canonical output, unsafe-input neutralization, and round trips.
+  import, canonical output, unsafe-input neutralization, raw color validation,
+  TipTap color-token revalidation, and round trips.
 - `test/report-editor.test.mjs` pins the native-textarea source of truth,
   untouched-value preservation, expanded rich DOM, toolbar active states,
-  image-source validation, undo isolation across mode switches, mode
-  switching (including invalidation of stale Markdown source after a Plain
-  edit), local drafts, and pre-postback flushing, driving the TipTap and
-  CodeMirror instances through the mount's test handle.
+  image-source validation, hex-color preservation after Rich and Markdown
+  edits, undo isolation across mode switches, mode switching (including
+  invalidation of stale Markdown source after a Plain edit), local drafts, and
+  pre-postback flushing, driving the TipTap and CodeMirror instances through
+  the mount's test handle.
 - `test/manifest-capture.test.mjs` pins the vendored parser before the converter
   and editor in the real content-script list.
 - `npm run verify:extension` loads the unpacked extension in hidden Chrome for
   Testing and exercises real typing, Ctrl/Cmd+B, the `1. ` input rule, live
   toolbar states, the CodeMirror source pane with its live split preview,
-  toolbar table insertion and growth, and draft restoration against the masked
-  ascent form fixture.
+  hex-color preservation across Rich and Markdown, toolbar table insertion and
+  growth, and draft restoration against the masked ascent form fixture.
 
 ## Peakbagger render test
 ```
