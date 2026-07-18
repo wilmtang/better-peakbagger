@@ -69,6 +69,7 @@ export function entrySources(entry) {
 export const COPY_FILES = [
     ['ACKNOWLEDGEMENTS.md', 'ACKNOWLEDGEMENTS.md'],
     ['LICENSE', 'LICENSE'],
+    ['PRIVACY.md', 'PRIVACY.md'],
     ['README.md', 'README.md'],
     ['manifest.json', 'manifest.json'],
     ['src/report-editor.css', 'css/report-editor.css'],
