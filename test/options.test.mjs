@@ -102,7 +102,7 @@ test('settings are grouped by the surface they affect', async () => {
     assert.ok(general.querySelector('#theme'));
     assert.ok(general.querySelector('#enable-3d-map'));
     assert.equal(general.querySelector('#units'), null);
-    for (const id of ['retain-waypoints', 'fill-trip-info', 'fill-wilderness-nights']) {
+    for (const id of ['retain-waypoints', 'fill-ascent-details', 'fill-trip-info', 'fill-wilderness-nights']) {
         assert.ok(capture.querySelector(`#${id}`), `${id} should belong to Activity capture`);
     }
     for (const id of ['units', 'chart-series', 'map-route-color', 'remember-map-layer', 'map-viewport-width', 'terrain-cache-limit']) {
@@ -139,11 +139,14 @@ test('experimental 3D map is off by default and discloses external DEM requests'
 test('activity capture settings have documented defaults and persist changes', async () => {
     const dom = await loadOptions({});
     assert.equal(el(dom, 'retain-waypoints').checked, true);
+    assert.equal(el(dom, 'fill-ascent-details').checked, true);
     assert.equal(el(dom, 'fill-trip-info').checked, true);
     assert.equal(el(dom, 'fill-wilderness-nights').checked, true);
 
     el(dom, 'retain-waypoints').checked = false;
     el(dom, 'retain-waypoints').dispatchEvent(new dom.window.Event('change'));
+    el(dom, 'fill-ascent-details').checked = false;
+    el(dom, 'fill-ascent-details').dispatchEvent(new dom.window.Event('change'));
     el(dom, 'fill-trip-info').checked = false;
     el(dom, 'fill-trip-info').dispatchEvent(new dom.window.Event('change'));
     el(dom, 'fill-wilderness-nights').checked = false;
@@ -151,6 +154,7 @@ test('activity capture settings have documented defaults and persist changes', a
     await new Promise(r => dom.window.setTimeout(r, 20));
 
     assert.equal(dom.chrome._store.bpbSettings.retainWaypoints, false);
+    assert.equal(dom.chrome._store.bpbSettings.fillAscentDetails, false);
     assert.equal(dom.chrome._store.bpbSettings.fillTripInfo, false);
     assert.equal(dom.chrome._store.bpbSettings.fillWildernessNights, false);
 });

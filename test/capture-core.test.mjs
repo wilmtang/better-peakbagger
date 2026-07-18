@@ -209,6 +209,61 @@ test('nights out uses the activity-local calendar span and stays unknown without
     assert.equal(Core.calculateNightsOut([[point(0, 0), point(0, 1)]], {}), null);
 });
 
+test('day statistics use activity-local dates and preserve the cross-midnight edge once', () => {
+    const start = Date.UTC(2026, 6, 1, 6, 0);
+    const segments = [[
+        point(0, 0, 100, start),
+        point(0, 0.001, 130, start + 30 * 60000),
+        point(0, 0.002, 120, start + 90 * 60000),
+        point(0, 0.003, 160, start + 120 * 60000)
+    ]];
+
+    const stats = Core.calculateDayStats(segments, { utcOffsetMinutes: -420 });
+
+    assert.deepEqual(stats.map(row => row.date), ['2026-06-30', '2026-07-01']);
+    assert.equal(stats[0].gainM, 30);
+    assert.equal(stats[0].lossM, 0);
+    assert.equal(stats[0].maxElevationM, 130);
+    assert.equal(stats[0].campElevationM, 130);
+    assert.equal(stats[1].gainM, 40);
+    assert.equal(stats[1].lossM, 10);
+    assert.equal(stats[1].maxElevationM, 160);
+    assert.equal(stats[1].campElevationM, null);
+    assert.ok(Math.abs(stats.reduce((sum, row) => sum + row.distanceM, 0)
+        - Core.distanceM(segments[0][0], segments[0][1])
+        - Core.distanceM(segments[0][1], segments[0][2])
+        - Core.distanceM(segments[0][2], segments[0][3])) < 0.001);
+});
+
+test('day statistics stay unavailable when any retained point lacks a timestamp', () => {
+    const start = Date.UTC(2026, 6, 1);
+    assert.deepEqual(Core.calculateDayStats([[
+        point(0, 0, 100, start),
+        point(0, 0.001, 110, null),
+        point(0, 0.002, 120, start + 60000)
+    ]], { utcOffsetMinutes: 0 }), []);
+});
+
+test('day statistics leave elevation fields unknown when the track has no elevation', () => {
+    const start = Date.UTC(2026, 6, 1);
+    const [stats] = Core.calculateDayStats([[
+        point(0, 0, null, start),
+        point(0, 0.001, null, start + 60000)
+    ]], { utcOffsetMinutes: 0 });
+    assert.equal(stats.gainM, null);
+    assert.equal(stats.lossM, null);
+    assert.equal(stats.maxElevationM, null);
+    assert.equal(stats.campElevationM, null);
+    assert.ok(stats.distanceM > 0);
+});
+
+test('day statistics reject spans beyond Peakbagger’s supported row count', () => {
+    assert.deepEqual(Core.calculateDayStats([[
+        point(0, 0, 100, Date.UTC(2026, 0, 1)),
+        point(0, 0.001, 100, Date.UTC(2026, 4, 1))
+    ]], { utcOffsetMinutes: 0 }), []);
+});
+
 test('same-day draft suffixes follow encounter order without mutating matches', () => {
     const matches = [
         { id: 1, draftFields: { date: '2026-07-01', upDistanceM: 300 } },

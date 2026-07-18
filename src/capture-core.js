@@ -729,6 +729,92 @@ import { gpxMetrics as Metrics } from './gpx-metrics.js';
         return Math.max(0, lastDay - firstDay);
     };
 
+    const calculateDayStats = (segments, providerMeta = {}) => {
+        const firstTime = firstFinite(segments, 'time');
+        const lastTime = firstFinite(segments, 'time', true);
+        const points = (segments || []).flat();
+        if (!Number.isFinite(firstTime) || !Number.isFinite(lastTime) || lastTime < firstTime
+            || !points.length || points.some(point => !Number.isFinite(point.time))) return [];
+
+        const dayMs = 24 * 60 * 60 * 1000;
+        const offsetMs = timezoneOffsetMinutes(providerMeta, firstTime) * 60 * 1000;
+        const firstDay = Math.floor((firstTime + offsetMs) / dayMs);
+        const lastDay = Math.floor((lastTime + offsetMs) / dayMs);
+        // Peakbagger's Wilderness Nights selector currently supports 0–100.
+        // Refuse a pathological timestamp span rather than building an
+        // unbounded payload for rows the page cannot expose.
+        if (lastDay - firstDay + 1 > 101) return [];
+        const pathsByDay = new Map();
+        const appendPath = (day, path) => {
+            if (!path.length) return;
+            if (!pathsByDay.has(day)) pathsByDay.set(day, []);
+            pathsByDay.get(day).push(path);
+        };
+
+        for (const segment of segments) {
+            let currentDay = null;
+            let currentPath = [];
+            let previous = null;
+            for (const point of segment) {
+                const day = Math.floor((point.time + offsetMs) / dayMs);
+                if (currentDay === null) {
+                    currentDay = day;
+                    currentPath = [point];
+                } else if (day !== currentDay) {
+                    appendPath(currentDay, currentPath);
+                    currentDay = day;
+                    // Preserve the cross-midnight edge exactly once by assigning
+                    // it to the new day. The prior point is also the best known
+                    // start/camp position when the recorder was idle overnight.
+                    currentPath = previous ? [previous, point] : [point];
+                } else {
+                    currentPath.push(point);
+                }
+                previous = point;
+            }
+            if (currentDay !== null) appendPath(currentDay, currentPath);
+        }
+
+        const pathDistanceM = path => path.reduce((sum, point, index) =>
+            index ? sum + distanceM(path[index - 1], point) : sum, 0);
+        const pad = value => String(value).padStart(2, '0');
+        const formatDay = day => {
+            const date = new Date(day * dayMs);
+            return `${date.getUTCFullYear()}-${pad(date.getUTCMonth() + 1)}-${pad(date.getUTCDate())}`;
+        };
+
+        const result = [];
+        for (let day = firstDay; day <= lastDay; day++) {
+            const paths = pathsByDay.get(day) || [];
+            const elevations = paths.flatMap(path => path.map(point => point.ele).filter(Number.isFinite));
+            const pathGains = paths.flatMap(path => {
+                const values = path.map(point => point.ele).filter(Number.isFinite);
+                if (!values.length) return [];
+                return [calculateConfirmedGainM(values)];
+            });
+            const startElevationM = firstFinite(paths, 'ele');
+            const endElevationM = firstFinite(paths, 'ele', true);
+            // The confirmed-gain filter is directional, so reversing samples
+            // does not produce a symmetric loss. Enforce the day's elevation
+            // balance across sanitized recording gaps while keeping the sum of
+            // confirmed gains as its lower bound.
+            const recordedGainM = pathGains.reduce((sum, gainM) => sum + gainM, 0);
+            const gainM = elevations.length
+                ? Math.max(recordedGainM, endElevationM - startElevationM) : null;
+            const lossM = elevations.length ? Math.max(0, gainM + startElevationM - endElevationM) : null;
+            result.push({
+                date: formatDay(day),
+                gainM,
+                lossM,
+                distanceM: paths.reduce((sum, path) => sum + pathDistanceM(path), 0),
+                maxElevationM: elevations.length
+                    ? elevations.reduce((maximum, elevation) => Math.max(maximum, elevation), -Infinity) : null,
+                campElevationM: day < lastDay ? firstFinite(paths, 'ele', true) : null
+            });
+        }
+        return result;
+    };
+
     const calculateDraftFields = (segments, match, providerMeta = {}) => {
         const trackIndex = buildTrackIndex(segments);
         const encounter = match.encounter;
@@ -819,6 +905,7 @@ import { gpxMetrics as Metrics } from './gpx-metrics.js';
         serializeUploadGpx,
         calculateDraftFields,
         calculateNightsOut,
+        calculateDayStats,
         assignDraftSuffixes,
         publicMatch,
         formatEncounterDateTime

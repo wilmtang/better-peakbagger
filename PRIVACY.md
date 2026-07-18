@@ -63,8 +63,9 @@ requests for the viewed area only after the user enables that feature.
 The serializer excludes heart rate, cadence, power, temperature, device fields,
 descriptions, routes, waypoint elevation/time/symbols, and extension elements.
 The activity or track name is retained only for enabled multi-peak Trip Info.
-Derived form values such as date, ascent times, distance, gain, and nights out
-remain in the prepared draft until it expires or is discarded.
+Derived form values such as date, ascent times, distance, gain, per-day
+statistics, and nights out remain in the prepared draft until it expires or is
+discarded.
 
 ## Peakbagger page features
 

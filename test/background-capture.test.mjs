@@ -138,6 +138,7 @@ test('background capture persists a private job, opens grouped drafts, and previ
     assert.equal(ready.matches[0].classification, 'strong');
     assert.equal(ready.matches[0].selected, true);
     assert.equal(ready.uploadGpx, undefined, 'GPX must not be exposed to the popup response');
+    assert.equal(ready.dayStats, undefined, 'day-level draft metrics must not be exposed to the popup response');
     assert.equal(ready.hasCachedGpx, true);
 
     const storedJob = harness.values.bpbCaptureJobs['1'];
@@ -159,6 +160,7 @@ test('background capture persists a private job, opens grouped drafts, and previ
     const apply = await harness.send({ type: 'DRAFT_READY', pid: '7', cid: '77' }, { tab: { id: 100 } });
     assert.equal(apply.action, 'apply');
     assert.equal(apply.fields.suffix, '');
+    assert.equal(apply.fields.fillAscentDetails, true);
     assert.match(apply.gpx, /<gpx/);
     assert.equal(await harness.send({ type: 'DRAFT_PREVIEW_STARTED', jobId: apply.jobId, pid: 7, cid: 77 }, { tab: { id: 100 } }).then(value => value.ok), true);
 
@@ -369,14 +371,26 @@ test('retained waypoints share the 3,000-point budget and multi-peak drafts rece
         previewResult: { state: 'success', message: 'GPX file successfully uploaded.' }
     }, { tab: { id: 100 } });
     assert.equal(confirmed.action, 'banner');
+    assert.equal(confirmed.dayStatsPending, true);
+    assert.deepEqual(confirmed.dayStats.map(row => row.date), ['2026-07-01', '2026-07-02', '2026-07-03']);
+    assert.equal(await harness.send({
+        type: 'DRAFT_DAY_STATS_APPLIED', jobId: first.jobId, pid: 7, cid: 77
+    }, { tab: { id: 100 } }).then(value => value.ok), false,
+    'a day-stat acknowledgment must remain bound to its draft identity');
+    assert.equal(await harness.send({
+        type: 'DRAFT_DAY_STATS_APPLIED', jobId: first.jobId, pid: 8, cid: 77
+    }, { tab: { id: 100 } }).then(value => value.ok), true);
+    assert.equal(harness.values.bpbDraftTabs['100'].dayStatsPending, false);
     assert.deepEqual(harness.tabMessages, [{ tabId: 101, message: { type: 'DRAFT_PROCEED' } }]);
     assert.equal(harness.values.bpbCaptureJobs['1'].phase, 'opened');
     assert.match(harness.values.bpbCaptureJobs['1'].uploadGpx, /<gpx/);
 
     const second = await harness.send({ type: 'DRAFT_READY', pid: '7', cid: '77' }, { tab: { id: 101 } });
     assert.deepEqual({ ...second.fields.tripInfo }, { sequence: 2, name: 'Afternoon Hike', nightsOut: 2 });
-    assert.equal(first.fields.wildernessNightsOut, null);
-    assert.equal(second.fields.wildernessNightsOut, null);
+    assert.equal(first.fields.wildernessNightsOut, 2);
+    assert.equal(second.fields.wildernessNightsOut, 2);
+    assert.equal(first.fields.fillAscentDetails, true);
+    assert.equal(first.fields.dayStats.length, 3);
     assert.equal(await harness.send({
         type: 'DRAFT_PREVIEW_STARTED', jobId: second.jobId, pid: 7, cid: 77
     }, { tab: { id: 101 } }).then(value => value.ok), true);
@@ -385,6 +399,10 @@ test('retained waypoints share the 3,000-point budget and multi-peak drafts rece
         previewResult: { state: 'success', message: 'GPX file successfully uploaded.' }
     }, { tab: { id: 101 } });
     assert.equal(finished.action, 'banner');
+    assert.equal(finished.dayStatsPending, true);
+    assert.equal(await harness.send({
+        type: 'DRAFT_DAY_STATS_APPLIED', jobId: second.jobId, pid: 7, cid: 77
+    }, { tab: { id: 101 } }).then(value => value.ok), true);
     assert.equal(harness.values.bpbCaptureJobs['1'].phase, 'previewed');
     assert.equal(harness.values.bpbCaptureJobs['1'].uploadGpx, null);
 });
@@ -433,14 +451,16 @@ test('single-peak overnight captures fill wilderness nights without creating Tri
     assert.equal(apply.fields.wildernessNightsOut, 2);
 });
 
-test('disabled draft autofill settings leave trip and wilderness fields untouched', async () => {
+test('disabled draft autofill settings leave ascent details, trip, and wilderness fields untouched', async () => {
     const harness = createHarness({
-        settings: { fillTripInfo: false, fillWildernessNights: false },
+        settings: { fillAscentDetails: false, fillTripInfo: false, fillWildernessNights: false },
         peakXml: '<p><t i="7" n="First Peak" a="0" o="0" e="426.51" r="100" l="Test Range"/><t i="8" n="Second Peak" a="0" o="0" e="426.51" r="100" l="Test Range"/></p>'
     });
     await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
     await harness.send({ type: 'CAPTURE_OPEN_DRAFTS', tabId: 1, selectedIds: [7, 8] });
     const apply = await harness.send({ type: 'DRAFT_READY', pid: '7', cid: '77' }, { tab: { id: 100 } });
+    assert.equal(apply.fields.fillAscentDetails, false);
+    assert.deepEqual([...apply.fields.dayStats], []);
     assert.equal(apply.fields.tripInfo, null);
     assert.equal(apply.fields.wildernessNightsOut, null);
 });

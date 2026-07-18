@@ -33,6 +33,7 @@ import { settings as Settings } from './settings.js';
         const settings = await Settings.get();
         return {
             retainWaypoints: settings.retainWaypoints,
+            fillAscentDetails: settings.fillAscentDetails,
             fillTripInfo: settings.fillTripInfo,
             fillWildernessNights: settings.fillWildernessNights
         };
@@ -40,6 +41,7 @@ import { settings as Settings } from './settings.js';
 
     const sameCapturePreferences = (left, right) => !!left && !!right
         && left.retainWaypoints === right.retainWaypoints
+        && left.fillAscentDetails === right.fillAscentDetails
         && left.fillTripInfo === right.fillTripInfo
         && left.fillWildernessNights === right.fillWildernessNights;
 
@@ -75,6 +77,7 @@ import { settings as Settings } from './settings.js';
         capturePreferences: undefined,
         tripName: undefined,
         nightsOut: undefined,
+        dayStats: undefined,
         matches: (job.matches || []).map(match => ({ ...match, draftFields: undefined }))
     } : null;
 
@@ -309,6 +312,9 @@ import { settings as Settings } from './settings.js';
                 ? rawTripName.replace(/\s+/g, ' ').trim().slice(0, 200)
                 : '';
             const nightsOut = Core.calculateNightsOut(sanitized.segments, capture.metadata);
+            const dayStats = capturePreferences.fillAscentDetails
+                ? Core.calculateDayStats(sanitized.segments, capture.metadata)
+                : [];
 
             await updateJob(tabId, {
                 phase: matches.length ? 'ready' : 'no-matches',
@@ -327,6 +333,7 @@ import { settings as Settings } from './settings.js';
                 },
                 tripName,
                 nightsOut,
+                dayStats,
                 uploadGpx,
                 error: null,
                 expiresAt: now() + JOB_TTL_MS
@@ -462,7 +469,7 @@ import { settings as Settings } from './settings.js';
         const fallbackTripName = trackOrdered.map(match => match.name).join(' / ').slice(0, 200);
         const useTripInfo = job.capturePreferences?.fillTripInfo && selectedWithSuffixes.length > 1;
         const useWildernessNights = job.capturePreferences?.fillWildernessNights
-            && selectedWithSuffixes.length === 1 && Number.isInteger(job.nightsOut) && job.nightsOut > 0;
+            && Number.isInteger(job.nightsOut) && job.nightsOut > 0;
         const selected = selectedWithSuffixes.sort((a, b) => b.confidence - a.confidence);
 
         const existingDrafts = await readMap(DRAFTS_KEY);
@@ -498,6 +505,7 @@ import { settings as Settings } from './settings.js';
                 previewOrder: index,
                 previewStarted: false,
                 complete: false,
+                dayStatsPending: false,
                 focusOnReady: index === 0,
                 expiresAt: now() + JOB_TTL_MS
             };
@@ -565,7 +573,18 @@ import { settings as Settings } from './settings.js';
         if (!match) return { action: 'error', message: 'The selected peak is no longer available.' };
 
         if (draft.complete) {
-            return { action: 'banner', classification: draft.classification, confidence: draft.confidence };
+            return {
+                action: 'banner',
+                classification: draft.classification,
+                confidence: draft.confidence,
+                ...(draft.dayStatsPending ? {
+                    jobId: job.id,
+                    pid: draft.pid,
+                    cid: draft.cid,
+                    dayStats: job.dayStats || [],
+                    dayStatsPending: true
+                } : {})
+            };
         }
 
         if (draft.previewStarted) {
@@ -588,12 +607,26 @@ import { settings as Settings } from './settings.js';
                 if (!map[tabId]) return;
                 map[tabId].complete = true;
                 map[tabId].previewError = null;
+                map[tabId].dayStatsPending = job.capturePreferences?.fillAscentDetails !== false
+                    && Array.isArray(job.dayStats) && job.dayStats.length > 1;
             });
             const currentDrafts = await readMap(DRAFTS_KEY);
             const nextDraft = firstPendingDraft(currentDrafts, draft.jobId);
             if (nextDraft) await notifyDraftToProceed(nextDraft);
             else await updateJob(draft.sourceTabId, { phase: 'previewed', uploadGpx: null });
-            return { action: 'banner', classification: draft.classification, confidence: draft.confidence };
+            const completedDraft = currentDrafts[tabId];
+            return {
+                action: 'banner',
+                classification: draft.classification,
+                confidence: draft.confidence,
+                ...(completedDraft?.dayStatsPending ? {
+                    jobId: job.id,
+                    pid: draft.pid,
+                    cid: draft.cid,
+                    dayStats: job.dayStats,
+                    dayStatsPending: true
+                } : {})
+            };
         }
 
         const currentDraft = firstPendingDraft(drafts, draft.jobId);
@@ -615,6 +648,8 @@ import { settings as Settings } from './settings.js';
             fields: {
                 ...match.draftFields,
                 suffix: draft.suffix || '',
+                fillAscentDetails: job.capturePreferences?.fillAscentDetails !== false,
+                dayStats: job.dayStats || [],
                 tripInfo: draft.tripInfo || null,
                 wildernessNightsOut: draft.wildernessNightsOut ?? null
             },
@@ -633,6 +668,18 @@ import { settings as Settings } from './settings.js';
                 return { ok: false };
             }
             draft.previewStarted = true;
+            draft.expiresAt = now() + JOB_TTL_MS;
+            return { ok: true };
+        });
+    };
+
+    const dayStatsApplied = async (message, sender) => {
+        const tabId = sender.tab?.id;
+        return mutateMap(DRAFTS_KEY, drafts => {
+            const draft = drafts[tabId];
+            if (!draft || !draft.complete || !draft.dayStatsPending || draft.jobId !== message.jobId
+                || !validateDraftPage(draft, message)) return { ok: false };
+            draft.dayStatsPending = false;
             draft.expiresAt = now() + JOB_TTL_MS;
             return { ok: true };
         });
@@ -668,6 +715,7 @@ import { settings as Settings } from './settings.js';
             case 'CAPTURE_OPEN_DRAFTS': return openDrafts(message);
             case 'DRAFT_READY': return draftReady(message, sender);
             case 'DRAFT_PREVIEW_STARTED': return previewStarted(message, sender);
+            case 'DRAFT_DAY_STATS_APPLIED': return dayStatsApplied(message, sender);
             default: return null;
             }
         };

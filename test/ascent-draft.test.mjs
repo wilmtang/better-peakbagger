@@ -29,8 +29,8 @@ const waitForCondition = async condition => {
     }
 };
 
-const loadDraft = (responseFactory, { statusText = 'No GPS Data for this Ascent' } = {}) => {
-    const dom = new JSDOM(formHtml, {
+const loadDraft = (responseFactory, { statusText = 'No GPS Data for this Ascent', html = formHtml } = {}) => {
+    const dom = new JSDOM(html, {
         url: 'https://peakbagger.com/climber/ascentedit.aspx?pid=12&cid=34',
         runScripts: 'outside-only'
     });
@@ -141,6 +141,100 @@ test('fills single-ascent wilderness nights without firing Peakbagger’s AutoPo
 
     assert.equal(dom.window.document.getElementById('AscentNightsDD').value, '2');
     assert.equal(nightsChanges, 0);
+    dom.window.close();
+});
+
+test('the ascent-details setting leaves optional route fields untouched while Preview still runs', async () => {
+    let previewClicks = 0;
+    const payload = {
+        action: 'apply', jobId: 'job', pid: '12', cid: '34', classification: 'strong', confidence: 91,
+        fields: {
+            date: '2026-07-01', suffix: '', fillAscentDetails: false,
+            startElevationM: 1000, endElevationM: 900,
+            upDistanceM: 5000, downDistanceM: 6000, upGainM: 1200, downGainM: 80,
+            upDuration: { days: 0, hours: 2, minutes: 5 },
+            downDuration: { days: 0, hours: 1, minutes: 55 }
+        },
+        gpx: '<gpx><trk><trkseg><trkpt lat="47" lon="-121"></trkpt></trkseg></trk></gpx>'
+    };
+    const { dom } = loadDraft(message => message.type === 'DRAFT_READY' ? payload : { ok: true });
+    dom.window.document.getElementById('GPXPreview').addEventListener('click', () => { previewClicks++; });
+    await waitForCondition(() => previewClicks === 1);
+
+    assert.equal(dom.window.document.getElementById('DateText').value, '2026-07-01');
+    assert.equal(dom.window.document.getElementById('StartM').value, '');
+    assert.equal(dom.window.document.getElementById('UpMi').value, '');
+    assert.equal(previewClicks, 1);
+    dom.window.close();
+});
+
+test('missing optional Peakbagger forms do not block the core date and GPX Preview flow', async () => {
+    let previewClicks = 0;
+    const minimalHtml = `<!doctype html><body><form>
+      <input id="DateText"><input id="GPXUpload" type="file">
+      <span id="GPXStatusLabel">No GPS Data for this Ascent</span>
+      <button id="GPXPreview" type="button">Preview</button>
+    </form></body>`;
+    const payload = {
+        action: 'apply', jobId: 'job', pid: '12', cid: '34', classification: 'strong', confidence: 91,
+        fields: {
+            date: '2026-07-01', suffix: 'a', startElevationM: 1000, endElevationM: 900,
+            upDistanceM: 5000, downDistanceM: 6000, upGainM: 1200, downGainM: 80,
+            upDuration: { days: 0, hours: 2, minutes: 5 },
+            downDuration: { days: 0, hours: 1, minutes: 55 },
+            tripInfo: { sequence: 1, name: 'Overnight trip', nightsOut: 1 },
+            wildernessNightsOut: 1
+        },
+        gpx: '<gpx><trk><trkseg><trkpt lat="47" lon="-121"></trkpt></trkseg></trk></gpx>'
+    };
+    const { dom } = loadDraft(message => message.type === 'DRAFT_READY' ? payload : { ok: true }, {
+        html: minimalHtml
+    });
+    dom.window.document.getElementById('GPXPreview').addEventListener('click', () => { previewClicks++; });
+    await waitForCondition(() => previewClicks === 1);
+
+    assert.equal(dom.window.document.getElementById('DateText').value, '2026-07-01');
+    assert.equal(dom.window.document.getElementById('GPXUpload').files.length, 1);
+    assert.equal(previewClicks, 1);
+    assert.doesNotMatch(dom.window.document.getElementById('bpb-draft-banner').textContent, /stopped/i);
+    dom.window.close();
+});
+
+test('post-Preview day rows are filled once and acknowledged without another Preview', async () => {
+    const dayRows = Array.from({ length: 2 }, (_, index) => {
+        const sequence = index + 1;
+        return `<input id="Date${sequence}"><input id="GainFt${sequence}"><input id="GainM${sequence}" value="${sequence === 1 ? '999' : ''}">
+          <input id="LossFt${sequence}"><input id="LossM${sequence}"><input id="DistMi${sequence}"><input id="DistKm${sequence}">
+          <input id="MaxFt${sequence}"><input id="MaxM${sequence}"><input id="CampFt${sequence}"><input id="CampM${sequence}">`;
+    }).join('');
+    const html = formHtml.replace('<span id="GPXStatusLabel">', `${dayRows}<span id="GPXStatusLabel">`);
+    const response = {
+        action: 'banner', classification: 'strong', confidence: 91,
+        jobId: 'job', pid: '12', cid: '34', dayStatsPending: true,
+        dayStats: [
+            { date: '2026-07-11', gainM: 400, lossM: 50, distanceM: 1609.344, maxElevationM: 1400, campElevationM: 1200 },
+            { date: '2026-07-12', gainM: 600, lossM: 900, distanceM: 8046.72, maxElevationM: 2100, campElevationM: null }
+        ]
+    };
+    const { dom, messages } = loadDraft(message => message.type === 'DRAFT_READY' ? response : { ok: true }, {
+        html,
+        statusText: 'Your file is now successfully uploaded.'
+    });
+    await waitForCondition(() => messages.some(message => message.type === 'DRAFT_DAY_STATS_APPLIED'));
+
+    assert.equal(dom.window.document.getElementById('Date1').value, '2026-07-11');
+    assert.equal(dom.window.document.getElementById('GainFt1').value, '1312');
+    assert.equal(dom.window.document.getElementById('GainM1').value, '999', 'existing server/user values must not be overwritten');
+    assert.equal(dom.window.document.getElementById('LossFt1').value, '164');
+    assert.equal(dom.window.document.getElementById('DistMi1').value, '1.000');
+    assert.equal(dom.window.document.getElementById('MaxM2').value, '2100');
+    assert.equal(dom.window.document.getElementById('CampM1').value, '1200');
+    assert.equal(dom.window.document.getElementById('CampM2').value, '');
+    assert.deepEqual(messages.map(message => message.type), ['DRAFT_READY', 'DRAFT_DAY_STATS_APPLIED']);
+    assert.deepEqual({ ...messages[1] }, {
+        type: 'DRAFT_DAY_STATS_APPLIED', jobId: 'job', pid: '12', cid: '34'
+    });
+    assert.match(dom.window.document.getElementById('bpb-draft-banner').textContent, /Preview is ready/);
     dom.window.close();
 });
 
