@@ -11,127 +11,255 @@ over that value; neither replaces the form or submits an ascent. The extension
 flushes the active view synchronously before Preview, Save, an ASP.NET postback,
 or page exit.
 
-## One converter, two editing surfaces
+## The 30-second model
 
-The converter is the heart of the feature, and it is deliberately
-editor-agnostic. The extension installs through npm and packages
-[Marked 18.0.6](https://github.com/markedjs/marked/tree/v18.0.6), a small
-MIT-licensed GFM parser. Better Peakbagger consumes Marked's token tree and maps
-only known token types into its own allowlisted AST. It **never uses Marked's
-HTML renderer** and never inserts arbitrary Markdown HTML. This keeps the rich
-view, Markdown preview, bracket import, pasted DOM, and saved value on one
-conversion path:
+There are three editing modes, but they do not pass their private document
+formats directly to one another. They exchange one value through the original
+`JournalText` textarea:
 
 ```text
-Markdown ── Marked tokens ──┐
-                            ├── allowlisted report AST ──┬── safe preview/editor HTML
-bracket markup ── safe DOM ─┘                            ├── Peakbagger bracket markup
-rich editor DOM ─────────────────────────────────────────┘── Markdown
+                         submitted to Peakbagger
+                                  ▲
+                                  │ bracket-markup string
+                                  │
+                         JournalText textarea
+                         (interchange + source of truth)
+                           ▲          ▲          ▲
+                           │          │          │
+                    bracket string    │    bracket string
+                           │          │          │
+                    Rich converter    │    Markdown converter
+                           │          │          │
+                    TipTap document   │    CodeMirror string ──► preview HTML
+                                      │
+                                Plain mode
+                         edits JournalText directly
 ```
 
-The *input surfaces* on top of that path are established open-source editors,
-adopted after the first release:
+The Markdown preview is not a fourth mode and never becomes source data. It is
+a read-only rendering derived from the current CodeMirror string. The
+allowlisted report AST is also not stored or passed between modes; it is a
+short-lived intermediate value created during each conversion.
 
-- **Rich mode is a [TipTap](https://tiptap.dev) (ProseMirror) editor**
-  (`src/report-rich-editor.js`). Its schema is locked to exactly the
-  allowlisted node and mark set — including small custom marks for
-  Peakbagger's `[small]` and `[q]` — so nothing typed, pasted, or dropped can
-  enter the document unless the converter has a bracket equivalent for it.
-  The model provides what `document.execCommand` never could: reliable undo
-  and IME handling, markdown-style input rules (`**bold**`, `# `, `1. ` as
-  you type), toolbar active states, and real table editing.
-- **Markdown mode is a [CodeMirror 6](https://codemirror.net) source pane**
-  (`src/report-md-editor.js`) beside a live preview. CodeMirror contributes
-  GFM syntax highlighting, list continuation on Enter, and history; it renders
-  nothing. The preview is produced by this extension's own converter, so what
-  it shows is exactly what will be saved.
+On every mode switch, the editor first flushes a dirty outgoing mode into
+`JournalText`, then builds the incoming view from `JournalText`. The one
+exception is an exact Markdown-source sidecar described below.
 
-An earlier revision of this document rejected editor frameworks because they
-"would not remove the hard part": the Peakbagger-specific, security-aware
-serializer. That was true, and it is why the serializer was built first,
-standalone. With the converter in place the calculus reversed — the frameworks
-now slot in as input surfaces only, the schema enforcement *adds* a safety
-layer on top of serialization-time sanitizing, and the added bundle weight
-(the editor bundle is ~1 MB minified, loaded only on the ascent add/edit
-form) was judged acceptable for the editing quality. Neither library ever
-parses or renders the saved report: TipTap documents are serialized through
-`domToBracket`, CodeMirror text through the Marked pipeline, and every href,
-image source, color, and dimension is still validated by the converter on the
-way out.
+## Representations and ownership
 
-## From keystroke to saved bracket markup
+| Representation | Owner | Data format | Role |
+| --- | --- | --- | --- |
+| Saved/form value | Peakbagger's `JournalText` textarea | String containing Peakbagger square-bracket markup and newlines | The only value submitted to Peakbagger and the interchange between modes |
+| Rich document | [TipTap](https://tiptap.dev)/ProseMirror | Schema-constrained ProseMirror document; `getHTML()` exposes a clean HTML serialization | Editable Rich-mode state only |
+| Markdown source | [CodeMirror 6](https://codemirror.net) | GFM Markdown string plus allowlisted Peakbagger bracket extensions | Editable Markdown-mode state only |
+| Markdown source sidecar | `state.mdSource`, and `source` in a Markdown draft | Exact Markdown string | Preserves the user's Markdown spelling when a round trip through bracket markup would rewrite it |
+| Preview | A preview `<div>` | Generated safe HTML string | Read-only view of the current Markdown source; never parsed back |
+| Report AST | `src/report-markup.js` | Plain JavaScript block/inline objects | Temporary common semantic form used only inside a conversion |
+| Plain editor | The original `JournalText` textarea | The same bracket-markup string that will be submitted | Verbatim editing with no converter |
 
-JournalText receives a freshly printed value on every edit (debounced while
-typing, synchronous before any submit or postback). What happens between the
-editing surface and that value differs by mode, but both paths meet in the
-same allowlisted AST.
-
-Rich mode:
-
-1. TipTap holds the report as a schema-constrained document. The schema is
-   the first filter: typing, pasting, and dropping can only introduce nodes
-   and marks that exist in the allowlist, because nothing else is
-   representable in the document model.
-2. `getHTML()` serializes that document to clean HTML — the schema's own
-   rendering, not the live contenteditable DOM with its cursor scaffolding.
-3. That HTML string is parsed into a *detached* document. Detached means
-   inert: it is never inserted into the page and nothing in it can execute.
-4. `domToBracket` folds the detached DOM into the AST. This is the second,
-   authoritative filter: aliases normalize (`strong`→`b`, `em`→`i`,
-   `del`→`s`), every link, image source, color, and dimension re-passes its
-   sanitizer, and an element outside the allowlist contributes nothing but
-   its visible text.
-5. The AST prints as bracket markup. Ordinary text that merely *looks* like
-   a tag is entity-escaped here, so Peakbagger renders it as visible text
-   instead of interpreting it.
-
-Markdown mode:
-
-1. CodeMirror holds plain text and plays no part in conversion.
-2. The text runs through the vendored Marked *lexer* only; Marked's HTML
-   renderer is never used.
-3. Known token types map into the same AST; raw-HTML tokens are kept as
-   literal text.
-4. The AST prints two ways: as bracket markup for JournalText, and as safe
-   HTML for the live preview — which is why the preview cannot drift from
-   what will be saved.
-
-Loading is those paths in reverse: the bracket source is tokenized, only
-balanced tags that pass the allowlist become real elements in a detached
-DOM, and the resulting AST prints as TipTap's editor HTML or as Markdown
-source text.
-
-One report in all four representations:
+One report can therefore have several equivalent spellings:
 
 ```text
 Markdown source    We climbed **Baker** under [span style="color:steelblue"]blue[/span] skies.
-Rich document      <p>We climbed <strong>Baker</strong> under <span style="color: steelblue;">blue</span> skies.</p>
+Rich getHTML()     <p>We climbed <strong>Baker</strong> under <span style="color: steelblue;">blue</span> skies.</p>
+Report AST         paragraph(text, bold(text), text, color("steelblue", text), text)
 Saved JournalText  We climbed [b]Baker[/b] under [span style="color:steelblue"]blue[/span] skies.
 Preview HTML       <p>We climbed <b>Baker</b> under <span style="color:steelblue">blue</span> skies.</p>
 ```
 
-### Colors and the DOM read-back
+These values are semantically related, not byte-for-byte mirrors. Only
+`JournalText` has submission authority.
 
-Step 4 of the rich path does not read a color out of the attribute text; it
-reads the parsed style declaration, `element.style.color`. CSSOM serializes
-that read-back, and the serialization is lossy for numeric forms: a color
-specified as `#2471a3` reads back as `rgb(36, 113, 163)`, while a keyword
-such as `steelblue` reads back unchanged. This is specified CSSOM behavior,
-identical in Chrome, Firefox, and the test harness's jsdom.
+Module ownership follows the same boundary: `src/report-editor.js` orchestrates
+mode switches, dirty state, drafts, and `JournalText`; `src/report-rich-editor.js`
+owns the TipTap schema and commands; `src/report-md-editor.js` owns only the
+CodeMirror surface; and `src/report-markup.js` owns every format conversion,
+sanitizer, and canonical serializer.
 
-`sanitizeColor` accepts exactly two shapes — a hex literal or a short
-alphabetic keyword — and `rgb(…)` is neither, so a hex color entering the
-rich path is dropped at the sanitizer. The toolbar palette therefore applies
-named CSS colors, which survive the round trip byte-for-byte and match the
-only color forms verified against Peakbagger's own renderer (the render test
-below uses `red` and `green`).
+## Exact conversion paths
 
-Hex colors remain valid input in Markdown and Plain mode, whose values are
-handled as strings and never re-read through a style declaration. The
-corresponding restriction: a saved report containing a hex color keeps it
-while merely viewed, but an actual rich-mode edit re-serializes the document
-and loses that color (its text is kept). Re-apply a palette color, or make
-the edit in Markdown or Plain mode.
+The orchestrator calls these converter entry points:
+
+| Operation | Converter entry point |
+| --- | --- |
+| Enter Rich | `bracketToEditorHtml(JournalText.value)` |
+| Flush a Rich edit | parse `richEditor.getHTML()` into a detached DOM, then `domToBracket(body)` |
+| Enter Markdown without an exact sidecar | `bracketToMarkdown(JournalText.value)` |
+| Flush a Markdown edit | `markdownToBracket(codeMirrorText)` |
+| Refresh Markdown preview | `markdownToPreviewHtml(codeMirrorText)` |
+| Enter or edit Plain | None; Plain is `JournalText` |
+
+### Loading Rich mode
+
+```text
+JournalText bracket string
+  → validate balanced bracket tags and attributes
+  → safe HTML in a detached DOM
+  → allowlisted report AST
+  → generated editor HTML
+  → TipTap parses HTML into its ProseMirror document
+```
+
+TipTap is rebuilt on every entry to Rich mode, so its undo history cannot cross
+a mode switch. Loading may already produce a normalized or reduced Rich view,
+but the original `JournalText` remains unchanged until the user actually edits
+Rich mode.
+
+### Editing and flushing Rich mode
+
+```text
+TipTap ProseMirror document
+  → TipTap getHTML()
+  → detached DOM
+  → allowlisted report AST
+  → canonical Peakbagger bracket string
+  → JournalText
+```
+
+The schema is an early structural filter, but it is not trusted as the final
+security boundary. The DOM-to-AST conversion validates the content again. A
+Rich edit clears the Markdown-source sidecar because that old Markdown no
+longer describes the document.
+
+### Loading Markdown mode
+
+Normally the path is:
+
+```text
+JournalText bracket string
+  → validate balanced bracket tags and attributes
+  → safe HTML in a detached DOM
+  → allowlisted report AST
+  → generated canonical Markdown string
+  → CodeMirror
+```
+
+If `state.mdSource` holds an exact Markdown string from the current editing
+session or a restored draft, CodeMirror receives that string instead. This
+avoids needless rewrites such as changing a user's list markers or emphasis
+spelling merely because they visited another mode without editing it.
+
+### Editing Markdown mode
+
+CodeMirror only edits and highlights text. It does not parse, sanitize, or
+render the report. The extension sends its string through two sibling outputs:
+
+```text
+CodeMirror Markdown string
+  → Marked 18.0.6 lexer tokens
+  → allowlisted report AST ──→ canonical bracket string ──→ JournalText
+                           └─→ generated safe HTML ───────→ preview.innerHTML
+```
+
+[Marked 18.0.6](https://github.com/markedjs/marked/tree/v18.0.6) is used only as
+a GFM lexer. Its HTML renderer is never called. Raw HTML tokens become visible
+text, while Peakbagger bracket extensions embedded in a Markdown text token go
+through the same bracket-to-detached-DOM parser used when loading
+`JournalText`.
+
+The preview and `JournalText` are printed from the same parsed semantics, so
+they agree about supported structure and rejected input. The preview does not
+prove pixel-for-pixel fidelity with Peakbagger's own stylesheet.
+
+### Plain mode
+
+Plain mode exposes the original `JournalText` textarea. There is no AST,
+detached DOM, TipTap, Marked, CodeMirror conversion, sanitization, or
+normalization:
+
+```text
+user keystrokes ↔ JournalText bracket string → Peakbagger form submission
+```
+
+That makes Plain mode the verbatim escape hatch, including for markup the Rich
+and Markdown converters do not support. It also means Plain mode provides none
+of their safety filtering.
+
+## What sanitizes, and what only normalizes
+
+Sanitizing decides whether content is allowed to reach `JournalText` or the
+preview as active markup. Normalizing keeps allowed semantics but chooses one
+canonical spelling or structure. Several components do only one of those jobs:
+
+| Component | Sanitizes? | Normalizes? | What it actually does |
+| --- | --- | --- | --- |
+| TipTap schema | Partial, structural first pass | Yes | Refuses nodes and marks its schema cannot represent; turns editing operations and pasted content into a ProseMirror document |
+| CodeMirror | No | No | Stores a string, highlights syntax, continues lists, and manages Markdown undo history |
+| Marked lexer | No | No | Tokenizes GFM syntax; Better Peakbagger, not Marked, decides which token types enter the AST |
+| Markdown-token-to-AST mapper | Yes | Yes | Accepts known token types, validates links and images, sends bracket extensions through the bracket parser, and keeps raw HTML inert as visible text |
+| Bracket-source parser | Yes | Yes | Requires balanced allowlisted tags, validates attributes, neutralizes unsupported tag-like source, and builds inert safe HTML |
+| DOM-to-AST parser | Yes, authoritative for DOM input | Yes | Drops dangerous DOM nodes, unwraps unsupported elements to safe visible content where appropriate, and revalidates links, image sources, dimensions, and colors |
+| AST-to-bracket printer | No new validation | Yes | Serializes the already-validated AST, emitting canonical Peakbagger tags and escaping ordinary text that resembles HTML or bracket tags |
+| AST-to-HTML printer | No new validation | Yes | Serializes the already-validated AST into allowlisted preview/editor elements with escaped text and attributes |
+| AST-to-Markdown printer | No new validation | Yes | Serializes the already-validated AST into canonical Markdown plus bracket extensions for features with no standard Markdown form |
+| Preview `<div>` | No | No | Receives only AST-generated safe HTML and is never read back into source data |
+| Plain mode | No | No | Edits the submitted string verbatim |
+
+Important normalization examples include:
+
+- `strong` → `b`, `em` → `i`, and `strike`/`del` → `s` in saved markup;
+- `font color="…"` → `span style="color:…"`;
+- `p`, `div`, and `br` → Peakbagger's newline convention;
+- loose legacy `- item` and `1. item` reports → real list tags after an edit;
+- every table → `[table border="1"]`;
+- DOM bold/italic/underline/strike styles → semantic AST marks;
+- unsafe or unsupported source → escaped visible text, unwrapped visible
+  children, or complete removal for dangerous elements, depending on where it
+  entered.
+
+## Mode-switch behavior
+
+| Switch | What is flushed | What the destination receives |
+| --- | --- | --- |
+| Rich → Markdown | Dirty Rich document becomes canonical bracket markup; this clears `mdSource` | Canonical Markdown regenerated from `JournalText` |
+| Markdown → Rich | Dirty Markdown becomes canonical bracket markup; exact Markdown remains in `mdSource` | Rich document regenerated from `JournalText` |
+| Markdown → Rich → Markdown, with no Rich edit | Nothing is rewritten by Rich | The exact `mdSource` string is restored |
+| Rich or Markdown → Plain | Dirty outgoing editor is flushed first | The actual `JournalText` string |
+| Plain → Rich | Nothing is flushed by Plain | Rich document regenerated from the current `JournalText` string |
+| Plain → Markdown | Nothing is flushed by Plain | Normally Markdown regenerated from `JournalText`; see the stale-sidecar defect below |
+
+Dirty flags are deliberate. Merely opening Rich or Markdown may normalize or
+omit unsupported content in that view, but does not overwrite the server value.
+The first real edit serializes the entire active document, at which point those
+normalizations become the new `JournalText`. Before Preview, Save, any ASP.NET
+postback, or page exit, a pending dirty edit is flushed synchronously rather
+than waiting for the typing debounce.
+
+## Known conversion defects
+
+### Hex colors are lost outside Plain mode
+
+The bracket parser initially accepts a color such as `#2471a3`, creates a
+detached `<span>`, and later reads the parsed declaration through
+`element.style.color`. CSSOM returns the equivalent `rgb(36, 113, 163)`.
+`sanitizeColor` accepts hex literals and short alphabetic keywords, but not the
+`rgb(…)` spelling, so the second validation drops the color wrapper and keeps
+its text.
+
+This affects both Rich and Markdown. Markdown bracket extensions pass through
+the same detached-DOM parser; CodeMirror does not keep them away from it. The
+toolbar therefore uses named colors such as `steelblue`, which survive the
+round trip. Plain mode preserves hex markup because it invokes no converter.
+
+Merely visiting Rich or Markdown still leaves the original `JournalText`
+untouched. Making any edit in either mode serializes the whole reduced document
+and makes the lost color permanent. This is a converter invariant bug, not a
+loss of the semantic color by the browser.
+
+### Plain edits can leave the Markdown sidecar stale
+
+`state.mdSource` deliberately preserves exact Markdown across a no-op visit to
+Rich mode. Plain mode, however, currently has no input listener that clears
+that sidecar. This sequence is unsafe:
+
+1. Visit Markdown mode, which creates or restores `state.mdSource`.
+2. Switch to Plain and edit `JournalText` directly.
+3. Return to Markdown.
+
+The Markdown pane can reuse the stale sidecar instead of regenerating from the
+new Plain value. A later Markdown edit can then overwrite the Plain edit. Until
+the implementation invalidates `mdSource` on Plain input, do not mix Plain
+edits with Markdown in the same page session.
 
 ## Supported Markdown
 
@@ -247,6 +375,9 @@ shows the exact bracket source.
 
 ## Regression boundaries
 
+- The two known conversion defects above describe current behavior, not the
+  intended contract. Neither has focused regression coverage yet; each fix
+  should add a mode-level test before removing its warning from this document.
 - `test/report-markup.test.mjs` pins Markdown tokens, bracket aliases, DOM
   import, canonical output, unsafe-input neutralization, and round trips.
 - `test/report-editor.test.mjs` pins the native-textarea source of truth,
