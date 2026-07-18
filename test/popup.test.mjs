@@ -155,3 +155,43 @@ test('popup presents a trackless manual activity as a neutral retryable state', 
     await new Promise(resolve => setTimeout(resolve, 30));
     dom.window.close();
 });
+
+test('popup stops status polling when capture finishes without storing a job', async () => {
+    const dom = new JSDOM(html, {
+        url: 'chrome-extension://better-peakbagger/popup/popup.html',
+        runScripts: 'outside-only'
+    });
+    const nativeSetTimeout = dom.window.setTimeout.bind(dom.window);
+    dom.window.setTimeout = (callback, delay, ...args) =>
+        nativeSetTimeout(callback, delay === 450 ? 5 : delay, ...args);
+    let statusCalls = 0;
+    dom.window.chrome = {
+        tabs: { query: async () => [{ id: 9 }] },
+        runtime: {
+            sendMessage: async message => {
+                if (message.type === 'CAPTURE_STATUS') {
+                    statusCalls++;
+                    return null;
+                }
+                if (message.type === 'CAPTURE_START') {
+                    await new Promise(resolve => nativeSetTimeout(resolve, 20));
+                    return {
+                        phase: 'error',
+                        error: { code: 'unsupported', message: 'Open a supported activity first.' }
+                    };
+                }
+                return null;
+            }
+        }
+    };
+
+    dom.window.eval(source);
+    await waitFor(() => /Open a supported activity first/.test(dom.window.document.getElementById('state').textContent));
+    await new Promise(resolve => setTimeout(resolve, 20));
+    const stoppedAt = statusCalls;
+    await new Promise(resolve => setTimeout(resolve, 30));
+
+    assert.ok(stoppedAt > 0, 'the popup should check for an initially persisted job');
+    assert.equal(statusCalls, stoppedAt, 'null status responses must not keep rearming after capture ends');
+    dom.window.close();
+});

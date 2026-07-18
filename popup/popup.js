@@ -16,6 +16,8 @@
     let activeTab = null;
     let currentJob = null;
     let pollTimer = null;
+    let capturePending = false;
+    const TERMINAL_PHASES = new Set(['ready', 'no-matches', 'no-gps', 'error', 'opened', 'previewed']);
 
     const clear = element => { while (element.firstChild) element.firstChild.remove(); };
 
@@ -178,8 +180,10 @@
         try {
             const job = await ext.runtime.sendMessage({ type: 'CAPTURE_STATUS', tabId: activeTab.id });
             if (job) render(job);
-            if (!job || !['ready', 'no-matches', 'no-gps', 'error', 'opened', 'previewed'].includes(job.phase)) {
+            if ((!job && capturePending) || (job && !TERMINAL_PHASES.has(job.phase))) {
                 pollTimer = setTimeout(poll, 450);
+            } else {
+                pollTimer = null;
             }
         } catch (error) {
             errorState({ message: error.message });
@@ -188,10 +192,23 @@
 
     const beginCapture = force => {
         clearTimeout(pollTimer);
+        capturePending = true;
         stateCard('Starting capture…', 'No GPS data is accessed until account ownership is verified.', { loading: true });
         void ext.runtime.sendMessage({ type: 'CAPTURE_START', tabId: activeTab.id, force })
-            .then(job => { if (job) render(job); })
-            .catch(error => errorState({ message: error.message }));
+            .then(job => {
+                capturePending = false;
+                if (job) render(job);
+                if (!job || TERMINAL_PHASES.has(job.phase)) {
+                    clearTimeout(pollTimer);
+                    pollTimer = null;
+                }
+            })
+            .catch(error => {
+                capturePending = false;
+                clearTimeout(pollTimer);
+                pollTimer = null;
+                errorState({ message: error.message });
+            });
         void poll();
     };
 
