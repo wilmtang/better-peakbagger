@@ -91,7 +91,7 @@
     );
     addLink(
         'Copernicus satellite imagery',
-        'Find fresh satelitte data by date and cloud cover',
+        'Find fresh satellite data by date and cloud cover',
         `https://browser.dataspace.copernicus.eu/?zoom=13&lat=${lat}&lng=${lon}&themeId=DEFAULT-THEME`
     );
 

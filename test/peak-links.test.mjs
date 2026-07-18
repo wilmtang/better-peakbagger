@@ -60,6 +60,10 @@ test('Peak.aspx gains location-specific Windy and Copernicus links', async () =>
             copernicus.href,
             `https://browser.dataspace.copernicus.eu/?zoom=13&lat=${lat}&lng=${lon}&themeId=DEFAULT-THEME`
         );
+        assert.equal(
+            copernicus.parentElement.querySelector('.bpb-peak-links__detail').textContent,
+            'Find fresh satellite data by date and cloud cover'
+        );
 
         const fireSmoke = linkByText(document, 'AirNow fire & smoke');
         assert.equal(fireSmoke.href, `https://fire.airnow.gov/#9/${lat}/${lon}`);
