@@ -23,22 +23,52 @@ Better Peakbagger module uses a global as an internal dependency.
 ## Everyday workflow
 
 For test-driven work, edit source and run `npm test`; its `pretest` hook creates
-a fresh development build before the suite. For interactive browser work, run
-`npm run watch` in one terminal, load `dist/`, and reload the extension and
-target page after a rebuild.
+a fresh development build before the suite.
 
-Do not run `watch` and another build command in the same worktree at the same
-time. One-off builds deliberately replace `dist/`, so concurrent writers can
-produce a transient mixed tree.
+For interactive browser work, use one of the managed development commands:
 
-Load `dist/` as an unpacked extension and reload it after a rebuild:
+```bash
+npm run start:firefox
+npm run start:chromium -- --chromium-binary "/path/to/chrome-for-testing"
+```
+
+Each command makes the initial `dist/` build, launches web-ext with a temporary
+browser profile, keeps esbuild watching the source tree, and reloads the
+extension after every successful rebuild. Stop the command with Ctrl+C; the
+watchers, browser process, and Firefox temporary source are then cleaned up.
+
+The reload is transactional. A change rebuilds all browser bundles and copies
+all runtime assets; only after every operation succeeds does the build change
+the single file watched by web-ext. A syntax or copy error is printed but does
+not reload the browser into a partly updated extension. Fix the error and save
+again to retry.
+
+Extension reload is not page reload. Content scripts already injected into an
+open Peakbagger, Garmin, or Strava tab keep their old page instance, so refresh
+that tab after the extension reloads. Reopening the popup or Preferences is
+enough for those extension pages. The commands deliberately do not refresh
+activity or ascent-editor tabs automatically, because that could discard page
+state or interrupt a capture.
+
+Do not run `watch`, either `start:*` command, and another build command in the
+same worktree at the same time. The managed browser commands already own the
+watcher, while one-off builds deliberately replace `dist/`; concurrent writers
+can produce a transient mixed tree.
+
+For a manually managed browser instead, run `npm run watch`, load `dist/` as an
+unpacked extension, and reload it yourself after a rebuild:
 
 - **Chrome/Edge/Brave:** open the browser's extensions page → enable Developer mode → *Load
   unpacked* → pick the `dist/` folder. Click the reload ↻ on the card after each
   rebuild.
-- **Firefox:** `npm run start:firefox` (builds, prepares a Firefox-flavoured
-  copy of `dist/`, and launches `web-ext run`), or load `dist/manifest.json` via
+- **Firefox:** load `dist/manifest.json` via
   `about:debugging` → *This Firefox* → *Load Temporary Add-on*.
+
+Standalone `npm run watch` still writes the completed-build signal, but a
+manually loaded browser does not subscribe to it; use the browser's extension
+reload control, then refresh the target page. Restart any watcher after changing
+`scripts/build-config.mjs`, the build scripts, or installed dependencies—the
+running Node process has already loaded those inputs.
 
 Do **not** load the repo root — `manifest.json` there names bundle files that
 only exist under `dist/` after a build.
@@ -49,19 +79,23 @@ only exist under `dist/` after a build.
 | --- | --- |
 | `npm run build` | One-off development build (unminified, source maps) into `dist/`. |
 | `npm run build:release` | Minified production build (no source maps). |
-| `npm run watch` | Rebuild on change; also re-copies static assets. |
+| `npm run watch` | Transactionally rebuild on change and re-copy static assets; does not launch or control a browser. |
 | `npm test` | `pretest` builds `dist/`, then runs `test/**/*.test.mjs`. |
 | `npm run verify:extension` | Loads the **real** unpacked `dist/` in headless Chrome for Testing and drives capture, the editor, and the maps. The only check that exercises the true manifest load. |
 | `npm run terrain:verify` | Renders the real MapLibre terrain frame on the GPU with a synthetic route. |
 | `npm run showcase:render` | Builds and renders the local UI showcase fixtures. |
 | `npm run lint` | Builds, then runs `web-ext lint --source-dir dist`. |
 | `npm run package` | Release build + `web-ext build` from `dist/`; writes the canonical Chrome ZIP under `web-ext-artifacts/`. |
-| `npm run start:chromium` / `start:firefox` | Build and ask web-ext to launch the extension in a dev browser. |
+| `npm run start:chromium` / `start:firefox` | Build, watch, launch a web-ext development browser, and auto-reload the extension after successful rebuilds. Firefox mirrors each complete build into its inline-Preferences source first. |
 
 Chrome stable 137+ rejects command-line `--load-extension`, so
 `start:chromium` needs a compatible Chromium/Chrome for Testing binary (pass
 web-ext's `--chromium-binary` after `--`) or it will fail. Manual **Load
 unpacked** from `dist/` remains the simplest Chrome-family loop.
+
+The reload marker (`dist/.better-peakbagger-reload`) exists only in watch mode.
+It is an internal development coordination file, not extension runtime state;
+one-off and release builds replace `dist/` and do not package it.
 
 ## How the build works
 

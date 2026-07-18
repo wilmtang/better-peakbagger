@@ -1042,7 +1042,7 @@ Settings shape (`chrome.storage.sync`, key `bpbSettings`):
 
 ```
 npm run build           create the development dist/ (source maps included)
-npm run watch           rebuild dist/ while developing
+npm run watch           rebuild dist/ while developing (manual browser reload)
 npm test                build + fixture-driven jsdom/module tests
 npm run lint            build + web-ext lint against dist/
 npm run verify:extension
@@ -1051,15 +1051,17 @@ npm run terrain:verify  hidden Chrome visual check of the 3D renderer
 npm run package         minify dist/ and create the canonical Chrome ZIP
 npm run build:firefox -- SOURCE.zip FIREFOX.zip
                         derive Firefox's inline-Preferences package
-npm run start:firefox   build and launch Firefox with a temporary manifest
-npm run start:chromium  build and launch Chromium from dist/
+npm run start:firefox   build, watch, and auto-reload a Firefox dev extension
+npm run start:chromium  build, watch, and auto-reload a Chromium dev extension
 ```
 
 Install locked dependencies with `npm ci`, then load `dist/`—not the repository
 root—as the unpacked extension. `dist/` is generated and ignored; change the ES
-modules and assets in the source tree, then rebuild. The complete daily
-workflow, bundle/dependency rules, test boundaries, and release commands live
-in [the development guide](docs/development.md).
+modules and assets in the source tree, then rebuild. The `start:*` commands
+reload the extension only after a complete successful build; refresh an already
+open Peakbagger/provider tab to reinject its content scripts. The complete daily
+workflow, browser-launch details, bundle/dependency rules, test boundaries, and
+release commands live in [the development guide](docs/development.md).
 
 Clone once, then enable the repository's own hooks:
 

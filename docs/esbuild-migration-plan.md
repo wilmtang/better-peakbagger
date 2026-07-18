@@ -41,6 +41,13 @@ intentional worker→page boundary.
 
 ## Log
 
+- **Post-migration development loop** — `start:chromium` and `start:firefox` now own
+  esbuild watch mode and ask web-ext to reload from one completed-build signal. Every bundle
+  and copied asset must succeed before the signal changes, so a broken or half-written build
+  does not replace the running extension. Firefox synchronizes the complete tree, applies its
+  inline-Preferences manifest, and only then signals reload. Existing site tabs remain a
+  deliberate manual refresh because automatically reloading an activity or editor could lose
+  user state. Focused orchestration tests and the full 243-test suite pass.
 - **Step 12 done** — the full `npm test` suite and `npm run verify:extension` pass from
   the committed migration state. The real extension ran hidden in Chrome for Testing (new
   headless, 1000×760) and exercised the bundled worker, settings bridge, analyzer, 3D gates,
