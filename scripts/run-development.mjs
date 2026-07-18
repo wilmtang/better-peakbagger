@@ -65,8 +65,10 @@ export async function runDevelopment(browser, passthrough = []) {
       forwardedSignal = signal;
       if (!child.killed) child.kill(signal);
     };
-    process.on("SIGINT", forwardSignal);
-    process.on("SIGTERM", forwardSignal);
+    const forwardInterrupt = () => forwardSignal("SIGINT");
+    const forwardTerminate = () => forwardSignal("SIGTERM");
+    process.on("SIGINT", forwardInterrupt);
+    process.on("SIGTERM", forwardTerminate);
 
     try {
       const result = await waitForChild(child);
@@ -74,8 +76,8 @@ export async function runDevelopment(browser, passthrough = []) {
       if (result.signal) return 1;
       return result.code ?? 1;
     } finally {
-      process.off("SIGINT", forwardSignal);
-      process.off("SIGTERM", forwardSignal);
+      process.off("SIGINT", forwardInterrupt);
+      process.off("SIGTERM", forwardTerminate);
     }
   } finally {
     if (child && child.exitCode === null && !child.killed) child.kill("SIGTERM");

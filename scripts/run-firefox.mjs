@@ -106,8 +106,10 @@ async function main() {
   const forwardSignal = signal => {
     if (!child.killed) child.kill(signal);
   };
-  process.on("SIGINT", forwardSignal);
-  process.on("SIGTERM", forwardSignal);
+  const forwardInterrupt = () => forwardSignal("SIGINT");
+  const forwardTerminate = () => forwardSignal("SIGTERM");
+  process.on("SIGINT", forwardInterrupt);
+  process.on("SIGTERM", forwardTerminate);
 
   try {
     const result = await new Promise((resolve, reject) => {
@@ -120,8 +122,8 @@ async function main() {
       process.exitCode = result.code ?? 1;
     }
   } finally {
-    process.off("SIGINT", forwardSignal);
-    process.off("SIGTERM", forwardSignal);
+    process.off("SIGINT", forwardInterrupt);
+    process.off("SIGTERM", forwardTerminate);
     await cleanup();
   }
 }
