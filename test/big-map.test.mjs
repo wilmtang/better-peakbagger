@@ -180,6 +180,35 @@ test('Full Screen single-ascent maps recolor the native track and add a casing',
     dom.window.close();
 });
 
+test('idle terrain updates check route presence without recollecting route geometry', async () => {
+    const fixture = await loadBigMap({ type: 'A', width: 6 });
+    const { dom, window, leaflet } = fixture;
+    const route = new leaflet.Polyline([
+        { lat: 44.15, lng: -121.78 },
+        { lat: 44.16, lng: -121.76 },
+        { lat: 44.17, lng: -121.75 }
+    ], { color: '#d9483b', weight: 3 });
+    let geometryReads = 0;
+    const nativeGetLatLngs = route.getLatLngs.bind(route);
+    route.getLatLngs = () => {
+        geometryReads++;
+        return nativeGetLatLngs();
+    };
+    window.map = new leaflet.MapStub([route]);
+    fixture.evaluate();
+
+    await waitFor(dom, () => window.document.getElementById('bpb-terrain-toggle')?.disabled === false);
+    await new Promise(resolve => window.setTimeout(resolve, 0));
+    geometryReads = 0;
+
+    window.map.addLayer({ options: { attribution: 'late tiles' } });
+    await new Promise(resolve => window.setTimeout(resolve, 0));
+    assert.ok(geometryReads <= 1,
+        'an unrelated layer event should identify the route without collecting and copying its coordinates');
+
+    dom.window.close();
+});
+
 test('Full Screen maps case native tracks that live in the MasterMap child iframe', async () => {
     // The real Full Screen page is a shell: its Leaflet map and GPS tracks live
     // in a same-origin MasterMap.aspx child iframe, not the top window. The

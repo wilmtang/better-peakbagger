@@ -311,6 +311,22 @@ import { terrainCamera as TerrainCamera } from './terrain-camera.js';
         return limited.length === segments.length ? { segments: limited, colors } : { segments: limited, colors: [] };
     };
 
+    // Layer events only need to enable or disable the idle toggle. Avoid
+    // flattening, copying, coloring, and reducing every route until the user
+    // actually asks to enter 3D.
+    const hasNativeRoute = () => {
+        if (!activeMap || !activeMapWin || typeof activeMap.eachLayer !== 'function') return false;
+        const L = activeMapWin.L;
+        if (!L) return false;
+        let found = false;
+        try {
+            activeMap.eachLayer(layer => {
+                if (!found && !casingLayers.has(layer) && isNativeTrack(layer, L)) found = true;
+            });
+        } catch (error) { /* A live Leaflet layer collection can change during iteration. */ }
+        return found;
+    };
+
     const terrainBasemaps = () => {
         const B = terrainBasemap;
         if (!B) return { basemap: null, basemaps: [] };
@@ -375,7 +391,7 @@ import { terrainCamera as TerrainCamera } from './terrain-camera.js';
             terrainToggle.setAttribute('aria-label', 'Return to the 2D map');
             terrainToggle.setAttribute('aria-pressed', 'true');
         } else {
-            const hasRoute = collectRoute().segments.length > 0;
+            const hasRoute = hasNativeRoute();
             terrainToggle.disabled = !hasRoute;
             terrainToggle.textContent = '3D';
             terrainToggle.title = hasRoute ? 'View this route on 3D terrain' : 'Available once the map has a GPS track';
