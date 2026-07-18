@@ -24,6 +24,7 @@
     "release:verify-archive": "node scripts/verify-release-archive.mjs",
     "pretest": "npm run build",
     "showcase:render": "npm run build && node scripts/render-showcase.mjs",
+    "showcase:teton:render": "npm run build && node scripts/render-teton-live-showcase.mjs",
     "terrain:verify": "npm run build && node scripts/verify-terrain-visual.mjs",
     "start:firefox": "node scripts/run-development.mjs firefox",
     "start:chromium": "node scripts/run-development.mjs chromium",
