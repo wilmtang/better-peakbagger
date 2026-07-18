@@ -151,8 +151,10 @@ startup invariant is documented in [dark-mode-flash.md](dark-mode-flash.md).
 - CacheStorage: bounded, best-effort DEM response bytes.
 - Peakbagger `localStorage`: page-local filter state and the early theme mirror.
 
-Returning from 3D to 2D destroys the MapLibre renderer and stops its tile
-activity. Successful DEM responses may remain in the bounded cache.
+The 2D and 3D renderers hand off their validated center and equivalent zoom on
+every switch; bearing and pitch stay 3D-only. Returning to 2D then destroys the
+MapLibre renderer and stops its tile activity. Successful DEM responses may
+remain in the bounded cache.
 
 ## Verification boundaries
 

@@ -16,6 +16,7 @@ import { gpxMetrics as GpxMetrics } from './gpx-metrics.js';
 import { settingsSchema as Schema } from './settings-schema.js';
 import { peakMarkers } from './peak-markers.js';
 import { terrainBasemap } from './terrain-basemap.js';
+import { terrainCamera as TerrainCamera } from './terrain-camera.js';
 
 // Chart and tzlookup remain separately-loaded vendor globals (see manifest).
 const run = async () => {
@@ -28,6 +29,7 @@ const run = async () => {
     const MAP_RESIZE_RAIL_HEIGHT = 18;
     const MAP_RESIZE_PERSIST_DELAY_MS = 400;
     const TERRAIN_LOAD_TIMEOUT_MS = 17000;
+    const TERRAIN_CAMERA_TIMEOUT_MS = 1000;
 
     const parseMapRouteSegments = xml => {
         const segments = [];
@@ -524,6 +526,22 @@ const run = async () => {
         let terrainConsentPending = false;
         let terrainLoadTimer = null;
         let terrainNavTop = null;
+        let terrainViewCamera = null;
+        let terrainStopPending = false;
+        let terrainCameraRequestId = 0;
+
+        const nativeLeafletMap = () => {
+            try {
+                return mapIframe && mapIframe.contentWindow && mapIframe.contentWindow.mapsPlaceholder;
+            } catch (error) {
+                return null;
+            }
+        };
+
+        const rememberTerrainCamera = value => {
+            const camera = TerrainCamera.clean(value);
+            if (camera) terrainViewCamera = camera;
+        };
 
         // Float the toggle just above the zoom stack in whichever map is showing:
         // the 3D frame reports its stack height (it is cross-origin), while the
@@ -595,7 +613,13 @@ const run = async () => {
             // in the title/aria-label. A spinner class covers the load.
             terrainButton.classList.remove('bpb-map-3d-toggle-loading');
             terrainButton.removeAttribute('aria-busy');
-            if (terrainState === 'loading') {
+            if (terrainStopPending) {
+                terrainButton.disabled = true;
+                terrainButton.textContent = '2D';
+                terrainButton.title = 'Returning to the 2D map…';
+                terrainButton.setAttribute('aria-label', 'Returning to the 2D map');
+                terrainButton.setAttribute('aria-pressed', 'true');
+            } else if (terrainState === 'loading') {
                 terrainButton.disabled = true;
                 terrainButton.textContent = '3D';
                 terrainButton.classList.add('bpb-map-3d-toggle-loading');
@@ -629,6 +653,8 @@ const run = async () => {
         const failTerrain = message => {
             clearTerrainLoadTimer();
             terrainState = 'idle';
+            terrainViewCamera = null;
+            terrainStopPending = false;
             restoreNativeMap();
             postTerrain('destroy');
             updateTerrainButton();
@@ -652,26 +678,47 @@ const run = async () => {
             // reserved for errors and the drape-unsupported notice.
             showTerrainMessage('');
             updateTerrainButton();
+            terrainViewCamera = TerrainCamera.fromLeaflet(nativeLeafletMap());
             postTerrain('init', {
                 routeSegments: mapRouteSegments,
                 routeStyle: resolveMapRouteStyle(BPB.get()),
                 theme: effectiveTheme(BPB.get().theme),
                 basemap: getTerrainBasemap(),
                 basemaps: enumerateTerrainBasemaps(),
-                cacheLimitMb: resolveTerrainCacheLimitMb(BPB.get())
+                cacheLimitMb: resolveTerrainCacheLimitMb(BPB.get()),
+                ...(terrainViewCamera ? { camera: terrainViewCamera } : {})
             });
             terrainLoadTimer = setTimeout(() => {
                 if (terrainState === 'loading') failTerrain(terrainFailureMessage('timeout'));
             }, TERRAIN_LOAD_TIMEOUT_MS);
         };
 
-        const stopTerrain = () => {
+        const finishTerrainStop = () => {
             clearTerrainLoadTimer();
+            if (terrainState === 'active' && terrainViewCamera) {
+                TerrainCamera.applyToLeaflet(nativeLeafletMap(), terrainViewCamera);
+            }
             terrainState = 'idle';
+            terrainViewCamera = null;
+            terrainStopPending = false;
             restoreNativeMap();
             postTerrain('destroy');
             showTerrainMessage('');
             updateTerrainButton();
+        };
+
+        const stopTerrain = () => {
+            if (terrainState !== 'active') {
+                finishTerrainStop();
+                return;
+            }
+            if (terrainStopPending) return;
+            clearTerrainLoadTimer();
+            terrainStopPending = true;
+            updateTerrainButton();
+            terrainCameraRequestId++;
+            postTerrain('cameraRequest', { requestId: terrainCameraRequestId });
+            terrainLoadTimer = setTimeout(finishTerrainStop, TERRAIN_CAMERA_TIMEOUT_MS);
         };
 
         const syncTerrainAvailability = settings => {
@@ -739,6 +786,7 @@ const run = async () => {
                 if (data.enabled === true) startTerrain(true);
             } else if (data.type === 'loaded' && terrainState === 'loading') {
                 clearTerrainLoadTimer();
+                rememberTerrainCamera(data.camera);
                 terrainState = 'active';
                 terrainNavTop = Number.isFinite(data.navTop) ? data.navTop : null;
                 mapIframe.style.visibility = 'hidden';
@@ -748,6 +796,9 @@ const run = async () => {
             } else if (data.type === 'metrics' && terrainState === 'active') {
                 if (Number.isFinite(data.navTop)) terrainNavTop = data.navTop;
                 positionTerrainToggle();
+            } else if (data.type === 'camera' && terrainState === 'active') {
+                rememberTerrainCamera(data.camera);
+                if (terrainStopPending && data.requestId === terrainCameraRequestId) finishTerrainStop();
             } else if (data.type === 'peaksRequest' && terrainState !== 'idle') {
                 answerPeaksRequest(data);
             } else if (data.type === 'error' && terrainState === 'loading') {

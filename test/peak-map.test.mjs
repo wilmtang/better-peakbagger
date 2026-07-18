@@ -62,6 +62,16 @@ test('Peak pages wrap the Dynamic Map with a 3D toggle and open a validated summ
     const iframe = window.document.getElementById('Gmap');
     const mount = window.document.getElementById('bpb-map-viewport');
     const toggle = window.document.getElementById('bpb-terrain-toggle');
+    const setViewCalls = [];
+    iframe.contentWindow.mapsPlaceholder = {
+        eachLayer() {},
+        on() {},
+        getCenter() { return { lat: 48.84, lng: -121.59 }; },
+        getZoom() { return 15; },
+        setView(center, zoom, options) {
+            setViewCalls.push({ center: [...center], zoom, options: { ...options } });
+        }
+    };
 
     assert.ok(mount);
     assert.equal(mount.className, 'bpb-terrain-mount-peak');
@@ -81,6 +91,8 @@ test('Peak pages wrap the Dynamic Map with a 3D toggle and open a validated summ
     const init = messages.find(message => message.__bpbTerrain === true && message.type === 'init');
     assert.deepEqual(init.focus, [48.83115, -121.60214]);
     assert.equal(init.focusZoom, 13, 'Leaflet z14 is translated to the equivalent MapLibre z13 view');
+    assert.deepEqual(init.camera, { center: [48.84, -121.59], zoom: 14 },
+        'the live Dynamic Map camera takes precedence over its original URL focus');
     assert.deepEqual(init.focusPeak, {
         id: 2829,
         name: 'Mount Shuksan',
@@ -106,7 +118,35 @@ test('Peak pages wrap the Dynamic Map with a 3D toggle and open a validated summ
     assert.equal(toggle.textContent, '2D');
     assert.equal(toggle.getAttribute('aria-pressed'), 'true');
 
+    window.dispatchEvent(new window.MessageEvent('message', {
+        source: window,
+        origin: window.location.origin,
+        data: {
+            __bpbTerrain: true,
+            dir: 'toPage',
+            type: 'camera',
+            camera: { center: [48.9, -121.7], zoom: 12.5 }
+        }
+    }));
     toggle.click();
+    assert.equal(messages.at(-1).type, 'cameraRequest');
+    const cameraRequestId = messages.at(-1).requestId;
+    window.dispatchEvent(new window.MessageEvent('message', {
+        source: window,
+        origin: window.location.origin,
+        data: {
+            __bpbTerrain: true,
+            dir: 'toPage',
+            type: 'camera',
+            requestId: cameraRequestId,
+            camera: { center: [48.9, -121.7], zoom: 12.5 }
+        }
+    }));
+    assert.deepEqual(setViewCalls, [{
+        center: [48.9, -121.7],
+        zoom: 13.5,
+        options: { animate: false }
+    }], 'the settled terrain camera is applied before the Dynamic Map is revealed');
     assert.equal(iframe.style.visibility, 'visible');
     assert.equal(iframe.hasAttribute('aria-hidden'), false);
     assert.equal(toggle.textContent, '3D');

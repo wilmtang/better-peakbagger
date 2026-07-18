@@ -5,6 +5,7 @@
 
 import { settingsSchema } from './settings-schema.js';
 import { terrainCache as TerrainCache } from './terrain-cache.js';
+import { terrainCamera } from './terrain-camera.js';
 
 // Kept as an IIFE for scoping; maplibregl remains a separately-loaded vendor
 // global (see terrain/terrain.html); no globals are published here.
@@ -1053,6 +1054,7 @@ import { terrainCache as TerrainCache } from './terrain-cache.js';
         if (map || mapElement) return;
         const route = validateRoute(data.routeSegments, data.routeColors);
         const focus = validateFocus(data.focus, data.focusZoom);
+        const requestedCamera = terrainCamera.toMapLibre(data.camera);
         routeHasFeatureColors = Boolean(route && route.hasFeatureColors);
         const maplibre = globalThis.maplibregl;
         const cacheLimitMb = settingsSchema.terrainCacheLimitMb(data.cacheLimitMb);
@@ -1146,16 +1148,17 @@ import { terrainCache as TerrainCache } from './terrain-cache.js';
             terrainCache = TerrainCache.create({ limitMb: cacheLimitMb });
             maplibre.addProtocol(TerrainCache.PROTOCOL, terrainCache.load);
             terrainProtocolRegistered = true;
-            // Start at the final camera directly. Route views frame the track;
-            // Peak pages center on their summit. Initialising at a placeholder
-            // camera and moving only after 'load' would fetch and mesh a whole
-            // throwaway tileset for a view the user never sees.
-            const initialCamera = route
+            // Start at the live 2D camera when one was available; otherwise
+            // route views frame the track and Peak pages center on their summit.
+            // Initialising at a placeholder camera and moving only after 'load'
+            // would fetch and mesh a throwaway tileset the user never sees.
+            const initialCamera = requestedCamera
+                || (route
                 ? {
                     bounds: route.bounds,
                     fitBoundsOptions: { padding: 46, maxZoom: 15.5, pitch: 60, bearing: 0 }
                 }
-                : { center: focus.center, zoom: focus.zoom };
+                : { center: focus.center, zoom: focus.zoom });
             map = new maplibre.Map({
                 container: canvas,
                 style: terrainStyle(activeTheme, activeBasemap),
@@ -1172,8 +1175,8 @@ import { terrainCache as TerrainCache } from './terrain-cache.js';
             // attribution ("ⓘ") first so it can't wrap and shove the zoom upward,
             // then a zoom-only control (no compass) so the stack is the same
             // two-button height as the 2D zoom and the floating toggle lines up
-            // the same way in both. Returning to 2D reframes the route, so the
-            // compass's reset role is covered.
+            // the same way in both. The 2D camera preserves center and zoom but
+            // has no bearing, so a later 3D transition starts north-up again.
             terrainMap.addControl(new maplibre.AttributionControl({ compact: true }), 'bottom-right');
             terrainMap.addControl(new maplibre.NavigationControl({ showCompass: false }), 'bottom-right');
             terrainMap.addControl(new maplibre.ScaleControl({ maxWidth: 120, unit: 'metric' }), 'bottom-left');
@@ -1246,13 +1249,19 @@ import { terrainCache as TerrainCache } from './terrain-cache.js';
                     paint: { 'circle-radius': 8, 'circle-color': HIGHLIGHT_COLORS.distance, 'circle-stroke-color': '#ffffff', 'circle-stroke-width': 2 }
                 });
                 terrainMap.on('moveend', () => {
-                    if (map === terrainMap) schedulePeaksRequest();
+                    if (map !== terrainMap) return;
+                    const camera = terrainCamera.fromMapLibre(terrainMap);
+                    if (camera) post('camera', { camera });
+                    schedulePeaksRequest();
                 });
                 loaded = true;
                 setTheme(activeTheme);
                 status.remove();
                 mapElement.style.pointerEvents = 'auto';
-                post('loaded', { navTop: measureNavTop() });
+                post('loaded', {
+                    navTop: measureNavTop(),
+                    camera: terrainCamera.fromMapLibre(terrainMap)
+                });
                 schedulePeaksRequest();
             });
 
@@ -1288,6 +1297,11 @@ import { terrainCache as TerrainCache } from './terrain-cache.js';
         else if (data.type === 'destroy') {
             removeTerrain();
             post('destroyed');
+        } else if (data.type === 'cameraRequest') {
+            const camera = terrainCamera.fromMapLibre(map);
+            if (camera && Number.isSafeInteger(data.requestId) && data.requestId > 0) {
+                post('camera', { camera, requestId: data.requestId });
+            }
         } else if (data.type === 'highlight') setHighlight(data.coordinates, data.series);
         else if (data.type === 'peaks') applyPeaks(data);
         else if (data.type === 'update') {

@@ -42,16 +42,16 @@ export const ENTRIES = [
     { out: 'content/ascent-editor.js', sources: ['ascent-draft.js', 'report-markup.js', 'report-editor.js'] },
     { out: 'content/theme.js', sources: ['settings-schema.js', 'settings.js', 'site-dark-css.js', 'theme.js'] },
     { out: 'content/ascent-bridge.js', sources: ['settings-schema.js', 'settings.js', 'bridge.js'] },
-    { out: 'content/gpx-analyzer.js', sources: ['gpx-metrics.js', 'terrain-basemap.js', 'peak-markers.js', 'settings-schema.js', 'gpx-analyzer.js'] },
-    { out: 'content/terrain-map.js', sources: ['settings-schema.js', 'settings.js', 'terrain-map.js'] },
+    { out: 'content/gpx-analyzer.js', sources: ['gpx-metrics.js', 'terrain-basemap.js', 'terrain-camera.js', 'peak-markers.js', 'settings-schema.js', 'gpx-analyzer.js'] },
+    { out: 'content/terrain-map.js', sources: ['terrain-camera.js', 'settings-schema.js', 'settings.js', 'terrain-map.js'] },
     { out: 'content/ascent-filter.js', sources: ['settings-schema.js', 'settings.js', 'ascent-filter.js'] },
     { out: 'content/peak-map-bridge.js', sources: ['settings-schema.js', 'settings.js', 'peak-map-bridge.js'] },
     { out: 'content/peak-links.js', sources: ['peak-links.js'] },
-    { out: 'content/peak-map.js', sources: ['terrain-basemap.js', 'peak-markers.js', 'settings-schema.js', 'peak-map.js'] },
+    { out: 'content/peak-map.js', sources: ['terrain-basemap.js', 'terrain-camera.js', 'peak-markers.js', 'settings-schema.js', 'peak-map.js'] },
     { out: 'content/big-map-bridge.js', sources: ['settings-schema.js', 'settings.js', 'big-map-bridge.js'] },
-    { out: 'content/big-map.js', sources: ['gpx-metrics.js', 'terrain-basemap.js', 'peak-markers.js', 'settings-schema.js', 'big-map.js'] },
+    { out: 'content/big-map.js', sources: ['gpx-metrics.js', 'terrain-basemap.js', 'terrain-camera.js', 'peak-markers.js', 'settings-schema.js', 'big-map.js'] },
 
-    { out: 'terrain/terrain-frame.js', sources: ['settings-schema.js', 'terrain-cache.js', 'terrain-frame.js'] },
+    { out: 'terrain/terrain-frame.js', sources: ['terrain-camera.js', 'settings-schema.js', 'terrain-cache.js', 'terrain-frame.js'] },
     // The options page keeps its head/tail split: the head bundle applies the
     // theme before first paint, the tail bundle runs the settings UI.
     { out: 'options/options-head.js', sources: ['settings-schema.js', 'settings.js', 'options-theme.js'], page: true },
