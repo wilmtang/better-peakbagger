@@ -6,7 +6,9 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import { JSDOM } from 'jsdom';
 
-const source = await fs.readFile(new URL('../src/provider-page.js', import.meta.url), 'utf8');
+// The built bundle (IIFE) evaluated in each page's jsdom realm, so the module
+// reads that page's document/location — exactly as the injected script does.
+const source = await fs.readFile(new URL('../dist/provider-page.js', import.meta.url), 'utf8');
 
 const load = (html, url) => {
     const dom = new JSDOM(html, { url, runScripts: 'outside-only' });

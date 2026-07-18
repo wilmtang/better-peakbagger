@@ -8,13 +8,8 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { JSDOM } from 'jsdom';
-import { makeChromeStub, waitFor } from './helpers/load-page.mjs';
-
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+import { makeChromeStub, waitFor, evalBundle } from './helpers/load-page.mjs';
 
 const loadBridge = async () => {
     const dom = new JSDOM('<!doctype html><body></body>', {
@@ -23,9 +18,7 @@ const loadBridge = async () => {
     });
     dom.chrome = makeChromeStub();
     dom.window.chrome = dom.chrome;
-    dom.window.eval(await readFile(path.join(root, 'src', 'settings-schema.js'), 'utf8'));
-    dom.window.eval(await readFile(path.join(root, 'src', 'settings.js'), 'utf8'));
-    dom.window.eval(await readFile(path.join(root, 'src', 'bridge.js'), 'utf8'));
+    await evalBundle(dom.window, 'content/ascent-bridge.js');
     return dom;
 };
 

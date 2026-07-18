@@ -5,10 +5,7 @@
 // the validated route style fields, not the full settings object or a settings
 // write path.
 
-(() => {
-    'use strict';
-    const S = globalThis.BPBSettings;
-    if (!S) return;
+import { settings as S } from './settings.js';
 
     const send = settings => window.postMessage({
         __bpbBigMap: true,
@@ -33,4 +30,3 @@
     });
 
     S.subscribe(send);
-})();

@@ -6,13 +6,11 @@
 // DOM, reorders existing rows, and persists PeakAscents chip preferences in the
 // page's (same-origin) localStorage, so no page-global access is needed.
 
-(() => {
-    'use strict';
+import { settings as S } from './settings.js';
 
     // Chip on/off states and the Trip report word-count threshold are per-page
     // UI state kept in page localStorage (below). The shared extension settings
     // (chrome.storage) own only the cross-cutting "has beta" definition.
-    const S = globalThis.BPBSettings;
 
     const STORAGE_KEY = 'pbAscentBetaFilter.v1';
     const DEFAULT_STATE = { beta: true, tr: false, minWords: 1, gps: false, link: false };
@@ -677,4 +675,3 @@
     } else {
         start();
     }
-})();

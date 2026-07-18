@@ -9,18 +9,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { createRequire } from 'node:module';
 import vm from 'node:vm';
 import { JSDOM } from 'jsdom';
+import { reportMarkup as Markup } from '../src/report-markup.js';
 
 const browserDom = new JSDOM('');
 globalThis.DOMParser = browserDom.window.DOMParser;
 const markedContext = vm.createContext({});
-vm.runInContext(await readFile(new URL('../vendor/marked.umd.js', import.meta.url), 'utf8'), markedContext);
+vm.runInContext(await readFile(new URL('../node_modules/marked/lib/marked.umd.js', import.meta.url), 'utf8'), markedContext);
 globalThis.marked = markedContext.marked;
-
-const require = createRequire(import.meta.url);
-const Markup = require('../src/report-markup.js');
 
 // ---- markdown → bracket ----------------------------------------------------
 

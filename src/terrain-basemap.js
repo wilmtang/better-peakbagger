@@ -7,8 +7,6 @@
 // 2D layer menu and the 3D drape picker cannot diverge. Pure with respect to
 // the extension: it only reads the same-origin page/frame that owns Leaflet.
 
-(() => {
-    'use strict';
 
     // Peakbagger builds each 2D basemap on demand inside its MasterMap
     // MapChange() switch, so there is no per-layer global to read and only the
@@ -158,5 +156,4 @@
         return null;
     };
 
-    globalThis.BPBTerrainBasemap = { TERRAIN_DRAPE_LAYERS, drapeFromCode, fromLayer, enumerate, active };
-})();
+    export const terrainBasemap = { TERRAIN_DRAPE_LAYERS, drapeFromCode, fromLayer, enumerate, active };

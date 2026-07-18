@@ -7,14 +7,15 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { JSDOM } from 'jsdom';
-import { loadPage, PAGE_FIXTURES } from './helpers/load-page.mjs';
+import { loadPage, PAGE_FIXTURES, DIST } from './helpers/load-page.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const source = await readFile(path.join(root, 'src', 'peak-links.js'), 'utf8');
+// The built bundle (IIFE) stands in for the injected content script.
+const source = await readFile(path.join(DIST, 'content', 'peak-links.js'), 'utf8');
 
 const loadPeak = fixture => loadPage(fixture, {
     url: 'https://www.peakbagger.com/Peak.aspx?pid=1',
-    scripts: ['src/peak-links.js'],
+    bundles: ['content/peak-links.js'],
     fixtures: PAGE_FIXTURES
 });
 

@@ -23,10 +23,6 @@
 // mode in report-editor.js remains the explicit verbatim escape hatch.
 // Idempotent: safe to inject more than once into the same global.
 
-(() => {
-    'use strict';
-
-    if (globalThis.BPBReportMarkup) return;
 
     const INLINE_TAGS = new Map([
         ['b', 'b'], ['strong', 'b'],
@@ -736,6 +732,4 @@
         domToBracket: root => astToBracket(domToAst(root))
     };
 
-    globalThis.BPBReportMarkup = API;
-    if (typeof module !== 'undefined' && module.exports) module.exports = API;
-})();
+    export const reportMarkup = API;

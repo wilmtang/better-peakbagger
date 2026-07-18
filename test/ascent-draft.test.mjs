@@ -6,7 +6,9 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import { JSDOM } from 'jsdom';
 
-const source = await fs.readFile(new URL('../src/ascent-draft.js', import.meta.url), 'utf8');
+// The built ascent-editor bundle (draft filling + report markup + editor); the
+// editor stays dormant without a JournalText field, so it exercises draft fill.
+const source = await fs.readFile(new URL('../dist/content/ascent-editor.js', import.meta.url), 'utf8');
 
 const formHtml = `<!doctype html><body><form>
   <input id="DateText"><input id="SuffixText"><input id="StartFt"><input id="StartM"><input id="EndFt"><input id="EndM">

@@ -4,12 +4,12 @@
 // Loads the REAL unpacked extension in hidden Chrome and drives a local
 // Peakbagger stand-in, so the actual manifest decides script order and worlds.
 //
-// This covers what nothing else does. npm test evals sources by hand, so it
-// cannot see manifest order. scripts/verify-terrain-visual.mjs stubs
-// window.BPBSettings *and* answers the bridge protocol itself, so it never runs
-// src/settings.js or src/bridge.js. And manifest.background.scripts is the
-// Firefox path -- Chrome ignores it and uses background.js's own importScripts.
-// Two shipped regressions lived in exactly those blind spots.
+// This covers what nothing else does. npm test evaluates the built bundles in
+// jsdom, so it cannot see how a browser interprets manifest order and worlds.
+// scripts/verify-terrain-visual.mjs provides storage and bridge-protocol stubs,
+// so it does not exercise the real cross-world bridge. The worker also has to
+// boot through the manifest's single bundled background entry. Two shipped
+// regressions lived in exactly those blind spots.
 //
 // Browser notes, both learned the hard way:
 //   - Chrome *stable* 137+ refuses --load-extension. Use Chrome for Testing,
@@ -27,6 +27,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+// The unpacked extension is the built bundle tree, not the source root.
+const dist = path.join(root, 'dist');
 
 let chromium;
 try {
@@ -130,16 +132,16 @@ try {
         headless: true,
         viewport: { width: 1000, height: 760 },
         args: [
-            `--disable-extensions-except=${root}`,
-            `--load-extension=${root}`,
+            `--disable-extensions-except=${dist}`,
+            `--load-extension=${dist}`,
             '--host-resolver-rules=MAP www.peakbagger.com 127.0.0.1'
         ]
     });
 
     // --- The MV3 service worker actually boots -------------------------------
-    // Chrome resolves the worker's dependencies through background.js's own
-    // importScripts. When one is missing, settings.js bails, background.js
-    // returns before addListener, and capture is silently dead.
+    // Chrome boots the bundled worker selected by the manifest. A missing
+    // source in its bundle or an initialization failure can prevent the
+    // coordinator from registering its listener and leave capture silently dead.
     let [worker] = context.serviceWorkers();
     if (!worker) worker = await context.waitForEvent('serviceworker', { timeout: 15000 }).catch(() => null);
     check(!!worker, 'the extension service worker never started');
@@ -167,8 +169,8 @@ try {
     const readToggle = page => page.evaluate(() => {
         const button = document.getElementById('bpb-terrain-toggle');
         return {
-            // theme.js is isolated-world and bails without BPBSettings, so this
-            // attribute proves settings.js initialised there.
+            // theme.js imports settings in the isolated-world bundle, so this
+            // attribute proves that bundle initialized there.
             isolatedWorldReady: document.documentElement.getAttribute('data-bpb-theme'),
             analyzerPanel: !!document.getElementById('bpb-gpx-analysis'),
             stats: document.querySelector('#bpb-gpx-analysis div')?.textContent || '',
@@ -271,10 +273,8 @@ try {
             const iframe = document.getElementById('if');
             return {
                 url: location.href,
-                metricsReady: !!window.BPBGpxMetrics,
-                basemapReady: !!window.BPBTerrainBasemap,
-                peakMarkersReady: !!window.BPBPeakMarkers,
-                schemaReady: !!window.BPBSettingsSchema,
+                // Bundle readiness is proven by the toggle (checked below); no
+                // module publishes a global anymore.
                 mountExists: !!document.getElementById('bpb-map-viewport'),
                 iframeMapReady: !!iframe?.contentWindow?.mapsPlaceholder,
                 iframeLeafletReady: !!iframe?.contentWindow?.L,
@@ -302,9 +302,10 @@ try {
                 mountClass: mount.className,
                 mountHeight: mount.getBoundingClientRect().height,
                 iframePreserved: iframe.parentElement === mount,
-                basemapReady: !!window.BPBTerrainBasemap,
-                peakMarkersReady: !!window.BPBPeakMarkers,
-                schemaReady: !!window.BPBSettingsSchema,
+                // The MAIN-world coordinator bundle self-contains basemap,
+                // peak-markers, and schema via ES imports, so its toggle existing
+                // (this state being truthy) proves those loaded. The isolated
+                // theme bundle is confirmed separately by the theme attribute.
                 isolatedWorldReady: document.documentElement.getAttribute('data-bpb-theme') !== null
             } : false;
         }, null, { timeout: 10000 }).then(handle => handle.jsonValue()).catch(() => null);
@@ -314,8 +315,8 @@ try {
             `the Peak map wrapper must preserve the native iframe (state=${JSON.stringify(peakState)})`);
         check(peakState?.mountHeight === 425,
             `the Peak map wrapper must preserve the native 425px height (state=${JSON.stringify(peakState)})`);
-        check(peakState?.basemapReady && peakState?.peakMarkersReady && peakState?.schemaReady && peakState?.isolatedWorldReady,
-            `the Peak MAIN/isolated bundles did not all initialize (state=${JSON.stringify(peakState)})`);
+        check(peakState?.isolatedWorldReady,
+            `the Peak isolated-world theme bundle did not initialize (state=${JSON.stringify(peakState)})`);
         if (process.env.BPB_VERIFY_PEAK_SCREENSHOT) {
             await peakPage.screenshot({ path: process.env.BPB_VERIFY_PEAK_SCREENSHOT, fullPage: true });
         }

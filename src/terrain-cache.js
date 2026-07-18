@@ -5,8 +5,6 @@
 // tiles. CacheStorage remains browser-managed: the browser may evict it when
 // space is tight, and a cache miss always falls back to the network.
 
-(() => {
-    'use strict';
 
     const CACHE_NAME = 'bpb-mapterhorn-dem-v1';
     const INDEX_KEY = 'bpbMapterhornDemIndexV1';
@@ -253,5 +251,4 @@
         }
     };
 
-    globalThis.BPBTerrainCache = { CACHE_NAME, INDEX_KEY, PROTOCOL, create, getUsage, parseTileUrl };
-})();
+    export const terrainCache = { CACHE_NAME, INDEX_KEY, PROTOCOL, create, getUsage, parseTileUrl };

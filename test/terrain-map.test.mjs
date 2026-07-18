@@ -7,11 +7,22 @@ import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { JSDOM } from 'jsdom';
+import { makeChromeStub } from './helpers/load-page.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const terrainBridgeSource = await readFile(path.join(root, 'src', 'terrain-map.js'), 'utf8');
-const schemaSource = await readFile(path.join(root, 'src', 'settings-schema.js'), 'utf8');
-const terrainFrameSource = await readFile(path.join(root, 'src', 'terrain-frame.js'), 'utf8');
+// The bridge imports settings, so tests provide the real chrome.storage shape
+// that module reads from, plus the getURL the bridge needs. Push updates with
+// chrome.storage.sync.set(...).
+const chromeWith = settings => {
+    const chrome = makeChromeStub({ bpbSettings: settings });
+    chrome.runtime.getURL = path => `chrome-extension://test-id/${path}`;
+    return chrome;
+};
+// The isolated in-page 3D bridge bundle, and the extension-owned terrain frame
+// bundle (settings-schema + terrain-cache + terrain-frame). MapLibre is stubbed
+// per test; the bundled terrain cache binds the supplied fetch stub.
+const bridgeBundle = await readFile(path.join(root, 'dist', 'content', 'terrain-map.js'), 'utf8');
+const frameBundle = await readFile(path.join(root, 'dist', 'terrain', 'terrain-frame.js'), 'utf8');
 
 test('3D terrain waits for the extension frame handshake before sending route coordinates', async () => {
     const dom = new JSDOM(`<!doctype html><body>
@@ -25,14 +36,10 @@ test('3D terrain waits for the extension frame handshake before sending route co
     const { window } = dom;
     const pageMessages = [];
     const frameMessages = [];
-    let settingsListener = null;
-    window.chrome = { runtime: { getURL: path => `chrome-extension://test-id/${path}` } };
-    window.BPBSettings = {
-        get: async () => ({ enable3dMap: true }),
-        subscribe(listener) { settingsListener = listener; return () => {}; }
-    };
+    window.chrome = chromeWith({ enable3dMap: true });
     window.postMessage = message => { pageMessages.push(message); };
-    window.eval(terrainBridgeSource);
+    window.eval(bridgeBundle);
+    await new Promise(resolve => window.setTimeout(resolve, 0)); // settings.get() resolves
 
     const dispatchPage = data => window.dispatchEvent(new window.MessageEvent('message', {
         source: window,
@@ -97,7 +104,8 @@ test('3D terrain waits for the extension frame handshake before sending route co
         series: 'time'
     }, 'the isolated-world bridge preserves the series discriminator');
 
-    settingsListener({ enable3dMap: false });
+    await window.chrome.storage.sync.set({ bpbSettings: { enable3dMap: false } });
+    await new Promise(resolve => window.setTimeout(resolve, 0));
     assert.equal(window.document.getElementById('bpb-terrain-frame'), null);
     assert.equal(pageMessages.at(-1).type, 'error');
     assert.equal(pageMessages.at(-1).reason, 'unavailable');
@@ -119,13 +127,9 @@ test('3D terrain bridge refuses page requests unless the stored feature gate is 
     });
     const { window } = dom;
     const messages = [];
-    window.chrome = { runtime: { getURL: path => `chrome-extension://test-id/${path}` } };
-    window.BPBSettings = {
-        get: async () => ({ enable3dMap: false }),
-        subscribe() { return () => {}; }
-    };
+    window.chrome = chromeWith({ enable3dMap: false });
     window.postMessage = message => { messages.push(message); };
-    window.eval(terrainBridgeSource);
+    window.eval(bridgeBundle);
 
     window.dispatchEvent(new window.MessageEvent('message', {
         source: window,
@@ -153,21 +157,9 @@ test('3D terrain consent is extension-owned, discloses the actual providers, and
     });
     const { window } = dom;
     const messages = [];
-    const patches = [];
-    let stored = { enable3dMap: false, theme: 'light' };
-    window.chrome = { runtime: { getURL: path => `chrome-extension://test-id/${path}` } };
-    window.BPBSettings = {
-        get: async () => ({ ...stored }),
-        set: async patch => {
-            patches.push({ ...patch });
-            stored = { ...stored, ...patch };
-            return { ...stored };
-        },
-        subscribe() { return () => {}; },
-        resolveTheme: theme => theme === 'dark' ? 'dark' : 'light'
-    };
+    window.chrome = chromeWith({ enable3dMap: false, theme: 'light' });
     window.postMessage = message => { messages.push(message); };
-    window.eval(terrainBridgeSource);
+    window.eval(bridgeBundle);
 
     const requestConsent = () => window.dispatchEvent(new window.MessageEvent('message', {
         source: window,
@@ -189,20 +181,23 @@ test('3D terrain consent is extension-owned, discloses the actual providers, and
         ['Privacy notice', 'mapterhorn.com'],
         ['Privacy notice', 'openfreemap.org']
     ]);
-    assert.equal(patches.length, 0, 'opening the confirmation must not change the setting');
+    const featureEnabled = async () =>
+        (await window.chrome.storage.sync.get('bpbSettings')).bpbSettings.enable3dMap;
+    assert.equal(await featureEnabled(), false, 'opening the confirmation must not change the setting');
 
     dialog.querySelector('.bpb-terrain-consent-secondary').click();
     assert.equal(window.document.querySelector('[role="dialog"]'), null);
     assert.equal(messages.at(-1).type, 'consentResult');
     assert.equal(messages.at(-1).enabled, false);
-    assert.equal(patches.length, 0, 'declining must keep the feature off');
+    assert.equal(await featureEnabled(), false, 'declining must keep the feature off');
 
     requestConsent();
     await new Promise(resolve => window.setTimeout(resolve, 0));
     dialog = window.document.querySelector('[role="dialog"]');
     dialog.querySelector('.bpb-terrain-consent-primary').click();
     await new Promise(resolve => window.setTimeout(resolve, 0));
-    assert.deepEqual(patches, [], 'host-page script must not enable an extension feature through DOM click()');
+    assert.equal(await featureEnabled(), false,
+        'host-page script must not enable an extension feature through DOM click()');
     assert.ok(window.document.querySelector('[role="dialog"]'), 'scripted acceptance must leave the confirmation open');
     dialog.querySelector('.bpb-terrain-consent-secondary').click();
     dom.window.close();
@@ -218,17 +213,17 @@ test('a newer feature-gate push wins over a stale initial storage read', async (
         runScripts: 'outside-only'
     });
     const { window } = dom;
-    let resolveInitialSettings;
-    let settingsListener;
-    window.chrome = { runtime: { getURL: path => `chrome-extension://test-id/${path}` } };
-    window.BPBSettings = {
-        get: () => new Promise(resolve => { resolveInitialSettings = resolve; }),
-        subscribe(listener) { settingsListener = listener; return () => {}; }
-    };
+    window.chrome = chromeWith({ enable3dMap: false });
+    // Defer the initial storage read so a subscribe push can land before it.
+    let resolveInitialGet;
+    window.chrome.storage.sync.get = () => new Promise(resolve => {
+        resolveInitialGet = () => resolve({ bpbSettings: { enable3dMap: false } });
+    });
     window.postMessage = () => {};
-    window.eval(terrainBridgeSource);
+    window.eval(bridgeBundle);
 
-    settingsListener({ enable3dMap: true });
+    // A newer enabling push arrives before the initial read resolves.
+    await window.chrome.storage.sync.set({ bpbSettings: { enable3dMap: true } });
     window.dispatchEvent(new window.MessageEvent('message', {
         source: window,
         origin: window.location.origin,
@@ -239,7 +234,7 @@ test('a newer feature-gate push wins over a stale initial storage read', async (
             routeSegments: [[[48.7, -121.8], [48.71, -121.81]]]
         }
     }));
-    resolveInitialSettings({ enable3dMap: false });
+    resolveInitialGet(); // the stale initial read resolves (disabled), after the push
     await new Promise(resolve => window.setTimeout(resolve, 0));
 
     assert.ok(window.document.getElementById('bpb-terrain-frame'),
@@ -307,12 +302,6 @@ test('3D terrain frame validates coordinate-only routes before loading public DE
     };
 
     window.chrome = { runtime: { getURL: path => `chrome-extension://test-id/${path}` } };
-    window.BPBTerrainCache = {
-        PROTOCOL: 'bpb-dem',
-        create({ limitMb }) {
-            return { limitMb, load() {}, flush() { return Promise.resolve(); } };
-        }
-    };
     window.maplibregl = {
         Map: MapStub,
         NavigationControl: class NavigationControl {},
@@ -323,8 +312,10 @@ test('3D terrain frame validates coordinate-only routes before loading public DE
         removeProtocol(name) { protocolHandlers.delete(name); }
     };
     window.postMessage = message => { messages.push(message); };
-    window.eval(schemaSource);
-    window.eval(terrainFrameSource);
+    // terrain-frame imports the real terrain-cache; its create() binds fetch
+    // (never invoked here, as no tiles load in jsdom), so provide a stub.
+    window.fetch = () => Promise.resolve();
+    window.eval(frameBundle);
 
     const dispatch = data => window.dispatchEvent(new window.MessageEvent('message', {
         source: window,
@@ -619,7 +610,6 @@ test('the 3D drape picker offers every layer and swaps the draped raster live', 
     }
 
     window.chrome = { runtime: { getURL: path => `chrome-extension://test-id/${path}` } };
-    window.BPBTerrainCache = { PROTOCOL: 'bpb-dem', create: () => ({ load() {}, flush: () => Promise.resolve() }) };
     window.maplibregl = {
         Map: MapStub,
         NavigationControl: class {},
@@ -630,8 +620,10 @@ test('the 3D drape picker offers every layer and swaps the draped raster live', 
         removeProtocol() {}
     };
     window.postMessage = () => {};
-    window.eval(schemaSource);
-    window.eval(terrainFrameSource);
+    // terrain-frame imports the real terrain-cache; its create() binds fetch
+    // (never invoked here, as no tiles load in jsdom), so provide a stub.
+    window.fetch = () => Promise.resolve();
+    window.eval(frameBundle);
 
     const routeSegments = [[[48.7, -121.8], [48.71, -121.81]]];
     const layer = (name, host) => ({ name, tiles: [`https://${host}/{z}/{x}/{y}.png`] });
@@ -738,7 +730,6 @@ test('the extension-provided vector entry grafts the provider style under the ex
         return Promise.resolve({ ok: true, json: () => Promise.resolve(providerStyle) });
     };
     window.chrome = { runtime: { getURL: path => `chrome-extension://test-id/${path}` } };
-    window.BPBTerrainCache = { PROTOCOL: 'bpb-dem', create: () => ({ load() {}, flush: () => Promise.resolve() }) };
     window.maplibregl = {
         Map: MapStub,
         NavigationControl: class {},
@@ -749,8 +740,9 @@ test('the extension-provided vector entry grafts the provider style under the ex
         removeProtocol() {}
     };
     window.postMessage = () => {};
-    window.eval(schemaSource);
-    window.eval(terrainFrameSource);
+    // This test sets its own recording fetch above; real terrain-cache binds it
+    // at create (tile loads never fire here), so keep it — do not overwrite.
+    window.eval(frameBundle);
 
     // No page-offered raster layers: the vector entry must exist regardless.
     window.dispatchEvent(new window.MessageEvent('message', {
@@ -827,13 +819,10 @@ test('the bridge forwards peak-feed requests to the page and replies to the fram
     const { window } = dom;
     const pageMessages = [];
     const frameMessages = [];
-    window.chrome = { runtime: { getURL: path => `chrome-extension://test-id/${path}` } };
-    window.BPBSettings = {
-        get: async () => ({ enable3dMap: true }),
-        subscribe() { return () => {}; }
-    };
+    window.chrome = chromeWith({ enable3dMap: true });
     window.postMessage = message => { pageMessages.push(message); };
-    window.eval(terrainBridgeSource);
+    window.eval(bridgeBundle);
+    await new Promise(resolve => window.setTimeout(resolve, 0)); // settings.get() resolves
 
     window.dispatchEvent(new window.MessageEvent('message', {
         source: window,
@@ -949,10 +938,6 @@ test('3D peak markers request Peakbagger dots on camera settle and render only v
     }
 
     window.chrome = { runtime: { getURL: path => `chrome-extension://test-id/${path}` } };
-    window.BPBTerrainCache = {
-        PROTOCOL: 'bpb-dem',
-        create() { return { load() {}, flush() { return Promise.resolve(); } }; }
-    };
     window.maplibregl = {
         Map: MapStub,
         Popup: PopupStub,
@@ -964,8 +949,10 @@ test('3D peak markers request Peakbagger dots on camera settle and render only v
         removeProtocol() {}
     };
     window.postMessage = message => { messages.push(message); };
-    window.eval(schemaSource);
-    window.eval(terrainFrameSource);
+    // terrain-frame imports the real terrain-cache; its create() binds fetch
+    // (never invoked here, as no tiles load in jsdom), so provide a stub.
+    window.fetch = () => Promise.resolve();
+    window.eval(frameBundle);
 
     const dispatch = data => window.dispatchEvent(new window.MessageEvent('message', {
         source: window,
@@ -1206,10 +1193,6 @@ test('3D peak dots snap uphill to the local DEM summit, and only to a genuine on
     }
 
     window.chrome = { runtime: { getURL: path => `chrome-extension://test-id/${path}` } };
-    window.BPBTerrainCache = {
-        PROTOCOL: 'bpb-dem',
-        create() { return { load() {}, flush() { return Promise.resolve(); } }; }
-    };
     window.maplibregl = {
         Map: MapStub,
         Popup: class { remove() {} },
@@ -1221,8 +1204,10 @@ test('3D peak dots snap uphill to the local DEM summit, and only to a genuine on
         removeProtocol() {}
     };
     window.postMessage = () => {};
-    window.eval(schemaSource);
-    window.eval(terrainFrameSource);
+    // terrain-frame imports the real terrain-cache; its create() binds fetch
+    // (never invoked here, as no tiles load in jsdom), so provide a stub.
+    window.fetch = () => Promise.resolve();
+    window.eval(frameBundle);
 
     const dispatch = data => window.dispatchEvent(new window.MessageEvent('message', {
         source: window,

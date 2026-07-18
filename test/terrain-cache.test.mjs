@@ -8,8 +8,7 @@ import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { JSDOM } from 'jsdom';
 
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const cacheSource = await readFile(path.join(root, 'src', 'terrain-cache.js'), 'utf8');
+import { terrainCache } from '../src/terrain-cache.js';
 
 class MemoryCache {
     constructor() { this.entries = new Map(); }
@@ -48,8 +47,9 @@ const makeStorageArea = () => {
 
 const loadCacheModule = () => {
     const dom = new JSDOM('<!doctype html>', { runScripts: 'outside-only' });
-    dom.window.eval(cacheSource);
-    return { dom, module: dom.window.BPBTerrainCache };
+    // Tests pass cacheStorage/storageArea explicitly, so the module needs no
+    // ambient caches API.
+    return { dom, module: terrainCache };
 };
 
 test('DEM protocol accepts only bounded Mapterhorn tile coordinates', () => {

@@ -10,11 +10,10 @@ import { JSDOM } from 'jsdom';
 import { makeChromeStub, waitFor } from './helpers/load-page.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const schemaSource = await readFile(path.join(root, 'src', 'settings-schema.js'), 'utf8');
-const settingsSource = await readFile(path.join(root, 'src', 'settings.js'), 'utf8');
-const bridgeSource = await readFile(path.join(root, 'src', 'big-map-bridge.js'), 'utf8');
-const peakMarkersSource = await readFile(path.join(root, 'src', 'peak-markers.js'), 'utf8');
-const bigMapSource = await readFile(path.join(root, 'src', 'big-map.js'), 'utf8');
+// The BigMap page loads the isolated settings-bridge bundle then the MAIN-world
+// enhancer bundle (which carries metrics, basemap, and the peak-marker feed).
+const bridgeBundle = await readFile(path.join(root, 'dist', 'content', 'big-map-bridge.js'), 'utf8');
+const mainBundle = await readFile(path.join(root, 'dist', 'content', 'big-map.js'), 'utf8');
 
 const makeLeaflet = window => {
     class Polyline {
@@ -78,10 +77,8 @@ const loadBigMap = async ({ type = 'G', width = 7, settings = {} } = {}) => {
     };
     const leaflet = makeLeaflet(window);
     return { dom, window, messages, leaflet, evaluate: () => {
-        window.eval(schemaSource);
-        window.eval(settingsSource);
-        window.eval(bridgeSource);
-        window.eval(bigMapSource);
+        window.eval(bridgeBundle);
+        window.eval(mainBundle);
     } };
 };
 
@@ -136,7 +133,9 @@ test('Full Screen recent-track maps preserve native colors, hover, and click beh
     assert.equal(lateRoute.options.color, '#31a354', 'group tracks keep their native color');
     assert.equal(casingsOf().length, 3, 'a track added later also gains a casing');
 
-    await window.BPBSettings.set({ mapRouteWidth: 9 });
+    // Change the stored width; the bridge's storage.onChanged listener pushes it
+    // to the MAIN-world enhancer (settings is no longer a page global).
+    await window.chrome.storage.sync.set({ bpbSettings: { ...window.chrome._store.bpbSettings, mapRouteWidth: 9 } });
     await waitFor(dom, () => routeA.options.weight === 9 && routeB.options.weight === 9 && lateRoute.options.weight === 9);
     // mapRouteCasingWidth defaults to 9 but is clamped to width + 2 = 11.
     await waitFor(dom, () => casingsOf().every(casing => casing.options.weight === 11));
@@ -195,10 +194,8 @@ test('Full Screen maps case native tracks that live in the MasterMap child ifram
     track._popup = { content: 'Native Peakbagger trip report' };
     mapWin.mapsPlaceholder = new leaflet.MapStub([track]);
 
-    window.eval(schemaSource);
-    window.eval(settingsSource);
-    window.eval(bridgeSource);
-    window.eval(bigMapSource);
+    window.eval(bridgeBundle);
+    window.eval(mainBundle);
 
     await waitFor(dom, () => track.options.weight === 8);
     assert.equal(track.options.color, '#FF0000', 'group tracks keep their native color');
@@ -291,7 +288,6 @@ test('Full Screen 3D maps serve peak-dot requests from the native PLLBB feed', a
             text: async () => `<ts><t i="58603" n="Iron Mountain" a="44.155" o="-121.77" c="1" r="246"/></ts>`
         };
     };
-    window.eval(peakMarkersSource);
     fixture.evaluate();
 
     await waitFor(dom, () => route.options.weight === 6);
@@ -337,7 +333,6 @@ test('Full Screen 3D group maps answer peak-dot requests as unavailable, like th
     route.on('click', () => {});
     window.map = new leaflet.MapStub([route]);
     window.fetch = async () => { throw new Error('a group map must never hit the peak feed'); };
-    window.eval(peakMarkersSource);
     fixture.evaluate();
 
     await waitFor(dom, () => route.options.weight === 6);

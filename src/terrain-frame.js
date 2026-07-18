@@ -3,6 +3,11 @@
 //
 // Better Peakbagger — MapLibre renderer hosted by terrain/terrain.html.
 
+import { settingsSchema } from './settings-schema.js';
+import { terrainCache as TerrainCache } from './terrain-cache.js';
+
+// Kept as an IIFE for scoping; maplibregl remains a separately-loaded vendor
+// global (see terrain/terrain.html); no globals are published here.
 (() => {
     'use strict';
 
@@ -113,7 +118,7 @@
     let noticeElement = null;
     let terrainCache = null;
     let terrainProtocolRegistered = false;
-    let activeRouteStyle = { ...globalThis.BPBSettingsSchema.ROUTE_STYLE };
+    let activeRouteStyle = { ...settingsSchema.ROUTE_STYLE };
     let vectorActive = false;
     let vectorStylePromise = null;
     let vectorSwapToken = 0;
@@ -197,7 +202,7 @@
             map = null;
         }
         if (terrainProtocolRegistered && globalThis.maplibregl && typeof globalThis.maplibregl.removeProtocol === 'function') {
-            try { globalThis.maplibregl.removeProtocol(globalThis.BPBTerrainCache.PROTOCOL); } catch (error) { /* The frame may already be unloading. */ }
+            try { globalThis.maplibregl.removeProtocol(TerrainCache.PROTOCOL); } catch (error) { /* The frame may already be unloading. */ }
         }
         if (terrainCache) void terrainCache.flush();
         terrainCache = null;
@@ -288,7 +293,7 @@
     // The host page is cross-origin to this frame, so its style is untrusted;
     // the shared schema keeps this check identical to the page-world and
     // storage-side ones.
-    const validateStyle = style => globalThis.BPBSettingsSchema.routeStyle(style);
+    const validateStyle = style => settingsSchema.routeStyle(style);
 
     const isPublicHostname = hostname => {
         const host = hostname.toLowerCase();
@@ -1049,8 +1054,8 @@
         const focus = validateFocus(data.focus, data.focusZoom);
         routeHasFeatureColors = Boolean(route && route.hasFeatureColors);
         const maplibre = globalThis.maplibregl;
-        const cacheLimitMb = globalThis.BPBSettingsSchema.terrainCacheLimitMb(data.cacheLimitMb);
-        if ((!route && !focus) || !maplibre || !globalThis.BPBTerrainCache || !globalThis.chrome?.runtime?.getURL) {
+        const cacheLimitMb = settingsSchema.terrainCacheLimitMb(data.cacheLimitMb);
+        if ((!route && !focus) || !maplibre || !TerrainCache || !globalThis.chrome?.runtime?.getURL) {
             fail('unavailable');
             return;
         }
@@ -1137,8 +1142,8 @@
 
         try {
             maplibre.setWorkerUrl(chrome.runtime.getURL('vendor/maplibre-gl-csp-worker.js'));
-            terrainCache = globalThis.BPBTerrainCache.create({ limitMb: cacheLimitMb });
-            maplibre.addProtocol(globalThis.BPBTerrainCache.PROTOCOL, terrainCache.load);
+            terrainCache = TerrainCache.create({ limitMb: cacheLimitMb });
+            maplibre.addProtocol(TerrainCache.PROTOCOL, terrainCache.load);
             terrainProtocolRegistered = true;
             // Start at the final camera directly. Route views frame the track;
             // Peak pages center on their summit. Initialising at a placeholder

@@ -22,12 +22,9 @@
 //
 // See docs/dark-mode-flash.md.
 
-(() => {
-    // Firefox content scripts have a global scope that inherits from `window`
-    // but is not the same object. Shared extension modules publish on
-    // globalThis, so reading them back through window silently misses them.
-    const S = globalThis.BPBSettings;
-    if (!S) return;
+import { settings as S } from './settings.js';
+import { darkCss } from './site-dark-css.js';
+
     const root = document.documentElement;
 
     // Mirrors the theme preference ('system' | 'light' | 'dark') so the next
@@ -45,10 +42,10 @@
     // (the GPX chart) dark on an otherwise-light page. `<head>` doesn't exist at
     // document_start, so fall back to `<html>`; once it exists we prefer it.
     const ensureSheet = () => {
-        if (!globalThis.BPBDarkCSS || document.getElementById(STYLE_ID)) return;
+        if (!darkCss || document.getElementById(STYLE_ID)) return;
         const style = document.createElement('style');
         style.id = STYLE_ID;
-        style.textContent = globalThis.BPBDarkCSS;
+        style.textContent = darkCss;
         (document.head || root).appendChild(style);
     };
     ensureSheet();
@@ -75,4 +72,3 @@
         if (mq.addEventListener) mq.addEventListener('change', onChange);
         else if (mq.addListener) mq.addListener(onChange);
     }
-})();

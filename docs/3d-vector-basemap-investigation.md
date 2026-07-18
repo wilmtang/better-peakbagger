@@ -17,9 +17,10 @@ and explains the recommendation the `OSM Vector (experimental)` prototype implem
 
 ## What a provider must offer
 
-The extension is build-free, ships no server, and treats every third-party
-request as a privacy decision (today the 3D view deliberately contacts exactly
-one third party: Mapterhorn, for DEM tiles). A candidate therefore needs:
+The extension ships no server or remotely loaded executable code, and treats
+every third-party request as a privacy decision (today the 3D view deliberately
+contacts exactly one third party: Mapterhorn, for DEM tiles). A candidate
+therefore needs:
 
 1. **No API key and no registration.** A key shipped inside a public,
    AGPL-licensed extension is a public key; per-user keys are a sign-up wall.
@@ -117,7 +118,7 @@ self-hosting on cheap object storage, plus a hosted API.
   Cloudflare for 625k tile requests) but means the maintainer starts
   operating map infrastructure that every user's traffic depends on — a
   bigger commitment than this extension makes for anything today. It would
-  also add a vendored `pmtiles` protocol adapter to the build-free bundle.
+  also add a `pmtiles` protocol adapter dependency to the generated runtime.
 - Worth revisiting if a keyless free instance ever appears or if the project
   ever wants first-party infrastructure.
 

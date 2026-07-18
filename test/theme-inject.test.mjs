@@ -13,13 +13,14 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import vm from 'node:vm';
 import { JSDOM } from 'jsdom';
-import { makeChromeStub } from './helpers/load-page.mjs';
+import { makeChromeStub, evalBundle } from './helpers/load-page.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const themeBundle = await readFile(path.join(root, 'dist', 'content', 'theme.js'), 'utf8');
 const STYLE_ID = 'bpb-site-dark';
 
-// Load the site-wide content scripts (settings -> site-dark-css -> theme) into a
-// fresh jsdom, in manifest order, with the given stored settings.
+// Load the bundled site-wide theme entry into a fresh jsdom with the given
+// stored settings.
 const loadTheme = async (settings = {}) => {
     const dom = new JSDOM('<!DOCTYPE html><html><head></head><body></body></html>', {
         url: 'https://www.peakbagger.com/',
@@ -27,9 +28,7 @@ const loadTheme = async (settings = {}) => {
     });
     dom.chrome = makeChromeStub({ bpbSettings: settings });
     dom.window.chrome = dom.chrome;
-    for (const rel of ['src/settings-schema.js', 'src/settings.js', 'src/site-dark-css.js', 'src/theme.js']) {
-        dom.window.eval(await readFile(path.join(root, rel), 'utf8'));
-    }
+    await evalBundle(dom.window, 'content/theme.js');
     // Let S.get().then(apply) reconcile.
     await new Promise(r => dom.window.setTimeout(r, 20));
     return dom;
@@ -69,17 +68,16 @@ test('theme=light sets the attribute but the inert sheet is still present', asyn
     assert.ok(sheet(dom));
 });
 
-test('Firefox isolated-world globals still initialize the site theme', async () => {
+test('the bundled theme initializes in a Firefox-like isolated-world context', async () => {
     const dom = new JSDOM('<!DOCTYPE html><html><head></head><body></body></html>', {
         url: 'https://www.peakbagger.com/',
         runScripts: 'outside-only'
     });
     const chrome = makeChromeStub({ bpbSettings: { theme: 'dark' } });
 
-    // Firefox content scripts have one shared global scope per extension and
-    // frame, but globalThis is a distinct object that inherits from the page's
-    // Xray-wrapped window. A window lookup therefore cannot see a module that
-    // another content script published on globalThis.
+    // Firefox's isolated global is distinct from the page's Xray-wrapped
+    // window. The self-contained bundle must work without publishing anything
+    // onto the page global.
     const isolatedWorld = vm.createContext({
         window: dom.window,
         document: dom.window.document,
@@ -88,13 +86,12 @@ test('Firefox isolated-world globals still initialize the site theme', async () 
         URL,
         console
     });
-    for (const rel of ['src/settings-schema.js', 'src/settings.js', 'src/site-dark-css.js', 'src/theme.js']) {
-        vm.runInContext(await readFile(path.join(root, rel), 'utf8'), isolatedWorld, { filename: rel });
-    }
+    vm.runInContext(themeBundle, isolatedWorld, { filename: 'content/theme.js' });
     await new Promise(resolve => setTimeout(resolve, 20));
 
-    assert.ok(isolatedWorld.BPBSettings, 'settings publish on the isolated global');
-    assert.equal(dom.window.BPBSettings, undefined, 'the page window remains a distinct object');
+    // The bundle runs in the isolated context (not the page window), so it
+    // themes the shared document without leaking anything onto window.
+    assert.equal(dom.window.BPBSettings, undefined, 'the page window is untouched');
     assert.equal(attr(dom), 'dark');
     assert.ok(sheet(dom), 'the theme must read its dependencies from the isolated global');
     dom.window.close();

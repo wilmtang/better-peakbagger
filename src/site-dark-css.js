@@ -5,8 +5,8 @@
 // This is deliberately a JS string rather than a .css file: src/theme.js
 // injects it as a <style> synchronously at document_start (the way Dark Reader
 // does), which a manifest `css` entry cannot guarantee before first paint. See
-// docs/dark-mode-flash.md. Loaded as an isolated-world content script ahead of
-// theme.js; idempotent.
+// docs/dark-mode-flash.md. Imported by theme.js into the isolated-world theme
+// bundle.
 //
 // Every rule is scoped under html[data-bpb-theme="dark"], which src/theme.js
 // toggles from the extension settings, so the injected sheet is inert until
@@ -14,9 +14,7 @@
 // body, navy links, purple visited, maroon h1, navy h2, light-gray table.gray
 // borders, Tahoma. Images and the map iframe are left untouched.
 
-(() => {
-    if (globalThis.BPBDarkCSS) return;
-    globalThis.BPBDarkCSS = `
+export const darkCss = `
 html[data-bpb-theme="dark"] {
     color-scheme: dark;
     background: #181a1b !important;
@@ -172,4 +170,3 @@ html[data-bpb-theme="dark"] button.pbaf-date-sort {
 }
 html[data-bpb-theme="dark"] button.pbaf-date-sort:hover { color: #9ecbff !important; }
 `;
-})();

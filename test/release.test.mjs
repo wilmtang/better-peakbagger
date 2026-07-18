@@ -5,6 +5,12 @@ import { test } from "node:test";
 import JSZip from "jszip";
 
 import {
+  COPY_FILES,
+  ENTRIES,
+  VENDOR_COPY,
+  VENDOR_TZ,
+} from "../scripts/build-config.mjs";
+import {
   buildFirefoxPackage,
   createFirefoxManifest,
   requirePackagePaths,
@@ -58,8 +64,12 @@ test("Firefox metadata preserves the project's or-later license grant", () => {
   assert.match(metadata.version.custom_license.name["en-US"], /or later/);
   assert.match(metadata.version.custom_license.text["en-US"], /at your option/);
   assert.match(metadata.version.custom_license.text["en-US"], /GNU AFFERO/);
+  assert.match(metadata.version.approval_notes, /esbuild 0\.28\.1/);
   assert.match(metadata.version.approval_notes, /Chart\.js 4\.5\.1/);
+  assert.match(metadata.version.approval_notes, /Marked 18\.0\.6/);
   assert.match(metadata.version.approval_notes, /MapLibre GL JS 5\.24\.0/);
+  assert.match(metadata.version.approval_notes, /tz-lookup 6\.1\.25/);
+  assert.doesNotMatch(metadata.version.approval_notes, /build-free|@photostructure/);
   assert.match(metadata.version.approval_notes, /tiles\.mapterhorn\.com/);
   assert.match(metadata.description["en-US"], /coordinate corridor boxes/);
   assert.match(metadata.description["en-US"], /Waypoint coordinates and names are included by default/);
@@ -69,9 +79,11 @@ async function makeReleaseZip(extraFiles = {}, omittedFiles = []) {
   const zip = new JSZip();
   const omitted = new Set(omittedFiles);
   const files = {
-    "ACKNOWLEDGEMENTS.md": "acknowledgements",
-    LICENSE: "license",
-    "README.md": "readme",
+    ...Object.fromEntries(ENTRIES.map(({ out }) => [out, `bundle:${out}`])),
+    ...Object.fromEntries(COPY_FILES.map(([, out]) => [out, `copy:${out}`])),
+    ...Object.fromEntries(VENDOR_COPY.map(([, out]) => [out, `vendor:${out}`])),
+    [VENDOR_TZ.out]: "vendor:tz-lookup",
+    "icons/icon-128.png": "icon",
     "manifest.json": JSON.stringify({
       version: "1.4.0",
       options_ui: {
@@ -79,26 +91,6 @@ async function makeReleaseZip(extraFiles = {}, omittedFiles = []) {
         open_in_tab: true,
       },
     }),
-    "icons/icon-128.png": "icon",
-    "options/options.html": "options",
-    "popup/popup.html": "popup",
-    "src/background.js": "background",
-    "src/big-map-bridge.js": "big map bridge",
-    "src/big-map.js": "big map",
-    "src/capture-core.js": "core",
-    "src/gpx-metrics.js": "gpx metrics",
-    "src/terrain-map.css": "terrain css",
-    "src/terrain-cache.js": "terrain cache",
-    "src/terrain-frame.js": "terrain frame",
-    "src/terrain-map.js": "terrain",
-    "terrain/terrain.html": "terrain document",
-    "vendor/chart.umd.min.js": "chart",
-    "vendor/maplibre-LICENSE.txt": "maplibre license",
-    "vendor/maplibre-gl-csp-worker.js": "maplibre worker",
-    "vendor/maplibre-gl-csp.js": "maplibre",
-    "vendor/maplibre-gl.css": "maplibre css",
-    "vendor/tz-lookup-LICENSE.txt": "tz-lookup license",
-    "vendor/tz-lookup.js": "tz-lookup",
     ...extraFiles,
   };
   for (const [name, contents] of Object.entries(files)) {
@@ -108,6 +100,27 @@ async function makeReleaseZip(extraFiles = {}, omittedFiles = []) {
   }
   return zip.generateAsync({ type: "uint8array" });
 }
+
+test("release and browser development commands use the dist build", async () => {
+  const [packageJson, workflow] = await Promise.all([
+    readFile(new URL("../package.json", import.meta.url), "utf8").then(JSON.parse),
+    readFile(new URL("../.github/workflows/release.yml", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(packageJson.scripts.package, /build:release.*--source-dir dist/);
+  assert.equal(
+    packageJson.scripts["start:firefox"],
+    "node scripts/run-development.mjs firefox",
+  );
+  assert.equal(
+    packageJson.scripts["start:chromium"],
+    "node scripts/run-development.mjs chromium",
+  );
+  assert.match(
+    workflow,
+    /- name: Build store packages[\s\S]*?npm run package[\s\S]*?chrome_archive=/,
+  );
+});
 
 test("release archive rejects development and internal files", async () => {
   await assert.doesNotReject(
@@ -184,7 +197,7 @@ test("Firefox development source copies runtime files while overriding only the 
       await readFile(new URL("../manifest.json", import.meta.url), "utf8"),
     );
     assert.deepEqual(manifest, createFirefoxManifest(canonicalManifest));
-    for (const directory of ["icons", "options", "popup", "src", "vendor"]) {
+    for (const directory of ["content", "css", "icons", "options", "popup", "terrain", "vendor"]) {
       assert.equal(
         (await lstat(path.join(prepared.sourceDir, directory))).isDirectory(),
         true,

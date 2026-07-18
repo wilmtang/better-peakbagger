@@ -6,8 +6,6 @@
 // used for analysis leave by default; an explicit capture setting may also
 // allowlist waypoint coordinates/names and the track name used for Trip Info.
 
-(() => {
-    'use strict';
 
     const PROFILE_PATTERNS = {
         garmin: /\/(?:modern\/)?profile\/([^/?#]+)/i,
@@ -253,6 +251,10 @@
     };
 
     const API = { providerFromUrl, profileId, inspectOwnership, parseGpxData, garminExportRequest, capture };
+    export const providerPage = API;
+
+    // Deliberate page-world global (NOT a transitional bridge): background.js
+    // injects this file with scripting.executeScript, then injects inline funcs
+    // that call globalThis.BPBProviderPage across the worker→page boundary,
+    // where ES imports cannot reach. Kept permanently.
     globalThis.BPBProviderPage = API;
-    if (typeof module !== 'undefined' && module.exports) module.exports = API;
-})();

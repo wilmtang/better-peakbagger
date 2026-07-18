@@ -11,7 +11,8 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { JSDOM } from 'jsdom';
-import { makeChromeStub, waitFor } from './helpers/load-page.mjs';
+import { makeChromeStub, waitFor, evalBundle } from './helpers/load-page.mjs';
+import { settingsSchema } from '../src/settings-schema.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -51,13 +52,12 @@ const loadOptions = async (settings = {}, {
     dom.chrome = makeChromeStub({ bpbSettings: settings }, local);
     dom.window.chrome = dom.chrome;
     dom.window.caches = cacheStorage;
-    dom.window.eval(await readFile(path.join(root, 'src', 'terrain-cache.js'), 'utf8'));
     if (cachedTheme !== null) dom.window.localStorage.setItem('bpbThemePref', cachedTheme);
-    dom.window.eval(await readFile(path.join(root, 'src', 'settings-schema.js'), 'utf8'));
-    dom.window.eval(await readFile(path.join(root, 'src', 'settings.js'), 'utf8'));
-    dom.window.eval(await readFile(path.join(root, 'options', 'theme.js'), 'utf8'));
+    // The options page loads the head bundle (settings + theme, pre-paint) then
+    // the tail bundle (terrain-cache + the settings UI), as options.html does.
+    await evalBundle(dom.window, 'options/options-head.js');
     dom.initialTheme = dom.window.document.documentElement.getAttribute('data-bpb-theme');
-    dom.window.eval(await readFile(path.join(root, 'options', 'options.js'), 'utf8'));
+    await evalBundle(dom.window, 'options/options.js');
     await new Promise(r => dom.window.setTimeout(r, 20)); // S.get().then(populate)
     return dom;
 };
@@ -68,7 +68,7 @@ test('theme bootstrap loads before the options stylesheet', async () => {
     const dom = await loadOptions({});
     const resources = Array.from(dom.window.document.head.querySelectorAll('script[src], link[rel="stylesheet"]'))
         .map(node => node.getAttribute('src') || node.getAttribute('href'));
-    assert.deepEqual(resources, ['../src/settings-schema.js', '../src/settings.js', 'theme.js', 'options.css']);
+    assert.deepEqual(resources, ['options-head.js', 'options.css']);
 });
 
 test('cached dark theme is applied before the asynchronous settings read', async () => {
@@ -229,7 +229,7 @@ test('map layer memory is opt-in and disabling it forgets the saved layer', asyn
     const defaultDom = await loadOptions({});
     assert.equal(el(defaultDom, 'remember-map-layer').checked, false);
     const invalidDom = await loadOptions({ rememberMapLayer: true, mapLastLayer: 'javascript:bad' });
-    assert.equal((await invalidDom.window.BPBSettings.get()).mapLastLayer, '');
+    assert.equal(settingsSchema.clean(invalidDom.chrome._store.bpbSettings).mapLastLayer, '');
 
     const dom = await loadOptions({ rememberMapLayer: true, mapLastLayer: 'L_OT' });
     const checkbox = el(dom, 'remember-map-layer');

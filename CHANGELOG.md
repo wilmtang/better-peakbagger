@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+- **ES-module build and development workflow.** Runtime source now uses ES
+  imports and esbuild produces the unpacked `dist/` extension; browser vendor
+  libraries come from locked npm dependencies instead of committed copies.
+  Tests exercise built bundles and release archives package `dist/`. The
+  Chromium and Firefox development commands now rebuild continuously and reload
+  the extension only after every bundle and copied asset succeeds; Firefox
+  mirrors that complete build into its inline-Preferences source first. The new
+  [development guide](docs/development.md) documents the browser loop, page
+  refresh boundary, verification, dependency, and release workflows.
+
 ## 2.2.0 — 2026-07-17
 
 - **3D terrain on peak pages.** The 3D terrain toggle is now available on individual peak maps (`Peak.aspx`), joining ascent maps and Full Screen maps.

@@ -42,7 +42,7 @@ jobs:
 
       - name: Build store packages
         run: |
-          npm run build
+          npm run package
           chrome_archive="web-ext-artifacts/better_peakbagger-${GITHUB_REF_NAME#v}.zip"
           firefox_archive="${chrome_archive%.zip}-firefox.zip"
           npm run build:firefox -- "$chrome_archive" "$firefox_archive"

@@ -88,12 +88,14 @@ const server = createServer(async (request, response) => {
             'cache-control': 'no-store'
         });
         let contents = await readFile(file);
-        if (url.pathname === '/terrain/terrain.html') {
+        if (url.pathname === '/dist/terrain/terrain.html') {
+            // The extension resources live under dist/; map getURL('x') to /dist/x
+            // so the frame's MapLibre worker and the frame bundle resolve there.
             contents = Buffer.from(contents.toString('utf8').replace('</head>', `  <script>
-    globalThis.chrome = { runtime: { getURL: resource => new URL('/' + resource, location.origin).href } };
+    globalThis.chrome = { runtime: { getURL: resource => new URL('/dist/' + resource, location.origin).href } };
   </script>
 </head>`));
-        } else if (url.pathname === '/options/options.html' && url.searchParams.get('visual') === '1') {
+        } else if (url.pathname === '/dist/options/options.html' && url.searchParams.get('visual') === '1') {
             contents = Buffer.from(contents.toString('utf8').replace('    <script src="options.js"></script>\n', ''));
         }
         response.end(contents);
@@ -529,7 +531,8 @@ try {
     // parameters from the MasterMap iframe URL (ascent map: type + climber
     // id, no subject pid), render the rings, open the name-link popup on
     // click, and drop everything once the view widens past the native cutoff.
-    if (!peakFeedRequests.length) throw new Error('The 3D view did not ask the peak feed after settling');
+    await waitForCondition(() => peakFeedRequests.length,
+        () => 'The 3D view did not ask the peak feed after settling');
     const feedUrl = new URL(peakFeedRequests[0]);
     if (feedUrl.searchParams.get('t') !== 'A' || feedUrl.searchParams.get('cid') !== '900001'
         || feedUrl.searchParams.get('pid') !== null) {

@@ -8,19 +8,11 @@
 // which reaches settings through the bridge (src/bridge.js) instead.
 //
 // The schema itself — defaults, bounds, and validators — lives in the pure
-// src/settings-schema.js, which must load first (manifest script order /
-// importScripts) and which the MAIN world loads directly. This file adds only
-// chrome.storage access on top of it.
-// Idempotent: safe to inject more than once into the same global.
+// src/settings-schema.js. ES-module imports carry it into this module and into
+// the MAIN-world bundles that validate settings without storage access. This
+// file adds only chrome.storage access on top of it.
 
-(() => {
-    if (globalThis.BPBSettings) return;
-
-    if (typeof module !== 'undefined' && module.exports && !globalThis.BPBSettingsSchema) {
-        require('./settings-schema.js');
-    }
-    const Schema = globalThis.BPBSettingsSchema;
-    if (!Schema) return; // Callers fail closed when BPBSettings is missing.
+import { settingsSchema as Schema } from './settings-schema.js';
 
     const api = (typeof browser !== 'undefined' && browser.storage) ? browser : chrome;
     const STORAGE_KEY = 'bpbSettings';
@@ -62,5 +54,4 @@
         return () => api.storage.onChanged.removeListener(handler);
     };
 
-    globalThis.BPBSettings = { STORAGE_KEY, DEFAULTS, clean, get, set, subscribe, resolveTheme };
-})();
+    export const settings = { STORAGE_KEY, DEFAULTS, clean, get, set, subscribe, resolveTheme };

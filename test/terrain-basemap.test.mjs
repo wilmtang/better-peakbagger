@@ -8,17 +8,9 @@ import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { JSDOM } from 'jsdom';
 
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const basemapSource = await readFile(path.join(root, 'src', 'terrain-basemap.js'), 'utf8');
+import { terrainBasemap } from '../src/terrain-basemap.js';
 
-const load = () => {
-    const dom = new JSDOM('<!doctype html><body></body>', {
-        url: 'https://www.peakbagger.com/climber/ascent.aspx',
-        runScripts: 'outside-only'
-    });
-    dom.window.eval(basemapSource);
-    return dom.window.BPBTerrainBasemap;
-};
+const load = () => terrainBasemap;
 
 // The module builds objects in the JSDOM realm, so strict deepEqual would trip
 // on the foreign prototype; compare structure by value instead.

@@ -13,12 +13,6 @@
 // reason the shared geometry lives in src/gpx-metrics.js.
 //
 // src/settings.js owns storage access and layers it on top of this module.
-// Idempotent: safe to inject more than once into the same global.
-
-(() => {
-    'use strict';
-
-    if (globalThis.BPBSettingsSchema) return;
 
     const MAP_LAYERS = new Set(['L_CT', 'L_MT', 'L_FS', 'L_3D', 'L_SN', 'L_AG', 'L_OT', 'L_OS', 'L_AI', 'L_XX', 'B_B1', 'G_SA']);
 
@@ -172,6 +166,4 @@
         terrainCacheLimitMb
     };
 
-    globalThis.BPBSettingsSchema = API;
-    if (typeof module !== 'undefined' && module.exports) module.exports = API;
-})();
+    export const settingsSchema = API;
