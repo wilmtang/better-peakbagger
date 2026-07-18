@@ -64,8 +64,12 @@ test("Firefox metadata preserves the project's or-later license grant", () => {
   assert.match(metadata.version.custom_license.name["en-US"], /or later/);
   assert.match(metadata.version.custom_license.text["en-US"], /at your option/);
   assert.match(metadata.version.custom_license.text["en-US"], /GNU AFFERO/);
+  assert.match(metadata.version.approval_notes, /esbuild 0\.28\.1/);
   assert.match(metadata.version.approval_notes, /Chart\.js 4\.5\.1/);
+  assert.match(metadata.version.approval_notes, /Marked 18\.0\.6/);
   assert.match(metadata.version.approval_notes, /MapLibre GL JS 5\.24\.0/);
+  assert.match(metadata.version.approval_notes, /tz-lookup 6\.1\.25/);
+  assert.doesNotMatch(metadata.version.approval_notes, /build-free|@photostructure/);
   assert.match(metadata.version.approval_notes, /tiles\.mapterhorn\.com/);
   assert.match(metadata.description["en-US"], /coordinate corridor boxes/);
   assert.match(metadata.description["en-US"], /Waypoint coordinates and names are included by default/);

@@ -40,13 +40,14 @@ token stream and does not use its HTML renderer.
 
 ### tz-lookup
 
-Better Peakbagger distributes the unmodified @photostructure/tz-lookup 11.6.0
-coordinate-to-timezone lookup as `vendor/tz-lookup.js`. It resolves the GPX
-track's starting coordinate to an IANA timezone entirely offline so chart
-times can be shown in the climb's local time.
+Better Peakbagger uses esbuild to wrap the `tz-lookup` 6.1.25 CommonJS
+distribution as `vendor/tz-lookup.js`, without application changes to its
+coordinate-to-timezone data or lookup logic. It resolves the GPX track's
+starting coordinate to an IANA timezone entirely offline so chart times can be
+shown in the climb's local time.
 
-- Project: [@photostructure/tz-lookup](https://github.com/photostructure/tz-lookup)
-- Source: [@photostructure/tz-lookup v11.6.0](https://www.npmjs.com/package/@photostructure/tz-lookup/v/11.6.0)
+- Project: [tz-lookup](https://github.com/darkskyapp/tz-lookup)
+- Source: [tz-lookup 6.1.25](https://www.npmjs.com/package/tz-lookup/v/6.1.25)
 - License: CC0-1.0 (public-domain dedication)
 - Packaged license text: [`vendor/tz-lookup-LICENSE.txt`](vendor/tz-lookup-LICENSE.txt)
 
