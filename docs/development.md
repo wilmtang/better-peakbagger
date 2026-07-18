@@ -82,7 +82,7 @@ only exist under `dist/` after a build.
 | `npm run watch` | Transactionally rebuild on change and re-copy static assets; does not launch or control a browser. |
 | `npm test` | `pretest` builds `dist/`, then runs `test/**/*.test.mjs`. |
 | `npm run verify:extension` | Loads the **real** unpacked `dist/` in headless Chrome for Testing and drives capture, the editor, and the maps. The only check that exercises the true manifest load. |
-| `npm run terrain:verify` | Renders the real MapLibre terrain frame on the GPU with a synthetic route. |
+| `npm run terrain:verify` | Renders the real MapLibre terrain frame on the GPU with synthetic route, basemap, peak, and CORS-enabled DEM fixtures; it makes no live terrain-provider requests. |
 | `npm run showcase:render` | Builds and renders the local UI showcase fixtures. |
 | `npm run lint` | Builds, then runs `web-ext lint --source-dir dist`. |
 | `npm run package` | Release build + `web-ext build` from `dist/`; writes the canonical Chrome ZIP under `web-ext-artifacts/`. |
@@ -217,8 +217,9 @@ generalize this exception.
   worlds, injection order, and the live service-worker lifecycle are invisible
   to it.
 - `npm run terrain:verify` renders the true MapLibre frame on the GPU, but its
-  showcase pages provide their own settings/chrome stubs, so it does not run the
-  real settings or bridge code.
+  showcase pages provide their own settings/chrome stubs and its Mapterhorn
+  requests are intercepted with a synthetic CORS-enabled DEM, so it does not run
+  the real settings or bridge code or exercise the live terrain service.
 - `npm run verify:extension` is the only check that loads the real unpacked
   extension in Chrome for Testing. Run it after touching `manifest.json`, bundle
   composition, execution worlds, the worker, or anything a content script relies

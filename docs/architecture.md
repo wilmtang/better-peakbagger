@@ -166,10 +166,11 @@ that a browser accepts the real manifest, execution worlds, separately loaded
 script order, or the service-worker lifecycle.
 
 `npm run terrain:verify` renders the real MapLibre frame on the GPU, but its
-showcases stub storage and the bridge protocol. `npm run verify:extension` is
-the only check that loads the real unpacked `dist/`; run it after changing the
-manifest, build composition, execution worlds, worker, or content-script
-startup dependencies.
+showcases stub storage and the bridge protocol and intercept Mapterhorn requests
+with a synthetic CORS-enabled DEM. It does not exercise the live terrain service.
+`npm run verify:extension` is the only check that loads the real unpacked `dist/`;
+run it after changing the manifest, build composition, execution worlds, worker,
+or content-script startup dependencies.
 
 Live Garmin, Strava, and Peakbagger DOM/export behavior still requires minimal,
 read-only manual verification before release. See [development.md](development.md)

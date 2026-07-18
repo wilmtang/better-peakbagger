@@ -16,6 +16,13 @@ const chromePath = process.env.CHROME_BIN || ({
     win32: path.join(process.env.PROGRAMFILES || 'C:\\Program Files', 'Google/Chrome/Application/chrome.exe')
 }[process.platform] || 'google-chrome');
 const outputDir = path.resolve(process.argv[2] || path.join(os.tmpdir(), 'better-peakbagger-terrain-visual'));
+const MAPTERHORN_TILE_ORIGIN = 'https://tiles.mapterhorn.com';
+const TERRAIN_FIXTURE_HEADER = 'synthetic-terrarium-v1';
+// A 512px lossless WebP containing a synthetic Terrarium-encoded stepped
+// mountain (0m at the tile edge, 2,000m at its center). Reusing it for every
+// requested coordinate keeps this visual test deterministic and offline while
+// still making MapLibre decode an actual WebP DEM and build a non-flat mesh.
+const SYNTHETIC_TERRARIUM_WEBP = 'UklGRoIAAABXRUJQVlA4THYAAAAv/8F/AD8gFkzyR94dhICgyHPTY/6zQwZFtW1TKqigggoqqKCC/rM/wx3R/wkI/M//A+P38h+YpefnP1DLz8t/4Fauz38gV4/Pf2DXtuc/0OvT+Y//+I/41uc/wDsv/wHdffkP4N6T/4DtvfkP0P6T/4CM/8Ef';
 const contentTypes = new Map([
     ['.css', 'text/css; charset=utf-8'],
     ['.gpx', 'application/gpx+xml; charset=utf-8'],
@@ -91,10 +98,22 @@ const server = createServer(async (request, response) => {
         if (url.pathname === '/dist/terrain/terrain.html') {
             // The extension resources live under dist/; map getURL('x') to /dist/x
             // so the frame's MapLibre worker and the frame bundle resolve there.
+            // Expose only this fixture's Map instance so the check can prove the
+            // mocked DEM was decoded into non-flat terrain; production publishes
+            // no MapLibre internals.
             contents = Buffer.from(contents.toString('utf8').replace('</head>', `  <script>
     globalThis.chrome = { runtime: { getURL: resource => new URL('/dist/' + resource, location.origin).href } };
   </script>
-</head>`));
+</head>`).replace('  <script src="terrain-frame.js"></script>', `  <script>
+    maplibregl.Map = new Proxy(maplibregl.Map, {
+      construct(Target, args, newTarget) {
+        const instance = Reflect.construct(Target, args, newTarget);
+        globalThis.__bpbTerrainTestMap = instance;
+        return instance;
+      }
+    });
+  </script>
+  <script src="terrain-frame.js"></script>`));
         } else if (url.pathname === '/dist/options/options.html' && url.searchParams.get('visual') === '1') {
             contents = Buffer.from(contents.toString('utf8').replace('    <script src="options.js"></script>\n', ''));
         }
@@ -189,6 +208,50 @@ const waitForPageState = async (cdp, expression, timeoutMs = 30000) => {
     }
     throw new Error(`Timed out waiting for page state: ${JSON.stringify(lastValue)}`);
 };
+
+const isBoundedMapterhornTile = value => {
+    try {
+        const url = new URL(value);
+        if (url.origin !== MAPTERHORN_TILE_ORIGIN) return false;
+        const match = url.pathname.match(/^\/(\d{1,2})\/(\d+)\/(\d+)\.webp$/);
+        if (!match) return false;
+        const z = Number(match[1]), x = Number(match[2]), y = Number(match[3]);
+        const dimension = 2 ** z;
+        return z >= 0 && z <= 18 && x >= 0 && x < dimension && y >= 0 && y < dimension;
+    } catch {
+        return false;
+    }
+};
+
+const terrainMeshState = cdp => evaluate(cdp, `(() => {
+    const frame = document.getElementById('bpb-terrain-frame');
+    const map = frame && frame.contentWindow && frame.contentWindow.__bpbTerrainTestMap;
+    if (!map || typeof map.isSourceLoaded !== 'function' || !map.isSourceLoaded('terrain')) {
+        return { ready: false, reason: map ? 'terrain source is not loaded' : 'terrain map is not exposed' };
+    }
+    const bounds = map.getBounds();
+    const west = bounds.getWest(), east = bounds.getEast();
+    const south = bounds.getSouth(), north = bounds.getNorth();
+    const elevations = [];
+    for (let row = 1; row <= 7; row++) {
+        for (let column = 1; column <= 7; column++) {
+            const elevation = map.queryTerrainElevation([
+                west + (east - west) * column / 8,
+                south + (north - south) * row / 8
+            ]);
+            if (Number.isFinite(elevation)) elevations.push(elevation);
+        }
+    }
+    const min = elevations.length ? Math.min(...elevations) : NaN;
+    const max = elevations.length ? Math.max(...elevations) : NaN;
+    return {
+        ready: elevations.length >= 12 && max - min >= 250,
+        samples: elevations.length,
+        min: Number.isFinite(min) ? Math.round(min) : null,
+        max: Number.isFinite(max) ? Math.round(max) : null,
+        range: Number.isFinite(max - min) ? Math.round(max - min) : null
+    };
+})()`);
 
 const captureBuffer = async cdp => {
     const { data } = await cdp.call('Page.captureScreenshot', {
@@ -453,16 +516,63 @@ try {
     console.log(`Renderer: ${renderer} (headless, GPU)`);
 
     const terrainRequests = [];
+    const mockedTerrainResponses = [];
+    const terrainMockFailures = [];
     const basemapRequests = [];
     const peakFeedRequests = [];
     const runtimeErrors = [];
+    cdp.on('Fetch.requestPaused', ({ requestId, request }) => {
+        const fulfill = async () => {
+            if (request.method !== 'GET' || !isBoundedMapterhornTile(request.url)) {
+                throw new Error(`Refusing unexpected Mapterhorn request: ${request.method} ${request.url}`);
+            }
+            await cdp.call('Fetch.fulfillRequest', {
+                requestId,
+                responseCode: 200,
+                responseHeaders: [
+                    { name: 'Access-Control-Allow-Origin', value: '*' },
+                    { name: 'Access-Control-Allow-Methods', value: 'GET, OPTIONS' },
+                    { name: 'Access-Control-Expose-Headers', value: 'X-BPB-Terrain-Fixture' },
+                    { name: 'Cache-Control', value: 'no-store' },
+                    { name: 'Content-Type', value: 'image/webp' },
+                    { name: 'Cross-Origin-Resource-Policy', value: 'cross-origin' },
+                    { name: 'X-BPB-Terrain-Fixture', value: TERRAIN_FIXTURE_HEADER }
+                ],
+                body: SYNTHETIC_TERRARIUM_WEBP
+            });
+            mockedTerrainResponses.push(request.url);
+        };
+        void fulfill().catch(async error => {
+            terrainMockFailures.push(error.stack || error.message);
+            try {
+                await cdp.call('Fetch.failRequest', { requestId, errorReason: 'BlockedByClient' });
+            } catch { /* The request may already have been resolved by CDP. */ }
+        });
+    });
     cdp.on('Network.requestWillBeSent', ({ request }) => {
         if (/\.mapterhorn\.com\//.test(request.url)) terrainRequests.push(request.url);
         if (/\/scripts\/showcase\/terrain-tiles\//.test(request.url)) basemapRequests.push(request.url);
         if (/\/Async\/PLLBB\.aspx\?/i.test(request.url)) peakFeedRequests.push(request.url);
     });
+    cdp.on('Network.responseReceived', ({ response }) => {
+        if (!/\.mapterhorn\.com\//.test(response.url)) return;
+        const header = name => Object.entries(response.headers || {})
+            .find(([candidate]) => candidate.toLowerCase() === name)?.[1];
+        if (response.status !== 200 || header('access-control-allow-origin') !== '*'
+            || header('x-bpb-terrain-fixture') !== TERRAIN_FIXTURE_HEADER) {
+            terrainMockFailures.push(`Unexpected Mapterhorn response escaped the mock: ${response.status} ${response.url}`);
+        }
+    });
     cdp.on('Runtime.exceptionThrown', ({ exceptionDetails }) => {
         runtimeErrors.push(exceptionDetails.exception?.description || exceptionDetails.text || 'Unknown runtime exception');
+    });
+    await cdp.call('Fetch.enable', {
+        // Pause the whole provider domain so a production endpoint change fails
+        // closed instead of silently restoring live network traffic in this test.
+        patterns: [
+            { urlPattern: '*://mapterhorn.com/*', requestStage: 'Request' },
+            { urlPattern: '*://*.mapterhorn.com/*', requestStage: 'Request' }
+        ]
     });
 
     const baseUrl = `http://www.peakbagger.com:${serverPort}/climber/ascent.aspx`;
@@ -515,8 +625,15 @@ try {
         const select = surface && surface.querySelector('.bpb-terrain-picker');
         return select && select.selectedIndex >= 0 ? select.options[select.selectedIndex].textContent : '';
     })()`);
-    await waitForCondition(() => terrainRequests.some(url => url.endsWith('.webp')),
-        () => 'The 3D view did not request terrain tiles');
+    await waitForCondition(() => {
+        if (terrainMockFailures.length) throw new Error(`DEM mock failed: ${terrainMockFailures.join('\n')}`);
+        return mockedTerrainResponses.length > 0;
+    }, () => 'The 3D view did not load a mocked terrain tile');
+    let terrainMesh;
+    await waitForCondition(async () => {
+        terrainMesh = await terrainMeshState(cdp);
+        return terrainMesh.ready;
+    }, () => `The mocked DEM did not produce a loaded, non-flat terrain mesh: ${JSON.stringify(terrainMesh)}`);
     await waitForCondition(() => basemapRequests.length,
         async () => `The 3D view did not request the selected Leaflet raster layer (badge: ${await activeBadge() || 'missing'})`);
     await waitForCondition(async () => /Synthetic topographic map/.test(await activeBadge()),
@@ -807,6 +924,8 @@ try {
     await delay(400);
     await capture(cdp, path.join(outputDir, 'options-general.png'));
 
+    if (terrainMockFailures.length) throw new Error(`DEM mock failed: ${terrainMockFailures.join('\n')}`);
+    console.log(`Mocked DEM: ${mockedTerrainResponses.length} CORS-enabled responses; non-flat mesh ${terrainMesh.min}–${terrainMesh.max}m.`);
     console.log(`Hidden Chrome visual verification passed (${ready.canvas.width}x${ready.canvas.height} wide, ${darkReady.canvas.width}x${darkReady.canvas.height} default).`);
     console.log(`Screenshots: ${outputDir}`);
 } catch (error) {
