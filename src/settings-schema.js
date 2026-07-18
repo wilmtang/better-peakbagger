@@ -32,6 +32,7 @@
         units: 'auto', theme: 'system',
         enable3dMap: false,
         retainWaypoints: true,
+        fillAscentDetails: true,
         fillTripInfo: true,
         fillWildernessNights: true,
         // Which GPX-chart series is shown by default: 'both', or only
@@ -122,7 +123,7 @@
         const s = { ...DEFAULTS, ...(raw && typeof raw === 'object' ? raw : {}) };
         if (!['auto', 'imperial', 'metric'].includes(s.units)) s.units = DEFAULTS.units;
         if (!['system', 'light', 'dark'].includes(s.theme)) s.theme = DEFAULTS.theme;
-        for (const key of ['enable3dMap', 'retainWaypoints', 'fillTripInfo', 'fillWildernessNights', 'enableReportEditor']) {
+        for (const key of ['enable3dMap', 'retainWaypoints', 'fillAscentDetails', 'fillTripInfo', 'fillWildernessNights', 'enableReportEditor']) {
             if (typeof s[key] !== 'boolean') s[key] = DEFAULTS[key];
         }
         if (!['both', 'distance', 'time'].includes(s.chartDefaultSeries)) s.chartDefaultSeries = DEFAULTS.chartDefaultSeries;

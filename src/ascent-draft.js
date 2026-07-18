@@ -158,6 +158,18 @@
         return true;
     };
 
+    const setFieldIfEmpty = async (id, value, digits = 0) => {
+        const element = document.getElementById(id);
+        if (!element || String(element.value || '').trim()) return false;
+        return setField(id, value, digits);
+    };
+
+    const setTextFieldIfEmpty = (id, value) => {
+        const element = document.getElementById(id);
+        if (!element || String(element.value || '').trim()) return false;
+        return setTextField(id, value);
+    };
+
     const setSelectValue = (id, value, dispatchChange = true) => {
         const element = document.getElementById(id);
         if (!element || element.tagName !== 'SELECT') return false;
@@ -182,11 +194,31 @@
         await setField(`${prefix}Min`, duration.minutes);
     };
 
+    const fillDayStats = async dayStats => {
+        if (!Array.isArray(dayStats)) return;
+        for (let index = 0; index < dayStats.length; index++) {
+            const row = dayStats[index];
+            const sequence = index + 1;
+            setTextFieldIfEmpty(`Date${sequence}`, row.date);
+            await setFieldIfEmpty(`GainFt${sequence}`, row.gainM === null ? null : row.gainM * FEET_PER_METER);
+            await setFieldIfEmpty(`GainM${sequence}`, row.gainM);
+            await setFieldIfEmpty(`LossFt${sequence}`, row.lossM === null ? null : row.lossM * FEET_PER_METER);
+            await setFieldIfEmpty(`LossM${sequence}`, row.lossM);
+            await setFieldIfEmpty(`DistMi${sequence}`, row.distanceM / METERS_PER_MILE, 3);
+            await setFieldIfEmpty(`DistKm${sequence}`, row.distanceM / 1000, 2);
+            await setFieldIfEmpty(`MaxFt${sequence}`, row.maxElevationM === null
+                ? null : row.maxElevationM * FEET_PER_METER);
+            await setFieldIfEmpty(`MaxM${sequence}`, row.maxElevationM);
+            await setFieldIfEmpty(`CampFt${sequence}`, row.campElevationM === null
+                ? null : row.campElevationM * FEET_PER_METER);
+            await setFieldIfEmpty(`CampM${sequence}`, row.campElevationM);
+        }
+    };
+
     const formIsReady = () => !!(
         document.getElementById('DateText')
         && document.getElementById('GPXUpload')
         && document.getElementById('GPXPreview')
-        && (document.getElementById('StartFt') || document.getElementById('StartM'))
     );
 
     const readPreviewResult = () => {
@@ -207,40 +239,40 @@
         setTextField('DateText', fields.date);
         setTextField('SuffixText', fields.suffix || '');
 
-        await setField('StartFt', fields.startElevationM === null ? null : fields.startElevationM * FEET_PER_METER);
-        await setField('StartM', fields.startElevationM);
-        await setField('EndFt', fields.endElevationM === null ? null : fields.endElevationM * FEET_PER_METER);
-        await setField('EndM', fields.endElevationM);
+        if (fields.fillAscentDetails !== false) {
+            await setField('StartFt', fields.startElevationM === null ? null : fields.startElevationM * FEET_PER_METER);
+            await setField('StartM', fields.startElevationM);
+            await setField('EndFt', fields.endElevationM === null ? null : fields.endElevationM * FEET_PER_METER);
+            await setField('EndM', fields.endElevationM);
 
-        await setField('UpMi', fields.upDistanceM / METERS_PER_MILE, 2);
-        await setField('UpKm', fields.upDistanceM / 1000, 2);
-        await setField('DnMi', fields.downDistanceM / METERS_PER_MILE, 2);
-        await setField('DnKm', fields.downDistanceM / 1000, 2);
-        await setDuration('Up', fields.upDuration);
-        await setDuration('Dn', fields.downDuration);
+            await setField('UpMi', fields.upDistanceM / METERS_PER_MILE, 2);
+            await setField('UpKm', fields.upDistanceM / 1000, 2);
+            await setField('DnMi', fields.downDistanceM / METERS_PER_MILE, 2);
+            await setField('DnKm', fields.downDistanceM / 1000, 2);
+            await setDuration('Up', fields.upDuration);
+            await setDuration('Dn', fields.downDuration);
 
-        const gainFt = Number.parseFloat(document.getElementById('GainFt')?.value);
-        const gainM = Number.parseFloat(document.getElementById('GainM')?.value);
-        if (Number.isFinite(gainFt)) await setField('ExUpFt', Math.max(0, fields.upGainM * FEET_PER_METER - gainFt));
-        if (Number.isFinite(gainM)) await setField('ExUpM', Math.max(0, fields.upGainM - gainM));
-        await setField('ExDnFt', fields.downGainM * FEET_PER_METER);
-        await setField('ExDnM', fields.downGainM);
+            const gainFt = Number.parseFloat(document.getElementById('GainFt')?.value);
+            const gainM = Number.parseFloat(document.getElementById('GainM')?.value);
+            if (Number.isFinite(gainFt)) await setField('ExUpFt', Math.max(0, fields.upGainM * FEET_PER_METER - gainFt));
+            if (Number.isFinite(gainM)) await setField('ExUpM', Math.max(0, fields.upGainM - gainM));
+            await setField('ExDnFt', fields.downGainM * FEET_PER_METER);
+            await setField('ExDnM', fields.downGainM);
+            await fillDayStats(fields.dayStats);
+        }
 
         if (fields.tripInfo) {
-            const complete = selectNewTrip()
-                && setTextField('TripSeqText', String(fields.tripInfo.sequence))
-                && setTextField('TripNameText', fields.tripInfo.name)
-                && setTextField('TripNightsText', fields.tripInfo.nightsOut === null ? '' : String(fields.tripInfo.nightsOut));
-            if (!complete) throw new Error('Peakbagger’s Trip Info fields have changed or did not load completely.');
+            selectNewTrip();
+            setTextField('TripSeqText', String(fields.tripInfo.sequence));
+            setTextField('TripNameText', fields.tripInfo.name);
+            setTextField('TripNightsText', fields.tripInfo.nightsOut === null ? '' : String(fields.tripInfo.nightsOut));
         }
 
         if (fields.wildernessNightsOut !== null && fields.wildernessNightsOut !== undefined) {
             // AscentNightsDD has an inline AutoPostBack handler. Sending a
             // synthetic change here would reload before GPX Preview; its
             // selected value is still included in the Preview form post.
-            if (!setSelectValue('AscentNightsDD', fields.wildernessNightsOut, false)) {
-                throw new Error('Peakbagger’s Wilderness Nights field has changed or does not support this trip length.');
-            }
+            setSelectValue('AscentNightsDD', fields.wildernessNightsOut, false);
         }
     };
 
@@ -340,6 +372,20 @@
                 return;
             }
             if (response.action === 'banner') {
+                if (response.dayStatsPending) {
+                    await fillDayStats(response.dayStats);
+                    try {
+                        await ext.runtime.sendMessage({
+                            type: 'DRAFT_DAY_STATS_APPLIED',
+                            jobId: response.jobId,
+                            pid: response.pid,
+                            cid: response.cid
+                        });
+                    } catch (_error) {
+                        // Day statistics are optional. A later page load can
+                        // retry while the short-lived draft is still present.
+                    }
+                }
                 const label = response.classification === 'strong' ? 'Strong' : 'Probable';
                 showBanner(response.classification,
                     `${label} match · ${response.confidence}% confidence. Preview is ready—review Peakbagger’s result before saving.`);
