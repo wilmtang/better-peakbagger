@@ -6,11 +6,15 @@
 // white casing, and (on single-ascent maps) the preferred route color.
 // Runs in MAIN world because the Leaflet map and layers are page-owned globals.
 
+import { settingsSchema as Schema } from './settings-schema.js';
+import { gpxMetrics } from './gpx-metrics.js';
+import { terrainBasemap } from './terrain-basemap.js';
+import { peakMarkers } from './peak-markers.js';
+
+// Kept as an IIFE for early-exit control flow (non-Full-Screen-Map pages);
+// dependencies are ES imports and the module publishes no globals.
 (() => {
     'use strict';
-
-    const Schema = globalThis.BPBSettingsSchema;
-    if (!Schema) return;
 
     const params = new URLSearchParams(location.search);
     const mapType = (params.get('t') || '').toUpperCase();
@@ -296,14 +300,14 @@
                 try { pushLatLngs(layer.getLatLngs(), color); } catch (error) { /* layer may be mid-removal */ }
             });
         } catch (error) { /* a live Leaflet layer collection can change during iteration */ }
-        const limited = globalThis.BPBGpxMetrics ? globalThis.BPBGpxMetrics.limitMapRouteSegments(segments) : segments;
+        const limited = gpxMetrics ? gpxMetrics.limitMapRouteSegments(segments) : segments;
         // The reducer keeps segment order 1:1, or returns [] when it drops the
         // whole overlay; only then do the parallel colors fall out of alignment.
         return limited.length === segments.length ? { segments: limited, colors } : { segments: limited, colors: [] };
     };
 
     const terrainBasemaps = () => {
-        const B = globalThis.BPBTerrainBasemap;
+        const B = terrainBasemap;
         if (!B) return { basemap: null, basemaps: [] };
         let select = null;
         try { select = activeMapWin && activeMapWin.document && activeMapWin.document.getElementById('selmap'); }
@@ -418,8 +422,8 @@
         if (!peaksClientResolved) {
             peaksClientResolved = true;
             const iframe = findMapIframe();
-            peaksClient = globalThis.BPBPeakMarkers && iframe
-                ? globalThis.BPBPeakMarkers.createClient(iframe.src)
+            peaksClient = peakMarkers && iframe
+                ? peakMarkers.createClient(iframe.src)
                 : null;
         }
         if (!peaksClient) {

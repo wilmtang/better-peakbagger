@@ -68,13 +68,11 @@ test('BigMap showcase contains only synthetic multi-route interaction data', () 
 // bail out or throw. Modules also read BPBPeakMarkers and BPBTerrainBasemap
 // behind null checks and degrade gracefully, so a page may legitimately omit
 // those (scripts/showcase/gpx.html is chart-only and does).
-const REQUIRES = {
-    // Only modules that still read globals via the transitional bridge remain;
-    // converted modules import their deps and drop out of this map.
-    'src/gpx-analyzer.js': ['BPBGpxMetrics', 'BPBSettingsSchema'],
-    'src/big-map.js': ['BPBSettingsSchema'],
-    'src/terrain-frame.js': ['BPBSettingsSchema', 'BPBTerrainCache']
-};
+// Every content module now imports its dependencies, so no module reads a
+// cross-module global. This provider-order guard therefore has nothing left to
+// pin; Step 10 replaces the showcase pages with built bundles and retires this
+// machinery. Kept empty (not deleted) until then so the harness stays stable.
+const REQUIRES = {};
 
 const providerOf = async () => {
     const dir = new URL('../src/', import.meta.url);

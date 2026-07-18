@@ -12,13 +12,13 @@
 // isolated-world bridge (src/bridge.js) over window.postMessage. Affected map
 // and chart surfaces update live when settings change.
 
-(async () => {
-    'use strict';
+import { gpxMetrics as GpxMetrics } from './gpx-metrics.js';
+import { settingsSchema as Schema } from './settings-schema.js';
+import { peakMarkers } from './peak-markers.js';
+import { terrainBasemap } from './terrain-basemap.js';
 
-    const GpxMetrics = globalThis.BPBGpxMetrics;
-    const Schema = globalThis.BPBSettingsSchema;
-    if (!GpxMetrics || !Schema) return;
-
+// Chart and tzlookup remain separately-loaded vendor globals (see manifest).
+const run = async () => {
     const METERS_PER_MILE = 1609.344;
     const FEET_PER_METER = 3.28084;
     const MAP_VIEWPORT_MIN_WIDTH = Schema.BOUNDS.viewportWidth.min;
@@ -714,8 +714,8 @@
             if (!Number.isFinite(requestId)) return;
             if (!peaksClientResolved) {
                 peaksClientResolved = true;
-                peaksClient = globalThis.BPBPeakMarkers && mapIframe
-                    ? globalThis.BPBPeakMarkers.createClient(mapIframe.src)
+                peaksClient = peakMarkers && mapIframe
+                    ? peakMarkers.createClient(mapIframe.src)
                     : null;
             }
             if (!peaksClient) {
@@ -786,11 +786,11 @@
         };
 
         // Drape/basemap logic is shared with the Full Screen BigMap via
-        // src/terrain-basemap.js (globalThis.BPBTerrainBasemap) so the 2D layer
+        // src/terrain-basemap.js (terrainBasemap) so the 2D layer
         // menu and the 3D drape picker cannot diverge. These wrappers only
         // resolve the Ascent page's MasterMap frame and delegate.
         const getTerrainBasemap = () => {
-            const B = globalThis.BPBTerrainBasemap;
+            const B = terrainBasemap;
             if (!B) return null;
             try {
                 const iframe = findMapIframe();
@@ -803,7 +803,7 @@
         };
 
         const enumerateTerrainBasemaps = () => {
-            const B = globalThis.BPBTerrainBasemap;
+            const B = terrainBasemap;
             return B ? B.enumerate(findMapLayerSelect()) : [];
         };
 
@@ -1347,4 +1347,5 @@
     } else {
         initChart();
     }
-})();
+};
+run();

@@ -28,7 +28,7 @@ modules as real ES modules (zero `globalThis.BPB*`), vendor via npm, docs + dev 
 | 2 | Convert pure leaves: `settings-schema`, `gpx-metrics`, `capture-core` (+ unit tests) | ✅ done |
 | 3 | Convert shared leaves: `terrain-basemap`, `peak-markers`, `terrain-cache`, `site-dark-css`, `report-markup`, `provider-page` | ✅ done |
 | 4 | Convert `settings`, `theme`, `bridge`, `big-map-bridge`, `peak-map-bridge` | ✅ done |
-| 5 | Convert feature modules: `ascent-filter`, `peak-links`, `gpx-analyzer`, `peak-map`, `big-map`, `terrain-map`, `terrain-frame` | ⬜ todo |
+| 5 | Convert feature modules: `ascent-filter`, `peak-links`, `gpx-analyzer`, `peak-map`, `big-map`, `terrain-map`, `terrain-frame` | ✅ done |
 | 6 | Convert editor: `ascent-draft`, `report-editor` | ⬜ todo |
 | 7 | Convert entry roots: `background`, `options`, `popup` | ⬜ todo |
 | 8 | Strip all transitional bridges; assert no `globalThis.BPB*` remains | ⬜ todo |
@@ -39,6 +39,13 @@ modules as real ES modules (zero `globalThis.BPB*`), vendor via npm, docs + dev 
 
 ## Log
 
+- **Step 5 done** — `ascent-filter`, `gpx-analyzer`, `peak-map`, `big-map`, `terrain-map`,
+  `terrain-frame` import their deps (Chart/tzlookup/maplibre stay vendor globals); modules with
+  early-exit guards keep a thin IIFE for control flow only. `peak-links` (no deps/exports)
+  stays a self-contained IIFE. `gpx-analyzer`'s async IIFE became `const run = async…; run()`
+  (esbuild IIFE format rejects top-level await). terrain-map/terrain-frame tests moved to a
+  real chrome.storage stub + a fetch stub (real terrain-cache binds fetch at create); showcase
+  REQUIRES emptied (no module reads cross-module globals anymore). 240 green; verify:extension ok.
 - **Step 4 done** — `settings` (imports `{ settingsSchema }`), `theme` (imports settings +
   darkCss), `bridge`, `big-map-bridge`, `peak-map-bridge` are ES modules. `background-capture`
   now boots the built worker bundle in a vm context. `settings`' transitional bridge is

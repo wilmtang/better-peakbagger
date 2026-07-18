@@ -5,11 +5,15 @@
 // Dynamic Map. Runs in MAIN world to inspect the page-owned, same-origin
 // MasterMap frame while settings and the renderer remain extension-isolated.
 
+import { settingsSchema as Schema } from './settings-schema.js';
+import { terrainBasemap } from './terrain-basemap.js';
+import { peakMarkers } from './peak-markers.js';
+
+// Kept as an IIFE for early-exit control flow (no page map → nothing to do);
+// dependencies are ES imports and the module publishes no globals.
 (() => {
     'use strict';
 
-    const Schema = globalThis.BPBSettingsSchema;
-    if (!Schema) return;
     const PEAKBAGGER_ORIGIN = /^https?:\/\/(?:www\.)?peakbagger\.com(?::\d+)?$/i;
 
     const iframe = document.querySelector('iframe#Gmap');
@@ -122,7 +126,7 @@
     };
 
     const terrainBasemaps = () => {
-        const B = globalThis.BPBTerrainBasemap;
+        const B = terrainBasemap;
         if (!B) return { basemap: null, basemaps: [] };
         const context = resolveMapContext();
         let select = null;
@@ -241,8 +245,8 @@
         if (!Number.isFinite(requestId)) return;
         if (!peaksClientResolved) {
             peaksClientResolved = true;
-            peaksClient = globalThis.BPBPeakMarkers
-                ? globalThis.BPBPeakMarkers.createClient(iframe.src)
+            peaksClient = peakMarkers
+                ? peakMarkers.createClient(iframe.src)
                 : null;
         }
         if (!peaksClient) {

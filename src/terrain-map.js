@@ -5,6 +5,9 @@
 // frame. MapLibre and its worker run in terrain/terrain.html, where they have a
 // real extension origin instead of a browser-specific content-script sandbox.
 
+import { settings } from './settings.js';
+
+// Kept as an IIFE for scoping; dependencies are ES imports, no globals published.
 (() => {
     'use strict';
 
@@ -88,8 +91,8 @@
         const backdrop = document.createElement('div');
         backdrop.id = 'bpb-terrain-consent';
         backdrop.className = 'bpb-terrain-consent-backdrop';
-        backdrop.dataset.theme = globalThis.BPBSettings?.resolveTheme
-            ? globalThis.BPBSettings.resolveTheme(terrainTheme)
+        backdrop.dataset.theme = settings?.resolveTheme
+            ? settings.resolveTheme(terrainTheme)
             : 'light';
 
         const dialog = document.createElement('section');
@@ -160,8 +163,8 @@
             enable.textContent = 'Enabling…';
             error.textContent = '';
             try {
-                if (!globalThis.BPBSettings) throw new Error('Settings are unavailable');
-                const next = await globalThis.BPBSettings.set({ enable3dMap: true });
+                if (!settings) throw new Error('Settings are unavailable');
+                const next = await settings.set({ enable3dMap: true });
                 if (!next || next.enable3dMap !== true) throw new Error('Setting was not saved');
                 applySettings(next);
                 finishConsent(true);
@@ -200,8 +203,8 @@
     };
 
     const initialSettingsRevision = settingsRevision;
-    const settingsReady = globalThis.BPBSettings
-        ? globalThis.BPBSettings.get().then(settings => {
+    const settingsReady = settings
+        ? settings.get().then(settings => {
             // A storage push can beat the initial async read. Never let that
             // stale read override the newer feature-gate value.
             if (settingsRevision === initialSettingsRevision) applySettings(settings);
@@ -210,7 +213,7 @@
         })
         : Promise.resolve();
 
-    if (globalThis.BPBSettings) globalThis.BPBSettings.subscribe(settings => {
+    if (settings) settings.subscribe(settings => {
         settingsRevision++;
         applySettings(settings);
     });
