@@ -17,5 +17,8 @@ living docs in [`docs/`](../).
   research note on ascent/summit detection.
 - [Vector basemaps for the 3D terrain view](3d-vector-basemap-investigation.md) —
   July 2026 provider evaluation that led to the experimental OpenFreeMap style.
+- [Trip-report color conversion spike](trip-report-color-conversion-spike.md) —
+  comparison of CSSOM color canonicalization with raw-token preservation and
+  the resulting sanitizer boundary decision.
 - [esbuild + ES-module migration](esbuild-migration-plan.md) — completed plan
   and step-by-step migration log.
