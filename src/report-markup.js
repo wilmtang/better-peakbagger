@@ -175,9 +175,12 @@
         }
         if (tag === 'video') {
             const src = sanitizeVideoSrc(readAttr(attrs, 'src'));
+            const width = sanitizeDimension(readAttr(attrs, 'width'));
+            const height = sanitizeDimension(readAttr(attrs, 'height'));
             return src ? {
                 tag,
-                html: `<video src="${escapeAttribute(src)}" controls preload="metadata" playsinline referrerpolicy="no-referrer">`,
+                html: `<video src="${escapeAttribute(src)}"${width ? ` width="${width}"` : ''}${
+                    height ? ` height="${height}"` : ''} controls preload="metadata" playsinline referrerpolicy="no-referrer">`,
                 self: false
             } : null;
         }
@@ -340,7 +343,11 @@
         }
         if (tag === 'VIDEO') {
             const src = sanitizeVideoSrc(node.getAttribute('src'));
-            return src ? [{ t: 'video', src }] : [];
+            return src ? [{
+                t: 'video', src,
+                width: sanitizeDimension(node.getAttribute('width')),
+                height: sanitizeDimension(node.getAttribute('height'))
+            }] : [];
         }
 
         let kids = compactInlines([...node.childNodes].flatMap(inlineFromNode));
@@ -544,10 +551,13 @@
         }
         if (token.type === 'image') {
             const videoSrc = sanitizeVideoSrc(token.href);
-            const videoMarker = String(token.text || '').trim().toLowerCase() === 'video';
-            if (videoSrc && (isDirectVideoSrc(videoSrc) || videoMarker)) return [{ t: 'video', src: videoSrc }];
+            const attributes = markdownImageAttributes(token);
+            const videoMarker = attributes.alt.trim().toLowerCase() === 'video';
+            if (videoSrc && (isDirectVideoSrc(videoSrc) || videoMarker)) {
+                return [{ t: 'video', src: videoSrc, width: attributes.width, height: attributes.height }];
+            }
             const src = sanitizeImageSrc(token.href);
-            return src ? [{ t: 'img', src, ...markdownImageAttributes(token) }]
+            return src ? [{ t: 'img', src, ...attributes }]
                 : textWithBreaks(token.raw);
         }
         // Marked deliberately does not sanitize raw HTML. Keep it visible and
@@ -610,7 +620,10 @@
             /\[video\b([^\]\r\n]*)\]\s*\[\/video\]/gi,
             (raw, attributes) => {
                 const src = sanitizeVideoSrc(readAttr(attributes, 'src'));
-                return src ? `![Video](${src})` : raw;
+                const width = sanitizeDimension(readAttr(attributes, 'width'));
+                const height = sanitizeDimension(readAttr(attributes, 'height'));
+                const size = width ? `|${width}${height ? `x${height}` : ''}` : '';
+                return src ? `![Video${size}](${src})` : raw;
             }
         );
         return markedBlocks(lexer(input, { gfm: true, breaks: false }));
@@ -625,7 +638,10 @@
             return `[img src="${escapeAttribute(node.src)}"${node.alt ? ` alt="${escapeAttribute(node.alt)}"` : ''}${
                 node.width ? ` width="${node.width}"` : ''}${node.height ? ` height="${node.height}"` : ''}]`;
         }
-        if (node.t === 'video') return `[video src="${escapeAttribute(node.src)}"][/video]`;
+        if (node.t === 'video') {
+            return `[video src="${escapeAttribute(node.src)}"${node.width ? ` width="${node.width}"` : ''}${
+                node.height ? ` height="${node.height}"` : ''}][/video]`;
+        }
         const inner = inlinesToBracket(node.kids);
         if (node.t === 'a') {
             return `[a href="${escapeAttribute(node.href)}"${node.blank ? ' target="_blank"' : ''}]${inner}[/a]`;
@@ -673,7 +689,8 @@
             } loading="lazy" referrerpolicy="no-referrer">`;
         }
         if (node.t === 'video') {
-            return `<video src="${escapeAttribute(node.src)}" controls preload="metadata" playsinline referrerpolicy="no-referrer"></video>`;
+            return `<video src="${escapeAttribute(node.src)}"${node.width ? ` width="${node.width}"` : ''}${
+                node.height ? ` height="${node.height}"` : ''} controls preload="metadata" playsinline referrerpolicy="no-referrer"></video>`;
         }
         const inner = inlinesToHtml(node.kids);
         if (node.t === 'a') return `<a href="${escapeAttribute(node.href)}"${
@@ -738,7 +755,10 @@
             if (node.height) return inlinesToBracket([node]);
             return `![${escapeMarkdownText(node.alt || '')}](${node.src})`;
         }
-        if (node.t === 'video') return `![Video](${node.src})`;
+        if (node.t === 'video') {
+            const size = node.width ? `|${node.width}${node.height ? `x${node.height}` : ''}` : '';
+            return `![Video${size}](${node.src})`;
+        }
         const inner = inlinesToMarkdown(node.kids);
         if (node.t === 'b') return `**${inner}**`;
         if (node.t === 'i') return `*${inner}*`;

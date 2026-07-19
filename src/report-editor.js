@@ -270,7 +270,7 @@ import { createMarkdownEditor } from './report-md-editor.js';
     const status = el('span', 'bpb-re-status');
     status.setAttribute('role', 'status');
     status.setAttribute('aria-live', 'polite');
-    const mediaHint = 'Image size: ![Photo|500](url) for width, or ![Photo|500x600](url) for width × height. Direct video: ![](https://example.com/clip.mp4)';
+    const mediaHint = 'Image size: ![Photo|500](url) for width, or ![Photo|500x600](url) for width × height. Direct video: ![Video|500x281](https://example.com/clip.mp4)';
     const mdHint = el('span', 'bpb-re-hint', mediaHint);
     mdHint.title = mediaHint;
     foot.append(status, mdHint);

@@ -150,6 +150,16 @@ test('direct Markdown video links render with native controls and preserve the s
     assert.equal(Markup.bracketToMarkdown(bracket), '![Video](https://media.example.com/summit.mp4)');
     assert.equal(Markup.markdownToBracket(Markup.bracketToMarkdown(bracket)), bracket);
 
+    const sized = '![Video|640x360](https://media.example.com/summit.mp4)';
+    const sizedBracket = '[video src="https://media.example.com/summit.mp4" width="640" height="360"][/video]';
+    assert.equal(Markup.markdownToBracket(sized), sizedBracket);
+    assert.match(Markup.markdownToPreviewHtml(sized), /<video[^>]*width="640" height="360"/);
+    assert.equal(Markup.bracketToMarkdown(sizedBracket), sized);
+    assert.equal(Markup.markdownToBracket(sizedBracket), sizedBracket,
+        'the explicit bracket extension must retain valid video dimensions');
+    assert.doesNotMatch(Markup.markdownToBracket('![Video|1601](https://media.example.com/summit.mp4)'),
+        /\bwidth=/, 'out-of-range video dimensions must not be saved');
+
     // `[video]` is also accepted as the explicit Markdown extension, which
     // handles direct media URLs that do not end in a recognizable suffix.
     const signed = '[video src="https://cdn.example.com/download?id=9"][/video]';

@@ -286,6 +286,7 @@ Peakbagger equivalent:
 | `![alt](https://…)` | `[img src="…" alt="…"]` |
 | `![alt\|300](https://…)`, `![alt\|300x200](https://…)` | `[img … width="300"]`, optionally with `height="200"` |
 | `![](https://…/clip.mp4)` (also `.webm`, `.ogv`, `.ogg`, or `.m3u8`) | `[video src="…"][/video]` |
+| `![Video\|640](https://…)`, `![Video\|640x360](https://…)` | `[video … width="640"]`, optionally with `height="360"` |
 | two spaces plus newline, or an ordinary newline inside a paragraph | Peakbagger line break |
 | a blank line | Peakbagger paragraph spacing |
 
@@ -300,7 +301,9 @@ An empty alt text and a recognizable media-file suffix creates a video; use
 `![Video](https://…)` for a signed or extensionless direct media URL. The
 Markdown preview and Rich editor show a native, non-autoplaying video control.
 The saved report uses Peakbagger's `[video src="…"][/video]` form. Video pages
-and iframe embeds are deliberately not supported.
+and iframe embeds are deliberately not supported. The same `|width` or
+`|widthxheight` suffix used for images sizes a video; Rich video controls resize
+with an aspect-locked corner handle or the left/right arrow keys.
 
 Peakbagger-supported inline features without standard Markdown syntax remain
 available as bracket extensions inside Markdown:
@@ -341,11 +344,11 @@ The rich toolbar exposes the common actions without becoming a wall of
 controls: block style (paragraph, six heading levels, quote, preformatted),
 bold, italic, underline, strikethrough, link, image, direct video, table, both list types,
 horizontal rule, and undo/redo, with live active states that follow the caret.
-Selecting an image reveals one lower-corner handle; dragging it resizes the
-image without distorting its aspect ratio, and the left/right arrow keys on the
-focused handle provide precise adjustment. The resulting pixel dimensions are
-stored in Peakbagger's existing `width`/`height` image attributes and remain
-bounded to 1,600 pixels per axis.
+Selecting an image or video reveals one lower-corner handle; dragging it
+resizes the media without distorting its aspect ratio, and the left/right arrow
+keys on the focused handle provide precise adjustment. The resulting pixel
+dimensions are stored in Peakbagger's existing `width`/`height` media
+attributes and remain bounded to 1,600 pixels per axis.
 Less-frequent inline formats — inline code, highlight, sub/superscript, small,
 inline quote, and a named-color text palette — sit one click away behind the
 "Aa" control. While the caret is inside a table, a contextual row offers

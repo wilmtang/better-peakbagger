@@ -400,6 +400,51 @@ test('link and media popovers toggle closed, share the overlay layer, and insert
     assert.equal(ui.querySelector('.bpb-re-surface video')?.getAttribute('controls'), '');
 });
 
+test('a Rich video resize stays proportional and persists its dimensions', async () => {
+    const source = '[video src="https://media.example.com/summit.mp4" width="800" height="450"][/video]';
+    const dom = await loadEditor({ report: source });
+    const ui = await editorReady(dom);
+    const doc = dom.window.document;
+    const video = ui.querySelector('.bpb-re-video-resize video');
+    const handle = ui.querySelector('[aria-label="Resize video"]');
+
+    assert.ok(video, 'Rich videos should use the resizable node view');
+    assert.equal(handle?.tagName, 'BUTTON');
+    assert.equal(handle?.type, 'button', 'the resize handle must never submit the ascent form');
+    assert.equal(handle?.getAttribute('aria-keyshortcuts'), 'ArrowLeft ArrowRight');
+
+    Object.defineProperties(video, {
+        offsetWidth: { configurable: true, get: () => Number.parseFloat(video.style.width) || 800 },
+        offsetHeight: { configurable: true, get: () => Number.parseFloat(video.style.height) || 450 }
+    });
+
+    handle.dispatchEvent(new dom.window.MouseEvent('mousedown', {
+        bubbles: true, clientX: 800, clientY: 450, button: 0
+    }));
+    doc.dispatchEvent(new dom.window.MouseEvent('mousemove', {
+        bubbles: true, clientX: 600, clientY: 338, buttons: 1
+    }));
+    doc.dispatchEvent(new dom.window.MouseEvent('mouseup', {
+        bubbles: true, clientX: 600, clientY: 338, button: 0
+    }));
+
+    const resized = '[video src="https://media.example.com/summit.mp4" width="600" height="338"][/video]';
+    await waitFor(dom, () => doc.getElementById('JournalText').value === resized);
+    assert.equal(video.style.width, '600px');
+    assert.equal(video.style.height, '338px');
+
+    handle.dispatchEvent(new dom.window.KeyboardEvent('keydown', {
+        bubbles: true, key: 'ArrowLeft', shiftKey: true
+    }));
+    const keyboardResized = '[video src="https://media.example.com/summit.mp4" width="550" height="310"][/video]';
+    await waitFor(dom, () => doc.getElementById('JournalText').value === keyboardResized);
+
+    editors(dom).rich.chain().focus().undo().run();
+    doc.getElementById('GPXPreview').click();
+    assert.equal(doc.getElementById('JournalText').value, source,
+        'the grouped video resize interaction should be undoable');
+});
+
 test('a Rich image resize stays proportional and persists its dimensions', async () => {
     const source = '[img src="https://example.com/topo.jpg" alt="Topo" width="800" height="600"]';
     const dom = await loadEditor({ report: source });

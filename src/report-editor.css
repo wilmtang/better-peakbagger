@@ -452,24 +452,27 @@
 .bpb-re-preview video {
     display: inline-block;
     max-width: 100%;
-    max-height: 48vh;
     vertical-align: bottom;
 }
 
-.bpb-re-surface .bpb-re-image-resize {
+.bpb-re-surface .bpb-re-image-resize,
+.bpb-re-surface .bpb-re-video-resize {
     max-width: 100%;
     vertical-align: bottom;
 }
 
-.bpb-re-surface .bpb-re-image-resize-frame {
+.bpb-re-surface .bpb-re-image-resize-frame,
+.bpb-re-surface .bpb-re-video-resize-frame {
     max-width: 100%;
 }
 
-.bpb-re-surface .bpb-re-image-resize img {
+.bpb-re-surface .bpb-re-image-resize img,
+.bpb-re-surface .bpb-re-video-resize video {
     display: block;
 }
 
-.bpb-re-surface .bpb-re-image-resize-handle {
+.bpb-re-surface .bpb-re-image-resize-handle,
+.bpb-re-surface .bpb-re-video-resize-handle {
     position: absolute;
     right: 0;
     bottom: 0;
@@ -491,23 +494,29 @@
 
 .bpb-re-surface .bpb-re-image-resize.ProseMirror-selectednode .bpb-re-image-resize-handle,
 .bpb-re-surface .bpb-re-image-resize[data-resize-state="true"] .bpb-re-image-resize-handle,
-.bpb-re-surface .bpb-re-image-resize-handle:focus-visible {
+.bpb-re-surface .bpb-re-image-resize-handle:focus-visible,
+.bpb-re-surface .bpb-re-video-resize.ProseMirror-selectednode .bpb-re-video-resize-handle,
+.bpb-re-surface .bpb-re-video-resize[data-resize-state="true"] .bpb-re-video-resize-handle,
+.bpb-re-surface .bpb-re-video-resize-handle:focus-visible {
     opacity: 1;
     pointer-events: auto;
 }
 
-.bpb-re-surface .bpb-re-image-resize-handle:focus-visible {
+.bpb-re-surface .bpb-re-image-resize-handle:focus-visible,
+.bpb-re-surface .bpb-re-video-resize-handle:focus-visible {
     outline: 2px solid #3b76c4;
     outline-offset: 2px;
 }
 
-.bpb-re-surface .bpb-re-image-resizing {
+.bpb-re-surface .bpb-re-image-resizing,
+.bpb-re-surface .bpb-re-video-resizing {
     cursor: nwse-resize;
     user-select: none;
 }
 
 @media (prefers-reduced-motion: reduce) {
-    .bpb-re-surface .bpb-re-image-resize-handle {
+    .bpb-re-surface .bpb-re-image-resize-handle,
+    .bpb-re-surface .bpb-re-video-resize-handle {
         transition: none;
     }
 }

@@ -195,12 +195,19 @@ const ReportVideo = Node.create({
     draggable: true,
 
     addAttributes() {
+        const dimension = name => ({
+            default: null,
+            parseHTML: element => element.getAttribute(name),
+            renderHTML: attributes => (attributes[name] ? { [name]: attributes[name] } : {})
+        });
         return {
             src: {
                 default: null,
                 parseHTML: element => sanitizeVideoSrc(element.getAttribute('src')),
                 renderHTML: attributes => attributes.src ? { src: attributes.src } : {}
-            }
+            },
+            width: dimension('width'),
+            height: dimension('height')
         };
     },
 
@@ -210,6 +217,106 @@ const ReportVideo = Node.create({
         return ['video', mergeAttributes({
             controls: '', preload: 'metadata', playsinline: '', referrerpolicy: 'no-referrer'
         }, HTMLAttributes)];
+    },
+
+    addNodeView() {
+        return ({ node, getPos, HTMLAttributes, editor }) => {
+            let currentNode = node;
+            const video = document.createElement('video');
+            video.draggable = false;
+            video.controls = true;
+            video.preload = 'metadata';
+            video.playsInline = true;
+            video.referrerPolicy = 'no-referrer';
+
+            const applyVideoAttributes = updatedNode => {
+                const src = updatedNode.attrs.src;
+                if (src === null || src === undefined) video.removeAttribute('src');
+                else video.setAttribute('src', src);
+                video.style.width = updatedNode.attrs.width ? `${updatedNode.attrs.width}px` : '';
+                video.style.height = updatedNode.attrs.height ? `${updatedNode.attrs.height}px` : '';
+            };
+
+            for (const [name, value] of Object.entries(mergeAttributes(this.options.HTMLAttributes, HTMLAttributes))) {
+                if (value !== null && value !== undefined && name !== 'width' && name !== 'height') {
+                    video.setAttribute(name, value);
+                }
+            }
+
+            const commitSize = (width, height) => {
+                const pos = getPos();
+                if (pos === undefined) return;
+                editor.chain().setNodeSelection(pos).updateAttributes(this.name, {
+                    width: Math.round(width),
+                    height: Math.round(height)
+                }).run();
+            };
+
+            const resizeByKeyboard = event => {
+                if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+                event.preventDefault();
+                event.stopPropagation();
+
+                const width = video.offsetWidth || Number(currentNode.attrs.width) || video.videoWidth;
+                const height = video.offsetHeight || Number(currentNode.attrs.height) || video.videoHeight;
+                if (!width || !height) return;
+
+                const step = event.shiftKey ? 50 : 10;
+                const delta = event.key === 'ArrowRight' ? step : -step;
+                let nextWidth = Math.min(MAX_REPORT_IMAGE_DIMENSION,
+                    Math.max(MIN_RESIZED_IMAGE_WIDTH, width + delta));
+                let nextHeight = Math.round(nextWidth * height / width);
+                if (nextHeight > MAX_REPORT_IMAGE_DIMENSION) {
+                    nextHeight = MAX_REPORT_IMAGE_DIMENSION;
+                    nextWidth = Math.round(nextHeight * width / height);
+                } else if (nextHeight < MIN_RESIZED_IMAGE_HEIGHT) {
+                    nextHeight = MIN_RESIZED_IMAGE_HEIGHT;
+                    nextWidth = Math.round(nextHeight * width / height);
+                }
+                commitSize(nextWidth, nextHeight);
+            };
+
+            return new ResizableNodeView({
+                element: video,
+                editor,
+                node,
+                getPos,
+                onResize: (width, height) => {
+                    video.style.width = `${width}px`;
+                    video.style.height = `${height}px`;
+                },
+                onCommit: commitSize,
+                onUpdate: updatedNode => {
+                    if (updatedNode.type !== currentNode.type) return false;
+                    currentNode = updatedNode;
+                    applyVideoAttributes(updatedNode);
+                    return true;
+                },
+                options: {
+                    directions: ['bottom-right'],
+                    min: { width: MIN_RESIZED_IMAGE_WIDTH, height: MIN_RESIZED_IMAGE_HEIGHT },
+                    max: { width: MAX_REPORT_IMAGE_DIMENSION, height: MAX_REPORT_IMAGE_DIMENSION },
+                    preserveAspectRatio: true,
+                    className: {
+                        container: 'bpb-re-video-resize',
+                        wrapper: 'bpb-re-video-resize-frame',
+                        handle: 'bpb-re-video-resize-handle',
+                        resizing: 'bpb-re-video-resizing'
+                    },
+                    createCustomHandle: () => {
+                        const handle = document.createElement('button');
+                        handle.type = 'button';
+                        handle.className = 'bpb-re-video-resize-handle';
+                        handle.dataset.resizeHandle = 'bottom-right';
+                        handle.title = 'Drag to resize video; use left and right arrows for precise sizing';
+                        handle.setAttribute('aria-label', 'Resize video');
+                        handle.setAttribute('aria-keyshortcuts', 'ArrowLeft ArrowRight');
+                        handle.addEventListener('keydown', resizeByKeyboard);
+                        return handle;
+                    }
+                }
+            });
+        };
     }
 });
 

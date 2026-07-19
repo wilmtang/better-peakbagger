@@ -472,6 +472,12 @@ try {
                 contentType: 'image/png',
                 body: mountain
             }));
+            const videoUrl = 'https://better-peakbagger.test/showcase-activity.mp4';
+            const video = await readFile(path.join(root, 'store-assets', 'showcase-activity-capture.mp4'));
+            await editorPage.route(videoUrl, route => route.fulfill({
+                contentType: 'video/mp4',
+                body: video
+            }));
 
             // A selected Rich image exposes one restrained corner handle. A
             // real pointer drag and keyboard adjustment must both persist the
@@ -576,6 +582,76 @@ try {
                     }, pointerResize.width, { timeout: 5000 }).then(handle => handle.jsonValue()).catch(() => null);
                     check(keyboardResize?.width === pointerResize.width + 10,
                         `the focused resize handle ignored ArrowRight (state=${JSON.stringify(keyboardResize)})`);
+                }
+            }
+
+            // Rich videos use the same bounded, aspect-locked resizing path
+            // and must retain their dimensions through JournalText.
+            await editorPage.locator('#bpb-report-editor').getByRole('button', {
+                name: 'Plain', exact: true
+            }).click();
+            await editorPage.locator('#JournalText').fill(
+                `[video src="${videoUrl}" width="320" height="180"][/video]`);
+            await editorPage.locator('#bpb-report-editor').getByRole('button', {
+                name: 'Rich text', exact: true
+            }).click();
+            const richVideo = editorPage.locator(
+                '#bpb-report-editor .bpb-re-surface .bpb-re-video-resize video');
+            const richVideoLoaded = await editorPage.waitForFunction(() => {
+                const video = document.querySelector(
+                    '#bpb-report-editor .bpb-re-surface .bpb-re-video-resize video');
+                return video?.readyState >= 1 && video.videoWidth > 0 && video.videoHeight > 0;
+            }, null, { timeout: 5000 }).then(() => true).catch(() => false);
+            check(richVideoLoaded, 'the Rich video fixture did not load metadata');
+            if (richVideoLoaded) {
+                await richVideo.click();
+                const resizeHandle = editorPage.locator(
+                    '#bpb-report-editor .bpb-re-surface [aria-label="Resize video"]');
+                const handleReady = await editorPage.waitForFunction(() => {
+                    const handle = document.querySelector(
+                        '#bpb-report-editor .bpb-re-surface [aria-label="Resize video"]');
+                    if (!handle) return false;
+                    const style = getComputedStyle(handle);
+                    return style.opacity === '1' && style.pointerEvents === 'auto';
+                }, null, { timeout: 3000 }).then(() => true).catch(() => false);
+                check(handleReady, 'selecting a Rich video did not reveal its resize handle');
+                if (handleReady && process.env.BPB_VERIFY_EDITOR_VIDEO_SCREENSHOT) {
+                    await editorPage.locator('#bpb-report-editor').screenshot({
+                        path: process.env.BPB_VERIFY_EDITOR_VIDEO_SCREENSHOT
+                    });
+                }
+
+                const box = handleReady ? await resizeHandle.boundingBox() : null;
+                if (box) {
+                    const startX = box.x + box.width / 2;
+                    const startY = box.y + box.height / 2;
+                    await editorPage.mouse.move(startX, startY);
+                    await editorPage.mouse.down();
+                    await editorPage.mouse.move(startX - 80, startY - 45, { steps: 6 });
+                    await editorPage.mouse.up();
+                }
+
+                const pointerResize = await editorPage.waitForFunction(() => {
+                    const source = document.getElementById('JournalText').value;
+                    const width = Number(/\bwidth="(\d+)"/.exec(source)?.[1]);
+                    const height = Number(/\bheight="(\d+)"/.exec(source)?.[1]);
+                    return width < 320 && width >= 230 && height >= 125
+                        ? { width, height, source } : null;
+                }, null, { timeout: 5000 }).then(handle => handle.jsonValue()).catch(() => null);
+                check(pointerResize && pointerResize.width >= 230 && pointerResize.width <= 250
+                    && pointerResize.height >= 125 && pointerResize.height <= 145,
+                `dragging the Rich video did not persist a proportional resize (state=${JSON.stringify(pointerResize)})`);
+
+                if (pointerResize) {
+                    await resizeHandle.focus();
+                    await editorPage.keyboard.press('ArrowRight');
+                    const keyboardResize = await editorPage.waitForFunction(previous => {
+                        const source = document.getElementById('JournalText').value;
+                        const width = Number(/\bwidth="(\d+)"/.exec(source)?.[1]);
+                        return width === previous + 10 ? { width, source } : null;
+                    }, pointerResize.width, { timeout: 5000 }).then(handle => handle.jsonValue()).catch(() => null);
+                    check(keyboardResize?.width === pointerResize.width + 10,
+                        `the focused video resize handle ignored ArrowRight (state=${JSON.stringify(keyboardResize)})`);
                 }
             }
 
@@ -878,9 +954,9 @@ console.log('  - the Peak Dynamic Map preserves its native frame and shows an en
 console.log('  - clicking Peak 3D creates the isolated frame with a route-free summit focus');
 console.log('  - the trip-report editor mounts on the captured ascent form; real typing,');
 console.log('    Ctrl/Cmd+B, and the "1. " input rule sync bracket markup into JournalText');
-console.log('    with live toolbar states; selected Rich images resize proportionally by');
+console.log('    with live toolbar states; selected Rich images and videos resize proportionally by');
 console.log('    pointer or keyboard; markdown mode shows a CodeMirror source beside a');
 console.log('    live preview that renders headings, quotes, tables, strike, code, rules,');
-console.log('    and Obsidian-style pipe-sized images;');
+console.log('    and Obsidian-style pipe-sized images and direct videos;');
 console.log('    hex colors survive Rich edits and Markdown preview; the toolbar inserts');
 console.log('    and grows tables; and a reloaded page offers and restores the draft');
