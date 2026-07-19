@@ -20,15 +20,18 @@
 //
 // Hidden: no window is shown and the user's browser/profile is never touched.
 
-import { createServer } from 'node:http';
+import { execFile } from 'node:child_process';
 import { mkdtemp, rm, readFile } from 'node:fs/promises';
+import { createServer } from 'node:https';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { promisify } from 'node:util';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 // The unpacked extension is the built bundle tree, not the source root.
 const dist = path.join(root, 'dist');
+const execFileAsync = promisify(execFile);
 
 let chromium;
 try {
@@ -107,8 +110,23 @@ const masterMapHtml = `<!doctype html><html><body>
 const ascentEditHtml = await readFile(
     path.join(root, 'test', 'fixtures', 'pages', 'climber-ascentedit.html'), 'utf8');
 
-const server = createServer((request, response) => {
-    const url = new URL(request.url, 'http://x');
+const profile = await mkdtemp(path.join(os.tmpdir(), 'better-peakbagger-extension-'));
+const tlsKeyPath = path.join(profile, 'fixture-key.pem');
+const tlsCertPath = path.join(profile, 'fixture-cert.pem');
+try {
+    await execFileAsync('openssl', [
+        'req', '-x509', '-newkey', 'rsa:2048', '-nodes',
+        '-subj', '/CN=www.peakbagger.com', '-days', '1',
+        '-keyout', tlsKeyPath, '-out', tlsCertPath,
+    ]);
+} catch (error) {
+    await rm(profile, { recursive: true, force: true });
+    throw new Error(`Could not create the isolated HTTPS fixture certificate: ${error.message}`);
+}
+const [tlsKey, tlsCert] = await Promise.all([readFile(tlsKeyPath), readFile(tlsCertPath)]);
+
+const server = createServer({ key: tlsKey, cert: tlsCert }, (request, response) => {
+    const url = new URL(request.url, 'https://x');
     const send = (type, body) => { response.writeHead(200, { 'content-type': type }); response.end(body); };
     if (/ascentedit\.aspx/i.test(url.pathname)) return send('text/html; charset=utf-8', ascentEditHtml);
     if (/ascent\.aspx/i.test(url.pathname)) return send('text/html; charset=utf-8', ascentHtml);
@@ -121,7 +139,6 @@ const server = createServer((request, response) => {
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
 const port = server.address().port;
 
-const profile = await mkdtemp(path.join(os.tmpdir(), 'better-peakbagger-extension-'));
 const failures = [];
 const check = (ok, message) => { if (!ok) failures.push(message); };
 
@@ -130,6 +147,7 @@ try {
     context = await chromium.launchPersistentContext(profile, {
         channel: 'chromium',
         headless: true,
+        ignoreHTTPSErrors: true,
         viewport: { width: 1000, height: 760 },
         args: [
             `--disable-extensions-except=${dist}`,
@@ -161,7 +179,7 @@ try {
 
     const openAscent = async () => {
         const page = await context.newPage();
-        await page.goto(`http://www.peakbagger.com:${port}/climber/ascent.aspx?aid=1`, { waitUntil: 'load' });
+        await page.goto(`https://www.peakbagger.com:${port}/climber/ascent.aspx?aid=1`, { waitUntil: 'load' });
         await page.waitForTimeout(2000);
         return page;
     };
@@ -217,7 +235,13 @@ try {
     // Re-open and accept through a real protocol-driven pointer event. HTTPS
     // is intercepted so this verifies the privileged setting write and
     // continuation without contacting any tile provider.
-    await context.route('https://**', route => route.abort());
+    await context.route('https://**', route => {
+        const requestUrl = new URL(route.request().url());
+        if (requestUrl.hostname === 'www.peakbagger.com' && requestUrl.port === String(port)) {
+            return route.continue();
+        }
+        return route.abort();
+    });
     await offPage.locator('#bpb-terrain-toggle').click();
     await offPage.locator('#bpb-terrain-consent').waitFor({ state: 'visible', timeout: 5000 });
     await offPage.locator('.bpb-terrain-consent-primary').click();
@@ -257,7 +281,7 @@ try {
         bigMapCdp.on('Runtime.exceptionThrown', event => {
             bigMapErrors.push(event.exceptionDetails?.exception?.description || event.exceptionDetails?.text || 'unknown exception');
         });
-        await bigMapPage.goto(`http://www.peakbagger.com:${port}/map/BigMap.aspx?t=A&d=2296`, { waitUntil: 'load' });
+        await bigMapPage.goto(`https://www.peakbagger.com:${port}/map/BigMap.aspx?t=A&d=2296`, { waitUntil: 'load' });
         const bigMapToggle = await bigMapPage.waitForFunction(() => {
             const button = document.getElementById('bpb-terrain-toggle');
             if (!button) return false;
@@ -290,7 +314,7 @@ try {
         const peakPage = await context.newPage();
         const peakErrors = [];
         peakPage.on('pageerror', error => peakErrors.push(String(error)));
-        await peakPage.goto(`http://www.peakbagger.com:${port}/Peak.aspx?pid=2829`, { waitUntil: 'load' });
+        await peakPage.goto(`https://www.peakbagger.com:${port}/Peak.aspx?pid=2829`, { waitUntil: 'load' });
         const peakState = await peakPage.waitForFunction(() => {
             const button = document.getElementById('bpb-terrain-toggle');
             const mount = document.getElementById('bpb-map-viewport');
@@ -360,7 +384,7 @@ try {
             }, editorTheme);
             await optionsPage.close();
         }
-        const editorUrl = `http://www.peakbagger.com:${port}/climber/ascentedit.aspx?cid=900001`;
+        const editorUrl = `https://www.peakbagger.com:${port}/climber/ascentedit.aspx?cid=900001`;
         const editorPage = await context.newPage();
         const editorErrors = [];
         editorPage.on('pageerror', error => editorErrors.push(String(error)));

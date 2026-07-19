@@ -32,11 +32,14 @@ UX polish; nothing here is an exploitable security hole.
   than incorrectly asserting that the user is signed out.
 - **E3 — Done.** Bare `web-ext` commands now use `dist`, and the obsolete
   root-packaging ignore list is gone.
-- **E6 — In progress.** Auth-store mutations are serialized so concurrent
+- **E6 — Done.** Auth-store mutations are serialized so concurrent
   credential/account/repository writes cannot clobber one another, and
   structured non-2xx OAuth responses retain their typed GitHub error instead
   of being reported as a network outage. The duplicate disconnect branch is
-  gone; only the manifest matching decision remains.
+  gone, and declarative page/resource matches now align with HTTPS-only host
+  permissions. Arbitrary-case path matching remains deliberately narrow:
+  broad manifest globs would inject large vendor and MAIN-world bundles into
+  unrelated pages, while the known server-generated casings are covered.
 - **E1 — Done.** Global cleanup no longer runs on every message. Contrary to
   the original audit premise, not every reader filtered expiry, so lazy gates
   were added for jobs, drafts, and snapshots before moving physical deletion

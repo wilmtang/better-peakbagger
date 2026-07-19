@@ -42,10 +42,10 @@
   "content_scripts": [
     {
       "matches": [
-        "*://www.peakbagger.com/climber/ascentedit.aspx*",
-        "*://www.peakbagger.com/climber/AscentEdit.aspx*",
-        "*://peakbagger.com/climber/ascentedit.aspx*",
-        "*://peakbagger.com/climber/AscentEdit.aspx*"
+        "https://www.peakbagger.com/climber/ascentedit.aspx*",
+        "https://www.peakbagger.com/climber/AscentEdit.aspx*",
+        "https://peakbagger.com/climber/ascentedit.aspx*",
+        "https://peakbagger.com/climber/AscentEdit.aspx*"
       ],
       "css": [
         "css/report-editor.css"
@@ -59,7 +59,7 @@
     },
     {
       "matches": [
-        "*://*.peakbagger.com/*"
+        "https://*.peakbagger.com/*"
       ],
       "js": [
         "content/theme.js"
@@ -69,10 +69,10 @@
     },
     {
       "matches": [
-        "*://www.peakbagger.com/climber/ascent.aspx*",
-        "*://www.peakbagger.com/climber/Ascent.aspx*",
-        "*://peakbagger.com/climber/ascent.aspx*",
-        "*://peakbagger.com/climber/Ascent.aspx*"
+        "https://www.peakbagger.com/climber/ascent.aspx*",
+        "https://www.peakbagger.com/climber/Ascent.aspx*",
+        "https://peakbagger.com/climber/ascent.aspx*",
+        "https://peakbagger.com/climber/Ascent.aspx*"
       ],
       "js": [
         "content/ascent-bridge.js"
@@ -82,10 +82,10 @@
     },
     {
       "matches": [
-        "*://www.peakbagger.com/climber/ascent.aspx*",
-        "*://www.peakbagger.com/climber/Ascent.aspx*",
-        "*://peakbagger.com/climber/ascent.aspx*",
-        "*://peakbagger.com/climber/Ascent.aspx*"
+        "https://www.peakbagger.com/climber/ascent.aspx*",
+        "https://www.peakbagger.com/climber/Ascent.aspx*",
+        "https://peakbagger.com/climber/ascent.aspx*",
+        "https://peakbagger.com/climber/Ascent.aspx*"
       ],
       "css": [
         "css/ascent-backup.css"
@@ -98,10 +98,10 @@
     },
     {
       "matches": [
-        "*://www.peakbagger.com/climber/ascent.aspx*",
-        "*://www.peakbagger.com/climber/Ascent.aspx*",
-        "*://peakbagger.com/climber/ascent.aspx*",
-        "*://peakbagger.com/climber/Ascent.aspx*"
+        "https://www.peakbagger.com/climber/ascent.aspx*",
+        "https://www.peakbagger.com/climber/Ascent.aspx*",
+        "https://peakbagger.com/climber/ascent.aspx*",
+        "https://peakbagger.com/climber/Ascent.aspx*"
       ],
       "js": [
         "vendor/chart.umd.min.js",
@@ -114,10 +114,10 @@
     },
     {
       "matches": [
-        "*://www.peakbagger.com/climber/ascent.aspx*",
-        "*://www.peakbagger.com/climber/Ascent.aspx*",
-        "*://peakbagger.com/climber/ascent.aspx*",
-        "*://peakbagger.com/climber/Ascent.aspx*"
+        "https://www.peakbagger.com/climber/ascent.aspx*",
+        "https://www.peakbagger.com/climber/Ascent.aspx*",
+        "https://peakbagger.com/climber/ascent.aspx*",
+        "https://peakbagger.com/climber/Ascent.aspx*"
       ],
       "css": [
         "css/terrain-map.css"
@@ -130,14 +130,14 @@
     },
     {
       "matches": [
-        "*://www.peakbagger.com/climber/PeakAscents.aspx*",
-        "*://www.peakbagger.com/climber/peakascents.aspx*",
-        "*://www.peakbagger.com/climber/ClimbListC.aspx*",
-        "*://www.peakbagger.com/climber/climblistc.aspx*",
-        "*://peakbagger.com/climber/PeakAscents.aspx*",
-        "*://peakbagger.com/climber/peakascents.aspx*",
-        "*://peakbagger.com/climber/ClimbListC.aspx*",
-        "*://peakbagger.com/climber/climblistc.aspx*"
+        "https://www.peakbagger.com/climber/PeakAscents.aspx*",
+        "https://www.peakbagger.com/climber/peakascents.aspx*",
+        "https://www.peakbagger.com/climber/ClimbListC.aspx*",
+        "https://www.peakbagger.com/climber/climblistc.aspx*",
+        "https://peakbagger.com/climber/PeakAscents.aspx*",
+        "https://peakbagger.com/climber/peakascents.aspx*",
+        "https://peakbagger.com/climber/ClimbListC.aspx*",
+        "https://peakbagger.com/climber/climblistc.aspx*"
       ],
       "js": [
         "content/ascent-filter.js"
@@ -147,10 +147,10 @@
     },
     {
       "matches": [
-        "*://www.peakbagger.com/Peak.aspx*",
-        "*://www.peakbagger.com/peak.aspx*",
-        "*://peakbagger.com/Peak.aspx*",
-        "*://peakbagger.com/peak.aspx*"
+        "https://www.peakbagger.com/Peak.aspx*",
+        "https://www.peakbagger.com/peak.aspx*",
+        "https://peakbagger.com/Peak.aspx*",
+        "https://peakbagger.com/peak.aspx*"
       ],
       "js": [
         "content/peak-map-bridge.js"
@@ -160,10 +160,10 @@
     },
     {
       "matches": [
-        "*://www.peakbagger.com/Peak.aspx*",
-        "*://www.peakbagger.com/peak.aspx*",
-        "*://peakbagger.com/Peak.aspx*",
-        "*://peakbagger.com/peak.aspx*"
+        "https://www.peakbagger.com/Peak.aspx*",
+        "https://www.peakbagger.com/peak.aspx*",
+        "https://peakbagger.com/Peak.aspx*",
+        "https://peakbagger.com/peak.aspx*"
       ],
       "css": [
         "css/peak-links.css"
@@ -176,10 +176,10 @@
     },
     {
       "matches": [
-        "*://www.peakbagger.com/Peak.aspx*",
-        "*://www.peakbagger.com/peak.aspx*",
-        "*://peakbagger.com/Peak.aspx*",
-        "*://peakbagger.com/peak.aspx*"
+        "https://www.peakbagger.com/Peak.aspx*",
+        "https://www.peakbagger.com/peak.aspx*",
+        "https://peakbagger.com/Peak.aspx*",
+        "https://peakbagger.com/peak.aspx*"
       ],
       "js": [
         "content/peak-map.js"
@@ -190,10 +190,10 @@
     },
     {
       "matches": [
-        "*://www.peakbagger.com/Peak.aspx*",
-        "*://www.peakbagger.com/peak.aspx*",
-        "*://peakbagger.com/Peak.aspx*",
-        "*://peakbagger.com/peak.aspx*"
+        "https://www.peakbagger.com/Peak.aspx*",
+        "https://www.peakbagger.com/peak.aspx*",
+        "https://peakbagger.com/Peak.aspx*",
+        "https://peakbagger.com/peak.aspx*"
       ],
       "css": [
         "css/terrain-map.css"
@@ -206,8 +206,8 @@
     },
     {
       "matches": [
-        "*://*.peakbagger.com/*BigMap.aspx*",
-        "*://*.peakbagger.com/*bigmap.aspx*"
+        "https://*.peakbagger.com/*BigMap.aspx*",
+        "https://*.peakbagger.com/*bigmap.aspx*"
       ],
       "js": [
         "content/big-map-bridge.js"
@@ -217,8 +217,8 @@
     },
     {
       "matches": [
-        "*://*.peakbagger.com/*BigMap.aspx*",
-        "*://*.peakbagger.com/*bigmap.aspx*"
+        "https://*.peakbagger.com/*BigMap.aspx*",
+        "https://*.peakbagger.com/*bigmap.aspx*"
       ],
       "js": [
         "content/big-map.js"
@@ -229,8 +229,8 @@
     },
     {
       "matches": [
-        "*://*.peakbagger.com/*BigMap.aspx*",
-        "*://*.peakbagger.com/*bigmap.aspx*"
+        "https://*.peakbagger.com/*BigMap.aspx*",
+        "https://*.peakbagger.com/*bigmap.aspx*"
       ],
       "css": [
         "css/terrain-map.css"
@@ -248,7 +248,7 @@
         "terrain/terrain.html"
       ],
       "matches": [
-        "*://*.peakbagger.com/*"
+        "https://*.peakbagger.com/*"
       ]
     }
   ],

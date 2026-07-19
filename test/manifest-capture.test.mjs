@@ -25,6 +25,12 @@ test('capture permissions are explicit and provider access remains activeTab-onl
     }
     assert.ok(manifest.host_permissions.every(pattern => pattern.includes('peakbagger.com')));
     assert.ok(manifest.host_permissions.every(pattern => !/garmin|strava/i.test(pattern)));
+    const declarativeMatches = [
+        ...manifest.content_scripts.flatMap(entry => entry.matches),
+        ...manifest.web_accessible_resources.flatMap(entry => entry.matches),
+    ];
+    assert.ok(declarativeMatches.every(pattern => pattern.startsWith('https://')),
+        'content scripts and exposed resources must stay inside the HTTPS permission boundary');
     assert.equal(manifest.action.default_popup, 'popup/popup.html');
 });
 
@@ -60,7 +66,7 @@ test('3D terrain is isolated from Peakbagger globals in an extension-owned frame
 
     assert.deepEqual(manifest.web_accessible_resources, [{
         resources: ['terrain/terrain.html'],
-        matches: ['*://*.peakbagger.com/*']
+        matches: ['https://*.peakbagger.com/*']
     }]);
     // The frame loads MapLibre (a copied vendor script) then the frame bundle,
     // which composes the shared camera/schema helpers, terrain cache, and frame.
