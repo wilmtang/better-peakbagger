@@ -14,7 +14,7 @@
 // editor exclusively through richCommands/richState so the TipTap API surface
 // stays contained in one file.
 
-import { Editor, Extension, Mark, ResizableNodeView, getStyleProperty, mergeAttributes } from '@tiptap/core';
+import { Editor, Extension, Mark, Node, ResizableNodeView, getStyleProperty, mergeAttributes } from '@tiptap/core';
 import StarterKit from '@tiptap/starter-kit';
 import { Table, TableRow, TableHeader, TableCell } from '@tiptap/extension-table';
 import Image from '@tiptap/extension-image';
@@ -23,7 +23,7 @@ import Superscript from '@tiptap/extension-superscript';
 import Highlight from '@tiptap/extension-highlight';
 import { TextStyle, Color } from '@tiptap/extension-text-style';
 import { Placeholder } from '@tiptap/extensions';
-import { MAX_REPORT_IMAGE_DIMENSION } from './report-markup.js';
+import { MAX_REPORT_IMAGE_DIMENSION, sanitizeVideoSrc } from './report-markup.js';
 
 // TipTap parses a raw hex token correctly, but its DOM serializer can still
 // canonicalize the rendered style to rgb(). Carry the parsed token in an
@@ -183,6 +183,36 @@ const ReportImage = Image.extend({
     }
 });
 
+// A direct media URL is safe to represent as a native video element; embeds
+// such as iframes remain outside the editor schema. This node is inline so a
+// Markdown video reference can sit naturally in the surrounding paragraph.
+const ReportVideo = Node.create({
+    name: 'reportVideo',
+    group: 'inline',
+    inline: true,
+    atom: true,
+    selectable: true,
+    draggable: true,
+
+    addAttributes() {
+        return {
+            src: {
+                default: null,
+                parseHTML: element => sanitizeVideoSrc(element.getAttribute('src')),
+                renderHTML: attributes => attributes.src ? { src: attributes.src } : {}
+            }
+        };
+    },
+
+    parseHTML() { return [{ tag: 'video[src]' }]; },
+
+    renderHTML({ HTMLAttributes }) {
+        return ['video', mergeAttributes({
+            controls: '', preload: 'metadata', playsinline: '', referrerpolicy: 'no-referrer'
+        }, HTMLAttributes)];
+    }
+});
+
 const shortcutExtension = handlers => Extension.create({
     name: 'bpbShortcuts',
     addKeyboardShortcuts() {
@@ -201,6 +231,7 @@ export const createRichEditor = ({ element, placeholder, ariaLabel, onUpdate, on
             }),
             Table.configure({ resizable: false }), TableRow, TableHeader, TableCell,
             ReportImage.configure({ inline: true }),
+            ReportVideo,
             Subscript, Superscript, Highlight,
             TextStyle, ReportColor,
             Small, InlineQuote,
@@ -255,6 +286,9 @@ export const richCommands = {
     setLink: (editor, href) => editor.chain().focus().extendMarkRange('link').setLink({ href }).run(),
     unsetLink: editor => editor.chain().focus().extendMarkRange('link').unsetLink().run(),
     insertImage: (editor, attrs) => editor.chain().focus().setImage(attrs).run(),
+    insertVideo: (editor, src) => editor.chain().focus().insertContent({
+        type: 'reportVideo', attrs: { src }
+    }).run(),
     // The block dropdown: a heading/code choice converts the current block; a
     // quote choice wraps a fresh paragraph; Paragraph unwraps an active quote.
     setBlock: (editor, value) => {

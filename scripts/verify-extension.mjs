@@ -377,6 +377,9 @@ try {
             });
             check(nativeHidden, 'the native textarea should be hidden but still inside the form');
 
+            const surfaceTopBeforePanel = await editorPage.evaluate(() =>
+                document.querySelector('#bpb-report-editor .bpb-re-surface')?.getBoundingClientRect().top);
+
             await editorPage.locator('#bpb-report-editor').getByRole('button', {
                 name: 'Insert image', exact: true
             }).click();
@@ -421,6 +424,42 @@ try {
                 }
             ]), `image-hosting help links were incomplete or unsafe (state=${
                 JSON.stringify(imageHostingHelp)})`);
+            const contextualPanelLayout = await editorPage.evaluate(before => {
+                const editor = document.getElementById('bpb-report-editor');
+                const toolbar = editor?.querySelector('.bpb-re-toolbar');
+                const surface = editor?.querySelector('.bpb-re-surface');
+                const box = editor?.querySelector('.bpb-re-imagebox');
+                const toolbarRect = toolbar?.getBoundingClientRect();
+                const surfaceRect = surface?.getBoundingClientRect();
+                const boxRect = box?.getBoundingClientRect();
+                return toolbarRect && surfaceRect && boxRect ? {
+                    surfaceDelta: surfaceRect.top - before,
+                    overlay: getComputedStyle(box).position === 'static'
+                        ? getComputedStyle(editor.querySelector('.bpb-re-contextual')).position
+                        : getComputedStyle(box).position,
+                    panelStartsAtToolbar: Math.abs(boxRect.top - toolbarRect.bottom) <= 1,
+                    panelOverlaysSurface: boxRect.bottom > surfaceRect.top
+                } : null;
+            }, surfaceTopBeforePanel);
+            check(Math.abs(contextualPanelLayout?.surfaceDelta ?? Infinity) <= 0.5
+                && contextualPanelLayout.overlay === 'absolute'
+                && contextualPanelLayout.panelStartsAtToolbar
+                && contextualPanelLayout.panelOverlaysSurface,
+            `opening the image panel moved the writing surface instead of overlaying it (layout=${
+                JSON.stringify(contextualPanelLayout)})`);
+            await editorPage.locator('#bpb-report-editor').getByRole('button', {
+                name: 'Insert image', exact: true
+            }).click();
+            const imageDismissed = await editorPage.locator('.bpb-re-imagebox').evaluate(box => box.hidden);
+            check(imageDismissed, 'clicking Insert image again did not dismiss its panel');
+            await editorPage.locator('#bpb-report-editor').getByRole('button', {
+                name: 'Link (Ctrl+K)', exact: true
+            }).click();
+            await editorPage.locator('#bpb-report-editor').getByRole('button', {
+                name: 'Link (Ctrl+K)', exact: true
+            }).click();
+            const linkDismissed = await editorPage.locator('.bpb-re-linkbox').evaluate(box => box.hidden);
+            check(linkDismissed, 'clicking Link again did not dismiss its panel');
             if (process.env.BPB_VERIFY_EDITOR_IMAGE_SCREENSHOT) {
                 await editorPage.locator('#bpb-report-editor').screenshot({
                     path: process.env.BPB_VERIFY_EDITOR_IMAGE_SCREENSHOT
@@ -686,6 +725,8 @@ try {
                 '',
                 `![Alpine ridge|300x180](${mountainUrl})`,
                 '',
+                `![Video](${mountainUrl})`,
+                '',
                 '---'
             ].join('\n'));
             const expandedSync = await editorPage.waitForFunction(imageUrl => {
@@ -695,6 +736,7 @@ try {
                     && value.includes('[table border="1"]')
                     && value.includes('[code]inline_code()[/code]')
                     && value.includes(`[img src="${imageUrl}" alt="Alpine ridge" width="300" height="180"]`)
+                    && value.includes(`[video src="${imageUrl}"][/video]`)
                     && value.endsWith('[hr]');
             }, mountainUrl, { timeout: 5000 }).then(() => true).catch(() => false);
             check(expandedSync, `expanded Markdown did not reach JournalText (value=${
@@ -702,10 +744,13 @@ try {
             const expandedPreview = await editorPage.waitForFunction(() => {
                 const preview = document.querySelector('.bpb-re-preview');
                 const image = preview?.querySelector('img');
+                const video = preview?.querySelector('video');
                 return ['H2', 'BLOCKQUOTE', 'TABLE', 'S', 'CODE', 'HR']
                     .every(tag => preview && preview.querySelector(tag))
                     && image?.getAttribute('width') === '300'
-                    && image?.getAttribute('height') === '180';
+                    && image?.getAttribute('height') === '180'
+                    && video?.hasAttribute('controls')
+                    && !video?.hasAttribute('autoplay');
             }, null, { timeout: 5000 }).then(() => true).catch(() => false);
             check(expandedPreview, 'the live preview omitted a supported semantic element');
             if (process.env.BPB_VERIFY_EDITOR_SCREENSHOT) {

@@ -14,7 +14,7 @@
 // Supported blocks: paragraphs/line breaks, h1-h6, block quotes, nested ul/ol,
 // tables, preformatted code, and horizontal rules. Supported inline content:
 // b/strong, i/em, u, s/strike/del, small, mark, sub, sup, code, q, safe links,
-// HTTPS images, and color-only span/font markup. P/div/br are accepted on
+// HTTPS images and direct videos, and color-only span/font markup. P/div/br are accepted on
 // import but normalized to Peakbagger's newline convention.
 //
 // This module never accepts arbitrary HTML. Unsupported tags, raw Markdown
@@ -42,7 +42,7 @@
         'UL', 'OL', 'TABLE', 'PRE', 'HR'
     ]);
     const DROP_DOM = new Set([
-        'SCRIPT', 'STYLE', 'TEMPLATE', 'IFRAME', 'VIDEO', 'AUDIO', 'OBJECT',
+        'SCRIPT', 'STYLE', 'TEMPLATE', 'IFRAME', 'AUDIO', 'OBJECT',
         'EMBED', 'FORM', 'INPUT', 'BUTTON', 'SELECT', 'TEXTAREA'
     ]);
     const BREAK = Object.freeze({ t: 'br' });
@@ -89,6 +89,14 @@
         catch (error) { return null; }
     };
 
+    // Videos use the same source boundary as images. The extension never
+    // embeds a third-party page: this is only for a direct media resource the
+    // browser can play in its native, non-autoplaying control.
+    export const sanitizeVideoSrc = sanitizeImageSrc;
+
+    const VIDEO_FILE = /\.(?:m3u8|mp4|og[gv]|webm)(?:[?#]|$)/i;
+    const isDirectVideoSrc = src => VIDEO_FILE.test(src);
+
     const sanitizeColor = raw => {
         if (typeof raw !== 'string') return null;
         const color = raw.trim().toLowerCase();
@@ -127,7 +135,7 @@
         const lower = String(name || '').toLowerCase();
         if (INLINE_TAGS.has(lower)) return INLINE_TAGS.get(lower);
         if (lower === 'font') return 'span';
-        if (BLOCK_TAGS.has(lower) || VOID_TAGS.has(lower) || lower === 'a' || lower === 'span') return lower;
+        if (BLOCK_TAGS.has(lower) || VOID_TAGS.has(lower) || lower === 'a' || lower === 'span' || lower === 'video') return lower;
         return null;
     };
 
@@ -164,6 +172,14 @@
                     width ? ` width="${width}"` : ''}${height ? ` height="${height}"` : ''}>`,
                 self: true
             };
+        }
+        if (tag === 'video') {
+            const src = sanitizeVideoSrc(readAttr(attrs, 'src'));
+            return src ? {
+                tag,
+                html: `<video src="${escapeAttribute(src)}" controls preload="metadata" playsinline referrerpolicy="no-referrer">`,
+                self: false
+            } : null;
         }
         if (tag === 'span') {
             const styleColor = /^\s*color\s*:\s*([^;]+)\s*;?\s*$/i.exec(readAttr(attrs, 'style') || '');
@@ -321,6 +337,10 @@
                 width: sanitizeDimension(node.getAttribute('width')),
                 height: sanitizeDimension(node.getAttribute('height'))
             }];
+        }
+        if (tag === 'VIDEO') {
+            const src = sanitizeVideoSrc(node.getAttribute('src'));
+            return src ? [{ t: 'video', src }] : [];
         }
 
         let kids = compactInlines([...node.childNodes].flatMap(inlineFromNode));
@@ -523,6 +543,9 @@
             return href && kids.length ? [{ t: 'a', href, blank: false, kids }] : textWithBreaks(token.raw);
         }
         if (token.type === 'image') {
+            const videoSrc = sanitizeVideoSrc(token.href);
+            const videoMarker = String(token.text || '').trim().toLowerCase() === 'video';
+            if (videoSrc && (isDirectVideoSrc(videoSrc) || videoMarker)) return [{ t: 'video', src: videoSrc }];
             const src = sanitizeImageSrc(token.href);
             return src ? [{ t: 'img', src, ...markdownImageAttributes(token) }]
                 : textWithBreaks(token.raw);
@@ -580,7 +603,17 @@
         const parser = globalThis.marked;
         const lexer = parser && (parser.lexer || parser.marked?.lexer);
         if (typeof lexer !== 'function') throw new Error('Vendored Marked parser is not loaded');
-        return markedBlocks(lexer(String(source ?? ''), { gfm: true, breaks: false }));
+        // Marked recognizes the URL in a bracket video tag as an ordinary
+        // link before our extension parser can see it. Normalize only the
+        // validated paired form into the explicit Markdown video marker.
+        const input = String(source ?? '').replace(
+            /\[video\b([^\]\r\n]*)\]\s*\[\/video\]/gi,
+            (raw, attributes) => {
+                const src = sanitizeVideoSrc(readAttr(attributes, 'src'));
+                return src ? `![Video](${src})` : raw;
+            }
+        );
+        return markedBlocks(lexer(input, { gfm: true, breaks: false }));
     };
 
     // ---- AST -> Peakbagger bracket markup ---------------------------------
@@ -592,6 +625,7 @@
             return `[img src="${escapeAttribute(node.src)}"${node.alt ? ` alt="${escapeAttribute(node.alt)}"` : ''}${
                 node.width ? ` width="${node.width}"` : ''}${node.height ? ` height="${node.height}"` : ''}]`;
         }
+        if (node.t === 'video') return `[video src="${escapeAttribute(node.src)}"][/video]`;
         const inner = inlinesToBracket(node.kids);
         if (node.t === 'a') {
             return `[a href="${escapeAttribute(node.href)}"${node.blank ? ' target="_blank"' : ''}]${inner}[/a]`;
@@ -637,6 +671,9 @@
             return `<img src="${escapeAttribute(node.src)}" alt="${escapeAttribute(node.alt || '')}"${
                 node.width ? ` width="${node.width}"` : ''}${node.height ? ` height="${node.height}"` : ''
             } loading="lazy" referrerpolicy="no-referrer">`;
+        }
+        if (node.t === 'video') {
+            return `<video src="${escapeAttribute(node.src)}" controls preload="metadata" playsinline referrerpolicy="no-referrer"></video>`;
         }
         const inner = inlinesToHtml(node.kids);
         if (node.t === 'a') return `<a href="${escapeAttribute(node.href)}"${
@@ -701,6 +738,7 @@
             if (node.height) return inlinesToBracket([node]);
             return `![${escapeMarkdownText(node.alt || '')}](${node.src})`;
         }
+        if (node.t === 'video') return `![Video](${node.src})`;
         const inner = inlinesToMarkdown(node.kids);
         if (node.t === 'b') return `**${inner}**`;
         if (node.t === 'i') return `*${inner}*`;
@@ -761,6 +799,7 @@
         sanitizeHref,
         resolveLinkTarget,
         sanitizeImageSrc,
+        sanitizeVideoSrc,
         parseBracket,
         parseMarkdown,
         domToAst,

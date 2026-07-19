@@ -138,6 +138,25 @@ test('images require HTTPS and raw Markdown HTML stays inert', () => {
     assert.match(preview, /&lt;iframe/);
 });
 
+test('direct Markdown video links render with native controls and preserve the safe bracket form', () => {
+    const source = '![](https://media.example.com/summit.mp4)';
+    const bracket = '[video src="https://media.example.com/summit.mp4"][/video]';
+    const preview = Markup.markdownToPreviewHtml(source);
+
+    assert.equal(Markup.markdownToBracket(source), bracket);
+    assert.match(preview,
+        /<video src="https:\/\/media\.example\.com\/summit\.mp4" controls preload="metadata" playsinline referrerpolicy="no-referrer"><\/video>/);
+    assert.doesNotMatch(preview, /autoplay/i);
+    assert.equal(Markup.bracketToMarkdown(bracket), '![Video](https://media.example.com/summit.mp4)');
+    assert.equal(Markup.markdownToBracket(Markup.bracketToMarkdown(bracket)), bracket);
+
+    // `[video]` is also accepted as the explicit Markdown extension, which
+    // handles direct media URLs that do not end in a recognizable suffix.
+    const signed = '[video src="https://cdn.example.com/download?id=9"][/video]';
+    assert.equal(Markup.markdownToBracket(signed), signed);
+    assert.doesNotMatch(Markup.markdownToPreviewHtml('![](http://example.com/clip.mp4)'), /<video\b/i);
+});
+
 test('Obsidian-style image size suffixes become bounded dimensions, not alt text', () => {
     const widthOnly = '![Topo|500](https://example.com/topo.jpg)';
     const widthAndHeight = '![Route photo|500x600](https://example.com/route.jpg)';

@@ -83,10 +83,13 @@ test('the editor mounts on the ascent form and hides the native textarea', async
         'Paragraph', 'Heading 1', 'Heading 2', 'Heading 3', 'Heading 4',
         'Heading 5', 'Heading 6', 'Quote', 'Preformatted'
     ]);
-    for (const label of ['Strikethrough', 'Horizontal rule', 'Insert table', 'Insert image',
+    for (const label of ['Strikethrough', 'Horizontal rule', 'Insert table', 'Insert image', 'Insert video',
         'More formats', 'Undo (Ctrl+Z)', 'Redo (Ctrl+Shift+Z)']) {
         assert.ok(ui.querySelector(`[aria-label="${label}"]`), `missing toolbar control: ${label}`);
     }
+    assert.equal(ui.querySelector('.bpb-re-contextual')?.parentElement,
+        ui.querySelector('.bpb-re-toolbar'),
+        'contextual controls must stay in the toolbar layer, not in the writing surface flow');
     assert.ok(ui.querySelector('.bpb-re-surface'), 'the rich surface should be mounted');
     assert.equal(editors(dom).rich.getHTML(), '<p></p>',
         'an empty report must not become a hard break');
@@ -157,6 +160,22 @@ test('markdown mode converts to bracket markup and the live preview shows the fi
 
     // The chosen mode is remembered for next time.
     assert.equal(dom.chrome._store.bpbSettings.reportEditorMode, 'markdown');
+});
+
+test('Markdown direct video links save as video markup and render native controls', async () => {
+    const dom = await loadEditor();
+    await editorReady(dom);
+    const doc = dom.window.document;
+
+    modeButton(doc, 'Markdown').click();
+    typeMarkdown(dom, 'Summit video:\n\n![](https://media.example.com/summit.mp4)');
+    await waitFor(dom, () => doc.getElementById('JournalText').value.includes('[video src='));
+    assert.equal(doc.getElementById('JournalText').value,
+        'Summit video:\n\n[video src="https://media.example.com/summit.mp4"][/video]');
+    const video = doc.querySelector('.bpb-re-preview video');
+    assert.equal(video?.getAttribute('src'), 'https://media.example.com/summit.mp4');
+    assert.equal(video?.hasAttribute('controls'), true);
+    assert.equal(video?.hasAttribute('autoplay'), false);
 });
 
 test('switching rich → markdown → rich keeps the content through the canonical form', async () => {
@@ -340,6 +359,45 @@ test('the image popover validates the source and inserts alt text', async () => 
     await waitFor(dom, () => doc.getElementById('JournalText').value.includes('[img'));
     assert.equal(doc.getElementById('JournalText').value,
         '[img src="https://example.com/topo.jpg" alt="Topo"]');
+});
+
+test('link and media popovers toggle closed, share the overlay layer, and insert safe video', async () => {
+    const dom = await loadEditor();
+    const ui = await editorReady(dom);
+    const doc = dom.window.document;
+    const layer = ui.querySelector('.bpb-re-contextual');
+    const linkTool = ui.querySelector('[aria-label="Link (Ctrl+K)"]');
+    const imageTool = ui.querySelector('[aria-label="Insert image"]');
+    const videoTool = ui.querySelector('[aria-label="Insert video"]');
+    const imageBox = ui.querySelector('.bpb-re-imagebox');
+    const videoBox = ui.querySelector('.bpb-re-videobox');
+
+    linkTool.click();
+    assert.equal(ui.querySelector('.bpb-re-linkbox').hidden, false);
+    linkTool.click();
+    assert.equal(ui.querySelector('.bpb-re-linkbox').hidden, true,
+        'clicking Link again should dismiss its panel');
+
+    imageTool.click();
+    assert.equal(imageBox.hidden, false);
+    assert.equal(imageBox.parentElement, layer);
+    imageTool.click();
+    assert.equal(imageBox.hidden, true, 'clicking Image again should dismiss its panel');
+
+    videoTool.click();
+    assert.equal(videoBox.hidden, false);
+    assert.equal(videoBox.parentElement, layer);
+    const videoSrc = ui.querySelector('[aria-label="Video URL (HTTPS)"]');
+    videoSrc.value = 'http://example.com/clip.mp4';
+    ui.querySelector('.bpb-re-videobox .bpb-re-linkapply').click();
+    assert.ok(videoSrc.classList.contains('bpb-re-invalid'), 'mixed-content video URLs must be rejected');
+
+    videoSrc.value = 'https://media.example.com/clip.mp4';
+    ui.querySelector('.bpb-re-videobox .bpb-re-linkapply').click();
+    await waitFor(dom, () => doc.getElementById('JournalText').value.includes('[video src='));
+    assert.equal(doc.getElementById('JournalText').value,
+        '[video src="https://media.example.com/clip.mp4"][/video]');
+    assert.equal(ui.querySelector('.bpb-re-surface video')?.getAttribute('controls'), '');
 });
 
 test('a Rich image resize stays proportional and persists its dimensions', async () => {

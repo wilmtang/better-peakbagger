@@ -126,6 +126,8 @@ import { createMarkdownEditor } from './report-md-editor.js';
             svg('<path fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" d="M6.5 9.5l3-3M5.7 7.2L4 8.9a2.5 2.5 0 003.5 3.5l1.7-1.7M10.3 8.8L12 7.1a2.5 2.5 0 00-3.5-3.5L6.8 5.3"/>')),
         image: button('bpb-re-tool', 'Image', 'Insert image',
             svg('<rect x="1.5" y="2.5" width="13" height="11" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.4"/><circle cx="5.2" cy="6" r="1.2" fill="currentColor"/><path d="M3 12.5l3.2-3.4 2.2 2.2 2.6-3 2.5 4.2" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>')),
+        video: button('bpb-re-tool', 'Video', 'Insert video',
+            svg('<rect x="1.5" y="2.5" width="13" height="11" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M6.5 5.2v5.6L11 8 6.5 5.2z" fill="currentColor"/>')),
         insertTable: button('bpb-re-tool', 'Table', 'Insert table',
             svg('<rect x="1.5" y="2.5" width="13" height="11" rx="1" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M1.5 6.5h13M6 2.5v11M10.5 2.5v11" fill="none" stroke="currentColor" stroke-width="1.2"/>')),
         bulletList: button('bpb-re-tool', 'Bulleted list', 'Bulleted list',
@@ -195,11 +197,11 @@ import { createMarkdownEditor } from './report-md-editor.js';
     imageAltInput.placeholder = 'Description (alt text)';
     imageAltInput.setAttribute('aria-label', 'Image description');
     const imageApply = button('bpb-re-linkapply', 'Add image');
-    const imageHostingHint = el('div', 'bpb-re-image-hosting', 'Common free image hosting includes ');
+    const imageHostingHint = el('div', 'bpb-re-image-hosting', 'Need an image URL? Try ');
     const hostingLinks = [
+        ['Peakbagger Photos', 'https://www.peakbagger.com/climber/photo.aspx'],
         ['Imgur', 'https://imgur.com/upload'],
-        ['ImgBB', 'https://imgbb.com/'],
-        ['Peakbagger', 'https://www.peakbagger.com/climber/photo.aspx'],
+        ['ImgBB', 'https://imgbb.com/']
     ].map(([label, href]) => {
         const link = el('a', null, label);
         link.href = href;
@@ -209,9 +211,20 @@ import { createMarkdownEditor } from './report-md-editor.js';
     });
     imageHostingHint.append(
         hostingLinks[0], ', ', hostingLinks[1], ', or ', hostingLinks[2],
-        ' etc. Terms and conditions may vary.'
+        '. Free plans, limits, and terms vary.'
     );
     imageBox.append(imageSrcInput, imageAltInput, imageApply, imageHostingHint);
+
+    const videoBox = el('div', 'bpb-re-box bpb-re-videobox');
+    videoBox.hidden = true;
+    const videoSrcInput = el('input');
+    videoSrcInput.type = 'text';
+    videoSrcInput.placeholder = 'https://example.com/clip.mp4';
+    videoSrcInput.setAttribute('aria-label', 'Video URL (HTTPS)');
+    const videoApply = button('bpb-re-linkapply', 'Add video');
+    const videoHint = el('div', 'bpb-re-video-hint',
+        'Direct video files play with browser controls. Video pages and embeds are not supported.');
+    videoBox.append(videoSrcInput, videoApply, videoHint);
 
     // Less-frequent inline formats live one click away instead of widening the
     // main bar: code, highlight, sub/sup, small, inline quote, and text color.
@@ -257,14 +270,21 @@ import { createMarkdownEditor } from './report-md-editor.js';
     const status = el('span', 'bpb-re-status');
     status.setAttribute('role', 'status');
     status.setAttribute('aria-live', 'polite');
-    const imageSizeHint = 'Image size: ![Photo|500](url) for width, or ![Photo|500x600](url) for width × height, or switch to rich text editor drag';
-    const mdHint = el('span', 'bpb-re-hint', imageSizeHint);
-    mdHint.title = imageSizeHint;
+    const mediaHint = 'Image size: ![Photo|500](url) for width, or ![Photo|500x600](url) for width × height. Direct video: ![](https://example.com/clip.mp4)';
+    const mdHint = el('span', 'bpb-re-hint', mediaHint);
+    mdHint.title = mediaHint;
     foot.append(status, mdHint);
 
-    ui.append(draftBar, bar, tableBar, linkBox, imageBox, moreBox, richWrap, mdSplit, foot);
+    // Contextual controls sit in a positioned layer below the toolbar. They
+    // must not become normal-flow rows: opening a tool should never move the
+    // writing surface or the cursor the user is working against.
+    const toolbar = el('div', 'bpb-re-toolbar');
+    const contextual = el('div', 'bpb-re-contextual');
+    contextual.append(tableBar, linkBox, imageBox, videoBox, moreBox);
+    toolbar.append(bar, contextual);
+    ui.append(draftBar, toolbar, richWrap, mdSplit, foot);
 
-    const boxes = [linkBox, imageBox, moreBox];
+    const boxes = [tableBar, linkBox, imageBox, videoBox, moreBox];
     const closeBoxes = () => { for (const box of boxes) box.hidden = true; };
     const toggleBox = box => {
         const wasOpen = !box.hidden;
@@ -485,6 +505,11 @@ import { createMarkdownEditor } from './report-md-editor.js';
         linkInput.select();
     };
 
+    const closeBoxAndRestoreEditor = () => {
+        closeBoxes();
+        richEditor?.commands.focus();
+    };
+
     const applyLink = () => {
         const href = Markup.resolveLinkTarget(linkInput.value);
         if (!href) {
@@ -503,11 +528,13 @@ import { createMarkdownEditor } from './report-md-editor.js';
             richCommands.setLink(richEditor, href);
         }
         closeBoxes();
+        refreshToolbar();
     };
 
     const removeLink = () => {
         richCommands.unsetLink(richEditor);
         closeBoxes();
+        refreshToolbar();
     };
 
     const openImageBox = () => {
@@ -529,6 +556,28 @@ import { createMarkdownEditor } from './report-md-editor.js';
         imageSrcInput.classList.remove('bpb-re-invalid');
         richCommands.insertImage(richEditor, { src, alt: imageAltInput.value.trim() });
         closeBoxes();
+        refreshToolbar();
+    };
+
+    const openVideoBox = () => {
+        closeBoxes();
+        videoSrcInput.value = '';
+        videoSrcInput.classList.remove('bpb-re-invalid');
+        videoBox.hidden = false;
+        videoSrcInput.focus();
+    };
+
+    const applyVideo = () => {
+        const src = Markup.sanitizeVideoSrc(videoSrcInput.value.trim());
+        if (!src) {
+            videoSrcInput.classList.add('bpb-re-invalid');
+            videoSrcInput.focus();
+            return;
+        }
+        videoSrcInput.classList.remove('bpb-re-invalid');
+        richCommands.insertVideo(richEditor, src);
+        closeBoxes();
+        refreshToolbar();
     };
 
     for (const [name, control] of Object.entries({ ...toolButtons, ...moreButtons, ...tableButtons })) {
@@ -536,33 +585,49 @@ import { createMarkdownEditor } from './report-md-editor.js';
         control.addEventListener('mousedown', event => event.preventDefault());
         control.addEventListener('click', () => {
             if (name === 'more') return toggleBox(moreBox);
-            if (name === 'link') return openLinkBox();
-            if (name === 'image') return openImageBox();
+            if (name === 'link') return linkBox.hidden ? openLinkBox() : closeBoxAndRestoreEditor();
+            if (name === 'image') return imageBox.hidden ? openImageBox() : closeBoxAndRestoreEditor();
+            if (name === 'video') return videoBox.hidden ? openVideoBox() : closeBoxAndRestoreEditor();
+            closeBoxes();
             richCommands[name](richEditor);
         });
     }
     for (const control of swatchButtons) {
         control.addEventListener('mousedown', event => event.preventDefault());
-        control.addEventListener('click', () => richCommands.setColor(richEditor, control.dataset.color));
+        control.addEventListener('click', () => {
+            closeBoxes();
+            richCommands.setColor(richEditor, control.dataset.color);
+        });
     }
     swatchClear.addEventListener('mousedown', event => event.preventDefault());
-    swatchClear.addEventListener('click', () => richCommands.unsetColor(richEditor));
+    swatchClear.addEventListener('click', () => {
+        closeBoxes();
+        richCommands.unsetColor(richEditor);
+    });
 
-    blockFormat.addEventListener('change', () => richCommands.setBlock(richEditor, blockFormat.value));
+    blockFormat.addEventListener('change', () => {
+        closeBoxes();
+        richCommands.setBlock(richEditor, blockFormat.value);
+    });
 
     linkApply.addEventListener('click', applyLink);
     linkRemove.addEventListener('click', removeLink);
     linkInput.addEventListener('keydown', event => {
         if (event.key === 'Enter') { event.preventDefault(); applyLink(); }
-        if (event.key === 'Escape') { event.preventDefault(); closeBoxes(); richEditor.commands.focus(); }
+        if (event.key === 'Escape') { event.preventDefault(); closeBoxAndRestoreEditor(); }
     });
     imageApply.addEventListener('click', applyImage);
     for (const input of [imageSrcInput, imageAltInput]) {
         input.addEventListener('keydown', event => {
             if (event.key === 'Enter') { event.preventDefault(); applyImage(); }
-            if (event.key === 'Escape') { event.preventDefault(); closeBoxes(); richEditor.commands.focus(); }
+            if (event.key === 'Escape') { event.preventDefault(); closeBoxAndRestoreEditor(); }
         });
     }
+    videoApply.addEventListener('click', applyVideo);
+    videoSrcInput.addEventListener('keydown', event => {
+        if (event.key === 'Enter') { event.preventDefault(); applyVideo(); }
+        if (event.key === 'Escape') { event.preventDefault(); closeBoxAndRestoreEditor(); }
+    });
 
     // ---- Modes -------------------------------------------------------------------
 

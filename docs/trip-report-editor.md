@@ -285,6 +285,7 @@ Peakbagger equivalent:
 | `[label](https://…)` and bare web URLs | `[a href="…"]` |
 | `![alt](https://…)` | `[img src="…" alt="…"]` |
 | `![alt\|300](https://…)`, `![alt\|300x200](https://…)` | `[img … width="300"]`, optionally with `height="200"` |
+| `![](https://…/clip.mp4)` (also `.webm`, `.ogv`, `.ogg`, or `.m3u8`) | `[video src="…"][/video]` |
 | two spaces plus newline, or an ordinary newline inside a paragraph | Peakbagger line break |
 | a blank line | Peakbagger paragraph spacing |
 
@@ -293,6 +294,13 @@ image's dimensions, not its alt text, and each dimension must remain between 1
 and 1,600 pixels. The source is still subject to Better Peakbagger's image URL
 rules: HTTPS and root-relative Peakbagger paths work; an Obsidian vault-local
 attachment path does not grant the extension access to that file.
+
+Direct video uses the image form because Markdown has no standard video syntax.
+An empty alt text and a recognizable media-file suffix creates a video; use
+`![Video](https://…)` for a signed or extensionless direct media URL. The
+Markdown preview and Rich editor show a native, non-autoplaying video control.
+The saved report uses Peakbagger's `[video src="…"][/video]` form. Video pages
+and iframe embeds are deliberately not supported.
 
 Peakbagger-supported inline features without standard Markdown syntax remain
 available as bracket extensions inside Markdown:
@@ -316,7 +324,7 @@ The following tags were verified against Peakbagger's rendered ascent-report
 output and are represented in rich and Markdown modes:
 
 - Inline: `b`, `strong`, `i`, `em`, `u`, `s`, `strike`, `del`, `small`,
-  `mark`, `sub`, `sup`, `code`, `q`, `a`, `img`, and color-only `span`/`font`.
+  `mark`, `sub`, `sup`, `code`, `q`, `a`, `img`, `video`, and color-only `span`/`font`.
 - Blocks: `h1`–`h6`, `blockquote`, `ul`, `ol`, `li`, `table`, `tr`, `th`,
   `td`, `pre`, and `hr`.
 - Compatibility imports: `p`, `div`, and `br` are accepted, then normalized to
@@ -331,7 +339,7 @@ Peakbagger's report page.
 
 The rich toolbar exposes the common actions without becoming a wall of
 controls: block style (paragraph, six heading levels, quote, preformatted),
-bold, italic, underline, strikethrough, link, image, table, both list types,
+bold, italic, underline, strikethrough, link, image, direct video, table, both list types,
 horizontal rule, and undo/redo, with live active states that follow the caret.
 Selecting an image reveals one lower-corner handle; dragging it resizes the
 image without distorting its aspect ratio, and the left/right arrow keys on the
@@ -349,7 +357,7 @@ Peakbagger was observed rendering `iframe` markup, and the site accepts a much
 broader HTML-shaped surface than a trip-report editor should expose. Better
 Peakbagger therefore does **not** generate or execute:
 
-- `iframe`, `video`, `audio`, `object`, or `embed`;
+- `iframe`, `audio`, `object`, or `embed`;
 - `script`, forms, controls, or event-handler attributes;
 - raw HTML embedded in Markdown;
 - `javascript:`, `data:`, filesystem, browser-internal, or protocol-relative
@@ -364,10 +372,11 @@ will remain visible text after Peakbagger renders it instead of becoming active
 HTML.
 
 Links allow HTTP, HTTPS, `mailto:`, root-relative Peakbagger paths, and local
-fragments. Images are stricter: only HTTPS or root-relative sources are emitted,
-dimensions are bounded, and the local editor preview adds lazy loading plus a
-no-referrer policy. A remote image in the final saved report is still loaded by
-Peakbagger and therefore makes a request to that image host when someone reads
+fragments. Images and direct videos are stricter: only HTTPS or root-relative
+sources are emitted; image dimensions are bounded; the local preview uses a
+no-referrer policy, and video never autoplays. A remote image or video in the
+final saved report is still loaded by Peakbagger and therefore makes a request
+to that host when someone reads
 the report.
 
 ## Local drafts and cache limits
