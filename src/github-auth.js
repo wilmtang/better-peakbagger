@@ -94,8 +94,10 @@
             try { text = await res.text(); } catch { text = ''; }
             let json = null;
             try { json = text ? JSON.parse(text) : null; } catch { json = null; }
+            if (json && json.error) return json;
             if (!res || !res.ok || !json) {
-                throw new GithubAuthError(AUTH_ERROR_CODES.NETWORK, 'GitHub returned an unexpected response.');
+                throw new GithubAuthError(AUTH_ERROR_CODES.UNKNOWN,
+                    (json && (json.error_description || json.message)) || 'GitHub returned an unexpected response.');
             }
             return json;
         };

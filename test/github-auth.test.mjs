@@ -106,6 +106,18 @@ test('a denied authorization maps to the denied code', async () => {
     );
 });
 
+test('a structured non-2xx OAuth response keeps its typed error', async () => {
+    const clock = makeClock();
+    const { fetch } = makeFetch({
+        [TOKEN]: () => respond(400, { error: 'access_denied', error_description: 'The user declined.' }),
+    });
+    const flow = Auth.createDeviceFlow({ fetch, wait: clock.wait, now: clock.now });
+    await assert.rejects(
+        flow.pollForToken({ deviceCode: 'DC', interval: 5, expiresIn: 900 }),
+        err => err.code === Auth.AUTH_ERROR_CODES.DENIED && /declined/.test(err.message),
+    );
+});
+
 test('an expired user code maps to expired', async () => {
     const clock = makeClock();
     const { fetch } = makeFetch({ [TOKEN]: () => respond(200, { error: 'expired_token' }) });
