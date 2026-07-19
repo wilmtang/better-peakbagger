@@ -1,6 +1,7 @@
 # GitHub ascent backup: design and execution plan
 
-Status: proposed (not yet implemented).
+Status: in progress. See the execution checklist at the end for what has
+landed; steps are marked **Done** as each focused commit lands.
 
 When the user saves an ascent on Peakbagger, Better Peakbagger can back that
 ascent up into a GitHub repository the user has explicitly granted access to.
@@ -268,13 +269,16 @@ auth problems also flag the options page.
 Each step is one focused commit (or a small series), tested before the next
 begins, per the repository commit discipline.
 
-1. **Design doc** — this file.
-2. **Pure payload module + tests.** `src/github-backup.js`: folder slug
-   rules (dates, partial dates, peak-name slugging, `a<aid>` suffix),
+1. **Design doc** — this file. **Done.**
+2. **Pure payload module + tests.** **Done.** `src/github-backup.js`: folder
+   slug rules (dates, partial dates, peak-name slugging, `a<aid>` suffix),
    `ascent.json` v1 serialization from a form-snapshot object, `report.md`
    assembly (sidecar-verbatim vs bracket→Markdown via `src/report-markup.js`),
    commit-message text. `test/github-backup.test.mjs` covers slug edge cases,
-   unit normalization, blank-field omission, and Markdown selection.
+   unit normalization, blank-field omission, and Markdown selection. The
+   snapshot contract this module consumes is documented in its header; the
+   content script and background worker own the Peakbagger-DOM field mapping
+   that produces it.
 3. **Pure GitHub client + tests.** Git Data commit builder with an injected
    `fetch`: ref read, blob/tree/commit creation, rename-move tree handling,
    single non-fast-forward retry, typed errors. Tests run against a scripted
