@@ -384,15 +384,24 @@ test('keyboard image resizing stops at the serialized dimension ceiling', async 
 
 test('plain mode is the untouched native textarea, hints restored', async () => {
     const dom = await loadEditor({ report: 'raw [whatever] text' });
-    await editorReady(dom);
+    const ui = await editorReady(dom);
     const doc = dom.window.document;
+    const plainHint = ui.querySelector('.bpb-re-plain-hint');
+
+    assert.equal(plainHint.hidden, true);
 
     modeButton(doc, 'Plain').click();
     const textarea = doc.getElementById('JournalText');
     assert.equal(textarea.classList.contains('bpb-re-hidden'), false);
     assert.equal(textarea.value, 'raw [whatever] text');
+    assert.equal(plainHint.hidden, false);
+    assert.equal(plainHint.textContent,
+        'Peakbagger’s original text editor — use Peakbagger’s [bracket] syntax.');
     const hints = [...doc.querySelectorAll('span')].find(s => /Hints:/.test(s.textContent));
     assert.equal(hints.classList.contains('bpb-re-hidden'), false);
+
+    modeButton(doc, 'Rich text').click();
+    assert.equal(plainHint.hidden, true);
 });
 
 test('editing Plain invalidates the exact Markdown sidecar', async () => {

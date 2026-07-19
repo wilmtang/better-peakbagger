@@ -154,6 +154,10 @@ import { createMarkdownEditor } from './report-md-editor.js';
 
     bar.append(tools, modes);
 
+    const plainHint = el('div', 'bpb-re-plain-hint',
+        'Peakbagger’s original text editor — use Peakbagger’s [bracket] syntax.');
+    plainHint.hidden = true;
+
     // Contextual table controls, shown only while the caret is inside a table.
     const tableBar = el('div', 'bpb-re-box bpb-re-tablebar');
     tableBar.setAttribute('role', 'toolbar');
@@ -241,7 +245,7 @@ import { createMarkdownEditor } from './report-md-editor.js';
     mdHint.title = imageSizeHint;
     foot.append(status, mdHint);
 
-    ui.append(draftBar, bar, tableBar, linkBox, imageBox, moreBox, richWrap, mdSplit, foot);
+    ui.append(draftBar, bar, plainHint, tableBar, linkBox, imageBox, moreBox, richWrap, mdSplit, foot);
 
     const boxes = [linkBox, imageBox, moreBox];
     const closeBoxes = () => { for (const box of boxes) box.hidden = true; };
@@ -581,6 +585,7 @@ import { createMarkdownEditor } from './report-md-editor.js';
         tableBar.hidden = true;
         mdHint.hidden = !markdown;
         foot.hidden = mode === 'plain';
+        plainHint.hidden = mode !== 'plain';
         showNative(mode === 'plain');
 
         for (const [name, control] of Object.entries(modeButtons)) {
