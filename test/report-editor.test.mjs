@@ -18,6 +18,11 @@ import { loadPage, waitFor, PAGE_FIXTURES } from './helpers/load-page.mjs';
 const FIXTURE = 'climber-ascentedit.html';
 const URL = 'https://www.peakbagger.com/climber/ascentedit.aspx?cid=900001';
 const DRAFT_KEY = 'bpbReportDraft:900001:new';
+const videoMarkup = (src, dimensions = '') => `[video src="${src}"${dimensions}`
+    + ' controls preload="metadata" playsinline referrerpolicy="no-referrer"][/video]';
+const youtubeMarkup = (src, dimensions = '') => `[iframe src="${src}"${dimensions}`
+    + ' title="YouTube video" loading="lazy" referrerpolicy="no-referrer"'
+    + ' allow="accelerometer; encrypted-media; gyroscope; picture-in-picture" allowfullscreen][/iframe]';
 // The ascentedit page loads the theme bundle (which carries settings) and,
 // after the Markdown vendor script, the ascent-editor bundle (draft filling +
 // report markup + editor). Mirror that so report-editor.js sees its settings.
@@ -171,7 +176,7 @@ test('Markdown direct video links save as video markup and render native control
     typeMarkdown(dom, 'Summit video:\n\n![](https://media.example.com/summit.mp4)');
     await waitFor(dom, () => doc.getElementById('JournalText').value.includes('[video src='));
     assert.equal(doc.getElementById('JournalText').value,
-        'Summit video:\n\n[video src="https://media.example.com/summit.mp4"][/video]');
+        `Summit video:\n\n${videoMarkup('https://media.example.com/summit.mp4')}`);
     const video = doc.querySelector('.bpb-re-preview video');
     assert.equal(video?.getAttribute('src'), 'https://media.example.com/summit.mp4');
     assert.equal(video?.hasAttribute('controls'), true);
@@ -396,7 +401,7 @@ test('link and media popovers toggle closed, share the toolbar layer, and insert
     ui.querySelector('.bpb-re-videobox .bpb-re-linkapply').click();
     await waitFor(dom, () => doc.getElementById('JournalText').value.includes('[video src='));
     assert.equal(doc.getElementById('JournalText').value,
-        '[video src="https://media.example.com/clip.mp4"][/video]');
+        videoMarkup('https://media.example.com/clip.mp4'));
     assert.equal(ui.querySelector('.bpb-re-surface video')?.getAttribute('controls'), '');
 });
 
@@ -413,7 +418,8 @@ test('the video tool inserts a canonical, resizable YouTube iframe', async () =>
     videoSrc.value = 'https://youtu.be/aqz-KE-bpKQ?si=share-token';
     ui.querySelector('.bpb-re-videobox .bpb-re-linkapply').click();
 
-    const source = '[iframe src="https://www.youtube.com/embed/aqz-KE-bpKQ" width="640" height="360"][/iframe]';
+    const source = youtubeMarkup('https://www.youtube.com/embed/aqz-KE-bpKQ',
+        ' width="640" height="360"');
     await waitFor(dom, () => doc.getElementById('JournalText').value === source);
     const iframe = ui.querySelector('.bpb-re-youtube-resize iframe');
     assert.equal(iframe?.getAttribute('src'), 'https://www.youtube.com/embed/aqz-KE-bpKQ');
@@ -423,7 +429,7 @@ test('the video tool inserts a canonical, resizable YouTube iframe', async () =>
 });
 
 test('a Rich video resize stays proportional and persists its dimensions', async () => {
-    const source = '[video src="https://media.example.com/summit.mp4" width="800" height="450"][/video]';
+    const source = videoMarkup('https://media.example.com/summit.mp4', ' width="800" height="450"');
     const dom = await loadEditor({ report: source });
     const ui = await editorReady(dom);
     const doc = dom.window.document;
@@ -450,7 +456,7 @@ test('a Rich video resize stays proportional and persists its dimensions', async
         bubbles: true, clientX: 600, clientY: 338, button: 0
     }));
 
-    const resized = '[video src="https://media.example.com/summit.mp4" width="600" height="338"][/video]';
+    const resized = videoMarkup('https://media.example.com/summit.mp4', ' width="600" height="338"');
     await waitFor(dom, () => doc.getElementById('JournalText').value === resized);
     assert.equal(video.style.width, '600px');
     assert.equal(video.style.height, '338px');
@@ -458,7 +464,8 @@ test('a Rich video resize stays proportional and persists its dimensions', async
     handle.dispatchEvent(new dom.window.KeyboardEvent('keydown', {
         bubbles: true, key: 'ArrowLeft', shiftKey: true
     }));
-    const keyboardResized = '[video src="https://media.example.com/summit.mp4" width="550" height="310"][/video]';
+    const keyboardResized = videoMarkup('https://media.example.com/summit.mp4',
+        ' width="550" height="310"');
     await waitFor(dom, () => doc.getElementById('JournalText').value === keyboardResized);
 
     editors(dom).rich.chain().focus().undo().run();
@@ -468,7 +475,8 @@ test('a Rich video resize stays proportional and persists its dimensions', async
 });
 
 test('a Rich YouTube iframe resize stays proportional and persists its dimensions', async () => {
-    const source = '[iframe src="https://www.youtube.com/embed/aqz-KE-bpKQ" width="800" height="450"][/iframe]';
+    const source = youtubeMarkup('https://www.youtube.com/embed/aqz-KE-bpKQ',
+        ' width="800" height="450"');
     const dom = await loadEditor({ report: source });
     const ui = await editorReady(dom);
     const doc = dom.window.document;
@@ -495,7 +503,8 @@ test('a Rich YouTube iframe resize stays proportional and persists its dimension
         bubbles: true, clientX: 600, clientY: 338, button: 0
     }));
 
-    const resized = '[iframe src="https://www.youtube.com/embed/aqz-KE-bpKQ" width="600" height="338"][/iframe]';
+    const resized = youtubeMarkup('https://www.youtube.com/embed/aqz-KE-bpKQ',
+        ' width="600" height="338"');
     await waitFor(dom, () => doc.getElementById('JournalText').value === resized);
     assert.equal(iframe.style.width, '600px');
     assert.equal(iframe.style.height, '338px');
@@ -503,7 +512,8 @@ test('a Rich YouTube iframe resize stays proportional and persists its dimension
     handle.dispatchEvent(new dom.window.KeyboardEvent('keydown', {
         bubbles: true, key: 'ArrowLeft', shiftKey: true
     }));
-    const keyboardResized = '[iframe src="https://www.youtube.com/embed/aqz-KE-bpKQ" width="550" height="310"][/iframe]';
+    const keyboardResized = youtubeMarkup('https://www.youtube.com/embed/aqz-KE-bpKQ',
+        ' width="550" height="310"');
     await waitFor(dom, () => doc.getElementById('JournalText').value === keyboardResized);
 });
 

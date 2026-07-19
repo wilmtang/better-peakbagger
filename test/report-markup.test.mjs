@@ -19,6 +19,10 @@ const markedContext = vm.createContext({});
 vm.runInContext(await readFile(new URL('../node_modules/marked/lib/marked.umd.js', import.meta.url), 'utf8'), markedContext);
 globalThis.marked = markedContext.marked;
 
+const VIDEO_ATTRIBUTES = ' controls preload="metadata" playsinline referrerpolicy="no-referrer"';
+const YOUTUBE_ATTRIBUTES = ' title="YouTube video" loading="lazy" referrerpolicy="no-referrer"'
+    + ' allow="accelerometer; encrypted-media; gyroscope; picture-in-picture" allowfullscreen';
+
 // ---- markdown → bracket ----------------------------------------------------
 
 test('markdown converts to Peakbagger bracket markup', () => {
@@ -140,7 +144,7 @@ test('images require HTTPS and raw Markdown HTML stays inert', () => {
 
 test('direct Markdown video links render with native controls and preserve the safe bracket form', () => {
     const source = '![](https://media.example.com/summit.mp4)';
-    const bracket = '[video src="https://media.example.com/summit.mp4"][/video]';
+    const bracket = `[video src="https://media.example.com/summit.mp4"${VIDEO_ATTRIBUTES}][/video]`;
     const preview = Markup.markdownToPreviewHtml(source);
 
     assert.equal(Markup.markdownToBracket(source), bracket);
@@ -151,7 +155,7 @@ test('direct Markdown video links render with native controls and preserve the s
     assert.equal(Markup.markdownToBracket(Markup.bracketToMarkdown(bracket)), bracket);
 
     const sized = '![Video|640x360](https://media.example.com/summit.mp4)';
-    const sizedBracket = '[video src="https://media.example.com/summit.mp4" width="640" height="360"][/video]';
+    const sizedBracket = `[video src="https://media.example.com/summit.mp4" width="640" height="360"${VIDEO_ATTRIBUTES}][/video]`;
     assert.equal(Markup.markdownToBracket(sized), sizedBracket);
     assert.match(Markup.markdownToPreviewHtml(sized), /<video[^>]*width="640" height="360"/);
     assert.equal(Markup.bracketToMarkdown(sizedBracket), sized);
@@ -163,15 +167,28 @@ test('direct Markdown video links render with native controls and preserve the s
     // `[video]` is also accepted as the explicit Markdown extension, which
     // handles direct media URLs that do not end in a recognizable suffix.
     const signed = '[video src="https://cdn.example.com/download?id=9"][/video]';
-    assert.equal(Markup.markdownToBracket(signed), signed);
+    assert.equal(Markup.markdownToBracket(signed),
+        `[video src="https://cdn.example.com/download?id=9"${VIDEO_ATTRIBUTES}][/video]`);
     assert.doesNotMatch(Markup.markdownToPreviewHtml('![](http://example.com/clip.mp4)'), /<video\b/i);
+});
+
+test('video Markdown preserves height-only sizing and parenthesized signed URLs', () => {
+    const heightOnly = `[video src="https://media.example.com/summit.mp4" height="360"${VIDEO_ATTRIBUTES}][/video]`;
+    assert.equal(Markup.bracketToMarkdown(heightOnly),
+        '![Video|x360](https://media.example.com/summit.mp4)');
+    assert.equal(Markup.markdownToBracket(Markup.bracketToMarkdown(heightOnly)), heightOnly);
+
+    const parenthesized = `[video src="https://media.example.com/clip.mp4?signature=abc)"${VIDEO_ATTRIBUTES}][/video]`;
+    assert.equal(Markup.bracketToMarkdown(parenthesized),
+        '![Video](<https://media.example.com/clip.mp4?signature=abc)>)');
+    assert.equal(Markup.markdownToBracket(Markup.bracketToMarkdown(parenthesized)), parenthesized);
 });
 
 test('YouTube Markdown links become the one permitted iframe embed', () => {
     const id = 'aqz-KE-bpKQ';
     const embed = `https://www.youtube.com/embed/${id}`;
     const source = `![YouTube|640x360](https://youtu.be/${id}?si=share-token)`;
-    const bracket = `[iframe src="${embed}" width="640" height="360"][/iframe]`;
+    const bracket = `[iframe src="${embed}" width="640" height="360"${YOUTUBE_ATTRIBUTES}][/iframe]`;
     const preview = Markup.markdownToPreviewHtml(source);
 
     assert.equal(Markup.sanitizeYouTubeEmbedSrc(`https://www.youtube.com/watch?v=${id}&autoplay=1`), embed);
@@ -187,6 +204,10 @@ test('YouTube Markdown links become the one permitted iframe embed', () => {
         `![YouTube|640x360](https://www.youtube.com/watch?v=${id})`);
     assert.equal(Markup.markdownToBracket(bracket), bracket,
         'the explicit bracket extension must retain the canonical YouTube embed');
+    const heightOnly = `[iframe src="${embed}" height="360"${YOUTUBE_ATTRIBUTES}][/iframe]`;
+    assert.equal(Markup.bracketToMarkdown(heightOnly),
+        `![YouTube|x360](https://www.youtube.com/watch?v=${id})`);
+    assert.equal(Markup.markdownToBracket(Markup.bracketToMarkdown(heightOnly)), heightOnly);
     assert.doesNotMatch(Markup.bracketToPreviewHtml(
         `[iframe src="https://example.com/embed/${id}"][/iframe]`), /<iframe\b/i);
 });

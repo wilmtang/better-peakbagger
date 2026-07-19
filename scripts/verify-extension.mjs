@@ -931,7 +931,7 @@ try {
                     && value.includes('[table border="1"]')
                     && value.includes('[code]inline_code()[/code]')
                     && value.includes(`[img src="${imageUrl}" alt="Alpine ridge" width="300" height="180"]`)
-                    && value.includes(`[video src="${imageUrl}"][/video]`)
+                    && value.includes(`[video src="${imageUrl}" controls preload="metadata" playsinline referrerpolicy="no-referrer"][/video]`)
                     && value.endsWith('[hr]');
             }, mountainUrl, { timeout: 5000 }).then(() => true).catch(() => false);
             check(expandedSync, `expanded Markdown did not reach JournalText (value=${

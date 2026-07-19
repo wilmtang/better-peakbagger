@@ -136,6 +136,17 @@
 
     export const MAX_REPORT_IMAGE_DIMENSION = 1600;
 
+    // These fixed attributes are part of the saved markup, not just the local
+    // preview. Peakbagger turns bracket tags into HTML without adding native
+    // media behavior, so omitting `controls` would publish an inert video.
+    // Keeping the strings shared also prevents the preview from promising
+    // privacy or playback behavior that the submitted report does not have.
+    const VIDEO_RUNTIME_ATTRIBUTES =
+        ' controls preload="metadata" playsinline referrerpolicy="no-referrer"';
+    const YOUTUBE_RUNTIME_ATTRIBUTES =
+        ' title="YouTube video" loading="lazy" referrerpolicy="no-referrer"'
+        + ' allow="accelerometer; encrypted-media; gyroscope; picture-in-picture" allowfullscreen';
+
     const sanitizeDimension = raw => {
         if (raw === null || raw === undefined || raw === '') return null;
         const value = Number(raw);
@@ -211,7 +222,7 @@
             return src ? {
                 tag,
                 html: `<video src="${escapeAttribute(src)}"${width ? ` width="${width}"` : ''}${
-                    height ? ` height="${height}"` : ''} controls preload="metadata" playsinline referrerpolicy="no-referrer">`,
+                    height ? ` height="${height}"` : ''}${VIDEO_RUNTIME_ATTRIBUTES}>`,
                 self: false
             } : null;
         }
@@ -222,7 +233,7 @@
             return src ? {
                 tag,
                 html: `<iframe src="${escapeAttribute(src)}"${width ? ` width="${width}"` : ''}${
-                    height ? ` height="${height}"` : ''} title="YouTube video" loading="lazy" referrerpolicy="no-referrer" allow="accelerometer; encrypted-media; gyroscope; picture-in-picture" allowfullscreen>`,
+                    height ? ` height="${height}"` : ''}${YOUTUBE_RUNTIME_ATTRIBUTES}>`,
                 self: false
             } : null;
         }
@@ -571,14 +582,21 @@
     // bracket markup; otherwise it remains ordinary alt text.
     const markdownImageAttributes = token => {
         const rawAlt = String(token.text || '');
-        const sized = /^(.*)\|(\d+)(?:x(\d+))?$/i.exec(rawAlt);
+        const sized = /^(.*)\|(?:(\d+)(?:x(\d+))?|x(\d+))$/i.exec(rawAlt);
         if (!sized) return { alt: rawAlt, width: null, height: null };
         const width = sanitizeDimension(sized[2]);
-        const height = sized[3] === undefined ? null : sanitizeDimension(sized[3]);
-        return width && (sized[3] === undefined || height)
+        const rawHeight = sized[3] ?? sized[4];
+        const height = rawHeight === undefined ? null : sanitizeDimension(rawHeight);
+        const valid = sized[4] !== undefined ? !!height : width && (sized[3] === undefined || height);
+        return valid
             ? { alt: sized[1], width, height }
             : { alt: rawAlt, width: null, height: null };
     };
+
+    // Marked's ordinary `(destination)` form closes on an unmatched `)` in a
+    // signed media URL. Its angle-delimited destination preserves every URL
+    // character accepted by cleanUrlText (which already excludes `<`/`>`).
+    const markdownMediaDestination = src => /[()]/.test(src) ? `<${src}>` : src;
 
     const markedInlines = tokens => compactInlines((tokens || []).flatMap(token => {
         if (!token || typeof token !== 'object') return [];
@@ -677,7 +695,8 @@
                 const width = sanitizeDimension(readAttr(attributes, 'width'));
                 const height = sanitizeDimension(readAttr(attributes, 'height'));
                 const watch = src && youtubeWatchUrl(src);
-                const size = width ? `|${width}${height ? `x${height}` : ''}` : '';
+                const size = width ? `|${width}${height ? `x${height}` : ''}`
+                    : height ? `|x${height}` : '';
                 return watch ? `![YouTube${size}](${watch})` : raw;
             }
         ).replace(
@@ -686,8 +705,9 @@
                 const src = sanitizeVideoSrc(readAttr(attributes, 'src'));
                 const width = sanitizeDimension(readAttr(attributes, 'width'));
                 const height = sanitizeDimension(readAttr(attributes, 'height'));
-                const size = width ? `|${width}${height ? `x${height}` : ''}` : '';
-                return src ? `![Video${size}](${src})` : raw;
+                const size = width ? `|${width}${height ? `x${height}` : ''}`
+                    : height ? `|x${height}` : '';
+                return src ? `![Video${size}](${markdownMediaDestination(src)})` : raw;
             }
         );
         return markedBlocks(lexer(input, { gfm: true, breaks: false }));
@@ -704,11 +724,11 @@
         }
         if (node.t === 'video') {
             return `[video src="${escapeAttribute(node.src)}"${node.width ? ` width="${node.width}"` : ''}${
-                node.height ? ` height="${node.height}"` : ''}][/video]`;
+                node.height ? ` height="${node.height}"` : ''}${VIDEO_RUNTIME_ATTRIBUTES}][/video]`;
         }
         if (node.t === 'youtube') {
             return `[iframe src="${escapeAttribute(node.src)}"${node.width ? ` width="${node.width}"` : ''}${
-                node.height ? ` height="${node.height}"` : ''}][/iframe]`;
+                node.height ? ` height="${node.height}"` : ''}${YOUTUBE_RUNTIME_ATTRIBUTES}][/iframe]`;
         }
         const inner = inlinesToBracket(node.kids);
         if (node.t === 'a') {
@@ -758,11 +778,11 @@
         }
         if (node.t === 'video') {
             return `<video src="${escapeAttribute(node.src)}"${node.width ? ` width="${node.width}"` : ''}${
-                node.height ? ` height="${node.height}"` : ''} controls preload="metadata" playsinline referrerpolicy="no-referrer"></video>`;
+                node.height ? ` height="${node.height}"` : ''}${VIDEO_RUNTIME_ATTRIBUTES}></video>`;
         }
         if (node.t === 'youtube') {
             return `<iframe src="${escapeAttribute(node.src)}"${node.width ? ` width="${node.width}"` : ''}${
-                node.height ? ` height="${node.height}"` : ''} title="YouTube video" loading="lazy" referrerpolicy="no-referrer" allow="accelerometer; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>`;
+                node.height ? ` height="${node.height}"` : ''}${YOUTUBE_RUNTIME_ATTRIBUTES}></iframe>`;
         }
         const inner = inlinesToHtml(node.kids);
         if (node.t === 'a') return `<a href="${escapeAttribute(node.href)}"${
@@ -828,13 +848,15 @@
             return `![${escapeMarkdownText(node.alt || '')}](${node.src})`;
         }
         if (node.t === 'video') {
-            const size = node.width ? `|${node.width}${node.height ? `x${node.height}` : ''}` : '';
-            return `![Video${size}](${node.src})`;
+            const size = node.width ? `|${node.width}${node.height ? `x${node.height}` : ''}`
+                : node.height ? `|x${node.height}` : '';
+            return `![Video${size}](${markdownMediaDestination(node.src)})`;
         }
         if (node.t === 'youtube') {
             const watch = youtubeWatchUrl(node.src);
             if (!watch) return inlinesToBracket([node]);
-            const size = node.width ? `|${node.width}${node.height ? `x${node.height}` : ''}` : '';
+            const size = node.width ? `|${node.width}${node.height ? `x${node.height}` : ''}`
+                : node.height ? `|x${node.height}` : '';
             return `![YouTube${size}](${watch})`;
         }
         const inner = inlinesToMarkdown(node.kids);

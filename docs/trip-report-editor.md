@@ -285,9 +285,9 @@ Peakbagger equivalent:
 | `[label](https://…)` and bare web URLs | `[a href="…"]` |
 | `![alt](https://…)` | `[img src="…" alt="…"]` |
 | `![alt\|300](https://…)`, `![alt\|300x200](https://…)` | `[img … width="300"]`, optionally with `height="200"` |
-| `![](https://…/clip.mp4)` (also `.webm`, `.ogv`, `.ogg`, or `.m3u8`) | `[video src="…"][/video]` |
+| `![](https://…/clip.mp4)` (also `.webm`, `.ogv`, `.ogg`, or `.m3u8`) | `[video src="…" controls …][/video]` |
 | `![Video\|640](https://…)`, `![Video\|640x360](https://…)` | `[video … width="640"]`, optionally with `height="360"` |
-| `![YouTube\|640x360](https://youtu.be/aqz-KE-bpKQ)` | `[iframe src="https://www.youtube.com/embed/aqz-KE-bpKQ" width="640" height="360"][/iframe]` |
+| `![YouTube\|640x360](https://youtu.be/aqz-KE-bpKQ)` | A canonical, lazy, no-referrer YouTube player iframe |
 | two spaces plus newline, or an ordinary newline inside a paragraph | Peakbagger line break |
 | a blank line | Peakbagger paragraph spacing |
 
@@ -301,13 +301,17 @@ Direct video uses the image form because Markdown has no standard video syntax.
 An empty alt text and a recognizable media-file suffix creates a video; use
 `![Video](https://…)` for a signed or extensionless direct media URL. The
 Markdown preview and Rich editor show a native, non-autoplaying video control.
-The saved report uses Peakbagger's `[video src="…"][/video]` form. Video pages
+The saved report uses Peakbagger's `[video src="…" controls …][/video]` form,
+including fixed native controls, metadata preload, inline playback, and a
+no-referrer policy. Video pages
 and iframe embeds are deliberately not supported, with one narrow exception:
 a recognized YouTube watch, share, Shorts, Live, or embed URL is converted to a
 canonical YouTube player iframe. Other video pages and all non-YouTube embeds
 remain unsupported. The same `|width` or `|widthxheight` suffix used for images
 sizes a direct video or YouTube player; Rich media controls resize with an
 aspect-locked corner handle or the left/right arrow keys.
+Height-only legacy media markup is represented canonically as `|x360`, so a
+Rich/Plain → Markdown → Rich round trip does not discard that dimension.
 
 Peakbagger-supported inline features without standard Markdown syntax remain
 available as bracket extensions inside Markdown:
