@@ -287,13 +287,16 @@ begins, per the repository commit discipline.
    are listed one directory level at a time so a large archive never trips the
    recursive-tree truncation limit. Tests run against a scripted fetch stub; no
    network.
-4. **App registration + device-flow client.** Register the GitHub App
-   (manual, one-time: device flow on, no webhook, *Contents: read and
-   write*, installable on any account, user-token expiration opted out, no
-   client secret generated) and land its public `client_id` in code. `src/github-auth.js`: device-flow
-   client with an injected `fetch` (code request, polling with
-   `interval`/`slow_down` handling, typed errors) plus the `storage.local`
-   token/repo accessor, tested against a scripted fetch stub.
+4. **App registration + device-flow client.** **Done.** The GitHub App is
+   registered (device flow on, no webhook, *Contents: read and write*,
+   installable on any account, user-token expiration opted out, no client
+   secret generated); its public `client_id` (`Iv23liZpTdD1iZfT3eL1`) is in
+   `src/github-auth.js`. That module holds the device-flow client with an
+   injected `fetch` and clock (code request, polling with `interval`/`slow_down`
+   handling, abortable, `GithubAuthError`-typed) plus the `storage.local`-only
+   token/repo accessor (`authStore`), tested against a scripted fetch stub and a
+   fake storage area. *The app's public slug is still needed for the step-5
+   install handoff URL (`github.com/apps/<slug>/installations/new`).*
 5. **Setup UI.** Options-page section: enable toggle (requests both optional
    host permissions), **Connect GitHub** with user-code display,
    install-page handoff, granted-repo discovery via `GET /user/installations`
