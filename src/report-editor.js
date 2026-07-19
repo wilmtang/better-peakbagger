@@ -236,7 +236,9 @@ import { createMarkdownEditor } from './report-md-editor.js';
     const status = el('span', 'bpb-re-status');
     status.setAttribute('role', 'status');
     status.setAttribute('aria-live', 'polite');
-    const mdHint = el('span', 'bpb-re-hint', '# heading  > quote  ~~strike~~  `code`  [link](url)  ![image|500](url)  | table |');
+    const imageSizeHint = 'Image size: ![Photo|500](url) for width, or ![Photo|500x600](url) for width × height';
+    const mdHint = el('span', 'bpb-re-hint', imageSizeHint);
+    mdHint.title = imageSizeHint;
     foot.append(status, mdHint);
 
     ui.append(draftBar, bar, tableBar, linkBox, imageBox, moreBox, richWrap, mdSplit, foot);

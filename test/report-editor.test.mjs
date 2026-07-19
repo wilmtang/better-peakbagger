@@ -139,6 +139,12 @@ test('markdown mode converts to bracket markup and the live preview shows the fi
     assert.equal(doc.getElementById('JournalText').value,
         '[h1]Day 1[/h1]\n\nWe went [b]up[/b].\n\n[ul][li]tent[/li][li]stove[/li][/ul]');
 
+    const imageSizeHint = doc.querySelector('.bpb-re-hint');
+    assert.match(imageSizeHint.textContent, /!\[Photo\|500\]\(url\) for width/);
+    assert.match(imageSizeHint.textContent, /!\[Photo\|500x600\]\(url\) for width × height/);
+    assert.equal(imageSizeHint.title, imageSizeHint.textContent,
+        'the full sizing help should remain available if the footer is visually truncated');
+
     // No tab to click: the preview pane re-renders beside the source.
     const preview = doc.querySelector('.bpb-re-preview');
     assert.match(preview.innerHTML, /<h1>Day 1<\/h1>/);

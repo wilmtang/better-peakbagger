@@ -544,10 +544,26 @@
 }
 
 .bpb-re-hint {
+    min-width: 0;
     font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    text-align: right;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+}
+
+@container (max-width: 660px) {
+    .bpb-re-foot {
+        align-items: flex-start;
+        flex-direction: column;
+        gap: 2px;
+    }
+
+    .bpb-re-hint {
+        text-align: left;
+        white-space: normal;
+        overflow: visible;
+    }
 }
 
 .bpb-re-draft {
