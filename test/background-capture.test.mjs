@@ -19,6 +19,7 @@ const event = () => {
 const createHarness = ({ peakXml = null, captureResult = null, ownershipResult = null, settings = {}, beforePeakFetch = null,
     loginHtml = '<a href="climber/climber.aspx?cid=77">My Home Page</a>' } = {}) => {
     const values = {};
+    let sessionGetCalls = 0;
     const syncValues = { bpbSettings: structuredClone(settings) };
     const tabs = new Map([[1, {
         id: 1,
@@ -50,7 +51,7 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
     const browser = {
         storage: {
             session: {
-                get: async key => ({ [key]: structuredClone(values[key]) }),
+                get: async key => { sessionGetCalls++; return { [key]: structuredClone(values[key]) }; },
                 set: async patch => Object.assign(values, structuredClone(patch))
             },
             sync: {
@@ -128,7 +129,10 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
     const send = (message, sender = {}) => new Promise(resolve => {
         assert.equal(listener(message, sender, resolve), true);
     });
-    return { send, values, syncValues, tabs, grouped, groupUpdates, badgeCalls, fetchCalls, scriptCalls, tabMessages };
+    return {
+        send, values, syncValues, tabs, grouped, groupUpdates, badgeCalls, fetchCalls, scriptCalls, tabMessages,
+        sessionGetCalls: () => sessionGetCalls,
+    };
 };
 
 test('background capture persists a private job, opens grouped drafts, and previews idempotently', async () => {
@@ -285,6 +289,19 @@ test('discarding a cached capture removes its GPX and draft identities before re
     assert.equal(recaptured.phase, 'ready');
     assert.equal(recaptured.hasCachedGpx, true);
     assert.notEqual(harness.values.bpbCaptureJobs['1'].id, firstJobId);
+});
+
+test('status reads hide expired jobs without running global cleanup', async () => {
+    const harness = createHarness();
+    await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    harness.values.bpbCaptureJobs['1'].expiresAt = Date.now() - 1;
+    const readsBefore = harness.sessionGetCalls();
+
+    assert.equal(await harness.send({ type: 'CAPTURE_STATUS', tabId: 1 }), null);
+    assert.equal(harness.sessionGetCalls() - readsBefore, 1,
+        'a status poll should read only jobs, not mutate drafts, jobs, and snapshots');
+    assert.ok(harness.values.bpbCaptureJobs['1'],
+        'lazy filtering hides stale data; the periodic alarm owns physical cleanup');
 });
 
 test('a capture that finishes for a different activity is not reused after navigation', async () => {

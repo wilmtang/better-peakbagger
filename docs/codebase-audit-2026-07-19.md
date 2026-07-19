@@ -37,7 +37,11 @@ UX polish; nothing here is an exploitable security hole.
   structured non-2xx OAuth responses retain their typed GitHub error instead
   of being reported as a network outage. The duplicate disconnect branch is
   gone; only the manifest matching decision remains.
-- **E1–E2, E4–E5 — Pending.**
+- **E1 — Done.** Global cleanup no longer runs on every message. Contrary to
+  the original audit premise, not every reader filtered expiry, so lazy gates
+  were added for jobs, drafts, and snapshots before moving physical deletion
+  solely to the existing alarm.
+- **E2, E4–E5 — Pending.**
 - **U1–U2 — Done.** Unsupported pages now show a neutral, actionable empty
   state, and Settings is available from both that state and the header gear.
 - **U4 — Done.** Draft notifications now use stylesheet-owned semantic classes,

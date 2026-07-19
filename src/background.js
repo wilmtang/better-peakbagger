@@ -32,6 +32,7 @@ import { githubClient as GithubClient } from './github-client.js';
     let mutationQueue = Promise.resolve();
 
     const now = () => Date.now();
+    const isFresh = record => !!record && Number(record.expiresAt) > now();
     const makeId = () => `${now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
     const storage = () => {
         if (!ext.storage.session) throw new Error('This browser does not provide private session storage.');
@@ -66,7 +67,7 @@ import { githubClient as GithubClient } from './github-client.js';
         return operation;
     };
 
-    const publicJob = job => job ? {
+    const publicJob = job => isFresh(job) ? {
         ...job,
         hasCachedGpx: typeof job.uploadGpx === 'string' && job.uploadGpx.length > 0,
         uploadGpx: undefined,
@@ -451,7 +452,7 @@ import { githubClient as GithubClient } from './github-client.js';
         const tabId = Number(message.tabId);
         return mutateMap(JOBS_KEY, jobs => {
             const job = jobs[tabId];
-            if (!job || (job.phase !== 'ready' && job.phase !== 'opened')) return null;
+            if (!isFresh(job) || (job.phase !== 'ready' && job.phase !== 'opened')) return null;
             const allowed = new Set(job.matches.map(match => String(match.id)));
             job.selectedIds = [...new Set((message.selectedIds || []).map(String))]
                 .filter(id => allowed.has(id))
@@ -466,7 +467,7 @@ import { githubClient as GithubClient } from './github-client.js';
         await updateSelection(message);
         const jobs = await readMap(JOBS_KEY);
         const job = jobs[tabId];
-        if (!job || !job.uploadGpx || (job.phase !== 'ready' && job.phase !== 'opened')) {
+        if (!isFresh(job) || !job.uploadGpx || (job.phase !== 'ready' && job.phase !== 'opened')) {
             throw new Error('Capture results are no longer available. Capture the activity again.');
         }
         const selectedWithSuffixes = Core.assignDraftSuffixes(job.matches
@@ -487,7 +488,7 @@ import { githubClient as GithubClient } from './github-client.js';
 
         const existingDrafts = await readMap(DRAFTS_KEY);
         const existingForJob = Object.values(existingDrafts)
-            .filter(draft => draft.jobId === job.id)
+            .filter(draft => isFresh(draft) && draft.jobId === job.id)
             .sort((a, b) => b.confidence - a.confidence);
         if (existingForJob.length) {
             for (const draft of existingForJob) await ext.tabs.update(draft.tabId, { active: false });
@@ -548,7 +549,7 @@ import { githubClient as GithubClient } from './github-client.js';
     const draftOrder = draft => Number.isInteger(draft.previewOrder) ? draft.previewOrder : Number(draft.tabId);
     const compareDraftOrder = (left, right) => draftOrder(left) - draftOrder(right);
     const orderedDrafts = (drafts, jobId) => Object.values(drafts)
-        .filter(candidate => candidate.jobId === jobId)
+        .filter(candidate => isFresh(candidate) && candidate.jobId === jobId)
         .sort(compareDraftOrder);
     const firstPendingDraft = (drafts, jobId) => orderedDrafts(drafts, jobId)
         .find(candidate => !candidate.complete) || null;
@@ -575,11 +576,14 @@ import { githubClient as GithubClient } from './github-client.js';
         if (!Number.isInteger(tabId)) return { action: 'error', message: 'Draft tab identity is unavailable.' };
         const drafts = await readMap(DRAFTS_KEY);
         const draft = drafts[tabId];
-        if (!draft) return { action: 'ignore' };
+        if (!isFresh(draft)) return { action: 'ignore' };
         if (!validateDraftPage(draft, message)) {
             return { action: 'error', message: 'This Peakbagger page does not match its prepared ascent draft.' };
         }
         const jobs = await readMap(JOBS_KEY);
+        // A fresh draft intentionally keeps its source job alive past the
+        // job's own TTL; cleanup preserves that relationship until every draft
+        // expires or closes.
         const job = Object.values(jobs).find(candidate => candidate.id === draft.jobId);
         if (!job) return { action: 'error', message: 'The private draft data expired. Capture the activity again.' };
         const match = job.matches.find(candidate => candidate.id === draft.pid);
@@ -676,7 +680,7 @@ import { githubClient as GithubClient } from './github-client.js';
         return mutateMap(DRAFTS_KEY, drafts => {
             const draft = drafts[tabId];
             const currentDraft = draft ? firstPendingDraft(drafts, draft.jobId) : null;
-            if (!draft || currentDraft?.tabId !== tabId || draft.jobId !== message.jobId
+            if (!isFresh(draft) || currentDraft?.tabId !== tabId || draft.jobId !== message.jobId
                 || !validateDraftPage(draft, message) || draft.previewStarted || draft.complete) {
                 return { ok: false };
             }
@@ -690,7 +694,7 @@ import { githubClient as GithubClient } from './github-client.js';
         const tabId = sender.tab?.id;
         return mutateMap(DRAFTS_KEY, drafts => {
             const draft = drafts[tabId];
-            if (!draft || !draft.complete || !draft.dayStatsPending || draft.jobId !== message.jobId
+            if (!isFresh(draft) || !draft.complete || !draft.dayStatsPending || draft.jobId !== message.jobId
                 || !validateDraftPage(draft, message)) return { ok: false };
             draft.dayStatsPending = false;
             draft.expiresAt = now() + JOB_TTL_MS;
@@ -942,6 +946,7 @@ import { githubClient as GithubClient } from './github-client.js';
     const findSnapshotForPage = async (page, { allowPeakOnly = true } = {}) => {
         const snapshots = await readMap(SNAPSHOTS_KEY);
         const entries = Object.entries(snapshots)
+            .filter(([, record]) => isFresh(record))
             .map(([key, record]) => ({ key, record }))
             .sort((a, b) => (b.record.savedAt || 0) - (a.record.savedAt || 0));
         const idOf = e => e.record.identity || {};
@@ -999,7 +1004,6 @@ import { githubClient as GithubClient } from './github-client.js';
 
     ext.runtime.onMessage.addListener((message, sender, sendResponse) => {
         const run = async () => {
-            await cleanup();
             const type = message?.type;
             // The auth surface is extension-page only; the token never crosses
             // to a content script.
