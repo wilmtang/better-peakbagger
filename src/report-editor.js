@@ -338,7 +338,7 @@ import { createMarkdownEditor } from './report-md-editor.js';
         const then = new Date(stamp);
         const now = new Date();
         return then.toDateString() === now.toDateString()
-            ? then.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+            ? then.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' })
             : then.toLocaleDateString([], { month: 'short', day: 'numeric' });
     };
 

@@ -489,7 +489,7 @@ test('edits autosave a local draft keyed to this climber and form', async () => 
     assert.equal(draft.mode, 'rich');
     assert.equal(typeof draft.savedAt, 'number');
     assert.match(dom.window.document.querySelector('.bpb-re-status').textContent,
-        /Draft saved on this device/);
+        /Draft saved on this device · \d{1,2}:\d{2}:\d{2}(?:\s[AP]M)?$/);
 });
 
 test('a differing stored draft is offered, and Restore applies it in its saved mode', async () => {
