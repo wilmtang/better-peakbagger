@@ -27,7 +27,9 @@ UX polish; nothing here is an exploitable security hole.
   page and follow validated GitHub `Link` pagination, with multi-page coverage.
 - **B4 — Done.** Jobs without a recognized provider keep the neutral “Capture
   this activity” subtitle.
-- **B7 — Pending.**
+- **B7 — Done.** Login detection accepts multiple signed-in account controls,
+  remains fail-closed, and ambiguous failures now describe verification rather
+  than incorrectly asserting that the user is signed out.
 - **E3 — Done.** Bare `web-ext` commands now use `dist`, and the obsolete
   root-packaging ignore list is gone.
 - **E1–E2, E4–E6 — Pending.**

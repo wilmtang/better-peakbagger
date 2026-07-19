@@ -16,7 +16,8 @@ const event = () => {
     return { listeners, addListener: listener => listeners.push(listener) };
 };
 
-const createHarness = ({ peakXml = null, captureResult = null, ownershipResult = null, settings = {}, beforePeakFetch = null } = {}) => {
+const createHarness = ({ peakXml = null, captureResult = null, ownershipResult = null, settings = {}, beforePeakFetch = null,
+    loginHtml = '<a href="climber/climber.aspx?cid=77">My Home Page</a>' } = {}) => {
     const values = {};
     const syncValues = { bpbSettings: structuredClone(settings) };
     const tabs = new Map([[1, {
@@ -98,7 +99,7 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
         const value = String(url);
         fetchCalls.push(value);
         if (value.includes('/Default.aspx')) {
-            return { ok: true, text: async () => '<a href="climber/climber.aspx?cid=77">My Home Page</a>' };
+            return { ok: true, text: async () => loginHtml };
         }
         if (value.includes('/Async/pllbb2.aspx')) {
             if (beforePeakFetch) await beforePeakFetch();
@@ -174,6 +175,20 @@ test('background capture persists a private job, opens grouped drafts, and previ
 
     const duplicate = await harness.send({ type: 'DRAFT_PREVIEW_STARTED', jobId: apply.jobId, pid: 7, cid: 77 }, { tab: { id: 100 } });
     assert.equal(duplicate.ok, false);
+});
+
+test('Peakbagger login accepts signed-in account controls and reports ambiguous pages honestly', async () => {
+    const accountControl = createHarness({
+        loginHtml: '<a class="account" href="/climber/ClimberEdit.aspx?mode=profile&amp;cid=77">Edit Account</a>'
+    });
+    assert.equal((await accountControl.send({ type: 'CAPTURE_START', tabId: 1, force: false })).phase, 'ready');
+
+    const ambiguous = createHarness({ loginHtml: '<a href="/climber/login.aspx">Log In</a>' });
+    const failed = await ambiguous.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    assert.equal(failed.phase, 'error');
+    assert.equal(failed.error.code, 'peakbagger-signed-out');
+    assert.match(failed.error.message, /login could not be verified/i);
+    assert.doesNotMatch(failed.error.message, /^Sign in to Peakbagger/);
 });
 
 test('coordinate-only provider GPX still produces a valid Peakbagger draft', async () => {

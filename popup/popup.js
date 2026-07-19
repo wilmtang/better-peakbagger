@@ -71,13 +71,13 @@
             return;
         }
         stateCard(
-            notOwner ? 'This activity isn’t yours' : signedOut ? 'Sign in to Peakbagger' : 'Capture stopped',
+            notOwner ? 'This activity isn’t yours' : signedOut ? 'Check your Peakbagger session' : 'Capture stopped',
             error?.message || 'The activity could not be captured.',
             {
                 kind: notOwner ? 'locked' : 'error',
                 actions: signedOut
                     ? [
-                        { label: 'Open Peakbagger sign in', onClick: () => ext.tabs.create({ url: 'https://peakbagger.com/Climber/Login.aspx' }) },
+                        { label: 'Open Peakbagger', onClick: () => ext.tabs.create({ url: 'https://peakbagger.com/Default.aspx' }) },
                         { label: 'I’m signed in — try again', onClick: retry }
                     ]
                     : providerSignedOut

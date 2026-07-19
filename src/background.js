@@ -117,7 +117,8 @@ import { githubClient as GithubClient } from './github-client.js';
         }
         if (!response.ok) throw new Error(`Peakbagger login check failed with HTTP ${response.status}.`);
         const html = await response.text();
-        const match = /href=["'][^"']*\bcid=(\d+)[^"']*["'][^>]*>[\s\S]{0,80}?My Home Page/i.exec(html);
+        const match = /href=["'][^"']*\bcid=(\d+)[^"']*["'][^>]*>[\s\S]{0,80}?My Home Page/i.exec(html)
+            || /href=["'][^"']*\/climber\/(?:climberedit|ascentedit)\.aspx\?[^"']*\bcid=(\d+)[^"']*["'][^>]*>[\s\S]{0,80}?(?:Edit Account|Add Ascent)/i.exec(html);
         return match ? match[1] : null;
     };
 
@@ -233,7 +234,7 @@ import { githubClient as GithubClient } from './github-client.js';
             await updateJob(tabId, { phase: 'checking-peakbagger' });
             const cid = await peakbaggerLogin();
             if (!cid) {
-                await failJob(tabId, 'peakbagger-signed-out', 'Sign in to Peakbagger before capturing this activity.');
+                await failJob(tabId, 'peakbagger-signed-out', 'Your Peakbagger login could not be verified. Open Peakbagger, confirm you’re signed in, then try again.');
                 return;
             }
 
