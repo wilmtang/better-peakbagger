@@ -42,6 +42,7 @@
         // Trip-report editor on the ascent add/edit form, and the last mode
         // the user wrote in ('plain' is the untouched native textarea).
         enableReportEditor: true,
+        addReportCredit: false,
         reportEditorMode: 'rich',
         mapRouteColor: ROUTE_STYLE.color, mapRouteWidth: ROUTE_STYLE.width,
         mapRouteCasingColor: ROUTE_STYLE.casingColor, mapRouteCasingWidth: ROUTE_STYLE.casingWidth,
@@ -123,7 +124,7 @@
         const s = { ...DEFAULTS, ...(raw && typeof raw === 'object' ? raw : {}) };
         if (!['auto', 'imperial', 'metric'].includes(s.units)) s.units = DEFAULTS.units;
         if (!['system', 'light', 'dark'].includes(s.theme)) s.theme = DEFAULTS.theme;
-        for (const key of ['enable3dMap', 'retainWaypoints', 'fillAscentDetails', 'fillTripInfo', 'fillWildernessNights', 'enableReportEditor']) {
+        for (const key of ['enable3dMap', 'retainWaypoints', 'fillAscentDetails', 'fillTripInfo', 'fillWildernessNights', 'enableReportEditor', 'addReportCredit']) {
             if (typeof s[key] !== 'boolean') s[key] = DEFAULTS[key];
         }
         if (!['both', 'distance', 'time'].includes(s.chartDefaultSeries)) s.chartDefaultSeries = DEFAULTS.chartDefaultSeries;

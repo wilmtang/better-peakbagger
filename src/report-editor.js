@@ -43,6 +43,10 @@ import { createMarkdownEditor } from './report-md-editor.js';
     const SYNC_DEBOUNCE_MS = 150;
     const AUTOSAVE_DEBOUNCE_MS = 800;
     const MODES = ['rich', 'markdown', 'plain'];
+    const STORE_URL = globalThis.browser
+        ? 'https://addons.mozilla.org/en-US/firefox/addon/better-peakbagger/'
+        : 'https://chromewebstore.google.com/detail/better-peakbagger/kndjohodnpdoejmjkiiakejfehoodedn';
+    const REPORT_CREDIT = `[small][i]Created with [a href="${STORE_URL}" target="_blank"]Better Peakbagger[/a].[/i][/small]`;
 
     const params = new URLSearchParams(location.search);
     const draftKey = `${DRAFT_PREFIX}${params.get('cid') || '0'}:${
@@ -63,6 +67,7 @@ import { createMarkdownEditor } from './report-md-editor.js';
         mdSource: null,      // authoritative markdown text while in markdown mode
         mdDirty: false,      // do not normalize an untouched server report
         richDirty: false,    // preserve untouched unsupported server markup verbatim
+        creditScaffold: false, // temporary blank writing space before a newly seeded credit
         syncTimer: null,
         autosaveTimer: null
     };
@@ -343,7 +348,10 @@ import { createMarkdownEditor } from './report-md-editor.js';
     form.addEventListener('click', flushSync, true);
     form.addEventListener('change', flushSync, true);
     textarea.addEventListener('input', () => {
-        if (state.mode === 'plain') state.mdSource = null;
+        if (state.mode === 'plain') {
+            state.mdSource = null;
+            state.creditScaffold = false;
+        }
     });
     globalThis.addEventListener('pagehide', () => { flushSync(); void saveDraftNow(); });
 
@@ -415,6 +423,7 @@ import { createMarkdownEditor } from './report-md-editor.js';
         const discard = button('bpb-re-draft-discard', 'Delete draft');
         restore.addEventListener('click', () => {
             textarea.value = stored.text;
+            state.creditScaffold = false;
             state.mdSource = stored.mode === 'markdown' && typeof stored.source === 'string'
                 ? stored.source
                 : null;
@@ -652,7 +661,7 @@ import { createMarkdownEditor } from './report-md-editor.js';
             element: richWrap,
             placeholder: 'Write your trip report…',
             ariaLabel: 'Trip report',
-            onUpdate: () => { state.richDirty = true; scheduleSync(); },
+            onUpdate: () => { state.richDirty = true; state.creditScaffold = false; scheduleSync(); },
             onStateChange: () => refreshToolbar(),
             shortcuts: { 'Mod-k': openLinkBox }
         });
@@ -677,6 +686,10 @@ import { createMarkdownEditor } from './report-md-editor.js';
         mdHint.hidden = !markdown;
         foot.hidden = mode === 'plain';
         plainHint.hidden = mode !== 'plain';
+        if (mode === 'plain' && state.creditScaffold && !textarea.value.startsWith('\n\n')) {
+            textarea.value = `\n\n${textarea.value}`;
+            textarea.setSelectionRange(0, 0);
+        }
         showNative(mode === 'plain');
 
         for (const [name, control] of Object.entries(modeButtons)) {
@@ -693,14 +706,17 @@ import { createMarkdownEditor } from './report-md-editor.js';
             // On this fresh history, addToHistory: false keeps the initial
             // fill unrecorded, so undo starts empty instead of offering to
             // blank the document.
-            richEditor.chain()
+            const editorHtml = Markup.bracketToEditorHtml(textarea.value);
+            const initialContent = richEditor.chain()
                 .setMeta('addToHistory', false)
-                .setContent(Markup.bracketToEditorHtml(textarea.value), { emitUpdate: false })
-                .run();
+                .setContent(state.creditScaffold ? `<p></p>${editorHtml}` : editorHtml, { emitUpdate: false });
+            if (state.creditScaffold) initialContent.setTextSelection(1);
+            initialContent.run();
             state.richDirty = false;
             refreshToolbar();
         } else if (markdown) {
-            mdEditor.setValue(state.mdSource ?? Markup.bracketToMarkdown(textarea.value));
+            const markdownSource = state.mdSource ?? Markup.bracketToMarkdown(textarea.value);
+            mdEditor.setValue(state.creditScaffold ? `\n\n${markdownSource}` : markdownSource);
             state.mdSource = mdEditor.getValue();
             state.mdDirty = false;
             renderPreview();
@@ -722,13 +738,23 @@ import { createMarkdownEditor } from './report-md-editor.js';
 
     const initialize = async () => {
         const settings = await Settings.get();
-        if (!settings.enableReportEditor) return;
+        if (settings.addReportCredit && !textarea.value.trim()) {
+            textarea.value = REPORT_CREDIT;
+            state.creditScaffold = true;
+        }
+        if (!settings.enableReportEditor) {
+            if (state.creditScaffold) {
+                textarea.value = `\n\n${textarea.value}`;
+                textarea.setSelectionRange(0, 0);
+            }
+            return;
+        }
 
         mdEditor = createMarkdownEditor({
             parent: mdPane,
             placeholder: 'Write your trip report in Markdown…',
             ariaLabel: 'Trip report in Markdown',
-            onDocChanged: () => { state.mdDirty = true; scheduleSync(); }
+            onDocChanged: () => { state.mdDirty = true; state.creditScaffold = false; scheduleSync(); }
         });
         mdEditor.view.scrollDOM.addEventListener('scroll', syncPreviewScroll);
 

@@ -102,6 +102,7 @@ test('settings are grouped by the surface they affect', async () => {
         assert.equal(section.querySelectorAll(':scope > .card').length, 1);
     }
     assert.ok(general.querySelector('#theme'));
+    assert.ok(general.querySelector('#add-report-credit'));
     assert.ok(general.querySelector('#enable-3d-map'));
     assert.equal(general.querySelector('#units'), null);
     for (const id of ['retain-waypoints', 'fill-ascent-details', 'fill-trip-info', 'fill-wilderness-nights']) {
@@ -113,6 +114,22 @@ test('settings are grouped by the surface they affect', async () => {
     for (const id of ['beta-tr', 'beta-tr-words', 'beta-gps', 'beta-link']) {
         assert.ok(beta.querySelector(`#${id}`), `${id} should belong to Ascent beta filters`);
     }
+});
+
+test('trip report credit is off by default and persists as an explicit opt-in', async () => {
+    const dom = await loadOptions({});
+    const checkbox = el(dom, 'add-report-credit');
+    const row = checkbox.closest('.row');
+
+    assert.equal(checkbox.checked, false);
+    assert.match(row.querySelector('.title').textContent, /^Credit Better Peakbagger in trip reports$/);
+    assert.match(row.querySelector('.desc').textContent, /small, editable store link.*change or remove/i);
+    const invalidDom = await loadOptions({ addReportCredit: 'yes' });
+    assert.equal(el(invalidDom, 'add-report-credit').checked, false);
+
+    checkbox.checked = true;
+    checkbox.dispatchEvent(new dom.window.Event('change'));
+    await waitFor(dom, () => dom.chrome._store.bpbSettings.addReportCredit === true);
 });
 
 test('experimental 3D map is off by default and discloses external DEM requests', async () => {

@@ -32,7 +32,7 @@ const BUNDLES = [
     'content/ascent-editor.js'
 ];
 
-const loadEditor = async ({ settings = {}, report = '', drafts = {}, url = URL } = {}) => {
+const loadEditor = async ({ settings = {}, report = '', drafts = {}, url = URL, firefox = false } = {}) => {
     const dom = await loadPage(FIXTURE, {
         url,
         settings,
@@ -41,6 +41,7 @@ const loadEditor = async ({ settings = {}, report = '', drafts = {}, url = URL }
         prepare: d => {
             d.window.document.getElementById('JournalText').value = report;
             Object.assign(d.chrome._localStore, drafts);
+            if (firefox) d.window.browser = d.chrome;
         }
     });
     return dom;
@@ -106,6 +107,67 @@ test('the editor mounts on the ascent form and hides the native textarea', async
         'TipTap should recognize the empty document and expose its placeholder');
     assert.equal(ui.querySelector('[aria-label="Undo (Ctrl+Z)"]').disabled, true,
         'undo starts disabled with an empty history');
+});
+
+test('opt-in credit leaves blank writing space and links to the Chrome store', async () => {
+    const dom = await loadEditor({ settings: { addReportCredit: true } });
+    const ui = await editorReady(dom);
+    const textarea = dom.window.document.getElementById('JournalText');
+    const paragraphs = ui.querySelectorAll('.bpb-re-surface p');
+    const credit = paragraphs[1];
+    const link = credit.querySelector('a');
+
+    assert.equal(paragraphs[0].textContent, '', 'the report should start with editable writing space');
+    assert.equal(editors(dom).rich.state.selection.from, 1, 'the caret should begin before the credit');
+    assert.ok(credit.querySelector('small'), 'the credit should read as a quiet footnote');
+    assert.ok(credit.querySelector('em'), 'the credit should stay visually secondary');
+    assert.equal(link.textContent, 'Better Peakbagger');
+    assert.equal(link.href,
+        'https://chromewebstore.google.com/detail/better-peakbagger/kndjohodnpdoejmjkiiakejfehoodedn');
+    assert.equal(textarea.value,
+        '[small][i]Created with [a href="https://chromewebstore.google.com/detail/better-peakbagger/kndjohodnpdoejmjkiiakejfehoodedn" target="_blank"]Better Peakbagger[/a].[/i][/small]');
+
+    editors(dom).rich.commands.insertContent('Summit day.');
+    await waitFor(dom, () => textarea.value.startsWith('Summit day.'));
+    assert.match(textarea.value, /^Summit day\.\n\n.*Created with /s,
+        'typing at the initial caret should keep the credit as a separate footnote');
+    assert.match(textarea.value, /\[small\].*Better Peakbagger.*\[\/small\]/s);
+});
+
+test('opt-in credit links Firefox reports to Firefox Add-ons', async () => {
+    const dom = await loadEditor({ settings: { addReportCredit: true }, firefox: true });
+    const ui = await editorReady(dom);
+    const link = ui.querySelector('.bpb-re-surface a');
+
+    assert.equal(link.href, 'https://addons.mozilla.org/en-US/firefox/addon/better-peakbagger/');
+});
+
+test('opt-in credit starts after the caret in Markdown and Plain modes', async () => {
+    const markdownDom = await loadEditor({
+        settings: { addReportCredit: true, reportEditorMode: 'markdown' }
+    });
+    await editorReady(markdownDom);
+    assert.ok(editors(markdownDom).markdown.getValue().startsWith('\n\n'));
+    assert.equal(editors(markdownDom).markdown.view.state.selection.main.head, 0);
+
+    const plainDom = await loadEditor({
+        settings: { addReportCredit: true, reportEditorMode: 'plain' }
+    });
+    await editorReady(plainDom);
+    const textarea = plainDom.window.document.getElementById('JournalText');
+    assert.ok(textarea.value.startsWith('\n\n'));
+    assert.equal(textarea.selectionStart, 0);
+});
+
+test('opt-in credit never modifies a non-empty report', async () => {
+    const dom = await loadEditor({
+        settings: { addReportCredit: true },
+        report: 'Existing trip report.'
+    });
+    await editorReady(dom);
+
+    assert.equal(dom.window.document.getElementById('JournalText').value, 'Existing trip report.');
+    assert.equal(editors(dom).rich.getHTML(), '<p>Existing trip report.</p>');
 });
 
 test('rich edits sync into the hidden textarea as bracket markup', async () => {
