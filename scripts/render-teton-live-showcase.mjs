@@ -80,8 +80,12 @@ try {
     if (!providerRequests.has('tiles.mapterhorn.com') || !providerRequests.has('tiles.openfreemap.org')) {
         throw new Error(`The live providers did not both load (requests=${JSON.stringify([...providerRequests])})`);
     }
+    // A full-width WebGL layer can reach idle before Blink composites the
+    // static header in new headless. Reading its bounds flushes that layout so
+    // the capture cannot silently omit the title and extension icon.
+    await page.locator('.showcase-head').evaluate(element => element.getBoundingClientRect().width);
     await mkdir(path.dirname(output), { recursive: true });
-    await page.screenshot({ path: output });
+    await page.locator('body').screenshot({ path: output });
     console.log(`Rendered ${output}`);
     console.log(`Renderer: ${renderer} (hidden Chrome for Testing, 1280x800)`);
     console.log(`Live providers: ${[...providerRequests].sort().join(', ')}`);

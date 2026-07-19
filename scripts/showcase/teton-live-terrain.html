@@ -7,34 +7,34 @@
   <link rel="stylesheet" href="/scripts/showcase/showcase.css">
   <link rel="stylesheet" href="/dist/vendor/maplibre-gl.css">
   <style>
-    .terrain-stage { height: calc(100% - 46px); padding: 14px; background: #f7f7f3; }
-    .terrain-layout { display: grid; grid-template-columns: minmax(0, 1fr) 255px; gap: 14px; height: 100%; }
-    .terrain-left { display: grid; grid-template-rows: minmax(0, 1fr) 146px; gap: 12px; min-width: 0; }
-    .map-card, .chart-card, .stats-card { overflow: hidden; border: 1px solid #d5d9d4; border-radius: 10px; background: #fff; }
-    .map-card { position: relative; width: auto; height: auto; min-height: 0; margin: 0; background: #dce6e1; }
+    .terrain-stage { height: calc(100% - 46px); padding: 10px 14px 12px; color: #d9dfe2; background: #101416; }
+    .terrain-layout { display: grid; grid-template-rows: minmax(0, 1.7fr) minmax(190px, 1fr); gap: 10px; height: 100%; }
+    .map-card, .chart-card { overflow: hidden; border: 1px solid #343c40; border-radius: 8px; background: #151a1d; }
+    .map-card { position: relative; width: auto; height: auto; min-height: 0; margin: 0; }
     #teton-map { width: 100%; height: 100%; }
-    .map-tag { position: absolute; top: 12px; left: 12px; z-index: 2; border: 1px solid rgba(19, 56, 37, .18); border-radius: 999px; padding: 6px 9px; color: #173d2a; background: rgba(255, 255, 255, .92); box-shadow: 0 2px 8px rgba(0, 0, 0, .12); font-size: 11px; font-weight: 750; pointer-events: none; }
-    .map-legend { position: absolute; right: 12px; bottom: 12px; z-index: 2; border: 1px solid rgba(19, 56, 37, .18); border-radius: 7px; padding: 6px 8px; color: #34463a; background: rgba(255, 255, 255, .92); font-size: 10px; pointer-events: none; }
-    .map-legend i { display: inline-block; width: 18px; height: 4px; margin: 0 4px 2px 0; border-radius: 3px; background: #d94b36; vertical-align: middle; }
-    .chart-card { position: relative; padding: 9px 12px 7px; }
-    .chart-head { display: flex; align-items: baseline; justify-content: space-between; margin: 0 1px 4px; color: #405048; font-size: 11px; }
-    .chart-head strong { color: #1c3628; font-size: 12px; }
-    #elevation-chart { width: 100% !important; height: 108px !important; }
-    .stats-card { display: flex; flex-direction: column; padding: 17px; color: #24382c; }
-    .eyebrow { margin: 0 0 4px; color: #52735f; font-size: 10px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
-    .stats-card h2 { margin: 0; color: #153b2a; font-size: 23px; line-height: 1.08; letter-spacing: -.035em; }
-    .subhead { margin: 6px 0 15px; color: #68766e; font-size: 11px; }
-    .metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-    .metric { padding: 10px 8px; border: 1px solid #e0e5df; border-radius: 8px; background: #fafbf9; }
-    .metric span { display: block; color: #77847b; font-size: 10px; }
-    .metric strong { display: block; margin-top: 3px; color: #26392c; font-size: 16px; letter-spacing: -.02em; }
-    .scrubber { margin-top: 15px; padding-top: 14px; border-top: 1px solid #e0e5df; }
-    .scrubber-title { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: #536359; font-size: 10px; font-weight: 700; }
-    .scrubber-title strong { color: #213e2c; font-size: 11px; }
-    input[type="range"] { width: 100%; margin: 11px 0 8px; accent-color: #d94b36; }
-    .scrubber-copy { margin: 0; color: #68766e; font-size: 11px; line-height: 1.35; }
-    .providers { margin-top: auto; padding-top: 14px; color: #7a867f; font-size: 10px; line-height: 1.35; }
-    .providers b { color: #4b5f52; }
+    .map-style { position: absolute; top: 12px; right: 12px; z-index: 2; display: flex; align-items: center; justify-content: space-between; width: 180px; border: 1px solid rgba(255, 255, 255, .16); border-radius: 7px; padding: 7px 10px; color: #eef1f2; background: rgba(20, 24, 25, .9); box-shadow: 0 3px 12px rgba(0, 0, 0, .24); font-size: 11px; font-weight: 700; pointer-events: none; }
+    .map-mode { position: absolute; right: 12px; bottom: 76px; z-index: 2; border: 1px solid rgba(255, 255, 255, .14); border-radius: 7px; padding: 7px 10px; color: #f0f2f3; background: rgba(20, 24, 25, .9); box-shadow: 0 3px 12px rgba(0, 0, 0, .24); font: 750 11px/1 system-ui, sans-serif; cursor: pointer; }
+    .map-hint { position: absolute; left: 50%; bottom: 10px; z-index: 2; transform: translateX(-50%); border-radius: 999px; padding: 5px 9px; color: #d3d8da; background: rgba(13, 16, 17, .78); font-size: 9px; pointer-events: none; }
+    .peak-legend { position: absolute; left: 12px; top: 12px; z-index: 2; border-radius: 6px; padding: 6px 8px; color: #e7eaeb; background: rgba(18, 22, 23, .84); font-size: 9px; pointer-events: none; }
+    .peak-legend i { display: inline-block; width: 9px; height: 9px; margin: 0 4px -1px 7px; border: 2px solid #ff6175; border-radius: 50%; }
+    .peak-legend i:first-child { margin-left: 0; border-color: #25df61; }
+    .chart-card { position: relative; padding: 8px 13px 7px; }
+    .chart-summary { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 18px; margin-bottom: 3px; }
+    .chart-summary strong { display: block; color: #f2f4f5; font-size: 12px; letter-spacing: -.01em; }
+    .chart-summary p { margin: 2px 0 0; color: #8f9aa0; font-size: 9px; font-style: italic; }
+    .chart-actions { display: flex; align-items: center; gap: 10px; color: #aab2b6; font-size: 9px; }
+    .unit-pill { border: 1px solid #3c474c; border-radius: 5px; padding: 5px 7px; color: #dce1e3; background: #20272a; font-size: 9px; }
+    .route-key i { display: inline-block; width: 17px; height: 4px; margin: 0 3px 1px 7px; border-radius: 2px; background: #ef4b32; vertical-align: middle; }
+    .route-key i.casing { height: 6px; border: 1px solid #4a5357; background: #fff; }
+    .chart-wrap { height: 137px; }
+    #elevation-chart { width: 100% !important; height: 137px !important; }
+    .providers { position: absolute; right: 13px; bottom: 7px; margin: 0; color: #6e797f; font-size: 8px; }
+    .providers b { color: #929ca1; }
+    .maplibregl-ctrl-group { overflow: hidden; border: 1px solid rgba(255,255,255,.14); border-radius: 7px; background: rgba(20, 24, 25, .9); box-shadow: 0 3px 12px rgba(0,0,0,.24); }
+    .maplibregl-ctrl-group button { background-color: transparent; }
+    .maplibregl-ctrl-group button + button { border-top-color: rgba(255,255,255,.12); }
+    .maplibregl-ctrl-group button .maplibregl-ctrl-icon { filter: invert(1); }
+    .maplibregl-ctrl-scale { border-color: #f2f2f2; color: #f2f2f2; background: rgba(20, 24, 25, .72); font-size: 8px; }
   </style>
 </head>
 <body>
@@ -51,34 +51,27 @@
       <div class="browser-bar"><span class="traffic-lights"><i></i><i></i><i></i></span><div class="address">peakbagger.com/climber/ascent.aspx</div></div>
       <div class="terrain-stage">
         <div class="terrain-layout">
-          <div class="terrain-left">
-            <section class="map-card">
-              <div id="teton-map" aria-label="Interactive 3D terrain map of Grand Teton"></div>
-              <span class="map-tag">3D terrain · Grand Teton</span>
-              <span class="map-legend"><i></i>Demo GPX route</span>
-            </section>
-            <section class="chart-card" aria-label="Elevation profile">
-              <div class="chart-head"><strong>Elevation profile</strong><span id="chart-distance">8.3 mi · 11:20 AM</span></div>
-              <canvas id="elevation-chart"></canvas>
-            </section>
-          </div>
-          <aside class="stats-card">
-            <p class="eyebrow">Demo GPX track</p>
-            <h2>Grand Teton</h2>
-            <p class="subhead">Teton Range · Wyoming</p>
-            <div class="metrics">
-              <div class="metric"><span>Distance</span><strong>14.2 mi</strong></div>
-              <div class="metric"><span>Elevation gain</span><strong>6,850 ft</strong></div>
-              <div class="metric"><span>Moving time</span><strong>8:34</strong></div>
-              <div class="metric"><span>High point</span><strong>13,775 ft</strong></div>
+          <section class="map-card">
+            <div id="teton-map" aria-label="Interactive 3D terrain map of Grand Teton"></div>
+            <span class="peak-legend"><i></i> climbed <i></i> unclimbed demo peaks</span>
+            <span class="map-style">3D Terrain <span aria-hidden="true">⌄</span></span>
+            <button class="map-mode" id="map-mode" type="button">2D</button>
+            <span class="map-hint">Drag to pan · scroll to zoom · right-drag to tilt</span>
+          </section>
+          <section class="chart-card" aria-label="Synchronized elevation profile">
+            <div class="chart-summary">
+              <div>
+                <strong>Interactive Stats: 14.2 miles | 7,095 ft gain | Time: 12h 34m</strong>
+                <p id="chart-position">5.4 mi · Upper Saddle · 11:20 AM</p>
+              </div>
+              <div class="chart-actions">
+                <span class="unit-pill">Imperial⌄</span>
+                <span class="route-key">Route <i></i> Casing <i class="casing"></i></span>
+              </div>
             </div>
-            <div class="scrubber">
-              <div class="scrubber-title"><span>Route scrubber</span><strong id="scrubber-place">Upper Saddle</strong></div>
-              <input id="route-scrubber" type="range" min="0" max="10" value="7" aria-label="Route scrubber">
-              <p class="scrubber-copy" id="scrubber-copy">8.3 mi · 11:20 AM · marker follows the elevation profile.</p>
-            </div>
-            <p class="providers"><b>Live terrain:</b> Mapterhorn DEM + OpenFreeMap OSM vector tiles.</p>
-          </aside>
+            <div class="chart-wrap"><canvas id="elevation-chart"></canvas></div>
+            <p class="providers"><b>Live terrain:</b> Mapterhorn · <b>map:</b> OpenFreeMap</p>
+          </section>
         </div>
       </div>
     </section>
@@ -89,18 +82,38 @@
   <script>
     (() => {
       'use strict';
-      const points = [
+      const ascentPoints = [
         { lat: 43.7347, lon: -110.7415, ele: 2060, miles: 0, time: '5:40 AM', place: 'Lupine Meadows' },
-        { lat: 43.7316, lon: -110.7455, ele: 2130, miles: 1.2, time: '6:10 AM', place: 'Valley trail' },
-        { lat: 43.7292, lon: -110.7525, ele: 2230, miles: 2.4, time: '6:48 AM', place: 'Garnet Canyon' },
-        { lat: 43.7275, lon: -110.7607, ele: 2410, miles: 3.6, time: '7:35 AM', place: 'Moraine switchbacks' },
-        { lat: 43.7287, lon: -110.7704, ele: 2590, miles: 4.6, time: '8:20 AM', place: 'Garnet Meadows' },
-        { lat: 43.7313, lon: -110.7810, ele: 2860, miles: 5.8, time: '9:05 AM', place: 'Boulder field' },
-        { lat: 43.7347, lon: -110.7897, ele: 3130, miles: 7.0, time: '9:48 AM', place: 'Lower Saddle' },
-        { lat: 43.7380, lon: -110.7962, ele: 3535, miles: 8.3, time: '11:20 AM', place: 'Upper Saddle' },
-        { lat: 43.7390, lon: -110.7990, ele: 3800, miles: 9.4, time: '12:05 PM', place: 'The Enclosure' },
-        { lat: 43.7402, lon: -110.8008, ele: 4010, miles: 11.1, time: '12:45 PM', place: 'Summit ridge' },
-        { lat: 43.7412, lon: -110.8024, ele: 4199, miles: 14.2, time: '1:15 PM', place: 'Grand Teton summit' }
+        { lat: 43.7316, lon: -110.7455, ele: 2130, miles: .7, time: '6:10 AM', place: 'Valley trail' },
+        { lat: 43.7292, lon: -110.7525, ele: 2230, miles: 1.5, time: '6:48 AM', place: 'Garnet Canyon' },
+        { lat: 43.7275, lon: -110.7607, ele: 2410, miles: 2.3, time: '7:35 AM', place: 'Moraine switchbacks' },
+        { lat: 43.7287, lon: -110.7704, ele: 2590, miles: 3.1, time: '8:20 AM', place: 'Garnet Meadows' },
+        { lat: 43.7313, lon: -110.7810, ele: 2860, miles: 3.8, time: '9:05 AM', place: 'Boulder field' },
+        { lat: 43.7347, lon: -110.7897, ele: 3130, miles: 4.6, time: '9:48 AM', place: 'Lower Saddle' },
+        { lat: 43.7380, lon: -110.7962, ele: 3535, miles: 5.4, time: '11:20 AM', place: 'Upper Saddle' },
+        { lat: 43.7390, lon: -110.7990, ele: 3800, miles: 6.0, time: '12:05 PM', place: 'The Enclosure' },
+        { lat: 43.7402, lon: -110.8008, ele: 4010, miles: 6.6, time: '12:45 PM', place: 'Summit ridge' },
+        { lat: 43.7412, lon: -110.8024, ele: 4199, miles: 7.1, time: '1:15 PM', place: 'Grand Teton summit' }
+      ];
+      const descentMiles = [7.7, 8.4, 9.2, 10.0, 10.8, 11.6, 12.4, 13.1, 13.7, 14.2];
+      const descentTimes = ['1:48 PM', '2:25 PM', '3:05 PM', '3:46 PM', '4:18 PM', '4:45 PM', '5:10 PM', '5:36 PM', '5:58 PM', '6:14 PM'];
+      const points = [
+        ...ascentPoints,
+        ...ascentPoints.slice(0, -1).reverse().map((point, index) => ({
+          ...point,
+          miles: descentMiles[index],
+          time: descentTimes[index],
+          place: `Return · ${point.place}`
+        }))
+      ];
+      const peaks = [
+        { coordinates: [-110.8024, 43.7412], climbed: true },
+        { coordinates: [-110.8171, 43.7306], climbed: false },
+        { coordinates: [-110.8205, 43.7186], climbed: true },
+        { coordinates: [-110.7790, 43.7524], climbed: false },
+        { coordinates: [-110.8074, 43.7166], climbed: false },
+        { coordinates: [-110.8288, 43.7415], climbed: false },
+        { coordinates: [-110.7902, 43.7664], climbed: false }
       ];
       const feet = value => Math.round(value * 3.28084);
       let activeIndex = 7;
@@ -121,7 +134,7 @@
           if (!point || !area) return;
           const ctx = instance.ctx;
           ctx.save();
-          ctx.strokeStyle = 'rgba(217, 75, 54, .55)';
+          ctx.strokeStyle = 'rgba(103, 190, 246, .55)';
           ctx.lineWidth = 1;
           ctx.setLineDash([3, 3]);
           ctx.beginPath();
@@ -129,13 +142,33 @@
           ctx.lineTo(point.x, area.bottom);
           ctx.stroke();
           ctx.setLineDash([]);
-          ctx.fillStyle = '#d94b36';
+          ctx.fillStyle = '#67bef6';
           ctx.strokeStyle = '#fff';
           ctx.lineWidth = 2;
           ctx.beginPath();
           ctx.arc(point.x, point.y, 5, 0, Math.PI * 2);
           ctx.fill();
           ctx.stroke();
+
+          const data = points[activeIndex];
+          const width = 142;
+          const height = 47;
+          const left = Math.min(point.x + 11, area.right - width - 3);
+          const top = Math.max(area.top + 3, point.y - height - 9);
+          ctx.fillStyle = 'rgba(2, 4, 5, .92)';
+          ctx.strokeStyle = 'rgba(255, 255, 255, .12)';
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.roundRect(left, top, width, height, 5);
+          ctx.fill();
+          ctx.stroke();
+          ctx.fillStyle = '#f2f4f5';
+          ctx.font = '600 9px system-ui, sans-serif';
+          ctx.fillText(`Dist: ${data.miles.toFixed(1)} miles`, left + 8, top + 13);
+          ctx.font = '9px system-ui, sans-serif';
+          ctx.fillText(`Elevation: ${feet(data.ele).toLocaleString()} ft`, left + 8, top + 27);
+          ctx.fillStyle = '#b9c2c6';
+          ctx.fillText(`Time: ${data.time}`, left + 8, top + 40);
           ctx.restore();
         }
       };
@@ -143,9 +176,7 @@
       const updateScrubber = index => {
         activeIndex = Number(index);
         const point = points[activeIndex];
-        document.getElementById('scrubber-place').textContent = point.place;
-        document.getElementById('scrubber-copy').textContent = `${point.miles.toFixed(1)} mi · ${point.time} · marker follows the elevation profile.`;
-        document.getElementById('chart-distance').textContent = `${point.miles.toFixed(1)} mi · ${point.time}`;
+        document.getElementById('chart-position').textContent = `${point.miles.toFixed(1)} mi · ${point.place} · ${point.time}`;
         if (markerSource) markerSource.setData(markerFeature(activeIndex));
         if (chart) chart.update('none');
       };
@@ -157,8 +188,8 @@
             labels: points.map(point => point.miles.toFixed(1)),
             datasets: [{
               data: points.map(point => feet(point.ele)),
-              borderColor: '#d94b36',
-              backgroundColor: 'rgba(217, 75, 54, .12)',
+              borderColor: '#67bef6',
+              backgroundColor: 'rgba(54, 142, 202, .22)',
               fill: true,
               pointRadius: 0,
               borderWidth: 2.2,
@@ -169,10 +200,11 @@
             responsive: true,
             maintainAspectRatio: false,
             animation: false,
+            layout: { padding: { bottom: 6 } },
             plugins: { legend: { display: false }, tooltip: { enabled: false } },
             scales: {
-              x: { grid: { display: false }, ticks: { color: '#69786f', font: { size: 9 }, maxTicksLimit: 7 }, title: { display: true, text: 'Distance (mi)', color: '#55665b', font: { size: 9 } } },
-              y: { grid: { color: 'rgba(69, 92, 76, .12)' }, ticks: { color: '#69786f', font: { size: 9 }, maxTicksLimit: 4, callback: value => `${Math.round(value / 1000)}k` } }
+              x: { grid: { color: 'rgba(160, 176, 185, .10)' }, ticks: { color: '#8d989e', font: { size: 8 }, maxTicksLimit: 8 }, title: { display: true, text: 'Distance (miles)', color: '#939da2', font: { size: 8 } } },
+              y: { grid: { color: 'rgba(160, 176, 185, .12)' }, ticks: { color: '#8d989e', font: { size: 8 }, maxTicksLimit: 5, callback: value => Number(value).toLocaleString() } }
             }
           },
           plugins: [scrubberPlugin]
@@ -184,15 +216,16 @@
         map = new maplibregl.Map({
           container: 'teton-map',
           style: 'https://tiles.openfreemap.org/styles/liberty',
-          center: [-110.787, 43.741],
-          zoom: 12.2,
-          pitch: 60,
+          center: [-110.778, 43.739],
+          zoom: 11.55,
+          pitch: 62,
           bearing: -72,
           attributionControl: false,
           fadeDuration: 0,
           maxPitch: 80
         });
         map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'bottom-right');
+        map.addControl(new maplibregl.ScaleControl({ maxWidth: 90, unit: 'metric' }), 'bottom-left');
         map.on('error', event => { window.__tetonState.lastError = event?.error?.message || 'Map request failed'; });
         map.on('load', () => {
           map.addSource('terrain-dem', {
@@ -208,11 +241,23 @@
           map.addLayer({
             id: 'terrain-relief', type: 'color-relief', source: 'terrain-dem',
             paint: {
-              'color-relief-color': ['interpolate', ['linear'], ['elevation'], 1800, '#5f806f', 2300, '#809878', 2900, '#afa978', 3500, '#9f8874', 4050, '#d9d7c9', 4500, '#f6f3ed'],
-              'color-relief-opacity': .8
+              'color-relief-color': ['interpolate', ['linear'], ['elevation'], 1800, '#39453e', 2300, '#59635b', 2900, '#75766e', 3500, '#898078', 4050, '#bab8b1', 4500, '#dedbd4'],
+              'color-relief-opacity': .84
             }
           }, terrainLabelLayer);
-          map.addLayer({ id: 'terrain-hillshade', type: 'hillshade', source: 'terrain-dem', paint: { 'hillshade-exaggeration': .35 } });
+          map.addLayer({ id: 'terrain-hillshade', type: 'hillshade', source: 'terrain-dem', paint: { 'hillshade-exaggeration': .45, 'hillshade-shadow-color': '#111516' } });
+          map.addSource('peaks', {
+            type: 'geojson',
+            data: { type: 'FeatureCollection', features: peaks.map(peak => ({
+              type: 'Feature', properties: { climbed: peak.climbed }, geometry: { type: 'Point', coordinates: peak.coordinates }
+            })) }
+          });
+          map.addLayer({
+            id: 'peak-rings', type: 'circle', source: 'peaks', paint: {
+              'circle-radius': 6, 'circle-color': 'rgba(18, 22, 23, .45)', 'circle-stroke-width': 3,
+              'circle-stroke-color': ['case', ['get', 'climbed'], '#25df61', '#ff6175']
+            }
+          });
           map.addSource('route', { type: 'geojson', data: { type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: points.map(point => [point.lon, point.lat]) } } });
           map.addLayer({ id: 'route-casing', type: 'line', source: 'route', paint: { 'line-color': '#fff', 'line-width': 7, 'line-opacity': .96 } });
           map.addLayer({ id: 'route-line', type: 'line', source: 'route', paint: { 'line-color': '#d94b36', 'line-width': 4, 'line-opacity': 1 } });
@@ -230,7 +275,17 @@
 
       buildChart();
       buildMap();
-      document.getElementById('route-scrubber').addEventListener('input', event => updateScrubber(event.target.value));
+      document.getElementById('elevation-chart').addEventListener('mousemove', event => {
+        if (!chart) return;
+        const [element] = chart.getElementsAtEventForMode(event, 'index', { intersect: false }, false);
+        if (element && element.index !== activeIndex) updateScrubber(element.index);
+      });
+      document.getElementById('map-mode').addEventListener('click', event => {
+        if (!map) return;
+        const is3d = map.getPitch() > 0;
+        map.easeTo({ pitch: is3d ? 0 : 62, duration: 350 });
+        event.currentTarget.textContent = is3d ? '3D' : '2D';
+      });
     })();
   </script>
 </body>
