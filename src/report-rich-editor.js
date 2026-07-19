@@ -23,7 +23,7 @@ import Superscript from '@tiptap/extension-superscript';
 import Highlight from '@tiptap/extension-highlight';
 import { TextStyle, Color } from '@tiptap/extension-text-style';
 import { Placeholder } from '@tiptap/extensions';
-import { MAX_REPORT_IMAGE_DIMENSION, sanitizeVideoSrc } from './report-markup.js';
+import { MAX_REPORT_IMAGE_DIMENSION, sanitizeVideoSrc, sanitizeYouTubeEmbedSrc } from './report-markup.js';
 
 // TipTap parses a raw hex token correctly, but its DOM serializer can still
 // canonicalize the rendered style to rgb(). Carry the parsed token in an
@@ -183,9 +183,9 @@ const ReportImage = Image.extend({
     }
 });
 
-// A direct media URL is safe to represent as a native video element; embeds
-// such as iframes remain outside the editor schema. This node is inline so a
-// Markdown video reference can sit naturally in the surrounding paragraph.
+// Direct media URLs use a native video element. The only embed in the schema
+// is a canonical YouTube player URL produced by report-markup.js; arbitrary
+// iframe sources remain outside the schema.
 const ReportVideo = Node.create({
     name: 'reportVideo',
     group: 'inline',
@@ -203,17 +203,37 @@ const ReportVideo = Node.create({
         return {
             src: {
                 default: null,
-                parseHTML: element => sanitizeVideoSrc(element.getAttribute('src')),
+                parseHTML: element => element.tagName === 'IFRAME'
+                    ? sanitizeYouTubeEmbedSrc(element.getAttribute('src'))
+                    : sanitizeVideoSrc(element.getAttribute('src')),
                 renderHTML: attributes => attributes.src ? { src: attributes.src } : {}
+            },
+            provider: {
+                default: 'file',
+                parseHTML: element => element.tagName === 'IFRAME' ? 'youtube' : 'file',
+                renderHTML: () => ({})
             },
             width: dimension('width'),
             height: dimension('height')
         };
     },
 
-    parseHTML() { return [{ tag: 'video[src]' }]; },
+    parseHTML() {
+        return [
+            { tag: 'video[src]', getAttrs: element =>
+                sanitizeVideoSrc(element.getAttribute('src')) ? null : false },
+            { tag: 'iframe[src]', getAttrs: element =>
+                sanitizeYouTubeEmbedSrc(element.getAttribute('src')) ? null : false }
+        ];
+    },
 
-    renderHTML({ HTMLAttributes }) {
+    renderHTML({ HTMLAttributes, node }) {
+        if (node.attrs.provider === 'youtube') {
+            return ['iframe', mergeAttributes({
+                title: 'YouTube video', loading: 'lazy', referrerpolicy: 'no-referrer',
+                allow: 'accelerometer; encrypted-media; gyroscope; picture-in-picture', allowfullscreen: ''
+            }, HTMLAttributes)];
+        }
         return ['video', mergeAttributes({
             controls: '', preload: 'metadata', playsinline: '', referrerpolicy: 'no-referrer'
         }, HTMLAttributes)];
@@ -222,24 +242,33 @@ const ReportVideo = Node.create({
     addNodeView() {
         return ({ node, getPos, HTMLAttributes, editor }) => {
             let currentNode = node;
-            const video = document.createElement('video');
-            video.draggable = false;
-            video.controls = true;
-            video.preload = 'metadata';
-            video.playsInline = true;
-            video.referrerPolicy = 'no-referrer';
+            const youtube = node.attrs.provider === 'youtube';
+            const media = document.createElement(youtube ? 'iframe' : 'video');
+            media.draggable = false;
+            if (youtube) {
+                media.loading = 'lazy';
+                media.title = 'YouTube video';
+                media.referrerPolicy = 'no-referrer';
+                media.allow = 'accelerometer; encrypted-media; gyroscope; picture-in-picture';
+                media.allowFullscreen = true;
+            } else {
+                media.controls = true;
+                media.preload = 'metadata';
+                media.playsInline = true;
+                media.referrerPolicy = 'no-referrer';
+            }
 
-            const applyVideoAttributes = updatedNode => {
+            const applyMediaAttributes = updatedNode => {
                 const src = updatedNode.attrs.src;
-                if (src === null || src === undefined) video.removeAttribute('src');
-                else video.setAttribute('src', src);
-                video.style.width = updatedNode.attrs.width ? `${updatedNode.attrs.width}px` : '';
-                video.style.height = updatedNode.attrs.height ? `${updatedNode.attrs.height}px` : '';
+                if (src === null || src === undefined) media.removeAttribute('src');
+                else media.setAttribute('src', src);
+                media.style.width = updatedNode.attrs.width ? `${updatedNode.attrs.width}px` : '';
+                media.style.height = updatedNode.attrs.height ? `${updatedNode.attrs.height}px` : '';
             };
 
             for (const [name, value] of Object.entries(mergeAttributes(this.options.HTMLAttributes, HTMLAttributes))) {
                 if (value !== null && value !== undefined && name !== 'width' && name !== 'height') {
-                    video.setAttribute(name, value);
+                    media.setAttribute(name, value);
                 }
             }
 
@@ -257,8 +286,13 @@ const ReportVideo = Node.create({
                 event.preventDefault();
                 event.stopPropagation();
 
-                const width = video.offsetWidth || Number(currentNode.attrs.width) || video.videoWidth;
-                const height = video.offsetHeight || Number(currentNode.attrs.height) || video.videoHeight;
+                // Iframes include their default border in offset dimensions.
+                // Once a size is serialized, it is the precise source of
+                // truth for predictable keyboard increments.
+                const width = Number(currentNode.attrs.width) || media.offsetWidth
+                    || (youtube ? 0 : media.videoWidth);
+                const height = Number(currentNode.attrs.height) || media.offsetHeight
+                    || (youtube ? 0 : media.videoHeight);
                 if (!width || !height) return;
 
                 const step = event.shiftKey ? 50 : 10;
@@ -277,19 +311,20 @@ const ReportVideo = Node.create({
             };
 
             return new ResizableNodeView({
-                element: video,
+                element: media,
                 editor,
                 node,
                 getPos,
                 onResize: (width, height) => {
-                    video.style.width = `${width}px`;
-                    video.style.height = `${height}px`;
+                    media.style.width = `${width}px`;
+                    media.style.height = `${height}px`;
                 },
                 onCommit: commitSize,
                 onUpdate: updatedNode => {
-                    if (updatedNode.type !== currentNode.type) return false;
+                    if (updatedNode.type !== currentNode.type
+                        || updatedNode.attrs.provider !== currentNode.attrs.provider) return false;
                     currentNode = updatedNode;
-                    applyVideoAttributes(updatedNode);
+                    applyMediaAttributes(updatedNode);
                     return true;
                 },
                 options: {
@@ -298,18 +333,18 @@ const ReportVideo = Node.create({
                     max: { width: MAX_REPORT_IMAGE_DIMENSION, height: MAX_REPORT_IMAGE_DIMENSION },
                     preserveAspectRatio: true,
                     className: {
-                        container: 'bpb-re-video-resize',
-                        wrapper: 'bpb-re-video-resize-frame',
-                        handle: 'bpb-re-video-resize-handle',
-                        resizing: 'bpb-re-video-resizing'
+                        container: youtube ? 'bpb-re-youtube-resize' : 'bpb-re-video-resize',
+                        wrapper: youtube ? 'bpb-re-youtube-resize-frame' : 'bpb-re-video-resize-frame',
+                        handle: youtube ? 'bpb-re-youtube-resize-handle' : 'bpb-re-video-resize-handle',
+                        resizing: youtube ? 'bpb-re-youtube-resizing' : 'bpb-re-video-resizing'
                     },
                     createCustomHandle: () => {
                         const handle = document.createElement('button');
                         handle.type = 'button';
-                        handle.className = 'bpb-re-video-resize-handle';
+                        handle.className = youtube ? 'bpb-re-youtube-resize-handle' : 'bpb-re-video-resize-handle';
                         handle.dataset.resizeHandle = 'bottom-right';
-                        handle.title = 'Drag to resize video; use left and right arrows for precise sizing';
-                        handle.setAttribute('aria-label', 'Resize video');
+                        handle.title = `Drag to resize ${youtube ? 'YouTube video' : 'video'}; use left and right arrows for precise sizing`;
+                        handle.setAttribute('aria-label', youtube ? 'Resize YouTube video' : 'Resize video');
                         handle.setAttribute('aria-keyshortcuts', 'ArrowLeft ArrowRight');
                         handle.addEventListener('keydown', resizeByKeyboard);
                         return handle;
@@ -395,6 +430,9 @@ export const richCommands = {
     insertImage: (editor, attrs) => editor.chain().focus().setImage(attrs).run(),
     insertVideo: (editor, src) => editor.chain().focus().insertContent({
         type: 'reportVideo', attrs: { src }
+    }).run(),
+    insertYouTube: (editor, src) => editor.chain().focus().insertContent({
+        type: 'reportVideo', attrs: { src, provider: 'youtube', width: 640, height: 360 }
     }).run(),
     // The block dropdown: a heading/code choice converts the current block; a
     // quote choice wraps a fresh paragraph; Paragraph unwraps an active quote.

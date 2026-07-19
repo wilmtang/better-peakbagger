@@ -287,6 +287,7 @@ Peakbagger equivalent:
 | `![alt\|300](https://…)`, `![alt\|300x200](https://…)` | `[img … width="300"]`, optionally with `height="200"` |
 | `![](https://…/clip.mp4)` (also `.webm`, `.ogv`, `.ogg`, or `.m3u8`) | `[video src="…"][/video]` |
 | `![Video\|640](https://…)`, `![Video\|640x360](https://…)` | `[video … width="640"]`, optionally with `height="360"` |
+| `![YouTube\|640x360](https://youtu.be/aqz-KE-bpKQ)` | `[iframe src="https://www.youtube.com/embed/aqz-KE-bpKQ" width="640" height="360"][/iframe]` |
 | two spaces plus newline, or an ordinary newline inside a paragraph | Peakbagger line break |
 | a blank line | Peakbagger paragraph spacing |
 
@@ -301,9 +302,12 @@ An empty alt text and a recognizable media-file suffix creates a video; use
 `![Video](https://…)` for a signed or extensionless direct media URL. The
 Markdown preview and Rich editor show a native, non-autoplaying video control.
 The saved report uses Peakbagger's `[video src="…"][/video]` form. Video pages
-and iframe embeds are deliberately not supported. The same `|width` or
-`|widthxheight` suffix used for images sizes a video; Rich video controls resize
-with an aspect-locked corner handle or the left/right arrow keys.
+and iframe embeds are deliberately not supported, with one narrow exception:
+a recognized YouTube watch, share, Shorts, Live, or embed URL is converted to a
+canonical YouTube player iframe. Other video pages and all non-YouTube embeds
+remain unsupported. The same `|width` or `|widthxheight` suffix used for images
+sizes a direct video or YouTube player; Rich media controls resize with an
+aspect-locked corner handle or the left/right arrow keys.
 
 Peakbagger-supported inline features without standard Markdown syntax remain
 available as bracket extensions inside Markdown:
@@ -327,7 +331,8 @@ The following tags were verified against Peakbagger's rendered ascent-report
 output and are represented in rich and Markdown modes:
 
 - Inline: `b`, `strong`, `i`, `em`, `u`, `s`, `strike`, `del`, `small`,
-  `mark`, `sub`, `sup`, `code`, `q`, `a`, `img`, `video`, and color-only `span`/`font`.
+  `mark`, `sub`, `sup`, `code`, `q`, `a`, `img`, `video`, the restricted
+  YouTube `iframe`, and color-only `span`/`font`.
 - Blocks: `h1`–`h6`, `blockquote`, `ul`, `ol`, `li`, `table`, `tr`, `th`,
   `td`, `pre`, and `hr`.
 - Compatibility imports: `p`, `div`, and `br` are accepted, then normalized to
@@ -342,9 +347,11 @@ Peakbagger's report page.
 
 The rich toolbar exposes the common actions without becoming a wall of
 controls: block style (paragraph, six heading levels, quote, preformatted),
-bold, italic, underline, strikethrough, link, image, direct video, table, both list types,
+bold, italic, underline, strikethrough, link, image, direct video or YouTube, table, both list types,
 horizontal rule, and undo/redo, with live active states that follow the caret.
-Selecting an image or video reveals one lower-corner handle; dragging it
+Selecting an image or direct video reveals one lower-corner handle. A YouTube
+player keeps the same editor-owned corner handle visible so its own clicks
+remain available for playback; dragging it
 resizes the media without distorting its aspect ratio, and the left/right arrow
 keys on the focused handle provide precise adjustment. The resulting pixel
 dimensions are stored in Peakbagger's existing `width`/`height` media
@@ -360,7 +367,8 @@ Peakbagger was observed rendering `iframe` markup, and the site accepts a much
 broader HTML-shaped surface than a trip-report editor should expose. Better
 Peakbagger therefore does **not** generate or execute:
 
-- `iframe`, `audio`, `object`, or `embed`;
+- iframes other than a canonical YouTube player, plus `audio`, `object`, or
+  `embed`;
 - `script`, forms, controls, or event-handler attributes;
 - raw HTML embedded in Markdown;
 - `javascript:`, `data:`, filesystem, browser-internal, or protocol-relative
@@ -377,10 +385,11 @@ HTML.
 Links allow HTTP, HTTPS, `mailto:`, root-relative Peakbagger paths, and local
 fragments. Images and direct videos are stricter: only HTTPS or root-relative
 sources are emitted; image dimensions are bounded; the local preview uses a
-no-referrer policy, and video never autoplays. A remote image or video in the
-final saved report is still loaded by Peakbagger and therefore makes a request
-to that host when someone reads
-the report.
+no-referrer policy, and video never autoplays. A recognized YouTube URL is
+instead emitted as a canonical, no-referrer YouTube iframe. A remote image,
+video, or YouTube player in the final saved report is still loaded by
+Peakbagger and therefore makes a request to that host when someone reads the
+report.
 
 ## Local drafts and cache limits
 

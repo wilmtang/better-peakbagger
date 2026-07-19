@@ -219,11 +219,11 @@ import { createMarkdownEditor } from './report-md-editor.js';
     videoBox.hidden = true;
     const videoSrcInput = el('input');
     videoSrcInput.type = 'text';
-    videoSrcInput.placeholder = 'https://example.com/clip.mp4';
-    videoSrcInput.setAttribute('aria-label', 'Video URL (HTTPS)');
+    videoSrcInput.placeholder = 'https://example.com/clip.mp4 or https://youtu.be/...';
+    videoSrcInput.setAttribute('aria-label', 'Video file or YouTube URL');
     const videoApply = button('bpb-re-linkapply', 'Add video');
     const videoHint = el('div', 'bpb-re-video-hint',
-        'Direct video files play with browser controls. Video pages and embeds are not supported.');
+        'Use a direct HTTPS video file URL or a YouTube watch/share URL. Other embeds are not supported.');
     videoBox.append(videoSrcInput, videoApply, videoHint);
 
     // Less-frequent inline formats live one click away instead of widening the
@@ -270,7 +270,7 @@ import { createMarkdownEditor } from './report-md-editor.js';
     const status = el('span', 'bpb-re-status');
     status.setAttribute('role', 'status');
     status.setAttribute('aria-live', 'polite');
-    const mediaHint = 'Image size: ![Photo|500](url) for width, or ![Photo|500x600](url) for width × height. Direct video: ![Video|500x281](https://example.com/clip.mp4)';
+    const mediaHint = 'Image size: ![Photo|500](url) for width, or ![Photo|500x600](url) for width × height. Direct file: ![Video|500x281](https://example.com/clip.mp4) · YouTube: ![YouTube|560x315](https://youtu.be/aqz-KE-bpKQ)';
     const mdHint = el('span', 'bpb-re-hint', mediaHint);
     mdHint.title = mediaHint;
     foot.append(status, mdHint);
@@ -568,14 +568,17 @@ import { createMarkdownEditor } from './report-md-editor.js';
     };
 
     const applyVideo = () => {
-        const src = Markup.sanitizeVideoSrc(videoSrcInput.value.trim());
+        const source = videoSrcInput.value.trim();
+        const youtubeSrc = Markup.sanitizeYouTubeEmbedSrc(source);
+        const src = youtubeSrc || Markup.sanitizeVideoSrc(source);
         if (!src) {
             videoSrcInput.classList.add('bpb-re-invalid');
             videoSrcInput.focus();
             return;
         }
         videoSrcInput.classList.remove('bpb-re-invalid');
-        richCommands.insertVideo(richEditor, src);
+        if (youtubeSrc) richCommands.insertYouTube(richEditor, youtubeSrc);
+        else richCommands.insertVideo(richEditor, src);
         closeBoxes();
         refreshToolbar();
     };

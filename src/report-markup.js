@@ -14,8 +14,9 @@
 // Supported blocks: paragraphs/line breaks, h1-h6, block quotes, nested ul/ol,
 // tables, preformatted code, and horizontal rules. Supported inline content:
 // b/strong, i/em, u, s/strike/del, small, mark, sub, sup, code, q, safe links,
-// HTTPS images and direct videos, and color-only span/font markup. P/div/br are accepted on
-// import but normalized to Peakbagger's newline convention.
+// HTTPS images and direct videos, canonical YouTube embeds, and color-only
+// span/font markup. P/div/br are accepted on import but normalized to
+// Peakbagger's newline convention.
 //
 // This module never accepts arbitrary HTML. Unsupported tags, raw Markdown
 // HTML, unsafe URLs, event attributes, and non-color styles become visible
@@ -42,7 +43,7 @@
         'UL', 'OL', 'TABLE', 'PRE', 'HR'
     ]);
     const DROP_DOM = new Set([
-        'SCRIPT', 'STYLE', 'TEMPLATE', 'IFRAME', 'AUDIO', 'OBJECT',
+        'SCRIPT', 'STYLE', 'TEMPLATE', 'AUDIO', 'OBJECT',
         'EMBED', 'FORM', 'INPUT', 'BUTTON', 'SELECT', 'TEXTAREA'
     ]);
     const BREAK = Object.freeze({ t: 'br' });
@@ -96,6 +97,35 @@
 
     const VIDEO_FILE = /\.(?:m3u8|mp4|og[gv]|webm)(?:[?#]|$)/i;
     const isDirectVideoSrc = src => VIDEO_FILE.test(src);
+    const YOUTUBE_ID = /^[A-Za-z0-9_-]{11}$/;
+
+    // This is deliberately not a general iframe sanitizer. The one allowed
+    // embed is a canonical YouTube player, derived from a recognized YouTube
+    // URL and stripped of user-controlled player options.
+    export const sanitizeYouTubeEmbedSrc = raw => {
+        const source = cleanUrlText(raw);
+        if (!source) return null;
+        try {
+            const url = new URL(source);
+            if (url.protocol !== 'https:') return null;
+            const host = url.hostname.toLowerCase().replace(/\.$/, '');
+            let id = null;
+            if (host === 'youtu.be' || host === 'www.youtu.be') {
+                const [candidate, ...rest] = url.pathname.split('/').filter(Boolean);
+                if (!rest.length) id = candidate;
+            } else if (['youtube.com', 'www.youtube.com', 'm.youtube.com', 'music.youtube.com'].includes(host)) {
+                const segments = url.pathname.split('/').filter(Boolean);
+                if (url.pathname === '/watch') id = url.searchParams.get('v');
+                else if (['embed', 'shorts', 'live'].includes(segments[0])) id = segments[1];
+            }
+            return id && YOUTUBE_ID.test(id) ? `https://www.youtube.com/embed/${id}` : null;
+        } catch (error) { return null; }
+    };
+
+    const youtubeWatchUrl = embed => {
+        const id = /^https:\/\/www\.youtube\.com\/embed\/([A-Za-z0-9_-]{11})$/.exec(embed)?.[1];
+        return id ? `https://www.youtube.com/watch?v=${id}` : null;
+    };
 
     const sanitizeColor = raw => {
         if (typeof raw !== 'string') return null;
@@ -135,7 +165,8 @@
         const lower = String(name || '').toLowerCase();
         if (INLINE_TAGS.has(lower)) return INLINE_TAGS.get(lower);
         if (lower === 'font') return 'span';
-        if (BLOCK_TAGS.has(lower) || VOID_TAGS.has(lower) || lower === 'a' || lower === 'span' || lower === 'video') return lower;
+        if (BLOCK_TAGS.has(lower) || VOID_TAGS.has(lower) || lower === 'a' || lower === 'span'
+            || lower === 'video' || lower === 'iframe') return lower;
         return null;
     };
 
@@ -181,6 +212,17 @@
                 tag,
                 html: `<video src="${escapeAttribute(src)}"${width ? ` width="${width}"` : ''}${
                     height ? ` height="${height}"` : ''} controls preload="metadata" playsinline referrerpolicy="no-referrer">`,
+                self: false
+            } : null;
+        }
+        if (tag === 'iframe') {
+            const src = sanitizeYouTubeEmbedSrc(readAttr(attrs, 'src'));
+            const width = sanitizeDimension(readAttr(attrs, 'width'));
+            const height = sanitizeDimension(readAttr(attrs, 'height'));
+            return src ? {
+                tag,
+                html: `<iframe src="${escapeAttribute(src)}"${width ? ` width="${width}"` : ''}${
+                    height ? ` height="${height}"` : ''} title="YouTube video" loading="lazy" referrerpolicy="no-referrer" allow="accelerometer; encrypted-media; gyroscope; picture-in-picture" allowfullscreen>`,
                 self: false
             } : null;
         }
@@ -345,6 +387,14 @@
             const src = sanitizeVideoSrc(node.getAttribute('src'));
             return src ? [{
                 t: 'video', src,
+                width: sanitizeDimension(node.getAttribute('width')),
+                height: sanitizeDimension(node.getAttribute('height'))
+            }] : [];
+        }
+        if (tag === 'IFRAME') {
+            const src = sanitizeYouTubeEmbedSrc(node.getAttribute('src'));
+            return src ? [{
+                t: 'youtube', src,
                 width: sanitizeDimension(node.getAttribute('width')),
                 height: sanitizeDimension(node.getAttribute('height'))
             }] : [];
@@ -552,6 +602,10 @@
         if (token.type === 'image') {
             const videoSrc = sanitizeVideoSrc(token.href);
             const attributes = markdownImageAttributes(token);
+            const youtubeSrc = sanitizeYouTubeEmbedSrc(token.href);
+            if (youtubeSrc) {
+                return [{ t: 'youtube', src: youtubeSrc, width: attributes.width, height: attributes.height }];
+            }
             const videoMarker = attributes.alt.trim().toLowerCase() === 'video';
             if (videoSrc && (isDirectVideoSrc(videoSrc) || videoMarker)) {
                 return [{ t: 'video', src: videoSrc, width: attributes.width, height: attributes.height }];
@@ -617,6 +671,16 @@
         // link before our extension parser can see it. Normalize only the
         // validated paired form into the explicit Markdown video marker.
         const input = String(source ?? '').replace(
+            /\[iframe\b([^\]\r\n]*)\]\s*\[\/iframe\]/gi,
+            (raw, attributes) => {
+                const src = sanitizeYouTubeEmbedSrc(readAttr(attributes, 'src'));
+                const width = sanitizeDimension(readAttr(attributes, 'width'));
+                const height = sanitizeDimension(readAttr(attributes, 'height'));
+                const watch = src && youtubeWatchUrl(src);
+                const size = width ? `|${width}${height ? `x${height}` : ''}` : '';
+                return watch ? `![YouTube${size}](${watch})` : raw;
+            }
+        ).replace(
             /\[video\b([^\]\r\n]*)\]\s*\[\/video\]/gi,
             (raw, attributes) => {
                 const src = sanitizeVideoSrc(readAttr(attributes, 'src'));
@@ -641,6 +705,10 @@
         if (node.t === 'video') {
             return `[video src="${escapeAttribute(node.src)}"${node.width ? ` width="${node.width}"` : ''}${
                 node.height ? ` height="${node.height}"` : ''}][/video]`;
+        }
+        if (node.t === 'youtube') {
+            return `[iframe src="${escapeAttribute(node.src)}"${node.width ? ` width="${node.width}"` : ''}${
+                node.height ? ` height="${node.height}"` : ''}][/iframe]`;
         }
         const inner = inlinesToBracket(node.kids);
         if (node.t === 'a') {
@@ -691,6 +759,10 @@
         if (node.t === 'video') {
             return `<video src="${escapeAttribute(node.src)}"${node.width ? ` width="${node.width}"` : ''}${
                 node.height ? ` height="${node.height}"` : ''} controls preload="metadata" playsinline referrerpolicy="no-referrer"></video>`;
+        }
+        if (node.t === 'youtube') {
+            return `<iframe src="${escapeAttribute(node.src)}"${node.width ? ` width="${node.width}"` : ''}${
+                node.height ? ` height="${node.height}"` : ''} title="YouTube video" loading="lazy" referrerpolicy="no-referrer" allow="accelerometer; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>`;
         }
         const inner = inlinesToHtml(node.kids);
         if (node.t === 'a') return `<a href="${escapeAttribute(node.href)}"${
@@ -759,6 +831,12 @@
             const size = node.width ? `|${node.width}${node.height ? `x${node.height}` : ''}` : '';
             return `![Video${size}](${node.src})`;
         }
+        if (node.t === 'youtube') {
+            const watch = youtubeWatchUrl(node.src);
+            if (!watch) return inlinesToBracket([node]);
+            const size = node.width ? `|${node.width}${node.height ? `x${node.height}` : ''}` : '';
+            return `![YouTube${size}](${watch})`;
+        }
         const inner = inlinesToMarkdown(node.kids);
         if (node.t === 'b') return `**${inner}**`;
         if (node.t === 'i') return `*${inner}*`;
@@ -820,6 +898,7 @@
         resolveLinkTarget,
         sanitizeImageSrc,
         sanitizeVideoSrc,
+        sanitizeYouTubeEmbedSrc,
         parseBracket,
         parseMarkdown,
         domToAst,

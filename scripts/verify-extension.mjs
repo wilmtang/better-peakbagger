@@ -478,6 +478,11 @@ try {
                 contentType: 'video/mp4',
                 body: video
             }));
+            const youtubeUrl = 'https://www.youtube.com/embed/aqz-KE-bpKQ';
+            await editorPage.route(youtubeUrl, route => route.fulfill({
+                contentType: 'text/html',
+                body: '<!doctype html><title>YouTube fixture</title><p>YouTube fixture</p>'
+            }));
 
             // A selected Rich image exposes one restrained corner handle. A
             // real pointer drag and keyboard adjustment must both persist the
@@ -652,6 +657,105 @@ try {
                     }, pointerResize.width, { timeout: 5000 }).then(handle => handle.jsonValue()).catch(() => null);
                     check(keyboardResize?.width === pointerResize.width + 10,
                         `the focused video resize handle ignored ArrowRight (state=${JSON.stringify(keyboardResize)})`);
+                }
+            }
+
+            // YouTube is the sole iframe exception. Its Markdown preview and
+            // Rich node view must use the canonical player URL and retain the
+            // same bounded, aspect-locked resize behavior as native video.
+            await editorPage.locator('#bpb-report-editor').getByRole('button', {
+                name: 'Plain', exact: true
+            }).click();
+            await editorPage.locator('#JournalText').fill(
+                `[iframe src="${youtubeUrl}" width="320" height="180"][/iframe]`);
+            await editorPage.locator('#bpb-report-editor').getByRole('button', {
+                name: 'Markdown', exact: true
+            }).click();
+            const markdownYouTube = await editorPage.waitForFunction(expected => {
+                const iframe = document.querySelector('#bpb-report-editor .bpb-re-preview iframe');
+                return iframe?.getAttribute('src') === expected ? {
+                    src: iframe.getAttribute('src'),
+                    title: iframe.getAttribute('title'),
+                    allow: iframe.getAttribute('allow')
+                } : null;
+            }, youtubeUrl, { timeout: 5000 }).then(handle => handle.jsonValue()).catch(() => null);
+            check(markdownYouTube?.src === youtubeUrl
+                && markdownYouTube?.title === 'YouTube video'
+                && markdownYouTube?.allow === 'accelerometer; encrypted-media; gyroscope; picture-in-picture',
+            `Markdown did not render the canonical YouTube iframe (state=${JSON.stringify(markdownYouTube)})`);
+
+            await editorPage.locator('#bpb-report-editor').getByRole('button', {
+                name: 'Rich text', exact: true
+            }).click();
+            const richYouTube = editorPage.locator(
+                '#bpb-report-editor .bpb-re-surface .bpb-re-youtube-resize iframe');
+            const richYouTubeReady = await editorPage.waitForFunction(expected => {
+                const iframe = document.querySelector(
+                    '#bpb-report-editor .bpb-re-surface .bpb-re-youtube-resize iframe');
+                return iframe?.getAttribute('src') === expected
+                    && iframe.getAttribute('title') === 'YouTube video';
+            }, youtubeUrl, { timeout: 5000 }).then(() => true).catch(() => false);
+            check(richYouTubeReady, 'the Rich YouTube iframe did not render its canonical player URL');
+            if (richYouTubeReady) {
+                // Player clicks belong to YouTube. The editor-owned corner
+                // affordance stays available without intercepting playback
+                // controls inside the frame.
+                const resizeHandle = editorPage.locator(
+                    '#bpb-report-editor .bpb-re-surface [aria-label="Resize YouTube video"]');
+                const handleReady = await editorPage.waitForFunction(() => {
+                    const handle = document.querySelector(
+                        '#bpb-report-editor .bpb-re-surface [aria-label="Resize YouTube video"]');
+                    if (!handle) return false;
+                    const style = getComputedStyle(handle);
+                    return style.opacity === '1' && style.pointerEvents === 'auto';
+                }, null, { timeout: 3000 }).then(() => true).catch(() => false);
+                check(handleReady, 'the Rich YouTube iframe did not expose its resize handle');
+                if (handleReady && process.env.BPB_VERIFY_EDITOR_YOUTUBE_SCREENSHOT) {
+                    await editorPage.locator('#bpb-report-editor').screenshot({
+                        path: process.env.BPB_VERIFY_EDITOR_YOUTUBE_SCREENSHOT
+                    });
+                }
+
+                const box = handleReady ? await resizeHandle.boundingBox() : null;
+                if (box) {
+                    const startX = box.x + box.width / 2;
+                    const startY = box.y + box.height / 2;
+                    await editorPage.mouse.move(startX, startY);
+                    await editorPage.mouse.down();
+                    await editorPage.mouse.move(startX - 80, startY - 45, { steps: 6 });
+                    await editorPage.mouse.up();
+                }
+
+                const pointerResize = await editorPage.waitForFunction(() => {
+                    const source = document.getElementById('JournalText').value;
+                    const width = Number(/\bwidth="(\d+)"/.exec(source)?.[1]);
+                    const height = Number(/\bheight="(\d+)"/.exec(source)?.[1]);
+                    return width < 320 && width >= 230 && height >= 125
+                        ? { width, height, source } : null;
+                }, null, { timeout: 5000 }).then(handle => handle.jsonValue()).catch(() => null);
+                const youtubeResizeState = pointerResize ? null : await editorPage.evaluate(() => {
+                    const iframe = document.querySelector('.bpb-re-youtube-resize iframe');
+                    const container = document.querySelector('.bpb-re-youtube-resize');
+                    return { source: document.getElementById('JournalText').value,
+                        style: iframe && { width: iframe.style.width, height: iframe.style.height },
+                        iframe: iframe?.getBoundingClientRect(),
+                        resizeState: container?.dataset.resizeState };
+                });
+                check(pointerResize && pointerResize.width >= 230 && pointerResize.width <= 250
+                    && pointerResize.height >= 125 && pointerResize.height <= 145,
+                `dragging the Rich YouTube iframe did not persist a proportional resize (state=${
+                    JSON.stringify(pointerResize || youtubeResizeState)})`);
+
+                if (pointerResize) {
+                    await resizeHandle.focus();
+                    await editorPage.keyboard.press('ArrowRight');
+                    const keyboardResize = await editorPage.waitForFunction(previous => {
+                        const source = document.getElementById('JournalText').value;
+                        const width = Number(/\bwidth="(\d+)"/.exec(source)?.[1]);
+                        return width === previous + 10 ? { width, source } : null;
+                    }, pointerResize.width, { timeout: 5000 }).then(handle => handle.jsonValue()).catch(() => null);
+                    check(keyboardResize?.width === pointerResize.width + 10,
+                        `the focused YouTube resize handle ignored ArrowRight (state=${JSON.stringify(keyboardResize)})`);
                 }
             }
 
@@ -954,9 +1058,9 @@ console.log('  - the Peak Dynamic Map preserves its native frame and shows an en
 console.log('  - clicking Peak 3D creates the isolated frame with a route-free summit focus');
 console.log('  - the trip-report editor mounts on the captured ascent form; real typing,');
 console.log('    Ctrl/Cmd+B, and the "1. " input rule sync bracket markup into JournalText');
-console.log('    with live toolbar states; selected Rich images and videos resize proportionally by');
+console.log('    with live toolbar states; selected Rich images/videos and YouTube players resize proportionally by');
 console.log('    pointer or keyboard; markdown mode shows a CodeMirror source beside a');
 console.log('    live preview that renders headings, quotes, tables, strike, code, rules,');
-console.log('    and Obsidian-style pipe-sized images and direct videos;');
+console.log('    and Obsidian-style pipe-sized images, direct videos, and YouTube embeds;');
 console.log('    hex colors survive Rich edits and Markdown preview; the toolbar inserts');
 console.log('    and grows tables; and a reloaded page offers and restores the draft');

@@ -387,7 +387,7 @@ test('link and media popovers toggle closed, share the overlay layer, and insert
     videoTool.click();
     assert.equal(videoBox.hidden, false);
     assert.equal(videoBox.parentElement, layer);
-    const videoSrc = ui.querySelector('[aria-label="Video URL (HTTPS)"]');
+    const videoSrc = ui.querySelector('[aria-label="Video file or YouTube URL"]');
     videoSrc.value = 'http://example.com/clip.mp4';
     ui.querySelector('.bpb-re-videobox .bpb-re-linkapply').click();
     assert.ok(videoSrc.classList.contains('bpb-re-invalid'), 'mixed-content video URLs must be rejected');
@@ -398,6 +398,28 @@ test('link and media popovers toggle closed, share the overlay layer, and insert
     assert.equal(doc.getElementById('JournalText').value,
         '[video src="https://media.example.com/clip.mp4"][/video]');
     assert.equal(ui.querySelector('.bpb-re-surface video')?.getAttribute('controls'), '');
+});
+
+test('the video tool inserts a canonical, resizable YouTube iframe', async () => {
+    const dom = await loadEditor();
+    const ui = await editorReady(dom);
+    const doc = dom.window.document;
+    const videoTool = ui.querySelector('[aria-label="Insert video"]');
+    const videoSrc = ui.querySelector('[aria-label="Video file or YouTube URL"]');
+
+    videoTool.click();
+    assert.match(ui.querySelector('.bpb-re-video-hint').textContent,
+        /direct HTTPS video file URL or a YouTube watch\/share URL/i);
+    videoSrc.value = 'https://youtu.be/aqz-KE-bpKQ?si=share-token';
+    ui.querySelector('.bpb-re-videobox .bpb-re-linkapply').click();
+
+    const source = '[iframe src="https://www.youtube.com/embed/aqz-KE-bpKQ" width="640" height="360"][/iframe]';
+    await waitFor(dom, () => doc.getElementById('JournalText').value === source);
+    const iframe = ui.querySelector('.bpb-re-youtube-resize iframe');
+    assert.equal(iframe?.getAttribute('src'), 'https://www.youtube.com/embed/aqz-KE-bpKQ');
+    assert.equal(iframe?.getAttribute('title'), 'YouTube video');
+    assert.equal(iframe?.getAttribute('allowfullscreen'), '');
+    assert.equal(ui.querySelector('[aria-label="Resize YouTube video"]')?.tagName, 'BUTTON');
 });
 
 test('a Rich video resize stays proportional and persists its dimensions', async () => {
@@ -443,6 +465,46 @@ test('a Rich video resize stays proportional and persists its dimensions', async
     doc.getElementById('GPXPreview').click();
     assert.equal(doc.getElementById('JournalText').value, source,
         'the grouped video resize interaction should be undoable');
+});
+
+test('a Rich YouTube iframe resize stays proportional and persists its dimensions', async () => {
+    const source = '[iframe src="https://www.youtube.com/embed/aqz-KE-bpKQ" width="800" height="450"][/iframe]';
+    const dom = await loadEditor({ report: source });
+    const ui = await editorReady(dom);
+    const doc = dom.window.document;
+    const iframe = ui.querySelector('.bpb-re-youtube-resize iframe');
+    const handle = ui.querySelector('[aria-label="Resize YouTube video"]');
+
+    assert.ok(iframe, 'Rich YouTube embeds should use the resizable node view');
+    assert.equal(handle?.tagName, 'BUTTON');
+    assert.equal(handle?.type, 'button', 'the resize handle must never submit the ascent form');
+    assert.equal(handle?.getAttribute('aria-keyshortcuts'), 'ArrowLeft ArrowRight');
+
+    Object.defineProperties(iframe, {
+        offsetWidth: { configurable: true, get: () => Number.parseFloat(iframe.style.width) || 800 },
+        offsetHeight: { configurable: true, get: () => Number.parseFloat(iframe.style.height) || 450 }
+    });
+
+    handle.dispatchEvent(new dom.window.MouseEvent('mousedown', {
+        bubbles: true, clientX: 800, clientY: 450, button: 0
+    }));
+    doc.dispatchEvent(new dom.window.MouseEvent('mousemove', {
+        bubbles: true, clientX: 600, clientY: 338, buttons: 1
+    }));
+    doc.dispatchEvent(new dom.window.MouseEvent('mouseup', {
+        bubbles: true, clientX: 600, clientY: 338, button: 0
+    }));
+
+    const resized = '[iframe src="https://www.youtube.com/embed/aqz-KE-bpKQ" width="600" height="338"][/iframe]';
+    await waitFor(dom, () => doc.getElementById('JournalText').value === resized);
+    assert.equal(iframe.style.width, '600px');
+    assert.equal(iframe.style.height, '338px');
+
+    handle.dispatchEvent(new dom.window.KeyboardEvent('keydown', {
+        bubbles: true, key: 'ArrowLeft', shiftKey: true
+    }));
+    const keyboardResized = '[iframe src="https://www.youtube.com/embed/aqz-KE-bpKQ" width="550" height="310"][/iframe]';
+    await waitFor(dom, () => doc.getElementById('JournalText').value === keyboardResized);
 });
 
 test('a Rich image resize stays proportional and persists its dimensions', async () => {

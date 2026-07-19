@@ -167,6 +167,30 @@ test('direct Markdown video links render with native controls and preserve the s
     assert.doesNotMatch(Markup.markdownToPreviewHtml('![](http://example.com/clip.mp4)'), /<video\b/i);
 });
 
+test('YouTube Markdown links become the one permitted iframe embed', () => {
+    const id = 'aqz-KE-bpKQ';
+    const embed = `https://www.youtube.com/embed/${id}`;
+    const source = `![YouTube|640x360](https://youtu.be/${id}?si=share-token)`;
+    const bracket = `[iframe src="${embed}" width="640" height="360"][/iframe]`;
+    const preview = Markup.markdownToPreviewHtml(source);
+
+    assert.equal(Markup.sanitizeYouTubeEmbedSrc(`https://www.youtube.com/watch?v=${id}&autoplay=1`), embed);
+    assert.equal(Markup.sanitizeYouTubeEmbedSrc(`https://www.youtube.com/shorts/${id}`), embed);
+    assert.equal(Markup.sanitizeYouTubeEmbedSrc(`https://example.com/embed/${id}`), null);
+    assert.equal(Markup.sanitizeYouTubeEmbedSrc(`https://www.youtube-nocookie.com/embed/${id}`), null);
+    assert.equal(Markup.markdownToBracket(source), bracket);
+    assert.match(preview,
+        new RegExp(`<iframe src="${embed}" width="640" height="360" title="YouTube video" loading="lazy" referrerpolicy="no-referrer"`));
+    assert.match(preview, /allow="accelerometer; encrypted-media; gyroscope; picture-in-picture" allowfullscreen><\/iframe>/);
+    assert.doesNotMatch(preview, /autoplay/i);
+    assert.equal(Markup.bracketToMarkdown(bracket),
+        `![YouTube|640x360](https://www.youtube.com/watch?v=${id})`);
+    assert.equal(Markup.markdownToBracket(bracket), bracket,
+        'the explicit bracket extension must retain the canonical YouTube embed');
+    assert.doesNotMatch(Markup.bracketToPreviewHtml(
+        `[iframe src="https://example.com/embed/${id}"][/iframe]`), /<iframe\b/i);
+});
+
 test('Obsidian-style image size suffixes become bounded dimensions, not alt text', () => {
     const widthOnly = '![Topo|500](https://example.com/topo.jpg)';
     const widthAndHeight = '![Route photo|500x600](https://example.com/route.jpg)';

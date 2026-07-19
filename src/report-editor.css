@@ -449,30 +449,36 @@
 }
 
 .bpb-re-surface video,
-.bpb-re-preview video {
+.bpb-re-preview video,
+.bpb-re-surface iframe,
+.bpb-re-preview iframe {
     display: inline-block;
     max-width: 100%;
     vertical-align: bottom;
 }
 
 .bpb-re-surface .bpb-re-image-resize,
-.bpb-re-surface .bpb-re-video-resize {
+.bpb-re-surface .bpb-re-video-resize,
+.bpb-re-surface .bpb-re-youtube-resize {
     max-width: 100%;
     vertical-align: bottom;
 }
 
 .bpb-re-surface .bpb-re-image-resize-frame,
-.bpb-re-surface .bpb-re-video-resize-frame {
+.bpb-re-surface .bpb-re-video-resize-frame,
+.bpb-re-surface .bpb-re-youtube-resize-frame {
     max-width: 100%;
 }
 
 .bpb-re-surface .bpb-re-image-resize img,
-.bpb-re-surface .bpb-re-video-resize video {
+.bpb-re-surface .bpb-re-video-resize video,
+.bpb-re-surface .bpb-re-youtube-resize iframe {
     display: block;
 }
 
 .bpb-re-surface .bpb-re-image-resize-handle,
-.bpb-re-surface .bpb-re-video-resize-handle {
+.bpb-re-surface .bpb-re-video-resize-handle,
+.bpb-re-surface .bpb-re-youtube-resize-handle {
     position: absolute;
     right: 0;
     bottom: 0;
@@ -492,31 +498,52 @@
     transition: opacity 100ms ease;
 }
 
+/* An iframe receives pointer input inside its embedded document, so it cannot
+ * reliably select the surrounding editor node. Keep this one editor-owned
+ * corner affordance available without intercepting the YouTube player. */
+.bpb-re-surface .bpb-re-youtube-resize-handle {
+    z-index: 1;
+    opacity: 1;
+    pointer-events: auto;
+}
+
+/* Keep document-level drag events out of the child browsing context until
+ * the resize commits; normal player interaction resumes immediately after. */
+.bpb-re-surface .bpb-re-youtube-resize[data-resize-state="true"] iframe {
+    pointer-events: none;
+}
+
 .bpb-re-surface .bpb-re-image-resize.ProseMirror-selectednode .bpb-re-image-resize-handle,
 .bpb-re-surface .bpb-re-image-resize[data-resize-state="true"] .bpb-re-image-resize-handle,
 .bpb-re-surface .bpb-re-image-resize-handle:focus-visible,
 .bpb-re-surface .bpb-re-video-resize.ProseMirror-selectednode .bpb-re-video-resize-handle,
 .bpb-re-surface .bpb-re-video-resize[data-resize-state="true"] .bpb-re-video-resize-handle,
-.bpb-re-surface .bpb-re-video-resize-handle:focus-visible {
+.bpb-re-surface .bpb-re-video-resize-handle:focus-visible,
+.bpb-re-surface .bpb-re-youtube-resize.ProseMirror-selectednode .bpb-re-youtube-resize-handle,
+.bpb-re-surface .bpb-re-youtube-resize[data-resize-state="true"] .bpb-re-youtube-resize-handle,
+.bpb-re-surface .bpb-re-youtube-resize-handle:focus-visible {
     opacity: 1;
     pointer-events: auto;
 }
 
 .bpb-re-surface .bpb-re-image-resize-handle:focus-visible,
-.bpb-re-surface .bpb-re-video-resize-handle:focus-visible {
+.bpb-re-surface .bpb-re-video-resize-handle:focus-visible,
+.bpb-re-surface .bpb-re-youtube-resize-handle:focus-visible {
     outline: 2px solid #3b76c4;
     outline-offset: 2px;
 }
 
 .bpb-re-surface .bpb-re-image-resizing,
-.bpb-re-surface .bpb-re-video-resizing {
+.bpb-re-surface .bpb-re-video-resizing,
+.bpb-re-surface .bpb-re-youtube-resizing {
     cursor: nwse-resize;
     user-select: none;
 }
 
 @media (prefers-reduced-motion: reduce) {
     .bpb-re-surface .bpb-re-image-resize-handle,
-    .bpb-re-surface .bpb-re-video-resize-handle {
+    .bpb-re-surface .bpb-re-video-resize-handle,
+    .bpb-re-surface .bpb-re-youtube-resize-handle {
         transition: none;
     }
 }
