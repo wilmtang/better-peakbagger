@@ -38,7 +38,10 @@ UX polish; nothing here is an exploitable security hole.
 - **U4 — Done.** Draft notifications now use stylesheet-owned semantic classes,
   follow OS and explicit extension themes, expose CSS focus states, and respect
   reduced motion.
-- **U3, U5–U7 — Pending.**
+- **U5 — Done.** The device code is a labelled copy control with selection
+  fallback, and the approval state shows a live expiry countdown that becomes
+  an actionable expired-flow error.
+- **U3, U6–U7 — Pending.**
 
 ---
 

@@ -31,6 +31,12 @@ export function initGithubBackup({ extensionApi, flash, save }) {
     if (!enableEl || !detailEl || !panelEl) return { populate() {} };
 
     let pollTimer = null;
+    let countdownTimer = null;
+    const stopPollTimer = () => { if (pollTimer) { clearTimeout(pollTimer); pollTimer = null; } };
+    const stopTimers = () => {
+        stopPollTimer();
+        if (countdownTimer) { clearTimeout(countdownTimer); countdownTimer = null; }
+    };
 
     const send = message => new Promise(resolve => {
         try {
@@ -68,7 +74,22 @@ export function initGithubBackup({ extensionApi, flash, save }) {
     );
 
     const renderConnecting = code => {
-        const codeBox = el('div', { class: 'github-code', 'aria-label': 'Your device code' }, el('span', { text: code.userCode || '········' }));
+        const codeValue = el('span', { class: 'github-code-value', text: code.userCode || '········' });
+        const copyLabel = el('span', { class: 'github-code-copy', text: 'Copy' });
+        const codeBox = el('button', {
+            type: 'button', class: 'github-code', 'aria-label': `Copy device code ${code.userCode || ''}`.trim(),
+            onclick: async () => {
+                try {
+                    await navigator.clipboard.writeText(code.userCode || '');
+                    copyLabel.textContent = 'Copied';
+                } catch {
+                    const selection = window.getSelection();
+                    if (selection) { selection.removeAllRanges(); const range = document.createRange(); range.selectNodeContents(codeValue); selection.addRange(range); }
+                    copyLabel.textContent = 'Select and copy';
+                }
+            },
+        }, [codeValue, copyLabel]);
+        const hint = el('p', { class: 'github-hint' });
         render(
             el('p', { class: 'github-line', text: 'Enter this code on GitHub to authorize Better Peakbagger:' }),
             codeBox,
@@ -76,8 +97,18 @@ export function initGithubBackup({ extensionApi, flash, save }) {
                 button('Open github.com/login/device', { primary: true, onClick: () => openTab(code.verificationUriComplete || code.verificationUri || 'https://github.com/login/device') }),
                 button('Cancel', { onClick: cancelConnect }),
             ]),
-            el('p', { class: 'github-hint', text: 'Waiting for you to approve on GitHub…' }),
+            hint,
         );
+        const deadline = (Number(code.startedAt) || Date.now()) + (Number(code.expiresIn) || 900) * 1000;
+        const updateCountdown = () => {
+            const remaining = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
+            if (remaining <= 0) { renderError('expired'); return; }
+            const minutes = Math.floor(remaining / 60);
+            const seconds = String(remaining % 60).padStart(2, '0');
+            hint.textContent = `Waiting for approval · Expires in ${minutes}:${seconds}`;
+            countdownTimer = setTimeout(updateCountdown, 1000);
+        };
+        updateCountdown();
     };
 
     const renderChooseRepo = (status, discovery) => {
@@ -129,17 +160,18 @@ export function initGithubBackup({ extensionApi, flash, save }) {
         );
     };
 
-    const renderError = (code, retry) => render(
-        el('p', { class: 'github-line github-error', text: errorText(code) }),
-        el('div', { class: 'github-actions' }, button('Try again', { primary: true, onClick: retry || connect })),
-    );
+    const renderError = (code, retry) => {
+        stopTimers();
+        render(
+            el('p', { class: 'github-line github-error', text: errorText(code) }),
+            el('div', { class: 'github-actions' }, button('Try again', { primary: true, onClick: retry || connect })),
+        );
+    };
 
     // ---- flow --------------------------------------------------------------
 
-    const stopPolling = () => { if (pollTimer) { clearTimeout(pollTimer); pollTimer = null; } };
-
     const connect = async () => {
-        stopPolling();
+        stopTimers();
         render(el('p', { class: 'github-line', text: 'Contacting GitHub…' }));
         const res = await send({ type: 'GITHUB_AUTH_BEGIN' });
         if (!res || res.phase === 'error') return renderError(res && res.code);
@@ -148,13 +180,13 @@ export function initGithubBackup({ extensionApi, flash, save }) {
     };
 
     const cancelConnect = async () => {
-        stopPolling();
+        stopTimers();
         await send({ type: 'GITHUB_AUTH_DISCONNECT' });
         renderDisconnected();
     };
 
     const pollAuth = () => {
-        stopPolling();
+        stopPollTimer();
         pollTimer = setTimeout(async () => {
             const state = await send({ type: 'GITHUB_AUTH_STATE' });
             if (!state) return pollAuth();
@@ -167,7 +199,7 @@ export function initGithubBackup({ extensionApi, flash, save }) {
     };
 
     const afterAuthorized = async () => {
-        stopPolling();
+        stopTimers();
         const status = await send({ type: 'GITHUB_AUTH_STATUS' });
         if (status && status.connected) { flash('GitHub connected'); return renderConnected(status); }
         const discovery = await send({ type: 'GITHUB_AUTH_DISCOVER' });
@@ -193,7 +225,7 @@ export function initGithubBackup({ extensionApi, flash, save }) {
     };
 
     const disconnect = async () => {
-        stopPolling();
+        stopTimers();
         const status = await send({ type: 'GITHUB_AUTH_DISCONNECT' });
         flash('GitHub disconnected');
         if (status) return renderDisconnected();
@@ -203,7 +235,7 @@ export function initGithubBackup({ extensionApi, flash, save }) {
     // Show the connection state for the current stored status.
     const renderFromStatus = async () => {
         const status = await send({ type: 'GITHUB_AUTH_STATUS' });
-        if (!status || !status.enabled) { detailEl.hidden = true; stopPolling(); return; }
+        if (!status || !status.enabled) { detailEl.hidden = true; stopTimers(); return; }
         detailEl.hidden = false;
         if (status.connected) return renderConnected(status);
         if (status.hasToken) {
@@ -231,7 +263,7 @@ export function initGithubBackup({ extensionApi, flash, save }) {
             await save({ enableGithubBackup: true });
             await renderFromStatus();
         } else {
-            stopPolling();
+            stopTimers();
             await save({ enableGithubBackup: false, autoGithubBackup: false });
             detailEl.hidden = true;
         }

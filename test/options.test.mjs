@@ -460,6 +460,43 @@ test('a lost device flow stops polling and offers a retry', async () => {
         .some(button => button.textContent === 'Try again'));
 });
 
+test('the device code is copyable and shows its remaining lifetime', async () => {
+    const startedAt = Date.now();
+    const dom = await loadOptions({ enableGithubBackup: true }, {
+        prepareChrome: chrome => {
+            chrome.permissions = { request: async () => true, contains: async () => true, remove: async () => true };
+            chrome.runtime.sendMessage = (message, callback) => {
+                let reply;
+                if (message.type === 'GITHUB_AUTH_STATUS') reply = { enabled: true, connected: false, hasToken: false };
+                else if (message.type === 'GITHUB_AUTH_BEGIN') reply = {
+                    phase: 'polling', userCode: 'ABCD-EFGH', verificationUri: 'https://github.com/login/device',
+                    expiresIn: 125, startedAt,
+                };
+                else reply = { phase: 'polling' };
+                if (typeof callback === 'function') Promise.resolve().then(() => callback(reply));
+                return Promise.resolve(reply);
+            };
+        },
+    });
+    let copied = '';
+    Object.defineProperty(dom.window.navigator, 'clipboard', {
+        configurable: true,
+        value: { writeText: async value => { copied = value; } },
+    });
+
+    Array.from(el(dom, 'github-panel').querySelectorAll('button'))
+        .find(button => button.textContent === 'Connect GitHub').click();
+    await waitFor(dom, () => el(dom, 'github-panel').querySelector('.github-code'));
+    const codeButton = el(dom, 'github-panel').querySelector('.github-code');
+    assert.match(codeButton.getAttribute('aria-label'), /Copy device code ABCD-EFGH/);
+    assert.match(el(dom, 'github-panel').textContent, /Expires in 2:0[45]/);
+
+    codeButton.click();
+    await waitFor(dom, () => /Copied/.test(codeButton.textContent));
+    assert.equal(copied, 'ABCD-EFGH');
+    dom.window.close();
+});
+
 test('a connected status renders the account and repository', async () => {
     const dom = await loadOptions({ enableGithubBackup: true }, {
         prepareChrome: withGithubBackground({
