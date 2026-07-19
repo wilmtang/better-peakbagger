@@ -94,6 +94,18 @@ textarea one click away and is the safe choice for an existing report that uses
 markup outside the editor's supported syntax. See the
 [supported syntax and safety contract](https://github.com/wilmtang/better-peakbagger/blob/main/docs/trip-report-editor.md).
 
+### Back up ascents to GitHub
+
+Keep your own copy of every ascent in a GitHub repository you control. Turn on
+GitHub backup in Settings and connect once — you sign in with a short device
+code and pick a single repository on GitHub's own page, so no tokens are ever
+typed or pasted. After you save an ascent, a **Back up to GitHub** button
+appears on the ascent page; one click commits a folder with the trip report as
+real Markdown, every field you entered as JSON, and Peakbagger's stored GPS
+track. Re-saving an ascent re-syncs the same folder. The backup only ever
+writes to your chosen repository, never touches your Peakbagger save, and can
+be turned off or disconnected at any time.
+
 ### Check summit conditions and recent imagery
 
 Peak pages link directly to the summit's weather detail on Windy and the same
@@ -117,7 +129,9 @@ developer data server. Raw Garmin or Strava GPX is processed on the activity
 page and is never stored or sent to the extension developer. Peakbagger receives
 small corridor boxes for summit discovery and, only after you choose **Open
 drafts**, a privacy-reduced track for GPS Preview. The optional 3D view requests
-map tiles only after you choose 3D and accept the first-use confirmation.
+map tiles only after you choose 3D and accept the first-use confirmation. GitHub
+backup is off until you enable it, sends an ascent only to the repository you
+choose, and keeps its access token in local extension storage, never synced.
 
 See [Privacy and data handling](PRIVACY.md) for the complete permissions,
 retention, provider, and field-level disclosure.

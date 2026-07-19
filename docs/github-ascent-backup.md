@@ -344,9 +344,17 @@ begins, per the repository commit discipline.
    push → commit payload — and pins the fail-closed gates and snapshot
    consumption. The fixture selectors are confirmed on live Peakbagger at
    step 11.
-9. **Manifest + docs.** Both `optional_host_permissions`, PRIVACY.md section,
-   README feature blurb, Firefox data-collection review. Run
-   `npm run verify:extension` (manifest changed).
+9. **Manifest + docs.** **Done.** `optional_host_permissions` for `github.com`
+   and `api.github.com` are in `manifest.json` (added with the setup UI).
+   PRIVACY.md gains a "GitHub backup (optional)" section, the third-party list
+   gains GitHub, the permissions list gains the optional GitHub host access and
+   the local-only token note, and the `locationInfo` disclosure now covers the
+   stored track written to the user's repo. README gains a feature section and
+   a privacy line. Firefox data-collection review: `locationInfo` already
+   declares the only sensitive category the backup transmits (the stored GPS
+   track); the remaining payload is the user's own ascent fields and trip
+   report sent to the user's own repository on an explicit action, so no
+   additional `data_collection_permissions` category is added.
 10. **Auto-backup toggle.** Separate opt-in setting performing the same push
     after save-detection, same visible result states.
 11. **Release verification.** `npm test`, `npm run verify:extension`, one
