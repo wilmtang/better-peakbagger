@@ -10,6 +10,7 @@ import { captureCore as Core } from './capture-core.js';
 import { providerFromUrl } from './provider-url.js';
 import { settings as Settings } from './settings.js';
 import { githubAuth as GithubAuth } from './github-auth.js';
+import { githubClient as GithubClient } from './github-client.js';
 
 (() => {
     'use strict';
@@ -843,6 +844,100 @@ import { githubAuth as GithubAuth } from './github-auth.js';
         return { ok: true };
     };
 
+    // Whether the saved ascent page should offer a backup: enabled and connected.
+    // Content-script safe — it exposes no token, only the flags and repo name.
+    const githubBackupStatus = async sender => {
+        if (!isPeakbaggerSender(sender)) return { enabled: false, connected: false };
+        const settings = await Settings.get();
+        const auth = await GithubAuth.authStore.read();
+        const connected = !!(auth && auth.token && auth.repo && auth.repo.owner && auth.repo.name);
+        return {
+            enabled: !!settings.enableGithubBackup,
+            connected,
+            repo: connected ? { fullName: auth.repo.fullName || `${auth.repo.owner}/${auth.repo.name}` } : null,
+        };
+    };
+
+    // Merge the pending save-time snapshot with the saved ascent page's fields.
+    // The saved page is authoritative for the identity and the fields it renders
+    // (aid, date, suffix, peak name/elevation/location); the snapshot supplies
+    // the fields the page does not (the entered numbers) and the resolved report.
+    const mergeBackupSnapshot = (snap, page = {}) => {
+        const p = page && typeof page === 'object' ? page : {};
+        const base = snap && typeof snap === 'object' ? snap : null;
+        if (!base && !p.ascent && !p.peak) return null;
+        const ascent = { ...(base ? base.ascent : {}) };
+        const pAscent = p.ascent || {};
+        if (pAscent.id != null) ascent.id = pAscent.id;
+        if (pAscent.date) ascent.date = pAscent.date;
+        if (typeof pAscent.suffix === 'string' && pAscent.suffix) ascent.suffix = pAscent.suffix;
+        const peak = { ...(base && base.peak ? base.peak : {}) };
+        for (const [key, value] of Object.entries(p.peak || {})) {
+            if (value != null && value !== '') peak[key] = value;
+        }
+        const snapMarkdown = base && base.report && typeof base.report.markdown === 'string' ? base.report.markdown : '';
+        const pageMarkdown = p.report && typeof p.report.markdown === 'string' ? p.report.markdown : '';
+        const report = { markdown: snapMarkdown || pageMarkdown };
+        return { ascent, peak, report, backup: { ...(base ? base.backup : {}) } };
+    };
+
+    // Find the pending snapshot for a saved ascent page. A new ascent had no aid
+    // when it was snapshotted, so match by ascent id first (re-saves/edits), then
+    // by peak+date, then by peak alone (most recent) when the page date could not
+    // be parsed. Returns { key, record } or null.
+    const findSnapshotForPage = async page => {
+        const snapshots = await readMap(SNAPSHOTS_KEY);
+        const entries = Object.entries(snapshots)
+            .map(([key, record]) => ({ key, record }))
+            .sort((a, b) => (b.record.savedAt || 0) - (a.record.savedAt || 0));
+        const idOf = e => e.record.identity || {};
+        const ascentId = page && page.ascent ? page.ascent.id : null;
+        const peakId = page && page.peak ? page.peak.id : null;
+        const date = page && page.ascent ? page.ascent.date : null;
+        let match = ascentId != null ? entries.find(e => idOf(e).ascentId === ascentId) : null;
+        if (!match && peakId != null && date) match = entries.find(e => idOf(e).peakId === peakId && idOf(e).date === date);
+        if (!match && peakId != null) match = entries.find(e => idOf(e).peakId === peakId);
+        return match || null;
+    };
+
+    // Push one saved ascent to the connected repository as a single commit. The
+    // token is read here and never leaves the worker. Fails closed when the
+    // feature is off, disconnected, or the sender is not a Peakbagger tab.
+    const backupAscent = async (message, sender) => {
+        if (!isPeakbaggerSender(sender)) return { ok: false, error: { code: 'forbidden' } };
+        const settings = await Settings.get();
+        if (!settings.enableGithubBackup) return { ok: false, error: { code: 'disabled' } };
+        const auth = await GithubAuth.authStore.read();
+        if (!auth || !auth.token) return { ok: false, error: { code: 'not-connected' } };
+        if (!auth.repo || !auth.repo.owner || !auth.repo.name) return { ok: false, error: { code: 'no-repo' } };
+
+        const found = await findSnapshotForPage(message.page);
+        const snapshot = mergeBackupSnapshot(found && found.record.snapshot, message.page);
+        if (!snapshot || snapshot.ascent.id == null) return { ok: false, error: { code: 'no-data' } };
+        snapshot.backup = {
+            ...(snapshot.backup || {}),
+            syncedAt: new Date().toISOString(),
+            extensionVersion: ext.runtime.getManifest ? ext.runtime.getManifest().version : (snapshot.backup && snapshot.backup.extensionVersion) || '',
+        };
+
+        const client = GithubClient.createGithubClient({
+            fetch: netFetch,
+            token: auth.token,
+            owner: auth.repo.owner,
+            repo: auth.repo.name,
+            branch: auth.repo.branch || undefined,
+        });
+        try {
+            const result = await client.pushAscentBackup(snapshot, { gpx: message.gpx });
+            // The snapshot has served its purpose; drop it so a later view of the
+            // same page does not re-push from stale data.
+            if (found) await mutateMap(SNAPSHOTS_KEY, m => { delete m[found.key]; });
+            return { ok: true, result };
+        } catch (error) {
+            return { ok: false, error: { code: error.code || 'unknown', message: error.message || 'The backup failed.' } };
+        }
+    };
+
     ext.runtime.onMessage.addListener((message, sender, sendResponse) => {
         const run = async () => {
             await cleanup();
@@ -860,6 +955,8 @@ import { githubAuth as GithubAuth } from './github-auth.js';
             case 'GITHUB_AUTH_SELECT_REPO': return githubSelectRepo(message);
             case 'GITHUB_AUTH_DISCONNECT': return githubDisconnect();
             case 'GITHUB_BACKUP_SNAPSHOT': return storeBackupSnapshot(message, sender);
+            case 'GITHUB_BACKUP_STATUS': return githubBackupStatus(sender);
+            case 'GITHUB_BACKUP_ASCENT': return backupAscent(message, sender);
             case 'CAPTURE_START': return startCapture(message);
             case 'CAPTURE_STATUS': {
                 const jobs = await readMap(JOBS_KEY);

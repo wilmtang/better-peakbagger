@@ -319,15 +319,31 @@ begins, per the repository commit discipline.
    storage.session (Peakbagger-sender + feature gated, identity-keyed, bounded,
    30-minute expiry via the existing cleanup alarm).
    `test/ascent-snapshot.test.mjs` pins the mapping against the masked fixture.
-7. **Ascent-page surface.** Content-script piece on `ascent.aspx` (isolated
-   world): ownership check, snapshot match, GPX link fetch, the Back up
-   affordance with success/error/retry states, message to background. New
-   `GITHUB_BACKUP_ASCENT` handler in `src/background.js` with sender/identity
-   validation mirroring the draft handlers.
-8. **Fixture + integration tests.** Capture a PII-masked saved-ascent
-   (`ascent.aspx`) fixture (none exists yet; follow the fixtures workflow),
-   then test the end-to-end path in jsdom with stubbed GitHub fetch:
-   snapshot → surface → background → commit payload.
+7. **Ascent-page surface.** **Done.** `src/ascent-page.js` reads the saved
+   ascent (aid, ownership via the edit link — fail closed, peak, GPX link, and a
+   DOM→Markdown report fallback); `src/ascent-backup.js` (isolated world on
+   ascent.aspx, styled in `src/ascent-backup.css`) shows the dismissible **Back
+   up to GitHub** affordance only for the owner when enabled and connected,
+   fetches Peakbagger's stored track in the page session, and messages the
+   worker with success/error/retry states. The `GITHUB_BACKUP_ASCENT` handler
+   in `src/background.js` (Peakbagger-sender gated) matches the pending snapshot,
+   merges the saved-page fields over it (page wins on identity and peak
+   metadata; the snapshot supplies the entered fields and the report), stamps
+   provenance, pushes through `github-client`, drops the used snapshot, and
+   returns the commit URL or a typed error. `GITHUB_BACKUP_STATUS` gives the
+   surface a token-free enabled/connected check. *Refinement discovered here:
+   the bracket→Markdown conversion needs a DOM, which the service worker lacks,
+   so it runs in the content script and `github-backup.js` now consumes a
+   resolved `report.markdown` — keeping the pure module DOM-free.*
+8. **Fixture + integration tests.** **Done.** A masked, representative
+   `ascent.aspx` fixture (`test/fixtures/pages/climber-ascent.html`, fake ids)
+   drives `test/ascent-page.test.mjs` (parser + ownership) and
+   `test/ascent-backup.test.mjs` (the built surface: gates, GPX fetch, message
+   shape, success/error). `test/github-backup-integration.test.mjs` runs the
+   real built worker end-to-end — snapshot → status → merge → scripted GitHub
+   push → commit payload — and pins the fail-closed gates and snapshot
+   consumption. The fixture selectors are confirmed on live Peakbagger at
+   step 11.
 9. **Manifest + docs.** Both `optional_host_permissions`, PRIVACY.md section,
    README feature blurb, Firefox data-collection review. Run
    `npm run verify:extension` (manifest changed).

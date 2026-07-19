@@ -36,10 +36,11 @@ export function resolvePageSource(name) {
 // One record per bundle. `out` is the dist-relative output path; `sources` are
 // its explicit roots, ordered where sibling side effects depend on that order.
 export const ENTRIES = [
-    { out: 'background.js', sources: ['gpx-metrics.js', 'capture-core.js', 'provider-url.js', 'settings-schema.js', 'settings.js', 'github-auth.js', 'background.js'] },
+    { out: 'background.js', sources: ['gpx-metrics.js', 'capture-core.js', 'provider-url.js', 'settings-schema.js', 'settings.js', 'github-auth.js', 'github-client.js', 'background.js'] },
     { out: 'provider-page.js', sources: ['provider-url.js', 'provider-page.js'] },
 
     { out: 'content/ascent-editor.js', sources: ['ascent-draft.js', 'report-markup.js', 'report-editor.js'] },
+    { out: 'content/ascent-backup.js', sources: ['report-markup.js', 'ascent-page.js', 'ascent-backup.js'] },
     { out: 'content/theme.js', sources: ['settings-schema.js', 'settings.js', 'site-dark-css.js', 'theme.js'] },
     { out: 'content/ascent-bridge.js', sources: ['settings-schema.js', 'settings.js', 'bridge.js'] },
     { out: 'content/gpx-analyzer.js', sources: ['gpx-metrics.js', 'terrain-basemap.js', 'terrain-camera.js', 'peak-markers.js', 'settings-schema.js', 'gpx-analyzer.js'] },
@@ -73,6 +74,7 @@ export const COPY_FILES = [
     ['README.md', 'README.md'],
     ['manifest.json', 'manifest.json'],
     ['src/report-editor.css', 'css/report-editor.css'],
+    ['src/ascent-backup.css', 'css/ascent-backup.css'],
     ['src/terrain-map.css', 'css/terrain-map.css'],
     ['src/peak-links.css', 'css/peak-links.css'],
     ['terrain/terrain.html', 'terrain/terrain.html'],

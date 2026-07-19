@@ -87,6 +87,22 @@
         "*://peakbagger.com/climber/ascent.aspx*",
         "*://peakbagger.com/climber/Ascent.aspx*"
       ],
+      "css": [
+        "css/ascent-backup.css"
+      ],
+      "js": [
+        "content/ascent-backup.js"
+      ],
+      "run_at": "document_end",
+      "all_frames": false
+    },
+    {
+      "matches": [
+        "*://www.peakbagger.com/climber/ascent.aspx*",
+        "*://www.peakbagger.com/climber/Ascent.aspx*",
+        "*://peakbagger.com/climber/ascent.aspx*",
+        "*://peakbagger.com/climber/Ascent.aspx*"
+      ],
       "js": [
         "vendor/chart.umd.min.js",
         "vendor/tz-lookup.js",

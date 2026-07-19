@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<!-- Masked, representative saved-ascent page (ascent.aspx). Hand-built to the
+     structure the GitHub backup surface reads: the owner's edit link, the peak
+     link, the ascent date, the stored GPS-track download link, and a trip
+     report. Identifiers are fake (climber 900001, the masked-account id). The
+     live selectors are confirmed against real Peakbagger before release. -->
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>Mount Rainier Ascent Info - Peakbagger.com</title>
+</head>
+<body>
+    <div id="page">
+        <div id="nav">
+            <a href="/climber/ClimbListC.aspx?cid=900001">Climber 900001</a>
+        </div>
+
+        <h1><a href="/peak.aspx?pid=2296">Mount Rainier</a></h1>
+        <div class="peakinfo">Elevation: 14,411 ft / 4,392 m &middot; Washington, United States</div>
+
+        <table class="gray" id="ascentinfo">
+            <tr><td>Ascent Date:</td><td>Jul 12, 2026</td></tr>
+            <tr><td>Ascent Type:</td><td>Successful Summit</td></tr>
+            <tr><td>Route:</td><td>Disappointment Cleaver</td></tr>
+            <tr>
+                <td>Trip Report</td>
+                <td id="reportcell">
+                    <b>Great climb</b> under blue skies. Turned around a
+                    <i>rope team</i> near the summit.
+                    <ul><li>Ice axe</li><li>Crampons</li></ul>
+                    See the <a href="https://peakbagger.com/peak.aspx?pid=2296">peak page</a>.
+                </td>
+            </tr>
+        </table>
+
+        <div id="gpxlinks">
+            <a href="/climber/GetAscentGPX.aspx?aid=7654321">Download this GPS track</a>
+        </div>
+
+        <div id="owneractions">
+            <a href="/climber/ascentedit.aspx?aid=7654321">Edit This Ascent</a>
+            <a href="/climber/ascentadd.aspx?pid=2296">Add Another Ascent</a>
+        </div>
+    </div>
+</body>
+</html>
