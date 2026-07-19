@@ -231,6 +231,9 @@ test('Obsidian-style image size suffixes become bounded dimensions, not alt text
     assert.equal(Markup.markdownToBracket('![Literal|1601](https://example.com/a.jpg)'),
         '[img src="https://example.com/a.jpg" alt="Literal|1601"]',
         'an out-of-bounds suffix must remain ordinary alt text');
+    assert.equal(Markup.markdownToBracket('![Literal|x360](https://example.com/a.jpg)'),
+        '[img src="https://example.com/a.jpg" alt="Literal|x360"]',
+        'the height-only recovery syntax must remain specific to video and YouTube');
 });
 
 // ---- bracket import ---------------------------------------------------------

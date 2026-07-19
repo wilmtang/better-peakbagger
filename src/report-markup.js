@@ -582,14 +582,24 @@
     // bracket markup; otherwise it remains ordinary alt text.
     const markdownImageAttributes = token => {
         const rawAlt = String(token.text || '');
-        const sized = /^(.*)\|(?:(\d+)(?:x(\d+))?|x(\d+))$/i.exec(rawAlt);
+        const sized = /^(.*)\|(\d+)(?:x(\d+))?$/i.exec(rawAlt);
         if (!sized) return { alt: rawAlt, width: null, height: null };
         const width = sanitizeDimension(sized[2]);
-        const rawHeight = sized[3] ?? sized[4];
-        const height = rawHeight === undefined ? null : sanitizeDimension(rawHeight);
-        const valid = sized[4] !== undefined ? !!height : width && (sized[3] === undefined || height);
-        return valid
+        const height = sized[3] === undefined ? null : sanitizeDimension(sized[3]);
+        return width && (sized[3] === undefined || height)
             ? { alt: sized[1], width, height }
+            : { alt: rawAlt, width: null, height: null };
+    };
+
+    // `|xheight` exists only to preserve already-supported height-only video
+    // and iframe markup. Do not reinterpret an ordinary image alt suffix.
+    const markdownMediaAttributes = token => {
+        const rawAlt = String(token.text || '');
+        const heightOnly = /^(.*)\|x(\d+)$/i.exec(rawAlt);
+        if (!heightOnly) return markdownImageAttributes(token);
+        const height = sanitizeDimension(heightOnly[2]);
+        return height
+            ? { alt: heightOnly[1], width: null, height }
             : { alt: rawAlt, width: null, height: null };
     };
 
@@ -619,17 +629,23 @@
         }
         if (token.type === 'image') {
             const videoSrc = sanitizeVideoSrc(token.href);
-            const attributes = markdownImageAttributes(token);
+            const mediaAttributes = markdownMediaAttributes(token);
             const youtubeSrc = sanitizeYouTubeEmbedSrc(token.href);
             if (youtubeSrc) {
-                return [{ t: 'youtube', src: youtubeSrc, width: attributes.width, height: attributes.height }];
+                return [{
+                    t: 'youtube', src: youtubeSrc,
+                    width: mediaAttributes.width, height: mediaAttributes.height
+                }];
             }
-            const videoMarker = attributes.alt.trim().toLowerCase() === 'video';
+            const videoMarker = mediaAttributes.alt.trim().toLowerCase() === 'video';
             if (videoSrc && (isDirectVideoSrc(videoSrc) || videoMarker)) {
-                return [{ t: 'video', src: videoSrc, width: attributes.width, height: attributes.height }];
+                return [{
+                    t: 'video', src: videoSrc,
+                    width: mediaAttributes.width, height: mediaAttributes.height
+                }];
             }
             const src = sanitizeImageSrc(token.href);
-            return src ? [{ t: 'img', src, ...attributes }]
+            return src ? [{ t: 'img', src, ...markdownImageAttributes(token) }]
                 : textWithBreaks(token.raw);
         }
         // Marked deliberately does not sanitize raw HTML. Keep it visible and
