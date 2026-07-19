@@ -88,6 +88,11 @@ test('the editor mounts on the ascent form and hides the native textarea', async
         assert.ok(ui.querySelector(`[aria-label="${label}"]`), `missing toolbar control: ${label}`);
     }
     assert.ok(ui.querySelector('.bpb-re-surface'), 'the rich surface should be mounted');
+    assert.equal(editors(dom).rich.getHTML(), '<p></p>',
+        'an empty report must not become a hard break');
+    const emptyParagraph = ui.querySelector('.bpb-re-surface p.is-editor-empty');
+    assert.equal(emptyParagraph?.dataset.placeholder, 'Write your trip report…',
+        'TipTap should recognize the empty document and expose its placeholder');
     assert.equal(ui.querySelector('[aria-label="Undo (Ctrl+Z)"]').disabled, true,
         'undo starts disabled with an empty history');
 });

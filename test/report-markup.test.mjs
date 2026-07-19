@@ -261,7 +261,7 @@ test('editor HTML escapes text content so imports cannot inject markup', () => {
 test('bracket reports render to editor HTML with paragraphs and lists', () => {
     const html = Markup.bracketToEditorHtml('one\ntwo\n\n- a\n- b\n\n1. c');
     assert.equal(html, '<p>one<br>two</p><ul><li>a</li><li>b</li></ul><ol><li>c</li></ol>');
-    assert.equal(Markup.bracketToEditorHtml(''), '<p><br></p>');
+    assert.equal(Markup.bracketToEditorHtml(''), '<p></p>');
 });
 
 test('bracket ↔ markdown mode switching round-trips the supported formatting', () => {

@@ -675,7 +675,7 @@
 
     const astToHtml = (blocks, { editor = false } = {}) => {
         const html = blocksToHtml(blocks);
-        return html || (editor ? '<p><br></p>' : '');
+        return html || (editor ? '<p></p>' : '');
     };
 
     // ---- AST -> Markdown --------------------------------------------------
