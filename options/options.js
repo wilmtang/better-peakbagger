@@ -266,8 +266,12 @@ import { optionsTheme as Theme } from './theme.js';
         });
 
         // Initial state: honor a deep-link hash, otherwise the first section.
+        // A deep link locks like a click, because the browser animates the
+        // initial fragment scroll under scroll-behavior: smooth — without the
+        // lock the highlight would sweep through the sections it scrolls past.
         const initial = entries.find(entry => entry.link.hash === location.hash);
-        setActive(initial ? initial.link : entries[0].link);
+        if (initial) lockTo(initial.link);
+        else setActive(entries[0].link);
     };
     initSectionNav();
 
