@@ -172,7 +172,7 @@ test('a same-slug re-sync prunes a now-absent GPX but keeps overwriting the rest
 test('a non-fast-forward ref update re-reads and retries exactly once, then succeeds', async () => {
     let patchCount = 0;
     let refReads = 0;
-    const { fetch, calls } = makeFetch({
+    const { fetch } = makeFetch({
         'GET /repos/me/backup': REPO_OK(),
         'GET /repos/me/backup/git/ref/heads/main': () => { refReads += 1; return respond(200, { object: { sha: `C${refReads - 1}` } }); },
         'GET /repos/me/backup/git/commits/C0': COMMIT('C0', 'T0'),

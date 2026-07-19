@@ -8,7 +8,6 @@ import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import { ENTRIES } from '../scripts/build-config.mjs';
 
-const readFile = fs.readFile;
 const manifest = JSON.parse(await fs.readFile(new URL('../manifest.json', import.meta.url), 'utf8'));
 const packageJson = JSON.parse(await fs.readFile(new URL('../package.json', import.meta.url), 'utf8'));
 

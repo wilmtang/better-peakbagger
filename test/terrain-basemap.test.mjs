@@ -2,11 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
-import path from 'node:path';
 import test from 'node:test';
-import { fileURLToPath } from 'node:url';
-import { JSDOM } from 'jsdom';
 
 import { terrainBasemap } from '../src/terrain-basemap.js';
 

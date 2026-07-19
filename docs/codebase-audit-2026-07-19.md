@@ -44,7 +44,11 @@ UX polish; nothing here is an exploitable security hole.
 - **E4 — Done.** Pushes and pull requests now run lockfile installs, `npm test`,
   and bare `web-ext lint` against `dist` in a least-privilege GitHub Actions
   workflow.
-- **E2, E5 — Pending.**
+- **E5 — Done.** ESLint 10 now checks source, options, popup, scripts, and tests
+  in CI with the audit's three errors-only rules. The initial pass removed
+  stale test/verification bindings and explicitly models the manifest-provided
+  Chart.js global without weakening the rules project-wide.
+- **E2 — Pending.**
 - **U1–U2 — Done.** Unsupported pages now show a neutral, actionable empty
   state, and Settings is available from both that state and the header gear.
 - **U4 — Done.** Draft notifications now use stylesheet-owned semantic classes,

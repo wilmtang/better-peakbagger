@@ -702,8 +702,6 @@ try {
             await editorPage.locator('#bpb-report-editor').getByRole('button', {
                 name: 'Rich text', exact: true
             }).click();
-            const richYouTube = editorPage.locator(
-                '#bpb-report-editor .bpb-re-surface .bpb-re-youtube-resize iframe');
             const richYouTubeReady = await editorPage.waitForFunction(expected => {
                 const iframe = document.querySelector(
                     '#bpb-report-editor .bpb-re-surface .bpb-re-youtube-resize iframe');
