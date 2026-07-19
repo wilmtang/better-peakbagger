@@ -297,13 +297,18 @@ begins, per the repository commit discipline.
    token/repo accessor (`authStore`), tested against a scripted fetch stub and a
    fake storage area. *The app's public slug is still needed for the step-5
    install handoff URL (`github.com/apps/<slug>/installations/new`).*
-5. **Setup UI.** Options-page section: enable toggle (requests both optional
-   host permissions), **Connect GitHub** with user-code display,
-   install-page handoff, granted-repo discovery via `GET /user/installations`
-   (a picker when several repos are granted, an install link when none), a
-   clear connected state, and **Disconnect** (drops the local token; full
-   revocation is uninstalling the app on GitHub). Feature gate added to
-   `settings-schema.js`.
+5. **Setup UI.** **Done.** Options-page "GitHub backup" section
+   (`options/github.js`, styled in `options.css`): the enable toggle requests
+   both optional host permissions (added to `manifest.json`), **Connect
+   GitHub** shows the user code and hands off to `github.com/login/device`,
+   discovery via `GET /user/installations` auto-selects a sole granted repo or
+   offers a picker (an install-page link when none), a clear connected state
+   names the account and repo, and **Disconnect** drops the local token (full
+   revocation is uninstalling the app on GitHub). The options page never sees
+   the token: it drives the background worker over `GITHUB_AUTH_*` messages,
+   gated to extension-page senders; `github-auth.js` joins the background
+   bundle. The `enableGithubBackup` gate is in `settings-schema.js`. Verified
+   against the rendered panel in light and dark, plus jsdom options tests.
 6. **Save-time snapshot.** Extend the editor's existing pre-Save flush in the
    ascent-editor content script to serialize the form + Markdown sidecar into
    a `storage.session` snapshot with the drafts' identity binding and

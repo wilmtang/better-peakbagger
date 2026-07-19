@@ -21,6 +21,10 @@
     "https://peakbagger.com/*",
     "https://www.peakbagger.com/*"
   ],
+  "optional_host_permissions": [
+    "https://github.com/*",
+    "https://api.github.com/*"
+  ],
   "action": {
     "default_title": "Capture activity for Peakbagger",
     "default_popup": "popup/popup.html"

@@ -40,7 +40,8 @@ const makeCacheStorage = (initial = {}) => {
 const loadOptions = async (settings = {}, {
     cacheStorage = makeCacheStorage(),
     local = {},
-    cachedTheme = null
+    cachedTheme = null,
+    prepareChrome = null
 } = {}) => {
     const html = await readFile(path.join(root, 'options', 'options.html'), 'utf8');
     const dom = new JSDOM(html, {
@@ -50,6 +51,7 @@ const loadOptions = async (settings = {}, {
         runScripts: 'outside-only'
     });
     dom.chrome = makeChromeStub({ bpbSettings: settings }, local);
+    if (prepareChrome) prepareChrome(dom.chrome);
     dom.window.chrome = dom.chrome;
     dom.window.caches = cacheStorage;
     if (cachedTheme !== null) dom.window.localStorage.setItem('bpbThemePref', cachedTheme);
@@ -90,10 +92,13 @@ test('settings are grouped by the surface they affect', async () => {
         'General',
         'Activity capture',
         'Map & GPX chart',
-        'Ascent beta filters'
+        'Ascent beta filters',
+        'GitHub backup'
     ]);
 
-    const [general, capture, mapChart, beta] = sections;
+    const [general, capture, mapChart, beta, github] = sections;
+    assert.ok(github.querySelector('#enable-github-backup'));
+    assert.ok(github.querySelector('#github-panel'));
     for (const section of sections) {
         const heading = section.querySelector('h2');
         assert.equal(section.getAttribute('aria-labelledby'), heading.id);
@@ -301,4 +306,69 @@ test('3D terrain cache limit remains bounded and persists edits', async () => {
 test('the removed "minimum trip-report words" control is gone', async () => {
     const dom = await loadOptions({});
     assert.equal(el(dom, 'minwords'), null);
+});
+
+// ---- GitHub backup setup --------------------------------------------------
+
+// Wire the options page's GITHUB_AUTH_* messages to a scripted background and a
+// grantable optional-permission request, so the setup panel can be driven in
+// jsdom without a browser or network.
+const withGithubBackground = (status, { grant = true } = {}) => chrome => {
+    chrome.permissions = { request: async () => grant, contains: async () => grant, remove: async () => true };
+    chrome.runtime.sendMessage = (message, callback) => {
+        const reply = message.type === 'GITHUB_AUTH_STATUS' ? status : {};
+        if (typeof callback === 'function') Promise.resolve().then(() => callback(reply));
+        return Promise.resolve(reply);
+    };
+};
+
+test('the GitHub backup section is off by default and hides its detail panel', async () => {
+    const dom = await loadOptions({}, { prepareChrome: withGithubBackground({ enabled: false }) });
+    assert.equal(el(dom, 'enable-github-backup').checked, false);
+    assert.equal(el(dom, 'github-detail').hidden, true);
+});
+
+test('enabling GitHub backup requests the github host permissions and persists the gate', async () => {
+    let requested = null;
+    const dom = await loadOptions({}, {
+        prepareChrome: chrome => {
+            withGithubBackground({ enabled: true, connected: false, hasToken: false })(chrome);
+            const request = chrome.permissions.request;
+            chrome.permissions.request = async arg => { requested = arg; return request(arg); };
+        }
+    });
+    const toggle = el(dom, 'enable-github-backup');
+    toggle.checked = true;
+    toggle.dispatchEvent(new dom.window.Event('change'));
+    await new Promise(r => dom.window.setTimeout(r, 30));
+    // Compare by value: the requested object originates in the jsdom realm.
+    assert.equal(JSON.stringify(requested), JSON.stringify({ origins: ['https://github.com/*', 'https://api.github.com/*'] }));
+    assert.equal(dom.chrome._store.bpbSettings.enableGithubBackup, true);
+});
+
+test('a denied host-permission request reverts the toggle and leaves the gate off', async () => {
+    const dom = await loadOptions({}, { prepareChrome: withGithubBackground({ enabled: false }, { grant: false }) });
+    const toggle = el(dom, 'enable-github-backup');
+    toggle.checked = true;
+    toggle.dispatchEvent(new dom.window.Event('change'));
+    await new Promise(r => dom.window.setTimeout(r, 30));
+    assert.equal(toggle.checked, false);
+    assert.notEqual(dom.chrome._store.bpbSettings.enableGithubBackup, true);
+});
+
+test('a connected status renders the account and repository', async () => {
+    const dom = await loadOptions({ enableGithubBackup: true }, {
+        prepareChrome: withGithubBackground({
+            enabled: true, connected: true, hasToken: true,
+            account: { login: 'ada' }, repo: { owner: 'ada', name: 'peaks', fullName: 'ada/peaks' },
+        })
+    });
+    await new Promise(r => dom.window.setTimeout(r, 40));
+    assert.equal(el(dom, 'github-detail').hidden, false);
+    const panelText = el(dom, 'github-panel').textContent;
+    assert.match(panelText, /@ada/);
+    assert.match(panelText, /ada\/peaks/);
+    // The connected state offers a disconnect control.
+    const buttons = Array.from(el(dom, 'github-panel').querySelectorAll('button'), b => b.textContent);
+    assert.ok(buttons.includes('Disconnect'));
 });

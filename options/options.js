@@ -6,6 +6,7 @@
 import { settings as S } from '../src/settings.js';
 import { terrainCache as TerrainCache } from '../src/terrain-cache.js';
 import { optionsTheme as Theme } from './theme.js';
+import { initGithubBackup } from './github.js';
 
 (() => {
     'use strict';
@@ -104,6 +105,7 @@ import { optionsTheme as Theme } from './theme.js';
         betaTrWordsEl.disabled = !settings.betaTr;
         betaGpsEl.checked = settings.betaGps;
         betaLinkEl.checked = settings.betaLink;
+        githubBackup.populate(settings);
         applyTheme(settings.theme);
     };
 
@@ -117,6 +119,10 @@ import { optionsTheme as Theme } from './theme.js';
         });
         return saveQueue;
     };
+
+    // GitHub backup setup owns its own panel; it drives the background worker
+    // through GITHUB_AUTH_* messages and never sees the token.
+    const githubBackup = initGithubBackup({ extensionApi, flash, save });
 
     unitsEl.addEventListener('change', () => save({ units: unitsEl.value }));
     themeEl.addEventListener('change', () => save({ theme: themeEl.value }));

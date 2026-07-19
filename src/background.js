@@ -9,6 +9,7 @@
 import { captureCore as Core } from './capture-core.js';
 import { providerFromUrl } from './provider-url.js';
 import { settings as Settings } from './settings.js';
+import { githubAuth as GithubAuth } from './github-auth.js';
 
 (() => {
     'use strict';
@@ -689,10 +690,136 @@ import { settings as Settings } from './settings.js';
         });
     };
 
+    // ---- GitHub ascent backup: auth + repository setup ---------------------
+    //
+    // The token lives only here (via GithubAuth.authStore over storage.local)
+    // and is never returned to any page. The device-flow poll is driven in the
+    // worker; the options page shows the user code and polls GITHUB_AUTH_STATE
+    // while it keeps the worker awake. Repo scoping happens on GitHub's own
+    // install page, then discovery lists exactly what the token can reach.
+
+    const netFetch = (url, init) => fetch(url, init);
+    const githubAuthState = { phase: 'idle' };
+    let githubAuthAbort = null;
+    const resetGithubAuthState = next => { Object.keys(githubAuthState).forEach(k => delete githubAuthState[k]); Object.assign(githubAuthState, next); };
+
+    // Only extension-owned pages (the options page) may touch the auth surface;
+    // a content script's sender.url is a web origin, never the extension origin.
+    const isExtensionPage = sender => {
+        try { return !!(sender && sender.url && sender.url.startsWith(ext.runtime.getURL(''))); }
+        catch { return false; }
+    };
+
+    const githubStatus = async () => {
+        const auth = await GithubAuth.authStore.read();
+        const settings = await Settings.get();
+        return {
+            enabled: settings.enableGithubBackup,
+            auto: settings.autoGithubBackup,
+            connected: !!(auth && auth.token && auth.repo && auth.repo.owner && auth.repo.name),
+            hasToken: !!(auth && auth.token),
+            account: (auth && auth.account) || null,
+            repo: (auth && auth.repo) || null,
+            installUrl: GithubAuth.INSTALL_URL,
+            appUrl: GithubAuth.APP_URL,
+            verificationUri: GithubAuth.VERIFICATION_URI,
+        };
+    };
+
+    // Auto-select the sole granted repo (zero-typing setup); several or none
+    // leave the choice to the user.
+    const applyDiscoveredRepos = async repos => {
+        if (repos.length === 1) {
+            const r = repos[0];
+            await GithubAuth.authStore.setRepo({ owner: r.owner, name: r.name, branch: r.defaultBranch, id: r.id, fullName: r.fullName });
+            await GithubAuth.authStore.setInstallationId(r.installationId);
+        }
+    };
+
+    const githubBeginAuth = async () => {
+        if (githubAuthAbort) githubAuthAbort.abort();
+        githubAuthAbort = new AbortController();
+        const flow = GithubAuth.createDeviceFlow({ fetch: netFetch });
+        let code;
+        try {
+            code = await flow.requestCode();
+        } catch (error) {
+            resetGithubAuthState({ phase: 'error', code: error.code || 'unknown' });
+            return { phase: 'error', code: githubAuthState.code };
+        }
+        resetGithubAuthState({
+            phase: 'polling',
+            userCode: code.userCode,
+            verificationUri: code.verificationUri,
+            verificationUriComplete: code.verificationUriComplete,
+            expiresIn: code.expiresIn,
+        });
+        // Fire-and-forget the poll; the options page reads progress via
+        // GITHUB_AUTH_STATE and keeps the worker alive while it does.
+        flow.pollForToken(code, { signal: githubAuthAbort.signal }).then(async cred => {
+            await GithubAuth.authStore.setCredential(cred);
+            let account = null;
+            try { account = await GithubAuth.fetchAccount({ fetch: netFetch, token: cred.token }); await GithubAuth.authStore.setAccount(account); } catch { /* non-fatal */ }
+            let repos = [];
+            let installationCount = 0;
+            try {
+                const discovered = await GithubAuth.listBackupRepositories({ fetch: netFetch, token: cred.token });
+                repos = discovered.repos;
+                installationCount = discovered.installationCount;
+                await applyDiscoveredRepos(repos);
+            } catch { /* the user may not have installed yet; discover again later */ }
+            resetGithubAuthState({ phase: 'authorized', account, repos, installationCount });
+        }).catch(error => {
+            resetGithubAuthState({ phase: 'error', code: (error && error.code) || 'unknown' });
+        });
+        return { phase: 'polling', userCode: code.userCode, verificationUri: code.verificationUri, verificationUriComplete: code.verificationUriComplete, expiresIn: code.expiresIn };
+    };
+
+    // Re-list repositories on demand — after the user returns from the install
+    // page having granted (or changed) the selected repositories.
+    const githubDiscoverRepos = async () => {
+        const token = await GithubAuth.authStore.getToken();
+        if (!token) return { phase: 'error', code: 'no-token' };
+        try {
+            const { repos, installationCount } = await GithubAuth.listBackupRepositories({ fetch: netFetch, token });
+            await applyDiscoveredRepos(repos);
+            return { installationCount, repos, repo: await GithubAuth.authStore.getRepo() };
+        } catch (error) {
+            return { phase: 'error', code: error.code || 'unknown' };
+        }
+    };
+
+    const githubSelectRepo = async message => {
+        const r = message && message.repo;
+        if (!r || !r.owner || !r.name) return { error: 'invalid-repo' };
+        await GithubAuth.authStore.setRepo({ owner: r.owner, name: r.name, branch: r.branch || r.defaultBranch || 'main', id: r.id ?? null, fullName: r.fullName || `${r.owner}/${r.name}` });
+        if (r.installationId != null) await GithubAuth.authStore.setInstallationId(r.installationId);
+        return githubStatus();
+    };
+
+    const githubDisconnect = async () => {
+        if (githubAuthAbort) githubAuthAbort.abort();
+        resetGithubAuthState({ phase: 'idle' });
+        await GithubAuth.authStore.clear();
+        return githubStatus();
+    };
+
     ext.runtime.onMessage.addListener((message, sender, sendResponse) => {
         const run = async () => {
             await cleanup();
-            switch (message?.type) {
+            const type = message?.type;
+            // The auth surface is extension-page only; the token never crosses
+            // to a content script.
+            if (typeof type === 'string' && type.startsWith('GITHUB_AUTH_') && !isExtensionPage(sender)) {
+                return { error: 'forbidden' };
+            }
+            switch (type) {
+            case 'GITHUB_AUTH_STATUS': return githubStatus();
+            case 'GITHUB_AUTH_BEGIN': return githubBeginAuth();
+            case 'GITHUB_AUTH_STATE': return { ...githubAuthState };
+            case 'GITHUB_AUTH_DISCOVER': return githubDiscoverRepos();
+            case 'GITHUB_AUTH_SELECT_REPO': return githubSelectRepo(message);
+            case 'GITHUB_AUTH_DISCONNECT': return githubDisconnect();
             case 'CAPTURE_START': return startCapture(message);
             case 'CAPTURE_STATUS': {
                 const jobs = await readMap(JOBS_KEY);
