@@ -1,6 +1,6 @@
 # Options page sidebar navigation — investigation and execution plan
 
-Status: planned, not yet implemented.
+Status: implemented 2026-07-19. See "Deviations from the plan" at the end.
 
 Goal: give the extension's settings page (`options/options.html`) a left sidebar
 that lists the settings sections, like Sidebery's setup page — clicking an entry
@@ -173,3 +173,43 @@ Each step is a commit-sized unit; run `npm test` before committing.
   fallback covers older builds either way.
 - **Hash-on-load jump** → native anchor jump happens before `options.js` runs;
   acceptable (no animation on first paint is correct anyway).
+
+## Deviations from the plan
+
+Recorded during implementation (steps executed against
+`options/options.{html,css,js}` and `test/options.test.mjs`):
+
+- **Scroll-spy uses `getBoundingClientRect`, not `offsetTop`.** The plan
+  specified Sidebery's bottom-up `offsetTop` walk. An `offsetTop` comparison is
+  only correct when each section's `offsetParent` is the scroll container, which
+  would force a `position: relative` on `.content` and padding bookkeeping.
+  Comparing viewport-relative section tops against a marker just below the
+  content's top edge is equivalent, layout-correct without those assumptions,
+  and still a deterministic top-down walk (sections are in document order). The
+  `scroll-margin-top` anchor-landing offset is kept as planned.
+
+- **Deep-link loads engage the nav lock.** The plan assumed a hash-on-load did
+  an instant jump ("no animation on first paint"). In a real browser the
+  content's `scroll-behavior: smooth` animates the *initial* fragment scroll, so
+  the scroll-spy swept the highlight through the intervening sections. The
+  controller now locks a deep-link target exactly like a click, holding the
+  highlight until the animated scroll settles. Confirmed in hidden Chrome for
+  Testing (see below).
+
+- **Commit grouping.** Markup + styles + the structural test shipped as one
+  commit (a styled static sidebar with native anchor scroll — markup without
+  styles would have been a broken intermediate); the scroll-spy controller +
+  behavioral tests as a second; the deep-link nav-lock fix as a third once
+  real-browser verification surfaced it.
+
+- **Real-browser verification (step 5).** Ran hidden Chrome for Testing
+  (`channel: 'chromium'`, `headless: true`, real unpacked `dist/` via
+  `--load-extension`) over `chrome-extension://…/options/options.html` at
+  1000×760 and 700×760, screenshotting the page (not the display). Verified:
+  click-to-scroll (target lands ~24px below the content top), scroll-spy
+  tracking each section, the bottom clamp activating the last section,
+  deep-link-on-load holding `#beta` through and after the animated scroll,
+  light + dark, the narrow chip row with no horizontal overflow, and a visible
+  keyboard focus ring reachable by Tab. No page errors; the options page also
+  loaded and read/wrote settings cleanly in the real extension context, which
+  is why the optional `npm run verify:extension` pass was not additionally run.
