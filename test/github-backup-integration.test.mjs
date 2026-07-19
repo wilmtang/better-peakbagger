@@ -23,10 +23,10 @@ const respond = (status, body) => ({
     text: async () => (typeof body === 'string' ? body : JSON.stringify(body ?? {})),
 });
 
-const createWorker = ({ settings = { enableGithubBackup: true }, auth = null, github } = {}) => {
-    const session = {};
+const createWorker = ({ settings = { enableGithubBackup: true }, auth = null, github, session: sharedSession = null, local: sharedLocal = null } = {}) => {
+    const session = sharedSession || {};
     const sync = { bpbSettings: structuredClone(settings) };
-    const local = auth ? { bpbGithubAuth: structuredClone(auth) } : {};
+    const local = sharedLocal || (auth ? { bpbGithubAuth: structuredClone(auth) } : {});
     const area = values => ({
         get: async key => ({ [key]: structuredClone(values[key]) }),
         set: async patch => Object.assign(values, structuredClone(patch)),
@@ -47,7 +47,10 @@ const createWorker = ({ settings = { enableGithubBackup: true }, auth = null, gi
     const githubCalls = [];
     const fetch = async (url, init = {}) => {
         const method = init.method || 'GET';
-        const body = init.body ? JSON.parse(init.body) : undefined;
+        let body = init.body;
+        if (body) {
+            try { body = JSON.parse(body); } catch { /* OAuth device flow is form-encoded. */ }
+        }
         githubCalls.push({ method, url: String(url), body });
         const reply = github(method, String(url).replace('https://api.github.com', '').split('?')[0], body);
         if (!reply) throw new Error(`unrouted ${method} ${url}`);
@@ -246,4 +249,36 @@ test('the snapshot store rejects a non-Peakbagger sender', async () => {
     assert.equal(res.ok, false);
     // Nothing was stored (the cleanup pass may have initialised an empty map).
     assert.equal(Object.keys(worker.session.bpbGithubSnapshots || {}).length, 0);
+});
+
+test('a restarted worker resumes a pending device flow from session storage', async () => {
+    const session = {};
+    const local = {};
+    const extensionSender = { url: 'chrome-extension://test/options/options.html' };
+    const github = (method, path) => {
+        if (method === 'POST' && path === 'https://github.com/login/device/code') return respond(200, {
+            device_code: 'DC', user_code: 'ABCD-1234', verification_uri: 'https://github.com/login/device',
+            expires_in: 900, interval: 5,
+        });
+        if (method === 'POST' && path === 'https://github.com/login/oauth/access_token') {
+            return respond(200, { access_token: 'gho_resumed', token_type: 'bearer', scope: '' });
+        }
+        if (method === 'GET' && path === '/user') return respond(200, { login: 'ada', id: 7 });
+        if (method === 'GET' && path === '/user/installations') return respond(200, { installations: [] });
+        return null;
+    };
+
+    const firstWorker = createWorker({ github, session, local });
+    const began = await firstWorker.send({ type: 'GITHUB_AUTH_BEGIN' }, extensionSender);
+    assert.equal(began.phase, 'polling');
+    assert.equal(session.bpbGithubAuthPending.deviceCode, 'DC');
+
+    // Simulate the service worker being torn down and later woken by the next
+    // options-page status message after the server interval has elapsed.
+    session.bpbGithubAuthPending.nextPollAt = 0;
+    const restartedWorker = createWorker({ github, session, local });
+    const resumed = await restartedWorker.send({ type: 'GITHUB_AUTH_STATE' }, extensionSender);
+    assert.equal(resumed.phase, 'authorized');
+    assert.equal(local.bpbGithubAuth.token, 'gho_resumed');
+    assert.equal(session.bpbGithubAuthPending, undefined);
 });

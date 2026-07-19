@@ -114,9 +114,29 @@
             };
         };
 
+        // Perform one token-endpoint request. The background worker uses this
+        // one-shot form so each options-page message can advance a persisted
+        // device flow without relying on an MV3 worker staying alive.
+        const pollTokenOnce = async code => {
+            const data = await post(ACCESS_TOKEN_URL, {
+                client_id: clientId,
+                device_code: code.deviceCode,
+                grant_type: DEVICE_GRANT,
+            });
+            if (data.access_token) {
+                return {
+                    phase: 'authorized',
+                    credential: { token: data.access_token, tokenType: data.token_type || 'bearer', scope: data.scope || '' },
+                };
+            }
+            if (data.error === 'authorization_pending') return { phase: 'pending' };
+            if (data.error === 'slow_down') return { phase: 'slow-down', interval: Number(data.interval) || 0 };
+            throw new GithubAuthError(mapOAuthError(data.error), data.error_description);
+        };
+
         // Step 2: poll for the token, honoring the server interval and any
         // slow_down, until the user approves or the code expires. `signal`
-        // (optional) lets the UI cancel a pending authorization.
+        // (optional) lets non-worker callers cancel a pending authorization.
         const pollForToken = async (code, { signal = null } = {}) => {
             let interval = Math.max(1, Number(code.interval) || 5);
             const deadline = now() + (Number(code.expiresIn) || 900) * 1000;
@@ -125,21 +145,14 @@
                 await wait(interval * 1000);
                 if (signal && signal.aborted) throw new GithubAuthError(AUTH_ERROR_CODES.CANCELLED, 'Authorization cancelled.');
                 if (now() > deadline) throw new GithubAuthError(AUTH_ERROR_CODES.EXPIRED, 'The authorization code expired.');
-                const data = await post(ACCESS_TOKEN_URL, {
-                    client_id: clientId,
-                    device_code: code.deviceCode,
-                    grant_type: DEVICE_GRANT,
-                });
-                if (data.access_token) {
-                    return { token: data.access_token, tokenType: data.token_type || 'bearer', scope: data.scope || '' };
-                }
-                if (data.error === 'authorization_pending') continue;
-                if (data.error === 'slow_down') {
+                const result = await pollTokenOnce(code);
+                if (result.phase === 'authorized') return result.credential;
+                if (result.phase === 'pending') continue;
+                if (result.phase === 'slow-down') {
                     // Add the server's advice (or the documented +5s) to the interval.
-                    interval = Math.max(interval + 5, Number(data.interval) || 0);
+                    interval = Math.max(interval + 5, result.interval);
                     continue;
                 }
-                throw new GithubAuthError(mapOAuthError(data.error), data.error_description);
             }
         };
 
@@ -151,7 +164,7 @@
             return pollForToken(code, { signal });
         };
 
-        return { requestCode, pollForToken, authorize };
+        return { requestCode, pollTokenOnce, pollForToken, authorize };
     };
 
     // ---- Installation / repository discovery -------------------------------

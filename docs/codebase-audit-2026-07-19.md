@@ -18,9 +18,9 @@ UX polish; nothing here is an exploitable security hole.
   coverage includes GPS Preview, a Save click, and implicit submission.
 - **B2 — Done.** Automatic backup accepts only ascent-ID or peak-and-date
   snapshot matches; the visible manual action retains the peak-only fallback.
-- **B3 — In progress.** The options UI now treats an idle worker during an
-  active device flow as a lost flow and offers a retry; worker persistence is
-  still pending.
+- **B3 — Done.** The options UI detects a lost flow, while the worker persists
+  pending device-flow state in `storage.session` and advances it one poll per
+  status message; a worker-restart simulation covers successful resumption.
 - **B5 — Done.** Every OS-dark semantic color is explicitly reset when the
   extension theme is light, with selector-completeness and contrast coverage.
 - **B4, B6–B7 — Pending.**

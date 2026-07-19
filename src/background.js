@@ -24,6 +24,7 @@ import { githubClient as GithubClient } from './github-client.js';
     // Save-time GitHub backup snapshots, keyed by climber+peak+date, expiring on
     // the same 30-minute horizon as a prepared draft.
     const SNAPSHOTS_KEY = 'bpbGithubSnapshots';
+    const GITHUB_AUTH_PENDING_KEY = 'bpbGithubAuthPending';
     const SNAPSHOT_TTL_MS = 30 * 60 * 1000;
     const SNAPSHOT_LIMIT = 10;
     const CLEANUP_ALARM = 'bpb-capture-cleanup';
@@ -705,14 +706,23 @@ import { githubClient as GithubClient } from './github-client.js';
     //
     // The token lives only here (via GithubAuth.authStore over storage.local)
     // and is never returned to any page. The device-flow poll is driven in the
-    // worker; the options page shows the user code and polls GITHUB_AUTH_STATE
-    // while it keeps the worker awake. Repo scoping happens on GitHub's own
-    // install page, then discovery lists exactly what the token can reach.
+    // worker; the options page shows the user code and advances a persisted,
+    // one-request-at-a-time poll through GITHUB_AUTH_STATE. Repo scoping happens
+    // on GitHub's own install page, then discovery lists exactly what the token
+    // can reach.
 
     const netFetch = (url, init) => fetch(url, init);
-    const githubAuthState = { phase: 'idle' };
-    let githubAuthAbort = null;
-    const resetGithubAuthState = next => { Object.keys(githubAuthState).forEach(k => delete githubAuthState[k]); Object.assign(githubAuthState, next); };
+    const readPendingGithubAuth = async () => (await storage().get(GITHUB_AUTH_PENDING_KEY))[GITHUB_AUTH_PENDING_KEY] || null;
+    const writePendingGithubAuth = pending => storage().set({ [GITHUB_AUTH_PENDING_KEY]: pending });
+    const clearPendingGithubAuth = () => storage().remove(GITHUB_AUTH_PENDING_KEY);
+    const publicGithubAuthState = pending => ({
+        phase: 'polling',
+        userCode: pending.userCode,
+        verificationUri: pending.verificationUri,
+        verificationUriComplete: pending.verificationUriComplete,
+        expiresIn: pending.expiresIn,
+        startedAt: pending.startedAt,
+    });
 
     // Only extension-owned pages (the options page) may touch the auth surface;
     // a content script's sender.url is a web origin, never the extension origin.
@@ -748,26 +758,52 @@ import { githubClient as GithubClient } from './github-client.js';
     };
 
     const githubBeginAuth = async () => {
-        if (githubAuthAbort) githubAuthAbort.abort();
-        githubAuthAbort = new AbortController();
+        await clearPendingGithubAuth();
         const flow = GithubAuth.createDeviceFlow({ fetch: netFetch });
         let code;
         try {
             code = await flow.requestCode();
         } catch (error) {
-            resetGithubAuthState({ phase: 'error', code: error.code || 'unknown' });
-            return { phase: 'error', code: githubAuthState.code };
+            return { phase: 'error', code: error.code || 'unknown' };
         }
-        resetGithubAuthState({
-            phase: 'polling',
+        const startedAt = now();
+        const pending = {
+            deviceCode: code.deviceCode,
             userCode: code.userCode,
             verificationUri: code.verificationUri,
             verificationUriComplete: code.verificationUriComplete,
             expiresIn: code.expiresIn,
-        });
-        // Fire-and-forget the poll; the options page reads progress via
-        // GITHUB_AUTH_STATE and keeps the worker alive while it does.
-        flow.pollForToken(code, { signal: githubAuthAbort.signal }).then(async cred => {
+            interval: Math.max(1, Number(code.interval) || 5),
+            startedAt,
+            expiresAt: startedAt + code.expiresIn * 1000,
+            nextPollAt: startedAt + Math.max(1, Number(code.interval) || 5) * 1000,
+        };
+        await writePendingGithubAuth(pending);
+        return publicGithubAuthState(pending);
+    };
+
+    const githubPollAuth = async () => {
+        const pending = await readPendingGithubAuth();
+        if (!pending) return { phase: 'idle' };
+        if (now() > pending.expiresAt) {
+            await clearPendingGithubAuth();
+            return { phase: 'error', code: 'expired' };
+        }
+        if (now() < pending.nextPollAt) return publicGithubAuthState(pending);
+
+        const flow = GithubAuth.createDeviceFlow({ fetch: netFetch });
+        try {
+            const result = await flow.pollTokenOnce(pending);
+            if (result.phase === 'pending' || result.phase === 'slow-down') {
+                const interval = result.phase === 'slow-down'
+                    ? Math.max(pending.interval + 5, result.interval)
+                    : pending.interval;
+                const next = { ...pending, interval, nextPollAt: now() + interval * 1000 };
+                await writePendingGithubAuth(next);
+                return publicGithubAuthState(next);
+            }
+
+            const cred = result.credential;
             await GithubAuth.authStore.setCredential(cred);
             let account = null;
             try { account = await GithubAuth.fetchAccount({ fetch: netFetch, token: cred.token }); await GithubAuth.authStore.setAccount(account); } catch { /* non-fatal */ }
@@ -779,11 +815,12 @@ import { githubClient as GithubClient } from './github-client.js';
                 installationCount = discovered.installationCount;
                 await applyDiscoveredRepos(repos);
             } catch { /* the user may not have installed yet; discover again later */ }
-            resetGithubAuthState({ phase: 'authorized', account, repos, installationCount });
-        }).catch(error => {
-            resetGithubAuthState({ phase: 'error', code: (error && error.code) || 'unknown' });
-        });
-        return { phase: 'polling', userCode: code.userCode, verificationUri: code.verificationUri, verificationUriComplete: code.verificationUriComplete, expiresIn: code.expiresIn };
+            await clearPendingGithubAuth();
+            return { phase: 'authorized', account, repos, installationCount };
+        } catch (error) {
+            await clearPendingGithubAuth();
+            return { phase: 'error', code: (error && error.code) || 'unknown' };
+        }
     };
 
     // Re-list repositories on demand — after the user returns from the install
@@ -809,8 +846,7 @@ import { githubClient as GithubClient } from './github-client.js';
     };
 
     const githubDisconnect = async () => {
-        if (githubAuthAbort) githubAuthAbort.abort();
-        resetGithubAuthState({ phase: 'idle' });
+        await clearPendingGithubAuth();
         await GithubAuth.authStore.clear();
         return githubStatus();
     };
@@ -956,7 +992,7 @@ import { githubClient as GithubClient } from './github-client.js';
             switch (type) {
             case 'GITHUB_AUTH_STATUS': return githubStatus();
             case 'GITHUB_AUTH_BEGIN': return githubBeginAuth();
-            case 'GITHUB_AUTH_STATE': return { ...githubAuthState };
+            case 'GITHUB_AUTH_STATE': return githubPollAuth();
             case 'GITHUB_AUTH_DISCOVER': return githubDiscoverRepos();
             case 'GITHUB_AUTH_SELECT_REPO': return githubSelectRepo(message);
             case 'GITHUB_AUTH_DISCONNECT': return githubDisconnect();
