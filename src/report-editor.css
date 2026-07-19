@@ -179,6 +179,23 @@
     outline: 1px solid #b42318;
 }
 
+.bpb-re-image-hosting {
+    flex: 0 0 100%;
+    color: #4f5660;
+    font-size: x-small;
+    line-height: 1.4;
+}
+
+.bpb-re-image-hosting a {
+    color: #1d6296;
+    text-underline-offset: 2px;
+}
+
+.bpb-re-image-hosting a:focus-visible {
+    outline: 2px solid #3b76c4;
+    outline-offset: 2px;
+}
+
 .bpb-re-box .bpb-re-linkapply,
 .bpb-re-box .bpb-re-linkremove,
 .bpb-re-box .bpb-re-tablebtn {
@@ -621,6 +638,14 @@ html[data-bpb-theme="dark"] .bpb-re-box {
 
 html[data-bpb-theme="dark"] .bpb-re-plain-hint {
     color: #a9a39a;
+}
+
+html[data-bpb-theme="dark"] .bpb-re-image-hosting {
+    color: #a9a39a;
+}
+
+html[data-bpb-theme="dark"] .bpb-re-image-hosting a {
+    color: #8ab4f8;
 }
 
 html[data-bpb-theme="dark"] .bpb-re button {

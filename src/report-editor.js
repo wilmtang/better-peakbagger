@@ -195,7 +195,23 @@ import { createMarkdownEditor } from './report-md-editor.js';
     imageAltInput.placeholder = 'Description (alt text)';
     imageAltInput.setAttribute('aria-label', 'Image description');
     const imageApply = button('bpb-re-linkapply', 'Add image');
-    imageBox.append(imageSrcInput, imageAltInput, imageApply);
+    const imageHostingHint = el('div', 'bpb-re-image-hosting', 'Need an image URL? Try ');
+    const hostingLinks = [
+        ['Peakbagger Photos', 'https://www.peakbagger.com/climber/photo.aspx'],
+        ['Imgur', 'https://imgur.com/upload'],
+        ['ImgBB', 'https://imgbb.com/']
+    ].map(([label, href]) => {
+        const link = el('a', null, label);
+        link.href = href;
+        link.target = '_blank';
+        link.rel = 'noopener noreferrer';
+        return link;
+    });
+    imageHostingHint.append(
+        hostingLinks[0], ', ', hostingLinks[1], ', or ', hostingLinks[2],
+        '. Free plans, limits, and terms vary.'
+    );
+    imageBox.append(imageSrcInput, imageAltInput, imageApply, imageHostingHint);
 
     // Less-frequent inline formats live one click away instead of widening the
     // main bar: code, highlight, sub/sup, small, inline quote, and text color.

@@ -301,6 +301,33 @@ test('the image popover validates the source and inserts alt text', async () => 
     assert.equal(ui.querySelector('.bpb-re-imagebox').hidden, false);
     const src = ui.querySelector('[aria-label="Image URL (HTTPS)"]');
     const alt = ui.querySelector('[aria-label="Image description"]');
+    const hostingHint = ui.querySelector('.bpb-re-image-hosting');
+    assert.match(hostingHint.textContent, /Free plans, limits, and terms vary\./);
+    assert.deepEqual([...hostingHint.querySelectorAll('a')].map(link => ({
+        label: link.textContent,
+        href: link.href,
+        target: link.target,
+        rel: link.rel
+    })), [
+        {
+            label: 'Peakbagger Photos',
+            href: 'https://www.peakbagger.com/climber/photo.aspx',
+            target: '_blank',
+            rel: 'noopener noreferrer'
+        },
+        {
+            label: 'Imgur',
+            href: 'https://imgur.com/upload',
+            target: '_blank',
+            rel: 'noopener noreferrer'
+        },
+        {
+            label: 'ImgBB',
+            href: 'https://imgbb.com/',
+            target: '_blank',
+            rel: 'noopener noreferrer'
+        }
+    ]);
 
     src.value = 'javascript:alert(1)';
     ui.querySelector('.bpb-re-imagebox .bpb-re-linkapply').click();

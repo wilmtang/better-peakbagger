@@ -377,6 +377,56 @@ try {
             });
             check(nativeHidden, 'the native textarea should be hidden but still inside the form');
 
+            await editorPage.locator('#bpb-report-editor').getByRole('button', {
+                name: 'Insert image', exact: true
+            }).click();
+            const imageHostingHelp = await editorPage.evaluate(() => {
+                const box = document.querySelector('#bpb-report-editor .bpb-re-imagebox');
+                const hint = box?.querySelector('.bpb-re-image-hosting');
+                const controls = box ? [...box.querySelectorAll('input, button')] : [];
+                const hintRect = hint?.getBoundingClientRect();
+                const controlRects = controls.map(control => control.getBoundingClientRect());
+                return box && hint && hintRect && controlRects.length ? {
+                    visible: getComputedStyle(box).display !== 'none',
+                    belowControls: hintRect.top >= Math.max(...controlRects.map(rect => rect.bottom)),
+                    links: [...hint.querySelectorAll('a')].map(link => ({
+                        label: link.textContent,
+                        href: link.href,
+                        target: link.target,
+                        rel: link.rel
+                    }))
+                } : null;
+            });
+            check(imageHostingHelp?.visible && imageHostingHelp.belowControls,
+                `image-hosting help was not visible below the image controls (state=${
+                    JSON.stringify(imageHostingHelp)})`);
+            check(JSON.stringify(imageHostingHelp?.links) === JSON.stringify([
+                {
+                    label: 'Peakbagger Photos',
+                    href: 'https://www.peakbagger.com/climber/photo.aspx',
+                    target: '_blank',
+                    rel: 'noopener noreferrer'
+                },
+                {
+                    label: 'Imgur',
+                    href: 'https://imgur.com/upload',
+                    target: '_blank',
+                    rel: 'noopener noreferrer'
+                },
+                {
+                    label: 'ImgBB',
+                    href: 'https://imgbb.com/',
+                    target: '_blank',
+                    rel: 'noopener noreferrer'
+                }
+            ]), `image-hosting help links were incomplete or unsafe (state=${
+                JSON.stringify(imageHostingHelp)})`);
+            if (process.env.BPB_VERIFY_EDITOR_IMAGE_SCREENSHOT) {
+                await editorPage.locator('#bpb-report-editor').screenshot({
+                    path: process.env.BPB_VERIFY_EDITOR_IMAGE_SCREENSHOT
+                });
+            }
+
             const mountainUrl = 'https://better-peakbagger.test/showcase-alpine-ridge.png';
             const mountain = await readFile(path.join(root, 'store-assets', 'showcase-trip-report-mountain.png'));
             await editorPage.route(mountainUrl, route => route.fulfill({
