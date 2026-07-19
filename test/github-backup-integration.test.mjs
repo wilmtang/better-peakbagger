@@ -178,6 +178,31 @@ test('backup fails closed when the feature is off, disconnected, or the sender i
     assert.equal(off.error.code, 'disabled');
 });
 
+test('automatic backup declines on a revisit with no fresh snapshot, but pushes when one exists', async () => {
+    const backend = gitDataBackend();
+    const worker = createWorker({ settings: { enableGithubBackup: true, autoGithubBackup: true }, auth: AUTH, github: backend.handler });
+    const page = {
+        ascent: { id: 7654321, date: '2026-07-12' },
+        peak: { id: 2296, name: 'Mount Rainier' },
+        report: { markdown: '' },
+    };
+
+    // No snapshot stored yet: an auto push on a mere revisit declines quietly.
+    const revisit = await worker.send({ type: 'GITHUB_BACKUP_ASCENT', page, auto: true }, PEAK_SENDER);
+    assert.equal(revisit.ok, false);
+    assert.equal(revisit.error.code, 'no-fresh-save');
+
+    // After a save-time snapshot, the same auto push commits.
+    await worker.send({ type: 'GITHUB_BACKUP_SNAPSHOT', ...editSnapshot() }, EDIT_SENDER);
+    const pushed = await worker.send({ type: 'GITHUB_BACKUP_ASCENT', page, auto: true }, PEAK_SENDER);
+    assert.equal(pushed.ok, true);
+    assert.equal(pushed.result.commitUrl, 'https://github.com/me/backup/commit/C1');
+
+    // The status query reports the auto preference to the surface.
+    const status = await worker.send({ type: 'GITHUB_BACKUP_STATUS' }, PEAK_SENDER);
+    assert.equal(status.auto, true);
+});
+
 test('a GitHub failure surfaces its typed code without throwing', async () => {
     const failing = (method, path) => {
         if (method === 'GET' && path === '/repos/me/backup') return respond(401, { message: 'Bad credentials' });

@@ -853,6 +853,7 @@ import { githubClient as GithubClient } from './github-client.js';
         const connected = !!(auth && auth.token && auth.repo && auth.repo.owner && auth.repo.name);
         return {
             enabled: !!settings.enableGithubBackup,
+            auto: !!settings.autoGithubBackup,
             connected,
             repo: connected ? { fullName: auth.repo.fullName || `${auth.repo.owner}/${auth.repo.name}` } : null,
         };
@@ -912,6 +913,11 @@ import { githubClient as GithubClient } from './github-client.js';
         if (!auth.repo || !auth.repo.owner || !auth.repo.name) return { ok: false, error: { code: 'no-repo' } };
 
         const found = await findSnapshotForPage(message.page);
+        // Automatic backup fires on every saved-ascent page load, so it must push
+        // only right after a save — i.e. when a matching pending snapshot exists.
+        // Without one (an old ascent merely being viewed) it declines quietly so
+        // it never re-pushes on a revisit; the manual button is still offered.
+        if (message.auto && !found) return { ok: false, error: { code: 'no-fresh-save' } };
         const snapshot = mergeBackupSnapshot(found && found.record.snapshot, message.page);
         if (!snapshot || snapshot.ascent.id == null) return { ok: false, error: { code: 'no-data' } };
         snapshot.backup = {

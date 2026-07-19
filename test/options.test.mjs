@@ -372,3 +372,21 @@ test('a connected status renders the account and repository', async () => {
     const buttons = Array.from(el(dom, 'github-panel').querySelectorAll('button'), b => b.textContent);
     assert.ok(buttons.includes('Disconnect'));
 });
+
+test('the connected state exposes the auto-backup toggle and persists it', async () => {
+    const dom = await loadOptions({ enableGithubBackup: true }, {
+        prepareChrome: withGithubBackground({
+            enabled: true, connected: true, hasToken: true, auto: false,
+            account: { login: 'ada' }, repo: { owner: 'ada', name: 'peaks', fullName: 'ada/peaks' },
+        }),
+    });
+    await new Promise(r => dom.window.setTimeout(r, 40));
+    const autoEl = el(dom, 'github-auto-backup');
+    assert.ok(autoEl, 'the auto-backup checkbox is present when connected');
+    assert.equal(autoEl.checked, false);
+
+    autoEl.checked = true;
+    autoEl.dispatchEvent(new dom.window.Event('change'));
+    await new Promise(r => dom.window.setTimeout(r, 30));
+    assert.equal(dom.chrome._store.bpbSettings.autoGithubBackup, true);
+});

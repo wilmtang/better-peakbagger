@@ -205,6 +205,8 @@ button.github-repo:hover { border-color: var(--accent); }
 button.github-repo:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .github-connected { display: flex; align-items: center; gap: 8px; font-weight: 500; }
 .github-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--accent); flex: 0 0 auto; }
+.github-auto { display: flex; align-items: center; gap: 7px; font-size: 13px; color: var(--text); cursor: pointer; }
+.github-auto input[type="checkbox"] { width: 15px; height: 15px; margin: 0; accent-color: var(--accent); cursor: pointer; }
 
 .status {
     margin: 16px 2px 0;

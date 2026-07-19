@@ -355,8 +355,14 @@ begins, per the repository commit discipline.
    track); the remaining payload is the user's own ascent fields and trip
    report sent to the user's own repository on an explicit action, so no
    additional `data_collection_permissions` category is added.
-10. **Auto-backup toggle.** Separate opt-in setting performing the same push
-    after save-detection, same visible result states.
+10. **Auto-backup toggle.** **Done.** The `autoGithubBackup` setting (a
+    separate opt-in shown in the connected state of the options panel)
+    performs the same push automatically on the saved ascent page, with the
+    same working/success/error states. It fires only when a matching pending
+    snapshot exists (a fresh save), so revisiting an old ascent declines
+    quietly (`no-fresh-save`) and falls back to the manual button rather than
+    re-pushing. `GITHUB_BACKUP_STATUS` now reports the `auto` preference to the
+    surface. Covered by the integration, surface, and options suites.
 11. **Release verification.** `npm test`, `npm run verify:extension`, one
     real device-flow authorization + installation against the registered
     app, and a minimal, rate-limited live check on real Peakbagger in both

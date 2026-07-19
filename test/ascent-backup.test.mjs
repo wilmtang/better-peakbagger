@@ -93,6 +93,25 @@ test('a typed backup error shows an actionable message with a retry', async () =
     assert.ok(Array.from(bar(dom).querySelectorAll('button'), b => b.textContent).includes('Try again'));
 });
 
+test('automatic mode pushes on load without a click', async () => {
+    let received = null;
+    const { dom } = await loadSurface({
+        status: { enabled: true, connected: true, auto: true },
+        onBackup: message => { received = message; return { ok: true, result: { commitUrl: 'https://github.com/me/backup/commit/z', isUpdate: false } }; },
+    });
+    await waitFor(dom, () => bar(dom) && /Backed up/.test(bar(dom).textContent));
+    assert.ok(received && received.auto === true, 'the push was flagged automatic');
+});
+
+test('automatic mode on a revisit falls back to the manual button, not an error', async () => {
+    const { dom } = await loadSurface({
+        status: { enabled: true, connected: true, auto: true },
+        onBackup: () => ({ ok: false, error: { code: 'no-fresh-save' } }),
+    });
+    await waitFor(dom, () => bar(dom) && /Back up this ascent/.test(bar(dom).textContent));
+    assert.ok(bar(dom).querySelector('.bpb-gh-primary'), 'the manual Back up button is offered');
+});
+
 test('a visitor viewing someone else’s ascent gets no affordance', async () => {
     const html = await readFile(path.join(root, 'test', 'fixtures', 'pages', 'climber-ascent.html'), 'utf8');
     // Strip the owner-only edit link before load.

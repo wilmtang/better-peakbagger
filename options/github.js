@@ -48,6 +48,7 @@ export function initGithubBackup({ extensionApi, flash, save }) {
         for (const [key, value] of Object.entries(props)) {
             if (key === 'class') node.className = value;
             else if (key === 'text') node.textContent = value;
+            else if (key === 'checked') node.checked = !!value;
             else if (key.startsWith('on') && typeof value === 'function') node.addEventListener(key.slice(2), value);
             else if (value != null) node.setAttribute(key, value);
         }
@@ -108,11 +109,19 @@ export function initGithubBackup({ extensionApi, flash, save }) {
     const renderConnected = status => {
         const who = status.account && status.account.login ? `@${status.account.login}` : 'GitHub';
         const repo = status.repo ? status.repo.fullName || `${status.repo.owner}/${status.repo.name}` : '';
+        const autoToggle = el('label', { class: 'github-auto', for: 'github-auto-backup' }, [
+            el('input', {
+                type: 'checkbox', id: 'github-auto-backup', checked: !!status.auto,
+                onchange: event => { void save({ autoGithubBackup: event.target.checked }); },
+            }),
+            el('span', { text: 'Back up automatically after each save' }),
+        ]);
         render(
             el('p', { class: 'github-line github-connected' }, [
                 el('span', { class: 'github-dot' }),
                 el('span', { text: `Connected as ${who} · backing up to ${repo}` }),
             ]),
+            autoToggle,
             el('div', { class: 'github-actions' }, [
                 button('Change repository', { onClick: refreshRepos }),
                 button('Disconnect', { onClick: disconnect }),

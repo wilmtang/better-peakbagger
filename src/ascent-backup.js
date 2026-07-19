@@ -75,7 +75,7 @@ import { ascentPage as AscentPage } from './ascent-page.js';
         el('button', { type: 'button', class: 'bpb-gh-btn', text: 'Try again', onclick: () => runBackup(info) }),
     );
 
-    const runBackup = async info => {
+    const runBackup = async (info, { auto = false } = {}) => {
         renderWorking();
         let gpx = null;
         if (info.gpxUrl) {
@@ -88,18 +88,24 @@ import { ascentPage as AscentPage } from './ascent-page.js';
             peak: { id: info.peak.id, name: info.peak.name },
             report: { markdown: info.reportMarkdown || '' },
         };
-        const response = await sendBg({ type: 'GITHUB_BACKUP_ASCENT', page, gpx });
-        if (response && response.ok) renderSuccess(response.result);
-        else renderError(info, response && response.error);
+        const response = await sendBg({ type: 'GITHUB_BACKUP_ASCENT', page, gpx, auto });
+        if (response && response.ok) { renderSuccess(response.result); return; }
+        // Automatic mode on an already-backed-up revisit: fall back to the manual
+        // affordance rather than showing an error the user did not trigger.
+        if (auto && response && response.error && response.error.code === 'no-fresh-save') { renderIdle(info); return; }
+        renderError(info, response && response.error);
     };
 
-    const mountBar = info => {
+    const mountBar = (info, { auto = false } = {}) => {
         bar = el('div', { class: 'bpb-gh-bar', role: 'region', 'aria-label': 'GitHub backup' }, [
             el('div', { class: 'bpb-gh-body' }),
             el('button', { type: 'button', class: 'bpb-gh-dismiss', 'aria-label': 'Dismiss', text: '×', onclick: () => bar.remove() }),
         ]);
         document.body.insertBefore(bar, document.body.firstChild);
-        renderIdle(info);
+        // Automatic mode pushes right away (declining quietly on a revisit);
+        // manual mode waits for the click.
+        if (auto) runBackup(info, { auto: true });
+        else renderIdle(info);
     };
 
     const start = async () => {
@@ -108,7 +114,7 @@ import { ascentPage as AscentPage } from './ascent-page.js';
         if (info.ascentId == null || !info.isOwner) return;
         const status = await sendBg({ type: 'GITHUB_BACKUP_STATUS' });
         if (!status || !status.enabled || !status.connected) return;
-        mountBar(info);
+        mountBar(info, { auto: !!status.auto });
     };
 
     void start();
