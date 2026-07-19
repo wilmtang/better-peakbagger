@@ -281,3 +281,17 @@ test('clear drops the local token and repo', async () => {
     assert.equal(await store.isConnected(), false);
     assert.ok(!('bpbGithubAuth' in area.data));
 });
+
+test('concurrent auth-store writes preserve both patches', async () => {
+    const area = makeArea();
+    const store = Auth.createAuthStore(area);
+    await Promise.all([
+        store.setAccount({ login: 'ada' }),
+        store.setRepo({ owner: 'ada', name: 'peaks' }),
+    ]);
+
+    assert.deepEqual(await store.read(), {
+        account: { login: 'ada' },
+        repo: { owner: 'ada', name: 'peaks' },
+    });
+});

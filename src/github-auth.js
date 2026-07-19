@@ -268,6 +268,7 @@
     // The accessor is built over an injectable storage area so it is testable
     // without a browser; the default binds chrome.storage.local at call time.
     const createAuthStore = (area = resolveLocalArea()) => {
+        let mutationQueue = Promise.resolve();
         const read = async () => {
             if (!area) return null;
             try {
@@ -276,12 +277,17 @@
                 return value && typeof value === 'object' ? value : null;
             } catch { return null; }
         };
-        const write = async patch => {
+        const mutate = operation => {
+            const pending = mutationQueue.then(operation);
+            mutationQueue = pending.catch(() => {});
+            return pending;
+        };
+        const write = patch => mutate(async () => {
             if (!area) return null;
             const next = { ...(await read()), ...patch };
             try { await area.set({ [STORAGE_KEY]: next }); } catch { /* storage unavailable */ }
             return next;
-        };
+        });
         return {
             STORAGE_KEY,
             read,
@@ -300,10 +306,10 @@
             },
             // Disconnect: drop the local token and every derived choice. This
             // does not revoke on GitHub — that is uninstalling the app.
-            clear: async () => {
+            clear: () => mutate(async () => {
                 if (!area) return;
                 try { await area.remove(STORAGE_KEY); } catch { /* storage unavailable */ }
-            },
+            }),
         };
     };
 
