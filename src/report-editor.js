@@ -275,21 +275,26 @@ import { createMarkdownEditor } from './report-md-editor.js';
     mdHint.title = mediaHint;
     foot.append(status, mdHint);
 
-    // Contextual controls sit in a positioned layer above the toolbar. They
-    // must not become normal-flow rows or cover the writing surface: opening
-    // a tool must leave the cursor and editor where the user is working.
+    // Contextual controls sit above the entire toolbar region, including a
+    // visible draft-recovery bar. They must not become normal-flow rows or
+    // cover either recovery actions or the writing surface.
     const toolbar = el('div', 'bpb-re-toolbar');
     const contextual = el('div', 'bpb-re-contextual');
     contextual.append(tableBar, linkBox, imageBox, videoBox, moreBox);
-    toolbar.append(bar, contextual);
-    ui.append(draftBar, toolbar, richWrap, mdSplit, foot);
+    toolbar.append(draftBar, bar, contextual);
+    ui.append(toolbar, richWrap, mdSplit, foot);
 
     const boxes = [tableBar, linkBox, imageBox, videoBox, moreBox];
+    const manualBoxes = [linkBox, imageBox, videoBox, moreBox];
     const closeBoxes = () => { for (const box of boxes) box.hidden = true; };
     const toggleBox = box => {
         const wasOpen = !box.hidden;
         closeBoxes();
         box.hidden = wasOpen;
+        if (wasOpen) {
+            richEditor?.commands.focus();
+            refreshToolbar();
+        }
     };
 
     // ---- Native textarea sync (the submitted source of truth) ---------------
@@ -490,7 +495,7 @@ import { createMarkdownEditor } from './report-md-editor.js';
         for (const control of swatchButtons) {
             control.setAttribute('aria-pressed', String(snapshot.color === control.dataset.color));
         }
-        tableBar.hidden = !snapshot.inTable;
+        tableBar.hidden = !snapshot.inTable || manualBoxes.some(box => !box.hidden);
     };
 
     const openLinkBox = () => {
@@ -508,6 +513,7 @@ import { createMarkdownEditor } from './report-md-editor.js';
     const closeBoxAndRestoreEditor = () => {
         closeBoxes();
         richEditor?.commands.focus();
+        refreshToolbar();
     };
 
     const applyLink = () => {

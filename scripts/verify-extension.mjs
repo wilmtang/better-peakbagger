@@ -892,6 +892,42 @@ try {
                 .then(() => true).catch(() => false);
             check(offered, 'a differing local draft was not offered after reload');
             if (offered) {
+                await editorPage.locator('#bpb-report-editor').getByRole('button', {
+                    name: 'Rich text', exact: true
+                }).click();
+                await editorPage.locator('#bpb-report-editor').getByRole('button', {
+                    name: 'Insert image', exact: true
+                }).click();
+                const draftPanelLayout = await editorPage.evaluate(() => {
+                    const draft = document.querySelector('#bpb-report-editor .bpb-re-draft');
+                    const panel = document.querySelector('#bpb-report-editor .bpb-re-imagebox');
+                    const draftRect = draft?.getBoundingClientRect();
+                    const panelRect = panel?.getBoundingClientRect();
+                    return draftRect && panelRect ? {
+                        disjoint: panelRect.bottom <= draftRect.top + 1,
+                        panelBottom: panelRect.bottom,
+                        draftTop: draftRect.top
+                    } : null;
+                });
+                check(draftPanelLayout?.disjoint,
+                    `the image panel covered draft recovery actions (layout=${JSON.stringify(draftPanelLayout)})`);
+                if (process.env.BPB_VERIFY_EDITOR_DRAFT_PANEL_SCREENSHOT) {
+                    const editorBox = await editorPage.locator('#bpb-report-editor').boundingBox();
+                    const panelBox = await editorPage.locator('.bpb-re-imagebox').boundingBox();
+                    if (editorBox && panelBox) {
+                        const left = Math.min(editorBox.x, panelBox.x);
+                        const top = Math.max(0, panelBox.y - 8);
+                        const right = Math.max(editorBox.x + editorBox.width, panelBox.x + panelBox.width);
+                        const bottom = Math.min(editorBox.y + editorBox.height, editorBox.y + 180);
+                        await editorPage.screenshot({
+                            path: process.env.BPB_VERIFY_EDITOR_DRAFT_PANEL_SCREENSHOT,
+                            clip: { x: left, y: top, width: right - left, height: bottom - top }
+                        });
+                    }
+                }
+                await editorPage.locator('#bpb-report-editor').getByRole('button', {
+                    name: 'Insert image', exact: true
+                }).click();
                 await editorPage.locator('#bpb-report-editor').getByRole('button', { name: 'Restore draft', exact: true }).click();
                 const restored = await editorPage.evaluate(() => ({
                     mode: document.getElementById('bpb-report-editor').dataset.mode,

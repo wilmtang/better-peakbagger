@@ -95,6 +95,9 @@ test('the editor mounts on the ascent form and hides the native textarea', async
     assert.equal(ui.querySelector('.bpb-re-contextual')?.parentElement,
         ui.querySelector('.bpb-re-toolbar'),
         'contextual controls must stay in the toolbar layer, not in the writing surface flow');
+    assert.equal(ui.querySelector('.bpb-re-draft')?.parentElement,
+        ui.querySelector('.bpb-re-toolbar'),
+        'the overlay boundary must include the draft-recovery bar');
     assert.ok(ui.querySelector('.bpb-re-surface'), 'the rich surface should be mounted');
     assert.equal(editors(dom).rich.getHTML(), '<p></p>',
         'an empty report must not become a hard break');
@@ -264,6 +267,19 @@ test('the toolbar reflects the caret: active marks, block style, and table contr
     ui.querySelector('[aria-label="Insert table"]').click();
     assert.equal(ui.querySelector('.bpb-re-tablebar').hidden, false,
         'table controls should appear while the caret is inside a table');
+
+    ui.querySelector('[aria-label="Insert image"]').click();
+    assert.equal(ui.querySelector('.bpb-re-imagebox').hidden, false);
+    assert.equal(ui.querySelector('.bpb-re-tablebar').hidden, true,
+        'the automatic table row must not open behind another contextual panel');
+    ui.querySelector('[aria-label="Insert image"]').click();
+    assert.equal(ui.querySelector('.bpb-re-tablebar').hidden, false,
+        'dismissing a contextual panel should restore the applicable table row');
+
+    ui.querySelector('[aria-label="More formats"]').click();
+    ui.querySelector('[aria-label="More formats"]').click();
+    assert.equal(ui.querySelector('.bpb-re-tablebar').hidden, false,
+        'toggling More closed should restore the applicable table row');
     await waitFor(dom, () => dom.window.document.getElementById('JournalText').value.includes('[table border="1"]'));
 });
 

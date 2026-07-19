@@ -40,9 +40,9 @@
     background: #f2f2f0;
 }
 
-/* Contextual controls open upward from the toolbar, never over the writing
- * surface. Keeping this layer out of normal flow preserves the editor's
- * position while leaving its text and selection reachable. */
+/* Contextual controls open above the complete toolbar region, including a
+ * visible draft-recovery bar. Keeping this layer out of normal flow preserves
+ * the editor's position without covering recovery actions or the surface. */
 .bpb-re-toolbar {
     position: relative;
     z-index: 2;
