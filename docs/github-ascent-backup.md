@@ -173,8 +173,10 @@ Notes:
 App (device flow enabled, no webhook, repository permission *Contents: read
 and write*, installable on any account, opted out of user-token expiration)
 is the mechanism behind "OAuth to one repo". Only the app's public
-`client_id` ships in the extension; no client secret exists anywhere. The
-flow:
+`client_id` ships in the extension. Both device-flow endpoints take only the
+`client_id` — unlike the web application flow, whose token exchange requires
+a client secret — so no secret is ever generated for the app and none exists
+to leak. The flow:
 
 1. `POST https://github.com/login/device/code` with the `client_id`; show
    the returned `user_code` and point the user at `github.com/login/device`.
@@ -279,8 +281,8 @@ begins, per the repository commit discipline.
    fetch stub; no network.
 4. **App registration + device-flow client.** Register the GitHub App
    (manual, one-time: device flow on, no webhook, *Contents: read and
-   write*, installable on any account, user-token expiration opted out) and
-   land its public `client_id` in code. `src/github-auth.js`: device-flow
+   write*, installable on any account, user-token expiration opted out, no
+   client secret generated) and land its public `client_id` in code. `src/github-auth.js`: device-flow
    client with an injected `fetch` (code request, polling with
    `interval`/`slow_down` handling, typed errors) plus the `storage.local`
    token/repo accessor, tested against a scripted fetch stub.
