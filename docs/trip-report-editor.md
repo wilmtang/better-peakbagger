@@ -391,9 +391,11 @@ fragments. Images and direct videos are stricter: only HTTPS or root-relative
 sources are emitted; image dimensions are bounded; the local preview uses a
 no-referrer policy, and video never autoplays. A recognized YouTube URL is
 instead emitted as a canonical, no-referrer YouTube iframe. A remote image,
-video, or YouTube player in the final saved report is still loaded by
-Peakbagger and therefore makes a request to that host when someone reads the
-report.
+video, or YouTube player can make a request to its host when it is visible in
+the Rich editor or Markdown preview. Media in the final saved report is also
+loaded by Peakbagger and therefore makes a request to that host when someone
+reads the report. No-referrer prevents the report URL from being sent, but it
+does not hide the requesting browser's IP address or ordinary request metadata.
 
 ## Local drafts and cache limits
 

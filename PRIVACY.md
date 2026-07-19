@@ -80,6 +80,13 @@ climber and ascent or peak, expire after 14 days, and are limited to 30 drafts.
 The editor offers a differing draft for explicit restoration; it does not
 silently replace the server's text.
 
+When a Rich editor or Markdown preview displays a user-provided remote image,
+direct video, or YouTube embed, the browser may request that media from its
+host. Better Peakbagger applies a no-referrer policy, but the host still
+receives the user's IP address and ordinary request metadata. Saving remote
+media into a report also causes readers' browsers to request it when
+Peakbagger displays the published report.
+
 ## Optional 3D terrain
 
 The 3D feature is off by default, but its control remains visible. The first
@@ -109,8 +116,14 @@ clear the cache.
   selected.
 - **Selected map providers** may receive raster tile requests when their
   compatible Peakbagger layer is mirrored in 3D.
+- **YouTube** receives player requests when a YouTube trip-report embed is
+  displayed in the Rich editor, Markdown preview, or published report.
+- **User-provided media hosts** may receive image or direct-video requests when
+  that media is displayed in the Rich editor, Markdown preview, or published
+  report.
 - **Windy, Copernicus Browser, NOHRSC, and AirNow** are opened only when the user
   follows their corresponding summit link.
 
-Better Peakbagger packages its executable code and libraries locally. It does
-not download or execute remote code.
+Better Peakbagger packages all extension code and libraries locally. A YouTube
+player is remote page content isolated in YouTube's cross-origin iframe; it is
+never loaded as extension code or given extension privileges.
