@@ -102,7 +102,7 @@ test('popup discards the cached GPX before offering a fresh capture', async () =
     dom.window.eval(source);
     await waitFor(() => !dom.window.document.getElementById('clear-capture').hidden);
     dom.window.document.getElementById('clear-capture').click();
-    await waitFor(() => /Cached capture removed/.test(dom.window.document.getElementById('state').textContent));
+    await waitFor(() => /Captured track data deleted/.test(dom.window.document.getElementById('state').textContent));
 
     assert.ok(messages.some(message => message.type === 'CAPTURE_CLEAR' && message.tabId === 9));
     assert.equal(dom.window.document.getElementById('results').hidden, true);

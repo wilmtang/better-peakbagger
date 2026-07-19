@@ -214,6 +214,7 @@ test('map route appearance populates, enforces a visible casing, and saves edits
     assert.equal(el(dom, 'map-route-width').value, '8');
     assert.equal(el(dom, 'map-route-casing-color').value, '#ffffff');
     assert.equal(el(dom, 'map-route-casing-width').value, '10');
+    assert.equal(el(dom, 'map-route-casing-width').min, '10');
 
     const routeWidth = el(dom, 'map-route-width');
     routeWidth.value = '11';
@@ -221,6 +222,7 @@ test('map route appearance populates, enforces a visible casing, and saves edits
     await new Promise(r => dom.window.setTimeout(r, 10));
     assert.equal(dom.chrome._store.bpbSettings.mapRouteWidth, 11);
     assert.equal(dom.chrome._store.bpbSettings.mapRouteCasingWidth, 13);
+    assert.equal(el(dom, 'map-route-casing-width').min, '13');
 
     const casingColor = el(dom, 'map-route-casing-color');
     casingColor.value = '#efe8d5';
@@ -432,6 +434,15 @@ test('a denied host-permission request reverts the toggle and leaves the gate of
     await new Promise(r => dom.window.setTimeout(r, 30));
     assert.equal(toggle.checked, false);
     assert.notEqual(dom.chrome._store.bpbSettings.enableGithubBackup, true);
+    assert.equal(el(dom, 'github-detail').hidden, false);
+    assert.match(el(dom, 'github-panel').textContent, /GitHub access wasn’t granted/);
+    assert.ok(Array.from(el(dom, 'github-panel').querySelectorAll('button'))
+        .some(button => button.textContent === 'Try again'));
+
+    dom.window.dispatchEvent(new dom.window.Event('focus'));
+    await new Promise(r => dom.window.setTimeout(r, 10));
+    assert.match(el(dom, 'github-panel').textContent, /GitHub access wasn’t granted/,
+        'the actionable permission error must survive focus changes');
 });
 
 test('a lost device flow stops polling and offers a retry', async () => {

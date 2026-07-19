@@ -32,6 +32,7 @@ export function initGithubBackup({ extensionApi, flash, save }) {
 
     let pollTimer = null;
     let countdownTimer = null;
+    let permissionError = false;
     const stopPollTimer = () => { if (pollTimer) { clearTimeout(pollTimer); pollTimer = null; } };
     const stopTimers = () => {
         stopPollTimer();
@@ -72,6 +73,15 @@ export function initGithubBackup({ extensionApi, flash, save }) {
         el('p', { class: 'github-line', text: 'Connect a GitHub account, then pick one repository to hold your ascent backups.' }),
         el('div', { class: 'github-actions' }, button('Connect GitHub', { primary: true, onClick: connect })),
     );
+
+    const renderPermissionDenied = () => {
+        stopTimers();
+        detailEl.hidden = false;
+        render(
+            el('p', { class: 'github-line github-error', text: 'GitHub access wasn’t granted. Allow access to GitHub to enable backups.' }),
+            el('div', { class: 'github-actions' }, button('Try again', { primary: true, onClick: requestGithubPermission })),
+        );
+    };
 
     const renderConnecting = code => {
         const codeValue = el('span', { class: 'github-code-value', text: code.userCode || '········' });
@@ -234,6 +244,7 @@ export function initGithubBackup({ extensionApi, flash, save }) {
 
     // Show the connection state for the current stored status.
     const renderFromStatus = async () => {
+        if (permissionError) return renderPermissionDenied();
         const status = await send({ type: 'GITHUB_AUTH_STATUS' });
         if (!status || !status.enabled) { detailEl.hidden = true; stopTimers(); return; }
         detailEl.hidden = false;
@@ -249,20 +260,28 @@ export function initGithubBackup({ extensionApi, flash, save }) {
 
     // ---- toggle ------------------------------------------------------------
 
+    async function requestGithubPermission() {
+        permissionError = false;
+        let granted = false;
+        try {
+            granted = await extensionApi.permissions.request({ origins: GITHUB_ORIGINS });
+        } catch { granted = false; }
+        if (!granted) {
+            enableEl.checked = false;
+            permissionError = true;
+            renderPermissionDenied();
+            return;
+        }
+        enableEl.checked = true;
+        await save({ enableGithubBackup: true });
+        await renderFromStatus();
+    }
+
     enableEl.addEventListener('change', async () => {
         if (enableEl.checked) {
-            let granted = false;
-            try {
-                granted = await extensionApi.permissions.request({ origins: GITHUB_ORIGINS });
-            } catch { granted = false; }
-            if (!granted) {
-                enableEl.checked = false;
-                flash('GitHub access is needed to back up');
-                return;
-            }
-            await save({ enableGithubBackup: true });
-            await renderFromStatus();
+            await requestGithubPermission();
         } else {
+            permissionError = false;
             stopTimers();
             await save({ enableGithubBackup: false, autoGithubBackup: false });
             detailEl.hidden = true;
@@ -283,6 +302,7 @@ export function initGithubBackup({ extensionApi, flash, save }) {
         populate(settings) {
             const enabled = !!settings.enableGithubBackup;
             enableEl.checked = enabled;
+            if (!enabled && permissionError) { detailEl.hidden = false; return; }
             if (!painted || enabled !== lastEnabled) {
                 painted = true;
                 lastEnabled = enabled;

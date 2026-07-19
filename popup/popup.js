@@ -131,7 +131,7 @@
         clear(summary);
         clearCaptureButton.hidden = !job.hasCachedGpx;
         clearCaptureButton.disabled = false;
-        clearCaptureButton.textContent = 'Discard cached capture';
+        clearCaptureButton.textContent = 'Delete captured track data';
         const counts = document.createElement('strong');
         counts.textContent = `${track.originalPointCount.toLocaleString()} → ${track.retainedPointCount.toLocaleString()} points`;
         summary.append(counts, document.createTextNode(` · max deviation ${track.maxDeviationM.toFixed(1)} m · health/device metadata removed`));
@@ -230,18 +230,18 @@
         clearTimeout(pollTimer);
         openButton.disabled = true;
         clearCaptureButton.disabled = true;
-        clearCaptureButton.textContent = 'Discarding…';
+        clearCaptureButton.textContent = 'Deleting…';
         try {
             const response = await ext.runtime.sendMessage({ type: 'CAPTURE_CLEAR', tabId: activeTab.id });
-            if (!response?.ok) throw new Error(response?.error?.message || 'The cached capture could not be discarded.');
+            if (!response?.ok) throw new Error(response?.error?.message || 'The captured track data could not be deleted.');
             currentJob = null;
             stateCard(
-                'Cached capture removed',
-                'The reduced GPX and any prepared draft handoffs were deleted. Existing draft tabs were left open but disconnected.',
+                'Captured track data deleted',
+                'The reduced track and any prepared draft handoffs were deleted. Existing draft tabs were left open but disconnected.',
                 { action: { label: 'Capture again', primary: true, onClick: () => beginCapture(false) } }
             );
         } catch (error) {
-            stateCard('Couldn’t discard capture', error.message, {
+            stateCard('Couldn’t delete captured track data', error.message, {
                 kind: 'error',
                 action: { label: 'Back to results', onClick: () => renderResults(currentJob) }
             });

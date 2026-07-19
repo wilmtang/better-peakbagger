@@ -96,6 +96,7 @@ import { initGithubBackup } from './github.js';
         mapRouteColorEl.value = settings.mapRouteColor;
         mapRouteWidthEl.value = String(settings.mapRouteWidth);
         mapRouteCasingColorEl.value = settings.mapRouteCasingColor;
+        mapRouteCasingWidthEl.min = String(settings.mapRouteWidth + 2);
         mapRouteCasingWidthEl.value = String(settings.mapRouteCasingWidth);
         mapViewportWidthEl.value = String(settings.mapViewportWidth);
         mapViewportHeightEl.value = String(settings.mapViewportHeight);

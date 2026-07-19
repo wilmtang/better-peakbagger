@@ -41,7 +41,10 @@ UX polish; nothing here is an exploitable security hole.
 - **U5 — Done.** The device code is a labelled copy control with selection
   fallback, and the approval state shows a live expiry countdown that becomes
   an actionable expired-flow error.
-- **U3, U6–U7 — Pending.**
+- **U6–U7 — Done.** The casing input exposes its route-relative minimum;
+  popup deletion copy names the captured track data; and denied GitHub access
+  stays as actionable inline guidance through focus changes.
+- **U3 — Pending.**
 
 ---
 
