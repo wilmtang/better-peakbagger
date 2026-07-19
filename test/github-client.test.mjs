@@ -24,7 +24,7 @@ const { githubClient: Client } = await import('../src/github-client.js');
 const snapshot = (overrides = {}) => ({
     ascent: { id: 1234567, date: '2026-07-12', suffix: '', route: 'DC', gainFt: '9000', ...overrides.ascent },
     peak: { id: 2296, name: 'Mount Rainier', elevationFt: '14411', location: 'Washington, USA', ...overrides.peak },
-    report: { mode: 'rich', bracket: '[b]nice[/b]', markdownSource: null, ...overrides.report },
+    report: { markdown: '**nice**', ...overrides.report },
     backup: { extensionVersion: '2.2.0', syncedAt: '2026-07-12T21:04:05Z', ...overrides.backup },
 });
 

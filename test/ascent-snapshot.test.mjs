@@ -56,7 +56,7 @@ test('build maps the ascentedit form fields into the backup snapshot', async () 
     const params = new URLSearchParams('cid=900001&pid=2296');
     const { snapshot, identity, key } = Snapshot.build({
         form, params,
-        report: { mode: 'markdown', bracket: '[b]Great[/b]', markdownSource: '**Great**' },
+        report: { markdown: '**Great**' },
         extensionVersion: '2.2.0',
     });
 
@@ -73,8 +73,8 @@ test('build maps the ascentedit form fields into the backup snapshot', async () 
     assert.deepEqual(snapshot.ascent.gear, [gear0Label]);
     // Peak falls back to the URL pid when no peak is selected in the list box.
     assert.equal(snapshot.peak.id, 2296);
-    // Report passes through, sidecar intact.
-    assert.deepEqual(snapshot.report, { mode: 'markdown', bracket: '[b]Great[/b]', markdownSource: '**Great**' });
+    // The resolved Markdown body passes through.
+    assert.deepEqual(snapshot.report, { markdown: '**Great**' });
     assert.equal(snapshot.backup.extensionVersion, '2.2.0');
 
     assert.deepEqual(identity, { climberId: 900001, ascentId: null, peakId: 2296, date: '2026-07-12' });
@@ -96,13 +96,12 @@ test('a selected peak in the list box wins over the URL pid', async () => {
     assert.equal(snapshot.peak.name, 'Glacier Peak');
 });
 
-test('an edited ascent carries its aid and an empty report defaults to plain', async () => {
+test('an edited ascent carries its aid and an empty report yields an empty body', async () => {
     const { form } = await loadForm();
     setValue(form, 'DateText', '2026-07-12');
     const params = new URLSearchParams('cid=900001&aid=555&pid=2296');
     const { snapshot, identity } = Snapshot.build({ form, params, report: {} });
     assert.equal(snapshot.ascent.id, 555);
     assert.equal(identity.ascentId, 555);
-    assert.equal(snapshot.report.mode, 'plain');
-    assert.equal(snapshot.report.markdownSource, null);
+    assert.deepEqual(snapshot.report, { markdown: '' });
 });

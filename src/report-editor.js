@@ -371,6 +371,14 @@ import { createMarkdownEditor } from './report-md-editor.js';
     Settings.get().then(next => { backupEnabled = !!next.enableGithubBackup; }).catch(() => {});
     Settings.subscribe(next => { backupEnabled = !!next.enableGithubBackup; });
 
+    // Resolve the report to a Markdown body here, where the DOM and the Markdown
+    // parser exist: the exact Markdown-source sidecar when the user authored in
+    // Markdown, otherwise the submitted bracket markup converted to Markdown.
+    const reportMarkdownBody = () =>
+        (state.mode === 'markdown' && typeof state.mdSource === 'string')
+            ? state.mdSource
+            : Markup.bracketToMarkdown(textarea.value);
+
     const captureBackupSnapshot = () => {
         if (!backupEnabled) return;
         try {
@@ -378,7 +386,7 @@ import { createMarkdownEditor } from './report-md-editor.js';
             const { key, identity, snapshot } = AscentSnapshot.build({
                 form,
                 params,
-                report: { mode: state.mode, bracket: textarea.value, markdownSource: state.mdSource },
+                report: { markdown: reportMarkdownBody() },
                 extensionVersion: version,
             });
             ext.runtime.sendMessage({ type: 'GITHUB_BACKUP_SNAPSHOT', key, identity, snapshot });

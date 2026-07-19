@@ -114,7 +114,8 @@
 
     // Build the save-time snapshot from the live form and the editor's report.
     // `params` is a URLSearchParams of the edit page's query (cid/aid/pid);
-    // `report` is { mode, bracket, markdownSource } from the editor.
+    // `report` is { markdown } — the final Markdown body the editor already
+    // resolved (exact sidecar or bracket→Markdown), so this module needs no DOM.
     const build = ({ form, params, report = {}, extensionVersion = '' } = {}) => {
         const climberId = params && params.get('cid') ? Number(params.get('cid')) : null;
         const ascentId = params && params.get('aid') ? Number(params.get('aid')) : null;
@@ -148,11 +149,7 @@
         const snapshot = {
             ascent,
             peak: { id: peak.id, name: peak.name },
-            report: {
-                mode: report.mode || 'plain',
-                bracket: typeof report.bracket === 'string' ? report.bracket : '',
-                markdownSource: typeof report.markdownSource === 'string' ? report.markdownSource : null,
-            },
+            report: { markdown: typeof report.markdown === 'string' ? report.markdown : '' },
             backup: { extensionVersion: trim(extensionVersion), syncedAt: null },
         };
 

@@ -10,19 +10,11 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
-import vm from 'node:vm';
-import { JSDOM } from 'jsdom';
+import { githubBackup as Backup } from '../src/github-backup.js';
 
-// github-backup imports report-markup, which reads the global DOMParser (for
-// bracket parsing) and marked (for Markdown), so provide both before importing.
-const browserDom = new JSDOM('');
-globalThis.DOMParser = browserDom.window.DOMParser;
-const markedContext = vm.createContext({});
-vm.runInContext(await readFile(new URL('../node_modules/marked/lib/marked.umd.js', import.meta.url), 'utf8'), markedContext);
-globalThis.marked = markedContext.marked;
-
-const { githubBackup: Backup } = await import('../src/github-backup.js');
+// github-backup is browser-API-free: the report body arrives already resolved
+// to Markdown (the bracket→Markdown conversion runs in the content script,
+// where a DOM exists), so this suite needs no DOMParser or marked.
 
 const baseSnapshot = () => ({
     ascent: {
@@ -42,7 +34,7 @@ const baseSnapshot = () => ({
         weather: { precip: 'None', temperature: '28' },
     },
     peak: { id: 2296, name: 'Mount Rainier', elevationFt: '14411', location: 'Washington, USA' },
-    report: { mode: 'rich', bracket: '[b]Great climb[/b]', markdownSource: null },
+    report: { markdown: '**Great climb**' },
     backup: { extensionVersion: '2.2.0', syncedAt: '2026-07-12T21:04:05Z' },
 });
 
@@ -180,13 +172,9 @@ test('a partial date serializes to the known components and undated to null', ()
 
 // ---- report.md ------------------------------------------------------------
 
-test('report.md preserves the exact Markdown sidecar verbatim when authored in Markdown', () => {
+test('report.md wraps the resolved Markdown body verbatim under self-describing frontmatter', () => {
     const snap = baseSnapshot();
-    snap.report = {
-        mode: 'markdown',
-        bracket: '[b]Baker[/b] under blue skies',
-        markdownSource: 'We climbed **Baker** under blue skies.\n\n- ice axe\n- crampons',
-    };
+    snap.report = { markdown: 'We climbed **Baker** under blue skies.\n\n- ice axe\n- crampons' };
     const md = Backup.buildReportMarkdown(snap);
     assert.ok(md.startsWith('---\n'));
     assert.ok(md.includes('peak: "Mount Rainier"'));
@@ -197,11 +185,14 @@ test('report.md preserves the exact Markdown sidecar verbatim when authored in M
     assert.ok(md.endsWith('\n'));
 });
 
-test('report.md converts bracket markup to Markdown when not authored in Markdown', () => {
+test('report.md tolerates a missing body (frontmatter only)', () => {
     const snap = baseSnapshot();
-    snap.report = { mode: 'rich', bracket: '[b]Great[/b] and [i]steep[/i]', markdownSource: null };
+    snap.report = { markdown: '' };
     const md = Backup.buildReportMarkdown(snap);
-    assert.ok(md.includes('**Great** and *steep*'));
+    assert.ok(md.startsWith('---\n'));
+    assert.ok(md.includes('peakbagger: https://peakbagger.com/climber/ascent.aspx?aid=1234567'));
+    // Frontmatter only: the closing fence is the last content line.
+    assert.equal(md.trimEnd().split('\n').pop(), '---');
 });
 
 test('a colon in the peak name is safely quoted in the frontmatter', () => {

@@ -10,12 +10,13 @@
 // folder-slug rules and the commit-message text.
 //
 // This module has no DOM or extension-API dependency: it is browser-API-free so
-// the background worker can build the commit payload without coupling the
-// serialization to network, tokens, or messaging. The one dependency is the
-// trip-report converter (src/report-markup.js), used only when the report was
-// not authored in Markdown and must be turned from Peakbagger bracket markup
-// into Markdown. See docs/github-ascent-backup.md for the design and the
-// snapshot contract summarized below.
+// the background worker (where there is no DOMParser) can build the commit
+// payload without coupling the serialization to network, tokens, or messaging.
+// The report body arrives already as Markdown in `report.markdown` — the
+// content script, which does have a DOM and the Markdown parser, resolves the
+// exact Markdown sidecar vs a bracket-markup conversion (via src/report-markup.js)
+// before the snapshot reaches here. See docs/github-ascent-backup.md for the
+// design and the snapshot contract summarized below.
 //
 // Snapshot contract (the shape this module consumes; the content script and
 // background worker produce it and are the single owners of the Peakbagger-DOM
@@ -35,15 +36,14 @@
 //       weather: { precip, temperature }
 //     },
 //     peak: { id, name, elevationFt, location },
-//     report: { mode: 'markdown'|'rich'|'plain', bracket, markdownSource },
+//     report: { markdown }        // the final Markdown body (sidecar-verbatim
+//                                 //  or bracket→Markdown), resolved upstream
 //     backup: { extensionVersion, syncedAt }   // syncedAt is caller-stamped
 //   }
 //
 // Numeric fields accept the raw string the form held ("9000", "8.0"); this
 // module coerces them and omits anything blank or unparseable rather than
 // inventing a value. Idempotent: safe to inject more than once into the global.
-
-import { reportMarkup as Markup } from './report-markup.js';
 
     const SCHEMA_VERSION = 1;
     const ASCENTS_DIR = 'ascents';
@@ -251,16 +251,13 @@ import { reportMarkup as Markup } from './report-markup.js';
     // the quoting. Keeps the frontmatter valid for names with colons or quotes.
     const yamlString = value => `"${trimString(value).replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
 
-    // The report body as Markdown. When the user authored in Markdown, their
-    // exact source is preserved verbatim — their spelling, not a round trip.
-    // Otherwise the submitted bracket markup is converted through the shared
-    // allowlisted report AST.
+    // The report body, already resolved to Markdown upstream: the exact
+    // Markdown-source sidecar when the user authored in Markdown, otherwise the
+    // submitted bracket markup converted through src/report-markup.js. That
+    // conversion needs a DOM, so it runs in the content script, not here.
     const reportBody = report => {
-        const source = report && typeof report === 'object' ? report : {};
-        if (source.mode === 'markdown' && typeof source.markdownSource === 'string') {
-            return source.markdownSource;
-        }
-        return Markup.bracketToMarkdown(typeof source.bracket === 'string' ? source.bracket : '');
+        const markdown = report && typeof report === 'object' ? report.markdown : '';
+        return typeof markdown === 'string' ? markdown : '';
     };
 
     // report.md: a short self-describing frontmatter block (peak, date,
