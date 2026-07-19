@@ -22,6 +22,7 @@
 
 import { settings as Settings } from './settings.js';
 import { reportMarkup as Markup } from './report-markup.js';
+import { ascentSnapshot as AscentSnapshot } from './ascent-snapshot.js';
 import { createRichEditor, richCommands, richState } from './report-rich-editor.js';
 import { createMarkdownEditor } from './report-md-editor.js';
 
@@ -408,11 +409,48 @@ import { createMarkdownEditor } from './report-md-editor.js';
         void localStore.remove(draftKey).catch(() => {});
     };
 
+    // ---- GitHub backup snapshot ------------------------------------------------
+    //
+    // When GitHub backup is enabled, capture the submitted ascent form plus the
+    // exact Markdown-source sidecar at Save and hand it to the background worker,
+    // which keeps it (identity-keyed, 30-minute expiry) in storage.session for
+    // the saved ascent page to back up. Best-effort and gated: it never blocks or
+    // alters the Peakbagger save, and no snapshot is sent when the feature is off.
+    let backupEnabled = false;
+    Settings.get().then(next => { backupEnabled = !!next.enableGithubBackup; }).catch(() => {});
+    Settings.subscribe(next => { backupEnabled = !!next.enableGithubBackup; });
+
+    // Resolve the report to a Markdown body here, where the DOM and the Markdown
+    // parser exist: the exact Markdown-source sidecar when the user authored in
+    // Markdown, otherwise the submitted bracket markup converted to Markdown.
+    const reportMarkdownBody = () =>
+        (state.mode === 'markdown' && typeof state.mdSource === 'string')
+            ? state.mdSource
+            : Markup.bracketToMarkdown(textarea.value);
+
+    const captureBackupSnapshot = () => {
+        if (!backupEnabled) return;
+        try {
+            const version = ext.runtime.getManifest ? ext.runtime.getManifest().version : '';
+            const { key, identity, snapshot } = AscentSnapshot.build({
+                form,
+                params,
+                report: { markdown: reportMarkdownBody() },
+                extensionVersion: version,
+            });
+            ext.runtime.sendMessage({ type: 'GITHUB_BACKUP_SNAPSHOT', key, identity, snapshot });
+        } catch (error) { /* backup is best-effort; never disrupt the save */ }
+    };
+    // Enter-to-submit does not click a Save button; capture on submit too. The
+    // capture-phase flush listener above is registered first, so the textarea is
+    // already current when this reads it.
+    form.addEventListener('submit', captureBackupSnapshot, true);
+
     // Saving the ascent is the moment the draft has served its purpose. If the
     // save fails server-side, the value still round-trips in the form post.
     for (const id of ['SaveButton', 'SaveButton2']) {
         const save = document.getElementById(id);
-        if (save) save.addEventListener('click', () => { flushSync(); clearDraft(); }, true);
+        if (save) save.addEventListener('click', () => { flushSync(); captureBackupSnapshot(); clearDraft(); }, true);
     }
 
     const offerDraft = stored => {

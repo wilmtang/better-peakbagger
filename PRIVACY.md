@@ -30,11 +30,19 @@ requests for the viewed area only after the user enables that feature.
 - **Peakbagger host access** enables GPX analysis, ascent filtering, theme,
   login and summit checks, and validated draft filling on Peakbagger. There is
   no persistent Garmin Connect or Strava host access.
+- **Optional GitHub host access** (`github.com`, `api.github.com`) is requested
+  only when the user turns on GitHub backup, and only then. It authorizes the
+  extension to sign in via GitHub's device flow and to write ascent backups to
+  the one repository the user grants. The GitHub user token lives in
+  `storage.local` (never `storage.sync`), is held only by the background worker,
+  and is never exposed to any web page.
 - **Firefox `locationInfo` disclosure** reports that activity coordinates are
-  sent to Peakbagger for summit lookup and GPS Preview and, when the user loads
-  the 3D view, that tile coordinates for the viewed area go to Mapterhorn,
+  sent to Peakbagger for summit lookup and GPS Preview; when the user loads the
+  3D view, that tile coordinates for the viewed area go to Mapterhorn,
   OpenFreeMap when OSM Vector is selected, and a compatible selected map
-  provider. It is a data-handling disclosure, not permission to read device
+  provider; and, when the user backs an ascent up to GitHub, that Peakbagger's
+  stored GPS track (which contains coordinates) is written to the user's chosen
+  repository. It is a data-handling disclosure, not permission to read device
   location.
 
 ## Activity capture
@@ -109,6 +117,30 @@ responses may be reused from the bounded, best-effort local cache. Returning to
 2D destroys the renderer and stops that session's tile activity, but does not
 clear the cache.
 
+## GitHub backup (optional)
+
+GitHub backup is off by default and takes effect only after the user enables it
+in Settings and connects a repository. It never blocks or alters the Peakbagger
+save; the extension never clicks a Peakbagger Save control.
+
+- **What leaves the browser:** for an ascent the user chooses to back up, the
+  extension sends that ascent's structured fields (the values the user entered),
+  the trip report as Markdown, and Peakbagger's *stored* GPS track — the same
+  reduced, user-approved track Peakbagger already publishes on the ascent page,
+  not the raw provider GPX, which still never leaves the activity page. It goes
+  only to the single GitHub repository the user granted, over the GitHub API.
+- **When it leaves:** only on the user's explicit **Back up to GitHub** click,
+  or — if the user separately turns on automatic backup — after each save. No
+  ascent is transmitted without one of those opt-ins.
+- **Ownership:** the backup affordance appears only on ascents the signed-in
+  climber owns; it fails closed otherwise.
+- **Authorization:** sign-in uses GitHub's device flow with only the app's
+  public client id (no client secret exists). Repository scope is chosen on
+  GitHub's own installation page ("Only select repositories"). The resulting
+  token can reach only that repository's contents and is revocable at any time
+  by disconnecting in Settings or uninstalling the app on GitHub. The token is
+  stored in `storage.local` and never synced.
+
 ## Third-party services
 
 - **Peakbagger** receives summit-corridor lookups and user-approved GPS Preview
@@ -125,6 +157,10 @@ clear the cache.
   report.
 - **Windy, Copernicus Browser, NOHRSC, and AirNow** are opened only when the user
   follows their corresponding summit link.
+- **GitHub** receives ascent backups (fields, Markdown trip report, and
+  Peakbagger's stored GPS track) only after the user enables GitHub backup,
+  connects a repository, and either clicks Back up or opts into automatic
+  backup. Data goes only to the user-chosen repository.
 
 Better Peakbagger packages all extension code and libraries locally. A YouTube
 player is remote page content isolated in YouTube's cross-origin iframe; it is

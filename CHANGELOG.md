@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+- **Back up ascents to GitHub.** An opt-in feature that saves each ascent to a
+  GitHub repository you control. Turn it on in Settings and connect once via
+  GitHub's device flow (only the app's public client id ships — no secret, no
+  token to paste), then pick a single repository on GitHub's own installation
+  page. After you save an ascent, a **Back up to GitHub** button on the ascent
+  page commits one folder per ascent — the trip report as real Markdown, every
+  entered field as versioned `ascent.json`, and Peakbagger's stored GPS track —
+  as a single atomic Git Data commit; re-saving re-syncs the same folder even
+  if the date or peak changed. An optional "back up automatically after each
+  save" mode does the same without the click. The backup is strictly read-only
+  toward Peakbagger and never clicks a Save control; the access token lives only
+  in local extension storage, never synced, and never reaches a web page. The
+  optional `github.com` / `api.github.com` host permissions are requested only
+  when the feature is enabled. See
+  [github-ascent-backup.md](docs/github-ascent-backup.md).
+
 - **Trip-report editor rebuilt on established editors.** Rich text mode now
   runs on TipTap (ProseMirror) with a schema locked to the supported
   Peakbagger tags: live toolbar states, undo/redo, markdown-style typing

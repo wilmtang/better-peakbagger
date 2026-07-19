@@ -204,6 +204,59 @@ button.secondary:focus-visible { outline: 2px solid var(--accent); outline-offse
 input[type="number"].mini { min-width: 0; width: 72px; padding: 4px 8px; }
 .check input[type="number"]:disabled { opacity: .45; }
 
+/* GitHub backup setup panel. The detail row spans the card width and is a
+   plain block rather than the label/control split the other rows use. */
+.github-detail { display: block; }
+.github-detail[hidden] { display: none; }
+.github-panel { display: flex; flex-direction: column; gap: 12px; }
+.github-line { margin: 0; font-size: 13px; color: var(--text); max-width: 58ch; }
+.github-hint { margin: 0; font-size: 12px; color: var(--sub); max-width: 58ch; }
+.github-error { color: #d0453b; }
+.github-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.github-actions button.secondary { align-self: auto; }
+button.github-primary {
+    font: inherit;
+    font-weight: 600;
+    color: var(--accent-fg);
+    background: var(--accent);
+    border: 1px solid var(--accent);
+    border-radius: 8px;
+    padding: 6px 12px;
+    cursor: pointer;
+}
+button.github-primary:hover { filter: brightness(1.06); }
+button.github-primary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.github-code {
+    align-self: flex-start;
+    padding: 10px 16px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 22px;
+    font-weight: 700;
+    letter-spacing: .18em;
+    color: var(--text);
+    background: var(--input-bg);
+    border: 1px solid var(--input-border);
+    border-radius: 10px;
+    user-select: all;
+}
+.github-repo-list { display: flex; flex-direction: column; gap: 6px; }
+button.github-repo {
+    font: inherit;
+    text-align: left;
+    color: var(--text);
+    background: var(--input-bg);
+    border: 1px solid var(--input-border);
+    border-radius: 8px;
+    padding: 8px 12px;
+    cursor: pointer;
+}
+button.github-repo:hover { border-color: var(--accent); }
+button.github-repo:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.github-connected { display: flex; align-items: center; gap: 8px; font-weight: 500; }
+.github-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--accent); flex: 0 0 auto; }
+.github-auto { display: flex; align-items: center; gap: 7px; font-size: 13px; color: var(--text); cursor: pointer; }
+.github-auto input[type="checkbox"] { width: 15px; height: 15px; margin: 0; accent-color: var(--accent); cursor: pointer; }
+
 .status {
     margin: 16px 2px 0;
     min-height: 20px;

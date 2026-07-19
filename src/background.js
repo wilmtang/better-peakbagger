@@ -9,6 +9,8 @@
 import { captureCore as Core } from './capture-core.js';
 import { providerFromUrl } from './provider-url.js';
 import { settings as Settings } from './settings.js';
+import { githubAuth as GithubAuth } from './github-auth.js';
+import { githubClient as GithubClient } from './github-client.js';
 
 (() => {
     'use strict';
@@ -19,6 +21,11 @@ import { settings as Settings } from './settings.js';
     const JOBS_KEY = 'bpbCaptureJobs';
     const DRAFTS_KEY = 'bpbDraftTabs';
     const JOB_TTL_MS = 30 * 60 * 1000;
+    // Save-time GitHub backup snapshots, keyed by climber+peak+date, expiring on
+    // the same 30-minute horizon as a prepared draft.
+    const SNAPSHOTS_KEY = 'bpbGithubSnapshots';
+    const SNAPSHOT_TTL_MS = 30 * 60 * 1000;
+    const SNAPSHOT_LIMIT = 10;
     const CLEANUP_ALARM = 'bpb-capture-cleanup';
     const processes = new Map();
     let mutationQueue = Promise.resolve();
@@ -687,12 +694,275 @@ import { settings as Settings } from './settings.js';
                 if (job.expiresAt <= cutoff && !activeJobIds.has(job.id)) delete jobs[tabId];
             });
         });
+        await mutateMap(SNAPSHOTS_KEY, snapshots => {
+            Object.entries(snapshots).forEach(([key, record]) => {
+                if (!record || record.expiresAt <= cutoff) delete snapshots[key];
+            });
+        });
+    };
+
+    // ---- GitHub ascent backup: auth + repository setup ---------------------
+    //
+    // The token lives only here (via GithubAuth.authStore over storage.local)
+    // and is never returned to any page. The device-flow poll is driven in the
+    // worker; the options page shows the user code and polls GITHUB_AUTH_STATE
+    // while it keeps the worker awake. Repo scoping happens on GitHub's own
+    // install page, then discovery lists exactly what the token can reach.
+
+    const netFetch = (url, init) => fetch(url, init);
+    const githubAuthState = { phase: 'idle' };
+    let githubAuthAbort = null;
+    const resetGithubAuthState = next => { Object.keys(githubAuthState).forEach(k => delete githubAuthState[k]); Object.assign(githubAuthState, next); };
+
+    // Only extension-owned pages (the options page) may touch the auth surface;
+    // a content script's sender.url is a web origin, never the extension origin.
+    const isExtensionPage = sender => {
+        try { return !!(sender && sender.url && sender.url.startsWith(ext.runtime.getURL(''))); }
+        catch { return false; }
+    };
+
+    const githubStatus = async () => {
+        const auth = await GithubAuth.authStore.read();
+        const settings = await Settings.get();
+        return {
+            enabled: settings.enableGithubBackup,
+            auto: settings.autoGithubBackup,
+            connected: !!(auth && auth.token && auth.repo && auth.repo.owner && auth.repo.name),
+            hasToken: !!(auth && auth.token),
+            account: (auth && auth.account) || null,
+            repo: (auth && auth.repo) || null,
+            installUrl: GithubAuth.INSTALL_URL,
+            appUrl: GithubAuth.APP_URL,
+            verificationUri: GithubAuth.VERIFICATION_URI,
+        };
+    };
+
+    // Auto-select the sole granted repo (zero-typing setup); several or none
+    // leave the choice to the user.
+    const applyDiscoveredRepos = async repos => {
+        if (repos.length === 1) {
+            const r = repos[0];
+            await GithubAuth.authStore.setRepo({ owner: r.owner, name: r.name, branch: r.defaultBranch, id: r.id, fullName: r.fullName });
+            await GithubAuth.authStore.setInstallationId(r.installationId);
+        }
+    };
+
+    const githubBeginAuth = async () => {
+        if (githubAuthAbort) githubAuthAbort.abort();
+        githubAuthAbort = new AbortController();
+        const flow = GithubAuth.createDeviceFlow({ fetch: netFetch });
+        let code;
+        try {
+            code = await flow.requestCode();
+        } catch (error) {
+            resetGithubAuthState({ phase: 'error', code: error.code || 'unknown' });
+            return { phase: 'error', code: githubAuthState.code };
+        }
+        resetGithubAuthState({
+            phase: 'polling',
+            userCode: code.userCode,
+            verificationUri: code.verificationUri,
+            verificationUriComplete: code.verificationUriComplete,
+            expiresIn: code.expiresIn,
+        });
+        // Fire-and-forget the poll; the options page reads progress via
+        // GITHUB_AUTH_STATE and keeps the worker alive while it does.
+        flow.pollForToken(code, { signal: githubAuthAbort.signal }).then(async cred => {
+            await GithubAuth.authStore.setCredential(cred);
+            let account = null;
+            try { account = await GithubAuth.fetchAccount({ fetch: netFetch, token: cred.token }); await GithubAuth.authStore.setAccount(account); } catch { /* non-fatal */ }
+            let repos = [];
+            let installationCount = 0;
+            try {
+                const discovered = await GithubAuth.listBackupRepositories({ fetch: netFetch, token: cred.token });
+                repos = discovered.repos;
+                installationCount = discovered.installationCount;
+                await applyDiscoveredRepos(repos);
+            } catch { /* the user may not have installed yet; discover again later */ }
+            resetGithubAuthState({ phase: 'authorized', account, repos, installationCount });
+        }).catch(error => {
+            resetGithubAuthState({ phase: 'error', code: (error && error.code) || 'unknown' });
+        });
+        return { phase: 'polling', userCode: code.userCode, verificationUri: code.verificationUri, verificationUriComplete: code.verificationUriComplete, expiresIn: code.expiresIn };
+    };
+
+    // Re-list repositories on demand — after the user returns from the install
+    // page having granted (or changed) the selected repositories.
+    const githubDiscoverRepos = async () => {
+        const token = await GithubAuth.authStore.getToken();
+        if (!token) return { phase: 'error', code: 'no-token' };
+        try {
+            const { repos, installationCount } = await GithubAuth.listBackupRepositories({ fetch: netFetch, token });
+            await applyDiscoveredRepos(repos);
+            return { installationCount, repos, repo: await GithubAuth.authStore.getRepo() };
+        } catch (error) {
+            return { phase: 'error', code: error.code || 'unknown' };
+        }
+    };
+
+    const githubSelectRepo = async message => {
+        const r = message && message.repo;
+        if (!r || !r.owner || !r.name) return { error: 'invalid-repo' };
+        await GithubAuth.authStore.setRepo({ owner: r.owner, name: r.name, branch: r.branch || r.defaultBranch || 'main', id: r.id ?? null, fullName: r.fullName || `${r.owner}/${r.name}` });
+        if (r.installationId != null) await GithubAuth.authStore.setInstallationId(r.installationId);
+        return githubStatus();
+    };
+
+    const githubDisconnect = async () => {
+        if (githubAuthAbort) githubAuthAbort.abort();
+        resetGithubAuthState({ phase: 'idle' });
+        await GithubAuth.authStore.clear();
+        return githubStatus();
+    };
+
+    const isPeakbaggerSender = sender => {
+        try {
+            return !!(sender && sender.tab && sender.url && /(^|\.)peakbagger\.com$/i.test(new URL(sender.url).hostname));
+        } catch { return false; }
+    };
+
+    // The save-time snapshot from the ascentedit content script: keep it in
+    // storage.session, keyed by identity, for the saved ascent page to back up.
+    // Accepted only from a Peakbagger tab and only while the feature is enabled;
+    // the cleanup alarm expires it on the 30-minute horizon.
+    const storeBackupSnapshot = async (message, sender) => {
+        if (!isPeakbaggerSender(sender)) return { ok: false, reason: 'forbidden' };
+        if (!message || !message.key || !message.snapshot) return { ok: false, reason: 'invalid' };
+        const settings = await Settings.get();
+        if (!settings.enableGithubBackup) return { ok: false, reason: 'disabled' };
+        await mutateMap(SNAPSHOTS_KEY, snapshots => {
+            snapshots[message.key] = {
+                identity: message.identity || null,
+                snapshot: message.snapshot,
+                sourceTabId: sender.tab ? sender.tab.id : null,
+                savedAt: now(),
+                expiresAt: now() + SNAPSHOT_TTL_MS,
+            };
+            const ordered = Object.entries(snapshots).sort((a, b) => b[1].savedAt - a[1].savedAt);
+            for (const [key] of ordered.slice(SNAPSHOT_LIMIT)) delete snapshots[key];
+        });
+        return { ok: true };
+    };
+
+    // Whether the saved ascent page should offer a backup: enabled and connected.
+    // Content-script safe — it exposes no token, only the flags and repo name.
+    const githubBackupStatus = async sender => {
+        if (!isPeakbaggerSender(sender)) return { enabled: false, connected: false };
+        const settings = await Settings.get();
+        const auth = await GithubAuth.authStore.read();
+        const connected = !!(auth && auth.token && auth.repo && auth.repo.owner && auth.repo.name);
+        return {
+            enabled: !!settings.enableGithubBackup,
+            auto: !!settings.autoGithubBackup,
+            connected,
+            repo: connected ? { fullName: auth.repo.fullName || `${auth.repo.owner}/${auth.repo.name}` } : null,
+        };
+    };
+
+    // Merge the pending save-time snapshot with the saved ascent page's fields.
+    // The saved page is authoritative for the identity and the fields it renders
+    // (aid, date, suffix, peak name/elevation/location); the snapshot supplies
+    // the fields the page does not (the entered numbers) and the resolved report.
+    const mergeBackupSnapshot = (snap, page = {}) => {
+        const p = page && typeof page === 'object' ? page : {};
+        const base = snap && typeof snap === 'object' ? snap : null;
+        if (!base && !p.ascent && !p.peak) return null;
+        const ascent = { ...(base ? base.ascent : {}) };
+        const pAscent = p.ascent || {};
+        if (pAscent.id != null) ascent.id = pAscent.id;
+        if (pAscent.date) ascent.date = pAscent.date;
+        if (typeof pAscent.suffix === 'string' && pAscent.suffix) ascent.suffix = pAscent.suffix;
+        const peak = { ...(base && base.peak ? base.peak : {}) };
+        for (const [key, value] of Object.entries(p.peak || {})) {
+            if (value != null && value !== '') peak[key] = value;
+        }
+        const snapMarkdown = base && base.report && typeof base.report.markdown === 'string' ? base.report.markdown : '';
+        const pageMarkdown = p.report && typeof p.report.markdown === 'string' ? p.report.markdown : '';
+        const report = { markdown: snapMarkdown || pageMarkdown };
+        return { ascent, peak, report, backup: { ...(base ? base.backup : {}) } };
+    };
+
+    // Find the pending snapshot for a saved ascent page. A new ascent had no aid
+    // when it was snapshotted, so match by ascent id first (re-saves/edits), then
+    // by peak+date, then by peak alone (most recent) when the page date could not
+    // be parsed. Returns { key, record } or null.
+    const findSnapshotForPage = async page => {
+        const snapshots = await readMap(SNAPSHOTS_KEY);
+        const entries = Object.entries(snapshots)
+            .map(([key, record]) => ({ key, record }))
+            .sort((a, b) => (b.record.savedAt || 0) - (a.record.savedAt || 0));
+        const idOf = e => e.record.identity || {};
+        const ascentId = page && page.ascent ? page.ascent.id : null;
+        const peakId = page && page.peak ? page.peak.id : null;
+        const date = page && page.ascent ? page.ascent.date : null;
+        let match = ascentId != null ? entries.find(e => idOf(e).ascentId === ascentId) : null;
+        if (!match && peakId != null && date) match = entries.find(e => idOf(e).peakId === peakId && idOf(e).date === date);
+        if (!match && peakId != null) match = entries.find(e => idOf(e).peakId === peakId);
+        return match || null;
+    };
+
+    // Push one saved ascent to the connected repository as a single commit. The
+    // token is read here and never leaves the worker. Fails closed when the
+    // feature is off, disconnected, or the sender is not a Peakbagger tab.
+    const backupAscent = async (message, sender) => {
+        if (!isPeakbaggerSender(sender)) return { ok: false, error: { code: 'forbidden' } };
+        const settings = await Settings.get();
+        if (!settings.enableGithubBackup) return { ok: false, error: { code: 'disabled' } };
+        const auth = await GithubAuth.authStore.read();
+        if (!auth || !auth.token) return { ok: false, error: { code: 'not-connected' } };
+        if (!auth.repo || !auth.repo.owner || !auth.repo.name) return { ok: false, error: { code: 'no-repo' } };
+
+        const found = await findSnapshotForPage(message.page);
+        // Automatic backup fires on every saved-ascent page load, so it must push
+        // only right after a save — i.e. when a matching pending snapshot exists.
+        // Without one (an old ascent merely being viewed) it declines quietly so
+        // it never re-pushes on a revisit; the manual button is still offered.
+        if (message.auto && !found) return { ok: false, error: { code: 'no-fresh-save' } };
+        const snapshot = mergeBackupSnapshot(found && found.record.snapshot, message.page);
+        if (!snapshot || snapshot.ascent.id == null) return { ok: false, error: { code: 'no-data' } };
+        snapshot.backup = {
+            ...(snapshot.backup || {}),
+            syncedAt: new Date().toISOString(),
+            extensionVersion: ext.runtime.getManifest ? ext.runtime.getManifest().version : (snapshot.backup && snapshot.backup.extensionVersion) || '',
+        };
+
+        const client = GithubClient.createGithubClient({
+            fetch: netFetch,
+            token: auth.token,
+            owner: auth.repo.owner,
+            repo: auth.repo.name,
+            branch: auth.repo.branch || undefined,
+        });
+        try {
+            const result = await client.pushAscentBackup(snapshot, { gpx: message.gpx });
+            // The snapshot has served its purpose; drop it so a later view of the
+            // same page does not re-push from stale data.
+            if (found) await mutateMap(SNAPSHOTS_KEY, m => { delete m[found.key]; });
+            return { ok: true, result };
+        } catch (error) {
+            return { ok: false, error: { code: error.code || 'unknown', message: error.message || 'The backup failed.' } };
+        }
     };
 
     ext.runtime.onMessage.addListener((message, sender, sendResponse) => {
         const run = async () => {
             await cleanup();
-            switch (message?.type) {
+            const type = message?.type;
+            // The auth surface is extension-page only; the token never crosses
+            // to a content script.
+            if (typeof type === 'string' && type.startsWith('GITHUB_AUTH_') && !isExtensionPage(sender)) {
+                return { error: 'forbidden' };
+            }
+            switch (type) {
+            case 'GITHUB_AUTH_STATUS': return githubStatus();
+            case 'GITHUB_AUTH_BEGIN': return githubBeginAuth();
+            case 'GITHUB_AUTH_STATE': return { ...githubAuthState };
+            case 'GITHUB_AUTH_DISCOVER': return githubDiscoverRepos();
+            case 'GITHUB_AUTH_SELECT_REPO': return githubSelectRepo(message);
+            case 'GITHUB_AUTH_DISCONNECT': return githubDisconnect();
+            case 'GITHUB_BACKUP_SNAPSHOT': return storeBackupSnapshot(message, sender);
+            case 'GITHUB_BACKUP_STATUS': return githubBackupStatus(sender);
+            case 'GITHUB_BACKUP_ASCENT': return backupAscent(message, sender);
             case 'CAPTURE_START': return startCapture(message);
             case 'CAPTURE_STATUS': {
                 const jobs = await readMap(JOBS_KEY);

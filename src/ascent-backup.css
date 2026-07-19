@@ -1,0 +1,82 @@
+/* Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ * Better Peakbagger — saved ascent page GitHub backup affordance. A slim,
+ * dismissible inline bar that matches the extension's restrained look and
+ * reads in both light and dark contexts. */
+
+.bpb-gh-bar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 8px 0;
+    padding: 8px 12px;
+    font: 13px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    color: #1c1c1a;
+    background: #f3f6f3;
+    border: 1px solid #d7e0d7;
+    border-left: 3px solid #2f6b3f;
+    border-radius: 8px;
+}
+.bpb-gh-body { display: flex; align-items: center; gap: 10px; flex: 1 1 auto; flex-wrap: wrap; }
+.bpb-gh-label { font-weight: 600; }
+.bpb-gh-ok { color: #2f6b3f; }
+.bpb-gh-err { color: #b42318; font-weight: 500; }
+.bpb-gh-link { color: #2f6b3f; font-weight: 600; text-decoration: underline; }
+
+.bpb-gh-btn {
+    font: inherit;
+    color: #1c1c1a;
+    background: #fff;
+    border: 1px solid #c8c8c2;
+    border-radius: 7px;
+    padding: 4px 12px;
+    cursor: pointer;
+}
+.bpb-gh-btn:hover { border-color: #2f6b3f; color: #2f6b3f; }
+.bpb-gh-primary {
+    color: #fff;
+    background: #2f6b3f;
+    border-color: #2f6b3f;
+    font-weight: 600;
+}
+.bpb-gh-primary:hover { filter: brightness(1.07); color: #fff; }
+
+.bpb-gh-dismiss {
+    flex: 0 0 auto;
+    font-size: 18px;
+    line-height: 1;
+    color: #6a6a63;
+    background: transparent;
+    border: 0;
+    padding: 0 4px;
+    cursor: pointer;
+}
+.bpb-gh-dismiss:hover { color: #1c1c1a; }
+
+@media (prefers-color-scheme: dark) {
+    .bpb-gh-bar { color: #e6e1d8; background: #23262a; border-color: #3a3f45; border-left-color: #3f8a54; }
+    .bpb-gh-ok { color: #7ac78d; }
+    .bpb-gh-err { color: #f2a099; }
+    .bpb-gh-link { color: #7ac78d; }
+    .bpb-gh-btn { color: #e6e1d8; background: #2b2f34; border-color: #4a5058; }
+    .bpb-gh-btn:hover { border-color: #7ac78d; color: #7ac78d; }
+    .bpb-gh-primary { color: #fff; background: #3f8a54; border-color: #3f8a54; }
+    .bpb-gh-dismiss { color: #a29c92; }
+    .bpb-gh-dismiss:hover { color: #e6e1d8; }
+}
+
+/* The extension's own site dark theme, set as data-bpb-theme="dark" on <html>
+ * (see src/theme.js). Explicit so the bar follows the chosen theme, not only
+ * the OS preference. */
+:root[data-bpb-theme="dark"] .bpb-gh-bar { color: #e6e1d8; background: #23262a; border-color: #3a3f45; border-left-color: #3f8a54; }
+:root[data-bpb-theme="dark"] .bpb-gh-ok { color: #7ac78d; }
+:root[data-bpb-theme="dark"] .bpb-gh-err { color: #f2a099; }
+:root[data-bpb-theme="dark"] .bpb-gh-link { color: #7ac78d; }
+:root[data-bpb-theme="dark"] .bpb-gh-btn { color: #e6e1d8; background: #2b2f34; border-color: #4a5058; }
+:root[data-bpb-theme="dark"] .bpb-gh-btn:hover { border-color: #7ac78d; color: #7ac78d; }
+:root[data-bpb-theme="dark"] .bpb-gh-primary { color: #fff; background: #3f8a54; border-color: #3f8a54; }
+:root[data-bpb-theme="dark"] .bpb-gh-dismiss { color: #a29c92; }
+/* A light preference must win even when the OS is dark. */
+:root[data-bpb-theme="light"] .bpb-gh-bar { color: #1c1c1a; background: #f3f6f3; border-color: #d7e0d7; border-left-color: #2f6b3f; }
+:root[data-bpb-theme="light"] .bpb-gh-btn { color: #1c1c1a; background: #fff; border-color: #c8c8c2; }
+:root[data-bpb-theme="light"] .bpb-gh-primary { color: #fff; background: #2f6b3f; border-color: #2f6b3f; }

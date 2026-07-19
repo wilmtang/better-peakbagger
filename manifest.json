@@ -21,6 +21,10 @@
     "https://peakbagger.com/*",
     "https://www.peakbagger.com/*"
   ],
+  "optional_host_permissions": [
+    "https://github.com/*",
+    "https://api.github.com/*"
+  ],
   "action": {
     "default_title": "Capture activity for Peakbagger",
     "default_popup": "popup/popup.html"
@@ -74,6 +78,22 @@
         "content/ascent-bridge.js"
       ],
       "run_at": "document_start",
+      "all_frames": false
+    },
+    {
+      "matches": [
+        "*://www.peakbagger.com/climber/ascent.aspx*",
+        "*://www.peakbagger.com/climber/Ascent.aspx*",
+        "*://peakbagger.com/climber/ascent.aspx*",
+        "*://peakbagger.com/climber/Ascent.aspx*"
+      ],
+      "css": [
+        "css/ascent-backup.css"
+      ],
+      "js": [
+        "content/ascent-backup.js"
+      ],
+      "run_at": "document_end",
       "all_frames": false
     },
     {
