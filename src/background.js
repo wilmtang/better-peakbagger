@@ -20,6 +20,11 @@ import { githubAuth as GithubAuth } from './github-auth.js';
     const JOBS_KEY = 'bpbCaptureJobs';
     const DRAFTS_KEY = 'bpbDraftTabs';
     const JOB_TTL_MS = 30 * 60 * 1000;
+    // Save-time GitHub backup snapshots, keyed by climber+peak+date, expiring on
+    // the same 30-minute horizon as a prepared draft.
+    const SNAPSHOTS_KEY = 'bpbGithubSnapshots';
+    const SNAPSHOT_TTL_MS = 30 * 60 * 1000;
+    const SNAPSHOT_LIMIT = 10;
     const CLEANUP_ALARM = 'bpb-capture-cleanup';
     const processes = new Map();
     let mutationQueue = Promise.resolve();
@@ -688,6 +693,11 @@ import { githubAuth as GithubAuth } from './github-auth.js';
                 if (job.expiresAt <= cutoff && !activeJobIds.has(job.id)) delete jobs[tabId];
             });
         });
+        await mutateMap(SNAPSHOTS_KEY, snapshots => {
+            Object.entries(snapshots).forEach(([key, record]) => {
+                if (!record || record.expiresAt <= cutoff) delete snapshots[key];
+            });
+        });
     };
 
     // ---- GitHub ascent backup: auth + repository setup ---------------------
@@ -804,6 +814,35 @@ import { githubAuth as GithubAuth } from './github-auth.js';
         return githubStatus();
     };
 
+    const isPeakbaggerSender = sender => {
+        try {
+            return !!(sender && sender.tab && sender.url && /(^|\.)peakbagger\.com$/i.test(new URL(sender.url).hostname));
+        } catch { return false; }
+    };
+
+    // The save-time snapshot from the ascentedit content script: keep it in
+    // storage.session, keyed by identity, for the saved ascent page to back up.
+    // Accepted only from a Peakbagger tab and only while the feature is enabled;
+    // the cleanup alarm expires it on the 30-minute horizon.
+    const storeBackupSnapshot = async (message, sender) => {
+        if (!isPeakbaggerSender(sender)) return { ok: false, reason: 'forbidden' };
+        if (!message || !message.key || !message.snapshot) return { ok: false, reason: 'invalid' };
+        const settings = await Settings.get();
+        if (!settings.enableGithubBackup) return { ok: false, reason: 'disabled' };
+        await mutateMap(SNAPSHOTS_KEY, snapshots => {
+            snapshots[message.key] = {
+                identity: message.identity || null,
+                snapshot: message.snapshot,
+                sourceTabId: sender.tab ? sender.tab.id : null,
+                savedAt: now(),
+                expiresAt: now() + SNAPSHOT_TTL_MS,
+            };
+            const ordered = Object.entries(snapshots).sort((a, b) => b[1].savedAt - a[1].savedAt);
+            for (const [key] of ordered.slice(SNAPSHOT_LIMIT)) delete snapshots[key];
+        });
+        return { ok: true };
+    };
+
     ext.runtime.onMessage.addListener((message, sender, sendResponse) => {
         const run = async () => {
             await cleanup();
@@ -820,6 +859,7 @@ import { githubAuth as GithubAuth } from './github-auth.js';
             case 'GITHUB_AUTH_DISCOVER': return githubDiscoverRepos();
             case 'GITHUB_AUTH_SELECT_REPO': return githubSelectRepo(message);
             case 'GITHUB_AUTH_DISCONNECT': return githubDisconnect();
+            case 'GITHUB_BACKUP_SNAPSHOT': return storeBackupSnapshot(message, sender);
             case 'CAPTURE_START': return startCapture(message);
             case 'CAPTURE_STATUS': {
                 const jobs = await readMap(JOBS_KEY);

@@ -309,10 +309,16 @@ begins, per the repository commit discipline.
    gated to extension-page senders; `github-auth.js` joins the background
    bundle. The `enableGithubBackup` gate is in `settings-schema.js`. Verified
    against the rendered panel in light and dark, plus jsdom options tests.
-6. **Save-time snapshot.** Extend the editor's existing pre-Save flush in the
-   ascent-editor content script to serialize the form + Markdown sidecar into
-   a `storage.session` snapshot with the drafts' identity binding and
-   30-minute expiry; background cleanup alarm covers it.
+6. **Save-time snapshot.** **Done.** `src/ascent-snapshot.js` owns the
+   ascentedit.aspx field-name mapping and turns the live Form1 fields plus the
+   editor's report (mode, submitted bracket, exact Markdown sidecar) into the
+   github-backup snapshot, with a `climber|peak|date` match key and normalized
+   date. The report editor's Save/submit flush (`src/report-editor.js`) builds
+   it — gated on `enableGithubBackup`, best-effort, never blocking the save —
+   and sends `GITHUB_BACKUP_SNAPSHOT` to the worker, which stores it in
+   storage.session (Peakbagger-sender + feature gated, identity-keyed, bounded,
+   30-minute expiry via the existing cleanup alarm).
+   `test/ascent-snapshot.test.mjs` pins the mapping against the masked fixture.
 7. **Ascent-page surface.** Content-script piece on `ascent.aspx` (isolated
    world): ownership check, snapshot match, GPX link fetch, the Back up
    affordance with success/error/retry states, message to background. New
