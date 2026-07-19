@@ -114,6 +114,25 @@ test('every dark-theme text/background pair meets WCAG AA', () => {
     }
 });
 
+test('the backup bar light preference overrides every dark semantic color', async () => {
+    const css = await readFile(path.join(root, 'src/ascent-backup.css'), 'utf8');
+    const lightSelectors = new Set(Array.from(
+        css.matchAll(/:root\[data-bpb-theme="light"\]\s+([^,{]+)\s*\{/g),
+        match => match[1].trim()
+    ));
+    for (const selector of [
+        '.bpb-gh-bar', '.bpb-gh-ok', '.bpb-gh-err', '.bpb-gh-link',
+        '.bpb-gh-btn', '.bpb-gh-btn:hover', '.bpb-gh-primary',
+        '.bpb-gh-dismiss', '.bpb-gh-dismiss:hover'
+    ]) {
+        assert.ok(lightSelectors.has(selector), `${selector} must override OS-dark colors when the extension theme is light`);
+    }
+
+    assert.ok(contrast('#2f6b3f', '#f3f6f3') >= NORMAL, 'light success/link text must meet AA');
+    assert.ok(contrast('#b42318', '#f3f6f3') >= NORMAL, 'light error text must meet AA');
+    assert.ok(contrast('#6a6a63', '#f3f6f3') >= NORMAL, 'light dismiss text must meet AA');
+});
+
 test('dark theme preserves the native mountain motif behind page content', () => {
     const body = RULES.get(`${P} body`);
     const motif = RULES.get(`${P} body::before`);

@@ -78,5 +78,11 @@
 :root[data-bpb-theme="dark"] .bpb-gh-dismiss { color: #a29c92; }
 /* A light preference must win even when the OS is dark. */
 :root[data-bpb-theme="light"] .bpb-gh-bar { color: #1c1c1a; background: #f3f6f3; border-color: #d7e0d7; border-left-color: #2f6b3f; }
+:root[data-bpb-theme="light"] .bpb-gh-ok { color: #2f6b3f; }
+:root[data-bpb-theme="light"] .bpb-gh-err { color: #b42318; }
+:root[data-bpb-theme="light"] .bpb-gh-link { color: #2f6b3f; }
 :root[data-bpb-theme="light"] .bpb-gh-btn { color: #1c1c1a; background: #fff; border-color: #c8c8c2; }
+:root[data-bpb-theme="light"] .bpb-gh-btn:hover { border-color: #2f6b3f; color: #2f6b3f; }
 :root[data-bpb-theme="light"] .bpb-gh-primary { color: #fff; background: #2f6b3f; border-color: #2f6b3f; }
+:root[data-bpb-theme="light"] .bpb-gh-dismiss { color: #6a6a63; }
+:root[data-bpb-theme="light"] .bpb-gh-dismiss:hover { color: #1c1c1a; }

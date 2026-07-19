@@ -21,7 +21,9 @@ UX polish; nothing here is an exploitable security hole.
 - **B3 — In progress.** The options UI now treats an idle worker during an
   active device flow as a lost flow and offers a retry; worker persistence is
   still pending.
-- **B4–B7 — Pending.**
+- **B5 — Done.** Every OS-dark semantic color is explicitly reset when the
+  extension theme is light, with selector-completeness and contrast coverage.
+- **B4, B6–B7 — Pending.**
 - **E1–E6 — Pending.**
 - **U1–U7 — Pending.**
 
