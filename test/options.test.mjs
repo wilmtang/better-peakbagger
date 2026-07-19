@@ -302,3 +302,26 @@ test('the removed "minimum trip-report words" control is gone', async () => {
     const dom = await loadOptions({});
     assert.equal(el(dom, 'minwords'), null);
 });
+
+test('the sidebar links every settings section, in order', async () => {
+    const dom = await loadOptions({});
+    const doc = dom.window.document;
+    const nav = doc.querySelector('.side-nav');
+    assert.ok(nav, 'the sidebar nav exists');
+    assert.equal(nav.getAttribute('aria-label'), 'Settings sections');
+
+    const links = Array.from(nav.querySelectorAll('a.nav-item'));
+    // Every link points at an existing settings section...
+    for (const link of links) {
+        const id = link.getAttribute('href').slice(1);
+        const target = doc.getElementById(id);
+        assert.ok(target, `sidebar link #${id} resolves to an element`);
+        assert.ok(target.classList.contains('settings-section'), `#${id} is a settings section`);
+    }
+    // ...and the links cover every section, in document order — this guards
+    // against a section being added, removed, or renamed without its link.
+    const linkTargets = links.map(link => link.getAttribute('href').slice(1));
+    const sectionIds = Array.from(doc.querySelectorAll('.content .settings-section'), section => section.id);
+    assert.deepEqual(linkTargets, sectionIds);
+    assert.deepEqual(linkTargets, ['general', 'capture', 'map-chart', 'beta']);
+});

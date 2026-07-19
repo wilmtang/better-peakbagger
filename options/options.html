@@ -10,7 +10,7 @@
     <link rel="stylesheet" href="options.css">
 </head>
 <body>
-    <main class="wrap">
+    <nav class="side-nav" aria-label="Settings sections">
         <header class="head">
             <img class="logo" src="../icons/icon-48.png" alt="" width="40" height="40">
             <div>
@@ -18,8 +18,17 @@
                 <p class="sub">These settings apply across all Peakbagger pages.</p>
             </div>
         </header>
+        <ul class="nav-list">
+            <li><a class="nav-item" href="#general">General</a></li>
+            <li><a class="nav-item" href="#capture">Activity capture</a></li>
+            <li><a class="nav-item" href="#map-chart">Map &amp; GPX chart</a></li>
+            <li><a class="nav-item" href="#beta">Ascent beta filters</a></li>
+        </ul>
+    </nav>
 
-        <section class="settings-section" aria-labelledby="general-settings-heading">
+    <main class="content">
+      <div class="wrap">
+        <section id="general" class="settings-section" aria-labelledby="general-settings-heading">
             <h2 class="section-title" id="general-settings-heading">General</h2>
             <div class="card">
                 <div class="row">
@@ -67,7 +76,7 @@
             </div>
         </section>
 
-        <section class="settings-section" aria-labelledby="capture-settings-heading">
+        <section id="capture" class="settings-section" aria-labelledby="capture-settings-heading">
             <h2 class="section-title" id="capture-settings-heading">Activity capture</h2>
             <div class="card">
                 <div class="row">
@@ -124,7 +133,7 @@
             </div>
         </section>
 
-        <section class="settings-section" aria-labelledby="map-chart-settings-heading">
+        <section id="map-chart" class="settings-section" aria-labelledby="map-chart-settings-heading">
             <h2 class="section-title" id="map-chart-settings-heading">Map &amp; GPX chart</h2>
             <div class="card">
                 <div class="row">
@@ -228,7 +237,7 @@
             </div>
         </section>
 
-        <section class="settings-section" aria-labelledby="beta-settings-heading">
+        <section id="beta" class="settings-section" aria-labelledby="beta-settings-heading">
             <h2 class="section-title" id="beta-settings-heading">Ascent beta filters</h2>
             <div class="card">
                 <div class="row">
@@ -257,6 +266,7 @@
         </section>
 
         <p class="status" id="status" role="status" aria-live="polite"></p>
+      </div>
     </main>
 
     <script src="options.js"></script>
