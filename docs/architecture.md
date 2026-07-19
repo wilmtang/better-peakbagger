@@ -139,6 +139,17 @@ or send coordinates to a timezone service. See
 - `src/report-md-editor.js`: the CodeMirror source pane for Markdown mode.
 - `src/theme.js`: synchronous site theme startup and reconciliation.
 - `src/peak-links.js`: user-invoked external conditions and imagery links.
+- `src/ascent-snapshot.js`: the ascentedit.aspx form→snapshot mapping captured
+  at Save (the only place that knows those field names).
+- `src/ascent-page.js` / `src/ascent-backup.js`: the saved ascent page reader
+  (ownership, peak, GPX link, report) and the isolated-world "Back up to GitHub"
+  affordance.
+- `src/github-backup.js`: DOM-free payload builder (folder slug, `ascent.json`,
+  `report.md`, commit message). `src/github-client.js`: the injected-fetch Git
+  Data commit client. `src/github-auth.js`: device-flow auth plus the
+  `storage.local`-only token/repo accessor. The token is held only by the
+  background worker and never reaches a content script; the GitHub backup design
+  lives in [github-ascent-backup.md](github-ascent-backup.md).
 
 Extend the owning surface rather than adding cross-feature globals. The trip
 report format and safety contract are documented in
@@ -147,10 +158,12 @@ startup invariant is documented in [dark-mode-flash.md](dark-mode-flash.md).
 
 ## Storage and lifecycle
 
-- `storage.sync`: user preferences.
-- `storage.local`: terrain-cache index and extension-local report drafts.
-- `storage.session`: capture jobs and prepared draft payloads, expiring after
-  30 minutes.
+- `storage.sync`: user preferences (including the GitHub backup on/off and
+  auto-backup gates; never the token or repo).
+- `storage.local`: terrain-cache index, extension-local report drafts, and the
+  GitHub backup token/repo (secrets must not ride browser-account sync).
+- `storage.session`: capture jobs, prepared draft payloads, and save-time GitHub
+  backup snapshots, all expiring after 30 minutes.
 - CacheStorage: bounded, best-effort DEM response bytes.
 - Peakbagger `localStorage`: page-local filter state and the early theme mirror.
 
@@ -179,6 +192,7 @@ and [releasing.md](releasing.md) for exact workflows.
 ## Focused design notes
 
 - [Trip-report editor markup and safety](trip-report-editor.md)
+- [GitHub ascent backup](github-ascent-backup.md)
 - [3D peak markers](3d-peak-markers.md)
 - [Mountain-local chart time](mountain-local-time.md)
 - [Dark-mode startup](dark-mode-flash.md)

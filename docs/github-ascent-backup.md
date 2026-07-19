@@ -1,7 +1,13 @@
 # GitHub ascent backup: design and execution plan
 
-Status: in progress. See the execution checklist at the end for what has
-landed; steps are marked **Done** as each focused commit lands.
+Status: implemented. Steps 1–10 have landed, and the automated release checks
+(`npm test`, `npm run verify:extension`, `web-ext lint`) pass. Step 11's live
+verification — a real device-flow authorization and installation against the
+registered app, and one rate-limited save on real Peakbagger landing a commit in
+a scratch repo, in both browsers — remains a manual pre-release step, because it
+needs the user's GitHub and Peakbagger sessions. The execution checklist at the
+end records each step; the ascent.aspx selectors in `src/ascent-page.js` are the
+main thing that live verification confirms.
 
 When the user saves an ascent on Peakbagger, Better Peakbagger can back that
 ascent up into a GitHub repository the user has explicitly granted access to.
@@ -363,18 +369,27 @@ begins, per the repository commit discipline.
     quietly (`no-fresh-save`) and falls back to the manual button rather than
     re-pushing. `GITHUB_BACKUP_STATUS` now reports the `auto` preference to the
     surface. Covered by the integration, surface, and options suites.
-11. **Release verification.** `npm test`, `npm run verify:extension`, one
-    real device-flow authorization + installation against the registered
-    app, and a minimal, rate-limited live check on real Peakbagger in both
-    browsers: save one test ascent, confirm redirect behavior, GPX-link
-    timing, and a real commit landing in a scratch repo.
+11. **Release verification.** Automated checks **Done**: `npm test` (full
+    suite green, including the backup unit, surface, and built-worker
+    integration suites), `npm run verify:extension` (the worker boots with the
+    backup/auth handlers and every content script loads), and `web-ext lint`
+    (0 errors). **Pending manual pre-release** (needs the user's sessions): one
+    real device-flow authorization + installation against the registered app,
+    and a minimal, rate-limited live check on real Peakbagger in both browsers —
+    save one test ascent, confirm the redirect/`aid` and GPX-link timing that
+    `src/ascent-page.js` assumes, and a real commit landing in a scratch repo.
 
-## Open questions (resolve during steps 6–8)
+## Open questions (mostly resolved; confirm the live-behavior ones at step 11)
 
 - Exact post-save behavior on live Peakbagger: redirect target, referrer
-  value, and whether `aid` is always present on arrival — the fixtures only
-  cover the edit page today.
+  value, and whether `aid` is always present on arrival. Handled defensively —
+  `src/ascent-page.js` takes `aid` from the URL and fails closed without it, and
+  snapshot matching falls back from `aid` to peak+date to most-recent-for-peak,
+  so a new ascent (whose snapshot had no `aid`) still matches. Confirm on live
+  Peakbagger.
 - Whether the stored-GPX link is present immediately after a save that used
-  GPS Preview, or appears only after a server-side delay.
-- Whether deleted Peakbagger ascents should ever be reflected (current
-  answer: out of scope; the repo is an archive, not a mirror).
+  GPS Preview, or appears only after a server-side delay. The surface treats the
+  track as optional (omits `track.gpx` when the link is absent), so a delayed
+  link degrades to a report+JSON backup rather than failing; confirm the timing.
+- Whether deleted Peakbagger ascents should ever be reflected (answer: out of
+  scope; the repo is an archive, not a mirror).
