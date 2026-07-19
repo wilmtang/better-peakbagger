@@ -195,11 +195,11 @@ import { createMarkdownEditor } from './report-md-editor.js';
     imageAltInput.placeholder = 'Description (alt text)';
     imageAltInput.setAttribute('aria-label', 'Image description');
     const imageApply = button('bpb-re-linkapply', 'Add image');
-    const imageHostingHint = el('div', 'bpb-re-image-hosting', 'Need an image URL? Try ');
+    const imageHostingHint = el('div', 'bpb-re-image-hosting', 'Common free image hosting includes ');
     const hostingLinks = [
-        ['Peakbagger Photos', 'https://www.peakbagger.com/climber/photo.aspx'],
         ['Imgur', 'https://imgur.com/upload'],
-        ['ImgBB', 'https://imgbb.com/']
+        ['ImgBB', 'https://imgbb.com/'],
+        ['Peakbagger', 'https://www.peakbagger.com/climber/photo.aspx'],
     ].map(([label, href]) => {
         const link = el('a', null, label);
         link.href = href;
@@ -209,7 +209,7 @@ import { createMarkdownEditor } from './report-md-editor.js';
     });
     imageHostingHint.append(
         hostingLinks[0], ', ', hostingLinks[1], ', or ', hostingLinks[2],
-        '. Free plans, limits, and terms vary.'
+        ' etc. Terms and conditions may vary.'
     );
     imageBox.append(imageSrcInput, imageAltInput, imageApply, imageHostingHint);
 
@@ -257,7 +257,7 @@ import { createMarkdownEditor } from './report-md-editor.js';
     const status = el('span', 'bpb-re-status');
     status.setAttribute('role', 'status');
     status.setAttribute('aria-live', 'polite');
-    const imageSizeHint = 'Image size: ![Photo|500](url) for width, or ![Photo|500x600](url) for width × height';
+    const imageSizeHint = 'Image size: ![Photo|500](url) for width, or ![Photo|500x600](url) for width × height, or switch to rich text editor drag';
     const mdHint = el('span', 'bpb-re-hint', imageSizeHint);
     mdHint.title = imageSizeHint;
     foot.append(status, mdHint);

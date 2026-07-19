@@ -32,10 +32,35 @@ npm run start:firefox
 npm run start:chromium -- --chromium-binary "/path/to/chrome-for-testing"
 ```
 
-Each command makes the initial `dist/` build, launches web-ext with a temporary
-browser profile, keeps esbuild watching the source tree, and reloads the
-extension after every successful rebuild. Stop the command with Ctrl+C; the
-watchers, browser process, and Firefox temporary source are then cleaned up.
+Without additional profile flags, each command makes the initial `dist/` build,
+launches web-ext with a temporary browser profile, keeps esbuild watching the
+source tree, and reloads the extension after every successful rebuild. Stop the
+command with Ctrl+C; the watchers, browser process, and Firefox temporary source
+are then cleaned up.
+
+To keep site logins and browser settings across development sessions, give each
+browser a dedicated persistent development profile:
+
+```bash
+npm run start:firefox -- \
+  --firefox-profile "$HOME/.better-peakbagger-firefox-profile" \
+  --profile-create-if-missing \
+  --keep-profile-changes
+
+npm run start:chromium -- \
+  --chromium-binary "/path/to/chrome-for-testing" \
+  --chromium-profile "$HOME/.better-peakbagger-chromium-profile" \
+  --profile-create-if-missing \
+  --keep-profile-changes
+```
+
+Log into Peakbagger once in each profile; subsequent runs reuse its cookies.
+Keep these profiles outside the repository because they contain login state.
+Do not point either command at an everyday profile: web-ext changes Firefox
+security-related preferences when keeping profile changes, and Chromium can
+lock or damage a profile opened concurrently by another browser process. See
+the [web-ext profile options](https://extensionworkshop.com/documentation/develop/web-ext-command-reference/#firefox-profile)
+for the upstream behavior and Firefox warning.
 
 The reload is transactional. A change rebuilds all browser bundles and copies
 all runtime assets; only after every operation succeeds does the build change
