@@ -82,10 +82,12 @@ silently replace the server's text.
 
 When a Rich editor or Markdown preview displays a user-provided remote image,
 direct video, or YouTube embed, the browser may request that media from its
-host. Better Peakbagger applies a no-referrer policy, but the host still
-receives the user's IP address and ordinary request metadata. Saving remote
-media into a report also causes readers' browsers to request it when
-Peakbagger displays the published report.
+host. Better Peakbagger applies a no-referrer policy to those local editor and
+preview requests, and emits the same policy for published direct videos and
+YouTube players. Published remote images follow Peakbagger's page policy.
+Either way, the host still receives the requesting browser's IP address and
+ordinary request metadata. Saving remote media into a report also causes
+readers' browsers to request it when Peakbagger displays the published report.
 
 ## Optional 3D terrain
 

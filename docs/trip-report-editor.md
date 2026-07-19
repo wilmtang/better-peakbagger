@@ -394,8 +394,10 @@ instead emitted as a canonical, no-referrer YouTube iframe. A remote image,
 video, or YouTube player can make a request to its host when it is visible in
 the Rich editor or Markdown preview. Media in the final saved report is also
 loaded by Peakbagger and therefore makes a request to that host when someone
-reads the report. No-referrer prevents the report URL from being sent, but it
-does not hide the requesting browser's IP address or ordinary request metadata.
+reads the report. Direct videos and YouTube players retain no-referrer in the
+saved markup; remote images use Peakbagger's page policy. No-referrer prevents
+the report URL from being sent, but it does not hide the requesting browser's
+IP address or ordinary request metadata.
 
 ## Local drafts and cache limits
 
