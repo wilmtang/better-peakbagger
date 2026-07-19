@@ -195,5 +195,81 @@ import { optionsTheme as Theme } from './theme.js';
         else if (mq.addListener) mq.addListener(onChange);
     }
 
+    // Sidebar section navigation. Native anchors already scroll and deep-link;
+    // this only tracks which link is the active one. The whole feature is inert
+    // if the sidebar markup is absent, so options.js keeps working without it.
+    const initSectionNav = () => {
+        const nav = document.querySelector('.side-nav');
+        const content = document.querySelector('.content');
+        if (!nav || !content) return;
+        const entries = Array.from(nav.querySelectorAll('a.nav-item'))
+            .map(link => {
+                const section = link.hash ? document.getElementById(link.hash.slice(1)) : null;
+                return section ? { link, section } : null;
+            })
+            .filter(Boolean);
+        if (!entries.length) return;
+
+        const setActive = active => {
+            for (const { link } of entries) {
+                if (link === active) link.setAttribute('aria-current', 'true');
+                else link.removeAttribute('aria-current');
+            }
+        };
+
+        // Which link matches the current scroll position: the last section whose
+        // top has scrolled up past a marker just below the content's top edge
+        // (viewport-relative rects sidestep offsetParent assumptions). A bottom
+        // clamp lets a short final section win once the scroll bottoms out.
+        const ACTIVATE_MARGIN = 40;
+        const activeFromScroll = () => {
+            if (content.scrollHeight > content.clientHeight
+                && content.scrollTop + content.clientHeight >= content.scrollHeight - 2) {
+                return entries[entries.length - 1].link;
+            }
+            const marker = content.getBoundingClientRect().top + ACTIVATE_MARGIN;
+            let active = entries[0].link;
+            for (const { link, section } of entries) {
+                if (section.getBoundingClientRect().top <= marker) active = link;
+                else break;
+            }
+            return active;
+        };
+
+        // Nav lock: a click or hashchange pins the target active and suppresses
+        // the scroll-spy so the highlight can't sweep through intermediate
+        // sections during the smooth scroll. Released on scrollend, with a
+        // timeout fallback for browsers that don't fire it.
+        let navLocked = false;
+        let navLockTimer = null;
+        const lockTo = link => {
+            setActive(link);
+            navLocked = true;
+            clearTimeout(navLockTimer);
+            navLockTimer = setTimeout(() => { navLocked = false; }, 1250);
+        };
+
+        content.addEventListener('scroll', () => {
+            if (!navLocked) setActive(activeFromScroll());
+        }, { passive: true });
+        content.addEventListener('scrollend', () => {
+            clearTimeout(navLockTimer);
+            navLocked = false;
+            setActive(activeFromScroll());
+        });
+        for (const { link } of entries) {
+            link.addEventListener('click', () => lockTo(link));
+        }
+        window.addEventListener('hashchange', () => {
+            const target = entries.find(entry => entry.link.hash === location.hash);
+            if (target) lockTo(target.link);
+        });
+
+        // Initial state: honor a deep-link hash, otherwise the first section.
+        const initial = entries.find(entry => entry.link.hash === location.hash);
+        setActive(initial ? initial.link : entries[0].link);
+    };
+    initSectionNav();
+
     S.get().then(populate);
 })();

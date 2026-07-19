@@ -40,13 +40,15 @@ const makeCacheStorage = (initial = {}) => {
 const loadOptions = async (settings = {}, {
     cacheStorage = makeCacheStorage(),
     local = {},
-    cachedTheme = null
+    cachedTheme = null,
+    hash = ''
 } = {}) => {
     const html = await readFile(path.join(root, 'options', 'options.html'), 'utf8');
     const dom = new JSDOM(html, {
         // jsdom treats extension URLs as opaque origins, unlike real browsers,
         // so use a stable test origin to exercise the synchronous theme mirror.
-        url: 'https://options.better-peakbagger.test/options/options.html',
+        // A hash lets a test load the page as a deep link (#section).
+        url: `https://options.better-peakbagger.test/options/options.html${hash}`,
         runScripts: 'outside-only'
     });
     dom.chrome = makeChromeStub({ bpbSettings: settings }, local);
@@ -324,4 +326,40 @@ test('the sidebar links every settings section, in order', async () => {
     const sectionIds = Array.from(doc.querySelectorAll('.content .settings-section'), section => section.id);
     assert.deepEqual(linkTargets, sectionIds);
     assert.deepEqual(linkTargets, ['general', 'capture', 'map-chart', 'beta']);
+});
+
+const activeLinks = dom =>
+    Array.from(dom.window.document.querySelectorAll('.nav-item[aria-current]'));
+
+test('the sidebar marks the first section active on load', async () => {
+    const dom = await loadOptions({});
+    const active = activeLinks(dom);
+    assert.equal(active.length, 1, 'exactly one link is active');
+    assert.equal(active[0].getAttribute('href'), '#general');
+});
+
+test('a deep-link hash is the active section on load', async () => {
+    const dom = await loadOptions({}, { hash: '#map-chart' });
+    const active = activeLinks(dom);
+    assert.equal(active.length, 1);
+    assert.equal(active[0].getAttribute('href'), '#map-chart');
+});
+
+test('hash navigation moves the active sidebar link', async () => {
+    const dom = await loadOptions({});
+    dom.window.location.hash = '#beta';
+    dom.window.dispatchEvent(new dom.window.Event('hashchange'));
+    const active = activeLinks(dom);
+    assert.equal(active.length, 1);
+    assert.equal(active[0].getAttribute('href'), '#beta');
+});
+
+test('the scroll-spy survives jsdom\'s zero-layout world', async () => {
+    // jsdom reports every offset/rect as 0 and nothing scrolls; the scroll
+    // handler must not throw and must keep exactly one link active. The offset
+    // math itself is only provable in a real browser (see the plan's step 5).
+    const dom = await loadOptions({});
+    const content = dom.window.document.querySelector('.content');
+    assert.doesNotThrow(() => content.dispatchEvent(new dom.window.Event('scroll')));
+    assert.equal(activeLinks(dom).length, 1);
 });
