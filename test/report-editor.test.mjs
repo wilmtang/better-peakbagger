@@ -361,7 +361,7 @@ test('the image popover validates the source and inserts alt text', async () => 
         '[img src="https://example.com/topo.jpg" alt="Topo"]');
 });
 
-test('link and media popovers toggle closed, share the overlay layer, and insert safe video', async () => {
+test('link and media popovers toggle closed, share the toolbar layer, and insert safe video', async () => {
     const dom = await loadEditor();
     const ui = await editorReady(dom);
     const doc = dom.window.document;

@@ -437,16 +437,31 @@ try {
                     overlay: getComputedStyle(box).position === 'static'
                         ? getComputedStyle(editor.querySelector('.bpb-re-contextual')).position
                         : getComputedStyle(box).position,
-                    panelStartsAtToolbar: Math.abs(boxRect.top - toolbarRect.bottom) <= 1,
-                    panelOverlaysSurface: boxRect.bottom > surfaceRect.top
+                    panelEndsAtToolbar: Math.abs(boxRect.bottom - toolbarRect.top) <= 1,
+                    panelClearsSurface: boxRect.bottom <= toolbarRect.top
+                        && toolbarRect.bottom <= surfaceRect.top
                 } : null;
             }, surfaceTopBeforePanel);
             check(Math.abs(contextualPanelLayout?.surfaceDelta ?? Infinity) <= 0.5
                 && contextualPanelLayout.overlay === 'absolute'
-                && contextualPanelLayout.panelStartsAtToolbar
-                && contextualPanelLayout.panelOverlaysSurface,
-            `opening the image panel moved the writing surface instead of overlaying it (layout=${
+                && contextualPanelLayout.panelEndsAtToolbar
+                && contextualPanelLayout.panelClearsSurface,
+            `opening the image panel moved or covered the writing surface (layout=${
                 JSON.stringify(contextualPanelLayout)})`);
+            if (process.env.BPB_VERIFY_EDITOR_PANEL_SCREENSHOT) {
+                const editorBox = await editorPage.locator('#bpb-report-editor').boundingBox();
+                const panelBox = await editorPage.locator('.bpb-re-imagebox').boundingBox();
+                if (editorBox && panelBox) {
+                    const left = Math.min(editorBox.x, panelBox.x);
+                    const top = Math.max(0, Math.min(editorBox.y, panelBox.y) - 8);
+                    const right = Math.max(editorBox.x + editorBox.width, panelBox.x + panelBox.width);
+                    const bottom = Math.max(editorBox.y + 140, panelBox.y + panelBox.height) + 8;
+                    await editorPage.screenshot({
+                        path: process.env.BPB_VERIFY_EDITOR_PANEL_SCREENSHOT,
+                        clip: { x: left, y: top, width: right - left, height: bottom - top }
+                    });
+                }
+            }
             await editorPage.locator('#bpb-report-editor').getByRole('button', {
                 name: 'Insert image', exact: true
             }).click();

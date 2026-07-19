@@ -40,9 +40,9 @@
     background: #f2f2f0;
 }
 
-/* Contextual controls overlay the top of the writing surface. Keeping this
- * layer out of normal flow is deliberate: opening or switching tools must not
- * make the surface jump away from the user's cursor. */
+/* Contextual controls open upward from the toolbar, never over the writing
+ * surface. Keeping this layer out of normal flow preserves the editor's
+ * position while leaving its text and selection reachable. */
 .bpb-re-toolbar {
     position: relative;
     z-index: 2;
@@ -50,7 +50,7 @@
 
 .bpb-re-contextual {
     position: absolute;
-    top: 100%;
+    bottom: 100%;
     right: 0;
     left: 0;
     z-index: 2;
@@ -185,9 +185,9 @@
     box-sizing: border-box;
     width: 100%;
     pointer-events: auto;
-    border-bottom: 1px solid #b9b9b9;
-    border-radius: 0 0 6px 6px;
-    box-shadow: 0 5px 12px rgba(0, 0, 0, 0.14);
+    border-bottom: none;
+    border-radius: 6px 6px 0 0;
+    box-shadow: 0 -5px 12px rgba(0, 0, 0, 0.14);
 }
 
 .bpb-re-box input {

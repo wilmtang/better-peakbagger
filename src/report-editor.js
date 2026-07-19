@@ -275,9 +275,9 @@ import { createMarkdownEditor } from './report-md-editor.js';
     mdHint.title = mediaHint;
     foot.append(status, mdHint);
 
-    // Contextual controls sit in a positioned layer below the toolbar. They
-    // must not become normal-flow rows: opening a tool should never move the
-    // writing surface or the cursor the user is working against.
+    // Contextual controls sit in a positioned layer above the toolbar. They
+    // must not become normal-flow rows or cover the writing surface: opening
+    // a tool must leave the cursor and editor where the user is working.
     const toolbar = el('div', 'bpb-re-toolbar');
     const contextual = el('div', 'bpb-re-contextual');
     contextual.append(tableBar, linkBox, imageBox, videoBox, moreBox);
