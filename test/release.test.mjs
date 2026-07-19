@@ -122,6 +122,12 @@ test("release and browser development commands use the dist build", async () => 
   );
 });
 
+test("bare web-ext commands use only the dist build", async () => {
+  const packageJson = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"));
+  assert.equal(packageJson.webExt.sourceDir, "dist");
+  assert.equal("ignoreFiles" in packageJson.webExt, false);
+});
+
 test("release archive rejects development and internal files", async () => {
   await assert.doesNotReject(
     verifyReleaseArchive(await makeReleaseZip(), "1.4.0"),

@@ -58,25 +58,7 @@
     "web-ext": "^10.4.0"
   },
   "webExt": {
-    "sourceDir": ".",
-    "artifactsDir": "web-ext-artifacts",
-    "ignoreFiles": [
-      "AGENTS.md",
-      "CHANGELOG.md",
-      "CLAUDE.md",
-      "docs",
-      "docs/**",
-      "package.json",
-      "package-lock.json",
-      "ROADMAP.md",
-      "scripts",
-      "scripts/**",
-      "store-assets",
-      "store-assets/**",
-      "test",
-      "test/**",
-      "tmp",
-      "tmp/**"
-    ]
+    "sourceDir": "dist",
+    "artifactsDir": "web-ext-artifacts"
   }
 }

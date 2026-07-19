@@ -28,7 +28,9 @@ UX polish; nothing here is an exploitable security hole.
 - **B4 — Done.** Jobs without a recognized provider keep the neutral “Capture
   this activity” subtitle.
 - **B7 — Pending.**
-- **E1–E6 — Pending.**
+- **E3 — Done.** Bare `web-ext` commands now use `dist`, and the obsolete
+  root-packaging ignore list is gone.
+- **E1–E2, E4–E6 — Pending.**
 - **U1–U2 — Done.** Unsupported pages now show a neutral, actionable empty
   state, and Settings is available from both that state and the header gear.
 - **U3–U7 — Pending.**
