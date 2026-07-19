@@ -284,8 +284,15 @@ Peakbagger equivalent:
 | `---` horizontal rule | `[hr]` |
 | `[label](https://…)` and bare web URLs | `[a href="…"]` |
 | `![alt](https://…)` | `[img src="…" alt="…"]` |
+| `![alt\|300](https://…)`, `![alt\|300x200](https://…)` | `[img … width="300"]`, optionally with `height="200"` |
 | two spaces plus newline, or an ordinary newline inside a paragraph | Peakbagger line break |
 | a blank line | Peakbagger paragraph spacing |
+
+The image-size suffix follows Obsidian's pixel convention. It changes the
+image's dimensions, not its alt text, and each dimension must remain between 1
+and 1,600 pixels. The source is still subject to Better Peakbagger's image URL
+rules: HTTPS and root-relative Peakbagger paths work; an Obsidian vault-local
+attachment path does not grant the extension access to that file.
 
 Peakbagger-supported inline features without standard Markdown syntax remain
 available as bracket extensions inside Markdown:

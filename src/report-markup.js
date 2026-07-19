@@ -488,6 +488,21 @@
     const textWithBreaks = value => compactInlines(String(value ?? '').split('\n')
         .flatMap((part, index) => index ? [BREAK, ...parseBracketInline(part)] : parseBracketInline(part)));
 
+    // Obsidian encodes image dimensions as the final segment of the alt text:
+    // ![alt|width](url) or ![alt|widthxheight](url). Treat the suffix as size
+    // metadata only when every supplied dimension passes the same bounds as
+    // bracket markup; otherwise it remains ordinary alt text.
+    const markdownImageAttributes = token => {
+        const rawAlt = String(token.text || '');
+        const sized = /^(.*)\|(\d+)(?:x(\d+))?$/i.exec(rawAlt);
+        if (!sized) return { alt: rawAlt, width: null, height: null };
+        const width = sanitizeDimension(sized[2]);
+        const height = sized[3] === undefined ? null : sanitizeDimension(sized[3]);
+        return width && (sized[3] === undefined || height)
+            ? { alt: sized[1], width, height }
+            : { alt: rawAlt, width: null, height: null };
+    };
+
     const markedInlines = tokens => compactInlines((tokens || []).flatMap(token => {
         if (!token || typeof token !== 'object') return [];
         if (token.type === 'text' || token.type === 'escape') {
@@ -509,7 +524,7 @@
         }
         if (token.type === 'image') {
             const src = sanitizeImageSrc(token.href);
-            return src ? [{ t: 'img', src, alt: token.text || '', width: null, height: null }]
+            return src ? [{ t: 'img', src, ...markdownImageAttributes(token) }]
                 : textWithBreaks(token.raw);
         }
         // Marked deliberately does not sanitize raw HTML. Keep it visible and
@@ -679,7 +694,11 @@
         if (node.t === 'text') return escapeMarkdownText(node.text);
         if (node.t === 'br') return '\n';
         if (node.t === 'img') {
-            if (node.width || node.height) return inlinesToBracket([node]);
+            if (node.width) {
+                const size = `${node.width}${node.height ? `x${node.height}` : ''}`;
+                return `![${escapeMarkdownText(node.alt || '')}|${size}](${node.src})`;
+            }
+            if (node.height) return inlinesToBracket([node]);
             return `![${escapeMarkdownText(node.alt || '')}](${node.src})`;
         }
         const inner = inlinesToMarkdown(node.kids);

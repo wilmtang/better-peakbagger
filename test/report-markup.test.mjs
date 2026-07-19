@@ -138,6 +138,27 @@ test('images require HTTPS and raw Markdown HTML stays inert', () => {
     assert.match(preview, /&lt;iframe/);
 });
 
+test('Obsidian-style image size suffixes become bounded dimensions, not alt text', () => {
+    const widthOnly = '![Topo|500](https://example.com/topo.jpg)';
+    const widthAndHeight = '![Route photo|500x600](https://example.com/route.jpg)';
+
+    assert.equal(Markup.markdownToBracket(widthOnly),
+        '[img src="https://example.com/topo.jpg" alt="Topo" width="500"]');
+    assert.equal(Markup.markdownToBracket(widthAndHeight),
+        '[img src="https://example.com/route.jpg" alt="Route photo" width="500" height="600"]');
+    assert.match(Markup.markdownToPreviewHtml(widthOnly),
+        /<img src="https:\/\/example\.com\/topo\.jpg" alt="Topo" width="500"/);
+
+    const bracket = '[img src="https://example.com/route.jpg" alt="Route photo" width="500" height="600"]';
+    assert.equal(Markup.bracketToMarkdown(bracket), widthAndHeight,
+        'Rich-sized images should use the same syntax when converted to Markdown');
+    assert.equal(Markup.markdownToBracket(Markup.bracketToMarkdown(bracket)), bracket);
+
+    assert.equal(Markup.markdownToBracket('![Literal|1601](https://example.com/a.jpg)'),
+        '[img src="https://example.com/a.jpg" alt="Literal|1601"]',
+        'an out-of-bounds suffix must remain ordinary alt text');
+});
+
 // ---- bracket import ---------------------------------------------------------
 
 test('legacy plain-text lists import and normalize to real Peakbagger lists', () => {

@@ -236,7 +236,7 @@ import { createMarkdownEditor } from './report-md-editor.js';
     const status = el('span', 'bpb-re-status');
     status.setAttribute('role', 'status');
     status.setAttribute('aria-live', 'polite');
-    const mdHint = el('span', 'bpb-re-hint', '# heading  > quote  ~~strike~~  `code`  [link](url)  ![image](url)  | table |');
+    const mdHint = el('span', 'bpb-re-hint', '# heading  > quote  ~~strike~~  `code`  [link](url)  ![image|500](url)  | table |');
     foot.append(status, mdHint);
 
     ui.append(draftBar, bar, tableBar, linkBox, imageBox, moreBox, richWrap, mdSplit, foot);

@@ -599,22 +599,28 @@ try {
                 '',
                 '`inline_code()`',
                 '',
+                `![Alpine ridge|300x180](${mountainUrl})`,
+                '',
                 '---'
             ].join('\n'));
-            const expandedSync = await editorPage.waitForFunction(() => {
+            const expandedSync = await editorPage.waitForFunction(imageUrl => {
                 const value = document.getElementById('JournalText').value;
                 return value.includes('[h2]Route notes[/h2]')
                     && value.includes('[blockquote]Windy [s]retreat[/s].[/blockquote]')
                     && value.includes('[table border="1"]')
                     && value.includes('[code]inline_code()[/code]')
+                    && value.includes(`[img src="${imageUrl}" alt="Alpine ridge" width="300" height="180"]`)
                     && value.endsWith('[hr]');
-            }, null, { timeout: 5000 }).then(() => true).catch(() => false);
+            }, mountainUrl, { timeout: 5000 }).then(() => true).catch(() => false);
             check(expandedSync, `expanded Markdown did not reach JournalText (value=${
                 JSON.stringify(await editorPage.evaluate(() => document.getElementById('JournalText').value))})`);
             const expandedPreview = await editorPage.waitForFunction(() => {
                 const preview = document.querySelector('.bpb-re-preview');
+                const image = preview?.querySelector('img');
                 return ['H2', 'BLOCKQUOTE', 'TABLE', 'S', 'CODE', 'HR']
-                    .every(tag => preview && preview.querySelector(tag));
+                    .every(tag => preview && preview.querySelector(tag))
+                    && image?.getAttribute('width') === '300'
+                    && image?.getAttribute('height') === '180';
             }, null, { timeout: 5000 }).then(() => true).catch(() => false);
             check(expandedPreview, 'the live preview omitted a supported semantic element');
             if (process.env.BPB_VERIFY_EDITOR_SCREENSHOT) {
@@ -744,6 +750,7 @@ console.log('  - the trip-report editor mounts on the captured ascent form; real
 console.log('    Ctrl/Cmd+B, and the "1. " input rule sync bracket markup into JournalText');
 console.log('    with live toolbar states; selected Rich images resize proportionally by');
 console.log('    pointer or keyboard; markdown mode shows a CodeMirror source beside a');
-console.log('    live preview that renders headings, quotes, tables, strike, code, and rules;');
+console.log('    live preview that renders headings, quotes, tables, strike, code, rules,');
+console.log('    and Obsidian-style pipe-sized images;');
 console.log('    hex colors survive Rich edits and Markdown preview; the toolbar inserts');
 console.log('    and grows tables; and a reloaded page offers and restores the draft');
