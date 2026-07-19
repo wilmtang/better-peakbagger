@@ -195,3 +195,37 @@ test('popup stops status polling when capture finishes without storing a job', a
     assert.equal(statusCalls, stoppedAt, 'null status responses must not keep rearming after capture ends');
     dom.window.close();
 });
+
+test('popup shows a neutral unsupported-page state with discoverable Settings', async () => {
+    const dom = new JSDOM(html, {
+        url: 'chrome-extension://better-peakbagger/popup/popup.html',
+        runScripts: 'outside-only'
+    });
+    let settingsOpens = 0;
+    dom.window.chrome = {
+        tabs: { query: async () => [{ id: 9 }] },
+        runtime: {
+            openOptionsPage: async () => { settingsOpens++; },
+            sendMessage: async message => message.type === 'CAPTURE_STATUS' ? null : {
+                phase: 'error',
+                error: { code: 'unsupported', message: 'Open a supported activity first.' }
+            }
+        }
+    };
+
+    dom.window.eval(source);
+    await waitFor(() => /Open an activity to begin/.test(dom.window.document.getElementById('state').textContent));
+
+    const card = dom.window.document.querySelector('.state-card');
+    assert.equal(card.classList.contains('empty'), true);
+    assert.equal(card.classList.contains('error'), false);
+    assert.equal(dom.window.document.getElementById('provider-label').textContent, 'Capture this activity');
+    assert.match(card.textContent, /Garmin Connect or Strava activity/);
+
+    const headerSettings = dom.window.document.getElementById('open-settings');
+    assert.equal(headerSettings.getAttribute('aria-label'), 'Open Settings');
+    headerSettings.click();
+    Array.from(card.querySelectorAll('button')).find(button => button.textContent === 'Settings').click();
+    await waitFor(() => settingsOpens === 2);
+    dom.window.close();
+});

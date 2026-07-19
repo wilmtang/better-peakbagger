@@ -23,6 +23,8 @@ main { padding: 16px; }
   margin-bottom: 14px;
 }
 
+.brand > div { min-width: 0; }
+
 h1, h2, p { margin: 0; }
 h1 { font-size: 17px; line-height: 1.2; }
 h2 { font-size: 14px; }
@@ -38,6 +40,18 @@ h2 { font-size: 14px; }
 .state-card.error { border-color: #fda29b; background: #fef3f2; }
 .state-card.locked { border-color: #fda29b; background: #fef3f2; }
 .state-title { font-size: 14px; font-weight: 700; }
+.state-card.empty .state-title::before {
+  content: "△";
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  margin-right: 8px;
+  border-radius: 7px;
+  color: #175cd3;
+  background: #eff8ff;
+  vertical-align: -4px;
+}
 .state-detail { margin-top: 5px; color: #475467; font-size: 12px; line-height: 1.45; }
 
 .spinner {
@@ -82,6 +96,19 @@ button.secondary { width: 100%; }
 .state-card button + button { margin-left: 8px; }
 
 button:disabled { cursor: not-allowed; opacity: .55; }
+button:focus-visible, .button-link:focus-visible { outline: 2px solid #1570ef; outline-offset: 2px; }
+.settings-button {
+  flex: 0 0 auto;
+  width: 32px;
+  min-height: 32px;
+  margin: 0 0 0 auto;
+  padding: 6px;
+  border-color: transparent;
+  border-radius: 8px;
+  color: #667085;
+  background: transparent;
+}
+.settings-button:hover { color: #344054; background: #eaecf0; }
 .summary { margin-bottom: 13px; padding: 10px 12px; color: #475467; font-size: 12px; }
 .summary strong { color: #344054; }
 
@@ -125,6 +152,9 @@ button:disabled { cursor: not-allowed; opacity: .55; }
   .state-card, .summary, .peak-row { border-color: #475467; background: #1d2939; }
   .summary strong { color: #e4e7ec; }
   button, .button-link { border-color: #667085; color: #e4e7ec; background: #344054; }
+  .settings-button { border-color: transparent; color: #98a2b3; background: transparent; }
+  .settings-button:hover { color: #f2f4f7; background: #344054; }
+  .state-card.empty .state-title::before { color: #84adff; background: #102a56; }
   button.primary { border-color: #1570ef; background: #1570ef; }
   .state-card.error, .state-card.locked { border-color: #d92d20; background: #3b1515; }
 }

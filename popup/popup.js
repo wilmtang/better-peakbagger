@@ -13,6 +13,7 @@
     const clearCaptureButton = document.getElementById('clear-capture');
     const selectionCount = document.getElementById('selection-count');
     const providerLabel = document.getElementById('provider-label');
+    const settingsButton = document.getElementById('open-settings');
     let activeTab = null;
     let currentJob = null;
     let pollTimer = null;
@@ -53,11 +54,22 @@
     };
 
     const retry = () => beginCapture(true);
+    const openSettings = () => {
+        try { void ext.runtime.openOptionsPage(); } catch { /* unavailable in a broken extension context */ }
+    };
     const errorState = error => {
         const code = error?.code || 'capture-failed';
         const signedOut = code === 'peakbagger-signed-out';
         const providerSignedOut = code === 'provider-signed-out';
         const notOwner = code === 'not-owner';
+        if (code === 'unsupported') {
+            stateCard(
+                'Open an activity to begin',
+                'Open a Garmin Connect or Strava activity, then select Better Peakbagger again.',
+                { kind: 'empty', action: { label: 'Settings', onClick: openSettings } }
+            );
+            return;
+        }
         stateCard(
             notOwner ? 'This activity isn’t yours' : signedOut ? 'Sign in to Peakbagger' : 'Capture stopped',
             error?.message || 'The activity could not be captured.',
@@ -156,7 +168,9 @@
     const render = job => {
         if (!job) return;
         currentJob = job;
-        providerLabel.textContent = job.provider === 'garmin' ? 'Garmin Connect activity' : 'Strava activity';
+        providerLabel.textContent = job.provider === 'garmin'
+            ? 'Garmin Connect activity'
+            : job.provider === 'strava' ? 'Strava activity' : 'Capture this activity';
         if (job.phase === 'error') return errorState(job.error);
         if (job.phase === 'no-gps') {
             stateCard(
@@ -233,6 +247,8 @@
             });
         }
     });
+
+    settingsButton.addEventListener('click', openSettings);
 
     openButton.addEventListener('click', async () => {
         openButton.disabled = true;

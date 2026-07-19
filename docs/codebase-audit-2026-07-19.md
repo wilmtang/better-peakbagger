@@ -25,9 +25,13 @@ UX polish; nothing here is an exploitable security hole.
   extension theme is light, with selector-completeness and contrast coverage.
 - **B6 — Done.** Installation and repository discovery start at 100 items per
   page and follow validated GitHub `Link` pagination, with multi-page coverage.
-- **B4, B7 — Pending.**
+- **B4 — Done.** Jobs without a recognized provider keep the neutral “Capture
+  this activity” subtitle.
+- **B7 — Pending.**
 - **E1–E6 — Pending.**
-- **U1–U7 — Pending.**
+- **U1–U2 — Done.** Unsupported pages now show a neutral, actionable empty
+  state, and Settings is available from both that state and the header gear.
+- **U3–U7 — Pending.**
 
 ---
 
