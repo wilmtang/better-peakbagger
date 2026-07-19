@@ -236,9 +236,8 @@ export function initGithubBackup({ extensionApi, flash, save }) {
 
     const disconnect = async () => {
         stopTimers();
-        const status = await send({ type: 'GITHUB_AUTH_DISCONNECT' });
+        await send({ type: 'GITHUB_AUTH_DISCONNECT' });
         flash('GitHub disconnected');
-        if (status) return renderDisconnected();
         renderDisconnected();
     };
 

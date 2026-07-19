@@ -35,7 +35,8 @@ UX polish; nothing here is an exploitable security hole.
 - **E6 — In progress.** Auth-store mutations are serialized so concurrent
   credential/account/repository writes cannot clobber one another, and
   structured non-2xx OAuth responses retain their typed GitHub error instead
-  of being reported as a network outage. Other small-smell items remain.
+  of being reported as a network outage. The duplicate disconnect branch is
+  gone; only the manifest matching decision remains.
 - **E1–E2, E4–E5 — Pending.**
 - **U1–U2 — Done.** Unsupported pages now show a neutral, actionable empty
   state, and Settings is available from both that state and the header gear.
