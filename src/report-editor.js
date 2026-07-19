@@ -444,7 +444,11 @@ import { createMarkdownEditor } from './report-md-editor.js';
     // Enter-to-submit does not click a Save button; capture on submit too. The
     // capture-phase flush listener above is registered first, so the textarea is
     // already current when this reads it.
-    form.addEventListener('submit', captureBackupSnapshot, true);
+    form.addEventListener('submit', event => {
+        const submitter = event.submitter;
+        if (submitter && submitter.id !== 'SaveButton' && submitter.id !== 'SaveButton2') return;
+        captureBackupSnapshot();
+    }, true);
 
     // Saving the ascent is the moment the draft has served its purpose. If the
     // save fails server-side, the value still round-trips in the form post.

@@ -32,7 +32,7 @@ const BUNDLES = [
     'content/ascent-editor.js'
 ];
 
-const loadEditor = async ({ settings = {}, report = '', drafts = {}, url = URL, firefox = false } = {}) => {
+const loadEditor = async ({ settings = {}, report = '', drafts = {}, url = URL, firefox = false, prepare = null } = {}) => {
     const dom = await loadPage(FIXTURE, {
         url,
         settings,
@@ -42,6 +42,7 @@ const loadEditor = async ({ settings = {}, report = '', drafts = {}, url = URL, 
             d.window.document.getElementById('JournalText').value = report;
             Object.assign(d.chrome._localStore, drafts);
             if (firefox) d.window.browser = d.chrome;
+            if (prepare) prepare(d);
         }
     });
     return dom;
@@ -201,6 +202,33 @@ test('a pending rich edit is flushed synchronously when any submit control is cl
     typeRich(dom, '<p>typed right before preview</p>');
     doc.getElementById('GPXPreview').click();
     assert.equal(doc.getElementById('JournalText').value, 'typed right before preview');
+});
+
+test('backup snapshots are captured only for Save or implicit form submissions', async () => {
+    const messages = [];
+    const dom = await loadEditor({
+        settings: { enableGithubBackup: true },
+        prepare: d => {
+            d.chrome.runtime.getManifest = () => ({ version: '1.2.3' });
+            d.chrome.runtime.sendMessage = async message => { messages.push(message); };
+        }
+    });
+    await editorReady(dom);
+    const doc = dom.window.document;
+    const form = doc.getElementById('JournalText').form;
+
+    doc.getElementById('GPXPreview').click();
+    assert.equal(messages.filter(message => message.type === 'GITHUB_BACKUP_SNAPSHOT').length, 0,
+        'GPS Preview must not snapshot a form state that was never saved');
+
+    doc.getElementById('SaveButton').click();
+    assert.ok(messages.some(message => message.type === 'GITHUB_BACKUP_SNAPSHOT'),
+        'clicking Save must capture a backup snapshot');
+
+    messages.length = 0;
+    form.dispatchEvent(new dom.window.SubmitEvent('submit', { bubbles: true, cancelable: true }));
+    assert.equal(messages.filter(message => message.type === 'GITHUB_BACKUP_SNAPSHOT').length, 1,
+        'an implicit submission must capture a backup snapshot');
 });
 
 test('markdown mode converts to bracket markup and the live preview shows the final rendering', async () => {
