@@ -105,6 +105,30 @@
         'finding-peaks': ['Detecting summits…', 'Comparing the full-resolution path with nearby Peakbagger summits.']
     }[phase] || ['Working…', 'Preparing detected ascent drafts.']);
 
+    const cancelCapture = async () => {
+        clearTimeout(pollTimer);
+        pollTimer = null;
+        capturePending = false;
+        stateCard('Cancelling capture…', 'Removing this in-progress capture from the extension.', { loading: true });
+        try {
+            const response = await ext.runtime.sendMessage({ type: 'CAPTURE_CANCEL', tabId: activeTab.id });
+            if (!response?.ok) {
+                if (response?.job) return render(response.job);
+                throw new Error('The capture could not be cancelled.');
+            }
+            currentJob = null;
+            stateCard(
+                'Capture cancelled',
+                'No track data from this capture was kept.',
+                { action: { label: 'Start again', primary: true, onClick: () => beginCapture(true) } }
+            );
+        } catch (error) {
+            stateCard('Couldn’t cancel capture', error.message, {
+                kind: 'error', action: { label: 'Try again', onClick: cancelCapture }
+            });
+        }
+    };
+
     const evidenceText = match => {
         const parts = [`${Math.round(match.evidence.distanceM)} m from summit`];
         if (Number.isFinite(match.evidence.elevationDeltaM)) parts.push(`${Math.round(match.evidence.elevationDeltaM)} m elevation difference`);
@@ -186,7 +210,7 @@
         }
         if (job.phase === 'ready' || job.phase === 'opened' || job.phase === 'previewed') return renderResults(job);
         const [title, detail] = phaseText(job.phase);
-        stateCard(title, detail, { loading: true });
+        stateCard(title, detail, { loading: true, action: { label: 'Cancel', onClick: cancelCapture } });
     };
 
     const poll = async () => {
@@ -207,7 +231,9 @@
     const beginCapture = force => {
         clearTimeout(pollTimer);
         capturePending = true;
-        stateCard('Starting capture…', 'No GPS data is accessed until account ownership is verified.', { loading: true });
+        stateCard('Starting capture…', 'No GPS data is accessed until account ownership is verified.', {
+            loading: true, action: { label: 'Cancel', onClick: cancelCapture }
+        });
         void ext.runtime.sendMessage({ type: 'CAPTURE_START', tabId: activeTab.id, force })
             .then(job => {
                 capturePending = false;

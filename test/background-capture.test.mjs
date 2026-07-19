@@ -318,6 +318,30 @@ test('a capture that finishes for a different activity is not reused after navig
         'the completed job for the previous activity must not answer a capture of the new activity');
 });
 
+test('cancelling an in-progress capture discards its job and ignores later results', async () => {
+    let releasePeakFetch;
+    const peakFetchGate = new Promise(resolve => { releasePeakFetch = resolve; });
+    const harness = createHarness({ beforePeakFetch: () => peakFetchGate });
+    const until = async predicate => {
+        const deadline = Date.now() + 2000;
+        while (!predicate()) {
+            if (Date.now() > deadline) throw new Error('condition not reached');
+            await new Promise(resolve => setTimeout(resolve, 1));
+        }
+    };
+
+    const capture = harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    await until(() => harness.fetchCalls.some(call => call.includes('/Async/pllbb2.aspx')));
+    const cancelled = await harness.send({ type: 'CAPTURE_CANCEL', tabId: 1 });
+    assert.deepEqual({ ...cancelled }, { ok: true, cancelled: true, job: null });
+    assert.equal(harness.values.bpbCaptureJobs['1'], undefined);
+
+    releasePeakFetch();
+    assert.equal(await capture, null);
+    assert.equal(harness.values.bpbCaptureJobs['1'], undefined,
+        'the abandoned process must not recreate or retain its late result');
+});
+
 test('same-day suffixes include only selected ascents and follow track order', async () => {
     const harness = createHarness();
     await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });

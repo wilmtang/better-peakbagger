@@ -431,6 +431,22 @@ import { githubClient as GithubClient } from './github-client.js';
         return { ok: true, removedGpx, removedDraftCount: removedDraftTabIds.length };
     };
 
+    const cancelCapture = async message => {
+        const tabId = Number(message.tabId);
+        if (!Number.isInteger(tabId)) throw new Error('Activity tab identity is unavailable.');
+        const terminalPhases = new Set(['ready', 'no-matches', 'no-gps', 'error', 'opened', 'previewed']);
+        let cancelled = false;
+        let current = null;
+        await mutateMap(JOBS_KEY, jobs => {
+            current = jobs[tabId] || null;
+            if (!current || terminalPhases.has(current.phase)) return;
+            delete jobs[tabId];
+            cancelled = true;
+        });
+        if (cancelled) await setBadge(tabId, '');
+        return { ok: cancelled, cancelled, job: cancelled ? null : publicJob(current) };
+    };
+
     const updateSelection = async message => {
         const tabId = Number(message.tabId);
         return mutateMap(JOBS_KEY, jobs => {
@@ -1005,6 +1021,7 @@ import { githubClient as GithubClient } from './github-client.js';
                 const jobs = await readMap(JOBS_KEY);
                 return publicJob(jobs[Number(message.tabId)] || null);
             }
+            case 'CAPTURE_CANCEL': return cancelCapture(message);
             case 'CAPTURE_CLEAR': return clearCapture(message);
             case 'CAPTURE_SELECTION': return publicJob(await updateSelection(message));
             case 'CAPTURE_OPEN_DRAFTS': return openDrafts(message);

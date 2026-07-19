@@ -229,3 +229,37 @@ test('popup shows a neutral unsupported-page state with discoverable Settings', 
     await waitFor(() => settingsOpens === 2);
     dom.window.close();
 });
+
+test('popup can cancel an in-progress capture without retaining track data', async () => {
+    const dom = new JSDOM(html, {
+        url: 'chrome-extension://better-peakbagger/popup/popup.html',
+        runScripts: 'outside-only'
+    });
+    const messages = [];
+    let finishStart;
+    dom.window.chrome = {
+        tabs: { query: async () => [{ id: 9 }] },
+        runtime: {
+            sendMessage: message => {
+                messages.push(message);
+                if (message.type === 'CAPTURE_START') return new Promise(resolve => { finishStart = resolve; });
+                if (message.type === 'CAPTURE_STATUS') return Promise.resolve({ phase: 'checking-peakbagger', provider: 'strava' });
+                if (message.type === 'CAPTURE_CANCEL') return Promise.resolve({ ok: true, cancelled: true, job: null });
+                return Promise.resolve(null);
+            }
+        }
+    };
+
+    dom.window.eval(source);
+    await waitFor(() => Array.from(dom.window.document.querySelectorAll('#state button'))
+        .some(button => button.textContent === 'Cancel'));
+    Array.from(dom.window.document.querySelectorAll('#state button'))
+        .find(button => button.textContent === 'Cancel').click();
+    await waitFor(() => /No track data from this capture was kept/.test(dom.window.document.getElementById('state').textContent));
+
+    assert.ok(messages.some(message => message.type === 'CAPTURE_CANCEL' && message.tabId === 9));
+    assert.ok(Array.from(dom.window.document.querySelectorAll('#state button'))
+        .some(button => button.textContent === 'Start again'));
+    finishStart(null);
+    dom.window.close();
+});

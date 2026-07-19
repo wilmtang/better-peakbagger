@@ -44,7 +44,8 @@ UX polish; nothing here is an exploitable security hole.
 - **U6–U7 — Done.** The casing input exposes its route-relative minimum;
   popup deletion copy names the captured track data; and denied GitHub access
   stays as actionable inline guidance through focus changes.
-- **U3 — Pending.**
+- **U3 — Done.** Working phases expose Cancel; cancellation immediately drops
+  the job and late async results cannot recreate or retain its track data.
 
 ---
 
