@@ -17,6 +17,9 @@ verification, and used for store packages.
 the order of separately loaded bundles and vendor scripts.
 `scripts/build-config.mjs` owns bundle composition and copied assets. The worker
 ships as one `dist/background.js` bundle referenced by both browser families.
+Peakbagger content-script and web-accessible-resource matches are HTTPS-only,
+aligned with host permissions, and deliberately page-specific so large vendor
+or MAIN-world bundles are not injected into unrelated pages.
 
 ## Execution worlds
 
@@ -80,7 +83,8 @@ response is not equivalent to no peaks.
 Prepared drafts expire after 30 minutes and are delivered only after the worker
 and `src/ascent-draft.js` verify sender tab, job, peak, and climber identity.
 Preview may be triggered exactly once. No extension path clicks a Peakbagger
-Save control.
+Save control. Cancelling capture deletes its job immediately; the transaction
+identity prevents late provider or lookup results from recreating it.
 
 The detailed user-facing disclosure is canonical in
 [../PRIVACY.md](../PRIVACY.md). Capture algorithms and their regression tests
@@ -148,8 +152,11 @@ or send coordinates to a timezone service. See
   `report.md`, commit message). `src/github-client.js`: the injected-fetch Git
   Data commit client. `src/github-auth.js`: device-flow auth plus the
   `storage.local`-only token/repo accessor. The token is held only by the
-  background worker and never reaches a content script; the GitHub backup design
-  lives in [github-ascent-backup.md](github-ascent-backup.md).
+  background worker and never reaches a content script. The worker persists an
+  in-progress device authorization in `storage.session` and advances it one
+  interval-gated request per options-page status message, so worker suspension
+  cannot lose the displayed code. The GitHub backup design lives in
+  [github-ascent-backup.md](github-ascent-backup.md).
 
 Extend the owning surface rather than adding cross-feature globals. The trip
 report format and safety contract are documented in
@@ -163,7 +170,8 @@ startup invariant is documented in [dark-mode-flash.md](dark-mode-flash.md).
 - `storage.local`: terrain-cache index, extension-local report drafts, and the
   GitHub backup token/repo (secrets must not ride browser-account sync).
 - `storage.session`: capture jobs, prepared draft payloads, and save-time GitHub
-  backup snapshots, all expiring after 30 minutes.
+  backup snapshots (30-minute expiry), plus an in-progress GitHub device
+  authorization (GitHub's code expiry).
 - CacheStorage: bounded, best-effort DEM response bytes.
 - Peakbagger `localStorage`: page-local filter state and the early theme mirror.
 
@@ -171,6 +179,10 @@ The 2D and 3D renderers hand off their validated center and equivalent zoom on
 every switch; bearing and pitch stay 3D-only. Returning to 2D then destroys the
 MapLibre renderer and stops its tile activity. Successful DEM responses may
 remain in the bounded cache.
+
+Freshness gates reject expired jobs, drafts, and backup snapshots on read. A
+five-minute alarm performs physical cleanup outside ordinary message handling;
+correctness does not depend on the alarm firing before an expired read.
 
 ## Verification boundaries
 

@@ -14,11 +14,13 @@ Better Peakbagger module uses a global as an internal dependency.
 
 ## Prerequisites
 
-- Node.js 24 (the version used in CI) and npm.
+- Node.js 22 or newer (CI uses Node.js 22) and npm.
 - `npm ci` to install the exact dependency graph in `package-lock.json`
   (esbuild, runtime vendor packages, jsdom, Playwright, and web-ext).
 - For the real-extension checks: `npx playwright install chromium` (Chrome for
-  Testing — stable Chrome refuses `--load-extension`).
+  Testing — stable Chrome refuses `--load-extension`) and OpenSSL. The verifier
+  creates a one-day self-signed certificate inside its disposable test profile
+  so the local Peakbagger fixture exercises the production HTTPS-only manifest.
 
 ## Everyday workflow
 
@@ -109,9 +111,15 @@ only exist under `dist/` after a build.
 | `npm run verify:extension` | Loads the **real** unpacked `dist/` in headless Chrome for Testing and drives capture, the editor, and the maps. The only check that exercises the true manifest load. |
 | `npm run terrain:verify` | Renders the real MapLibre terrain frame on the GPU with synthetic route, basemap, peak, and CORS-enabled DEM fixtures; it makes no live terrain-provider requests. |
 | `npm run showcase:render` | Builds and renders the local UI showcase fixtures. |
+| `npm run lint:js` | Runs errors-only ESLint over source, extension surfaces, scripts, and tests. |
 | `npm run lint` | Builds, then runs `web-ext lint --source-dir dist`. |
 | `npm run package` | Release build + `web-ext build` from `dist/`; writes the canonical Chrome ZIP under `web-ext-artifacts/`. |
 | `npm run start:chromium` / `start:firefox` | Build, watch, launch a web-ext development browser, and auto-reload the extension after successful rebuilds. Firefox mirrors each complete build into its inline-Preferences source first. |
+
+Pushes and pull requests run `npm ci`, `npm test`, `npm run lint:js`, and bare
+`web-ext lint` in the least-privilege GitHub Actions workflow. The real-extension
+check remains local because it requires the separately installed Chrome for
+Testing binary; run it for the boundaries listed below.
 
 Chrome stable 137+ rejects command-line `--load-extension`, so
 `start:chromium` needs a compatible Chromium/Chrome for Testing binary (pass
@@ -241,14 +249,19 @@ generalize this exception.
   the shipped bundles, but it does not exercise the real manifest — execution
   worlds, injection order, and the live service-worker lifecycle are invisible
   to it.
+- `npm run lint:js` checks undeclared names, unused bindings, and unsafe equality
+  without rewriting source. `npm run lint` checks the built extension package;
+  neither establishes browser behavior.
 - `npm run terrain:verify` renders the true MapLibre frame on the GPU, but its
   showcase pages provide their own settings/chrome stubs and its Mapterhorn
   requests are intercepted with a synthetic CORS-enabled DEM, so it does not run
   the real settings or bridge code or exercise the live terrain service.
 - `npm run verify:extension` is the only check that loads the real unpacked
-  extension in Chrome for Testing. Run it after touching `manifest.json`, bundle
-  composition, execution worlds, the worker, or anything a content script relies
-  on at load.
+  extension in Chrome for Testing. It drives an isolated self-signed HTTPS
+  Peakbagger fixture so the real manifest's scheme, path, load order, worlds,
+  and worker lifecycle all participate. Run it after touching `manifest.json`,
+  bundle composition, execution worlds, the worker, or anything a content
+  script relies on at load.
 
 The real-extension and terrain checks are hidden/headless and use an isolated
 test profile. They establish browser loading, DOM behavior, and (for terrain)

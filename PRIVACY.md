@@ -12,9 +12,12 @@ requests for the viewed area only after the user enables that feature.
 ## Browser permissions
 
 - **`storage`** saves theme, units, chart, map, capture, editor, and beta-filter
-  preferences in `storage.sync`. It keeps the bounded DEM cache index in
-  `storage.local`, and short-lived capture jobs and prepared drafts in
-  `storage.session`; that capture data expires after 30 minutes. DEM response
+  preferences in `storage.sync`. It keeps the bounded DEM cache index and
+  GitHub backup token/repository in `storage.local`; short-lived capture jobs,
+  prepared drafts, save-time backup snapshots, and an in-progress GitHub device
+  authorization live in `storage.session`. Capture, draft, and snapshot records
+  expire after 30 minutes; pending authorization is removed when its GitHub
+  device code completes, fails, or expires. DEM response
   bytes live in browser-managed CacheStorage and may be evicted under storage
   pressure.
 - **`activeTab`** grants temporary access to the one Garmin Connect or Strava

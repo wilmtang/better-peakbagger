@@ -56,6 +56,10 @@ UX polish; nothing here is an exploitable security hole.
   After B3, options polling deliberately advances a persisted one-shot OAuth
   state machine whose worker enforces GitHub's network interval. Ports would
   add reconnection and state-replay complexity without a remaining defect.
+- **Maintained documentation — Done.** README, privacy, architecture,
+  development workflow, and the GitHub backup design now describe capture
+  cancellation, restart-safe authorization, CI/ESLint, HTTPS-only injection,
+  alarm-based cleanup, and the shipped automatic-backup behavior.
 - **U1–U2 — Done.** Unsupported pages now show a neutral, actionable empty
   state, and Settings is available from both that state and the header gear.
 - **U4 — Done.** Draft notifications now use stylesheet-owned semantic classes,

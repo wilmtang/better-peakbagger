@@ -1,7 +1,8 @@
 # GitHub ascent backup: design and execution plan
 
 Status: implemented. Steps 1–10 have landed, and the automated release checks
-(`npm test`, `npm run verify:extension`, `web-ext lint`) pass. Step 11's live
+(`npm test`, `npm run lint:js`, `npm run verify:extension`, `web-ext lint`)
+pass. Step 11's live
 verification — a real device-flow authorization and installation against the
 registered app, and one rate-limited save on real Peakbagger landing a commit in
 a scratch repo, in both browsers — remains a manual pre-release step, because it
@@ -13,8 +14,8 @@ When the user saves an ascent on Peakbagger, Better Peakbagger can back that
 ascent up into a GitHub repository the user has explicitly granted access to.
 Each ascent becomes one folder containing the trip report as real Markdown,
 every structured field the user entered as JSON, and the GPX track Peakbagger
-stores for the ascent. The backup is an explicit, opt-in feature; an automatic
-after-save mode is a later, separately opted-in refinement.
+stores for the ascent. The backup is an explicit, opt-in feature; automatic
+after-save backup is a second, separately disabled-by-default choice.
 
 ## Why this is cheap in this codebase
 
@@ -57,9 +58,10 @@ to the commit. Failures show an actionable message and a retry control.
 Backup never blocks or alters the Peakbagger save itself, and no extension
 path clicks either Peakbagger Save control.
 
-**Automatic mode (later).** A separate opt-in setting, "Back up automatically
+**Automatic mode.** A separate opt-in setting, "Back up automatically
 after save", performs the same push without the click, with the same visible
-success/failure state. It ships only after the manual path is verified.
+success/failure state. It requires a fresh, precise save-time snapshot; merely
+revisiting an old ascent falls back to the manual button without pushing.
 
 ## Repository layout
 
@@ -199,6 +201,14 @@ to leak. The flow:
    `GET /user/installations/{id}/repositories`, and store the choice.
    Exactly one granted repo means zero-typing setup.
 
+The background worker persists the pending device code, expiry, interval, and
+next-poll time in `storage.session`. The options page advances one poll attempt
+per status tick; the worker skips network access before `nextPollAt`, honors
+`slow_down`, and clears the pending record on success, denial, expiry, or
+disconnect. A service-worker restart therefore cannot silently lose a code the
+user is entering. Installation and repository discovery follow GitHub's
+validated pagination links rather than assuming the first page is complete.
+
 Because the app opts out of user-token expiration, the token is long-lived
 and no refresh-token machinery (which would require a client secret) is
 needed. The token lives in `chrome.storage.local`, *never* `storage.sync`:
@@ -319,8 +329,9 @@ begins, per the repository commit discipline.
    ascentedit.aspx field-name mapping and turns the live Form1 fields plus the
    editor's report (mode, submitted bracket, exact Markdown sidecar) into the
    github-backup snapshot, with a `climber|peak|date` match key and normalized
-   date. The report editor's Save/submit flush (`src/report-editor.js`) builds
-   it — gated on `enableGithubBackup`, best-effort, never blocking the save —
+   date. The report editor's Save or implicit-submit flush
+   (`src/report-editor.js`) builds it — Preview and other named submitters do
+   not — gated on `enableGithubBackup`, best-effort, never blocking the save —
    and sends `GITHUB_BACKUP_SNAPSHOT` to the worker, which stores it in
    storage.session (Peakbagger-sender + feature gated, identity-keyed, bounded,
    30-minute expiry via the existing cleanup alarm).
@@ -384,9 +395,10 @@ begins, per the repository commit discipline.
 - Exact post-save behavior on live Peakbagger: redirect target, referrer
   value, and whether `aid` is always present on arrival. Handled defensively —
   `src/ascent-page.js` takes `aid` from the URL and fails closed without it, and
-  snapshot matching falls back from `aid` to peak+date to most-recent-for-peak,
-  so a new ascent (whose snapshot had no `aid`) still matches. Confirm on live
-  Peakbagger.
+  manual snapshot matching falls back from `aid` to peak+date to
+  most-recent-for-peak, so a new ascent (whose snapshot had no `aid`) still
+  matches. Automatic mode permits only `aid` or peak+date and therefore cannot
+  push a merely similar stale snapshot. Confirm the live redirect on Peakbagger.
 - Whether the stored-GPX link is present immediately after a save that used
   GPS Preview, or appears only after a server-side delay. The surface treats the
   track as optional (omits `track.gpx` when the link is absent), so a delayed

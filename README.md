@@ -60,7 +60,8 @@ Selected ascents open together as prefilled Peakbagger drafts with GPS Preview
 already prepared. Review the details, make any corrections, and save when you
 are satisfied. If multiple selected summits fall on the same date, their drafts
 receive Peakbagger's `a`, `b`, … suffixes in track order so the ascents remain
-distinct.
+distinct. While a capture is working, **Cancel** immediately discards its
+short-lived job and ignores any provider or summit result that finishes later.
 
 <video src="store-assets/showcase-activity-capture.mp4" width="100%" autoplay loop muted playsinline></video>
 
@@ -195,6 +196,7 @@ root.
 
 ```sh
 npm test
+npm run lint:js
 npm run lint
 npm run verify:extension
 ```
