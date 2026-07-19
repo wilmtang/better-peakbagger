@@ -10,8 +10,6 @@ const mapShowcase = await readFile(new URL('../scripts/showcase/map.html', impor
 const terrainShowcase = await readFile(new URL('../scripts/showcase/terrain.html', import.meta.url), 'utf8');
 const bigMapShowcase = await readFile(new URL('../scripts/showcase/big-map.html', import.meta.url), 'utf8');
 const bigMapNativeShowcase = await readFile(new URL('../scripts/showcase/big-map-native.html', import.meta.url), 'utf8');
-const tetonShowcase = await readFile(new URL('../scripts/showcase/teton-live-terrain.html', import.meta.url), 'utf8');
-const tetonRenderer = await readFile(new URL('../scripts/render-teton-live-showcase.mjs', import.meta.url), 'utf8');
 const terrainFrame = await readFile(new URL('../terrain/terrain.html', import.meta.url), 'utf8');
 const terrainGpx = await readFile(new URL('../scripts/showcase/terrain.gpx', import.meta.url), 'utf8');
 
@@ -47,27 +45,6 @@ test('3D terrain showcase uses the production renderer with a synthetic route', 
     assert.doesNotMatch(terrainShowcase, /bpb-terrain-disclosure/);
     assert.match(terrainGpx, /Synthetic Mount Baker terrain check/);
     assert.doesNotMatch(terrainGpx, /<name>.*(?:Garmin|Strava|Alex|Zihao)/i);
-});
-
-test('Grand Teton showcase keeps the map and round-trip profile in the production order', () => {
-    const mapIndex = tetonShowcase.indexOf('class="map-card"');
-    const chartIndex = tetonShowcase.indexOf('class="chart-card"');
-
-    assert.notEqual(mapIndex, -1);
-    assert.notEqual(chartIndex, -1);
-    assert.ok(mapIndex < chartIndex, 'the wide terrain map should render above the elevation profile');
-    assert.doesNotMatch(tetonShowcase, /stats-card|terrain-left/,
-        'the showcase must not restore the dashboard sidebar layout');
-    assert.match(tetonShowcase, /ascentPoints\.slice\(0, -1\)\.reverse\(\)/,
-        'the elevation profile should return to the trailhead instead of ending at the summit');
-    assert.match(tetonShowcase, /Interactive Stats: 14\.2 miles \| 7,095 ft gain \| Time: 12h 34m/);
-
-    const headerFlushIndex = tetonRenderer.indexOf("locator('.showcase-head').evaluate");
-    const screenshotIndex = tetonRenderer.indexOf("locator('body').screenshot");
-    assert.notEqual(headerFlushIndex, -1);
-    assert.notEqual(screenshotIndex, -1);
-    assert.ok(headerFlushIndex < screenshotIndex,
-        'the renderer must flush the static header before capturing the full-width WebGL scene');
 });
 
 test('BigMap showcase contains only synthetic multi-route interaction data', () => {

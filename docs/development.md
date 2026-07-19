@@ -83,13 +83,10 @@ only exist under `dist/` after a build.
 | `npm test` | `pretest` builds `dist/`, then runs `test/**/*.test.mjs`. |
 | `npm run verify:extension` | Loads the **real** unpacked `dist/` in headless Chrome for Testing and drives capture, the editor, and the maps. The only check that exercises the true manifest load. |
 | `npm run terrain:verify` | Renders the real MapLibre terrain frame on the GPU with synthetic route, basemap, peak, and CORS-enabled DEM fixtures; it makes no live terrain-provider requests. |
-| `npm run showcase:render` | Builds and batch-renders the activity-capture and GPX fixture assets; requires Chrome, ffmpeg, and the fetched USGS basemap. |
-| `npm run showcase:teton:render` | Builds and renders the single Grand Teton asset from live Mapterhorn and OpenFreeMap tiles; requires network access and hardware WebGL in Chrome for Testing. |
+| `npm run showcase:render` | Builds and renders the local UI showcase fixtures. |
 | `npm run lint` | Builds, then runs `web-ext lint --source-dir dist`. |
 | `npm run package` | Release build + `web-ext build` from `dist/`; writes the canonical Chrome ZIP under `web-ext-artifacts/`. |
 | `npm run start:chromium` / `start:firefox` | Build, watch, launch a web-ext development browser, and auto-reload the extension after successful rebuilds. Firefox mirrors each complete build into its inline-Preferences source first. |
-
-The two showcase renderers stay separate because they have incompatible execution contracts. The batch renderer uses static headless screenshots with the GPU disabled and ffmpeg to assemble animations. The Grand Teton renderer uses Playwright, fails closed without a hardware renderer, waits for two live tile providers, and produces one capture. Keeping the live GPU render opt-in prevents routine fixture refreshes from acquiring network and graphics dependencies.
 
 Chrome stable 137+ rejects command-line `--load-extension`, so
 `start:chromium` needs a compatible Chromium/Chrome for Testing binary (pass
