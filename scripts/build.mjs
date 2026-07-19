@@ -31,6 +31,16 @@ const WATCH = args.has('--watch');
 
 export const RELOAD_SIGNAL = '.better-peakbagger-reload';
 
+export function formatReloadLog(sequence, date = new Date()) {
+    const pad = value => String(value).padStart(2, '0');
+    const timestamp = [
+        date.getFullYear(),
+        pad(date.getMonth() + 1),
+        pad(date.getDate()),
+    ].join('-') + ` ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+    return `[${timestamp}] Rebuilt ${ENTRIES.length} bundles (development reload ${sequence})`;
+}
+
 async function copyDir(from, to) {
     await mkdir(to, { recursive: true });
     for (const entry of await readdir(from, { withFileTypes: true })) {
@@ -137,7 +147,7 @@ export async function watchAll({
         await afterBuild({ sequence: nextSequence });
         await writeFile(reloadFile, `${nextSequence}\n`);
         sequence = nextSequence;
-        console.log(`Rebuilt ${ENTRIES.length} bundles (development reload ${sequence})`);
+        console.log(formatReloadLog(sequence));
     };
 
     const drain = async () => {

@@ -10,12 +10,20 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 
-import { RELOAD_SIGNAL } from "../scripts/build.mjs";
+import { formatReloadLog, RELOAD_SIGNAL } from "../scripts/build.mjs";
 import { webExtArguments } from "../scripts/run-development.mjs";
 import {
   createFirefoxSource,
   syncFirefoxSource,
 } from "../scripts/run-firefox.mjs";
+
+test("development reload logs include a local timestamp", () => {
+  const localTime = new Date(2026, 6, 19, 13, 4, 5);
+  assert.match(
+    formatReloadLog(3, localTime),
+    /^\[2026-07-19 13:04:05\] Rebuilt \d+ bundles \(development reload 3\)$/,
+  );
+});
 
 test("development browsers reload only from the completed-build signal", () => {
   const chromiumSource = path.resolve("dist");
