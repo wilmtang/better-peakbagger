@@ -394,6 +394,8 @@ test('plain mode is the untouched native textarea, hints restored', async () => 
     const plainHint = ui.querySelector('.bpb-re-plain-hint');
 
     assert.equal(plainHint.hidden, true);
+    assert.equal(plainHint.parentElement, ui.querySelector('.bpb-re-bar'),
+        'the Plain hint should reuse the shared toolbar row');
 
     modeButton(doc, 'Plain').click();
     const textarea = doc.getElementById('JournalText');

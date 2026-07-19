@@ -390,6 +390,41 @@ try {
             await editorPage.locator('#bpb-report-editor').getByRole('button', {
                 name: 'Plain', exact: true
             }).click();
+            const plainBarLayout = await editorPage.evaluate(() => {
+                const bar = document.querySelector('#bpb-report-editor .bpb-re-bar');
+                const hint = document.querySelector('#bpb-report-editor .bpb-re-plain-hint');
+                const modes = document.querySelector('#bpb-report-editor .bpb-re-modes');
+                const barRect = bar?.getBoundingClientRect();
+                const hintRect = hint?.getBoundingClientRect();
+                const modesRect = modes?.getBoundingClientRect();
+                return bar && hint && modes && barRect && hintRect && modesRect ? {
+                    hintInBar: hint.parentElement === bar,
+                    centerDelta: Math.abs(
+                        (hintRect.top + hintRect.height / 2) - (modesRect.top + modesRect.height / 2)),
+                    barHeight: barRect.height,
+                    modesHeight: modesRect.height
+                } : null;
+            });
+            check(plainBarLayout?.hintInBar
+                && plainBarLayout.centerDelta <= 1
+                && plainBarLayout.barHeight <= plainBarLayout.modesHeight + 12,
+            `the Plain syntax hint did not reuse the toolbar row (layout=${JSON.stringify(plainBarLayout)})`);
+            if (process.env.BPB_VERIFY_EDITOR_PLAIN_SCREENSHOT) {
+                const editorBox = await editorPage.locator('#bpb-report-editor').boundingBox();
+                const textareaBox = await editorPage.locator('#JournalText').boundingBox();
+                if (editorBox && textareaBox) {
+                    const left = Math.min(editorBox.x, textareaBox.x);
+                    const top = Math.min(editorBox.y, textareaBox.y);
+                    const right = Math.max(editorBox.x + editorBox.width, textareaBox.x + textareaBox.width);
+                    const bottom = Math.min(
+                        Math.max(editorBox.y + editorBox.height, textareaBox.y + textareaBox.height),
+                        top + 260);
+                    await editorPage.screenshot({
+                        path: process.env.BPB_VERIFY_EDITOR_PLAIN_SCREENSHOT,
+                        clip: { x: left, y: top, width: right - left, height: bottom - top }
+                    });
+                }
+            }
             await editorPage.locator('#JournalText').fill(
                 `[img src="${mountainUrl}" alt="Alpine ridge" width="440"]`);
             await editorPage.locator('#bpb-report-editor').getByRole('button', {

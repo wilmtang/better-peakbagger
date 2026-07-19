@@ -136,12 +136,18 @@
 }
 
 .bpb-re-plain-hint {
-    padding: 6px 10px;
-    border: 1px solid #b9b9b9;
-    border-radius: 0 0 6px 6px;
-    background: #fbfbf9;
+    flex: 1 1 auto;
+    min-width: 0;
+    padding: 0 4px;
     color: #4f5660;
     font-size: x-small;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.bpb-re[data-mode="plain"] .bpb-re-bar {
+    flex-wrap: nowrap;
 }
 
 /* --- popover rows (link, image, more formats, table) ----------------------- */
@@ -608,8 +614,7 @@
 /* --- dark theme ------------------------------------------------------------------ */
 
 html[data-bpb-theme="dark"] .bpb-re-bar,
-html[data-bpb-theme="dark"] .bpb-re-box,
-html[data-bpb-theme="dark"] .bpb-re-plain-hint {
+html[data-bpb-theme="dark"] .bpb-re-box {
     background: #202224;
     border-color: #3a3f45;
 }
