@@ -51,7 +51,11 @@ UX polish; nothing here is an exploitable security hole.
   in CI with the audit's three errors-only rules. The initial pass removed
   stale test/verification bindings and explicitly models the manifest-provided
   Chart.js global without weakening the rules project-wide.
-- **E2 — Pending.**
+- **E2 — Closed without code change.** After E1, popup polling is a bounded,
+  side-effect-free session read that exists only while the popup is open.
+  After B3, options polling deliberately advances a persisted one-shot OAuth
+  state machine whose worker enforces GitHub's network interval. Ports would
+  add reconnection and state-replay complexity without a remaining defect.
 - **U1–U2 — Done.** Unsupported pages now show a neutral, actionable empty
   state, and Settings is available from both that state and the header gear.
 - **U4 — Done.** Draft notifications now use stylesheet-owned semantic classes,
@@ -177,6 +181,13 @@ The popup polls `CAPTURE_STATUS` every 450 ms; the options GitHub panel polls
 `GITHUB_AUTH_STATE` every 2 s. Both work, but a `runtime.connect` port (or
 `storage.session.onChanged`) would push state transitions instead, cut message
 chatter, and — for the auth flow — remove the B3 keep-alive coupling.
+
+**Execution:** Closed without a code change after E1 and B3. The popup read is
+now cheap and bounded by the popup lifetime. The options messages no longer
+keep an in-memory flow alive; they advance durable one-shot work while the
+worker independently enforces `nextPollAt`. Replacing this with a port would
+require reconnect and state-replay machinery for no observed correctness or
+performance problem.
 
 ### E3 — Vestigial `webExt` config in package.json
 `package.json` carries `webExt.sourceDir: "."` with an `ignoreFiles` list,
@@ -327,8 +338,8 @@ run `npm run verify:extension` for any step touching the manifest or worker.
 15. **E4**: GitHub Actions workflow (`npm test` + `web-ext lint`).
 16. **E1**: move cleanup off the message path.
 17. **E5**: minimal ESLint; fix anything it finds (expect only E6-class items).
-18. **E2**: optional — port-based state push for popup/options; only worth it
-    if E1/B3 leave residual complaints.
+18. **E2 — closed**: E1/B3 left no residual correctness or performance issue;
+    retain the bounded reads instead of adding a port lifecycle.
 
 ### Explicitly out of scope
 - Any change to the capture privacy pipeline (`provider-page.js`,
