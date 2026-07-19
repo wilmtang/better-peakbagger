@@ -18,7 +18,10 @@ UX polish; nothing here is an exploitable security hole.
   coverage includes GPS Preview, a Save click, and implicit submission.
 - **B2 — Done.** Automatic backup accepts only ascent-ID or peak-and-date
   snapshot matches; the visible manual action retains the peak-only fallback.
-- **B3–B7 — Pending.**
+- **B3 — In progress.** The options UI now treats an idle worker during an
+  active device flow as a lost flow and offers a retry; worker persistence is
+  still pending.
+- **B4–B7 — Pending.**
 - **E1–E6 — Pending.**
 - **U1–U7 — Pending.**
 

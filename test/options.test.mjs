@@ -434,6 +434,32 @@ test('a denied host-permission request reverts the toggle and leaves the gate of
     assert.notEqual(dom.chrome._store.bpbSettings.enableGithubBackup, true);
 });
 
+test('a lost device flow stops polling and offers a retry', async () => {
+    const dom = await loadOptions({ enableGithubBackup: true }, {
+        prepareChrome: chrome => {
+            chrome.permissions = { request: async () => true, contains: async () => true, remove: async () => true };
+            chrome.runtime.sendMessage = (message, callback) => {
+                let reply;
+                if (message.type === 'GITHUB_AUTH_STATUS') reply = { enabled: true, connected: false, hasToken: false };
+                else if (message.type === 'GITHUB_AUTH_BEGIN') reply = {
+                    phase: 'polling', userCode: 'ABCD-EFGH', verificationUri: 'https://github.com/login/device', expiresIn: 900,
+                };
+                else if (message.type === 'GITHUB_AUTH_STATE') reply = { phase: 'idle' };
+                else reply = {};
+                if (typeof callback === 'function') Promise.resolve().then(() => callback(reply));
+                return Promise.resolve(reply);
+            };
+        },
+    });
+
+    Array.from(el(dom, 'github-panel').querySelectorAll('button'))
+        .find(button => button.textContent === 'Connect GitHub').click();
+    await waitFor(dom, () => /connection was lost/i.test(el(dom, 'github-panel').textContent), 3000);
+
+    assert.ok(Array.from(el(dom, 'github-panel').querySelectorAll('button'))
+        .some(button => button.textContent === 'Try again'));
+});
+
 test('a connected status renders the account and repository', async () => {
     const dom = await loadOptions({ enableGithubBackup: true }, {
         prepareChrome: withGithubBackground({

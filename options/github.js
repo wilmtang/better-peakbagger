@@ -159,6 +159,7 @@ export function initGithubBackup({ extensionApi, flash, save }) {
             const state = await send({ type: 'GITHUB_AUTH_STATE' });
             if (!state) return pollAuth();
             if (state.phase === 'polling') return pollAuth();
+            if (state.phase === 'idle') return renderError('no-token');
             if (state.phase === 'error') return renderError(state.code);
             if (state.phase === 'authorized') return afterAuthorized();
             return pollAuth();
