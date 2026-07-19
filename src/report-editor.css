@@ -706,6 +706,80 @@
     background: #fdf3d7;
 }
 
+/* --- prepared-draft notification -------------------------------------------------- */
+
+.bpb-draft-banner {
+    --bpb-draft-color: #93370d;
+    --bpb-draft-bg: #fffaeb;
+    --bpb-draft-border: #fedf89;
+    all: initial;
+    position: fixed;
+    top: 12px;
+    right: 12px;
+    z-index: 2147483647;
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    width: calc(100vw - 24px);
+    max-width: 460px;
+    box-sizing: border-box;
+    padding: 11px 12px 11px 14px;
+    color: var(--bpb-draft-color);
+    background: var(--bpb-draft-bg);
+    border: 1px solid var(--bpb-draft-border);
+    border-radius: 10px;
+    font: 600 14px/1.4 system-ui, sans-serif;
+    box-shadow: 0 8px 24px rgba(16, 24, 40, .18);
+    opacity: 1;
+    transform: translateY(0);
+    transition: opacity 160ms ease, transform 160ms ease;
+}
+
+.bpb-draft-banner-strong { --bpb-draft-color: #067647; --bpb-draft-bg: #ecfdf3; --bpb-draft-border: #a6f4c5; }
+.bpb-draft-banner-waiting { --bpb-draft-color: #175cd3; --bpb-draft-bg: #eff8ff; --bpb-draft-border: #b2ddff; }
+.bpb-draft-banner-error { --bpb-draft-color: #b42318; --bpb-draft-bg: #fef3f2; --bpb-draft-border: #fecdca; }
+.bpb-draft-banner-text { all: initial; flex: 1; color: inherit; font: inherit; }
+.bpb-draft-banner-dismiss,
+.bpb-draft-banner-action {
+    all: initial;
+    flex: 0 0 auto;
+    box-sizing: border-box;
+    color: inherit;
+    cursor: pointer;
+    outline: 2px solid transparent;
+    outline-offset: 1px;
+}
+.bpb-draft-banner-dismiss { width: 24px; height: 24px; border-radius: 6px; font: 700 20px/22px system-ui, sans-serif; text-align: center; }
+.bpb-draft-banner-action { padding: 4px 8px; background: #fff; border: 1px solid var(--bpb-draft-border); border-radius: 6px; font: 600 12px/1.4 system-ui, sans-serif; white-space: nowrap; }
+.bpb-draft-banner-dismiss:focus-visible,
+.bpb-draft-banner-action:focus-visible { outline-color: currentColor; }
+.bpb-draft-banner-action:disabled { cursor: default; opacity: .6; }
+.bpb-draft-banner-leaving { opacity: 0; transform: translateY(-8px); }
+
+@media (prefers-color-scheme: dark) {
+    .bpb-draft-banner-strong { --bpb-draft-color: #7ac78d; --bpb-draft-bg: #173322; --bpb-draft-border: #28623c; }
+    .bpb-draft-banner-probable { --bpb-draft-color: #f7c66a; --bpb-draft-bg: #332a18; --bpb-draft-border: #6b5518; }
+    .bpb-draft-banner-waiting { --bpb-draft-color: #8ab4f8; --bpb-draft-bg: #172b46; --bpb-draft-border: #365b86; }
+    .bpb-draft-banner-error { --bpb-draft-color: #f2a099; --bpb-draft-bg: #3b1515; --bpb-draft-border: #7a2e2a; }
+    .bpb-draft-banner-action { background: #202224; }
+}
+
+html[data-bpb-theme="dark"] .bpb-draft-banner-strong { --bpb-draft-color: #7ac78d; --bpb-draft-bg: #173322; --bpb-draft-border: #28623c; }
+html[data-bpb-theme="dark"] .bpb-draft-banner-probable { --bpb-draft-color: #f7c66a; --bpb-draft-bg: #332a18; --bpb-draft-border: #6b5518; }
+html[data-bpb-theme="dark"] .bpb-draft-banner-waiting { --bpb-draft-color: #8ab4f8; --bpb-draft-bg: #172b46; --bpb-draft-border: #365b86; }
+html[data-bpb-theme="dark"] .bpb-draft-banner-error { --bpb-draft-color: #f2a099; --bpb-draft-bg: #3b1515; --bpb-draft-border: #7a2e2a; }
+html[data-bpb-theme="dark"] .bpb-draft-banner-action { background: #202224; }
+
+html[data-bpb-theme="light"] .bpb-draft-banner-probable { --bpb-draft-color: #93370d; --bpb-draft-bg: #fffaeb; --bpb-draft-border: #fedf89; }
+html[data-bpb-theme="light"] .bpb-draft-banner-strong { --bpb-draft-color: #067647; --bpb-draft-bg: #ecfdf3; --bpb-draft-border: #a6f4c5; }
+html[data-bpb-theme="light"] .bpb-draft-banner-waiting { --bpb-draft-color: #175cd3; --bpb-draft-bg: #eff8ff; --bpb-draft-border: #b2ddff; }
+html[data-bpb-theme="light"] .bpb-draft-banner-error { --bpb-draft-color: #b42318; --bpb-draft-bg: #fef3f2; --bpb-draft-border: #fecdca; }
+html[data-bpb-theme="light"] .bpb-draft-banner-action { background: #fff; }
+
+@media (prefers-reduced-motion: reduce) {
+    .bpb-draft-banner { transition: none; }
+}
+
 /* --- dark theme ------------------------------------------------------------------ */
 
 html[data-bpb-theme="dark"] .bpb-re-bar,

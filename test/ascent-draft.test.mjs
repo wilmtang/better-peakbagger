@@ -9,6 +9,7 @@ import { JSDOM } from 'jsdom';
 // The built ascent-editor bundle (draft filling + report markup + editor); the
 // editor stays dormant without a JournalText field, so it exercises draft fill.
 const source = await fs.readFile(new URL('../dist/content/ascent-editor.js', import.meta.url), 'utf8');
+const editorCss = await fs.readFile(new URL('../src/report-editor.css', import.meta.url), 'utf8');
 
 const formHtml = `<!doctype html><body><form>
   <input id="DateText"><input id="SuffixText"><input id="StartFt"><input id="StartM"><input id="EndFt"><input id="EndM">
@@ -253,13 +254,24 @@ test('a post-preview reload shows a dismissible, short-lived confidence toast wi
     const banner = dom.window.document.getElementById('bpb-draft-banner');
     assert.match(banner.textContent, /Probable match · 71% confidence/);
     assert.match(banner.textContent, /Preview is ready/);
-    assert.equal(banner.style.position, 'fixed');
+    assert.ok(banner.classList.contains('bpb-draft-banner-probable'));
+    assert.equal(banner.style.position, '', 'layout and colors belong to the theme-aware stylesheet');
     assert.equal(banner.dataset.autoDismissMs, '4000');
     const dismiss = banner.querySelector('button[aria-label="Dismiss notification"]');
     assert.ok(dismiss);
     dismiss.click();
     assert.equal(dom.window.document.getElementById('bpb-draft-banner'), null);
     dom.window.close();
+});
+
+test('draft banner CSS covers semantic states in explicit light and dark themes', () => {
+    for (const theme of ['light', 'dark']) {
+        for (const kind of ['strong', 'probable', 'waiting', 'error']) {
+            assert.match(editorCss, new RegExp(`html\\[data-bpb-theme="${theme}"\\] \\.bpb-draft-banner-${kind}\\s*\\{`));
+        }
+    }
+    assert.match(editorCss, /prefers-color-scheme:\s*dark/);
+    assert.match(editorCss, /prefers-reduced-motion:\s*reduce/);
 });
 
 test('a rejected Preview reports Peakbagger’s error and retries only after the user asks', async () => {

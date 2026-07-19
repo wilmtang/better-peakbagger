@@ -35,7 +35,10 @@ UX polish; nothing here is an exploitable security hole.
 - **E1–E2, E4–E6 — Pending.**
 - **U1–U2 — Done.** Unsupported pages now show a neutral, actionable empty
   state, and Settings is available from both that state and the header gear.
-- **U3–U7 — Pending.**
+- **U4 — Done.** Draft notifications now use stylesheet-owned semantic classes,
+  follow OS and explicit extension themes, expose CSS focus states, and respect
+  reduced motion.
+- **U3, U5–U7 — Pending.**
 
 ---
 

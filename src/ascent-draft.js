@@ -26,46 +26,12 @@
         if (existing) existing.remove();
         const banner = document.createElement('div');
         banner.id = BANNER_ID;
+        banner.className = `bpb-draft-banner bpb-draft-banner-${kind}`;
         banner.setAttribute('role', kind === 'error' ? 'alert' : 'status');
         banner.setAttribute('aria-live', kind === 'error' ? 'assertive' : 'polite');
-        const colors = {
-            strong: ['#067647', '#ecfdf3', '#a6f4c5'],
-            probable: ['#93370d', '#fffaeb', '#fedf89'],
-            waiting: ['#175cd3', '#eff8ff', '#b2ddff'],
-            error: ['#b42318', '#fef3f2', '#fecdca']
-        };
-        const [color, background, border] = colors[kind] || colors.probable;
-        Object.assign(banner.style, {
-            all: 'initial',
-            position: 'fixed',
-            top: '12px',
-            right: '12px',
-            zIndex: '2147483647',
-            display: 'flex',
-            alignItems: 'flex-start',
-            gap: '10px',
-            width: 'calc(100vw - 24px)',
-            maxWidth: '460px',
-            boxSizing: 'border-box',
-            padding: '11px 12px 11px 14px',
-            color,
-            background,
-            border: `1px solid ${border}`,
-            borderRadius: '10px',
-            font: '600 14px/1.4 system-ui, sans-serif',
-            boxShadow: '0 8px 24px rgba(16,24,40,.18)',
-            opacity: '1',
-            transform: 'translateY(0)',
-            transition: 'opacity 160ms ease, transform 160ms ease'
-        });
 
         const text = document.createElement('span');
-        Object.assign(text.style, {
-            all: 'initial',
-            flex: '1',
-            color,
-            font: '600 14px/1.4 system-ui, sans-serif'
-        });
+        text.className = 'bpb-draft-banner-text';
         text.textContent = message;
 
         const dismissButton = document.createElement('button');
@@ -73,19 +39,7 @@
         dismissButton.setAttribute('aria-label', 'Dismiss notification');
         dismissButton.title = 'Dismiss';
         dismissButton.textContent = '\u00d7';
-        Object.assign(dismissButton.style, {
-            all: 'initial',
-            flex: '0 0 auto',
-            width: '24px',
-            height: '24px',
-            color,
-            font: '700 20px/22px system-ui, sans-serif',
-            textAlign: 'center',
-            cursor: 'pointer',
-            borderRadius: '6px',
-            outline: '2px solid transparent',
-            outlineOffset: '1px'
-        });
+        dismissButton.className = 'bpb-draft-banner-dismiss';
 
         let dismissTimer = null;
         const dismiss = immediate => {
@@ -94,35 +48,16 @@
                 banner.remove();
                 return;
             }
-            banner.style.opacity = '0';
-            banner.style.transform = 'translateY(-8px)';
+            banner.classList.add('bpb-draft-banner-leaving');
             globalThis.setTimeout(() => banner.remove(), 160);
         };
-        dismissButton.addEventListener('focus', () => { dismissButton.style.outlineColor = color; });
-        dismissButton.addEventListener('blur', () => { dismissButton.style.outlineColor = 'transparent'; });
         dismissButton.addEventListener('click', () => dismiss(true));
         banner.append(text);
         if (actionLabel && typeof onAction === 'function') {
             const actionButton = document.createElement('button');
             actionButton.type = 'button';
+            actionButton.className = 'bpb-draft-banner-action';
             actionButton.textContent = actionLabel;
-            Object.assign(actionButton.style, {
-                all: 'initial',
-                flex: '0 0 auto',
-                boxSizing: 'border-box',
-                padding: '4px 8px',
-                color,
-                background: '#fff',
-                border: `1px solid ${border}`,
-                borderRadius: '6px',
-                font: '600 12px/1.4 system-ui, sans-serif',
-                whiteSpace: 'nowrap',
-                cursor: 'pointer',
-                outline: '2px solid transparent',
-                outlineOffset: '1px'
-            });
-            actionButton.addEventListener('focus', () => { actionButton.style.outlineColor = color; });
-            actionButton.addEventListener('blur', () => { actionButton.style.outlineColor = 'transparent'; });
             actionButton.addEventListener('click', () => {
                 actionButton.disabled = true;
                 dismiss(true);
