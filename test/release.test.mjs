@@ -128,6 +128,14 @@ test("bare web-ext commands use only the dist build", async () => {
   assert.equal("ignoreFiles" in packageJson.webExt, false);
 });
 
+test("CI tests and lints the built extension", async () => {
+  const workflow = await readFile(new URL("../.github/workflows/ci.yml", import.meta.url), "utf8");
+  assert.match(workflow, /run: npm ci/);
+  assert.match(workflow, /run: npm test/);
+  assert.match(workflow, /run: npx web-ext lint/);
+  assert.match(workflow, /permissions:\s*\n\s+contents: read/);
+});
+
 test("release archive rejects development and internal files", async () => {
   await assert.doesNotReject(
     verifyReleaseArchive(await makeReleaseZip(), "1.4.0"),

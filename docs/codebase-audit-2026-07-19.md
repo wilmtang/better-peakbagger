@@ -41,7 +41,10 @@ UX polish; nothing here is an exploitable security hole.
   the original audit premise, not every reader filtered expiry, so lazy gates
   were added for jobs, drafts, and snapshots before moving physical deletion
   solely to the existing alarm.
-- **E2, E4–E5 — Pending.**
+- **E4 — Done.** Pushes and pull requests now run lockfile installs, `npm test`,
+  and bare `web-ext lint` against `dist` in a least-privilege GitHub Actions
+  workflow.
+- **E2, E5 — Pending.**
 - **U1–U2 — Done.** Unsupported pages now show a neutral, actionable empty
   state, and Settings is available from both that state and the header gear.
 - **U4 — Done.** Draft notifications now use stylesheet-owned semantic classes,
