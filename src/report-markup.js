@@ -96,10 +96,12 @@
         return /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/.test(color) || named ? color : null;
     };
 
+    export const MAX_REPORT_IMAGE_DIMENSION = 1600;
+
     const sanitizeDimension = raw => {
         if (raw === null || raw === undefined || raw === '') return null;
         const value = Number(raw);
-        return Number.isInteger(value) && value >= 1 && value <= 1600 ? value : null;
+        return Number.isInteger(value) && value >= 1 && value <= MAX_REPORT_IMAGE_DIMENSION ? value : null;
     };
 
     const escapeHtml = value => String(value)

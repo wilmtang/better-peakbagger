@@ -304,6 +304,78 @@ test('the image popover validates the source and inserts alt text', async () => 
         '[img src="https://example.com/topo.jpg" alt="Topo"]');
 });
 
+test('a Rich image resize stays proportional and persists its dimensions', async () => {
+    const source = '[img src="https://example.com/topo.jpg" alt="Topo" width="800" height="600"]';
+    const dom = await loadEditor({ report: source });
+    const ui = await editorReady(dom);
+    const doc = dom.window.document;
+    const image = ui.querySelector('.bpb-re-image-resize img');
+    const handle = ui.querySelector('[aria-label="Resize image"]');
+
+    assert.ok(image, 'Rich images should use the resizable node view');
+    assert.equal(handle?.tagName, 'BUTTON');
+    assert.equal(handle?.type, 'button', 'the resize handle must never submit the ascent form');
+    assert.equal(handle?.getAttribute('aria-keyshortcuts'), 'ArrowLeft ArrowRight');
+
+    Object.defineProperties(image, {
+        offsetWidth: { configurable: true, get: () => Number.parseFloat(image.style.width) || 800 },
+        offsetHeight: { configurable: true, get: () => Number.parseFloat(image.style.height) || 600 }
+    });
+
+    handle.dispatchEvent(new dom.window.MouseEvent('mousedown', {
+        bubbles: true, clientX: 800, clientY: 600, button: 0
+    }));
+    doc.dispatchEvent(new dom.window.MouseEvent('mousemove', {
+        bubbles: true, clientX: 600, clientY: 450, buttons: 1
+    }));
+    doc.dispatchEvent(new dom.window.MouseEvent('mouseup', {
+        bubbles: true, clientX: 600, clientY: 450, button: 0
+    }));
+
+    const resized = '[img src="https://example.com/topo.jpg" alt="Topo" width="600" height="450"]';
+    await waitFor(dom, () => doc.getElementById('JournalText').value === resized);
+    assert.equal(image.style.width, '600px');
+    assert.equal(image.style.height, '450px');
+
+    handle.dispatchEvent(new dom.window.KeyboardEvent('keydown', {
+        bubbles: true, key: 'ArrowLeft', shiftKey: true
+    }));
+    const keyboardResized = '[img src="https://example.com/topo.jpg" alt="Topo" width="550" height="413"]';
+    await waitFor(dom, () => doc.getElementById('JournalText').value === keyboardResized);
+
+    editors(dom).rich.chain().focus().undo().run();
+    doc.getElementById('GPXPreview').click();
+    assert.equal(doc.getElementById('JournalText').value, source,
+        'the grouped resize interaction should be undoable');
+    assert.equal(image.style.width, '800px', 'the node view should repaint dimensions after undo');
+    assert.equal(image.style.height, '600px');
+});
+
+test('keyboard image resizing stops at the serialized dimension ceiling', async () => {
+    const source = '[img src="https://example.com/panorama.jpg" alt="Panorama" width="1590" height="954"]';
+    const dom = await loadEditor({ report: source });
+    const ui = await editorReady(dom);
+    const doc = dom.window.document;
+    const image = ui.querySelector('.bpb-re-image-resize img');
+    const handle = ui.querySelector('[aria-label="Resize image"]');
+
+    Object.defineProperties(image, {
+        offsetWidth: { configurable: true, get: () => Number.parseFloat(image.style.width) || 1590 },
+        offsetHeight: { configurable: true, get: () => Number.parseFloat(image.style.height) || 954 }
+    });
+    handle.dispatchEvent(new dom.window.KeyboardEvent('keydown', {
+        bubbles: true, key: 'ArrowRight', shiftKey: true
+    }));
+
+    await waitFor(dom, () => /width="1600" height="960"/.test(doc.getElementById('JournalText').value));
+    handle.dispatchEvent(new dom.window.KeyboardEvent('keydown', {
+        bubbles: true, key: 'ArrowRight', shiftKey: true
+    }));
+    doc.getElementById('GPXPreview').click();
+    assert.equal(doc.getElementById('JournalText').value,
+        '[img src="https://example.com/panorama.jpg" alt="Panorama" width="1600" height="960"]');
+});
+
 test('plain mode is the untouched native textarea, hints restored', async () => {
     const dom = await loadEditor({ report: 'raw [whatever] text' });
     await editorReady(dom);

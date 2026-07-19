@@ -326,6 +326,11 @@ The rich toolbar exposes the common actions without becoming a wall of
 controls: block style (paragraph, six heading levels, quote, preformatted),
 bold, italic, underline, strikethrough, link, image, table, both list types,
 horizontal rule, and undo/redo, with live active states that follow the caret.
+Selecting an image reveals one lower-corner handle; dragging it resizes the
+image without distorting its aspect ratio, and the left/right arrow keys on the
+focused handle provide precise adjustment. The resulting pixel dimensions are
+stored in Peakbagger's existing `width`/`height` image attributes and remain
+bounded to 1,600 pixels per axis.
 Less-frequent inline formats — inline code, highlight, sub/superscript, small,
 inline quote, and a named-color text palette — sit one click away behind the
 "Aa" control. While the caret is inside a table, a contextual row offers

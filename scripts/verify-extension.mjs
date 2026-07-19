@@ -350,6 +350,16 @@ try {
     // cover with fidelity.
     {
         const modifier = process.platform === 'darwin' ? 'Meta' : 'Control';
+        const editorTheme = process.env.BPB_VERIFY_EDITOR_THEME;
+        if (extensionId && ['light', 'dark'].includes(editorTheme)) {
+            const optionsPage = await context.newPage();
+            await optionsPage.goto(`chrome-extension://${extensionId}/options/options.html`);
+            await optionsPage.evaluate(async theme => {
+                const current = (await chrome.storage.sync.get('bpbSettings')).bpbSettings || {};
+                await chrome.storage.sync.set({ bpbSettings: { ...current, theme } });
+            }, editorTheme);
+            await optionsPage.close();
+        }
         const editorUrl = `http://www.peakbagger.com:${port}/climber/ascentedit.aspx?cid=900001`;
         const editorPage = await context.newPage();
         const editorErrors = [];
@@ -366,6 +376,84 @@ try {
                 return getComputedStyle(textarea).display === 'none' && !!textarea.form;
             });
             check(nativeHidden, 'the native textarea should be hidden but still inside the form');
+
+            const mountainUrl = 'https://better-peakbagger.test/showcase-alpine-ridge.png';
+            const mountain = await readFile(path.join(root, 'store-assets', 'showcase-trip-report-mountain.png'));
+            await editorPage.route(mountainUrl, route => route.fulfill({
+                contentType: 'image/png',
+                body: mountain
+            }));
+
+            // A selected Rich image exposes one restrained corner handle. A
+            // real pointer drag and keyboard adjustment must both persist the
+            // resized dimensions through the shipped TipTap → JournalText path.
+            await editorPage.locator('#bpb-report-editor').getByRole('button', {
+                name: 'Plain', exact: true
+            }).click();
+            await editorPage.locator('#JournalText').fill(
+                `[img src="${mountainUrl}" alt="Alpine ridge" width="440"]`);
+            await editorPage.locator('#bpb-report-editor').getByRole('button', {
+                name: 'Rich text', exact: true
+            }).click();
+            const richImage = editorPage.locator(
+                '#bpb-report-editor .bpb-re-surface .bpb-re-image-resize img');
+            const richImageLoaded = await editorPage.waitForFunction(() => {
+                const image = document.querySelector(
+                    '#bpb-report-editor .bpb-re-surface .bpb-re-image-resize img');
+                return image?.complete && image.naturalWidth > 0;
+            }, null, { timeout: 5000 }).then(() => true).catch(() => false);
+            check(richImageLoaded, 'the Rich image-resize fixture did not load');
+            if (richImageLoaded) {
+                await richImage.click();
+                const resizeHandle = editorPage.locator(
+                    '#bpb-report-editor .bpb-re-surface [aria-label="Resize image"]');
+                const handleReady = await editorPage.waitForFunction(() => {
+                    const handle = document.querySelector(
+                        '#bpb-report-editor .bpb-re-surface [aria-label="Resize image"]');
+                    if (!handle) return false;
+                    const style = getComputedStyle(handle);
+                    return style.opacity === '1' && style.pointerEvents === 'auto';
+                }, null, { timeout: 3000 }).then(() => true).catch(() => false);
+                check(handleReady, 'selecting a Rich image did not reveal its resize handle');
+
+                if (handleReady && process.env.BPB_VERIFY_EDITOR_RESIZE_SCREENSHOT) {
+                    await editorPage.locator('#bpb-report-editor').screenshot({
+                        path: process.env.BPB_VERIFY_EDITOR_RESIZE_SCREENSHOT
+                    });
+                }
+
+                const box = handleReady ? await resizeHandle.boundingBox() : null;
+                if (box) {
+                    const startX = box.x + box.width / 2;
+                    const startY = box.y + box.height / 2;
+                    await editorPage.mouse.move(startX, startY);
+                    await editorPage.mouse.down();
+                    await editorPage.mouse.move(startX - 100, startY - 60, { steps: 6 });
+                    await editorPage.mouse.up();
+                }
+
+                const pointerResize = await editorPage.waitForFunction(() => {
+                    const source = document.getElementById('JournalText').value;
+                    const width = Number(/\bwidth="(\d+)"/.exec(source)?.[1]);
+                    const height = Number(/\bheight="(\d+)"/.exec(source)?.[1]);
+                    return width < 440 && width >= 64 && height >= 40 ? { width, height, source } : null;
+                }, null, { timeout: 5000 }).then(handle => handle.jsonValue()).catch(() => null);
+                check(pointerResize && pointerResize.width >= 330 && pointerResize.width <= 350
+                    && pointerResize.height >= 195 && pointerResize.height <= 215,
+                `dragging the Rich image did not persist a proportional resize (state=${JSON.stringify(pointerResize)})`);
+
+                if (pointerResize) {
+                    await resizeHandle.focus();
+                    await editorPage.keyboard.press('ArrowRight');
+                    const keyboardResize = await editorPage.waitForFunction(previous => {
+                        const source = document.getElementById('JournalText').value;
+                        const width = Number(/\bwidth="(\d+)"/.exec(source)?.[1]);
+                        return width === previous + 10 ? { width, source } : null;
+                    }, pointerResize.width, { timeout: 5000 }).then(handle => handle.jsonValue()).catch(() => null);
+                    check(keyboardResize?.width === pointerResize.width + 10,
+                        `the focused resize handle ignored ArrowRight (state=${JSON.stringify(keyboardResize)})`);
+                }
+            }
 
             // Existing hex colors must survive the real TipTap/DOM boundary.
             // CSSOM exposes rgb(), so assert the raw color token that the
@@ -578,12 +666,6 @@ try {
             const richShowcasePath = process.env.BPB_VERIFY_EDITOR_SHOWCASE_RICH_SCREENSHOT;
             const markdownShowcasePath = process.env.BPB_VERIFY_EDITOR_SHOWCASE_MARKDOWN_SCREENSHOT;
             if (richShowcasePath || markdownShowcasePath) {
-                const mountainUrl = 'https://better-peakbagger.test/showcase-alpine-ridge.png';
-                const mountain = await readFile(path.join(root, 'store-assets', 'showcase-trip-report-mountain.png'));
-                await editorPage.route(mountainUrl, route => route.fulfill({
-                    contentType: 'image/png',
-                    body: mountain
-                }));
                 const richSource = [
                     '[h2]Alpine dawn[/h2]',
                     '',
@@ -660,7 +742,8 @@ console.log('  - the Peak Dynamic Map preserves its native frame and shows an en
 console.log('  - clicking Peak 3D creates the isolated frame with a route-free summit focus');
 console.log('  - the trip-report editor mounts on the captured ascent form; real typing,');
 console.log('    Ctrl/Cmd+B, and the "1. " input rule sync bracket markup into JournalText');
-console.log('    with live toolbar states; markdown mode shows a CodeMirror source beside a');
+console.log('    with live toolbar states; selected Rich images resize proportionally by');
+console.log('    pointer or keyboard; markdown mode shows a CodeMirror source beside a');
 console.log('    live preview that renders headings, quotes, tables, strike, code, and rules;');
 console.log('    hex colors survive Rich edits and Markdown preview; the toolbar inserts');
 console.log('    and grows tables; and a reloaded page offers and restores the draft');

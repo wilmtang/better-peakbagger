@@ -14,7 +14,7 @@
 // editor exclusively through richCommands/richState so the TipTap API surface
 // stays contained in one file.
 
-import { Editor, Extension, Mark, getStyleProperty } from '@tiptap/core';
+import { Editor, Extension, Mark, ResizableNodeView, getStyleProperty, mergeAttributes } from '@tiptap/core';
 import StarterKit from '@tiptap/starter-kit';
 import { Table, TableRow, TableHeader, TableCell } from '@tiptap/extension-table';
 import Image from '@tiptap/extension-image';
@@ -23,6 +23,7 @@ import Superscript from '@tiptap/extension-superscript';
 import Highlight from '@tiptap/extension-highlight';
 import { TextStyle, Color } from '@tiptap/extension-text-style';
 import { Placeholder } from '@tiptap/extensions';
+import { MAX_REPORT_IMAGE_DIMENSION } from './report-markup.js';
 
 // TipTap parses a raw hex token correctly, but its DOM serializer can still
 // canonicalize the rendered style to rgb(). Carry the parsed token in an
@@ -62,9 +63,13 @@ const InlineQuote = Mark.create({
     renderHTML: () => ['q', 0]
 });
 
-// Stock Image drops width/height, which would silently strip the dimensions
-// of an [img width=…] the user saved earlier. Bounds are enforced by the
-// converter on serialization, not here.
+const MIN_RESIZED_IMAGE_WIDTH = 64;
+const MIN_RESIZED_IMAGE_HEIGHT = 40;
+
+// Keep existing width/height attributes, then render the image through
+// TipTap's resizable node view. Resizes stay aspect-locked and within the same
+// bound the converter accepts, so a drag cannot produce a dimension that is
+// silently discarded when JournalText is serialized.
 const ReportImage = Image.extend({
     addAttributes() {
         const dimension = name => ({
@@ -73,6 +78,108 @@ const ReportImage = Image.extend({
             renderHTML: attributes => (attributes[name] ? { [name]: attributes[name] } : {})
         });
         return { ...this.parent?.(), width: dimension('width'), height: dimension('height') };
+    },
+
+    addNodeView() {
+        return ({ node, getPos, HTMLAttributes, editor }) => {
+            let currentNode = node;
+            const image = document.createElement('img');
+            image.draggable = false;
+            image.loading = 'lazy';
+            image.referrerPolicy = 'no-referrer';
+
+            const applyImageAttributes = updatedNode => {
+                for (const name of ['src', 'alt', 'title']) {
+                    const value = updatedNode.attrs[name];
+                    if (value === null || value === undefined) image.removeAttribute(name);
+                    else image.setAttribute(name, value);
+                }
+                image.style.width = updatedNode.attrs.width ? `${updatedNode.attrs.width}px` : '';
+                image.style.height = updatedNode.attrs.height ? `${updatedNode.attrs.height}px` : '';
+            };
+
+            for (const [name, value] of Object.entries(mergeAttributes(this.options.HTMLAttributes, HTMLAttributes))) {
+                if (value !== null && value !== undefined && name !== 'width' && name !== 'height') {
+                    image.setAttribute(name, value);
+                }
+            }
+
+            const commitSize = (width, height) => {
+                const pos = getPos();
+                if (pos === undefined) return;
+                editor.chain().setNodeSelection(pos).updateAttributes(this.name, {
+                    width: Math.round(width),
+                    height: Math.round(height)
+                }).run();
+            };
+
+            const resizeByKeyboard = event => {
+                if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+                event.preventDefault();
+                event.stopPropagation();
+
+                const width = image.offsetWidth || Number(currentNode.attrs.width) || image.naturalWidth;
+                const height = image.offsetHeight || Number(currentNode.attrs.height) || image.naturalHeight;
+                if (!width || !height) return;
+
+                const step = event.shiftKey ? 50 : 10;
+                const delta = event.key === 'ArrowRight' ? step : -step;
+                let nextWidth = Math.min(MAX_REPORT_IMAGE_DIMENSION,
+                    Math.max(MIN_RESIZED_IMAGE_WIDTH, width + delta));
+                let nextHeight = Math.round(nextWidth * height / width);
+                if (nextHeight > MAX_REPORT_IMAGE_DIMENSION) {
+                    nextHeight = MAX_REPORT_IMAGE_DIMENSION;
+                    nextWidth = Math.round(nextHeight * width / height);
+                } else if (nextHeight < MIN_RESIZED_IMAGE_HEIGHT) {
+                    nextHeight = MIN_RESIZED_IMAGE_HEIGHT;
+                    nextWidth = Math.round(nextHeight * width / height);
+                }
+                commitSize(nextWidth, nextHeight);
+            };
+
+            const nodeView = new ResizableNodeView({
+                element: image,
+                editor,
+                node,
+                getPos,
+                onResize: (width, height) => {
+                    image.style.width = `${width}px`;
+                    image.style.height = `${height}px`;
+                },
+                onCommit: commitSize,
+                onUpdate: updatedNode => {
+                    if (updatedNode.type !== currentNode.type) return false;
+                    currentNode = updatedNode;
+                    applyImageAttributes(updatedNode);
+                    return true;
+                },
+                options: {
+                    directions: ['bottom-right'],
+                    min: { width: MIN_RESIZED_IMAGE_WIDTH, height: MIN_RESIZED_IMAGE_HEIGHT },
+                    max: { width: MAX_REPORT_IMAGE_DIMENSION, height: MAX_REPORT_IMAGE_DIMENSION },
+                    preserveAspectRatio: true,
+                    className: {
+                        container: 'bpb-re-image-resize',
+                        wrapper: 'bpb-re-image-resize-frame',
+                        handle: 'bpb-re-image-resize-handle',
+                        resizing: 'bpb-re-image-resizing'
+                    },
+                    createCustomHandle: () => {
+                        const handle = document.createElement('button');
+                        handle.type = 'button';
+                        handle.className = 'bpb-re-image-resize-handle';
+                        handle.dataset.resizeHandle = 'bottom-right';
+                        handle.title = 'Drag to resize image; use left and right arrows for precise sizing';
+                        handle.setAttribute('aria-label', 'Resize image');
+                        handle.setAttribute('aria-keyshortcuts', 'ArrowLeft ArrowRight');
+                        handle.addEventListener('keydown', resizeByKeyboard);
+                        return handle;
+                    }
+                }
+            });
+
+            return nodeView;
+        };
     }
 });
 
