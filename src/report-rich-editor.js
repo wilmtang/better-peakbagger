@@ -23,7 +23,12 @@ import Superscript from '@tiptap/extension-superscript';
 import Highlight from '@tiptap/extension-highlight';
 import { TextStyle, Color } from '@tiptap/extension-text-style';
 import { Placeholder } from '@tiptap/extensions';
-import { MAX_REPORT_IMAGE_DIMENSION, sanitizeVideoSrc, sanitizeYouTubeEmbedSrc } from './report-markup.js';
+import {
+    MAX_REPORT_IMAGE_DIMENSION,
+    sanitizeReportDimension,
+    sanitizeVideoSrc,
+    sanitizeYouTubeEmbedSrc
+} from './report-markup.js';
 
 // TipTap parses a raw hex token correctly, but its DOM serializer can still
 // canonicalize the rendered style to rgb(). Carry the parsed token in an
@@ -74,7 +79,7 @@ const ReportImage = Image.extend({
     addAttributes() {
         const dimension = name => ({
             default: null,
-            parseHTML: element => element.getAttribute(name),
+            parseHTML: element => sanitizeReportDimension(element.getAttribute(name)),
             renderHTML: attributes => (attributes[name] ? { [name]: attributes[name] } : {})
         });
         return { ...this.parent?.(), width: dimension('width'), height: dimension('height') };
@@ -197,7 +202,7 @@ const ReportVideo = Node.create({
     addAttributes() {
         const dimension = name => ({
             default: null,
-            parseHTML: element => element.getAttribute(name),
+            parseHTML: element => sanitizeReportDimension(element.getAttribute(name)),
             renderHTML: attributes => (attributes[name] ? { [name]: attributes[name] } : {})
         });
         return {

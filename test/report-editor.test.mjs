@@ -241,6 +241,26 @@ test('expanded rich DOM syncs headings, quotes, tables, code, rules, and images'
     ].join('\n'));
 });
 
+test('pasted rich media dimensions are bounded before node views apply them', async () => {
+    const dom = await loadEditor();
+    const ui = await editorReady(dom);
+    const doc = dom.window.document;
+
+    typeRich(dom, '<p><img src="https://example.com/map.jpg" alt="Topo" width="999999" height="888888">'
+        + '<video src="https://media.example.com/summit.mp4" width="999999" height="888888"></video></p>');
+
+    const image = ui.querySelector('.bpb-re-image-resize img');
+    const video = ui.querySelector('.bpb-re-video-resize video');
+    assert.deepEqual([image?.style.width, image?.style.height], ['', '']);
+    assert.deepEqual([video?.style.width, video?.style.height], ['', ''],
+        'untrusted dimensions must not become enormous inline styles before save');
+
+    await waitFor(dom, () => doc.getElementById('JournalText').value.includes('[video src='));
+    assert.equal(doc.getElementById('JournalText').value,
+        `[img src="https://example.com/map.jpg" alt="Topo"]${videoMarkup(
+            'https://media.example.com/summit.mp4')}`);
+});
+
 test('the toolbar reflects the caret: active marks, block style, and table controls', async () => {
     const dom = await loadEditor({ report: '[h2]Route[/h2]\n\n[b]bold text[/b]' });
     const ui = await editorReady(dom);

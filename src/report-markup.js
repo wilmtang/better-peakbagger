@@ -147,11 +147,12 @@
         ' title="YouTube video" loading="lazy" referrerpolicy="no-referrer"'
         + ' allow="accelerometer; encrypted-media; gyroscope; picture-in-picture" allowfullscreen';
 
-    const sanitizeDimension = raw => {
+    export const sanitizeReportDimension = raw => {
         if (raw === null || raw === undefined || raw === '') return null;
         const value = Number(raw);
         return Number.isInteger(value) && value >= 1 && value <= MAX_REPORT_IMAGE_DIMENSION ? value : null;
     };
+    const sanitizeDimension = sanitizeReportDimension;
 
     const escapeHtml = value => String(value)
         .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -937,6 +938,7 @@
         sanitizeImageSrc,
         sanitizeVideoSrc,
         sanitizeYouTubeEmbedSrc,
+        sanitizeReportDimension,
         parseBracket,
         parseMarkdown,
         domToAst,
