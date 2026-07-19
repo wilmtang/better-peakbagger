@@ -28,6 +28,11 @@
 
     // The registered Better Peakbagger backup app. Public by design.
     const CLIENT_ID = 'Iv23liZpTdD1iZfT3eL1';
+    // The app's public URL name (github.com/apps/<slug>), used to hand the user
+    // to GitHub's own repository-scoping UI at install time.
+    const APP_SLUG = 'better-peakbagger-backup';
+    const INSTALL_URL = `https://github.com/apps/${APP_SLUG}/installations/new`;
+    const APP_URL = `https://github.com/apps/${APP_SLUG}`;
     const DEVICE_CODE_URL = 'https://github.com/login/device/code';
     const ACCESS_TOKEN_URL = 'https://github.com/login/oauth/access_token';
     // Where the user types the shown code.
@@ -149,6 +154,66 @@
         return { requestCode, pollForToken, authorize };
     };
 
+    // ---- Installation / repository discovery -------------------------------
+
+    const API_ROOT = 'https://api.github.com';
+
+    // A GET against the GitHub REST API with the user token. A dead token
+    // surfaces as EXPIRED so the UI prompts a reconnect; anything else is
+    // network/unknown. Discovery is best-effort read-only.
+    const apiGet = async (fetch, token, path) => {
+        let res;
+        try {
+            res = await fetch(`${API_ROOT}${path}`, {
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                    Accept: 'application/vnd.github+json',
+                    'X-GitHub-Api-Version': '2022-11-28',
+                },
+            });
+        } catch {
+            throw new GithubAuthError(AUTH_ERROR_CODES.NETWORK, 'Could not reach GitHub.');
+        }
+        if (res.status === 401) throw new GithubAuthError(AUTH_ERROR_CODES.EXPIRED, 'The GitHub authorization is no longer valid.');
+        let text = '';
+        try { text = await res.text(); } catch { text = ''; }
+        let json = null;
+        try { json = text ? JSON.parse(text) : null; } catch { json = null; }
+        if (!res.ok || !json) throw new GithubAuthError(AUTH_ERROR_CODES.UNKNOWN, 'GitHub returned an unexpected response.');
+        return json;
+    };
+
+    // The account login behind the token, for a human-readable connected state.
+    const fetchAccount = async ({ fetch, token }) => {
+        const user = await apiGet(fetch, token, '/user');
+        return { login: user.login || '', id: user.id ?? null };
+    };
+
+    // Every repository the user granted this app, across its installations.
+    // Repo scoping happened at install time ("Only select repositories"), so
+    // this is exactly the set the token can write to. Returns the count of the
+    // app's installations too, so the UI can tell "none granted" (link to
+    // install) from "installed but no repos".
+    const listBackupRepositories = async ({ fetch, token, appSlug = APP_SLUG }) => {
+        const owned = await apiGet(fetch, token, '/user/installations');
+        const installations = (owned.installations || []).filter(inst => inst.app_slug === appSlug);
+        const repos = [];
+        for (const inst of installations) {
+            const page = await apiGet(fetch, token, `/user/installations/${inst.id}/repositories?per_page=100`);
+            for (const repo of page.repositories || []) {
+                repos.push({
+                    owner: repo.owner && repo.owner.login,
+                    name: repo.name,
+                    fullName: repo.full_name,
+                    id: repo.id,
+                    defaultBranch: repo.default_branch || 'main',
+                    installationId: inst.id,
+                });
+            }
+        }
+        return { installationCount: installations.length, repos };
+    };
+
     // ---- Token / repo storage (chrome.storage.local only) ------------------
 
     const STORAGE_KEY = 'bpbGithubAuth';
@@ -205,10 +270,15 @@
 
     const API = {
         CLIENT_ID,
+        APP_SLUG,
+        INSTALL_URL,
+        APP_URL,
         VERIFICATION_URI,
         AUTH_ERROR_CODES,
         GithubAuthError,
         createDeviceFlow,
+        fetchAccount,
+        listBackupRepositories,
         createAuthStore,
         authStore,
     };

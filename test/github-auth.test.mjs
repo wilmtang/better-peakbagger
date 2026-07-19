@@ -164,6 +164,53 @@ test('authorize requests a code, reports it, then resolves with the token', asyn
     assert.equal(result.token, 'gho_final');
 });
 
+// ---- installation / repository discovery ----------------------------------
+
+const API = 'https://api.github.com';
+
+test('listBackupRepositories returns every granted repo across the app installations', async () => {
+    const routes = {
+        [`${API}/user/installations`]: () => respond(200, {
+            installations: [
+                { id: 11, app_slug: 'better-peakbagger-backup', account: { login: 'me' } },
+                { id: 22, app_slug: 'some-other-app', account: { login: 'me' } },
+            ],
+        }),
+        [`${API}/user/installations/11/repositories?per_page=100`]: () => respond(200, {
+            repositories: [
+                { id: 1, name: 'peaks', full_name: 'me/peaks', default_branch: 'main', owner: { login: 'me' } },
+            ],
+        }),
+    };
+    const { fetch } = makeFetch(routes);
+    const result = await Auth.listBackupRepositories({ fetch, token: 't' });
+    // Only our app's installation (11) is queried; the other app is ignored.
+    assert.equal(result.installationCount, 1);
+    assert.deepEqual(result.repos, [{
+        owner: 'me', name: 'peaks', fullName: 'me/peaks', id: 1, defaultBranch: 'main', installationId: 11,
+    }]);
+});
+
+test('discovery reports zero installations so the UI can offer the install link', async () => {
+    const { fetch } = makeFetch({ [`${API}/user/installations`]: () => respond(200, { installations: [] }) });
+    const result = await Auth.listBackupRepositories({ fetch, token: 't' });
+    assert.equal(result.installationCount, 0);
+    assert.deepEqual(result.repos, []);
+});
+
+test('a dead token during discovery maps to expired', async () => {
+    const { fetch } = makeFetch({ [`${API}/user/installations`]: () => respond(401, { message: 'Bad credentials' }) });
+    await assert.rejects(
+        Auth.listBackupRepositories({ fetch, token: 't' }),
+        err => err.code === Auth.AUTH_ERROR_CODES.EXPIRED,
+    );
+});
+
+test('fetchAccount returns the login behind the token', async () => {
+    const { fetch } = makeFetch({ [`${API}/user`]: () => respond(200, { login: 'ada', id: 7 }) });
+    assert.deepEqual(await Auth.fetchAccount({ fetch, token: 't' }), { login: 'ada', id: 7 });
+});
+
 // ---- storage accessor -----------------------------------------------------
 
 // A minimal chrome.storage.local stand-in.

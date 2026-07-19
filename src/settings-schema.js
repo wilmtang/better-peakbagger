@@ -43,6 +43,13 @@
         // the user wrote in ('plain' is the untouched native textarea).
         enableReportEditor: true,
         reportEditorMode: 'rich',
+        // GitHub ascent backup. The feature gate is an ordinary synced boolean
+        // like the others; the token and chosen repo deliberately do NOT live
+        // in this schema (they must never sync) — src/github-auth.js owns those
+        // in storage.local. `autoGithubBackup` performs the push without the
+        // per-save click once the manual path is enabled.
+        enableGithubBackup: false,
+        autoGithubBackup: false,
         mapRouteColor: ROUTE_STYLE.color, mapRouteWidth: ROUTE_STYLE.width,
         mapRouteCasingColor: ROUTE_STYLE.casingColor, mapRouteCasingWidth: ROUTE_STYLE.casingWidth,
         mapViewportWidth: VIEWPORT.width, mapViewportHeight: VIEWPORT.height,
@@ -123,9 +130,12 @@
         const s = { ...DEFAULTS, ...(raw && typeof raw === 'object' ? raw : {}) };
         if (!['auto', 'imperial', 'metric'].includes(s.units)) s.units = DEFAULTS.units;
         if (!['system', 'light', 'dark'].includes(s.theme)) s.theme = DEFAULTS.theme;
-        for (const key of ['enable3dMap', 'retainWaypoints', 'fillAscentDetails', 'fillTripInfo', 'fillWildernessNights', 'enableReportEditor']) {
+        for (const key of ['enable3dMap', 'retainWaypoints', 'fillAscentDetails', 'fillTripInfo', 'fillWildernessNights', 'enableReportEditor', 'enableGithubBackup', 'autoGithubBackup']) {
             if (typeof s[key] !== 'boolean') s[key] = DEFAULTS[key];
         }
+        // Auto-backup is meaningless without the feature enabled; never let it
+        // stand on its own.
+        if (!s.enableGithubBackup) s.autoGithubBackup = false;
         if (!['both', 'distance', 'time'].includes(s.chartDefaultSeries)) s.chartDefaultSeries = DEFAULTS.chartDefaultSeries;
         if (!['rich', 'markdown', 'plain'].includes(s.reportEditorMode)) s.reportEditorMode = DEFAULTS.reportEditorMode;
         s.mapRouteColor = routeColor(s.mapRouteColor);
