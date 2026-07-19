@@ -33,12 +33,15 @@ Three existing mechanisms carry most of the weight:
 ## User experience
 
 **Setup (once).** In the extension options, the user enables "GitHub backup",
-which requests the optional `https://api.github.com/*` host permission. They
-paste a GitHub **fine-grained personal access token** scoped to exactly one
-repository with *Contents: read and write*, plus the `owner/repo` name. The
-options page validates both with a read-only API call and shows the granted
-repo and token expiry. This is the entire permission story: a single repo the
-user deliberately granted, no server, no OAuth app.
+which requests the optional GitHub host permissions, then clicks **Connect
+GitHub**. The extension shows an eight-character code; the user enters it at
+`github.com/login/device` and approves. The extension then opens the app's
+installation page, where GitHub's own UI asks which repositories to grant —
+the user picks **Only select repositories** and chooses their one backup
+repo. Back in options, the extension discovers the granted repository through
+the API and shows it as connected. No tokens are typed or copied anywhere.
+If more than one repository was granted, the options page asks which one to
+use; if none, it links back to the install page.
 
 **Per save.** After the user saves an ascent and lands on the saved ascent
 page, a small dismissible affordance appears: **Back up to GitHub**. Clicking
@@ -166,23 +169,51 @@ Notes:
 
 ## GitHub integration
 
-**Auth — fine-grained PAT (v1).** The token and `owner/repo` live in
-`chrome.storage.local`, *never* `storage.sync`: secrets must not ride
-browser-account sync, and this also keeps them outside `src/settings.js`'s
-sync-schema ownership. A dedicated small accessor (`src/github-auth.js`) owns
-that storage; the feature's on/off gate is an ordinary boolean in the
-settings schema like other feature gates. The token is held only by the
-background worker; content scripts never receive it. Plaintext
-`storage.local` is the honest ceiling for an extension without a native
-helper — the mitigation is the token's own blast radius: one repo, Contents
-only, user-set expiry.
+**Auth — GitHub App device flow (the shipped path).** A registered GitHub
+App (device flow enabled, no webhook, repository permission *Contents: read
+and write*, installable on any account, opted out of user-token expiration)
+is the mechanism behind "OAuth to one repo". Only the app's public
+`client_id` ships in the extension; no client secret exists anywhere. The
+flow:
 
-**Auth — GitHub App device flow (possible v2).** A registered GitHub App with
-device flow needs only its public `client_id`; the user installs the app on
-exactly one repository, giving the same single-repo scoping with a nicer
-code-entry UX and no manually minted token. Requires opting the app out of
-user-token expiration (or implementing refresh). Not needed for v1.
-A classic OAuth app via `launchWebAuthFlow` is ruled out: it needs an
+1. `POST https://github.com/login/device/code` with the `client_id`; show
+   the returned `user_code` and point the user at `github.com/login/device`.
+2. Poll `POST https://github.com/login/oauth/access_token` with the
+   `device_code` grant, honoring the returned `interval` and any
+   `slow_down`/`authorization_pending` responses, until the user access
+   token arrives.
+3. Send the user to `github.com/apps/<slug>/installations/new`, where they
+   grant **Only select repositories** → their backup repo. Repo scoping
+   happens here, at installation: the token can reach only the intersection
+   of the app's permissions and the installed repositories.
+4. Discover the granted repository with `GET /user/installations` and
+   `GET /user/installations/{id}/repositories`, and store the choice.
+   Exactly one granted repo means zero-typing setup.
+
+Because the app opts out of user-token expiration, the token is long-lived
+and no refresh-token machinery (which would require a client secret) is
+needed. The token lives in `chrome.storage.local`, *never* `storage.sync`:
+secrets must not ride browser-account sync, and this also keeps them outside
+`src/settings.js`'s sync-schema ownership. A dedicated accessor
+(`src/github-auth.js`) owns that storage; the feature's on/off gate is an
+ordinary boolean in the settings schema like other feature gates. The token
+is held only by the background worker; content scripts never receive it.
+Plaintext `storage.local` is the honest ceiling for an extension without a
+native helper — the mitigation is the token's blast radius: one repo,
+Contents only, revocable by uninstalling the app on GitHub.
+
+**Auth — fine-grained PAT (documented alternative, not scheduled).** A
+fine-grained personal access token scoped to one repository with *Contents:
+read and write* reaches the same API with the same blast radius. It needs no
+registered app, so it suits forks of the extension that lack the app's
+`client_id`; the cost is a manual chore (mint the token in GitHub's
+developer settings, paste it plus `owner/repo` into options) and a mandatory
+expiry the user must renew. The storage and background-only handling rules
+above apply unchanged. The execution plan below implements only the
+device-flow path; a PAT fallback field could be added later without
+structural change.
+
+A classic OAuth app via `launchWebAuthFlow` remains ruled out: it needs an
 embedded client secret and its `repo` scope grants every repo.
 
 **Commit strategy — Git Data API, one atomic commit.** `GET` the branch ref →
@@ -193,16 +224,19 @@ retry once. The Contents API alternative (one `PUT` per file) is simpler but
 produces three commits per ascent and cannot move a renamed folder
 atomically.
 
-**Error taxonomy.** Auth failed / token expired, repo not found or archived,
-permission missing, branch protection rejection, rate limit, network. Each
-maps to one actionable sentence in the affordance; token problems also flag
-the options page.
+**Error taxonomy.** Authorization revoked or token invalid, app uninstalled
+or repository access withdrawn, repo archived, branch protection rejection,
+rate limit, network. Each maps to one actionable sentence in the affordance;
+auth problems also flag the options page.
 
 ## Manifest and privacy changes
 
-- `optional_host_permissions`: `https://api.github.com/*`, requested when the
-  user enables the feature (Firefox MV3 already treats host permissions as
-  optional; verify the request flow on both browsers).
+- `optional_host_permissions`: `https://api.github.com/*` plus
+  `https://github.com/*` — the device-flow endpoints live on `github.com`
+  and do not reliably send CORS headers, so the background worker needs the
+  host grant. Both are requested only when the user enables the feature
+  (Firefox MV3 already treats host permissions as optional; verify the
+  request flow on both browsers).
 - **PRIVACY.md** gains a "GitHub backup (optional)" section: what leaves the
   browser (ascent fields, trip report, Peakbagger's stored GPX), that it goes
   only to the user-chosen repository over the GitHub API, only on explicit
@@ -243,35 +277,45 @@ begins, per the repository commit discipline.
    `fetch`: ref read, blob/tree/commit creation, rename-move tree handling,
    single non-fast-forward retry, typed errors. Tests run against a scripted
    fetch stub; no network.
-4. **Token storage + options UI.** `src/github-auth.js` accessor over
-   `storage.local`; options-page section with enable toggle (requests the
-   optional host permission), token + `owner/repo` fields, a Validate action
-   (read-only `GET /user` and `GET /repos/{owner}/{repo}`), and clear
-   granted-repo/expiry display. Feature gate added to `settings-schema.js`.
-5. **Save-time snapshot.** Extend the editor's existing pre-Save flush in the
+4. **App registration + device-flow client.** Register the GitHub App
+   (manual, one-time: device flow on, no webhook, *Contents: read and
+   write*, installable on any account, user-token expiration opted out) and
+   land its public `client_id` in code. `src/github-auth.js`: device-flow
+   client with an injected `fetch` (code request, polling with
+   `interval`/`slow_down` handling, typed errors) plus the `storage.local`
+   token/repo accessor, tested against a scripted fetch stub.
+5. **Setup UI.** Options-page section: enable toggle (requests both optional
+   host permissions), **Connect GitHub** with user-code display,
+   install-page handoff, granted-repo discovery via `GET /user/installations`
+   (a picker when several repos are granted, an install link when none), a
+   clear connected state, and **Disconnect** (drops the local token; full
+   revocation is uninstalling the app on GitHub). Feature gate added to
+   `settings-schema.js`.
+6. **Save-time snapshot.** Extend the editor's existing pre-Save flush in the
    ascent-editor content script to serialize the form + Markdown sidecar into
    a `storage.session` snapshot with the drafts' identity binding and
    30-minute expiry; background cleanup alarm covers it.
-6. **Ascent-page surface.** Content-script piece on `ascent.aspx` (isolated
+7. **Ascent-page surface.** Content-script piece on `ascent.aspx` (isolated
    world): ownership check, snapshot match, GPX link fetch, the Back up
    affordance with success/error/retry states, message to background. New
    `GITHUB_BACKUP_ASCENT` handler in `src/background.js` with sender/identity
    validation mirroring the draft handlers.
-7. **Fixture + integration tests.** Capture a PII-masked saved-ascent
+8. **Fixture + integration tests.** Capture a PII-masked saved-ascent
    (`ascent.aspx`) fixture (none exists yet; follow the fixtures workflow),
    then test the end-to-end path in jsdom with stubbed GitHub fetch:
    snapshot → surface → background → commit payload.
-8. **Manifest + docs.** `optional_host_permissions`, PRIVACY.md section,
+9. **Manifest + docs.** Both `optional_host_permissions`, PRIVACY.md section,
    README feature blurb, Firefox data-collection review. Run
    `npm run verify:extension` (manifest changed).
-9. **Auto-backup toggle.** Separate opt-in setting performing the same push
-   after save-detection, same visible result states.
-10. **Release verification.** `npm test`, `npm run verify:extension`, and a
-    minimal, rate-limited live check on real Peakbagger in both browsers:
-    save one test ascent, confirm redirect behavior, GPX-link timing, and a
-    real commit landing in a scratch repo.
+10. **Auto-backup toggle.** Separate opt-in setting performing the same push
+    after save-detection, same visible result states.
+11. **Release verification.** `npm test`, `npm run verify:extension`, one
+    real device-flow authorization + installation against the registered
+    app, and a minimal, rate-limited live check on real Peakbagger in both
+    browsers: save one test ascent, confirm redirect behavior, GPX-link
+    timing, and a real commit landing in a scratch repo.
 
-## Open questions (resolve during steps 5–7)
+## Open questions (resolve during steps 6–8)
 
 - Exact post-save behavior on live Peakbagger: redirect target, referrer
   value, and whether `aid` is always present on arrival — the fixtures only
