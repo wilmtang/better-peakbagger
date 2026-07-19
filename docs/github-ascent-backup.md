@@ -279,10 +279,14 @@ begins, per the repository commit discipline.
    snapshot contract this module consumes is documented in its header; the
    content script and background worker own the Peakbagger-DOM field mapping
    that produces it.
-3. **Pure GitHub client + tests.** Git Data commit builder with an injected
-   `fetch`: ref read, blob/tree/commit creation, rename-move tree handling,
-   single non-fast-forward retry, typed errors. Tests run against a scripted
-   fetch stub; no network.
+3. **Pure GitHub client + tests.** **Done.** `src/github-client.js`: Git Data
+   commit builder with an injected `fetch` and token — repo/branch pre-flight
+   (archived and no-push fail closed), ref read, blob/tree/commit creation,
+   rename-move *and* stale-file removal in one tree, single non-fast-forward
+   retry, and a `GithubBackupError` typed by `ERROR_CODES`. Existing folders
+   are listed one directory level at a time so a large archive never trips the
+   recursive-tree truncation limit. Tests run against a scripted fetch stub; no
+   network.
 4. **App registration + device-flow client.** Register the GitHub App
    (manual, one-time: device flow on, no webhook, *Contents: read and
    write*, installable on any account, user-token expiration opted out, no
