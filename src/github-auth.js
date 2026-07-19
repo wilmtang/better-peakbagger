@@ -174,10 +174,12 @@
     // A GET against the GitHub REST API with the user token. A dead token
     // surfaces as EXPIRED so the UI prompts a reconnect; anything else is
     // network/unknown. Discovery is best-effort read-only.
-    const apiGet = async (fetch, token, path) => {
+    const apiGetResponse = async (fetch, token, path) => {
+        const url = new URL(path, API_ROOT);
+        if (url.origin !== API_ROOT) throw new GithubAuthError(AUTH_ERROR_CODES.UNKNOWN, 'GitHub returned an invalid pagination link.');
         let res;
         try {
-            res = await fetch(`${API_ROOT}${path}`, {
+            res = await fetch(url.href, {
                 headers: {
                     Authorization: `Bearer ${token}`,
                     Accept: 'application/vnd.github+json',
@@ -193,7 +195,33 @@
         let json = null;
         try { json = text ? JSON.parse(text) : null; } catch { json = null; }
         if (!res.ok || !json) throw new GithubAuthError(AUTH_ERROR_CODES.UNKNOWN, 'GitHub returned an unexpected response.');
-        return json;
+        return { json, link: res.headers && typeof res.headers.get === 'function' ? res.headers.get('link') : null };
+    };
+
+    const apiGet = async (fetch, token, path) => (await apiGetResponse(fetch, token, path)).json;
+
+    const nextPage = link => {
+        if (!link) return null;
+        for (const part of link.split(',')) {
+            const match = /^\s*<([^>]+)>\s*;\s*rel="([^"]+)"\s*$/.exec(part);
+            if (match && match[2].split(/\s+/).includes('next')) return match[1];
+        }
+        return null;
+    };
+
+    const apiGetAll = async (fetch, token, path, key) => {
+        const items = [];
+        const seen = new Set();
+        let next = path;
+        while (next) {
+            const url = new URL(next, API_ROOT);
+            if (seen.has(url.href)) throw new GithubAuthError(AUTH_ERROR_CODES.UNKNOWN, 'GitHub returned a pagination loop.');
+            seen.add(url.href);
+            const page = await apiGetResponse(fetch, token, url.href);
+            if (Array.isArray(page.json[key])) items.push(...page.json[key]);
+            next = nextPage(page.link);
+        }
+        return items;
     };
 
     // The account login behind the token, for a human-readable connected state.
@@ -208,12 +236,12 @@
     // app's installations too, so the UI can tell "none granted" (link to
     // install) from "installed but no repos".
     const listBackupRepositories = async ({ fetch, token, appSlug = APP_SLUG }) => {
-        const owned = await apiGet(fetch, token, '/user/installations');
-        const installations = (owned.installations || []).filter(inst => inst.app_slug === appSlug);
+        const owned = await apiGetAll(fetch, token, '/user/installations?per_page=100', 'installations');
+        const installations = owned.filter(inst => inst.app_slug === appSlug);
         const repos = [];
         for (const inst of installations) {
-            const page = await apiGet(fetch, token, `/user/installations/${inst.id}/repositories?per_page=100`);
-            for (const repo of page.repositories || []) {
+            const granted = await apiGetAll(fetch, token, `/user/installations/${inst.id}/repositories?per_page=100`, 'repositories');
+            for (const repo of granted) {
                 repos.push({
                     owner: repo.owner && repo.owner.login,
                     name: repo.name,

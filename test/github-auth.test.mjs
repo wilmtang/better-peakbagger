@@ -22,9 +22,10 @@ const makeClock = () => {
     };
 };
 
-const respond = (status, body) => ({
+const respond = (status, body, headers = {}) => ({
     ok: status >= 200 && status < 300,
     status,
+    headers: { get: name => headers[name.toLowerCase()] || null },
     text: async () => (typeof body === 'string' ? body : JSON.stringify(body)),
 });
 
@@ -170,7 +171,7 @@ const API = 'https://api.github.com';
 
 test('listBackupRepositories returns every granted repo across the app installations', async () => {
     const routes = {
-        [`${API}/user/installations`]: () => respond(200, {
+        [`${API}/user/installations?per_page=100`]: () => respond(200, {
             installations: [
                 { id: 11, app_slug: 'better-peakbagger-backup', account: { login: 'me' } },
                 { id: 22, app_slug: 'some-other-app', account: { login: 'me' } },
@@ -192,18 +193,44 @@ test('listBackupRepositories returns every granted repo across the app installat
 });
 
 test('discovery reports zero installations so the UI can offer the install link', async () => {
-    const { fetch } = makeFetch({ [`${API}/user/installations`]: () => respond(200, { installations: [] }) });
+    const { fetch } = makeFetch({ [`${API}/user/installations?per_page=100`]: () => respond(200, { installations: [] }) });
     const result = await Auth.listBackupRepositories({ fetch, token: 't' });
     assert.equal(result.installationCount, 0);
     assert.deepEqual(result.repos, []);
 });
 
 test('a dead token during discovery maps to expired', async () => {
-    const { fetch } = makeFetch({ [`${API}/user/installations`]: () => respond(401, { message: 'Bad credentials' }) });
+    const { fetch } = makeFetch({ [`${API}/user/installations?per_page=100`]: () => respond(401, { message: 'Bad credentials' }) });
     await assert.rejects(
         Auth.listBackupRepositories({ fetch, token: 't' }),
         err => err.code === Auth.AUTH_ERROR_CODES.EXPIRED,
     );
+});
+
+test('repository discovery follows installation and repository pagination', async () => {
+    const routes = {
+        [`${API}/user/installations?per_page=100`]: () => respond(200, {
+            installations: [{ id: 11, app_slug: 'better-peakbagger-backup' }],
+        }, { link: `<${API}/user/installations?per_page=100&page=2>; rel="next"` }),
+        [`${API}/user/installations?per_page=100&page=2`]: () => respond(200, {
+            installations: [{ id: 22, app_slug: 'better-peakbagger-backup' }],
+        }),
+        [`${API}/user/installations/11/repositories?per_page=100`]: () => respond(200, {
+            repositories: [{ id: 1, name: 'one', full_name: 'me/one', owner: { login: 'me' } }],
+        }, { link: `<${API}/user/installations/11/repositories?per_page=100&page=2>; rel="next"` }),
+        [`${API}/user/installations/11/repositories?per_page=100&page=2`]: () => respond(200, {
+            repositories: [{ id: 2, name: 'two', full_name: 'me/two', owner: { login: 'me' } }],
+        }),
+        [`${API}/user/installations/22/repositories?per_page=100`]: () => respond(200, {
+            repositories: [{ id: 3, name: 'three', full_name: 'me/three', owner: { login: 'me' } }],
+        }),
+    };
+    const { fetch, calls } = makeFetch(routes);
+    const result = await Auth.listBackupRepositories({ fetch, token: 't' });
+
+    assert.equal(result.installationCount, 2);
+    assert.deepEqual(result.repos.map(repo => repo.fullName), ['me/one', 'me/two', 'me/three']);
+    assert.equal(calls.length, 5);
 });
 
 test('fetchAccount returns the login behind the token', async () => {
