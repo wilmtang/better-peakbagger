@@ -16,7 +16,9 @@ UX polish; nothing here is an exploitable security hole.
 
 - **B1 — Done.** Save-time snapshots now ignore non-Save submitters; regression
   coverage includes GPS Preview, a Save click, and implicit submission.
-- **B2–B7 — Pending.**
+- **B2 — Done.** Automatic backup accepts only ascent-ID or peak-and-date
+  snapshot matches; the visible manual action retains the peak-only fallback.
+- **B3–B7 — Pending.**
 - **E1–E6 — Pending.**
 - **U1–U7 — Pending.**
 

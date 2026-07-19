@@ -886,7 +886,7 @@ import { githubClient as GithubClient } from './github-client.js';
     // when it was snapshotted, so match by ascent id first (re-saves/edits), then
     // by peak+date, then by peak alone (most recent) when the page date could not
     // be parsed. Returns { key, record } or null.
-    const findSnapshotForPage = async page => {
+    const findSnapshotForPage = async (page, { allowPeakOnly = true } = {}) => {
         const snapshots = await readMap(SNAPSHOTS_KEY);
         const entries = Object.entries(snapshots)
             .map(([key, record]) => ({ key, record }))
@@ -897,7 +897,7 @@ import { githubClient as GithubClient } from './github-client.js';
         const date = page && page.ascent ? page.ascent.date : null;
         let match = ascentId != null ? entries.find(e => idOf(e).ascentId === ascentId) : null;
         if (!match && peakId != null && date) match = entries.find(e => idOf(e).peakId === peakId && idOf(e).date === date);
-        if (!match && peakId != null) match = entries.find(e => idOf(e).peakId === peakId);
+        if (!match && allowPeakOnly && peakId != null) match = entries.find(e => idOf(e).peakId === peakId);
         return match || null;
     };
 
@@ -912,7 +912,7 @@ import { githubClient as GithubClient } from './github-client.js';
         if (!auth || !auth.token) return { ok: false, error: { code: 'not-connected' } };
         if (!auth.repo || !auth.repo.owner || !auth.repo.name) return { ok: false, error: { code: 'no-repo' } };
 
-        const found = await findSnapshotForPage(message.page);
+        const found = await findSnapshotForPage(message.page, { allowPeakOnly: !message.auto });
         // Automatic backup fires on every saved-ascent page load, so it must push
         // only right after a save — i.e. when a matching pending snapshot exists.
         // Without one (an old ascent merely being viewed) it declines quietly so

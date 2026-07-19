@@ -203,6 +203,29 @@ test('automatic backup declines on a revisit with no fresh snapshot, but pushes 
     assert.equal(status.auto, true);
 });
 
+test('automatic backup rejects a peak-only snapshot match that manual backup may use', async () => {
+    const backend = gitDataBackend();
+    const worker = createWorker({ settings: { enableGithubBackup: true, autoGithubBackup: true }, auth: AUTH, github: backend.handler });
+    const pageWithoutDate = {
+        ascent: { id: 7654321 },
+        peak: { id: 2296, name: 'Mount Rainier' },
+        report: { markdown: '' },
+    };
+
+    await worker.send({ type: 'GITHUB_BACKUP_SNAPSHOT', ...editSnapshot() }, EDIT_SENDER);
+    const automatic = await worker.send({
+        type: 'GITHUB_BACKUP_ASCENT', page: pageWithoutDate, auto: true,
+    }, PEAK_SENDER);
+    assert.equal(automatic.ok, false);
+    assert.equal(automatic.error.code, 'no-fresh-save',
+        'auto mode must not merge a different same-peak ascent when the page date is unavailable');
+
+    const manual = await worker.send({
+        type: 'GITHUB_BACKUP_ASCENT', page: pageWithoutDate,
+    }, PEAK_SENDER);
+    assert.equal(manual.ok, true, 'the visible manual action keeps the best-effort peak-only fallback');
+});
+
 test('a GitHub failure surfaces its typed code without throwing', async () => {
     const failing = (method, path) => {
         if (method === 'GET' && path === '/repos/me/backup') return respond(401, { message: 'Bad credentials' });
