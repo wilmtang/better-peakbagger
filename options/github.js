@@ -59,6 +59,13 @@ export function initGithubBackup({ extensionApi, flash, save }) {
     const button = (label, { primary = false, onClick } = {}) =>
         el('button', { type: 'button', class: primary ? 'github-primary' : 'secondary', text: label, onclick: onClick });
     const openTab = url => { try { window.open(url, '_blank', 'noopener'); } catch { /* popup blocked */ } };
+    const createTab = async url => {
+        if (extensionApi.tabs && typeof extensionApi.tabs.create === 'function') {
+            await extensionApi.tabs.create({ url });
+            return;
+        }
+        openTab(url);
+    };
     const render = (...nodes) => { panelEl.replaceChildren(...nodes.filter(Boolean)); };
     const newRepositoryUrl = status => {
         const url = new URL('https://github.com/new');
@@ -177,6 +184,49 @@ export function initGithubBackup({ extensionApi, flash, save }) {
         choosingRepo = false;
         const who = status.account && status.account.login ? `@${status.account.login}` : 'GitHub';
         const repo = status.repo ? status.repo.fullName || `${status.repo.owner}/${status.repo.name}` : '';
+        const historyStatus = el('p', { class: 'github-hint github-error github-history-status', role: 'status' });
+        historyStatus.hidden = true;
+        const showHistoryError = (message, { offerSignIn = false } = {}) => {
+            const children = [document.createTextNode(message)];
+            if (offerSignIn) {
+                children.push(
+                    document.createTextNode(' '),
+                    el('button', {
+                        type: 'button', class: 'github-link', text: 'Sign in to Peakbagger',
+                        onclick: async () => {
+                            try {
+                                await createTab('https://www.peakbagger.com/Climber/Login.aspx');
+                            } catch {
+                                showHistoryError('The Peakbagger sign-in tab could not be opened. Check your browser settings, then try again.');
+                            }
+                        },
+                    }),
+                );
+            }
+            historyStatus.replaceChildren(...children);
+            historyStatus.hidden = false;
+        };
+        const openMyAscents = async event => {
+            const control = event.currentTarget;
+            control.disabled = true;
+            control.textContent = 'Opening…';
+            historyStatus.hidden = true;
+            const response = await send({ type: 'PEAKBAGGER_MY_ASCENTS' });
+            if (response && response.ok && response.url) {
+                try {
+                    await createTab(response.url);
+                } catch {
+                    showHistoryError('The My Ascents tab could not be opened. Check your browser settings, then try again.');
+                }
+            } else {
+                const message = response && response.error && response.error.message
+                    ? response.error.message
+                    : 'Peakbagger could not find your My Ascents page. Confirm you’re signed in, then try again.';
+                showHistoryError(message, { offerSignIn: response && response.error && response.error.code === 'peakbagger-signed-out' });
+            }
+            control.disabled = false;
+            control.textContent = 'Open My Ascents';
+        };
         const autoToggle = el('label', { class: 'github-auto', for: 'github-auto-backup' }, [
             el('input', {
                 type: 'checkbox', id: 'github-auto-backup', checked: !!status.auto,
@@ -184,12 +234,19 @@ export function initGithubBackup({ extensionApi, flash, save }) {
             }),
             el('span', { text: 'Back up automatically after each save' }),
         ]);
+        const historyHint = el('p', { class: 'github-hint github-history' }, [
+            document.createTextNode('For earlier ascents, '),
+            el('button', { type: 'button', class: 'github-link', text: 'Open My Ascents', onclick: openMyAscents }),
+            document.createTextNode(' and choose Back up all ascents. It always includes every year.'),
+        ]);
         render(
             el('p', { class: 'github-line github-connected' }, [
                 el('span', { class: 'github-dot' }),
                 el('span', { text: `Connected as ${who} · backing up to ${repo}` }),
             ]),
             autoToggle,
+            historyHint,
+            historyStatus,
             el('div', { class: 'github-actions' }, [
                 button('Change repository', { onClick: () => refreshRepos({ choose: true }) }),
                 button('Disconnect', { onClick: disconnect }),

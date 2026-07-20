@@ -53,6 +53,11 @@ to choose one explicitly. Empty and recognized backup repositories connect
 immediately; a populated repository is inspected and requires confirmation.
 Ambiguous root backup paths, archived repositories, and repositories without
 write access fail closed. No tokens are typed or copied anywhere.
+Once connected, Settings offers **Open My Ascents** for older entries. The
+worker resolves the signed-in climber from Peakbagger's own account controls
+and opens that climber's all-years list; it does not guess or persist a climber
+id. A signed-out state names the problem and links directly to Peakbagger's
+sign-in page.
 
 **Per save.** After the user saves an ascent and lands on the saved ascent
 page, a small dismissible affordance appears: **Back up to GitHub**. Clicking

@@ -1057,6 +1057,38 @@ import { githubClient as GithubClient } from './github-client.js';
         catch { return false; }
     };
 
+    const peakbaggerMyAscents = async () => {
+        let cid;
+        try {
+            cid = await peakbaggerLogin();
+        } catch (error) {
+            return {
+                ok: false,
+                error: {
+                    code: 'peakbagger-unavailable',
+                    message: error && error.message
+                        ? error.message
+                        : 'Could not reach Peakbagger. Check your connection, then try again.',
+                },
+            };
+        }
+        if (!cid) {
+            return {
+                ok: false,
+                error: {
+                    code: 'peakbagger-signed-out',
+                    message: 'Peakbagger could not find a signed-in account. Sign in to Peakbagger, then try again.',
+                },
+            };
+        }
+        const url = new URL('https://www.peakbagger.com/climber/ClimbListC.aspx');
+        url.searchParams.set('cid', cid);
+        url.searchParams.set('j', '-1');
+        url.searchParams.set('y', '9999');
+        url.searchParams.set('sort', 'AscentDate');
+        return { ok: true, url: url.toString() };
+    };
+
     const githubStatus = async () => {
         const auth = await GithubAuth.authStore.read();
         const settings = await Settings.get();
@@ -1410,12 +1442,16 @@ import { githubClient as GithubClient } from './github-client.js';
     ext.runtime.onMessage.addListener((message, sender, sendResponse) => {
         const run = async () => {
             const type = message?.type;
-            // The auth surface is extension-page only; the token never crosses
-            // to a content script.
-            if (typeof type === 'string' && type.startsWith('GITHUB_AUTH_') && !isExtensionPage(sender)) {
+            // Account setup and navigation helpers are extension-page only;
+            // neither the GitHub token nor the signed-in climber identity
+            // crosses to a content script.
+            const extensionOnly = type === 'PEAKBAGGER_MY_ASCENTS'
+                || (typeof type === 'string' && type.startsWith('GITHUB_AUTH_'));
+            if (extensionOnly && !isExtensionPage(sender)) {
                 return { error: 'forbidden' };
             }
             switch (type) {
+            case 'PEAKBAGGER_MY_ASCENTS': return peakbaggerMyAscents();
             case 'GITHUB_AUTH_STATUS': return githubStatus();
             case 'GITHUB_AUTH_BEGIN': return githubBeginAuth();
             case 'GITHUB_AUTH_STATE': return githubPollAuth();

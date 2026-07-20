@@ -7,7 +7,9 @@ import { readFile } from 'node:fs/promises';
 import { loadPage, PAGE_FIXTURES, waitFor } from './helpers/load-page.mjs';
 
 const PAGE_URL = 'https://www.peakbagger.com/climber/ClimbListC.aspx?cid=900001&j=-1&y=9999';
+const YEAR_PAGE_URL = 'https://www.peakbagger.com/climber/ClimbListC.aspx?cid=900001&y=2024';
 const editHtml = await readFile(new URL('./fixtures/pages/climber-ascentedit.html', import.meta.url), 'utf8');
+const listHtml = await readFile(new URL('./fixtures/pages/climber-ascents.html', import.meta.url), 'utf8');
 
 const prepareRuntime = (dom, handler) => {
     dom.window.chrome.runtime.sendMessage = (message, callback) => {
@@ -20,7 +22,7 @@ const prepareRuntime = (dom, handler) => {
 test('owned lists show a restrained full-profile backup entry point', async () => {
     const dom = await loadPage('climber-ascents.html', {
         fixtures: PAGE_FIXTURES,
-        url: PAGE_URL,
+        url: YEAR_PAGE_URL,
         bundles: ['content/profile-backup.js'],
         prepare: dom => prepareRuntime(dom, message => message.type === 'GITHUB_BACKUP_STATUS'
             ? { enabled: true, connected: true, repo: { fullName: 'me/backup' } }
@@ -29,11 +31,14 @@ test('owned lists show a restrained full-profile backup entry point', async () =
     await waitFor(dom, () => dom.window.document.getElementById('bpb-profile-backup'));
     const panel = dom.window.document.getElementById('bpb-profile-backup');
     assert.match(panel.textContent, /Back up your Peakbagger profile/);
+    assert.match(panel.textContent, /every ascent from every year/);
+    assert.match(panel.textContent, /even when this page shows only one year/);
     assert.match(panel.textContent, /me\/backup/);
     assert.equal(panel.querySelector('.bpb-profile-primary').textContent, 'Back up all ascents');
 
     [...panel.querySelectorAll('button')].find(control => control.textContent === 'Refresh all').click();
     assert.match(panel.textContent, /Refresh every ascent\?/);
+    assert.match(panel.textContent, /every ascent from every year/);
     assert.match(panel.textContent, /one GitHub commit for each/);
 });
 
@@ -46,6 +51,44 @@ test('public or mismatched climber lists never show profile backup', async () =>
     });
     await new Promise(resolve => dom.window.setTimeout(resolve, 20));
     assert.equal(dom.window.document.getElementById('bpb-profile-backup'), null);
+});
+
+test('starting from a one-year page fetches the owner\'s complete all-years list', async () => {
+    let requestedUrl = '';
+    const dom = await loadPage('climber-ascents.html', {
+        fixtures: PAGE_FIXTURES,
+        url: YEAR_PAGE_URL,
+        bundles: ['content/profile-backup.js'],
+        prepare: dom => {
+            const folders = [...dom.window.document.querySelectorAll('a[href*="/ascent.aspx?aid="]')]
+                .map(anchor => `ascent-a${new dom.window.URL(anchor.href).searchParams.get('aid')}`);
+            prepareRuntime(dom, message => {
+                if (message.type === 'GITHUB_BACKUP_STATUS') {
+                    return { enabled: true, connected: true, repo: { fullName: 'me/backup' } };
+                }
+                if (message.type === 'GITHUB_BACKUP_PROFILE_STATUS') return { ok: true, folders };
+                return null;
+            });
+            dom.window.fetch = async url => {
+                requestedUrl = String(url);
+                return {
+                    ok: true,
+                    status: 200,
+                    url: requestedUrl,
+                    headers: { get: () => null },
+                    text: async () => listHtml,
+                };
+            };
+        },
+    });
+    await waitFor(dom, () => dom.window.document.getElementById('bpb-profile-backup'));
+    dom.window.document.querySelector('.bpb-profile-primary').click();
+    await waitFor(dom, () => requestedUrl);
+
+    const requested = new URL(requestedUrl);
+    assert.equal(requested.searchParams.get('cid'), '900001');
+    assert.equal(requested.searchParams.get('j'), '-1');
+    assert.equal(requested.searchParams.get('y'), '9999');
 });
 
 test('profile preflight shows GitHub\'s specific failure detail', async () => {

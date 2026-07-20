@@ -48,7 +48,7 @@ import { githubError as GithubError } from './github-error.js';
     const renderIdle = status => body(
         node('div', { class: 'bpb-profile-copy' }, [
             node('strong', { text: 'Back up your Peakbagger profile' }),
-            node('span', { text: `Archive every ascent to ${status.repo.fullName}. Existing backups are skipped.` }),
+            node('span', { text: `Archive every ascent from every year to ${status.repo.fullName}, even when this page shows only one year. Existing backups are skipped.` }),
         ]),
         node('div', { class: 'bpb-profile-actions' }, [
             button('Back up all ascents', () => startBackup(false), true),
@@ -59,7 +59,7 @@ import { githubError as GithubError } from './github-error.js';
     const renderRefreshConfirmation = () => body(
         node('div', { class: 'bpb-profile-copy' }, [
             node('strong', { text: 'Refresh every ascent?' }),
-            node('span', { text: 'This re-syncs all ascents and creates one GitHub commit for each, including unchanged entries.' }),
+            node('span', { text: 'This re-syncs every ascent from every year and creates one GitHub commit for each, including unchanged entries.' }),
         ]),
         node('div', { class: 'bpb-profile-actions' }, [
             button('Refresh every ascent', () => startBackup(true), true),

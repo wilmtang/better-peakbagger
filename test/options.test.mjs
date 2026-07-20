@@ -102,6 +102,7 @@ test('settings are grouped by the surface they affect', async () => {
     const [general, capture, mapChart, beta, github, about] = sections;
     assert.ok(github.querySelector('#enable-github-backup'));
     assert.ok(github.querySelector('#github-panel'));
+    assert.match(github.querySelector('.desc').textContent, /every ascent from every year/);
     // Every settings section has a card; About is informational, not a card.
     for (const section of [general, capture, mapChart, beta, github]) {
         const heading = section.querySelector('h2');
@@ -632,6 +633,75 @@ test('a connected status renders the account and repository', async () => {
     // The connected state offers a disconnect control.
     const buttons = Array.from(el(dom, 'github-panel').querySelectorAll('button'), b => b.textContent);
     assert.ok(buttons.includes('Disconnect'));
+});
+
+test('the connected state opens the signed-in climber\'s all-years My Ascents page', async () => {
+    let opened = null;
+    const target = 'https://www.peakbagger.com/climber/ClimbListC.aspx?cid=900001&j=-1&y=9999&sort=AscentDate';
+    const dom = await loadOptions({ enableGithubBackup: true }, {
+        prepareChrome: chrome => {
+            chrome.permissions = { request: async () => true, contains: async () => true, remove: async () => true };
+            chrome.tabs = { create: async details => { opened = details.url; } };
+            chrome.runtime.sendMessage = (message, callback) => {
+                const reply = message.type === 'PEAKBAGGER_MY_ASCENTS'
+                    ? { ok: true, url: target }
+                    : {
+                        enabled: true, connected: true, hasToken: true,
+                        account: { login: 'ada' }, repo: { owner: 'ada', name: 'peaks', fullName: 'ada/peaks' },
+                    };
+                if (typeof callback === 'function') Promise.resolve().then(() => callback(reply));
+                return Promise.resolve(reply);
+            };
+        },
+    });
+    await waitFor(dom, () => Array.from(el(dom, 'github-panel').querySelectorAll('button'))
+        .some(button => button.textContent === 'Open My Ascents'));
+    assert.match(el(dom, 'github-panel').textContent, /always includes every year/);
+
+    Array.from(el(dom, 'github-panel').querySelectorAll('button'))
+        .find(button => button.textContent === 'Open My Ascents').click();
+    await waitFor(dom, () => opened);
+    assert.equal(opened, target);
+});
+
+test('the My Ascents action explains when Peakbagger is signed out', async () => {
+    const opened = [];
+    const dom = await loadOptions({ enableGithubBackup: true }, {
+        prepareChrome: chrome => {
+            chrome.permissions = { request: async () => true, contains: async () => true, remove: async () => true };
+            chrome.tabs = { create: async details => { opened.push(details.url); } };
+            chrome.runtime.sendMessage = (message, callback) => {
+                const reply = message.type === 'PEAKBAGGER_MY_ASCENTS'
+                    ? {
+                        ok: false,
+                        error: {
+                            code: 'peakbagger-signed-out',
+                            message: 'Peakbagger could not find a signed-in account. Sign in to Peakbagger, then try again.',
+                        },
+                    }
+                    : {
+                        enabled: true, connected: true, hasToken: true,
+                        account: { login: 'ada' }, repo: { owner: 'ada', name: 'peaks', fullName: 'ada/peaks' },
+                    };
+                if (typeof callback === 'function') Promise.resolve().then(() => callback(reply));
+                return Promise.resolve(reply);
+            };
+        },
+    });
+    await waitFor(dom, () => Array.from(el(dom, 'github-panel').querySelectorAll('button'))
+        .some(button => button.textContent === 'Open My Ascents'));
+    Array.from(el(dom, 'github-panel').querySelectorAll('button'))
+        .find(button => button.textContent === 'Open My Ascents').click();
+    await waitFor(dom, () => /could not find a signed-in account/i.test(el(dom, 'github-panel').textContent));
+
+    assert.match(el(dom, 'github-panel').textContent, /Sign in to Peakbagger, then try again/);
+    assert.doesNotMatch(el(dom, 'github-panel').textContent, /something went wrong/i);
+    const signIn = Array.from(el(dom, 'github-panel').querySelectorAll('button'))
+        .find(button => button.textContent === 'Sign in to Peakbagger');
+    assert.ok(signIn, 'the signed-out error offers a direct recovery action');
+    signIn.click();
+    await waitFor(dom, () => opened.length > 0);
+    assert.equal(opened[0], 'https://www.peakbagger.com/Climber/Login.aspx');
 });
 
 test('the connected state exposes the auto-backup toggle and persists it', async () => {

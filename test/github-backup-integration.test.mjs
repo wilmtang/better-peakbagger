@@ -23,7 +23,8 @@ const respond = (status, body) => ({
     text: async () => (typeof body === 'string' ? body : JSON.stringify(body ?? {})),
 });
 
-const createWorker = ({ settings = { enableGithubBackup: true }, auth = null, github, session: sharedSession = null, local: sharedLocal = null } = {}) => {
+const createWorker = ({ settings = { enableGithubBackup: true }, auth = null, github, session: sharedSession = null,
+    local: sharedLocal = null, peakbaggerLoginHtml = '<a href="climber/climber.aspx?cid=900001">My Home Page</a>' } = {}) => {
     const session = sharedSession || {};
     const sync = { bpbSettings: structuredClone(settings) };
     const local = sharedLocal || (auth ? { bpbGithubAuth: structuredClone(auth) } : {});
@@ -47,6 +48,9 @@ const createWorker = ({ settings = { enableGithubBackup: true }, auth = null, gi
     const githubCalls = [];
     const fetch = async (url, init = {}) => {
         const method = init.method || 'GET';
+        if (String(url) === 'https://peakbagger.com/Default.aspx') {
+            return respond(200, peakbaggerLoginHtml);
+        }
         let body = init.body;
         if (body) {
             try { body = JSON.parse(body); } catch { /* OAuth device flow is form-encoded. */ }
@@ -88,6 +92,7 @@ const AUTH = { token: 'gho_secret', repo: { owner: 'me', name: 'backup', branch:
 const PEAK_SENDER = { tab: { id: 5 }, url: 'https://www.peakbagger.com/climber/ascent.aspx?aid=7654321' };
 const EDIT_SENDER = { tab: { id: 4 }, url: 'https://www.peakbagger.com/climber/ascentedit.aspx?cid=900001&pid=2296' };
 const LIST_SENDER = { tab: { id: 6 }, url: 'https://www.peakbagger.com/climber/ClimbListC.aspx?cid=900001&j=-1&y=9999' };
+const EXTENSION_SENDER = { url: 'chrome-extension://test/options/options.html' };
 
 const editSnapshot = () => ({
     key: '900001|2296|2026-07-12',
@@ -193,6 +198,31 @@ test('profile messages require ClimbListC and matching ascent identity', async (
     assert.equal(wrongSurface.error.code, 'forbidden');
     const mismatched = await worker.send({ type: 'GITHUB_BACKUP_PROFILE_ASCENT', aid: 9, snapshot }, LIST_SENDER);
     assert.equal(mismatched.error.code, 'no-data');
+});
+
+test('the options page resolves My Ascents for the signed-in climber and rejects web senders', async () => {
+    const backend = gitDataBackend();
+    const worker = createWorker({ auth: AUTH, github: backend.handler });
+    const resolved = await worker.send({ type: 'PEAKBAGGER_MY_ASCENTS' }, EXTENSION_SENDER);
+    assert.equal(resolved.ok, true);
+    const url = new URL(resolved.url);
+    assert.equal(url.origin + url.pathname, 'https://www.peakbagger.com/climber/ClimbListC.aspx');
+    assert.equal(url.searchParams.get('cid'), '900001');
+    assert.equal(url.searchParams.get('j'), '-1');
+    assert.equal(url.searchParams.get('y'), '9999');
+    assert.equal(url.searchParams.get('sort'), 'AscentDate');
+
+    const forbidden = await worker.send({ type: 'PEAKBAGGER_MY_ASCENTS' }, PEAK_SENDER);
+    assert.equal(forbidden.error, 'forbidden');
+
+    const signedOut = createWorker({
+        auth: AUTH,
+        github: backend.handler,
+        peakbaggerLoginHtml: '<a href="/climber/login.aspx">Log In</a>',
+    });
+    const missing = await signedOut.send({ type: 'PEAKBAGGER_MY_ASCENTS' }, EXTENSION_SENDER);
+    assert.equal(missing.error.code, 'peakbagger-signed-out');
+    assert.match(missing.error.message, /Sign in to Peakbagger, then try again/);
 });
 
 test('backup fails closed when the feature is off, disconnected, or the sender is not Peakbagger', async () => {

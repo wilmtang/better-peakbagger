@@ -118,9 +118,11 @@ you save an ascent, a **Back up to GitHub** button appears on the ascent page;
 one click commits a clearly named mountain folder at the repository root with
 the trip report as real Markdown, every field you entered as JSON, and
 Peakbagger's stored GPS track. To archive older entries, open **My Ascents** and
-choose **Back up all ascents**. Existing folders are skipped, so interrupted
-runs resume safely when you start them again; **Refresh all** explicitly
-re-syncs every entry. Keep that Peakbagger tab open while the profile run works.
+choose **Back up all ascents**. That action always covers every year, even when
+the page is currently showing a single year. Existing folders are skipped, so
+interrupted runs resume safely when you start them again; **Refresh all**
+explicitly re-syncs every entry. Keep that Peakbagger tab open while the profile
+run works.
 Re-saving an ascent afterwards keeps its folder current. A populated repository
 requires confirmation and its unrelated files are preserved. Backup only ever
 writes to your chosen repository, never touches your Peakbagger save, and can
