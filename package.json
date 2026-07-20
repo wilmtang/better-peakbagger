@@ -26,6 +26,7 @@
     "pretest": "npm run build",
     "showcase:render": "npm run build && node scripts/render-showcase.mjs",
     "terrain:verify": "npm run build && node scripts/verify-terrain-visual.mjs",
+    "terrain:verify:firefox": "npm run build && node scripts/verify-firefox-terrain.mjs",
     "start:firefox": "node scripts/run-development.mjs firefox",
     "start:chromium": "node scripts/run-development.mjs chromium",
     "test": "node --test \"test/**/*.test.mjs\"",
