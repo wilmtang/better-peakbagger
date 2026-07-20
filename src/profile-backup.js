@@ -194,7 +194,7 @@ import { githubError as GithubError } from './github-error.js';
 
     const loadAscent = async (item, { probeUrl = null } = {}) => {
         if (probeUrl) {
-            const kind = /GetAscentGPX\.aspx/i.test(new URL(probeUrl, location.href).pathname) ? 'gpx' : 'edit';
+            const kind = /GPXFile\.aspx|GetAscentGPX\.aspx/i.test(new URL(probeUrl, location.href).pathname) ? 'gpx' : 'edit';
             const probe = await responseText(probeUrl, kind);
             if (probe.kind !== 'ok') return probe;
         }
@@ -224,7 +224,11 @@ import { githubError as GithubError } from './github-error.js';
         if (!built.snapshot.ascent.date && item.date) built.snapshot.ascent.date = item.date;
         let gpx = null;
         if (item.hasGpx) {
-            const gpxUrl = new URL(`/climber/GetAscentGPX.aspx?aid=${item.aid}`, location.origin).toString();
+            // Mirror the site's own ascent-page link (GPXFile.aspx?…&sep=1) so the
+            // backup stores byte-for-byte what a user clicking that link gets, and
+            // what the GPX analyzer reads. The old GetAscentGPX.aspx endpoint was
+            // renamed and now 302s to a 200 HTML error page.
+            const gpxUrl = new URL(`/climber/GPXFile.aspx?aid=${item.aid}&sep=1`, location.origin).toString();
             const track = await responseText(gpxUrl, 'gpx');
             if (track.kind !== 'ok') return track;
             gpx = track.text;
