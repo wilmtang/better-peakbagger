@@ -67,6 +67,7 @@ test('fills the expected fields, attaches reduced GPX with elevation and time, p
     let saveClicks = 0;
     const payload = {
         action: 'apply', jobId: 'job', pid: '12', cid: '34', classification: 'strong', confidence: 91,
+        preserveExistingFields: true,
         fields: {
             date: '2026-07-01', time: '08:45', suffix: 'a', startElevationM: 1000, endElevationM: 900,
             upDistanceM: 5000, downDistanceM: 6000, upGainM: 1200, downGainM: 80,
@@ -91,6 +92,48 @@ test('fills the expected fields, attaches reduced GPX with elevation and time, p
     assert.equal(saveClicks, 0);
     assert.deepEqual(messages.map(message => message.type), ['DRAFT_READY', 'DRAFT_PREVIEW_STARTED']);
     assert.match(dom.window.document.getElementById('bpb-draft-banner').textContent, /91% confidence/);
+    dom.window.close();
+});
+
+test('a processed upload preserves every populated ascent field', async () => {
+    let previewClicks = 0;
+    const protectedValues = {
+        DateText: '2025-12-31', SuffixText: 'manual',
+        StartFt: '4321', StartM: '1317', EndFt: '4000', EndM: '1219',
+        ExUpFt: '900', ExUpM: '274', ExDnFt: '800', ExDnM: '244',
+        UpMi: '9.5', UpKm: '15.3', DnMi: '8.2', DnKm: '13.2',
+        UpDay: '1', UpHr: '4', UpMin: '30', DnDay: '1', DnHr: '3', DnMin: '15',
+        TripSeqText: '7', TripNameText: 'Existing Traverse', TripNightsText: '4'
+    };
+    let html = formHtml;
+    for (const [id, value] of Object.entries(protectedValues)) {
+        html = html.replace(`<input id="${id}">`, `<input id="${id}" value="${value}">`);
+    }
+    html = html.replace('<option value="4">4</option>', '<option value="4" selected>4</option>');
+    const payload = {
+        action: 'apply', jobId: 'job', pid: '12', cid: '34', classification: 'strong', confidence: 91,
+        preserveExistingFields: true,
+        fields: {
+            date: '2026-07-01', suffix: 'a', startElevationM: 1000, endElevationM: 900,
+            upDistanceM: 5000, downDistanceM: 6000, upGainM: 1200, downGainM: 80,
+            upDuration: { days: 0, hours: 2, minutes: 5 },
+            downDuration: { days: 0, hours: 1, minutes: 55 },
+            tripInfo: { sequence: 2, name: 'Generated Trip', nightsOut: 1 },
+            wildernessNightsOut: 2
+        },
+        gpx: '<gpx><trk><trkseg><trkpt lat="47" lon="-121"></trkpt></trkseg></trk></gpx>'
+    };
+    const { dom } = loadDraft(message => message.type === 'DRAFT_READY' ? payload : { ok: true }, { html });
+    dom.window.document.getElementById('GPXPreview').addEventListener('click', () => { previewClicks++; });
+    await waitForCondition(() => previewClicks === 1);
+
+    for (const [id, value] of Object.entries(protectedValues)) {
+        assert.equal(dom.window.document.getElementById(id).value, value, `${id} must keep its existing value`);
+    }
+    assert.equal(dom.window.document.getElementById('TripDD').value, 'existing');
+    assert.equal(dom.window.document.getElementById('AscentNightsDD').value, '4');
+    assert.equal(dom.window.document.getElementById('GPXUpload').files.length, 1,
+        'the privacy-cleaned GPX still replaces the selected source file');
     dom.window.close();
 });
 

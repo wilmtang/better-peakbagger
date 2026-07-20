@@ -230,6 +230,8 @@ test('coordinate-only provider GPX still produces a valid Peakbagger draft', asy
     await harness.send({ type: 'CAPTURE_OPEN_DRAFTS', tabId: 1, selectedIds: [7] });
     const apply = await harness.send({ type: 'DRAFT_READY', pid: '7', cid: '77' }, { tab: { id: 100 } });
     assert.equal(apply.action, 'apply');
+    assert.equal(apply.preserveExistingFields, false,
+        'capture-opened fresh drafts keep their existing full-fill behavior');
     assert.doesNotMatch(apply.gpx, /<(?:ele|time)>/);
     assert.deepEqual({ ...apply.fields.upDuration }, { days: 0, hours: 0, minutes: 0 });
     assert.deepEqual({ ...apply.fields.downDuration }, { days: 0, hours: 0, minutes: 0 });

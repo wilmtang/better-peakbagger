@@ -770,7 +770,9 @@ import { createMarkdownEditor } from './report-md-editor.js';
             refreshToolbar();
         } else if (markdown) {
             const markdownSource = state.mdSource ?? Markup.bracketToMarkdown(textarea.value);
-            mdEditor.setValue(state.creditScaffold ? `\n\n${markdownSource}` : markdownSource);
+            mdEditor.setValue(state.creditScaffold && !markdownSource.startsWith('\n\n')
+                ? `\n\n${markdownSource}`
+                : markdownSource);
             state.mdSource = mdEditor.getValue();
             state.mdDirty = false;
             renderPreview();
