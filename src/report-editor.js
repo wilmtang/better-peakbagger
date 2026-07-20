@@ -160,12 +160,27 @@ import { createMarkdownEditor } from './report-md-editor.js';
     modeButtons.plain.title = 'Edit Peakbagger’s bracket markup directly';
     modes.append(...Object.values(modeButtons));
 
-    const plainHint = el('div', 'bpb-re-plain-hint',
+    const plainHint = el('div', 'bpb-re-mode-hint bpb-re-plain-hint',
         'Peakbagger’s original text editor — use Peakbagger’s [bracket] syntax.');
     plainHint.title = plainHint.textContent;
     plainHint.hidden = true;
 
-    bar.append(tools, plainHint, modes);
+    const markdownHint = el('div', 'bpb-re-mode-hint bpb-re-markdown-hint');
+    const syntaxExample = value => el('code', 'bpb-re-markdown-example', value);
+    const labelledExample = (label, value) => {
+        const group = el('span', 'bpb-re-markdown-example-group', `${label}: `);
+        group.append(syntaxExample(value));
+        return group;
+    };
+    markdownHint.append(
+        'Image sizing: ', syntaxExample('![Photo|500](url)'),
+        ' or ', syntaxExample('![Photo|500x600](url)'),
+        ' ', labelledExample('· Video', '![Video|500x281](url)'),
+        ' ', labelledExample('· YouTube', '![YouTube|560x315](url)')
+    );
+    markdownHint.hidden = true;
+
+    bar.append(tools, plainHint, markdownHint, modes);
 
     // Contextual table controls, shown only while the caret is inside a table.
     const tableBar = el('div', 'bpb-re-box bpb-re-tablebar');
@@ -217,7 +232,7 @@ import { createMarkdownEditor } from './report-md-editor.js';
     });
     imageHostingHint.append(
         hostingLinks[0], ', ', hostingLinks[1], ', or ', hostingLinks[2],
-        '. Free plans, limits, and terms vary.'
+        '. Plans vary. To resize, select the image and drag its lower-right handle.'
     );
     imageBox.append(imageSrcInput, imageAltInput, imageApply, imageHostingHint);
 
@@ -276,10 +291,7 @@ import { createMarkdownEditor } from './report-md-editor.js';
     const status = el('span', 'bpb-re-status');
     status.setAttribute('role', 'status');
     status.setAttribute('aria-live', 'polite');
-    const mediaHint = 'Image size: ![Photo|500](url) for width, or ![Photo|500x600](url) for width × height. Direct file: ![Video|500x281](https://example.com/clip.mp4) · YouTube: ![YouTube|560x315](https://youtu.be/aqz-KE-bpKQ)';
-    const mdHint = el('span', 'bpb-re-hint', mediaHint);
-    mdHint.title = mediaHint;
-    foot.append(status, mdHint);
+    foot.append(status);
 
     // Contextual controls sit above the entire toolbar region, including a
     // visible draft-recovery bar. They must not become normal-flow rows or
@@ -725,7 +737,7 @@ import { createMarkdownEditor } from './report-md-editor.js';
         richWrap.hidden = !rich;
         mdSplit.hidden = !markdown;
         tableBar.hidden = true;
-        mdHint.hidden = !markdown;
+        markdownHint.hidden = !markdown;
         foot.hidden = mode === 'plain';
         plainHint.hidden = mode !== 'plain';
         if (mode === 'plain' && state.creditScaffold && !textarea.value.startsWith('\n\n')) {

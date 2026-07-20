@@ -172,6 +172,47 @@ never to a cascade of bogus per-ascent failures or a silently wrong archive.
   summary distinguishes "failed" (needs attention) from "not reached"
   (paused/cancelled before their turn).
 
+## Automated coverage
+
+The failure handling is automatically testable because none of it needs a
+real Cloudflare in the loop — it needs the *decisions* pinned. Three layers,
+all using patterns this repo already has:
+
+- **Response classifier: pure unit tests.** Detection lives in one pure
+  function, `classify(status, headers, bodyText)` →
+  `ok | challenged | transient | wrong-content`. The primary challenge signal
+  is the documented `cf-mitigated: challenge` response header (Cloudflare's
+  official contract for detecting challenged fetch/XHR requests), with
+  status codes and challenge-page HTML markers as fallbacks. Tests feed
+  synthesized responses: the masked edit-form fixture → `ok`; a login page →
+  `wrong-content`; 403 + `cf-mitigated` → `challenged`; challenge-page markup
+  → `challenged`; 500/network error → `transient`. When a real challenge
+  page is next captured in the wild, a masked copy joins the fixtures.
+- **Runner state machine: scripted fetch + injected clock.** The runner takes
+  injected `fetch` and timer dependencies, exactly like the github-client and
+  device-flow tests. Scripted sequences pin the guarantees, not just the
+  happy path: a challenge at item k stops the queue (assert *no request
+  k+1*), resume re-probes the challenged URL before continuing and retries
+  item k; transient failures back off with the expected delays (fake clock,
+  no real waiting) and only two retries; consecutive transients pause the
+  run; a wrong-content response fails only its own ascent and the queue
+  proceeds; already-present folders are skipped. The cascade bug this design
+  exists to prevent — one challenge marching on and recording dozens of bogus
+  failures — is a one-line assertion here.
+- **End to end: fixtures + built-worker integration.** The list-parser test
+  reads a masked ClimbListC fixture; the built-worker integration test (the
+  github-backup-integration.test.mjs pattern) drives backfill messages
+  through the real bundled worker into a scripted GitHub fetch and asserts
+  the commit payloads.
+
+What automated tests cannot establish, and stays in the step-6 live check:
+that real Cloudflare responses actually carry the markers the classifier
+keys on, that clearing a challenge in another tab really mints clearance for
+the content script's fetches, and the true post-save GPX-link timing. That
+live check stays minimal and rate-limited; no test ever provokes or
+automates a challenge (AGENTS.md forbids automating one, and a test that
+depends on triggering Cloudflare would be both hostile and flaky).
+
 ## Progress UI
 
 An on-page panel on the list page (same visual language as the existing
@@ -216,8 +257,9 @@ extensions (new weather labels, routeDown, externalUrl). Additive keys keep
 3. Backfill runner in the list-page content script: queue, pacing, pause/
    cancel, fail-closed per-ascent gates, and the three-class failure handling
    (challenge → pause/hand-off/resume, transient → backoff, wrong content →
-   per-ascent failure); worker handler reusing the existing backup path for
-   provenance-stamped commits.
+   per-ascent failure), with the classifier unit tests and scripted-fetch/
+   injected-clock runner tests from the Automated coverage section; worker
+   handler reusing the existing backup path for provenance-stamped commits.
 4. Progress panel UI, light/dark, both browsers.
 5. Refresh-all mode.
 6. Release verification: fixtures + built-worker integration for the runner;

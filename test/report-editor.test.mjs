@@ -249,11 +249,12 @@ test('markdown mode converts to bracket markup and the live preview shows the fi
     assert.equal(doc.getElementById('JournalText').value,
         '[h1]Day 1[/h1]\n\nWe went [b]up[/b].\n\n[ul][li]tent[/li][li]stove[/li][/ul]');
 
-    const imageSizeHint = doc.querySelector('.bpb-re-hint');
-    assert.match(imageSizeHint.textContent, /!\[Photo\|500\]\(url\) for width/);
-    assert.match(imageSizeHint.textContent, /!\[Photo\|500x600\]\(url\) for width × height/);
-    assert.equal(imageSizeHint.title, imageSizeHint.textContent,
-        'the full sizing help should remain available if the footer is visually truncated');
+    const imageSizeHint = doc.querySelector('.bpb-re-markdown-hint');
+    assert.equal(imageSizeHint.parentElement, doc.querySelector('.bpb-re-bar'),
+        'Markdown help should use the toolbar hint area rather than a clipped footer');
+    assert.equal(imageSizeHint.hidden, false);
+    assert.match(imageSizeHint.textContent, /!\[Photo\|500\]\(url\) or !\[Photo\|500x600\]\(url\)/);
+    assert.match(imageSizeHint.textContent, /YouTube: !\[YouTube\|560x315\]\(url\)/);
 
     // No tab to click: the preview pane re-renders beside the source.
     const preview = doc.querySelector('.bpb-re-preview');
@@ -457,7 +458,8 @@ test('the image popover validates the source and inserts alt text', async () => 
     const src = ui.querySelector('[aria-label="Image URL (HTTPS)"]');
     const alt = ui.querySelector('[aria-label="Image description"]');
     const hostingHint = ui.querySelector('.bpb-re-image-hosting');
-    assert.match(hostingHint.textContent, /Free plans, limits, and terms vary\./);
+    assert.match(hostingHint.textContent,
+        /Plans vary\. To resize, select the image and drag its lower-right handle\./);
     assert.deepEqual([...hostingHint.querySelectorAll('a')].map(link => ({
         label: link.textContent,
         href: link.href,
