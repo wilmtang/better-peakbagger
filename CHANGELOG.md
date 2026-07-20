@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **Make returning to 3D near-instant.** Leaving a 3D map now parks its renderer
+  in the background for a few minutes instead of tearing it down, so switching
+  2D→3D→2D→3D resumes in a frame rather than rebuilding MapLibre and its terrain
+  worker each time. The renderer is fully released after five minutes of not
+  being used, or immediately if you turn 3D maps off.
+
 - **Add a compass to 3D maps.** A Google-Maps-style compass now floats just
   above the 3D button whenever a 3D terrain view is open. It tilts and rotates
   with the camera, and clicking it snaps the view back to north-up looking

@@ -18,6 +18,13 @@ import { terrainCamera } from './terrain-camera.js';
 
     let frame = null;
     let pendingInit = null;
+    // Keep-alive: after a 'destroy' the loaded frame stays in the DOM at opacity
+    // 0 for a TTL so a quick 2D→3D re-entry resumes MapLibre instead of rebuilding
+    // it. frameLoaded gates whether there is anything worth suspending.
+    let suspended = false;
+    let suspendTimer = null;
+    let frameLoaded = false;
+    const SUSPEND_TTL_MS = 5 * 60 * 1000;
     let terrainEnabled = false;
     let terrainTheme = 'system';
     let settingsRevision = 0;
@@ -32,7 +39,17 @@ import { terrainCamera } from './terrain-camera.js';
         ...detail
     }, location.origin);
 
+    const clearSuspendTimer = () => {
+        if (suspendTimer !== null) {
+            clearTimeout(suspendTimer);
+            suspendTimer = null;
+        }
+    };
+
     const removeFrame = () => {
+        clearSuspendTimer();
+        suspended = false;
+        frameLoaded = false;
         if (!frame) return;
         frame.remove();
         frame = null;
@@ -219,13 +236,39 @@ import { terrainCamera } from './terrain-camera.js';
         applySettings(settings);
     });
 
+    const buildInitPayload = data => ({
+        routeSegments: data.routeSegments,
+        routeColors: data.routeColors,
+        camera: terrainCamera.clean(data.camera),
+        focus: data.focus,
+        focusZoom: data.focusZoom,
+        focusPeak: data.focusPeak,
+        routeStyle: data.routeStyle,
+        theme: data.theme,
+        basemap: data.basemap,
+        basemaps: data.basemaps,
+        cacheLimitMb: data.cacheLimitMb
+    });
+
     const createFrame = async data => {
         await settingsReady;
-        if (frame) return;
         if (!terrainEnabled) {
             fail('unavailable');
             return;
         }
+        const payload = buildInitPayload(data);
+        // Resume the suspended frame with the fresh route/camera/theme instead of
+        // building a new iframe + MapLibre + CSP worker. The frame re-applies the
+        // payload to its live map and replies with a normal 'loaded'.
+        if (suspended && frame && frame.contentWindow) {
+            clearSuspendTimer();
+            suspended = false;
+            frameLoaded = false;
+            pendingInit = payload;
+            postToFrame('resume', payload);
+            return;
+        }
+        if (frame) return;
         // The MAIN-world coordinator (ascent GPX analyzer, Full Screen BigMap,
         // or a Peak page) owns the map viewport element and only sends 'init'
         // once it has a validated route or summit focus to draw, so the bridge
@@ -243,19 +286,8 @@ import { terrainCamera } from './terrain-camera.js';
         terrainFrame.addEventListener('error', () => {
             if (frame === terrainFrame) fail('frame');
         }, { once: true });
-        pendingInit = {
-            routeSegments: data.routeSegments,
-            routeColors: data.routeColors,
-            camera: terrainCamera.clean(data.camera),
-            focus: data.focus,
-            focusZoom: data.focusZoom,
-            focusPeak: data.focusPeak,
-            routeStyle: data.routeStyle,
-            theme: data.theme,
-            basemap: data.basemap,
-            basemaps: data.basemaps,
-            cacheLimitMb: data.cacheLimitMb
-        };
+        pendingInit = payload;
+        frameLoaded = false;
         terrainFrame.src = chrome.runtime.getURL('terrain/terrain.html');
         frame = terrainFrame;
         viewport.append(terrainFrame);
@@ -273,8 +305,25 @@ import { terrainCamera } from './terrain-camera.js';
                 });
             } else if (data.type === 'init') createFrame(data);
             else if (data.type === 'destroy') {
-                postToFrame('destroy');
-                removeFrame();
+                if (suspended) {
+                    // Already parked at opacity 0; nothing more to do.
+                } else if (frame && frameLoaded) {
+                    // Park the loaded frame instead of tearing it down.
+                    postToFrame('suspend');
+                    frame.style.opacity = '0';
+                    frame.style.pointerEvents = 'none';
+                    suspended = true;
+                    clearSuspendTimer();
+                    suspendTimer = setTimeout(() => {
+                        postToFrame('destroy');
+                        removeFrame();
+                    }, SUSPEND_TTL_MS);
+                } else {
+                    // A destroy that raced the boot (frame not yet loaded): the
+                    // old hard teardown.
+                    postToFrame('destroy');
+                    removeFrame();
+                }
                 postToPage('destroyed');
             } else if (data.type === 'highlight') {
                 postToFrame('highlight', { coordinates: data.coordinates, series: data.series });
@@ -300,9 +349,13 @@ import { terrainCamera } from './terrain-camera.js';
             || !data || data[FRAME_MESSAGE_TAG] !== true || data.dir !== 'toParent') return;
 
         if (data.type === 'ready') {
-            if (pendingInit) postToFrame('init', pendingInit);
+            if (pendingInit) {
+                frameLoaded = false;
+                postToFrame('init', pendingInit);
+            }
         } else if (data.type === 'loaded') {
             pendingInit = null;
+            frameLoaded = true;
             frame.style.opacity = '1';
             frame.style.pointerEvents = 'auto';
             postToPage('loaded', { navTop: data.navTop, camera: terrainCamera.clean(data.camera) });

@@ -174,6 +174,144 @@ test('3D terrain waits for the extension frame handshake before sending route co
     dom.window.close();
 });
 
+// Boot the bridge and drive one frame to 'loaded'. The bridge's only 5-minute
+// setTimeout is the keep-alive TTL, so intercept it (by its delay) into `timers`
+// for deterministic firing; every other timeout runs for real.
+const bootLoadedFrame = async (initOverrides = {}) => {
+    const dom = new JSDOM(`<!doctype html><body>
+      <div id="bpb-map-viewport">
+        <iframe src="https://www.peakbagger.com/map/MasterMap.aspx"></iframe>
+      </div>
+    </body>`, {
+        url: 'https://www.peakbagger.com/climber/ascent.aspx?aid=1',
+        runScripts: 'outside-only'
+    });
+    const { window } = dom;
+    const pageMessages = [];
+    const frameMessages = [];
+    const timers = [];
+    const realSetTimeout = window.setTimeout.bind(window);
+    window.setTimeout = (fn, delay) => {
+        if (delay === 5 * 60 * 1000) { timers.push(fn); return timers.length; }
+        return realSetTimeout(fn, delay);
+    };
+    window.chrome = chromeWith({ enable3dMap: true });
+    window.postMessage = message => { pageMessages.push(message); };
+    window.eval(bridgeBundle);
+    await new Promise(resolve => realSetTimeout(resolve, 0));
+
+    const dispatchPage = data => window.dispatchEvent(new window.MessageEvent('message', {
+        source: window, origin: window.location.origin,
+        data: { __bpbTerrain: true, dir: 'toCS', ...data }
+    }));
+    const initData = {
+        type: 'init',
+        routeSegments: [[[48.7, -121.8], [48.71, -121.81]]],
+        camera: { center: [48.72, -121.79], zoom: 12.5 },
+        routeStyle: { color: '#d9483b' },
+        theme: 'light',
+        cacheLimitMb: 512,
+        ...initOverrides
+    };
+    dispatchPage(initData);
+    await new Promise(resolve => realSetTimeout(resolve, 0));
+    const frame = window.document.getElementById('bpb-terrain-frame');
+    frame.contentWindow.postMessage = message => { frameMessages.push(message); };
+
+    const dispatchFrame = data => window.dispatchEvent(new window.MessageEvent('message', {
+        source: frame.contentWindow, origin: 'chrome-extension://test-id',
+        data: { __bpbTerrainFrame: true, dir: 'toParent', ...data }
+    }));
+    dispatchFrame({ type: 'ready' });
+    dispatchFrame({ type: 'loaded', navTop: 96, camera: { center: [48.72, -121.79], zoom: 12.5 } });
+
+    return { dom, window, frame, initData, dispatchPage, dispatchFrame, pageMessages, frameMessages, timers, realSetTimeout };
+};
+
+test('a loaded 3D frame suspends on destroy and resumes on re-entry without a new iframe', async () => {
+    const ctx = await bootLoadedFrame();
+    const { window, frame, initData, dispatchPage, dispatchFrame, pageMessages, frameMessages } = ctx;
+    assert.equal(frame.style.opacity, '1', 'the loaded frame is visible');
+
+    // destroy → suspend: the iframe stays, parked at opacity 0.
+    frameMessages.length = 0;
+    dispatchPage({ type: 'destroy' });
+    assert.equal(window.document.getElementById('bpb-terrain-frame'), frame, 'the frame stays in the DOM');
+    assert.equal(frame.style.opacity, '0');
+    assert.equal(frame.style.pointerEvents, 'none');
+    assert.equal(frameMessages.at(-1).type, 'suspend', 'the frame is told to suspend');
+    assert.equal(pageMessages.at(-1).type, 'destroyed', 'the page still gets its destroyed ack');
+    assert.equal(ctx.timers.length, 1, 'a keep-alive TTL is armed');
+
+    // re-entry → resume: no new iframe, a resume posted carrying the fresh payload.
+    frameMessages.length = 0;
+    dispatchPage(initData);
+    await new Promise(resolve => ctx.realSetTimeout(resolve, 0));
+    assert.equal(window.document.querySelectorAll('#bpb-terrain-frame').length, 1, 'no second iframe is built');
+    assert.equal(window.document.getElementById('bpb-terrain-frame'), frame, 'the same iframe is reused');
+    const resume = frameMessages.find(message => message.type === 'resume');
+    assert.ok(resume, 'a resume is posted instead of a fresh boot');
+    assert.equal(frameMessages.some(message => message.type === 'init'), false, 'no init handshake on resume');
+    assert.deepEqual(JSON.parse(JSON.stringify(resume.camera)), { center: [48.72, -121.79], zoom: 12.5 });
+
+    // The frame's normal 'loaded' reply restores the frame to visible.
+    dispatchFrame({ type: 'loaded', navTop: 96, camera: { center: [48.72, -121.79], zoom: 12.5 } });
+    assert.equal(frame.style.opacity, '1');
+    ctx.dom.window.close();
+});
+
+test('the keep-alive TTL hard-destroys the parked frame when it expires', async () => {
+    const ctx = await bootLoadedFrame();
+    const { window, frame, dispatchPage, frameMessages, timers } = ctx;
+    dispatchPage({ type: 'destroy' });
+    assert.equal(frame.style.opacity, '0');
+    assert.equal(timers.length, 1);
+
+    frameMessages.length = 0;
+    timers[0](); // fire the 5-minute TTL
+    assert.equal(frameMessages.at(-1).type, 'destroy', 'the frame is fully destroyed at expiry');
+    assert.equal(window.document.getElementById('bpb-terrain-frame'), null, 'the iframe is removed');
+    ctx.dom.window.close();
+});
+
+test('a destroy that races the boot hard-destroys instead of suspending', async () => {
+    const dom = new JSDOM(`<!doctype html><body>
+      <div id="bpb-map-viewport"><iframe src="https://www.peakbagger.com/map/MasterMap.aspx"></iframe></div>
+    </body>`, { url: 'https://www.peakbagger.com/climber/ascent.aspx?aid=1', runScripts: 'outside-only' });
+    const { window } = dom;
+    const pageMessages = [];
+    window.chrome = chromeWith({ enable3dMap: true });
+    window.postMessage = message => { pageMessages.push(message); };
+    window.eval(bridgeBundle);
+    await new Promise(resolve => window.setTimeout(resolve, 0));
+    const dispatchPage = data => window.dispatchEvent(new window.MessageEvent('message', {
+        source: window, origin: window.location.origin,
+        data: { __bpbTerrain: true, dir: 'toCS', ...data }
+    }));
+    dispatchPage({ type: 'init', routeSegments: [[[48.7, -121.8], [48.71, -121.81]]], theme: 'light', cacheLimitMb: 512 });
+    await new Promise(resolve => window.setTimeout(resolve, 0));
+    assert.ok(window.document.getElementById('bpb-terrain-frame'), 'the iframe was created');
+
+    // No 'loaded' yet → destroy tears it down (nothing worth suspending).
+    dispatchPage({ type: 'destroy' });
+    assert.equal(window.document.getElementById('bpb-terrain-frame'), null, 'the un-loaded frame is removed');
+    assert.equal(pageMessages.at(-1).type, 'destroyed');
+    dom.window.close();
+});
+
+test('disabling 3D tears down even a suspended frame immediately', async () => {
+    const ctx = await bootLoadedFrame();
+    const { window, frame, dispatchPage, timers } = ctx;
+    dispatchPage({ type: 'destroy' });
+    assert.equal(frame.style.opacity, '0', 'the frame is suspended');
+    assert.equal(timers.length, 1);
+
+    await window.chrome.storage.sync.set({ bpbSettings: { enable3dMap: false } });
+    await new Promise(resolve => ctx.realSetTimeout(resolve, 0));
+    assert.equal(window.document.getElementById('bpb-terrain-frame'), null, 'the suspended frame is removed at once');
+    ctx.dom.window.close();
+});
+
 test('3D terrain bridge refuses page requests unless the stored feature gate is enabled', async () => {
     const dom = new JSDOM(`<!doctype html><body>
       <div id="bpb-map-viewport">

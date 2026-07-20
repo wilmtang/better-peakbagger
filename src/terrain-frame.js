@@ -117,6 +117,10 @@ import { terrainCamera } from './terrain-camera.js';
     let basemapContentLoaded = false;
     let basemapChecked = false;
     let pickerElement = null;
+    // True once the user chose a drape in the 3D picker. A resume then keeps
+    // their choice; otherwise it re-resolves the drape from the page so a 2D
+    // layer change is reflected.
+    let userPickedBasemap = false;
     let noticeElement = null;
     let terrainCache = null;
     let terrainProtocolRegistered = false;
@@ -251,8 +255,32 @@ import { terrainCamera } from './terrain-camera.js';
         basemapContentLoaded = false;
         basemapChecked = false;
         pickerElement = null;
+        userPickedBasemap = false;
         noticeElement = null;
         loaded = false;
+    };
+
+    // Park the live map without tearing it down: stop ambient work so a hidden
+    // frame does no polling or hit-testing, but keep the map, cache, protocol,
+    // and DOM alive so a resume is instant. An idle MapLibre at opacity 0 renders
+    // nothing.
+    const suspendTerrain = () => {
+        if (peaksDebounceTimer !== null) {
+            clearTimeout(peaksDebounceTimer);
+            peaksDebounceTimer = null;
+        }
+        if (peakPopup) {
+            try { peakPopup.remove(); } catch (error) { /* Already detached. */ }
+            peakPopup = null;
+        }
+        if (peakPointerFrame !== null) {
+            cancelAnimationFrame(peakPointerFrame);
+            peakPointerFrame = null;
+        }
+        if (viewFrame !== null) {
+            cancelAnimationFrame(viewFrame);
+            viewFrame = null;
+        }
     };
 
     const fail = reason => {
@@ -667,6 +695,35 @@ import { terrainCamera } from './terrain-camera.js';
         if (index >= 0) failedBasemaps.add(index);
         swapBasemap(-1);
         showNotice(`${name || 'That map layer'} can’t be draped here — the map provider blocks cross-origin tiles. Showing terrain only.`);
+    };
+
+    // Build the switchable drape list from the layers the page offered, deduped
+    // by tile template, with the initially-selected layer as the active one
+    // (falling back to the first available, then terrain-only). Resets the
+    // per-drape CORS-check flags so the resolved layer is judged fresh. Used by
+    // the initial boot and by resume (to reflect a 2D layer change).
+    const resolveBasemaps = data => {
+        const initialBasemap = validateBasemap(data.basemap);
+        const offered = Array.isArray(data.basemaps) ? data.basemaps : [];
+        availableBasemaps = [];
+        const seenTiles = new Set();
+        // Keep the native control's order; append the initial layer only if the
+        // offered list somehow omitted it.
+        for (const candidate of [...offered.map(validateBasemap), initialBasemap]) {
+            if (!candidate) continue;
+            const key = candidate.tiles[0];
+            if (seenTiles.has(key)) continue;
+            seenTiles.add(key);
+            availableBasemaps.push(candidate);
+        }
+        activeBasemapIndex = initialBasemap
+            ? availableBasemaps.findIndex(basemap => basemap.tiles[0] === initialBasemap.tiles[0])
+            : -1;
+        activeBasemap = activeBasemapIndex >= 0 ? availableBasemaps[activeBasemapIndex] : null;
+        failedBasemaps.clear();
+        basemapErrored = false;
+        basemapContentLoaded = false;
+        basemapChecked = false;
     };
 
     // Group maps paint each track its own color (falling back to the preferred
@@ -1116,30 +1173,8 @@ import { terrainCamera } from './terrain-camera.js';
         activeRouteStyle = validateStyle(data.routeStyle);
         activeTheme = data.theme === 'dark' ? 'dark' : 'light';
 
-        // Build the switchable drape list from the layers the page offered,
-        // deduped by tile template, with the initially-selected layer as the
-        // active one (falling back to the first available, then terrain-only).
-        const initialBasemap = validateBasemap(data.basemap);
-        const offered = Array.isArray(data.basemaps) ? data.basemaps : [];
-        availableBasemaps = [];
-        const seenTiles = new Set();
-        // Keep the native control's order; append the initial layer only if the
-        // offered list somehow omitted it.
-        for (const candidate of [...offered.map(validateBasemap), initialBasemap]) {
-            if (!candidate) continue;
-            const key = candidate.tiles[0];
-            if (seenTiles.has(key)) continue;
-            seenTiles.add(key);
-            availableBasemaps.push(candidate);
-        }
-        activeBasemapIndex = initialBasemap
-            ? availableBasemaps.findIndex(basemap => basemap.tiles[0] === initialBasemap.tiles[0])
-            : -1;
-        activeBasemap = activeBasemapIndex >= 0 ? availableBasemaps[activeBasemapIndex] : null;
-        failedBasemaps.clear();
-        basemapErrored = false;
-        basemapContentLoaded = false;
-        basemapChecked = false;
+        resolveBasemaps(data);
+        userPickedBasemap = false;
 
         mapElement = document.createElement('div');
         mapElement.id = 'bpb-terrain-map';
@@ -1160,6 +1195,7 @@ import { terrainCamera } from './terrain-camera.js';
         pickerElement.setAttribute('aria-label', 'Draped map layer');
         pickerElement.addEventListener('change', () => {
             showNotice('');
+            userPickedBasemap = true;
             swapBasemap(pickerElement.value === 'terrain'
                 ? -1
                 : pickerElement.value === 'vector' ? 'vector' : Number(pickerElement.value));
@@ -1334,6 +1370,68 @@ import { terrainCamera } from './terrain-camera.js';
         }
     };
 
+    // Re-apply a fresh route/camera/theme to the parked (suspended) map instead
+    // of rebuilding it. Returns false when there is no live map to resume, so
+    // the caller boots fresh via createTerrain.
+    const resumeTerrain = data => {
+        if (!map || !loaded) return false;
+        const route = validateRoute(data.routeSegments, data.routeColors);
+        const focus = validateFocus(data.focus, data.focusZoom);
+        if (!route && !focus) {
+            fail('unavailable');
+            return true;
+        }
+        const requestedCamera = terrainCamera.toMapLibre(data.camera);
+        routeHasFeatureColors = Boolean(route && route.hasFeatureColors);
+
+        const focusPeak = focus ? validatePeaks([data.focusPeak]) : null;
+        focusPeakFeature = focusPeak && focusPeak.length === 1
+            && Math.abs(focusPeak[0].geometry.coordinates[0] - focus.center[0]) < 1e-6
+            && Math.abs(focusPeak[0].geometry.coordinates[1] - focus.center[1]) < 1e-6
+            ? focusPeak[0]
+            : null;
+
+        // Route, style, and theme applied to the existing sources/layers.
+        const routeSource = typeof map.getSource === 'function' ? map.getSource('bpb-route') : null;
+        if (routeSource && typeof routeSource.setData === 'function') {
+            routeSource.setData(route ? route.geojson : { type: 'FeatureCollection', features: [] });
+        }
+        setRoutePaint(data.routeStyle);
+        setTheme(data.theme);
+
+        // Drape: keep the user's in-3D pick; otherwise re-resolve from the page
+        // so a 2D layer change made while in 2D is reflected.
+        if (!userPickedBasemap) {
+            resolveBasemaps(data);
+            swapBasemap(activeBasemapIndex);
+        }
+
+        // Camera: the live 2D camera wins; else frame the route; else center the
+        // focus. Pitch/bearing reset to the fresh-boot defaults either way.
+        if (requestedCamera) {
+            map.jumpTo({ ...requestedCamera, pitch: 60, bearing: 0 });
+        } else if (route) {
+            map.fitBounds(route.bounds, { padding: 46, maxZoom: 15.5, pitch: 60, bearing: 0, duration: 0 });
+        } else {
+            map.jumpTo({ center: focus.center, zoom: focus.zoom, pitch: 60, bearing: 0 });
+        }
+
+        // Peaks: clear stale dots (keeping the focus peak) and refetch for the
+        // new view.
+        peaksUnavailable = false;
+        lastPeaksBoundsKey = null;
+        setPeakData([]);
+        schedulePeaksRequest();
+
+        if (typeof map.resize === 'function') map.resize();
+        post('loaded', {
+            navTop: measureNavTop(),
+            camera: terrainCamera.fromMapLibre(map)
+        });
+        postView();
+        return true;
+    };
+
     window.addEventListener('message', event => {
         const data = event.data;
         if (event.source !== window.parent || !PEAKBAGGER_ORIGIN.test(event.origin)
@@ -1341,6 +1439,9 @@ import { terrainCamera } from './terrain-camera.js';
         parentOrigin = event.origin;
 
         if (data.type === 'init') createTerrain(data);
+        else if (data.type === 'resume') {
+            if (!resumeTerrain(data)) createTerrain(data);
+        } else if (data.type === 'suspend') suspendTerrain();
         else if (data.type === 'destroy') {
             removeTerrain();
             post('destroyed');
