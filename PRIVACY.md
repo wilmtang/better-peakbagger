@@ -78,6 +78,30 @@ Derived form values such as date, ascent times, distance, gain, per-day
 statistics, and nights out remain in the prepared draft until it expires or is
 discarded.
 
+## Processing a GPX file you upload
+
+Choosing a `.gpx` file in the GPS Track field of Peakbagger's own Add Ascent
+form offers an optional **Process** action that runs the same pipeline as
+activity capture, under the same rules:
+
+- The file is read and parsed on that Peakbagger page. The raw XML never
+  leaves the page, and the original file on disk is not modified.
+- Only the analysis fields described above reach the background worker:
+  trackpoint latitude/longitude/elevation/timestamp, plus waypoint
+  coordinates/names and the track name exactly as the capture settings allow.
+- The climb's timezone is resolved offline from the track's starting
+  coordinate using the packaged `tz-lookup` data; no coordinate is sent to any
+  timezone service.
+- Peakbagger receives the same summit-corridor lookups, after the login check.
+- If you apply the result, the upload field is repopulated with the newly
+  serialized, privacy-reduced GPX described above — Peakbagger never receives
+  your source file through the extension — and the prepared values follow the
+  same 30-minute `storage.session` expiry, exactly-once GPS Preview, and
+  manual-Save rules as capture.
+
+The extension also fills an empty Ascent Date on a fresh form with today's
+date, entirely locally.
+
 ## Peakbagger page features
 
 The GPX Analyzer fetches only the GPX already linked from the current

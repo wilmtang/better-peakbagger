@@ -1,8 +1,9 @@
 # Plan: Process an uploaded GPX on the ascent form
 
-Status: agreed 2026-07-19 — multi-summit UX is Option C (hybrid), and the
-upload field is repopulated with the cleaned serialization (3.3). Ready to
-implement per section 4.
+Status: implemented 2026-07-19 (steps 1–6 of section 4). The maintained
+descriptions now live in [../architecture.md](../architecture.md)
+("Local-file entry point") and [../../PRIVACY.md](../../PRIVACY.md)
+("Processing a GPX file you upload"); this plan is kept as the design record.
 
 Activity capture today starts on a Garmin/Strava page. This feature respects
 the other instinct users have: open Peakbagger's own "Add Ascent" form and
