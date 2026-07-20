@@ -1,5 +1,9 @@
 # Plan: Process an uploaded GPX on the ascent form
 
+> Archived implementation record. The feature has shipped; current runtime and
+> privacy behavior live in [architecture.md](../architecture.md) and
+> [PRIVACY.md](../../PRIVACY.md).
+
 Status: implemented 2026-07-19 (steps 1–6 of section 4). The maintained
 descriptions now live in [../architecture.md](../architecture.md)
 ("Local-file entry point") and [../../PRIVACY.md](../../PRIVACY.md)

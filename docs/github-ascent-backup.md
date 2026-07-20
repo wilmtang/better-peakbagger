@@ -1,15 +1,11 @@
-# GitHub ascent backup: design and execution plan
+# GitHub ascent backup
 
-Status: implemented, including full-profile backfill. Steps 1–10 have landed,
-and the automated release checks
-(`npm test`, `npm run lint:js`, `npm run verify:browsers`, `web-ext lint`)
-pass. Step 11's live
-verification — a real device-flow authorization and installation against the
-registered app, and one rate-limited save on real Peakbagger landing a commit in
-a scratch repo, in both browsers — remains a manual pre-release step, because it
-needs the user's GitHub and Peakbagger sessions. The execution checklist at the
-end records each step; the ascent.aspx selectors in `src/ascent-page.js` are the
-main thing that live verification confirms.
+This is the maintained design for the shipped per-save and full-profile backup
+features. The completed implementation checklist is archived in
+[archive/github-ascent-backup-plan.md](archive/github-ascent-backup-plan.md).
+Real device-flow authorization, a rate-limited live Peakbagger save, stored-GPX
+timing, and a scratch-repository commit remain manual pre-release checks because
+they require the user's signed-in GitHub and Peakbagger sessions.
 
 When the user saves an ascent on Peakbagger, Better Peakbagger can back that
 ascent up into a GitHub repository the user has explicitly granted access to.
@@ -29,7 +25,8 @@ Three existing mechanisms carry most of the weight:
    published — so the capture privacy invariant ("raw provider GPX never
    leaves the activity page") is untouched.
 2. **The trip report has a Markdown representation.** The trip-report editor
-   (see `docs/trip-report-editor.md`) keeps an exact Markdown-source sidecar
+   (see [trip-report-editor.md](trip-report-editor.md)) keeps an exact
+   Markdown-source sidecar
    when the user writes Markdown, and `src/report-markup.js` can convert
    bracket markup to Markdown when they don't. The repo therefore holds a
    `report.md` that renders natively on GitHub, not Peakbagger's
@@ -278,16 +275,15 @@ Plaintext `storage.local` is the honest ceiling for an extension without a
 native helper — the mitigation is the token's blast radius: one repo,
 Contents only, revocable by uninstalling the app on GitHub.
 
-**Auth — fine-grained PAT (documented alternative, not scheduled).** A
+**Auth — fine-grained PAT (documented alternative, not shipped).** A
 fine-grained personal access token scoped to one repository with *Contents:
 read and write* reaches the same API with the same blast radius. It needs no
 registered app, so it suits forks of the extension that lack the app's
 `client_id`; the cost is a manual chore (mint the token in GitHub's
 developer settings, paste it plus `owner/repo` into options) and a mandatory
 expiry the user must renew. The storage and background-only handling rules
-above apply unchanged. The execution plan below implements only the
-device-flow path; a PAT fallback field could be added later without
-structural change.
+above apply unchanged. The shipped extension implements only the device-flow
+path; a PAT fallback would be a separate product and security decision.
 
 A classic OAuth app via `launchWebAuthFlow` remains ruled out: it needs an
 embedded client secret and its `repo` scope grants every repo.
@@ -309,21 +305,19 @@ non-empty branch, branch protection rejection, rate limit, network. Each maps
 to one actionable sentence in the affordance; auth and selection problems also
 flag the options page.
 
-## Manifest and privacy changes
+## Manifest and privacy boundary
 
 - `optional_host_permissions`: `https://api.github.com/*` plus
   `https://github.com/*` — the device-flow endpoints live on `github.com`
   and do not reliably send CORS headers, so the background worker needs the
-  host grant. Both are requested only when the user enables the feature
-  (Firefox MV3 already treats host permissions as optional; verify the
-  request flow on both browsers).
-- **PRIVACY.md** gains a "GitHub backup (optional)" section: what leaves the
-  browser (ascent fields, trip report, Peakbagger's stored GPX), that it goes
-  only to the user-chosen repository over the GitHub API, only on explicit
-  action or explicit auto-backup opt-in, and that the token stays in local
-  extension storage. GitHub joins the third-party services list.
-- Review the Firefox `data_collection_permissions` declaration; the README
-  gains a short feature section.
+  host grant. Both are requested only when the user enables the feature.
+- [PRIVACY.md](../PRIVACY.md) is canonical for what leaves the browser: ascent
+  fields, trip report, and Peakbagger's stored GPX go only to the selected
+  repository over the GitHub API, on explicit action or the separate automatic
+  opt-in. The token stays in local extension storage.
+- Firefox's `locationInfo` declaration covers the stored GPS track. The
+  remaining payload is user-authored ascent data sent to the user's own
+  repository, so the manifest declares no broader data category.
 
 ## Boundaries this must preserve
 
@@ -340,129 +334,3 @@ flag the options page.
 - The settings-schema single-source rule: the feature gate joins
   `src/settings-schema.js`; token and repo name are deliberately *not*
   settings-schema values because they must not sync.
-
-## Execution steps
-
-Each step is one focused commit (or a small series), tested before the next
-begins, per the repository commit discipline.
-
-1. **Design doc** — this file. **Done.**
-2. **Pure payload module + tests.** **Done.** `src/github-backup.js`: folder
-   slug rules (dates, partial dates, peak-name slugging, `a<aid>` suffix),
-   `ascent.json` v1 serialization from a form-snapshot object, `report.md`
-   assembly (sidecar-verbatim vs bracket→Markdown via `src/report-markup.js`),
-   commit-message text. `test/github-backup.test.mjs` covers slug edge cases,
-   unit normalization, blank-field omission, and Markdown selection. The
-   snapshot contract this module consumes is documented in its header; the
-   content script and background worker own the Peakbagger-DOM field mapping
-   that produces it.
-3. **Pure GitHub client + tests.** **Done.** `src/github-client.js`: Git Data
-   commit builder with an injected `fetch` and token — repo/branch pre-flight
-   (archived, no-push, and ambiguous paths fail closed), empty-repository
-   initialization, root-layout marker and folder discovery, and owned-file-only
-   rename handling in one tree, plus a single non-fast-forward
-   retry and `GithubBackupError` taxonomy. Tests run against a scripted fetch
-   stub; no network.
-4. **App registration + device-flow client.** **Done.** The GitHub App is
-   registered (device flow on, no webhook, *Contents: read and write*,
-   installable on any account, user-token expiration opted out, no client
-   secret generated); its public `client_id` (`Iv23liZpTdD1iZfT3eL1`) is in
-   `src/github-auth.js`. That module holds the device-flow client with an
-   injected `fetch` and clock (code request, polling with `interval`/`slow_down`
-   handling, abortable, `GithubAuthError`-typed) plus the `storage.local`-only
-   token/repo accessor (`authStore`), tested against a scripted fetch stub and a
-   fake storage area. *The app's public slug is still needed for the step-5
-   install handoff URL (`github.com/apps/<slug>/installations/new`).*
-5. **Setup UI.** **Done.** Options-page "GitHub backup" section
-   (`options/github.js`, styled in `options.css`): the enable toggle requests
-   both optional host permissions (added to `manifest.json`), **Connect
-   GitHub** shows the user code and hands off to `github.com/login/device`,
-   offers a prefilled GitHub repository-creation form or GitHub's installation
-   access picker, then lists even a sole granted repository for explicit,
-   worker-inspected selection. Existing content requires confirmation. A clear
-   connected state names the account and repo, and **Disconnect** drops the
-   local token (full revocation is uninstalling the app on GitHub). The options
-   page never sees the token: it drives the background worker over
-   `GITHUB_AUTH_*` messages, gated to extension-page senders;
-   `github-auth.js` joins the background bundle. The `enableGithubBackup` gate
-   is in `settings-schema.js`.
-6. **Save-time snapshot.** **Done.** `src/ascent-snapshot.js` owns the
-   ascentedit.aspx field-name mapping and turns the live Form1 fields plus the
-   editor's report (mode, submitted bracket, exact Markdown sidecar) into the
-   github-backup snapshot, with a `climber|peak|date` match key and normalized
-   date. The report editor's Save or implicit-submit flush
-   (`src/report-editor.js`) builds it — Preview and other named submitters do
-   not — gated on `enableGithubBackup`, best-effort, never blocking the save —
-   and sends `GITHUB_BACKUP_SNAPSHOT` to the worker, which stores it in
-   storage.session (Peakbagger-sender + feature gated, identity-keyed, bounded,
-   30-minute expiry via the existing cleanup alarm).
-   `test/ascent-snapshot.test.mjs` pins the mapping against the masked fixture.
-7. **Ascent-page surface.** **Done.** `src/ascent-page.js` reads the saved
-   ascent (aid, ownership via the edit link — fail closed, peak, GPX link, and a
-   DOM→Markdown report fallback); `src/ascent-backup.js` (isolated world on
-   ascent.aspx, styled in `src/ascent-backup.css`) shows the dismissible **Back
-   up to GitHub** affordance only for the owner when enabled and connected,
-   fetches Peakbagger's stored track in the page session, and messages the
-   worker with success/error/retry states. The `GITHUB_BACKUP_ASCENT` handler
-   in `src/background.js` (Peakbagger-sender gated) matches the pending snapshot,
-   merges the saved-page fields over it (page wins on identity and peak
-   metadata; the snapshot supplies the entered fields and the report), stamps
-   provenance, pushes through `github-client`, drops the used snapshot, and
-   returns the commit URL or a typed error. `GITHUB_BACKUP_STATUS` gives the
-   surface a token-free enabled/connected check. *Refinement discovered here:
-   the bracket→Markdown conversion needs a DOM, which the service worker lacks,
-   so it runs in the content script and `github-backup.js` now consumes a
-   resolved `report.markdown` — keeping the pure module DOM-free.*
-8. **Fixture + integration tests.** **Done.** A masked, representative
-   `ascent.aspx` fixture (`test/fixtures/pages/climber-ascent.html`, fake ids)
-   drives `test/ascent-page.test.mjs` (parser + ownership) and
-   `test/ascent-backup.test.mjs` (the built surface: gates, GPX fetch, message
-   shape, success/error). `test/github-backup-integration.test.mjs` runs the
-   real built worker end-to-end — snapshot → status → merge → scripted GitHub
-   push → commit payload — and pins the fail-closed gates and snapshot
-   consumption. The fixture selectors are confirmed on live Peakbagger at
-   step 11.
-9. **Manifest + docs.** **Done.** `optional_host_permissions` for `github.com`
-   and `api.github.com` are in `manifest.json` (added with the setup UI).
-   PRIVACY.md gains a "GitHub backup (optional)" section, the third-party list
-   gains GitHub, the permissions list gains the optional GitHub host access and
-   the local-only token note, and the `locationInfo` disclosure now covers the
-   stored track written to the user's repo. README gains a feature section and
-   a privacy line. Firefox data-collection review: `locationInfo` already
-   declares the only sensitive category the backup transmits (the stored GPS
-   track); the remaining payload is the user's own ascent fields and trip
-   report sent to the user's own repository on an explicit action, so no
-   additional `data_collection_permissions` category is added.
-10. **Auto-backup toggle.** **Done.** The `autoGithubBackup` setting (a
-    separate opt-in shown in the connected state of the options panel)
-    performs the same push automatically on the saved ascent page, with the
-    same working/success/error states. It fires only when a matching pending
-    snapshot exists (a fresh save), so revisiting an old ascent declines
-    quietly (`no-fresh-save`) and falls back to the manual button rather than
-    re-pushing. `GITHUB_BACKUP_STATUS` now reports the `auto` preference to the
-    surface. Covered by the integration, surface, and options suites.
-11. **Release verification.** Automated checks **Done**: `npm test` (full
-    suite green, including the backup unit, surface, and built-worker
-    integration suites), `npm run verify:browsers` (the worker boots with the
-    backup/auth handlers and every content script loads), and `web-ext lint`
-    (0 errors). **Pending manual pre-release** (needs the user's sessions): one
-    real device-flow authorization + installation against the registered app,
-    and a minimal, rate-limited live check on real Peakbagger in both browsers —
-    save one test ascent, confirm the redirect/`aid` and GPX-link timing that
-    `src/ascent-page.js` assumes, and a real commit landing in a scratch repo.
-
-## Open questions (mostly resolved; confirm the live-behavior ones at step 11)
-
-- Exact post-save behavior on live Peakbagger: redirect target, referrer
-  value, and whether `aid` is always present on arrival. Handled defensively —
-  `src/ascent-page.js` takes `aid` from the URL and fails closed without it, and
-  manual snapshot matching falls back from `aid` to peak+date to
-  most-recent-for-peak, so a new ascent (whose snapshot had no `aid`) still
-  matches. Automatic mode permits only `aid` or peak+date and therefore cannot
-  push a merely similar stale snapshot. Confirm the live redirect on Peakbagger.
-- Whether the stored-GPX link is present immediately after a save that used
-  GPS Preview, or appears only after a server-side delay. The surface treats the
-  track as optional (omits `track.gpx` when the link is absent), so a delayed
-  link degrades to a report+JSON backup rather than failing; confirm the timing.
-- Whether deleted Peakbagger ascents should ever be reflected (answer: out of
-  scope; the repo is an archive, not a mirror).

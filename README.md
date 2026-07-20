@@ -209,7 +209,7 @@ then use the
 and
 [browser-store release guide](https://github.com/wilmtang/better-peakbagger/blob/main/docs/releasing.md).
 Focused design notes and archived investigations are maintained in the
-[repository documentation](https://github.com/wilmtang/better-peakbagger/tree/main/docs).
+[developer documentation index](https://github.com/wilmtang/better-peakbagger/blob/main/docs/README.md).
 
 Install locked dependencies with `npm ci`. Runtime source is bundled into
 `dist/`; load, test, lint, verify, and package `dist/`, never the repository

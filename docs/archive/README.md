@@ -22,3 +22,16 @@ living docs in [`docs/`](../).
   the resulting sanitizer boundary decision.
 - [esbuild + ES-module migration](esbuild-migration-plan.md) — completed plan
   and step-by-step migration log.
+- [Cross-browser extension verification](cross-browser-verification.md) —
+  completed rollout plan for the Chrome, Firefox, and packaged-extension gates.
+- [GPX upload processing](gpx-upload-processing.md) — completed design and
+  implementation plan for processing a local file on the ascent form.
+- [GitHub ascent backup](github-ascent-backup-plan.md) — completed
+  implementation record and remaining manual live checks.
+- [Full-profile backup](full-profile-backup.md) — original completed backfill
+  design, superseded for batching and backpressure by the living
+  [pipeline design](../profile-backup-pipeline.md).
+- [Options-page sidebar](options-sidebar.md) — completed investigation,
+  execution plan, and deviations recorded during implementation.
+- [Codebase audit — 2026-07-19](codebase-audit-2026-07-19.md) — point-in-time
+  audit and remediation plan.

@@ -1,6 +1,6 @@
 # Full profile backup: design
 
-> Historical note: the original implementation below used one serial GitHub
+> Archived implementation record. The original implementation below used one serial GitHub
 > commit per ascent. It has since been replaced by the bounded, atomic batch
 > pipeline documented in
 > [profile-backup-pipeline.md](../profile-backup-pipeline.md). The ownership,

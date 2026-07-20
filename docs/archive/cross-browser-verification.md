@@ -1,5 +1,9 @@
 # Cross-browser extension verification: execution plan
 
+> Archived implementation record. The rollout is complete; current commands
+> and verification boundaries live in
+> [development.md](../development.md) and [releasing.md](../releasing.md).
+
 Status: implemented 2026-07-19. Chrome and Firefox runtime/package gates are
 authoritative in CI and release CI. Firefox terrain is a GPU-backed local
 release check until a hosted runner can report a representative renderer;
