@@ -128,13 +128,17 @@ test("bare web-ext commands use only the dist build", async () => {
   assert.equal("ignoreFiles" in packageJson.webExt, false);
 });
 
-test("CI tests and lints the built extension", async () => {
-  const workflow = await readFile(new URL("../.github/workflows/ci.yml", import.meta.url), "utf8");
-  assert.match(workflow, /run: npm ci/);
-  assert.match(workflow, /run: npm test/);
-  assert.match(workflow, /run: npm run lint:js/);
-  assert.match(workflow, /run: npx web-ext lint/);
+test("CI tests, lints, and exercises both real browser extensions", async () => {
+  const workflow = await readFile(new URL("../.github/workflows/test.yml", import.meta.url), "utf8");
+  assert.match(workflow, /node:\s*\n[\s\S]*?run: npm test[\s\S]*?run: npm run lint/);
+  assert.match(workflow, /chrome:\s*\n[\s\S]*?run: npm run verify:chrome/);
+  assert.match(workflow, /firefox:\s*\n[\s\S]*?run: npm run verify:firefox/);
+  assert.equal(workflow.match(/run: npm ci/g)?.length, 3);
   assert.match(workflow, /permissions:\s*\n\s+contents: read/);
+  await assert.rejects(
+    lstat(new URL("../.github/workflows/ci.yml", import.meta.url)),
+    { code: "ENOENT" },
+  );
 });
 
 test("release archive rejects development and internal files", async () => {
