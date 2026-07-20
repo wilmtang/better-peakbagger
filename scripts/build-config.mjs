@@ -37,7 +37,7 @@ export function resolvePageSource(name) {
 // its explicit roots, ordered where sibling side effects depend on that order.
 export const ENTRIES = [
     { out: 'background.js', sources: ['gpx-metrics.js', 'capture-core.js', 'provider-url.js', 'settings-schema.js', 'settings.js', 'github-auth.js', 'github-client.js', 'background.js'] },
-    { out: 'provider-page.js', sources: ['provider-url.js', 'provider-page.js'] },
+    { out: 'provider-page.js', sources: ['provider-url.js', 'gpx-parse.js', 'provider-page.js'] },
 
     { out: 'content/ascent-editor.js', sources: ['ascent-draft.js', 'report-markup.js', 'report-editor.js'] },
     { out: 'content/ascent-backup.js', sources: ['report-markup.js', 'ascent-page.js', 'ascent-backup.js'] },

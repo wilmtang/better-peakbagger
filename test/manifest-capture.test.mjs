@@ -43,7 +43,7 @@ test('the worker ships as one bundle for both Chrome and Firefox', () => {
     // The fail-closed coordinator is composed from these modules, in order.
     assert.deepEqual(bundleSources('background.js'),
         ['gpx-metrics.js', 'capture-core.js', 'provider-url.js', 'settings-schema.js', 'settings.js', 'github-auth.js', 'github-client.js', 'background.js']);
-    assert.deepEqual(bundleSources('provider-page.js'), ['provider-url.js', 'provider-page.js']);
+    assert.deepEqual(bundleSources('provider-page.js'), ['provider-url.js', 'gpx-parse.js', 'provider-page.js']);
     assert.deepEqual(manifest.browser_specific_settings.gecko.data_collection_permissions.required, ['locationInfo']);
 });
 
