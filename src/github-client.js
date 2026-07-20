@@ -26,6 +26,7 @@ import { githubBackup as Backup } from './github-backup.js';
 
     const API_ROOT = 'https://api.github.com';
     const BLOB_MODE = '100644';
+    const CONFLICT_RETRY_DELAYS = [500, 2000, 5000];
     const REPOSITORY_MARKER_PATH = '.better-peakbagger.json';
     const REPOSITORY_MARKER_CONTENT = `${JSON.stringify({
         schemaVersion: 1,
@@ -90,7 +91,14 @@ import { githubBackup as Backup } from './github-backup.js';
         return ERROR_CODES.UNKNOWN;
     };
 
-    const createGithubClient = ({ fetch, token, owner, repo, branch = null } = {}) => {
+    const createGithubClient = ({
+        fetch,
+        token,
+        owner,
+        repo,
+        branch = null,
+        sleep = ms => new Promise(resolve => setTimeout(resolve, ms)),
+    } = {}) => {
         if (typeof fetch !== 'function') throw new TypeError('github client requires an injected fetch');
         if (!token) throw new TypeError('github client requires a token');
         if (!owner || !repo) throw new TypeError('github client requires owner and repo');
@@ -326,17 +334,20 @@ import { githubBackup as Backup } from './github-backup.js';
             };
         };
 
-        // One atomic backup commit, with a single non-fast-forward retry: if
-        // another push landed between our read and our ref update, re-read and
-        // rebuild once. A second conflict surfaces rather than looping.
+        // Re-read and rebuild after a bounded backoff when GitHub reports a
+        // transient repository/ref conflict. Immediate retries can hit the same
+        // propagation window; the bounded schedule absorbs brief 409s without
+        // hiding a persistent conflict or looping forever.
         const pushAscentBackup = async (snapshot, options = {}) => {
-            try {
-                return await commitOnce(snapshot, options);
-            } catch (error) {
-                if (error instanceof GithubBackupError && error.code === ERROR_CODES.CONFLICT) {
-                    return commitOnce(snapshot, options);
+            for (let attempt = 0; ; attempt += 1) {
+                try {
+                    return await commitOnce(snapshot, options);
+                } catch (error) {
+                    if (!(error instanceof GithubBackupError)
+                        || error.code !== ERROR_CODES.CONFLICT
+                        || attempt >= CONFLICT_RETRY_DELAYS.length) throw error;
+                    await sleep(CONFLICT_RETRY_DELAYS[attempt]);
                 }
-                throw error;
             }
         };
 

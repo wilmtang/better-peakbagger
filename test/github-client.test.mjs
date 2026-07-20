@@ -282,9 +282,10 @@ test('a same-slug re-sync prunes a now-absent GPX but keeps overwriting the rest
     assert.equal(byPath[`${leaf}/track.gpx`].sha, null);
 });
 
-test('a non-fast-forward ref update re-reads and retries exactly once, then succeeds', async () => {
+test('a transient ref conflict backs off before re-reading and rebuilding', async () => {
     let patchCount = 0;
     let refReads = 0;
+    const delays = [];
     const { fetch } = makeFetch({
         'GET /repos/me/backup': REPO_OK(),
         'GET /repos/me/backup/git/ref/heads/main': () => { refReads += 1; return respond(200, { object: { sha: `C${refReads - 1}` } }); },
@@ -302,14 +303,19 @@ test('a non-fast-forward ref update re-reads and retries exactly once, then succ
                 : respond(200, { object: { sha: 'CN' } });
         },
     });
-    const client = Client.createGithubClient({ fetch, token: 't', owner: 'me', repo: 'backup' });
+    const client = Client.createGithubClient({
+        fetch, token: 't', owner: 'me', repo: 'backup', sleep: async ms => delays.push(ms),
+    });
     const result = await client.pushAscentBackup(snapshot(), {});
     assert.equal(result.sha, 'CN');
-    assert.equal(patchCount, 2);        // failed once, retried once
-    assert.equal(refReads, 2);          // re-read the ref on the retry
+    assert.equal(patchCount, 2);
+    assert.equal(refReads, 2);
+    assert.deepEqual(delays, [500]);
 });
 
-test('a second non-fast-forward surfaces a conflict rather than looping', async () => {
+test('a persistent ref conflict stops after the bounded retry schedule', async () => {
+    let patchCount = 0;
+    const delays = [];
     const { fetch } = makeFetch({
         'GET /repos/me/backup': REPO_OK(),
         'GET /repos/me/backup/git/ref/heads/main': REF('C0'),
@@ -318,13 +324,20 @@ test('a second non-fast-forward surfaces a conflict rather than looping', async 
         'POST /repos/me/backup/git/blobs': n => respond(201, { sha: `blob${n}` }),
         'POST /repos/me/backup/git/trees': () => respond(201, { sha: 'TX' }),
         'POST /repos/me/backup/git/commits': () => respond(201, { sha: 'CN', html_url: 'u' }),
-        'PATCH /repos/me/backup/git/refs/heads/main': () => respond(422, { message: 'Update is not a fast forward' }),
+        'PATCH /repos/me/backup/git/refs/heads/main': () => {
+            patchCount += 1;
+            return respond(422, { message: 'Update is not a fast forward' });
+        },
     });
-    const client = Client.createGithubClient({ fetch, token: 't', owner: 'me', repo: 'backup' });
+    const client = Client.createGithubClient({
+        fetch, token: 't', owner: 'me', repo: 'backup', sleep: async ms => delays.push(ms),
+    });
     await assert.rejects(
         client.pushAscentBackup(snapshot(), {}),
         err => err.code === Client.ERROR_CODES.CONFLICT,
     );
+    assert.equal(patchCount, 4);
+    assert.deepEqual(delays, [500, 2000, 5000]);
 });
 
 // ---- error taxonomy -------------------------------------------------------
