@@ -69,6 +69,7 @@ export const makeChromeStub = (initial = {}, localInitial = {}) => {
         // when the test only drives one feature. Mirror the page's full chrome.
         runtime: {
             id: 'test-extension',
+            getManifest: () => ({ version: '0.0.0-test' }),
             sendMessage: async () => undefined,
             onMessage: { addListener: () => {}, removeListener: () => {} }
         }

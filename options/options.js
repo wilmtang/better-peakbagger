@@ -37,6 +37,11 @@ import { initGithubBackup } from './github.js';
     const betaGpsEl = document.getElementById('beta-gps');
     const betaLinkEl = document.getElementById('beta-link');
     const statusEl = document.getElementById('status');
+    const aboutVersionEl = document.getElementById('about-version');
+
+    // About section — version from the extension manifest.
+    const manifest = extensionApi.runtime.getManifest();
+    aboutVersionEl.textContent = `Version ${manifest.version}`;
 
     const applyTheme = theme => Theme.apply(theme);
 

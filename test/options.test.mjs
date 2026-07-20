@@ -95,17 +95,21 @@ test('settings are grouped by the surface they affect', async () => {
         'Activity capture',
         'Map & GPX chart',
         'Ascent beta filters',
-        'GitHub backup'
+        'GitHub backup',
+        'About'
     ]);
 
-    const [general, capture, mapChart, beta, github] = sections;
+    const [general, capture, mapChart, beta, github, about] = sections;
     assert.ok(github.querySelector('#enable-github-backup'));
     assert.ok(github.querySelector('#github-panel'));
-    for (const section of sections) {
+    // Every settings section has a card; About is informational, not a card.
+    for (const section of [general, capture, mapChart, beta, github]) {
         const heading = section.querySelector('h2');
         assert.equal(section.getAttribute('aria-labelledby'), heading.id);
         assert.equal(section.querySelectorAll(':scope > .card').length, 1);
     }
+    assert.equal(about.getAttribute('aria-labelledby'), about.querySelector('h2').id);
+    assert.ok(about.querySelector('.about-version'));
     assert.ok(general.querySelector('#theme'));
     assert.ok(general.querySelector('#add-report-credit'));
     assert.ok(general.querySelector('#enable-3d-map'));
@@ -349,7 +353,7 @@ test('the sidebar links every settings section, in order', async () => {
     const linkTargets = links.map(link => link.getAttribute('href').slice(1));
     const sectionIds = Array.from(doc.querySelectorAll('.content .settings-section'), section => section.id);
     assert.deepEqual(linkTargets, sectionIds);
-    assert.deepEqual(linkTargets, ['general', 'capture', 'map-chart', 'beta', 'github']);
+    assert.deepEqual(linkTargets, ['general', 'capture', 'map-chart', 'beta', 'github', 'about']);
 });
 
 const activeLinks = dom =>
