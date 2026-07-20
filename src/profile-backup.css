@@ -1,0 +1,59 @@
+/* Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
+ * SPDX-License-Identifier: AGPL-3.0-or-later */
+
+.bpb-profile-panel {
+    box-sizing: border-box;
+    margin: 10px 0;
+    padding: 14px 16px;
+    font: 13px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    color: #1c1c1a;
+    background: #f3f6f3;
+    border: 1px solid #d7e0d7;
+    border-left: 3px solid #2f6b3f;
+    border-radius: 10px;
+}
+.bpb-profile-body { display: grid; gap: 10px; }
+.bpb-profile-copy, .bpb-profile-progress-copy { display: grid; gap: 2px; }
+.bpb-profile-copy strong, .bpb-profile-progress-copy strong { font-size: 14px; }
+.bpb-profile-note { color: #66665f; font-size: 12px; }
+.bpb-profile-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.bpb-profile-btn {
+    font: inherit;
+    color: #1c1c1a;
+    background: #fff;
+    border: 1px solid #c8c8c2;
+    border-radius: 7px;
+    padding: 5px 12px;
+    cursor: pointer;
+}
+.bpb-profile-btn:hover { border-color: #2f6b3f; color: #2f6b3f; }
+.bpb-profile-btn:focus-visible { outline: 2px solid #2f6b3f; outline-offset: 2px; }
+.bpb-profile-primary { color: #fff; background: #2f6b3f; border-color: #2f6b3f; font-weight: 600; }
+.bpb-profile-primary:hover { color: #fff; filter: brightness(1.07); }
+.bpb-profile-progress { width: 100%; height: 9px; accent-color: #2f6b3f; }
+.bpb-profile-error, .bpb-profile-failures { color: #b42318; }
+.bpb-profile-failures { margin: 0; padding-left: 20px; }
+.bpb-profile-failures a { color: inherit; }
+
+@media (prefers-color-scheme: dark) {
+    .bpb-profile-panel { color: #e6e1d8; background: #23262a; border-color: #3a3f45; border-left-color: #3f8a54; }
+    .bpb-profile-note { color: #aaa49a; }
+    .bpb-profile-btn { color: #e6e1d8; background: #2b2f34; border-color: #4a5058; }
+    .bpb-profile-btn:hover { border-color: #7ac78d; color: #7ac78d; }
+    .bpb-profile-primary, .bpb-profile-primary:hover { color: #fff; background: #3f8a54; border-color: #3f8a54; }
+    .bpb-profile-error, .bpb-profile-failures { color: #f2a099; }
+}
+:root[data-bpb-theme="dark"] .bpb-profile-panel { color: #e6e1d8; background: #23262a; border-color: #3a3f45; border-left-color: #3f8a54; }
+:root[data-bpb-theme="dark"] .bpb-profile-note { color: #aaa49a; }
+:root[data-bpb-theme="dark"] .bpb-profile-btn { color: #e6e1d8; background: #2b2f34; border-color: #4a5058; }
+:root[data-bpb-theme="dark"] .bpb-profile-btn:hover { border-color: #7ac78d; color: #7ac78d; }
+:root[data-bpb-theme="dark"] .bpb-profile-primary,
+:root[data-bpb-theme="dark"] .bpb-profile-primary:hover { color: #fff; background: #3f8a54; border-color: #3f8a54; }
+:root[data-bpb-theme="dark"] .bpb-profile-error,
+:root[data-bpb-theme="dark"] .bpb-profile-failures { color: #f2a099; }
+:root[data-bpb-theme="light"] .bpb-profile-panel { color: #1c1c1a; background: #f3f6f3; border-color: #d7e0d7; border-left-color: #2f6b3f; }
+:root[data-bpb-theme="light"] .bpb-profile-note { color: #66665f; }
+:root[data-bpb-theme="light"] .bpb-profile-btn { color: #1c1c1a; background: #fff; border-color: #c8c8c2; }
+:root[data-bpb-theme="light"] .bpb-profile-primary { color: #fff; background: #2f6b3f; border-color: #2f6b3f; }
+:root[data-bpb-theme="light"] .bpb-profile-error,
+:root[data-bpb-theme="light"] .bpb-profile-failures { color: #b42318; }

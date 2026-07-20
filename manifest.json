@@ -59,6 +59,22 @@
     },
     {
       "matches": [
+        "https://www.peakbagger.com/climber/ClimbListC.aspx*",
+        "https://www.peakbagger.com/climber/climblistc.aspx*",
+        "https://peakbagger.com/climber/ClimbListC.aspx*",
+        "https://peakbagger.com/climber/climblistc.aspx*"
+      ],
+      "css": [
+        "css/profile-backup.css"
+      ],
+      "js": [
+        "content/profile-backup.js"
+      ],
+      "run_at": "document_end",
+      "all_frames": false
+    },
+    {
+      "matches": [
         "https://*.peakbagger.com/*"
       ],
       "js": [

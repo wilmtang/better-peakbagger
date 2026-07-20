@@ -176,6 +176,16 @@ test('every manifest and page bundle reference is a declared build output', () =
     }
 });
 
+test('full-profile backup is isolated to ClimbListC with its own bundled surface', () => {
+    const script = manifest.content_scripts.find(entry => entry.js?.includes('content/profile-backup.js'));
+    assert.ok(script);
+    assert.deepEqual(script.js, ['content/profile-backup.js']);
+    assert.deepEqual(script.css, ['css/profile-backup.css']);
+    assert.ok(script.matches.every(match => /climblistc\.aspx/i.test(match)));
+    const entry = ENTRIES.find(candidate => candidate.out === 'content/profile-backup.js');
+    assert.deepEqual(entry.sources, ['profile-backup-core.js', 'ascent-snapshot.js', 'report-markup.js', 'profile-backup.js']);
+});
+
 // The MV3 service worker resolves its dependencies through the bundle, not
 // importScripts. Boot the bundled worker and require that it comes up with its
 // coordinator wired and its message listener registered.
