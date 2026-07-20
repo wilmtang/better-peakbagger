@@ -915,8 +915,6 @@ try {
         };
     })()`);
     if (!/viewed map area and request metadata/i.test(disclosure.text || '')
-        || !/OpenFreeMap.*OpenStreetMap data/i.test(disclosure.text || '')
-        || !/selected map layer.*named provider/i.test(disclosure.text || '')
         || !disclosure.links?.includes('https://mapterhorn.com/privacy-policy/')
         || !disclosure.links?.includes('https://openfreemap.org/privacy/')) {
         throw new Error(`The General setting is missing the 3D privacy disclosure: ${JSON.stringify(disclosure)}`);

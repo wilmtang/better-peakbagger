@@ -198,12 +198,13 @@ atomic, and the next run diffs the list against `ascents/*-a<aid>` folder leaves
 that a browser accepts the real manifest, execution worlds, separately loaded
 script order, or the service-worker lifecycle.
 
-`npm run terrain:verify` renders the real MapLibre frame on the GPU, but its
-showcases stub storage and the bridge protocol and intercept Mapterhorn requests
-with a synthetic CORS-enabled DEM. It does not exercise the live terrain service.
-`npm run verify:extension` is the only check that loads the real unpacked `dist/`;
-run it after changing the manifest, build composition, execution worlds, worker,
-or content-script startup dependencies.
+`npm run terrain:verify` and `npm run terrain:verify:firefox` render the real MapLibre
+frame on a reported hardware GPU, but their showcases stub storage and the
+bridge protocol and intercept Mapterhorn requests with a synthetic CORS-enabled
+DEM. They do not exercise the live terrain service. `npm run verify:browsers`
+loads the real Chrome and derived Firefox manifests; run it after changing the
+manifest, build composition, execution worlds, worker, or content-script startup
+dependencies. Release CI runs the same gates against both minified packages.
 
 Live Garmin, Strava, and Peakbagger DOM/export behavior still requires minimal,
 read-only manual verification before release. See [development.md](development.md)

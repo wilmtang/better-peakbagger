@@ -1,7 +1,15 @@
 # Cross-browser extension verification: execution plan
 
-Status: investigated 2026-07-19; implementation plan agreed in conversation,
-not yet implemented.
+Status: implemented 2026-07-19. Chrome and Firefox runtime/package gates are
+authoritative in CI and release CI. Firefox terrain is a GPU-backed local
+release check until a hosted runner can report a representative renderer;
+native toolbar/browser-chrome and live-provider behavior remain manual by
+design.
+
+The coverage inventory below records the pre-implementation baseline and the
+agreed sequence. The resulting command matrix is documented in
+[`docs/development.md`](../development.md), and the remaining native/live check
+is in [`docs/releasing.md`](../releasing.md).
 
 Better Peakbagger has broad deterministic coverage in Node and jsdom, plus a
 substantial real-extension verifier in Chrome for Testing. The remaining risk
@@ -15,7 +23,7 @@ attachment, and extension-page behavior.
 This plan adds a small cross-browser layer around those boundaries while
 preserving the fast Node suite as the source of exhaustive edge-case coverage.
 
-## 1. Current coverage and confirmed gaps
+## 1. Baseline coverage and confirmed gaps
 
 ### `npm test`
 
@@ -111,6 +119,8 @@ Introduce explicit commands:
 | `npm run verify:firefox` | New Firefox real-extension smoke |
 | `npm run verify:browsers` | Build once, then run the Chrome and Firefox gates |
 | `npm run verify:extension` | Compatibility alias for `verify:chrome` until callers migrate |
+| `npm run verify:packages -- CHROME.zip FIREFOX.zip` | Run the same gates against the minified store packages |
+| `npm run terrain:verify:firefox` | Focused Firefox GPU and interaction check on representative hardware |
 
 Target gates after stabilization:
 
@@ -355,6 +365,15 @@ The plan is complete when:
 
 - [`scripts/verify-extension.mjs`](../../scripts/verify-extension.mjs) — real
   Chrome fixture server, isolated profile, manifest load, and assertions.
+- [`scripts/verify-firefox-extension.mjs`](../../scripts/verify-firefox-extension.mjs)
+  — real Firefox manifest, background, surface, storage, and draft-handoff
+  assertions.
+- [`scripts/browser-verification-fixtures.mjs`](../../scripts/browser-verification-fixtures.mjs)
+  — shared local HTTPS fixtures, narrow synthetic state, polling, and cleanup.
+- [`scripts/verify-packaged-extensions.mjs`](../../scripts/verify-packaged-extensions.mjs)
+  — execution gate for the exact minified Chrome and Firefox archives.
+- [`scripts/verify-firefox-terrain.mjs`](../../scripts/verify-firefox-terrain.mjs)
+  — hardware-renderer and Firefox pointer/resize terrain checks.
 - [`scripts/run-firefox.mjs`](../../scripts/run-firefox.mjs) — creation and
   cleanup of the derived Firefox source tree.
 - [`scripts/build-firefox-package.mjs`](../../scripts/build-firefox-package.mjs)

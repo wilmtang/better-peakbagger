@@ -202,7 +202,7 @@ root.
 npm test
 npm run lint:js
 npm run lint
-npm run verify:extension
+npm run verify:browsers
 ```
 
 ## License

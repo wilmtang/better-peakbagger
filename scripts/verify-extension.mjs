@@ -20,18 +20,25 @@
 //
 // Hidden: no window is shown and the user's browser/profile is never touched.
 
-import { execFile } from 'node:child_process';
 import { mkdtemp, rm, readFile } from 'node:fs/promises';
-import { createServer } from 'node:https';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { promisify } from 'node:util';
+
+import {
+    createBrowserFixtureServer,
+    createFailureCollector,
+    createSyntheticCaptureJob,
+    storeUrls,
+    verificationViewport,
+    waitForCondition
+} from './browser-verification-fixtures.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 // The unpacked extension is the built bundle tree, not the source root.
-const dist = path.join(root, 'dist');
-const execFileAsync = promisify(execFile);
+const dist = process.env.BPB_VERIFY_EXTENSION_SOURCE
+    ? path.resolve(process.env.BPB_VERIFY_EXTENSION_SOURCE)
+    : path.join(root, 'dist');
 
 let chromium;
 try {
@@ -41,106 +48,12 @@ try {
     process.exit(1);
 }
 
-const gpx = `<?xml version="1.0"?><gpx version="1.1"><trk><name>Synthetic</name><trkseg>${
-    Array.from({ length: 60 }, (_, i) =>
-        `<trkpt lat="${(46.85 + i * 0.0006).toFixed(6)}" lon="${(-121.76 + i * 0.0004).toFixed(6)}">`
-        + `<ele>${1500 + i * 25}</ele><time>2026-07-01T13:${String(i % 60).padStart(2, '0')}:00Z</time></trkpt>`
-    ).join('')}</trkseg></trk></gpx>`;
-
-const ascentHtml = `<!doctype html><html><head><title>Ascent</title></head><body>
-<table><tr><td>Elevation:</td><td>10,781 ft</td></tr></table>
-<iframe src="/map/MasterMap.aspx?t=P&d=2296&c=900001&hj=300" width="450" height="450"></iframe>
-<a href="/track.gpx">Download this GPS track</a>
-<a href="/map/BigMap.aspx?t=A">Full Screen Map</a>
-</body></html>`;
-
-const bigMapHtml = `<!doctype html><html><head><title>Full Screen Map</title></head><body>
-<iframe id="if" src="/map/MasterMap.aspx?t=A&d=2296&c=900001&hj=300"></iframe>
-</body></html>`;
-
-const peakHtml = `<!doctype html><html><head><title>Mount Shuksan</title></head><body>
-<h1>Mount Shuksan, Washington</h1>
-<table style="width:760px"><tr><td style="text-align:center">
-<b>Dynamic Map</b><br>
-<iframe id="Gmap" src="/map/MasterMap.aspx?cy=48.83115&cx=-121.60214&z=14&t=P&d=2829&c=0&hj=300"
-  width="100%" height="425px"></iframe><br>
-<img src="/image/MainPeakPinkCircle.gif">&nbsp;Mount Shuksan&nbsp;(Unclimbed!)<br>
-<a href="/map/BigMap.aspx?cy=48.83115&cx=-121.60214&z=14&l=L_CT|L_OT&t=P&d=2829&c=0&hj=300">
-  Click Here for a Full Screen Map
-</a>
-</td></tr></table>
-</body></html>`;
-
-// Enough of Peakbagger's frame for the analyzer's overlay and layer sync to
-// bind. Its Leaflet globals are page-owned, exactly as on the live site.
-const masterMapHtml = `<!doctype html><html><body>
-<select id="selmap"><option value="L_CT">Topo</option></select>
-<div class="leaflet-control-zoom" style="position:absolute;bottom:10px;right:10px;width:30px;height:60px"></div>
-<script>
-  class Polyline {
-    constructor(latLngs = [], options = {}) { this.latLngs = latLngs; this.options = options; this.events = {}; }
-    addTo(map) { map.addLayer(this); return this; }
-    bringToBack() { return this; }
-    getLatLngs() { return this.latLngs; }
-    setStyle(style) { Object.assign(this.options, style); return this; }
-    on(type, handler) { (this.events[type] ||= []).push(handler); return this; }
-  }
-  class Polygon extends Polyline {}
-  class MapStub {
-    constructor(layers = []) { this.layers = []; this.events = {}; layers.forEach(layer => this.addLayer(layer)); }
-    addLayer(layer) { layer._map = this; this.layers.push(layer); for (const fn of this.events.layeradd || []) fn({ layer }); return this; }
-    eachLayer(callback) { this.layers.slice().forEach(callback); }
-    invalidateSize() {}
-    on(type, handler) { (this.events[type] ||= []).push(handler); return this; }
-    removeLayer(layer) { this.layers = this.layers.filter(candidate => candidate !== layer); layer._map = null; }
-  }
-  window.L = {
-    Polyline, Polygon, Map: MapStub,
-    polyline: (latLngs, options) => new Polyline(latLngs, options),
-    circleMarker: (latLng, options) => new Polyline([latLng], options)
-  };
-  window.mapsPlaceholder = new MapStub([
-    new Polyline([{ lat: 46.85, lng: -121.76 }, { lat: 46.87, lng: -121.74 }], { color: '#d9483b', weight: 3 })
-  ]);
-</script></body></html>`;
-
-// The ascent editor is exercised against the real captured form, so the
-// content script meets Peakbagger's actual DOM (JournalText, hints row, the
-// Save/Preview controls) rather than a hand-written stand-in.
-const ascentEditHtml = await readFile(
-    path.join(root, 'test', 'fixtures', 'pages', 'climber-ascentedit.html'), 'utf8');
-
 const profile = await mkdtemp(path.join(os.tmpdir(), 'better-peakbagger-extension-'));
-const tlsKeyPath = path.join(profile, 'fixture-key.pem');
-const tlsCertPath = path.join(profile, 'fixture-cert.pem');
-try {
-    await execFileAsync('openssl', [
-        'req', '-x509', '-newkey', 'rsa:2048', '-nodes',
-        '-subj', '/CN=www.peakbagger.com', '-days', '1',
-        '-keyout', tlsKeyPath, '-out', tlsCertPath,
-    ]);
-} catch (error) {
-    await rm(profile, { recursive: true, force: true });
-    throw new Error(`Could not create the isolated HTTPS fixture certificate: ${error.message}`);
-}
-const [tlsKey, tlsCert] = await Promise.all([readFile(tlsKeyPath), readFile(tlsCertPath)]);
+const fixture = await createBrowserFixtureServer({ temporaryRoot: profile });
+const port = fixture.port;
 
-const server = createServer({ key: tlsKey, cert: tlsCert }, (request, response) => {
-    const url = new URL(request.url, 'https://x');
-    const send = (type, body) => { response.writeHead(200, { 'content-type': type }); response.end(body); };
-    if (/ascentedit\.aspx/i.test(url.pathname)) return send('text/html; charset=utf-8', ascentEditHtml);
-    if (/ascent\.aspx/i.test(url.pathname)) return send('text/html; charset=utf-8', ascentHtml);
-    if (/peak\.aspx/i.test(url.pathname)) return send('text/html; charset=utf-8', peakHtml);
-    if (/bigmap\.aspx/i.test(url.pathname)) return send('text/html; charset=utf-8', bigMapHtml);
-    if (/mastermap\.aspx/i.test(url.pathname)) return send('text/html; charset=utf-8', masterMapHtml);
-    if (/track\.gpx/i.test(url.pathname)) return send('application/gpx+xml', gpx);
-    response.writeHead(404); response.end('not found');
-});
-await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
-const port = server.address().port;
-
-const failures = [];
-const check = (ok, message) => { if (!ok) failures.push(message); };
+const failureCollector = createFailureCollector();
+const { failures, check } = failureCollector;
 
 let context;
 try {
@@ -148,7 +61,7 @@ try {
         channel: 'chromium',
         headless: true,
         ignoreHTTPSErrors: true,
-        viewport: { width: 1000, height: 760 },
+        viewport: verificationViewport,
         args: [
             `--disable-extensions-except=${dist}`,
             `--load-extension=${dist}`,
@@ -174,7 +87,70 @@ try {
                 .then(value => ({ ok: true, value: value ?? null }))
                 .catch(error => ({ ok: false, error: String(error) })));
         check(reply.ok, `the worker never answered CAPTURE_STATUS (capture would be dead): ${reply.error || ''}`);
+
+        const storageProbe = await optionsPage.evaluate(async () => {
+            const keys = {
+                sync: 'bpbBrowserVerifySync',
+                local: 'bpbBrowserVerifyLocal',
+                session: 'bpbBrowserVerifySession'
+            };
+            const changed = new Promise(resolve => {
+                const listener = (changes, area) => {
+                    if (area === 'local' && changes[keys.local]?.newValue === 'local') {
+                        chrome.storage.onChanged.removeListener(listener);
+                        resolve(true);
+                    }
+                };
+                chrome.storage.onChanged.addListener(listener);
+            });
+            await Promise.all([
+                chrome.storage.sync.set({ [keys.sync]: 'sync' }),
+                chrome.storage.local.set({ [keys.local]: 'local' }),
+                chrome.storage.session.set({ [keys.session]: 'session' })
+            ]);
+            const [sync, local, session, onChanged] = await Promise.all([
+                chrome.storage.sync.get(keys.sync),
+                chrome.storage.local.get(keys.local),
+                chrome.storage.session.get(keys.session),
+                changed
+            ]);
+            await Promise.all([
+                chrome.storage.sync.remove(keys.sync),
+                chrome.storage.local.remove(keys.local),
+                chrome.storage.session.remove(keys.session)
+            ]);
+            return {
+                origin: location.origin,
+                version: chrome.runtime.getManifest().version,
+                optionsOpenInTab: chrome.runtime.getManifest().options_ui?.open_in_tab,
+                renderedVersion: document.getElementById('about-version')?.textContent,
+                values: [sync[keys.sync], local[keys.local], session[keys.session]],
+                onChanged
+            };
+        });
+        check(storageProbe.origin.startsWith('chrome-extension://')
+            && storageProbe.renderedVersion === `Version ${storageProbe.version}`
+            && storageProbe.optionsOpenInTab === true,
+        `the Chrome options origin or manifest version was wrong: ${JSON.stringify(storageProbe)}`);
+        check(storageProbe.onChanged && storageProbe.values.join(',') === 'sync,local,session',
+            `Chrome storage areas or storage.onChanged did not round-trip: ${JSON.stringify(storageProbe)}`);
+        await optionsPage.locator('#units').selectOption('metric');
+        const optionPersisted = await optionsPage.waitForFunction(async () =>
+            (await chrome.storage.sync.get('bpbSettings')).bpbSettings?.units === 'metric',
+        null, { timeout: 5000 }).then(() => true).catch(() => false);
+        check(optionPersisted, 'the Chrome options page did not persist a real setting change');
+        await optionsPage.locator('#units').selectOption('auto');
         await optionsPage.close();
+
+        const popupPage = await context.newPage();
+        await popupPage.goto(`chrome-extension://${extensionId}/popup/popup.html`);
+        const popupState = await popupPage.waitForFunction(() => {
+            const text = document.getElementById('state')?.textContent || '';
+            return /Open an activity to begin/.test(text) ? text : false;
+        }, null, { timeout: 5000 }).then(handle => handle.jsonValue()).catch(() => null);
+        check(/Garmin Connect or Strava/.test(popupState || ''),
+            `the Chrome popup did not query its real active tab and render the worker response: ${JSON.stringify(popupState)}`);
+        await popupPage.close();
     }
 
     const openAscent = async () => {
@@ -368,6 +344,38 @@ try {
         await peakPage.close();
     }
 
+    // --- Ascent-list filter and in-place sort -------------------------------
+    {
+        const filterPage = await context.newPage();
+        await filterPage.goto(
+            `https://www.peakbagger.com:${port}/climber/PeakAscents.aspx?pid=1039`,
+            { waitUntil: 'load' }
+        );
+        const mounted = await filterPage.locator('#pbaf-bar').waitFor({ state: 'visible', timeout: 10000 })
+            .then(() => true).catch(() => false);
+        check(mounted, 'the Chrome ascent filter never mounted');
+        if (mounted) {
+            const before = await filterPage.evaluate(() => ({
+                visible: [...document.querySelectorAll('table.gray tr')]
+                    .filter(row => row.cells.length > 1 && row.cells[0].tagName === 'TD'
+                        && getComputedStyle(row).display !== 'none').length,
+                first: document.querySelector('table.gray tr td')?.textContent.trim(),
+                controls: document.querySelectorAll('.pbaf-table-sort').length
+            }));
+            await filterPage.locator('.pbaf-reset').click();
+            await filterPage.locator('.pbaf-table-sort').first().click();
+            const after = await filterPage.evaluate(() => ({
+                visible: [...document.querySelectorAll('table.gray tr')]
+                    .filter(row => row.cells.length > 1 && row.cells[0].tagName === 'TD'
+                        && getComputedStyle(row).display !== 'none').length,
+                first: document.querySelector('table.gray tr td')?.textContent.trim()
+            }));
+            check(before.controls > 1 && after.visible > before.visible && after.first !== before.first,
+                `the Chrome ascent filter did not reveal rows and sort in place: ${JSON.stringify({ before, after })}`);
+        }
+        await filterPage.close();
+    }
+
     // --- Trip-report editor on the real ascent form --------------------------
     // Real typing, real keyboard shortcuts, and real input rules against the
     // TipTap surface and the CodeMirror markdown pane, which jsdom cannot
@@ -375,13 +383,19 @@ try {
     {
         const modifier = process.platform === 'darwin' ? 'Meta' : 'Control';
         const editorTheme = process.env.BPB_VERIFY_EDITOR_THEME;
-        if (extensionId && ['light', 'dark'].includes(editorTheme)) {
+        if (extensionId) {
             const optionsPage = await context.newPage();
             await optionsPage.goto(`chrome-extension://${extensionId}/options/options.html`);
             await optionsPage.evaluate(async theme => {
                 const current = (await chrome.storage.sync.get('bpbSettings')).bpbSettings || {};
-                await chrome.storage.sync.set({ bpbSettings: { ...current, theme } });
-            }, editorTheme);
+                await chrome.storage.sync.set({
+                    bpbSettings: {
+                        ...current,
+                        addReportCredit: true,
+                        ...(['light', 'dark'].includes(theme) && { theme })
+                    }
+                });
+            }, editorTheme || null);
             await optionsPage.close();
         }
         const editorUrl = `https://www.peakbagger.com:${port}/climber/ascentedit.aspx?cid=900001`;
@@ -395,6 +409,27 @@ try {
         check(mounted, `the trip-report editor never mounted on the real form (errors=${JSON.stringify(editorErrors)})`);
 
         if (mounted) {
+            const creditState = await editorPage.waitForFunction(() => {
+                const link = document.querySelector('#bpb-report-editor a[href*="better-peakbagger"]');
+                const textarea = document.getElementById('JournalText');
+                return link && textarea?.value.includes(link.href) ? {
+                    href: link.href,
+                    serialized: textarea.value
+                } : false;
+            }, null, { timeout: 5000 }).then(handle => handle.jsonValue()).catch(() => null);
+            check(creditState?.href === storeUrls.chrome
+                && creditState.serialized.includes(storeUrls.chrome),
+            `the Chrome report credit did not render and serialize its store URL: ${JSON.stringify(creditState)}`);
+            // The remainder of the deep editor verifier intentionally starts
+            // from the fixture's empty report.
+            await editorPage.locator('#bpb-report-editor').getByRole('button', {
+                name: 'Plain', exact: true
+            }).click();
+            await editorPage.locator('#JournalText').fill('');
+            await editorPage.locator('#bpb-report-editor').getByRole('button', {
+                name: 'Rich text', exact: true
+            }).click();
+
             const nativeHidden = await editorPage.evaluate(() => {
                 const textarea = document.getElementById('JournalText');
                 return getComputedStyle(textarea).display === 'none' && !!textarea.form;
@@ -1113,9 +1148,121 @@ try {
         }
         await editorPage.close();
     }
+
+    // --- Real draft-tab handoff --------------------------------------------
+    // Seed only the private post-capture state. The worker still owns tab
+    // creation/grouping, identity registration, sender validation, file
+    // assignment, and exactly-once Preview. The native toolbar activeTab grant
+    // remains a manual release boundary.
+    if (extensionId) {
+        const sourcePage = await context.newPage();
+        const sourceUrl = `https://www.peakbagger.com:${port}/climber/ascent.aspx?aid=handoff-source`;
+        await sourcePage.goto(sourceUrl, { waitUntil: 'load' });
+        const controlPage = await context.newPage();
+        await controlPage.goto(`chrome-extension://${extensionId}/options/options.html`);
+        const seeded = await controlPage.evaluate(async ({ sourceUrl }) => {
+            const [sourceTab] = (await chrome.tabs.query({})).filter(tab => tab.url === sourceUrl);
+            if (!sourceTab) return { error: 'source tab not found' };
+            return { sourceTabId: sourceTab.id };
+        }, { sourceUrl });
+        check(Number.isInteger(seeded.sourceTabId),
+            `the Chrome draft source tab identity was unavailable: ${JSON.stringify(seeded)}`);
+        if (Number.isInteger(seeded.sourceTabId)) {
+            const job = createSyntheticCaptureJob(seeded.sourceTabId);
+            const opened = await controlPage.evaluate(async ({ sourceTabId, job }) => {
+                await chrome.storage.session.set({
+                    bpbCaptureJobs: { [sourceTabId]: job },
+                    bpbDraftTabs: {}
+                });
+                const reply = await chrome.runtime.sendMessage({
+                    type: 'CAPTURE_OPEN_DRAFTS',
+                    tabId: sourceTabId,
+                    selectedIds: [2829]
+                });
+                if (!reply?.tabIds?.length) return { reply };
+                const tab = await chrome.tabs.get(reply.tabIds[0]);
+                return { reply, tab };
+            }, { sourceTabId: seeded.sourceTabId, job });
+            const draftTabId = opened.reply?.tabIds?.[0];
+            check(Number.isInteger(draftTabId)
+                && /peakbagger\.com\/climber\/ascentedit\.aspx\?pid=2829&cid=900001/i.test(
+                    opened.tab?.pendingUrl || opened.tab?.url || ''),
+            `the Chrome worker did not create an identity-bound draft tab: ${JSON.stringify(opened)}`);
+            check(opened.reply?.groupWarning || Number(opened.tab?.groupId) >= 0,
+                `the Chrome draft tab was neither grouped nor reported honestly: ${JSON.stringify(opened)}`);
+
+            if (Number.isInteger(draftTabId)) {
+                const wrongUrl = `https://www.peakbagger.com:${port}/climber/ascentedit.aspx?pid=999&cid=900001`;
+                await controlPage.evaluate(({ draftTabId, wrongUrl }) =>
+                    chrome.tabs.update(draftTabId, { url: wrongUrl }), { draftTabId, wrongUrl });
+                const draftPage = await waitForCondition(() =>
+                    context.pages().find(page => page.url() === wrongUrl), {
+                    description: 'the Chrome draft tab to reach the wrong-identity fixture'
+                });
+                const mismatch = await draftPage.locator('#bpb-draft-banner').waitFor({
+                    state: 'visible', timeout: 10000
+                }).then(() => draftPage.locator('#bpb-draft-banner').textContent()).catch(() => null);
+                check(/does not match its prepared ascent draft/.test(mismatch || '')
+                    && fixture.requests.previewPosts === 0,
+                `the Chrome worker accepted the wrong peak identity: ${JSON.stringify({ mismatch, requests: fixture.requests })}`);
+
+                const correctUrl = `https://www.peakbagger.com:${port}/climber/ascentedit.aspx?pid=2829&cid=900001`;
+                await draftPage.goto(correctUrl, { waitUntil: 'load' });
+                try {
+                    await waitForCondition(() => fixture.requests.previewPosts === 1, {
+                        description: 'the Chrome draft GPS Preview POST',
+                        timeoutMs: 15_000
+                    });
+                } catch (error) {
+                    const pageState = await draftPage.evaluate(() => ({
+                        url: location.href,
+                        banner: document.getElementById('bpb-draft-banner')?.textContent || null,
+                        date: document.getElementById('DateText')?.value || null,
+                        files: document.getElementById('GPXUpload')?.files?.length ?? null,
+                        preview: document.getElementById('GPXPreview')?.value || null
+                    })).catch(readError => ({ error: String(readError) }));
+                    const privateState = await controlPage.evaluate(async ({ sourceTabId, draftTabId }) => {
+                        const values = await chrome.storage.session.get(['bpbCaptureJobs', 'bpbDraftTabs']);
+                        return {
+                            job: values.bpbCaptureJobs?.[sourceTabId] || null,
+                            draft: values.bpbDraftTabs?.[draftTabId] || null
+                        };
+                    }, { sourceTabId: seeded.sourceTabId, draftTabId });
+                    throw new Error(`Chrome draft Preview did not submit: ${JSON.stringify({
+                        requests: fixture.requests, pageState, privateState
+                    })}`, { cause: error });
+                }
+                await draftPage.waitForFunction(() =>
+                    /Preview is ready/.test(document.getElementById('bpb-draft-banner')?.textContent || ''),
+                null, { timeout: 10000 });
+                check(fixture.requests.previewPosts === 1
+                    && fixture.requests.savePosts === 0
+                    && fixture.requests.lastPreview?.attachedGpx
+                    && fixture.requests.lastPreview?.dateFilled
+                    && fixture.requests.lastPreview?.suffixBlank,
+                `the Chrome draft handoff did not attach/fill/Preview exactly once: ${JSON.stringify(fixture.requests)}`);
+
+                const privateState = await controlPage.evaluate(async ({ sourceTabId, draftTabId }) => {
+                    const values = await chrome.storage.session.get(['bpbCaptureJobs', 'bpbDraftTabs']);
+                    return {
+                        job: values.bpbCaptureJobs?.[sourceTabId] || null,
+                        draft: values.bpbDraftTabs?.[draftTabId] || null
+                    };
+                }, { sourceTabId: seeded.sourceTabId, draftTabId });
+                check(privateState.job?.phase === 'previewed'
+                    && privateState.job?.uploadGpx === null
+                    && privateState.draft?.complete === true
+                    && privateState.draft?.previewStarted === true,
+                `the Chrome worker did not complete the exactly-once handoff: ${JSON.stringify(privateState)}`);
+                await draftPage.close();
+            }
+        }
+        await controlPage.close();
+        await sourcePage.close();
+    }
 } finally {
     if (context) await context.close();
-    server.close();
+    await fixture.close();
     await rm(profile, { recursive: true, force: true });
 }
 
@@ -1126,6 +1273,7 @@ if (failures.length) {
 }
 console.log('Real-extension verification passed (hidden Chrome for Testing, new headless):');
 console.log('  - the MV3 service worker boots and answers messages (capture is alive)');
+console.log('  - sync/local/session storage, storage.onChanged, options persistence, and popup status passed');
 console.log('  - settings.js initialises in the isolated world and the bridge answers');
 console.log('  - the GPX analyzer renders stats from the real manifest load order');
 console.log('  - the 3D toggle stays visible when disabled and opens the provider/privacy confirmation');
@@ -1133,6 +1281,10 @@ console.log('  - trusted confirmation persists the feature gate without contacti
 console.log('  - the Full Screen BigMap receives settings and shows an enabled 3D toggle');
 console.log('  - the Peak Dynamic Map preserves its native frame and shows an enabled 3D toggle');
 console.log('  - clicking Peak 3D creates the isolated frame with a route-free summit focus');
+console.log('  - the PeakAscents filter mounts, reveals rows, and sorts in place');
+console.log('  - the opt-in report credit renders and serializes the Chrome Web Store URL');
+console.log('  - a real grouped draft tab rejects a wrong identity, attaches GPX, fills fields,');
+console.log('    submits Preview exactly once, and never submits Save');
 console.log('  - the trip-report editor mounts on the captured ascent form; real typing,');
 console.log('    Ctrl/Cmd+B, and the "1. " input rule sync bracket markup into JournalText');
 console.log('    with live toolbar states; selected Rich images/videos and YouTube players resize proportionally by');

@@ -441,8 +441,9 @@ shows the exact bracket source.
   the mount's test handle.
 - `test/manifest-capture.test.mjs` pins the vendored parser before the converter
   and editor in the real content-script list.
-- `npm run verify:extension` loads the unpacked extension in hidden Chrome for
-  Testing and exercises real typing, Ctrl/Cmd+B, the `1. ` input rule, live
+- `npm run verify:browsers` loads the unpacked extension in hidden Chrome and
+  Firefox and exercises each store-specific credit, real typing, Ctrl/Cmd+B,
+  the `1. ` input rule in Chrome, live
   toolbar states, the CodeMirror source pane with its live split preview,
   hex-color preservation across Rich and Markdown, toolbar table insertion and
   growth, and draft restoration against the masked ascent form fixture.

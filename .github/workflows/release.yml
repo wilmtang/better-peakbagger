@@ -13,7 +13,7 @@ jobs:
   verify:
     name: Verify release
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     permissions:
       contents: read
     steps:
@@ -53,6 +53,25 @@ jobs:
           firefox_archive="${chrome_archive%.zip}-firefox.zip"
           npm run release:verify-archive -- "$chrome_archive" chrome
           npm run release:verify-archive -- "$firefox_archive" firefox
+
+      - name: Install Chrome for Testing
+        run: npx playwright install --with-deps chromium
+
+      - name: Install Firefox
+        # browser-actions/setup-firefox v1.7.2
+        uses: browser-actions/setup-firefox@8058e910ee76e74bb76b7b2e5b61a55b3a65ed78
+        with:
+          firefox-version: latest
+
+      - name: Install geckodriver
+        # browser-actions/setup-geckodriver release for 6e97fca80859e868aed49bd960f7b73520a077f5
+        uses: browser-actions/setup-geckodriver@eb8b0670366f719ca31703766a8cb7e3ea2c56ed
+
+      - name: Execute store packages in both browsers
+        run: |
+          chrome_archive="web-ext-artifacts/better_peakbagger-${GITHUB_REF_NAME#v}.zip"
+          firefox_archive="${chrome_archive%.zip}-firefox.zip"
+          npm run verify:packages -- "$chrome_archive" "$firefox_archive"
 
       - name: Preserve verified store packages
         # actions/upload-artifact v7.0.1

@@ -26,10 +26,17 @@
     "pretest": "npm run build",
     "showcase:render": "npm run build && node scripts/render-showcase.mjs",
     "terrain:verify": "npm run build && node scripts/verify-terrain-visual.mjs",
+    "terrain:verify:firefox": "npm run build && node scripts/verify-firefox-terrain.mjs",
     "start:firefox": "node scripts/run-development.mjs firefox",
     "start:chromium": "node scripts/run-development.mjs chromium",
     "test": "node --test \"test/**/*.test.mjs\"",
-    "verify:extension": "npm run build && node scripts/verify-extension.mjs"
+    "verify:chrome": "npm run build && npm run verify:chrome:built",
+    "verify:chrome:built": "node scripts/verify-extension.mjs",
+    "verify:firefox": "npm run build && npm run verify:firefox:built",
+    "verify:firefox:built": "node scripts/verify-firefox-extension.mjs",
+    "verify:browsers": "npm run build && npm run verify:chrome:built && npm run verify:firefox:built",
+    "verify:packages": "node scripts/verify-packaged-extensions.mjs",
+    "verify:extension": "npm run verify:chrome"
   },
   "devDependencies": {
     "@codemirror/commands": "^6.10.4",
@@ -57,6 +64,7 @@
     "maplibre-gl": "^5.24.0",
     "marked": "^18.0.6",
     "playwright": "^1.61.1",
+    "selenium-webdriver": "^4.46.0",
     "tz-lookup": "^6.1.25",
     "web-ext": "^10.4.0"
   },
