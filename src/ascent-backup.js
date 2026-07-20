@@ -11,6 +11,7 @@
 // read-only toward Peakbagger and never touches a Save control.
 
 import { ascentPage as AscentPage } from './ascent-page.js';
+import { githubError as GithubError } from './github-error.js';
 
 (() => {
     'use strict';
@@ -18,23 +19,9 @@ import { ascentPage as AscentPage } from './ascent-page.js';
     const ext = globalThis.browser || globalThis.chrome;
     if (!ext || !ext.runtime) return;
 
-    const ERROR_TEXT = {
-        auth: 'The GitHub authorization is no longer valid. Reconnect in the extension options.',
-        'no-access': 'The backup repository is no longer reachable. Check it in the extension options.',
-        'not-connected': 'Connect a GitHub repository in the extension options first.',
-        'no-repo': 'Choose a backup repository in the extension options first.',
-        archived: 'The backup repository is archived and read-only.',
-        'repo-conflict': 'The repository contains conflicting backup folders. Choose another in the extension options.',
-        'branch-protected': 'The repository’s branch protection rejected the commit.',
-        'branch-missing': 'The backup repository has no branch to commit to yet.',
-        'rate-limit': 'GitHub is rate-limiting requests. Try again in a few minutes.',
-        conflict: 'Another change landed first. Try backing up again.',
-        network: 'Could not reach GitHub. Check your connection and try again.',
-        'no-data': 'Could not read this ascent’s details to back up.',
-        disabled: 'GitHub backup is turned off.',
-        unknown: 'The backup did not complete. Try again.',
-    };
-    const errorText = code => ERROR_TEXT[code] || ERROR_TEXT.unknown;
+    const errorText = error => GithubError.message(error, {
+        fallback: 'The extension did not return an error description. Reload this ascent and try again.',
+    });
 
     const sendBg = message => new Promise(resolve => {
         try {
@@ -72,7 +59,7 @@ import { ascentPage as AscentPage } from './ascent-page.js';
     );
 
     const renderError = (info, error) => setBody(
-        el('span', { class: 'bpb-gh-label bpb-gh-err', text: errorText(error && error.code) }),
+        el('span', { class: 'bpb-gh-label bpb-gh-err', text: errorText(error) }),
         el('button', { type: 'button', class: 'bpb-gh-btn', text: 'Try again', onclick: () => runBackup(info) }),
     );
 

@@ -48,6 +48,28 @@ test('public or mismatched climber lists never show profile backup', async () =>
     assert.equal(dom.window.document.getElementById('bpb-profile-backup'), null);
 });
 
+test('profile preflight shows GitHub\'s specific failure detail', async () => {
+    const dom = await loadPage('climber-ascents.html', {
+        fixtures: PAGE_FIXTURES,
+        url: PAGE_URL,
+        bundles: ['content/profile-backup.js'],
+        prepare: dom => prepareRuntime(dom, message => {
+            if (message.type === 'GITHUB_BACKUP_STATUS') {
+                return { enabled: true, connected: true, repo: { fullName: 'me/backup' } };
+            }
+            if (message.type === 'GITHUB_BACKUP_PROFILE_STATUS') {
+                return { ok: false, error: { code: 'unknown', message: 'Repository service is temporarily unavailable.' } };
+            }
+            return null;
+        }),
+    });
+    await waitFor(dom, () => dom.window.document.getElementById('bpb-profile-backup'));
+    dom.window.document.querySelector('.bpb-profile-primary').click();
+    await waitFor(dom, () => /Repository service is temporarily unavailable/.test(
+        dom.window.document.getElementById('bpb-profile-backup').textContent));
+    assert.doesNotMatch(dom.window.document.getElementById('bpb-profile-backup').textContent, /something went wrong/i);
+});
+
 test('one missing ascent is fetched from its edit form and sent as a direct profile snapshot', async () => {
     const sent = [];
     const dom = await loadPage('climber-ascents.html', {

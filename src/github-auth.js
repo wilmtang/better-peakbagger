@@ -41,6 +41,7 @@
 
     const AUTH_ERROR_CODES = Object.freeze({
         NETWORK: 'network',
+        AUTH: 'auth',                       // a stored token was rejected (401)
         DEVICE_FLOW_DISABLED: 'device-flow-disabled',
         DENIED: 'denied',                 // the user rejected the authorization
         EXPIRED: 'expired',               // the user code lapsed before approval
@@ -174,8 +175,8 @@
     const API_ROOT = 'https://api.github.com';
 
     // A GET against the GitHub REST API with the user token. A dead token
-    // surfaces as EXPIRED so the UI prompts a reconnect; anything else is
-    // network/unknown. Discovery is best-effort read-only.
+    // surfaces as AUTH so it is not confused with an expired device code;
+    // anything else is network/unknown. Discovery is best-effort read-only.
     const apiGetResponse = async (fetch, token, path) => {
         const url = new URL(path, API_ROOT);
         if (url.origin !== API_ROOT) throw new GithubAuthError(AUTH_ERROR_CODES.UNKNOWN, 'GitHub returned an invalid pagination link.');
@@ -191,7 +192,7 @@
         } catch {
             throw new GithubAuthError(AUTH_ERROR_CODES.NETWORK, 'Could not reach GitHub.');
         }
-        if (res.status === 401) throw new GithubAuthError(AUTH_ERROR_CODES.EXPIRED, 'The GitHub authorization is no longer valid.');
+        if (res.status === 401) throw new GithubAuthError(AUTH_ERROR_CODES.AUTH, 'The GitHub authorization is no longer valid.');
         let text = '';
         try { text = await res.text(); } catch { text = ''; }
         let json = null;

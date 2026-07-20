@@ -8,6 +8,7 @@
 import { profileBackupCore as Core } from './profile-backup-core.js';
 import { ascentSnapshot as Snapshot } from './ascent-snapshot.js';
 import { reportMarkup as Markup } from './report-markup.js';
+import { githubError as GithubError } from './github-error.js';
 
 (() => {
     'use strict';
@@ -40,15 +41,9 @@ import { reportMarkup as Markup } from './report-markup.js';
     const button = (text, onclick, primary = false) => node('button', {
         type: 'button', class: `bpb-profile-btn${primary ? ' bpb-profile-primary' : ''}`, text, onclick,
     });
-    const messageFor = error => {
-        const code = error && error.code;
-        if (code === 'auth') return 'GitHub authorization expired. Reconnect in extension options.';
-        if (code === 'rate-limit') return 'GitHub is rate-limiting requests. Try again in a few minutes.';
-        if (code === 'no-access') return 'The backup repository is no longer reachable.';
-        if (code === 'repo-conflict') return 'The repository contains conflicting backup folders. Choose another in extension options.';
-        if (code === 'network') return 'Could not reach GitHub. Check your connection and try again.';
-        return (error && error.message) || 'The profile backup could not start.';
-    };
+    const messageFor = error => GithubError.message(error, {
+        fallback: 'The extension did not return an error description. Reload this page and try again.',
+    });
 
     const renderIdle = status => body(
         node('div', { class: 'bpb-profile-copy' }, [
@@ -205,9 +200,15 @@ import { reportMarkup as Markup } from './report-markup.js';
         return { kind: 'ok', data: { snapshot: built.snapshot, gpx } };
     };
 
-    const pushAscent = (item, data) => sendBg({
-        type: 'GITHUB_BACKUP_PROFILE_ASCENT', aid: item.aid, snapshot: data.snapshot, gpx: data.gpx,
-    });
+    const pushAscent = async (item, data) => {
+        const result = await sendBg({
+            type: 'GITHUB_BACKUP_PROFILE_ASCENT', aid: item.aid, snapshot: data.snapshot, gpx: data.gpx,
+        });
+        if (result && !result.ok && result.error) {
+            return { ...result, error: { ...result.error, message: messageFor(result.error) } };
+        }
+        return result;
+    };
 
     const startBackup = async refreshAll => {
         renderPreparing();

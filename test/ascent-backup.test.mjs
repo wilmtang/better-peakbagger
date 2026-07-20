@@ -93,6 +93,17 @@ test('a typed backup error shows an actionable message with a retry', async () =
     assert.ok(Array.from(bar(dom).querySelectorAll('button'), b => b.textContent).includes('Try again'));
 });
 
+test('an unexpected backup error shows GitHub\'s bounded detail', async () => {
+    const { dom } = await loadSurface({
+        status: { enabled: true, connected: true },
+        onBackup: () => ({ ok: false, error: { code: 'unknown', message: 'Repository service is temporarily unavailable.' } }),
+    });
+    await waitFor(dom, () => bar(dom));
+    bar(dom).querySelector('.bpb-gh-primary').dispatchEvent(new dom.window.Event('click'));
+    await waitFor(dom, () => /Repository service is temporarily unavailable/.test(bar(dom).textContent));
+    assert.doesNotMatch(bar(dom).textContent, /something went wrong/i);
+});
+
 test('automatic mode pushes on load without a click', async () => {
     let received = null;
     const { dom } = await loadSurface({

@@ -449,7 +449,7 @@ test('a denied host-permission request reverts the toggle and leaves the gate of
         'the actionable permission error must survive focus changes');
 });
 
-test('a lost device flow stops polling and offers a retry', async () => {
+test('a lost device flow stops polling and offers to reconnect', async () => {
     const dom = await loadOptions({ enableGithubBackup: true }, {
         prepareChrome: chrome => {
             chrome.permissions = { request: async () => true, contains: async () => true, remove: async () => true };
@@ -472,7 +472,7 @@ test('a lost device flow stops polling and offers a retry', async () => {
     await waitFor(dom, () => /connection was lost/i.test(el(dom, 'github-panel').textContent), 3000);
 
     assert.ok(Array.from(el(dom, 'github-panel').querySelectorAll('button'))
-        .some(button => button.textContent === 'Try again'));
+        .some(button => button.textContent === 'Reconnect GitHub'));
 });
 
 test('the device code is copyable and shows its remaining lifetime', async () => {
@@ -584,6 +584,37 @@ test('a populated repository requires an explicit confirmation before connection
         .find(button => button.textContent === 'Use this repository').click();
     await waitFor(dom, () => /backing up to ada\/project/.test(el(dom, 'github-panel').textContent));
     assert.deepEqual(selectMessages.map(message => !!message.confirmExisting), [false, true]);
+});
+
+test('repository setup shows the specific GitHub failure instead of generic copy', async () => {
+    const status = {
+        enabled: true, connected: false, hasToken: true, account: { login: 'ada' },
+        installUrl: 'https://github.com/apps/example/installations/new',
+    };
+    const repo = { owner: 'ada', name: 'backup', fullName: 'ada/backup', defaultBranch: 'main', installationId: 11 };
+    const dom = await loadOptions({ enableGithubBackup: true }, {
+        prepareChrome: chrome => {
+            chrome.permissions = { request: async () => true, contains: async () => true, remove: async () => true };
+            chrome.runtime.sendMessage = (message, callback) => {
+                let reply = status;
+                if (message.type === 'GITHUB_AUTH_DISCOVER') reply = { repos: [repo] };
+                if (message.type === 'GITHUB_AUTH_SELECT_REPO') {
+                    reply = { connected: false, error: { code: 'unknown', message: 'Repository service is temporarily unavailable.' } };
+                }
+                if (typeof callback === 'function') Promise.resolve().then(() => callback(reply));
+                return Promise.resolve(reply);
+            };
+        },
+    });
+
+    await waitFor(dom, () => Array.from(el(dom, 'github-panel').querySelectorAll('button'))
+        .some(button => button.textContent === 'ada/backup'));
+    Array.from(el(dom, 'github-panel').querySelectorAll('button'))
+        .find(button => button.textContent === 'ada/backup').click();
+    await waitFor(dom, () => /Repository service is temporarily unavailable/.test(el(dom, 'github-panel').textContent));
+    assert.doesNotMatch(el(dom, 'github-panel').textContent, /something went wrong/i);
+    assert.ok(Array.from(el(dom, 'github-panel').querySelectorAll('button'))
+        .some(button => button.textContent === 'Try again'));
 });
 
 test('a connected status renders the account and repository', async () => {

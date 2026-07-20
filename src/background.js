@@ -1093,7 +1093,7 @@ import { githubClient as GithubClient } from './github-client.js';
         try {
             code = await flow.requestCode();
         } catch (error) {
-            return { phase: 'error', code: error.code || 'unknown' };
+            return { phase: 'error', code: error.code || 'unknown', message: error.message || '' };
         }
         const startedAt = now();
         const pending = {
@@ -1150,7 +1150,7 @@ import { githubClient as GithubClient } from './github-client.js';
             return { phase: 'authorized', account, repos, installationCount };
         } catch (error) {
             await clearPendingGithubAuth();
-            return { phase: 'error', code: (error && error.code) || 'unknown' };
+            return { phase: 'error', code: (error && error.code) || 'unknown', message: (error && error.message) || '' };
         }
     };
 
@@ -1164,7 +1164,7 @@ import { githubClient as GithubClient } from './github-client.js';
             await reconcileDiscoveredRepo(repos);
             return { installationCount, repos, repo: await GithubAuth.authStore.getRepo() };
         } catch (error) {
-            return { phase: 'error', code: error.code || 'unknown' };
+            return { phase: 'error', code: error.code || 'unknown', message: error.message || '' };
         }
     };
 

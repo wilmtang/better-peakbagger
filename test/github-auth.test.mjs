@@ -211,11 +211,11 @@ test('discovery reports zero installations so the UI can offer the install link'
     assert.deepEqual(result.repos, []);
 });
 
-test('a dead token during discovery maps to expired', async () => {
+test('a dead stored token during discovery maps to auth, not an expired device code', async () => {
     const { fetch } = makeFetch({ [`${API}/user/installations?per_page=100`]: () => respond(401, { message: 'Bad credentials' }) });
     await assert.rejects(
         Auth.listBackupRepositories({ fetch, token: 't' }),
-        err => err.code === Auth.AUTH_ERROR_CODES.EXPIRED,
+        err => err.code === Auth.AUTH_ERROR_CODES.AUTH,
     );
 });
 

@@ -10,24 +10,12 @@
 // selecting the granted repo. Enabling the feature first requests the optional
 // github.com / api.github.com host permissions that the worker needs.
 
-const GITHUB_ORIGINS = ['https://github.com/*', 'https://api.github.com/*'];
+import { githubError as GithubError } from '../src/github-error.js';
 
-// One actionable sentence per typed failure from the background worker.
-const ERROR_TEXT = {
-    network: 'Could not reach GitHub. Check your connection and try again.',
-    denied: 'The authorization was declined on GitHub.',
-    expired: 'The authorization expired before it was approved. Try again.',
-    cancelled: 'Connection cancelled.',
-    'device-flow-disabled': 'Device flow is not enabled for the app. Please report this.',
-    'no-token': 'The GitHub connection was lost. Connect again.',
-    'no-access': 'This repository is not writable. Check its GitHub App access and try again.',
-    archived: 'This repository is archived and read-only. Choose another repository.',
-    'branch-missing': 'This repository has no usable default branch. Choose another repository.',
-    'repo-conflict': 'This repository already contains paths that Better Peakbagger cannot safely adopt. Choose another repository.',
-    'rate-limit': 'GitHub is rate-limiting requests. Try again in a few minutes.',
-    unknown: 'Something went wrong talking to GitHub. Try again.',
-};
-const errorText = code => ERROR_TEXT[code] || ERROR_TEXT.unknown;
+const GITHUB_ORIGINS = ['https://github.com/*', 'https://api.github.com/*'];
+const errorText = error => GithubError.message(error, {
+    fallback: 'GitHub did not return a usable response. Reload Settings and try again.',
+});
 
 export function initGithubBackup({ extensionApi, flash, save }) {
     const enableEl = document.getElementById('enable-github-backup');
@@ -209,10 +197,15 @@ export function initGithubBackup({ extensionApi, flash, save }) {
         );
     };
 
-    const renderError = (code, retry, actionLabel = 'Try again') => {
+    const renderError = (error, retry, actionLabel = 'Try again') => {
         stopTimers();
+        const code = typeof error === 'string' ? error : error && error.code;
+        if (code === 'auth' || code === 'no-token') {
+            retry = reconnect;
+            actionLabel = 'Reconnect GitHub';
+        }
         render(
-            el('p', { class: 'github-line github-error', text: errorText(code) }),
+            el('p', { class: 'github-line github-error', text: errorText(error) }),
             el('div', { class: 'github-actions' }, button(actionLabel, { primary: true, onClick: retry || connect })),
         );
     };
@@ -223,7 +216,7 @@ export function initGithubBackup({ extensionApi, flash, save }) {
         stopTimers();
         render(el('p', { class: 'github-line', text: 'Contacting GitHub…' }));
         const res = await send({ type: 'GITHUB_AUTH_BEGIN' });
-        if (!res || res.phase === 'error') return renderError(res && res.code);
+        if (!res || res.phase === 'error') return renderError(res);
         renderConnecting(res);
         pollAuth();
     };
@@ -241,7 +234,7 @@ export function initGithubBackup({ extensionApi, flash, save }) {
             if (!state) return pollAuth();
             if (state.phase === 'polling') return pollAuth();
             if (state.phase === 'idle') return renderError('no-token');
-            if (state.phase === 'error') return renderError(state.code);
+            if (state.phase === 'error') return renderError(state);
             if (state.phase === 'authorized') return afterAuthorized();
             return pollAuth();
         }, 2000);
@@ -252,7 +245,7 @@ export function initGithubBackup({ extensionApi, flash, save }) {
         const status = await send({ type: 'GITHUB_AUTH_STATUS' });
         if (status && status.connected) { flash('GitHub connected'); return renderConnected(status); }
         const discovery = await send({ type: 'GITHUB_AUTH_DISCOVER' });
-        if (discovery && discovery.phase === 'error') return renderError(discovery.code, afterAuthorized);
+        if (discovery && discovery.phase === 'error') return renderError(discovery, afterAuthorized);
         const refreshed = await send({ type: 'GITHUB_AUTH_STATUS' });
         if (refreshed && refreshed.connected) { flash('GitHub connected'); return renderConnected(refreshed); }
         return renderChooseRepo(refreshed || status || {}, discovery);
@@ -261,7 +254,7 @@ export function initGithubBackup({ extensionApi, flash, save }) {
     const refreshRepos = async ({ choose = false } = {}) => {
         render(el('p', { class: 'github-line', text: 'Checking repository access…' }));
         const discovery = await send({ type: 'GITHUB_AUTH_DISCOVER' });
-        if (discovery && discovery.phase === 'error') return renderError(discovery.code, refreshRepos);
+        if (discovery && discovery.phase === 'error') return renderError(discovery, refreshRepos);
         const status = await send({ type: 'GITHUB_AUTH_STATUS' });
         if (!choose && status && status.connected) { flash('Repository selected'); return renderConnected(status); }
         return renderChooseRepo(status || {}, discovery);
@@ -273,9 +266,18 @@ export function initGithubBackup({ extensionApi, flash, save }) {
         if (status && status.connected) { flash('Repository selected'); return renderConnected(status); }
         if (status && status.needsConfirmation) return renderExistingRepoConfirmation(repo);
         if (status && status.error) {
-            return renderError(status.error.code, () => refreshRepos({ choose: true }), 'Choose another');
+            if (['network', 'rate-limit', 'conflict', 'invalid', 'unknown'].includes(status.error.code)) {
+                return renderError(status.error, () => selectRepo(repo, { confirmExisting }), 'Try again');
+            }
+            return renderError(status.error, () => refreshRepos({ choose: true }), 'Choose another');
         }
         return refreshRepos({ choose: true });
+    };
+
+    const reconnect = async () => {
+        stopTimers();
+        await send({ type: 'GITHUB_AUTH_DISCONNECT' });
+        await connect();
     };
 
     const disconnect = async () => {
@@ -294,6 +296,7 @@ export function initGithubBackup({ extensionApi, flash, save }) {
         if (status.connected) return renderConnected(status);
         if (status.hasToken) {
             const discovery = await send({ type: 'GITHUB_AUTH_DISCOVER' });
+            if (discovery && discovery.phase === 'error') return renderError(discovery, renderFromStatus);
             const after = await send({ type: 'GITHUB_AUTH_STATUS' });
             if (after && after.connected) return renderConnected(after);
             return renderChooseRepo(after || status, discovery);
