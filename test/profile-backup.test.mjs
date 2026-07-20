@@ -147,7 +147,9 @@ test('one missing ascent is fetched from its edit form and sent as a direct prof
     assert.ok(push);
     assert.equal(push.aid, 9100001);
     assert.equal(push.snapshot.ascent.id, 9100001);
+    assert.equal(push.snapshot.ascent.date, '2020-01-01');
     assert.equal(push.snapshot.peak.id, 990001);
+    assert.equal(push.snapshot.peak.name, 'Sample Peak 1');
     assert.equal(push.gpx, null);
     assert.match(dom.window.document.getElementById('bpb-profile-backup').textContent, /Backed up 1; skipped 37; failed 0/);
 });

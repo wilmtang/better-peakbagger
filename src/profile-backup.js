@@ -202,6 +202,12 @@ import { githubError as GithubError } from './github-error.js';
         if (built.snapshot.ascent.id !== item.aid || built.snapshot.peak.id !== item.pid) {
             return { kind: 'wrong-content', url: editUrl, reason: 'The ascent identity did not match the list.' };
         }
+        // Peakbagger's edit form can leave the peak selector empty, and some
+        // responses omit DateText even though the owner list carries a complete
+        // date. Identity was just cross-checked, so the list is the safe
+        // human-readable fallback for those fields.
+        if (item.peakName) built.snapshot.peak.name = item.peakName;
+        if (!built.snapshot.ascent.date && item.date) built.snapshot.ascent.date = item.date;
         let gpx = null;
         if (item.hasGpx) {
             const gpxUrl = new URL(`/climber/GetAscentGPX.aspx?aid=${item.aid}`, location.origin).toString();

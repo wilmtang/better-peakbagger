@@ -210,6 +210,7 @@ ClimbListC.aspx (isolated world, owner only)
   → parse or fetch the complete all-years ascent index
   → worker lists root backup folder leaves (token never leaves worker)
   → tab fetches each owned AscentEdit.aspx form and stored GPX, sequentially
+  → verified list metadata supplies the peak name and any omitted full date
   → worker receives one GITHUB_BACKUP_PROFILE_ASCENT snapshot at a time
   → same payload builder and atomic Git Data commit path as per-save backup
 ```

@@ -13,6 +13,11 @@
   as another failure. Brief repository conflicts get bounded, delayed retries
   first so GitHub propagation windows do not require manual intervention.
 
+- **Keep profile backup folder names descriptive.** The verified My Ascents
+  list now supplies the peak name and any omitted full date when Peakbagger's
+  fetched edit form leaves those display fields empty, avoiding generic
+  `undated-peak-a…` folders when better metadata is available.
+
 - **Process an uploaded GPX on the ascent form.** Peakbagger's own Add Ascent
   page now understands a plain GPX file: a fresh form gets today's date filled
   in, and choosing a `.gpx` in the native GPS Track field swaps Preview for a
