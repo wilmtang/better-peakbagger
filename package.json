@@ -30,6 +30,7 @@
     "start:chromium": "node scripts/run-development.mjs chromium",
     "test": "node --test \"test/**/*.test.mjs\"",
     "verify:chrome": "npm run build && node scripts/verify-extension.mjs",
+    "verify:firefox": "npm run build && node scripts/verify-firefox-extension.mjs",
     "verify:extension": "npm run verify:chrome"
   },
   "devDependencies": {
@@ -58,6 +59,7 @@
     "maplibre-gl": "^5.24.0",
     "marked": "^18.0.6",
     "playwright": "^1.61.1",
+    "selenium-webdriver": "^4.46.0",
     "tz-lookup": "^6.1.25",
     "web-ext": "^10.4.0"
   },
