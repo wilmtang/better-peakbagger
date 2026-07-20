@@ -181,15 +181,23 @@ async function main() {
 
     await driver.executeAsyncScript(done => {
       const api = globalThis.browser || globalThis.chrome;
-      api.storage.sync.get("bpbSettings").then(({ bpbSettings = {} }) =>
+      api.storage.sync.get("bpbSettings").then(({ bpbSettings = {} }) => Promise.all([
         api.storage.sync.set({
           bpbSettings: {
             ...bpbSettings,
             theme: "dark",
             enable3dMap: true,
             addReportCredit: true,
+            enableGithubBackup: true,
           },
-        })).then(() => done(true), error => done(String(error)));
+        }),
+        api.storage.local.set({
+          bpbGithubAuth: {
+            token: "browser-verification-only",
+            repo: { owner: "fixture", name: "backup", branch: "main", fullName: "fixture/backup" },
+          },
+        }),
+      ])).then(() => done(true), error => done(String(error)));
     });
     await driver.navigate().refresh();
     await waitForScript(
@@ -284,6 +292,24 @@ async function main() {
         && filterStateAfter.first !== filterStateBefore.first,
       "Firefox ascent filter did not mount, reveal rows, and sort in place",
       { before: filterStateBefore, after: filterStateAfter },
+    );
+
+    await driver.get(
+      `https://${fixtureHost}:${fixture.port}/climber/ClimbListC.aspx?cid=900001&j=-1&y=9999`,
+    );
+    await driver.wait(until.elementLocated(By.css(surfaceSelectors.profileBackup)), 10_000);
+    const profileBackupState = await driver.executeScript(`
+      const panel = document.querySelector(${JSON.stringify(surfaceSelectors.profileBackup)});
+      return {
+        copy: panel?.textContent || "",
+        primary: panel?.querySelector(".bpb-profile-primary")?.textContent || "",
+      };
+    `);
+    assertState(
+      profileBackupState.primary === "Back up all ascents"
+        && /fixture\/backup/.test(profileBackupState.copy),
+      "Firefox full-profile backup surface did not mount for its verified owner",
+      profileBackupState,
     );
 
     const editorUrl = `https://${fixtureHost}:${fixture.port}/climber/ascentedit.aspx?cid=900001`;
@@ -470,7 +496,7 @@ async function main() {
     console.log(`  - ${capabilities.getBrowserName()} ${capabilities.getBrowserVersion()}`);
     console.log(`  - hidden/headless at ${verificationViewport.width}x${verificationViewport.height}`);
     console.log("  - real sync/local/session storage and storage.onChanged round-tripped");
-    console.log("  - options, popup, ascent, editor, Peak, BigMap, and PeakAscents surfaces initialized");
+    console.log("  - options, popup, ascent, editor, Peak, BigMap, PeakAscents, and profile-backup surfaces initialized");
     console.log("  - AMO report credit, real editor input/draft recovery, filter/sort, and 3D frame passed");
     console.log("  - a real draft tab rejected wrong identity, attached GPX, filled fields, Previewed once, and never Saved");
     console.log("  - native toolbar activeTab grant, popup chrome, prompts, and window placement were not tested");

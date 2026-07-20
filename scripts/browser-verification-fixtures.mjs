@@ -19,6 +19,7 @@ export const verificationViewport = Object.freeze({ width: 1000, height: 760 });
 export const surfaceSelectors = Object.freeze({
   analyzer: "#bpb-gpx-analysis",
   editor: "#bpb-report-editor",
+  profileBackup: "#bpb-profile-backup",
   terrainToggle: "#bpb-terrain-toggle",
 });
 export const storeUrls = Object.freeze({
@@ -192,7 +193,7 @@ export async function createBrowserFixtureServer({ temporaryRoot }) {
   } catch (error) {
     throw new Error(`Could not create the isolated HTTPS fixture certificate: ${error.message}`);
   }
-  const [key, cert, ascentEditHtml, peakAscentsHtml] = await Promise.all([
+  const [key, cert, ascentEditHtml, peakAscentsHtml, profileAscentsHtml] = await Promise.all([
     readFile(keyPath),
     readFile(certificatePath),
     readFile(
@@ -201,6 +202,10 @@ export async function createBrowserFixtureServer({ temporaryRoot }) {
     ),
     readFile(
       path.join(projectRoot, "test", "fixtures", "peakascents", "1039-default-full-columns.html"),
+      "utf8",
+    ),
+    readFile(
+      path.join(projectRoot, "test", "fixtures", "pages", "climber-ascents.html"),
       "utf8",
     ),
   ]);
@@ -266,8 +271,11 @@ export async function createBrowserFixtureServer({ temporaryRoot }) {
       return send("text/html; charset=utf-8", relativeAscentEditHtml);
     }
     if (/ascent\.aspx/i.test(url.pathname)) return send("text/html; charset=utf-8", ascentHtml);
-    if (/peakascents\.aspx|climblistc\.aspx/i.test(url.pathname)) {
+    if (/peakascents\.aspx/i.test(url.pathname)) {
       return send("text/html; charset=utf-8", peakAscentsHtml);
+    }
+    if (/climblistc\.aspx/i.test(url.pathname)) {
+      return send("text/html; charset=utf-8", profileAscentsHtml);
     }
     if (/peak\.aspx/i.test(url.pathname)) return send("text/html; charset=utf-8", peakHtml);
     if (/bigmap\.aspx/i.test(url.pathname)) return send("text/html; charset=utf-8", bigMapHtml);

@@ -215,6 +215,9 @@ Use one launch and profile per browser to cover all fixtures.
 - **BigMap:** enhancer, settings bridge, and 3D integration mount.
 - **PeakAscents/ClimbListC:** filter mounts and one filter/sort operation
   succeeds.
+- **ClimbListC profile backup:** the verified owner's panel mounts from real
+  extension storage with a fixture-only connected repository; the smoke does
+  not start a backup or contact GitHub.
 
 #### Report editor
 

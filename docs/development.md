@@ -270,8 +270,10 @@ generalize this exception.
 - `npm run verify:browsers` loads the real Chrome and derived Firefox manifests.
   The isolated HTTPS fixtures exercise extension origins, execution worlds,
   worker/background startup, real storage, every manifest surface, store credit,
-  report editing, filtering, tab grouping when supported, sender-bound draft
-  handoff, native file assignment, exactly-once Preview, and the no-Save boundary.
+  report editing, filtering, the owner-only profile-backup entry point, tab
+  grouping when supported, sender-bound draft handoff, native file assignment,
+  exactly-once Preview, and the no-Save boundary. The profile-backup mount uses
+  a fixture-only local credential and makes no GitHub request.
   Run it after touching `manifest.json`, bundle composition, execution worlds,
   the worker, or anything a content script relies on at load.
 - `npm run verify:packages -- CHROME.zip FIREFOX.zip` runs those same gates against minified store bytes

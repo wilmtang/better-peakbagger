@@ -30,6 +30,7 @@ import {
     createFailureCollector,
     createSyntheticCaptureJob,
     storeUrls,
+    surfaceSelectors,
     verificationViewport,
     waitForCondition
 } from './browser-verification-fixtures.mjs';
@@ -140,6 +141,20 @@ try {
         null, { timeout: 5000 }).then(() => true).catch(() => false);
         check(optionPersisted, 'the Chrome options page did not persist a real setting change');
         await optionsPage.locator('#units').selectOption('auto');
+        await optionsPage.evaluate(async () => {
+            const { bpbSettings = {} } = await chrome.storage.sync.get('bpbSettings');
+            await Promise.all([
+                chrome.storage.sync.set({
+                    bpbSettings: { ...bpbSettings, enableGithubBackup: true }
+                }),
+                chrome.storage.local.set({
+                    bpbGithubAuth: {
+                        token: 'browser-verification-only',
+                        repo: { owner: 'fixture', name: 'backup', branch: 'main', fullName: 'fixture/backup' }
+                    }
+                })
+            ]);
+        });
         await optionsPage.close();
 
         const popupPage = await context.newPage();
@@ -374,6 +389,28 @@ try {
                 `the Chrome ascent filter did not reveal rows and sort in place: ${JSON.stringify({ before, after })}`);
         }
         await filterPage.close();
+    }
+
+    // --- Owner-only full-profile backup surface ----------------------------
+    {
+        const profilePage = await context.newPage();
+        await profilePage.goto(
+            `https://www.peakbagger.com:${port}/climber/ClimbListC.aspx?cid=900001&j=-1&y=9999`,
+            { waitUntil: 'load' }
+        );
+        const state = await profilePage.locator(surfaceSelectors.profileBackup)
+            .waitFor({ state: 'visible', timeout: 10000 })
+            .then(() => profilePage.evaluate(selector => {
+                const panel = document.querySelector(selector);
+                return {
+                    copy: panel?.textContent || '',
+                    primary: panel?.querySelector('.bpb-profile-primary')?.textContent || ''
+                };
+            }, surfaceSelectors.profileBackup))
+            .catch(() => null);
+        check(state?.primary === 'Back up all ascents' && /fixture\/backup/.test(state.copy),
+            `the Chrome full-profile backup surface did not mount for its verified owner: ${JSON.stringify(state)}`);
+        await profilePage.close();
     }
 
     // --- Trip-report editor on the real ascent form --------------------------
@@ -1282,6 +1319,7 @@ console.log('  - the Full Screen BigMap receives settings and shows an enabled 3
 console.log('  - the Peak Dynamic Map preserves its native frame and shows an enabled 3D toggle');
 console.log('  - clicking Peak 3D creates the isolated frame with a route-free summit focus');
 console.log('  - the PeakAscents filter mounts, reveals rows, and sorts in place');
+console.log('  - the owner-only full-profile backup surface mounts with a connected fixture repository');
 console.log('  - the opt-in report credit renders and serializes the Chrome Web Store URL');
 console.log('  - a real grouped draft tab rejects a wrong identity, attaches GPX, fills fields,');
 console.log('    submits Preview exactly once, and never submits Save');
