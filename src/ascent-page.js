@@ -54,9 +54,16 @@ import { reportMarkup as Markup } from './report-markup.js';
         return { id: Number.isFinite(id) ? id : null, name: clean(link.textContent) };
     };
 
+    // Find the stored-track download link. Peakbagger's link text ("Download
+    // this GPS track…") has been the stable signal, but match the href
+    // (GPXFile.aspx, plus the legacy GetAscentGPX.aspx) as a fallback so a future
+    // rewording of the link text does not silently drop the track.
     const gpxUrl = doc => {
         for (const a of doc.querySelectorAll('a[href]')) {
-            if (/Download this GPS track/i.test(a.textContent || '')) return a.href || a.getAttribute('href');
+            const href = a.getAttribute('href') || '';
+            if (/Download this GPS track/i.test(a.textContent || '') || /GPXFile\.aspx|GetAscentGPX\.aspx/i.test(href)) {
+                return a.href || href;
+            }
         }
         return null;
     };

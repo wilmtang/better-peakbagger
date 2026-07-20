@@ -123,8 +123,12 @@ const run = async () => {
     const resolveTerrainCacheLimitMb = settings => Schema.terrainCacheLimitMb(settings.terrainCacheLimitMb);
 
     const initChart = async () => {
-        // 1. Locate GPX link and build UI
-        const gpxLink = Array.from(document.querySelectorAll('a')).find(a => a.textContent.includes('Download this GPS track'));
+        // 1. Locate GPX link and build UI. The link text is the primary signal;
+        // match the href (GPXFile.aspx, plus the legacy GetAscentGPX.aspx) as a
+        // fallback so a future rewording does not silently disable the analyzer.
+        const gpxLink = Array.from(document.querySelectorAll('a')).find(a =>
+            a.textContent.includes('Download this GPS track')
+            || /GPXFile\.aspx|GetAscentGPX\.aspx/i.test(a.getAttribute('href') || ''));
         if (!gpxLink) return;
 
         await BPB.init();

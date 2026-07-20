@@ -40,6 +40,14 @@ test('read extracts the ascent identity, peak, GPX link, and date', async () => 
     assert.match(info.gpxUrl, /GPXFile\.aspx\?aid=7654321&sep=1/);
 });
 
+test('the GPX link is found by its href even when the link text is reworded', async () => {
+    const doc = await loadDoc();
+    // A future rewording that no longer prefix-matches "Download this GPS track".
+    doc.querySelector('a[href*="GPXFile.aspx"]').textContent = 'Get the track';
+    const info = AscentPage.read({ doc, search: '?aid=7654321' });
+    assert.match(info.gpxUrl, /GPXFile\.aspx\?aid=7654321&sep=1/);
+});
+
 test('the report is converted to Markdown from the page DOM for the fallback path', async () => {
     const doc = await loadDoc();
     const md = AscentPage.reportMarkdown(doc);
