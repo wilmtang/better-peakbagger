@@ -17,6 +17,16 @@ Better Peakbagger distributes the unmodified Chart.js 4.5.1 UMD build as
 - License: MIT
 - Packaged license text: `vendor/chart-LICENSE.txt` (copied from the npm package at build time)
 
+### CodeMirror
+
+Better Peakbagger bundles CodeMirror 6, including its Lezer parser
+dependencies, into `content/ascent-editor.js` to provide the Markdown source
+editor.
+
+- Project: [CodeMirror](https://codemirror.net/)
+- Source: [CodeMirror repositories](https://github.com/codemirror)
+- License: MIT
+
 ### MapLibre GL JS
 
 Better Peakbagger distributes the unmodified MapLibre GL JS 5.24.0 strict-CSP
@@ -37,6 +47,15 @@ token stream and does not use its HTML renderer.
 - Source: [Marked v18.0.6](https://github.com/markedjs/marked/tree/v18.0.6)
 - License: MIT
 - Packaged license text: `vendor/marked-LICENSE.txt` (copied from the npm package at build time)
+
+### TipTap
+
+Better Peakbagger bundles TipTap 3.28.0 and its ProseMirror dependencies into
+`content/ascent-editor.js` to provide the rich-text editor.
+
+- Project: [TipTap](https://tiptap.dev/)
+- Source: [TipTap 3.28.0](https://github.com/ueberdosis/tiptap/tree/v3.28.0)
+- License: MIT
 
 ### tz-lookup
 
