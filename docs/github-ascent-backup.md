@@ -73,16 +73,17 @@ revisiting an old ascent falls back to the manual button without pushing.
 
 **Full profile.** On the signed-in climber's own **My Ascents** page, **Back
 up all ascents** reads the complete all-years index, skips ascent ids already
-represented by a root-level `*-a<aid>` backup folder, and commits each missing
-ascent.
-The page tab owns the paced queue and must remain open; it can be paused or
-cancelled, and a later run resumes from the repository diff without local
-checkpoint state. A Peakbagger challenge pauses before the next request and
-hands the human check to a normal tab. A GitHub write error pauses on the
-current ascent before any later ascent is fetched; resuming retries that same
-ascent instead of silently accumulating repository-wide failures. **Refresh
-all** has an explicit confirmation and re-syncs every ascent through the same
-Update path.
+represented by a root-level `*-a<aid>` backup folder, and commits missing
+ascents in atomic groups of up to ten. A paced Peakbagger producer reads ahead
+while a single GitHub consumer writes; the in-tab buffer applies backpressure
+at 30 ascents or 32 MiB instead of growing without limit. The page tab must
+remain open, and a later run resumes from the repository diff without local
+checkpoint state. A Peakbagger challenge pauses on the interrupted ascent. A
+GitHub error retains the rejected batch so Resume retries it without refetching
+those ascents. **Refresh all** has an explicit confirmation and re-syncs every
+ascent through the same Update path. See
+[profile-backup-pipeline.md](profile-backup-pipeline.md) for the batching,
+backpressure, conflict, and lifecycle rationale.
 
 ## Repository layout
 
@@ -113,8 +114,10 @@ Update path.
 - **Empty repositories:** the first backup initializes the marker and default
   branch through GitHub's Contents API; users do not need to initialize a
   README. The ascent itself still lands as one atomic Git Data commit.
-- One ascent = one atomic commit: `Add ascent: Mount Rainier, 2026-07-12`
-  (or `Update ascent: …` on re-sync).
+- A manual or automatic save is one atomic commit: `Add ascent: Mount Rainier,
+  2026-07-12` (or `Update ascent: …` on re-sync). Full-profile backup combines
+  up to ten ascent folders into one atomic `Back up 10 ascents` / `Refresh 10
+  ascents` commit.
 
 ### `ascent.json` schema (v1)
 
@@ -209,10 +212,11 @@ background worker
 ClimbListC.aspx (isolated world, owner only)
   → parse or fetch the complete all-years ascent index
   → worker lists root backup folder leaves (token never leaves worker)
-  → tab fetches each owned AscentEdit.aspx form and stored GPX, sequentially
+  → paced producer fetches each AscentEdit.aspx form and stored GPX sequentially
   → verified list metadata supplies the peak name and any omitted full date
-  → worker receives one GITHUB_BACKUP_PROFILE_ASCENT snapshot at a time
-  → same payload builder and atomic Git Data commit path as per-save backup
+  → bounded in-tab buffer groups at most 10 ascents / 4 MiB per commit
+  → worker receives GITHUB_BACKUP_PROFILE_BATCH and serializes all repo writers
+  → one tree + one commit + one non-forced ref update makes the batch visible
 ```
 
 Notes:
@@ -289,13 +293,15 @@ A classic OAuth app via `launchWebAuthFlow` remains ruled out: it needs an
 embedded client secret and its `repo` scope grants every repo.
 
 **Commit strategy — Git Data API, one atomic commit.** `GET` the branch ref →
-`POST` blobs (`report.md`, `ascent.json`, optional `track.gpx`, and the marker
-when first adopting the repository) → `POST` a tree based on the latest commit
-(including any owned old-slug paths) → `POST` the commit → `PATCH` the ref. An
-empty repository instead creates a parentless commit and `POST`s its first ref.
-On a non-fast-forward race, re-read the ref and retry once. The Contents API
-alternative (one `PUT` per file) is simpler but produces multiple commits per
-ascent and cannot move a renamed folder atomically.
+`POST` one tree based on the latest commit, with ordinary file contents inline
+and any owned old-slug removals included → `POST` the commit → `PATCH` the ref.
+An unusually large individual file uses the blob endpoint before tree creation.
+An empty repository is first initialized with the marker through the Contents
+API because GitHub refuses to create the first ref in an empty repository. On a
+retryable 409/non-fast-forward race, the client waits, rereads the ref, rebuilds
+the whole commit, and retries on the 0.5/2/5-second bounded schedule. The
+Contents API alternative for ascent files would produce multiple commits and
+cannot move renamed folders or whole batches atomically.
 
 **Error taxonomy.** Authorization revoked or token invalid, app uninstalled or
 repository access withdrawn, repo archived, ambiguous repository paths, missing

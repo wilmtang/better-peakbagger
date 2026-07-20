@@ -2,16 +2,25 @@
 
 ## Unreleased
 
+- **Pipeline full-profile backups into atomic GitHub batches.** The My Ascents
+  reader now continues while GitHub commits the previous group, batching up to
+  ten ascents into one tree, commit, and branch update. A bounded 30-ascent /
+  32 MiB in-tab buffer applies backpressure during slow uploads, ordinary files
+  ride directly in the tree request, and every extension-owned GitHub writer is
+  serialized before it reads the branch. Failed batches stay ready for Resume
+  without another Peakbagger fetch. See the
+  [pipeline deep dive](docs/profile-backup-pipeline.md).
+
 - **Initialize empty GitHub backup repositories correctly.** The first backup
   now creates the repository marker and default branch through GitHub's
   supported Contents API before committing the ascent atomically. Brand-new
   repositories no longer retry an unsupported ref creation for every ascent.
 
-- **Pause profile backups on GitHub errors.** A full-profile run now stops at
-  the first rejected GitHub write, shows the actionable error immediately, and
-  retries the same ascent after Resume instead of counting every later ascent
-  as another failure. Brief repository conflicts get bounded, delayed retries
-  first so GitHub propagation windows do not require manual intervention.
+- **Pause profile backups on GitHub errors.** A full-profile run shows the
+  actionable error immediately and retains the rejected batch for Resume
+  instead of counting it as a series of ascent failures. Brief repository
+  conflicts get bounded, delayed retries first so GitHub propagation windows
+  do not require manual intervention.
 
 - **Keep profile backup folder names descriptive.** The verified My Ascents
   list now supplies the peak name and any omitted full date when Peakbagger's

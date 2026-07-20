@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // Full-profile GitHub backup on the signed-in climber's ClimbListC page. The
-// tab owns the multi-minute queue; the MV3 worker wakes only for repository
-// preflight and one atomic commit per ascent.
+// tab owns the multi-minute producer/consumer pipeline; the MV3 worker wakes
+// for repository preflight and serialized atomic batch commits.
 
 import { profileBackupCore as Core } from './profile-backup-core.js';
 import { ascentSnapshot as Snapshot } from './ascent-snapshot.js';

@@ -167,9 +167,11 @@ or send coordinates to a timezone service. See
 - `src/gpx-analyzer.js`: ascent GPX analysis, chart, and map synchronization.
 - `src/ascent-filter.js`: PeakAscents filtering and in-DOM sorting.
 - `src/profile-backup.js`: the owner-only ClimbListC profile-backup panel and
-  long-running queue. `src/profile-backup-core.js` owns its pure list parser,
-  repository diff, response classifier, and pause/retry state machine. The tab,
-  not the MV3 worker, owns the multi-minute loop.
+  long-running producer/consumer pipeline. `src/profile-backup-core.js` owns
+  its pure list parser, repository diff, bounded buffer, batch selection,
+  response classifier, and pause/retry state machine. The tab, not the MV3
+  worker, owns the multi-minute read lifecycle; the worker owns the serialized
+  GitHub write queue. See [profile-backup-pipeline.md](profile-backup-pipeline.md).
 - `src/ascent-draft.js`: validated draft filling and exactly-once Preview.
 - `src/gpx-parse.js`: the pure GPX-text parser shared by the provider adapter
   and the ascent-form upload flow (one parser for both entry points).

@@ -1,5 +1,11 @@
 # Full profile backup: design
 
+> Historical note: the original implementation below used one serial GitHub
+> commit per ascent. It has since been replaced by the bounded, atomic batch
+> pipeline documented in
+> [profile-backup-pipeline.md](../profile-backup-pipeline.md). The ownership,
+> challenge, identity, and repository-diff decisions remain applicable.
+
 Status: implemented in focused commits `c986662`, `ba1de43`, `1cd7522`,
 `66acdca`, and `14a1a24`. Fixture, queue, UI, and built-worker coverage is
 automated. A real, rate-limited scratch-repository run remains a manual
