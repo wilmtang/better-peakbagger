@@ -172,6 +172,23 @@ test('opt-in credit starts after the caret in Markdown and Plain modes', async (
     assert.equal(textarea.selectionStart, 0);
 });
 
+test('credit writing space does not grow across Rich and Markdown mode switches', async () => {
+    const dom = await loadEditor({ settings: { addReportCredit: true } });
+    await editorReady(dom);
+    const doc = dom.window.document;
+
+    modeButton(doc, 'Markdown').click();
+    const initialSource = editors(dom).markdown.getValue();
+    assert.match(initialSource, /^\n\n<small>/);
+
+    for (let switchIndex = 0; switchIndex < 3; switchIndex++) {
+        modeButton(doc, 'Rich text').click();
+        modeButton(doc, 'Markdown').click();
+        assert.equal(editors(dom).markdown.getValue(), initialSource,
+            'a mode round trip must not insert another leading blank line');
+    }
+});
+
 test('opt-in credit never modifies a non-empty report', async () => {
     const dom = await loadEditor({
         settings: { addReportCredit: true },
