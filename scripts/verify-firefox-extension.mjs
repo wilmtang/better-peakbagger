@@ -6,70 +6,20 @@
 // manifest, starts background.js, and runs both execution worlds before the
 // broader browser fixtures are shared with the Chrome verifier.
 
-import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
-import { createServer } from "node:https";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { promisify } from "node:util";
 
 import { Builder, By, until } from "selenium-webdriver";
 import firefox from "selenium-webdriver/firefox.js";
 
+import {
+  createBrowserFixtureServer,
+  fixtureHost,
+  surfaceSelectors,
+  verificationViewport,
+} from "./browser-verification-fixtures.mjs";
 import { prepareFirefoxSource } from "./run-firefox.mjs";
-
-const execFileAsync = promisify(execFile);
-const fixtureHost = "www.peakbagger.com";
-const viewport = { width: 1000, height: 760 };
-
-const gpx = `<?xml version="1.0"?><gpx version="1.1"><trk><name>Synthetic</name><trkseg>${
-  Array.from({ length: 24 }, (_, index) =>
-    `<trkpt lat="${(46.85 + index * 0.0006).toFixed(6)}" lon="${(-121.76 + index * 0.0004).toFixed(6)}">`
-      + `<ele>${1500 + index * 25}</ele><time>2026-07-01T13:${String(index).padStart(2, "0")}:00Z</time></trkpt>`)
-    .join("")}</trkseg></trk></gpx>`;
-
-const ascentHtml = `<!doctype html><html><head><title>Ascent</title></head><body>
-<table><tr><td>Elevation:</td><td>10,781 ft</td></tr></table>
-<a href="/track.gpx">Download this GPS track</a>
-</body></html>`;
-
-async function createFixtureServer(temporaryRoot) {
-  const keyPath = path.join(temporaryRoot, "fixture-key.pem");
-  const certificatePath = path.join(temporaryRoot, "fixture-cert.pem");
-  await execFileAsync("openssl", [
-    "req", "-x509", "-newkey", "rsa:2048", "-nodes",
-    "-subj", `/CN=${fixtureHost}`, "-days", "1",
-    "-keyout", keyPath, "-out", certificatePath,
-  ]);
-  const [key, cert] = await Promise.all([
-    readFile(keyPath),
-    readFile(certificatePath),
-  ]);
-  const server = createServer({ key, cert }, (request, response) => {
-    const url = new URL(request.url, `https://${fixtureHost}`);
-    const send = (contentType, body) => {
-      response.writeHead(200, { "content-type": contentType });
-      response.end(body);
-    };
-    if (/ascent\.aspx/i.test(url.pathname)) {
-      return send("text/html; charset=utf-8", ascentHtml);
-    }
-    if (/track\.gpx/i.test(url.pathname)) {
-      return send("application/gpx+xml", gpx);
-    }
-    response.writeHead(404);
-    response.end("not found");
-  });
-  await new Promise((resolve, reject) => {
-    server.once("error", reject);
-    server.listen(0, "127.0.0.1", resolve);
-  });
-  return {
-    port: server.address().port,
-    close: () => new Promise((resolve, reject) =>
-      server.close(error => error ? reject(error) : resolve())),
-  };
-}
 
 async function extensionBaseUrl(driver, addonId) {
   await driver.setContext(firefox.Context.CHROME);
@@ -94,13 +44,13 @@ async function main() {
   let addonId;
   try {
     prepared = await prepareFirefoxSource({ temporaryRoot });
-    fixture = await createFixtureServer(temporaryRoot);
+    fixture = await createBrowserFixtureServer({ temporaryRoot });
 
     const options = new firefox.Options()
       .addArguments("-headless", "-remote-allow-system-access")
       .setProfile(profileTemplate)
       .setPreference("network.dns.localDomains", fixtureHost)
-      .windowSize(viewport);
+      .windowSize(verificationViewport);
     options.setAcceptInsecureCerts(true);
     if (process.env.FIREFOX_BIN) options.setBinary(process.env.FIREFOX_BIN);
 
@@ -130,7 +80,7 @@ async function main() {
     await driver.get(
       `https://${fixtureHost}:${fixture.port}/climber/ascent.aspx?aid=1`,
     );
-    await driver.wait(until.elementLocated(By.id("bpb-gpx-analysis")), 15_000);
+    await driver.wait(until.elementLocated(By.css(surfaceSelectors.analyzer)), 15_000);
     const surfaceState = await driver.executeScript(`return {
       origin: location.origin,
       theme: document.documentElement.getAttribute("data-bpb-theme"),
@@ -147,7 +97,7 @@ async function main() {
     const capabilities = await driver.getCapabilities();
     console.log("Firefox extension startup verification passed:");
     console.log(`  - ${capabilities.getBrowserName()} ${capabilities.getBrowserVersion()}`);
-    console.log(`  - hidden/headless at ${viewport.width}x${viewport.height}`);
+    console.log(`  - hidden/headless at ${verificationViewport.width}x${verificationViewport.height}`);
     console.log("  - moz-extension origin, background message, isolated theme, and MAIN-world analyzer initialized");
     console.log("  - native toolbar activeTab grant, popup chrome, prompts, and window placement were not tested");
   } finally {
