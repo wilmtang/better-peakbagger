@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **Initialize empty GitHub backup repositories correctly.** The first backup
+  now creates the repository marker and default branch through GitHub's
+  supported Contents API before committing the ascent atomically. Brand-new
+  repositories no longer retry an unsupported ref creation for every ascent.
+
 - **Process an uploaded GPX on the ascent form.** Peakbagger's own Add Ascent
   page now understands a plain GPX file: a fresh form gets today's date filled
   in, and choosing a `.gpx` in the native GPS Track field swaps Preview for a

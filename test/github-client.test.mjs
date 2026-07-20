@@ -172,21 +172,31 @@ test('an empty repository is initialized with the first backup commit', async ()
             default_branch: 'main', archived: false, size: 0, permissions: { push: true },
         }),
         'GET /repos/me/backup/git/ref/heads/main': () => respond(409, { message: 'Git Repository is empty.' }),
+        'PUT /repos/me/backup/contents/.better-peakbagger.json': () => respond(201, {
+            commit: { sha: 'C0', tree: { sha: 'T0' } },
+        }),
+        'GET /repos/me/backup/git/trees/T0': () => respond(200, { tree: [MARKER] }),
+        'GET /repos/me/backup/git/blobs/marker': MARKER_BLOB,
         'POST /repos/me/backup/git/blobs': n => respond(201, { sha: `blob${n}` }),
         'POST /repos/me/backup/git/trees': () => respond(201, { sha: 'T1' }),
         'POST /repos/me/backup/git/commits': () => respond(201, { sha: 'C1', html_url: 'u' }),
-        'POST /repos/me/backup/git/refs': () => respond(201, { object: { sha: 'C1' } }),
+        'PATCH /repos/me/backup/git/refs/heads/main': () => respond(200, { object: { sha: 'C1' } }),
     });
     const client = Client.createGithubClient({ fetch, token: 't', owner: 'me', repo: 'backup' });
     const result = await client.pushAscentBackup(snapshot(), {});
     assert.equal(result.folder, '2026-07-12-mount-rainier-a1234567');
+    const initializeCall = calls.find(call => call.key === 'PUT /repos/me/backup/contents/.better-peakbagger.json');
+    assert.deepEqual(initializeCall.body, {
+        message: 'Initialize Better Peakbagger backup',
+        content: 'ewogICJzY2hlbWFWZXJzaW9uIjogMSwKICAidHlwZSI6ICJiZXR0ZXItcGVha2JhZ2dlci1iYWNrdXAiLAogICJsYXlvdXQiOiAicmVwb3NpdG9yeS1yb290Igp9Cg==',
+        branch: 'main',
+    });
     const treeCall = calls.find(call => call.key === 'POST /repos/me/backup/git/trees');
-    assert.equal('base_tree' in treeCall.body, false);
-    assert.ok(treeCall.body.tree.some(entry => entry.path === Client.REPOSITORY_MARKER_PATH));
+    assert.equal(treeCall.body.base_tree, 'T0');
+    assert.ok(!treeCall.body.tree.some(entry => entry.path === Client.REPOSITORY_MARKER_PATH));
     const commitCall = calls.find(call => call.key === 'POST /repos/me/backup/git/commits');
-    assert.deepEqual(commitCall.body.parents, []);
-    const refCall = calls.find(call => call.key === 'POST /repos/me/backup/git/refs');
-    assert.equal(refCall.body.ref, 'refs/heads/main');
+    assert.deepEqual(commitCall.body.parents, ['C0']);
+    assert.ok(!calls.some(call => call.key === 'POST /repos/me/backup/git/refs'));
 });
 
 test('an unmarked root backup collision is rejected before any write', async () => {

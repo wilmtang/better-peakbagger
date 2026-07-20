@@ -95,18 +95,21 @@ confirmation and re-syncs every ascent through the same Update path.
   human sorting; the `a<ascentId>` suffix is the stable identity. Partial
   Peakbagger dates degrade gracefully (`2026-07-00…` → `2026-07`, undated →
   `undated`).
-- **Repository ownership:** the first backup adds the marker in the same atomic
-  commit as the first mountain folder. Before selection and every write, an
-  unmarked repository with ambiguous root backup folders fails closed. Other
-  populated repositories require explicit confirmation; their existing paths
-  remain part of the base Git tree and are not modified.
+- **Repository ownership:** a populated repository gets the marker in the same
+  atomic commit as its first mountain folder. An empty repository first gets a
+  marker-only initialization commit because GitHub does not allow the Git
+  References API to create its initial branch. Before selection and every
+  write, an unmarked repository with ambiguous root backup folders fails
+  closed. Other populated repositories require explicit confirmation; their
+  existing paths remain part of the base Git tree and are not modified.
 - **Idempotency and renames:** re-saving an ascent re-syncs the folder ending in
   the same `-a<ascentId>`. If the slug changed, the extension writes the new
   root folder and removes only its own `report.md`, `ascent.json`, and
   `track.gpx` paths from the old folder in the same commit. User-added files are
   preserved.
-- **Empty repositories:** the first backup creates the initial tree, root
-  commit, and default-branch ref; users do not need to initialize a README.
+- **Empty repositories:** the first backup initializes the marker and default
+  branch through GitHub's Contents API; users do not need to initialize a
+  README. The ascent itself still lands as one atomic Git Data commit.
 - One ascent = one atomic commit: `Add ascent: Mount Rainier, 2026-07-12`
   (or `Update ascent: …` on re-sync).
 

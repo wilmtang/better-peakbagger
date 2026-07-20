@@ -7,9 +7,12 @@
 // resolve the branch, read its tip, build blobs for the folder's files, POST a
 // tree based on the latest commit (adding the new files and removing any stale
 // or renamed-away ones in the same tree), POST the commit, and fast-forward the
-// ref. A non-fast-forward race re-reads the ref and retries exactly once. The
-// Contents API alternative is simpler but produces one commit per file and
-// cannot move a renamed folder atomically, so it is not used.
+// ref. A non-fast-forward race re-reads the ref and retries exactly once. GitHub
+// does not permit creating a ref in an empty repository, so that one case is
+// bootstrapped with a marker-only Contents API commit before the ordinary
+// atomic ascent commit. The Contents API is not used for ascent files because
+// it would produce one commit per file and cannot move a renamed folder
+// atomically.
 //
 // This module performs network I/O, but only through an *injected* fetch and an
 // injected token: it holds no globals, no chrome APIs, and no ambient
@@ -225,6 +228,28 @@ import { githubBackup as Backup } from './github-backup.js';
             return { baseCommitSha, baseTreeSha, root };
         };
 
+        // GitHub's Git References API explicitly refuses to create the first
+        // branch in an empty repository. Seed only our ownership marker through
+        // the Contents API, then keep every ascent on the atomic Git Data path.
+        const initializeEmptyRepository = async ({ targetBranch }) => {
+            const initialized = await request('PUT', `/contents/${encodeURIComponent(REPOSITORY_MARKER_PATH)}`, {
+                body: {
+                    message: 'Initialize Better Peakbagger backup',
+                    content: REPOSITORY_MARKER_BASE64,
+                    branch: targetBranch,
+                },
+                phase: 'write',
+            });
+            const commit = initialized && initialized.commit;
+            const baseCommitSha = commit && commit.sha;
+            const baseTreeSha = commit && commit.tree && commit.tree.sha;
+            if (!baseCommitSha || !baseTreeSha) {
+                throw new GithubBackupError(ERROR_CODES.INVALID,
+                    'GitHub did not return the initialized repository commit.');
+            }
+            return { baseCommitSha, baseTreeSha, root: await readTree(baseTreeSha) };
+        };
+
         const inspectRepository = async () => {
             const resolved = await resolveRepo();
             const head = await readHead(resolved);
@@ -250,10 +275,8 @@ import { githubBackup as Backup } from './github-backup.js';
 
         const commitOnce = async (snapshot, { gpx } = {}) => {
             const resolved = await resolveRepo();
-            const head = await readHead(resolved);
-            const state = head
-                ? await inspectRootTree(head.root)
-                : { kind: 'empty', marker: false, records: [], rootEntryCount: 0 };
+            const head = await readHead(resolved) || await initializeEmptyRepository(resolved);
+            const state = await inspectRootTree(head.root);
             const folders = state.records.map(record => record.leaf);
             const ascentId = snapshot && snapshot.ascent && snapshot.ascent.id;
             const oldRecords = matchingRecords(state.records, ascentId);
@@ -282,24 +305,17 @@ import { githubBackup as Backup } from './github-backup.js';
             }
 
             const tree = await request('POST', '/git/trees', {
-                body: { ...(head ? { base_tree: head.baseTreeSha } : {}), tree: treeEntries },
+                body: { base_tree: head.baseTreeSha, tree: treeEntries },
                 phase: 'write',
             });
             const commit = await request('POST', '/git/commits', {
-                body: { message: backup.message, tree: tree.sha, parents: head ? [head.baseCommitSha] : [] },
+                body: { message: backup.message, tree: tree.sha, parents: [head.baseCommitSha] },
                 phase: 'write',
             });
-            if (head) {
-                await request('PATCH', `/git/refs/heads/${encodeURIComponent(resolved.targetBranch)}`, {
-                    body: { sha: commit.sha, force: false },
-                    phase: 'ref',
-                });
-            } else {
-                await request('POST', '/git/refs', {
-                    body: { ref: `refs/heads/${resolved.targetBranch}`, sha: commit.sha },
-                    phase: 'ref',
-                });
-            }
+            await request('PATCH', `/git/refs/heads/${encodeURIComponent(resolved.targetBranch)}`, {
+                body: { sha: commit.sha, force: false },
+                phase: 'ref',
+            });
 
             return {
                 sha: commit.sha,
