@@ -22,8 +22,8 @@ export const surfaceSelectors = Object.freeze({
   terrainToggle: "#bpb-terrain-toggle",
 });
 export const storeUrls = Object.freeze({
-  chrome: "https://chromewebstore.google.com/detail/better-peakbagger/",
-  firefox: "https://addons.mozilla.org/firefox/addon/better-peakbagger/",
+  chrome: "https://chromewebstore.google.com/detail/better-peakbagger/kndjohodnpdoejmjkiiakejfehoodedn",
+  firefox: "https://addons.mozilla.org/en-US/firefox/addon/better-peakbagger/",
 });
 
 export function createFailureCollector() {
@@ -83,6 +83,11 @@ const bigMapHtml = `<!doctype html><html><head><title>Full Screen Map</title></h
 
 const peakHtml = `<!doctype html><html><head><title>Mount Shuksan</title></head><body>
 <h1>Mount Shuksan, Washington</h1>
+<table>
+  <tr><td>Latitude/Longitude (WGS84)</td><td>48.83115, -121.60214 (Dec Deg)</td></tr>
+  <tr><td>Nation</td><td>United States</td></tr>
+  <tr><td colspan="2"><b>Links</b><br><br>Native links</td></tr>
+</table>
 <table style="width:760px"><tr><td style="text-align:center">
 <b>Dynamic Map</b><br>
 <iframe id="Gmap" src="/map/MasterMap.aspx?cy=48.83115&cx=-121.60214&z=14&t=P&d=2829&c=0&hj=300"
@@ -138,11 +143,15 @@ export async function createBrowserFixtureServer({ temporaryRoot }) {
   } catch (error) {
     throw new Error(`Could not create the isolated HTTPS fixture certificate: ${error.message}`);
   }
-  const [key, cert, ascentEditHtml] = await Promise.all([
+  const [key, cert, ascentEditHtml, peakAscentsHtml] = await Promise.all([
     readFile(keyPath),
     readFile(certificatePath),
     readFile(
       path.join(projectRoot, "test", "fixtures", "pages", "climber-ascentedit.html"),
+      "utf8",
+    ),
+    readFile(
+      path.join(projectRoot, "test", "fixtures", "peakascents", "1039-default-full-columns.html"),
       "utf8",
     ),
   ]);
@@ -154,6 +163,9 @@ export async function createBrowserFixtureServer({ temporaryRoot }) {
     };
     if (/ascentedit\.aspx/i.test(url.pathname)) return send("text/html; charset=utf-8", ascentEditHtml);
     if (/ascent\.aspx/i.test(url.pathname)) return send("text/html; charset=utf-8", ascentHtml);
+    if (/peakascents\.aspx|climblistc\.aspx/i.test(url.pathname)) {
+      return send("text/html; charset=utf-8", peakAscentsHtml);
+    }
     if (/peak\.aspx/i.test(url.pathname)) return send("text/html; charset=utf-8", peakHtml);
     if (/bigmap\.aspx/i.test(url.pathname)) return send("text/html; charset=utf-8", bigMapHtml);
     if (/mastermap\.aspx/i.test(url.pathname)) return send("text/html; charset=utf-8", masterMapHtml);

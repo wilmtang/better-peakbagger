@@ -29,8 +29,11 @@
     "start:firefox": "node scripts/run-development.mjs firefox",
     "start:chromium": "node scripts/run-development.mjs chromium",
     "test": "node --test \"test/**/*.test.mjs\"",
-    "verify:chrome": "npm run build && node scripts/verify-extension.mjs",
-    "verify:firefox": "npm run build && node scripts/verify-firefox-extension.mjs",
+    "verify:chrome": "npm run build && npm run verify:chrome:built",
+    "verify:chrome:built": "node scripts/verify-extension.mjs",
+    "verify:firefox": "npm run build && npm run verify:firefox:built",
+    "verify:firefox:built": "node scripts/verify-firefox-extension.mjs",
+    "verify:browsers": "npm run build && npm run verify:chrome:built && npm run verify:firefox:built",
     "verify:extension": "npm run verify:chrome"
   },
   "devDependencies": {

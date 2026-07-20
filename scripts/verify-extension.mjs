@@ -28,6 +28,7 @@ import { fileURLToPath } from 'node:url';
 import {
     createBrowserFixtureServer,
     createFailureCollector,
+    storeUrls,
     verificationViewport
 } from './browser-verification-fixtures.mjs';
 
@@ -82,7 +83,68 @@ try {
                 .then(value => ({ ok: true, value: value ?? null }))
                 .catch(error => ({ ok: false, error: String(error) })));
         check(reply.ok, `the worker never answered CAPTURE_STATUS (capture would be dead): ${reply.error || ''}`);
+
+        const storageProbe = await optionsPage.evaluate(async () => {
+            const keys = {
+                sync: 'bpbBrowserVerifySync',
+                local: 'bpbBrowserVerifyLocal',
+                session: 'bpbBrowserVerifySession'
+            };
+            const changed = new Promise(resolve => {
+                const listener = (changes, area) => {
+                    if (area === 'local' && changes[keys.local]?.newValue === 'local') {
+                        chrome.storage.onChanged.removeListener(listener);
+                        resolve(true);
+                    }
+                };
+                chrome.storage.onChanged.addListener(listener);
+            });
+            await Promise.all([
+                chrome.storage.sync.set({ [keys.sync]: 'sync' }),
+                chrome.storage.local.set({ [keys.local]: 'local' }),
+                chrome.storage.session.set({ [keys.session]: 'session' })
+            ]);
+            const [sync, local, session, onChanged] = await Promise.all([
+                chrome.storage.sync.get(keys.sync),
+                chrome.storage.local.get(keys.local),
+                chrome.storage.session.get(keys.session),
+                changed
+            ]);
+            await Promise.all([
+                chrome.storage.sync.remove(keys.sync),
+                chrome.storage.local.remove(keys.local),
+                chrome.storage.session.remove(keys.session)
+            ]);
+            return {
+                origin: location.origin,
+                version: chrome.runtime.getManifest().version,
+                renderedVersion: document.getElementById('about-version')?.textContent,
+                values: [sync[keys.sync], local[keys.local], session[keys.session]],
+                onChanged
+            };
+        });
+        check(storageProbe.origin.startsWith('chrome-extension://')
+            && storageProbe.renderedVersion === `Version ${storageProbe.version}`,
+        `the Chrome options origin or manifest version was wrong: ${JSON.stringify(storageProbe)}`);
+        check(storageProbe.onChanged && storageProbe.values.join(',') === 'sync,local,session',
+            `Chrome storage areas or storage.onChanged did not round-trip: ${JSON.stringify(storageProbe)}`);
+        await optionsPage.locator('#units').selectOption('metric');
+        const optionPersisted = await optionsPage.waitForFunction(async () =>
+            (await chrome.storage.sync.get('bpbSettings')).bpbSettings?.units === 'metric',
+        null, { timeout: 5000 }).then(() => true).catch(() => false);
+        check(optionPersisted, 'the Chrome options page did not persist a real setting change');
+        await optionsPage.locator('#units').selectOption('auto');
         await optionsPage.close();
+
+        const popupPage = await context.newPage();
+        await popupPage.goto(`chrome-extension://${extensionId}/popup/popup.html`);
+        const popupState = await popupPage.waitForFunction(() => {
+            const text = document.getElementById('state')?.textContent || '';
+            return /Open an activity to begin/.test(text) ? text : false;
+        }, null, { timeout: 5000 }).then(handle => handle.jsonValue()).catch(() => null);
+        check(/Garmin Connect or Strava/.test(popupState || ''),
+            `the Chrome popup did not query its real active tab and render the worker response: ${JSON.stringify(popupState)}`);
+        await popupPage.close();
     }
 
     const openAscent = async () => {
@@ -276,6 +338,38 @@ try {
         await peakPage.close();
     }
 
+    // --- Ascent-list filter and in-place sort -------------------------------
+    {
+        const filterPage = await context.newPage();
+        await filterPage.goto(
+            `https://www.peakbagger.com:${port}/climber/PeakAscents.aspx?pid=1039`,
+            { waitUntil: 'load' }
+        );
+        const mounted = await filterPage.locator('#pbaf-bar').waitFor({ state: 'visible', timeout: 10000 })
+            .then(() => true).catch(() => false);
+        check(mounted, 'the Chrome ascent filter never mounted');
+        if (mounted) {
+            const before = await filterPage.evaluate(() => ({
+                visible: [...document.querySelectorAll('table.gray tr')]
+                    .filter(row => row.cells.length > 1 && row.cells[0].tagName === 'TD'
+                        && getComputedStyle(row).display !== 'none').length,
+                first: document.querySelector('table.gray tr td')?.textContent.trim(),
+                controls: document.querySelectorAll('.pbaf-table-sort').length
+            }));
+            await filterPage.locator('.pbaf-reset').click();
+            await filterPage.locator('.pbaf-table-sort').first().click();
+            const after = await filterPage.evaluate(() => ({
+                visible: [...document.querySelectorAll('table.gray tr')]
+                    .filter(row => row.cells.length > 1 && row.cells[0].tagName === 'TD'
+                        && getComputedStyle(row).display !== 'none').length,
+                first: document.querySelector('table.gray tr td')?.textContent.trim()
+            }));
+            check(before.controls > 1 && after.visible > before.visible && after.first !== before.first,
+                `the Chrome ascent filter did not reveal rows and sort in place: ${JSON.stringify({ before, after })}`);
+        }
+        await filterPage.close();
+    }
+
     // --- Trip-report editor on the real ascent form --------------------------
     // Real typing, real keyboard shortcuts, and real input rules against the
     // TipTap surface and the CodeMirror markdown pane, which jsdom cannot
@@ -283,13 +377,19 @@ try {
     {
         const modifier = process.platform === 'darwin' ? 'Meta' : 'Control';
         const editorTheme = process.env.BPB_VERIFY_EDITOR_THEME;
-        if (extensionId && ['light', 'dark'].includes(editorTheme)) {
+        if (extensionId) {
             const optionsPage = await context.newPage();
             await optionsPage.goto(`chrome-extension://${extensionId}/options/options.html`);
             await optionsPage.evaluate(async theme => {
                 const current = (await chrome.storage.sync.get('bpbSettings')).bpbSettings || {};
-                await chrome.storage.sync.set({ bpbSettings: { ...current, theme } });
-            }, editorTheme);
+                await chrome.storage.sync.set({
+                    bpbSettings: {
+                        ...current,
+                        addReportCredit: true,
+                        ...(['light', 'dark'].includes(theme) && { theme })
+                    }
+                });
+            }, editorTheme || null);
             await optionsPage.close();
         }
         const editorUrl = `https://www.peakbagger.com:${port}/climber/ascentedit.aspx?cid=900001`;
@@ -303,6 +403,27 @@ try {
         check(mounted, `the trip-report editor never mounted on the real form (errors=${JSON.stringify(editorErrors)})`);
 
         if (mounted) {
+            const creditState = await editorPage.waitForFunction(() => {
+                const link = document.querySelector('#bpb-report-editor a[href*="better-peakbagger"]');
+                const textarea = document.getElementById('JournalText');
+                return link && textarea?.value.includes(link.href) ? {
+                    href: link.href,
+                    serialized: textarea.value
+                } : false;
+            }, null, { timeout: 5000 }).then(handle => handle.jsonValue()).catch(() => null);
+            check(creditState?.href === storeUrls.chrome
+                && creditState.serialized.includes(storeUrls.chrome),
+            `the Chrome report credit did not render and serialize its store URL: ${JSON.stringify(creditState)}`);
+            // The remainder of the deep editor verifier intentionally starts
+            // from the fixture's empty report.
+            await editorPage.locator('#bpb-report-editor').getByRole('button', {
+                name: 'Plain', exact: true
+            }).click();
+            await editorPage.locator('#JournalText').fill('');
+            await editorPage.locator('#bpb-report-editor').getByRole('button', {
+                name: 'Rich text', exact: true
+            }).click();
+
             const nativeHidden = await editorPage.evaluate(() => {
                 const textarea = document.getElementById('JournalText');
                 return getComputedStyle(textarea).display === 'none' && !!textarea.form;
@@ -1034,6 +1155,7 @@ if (failures.length) {
 }
 console.log('Real-extension verification passed (hidden Chrome for Testing, new headless):');
 console.log('  - the MV3 service worker boots and answers messages (capture is alive)');
+console.log('  - sync/local/session storage, storage.onChanged, options persistence, and popup status passed');
 console.log('  - settings.js initialises in the isolated world and the bridge answers');
 console.log('  - the GPX analyzer renders stats from the real manifest load order');
 console.log('  - the 3D toggle stays visible when disabled and opens the provider/privacy confirmation');
@@ -1041,6 +1163,8 @@ console.log('  - trusted confirmation persists the feature gate without contacti
 console.log('  - the Full Screen BigMap receives settings and shows an enabled 3D toggle');
 console.log('  - the Peak Dynamic Map preserves its native frame and shows an enabled 3D toggle');
 console.log('  - clicking Peak 3D creates the isolated frame with a route-free summit focus');
+console.log('  - the PeakAscents filter mounts, reveals rows, and sorts in place');
+console.log('  - the opt-in report credit renders and serializes the Chrome Web Store URL');
 console.log('  - the trip-report editor mounts on the captured ascent form; real typing,');
 console.log('    Ctrl/Cmd+B, and the "1. " input rule sync bracket markup into JournalText');
 console.log('    with live toolbar states; selected Rich images/videos and YouTube players resize proportionally by');
