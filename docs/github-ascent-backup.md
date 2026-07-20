@@ -78,8 +78,11 @@ ascent.
 The page tab owns the paced queue and must remain open; it can be paused or
 cancelled, and a later run resumes from the repository diff without local
 checkpoint state. A Peakbagger challenge pauses before the next request and
-hands the human check to a normal tab. **Refresh all** has an explicit
-confirmation and re-syncs every ascent through the same Update path.
+hands the human check to a normal tab. A GitHub write error pauses on the
+current ascent before any later ascent is fetched; resuming retries that same
+ascent instead of silently accumulating repository-wide failures. **Refresh
+all** has an explicit confirmation and re-syncs every ascent through the same
+Update path.
 
 ## Repository layout
 

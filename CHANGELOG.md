@@ -7,6 +7,11 @@
   supported Contents API before committing the ascent atomically. Brand-new
   repositories no longer retry an unsupported ref creation for every ascent.
 
+- **Pause profile backups on GitHub errors.** A full-profile run now stops at
+  the first rejected GitHub write, shows the actionable error immediately, and
+  retries the same ascent after Resume instead of counting every later ascent
+  as another failure.
+
 - **Process an uploaded GPX on the ascent form.** Peakbagger's own Add Ascent
   page now understands a plain GPX file: a fresh form gets today's date filled
   in, and choosing a `.gpx` in the native GPS Track field swaps Preview for a

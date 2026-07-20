@@ -112,6 +112,18 @@ import { githubError as GithubError } from './github-error.js';
             );
         }
         if (state.status === 'paused') {
+            if (state.pauseReason === 'github') {
+                return body(
+                    node('div', { class: 'bpb-profile-copy' }, [
+                        node('strong', { text: 'GitHub backup paused' }),
+                        node('span', { text: 'No later ascents were attempted. Resume will retry this ascent.' }),
+                    ]),
+                    renderFailures(state.pauseError ? [state.pauseError] : []),
+                    node('div', { class: 'bpb-profile-actions' }, [
+                        button('Resume', () => { void runner.resume(); }, true), button('Cancel', () => runner.cancel()),
+                    ]),
+                );
+            }
             const copy = state.pauseReason === 'transient'
                 ? 'Several ascents could not be reached. Check your connection before resuming.'
                 : 'Backup paused. This tab must stay open.';

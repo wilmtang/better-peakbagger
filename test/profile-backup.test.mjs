@@ -151,3 +151,48 @@ test('one missing ascent is fetched from its edit form and sent as a direct prof
     assert.equal(push.gpx, null);
     assert.match(dom.window.document.getElementById('bpb-profile-backup').textContent, /Backed up 1; skipped 37; failed 0/);
 });
+
+test('a GitHub write error pauses visibly and resume retries the same ascent', async () => {
+    const pushed = [];
+    const dom = await loadPage('climber-ascents.html', {
+        fixtures: PAGE_FIXTURES,
+        url: PAGE_URL,
+        bundles: ['content/profile-backup.js'],
+        prepare: dom => {
+            const aids = [...dom.window.document.querySelectorAll('a[href*="/ascent.aspx?aid="]')]
+                .map(anchor => Number(new dom.window.URL(anchor.href).searchParams.get('aid')));
+            const existing = aids.slice(1).map(aid => `2020-01-01-peak-a${aid}`);
+            prepareRuntime(dom, message => {
+                if (message.type === 'GITHUB_BACKUP_STATUS') return { enabled: true, connected: true, repo: { fullName: 'me/backup' } };
+                if (message.type === 'GITHUB_BACKUP_PROFILE_STATUS') return { ok: true, enabled: true, connected: true, folders: existing };
+                if (message.type === 'GITHUB_BACKUP_PROFILE_ASCENT') {
+                    pushed.push(message.aid);
+                    return pushed.length === 1
+                        ? { ok: false, error: { code: 'rate-limit', message: 'API rate limit exceeded.' } }
+                        : { ok: true, result: { isUpdate: false } };
+                }
+                return null;
+            });
+            dom.window.fetch = async url => ({
+                ok: true,
+                status: 200,
+                url: String(url),
+                headers: { get: () => null },
+                text: async () => editHtml,
+            });
+        },
+    });
+    await waitFor(dom, () => dom.window.document.getElementById('bpb-profile-backup'));
+    dom.window.document.querySelector('.bpb-profile-primary').click();
+    await waitFor(dom, () => /GitHub backup paused/.test(dom.window.document.getElementById('bpb-profile-backup').textContent));
+
+    const panel = dom.window.document.getElementById('bpb-profile-backup');
+    assert.match(panel.textContent, /GitHub is temporarily rate-limiting requests/);
+    assert.match(panel.textContent, /Resume will retry this ascent/);
+    assert.deepEqual(pushed, [9100001]);
+
+    [...panel.querySelectorAll('button')].find(control => control.textContent === 'Resume').click();
+    await waitFor(dom, () => /Profile backup complete/.test(panel.textContent));
+    assert.deepEqual(pushed, [9100001, 9100001]);
+    assert.match(panel.textContent, /Backed up 1; skipped 37; failed 0/);
+});

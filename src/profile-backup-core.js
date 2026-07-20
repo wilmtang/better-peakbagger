@@ -160,6 +160,7 @@ const createRunner = ({
         failures: [],
         current: null,
         pauseReason: null,
+        pauseError: null,
         challengeUrl: null,
         notReached: work.length,
     };
@@ -188,7 +189,7 @@ const createRunner = ({
 
     const perform = async () => {
         if (cancelled) { publish({ status: 'cancelled', current: null }); return { ...state }; }
-        publish({ status: 'running', pauseReason: null, challengeUrl: null });
+        publish({ status: 'running', pauseReason: null, pauseError: null, challengeUrl: null });
         while (index < work.length) {
             if (cancelled) { publish({ status: 'cancelled', current: null }); break; }
             if (pauseRequested) { publish({ status: 'paused', pauseReason: 'user', current: null }); break; }
@@ -239,7 +240,19 @@ const createRunner = ({
                 catch (error) { pushed = { ok: false, error: { message: error && error.message } }; }
                 if (!pushed || !pushed.ok) {
                     const error = pushed && pushed.error;
-                    recordFailure(item, trim(error && error.message) || trim(error && error.code) || 'GitHub backup failed.', 'github');
+                    publish({
+                        status: 'paused',
+                        pauseReason: 'github',
+                        pauseError: {
+                            aid: item.aid,
+                            peakName: item.peakName || '',
+                            ascentUrl: item.ascentUrl || '',
+                            reason: trim(error && error.message) || trim(error && error.code) || 'GitHub backup failed.',
+                            kind: 'github',
+                        },
+                        current: null,
+                    });
+                    break;
                 } else {
                     index += 1;
                     publish({ completed: state.completed + 1, backedUp: state.backedUp + 1 });

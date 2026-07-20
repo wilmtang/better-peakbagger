@@ -7,7 +7,12 @@ import { readFile } from 'node:fs/promises';
 import { profileBackupCore as Core } from '../src/profile-backup-core.js';
 
 const editFixture = await readFile(new URL('./fixtures/pages/climber-ascentedit.html', import.meta.url), 'utf8');
-const items = [1, 2, 3].map(aid => ({ aid, peakName: `Peak ${aid}`, editUrl: `https://peakbagger.com/climber/AscentEdit.aspx?aid=${aid}` }));
+const items = [1, 2, 3].map(aid => ({
+    aid,
+    peakName: `Peak ${aid}`,
+    ascentUrl: `https://peakbagger.com/climber/Ascent.aspx?aid=${aid}`,
+    editUrl: `https://peakbagger.com/climber/AscentEdit.aspx?aid=${aid}`,
+}));
 const ok = { kind: 'ok', data: { snapshot: true } };
 
 test('response classifier distinguishes edit data, challenge, transient, and wrong content', () => {
@@ -102,6 +107,50 @@ test('wrong content fails one ascent, skips existing folders, and continues', as
     assert.deepEqual(result.failures.map(failure => failure.aid), [2]);
     assert.deepEqual(loaded, [2, 3]);
     assert.deepEqual(pushed, [3]);
+});
+
+test('a GitHub failure pauses on the current ascent and resume retries it', async () => {
+    const loaded = [];
+    const pushed = [];
+    let rejected = false;
+    const runner = Core.createRunner({
+        ascents: items,
+        paceMs: 0,
+        sleep: async () => {},
+        loadItem: async item => { loaded.push(item.aid); return ok; },
+        pushItem: async item => {
+            pushed.push(item.aid);
+            if (!rejected) {
+                rejected = true;
+                return { ok: false, error: { code: 'rate-limit', message: 'GitHub is temporarily rate-limiting requests.' } };
+            }
+            return { ok: true };
+        },
+    });
+
+    const paused = await runner.run();
+    assert.equal(paused.status, 'paused');
+    assert.equal(paused.pauseReason, 'github');
+    assert.equal(paused.completed, 0);
+    assert.equal(paused.backedUp, 0);
+    assert.equal(paused.failures.length, 0);
+    assert.equal(paused.notReached, 3);
+    assert.deepEqual(paused.pauseError, {
+        aid: 1,
+        peakName: 'Peak 1',
+        ascentUrl: items[0].ascentUrl,
+        reason: 'GitHub is temporarily rate-limiting requests.',
+        kind: 'github',
+    });
+    assert.deepEqual(loaded, [1]);
+    assert.deepEqual(pushed, [1]);
+
+    const finished = await runner.resume();
+    assert.equal(finished.status, 'complete');
+    assert.equal(finished.pauseError, null);
+    assert.equal(finished.backedUp, 3);
+    assert.deepEqual(loaded, [1, 1, 2, 3]);
+    assert.deepEqual(pushed, [1, 1, 2, 3]);
 });
 
 test('cancelling during an in-flight fetch stops before the GitHub write boundary', async () => {
