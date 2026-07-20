@@ -201,9 +201,18 @@ import { githubBackup as Backup } from './github-backup.js';
         };
 
         const readHead = async ({ info, targetBranch }) => {
-            const ref = await request('GET', `/git/ref/heads/${encodeURIComponent(targetBranch)}`, {
-                phase: 'ref', allowNotFound: true,
-            });
+            let ref;
+            try {
+                ref = await request('GET', `/git/ref/heads/${encodeURIComponent(targetBranch)}`, {
+                    phase: 'ref', allowNotFound: true,
+                });
+            } catch (error) {
+                // GitHub's refs endpoint returns 409 (not 404) for a repository
+                // with no commits. Treat only that exact response as an absent
+                // head; other conflicts must keep failing closed.
+                if (error && error.status === 409 && /git repository is empty/i.test(error.message || '')) ref = null;
+                else throw error;
+            }
             if (!ref) {
                 if (Number(info.size) === 0) return null;
                 throw new GithubBackupError(ERROR_CODES.BRANCH_MISSING,

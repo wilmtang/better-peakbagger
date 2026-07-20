@@ -315,6 +315,27 @@ test('repository selection inspects populated content before storing the choice'
     assert.equal(worker.local.bpbGithubAuth.installationId, 7);
 });
 
+test('repository selection accepts GitHub\'s 409 response for an empty repository', async () => {
+    const extensionSender = { url: 'chrome-extension://test/options/options.html' };
+    const repo = { owner: 'me', name: 'backup', fullName: 'me/backup', defaultBranch: 'main', installationId: 7 };
+    const github = (method, path) => {
+        if (method === 'GET' && path === '/repos/me/backup') return respond(200, {
+            default_branch: 'main', archived: false, size: 0, permissions: { push: true },
+        });
+        if (method === 'GET' && path === '/repos/me/backup/git/ref/heads/main') {
+            return respond(409, { message: 'Git Repository is empty.' });
+        }
+        return null;
+    };
+    const worker = createWorker({ auth: { token: 'gho_secret', account: { login: 'me' } }, github });
+
+    const result = await worker.send({ type: 'GITHUB_AUTH_SELECT_REPO', repo }, extensionSender);
+    assert.equal(result.connected, true);
+    assert.equal(result.inspection.kind, 'empty');
+    assert.equal(worker.local.bpbGithubAuth.repo.fullName, 'me/backup');
+    assert.equal(worker.local.bpbGithubAuth.installationId, 7);
+});
+
 test('repository selection rejects ambiguous root backup folders', async () => {
     const extensionSender = { url: 'chrome-extension://test/options/options.html' };
     const repo = { owner: 'me', name: 'project', fullName: 'me/project', defaultBranch: 'main' };

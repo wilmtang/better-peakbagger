@@ -158,7 +158,7 @@ test('repository inspection distinguishes empty, populated, and owned repositori
         'GET /repos/me/backup': () => respond(200, {
             default_branch: 'main', archived: false, size: 0, permissions: { push: true },
         }),
-        'GET /repos/me/backup/git/ref/heads/main': () => respond(404, { message: 'Git Repository is empty.' }),
+        'GET /repos/me/backup/git/ref/heads/main': () => respond(409, { message: 'Git Repository is empty.' }),
     });
     const emptyClient = Client.createGithubClient({ fetch: empty.fetch, token: 't', owner: 'me', repo: 'backup' });
     assert.deepEqual(await emptyClient.inspectRepository(), {
@@ -171,7 +171,7 @@ test('an empty repository is initialized with the first backup commit', async ()
         'GET /repos/me/backup': () => respond(200, {
             default_branch: 'main', archived: false, size: 0, permissions: { push: true },
         }),
-        'GET /repos/me/backup/git/ref/heads/main': () => respond(404, { message: 'Git Repository is empty.' }),
+        'GET /repos/me/backup/git/ref/heads/main': () => respond(409, { message: 'Git Repository is empty.' }),
         'POST /repos/me/backup/git/blobs': n => respond(201, { sha: `blob${n}` }),
         'POST /repos/me/backup/git/trees': () => respond(201, { sha: 'T1' }),
         'POST /repos/me/backup/git/commits': () => respond(201, { sha: 'C1', html_url: 'u' }),
