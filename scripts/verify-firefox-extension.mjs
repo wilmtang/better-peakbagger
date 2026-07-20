@@ -15,10 +15,12 @@ import firefox from "selenium-webdriver/firefox.js";
 
 import {
   createBrowserFixtureServer,
+  createSyntheticCaptureJob,
   fixtureHost,
   storeUrls,
   surfaceSelectors,
   verificationViewport,
+  waitForCondition,
 } from "./browser-verification-fixtures.mjs";
 import { prepareFirefoxSource } from "./run-firefox.mjs";
 
@@ -335,6 +337,129 @@ async function main() {
       popupState,
     );
 
+    const controlHandle = await driver.getWindowHandle();
+    const sourceTabId = await driver.executeAsyncScript(done => {
+      const api = globalThis.browser || globalThis.chrome;
+      api.tabs.query({ active: true, currentWindow: true })
+        .then(([tab]) => done(tab?.id ?? null), error => done({ error: String(error) }));
+    });
+    assertState(Number.isInteger(sourceTabId), "Firefox draft source tab identity was unavailable", sourceTabId);
+    const seededJob = createSyntheticCaptureJob(sourceTabId);
+    const opened = await driver.executeAsyncScript((job, done) => {
+      const api = globalThis.browser || globalThis.chrome;
+      api.storage.session.set({
+        bpbCaptureJobs: { [job.sourceTabId]: job },
+        bpbDraftTabs: {},
+      }).then(() => api.runtime.sendMessage({
+        type: "CAPTURE_OPEN_DRAFTS",
+        tabId: job.sourceTabId,
+        selectedIds: [2829],
+      })).then(async reply => {
+        const tab = reply?.tabIds?.length ? await api.tabs.get(reply.tabIds[0]) : null;
+        done({ reply, tab });
+      }).catch(error => done({ error: String(error) }));
+    }, seededJob);
+    const draftTabId = opened.reply?.tabIds?.[0];
+    assertState(
+      Number.isInteger(draftTabId),
+      "Firefox worker did not create a draft tab",
+      opened,
+    );
+    assertState(
+      opened.reply?.groupWarning || Number(opened.tab?.groupId) >= 0,
+      "Firefox draft tab was neither grouped nor reported honestly",
+      opened,
+    );
+
+    const draftHandle = await driver.wait(async () => {
+      const handles = await driver.getAllWindowHandles();
+      return handles.find(handle => handle !== controlHandle) || false;
+    }, 10_000);
+    await driver.switchTo().window(draftHandle);
+    const workerDraftUrl = await driver.wait(async () => {
+      const current = await driver.getCurrentUrl();
+      return /peakbagger\.com\/climber\/ascentedit\.aspx\?pid=2829&cid=900001/i.test(current)
+        ? current
+        : false;
+    }, 10_000);
+    assertState(
+      /peakbagger\.com\/climber\/ascentedit\.aspx\?pid=2829&cid=900001/i.test(workerDraftUrl),
+      "Firefox worker did not navigate the draft tab to its bound peak and climber",
+      workerDraftUrl,
+    );
+    await driver.switchTo().window(controlHandle);
+
+    const wrongDraftUrl = `https://${fixtureHost}:${fixture.port}/climber/ascentedit.aspx?pid=999&cid=900001`;
+    await driver.executeAsyncScript((tabId, url, done) => {
+      const api = globalThis.browser || globalThis.chrome;
+      api.tabs.update(tabId, { url }).then(() => done(true), error => done({ error: String(error) }));
+    }, draftTabId, wrongDraftUrl);
+    await driver.switchTo().window(draftHandle);
+    await driver.wait(async () => (await driver.getCurrentUrl()) === wrongDraftUrl, 10_000);
+    const mismatch = await driver.wait(until.elementLocated(By.id("bpb-draft-banner")), 10_000).then(
+      element => element.getText(),
+    );
+    assertState(
+      /does not match its prepared ascent draft/.test(mismatch)
+        && fixture.requests.previewPosts === 0,
+      "Firefox worker accepted the wrong peak identity",
+      { mismatch, requests: fixture.requests },
+    );
+
+    const correctDraftUrl = `https://${fixtureHost}:${fixture.port}/climber/ascentedit.aspx?pid=2829&cid=900001`;
+    await driver.get(correctDraftUrl);
+    try {
+      await waitForCondition(() => fixture.requests.previewPosts === 1, {
+        description: "the Firefox draft GPS Preview POST",
+        timeoutMs: 15_000,
+      });
+    } catch (error) {
+      const pageState = await driver.executeScript(`return {
+        url: location.href,
+        banner: document.getElementById("bpb-draft-banner")?.textContent || null,
+        date: document.getElementById("DateText")?.value || null,
+        files: document.getElementById("GPXUpload")?.files?.length ?? null,
+      };`).catch(readError => ({ error: String(readError) }));
+      throw new Error(`Firefox draft Preview did not submit: ${JSON.stringify({
+        requests: fixture.requests,
+        pageState,
+      })}`, { cause: error });
+    }
+    await waitForScript(
+      driver,
+      "return /Preview is ready/.test(document.getElementById('bpb-draft-banner')?.textContent || '');",
+      "the completed Firefox draft banner",
+    );
+    assertState(
+      fixture.requests.previewPosts === 1
+        && fixture.requests.savePosts === 0
+        && fixture.requests.lastPreview?.attachedGpx
+        && fixture.requests.lastPreview?.dateFilled
+        && fixture.requests.lastPreview?.suffixBlank,
+      "Firefox draft handoff did not attach/fill/Preview exactly once",
+      fixture.requests,
+    );
+
+    await driver.switchTo().window(controlHandle);
+    const privateState = await driver.executeAsyncScript((sourceId, draftId, done) => {
+      const api = globalThis.browser || globalThis.chrome;
+      api.storage.session.get(["bpbCaptureJobs", "bpbDraftTabs"]).then(values => done({
+        job: values.bpbCaptureJobs?.[sourceId] || null,
+        draft: values.bpbDraftTabs?.[draftId] || null,
+      }), error => done({ error: String(error) }));
+    }, sourceTabId, draftTabId);
+    assertState(
+      privateState.job?.phase === "previewed"
+        && privateState.job?.uploadGpx === null
+        && privateState.draft?.complete === true
+        && privateState.draft?.previewStarted === true,
+      "Firefox worker did not complete the exactly-once handoff",
+      privateState,
+    );
+    await driver.switchTo().window(draftHandle);
+    await driver.close();
+    await driver.switchTo().window(controlHandle);
+
     const capabilities = await driver.getCapabilities();
     console.log("Firefox extension startup verification passed:");
     console.log(`  - ${capabilities.getBrowserName()} ${capabilities.getBrowserVersion()}`);
@@ -342,6 +467,7 @@ async function main() {
     console.log("  - real sync/local/session storage and storage.onChanged round-tripped");
     console.log("  - options, popup, ascent, editor, Peak, BigMap, and PeakAscents surfaces initialized");
     console.log("  - AMO report credit, real editor input/draft recovery, filter/sort, and 3D frame passed");
+    console.log("  - a real draft tab rejected wrong identity, attached GPX, filled fields, Previewed once, and never Saved");
     console.log("  - native toolbar activeTab grant, popup chrome, prompts, and window placement were not tested");
   } finally {
     if (driver && addonId) {

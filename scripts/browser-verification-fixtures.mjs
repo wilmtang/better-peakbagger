@@ -70,6 +70,55 @@ const gpx = `<?xml version="1.0"?><gpx version="1.1"><trk><name>Synthetic</name>
       + `<ele>${1500 + index * 25}</ele><time>2026-07-01T13:${String(index % 60).padStart(2, "0")}:00Z</time></trkpt>`)
     .join("")}</trkseg></trk></gpx>`;
 
+export function createSyntheticCaptureJob(sourceTabId) {
+  const timestamp = Date.now();
+  return {
+    id: `browser-verify-${timestamp}`,
+    sourceTabId,
+    provider: "strava",
+    activityId: "browser-verify",
+    phase: "ready",
+    cid: 900001,
+    matches: [{
+      id: 2829,
+      name: "Mount Shuksan",
+      classification: "strong",
+      confidence: 96,
+      selected: true,
+      draftFields: {
+        date: "2026-07-01",
+        time: "08:30",
+        startElevationM: 1500,
+        endElevationM: 1510,
+        upDistanceM: 1200,
+        downDistanceM: 1100,
+        upDuration: { days: 0, hours: 1, minutes: 30 },
+        downDuration: { days: 0, hours: 1, minutes: 5 },
+        upGainM: 420,
+        downGainM: 35,
+      },
+    }],
+    selectedIds: [2829],
+    capturePreferences: {
+      retainWaypoints: false,
+      fillAscentDetails: true,
+      fillTripInfo: false,
+      fillWildernessNights: false,
+    },
+    tripName: "Synthetic",
+    nightsOut: null,
+    dayStats: [],
+    // The draft payload is newly serialized from the narrow allowlist. Unlike
+    // the analyzer download fixture above, it deliberately carries no track
+    // name or other provider metadata.
+    uploadGpx: gpx.replace("<name>Synthetic</name>", ""),
+    error: null,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+    expiresAt: timestamp + 20 * 60 * 1000,
+  };
+}
+
 const ascentHtml = `<!doctype html><html><head><title>Ascent</title></head><body>
 <table><tr><td>Elevation:</td><td>10,781 ft</td></tr></table>
 <iframe src="/map/MasterMap.aspx?t=P&d=2296&c=900001&hj=300" width="450" height="450"></iframe>
@@ -155,13 +204,67 @@ export async function createBrowserFixtureServer({ temporaryRoot }) {
       "utf8",
     ),
   ]);
-  const server = createServer({ key, cert }, (request, response) => {
+  const requests = {
+    previewPosts: 0,
+    savePosts: 0,
+    lastPreview: null,
+  };
+  const relativeAscentEditHtml = ascentEditHtml.replace(
+    /action="https:\/\/www\.peakbagger\.com\/climber\/ascentedit\.aspx\?cid=900001"/i,
+    'action=""',
+  );
+  const previewSuccessHtml = relativeAscentEditHtml.replace(
+    /(<span id="GPXStatusLabel"[^>]*>)[\s\S]*?(<\/span>)/i,
+    "$1Your file was successfully uploaded. Preview is ready.$2",
+  );
+  const readRequestBody = request => new Promise((resolve, reject) => {
+    const chunks = [];
+    let length = 0;
+    request.on("data", chunk => {
+      length += chunk.length;
+      if (length > 2_000_000) {
+        reject(new Error("Browser fixture POST exceeded 2 MB"));
+        request.destroy();
+        return;
+      }
+      chunks.push(chunk);
+    });
+    request.on("end", () => resolve(Buffer.concat(chunks).toString("latin1")));
+    request.on("error", reject);
+  });
+  const server = createServer({ key, cert }, async (request, response) => {
     const url = new URL(request.url, `https://${fixtureHost}`);
     const send = (contentType, body) => {
       response.writeHead(200, { "content-type": contentType });
       response.end(body);
     };
-    if (/ascentedit\.aspx/i.test(url.pathname)) return send("text/html; charset=utf-8", ascentEditHtml);
+    if (/ascentedit\.aspx/i.test(url.pathname)) {
+      if (request.method === "POST") {
+        try {
+          const body = await readRequestBody(request);
+          const preview = /name="GPXPreview"/i.test(body);
+          const save = /name="SaveButton2?"/i.test(body);
+          if (preview) {
+            requests.previewPosts += 1;
+            requests.lastPreview = {
+              attachedGpx: /filename="track\.gpx"[\s\S]*?<gpx\b/i.test(body),
+              dateFilled: /name="DateText"[\s\S]*?\r\n\r\n2026-07-01\r\n/i.test(body),
+              suffixBlank: /name="SuffixText"[\s\S]*?\r\n\r\n\r\n/i.test(body),
+            };
+          }
+          if (save) requests.savePosts += 1;
+          return send(
+            "text/html; charset=utf-8",
+            preview ? previewSuccessHtml : relativeAscentEditHtml,
+          );
+        } catch (error) {
+          response.writeHead(400);
+          response.end(error.message);
+          return;
+        }
+      }
+      return send("text/html; charset=utf-8", relativeAscentEditHtml);
+    }
     if (/ascent\.aspx/i.test(url.pathname)) return send("text/html; charset=utf-8", ascentHtml);
     if (/peakascents\.aspx|climblistc\.aspx/i.test(url.pathname)) {
       return send("text/html; charset=utf-8", peakAscentsHtml);
@@ -179,6 +282,7 @@ export async function createBrowserFixtureServer({ temporaryRoot }) {
   });
   return {
     port: server.address().port,
+    requests,
     close: () => new Promise((resolve, reject) =>
       server.close(error => error ? reject(error) : resolve())),
   };

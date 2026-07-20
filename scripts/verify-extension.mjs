@@ -28,8 +28,10 @@ import { fileURLToPath } from 'node:url';
 import {
     createBrowserFixtureServer,
     createFailureCollector,
+    createSyntheticCaptureJob,
     storeUrls,
-    verificationViewport
+    verificationViewport,
+    waitForCondition
 } from './browser-verification-fixtures.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -1142,6 +1144,118 @@ try {
         }
         await editorPage.close();
     }
+
+    // --- Real draft-tab handoff --------------------------------------------
+    // Seed only the private post-capture state. The worker still owns tab
+    // creation/grouping, identity registration, sender validation, file
+    // assignment, and exactly-once Preview. The native toolbar activeTab grant
+    // remains a manual release boundary.
+    if (extensionId) {
+        const sourcePage = await context.newPage();
+        const sourceUrl = `https://www.peakbagger.com:${port}/climber/ascent.aspx?aid=handoff-source`;
+        await sourcePage.goto(sourceUrl, { waitUntil: 'load' });
+        const controlPage = await context.newPage();
+        await controlPage.goto(`chrome-extension://${extensionId}/options/options.html`);
+        const seeded = await controlPage.evaluate(async ({ sourceUrl }) => {
+            const [sourceTab] = (await chrome.tabs.query({})).filter(tab => tab.url === sourceUrl);
+            if (!sourceTab) return { error: 'source tab not found' };
+            return { sourceTabId: sourceTab.id };
+        }, { sourceUrl });
+        check(Number.isInteger(seeded.sourceTabId),
+            `the Chrome draft source tab identity was unavailable: ${JSON.stringify(seeded)}`);
+        if (Number.isInteger(seeded.sourceTabId)) {
+            const job = createSyntheticCaptureJob(seeded.sourceTabId);
+            const opened = await controlPage.evaluate(async ({ sourceTabId, job }) => {
+                await chrome.storage.session.set({
+                    bpbCaptureJobs: { [sourceTabId]: job },
+                    bpbDraftTabs: {}
+                });
+                const reply = await chrome.runtime.sendMessage({
+                    type: 'CAPTURE_OPEN_DRAFTS',
+                    tabId: sourceTabId,
+                    selectedIds: [2829]
+                });
+                if (!reply?.tabIds?.length) return { reply };
+                const tab = await chrome.tabs.get(reply.tabIds[0]);
+                return { reply, tab };
+            }, { sourceTabId: seeded.sourceTabId, job });
+            const draftTabId = opened.reply?.tabIds?.[0];
+            check(Number.isInteger(draftTabId)
+                && /peakbagger\.com\/climber\/ascentedit\.aspx\?pid=2829&cid=900001/i.test(
+                    opened.tab?.pendingUrl || opened.tab?.url || ''),
+            `the Chrome worker did not create an identity-bound draft tab: ${JSON.stringify(opened)}`);
+            check(opened.reply?.groupWarning || Number(opened.tab?.groupId) >= 0,
+                `the Chrome draft tab was neither grouped nor reported honestly: ${JSON.stringify(opened)}`);
+
+            if (Number.isInteger(draftTabId)) {
+                const wrongUrl = `https://www.peakbagger.com:${port}/climber/ascentedit.aspx?pid=999&cid=900001`;
+                await controlPage.evaluate(({ draftTabId, wrongUrl }) =>
+                    chrome.tabs.update(draftTabId, { url: wrongUrl }), { draftTabId, wrongUrl });
+                const draftPage = await waitForCondition(() =>
+                    context.pages().find(page => page.url() === wrongUrl), {
+                    description: 'the Chrome draft tab to reach the wrong-identity fixture'
+                });
+                const mismatch = await draftPage.locator('#bpb-draft-banner').waitFor({
+                    state: 'visible', timeout: 10000
+                }).then(() => draftPage.locator('#bpb-draft-banner').textContent()).catch(() => null);
+                check(/does not match its prepared ascent draft/.test(mismatch || '')
+                    && fixture.requests.previewPosts === 0,
+                `the Chrome worker accepted the wrong peak identity: ${JSON.stringify({ mismatch, requests: fixture.requests })}`);
+
+                const correctUrl = `https://www.peakbagger.com:${port}/climber/ascentedit.aspx?pid=2829&cid=900001`;
+                await draftPage.goto(correctUrl, { waitUntil: 'load' });
+                try {
+                    await waitForCondition(() => fixture.requests.previewPosts === 1, {
+                        description: 'the Chrome draft GPS Preview POST',
+                        timeoutMs: 15_000
+                    });
+                } catch (error) {
+                    const pageState = await draftPage.evaluate(() => ({
+                        url: location.href,
+                        banner: document.getElementById('bpb-draft-banner')?.textContent || null,
+                        date: document.getElementById('DateText')?.value || null,
+                        files: document.getElementById('GPXUpload')?.files?.length ?? null,
+                        preview: document.getElementById('GPXPreview')?.value || null
+                    })).catch(readError => ({ error: String(readError) }));
+                    const privateState = await controlPage.evaluate(async ({ sourceTabId, draftTabId }) => {
+                        const values = await chrome.storage.session.get(['bpbCaptureJobs', 'bpbDraftTabs']);
+                        return {
+                            job: values.bpbCaptureJobs?.[sourceTabId] || null,
+                            draft: values.bpbDraftTabs?.[draftTabId] || null
+                        };
+                    }, { sourceTabId: seeded.sourceTabId, draftTabId });
+                    throw new Error(`Chrome draft Preview did not submit: ${JSON.stringify({
+                        requests: fixture.requests, pageState, privateState
+                    })}`, { cause: error });
+                }
+                await draftPage.waitForFunction(() =>
+                    /Preview is ready/.test(document.getElementById('bpb-draft-banner')?.textContent || ''),
+                null, { timeout: 10000 });
+                check(fixture.requests.previewPosts === 1
+                    && fixture.requests.savePosts === 0
+                    && fixture.requests.lastPreview?.attachedGpx
+                    && fixture.requests.lastPreview?.dateFilled
+                    && fixture.requests.lastPreview?.suffixBlank,
+                `the Chrome draft handoff did not attach/fill/Preview exactly once: ${JSON.stringify(fixture.requests)}`);
+
+                const privateState = await controlPage.evaluate(async ({ sourceTabId, draftTabId }) => {
+                    const values = await chrome.storage.session.get(['bpbCaptureJobs', 'bpbDraftTabs']);
+                    return {
+                        job: values.bpbCaptureJobs?.[sourceTabId] || null,
+                        draft: values.bpbDraftTabs?.[draftTabId] || null
+                    };
+                }, { sourceTabId: seeded.sourceTabId, draftTabId });
+                check(privateState.job?.phase === 'previewed'
+                    && privateState.job?.uploadGpx === null
+                    && privateState.draft?.complete === true
+                    && privateState.draft?.previewStarted === true,
+                `the Chrome worker did not complete the exactly-once handoff: ${JSON.stringify(privateState)}`);
+                await draftPage.close();
+            }
+        }
+        await controlPage.close();
+        await sourcePage.close();
+    }
 } finally {
     if (context) await context.close();
     await fixture.close();
@@ -1165,6 +1279,8 @@ console.log('  - the Peak Dynamic Map preserves its native frame and shows an en
 console.log('  - clicking Peak 3D creates the isolated frame with a route-free summit focus');
 console.log('  - the PeakAscents filter mounts, reveals rows, and sorts in place');
 console.log('  - the opt-in report credit renders and serializes the Chrome Web Store URL');
+console.log('  - a real grouped draft tab rejects a wrong identity, attaches GPX, fills fields,');
+console.log('    submits Preview exactly once, and never submits Save');
 console.log('  - the trip-report editor mounts on the captured ascent form; real typing,');
 console.log('    Ctrl/Cmd+B, and the "1. " input rule sync bracket markup into JournalText');
 console.log('    with live toolbar states; selected Rich images/videos and YouTube players resize proportionally by');
