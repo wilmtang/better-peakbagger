@@ -39,7 +39,7 @@ test('owned lists show a restrained full-profile backup entry point', async () =
     [...panel.querySelectorAll('button')].find(control => control.textContent === 'Refresh all').click();
     assert.match(panel.textContent, /Refresh every ascent\?/);
     assert.match(panel.textContent, /every ascent from every year/);
-    assert.match(panel.textContent, /one GitHub commit for each/);
+    assert.match(panel.textContent, /groups of up to 10/);
 });
 
 test('public or mismatched climber lists never show profile backup', async () => {
@@ -127,7 +127,7 @@ test('one missing ascent is fetched from its edit form and sent as a direct prof
                 sent.push(message);
                 if (message.type === 'GITHUB_BACKUP_STATUS') return { enabled: true, connected: true, repo: { fullName: 'me/backup' } };
                 if (message.type === 'GITHUB_BACKUP_PROFILE_STATUS') return { ok: true, enabled: true, connected: true, folders: existing };
-                if (message.type === 'GITHUB_BACKUP_PROFILE_ASCENT') return { ok: true, result: { isUpdate: false } };
+                if (message.type === 'GITHUB_BACKUP_PROFILE_BATCH') return { ok: true, result: { count: message.entries.length } };
                 return null;
             });
             dom.window.fetch = async url => ({
@@ -143,14 +143,15 @@ test('one missing ascent is fetched from its edit form and sent as a direct prof
     dom.window.document.querySelector('.bpb-profile-primary').click();
     await waitFor(dom, () => /Profile backup complete/.test(dom.window.document.getElementById('bpb-profile-backup').textContent));
 
-    const push = sent.find(message => message.type === 'GITHUB_BACKUP_PROFILE_ASCENT');
+    const push = sent.find(message => message.type === 'GITHUB_BACKUP_PROFILE_BATCH');
     assert.ok(push);
-    assert.equal(push.aid, 9100001);
-    assert.equal(push.snapshot.ascent.id, 9100001);
-    assert.equal(push.snapshot.ascent.date, '2020-01-01');
-    assert.equal(push.snapshot.peak.id, 990001);
-    assert.equal(push.snapshot.peak.name, 'Sample Peak 1');
-    assert.equal(push.gpx, null);
+    assert.equal(push.entries.length, 1);
+    assert.equal(push.entries[0].aid, 9100001);
+    assert.equal(push.entries[0].snapshot.ascent.id, 9100001);
+    assert.equal(push.entries[0].snapshot.ascent.date, '2020-01-01');
+    assert.equal(push.entries[0].snapshot.peak.id, 990001);
+    assert.equal(push.entries[0].snapshot.peak.name, 'Sample Peak 1');
+    assert.equal(push.entries[0].gpx, null);
     assert.match(dom.window.document.getElementById('bpb-profile-backup').textContent, /Backed up 1; skipped 37; failed 0/);
 });
 
@@ -167,8 +168,8 @@ test('a GitHub write error pauses visibly and resume retries the same ascent', a
             prepareRuntime(dom, message => {
                 if (message.type === 'GITHUB_BACKUP_STATUS') return { enabled: true, connected: true, repo: { fullName: 'me/backup' } };
                 if (message.type === 'GITHUB_BACKUP_PROFILE_STATUS') return { ok: true, enabled: true, connected: true, folders: existing };
-                if (message.type === 'GITHUB_BACKUP_PROFILE_ASCENT') {
-                    pushed.push(message.aid);
+                if (message.type === 'GITHUB_BACKUP_PROFILE_BATCH') {
+                    pushed.push(Array.from(message.entries, entry => entry.aid));
                     return pushed.length === 1
                         ? { ok: false, error: { code: 'rate-limit', message: 'API rate limit exceeded.' } }
                         : { ok: true, result: { isUpdate: false } };
@@ -190,11 +191,12 @@ test('a GitHub write error pauses visibly and resume retries the same ascent', a
 
     const panel = dom.window.document.getElementById('bpb-profile-backup');
     assert.match(panel.textContent, /GitHub is temporarily rate-limiting requests/);
-    assert.match(panel.textContent, /Resume will retry this ascent/);
-    assert.deepEqual(pushed, [9100001]);
+    assert.match(panel.textContent, /1-ascent batch is still ready/);
+    assert.match(panel.textContent, /Resume will retry it/);
+    assert.deepEqual(pushed, [[9100001]]);
 
     [...panel.querySelectorAll('button')].find(control => control.textContent === 'Resume').click();
     await waitFor(dom, () => /Profile backup complete/.test(panel.textContent));
-    assert.deepEqual(pushed, [9100001, 9100001]);
+    assert.deepEqual(pushed, [[9100001], [9100001]]);
     assert.match(panel.textContent, /Backed up 1; skipped 37; failed 0/);
 });

@@ -37,7 +37,7 @@ test('a challenge stops the queue and resume re-probes the same item before cont
             if (item.aid === 2 && !challenged) { challenged = true; return { kind: 'challenged', url: item.editUrl }; }
             return ok;
         },
-        pushItem: async () => ({ ok: true }),
+        pushBatch: async () => ({ ok: true }),
     });
 
     const paused = await runner.run();
@@ -63,7 +63,7 @@ test('transient errors use the injected backoff schedule and fail only after two
         ascents: [items[0]],
         sleep: async ms => delays.push(ms),
         loadItem: async () => { attempts += 1; return { kind: 'transient', reason: 'offline' }; },
-        pushItem: async () => ({ ok: true }),
+        pushBatch: async () => ({ ok: true }),
     });
     const result = await runner.run();
     assert.equal(attempts, 3);
@@ -80,7 +80,7 @@ test('consecutive exhausted transients pause before requesting the next ascent',
         paceMs: 0,
         sleep: async () => {},
         loadItem: async item => { calls.push(item.aid); return { kind: 'transient', reason: 'offline' }; },
-        pushItem: async () => ({ ok: true }),
+        pushBatch: async () => ({ ok: true }),
     });
     const result = await runner.run();
     assert.equal(result.status, 'paused');
@@ -98,7 +98,7 @@ test('wrong content fails one ascent, skips existing folders, and continues', as
         paceMs: 0,
         sleep: async () => {},
         loadItem: async item => { loaded.push(item.aid); return item.aid === 2 ? { kind: 'wrong-content', reason: 'signed out' } : ok; },
-        pushItem: async item => { pushed.push(item.aid); return { ok: true }; },
+        pushBatch: async batch => { pushed.push(...batch.map(entry => entry.item.aid)); return { ok: true }; },
     });
     const result = await runner.run();
     assert.equal(result.status, 'complete');
@@ -118,8 +118,8 @@ test('a GitHub failure pauses on the current ascent and resume retries it', asyn
         paceMs: 0,
         sleep: async () => {},
         loadItem: async item => { loaded.push(item.aid); return ok; },
-        pushItem: async item => {
-            pushed.push(item.aid);
+        pushBatch: async batch => {
+            pushed.push(batch.map(entry => entry.item.aid));
             if (!rejected) {
                 rejected = true;
                 return { ok: false, error: { code: 'rate-limit', message: 'GitHub is temporarily rate-limiting requests.' } };
@@ -135,6 +135,8 @@ test('a GitHub failure pauses on the current ascent and resume retries it', asyn
     assert.equal(paused.backedUp, 0);
     assert.equal(paused.failures.length, 0);
     assert.equal(paused.notReached, 3);
+    assert.equal(paused.buffered, 3);
+    assert.equal(paused.pauseBatchSize, 3);
     assert.deepEqual(paused.pauseError, {
         aid: 1,
         peakName: 'Peak 1',
@@ -142,15 +144,16 @@ test('a GitHub failure pauses on the current ascent and resume retries it', asyn
         reason: 'GitHub is temporarily rate-limiting requests.',
         kind: 'github',
     });
-    assert.deepEqual(loaded, [1]);
-    assert.deepEqual(pushed, [1]);
+    assert.deepEqual(loaded, [1, 2, 3]);
+    assert.deepEqual(pushed, [[1, 2, 3]]);
 
     const finished = await runner.resume();
     assert.equal(finished.status, 'complete');
     assert.equal(finished.pauseError, null);
     assert.equal(finished.backedUp, 3);
-    assert.deepEqual(loaded, [1, 1, 2, 3]);
-    assert.deepEqual(pushed, [1, 1, 2, 3]);
+    assert.equal(finished.buffered, 0);
+    assert.deepEqual(loaded, [1, 2, 3], 'resume reuses the retained batch instead of refetching Peakbagger');
+    assert.deepEqual(pushed, [[1, 2, 3], [1, 2, 3]]);
 });
 
 test('cancelling during an in-flight fetch stops before the GitHub write boundary', async () => {
@@ -160,7 +163,7 @@ test('cancelling during an in-flight fetch stops before the GitHub write boundar
     const runner = Core.createRunner({
         ascents: [items[0]],
         loadItem: async () => { await pending; return ok; },
-        pushItem: async () => { pushed = true; return { ok: true }; },
+        pushBatch: async () => { pushed = true; return { ok: true }; },
     });
     const running = runner.run();
     runner.cancel();
@@ -169,4 +172,66 @@ test('cancelling during an in-flight fetch stops before the GitHub write boundar
     assert.equal(result.status, 'cancelled');
     assert.equal(pushed, false);
     assert.equal(result.notReached, 1);
+});
+
+test('the producer fills only the bounded buffer while a GitHub batch is in flight', async () => {
+    const many = Array.from({ length: 8 }, (_, index) => ({ ...items[0], aid: index + 1, peakName: `Peak ${index + 1}` }));
+    const loaded = [];
+    const batches = [];
+    let releaseFirstBatch;
+    const firstBatchGate = new Promise(resolve => { releaseFirstBatch = resolve; });
+    let resolveWaiting;
+    const waiting = new Promise(resolve => { resolveWaiting = resolve; });
+    const runner = Core.createRunner({
+        ascents: many,
+        batchItems: 2,
+        batchBytes: 100,
+        bufferItems: 4,
+        bufferBytes: 100,
+        paceMs: 0,
+        sleep: async () => {},
+        measureItem: () => 1,
+        onState: state => { if (state.producerWaiting) resolveWaiting(); },
+        loadItem: async item => { loaded.push(item.aid); return ok; },
+        pushBatch: async batch => {
+            batches.push(batch.map(entry => entry.item.aid));
+            if (batches.length === 1) await firstBatchGate;
+            return { ok: true };
+        },
+    });
+
+    const running = runner.run();
+    await waiting;
+    assert.deepEqual(loaded, [1, 2, 3, 4], 'the in-flight batch counts toward the four-item memory bound');
+    assert.deepEqual(batches, [[1, 2]]);
+    releaseFirstBatch();
+    const result = await running;
+
+    assert.equal(result.status, 'complete');
+    assert.deepEqual(batches, [[1, 2], [3, 4], [5, 6], [7, 8]]);
+});
+
+test('the producer and consumer commit full batches plus one final partial batch', async () => {
+    const many = Array.from({ length: 23 }, (_, index) => ({ ...items[0], aid: index + 1, peakName: `Peak ${index + 1}` }));
+    const sizes = [];
+    const runner = Core.createRunner({
+        ascents: many,
+        paceMs: 0,
+        sleep: async () => {},
+        measureItem: () => 1,
+        loadItem: async () => ok,
+        pushBatch: async batch => { sizes.push(batch.length); return { ok: true }; },
+    });
+    const result = await runner.run();
+
+    assert.equal(result.status, 'complete');
+    assert.equal(result.backedUp, 23);
+    assert.deepEqual(sizes, [10, 10, 3]);
+});
+
+test('payload measurement includes the snapshot and GPX bytes', () => {
+    const withoutTrack = Core.backupPayloadBytes({ snapshot: { ascent: { id: 1 } }, gpx: null });
+    const withTrack = Core.backupPayloadBytes({ snapshot: { ascent: { id: 1 } }, gpx: '<gpx>track</gpx>' });
+    assert.ok(withoutTrack > 0);
+    assert.equal(withTrack - withoutTrack, new TextEncoder().encode('<gpx>track</gpx>').byteLength);
 });

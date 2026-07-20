@@ -59,7 +59,7 @@ import { githubError as GithubError } from './github-error.js';
     const renderRefreshConfirmation = () => body(
         node('div', { class: 'bpb-profile-copy' }, [
             node('strong', { text: 'Refresh every ascent?' }),
-            node('span', { text: 'This re-syncs every ascent from every year and creates one GitHub commit for each, including unchanged entries.' }),
+            node('span', { text: 'This re-syncs every ascent from every year and commits them to GitHub in groups of up to 10, including unchanged entries.' }),
         ]),
         node('div', { class: 'bpb-profile-actions' }, [
             button('Refresh every ascent', () => startBackup(true), true),
@@ -101,7 +101,7 @@ import { githubError as GithubError } from './github-error.js';
         if (state.status === 'complete' || state.status === 'cancelled') {
             const summary = state.status === 'complete'
                 ? `Backed up ${state.backedUp}; skipped ${state.skipped}; failed ${state.failures.length}.`
-                : `Cancelled. Backed up ${state.backedUp}; skipped ${state.skipped}; failed ${state.failures.length}; not reached ${state.notReached}.`;
+                : `Cancelled. Backed up ${state.backedUp}; skipped ${state.skipped}; failed ${state.failures.length}; not backed up ${state.notReached}.`;
             return body(
                 node('div', { class: 'bpb-profile-copy' }, [
                     node('strong', { text: state.status === 'complete' ? 'Profile backup complete' : 'Profile backup stopped' }),
@@ -113,10 +113,11 @@ import { githubError as GithubError } from './github-error.js';
         }
         if (state.status === 'paused') {
             if (state.pauseReason === 'github') {
+                const batchSize = state.pauseBatchSize || state.buffered || 1;
                 return body(
                     node('div', { class: 'bpb-profile-copy' }, [
                         node('strong', { text: 'GitHub backup paused' }),
-                        node('span', { text: 'No later ascents were attempted. Resume will retry this ascent.' }),
+                        node('span', { text: `The ${batchSize}-ascent batch is still ready. Resume will retry it; nothing was discarded.` }),
                     ]),
                     renderFailures(state.pauseError ? [state.pauseError] : []),
                     node('div', { class: 'bpb-profile-actions' }, [
@@ -137,11 +138,24 @@ import { githubError as GithubError } from './github-error.js';
         }
 
         const current = state.current;
+        const readyLabel = `${state.buffered} ascent${state.buffered === 1 ? '' : 's'} ready`;
+        const activity = state.producerWaiting
+            ? 'Waiting for GitHub…'
+            : current
+                ? `Reading ${current.peakName || `ascent ${current.aid}`}…`
+                : state.uploading
+                    ? `Uploading ${state.uploading} ascent${state.uploading === 1 ? '' : 's'} to GitHub…`
+                    : state.buffered
+                        ? `${readyLabel} for GitHub…`
+                        : 'Starting…';
+        const note = state.producerWaiting
+            ? `${readyLabel}. Reading resumes automatically when GitHub frees space.`
+            : `${state.fetched} read${state.buffered ? ` · ${readyLabel}` : ''}${state.uploading ? ` · uploading ${state.uploading}` : ''} · Keep this tab open.`;
         body(
             node('div', { class: 'bpb-profile-progress-copy' }, [
                 node('strong', { text: `${state.completed} of ${state.total}` }),
-                node('span', { text: current ? `Backing up ${current.peakName || `ascent ${current.aid}`}…` : 'Starting…' }),
-                node('span', { class: 'bpb-profile-note', text: 'Keep this tab open. You can use other tabs while this runs.' }),
+                node('span', { text: activity }),
+                node('span', { class: 'bpb-profile-note', text: note }),
             ]),
             node('progress', { class: 'bpb-profile-progress', max: Math.max(1, state.total), value: state.completed }),
             node('div', { class: 'bpb-profile-actions' }, [
@@ -218,9 +232,14 @@ import { githubError as GithubError } from './github-error.js';
         return { kind: 'ok', data: { snapshot: built.snapshot, gpx } };
     };
 
-    const pushAscent = async (item, data) => {
+    const pushAscentBatch = async batch => {
         const result = await sendBg({
-            type: 'GITHUB_BACKUP_PROFILE_ASCENT', aid: item.aid, snapshot: data.snapshot, gpx: data.gpx,
+            type: 'GITHUB_BACKUP_PROFILE_BATCH',
+            entries: batch.map(({ item, data }) => ({
+                aid: item.aid,
+                snapshot: data.snapshot,
+                gpx: data.gpx,
+            })),
         });
         if (result && !result.ok && result.error) {
             return { ...result, error: { ...result.error, message: messageFor(result.error) } };
@@ -252,7 +271,7 @@ import { githubError as GithubError } from './github-error.js';
             existingFolders: status.folders,
             refreshAll,
             loadItem: loadAscent,
-            pushItem: pushAscent,
+            pushBatch: pushAscentBatch,
             onState: renderState,
         });
         void runner.run();
