@@ -29,7 +29,8 @@
     "start:firefox": "node scripts/run-development.mjs firefox",
     "start:chromium": "node scripts/run-development.mjs chromium",
     "test": "node --test \"test/**/*.test.mjs\"",
-    "verify:extension": "npm run build && node scripts/verify-extension.mjs"
+    "verify:chrome": "npm run build && node scripts/verify-extension.mjs",
+    "verify:extension": "npm run verify:chrome"
   },
   "devDependencies": {
     "@codemirror/commands": "^6.10.4",

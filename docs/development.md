@@ -108,7 +108,8 @@ only exist under `dist/` after a build.
 | `npm run build:release` | Minified production build (no source maps). |
 | `npm run watch` | Transactionally rebuild on change and re-copy static assets; does not launch or control a browser. |
 | `npm test` | `pretest` builds `dist/`, then runs `test/**/*.test.mjs`. |
-| `npm run verify:extension` | Loads the **real** unpacked `dist/` in headless Chrome for Testing and drives capture, the editor, and the maps. The only check that exercises the true manifest load. |
+| `npm run verify:chrome` | Loads the **real** unpacked `dist/` in headless Chrome for Testing and drives the editor and maps through Chrome's manifest. |
+| `npm run verify:extension` | Compatibility alias for `verify:chrome`; existing callers can migrate without losing coverage. |
 | `npm run terrain:verify` | Renders the real MapLibre terrain frame on the GPU with synthetic route, basemap, peak, and CORS-enabled DEM fixtures; it makes no live terrain-provider requests. |
 | `npm run showcase:render` | Builds and renders the local UI showcase fixtures. |
 | `npm run lint:js` | Runs errors-only ESLint over source, extension surfaces, scripts, and tests. |
@@ -120,6 +121,11 @@ Pushes and pull requests run `npm ci`, `npm test`, `npm run lint:js`, and bare
 `web-ext lint` in the least-privilege GitHub Actions workflow. The real-extension
 check remains local because it requires the separately installed Chrome for
 Testing binary; run it for the boundaries listed below.
+
+The intended browser command family is `verify:chrome`, `verify:firefox`, and
+`verify:browsers`. Only the Chrome command is implemented at this tier; do not
+infer Firefox runtime coverage from `npm test`, Firefox packaging checks, or the
+`verify:extension` compatibility alias.
 
 Chrome stable 137+ rejects command-line `--load-extension`, so
 `start:chromium` needs a compatible Chromium/Chrome for Testing binary (pass
