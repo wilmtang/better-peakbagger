@@ -25,6 +25,15 @@ const loadForm = async () => {
     return { dom, doc, form };
 };
 const setValue = (form, name, value) => { const el = form.elements[name]; if (el) el.value = value; };
+const addCompanionRows = form => {
+    const table = form.ownerDocument.getElementById('OthersTable');
+    const registered = table.insertRow();
+    registered.insertCell().innerHTML = '<a href="/climber/Climber.aspx?cid=900101">Jan Doe</a>';
+    registered.insertCell().innerHTML = '<input type="button" value="Remove">';
+    const other = table.insertRow();
+    other.insertCell().textContent = 'Sample Hiking Club';
+    other.insertCell().innerHTML = '<input type="button" value="Remove">';
+};
 
 test('normalizeDate handles Peakbagger M/D/YYYY, partials, and ISO input', () => {
     assert.equal(Snapshot.normalizeDate('7/12/2026'), '2026-07-12');
@@ -54,6 +63,7 @@ test('build maps the ascentedit form fields into the backup snapshot', async () 
     setValue(form, 'TempDD', '4');
     setValue(form, 'WindDD', '2');
     setValue(form, 'VisDD', '1');
+    addCompanionRows(form);
     setValue(form, 'UpHr', '7'); setValue(form, 'UpMin', '30');
     // The first gear item, whatever the fixture lists it as.
     const gear0 = form.elements['GearCheckBoxList$0'];
