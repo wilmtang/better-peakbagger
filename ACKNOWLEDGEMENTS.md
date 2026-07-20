@@ -84,8 +84,7 @@ the approach demonstrated in
 [peakbagger-cli](https://github.com/dreamiurg/peakbagger-cli)'s
 [browser transport](https://github.com/dreamiurg/peakbagger-cli/blob/main/peakbagger/browser_transport.py).
 The project's rate-limit spacing for Peakbagger page fetches also used
-peakbagger-cli's default as a reference point. No code from peakbagger-cli is
-distributed with or executed by Better Peakbagger.
+peakbagger-cli's default as a reference point.
 
 Copyright (c) 2025 PeakBagger CLI Contributors. The upstream project is available under the
 [MIT License](https://github.com/dreamiurg/peakbagger-cli/blob/main/LICENSE).
