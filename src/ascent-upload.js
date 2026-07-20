@@ -28,15 +28,21 @@ import { settings as Settings } from './settings.js';
         `${nowDate.getFullYear()}-${pad(nowDate.getMonth() + 1)}-${pad(nowDate.getDate())}`;
 
     // The if-empty guard is the create/edit discriminator: an existing ascent
-    // being edited arrives with its date populated and is never touched. The
-    // capture draft flow sets the date unconditionally after its handshake,
-    // so ordering between autofill and draft delivery cannot corrupt a draft.
+    // being edited arrives with its date populated and is never touched. Mark
+    // only our generated value so local GPX processing may replace it with the
+    // track's date without mistaking a date the user entered for a default.
     const autofillDate = () => {
         const field = document.getElementById('DateText');
         if (!field || String(field.value || '').trim()) return false;
+        const clearGeneratedMarker = event => {
+            if (event.isTrusted) delete field.dataset.bpbAutofilled;
+        };
+        field.addEventListener('input', clearGeneratedMarker);
+        field.addEventListener('change', clearGeneratedMarker);
         field.value = localToday();
         field.dispatchEvent(new Event('input', { bubbles: true }));
         field.dispatchEvent(new Event('change', { bubbles: true }));
+        field.dataset.bpbAutofilled = 'date';
         return true;
     };
 

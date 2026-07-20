@@ -791,6 +791,7 @@ import { githubClient as GithubClient } from './github-client.js';
             complete: false,
             dayStatsPending: false,
             focusOnReady,
+            preserveExistingFields: draftTabId === tabId,
             expiresAt: now() + JOB_TTL_MS
         });
 
@@ -965,6 +966,7 @@ import { githubClient as GithubClient } from './github-client.js';
             cid: draft.cid,
             classification: draft.classification,
             confidence: draft.confidence,
+            preserveExistingFields: draft.preserveExistingFields === true,
             fields: {
                 ...match.draftFields,
                 suffix: draft.suffix || '',

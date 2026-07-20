@@ -152,6 +152,7 @@ test('a processed upload produces a capture-shaped job and delivers the current-
     // The existing draft handshake takes over: apply → preview-once → banner.
     const apply = await harness.send({ type: 'DRAFT_READY', pid: '7', cid: '77' });
     assert.equal(apply.action, 'apply');
+    assert.equal(apply.preserveExistingFields, true);
     assert.match(apply.gpx, /<gpx/);
     assert.equal(apply.fields.date, '2026-07-01');
     assert.equal(await harness.send({

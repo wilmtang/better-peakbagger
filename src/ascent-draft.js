@@ -99,9 +99,12 @@
         return setField(id, value, digits);
     };
 
-    const setTextFieldIfEmpty = (id, value) => {
+    const setTextFieldIfEmpty = (id, value, { replaceAutofilled = false } = {}) => {
         const element = document.getElementById(id);
-        if (!element || String(element.value || '').trim()) return false;
+        if (!element) return false;
+        const hasValue = !!String(element.value || '').trim();
+        const mayReplaceGenerated = replaceAutofilled && element.dataset.bpbAutofilled === 'date';
+        if (hasValue && !mayReplaceGenerated) return false;
         return setTextField(id, value);
     };
 
@@ -123,10 +126,18 @@
         return option ? setSelectValue('TripDD', option.value) : false;
     };
 
-    const setDuration = async (prefix, duration) => {
-        await setField(`${prefix}Day`, duration.days);
-        await setField(`${prefix}Hr`, duration.hours);
-        await setField(`${prefix}Min`, duration.minutes);
+    const setDuration = async (prefix, duration, preserveExistingFields = false) => {
+        const write = preserveExistingFields ? setFieldIfEmpty : setField;
+        await write(`${prefix}Day`, duration.days);
+        await write(`${prefix}Hr`, duration.hours);
+        await write(`${prefix}Min`, duration.minutes);
+    };
+
+    const tripInfoIsEmpty = () => {
+        const trip = document.getElementById('TripDD');
+        const defaultTrip = !trip || !String(trip.value || '').trim() || String(trip.value) === '0';
+        return defaultTrip && ['TripSeqText', 'TripNameText', 'TripNightsText']
+            .every(id => !String(document.getElementById(id)?.value || '').trim());
     };
 
     const fillDayStats = async dayStats => {
@@ -169,36 +180,47 @@
         return { state: 'unknown', message };
     };
 
-    const fillForm = async fields => {
+    // Capture opens fresh draft tabs and keeps its full-fill behavior. Local
+    // GPX processing can reuse a form the user has already started, so that
+    // path writes only blank controls (apart from our own generated date).
+    const fillForm = async (fields, preserveExistingFields = false) => {
         if (!formIsReady()) throw new Error('Peakbagger’s ascent form has changed or did not load completely.');
         // A timeless GPX derives no date; keep whatever the field already
         // holds (typically the fresh-form today autofill) instead of clearing.
-        if (fields.date) setTextField('DateText', fields.date);
-        setTextField('SuffixText', fields.suffix || '');
+        if (fields.date) {
+            if (preserveExistingFields) {
+                setTextFieldIfEmpty('DateText', fields.date, { replaceAutofilled: true });
+            } else {
+                setTextField('DateText', fields.date);
+            }
+        }
+        const writeText = preserveExistingFields ? setTextFieldIfEmpty : setTextField;
+        const writeNumber = preserveExistingFields ? setFieldIfEmpty : setField;
+        writeText('SuffixText', fields.suffix || '');
 
         if (fields.fillAscentDetails !== false) {
-            await setField('StartFt', fields.startElevationM === null ? null : fields.startElevationM * FEET_PER_METER);
-            await setField('StartM', fields.startElevationM);
-            await setField('EndFt', fields.endElevationM === null ? null : fields.endElevationM * FEET_PER_METER);
-            await setField('EndM', fields.endElevationM);
+            await writeNumber('StartFt', fields.startElevationM === null ? null : fields.startElevationM * FEET_PER_METER);
+            await writeNumber('StartM', fields.startElevationM);
+            await writeNumber('EndFt', fields.endElevationM === null ? null : fields.endElevationM * FEET_PER_METER);
+            await writeNumber('EndM', fields.endElevationM);
 
-            await setField('UpMi', fields.upDistanceM / METERS_PER_MILE, 2);
-            await setField('UpKm', fields.upDistanceM / 1000, 2);
-            await setField('DnMi', fields.downDistanceM / METERS_PER_MILE, 2);
-            await setField('DnKm', fields.downDistanceM / 1000, 2);
-            await setDuration('Up', fields.upDuration);
-            await setDuration('Dn', fields.downDuration);
+            await writeNumber('UpMi', fields.upDistanceM / METERS_PER_MILE, 2);
+            await writeNumber('UpKm', fields.upDistanceM / 1000, 2);
+            await writeNumber('DnMi', fields.downDistanceM / METERS_PER_MILE, 2);
+            await writeNumber('DnKm', fields.downDistanceM / 1000, 2);
+            await setDuration('Up', fields.upDuration, preserveExistingFields);
+            await setDuration('Dn', fields.downDuration, preserveExistingFields);
 
             const gainFt = Number.parseFloat(document.getElementById('GainFt')?.value);
             const gainM = Number.parseFloat(document.getElementById('GainM')?.value);
-            if (Number.isFinite(gainFt)) await setField('ExUpFt', Math.max(0, fields.upGainM * FEET_PER_METER - gainFt));
-            if (Number.isFinite(gainM)) await setField('ExUpM', Math.max(0, fields.upGainM - gainM));
-            await setField('ExDnFt', fields.downGainM * FEET_PER_METER);
-            await setField('ExDnM', fields.downGainM);
+            if (Number.isFinite(gainFt)) await writeNumber('ExUpFt', Math.max(0, fields.upGainM * FEET_PER_METER - gainFt));
+            if (Number.isFinite(gainM)) await writeNumber('ExUpM', Math.max(0, fields.upGainM - gainM));
+            await writeNumber('ExDnFt', fields.downGainM * FEET_PER_METER);
+            await writeNumber('ExDnM', fields.downGainM);
             await fillDayStats(fields.dayStats);
         }
 
-        if (fields.tripInfo) {
+        if (fields.tripInfo && (!preserveExistingFields || tripInfoIsEmpty())) {
             selectNewTrip();
             setTextField('TripSeqText', String(fields.tripInfo.sequence));
             setTextField('TripNameText', fields.tripInfo.name);
@@ -206,10 +228,13 @@
         }
 
         if (fields.wildernessNightsOut !== null && fields.wildernessNightsOut !== undefined) {
+            const existingNights = document.getElementById('AscentNightsDD')?.value;
             // AscentNightsDD has an inline AutoPostBack handler. Sending a
             // synthetic change here would reload before GPX Preview; its
             // selected value is still included in the Preview form post.
-            setSelectValue('AscentNightsDD', fields.wildernessNightsOut, false);
+            if (!preserveExistingFields || !existingNights || String(existingNights) === '0') {
+                setSelectValue('AscentNightsDD', fields.wildernessNightsOut, false);
+            }
         }
     };
 
@@ -279,7 +304,7 @@
     };
 
     const applyAndPreview = async payload => {
-        await fillForm(payload.fields);
+        await fillForm(payload.fields, payload.preserveExistingFields === true);
         attachGpx(payload.gpx, payload.allowWaypoints);
         const acknowledgment = await ext.runtime.sendMessage({
             type: 'DRAFT_PREVIEW_STARTED',

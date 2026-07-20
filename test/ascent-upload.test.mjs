@@ -66,8 +66,17 @@ test('an empty Ascent Date on a fresh form is filled with the local today', asyn
         }
     });
     assert.equal(dom.window.document.getElementById('DateText').value, localToday());
+    assert.equal(dom.window.document.getElementById('DateText').dataset.bpbAutofilled, 'date');
     assert.deepEqual(events, ['input', 'change'],
         'the fill must announce itself the way setTextField does');
+});
+
+test('editing the generated date protects it from later GPX processing', async () => {
+    const dom = await loadEditor();
+    const field = dom.window.document.getElementById('DateText');
+    field.value = '2019-08-14';
+    fireTrustedEvent(field, 'input', { bubbles: true });
+    assert.equal(field.dataset.bpbAutofilled, undefined);
 });
 
 test('a populated date — an existing ascent being edited — is never touched', async () => {
