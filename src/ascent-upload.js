@@ -87,6 +87,7 @@ import { settings as Settings } from './settings.js';
         let button = null;
         let labelElement = null;
         let status = null;
+        let card = null;
         let requestToken = 0;
 
         const clearStatus = () => {
@@ -103,8 +104,14 @@ import { settings as Settings } from './settings.js';
             (button || nativePreview).insertAdjacentElement('afterend', status);
         };
 
+        const removeCard = () => {
+            card?.remove();
+            card = null;
+        };
+
         const restoreNative = () => {
             requestToken++;
+            removeCard();
             button?.remove();
             button = null;
             labelElement = null;
@@ -132,6 +139,7 @@ import { settings as Settings } from './settings.js';
 
         const showProcessButton = () => {
             clearStatus();
+            removeCard();
             if (!button) {
                 button = document.createElement('button');
                 button.type = 'button';
@@ -156,6 +164,176 @@ import { settings as Settings } from './settings.js';
             restoreNative();
         };
 
+        const applySelection = async (response, selectedIds, primaryId, token) => {
+            setBusy(primaryId !== null ? 'Filling form…' : 'Opening drafts…');
+            const applied = await ext.runtime.sendMessage({
+                type: 'GPX_PROCESS_APPLY',
+                jobId: response.jobId,
+                selectedIds,
+                primaryId
+            });
+            if (token !== requestToken) return;
+            if (!applied?.ok) {
+                removeCard();
+                fail(applied?.error?.message || 'The prepared draft could not be delivered.');
+                return;
+            }
+            removeCard();
+            if (applied.groupWarning) showStatus('info', applied.groupWarning);
+            if (primaryId === null) {
+                // Only sibling drafts were opened; this page keeps its native
+                // upload path.
+                const count = (applied.tabIds || []).length;
+                showStatus('info', `Opened ${count} draft tab${count === 1 ? '' : 's'} in the Peak Drafts group.`);
+                restoreNative();
+            }
+            // With a primary, src/ascent-draft.js now fills this page (bound)
+            // or the standard draft delivery fills it after navigation
+            // (unbound); Peakbagger's postback then restores the native
+            // buttons. The button deliberately stays busy until then.
+        };
+
+        // ---- Summit picker card (plan §3.4, Option C) ----------------------
+
+        const summitChip = match => {
+            const chip = document.createElement('span');
+            const kind = match.classification === 'strong' ? 'strong'
+                : match.classification === 'probable' ? 'probable' : 'off';
+            chip.className = `bpb-summit-chip bpb-summit-chip-${kind}`;
+            chip.textContent = kind === 'strong' ? 'Strong' : kind === 'probable' ? 'Probable' : 'Off track';
+            return chip;
+        };
+
+        // The card title already says "along this track"; keep each row's
+        // encounter short enough to never truncate.
+        const encounterMeta = match => {
+            const parts = [];
+            if (match.time) parts.push(`at ${match.time}`);
+            if (Number.isFinite(match.upDistanceM)) parts.push(`${(match.upDistanceM / 1000).toFixed(1)} km`);
+            return parts.join(' · ');
+        };
+
+        const showSummitCard = (response, token) => {
+            removeCard();
+            clearStatus();
+            setIdle();
+            const matches = response.matches || [];
+            const fallback = response.boundFallback || null;
+            const boundPid = response.boundPid === null || response.boundPid === undefined
+                ? null : String(response.boundPid);
+            const confidenceById = new Map();
+
+            card = document.createElement('section');
+            card.className = 'bpb-summit-card';
+            card.setAttribute('aria-label', 'Summits detected along this track');
+
+            const heading = document.createElement('h3');
+            heading.className = 'bpb-summit-card-title';
+            heading.textContent = matches.length === 0
+                ? 'No summits detected within range of this track'
+                : matches.length === 1
+                    ? 'One summit detected along this track'
+                    : `${matches.length} summits detected along this track`;
+            card.append(heading);
+
+            const list = document.createElement('ul');
+            list.className = 'bpb-summit-list';
+            const checkboxes = new Map();
+
+            const summitRow = (match, { fallbackRow = false } = {}) => {
+                confidenceById.set(String(match.id), match.confidence);
+                const item = document.createElement('li');
+                const label = document.createElement('label');
+                label.className = 'bpb-summit-row';
+                const checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.className = 'bpb-summit-check';
+                checkbox.checked = !fallbackRow && (match.selected === true || String(match.id) === boundPid);
+                checkboxes.set(String(match.id), checkbox);
+                const name = document.createElement('span');
+                name.className = 'bpb-summit-name';
+                name.textContent = match.name;
+                const confidence = document.createElement('span');
+                confidence.className = 'bpb-summit-confidence';
+                confidence.textContent = `${match.confidence}%`;
+                const meta = document.createElement('span');
+                meta.className = 'bpb-summit-meta';
+                meta.textContent = fallbackRow
+                    ? `${match.closestApproachM} m from the summit`
+                    : encounterMeta(match);
+                label.append(checkbox, name, summitChip(match), confidence, meta);
+                item.append(label);
+                return item;
+            };
+
+            matches.forEach(match => list.append(summitRow(match)));
+
+            if (fallback) {
+                const note = document.createElement('p');
+                note.className = 'bpb-summit-note';
+                note.textContent = `Your track’s closest approach to ${fallback.name} is ${fallback.closestApproachM} m from the summit. Check it to use ${fallback.name} anyway.`;
+                card.append(note);
+                list.append(summitRow(fallback, { fallbackRow: true }));
+            } else if (boundPid !== null && !matches.some(match => String(match.id) === boundPid)) {
+                const note = document.createElement('p');
+                note.className = 'bpb-summit-note';
+                note.textContent = 'Your track never comes within range of this page’s peak; the summits above can open as drafts instead.';
+                card.append(note);
+            }
+            card.append(list);
+
+            const actions = document.createElement('div');
+            actions.className = 'bpb-summit-actions';
+            const applyButton = document.createElement('button');
+            applyButton.type = 'button';
+            applyButton.className = 'bpb-summit-apply';
+            const cancelButton = document.createElement('button');
+            cancelButton.type = 'button';
+            cancelButton.className = 'bpb-summit-cancel';
+            cancelButton.textContent = 'Cancel';
+            actions.append(applyButton, cancelButton);
+            card.append(actions);
+
+            const selection = () => {
+                const selectedIds = [...checkboxes].filter(([, checkbox]) => checkbox.checked).map(([id]) => id);
+                let primaryId = null;
+                if (boundPid !== null) {
+                    primaryId = selectedIds.includes(boundPid) ? boundPid : null;
+                } else if (selectedIds.length) {
+                    primaryId = selectedIds.reduce((best, id) =>
+                        confidenceById.get(id) > confidenceById.get(best) ? id : best);
+                }
+                return { selectedIds, primaryId };
+            };
+
+            const updateAction = () => {
+                const { selectedIds, primaryId } = selection();
+                const siblingCount = selectedIds.length - (primaryId === null ? 0 : 1);
+                applyButton.disabled = !selectedIds.length;
+                applyButton.textContent = primaryId === null
+                    ? (siblingCount ? `Open ${siblingCount} draft${siblingCount === 1 ? '' : 's'}` : 'Fill this ascent')
+                    : siblingCount
+                        ? `Fill + open ${siblingCount} draft${siblingCount === 1 ? '' : 's'}`
+                        : 'Fill this ascent';
+            };
+            for (const checkbox of checkboxes.values()) checkbox.addEventListener('change', updateAction);
+            updateAction();
+
+            applyButton.addEventListener('click', () => {
+                const { selectedIds, primaryId } = selection();
+                if (!selectedIds.length) return;
+                applyButton.disabled = true;
+                cancelButton.disabled = true;
+                void applySelection(response, selectedIds.map(Number),
+                    primaryId === null ? null : Number(primaryId), token);
+            });
+            cancelButton.addEventListener('click', () => {
+                restoreNative();
+            });
+
+            (button || nativePreview).insertAdjacentElement('afterend', card);
+        };
+
         const handleProcessResult = async (response, token) => {
             if (!response || response.phase === 'error') {
                 fail(response?.error?.message || 'The GPX could not be processed.');
@@ -173,30 +351,15 @@ import { settings as Settings } from './settings.js';
             const matches = response.matches || [];
             const boundPid = response.boundPid === null || response.boundPid === undefined
                 ? null : String(response.boundPid);
-            if (matches.length === 1 && boundPid !== null && String(matches[0].id) === boundPid) {
-                setBusy('Filling form…');
-                const applied = await ext.runtime.sendMessage({
-                    type: 'GPX_PROCESS_APPLY',
-                    jobId: response.jobId,
-                    selectedIds: [matches[0].id],
-                    primaryId: matches[0].id
-                });
-                if (token !== requestToken) return;
-                if (!applied?.ok) {
-                    fail(applied?.error?.message || 'The prepared draft could not be delivered.');
-                    return;
-                }
-                // src/ascent-draft.js now fills the form, attaches the cleaned
-                // GPX, and triggers GPS Preview exactly once; Peakbagger's
-                // postback then reloads this page with the native buttons.
+            // Option C: exactly one detected summit that is (or, on an unbound
+            // page, becomes) this page's peak fills immediately, no card;
+            // ambiguity is the only thing that earns UI.
+            if (matches.length === 1 && !response.boundFallback
+                && (boundPid === null || String(matches[0].id) === boundPid)) {
+                await applySelection(response, [matches[0].id], matches[0].id, token);
                 return;
             }
-
-            // Multi-summit, unbound-page, and bound-peak-off-track handling
-            // arrive with the summit picker card (plan §3.4).
-            fail(matches.length > 1
-                ? `This track crosses ${matches.length} summits; choosing among them is not supported yet.`
-                : 'This track’s detected summit does not match this form’s peak.');
+            showSummitCard(response, token);
         };
 
         const processFile = async () => {

@@ -29,8 +29,12 @@ const createHarness = ({ peakXml = null, settings = {}, failPeakFetch = false,
     const values = {};
     const syncValues = { bpbSettings: structuredClone(settings) };
     const tabs = new Map([[5, { id: 5, windowId: 9, url: PAGE_URL, active: true }]]);
+    let nextTabId = 100;
     const tabMessages = [];
     const fetchCalls = [];
+    const grouped = [];
+    const groupUpdates = [];
+    const navigations = [];
 
     const browser = {
         storage: {
@@ -51,11 +55,28 @@ const createHarness = ({ peakXml = null, settings = {}, failPeakFetch = false,
         },
         tabs: {
             get: async tabId => structuredClone(tabs.get(tabId)),
-            update: async (tabId, patch) => { Object.assign(tabs.get(tabId), patch); return structuredClone(tabs.get(tabId)); },
+            create: async details => {
+                const tab = { id: nextTabId++, windowId: details.windowId, url: details.url, active: details.active };
+                tabs.set(tab.id, tab);
+                return structuredClone(tab);
+            },
+            update: async (tabId, patch) => {
+                if (patch.url) {
+                    // Pin the invariant that a draft is registered before its
+                    // tab's URL ever changes.
+                    navigations.push({
+                        tabId,
+                        url: patch.url,
+                        draftRegistered: !!(values.bpbDraftTabs || {})[String(tabId)]
+                    });
+                }
+                Object.assign(tabs.get(tabId), patch);
+                return structuredClone(tabs.get(tabId));
+            },
             sendMessage: async (tabId, message) => { tabMessages.push({ tabId, message: structuredClone(message) }); return true; },
             onRemoved: { addListener: () => {} }
         },
-        tabGroups: { update: async () => {} },
+        tabGroups: { update: async (groupId, patch) => groupUpdates.push([groupId, structuredClone(patch)]) },
         alarms: { create: () => {}, onAlarm: { addListener: () => {} } }
     };
 
@@ -73,6 +94,8 @@ const createHarness = ({ peakXml = null, settings = {}, failPeakFetch = false,
         throw new Error(`Unexpected fetch: ${value}`);
     };
 
+    browser.tabs.group = async details => { grouped.push(structuredClone(details)); return 3; };
+
     const context = vm.createContext({ browser, fetch, URL, URLSearchParams, Math, Date, console, structuredClone });
     context.globalThis = context;
     context.self = context;
@@ -81,7 +104,7 @@ const createHarness = ({ peakXml = null, settings = {}, failPeakFetch = false,
     const send = (message, sender = SENDER) => new Promise(resolve => {
         assert.equal(listener(message, sender, resolve), true);
     });
-    return { send, values, tabs, tabMessages, fetchCalls };
+    return { send, values, tabs, tabMessages, fetchCalls, grouped, groupUpdates, navigations };
 };
 
 test('a processed upload produces a capture-shaped job and delivers the current-tab draft', async () => {
@@ -117,7 +140,7 @@ test('a processed upload produces a capture-shaped job and delivers the current-
     const applied = await harness.send({
         type: 'GPX_PROCESS_APPLY', jobId: ready.jobId, selectedIds: [7], primaryId: 7
     });
-    assert.deepEqual(JSON.parse(JSON.stringify(applied)), { ok: true, tabIds: [5] });
+    assert.deepEqual(JSON.parse(JSON.stringify(applied)), { ok: true, tabIds: [5], groupWarning: null });
     const draft = harness.values.bpbDraftTabs['5'];
     assert.equal(draft.pid, 7);
     assert.equal(draft.cid, '77');
@@ -259,15 +282,141 @@ test('a timeless GPX keeps a blank derived date and zero durations', async () =>
     assert.doesNotMatch(job.uploadGpx, /<time>/);
 });
 
+test('a multi-summit selection fills the current tab and opens grouped sibling drafts with suffix and trip parity', async () => {
+    const harness = createHarness({
+        peakXml: '<p><t i="7" n="First Peak" a="0" o="0" e="426.51" r="100" l="Test Range"/><t i="8" n="Second Peak" a="0" o="0.0005" e="426.51" r="100" l="Test Range"/></p>'
+    });
+    const ready = await harness.send({
+        type: 'GPX_PROCESS_START', segments: SEGMENTS, waypoints: [], trackName: 'Grand Traverse', utcOffsetMinutes: 0
+    });
+    assert.equal(ready.phase, 'ready');
+    assert.equal(ready.matches.length, 2);
+    assert.equal(harness.values.bpbCaptureJobs['5'].tripName, 'Grand Traverse');
+
+    const applied = await harness.send({
+        type: 'GPX_PROCESS_APPLY', jobId: ready.jobId, selectedIds: [7, 8], primaryId: 7
+    });
+    assert.equal(applied.ok, true);
+    assert.deepEqual(JSON.parse(JSON.stringify(applied.tabIds)), [5, 100]);
+
+    const current = harness.values.bpbDraftTabs['5'];
+    const sibling = harness.values.bpbDraftTabs['100'];
+    assert.equal(current.pid, 7);
+    assert.equal(current.previewOrder, 0, 'the current tab previews first');
+    assert.equal(sibling.pid, 8);
+    assert.equal(sibling.previewOrder, 1);
+    // Peak 7 sits earlier along the track than peak 8, and both share the
+    // ascent date, so track order assigns the alphabetical suffixes.
+    assert.equal(current.suffix, 'a');
+    assert.equal(sibling.suffix, 'b');
+    assert.deepEqual(JSON.parse(JSON.stringify(current.tripInfo)), { sequence: 1, name: 'Grand Traverse', nightsOut: 0 });
+    assert.deepEqual(JSON.parse(JSON.stringify(sibling.tripInfo)), { sequence: 2, name: 'Grand Traverse', nightsOut: 0 });
+
+    assert.deepEqual(JSON.parse(JSON.stringify(harness.grouped)), [{ tabIds: [100], createProperties: { windowId: 9 } }]);
+    assert.deepEqual(JSON.parse(JSON.stringify(harness.groupUpdates)), [[3, { title: 'Peak Drafts', color: 'green', collapsed: false }]]);
+    const siblingNavigation = harness.navigations.find(entry => entry.tabId === 100);
+    assert.equal(siblingNavigation.url, 'https://peakbagger.com/climber/ascentedit.aspx?pid=8&cid=77');
+    assert.equal(siblingNavigation.draftRegistered, true, 'the sibling draft exists before its tab navigates');
+    assert.deepEqual(harness.tabMessages, [{ tabId: 5, message: { type: 'DRAFT_PROCEED' } }]);
+
+    const apply = await harness.send({ type: 'DRAFT_READY', pid: '7', cid: '77' });
+    assert.equal(apply.action, 'apply');
+    assert.equal(apply.fields.suffix, 'a');
+    const waiting = await harness.send({ type: 'DRAFT_READY', pid: '8', cid: '77' }, { tab: { id: 100 }, url: 'https://peakbagger.com/climber/ascentedit.aspx?pid=8&cid=77' });
+    assert.equal(waiting.action, 'wait', 'the sibling waits for the current tab’s Preview');
+});
+
+test('an unbound page registers its draft first and then navigates to the chosen peak', async () => {
+    const harness = createHarness();
+    const unboundSender = { tab: { id: 5, windowId: 9 }, url: 'https://www.peakbagger.com/climber/ascentedit.aspx' };
+    const ready = await harness.send({
+        type: 'GPX_PROCESS_START', segments: SEGMENTS, waypoints: [], trackName: '', utcOffsetMinutes: 0
+    }, unboundSender);
+    assert.equal(ready.phase, 'ready');
+    assert.equal(ready.boundPid, null);
+
+    const applied = await harness.send({
+        type: 'GPX_PROCESS_APPLY', jobId: ready.jobId, selectedIds: [7], primaryId: 7
+    }, unboundSender);
+    assert.equal(applied.ok, true);
+    const navigation = harness.navigations.find(entry => entry.tabId === 5);
+    assert.equal(navigation.url, 'https://peakbagger.com/climber/ascentedit.aspx?pid=7&cid=77');
+    assert.equal(navigation.draftRegistered, true, 'registration precedes the URL change');
+    assert.equal(harness.tabMessages.length, 0, 'the reloaded page runs its own ready handshake');
+
+    // The reloaded page (now bound) delivers through the standard handshake.
+    const apply = await harness.send({ type: 'DRAFT_READY', pid: '7', cid: '77' });
+    assert.equal(apply.action, 'apply');
+});
+
+test('a bound peak the track only brushes surfaces as an explicit closest-approach fallback', async () => {
+    const harness = createHarness({
+        peakXml: '<p><t i="7" n="Bound Peak" a="0.002" o="0" e="426.51" r="100" l="Test Range"/><t i="8" n="On Track Peak" a="0" o="0" e="426.51" r="100" l="Test Range"/></p>'
+    });
+    const ready = await harness.send({
+        type: 'GPX_PROCESS_START', segments: SEGMENTS, waypoints: [], trackName: '', utcOffsetMinutes: 0
+    });
+    assert.equal(ready.phase, 'ready');
+    assert.deepEqual(JSON.parse(JSON.stringify(ready.matches.map(match => match.id))), [8],
+        'detection stays fail-closed: the off-track bound peak is not a silent match');
+    assert.equal(ready.boundFallback.id, 7);
+    assert.ok(ready.boundFallback.closestApproachM > 150 && ready.boundFallback.closestApproachM < 300,
+        `closest approach should be ~222 m, got ${ready.boundFallback.closestApproachM}`);
+    assert.equal(ready.boundFallback.selected, false);
+
+    // "Use ⟨peak⟩ anyway" fills the current page from the closest-approach
+    // point and still opens the detected summit as a sibling draft.
+    const applied = await harness.send({
+        type: 'GPX_PROCESS_APPLY', jobId: ready.jobId, selectedIds: [7, 8], primaryId: 7
+    });
+    assert.equal(applied.ok, true);
+    assert.equal(harness.values.bpbDraftTabs['5'].pid, 7);
+    assert.equal(harness.values.bpbDraftTabs['100'].pid, 8);
+    const apply = await harness.send({ type: 'DRAFT_READY', pid: '7', cid: '77' });
+    assert.equal(apply.action, 'apply');
+    assert.ok(Number.isFinite(apply.fields.upDistanceM));
+});
+
+test('a bound page can only ever fill itself for its own peak', async () => {
+    const harness = createHarness({
+        peakXml: '<p><t i="7" n="First Peak" a="0" o="0" e="426.51" r="100" l="Test Range"/><t i="8" n="Second Peak" a="0" o="0.0005" e="426.51" r="100" l="Test Range"/></p>'
+    });
+    const ready = await harness.send({
+        type: 'GPX_PROCESS_START', segments: SEGMENTS, waypoints: [], trackName: '', utcOffsetMinutes: 0
+    });
+    const rejected = await harness.send({
+        type: 'GPX_PROCESS_APPLY', jobId: ready.jobId, selectedIds: [7, 8], primaryId: 8
+    });
+    assert.equal(rejected.ok, false);
+    assert.equal(rejected.error.code, 'identity-mismatch');
+    assert.equal(harness.values.bpbDraftTabs, undefined, 'nothing may be registered on a refused apply');
+
+    // Without a primary, the same selection opens sibling drafts only and the
+    // current page keeps its native path.
+    const applied = await harness.send({
+        type: 'GPX_PROCESS_APPLY', jobId: ready.jobId, selectedIds: [8], primaryId: null
+    });
+    assert.equal(applied.ok, true);
+    assert.deepEqual(JSON.parse(JSON.stringify(applied.tabIds)), [100]);
+    assert.equal(harness.values.bpbDraftTabs['5'], undefined);
+    assert.equal(harness.values.bpbDraftTabs['100'].pid, 8);
+    assert.equal(harness.values.bpbDraftTabs['100'].focusOnReady, true,
+        'with no primary, the first sibling draft takes focus when ready');
+});
+
 // ---- End to end: real fixture page + built content bundle + built worker ----
 
-const wireWorkerToPage = harness => dom => {
+// The sink carries worker→page delivery outside the harness's tab objects,
+// which must stay structuredClone-able for the worker's tabs.get stub.
+const wireWorkerToPage = (harness, sink) => dom => {
     dom.window.tzlookup = () => 'UTC';
     const pageListeners = [];
     dom.chrome.runtime.sendMessage = message =>
         harness.send(structuredClone(message), { tab: { id: 5, windowId: 9 }, url: dom.window.location.href });
     dom.chrome.runtime.onMessage = { addListener: listener => pageListeners.push(listener) };
-    harness.tabs.get(5).deliver = message => pageListeners.forEach(listener => listener(message));
+    sink.deliver = (tabId, message) => {
+        if (tabId === 5) pageListeners.forEach(listener => listener(message));
+    };
     class DataTransferMock {
         constructor() {
             this.files = [];
@@ -282,18 +431,18 @@ const wireWorkerToPage = harness => dom => {
 test('end to end: user file pick → Process → filled form → exactly one GPS Preview', async () => {
     const harness = createHarness();
     // Route worker→tab messages to the page's runtime listeners.
-    const originalSendMessage = harness.tabMessages;
+    const sink = {};
     const dom = await loadPage('climber-ascentedit.html', {
         url: PAGE_URL,
         bundles: ['vendor/marked.umd.js', 'content/ascent-editor.js'],
         fixtures: PAGE_FIXTURES,
-        prepare: wireWorkerToPage(harness)
+        prepare: wireWorkerToPage(harness, sink)
     });
     // Deliver DRAFT_PROCEED (recorded by the harness) into the page.
     const pump = () => {
-        while (originalSendMessage.length) {
-            const { tabId, message } = originalSendMessage.shift();
-            harness.tabs.get(tabId)?.deliver?.(message);
+        while (harness.tabMessages.length) {
+            const { tabId, message } = harness.tabMessages.shift();
+            sink.deliver?.(tabId, message);
         }
     };
     const pumpTimer = setInterval(pump, 5);

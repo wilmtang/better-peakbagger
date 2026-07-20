@@ -239,6 +239,148 @@ test('a waypoint-only file points the user back at Peakbagger’s own path', asy
     assert.equal(processButton(dom), null);
 });
 
+const MULTI_MATCHES = [
+    { id: 7, name: 'First Peak', confidence: 91, classification: 'strong', selected: true, date: '2026-07-01', time: '08:12', upDistanceM: 3400 },
+    { id: 8, name: 'Second Peak', confidence: 72, classification: 'probable', selected: false, date: '2026-07-01', time: '10:40', upDistanceM: 7800 }
+];
+
+const loadCard = async ({ boundPid = 7, matches = MULTI_MATCHES, boundFallback = null, applyResult = { ok: true, tabIds: [5, 100] } } = {}) => {
+    const dom = await loadEditor({
+        respond: message => {
+            if (message.type === 'DRAFT_READY') return { action: 'ignore' };
+            if (message.type === 'GPX_PROCESS_START') {
+                return { phase: 'ready', jobId: 'job-2', boundPid, matches, boundFallback };
+            }
+            if (message.type === 'GPX_PROCESS_APPLY') return applyResult;
+            return undefined;
+        }
+    });
+    chooseGpx(dom);
+    processButton(dom).click();
+    await waitFor(dom, () => dom.window.document.querySelector('.bpb-summit-card'));
+    return dom;
+};
+
+const cardParts = dom => {
+    const cardElement = dom.window.document.querySelector('.bpb-summit-card');
+    return {
+        card: cardElement,
+        checkboxes: [...cardElement.querySelectorAll('.bpb-summit-check')],
+        apply: cardElement.querySelector('.bpb-summit-apply'),
+        cancel: cardElement.querySelector('.bpb-summit-cancel')
+    };
+};
+
+test('several summits earn the picker card with strong and bound peaks preselected', async () => {
+    const dom = await loadCard();
+    const { card, checkboxes, apply } = cardParts(dom);
+    assert.match(card.querySelector('.bpb-summit-card-title').textContent, /2 summits detected/);
+    assert.deepEqual(checkboxes.map(checkbox => checkbox.checked), [true, false],
+        'strong matches (and the bound peak) preselect; probable ones await the user');
+    assert.deepEqual(
+        [...card.querySelectorAll('.bpb-summit-chip')].map(chip => chip.textContent),
+        ['Strong', 'Probable']);
+    assert.match(card.querySelector('.bpb-summit-meta').textContent, /at 08:12 · 3\.4 km/);
+    assert.equal(apply.textContent, 'Fill this ascent');
+
+    checkboxes[1].click();
+    assert.equal(apply.textContent, 'Fill + open 1 draft');
+
+    apply.click();
+    await waitFor(dom, () => dom.messages.some(message => message.type === 'GPX_PROCESS_APPLY'));
+    const message = dom.messages.find(entry => entry.type === 'GPX_PROCESS_APPLY');
+    assert.deepEqual(JSON.parse(JSON.stringify(message)),
+        { type: 'GPX_PROCESS_APPLY', jobId: 'job-2', selectedIds: [7, 8], primaryId: 7 });
+    await waitFor(dom, () => !dom.window.document.querySelector('.bpb-summit-card'));
+    const button = processButton(dom);
+    assert.equal(button.getAttribute('aria-busy'), 'true');
+    assert.equal(button.querySelector('.bpb-process-label').textContent, 'Filling form…');
+});
+
+test('Cancel dismisses the card and restores Peakbagger’s native path', async () => {
+    const dom = await loadCard();
+    cardParts(dom).cancel.click();
+    assert.equal(dom.window.document.querySelector('.bpb-summit-card'), null);
+    assert.equal(processButton(dom), null);
+    assert.equal(dom.window.document.getElementById('GPXPreview')
+        .classList.contains('bpb-native-preview-hidden'), false);
+});
+
+test('a bound peak off the track offers an explicit closest-approach override', async () => {
+    const dom = await loadCard({
+        matches: [MULTI_MATCHES[1]],
+        boundFallback: {
+            id: 7, name: 'Bound Peak', confidence: 22, classification: 'weak', selected: false,
+            date: '2026-07-01', time: '09:00', upDistanceM: 5000, closestApproachM: 240
+        }
+    });
+    const { card, checkboxes, apply } = cardParts(dom);
+    assert.match(card.querySelector('.bpb-summit-note').textContent,
+        /closest approach to Bound Peak is 240 m from the summit/);
+    assert.match(card.textContent, /Off track/);
+    assert.equal(checkboxes[1].checked, false, 'using the bound peak anyway is an explicit choice');
+
+    // The detected summit alone can only open a draft; adding the bound peak
+    // fills this page too.
+    checkboxes[0].click();
+    assert.equal(apply.textContent, 'Open 1 draft');
+    checkboxes[1].click();
+    assert.equal(apply.textContent, 'Fill + open 1 draft');
+    checkboxes[0].click();
+    assert.equal(apply.textContent, 'Fill this ascent');
+
+    apply.click();
+    await waitFor(dom, () => dom.messages.some(message => message.type === 'GPX_PROCESS_APPLY'));
+    assert.deepEqual(JSON.parse(JSON.stringify(dom.messages.find(entry => entry.type === 'GPX_PROCESS_APPLY'))),
+        { type: 'GPX_PROCESS_APPLY', jobId: 'job-2', selectedIds: [7], primaryId: 7 });
+});
+
+test('sibling-only drafts leave this page on its native path with a confirmation', async () => {
+    const dom = await loadCard({
+        boundPid: 99,
+        matches: [MULTI_MATCHES[0]],
+        applyResult: { ok: true, tabIds: [100] }
+    });
+    const { card, apply } = cardParts(dom);
+    assert.match(card.querySelector('.bpb-summit-note').textContent,
+        /never comes within range of this page’s peak/);
+    assert.equal(apply.textContent, 'Open 1 draft');
+    apply.click();
+    await waitFor(dom, () => uploadStatus(dom));
+    assert.match(uploadStatus(dom).textContent, /Opened 1 draft tab in the Peak Drafts group/);
+    assert.equal(processButton(dom), null, 'the native upload path returns');
+    assert.equal(dom.messages.find(entry => entry.type === 'GPX_PROCESS_APPLY').primaryId, null);
+});
+
+test('on an unbound page the highest-confidence selection becomes this page’s peak', async () => {
+    const dom = await loadCard({ boundPid: null });
+    const { checkboxes, apply } = cardParts(dom);
+    checkboxes[1].click();
+    assert.equal(apply.textContent, 'Fill + open 1 draft');
+    apply.click();
+    await waitFor(dom, () => dom.messages.some(message => message.type === 'GPX_PROCESS_APPLY'));
+    assert.equal(dom.messages.find(entry => entry.type === 'GPX_PROCESS_APPLY').primaryId, 7,
+        'the strongest selected match fills the page it navigates to');
+});
+
+test('a single summit on an unbound page fills immediately without a card', async () => {
+    const dom = await loadEditor({
+        url: 'https://www.peakbagger.com/climber/ascentedit.aspx',
+        respond: message => {
+            if (message.type === 'GPX_PROCESS_START') {
+                return { phase: 'ready', jobId: 'job-3', boundPid: null, matches: [MULTI_MATCHES[0]], boundFallback: null };
+            }
+            if (message.type === 'GPX_PROCESS_APPLY') return { ok: true, tabIds: [5] };
+            return { action: 'ignore' };
+        }
+    });
+    chooseGpx(dom);
+    processButton(dom).click();
+    await waitFor(dom, () => dom.messages.some(message => message.type === 'GPX_PROCESS_APPLY'));
+    assert.equal(dom.window.document.querySelector('.bpb-summit-card'), null);
+    assert.equal(dom.messages.find(entry => entry.type === 'GPX_PROCESS_APPLY').primaryId, 7);
+});
+
 test('the stylesheet keeps its reduced-motion and dark-theme guards', async () => {
     const { readFile } = await import('node:fs/promises');
     const css = await readFile(new globalThis.URL('../src/ascent-upload.css', import.meta.url), 'utf8');

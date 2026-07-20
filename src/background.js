@@ -214,7 +214,11 @@ import { githubClient as GithubClient } from './github-client.js';
     // reduce → serialize → derive. Used by activity capture and the local-file
     // GPX process flow so drafted values can never diverge between the two.
     // Returns a discriminated result; job bookkeeping stays with the caller.
-    const analyzeTrack = async ({ segments, waypoints, metadata, capturePreferences, onPhase = async () => {} }) => {
+    // boundPid names the peak the calling page is bound to. When the track
+    // encounters it below the visible-match bar, the result carries an
+    // explicit closest-approach fallback ("Use ⟨peak⟩ anyway") instead of
+    // silently promoting a weak match — detection itself stays fail-closed.
+    const analyzeTrack = async ({ segments, waypoints, metadata, capturePreferences, boundPid = null, onPhase = async () => {} }) => {
         const sanitized = Core.sanitizeTrack(segments);
         const cleanWaypoints = capturePreferences.retainWaypoints
             ? Core.sanitizeWaypoints(waypoints)
@@ -234,7 +238,10 @@ import { githubClient as GithubClient } from './github-client.js';
         const peaks = await fetchPeaks(boxes);
         const allMatches = Core.detectPeaks(sanitized.segments, peaks, sanitized.quality.score);
         const visibleMatches = allMatches.filter(match => match.classification === 'strong' || match.classification === 'probable');
-        if (!visibleMatches.length) {
+        const boundBelowBar = boundPid === null ? null
+            : allMatches.find(match => match.id === Number(boundPid)
+                && !visibleMatches.some(visible => visible.id === match.id)) || null;
+        if (!visibleMatches.length && !boundBelowBar) {
             return {
                 status: 'no-matches',
                 trackSummary: { originalPointCount: pointCount, removedPrivateData: true }
@@ -246,7 +253,8 @@ import { githubClient as GithubClient } from './github-client.js';
             error.code = 'too-many-waypoints';
             throw error;
         }
-        const reduced = Core.reduceTrack(sanitized.segments, visibleMatches, trackPointLimit);
+        const anchorMatches = boundBelowBar ? [...visibleMatches, boundBelowBar] : visibleMatches;
+        const reduced = Core.reduceTrack(sanitized.segments, anchorMatches, trackPointLimit);
         const uploadGpx = Core.serializeUploadGpx(reduced.segments, cleanWaypoints);
         const matches = visibleMatches.map(match => ({
             ...Core.publicMatch(match),
@@ -261,9 +269,17 @@ import { githubClient as GithubClient } from './github-client.js';
             ? Core.calculateDayStats(sanitized.segments, metadata)
             : [];
 
+        const boundFallback = boundBelowBar ? {
+            ...Core.publicMatch(boundBelowBar),
+            selected: false,
+            closestApproachM: Math.round(boundBelowBar.encounter.distanceM),
+            draftFields: Core.calculateDraftFields(sanitized.segments, boundBelowBar, metadata)
+        } : null;
+
         return {
             status: 'ready',
             matches,
+            boundFallback,
             trackSummary: {
                 originalPointCount: reduced.originalPointCount,
                 retainedPointCount: reduced.retainedPointCount,
@@ -665,7 +681,8 @@ import { githubClient as GithubClient } from './github-client.js';
                 segments: Array.isArray(message.segments) ? message.segments : [],
                 waypoints: capturePreferences.retainWaypoints && Array.isArray(message.waypoints) ? message.waypoints : [],
                 metadata,
-                capturePreferences
+                capturePreferences,
+                boundPid: page.pid
             });
             if (analysis.status === 'no-gps') {
                 await finish({ phase: 'no-gps', uploadGpx: null, message: analysis.message });
@@ -678,6 +695,7 @@ import { githubClient as GithubClient } from './github-client.js';
             const updated = await finish({
                 phase: 'ready',
                 matches: analysis.matches,
+                boundFallback: analysis.boundFallback,
                 selectedIds: analysis.matches.filter(match => match.selected).map(match => match.id),
                 trackSummary: analysis.trackSummary,
                 tripName: analysis.tripName,
@@ -692,7 +710,11 @@ import { githubClient as GithubClient } from './github-client.js';
                 phase: 'ready',
                 jobId: job.id,
                 boundPid: page.pid,
-                matches: analysis.matches.map(uploadMatchSummary)
+                matches: analysis.matches.map(uploadMatchSummary),
+                boundFallback: analysis.boundFallback ? {
+                    ...uploadMatchSummary(analysis.boundFallback),
+                    closestApproachM: analysis.boundFallback.closestApproachM
+                } : null
             };
         } catch (error) {
             const failure = { code: error.code || 'process-failed', message: error.message || 'The GPX could not be processed.' };
@@ -713,22 +735,44 @@ import { githubClient as GithubClient } from './github-client.js';
             || job.phase !== 'ready' || !job.uploadGpx) {
             return { ok: false, error: { code: 'job-expired', message: 'The processed GPX is no longer available. Process the file again.' } };
         }
+        // The page's URL cid, when present, must match the job's verified
+        // login; a page without one relies on the login check alone.
+        if (page.cid !== null && String(page.cid) !== String(job.cid)) {
+            return { ok: false, error: { code: 'identity-mismatch', message: 'This ascent form belongs to a different Peakbagger account.' } };
+        }
         const byId = new Map(job.matches.map(match => [String(match.id), match]));
+        if (job.boundFallback) byId.set(String(job.boundFallback.id), job.boundFallback);
         const selectedIds = [...new Set((message.selectedIds || []).map(String))].filter(id => byId.has(id));
         if (!selectedIds.length) {
             return { ok: false, error: { code: 'no-selection', message: 'Select at least one detected peak.' } };
         }
-        // The current page may serve as a draft tab only for its own bound
-        // peak, with the climber identity present and matching the job.
-        if (page.pid === null || page.cid === null || String(page.cid) !== String(job.cid)
-            || selectedIds.length !== 1 || selectedIds[0] !== String(page.pid)) {
-            return { ok: false, error: { code: 'unsupported-selection', message: 'Only this form’s own peak can be filled from here.' } };
+        // The primary selection fills the current page. A bound page may fill
+        // itself only for its own peak; an unbound page becomes the primary's
+        // peak by navigation after its draft is registered.
+        const primaryId = message.primaryId !== null && message.primaryId !== undefined
+            && selectedIds.includes(String(message.primaryId)) ? String(message.primaryId) : null;
+        if (primaryId && page.pid !== null && primaryId !== String(page.pid)) {
+            return { ok: false, error: { code: 'identity-mismatch', message: 'This form is bound to a different peak.' } };
         }
-        const match = Core.assignDraftSuffixes(selectedIds.map(id => byId.get(id)))[0];
+
+        const selectedMatches = Core.assignDraftSuffixes(selectedIds.map(id => byId.get(id)));
+        const trackOrdered = selectedMatches.map((match, index) => ({ match, index }))
+            .sort((left, right) => {
+                const distance = left.match.draftFields.upDistanceM - right.match.draftFields.upDistanceM;
+                return Number.isFinite(distance) && distance !== 0 ? distance : left.index - right.index;
+            })
+            .map(({ match }) => match);
+        const sequenceById = new Map(trackOrdered.map((match, index) => [String(match.id), index + 1]));
+        const fallbackTripName = trackOrdered.map(match => match.name).join(' / ').slice(0, 200);
+        const useTripInfo = job.capturePreferences?.fillTripInfo && selectedMatches.length > 1;
         const useWildernessNights = job.capturePreferences?.fillWildernessNights
             && Number.isInteger(job.nightsOut) && job.nightsOut > 0;
-        const draft = {
-            tabId,
+        const primaryMatch = primaryId ? selectedMatches.find(match => String(match.id) === primaryId) : null;
+        const siblings = selectedMatches.filter(match => match !== primaryMatch)
+            .sort((a, b) => b.confidence - a.confidence);
+
+        const makeDraft = (match, draftTabId, previewOrder, focusOnReady) => ({
+            tabId: draftTabId,
             jobId: job.id,
             sourceTabId: tabId,
             pid: match.id,
@@ -736,19 +780,67 @@ import { githubClient as GithubClient } from './github-client.js';
             classification: match.classification,
             confidence: match.confidence,
             suffix: match.draftFields.suffix,
-            tripInfo: null,
+            tripInfo: useTripInfo ? {
+                sequence: sequenceById.get(String(match.id)),
+                name: job.tripName || fallbackTripName,
+                nightsOut: Number.isInteger(job.nightsOut) ? job.nightsOut : null
+            } : null,
             wildernessNightsOut: useWildernessNights ? job.nightsOut : null,
-            previewOrder: 0,
+            previewOrder,
             previewStarted: false,
             complete: false,
             dayStatsPending: false,
-            focusOnReady: false,
+            focusOnReady,
             expiresAt: now() + JOB_TTL_MS
-        };
-        await mutateMap(DRAFTS_KEY, drafts => { drafts[tabId] = draft; });
-        await updateJob(tabId, { phase: 'opened', openedDraftTabIds: [tabId] });
-        await notifyDraftToProceed(draft);
-        return { ok: true, tabIds: [tabId] };
+        });
+
+        // Every draft is registered before any tab changes URL, so a fast
+        // page load can never race its own identity checks.
+        let order = 0;
+        if (primaryMatch) {
+            const currentDraft = makeDraft(primaryMatch, tabId, order++, false);
+            await mutateMap(DRAFTS_KEY, drafts => { drafts[tabId] = currentDraft; });
+        }
+        const sourceTab = await ext.tabs.get(tabId);
+        const created = [];
+        for (const match of siblings) {
+            const tab = await ext.tabs.create({ url: 'about:blank', active: false, windowId: sourceTab.windowId });
+            const draft = makeDraft(match, tab.id, order++, !primaryMatch && created.length === 0);
+            await mutateMap(DRAFTS_KEY, drafts => { drafts[tab.id] = draft; });
+            created.push(draft);
+        }
+
+        let groupWarning = null;
+        if (created.length) {
+            try {
+                const groupId = await ext.tabs.group({
+                    tabIds: created.map(draft => draft.tabId),
+                    createProperties: { windowId: sourceTab.windowId }
+                });
+                await ext.tabGroups.update(groupId, { title: 'Peak Drafts', color: 'green', collapsed: false });
+            } catch (error) {
+                groupWarning = `Drafts opened, but tab grouping failed: ${error.message}`;
+            }
+        }
+        const tabIds = [...(primaryMatch ? [tabId] : []), ...created.map(draft => draft.tabId)];
+        await updateJob(tabId, { phase: 'opened', openedDraftTabIds: tabIds, groupWarning });
+        await Promise.all(created.map(draft => ext.tabs.update(draft.tabId, {
+            url: `https://peakbagger.com/climber/ascentedit.aspx?pid=${draft.pid}&cid=${draft.cid}`,
+            active: false
+        })));
+        if (primaryMatch) {
+            if (page.pid !== null) {
+                await notifyDraftToProceed({ tabId });
+            } else {
+                // Unbound page: peak selection on the native form is a
+                // postback, so the standard draft delivery fills the page
+                // this navigation reloads.
+                await ext.tabs.update(tabId, {
+                    url: `https://peakbagger.com/climber/ascentedit.aspx?pid=${primaryMatch.id}&cid=${job.cid}`
+                });
+            }
+        }
+        return { ok: true, tabIds, groupWarning };
     };
 
     const validateDraftPage = (draft, message) => String(draft.pid) === String(message.pid)
@@ -794,7 +886,10 @@ import { githubClient as GithubClient } from './github-client.js';
         // expires or closes.
         const job = Object.values(jobs).find(candidate => candidate.id === draft.jobId);
         if (!job) return { action: 'error', message: 'The private draft data expired. Capture the activity again.' };
-        const match = job.matches.find(candidate => candidate.id === draft.pid);
+        const match = job.matches.find(candidate => candidate.id === draft.pid)
+            // An upload job's bound peak may have been drafted through the
+            // explicit closest-approach override rather than a visible match.
+            || (job.boundFallback && job.boundFallback.id === draft.pid ? job.boundFallback : null);
         if (!match) return { action: 'error', message: 'The selected peak is no longer available.' };
 
         if (draft.complete) {
