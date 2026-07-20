@@ -73,14 +73,21 @@ const createWorker = ({ settings = { enableGithubBackup: true }, auth = null, gi
 
 // A scripted GitHub Git Data backend that records the tree it is asked to write.
 const gitDataBackend = () => {
-    const state = { blobs: {}, tree: null, n: 0 };
+    const state = { blobs: {}, contents: {}, tree: null, n: 0 };
     const handler = (method, path, body) => {
         if (method === 'GET' && path === '/repos/me/backup') return respond(200, { default_branch: 'main', archived: false, permissions: { push: true } });
         if (method === 'GET' && path === '/repos/me/backup/git/ref/heads/main') return respond(200, { object: { sha: 'C0' } });
         if (method === 'GET' && path === '/repos/me/backup/git/commits/C0') return respond(200, { sha: 'C0', tree: { sha: 'T0' } });
         if (method === 'GET' && path === '/repos/me/backup/git/trees/T0') return respond(200, { tree: [] });
         if (method === 'POST' && path === '/repos/me/backup/git/blobs') { const sha = `blob${++state.n}`; state.blobs[sha] = body.content; return respond(201, { sha }); }
-        if (method === 'POST' && path === '/repos/me/backup/git/trees') { state.tree = body; return respond(201, { sha: 'T1' }); }
+        if (method === 'POST' && path === '/repos/me/backup/git/trees') {
+            state.tree = body;
+            for (const entry of body.tree) {
+                if (typeof entry.content === 'string') state.contents[entry.path] = entry.content;
+                else if (entry.sha && state.blobs[entry.sha]) state.contents[entry.path] = state.blobs[entry.sha];
+            }
+            return respond(201, { sha: 'T1' });
+        }
         if (method === 'POST' && path === '/repos/me/backup/git/commits') return respond(201, { sha: 'C1', html_url: 'https://github.com/me/backup/commit/C1' });
         if (method === 'PATCH' && path === '/repos/me/backup/git/refs/heads/main') return respond(200, { object: { sha: 'C1' } });
         return null;
@@ -148,7 +155,8 @@ test('a saved ascent is backed up: snapshot + page merge, one commit, snapshot c
     ]);
 
     // ascent.json merges page peak metadata with the snapshot's entered fields.
-    const jsonBlob = Object.values(backend.state.blobs).find(c => c.includes('"schemaVersion"'));
+    const jsonBlob = Object.entries(backend.state.contents)
+        .find(([path]) => path.endsWith('/ascent.json'))[1];
     const json = JSON.parse(jsonBlob);
     assert.equal(json.ascent.id, 7654321);
     assert.equal(json.ascent.gainFt, 9000);
@@ -158,7 +166,8 @@ test('a saved ascent is backed up: snapshot + page merge, one commit, snapshot c
     assert.ok(json.backup.syncedAt, 'syncedAt is stamped at push time');
 
     // report.md carries the snapshot's resolved Markdown body.
-    const mdBlob = Object.values(backend.state.blobs).find(c => c.startsWith('---\n'));
+    const mdBlob = Object.entries(backend.state.contents)
+        .find(([path]) => path.endsWith('/report.md'))[1];
     assert.match(mdBlob, /\*\*Great climb\*\* under blue skies\./);
 
     // The snapshot has served its purpose and is dropped.
@@ -184,10 +193,122 @@ test('profile backfill lists repository folders and pushes a direct snapshot thr
     }, LIST_SENDER);
     assert.equal(result.ok, true);
     assert.equal(result.result.folder, '2026-07-12-mount-rainier-a7654321');
-    const json = JSON.parse(Object.values(backend.state.blobs).find(content => content.includes('"schemaVersion"')));
+    const json = JSON.parse(Object.entries(backend.state.contents)
+        .find(([path]) => path.endsWith('/ascent.json'))[1]);
     assert.equal(json.ascent.id, 7654321);
     assert.equal(json.backup.extensionVersion, '2.2.0');
     assert.ok(json.backup.syncedAt);
+});
+
+test('profile backfill validates and commits multiple ascents as one batch', async () => {
+    const backend = gitDataBackend();
+    const worker = createWorker({ auth: AUTH, github: backend.handler });
+    const entries = [7654321, 7654322].map((aid, index) => ({
+        aid,
+        snapshot: {
+            ascent: { id: aid, date: `2026-07-${12 + index}`, suffix: '' },
+            peak: { id: 2296 + index, name: `Peak ${index + 1}` },
+            report: { markdown: `Report ${index + 1}` },
+            backup: { extensionVersion: '', syncedAt: null },
+        },
+        gpx: null,
+    }));
+    const result = await worker.send({ type: 'GITHUB_BACKUP_PROFILE_BATCH', entries }, LIST_SENDER);
+
+    assert.equal(result.ok, true);
+    assert.equal(result.result.count, 2);
+    assert.equal(result.result.message, 'Back up 2 ascents');
+    assert.equal(result.result.items.length, 2);
+    assert.equal(backend.state.tree.tree.filter(entry => entry.path.endsWith('/ascent.json')).length, 2);
+    assert.equal(backend.state.tree.tree.filter(entry => entry.path.endsWith('/report.md')).length, 2);
+});
+
+test('profile batches reject duplicate identities and more than ten entries before writing', async () => {
+    const backend = gitDataBackend();
+    const worker = createWorker({ auth: AUTH, github: backend.handler });
+    const entry = {
+        aid: 7,
+        snapshot: { ascent: { id: 7 }, peak: { id: 8, name: 'Peak' }, report: { markdown: '' } },
+    };
+    const duplicate = await worker.send({
+        type: 'GITHUB_BACKUP_PROFILE_BATCH', entries: [structuredClone(entry), structuredClone(entry)],
+    }, LIST_SENDER);
+    assert.equal(duplicate.ok, false);
+    assert.equal(duplicate.error.code, 'no-data');
+
+    const oversized = await worker.send({
+        type: 'GITHUB_BACKUP_PROFILE_BATCH',
+        entries: Array.from({ length: 11 }, (_, index) => ({
+            aid: index + 1,
+            snapshot: { ascent: { id: index + 1 }, peak: { id: index + 20, name: 'Peak' } },
+        })),
+    }, LIST_SENDER);
+    assert.equal(oversized.ok, false);
+    assert.equal(oversized.error.code, 'no-data');
+    assert.equal(backend.state.tree, null);
+});
+
+test('the worker serializes competing profile batches before either reads the branch', async () => {
+    let currentCommit = 'C0';
+    let repoReads = 0;
+    let treeNumber = 0;
+    let commitNumber = 0;
+    let releaseFirstTree;
+    let markFirstTreeStarted;
+    const firstTreeStarted = new Promise(resolve => { markFirstTreeStarted = resolve; });
+    const firstTreeGate = new Promise(resolve => { releaseFirstTree = resolve; });
+    const github = (method, path) => {
+        if (method === 'GET' && path === '/repos/me/backup') {
+            repoReads += 1;
+            return respond(200, { default_branch: 'main', archived: false, permissions: { push: true } });
+        }
+        if (method === 'GET' && path === '/repos/me/backup/git/ref/heads/main') {
+            return respond(200, { object: { sha: currentCommit } });
+        }
+        if (method === 'GET' && path.startsWith('/repos/me/backup/git/commits/C')) {
+            const sha = path.split('/').at(-1);
+            return respond(200, { sha, tree: { sha: `T${sha.slice(1)}` } });
+        }
+        if (method === 'GET' && path.startsWith('/repos/me/backup/git/trees/T')) return respond(200, { tree: [] });
+        if (method === 'POST' && path === '/repos/me/backup/git/trees') {
+            treeNumber += 1;
+            if (treeNumber === 1) {
+                markFirstTreeStarted();
+                return firstTreeGate.then(() => respond(201, { sha: 'T1' }));
+            }
+            return respond(201, { sha: `T${treeNumber}` });
+        }
+        if (method === 'POST' && path === '/repos/me/backup/git/commits') {
+            commitNumber += 1;
+            return respond(201, { sha: `C${commitNumber}`, html_url: `u${commitNumber}` });
+        }
+        if (method === 'PATCH' && path === '/repos/me/backup/git/refs/heads/main') {
+            currentCommit = `C${commitNumber}`;
+            return respond(200, { object: { sha: currentCommit } });
+        }
+        return null;
+    };
+    const worker = createWorker({ auth: AUTH, github });
+    const message = aid => ({
+        type: 'GITHUB_BACKUP_PROFILE_BATCH',
+        entries: [{
+            aid,
+            snapshot: { ascent: { id: aid }, peak: { id: aid + 100, name: `Peak ${aid}` }, report: { markdown: '' } },
+        }],
+    });
+
+    const first = worker.send(message(1), LIST_SENDER);
+    await firstTreeStarted;
+    const second = worker.send(message(2), LIST_SENDER);
+    await Promise.resolve();
+    assert.equal(repoReads, 1, 'the second writer must wait before resolving the repository or reading its head');
+    releaseFirstTree();
+    const [firstResult, secondResult] = await Promise.all([first, second]);
+
+    assert.equal(firstResult.ok, true);
+    assert.equal(secondResult.ok, true);
+    assert.equal(repoReads, 2);
+    assert.equal(currentCommit, 'C2');
 });
 
 test('profile messages require ClimbListC and matching ascent identity', async () => {

@@ -3,16 +3,16 @@
 //
 // Better Peakbagger — GitHub Git Data client for the ascent backup (pure).
 //
-// Pushes one ascent as a single atomic commit through GitHub's Git Data API:
-// resolve the branch, read its tip, build blobs for the folder's files, POST a
-// tree based on the latest commit (adding the new files and removing any stale
-// or renamed-away ones in the same tree), POST the commit, and fast-forward the
-// ref. A non-fast-forward race re-reads the ref and retries exactly once. GitHub
+// Pushes one or more ascents as one atomic commit through GitHub's Git Data API:
+// resolve the branch, read its tip, POST a tree based on the latest commit
+// (adding new file contents and removing stale or renamed-away owned files),
+// POST the commit, and fast-forward the ref. Small file contents ride directly
+// in the tree request so a profile batch does not spend one mutation per file;
+// unusually large files keep the explicit blob path. A non-fast-forward race
+// re-reads the ref and rebuilds the whole batch after bounded backoff. GitHub
 // does not permit creating a ref in an empty repository, so that one case is
 // bootstrapped with a marker-only Contents API commit before the ordinary
-// atomic ascent commit. The Contents API is not used for ascent files because
-// it would produce one commit per file and cannot move a renamed folder
-// atomically.
+// atomic commit.
 //
 // This module performs network I/O, but only through an *injected* fetch and an
 // injected token: it holds no globals, no chrome APIs, and no ambient
@@ -27,6 +27,7 @@ import { githubBackup as Backup } from './github-backup.js';
     const API_ROOT = 'https://api.github.com';
     const BLOB_MODE = '100644';
     const CONFLICT_RETRY_DELAYS = [500, 2000, 5000];
+    const DEFAULT_INLINE_FILE_LIMIT_BYTES = 1024 * 1024;
     const REPOSITORY_MARKER_PATH = '.better-peakbagger.json';
     const REPOSITORY_MARKER_CONTENT = `${JSON.stringify({
         schemaVersion: 1,
@@ -44,7 +45,7 @@ import { githubBackup as Backup } from './github-backup.js';
         BRANCH_PROTECTED: 'branch-protected',
         BRANCH_MISSING: 'branch-missing',
         RATE_LIMIT: 'rate-limit',
-        CONFLICT: 'conflict',         // non-fast-forward; retried once before surfacing
+        CONFLICT: 'conflict',         // non-fast-forward or transient 409; bounded retries
         NETWORK: 'network',
         INVALID: 'invalid',           // malformed request GitHub rejected (422, not the above)
         UNKNOWN: 'unknown',
@@ -98,10 +99,14 @@ import { githubBackup as Backup } from './github-backup.js';
         repo,
         branch = null,
         sleep = ms => new Promise(resolve => setTimeout(resolve, ms)),
+        inlineFileLimitBytes = DEFAULT_INLINE_FILE_LIMIT_BYTES,
     } = {}) => {
         if (typeof fetch !== 'function') throw new TypeError('github client requires an injected fetch');
         if (!token) throw new TypeError('github client requires a token');
         if (!owner || !repo) throw new TypeError('github client requires owner and repo');
+        if (!Number.isFinite(inlineFileLimitBytes) || inlineFileLimitBytes < 0) {
+            throw new TypeError('github client requires a non-negative inline file limit');
+        }
 
         const repoBase = `${API_ROOT}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`;
 
@@ -281,34 +286,75 @@ import { githubBackup as Backup } from './github-backup.js';
             phase: 'write',
         });
 
-        const commitOnce = async (snapshot, { gpx } = {}) => {
+        const contentBytes = content => new TextEncoder().encode(content).byteLength;
+
+        const normalizeBatch = entries => {
+            if (!Array.isArray(entries) || entries.length === 0) {
+                throw new TypeError('github client requires at least one ascent backup');
+            }
+            const seen = new Set();
+            return entries.map(entry => {
+                const snapshot = entry && entry.snapshot;
+                const ascentId = snapshot && snapshot.ascent ? Number(snapshot.ascent.id) : NaN;
+                if (!Number.isFinite(ascentId) || ascentId <= 0 || seen.has(ascentId)) {
+                    throw new TypeError('github client requires unique positive ascent ids');
+                }
+                seen.add(ascentId);
+                return { snapshot, gpx: entry.gpx };
+            });
+        };
+
+        const commitMessageFor = backups => {
+            if (backups.length === 1) return backups[0].message;
+            return backups.every(backup => backup.isUpdate)
+                ? `Refresh ${backups.length} ascents`
+                : `Back up ${backups.length} ascents`;
+        };
+
+        const commitBatchOnce = async entries => {
             const resolved = await resolveRepo();
             const head = await readHead(resolved) || await initializeEmptyRepository(resolved);
             const state = await inspectRootTree(head.root);
-            const folders = state.records.map(record => record.leaf);
-            const ascentId = snapshot && snapshot.ascent && snapshot.ascent.id;
-            const oldRecords = matchingRecords(state.records, ascentId);
-
-            const backup = Backup.buildBackup(snapshot, { gpx, existingFolders: folders });
-            const newPaths = new Set(backup.files.map(file => file.path));
+            const workingFolders = state.records.map(record => record.leaf);
+            const backups = entries.map(({ snapshot, gpx }) => {
+                const backup = Backup.buildBackup(snapshot, { gpx, existingFolders: workingFolders });
+                const ascentId = snapshot.ascent.id;
+                const suffix = `-a${ascentId}`;
+                for (let i = workingFolders.length - 1; i >= 0; i -= 1) {
+                    if (workingFolders[i].endsWith(suffix)) workingFolders.splice(i, 1);
+                }
+                workingFolders.push(backup.folder);
+                return backup;
+            });
+            const newPaths = new Set(backups.flatMap(backup => backup.files.map(file => file.path)));
 
             // Files under the old folder that the new payload will not overwrite
             // get a null sha in the tree, which deletes them relative to the base
             // tree — the rename move and stale-file prune in one atomic tree.
-            const removals = Array.from(new Set((await Promise.all(oldRecords.map(oldFolderOwnedPaths)))
-                .flat()
-                .filter(path => !newPaths.has(path))));
+            const removals = [];
+            for (const { snapshot } of entries) {
+                const oldRecords = matchingRecords(state.records, snapshot.ascent.id);
+                for (const record of oldRecords) removals.push(...await oldFolderOwnedPaths(record));
+            }
 
             const treeEntries = [];
-            for (const file of backup.files) {
-                const blob = await writeBlob(file.content);
-                treeEntries.push({ path: file.path, mode: BLOB_MODE, type: 'blob', sha: blob.sha });
+            for (const file of backups.flatMap(backup => backup.files)) {
+                if (contentBytes(file.content) <= inlineFileLimitBytes) {
+                    treeEntries.push({ path: file.path, mode: BLOB_MODE, type: 'blob', content: file.content });
+                } else {
+                    const blob = await writeBlob(file.content);
+                    treeEntries.push({ path: file.path, mode: BLOB_MODE, type: 'blob', sha: blob.sha });
+                }
             }
             if (!state.marker) {
-                const marker = await writeBlob(REPOSITORY_MARKER_CONTENT);
-                treeEntries.push({ path: REPOSITORY_MARKER_PATH, mode: BLOB_MODE, type: 'blob', sha: marker.sha });
+                treeEntries.push({
+                    path: REPOSITORY_MARKER_PATH,
+                    mode: BLOB_MODE,
+                    type: 'blob',
+                    content: REPOSITORY_MARKER_CONTENT,
+                });
             }
-            for (const path of removals) {
+            for (const path of new Set(removals.filter(path => !newPaths.has(path)))) {
                 treeEntries.push({ path, mode: BLOB_MODE, type: 'blob', sha: null });
             }
 
@@ -317,7 +363,7 @@ import { githubBackup as Backup } from './github-backup.js';
                 phase: 'write',
             });
             const commit = await request('POST', '/git/commits', {
-                body: { message: backup.message, tree: tree.sha, parents: [head.baseCommitSha] },
+                body: { message: commitMessageFor(backups), tree: tree.sha, parents: [head.baseCommitSha] },
                 phase: 'write',
             });
             await request('PATCH', `/git/refs/heads/${encodeURIComponent(resolved.targetBranch)}`, {
@@ -325,12 +371,17 @@ import { githubBackup as Backup } from './github-backup.js';
                 phase: 'ref',
             });
 
+            const commitUrl = commit.html_url || `https://github.com/${owner}/${repo}/commit/${commit.sha}`;
             return {
                 sha: commit.sha,
-                commitUrl: commit.html_url || `https://github.com/${owner}/${repo}/commit/${commit.sha}`,
-                isUpdate: backup.isUpdate,
-                folder: backup.folder,
-                message: backup.message,
+                commitUrl,
+                count: backups.length,
+                message: commitMessageFor(backups),
+                items: backups.map(backup => ({
+                    isUpdate: backup.isUpdate,
+                    folder: backup.folder,
+                    message: backup.message,
+                })),
             };
         };
 
@@ -338,10 +389,11 @@ import { githubBackup as Backup } from './github-backup.js';
         // transient repository/ref conflict. Immediate retries can hit the same
         // propagation window; the bounded schedule absorbs brief 409s without
         // hiding a persistent conflict or looping forever.
-        const pushAscentBackup = async (snapshot, options = {}) => {
+        const pushAscentBackups = async entries => {
+            const normalized = normalizeBatch(entries);
             for (let attempt = 0; ; attempt += 1) {
                 try {
-                    return await commitOnce(snapshot, options);
+                    return await commitBatchOnce(normalized);
                 } catch (error) {
                     if (!(error instanceof GithubBackupError)
                         || error.code !== ERROR_CODES.CONFLICT
@@ -349,6 +401,16 @@ import { githubBackup as Backup } from './github-backup.js';
                     await sleep(CONFLICT_RETRY_DELAYS[attempt]);
                 }
             }
+        };
+
+        const pushAscentBackup = async (snapshot, { gpx } = {}) => {
+            const batch = await pushAscentBackups([{ snapshot, gpx }]);
+            return {
+                sha: batch.sha,
+                commitUrl: batch.commitUrl,
+                message: batch.message,
+                ...batch.items[0],
+            };
         };
 
         // Read-only profile preflight: the repository tree is the resumability
@@ -361,13 +423,14 @@ import { githubBackup as Backup } from './github-backup.js';
             return state.records.map(record => record.leaf);
         };
 
-        return { pushAscentBackup, getAscentFolders, inspectRepository };
+        return { pushAscentBackup, pushAscentBackups, getAscentFolders, inspectRepository };
     };
 
     const API = {
         createGithubClient,
         GithubBackupError,
         ERROR_CODES,
+        DEFAULT_INLINE_FILE_LIMIT_BYTES,
         REPOSITORY_MARKER_PATH,
     };
 

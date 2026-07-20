@@ -3,9 +3,9 @@
 //
 // The GitHub client pushes one ascent as a single atomic Git Data commit. These
 // tests drive it against a scripted fetch stub (no network) to pin the request
-// sequence (resolve repo → read ref/commit/tree → blobs → tree → commit → ref),
-// the rename-move and stale-file removal in one tree, the single
-// non-fast-forward retry, and the typed error mapping.
+// sequence (resolve repo → read ref/commit/tree → tree → commit → ref), atomic
+// multi-ascent batches, the rename-move and stale-file removal in one tree,
+// bounded non-fast-forward retries, and the typed error mapping.
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -67,7 +67,7 @@ const MARKER_BLOB = () => respond(200, {
     content: 'ewogICJzY2hlbWFWZXJzaW9uIjogMSwKICAidHlwZSI6ICJiZXR0ZXItcGVha2JhZ2dlci1iYWNrdXAiLAogICJsYXlvdXQiOiAicmVwb3NpdG9yeS1yb290Igp9Cg==',
 });
 
-test('an Add pushes blobs, one tree, one commit, and fast-forwards the ref', async () => {
+test('an Add inlines files into one tree, creates one commit, and fast-forwards the ref', async () => {
     const { fetch, calls } = makeFetch({
         'GET /repos/me/backup': REPO_OK(),
         'GET /repos/me/backup/git/ref/heads/main': REF('C0'),
@@ -87,10 +87,10 @@ test('an Add pushes blobs, one tree, one commit, and fast-forwards the ref', asy
     assert.equal(result.commitUrl, 'https://github.com/me/backup/commit/C1');
     assert.equal(result.folder, '2026-07-12-mount-rainier-a1234567');
 
-    // Three ascent blobs plus the repository marker, then one tree.
+    // Small files ride in the one tree mutation instead of spending one API
+    // request per blob.
     const blobCalls = calls.filter(c => c.key === 'POST /repos/me/backup/git/blobs');
-    assert.equal(blobCalls.length, 4);
-    assert.ok(blobCalls.every(c => c.body.encoding === 'utf-8'));
+    assert.equal(blobCalls.length, 0);
 
     const treeCall = calls.find(c => c.key === 'POST /repos/me/backup/git/trees');
     assert.equal(treeCall.body.base_tree, 'T0');
@@ -100,13 +100,67 @@ test('an Add pushes blobs, one tree, one commit, and fast-forwards the ref', asy
         '2026-07-12-mount-rainier-a1234567/report.md',
         '2026-07-12-mount-rainier-a1234567/track.gpx',
     ]);
-    assert.ok(treeCall.body.tree.every(e => e.sha && e.sha.startsWith('blob')));
+    assert.ok(treeCall.body.tree.every(e => typeof e.content === 'string'));
 
     const commitCall = calls.find(c => c.key === 'POST /repos/me/backup/git/commits');
     assert.equal(commitCall.body.message, 'Add ascent: Mount Rainier, 2026-07-12');
     assert.deepEqual(commitCall.body.parents, ['C0']);
     // Authorization is the injected token as a bearer.
     assert.equal(commitCall.headers.Authorization, 'Bearer t');
+});
+
+test('ten ascents share one atomic tree, commit, and branch update', async () => {
+    const { fetch, calls } = makeFetch({
+        'GET /repos/me/backup': REPO_OK(),
+        'GET /repos/me/backup/git/ref/heads/main': REF('C0'),
+        'GET /repos/me/backup/git/commits/C0': COMMIT('C0', 'T0'),
+        'GET /repos/me/backup/git/trees/T0': () => respond(200, { tree: [] }),
+        'POST /repos/me/backup/git/trees': () => respond(201, { sha: 'T1' }),
+        'POST /repos/me/backup/git/commits': () => respond(201, { sha: 'C1', html_url: 'u' }),
+        'PATCH /repos/me/backup/git/refs/heads/main': () => respond(200, { object: { sha: 'C1' } }),
+    });
+    const client = Client.createGithubClient({ fetch, token: 't', owner: 'me', repo: 'backup' });
+    const entries = Array.from({ length: 10 }, (_, index) => ({
+        snapshot: snapshot({
+            ascent: { id: 2000 + index, date: `2026-07-${String(index + 1).padStart(2, '0')}` },
+            peak: { id: 3000 + index, name: `Peak ${index + 1}` },
+        }),
+    }));
+    const result = await client.pushAscentBackups(entries);
+
+    assert.equal(result.count, 10);
+    assert.equal(result.items.length, 10);
+    assert.equal(result.message, 'Back up 10 ascents');
+    assert.equal(calls.filter(call => call.key === 'POST /repos/me/backup/git/trees').length, 1);
+    assert.equal(calls.filter(call => call.key === 'POST /repos/me/backup/git/commits').length, 1);
+    assert.equal(calls.filter(call => call.key === 'PATCH /repos/me/backup/git/refs/heads/main').length, 1);
+    assert.equal(calls.filter(call => call.key === 'POST /repos/me/backup/git/blobs').length, 0);
+    const tree = calls.find(call => call.key === 'POST /repos/me/backup/git/trees').body.tree;
+    assert.equal(tree.length, 21, 'ten two-file ascents plus the ownership marker');
+    assert.equal(new Set(tree.map(entry => entry.path)).size, tree.length);
+});
+
+test('an unusually large file keeps the explicit blob upload path', async () => {
+    const { fetch, calls } = makeFetch({
+        'GET /repos/me/backup': REPO_OK(),
+        'GET /repos/me/backup/git/ref/heads/main': REF('C0'),
+        'GET /repos/me/backup/git/commits/C0': COMMIT('C0', 'T0'),
+        'GET /repos/me/backup/git/trees/T0': () => respond(200, { tree: [] }),
+        'POST /repos/me/backup/git/blobs': () => respond(201, { sha: 'large-blob' }),
+        'POST /repos/me/backup/git/trees': () => respond(201, { sha: 'T1' }),
+        'POST /repos/me/backup/git/commits': () => respond(201, { sha: 'C1', html_url: 'u' }),
+        'PATCH /repos/me/backup/git/refs/heads/main': () => respond(200, { object: { sha: 'C1' } }),
+    });
+    const client = Client.createGithubClient({
+        fetch, token: 't', owner: 'me', repo: 'backup', inlineFileLimitBytes: 1024,
+    });
+    await client.pushAscentBackup(snapshot(), { gpx: `<gpx>${'x'.repeat(2048)}</gpx>` });
+
+    assert.equal(calls.filter(call => call.key === 'POST /repos/me/backup/git/blobs').length, 1);
+    const track = calls.find(call => call.key === 'POST /repos/me/backup/git/trees')
+        .body.tree.find(entry => entry.path.endsWith('/track.gpx'));
+    assert.equal(track.sha, 'large-blob');
+    assert.equal('content' in track, false);
 });
 
 test('profile preflight reads ascent folder leaves without writing', async () => {
@@ -243,8 +297,8 @@ test('a rename re-sync removes owned old paths and preserves user files', async 
     const treeCall = calls.find(c => c.key === 'POST /repos/me/backup/git/trees');
     const byPath = Object.fromEntries(treeCall.body.tree.map(e => [e.path, e]));
     // New folder written (report.md, ascent.json; no track.gpx this time).
-    assert.ok(byPath['2026-07-12-mount-rainier-a1234567/report.md'].sha.startsWith('blob'));
-    assert.ok(byPath['2026-07-12-mount-rainier-a1234567/ascent.json'].sha.startsWith('blob'));
+    assert.equal(typeof byPath['2026-07-12-mount-rainier-a1234567/report.md'].content, 'string');
+    assert.equal(typeof byPath['2026-07-12-mount-rainier-a1234567/ascent.json'].content, 'string');
     // Better Peakbagger's old paths are removed, but notes.md is not ours.
     for (const name of ['report.md', 'ascent.json', 'track.gpx']) {
         assert.equal(byPath[`${oldLeaf}/${name}`].sha, null);
@@ -277,7 +331,7 @@ test('a same-slug re-sync prunes a now-absent GPX but keeps overwriting the rest
     const treeCall = calls.find(c => c.key === 'POST /repos/me/backup/git/trees');
     const byPath = Object.fromEntries(treeCall.body.tree.map(e => [e.path, e]));
     // report.md / ascent.json overwritten (same path, real blob), not nulled.
-    assert.ok(byPath[`${leaf}/report.md`].sha.startsWith('blob'));
+    assert.equal(typeof byPath[`${leaf}/report.md`].content, 'string');
     // The stale track.gpx is the only removal.
     assert.equal(byPath[`${leaf}/track.gpx`].sha, null);
 });

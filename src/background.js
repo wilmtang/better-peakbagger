@@ -27,9 +27,11 @@ import { githubClient as GithubClient } from './github-client.js';
     const GITHUB_AUTH_PENDING_KEY = 'bpbGithubAuthPending';
     const SNAPSHOT_TTL_MS = 30 * 60 * 1000;
     const SNAPSHOT_LIMIT = 10;
+    const PROFILE_BACKUP_BATCH_LIMIT = 10;
     const CLEANUP_ALARM = 'bpb-capture-cleanup';
     const processes = new Map();
     let mutationQueue = Promise.resolve();
+    let githubWriteQueue = Promise.resolve();
 
     const now = () => Date.now();
     const isFresh = record => !!record && Number(record.expiresAt) > now();
@@ -64,6 +66,17 @@ import { githubClient as GithubClient } from './github-client.js';
             return result;
         });
         mutationQueue = operation.catch(() => {});
+        return operation;
+    };
+
+    // Every backup surface targets the same mutable branch. Serialize writes
+    // within this worker so an automatic save, a manual save, and a profile
+    // batch cannot race one another between reading and updating the branch
+    // head. External writers are still handled by the GitHub client's bounded
+    // optimistic-concurrency retry.
+    const enqueueGithubWrite = write => {
+        const operation = githubWriteQueue.then(write, write);
+        githubWriteQueue = operation.catch(() => {});
         return operation;
     };
 
@@ -1394,7 +1407,7 @@ import { githubClient as GithubClient } from './github-client.js';
             branch: auth.repo.branch || undefined,
         });
         try {
-            const result = await client.pushAscentBackup(snapshot, { gpx: message.gpx });
+            const result = await enqueueGithubWrite(() => client.pushAscentBackup(snapshot, { gpx: message.gpx }));
             // The snapshot has served its purpose; drop it so a later view of the
             // same page does not re-push from stale data.
             if (found) await mutateMap(SNAPSHOTS_KEY, m => { delete m[found.key]; });
@@ -1433,7 +1446,62 @@ import { githubClient as GithubClient } from './github-client.js';
             branch: auth.repo.branch || undefined,
         });
         try {
-            return { ok: true, result: await client.pushAscentBackup(snapshot, { gpx: message.gpx }) };
+            return {
+                ok: true,
+                result: await enqueueGithubWrite(() => client.pushAscentBackup(snapshot, { gpx: message.gpx })),
+            };
+        } catch (error) {
+            return { ok: false, error: { code: error.code || 'unknown', message: error.message || 'The backup failed.' } };
+        }
+    };
+
+    // A profile batch is one ordered branch mutation containing up to ten
+    // independently identity-checked ascents. The content script never sees
+    // the token, and a malformed entry rejects the entire batch before GitHub
+    // receives anything.
+    const backupProfileBatch = async (message, sender) => {
+        if (!isClimbListSender(sender)) return { ok: false, error: { code: 'forbidden' } };
+        const entries = message && message.entries;
+        if (!Array.isArray(entries) || entries.length === 0 || entries.length > PROFILE_BACKUP_BATCH_LIMIT) {
+            return { ok: false, error: { code: 'no-data' } };
+        }
+        const seen = new Set();
+        for (const entry of entries) {
+            const ascentId = entry && entry.snapshot && entry.snapshot.ascent
+                ? Number(entry.snapshot.ascent.id)
+                : NaN;
+            if (!Number.isFinite(ascentId) || ascentId <= 0 || ascentId !== Number(entry.aid) || seen.has(ascentId)) {
+                return { ok: false, error: { code: 'no-data' } };
+            }
+            seen.add(ascentId);
+        }
+        const settings = await Settings.get();
+        if (!settings.enableGithubBackup) return { ok: false, error: { code: 'disabled' } };
+        const auth = await GithubAuth.authStore.read();
+        if (!auth || !auth.token) return { ok: false, error: { code: 'not-connected' } };
+        if (!auth.repo || !auth.repo.owner || !auth.repo.name) return { ok: false, error: { code: 'no-repo' } };
+
+        const version = ext.runtime.getManifest ? ext.runtime.getManifest().version : '';
+        for (const entry of entries) {
+            entry.snapshot.backup = {
+                ...(entry.snapshot.backup || {}),
+                syncedAt: new Date().toISOString(),
+                extensionVersion: version,
+            };
+        }
+        const client = GithubClient.createGithubClient({
+            fetch: netFetch,
+            token: auth.token,
+            owner: auth.repo.owner,
+            repo: auth.repo.name,
+            branch: auth.repo.branch || undefined,
+        });
+        try {
+            const result = await enqueueGithubWrite(() => client.pushAscentBackups(entries.map(entry => ({
+                snapshot: entry.snapshot,
+                gpx: entry.gpx,
+            }))));
+            return { ok: true, result };
         } catch (error) {
             return { ok: false, error: { code: error.code || 'unknown', message: error.message || 'The backup failed.' } };
         }
@@ -1463,6 +1531,7 @@ import { githubClient as GithubClient } from './github-client.js';
             case 'GITHUB_BACKUP_ASCENT': return backupAscent(message, sender);
             case 'GITHUB_BACKUP_PROFILE_STATUS': return githubProfileBackupStatus(sender);
             case 'GITHUB_BACKUP_PROFILE_ASCENT': return backupProfileAscent(message, sender);
+            case 'GITHUB_BACKUP_PROFILE_BATCH': return backupProfileBatch(message, sender);
             case 'CAPTURE_START': return startCapture(message);
             case 'CAPTURE_STATUS': {
                 const jobs = await readMap(JOBS_KEY);
