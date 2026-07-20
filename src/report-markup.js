@@ -143,8 +143,11 @@
     // privacy or playback behavior that the submitted report does not have.
     const VIDEO_RUNTIME_ATTRIBUTES =
         ' controls preload="metadata" playsinline referrerpolicy="no-referrer"';
+    // YouTube rejects player requests without client identification (error
+    // 153). Its recommended cross-origin policy sends only Peakbagger's origin,
+    // never the ascent path or query string.
     const YOUTUBE_RUNTIME_ATTRIBUTES =
-        ' title="YouTube video" loading="lazy" referrerpolicy="no-referrer"'
+        ' title="YouTube video" loading="lazy" referrerpolicy="strict-origin-when-cross-origin"'
         + ' allow="accelerometer; encrypted-media; gyroscope; picture-in-picture" allowfullscreen';
 
     export const sanitizeReportDimension = raw => {

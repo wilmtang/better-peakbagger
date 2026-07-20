@@ -287,7 +287,7 @@ Peakbagger equivalent:
 | `![alt\|300](https://…)`, `![alt\|300x200](https://…)` | `[img … width="300"]`, optionally with `height="200"` |
 | `![](https://…/clip.mp4)` (also `.webm`, `.ogv`, `.ogg`, or `.m3u8`) | `[video src="…" controls …][/video]` |
 | `![Video\|640](https://…)`, `![Video\|640x360](https://…)` | `[video … width="640"]`, optionally with `height="360"` |
-| `![YouTube\|640x360](https://youtu.be/aqz-KE-bpKQ)` | A canonical, lazy, no-referrer YouTube player iframe |
+| `![YouTube\|640x360](https://youtu.be/aqz-KE-bpKQ)` | A canonical, lazy YouTube player iframe that sends only Peakbagger's origin |
 | two spaces plus newline, or an ordinary newline inside a paragraph | Peakbagger line break |
 | a blank line | Peakbagger paragraph spacing |
 
@@ -391,14 +391,16 @@ Links allow HTTP, HTTPS, `mailto:`, root-relative Peakbagger paths, and local
 fragments. Images and direct videos are stricter: only HTTPS or root-relative
 sources are emitted; image dimensions are bounded; the local preview uses a
 no-referrer policy, and video never autoplays. A recognized YouTube URL is
-instead emitted as a canonical, no-referrer YouTube iframe. A remote image,
-video, or YouTube player can make a request to its host when it is visible in
-the Rich editor or Markdown preview. Media in the final saved report is also
-loaded by Peakbagger and therefore makes a request to that host when someone
-reads the report. Direct videos and YouTube players retain no-referrer in the
-saved markup; remote images use Peakbagger's page policy. No-referrer prevents
-the report URL from being sent, but it does not hide the requesting browser's
-IP address or ordinary request metadata.
+instead emitted as a canonical iframe with `strict-origin-when-cross-origin`,
+because YouTube rejects unidentified player requests with error 153.
+Cross-origin player requests therefore identify only
+`https://www.peakbagger.com/`, never the ascent path or query string. A remote
+image, video, or YouTube player can make a request to its host when it is
+visible in the Rich editor or Markdown preview. Media in the final saved report
+is also loaded by Peakbagger and therefore makes a request to that host when
+someone reads the report. Direct videos retain no-referrer in saved markup;
+remote images use Peakbagger's page policy. These policies do not hide the
+requesting browser's IP address or ordinary request metadata.
 
 ## Local drafts and cache limits
 

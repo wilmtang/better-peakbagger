@@ -93,12 +93,14 @@ silently replace the server's text.
 
 When a Rich editor or Markdown preview displays a user-provided remote image,
 direct video, or YouTube embed, the browser may request that media from its
-host. Better Peakbagger applies a no-referrer policy to those local editor and
-preview requests, and emits the same policy for published direct videos and
-YouTube players. Published remote images follow Peakbagger's page policy.
-Either way, the host still receives the requesting browser's IP address and
-ordinary request metadata. Saving remote media into a report also causes
-readers' browsers to request it when Peakbagger displays the published report.
+host. Better Peakbagger applies a no-referrer policy to local image/direct-video
+requests and published direct videos. YouTube requires embedded players to
+identify the embedding client, so its player receives only Peakbagger's origin
+(`https://www.peakbagger.com/`), not the ascent path or query string. Published
+remote images follow Peakbagger's page policy. Either way, the host still
+receives the requesting browser's IP address and ordinary request metadata.
+Saving remote media into a report also causes readers' browsers to request it
+when Peakbagger displays the published report.
 
 ## Optional 3D terrain
 
@@ -154,7 +156,8 @@ save; the extension never clicks a Peakbagger Save control.
 - **Selected map providers** may receive raster tile requests when their
   compatible Peakbagger layer is mirrored in 3D.
 - **YouTube** receives player requests when a YouTube trip-report embed is
-  displayed in the Rich editor, Markdown preview, or published report.
+  displayed in the Rich editor, Markdown preview, or published report,
+  including Peakbagger's origin as the required client identification.
 - **User-provided media hosts** may receive image or direct-video requests when
   that media is displayed in the Rich editor, Markdown preview, or published
   report.

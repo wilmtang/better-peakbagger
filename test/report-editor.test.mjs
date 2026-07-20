@@ -21,7 +21,7 @@ const DRAFT_KEY = 'bpbReportDraft:900001:new';
 const videoMarkup = (src, dimensions = '') => `[video src="${src}"${dimensions}`
     + ' controls preload="metadata" playsinline referrerpolicy="no-referrer"][/video]';
 const youtubeMarkup = (src, dimensions = '') => `[iframe src="${src}"${dimensions}`
-    + ' title="YouTube video" loading="lazy" referrerpolicy="no-referrer"'
+    + ' title="YouTube video" loading="lazy" referrerpolicy="strict-origin-when-cross-origin"'
     + ' allow="accelerometer; encrypted-media; gyroscope; picture-in-picture" allowfullscreen][/iframe]';
 // The ascentedit page loads the theme bundle (which carries settings) and,
 // after the Markdown vendor script, the ascent-editor bundle (draft filling +
@@ -555,6 +555,7 @@ test('the video tool inserts a canonical, resizable YouTube iframe', async () =>
     const iframe = ui.querySelector('.bpb-re-youtube-resize iframe');
     assert.equal(iframe?.getAttribute('src'), 'https://www.youtube.com/embed/aqz-KE-bpKQ');
     assert.equal(iframe?.getAttribute('title'), 'YouTube video');
+    assert.equal(iframe?.getAttribute('referrerpolicy'), 'strict-origin-when-cross-origin');
     assert.equal(iframe?.getAttribute('allowfullscreen'), '');
     assert.equal(ui.querySelector('[aria-label="Resize YouTube video"]')?.tagName, 'BUTTON');
 });

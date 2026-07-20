@@ -235,7 +235,8 @@ const ReportVideo = Node.create({
     renderHTML({ HTMLAttributes, node }) {
         if (node.attrs.provider === 'youtube') {
             return ['iframe', mergeAttributes({
-                title: 'YouTube video', loading: 'lazy', referrerpolicy: 'no-referrer',
+                title: 'YouTube video', loading: 'lazy',
+                referrerpolicy: 'strict-origin-when-cross-origin',
                 allow: 'accelerometer; encrypted-media; gyroscope; picture-in-picture', allowfullscreen: ''
             }, HTMLAttributes)];
         }
@@ -253,7 +254,7 @@ const ReportVideo = Node.create({
             if (youtube) {
                 media.loading = 'lazy';
                 media.title = 'YouTube video';
-                media.referrerPolicy = 'no-referrer';
+                media.setAttribute('referrerpolicy', 'strict-origin-when-cross-origin');
                 media.allow = 'accelerometer; encrypted-media; gyroscope; picture-in-picture';
                 media.allowFullscreen = true;
             } else {

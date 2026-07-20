@@ -20,7 +20,8 @@ vm.runInContext(await readFile(new URL('../node_modules/marked/lib/marked.umd.js
 globalThis.marked = markedContext.marked;
 
 const VIDEO_ATTRIBUTES = ' controls preload="metadata" playsinline referrerpolicy="no-referrer"';
-const YOUTUBE_ATTRIBUTES = ' title="YouTube video" loading="lazy" referrerpolicy="no-referrer"'
+const YOUTUBE_ATTRIBUTES = ' title="YouTube video" loading="lazy"'
+    + ' referrerpolicy="strict-origin-when-cross-origin"'
     + ' allow="accelerometer; encrypted-media; gyroscope; picture-in-picture" allowfullscreen';
 
 // ---- markdown → bracket ----------------------------------------------------
@@ -200,7 +201,7 @@ test('YouTube Markdown links become the one permitted iframe embed', () => {
     assert.equal(Markup.sanitizeYouTubeEmbedSrc(`https://www.youtube-nocookie.com/embed/${id}`), null);
     assert.equal(Markup.markdownToBracket(source), bracket);
     assert.match(preview,
-        new RegExp(`<iframe src="${embed}" width="640" height="360" title="YouTube video" loading="lazy" referrerpolicy="no-referrer"`));
+        new RegExp(`<iframe src="${embed}" width="640" height="360" title="YouTube video" loading="lazy" referrerpolicy="strict-origin-when-cross-origin"`));
     assert.match(preview, /allow="accelerometer; encrypted-media; gyroscope; picture-in-picture" allowfullscreen><\/iframe>/);
     assert.doesNotMatch(preview, /autoplay/i);
     assert.equal(Markup.bracketToMarkdown(bracket),

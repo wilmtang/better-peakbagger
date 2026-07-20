@@ -715,11 +715,13 @@ try {
                 return iframe?.getAttribute('src') === expected ? {
                     src: iframe.getAttribute('src'),
                     title: iframe.getAttribute('title'),
+                    referrerPolicy: iframe.getAttribute('referrerpolicy'),
                     allow: iframe.getAttribute('allow')
                 } : null;
             }, youtubeUrl, { timeout: 5000 }).then(handle => handle.jsonValue()).catch(() => null);
             check(markdownYouTube?.src === youtubeUrl
                 && markdownYouTube?.title === 'YouTube video'
+                && markdownYouTube?.referrerPolicy === 'strict-origin-when-cross-origin'
                 && markdownYouTube?.allow === 'accelerometer; encrypted-media; gyroscope; picture-in-picture',
             `Markdown did not render the canonical YouTube iframe (state=${JSON.stringify(markdownYouTube)})`);
 
@@ -730,7 +732,8 @@ try {
                 const iframe = document.querySelector(
                     '#bpb-report-editor .bpb-re-surface .bpb-re-youtube-resize iframe');
                 return iframe?.getAttribute('src') === expected
-                    && iframe.getAttribute('title') === 'YouTube video';
+                    && iframe.getAttribute('title') === 'YouTube video'
+                    && iframe.getAttribute('referrerpolicy') === 'strict-origin-when-cross-origin';
             }, youtubeUrl, { timeout: 5000 }).then(() => true).catch(() => false);
             check(richYouTubeReady, 'the Rich YouTube iframe did not render its canonical player URL');
             if (richYouTubeReady) {
