@@ -118,7 +118,7 @@ test('ascent editor integration is isolated to Peakbagger and runtime code never
     assert.deepEqual(draftEntry.js, ['vendor/marked.umd.js', 'vendor/tz-lookup.js', 'content/ascent-editor.js']);
     assert.deepEqual(draftEntry.css, ['css/report-editor.css', 'css/ascent-upload.css']);
     assert.deepEqual(bundleSources('content/ascent-editor.js'),
-        ['ascent-draft.js', 'gpx-parse.js', 'settings-schema.js', 'settings.js', 'ascent-upload.js', 'report-markup.js', 'report-editor.js']);
+        ['ascent-draft.js', 'gpx-parse.js', 'settings-schema.js', 'settings.js', 'ascent-upload.js', 'ascent-saved.js', 'report-markup.js', 'report-editor.js']);
     const runtimeSource = await Promise.all([
         'src/ascent-draft.js',
         'src/background.js',

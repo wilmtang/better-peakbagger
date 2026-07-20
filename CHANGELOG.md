@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **Link straight to a freshly saved ascent.** After Peakbagger confirms an
+  ascent was added or saved, the success page now offers a **View the New
+  Ascent** link next to "Go Back to Referring Page" — previously the new ascent
+  was reachable only by hunting through the photo link's id.
+
 - **Pipeline full-profile backups into atomic GitHub batches.** The My Ascents
   reader now continues while GitHub commits the previous group, batching up to
   ten ascents into one tree, commit, and branch update. A bounded 30-ascent /
