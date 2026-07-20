@@ -87,6 +87,7 @@ const gitDataBackend = () => {
 const AUTH = { token: 'gho_secret', repo: { owner: 'me', name: 'backup', branch: 'main', fullName: 'me/backup' }, account: { login: 'me' } };
 const PEAK_SENDER = { tab: { id: 5 }, url: 'https://www.peakbagger.com/climber/ascent.aspx?aid=7654321' };
 const EDIT_SENDER = { tab: { id: 4 }, url: 'https://www.peakbagger.com/climber/ascentedit.aspx?cid=900001&pid=2296' };
+const LIST_SENDER = { tab: { id: 6 }, url: 'https://www.peakbagger.com/climber/ClimbListC.aspx?cid=900001&j=-1&y=9999' };
 
 const editSnapshot = () => ({
     key: '900001|2296|2026-07-12',
@@ -156,6 +157,41 @@ test('a saved ascent is backed up: snapshot + page merge, one commit, snapshot c
 
     // The snapshot has served its purpose and is dropped.
     assert.equal(worker.session.bpbGithubSnapshots['900001|2296|2026-07-12'], undefined);
+});
+
+test('profile backfill lists repository folders and pushes a direct snapshot through the built worker', async () => {
+    const backend = gitDataBackend();
+    const worker = createWorker({ auth: AUTH, github: backend.handler });
+    const status = await worker.send({ type: 'GITHUB_BACKUP_PROFILE_STATUS' }, LIST_SENDER);
+    assert.equal(status.ok, true);
+    assert.deepEqual(Array.from(status.folders), []);
+    assert.equal('token' in status, false);
+
+    const snapshot = {
+        ascent: { id: 7654321, date: '2026-07-12', suffix: '', route: 'Disappointment Cleaver' },
+        peak: { id: 2296, name: 'Mount Rainier' },
+        report: { markdown: 'Backfilled **report**.' },
+        backup: { extensionVersion: '', syncedAt: null },
+    };
+    const result = await worker.send({
+        type: 'GITHUB_BACKUP_PROFILE_ASCENT', aid: 7654321, snapshot, gpx: '<gpx/>',
+    }, LIST_SENDER);
+    assert.equal(result.ok, true);
+    assert.equal(result.result.folder, 'ascents/2026-07-12-mount-rainier-a7654321');
+    const json = JSON.parse(Object.values(backend.state.blobs).find(content => content.includes('"schemaVersion"')));
+    assert.equal(json.ascent.id, 7654321);
+    assert.equal(json.backup.extensionVersion, '2.2.0');
+    assert.ok(json.backup.syncedAt);
+});
+
+test('profile messages require ClimbListC and matching ascent identity', async () => {
+    const backend = gitDataBackend();
+    const worker = createWorker({ auth: AUTH, github: backend.handler });
+    const snapshot = { ascent: { id: 7 }, peak: { id: 8, name: 'Peak' }, report: { markdown: '' } };
+    const wrongSurface = await worker.send({ type: 'GITHUB_BACKUP_PROFILE_ASCENT', aid: 7, snapshot }, PEAK_SENDER);
+    assert.equal(wrongSurface.error.code, 'forbidden');
+    const mismatched = await worker.send({ type: 'GITHUB_BACKUP_PROFILE_ASCENT', aid: 9, snapshot }, LIST_SENDER);
+    assert.equal(mismatched.error.code, 'no-data');
 });
 
 test('backup fails closed when the feature is off, disconnected, or the sender is not Peakbagger', async () => {

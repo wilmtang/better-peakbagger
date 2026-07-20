@@ -60,7 +60,8 @@
         const el = field(form, name);
         if (!el || !el.options || el.selectedIndex < 0) return '';
         const option = el.options[el.selectedIndex];
-        return option ? trim(option.textContent) : '';
+        if (!option || trim(option.value) === '0') return '';
+        return trim(option.textContent);
     };
 
     // A "hours:minutes" time from Peakbagger's split Hr/Min inputs, or '' when

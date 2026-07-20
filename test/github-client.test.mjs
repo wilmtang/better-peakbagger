@@ -102,6 +102,25 @@ test('an Add pushes blobs, one tree, one commit, and fast-forwards the ref', asy
     assert.equal(commitCall.headers.Authorization, 'Bearer t');
 });
 
+test('profile preflight reads ascent folder leaves without writing', async () => {
+    const { fetch, calls } = makeFetch({
+        'GET /repos/me/backup': REPO_OK(),
+        'GET /repos/me/backup/git/ref/heads/main': REF('C0'),
+        'GET /repos/me/backup/git/commits/C0': COMMIT('C0', 'T0'),
+        'GET /repos/me/backup/git/trees/T0': () => respond(200, { tree: [{ path: 'ascents', type: 'tree', sha: 'TA' }] }),
+        'GET /repos/me/backup/git/trees/TA': () => respond(200, {
+            tree: [
+                { path: '2026-01-01-one-a1', type: 'tree', sha: 'F1' },
+                { path: 'README.md', type: 'blob', sha: 'B1' },
+                { path: '2026-01-02-two-a2', type: 'tree', sha: 'F2' },
+            ],
+        }),
+    });
+    const client = Client.createGithubClient({ fetch, token: 't', owner: 'me', repo: 'backup' });
+    assert.deepEqual(await client.getAscentFolders(), ['2026-01-01-one-a1', '2026-01-02-two-a2']);
+    assert.ok(calls.every(call => call.method === 'GET'));
+});
+
 test('a rename re-sync removes every old-folder blob and writes the new folder atomically', async () => {
     const oldLeaf = '2026-06-01-mount-rainier-a1234567';
     const { fetch, calls } = makeFetch({

@@ -124,3 +124,14 @@ test('an edited ascent carries its aid and an empty report yields an empty body'
     assert.equal(identity.ascentId, 555);
     assert.deepEqual(snapshot.report, { markdown: '' });
 });
+
+test('the zero-valued weather placeholders are omitted from snapshots', async () => {
+    const { form } = await loadForm();
+    const { snapshot } = Snapshot.build({
+        form,
+        params: new URLSearchParams('cid=900001&aid=555&pid=2296'),
+    });
+    assert.deepEqual(snapshot.ascent.weather, {
+        precip: '', temperature: '', wind: '', visibility: '', description: '',
+    });
+});

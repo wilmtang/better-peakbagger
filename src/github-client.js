@@ -227,7 +227,18 @@ import { githubBackup as Backup } from './github-backup.js';
             }
         };
 
-        return { pushAscentBackup };
+        // Read-only profile preflight: the repository tree is the resumability
+        // checkpoint, so the list-page runner needs only the ascent folder leaves.
+        const getAscentFolders = async () => {
+            const targetBranch = await resolveRepo();
+            const ref = await request('GET', `/git/ref/heads/${encodeURIComponent(targetBranch)}`, { phase: 'ref' });
+            const commitSha = ref.object && ref.object.sha;
+            const commit = await request('GET', `/git/commits/${commitSha}`, { phase: 'read' });
+            const { folders } = await listAscentFolders(commit.tree && commit.tree.sha);
+            return folders;
+        };
+
+        return { pushAscentBackup, getAscentFolders };
     };
 
     const API = { createGithubClient, GithubBackupError, ERROR_CODES };

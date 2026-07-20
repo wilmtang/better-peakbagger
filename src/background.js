@@ -878,6 +878,12 @@ import { githubClient as GithubClient } from './github-client.js';
         } catch { return false; }
     };
 
+    const isClimbListSender = sender => {
+        if (!isPeakbaggerSender(sender)) return false;
+        try { return /\/climber\/climblistc\.aspx$/i.test(new URL(sender.url).pathname); }
+        catch { return false; }
+    };
+
     // The save-time snapshot from the ascentedit content script: keep it in
     // storage.session, keyed by identity, for the saved ascent page to back up.
     // Accepted only from a Peakbagger tab and only while the feature is enabled;
@@ -914,6 +920,28 @@ import { githubClient as GithubClient } from './github-client.js';
             connected,
             repo: connected ? { fullName: auth.repo.fullName || `${auth.repo.owner}/${auth.repo.name}` } : null,
         };
+    };
+
+    // Profile backup preflight adds the repository's ascent-folder leaves to
+    // the ordinary status. This stays a dedicated message so viewing a saved
+    // ascent never pays for GitHub tree reads.
+    const githubProfileBackupStatus = async sender => {
+        if (!isClimbListSender(sender)) return { ok: false, error: { code: 'forbidden' } };
+        const status = await githubBackupStatus(sender);
+        if (!status.enabled || !status.connected) return { ok: true, ...status, folders: [] };
+        const auth = await GithubAuth.authStore.read();
+        const client = GithubClient.createGithubClient({
+            fetch: netFetch,
+            token: auth.token,
+            owner: auth.repo.owner,
+            repo: auth.repo.name,
+            branch: auth.repo.branch || undefined,
+        });
+        try {
+            return { ok: true, ...status, folders: await client.getAscentFolders() };
+        } catch (error) {
+            return { ok: false, ...status, error: { code: error.code || 'unknown', message: error.message || 'Could not read the backup repository.' } };
+        }
     };
 
     // Merge the pending save-time snapshot with the saved ascent page's fields.
@@ -1002,6 +1030,41 @@ import { githubClient as GithubClient } from './github-client.js';
         }
     };
 
+    // A backfill snapshot comes directly from the owner's fetched edit form,
+    // rather than the short-lived save hook. Restrict this more strongly than
+    // the per-ascent path: only ClimbListC senders, with matching numeric ids.
+    const backupProfileAscent = async (message, sender) => {
+        if (!isClimbListSender(sender)) return { ok: false, error: { code: 'forbidden' } };
+        const snapshot = message && message.snapshot;
+        const ascentId = snapshot && snapshot.ascent ? Number(snapshot.ascent.id) : NaN;
+        if (!Number.isFinite(ascentId) || ascentId <= 0 || ascentId !== Number(message.aid)) {
+            return { ok: false, error: { code: 'no-data' } };
+        }
+        const settings = await Settings.get();
+        if (!settings.enableGithubBackup) return { ok: false, error: { code: 'disabled' } };
+        const auth = await GithubAuth.authStore.read();
+        if (!auth || !auth.token) return { ok: false, error: { code: 'not-connected' } };
+        if (!auth.repo || !auth.repo.owner || !auth.repo.name) return { ok: false, error: { code: 'no-repo' } };
+
+        snapshot.backup = {
+            ...(snapshot.backup || {}),
+            syncedAt: new Date().toISOString(),
+            extensionVersion: ext.runtime.getManifest ? ext.runtime.getManifest().version : '',
+        };
+        const client = GithubClient.createGithubClient({
+            fetch: netFetch,
+            token: auth.token,
+            owner: auth.repo.owner,
+            repo: auth.repo.name,
+            branch: auth.repo.branch || undefined,
+        });
+        try {
+            return { ok: true, result: await client.pushAscentBackup(snapshot, { gpx: message.gpx }) };
+        } catch (error) {
+            return { ok: false, error: { code: error.code || 'unknown', message: error.message || 'The backup failed.' } };
+        }
+    };
+
     ext.runtime.onMessage.addListener((message, sender, sendResponse) => {
         const run = async () => {
             const type = message?.type;
@@ -1020,6 +1083,8 @@ import { githubClient as GithubClient } from './github-client.js';
             case 'GITHUB_BACKUP_SNAPSHOT': return storeBackupSnapshot(message, sender);
             case 'GITHUB_BACKUP_STATUS': return githubBackupStatus(sender);
             case 'GITHUB_BACKUP_ASCENT': return backupAscent(message, sender);
+            case 'GITHUB_BACKUP_PROFILE_STATUS': return githubProfileBackupStatus(sender);
+            case 'GITHUB_BACKUP_PROFILE_ASCENT': return backupProfileAscent(message, sender);
             case 'CAPTURE_START': return startCapture(message);
             case 'CAPTURE_STATUS': {
                 const jobs = await readMap(JOBS_KEY);
