@@ -171,7 +171,9 @@
 
     const fillForm = async fields => {
         if (!formIsReady()) throw new Error('Peakbagger’s ascent form has changed or did not load completely.');
-        setTextField('DateText', fields.date);
+        // A timeless GPX derives no date; keep whatever the field already
+        // holds (typically the fresh-form today autofill) instead of clearing.
+        if (fields.date) setTextField('DateText', fields.date);
         setTextField('SuffixText', fields.suffix || '');
 
         if (fields.fillAscentDetails !== false) {

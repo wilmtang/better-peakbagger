@@ -48,10 +48,12 @@
         "https://peakbagger.com/climber/AscentEdit.aspx*"
       ],
       "css": [
-        "css/report-editor.css"
+        "css/report-editor.css",
+        "css/ascent-upload.css"
       ],
       "js": [
         "vendor/marked.umd.js",
+        "vendor/tz-lookup.js",
         "content/ascent-editor.js"
       ],
       "run_at": "document_end",

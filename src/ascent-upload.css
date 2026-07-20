@@ -1,0 +1,107 @@
+/* Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ *
+ * The ascent-editor ✦ Process button and its inline status text. The button
+ * replaces Peakbagger's native GPS Preview in place while a .gpx file is
+ * chosen: same box metrics as its native neighbors, with a quiet 1.5px
+ * conic-gradient ring that rotates on hover/focus and while processing.
+ * Dark mode keys off the extension's html[data-bpb-theme] attribute;
+ * prefers-reduced-motion disables all rotation and bloom. */
+
+@property --bpb-ring-angle {
+    syntax: '<angle>';
+    initial-value: 0deg;
+    inherits: false;
+}
+
+.bpb-native-preview-hidden { display: none !important; }
+
+.bpb-process-button {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 2px 12px;
+    margin: 0;
+    border: none;
+    border-radius: 7px;
+    background: #ffffff;
+    color: #3730a3;
+    font: 600 13px/1.6 system-ui, -apple-system, sans-serif;
+    cursor: pointer;
+    vertical-align: middle;
+    box-shadow: 0 0 8px rgba(139, 92, 246, 0.18);
+    transition: box-shadow 0.2s ease, transform 0.08s ease;
+}
+
+/* The gradient ring: a masked conic border drawn by the pseudo-element, so it
+ * never affects layout and animates by angle alone. */
+.bpb-process-button::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    padding: 1.5px;
+    pointer-events: none;
+    background: conic-gradient(from var(--bpb-ring-angle, 0deg),
+        #6366f1, #8b5cf6, #d946ef, #f59e0b, #6366f1);
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+}
+
+@keyframes bpb-process-ring {
+    to { --bpb-ring-angle: 360deg; }
+}
+
+.bpb-process-button:hover,
+.bpb-process-button:focus-visible {
+    box-shadow: 0 0 14px rgba(139, 92, 246, 0.4);
+}
+
+.bpb-process-button:hover::before,
+.bpb-process-button:focus-visible::before,
+.bpb-process-button[aria-busy='true']::before {
+    animation: bpb-process-ring 2.4s linear infinite;
+}
+
+.bpb-process-button:focus-visible {
+    outline: 2px solid #6366f1;
+    outline-offset: 2px;
+}
+
+.bpb-process-button:active:not(:disabled) { transform: scale(0.97); }
+
+.bpb-process-button:disabled { cursor: default; }
+
+.bpb-process-button[aria-busy='true'] { color: #4c1d95; }
+
+.bpb-process-glyph { font-size: 12px; line-height: 1; }
+
+.bpb-upload-status {
+    display: inline-block;
+    margin-left: 8px;
+    max-width: 46em;
+    font: 12px/1.5 system-ui, -apple-system, sans-serif;
+    vertical-align: middle;
+}
+
+.bpb-upload-status-error { color: #b42318; }
+.bpb-upload-status-info { color: #175cd3; }
+
+html[data-bpb-theme='dark'] .bpb-process-button {
+    background: #1d232b;
+    color: #c7d2fe;
+    box-shadow: 0 0 8px rgba(139, 92, 246, 0.28);
+}
+
+html[data-bpb-theme='dark'] .bpb-process-button[aria-busy='true'] { color: #ddd6fe; }
+html[data-bpb-theme='dark'] .bpb-upload-status-error { color: #f2a099; }
+html[data-bpb-theme='dark'] .bpb-upload-status-info { color: #8ab4f8; }
+
+@media (prefers-reduced-motion: reduce) {
+    .bpb-process-button { transition: none; }
+    .bpb-process-button:active:not(:disabled) { transform: none; }
+    .bpb-process-button::before { animation: none !important; }
+}

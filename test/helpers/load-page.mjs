@@ -9,9 +9,12 @@
 // so a test names the page's bundles rather than a hand-kept list of src files.
 
 import { readFile } from 'node:fs/promises';
+import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { JSDOM } from 'jsdom';
+
+const require = createRequire(import.meta.url);
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 export const FIXTURES = path.join(root, 'test', 'fixtures', 'peakascents');
@@ -74,6 +77,17 @@ export const makeChromeStub = (initial = {}, localInitial = {}) => {
             onMessage: { addListener: () => {}, removeListener: () => {} }
         }
     };
+};
+
+// jsdom's public dispatchEvent can only mint untrusted events, but the upload
+// flow's swap guard keys on event.isTrusted (a user-initiated file pick). Fire
+// a trusted event through jsdom's internal dispatch helper; the paths are
+// internals pinned by the jsdom version in package-lock, so a jsdom upgrade
+// that moves them fails here loudly rather than silently skipping the guard.
+export const fireTrustedEvent = (element, type, attributes = { bubbles: true }) => {
+    const { fireAnEvent } = require(path.join(root, 'node_modules/jsdom/lib/jsdom/living/helpers/events.js'));
+    const { implForWrapper } = require(path.join(root, 'node_modules/jsdom/lib/generated/idl/utils.js'));
+    fireAnEvent(type, implForWrapper(element), undefined, attributes);
 };
 
 export const waitFor = async (dom, predicate, ms = 5000) => {

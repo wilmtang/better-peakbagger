@@ -39,7 +39,7 @@ export const ENTRIES = [
     { out: 'background.js', sources: ['gpx-metrics.js', 'capture-core.js', 'provider-url.js', 'settings-schema.js', 'settings.js', 'github-auth.js', 'github-client.js', 'background.js'] },
     { out: 'provider-page.js', sources: ['provider-url.js', 'gpx-parse.js', 'provider-page.js'] },
 
-    { out: 'content/ascent-editor.js', sources: ['ascent-draft.js', 'ascent-upload.js', 'report-markup.js', 'report-editor.js'] },
+    { out: 'content/ascent-editor.js', sources: ['ascent-draft.js', 'gpx-parse.js', 'settings-schema.js', 'settings.js', 'ascent-upload.js', 'report-markup.js', 'report-editor.js'] },
     { out: 'content/ascent-backup.js', sources: ['report-markup.js', 'ascent-page.js', 'ascent-backup.js'] },
     { out: 'content/theme.js', sources: ['settings-schema.js', 'settings.js', 'site-dark-css.js', 'theme.js'] },
     { out: 'content/ascent-bridge.js', sources: ['settings-schema.js', 'settings.js', 'bridge.js'] },
@@ -74,6 +74,7 @@ export const COPY_FILES = [
     ['README.md', 'README.md'],
     ['manifest.json', 'manifest.json'],
     ['src/report-editor.css', 'css/report-editor.css'],
+    ['src/ascent-upload.css', 'css/ascent-upload.css'],
     ['src/ascent-backup.css', 'css/ascent-backup.css'],
     ['src/terrain-map.css', 'css/terrain-map.css'],
     ['src/peak-links.css', 'css/peak-links.css'],
