@@ -44,7 +44,7 @@ import { createMarkdownEditor } from './report-md-editor.js';
     const SYNC_DEBOUNCE_MS = 150;
     const AUTOSAVE_DEBOUNCE_MS = 800;
     const MODES = ['rich', 'markdown', 'plain'];
-    const STORE_URL = globalThis.browser
+    const STORE_URL = ext.runtime?.getURL?.('').startsWith('moz-extension://')
         ? 'https://addons.mozilla.org/en-US/firefox/addon/better-peakbagger/'
         : 'https://chromewebstore.google.com/detail/better-peakbagger/kndjohodnpdoejmjkiiakejfehoodedn';
     const REPORT_CREDIT = `[small][i]Created with [a href="${STORE_URL}" target="_blank"]Better Peakbagger[/a].[/i][/small]`;

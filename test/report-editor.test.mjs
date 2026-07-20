@@ -32,7 +32,10 @@ const BUNDLES = [
     'content/ascent-editor.js'
 ];
 
-const loadEditor = async ({ settings = {}, report = '', drafts = {}, url = URL, firefox = false, prepare = null } = {}) => {
+const loadEditor = async ({
+    settings = {}, report = '', drafts = {}, url = URL, firefox = false,
+    browserAlias = firefox, prepare = null
+} = {}) => {
     const dom = await loadPage(FIXTURE, {
         url,
         settings,
@@ -41,7 +44,9 @@ const loadEditor = async ({ settings = {}, report = '', drafts = {}, url = URL, 
         prepare: d => {
             d.window.document.getElementById('JournalText').value = report;
             Object.assign(d.chrome._localStore, drafts);
-            if (firefox) d.window.browser = d.chrome;
+            d.chrome.runtime.getURL = path =>
+                `${firefox ? 'moz-extension' : 'chrome-extension'}://test-extension/${path}`;
+            if (browserAlias) d.window.browser = d.chrome;
             if (prepare) prepare(d);
         }
     });
@@ -110,8 +115,11 @@ test('the editor mounts on the ascent form and hides the native textarea', async
         'undo starts disabled with an empty history');
 });
 
-test('opt-in credit leaves blank writing space and links to the Chrome store', async () => {
-    const dom = await loadEditor({ settings: { addReportCredit: true } });
+test('opt-in credit leaves blank writing space and links Chrome reports to the Chrome store', async () => {
+    const dom = await loadEditor({
+        settings: { addReportCredit: true },
+        browserAlias: true
+    });
     const ui = await editorReady(dom);
     const textarea = dom.window.document.getElementById('JournalText');
     const paragraphs = ui.querySelectorAll('.bpb-re-surface p');
