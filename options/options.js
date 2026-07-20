@@ -37,6 +37,7 @@ import { initGithubBackup } from './github.js';
     const betaTrWordsEl = document.getElementById('beta-tr-words');
     const betaGpsEl = document.getElementById('beta-gps');
     const betaLinkEl = document.getElementById('beta-link');
+    const betaSortDateDescEl = document.getElementById('beta-sort-date-desc');
     const statusEl = document.getElementById('status');
     const aboutVersionEl = document.getElementById('about-version');
 
@@ -115,6 +116,7 @@ import { initGithubBackup } from './github.js';
         betaTrWordsEl.disabled = !settings.betaTr;
         betaGpsEl.checked = settings.betaGps;
         betaLinkEl.checked = settings.betaLink;
+        betaSortDateDescEl.checked = settings.betaSortDateDesc;
         githubBackup.populate(settings);
         applyTheme(settings.theme);
     };
@@ -188,6 +190,8 @@ import { initGithubBackup } from './github.js';
         betaTrWordsEl.value = String(value);
         save({ betaTrMinWords: value });
     });
+    // Independent of the "has beta" signals (it has no at-least-one invariant).
+    betaSortDateDescEl.addEventListener('change', () => save({ betaSortDateDesc: betaSortDateDescEl.checked }));
 
     // Keep in sync if changed elsewhere (another tab / an inline control).
     S.subscribe(settings => populate(settings));

@@ -8,6 +8,12 @@
 
 import { settings as S } from './settings.js';
 
+    // This script runs at document_start; kick off the one settings read now, at
+    // module load, so both the newest-first auto-sort and the "has beta"
+    // definition reuse it instead of adding a storage round-trip to the critical
+    // path. Resolves to the cleaned settings, or null on any read failure.
+    const settingsPromise = S ? S.get().catch(() => null) : Promise.resolve(null);
+
     // Chip on/off states and the Trip report word-count threshold are per-page
     // UI state kept in page localStorage (below). The shared extension settings
     // (chrome.storage) own only the cross-cutting "has beta" definition.
@@ -57,10 +63,15 @@ import { settings as S } from './settings.js';
     let sortOptOut = false;      // page isn't a candidate: let clicks navigate
     let pendingSortTarget = null;// a click held before the sorter decided
     let applyInstantSort = null; // (target) => reorder in the DOM, set once ready
+    let userSorted = false;      // a header sort the user chose must beat the auto-flip
 
     document.addEventListener('click', event => {
         const target = tableSortTarget(event.target);
         if (!target || sortOptOut) return; // not ours, or navigation is allowed
+        // Record the intent as soon as the click is captured — this fires for
+        // clicks held before the sorter is wired AND for the later replay, so
+        // the newest-first auto-flip never fights a sort the user picked.
+        userSorted = true;
         event.preventDefault();
         if (sortReady) applyInstantSort(target);
         else pendingSortTarget = target;   // hold until the sorter decides
@@ -475,6 +486,17 @@ import { settings as S } from './settings.js';
         // click replayed) as early as possible, not after the storage round-trip.
         setupInstantTableSort({ headerRow, sections, preamble, rows, dataRows });
 
+        // Newest-ascents-first (opt-in). Flip a default oldest-first list to
+        // descending once settings resolve — the rows are already in the DOM, so
+        // this lands within a frame. Runs before the compact-view return so it
+        // applies to date-only lists too.
+        void settingsPromise.then(s => {
+            if (!s || s.betaSortDateDesc !== true) return;
+            if (new URLSearchParams(location.search).has('sort')) return; // an explicit URL sort wins
+            if (userSorted || !applyInstantSort) return;                  // never fight a user's click
+            applyInstantSort({ columnIndex: -1, key: 'ascentdate', dir: 'desc' });
+        });
+
         if (columns.tr === null && columns.gps === null && columns.link === null) {
             renderCompactNotice(table);
             return;
@@ -527,7 +549,8 @@ import { settings as S } from './settings.js';
         // centralized in extension settings.
         if (S) {
             try {
-                betaCfg = betaCfgFrom(await S.get());
+                const s = await settingsPromise;
+                if (s) betaCfg = betaCfgFrom(s);
             } catch (e) { /* fall back to defaults */ }
         }
         const bar = buildBarShell();

@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **Open ascent lists newest-first (optional).** A new **Newest ascents first**
+  toggle in Ascent beta filters (off by default) flips a default oldest-first
+  ascent list to descending as soon as it loads, using the same instant reorder
+  a header click does. An explicit sort in the URL, or a column you click,
+  always wins.
+
 - **Carry the captured activity link into the trip-report field.** When you
   capture a Garmin or Strava activity, its link now lands in Peakbagger's "URL
   Link to External Trip Report" field on the draft — only when that field is

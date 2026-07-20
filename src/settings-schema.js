@@ -61,7 +61,10 @@
         rememberMapLayer: false, mapLastLayer: '',
         // What the ascent filter's "Has beta" chip counts: an ascent
         // qualifies if it has any of the enabled signals.
-        betaTr: true, betaTrMinWords: 1, betaGps: true, betaLink: true
+        betaTr: true, betaTrMinWords: 1, betaGps: true, betaLink: true,
+        // Open a default (oldest-first) ascent list sorted newest-first. A sort
+        // chosen by clicking a column, or carried in the URL, always wins.
+        betaSortDateDesc: false
     };
 
     const clampWords = value => {
@@ -134,7 +137,7 @@
         const s = { ...DEFAULTS, ...(raw && typeof raw === 'object' ? raw : {}) };
         if (!['auto', 'imperial', 'metric'].includes(s.units)) s.units = DEFAULTS.units;
         if (!['system', 'light', 'dark'].includes(s.theme)) s.theme = DEFAULTS.theme;
-        for (const key of ['enable3dMap', 'retainWaypoints', 'fillAscentDetails', 'fillTripInfo', 'fillWildernessNights', 'fillExternalUrl', 'enableReportEditor', 'addReportCredit', 'enableGithubBackup', 'autoGithubBackup']) {
+        for (const key of ['enable3dMap', 'retainWaypoints', 'fillAscentDetails', 'fillTripInfo', 'fillWildernessNights', 'fillExternalUrl', 'enableReportEditor', 'addReportCredit', 'enableGithubBackup', 'autoGithubBackup', 'betaSortDateDesc']) {
             if (typeof s[key] !== 'boolean') s[key] = DEFAULTS[key];
         }
         // Auto-backup is meaningless without the feature enabled; never let it

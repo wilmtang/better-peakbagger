@@ -366,3 +366,81 @@ test('renders on the default "Most Recent Year" view', async () => {
     });
     assert.ok(bar(dom));
 });
+
+// --- Newest-ascents-first (betaSortDateDesc, default off) --------------------
+
+const DEFAULT_RECENT = '2296-rainier-default-recent-year.html';
+const DEFAULT_RECENT_URL = 'https://www.peakbagger.com/climber/PeakAscents.aspx?pid=2296';
+const sortParam = dom => new dom.window.URL(dom.window.location.href).searchParams.get('sort');
+
+test('newest-first flips a default oldest-first list to descending and rewrites the URL', async () => {
+    const served = dateTexts(await loadPageWithBar(DEFAULT_RECENT, { url: DEFAULT_RECENT_URL }));
+
+    const dom = await loadPageWithBar(DEFAULT_RECENT, {
+        url: DEFAULT_RECENT_URL,
+        settings: { betaSortDateDesc: true }
+    });
+    await waitFor(dom, () => sortParam(dom) === 'ascentdated');
+    assert.deepEqual(dateTexts(dom), served.slice().reverse());
+    assert.equal(arrow(dom).textContent.trim(), '▼');
+});
+
+test('newest-first off leaves the served oldest-first order untouched', async () => {
+    const dom = await loadPageWithBar(DEFAULT_RECENT, { url: DEFAULT_RECENT_URL });
+    await new Promise(resolve => setTimeout(resolve, 10));
+    assert.equal(sortParam(dom), null, 'no sort param is added when the setting is off');
+    assert.equal(arrow(dom).textContent.trim(), '▲');
+});
+
+test('newest-first respects an explicit URL sort and never rewrites it', async () => {
+    const dom = await loadPageWithBar('21500-y9999-sort-ascentdate.html', {
+        url: 'https://www.peakbagger.com/climber/PeakAscents.aspx?pid=21500&u=ft&y=9999&sort=ascentdate',
+        settings: { betaSortDateDesc: true }
+    });
+    await new Promise(resolve => setTimeout(resolve, 10)); // let a mis-firing flip land, if any
+    assert.equal(sortParam(dom), 'ascentdate');
+    assert.equal(arrow(dom).textContent.trim(), '▲');
+});
+
+test('newest-first leaves an already-descending served page untouched', async () => {
+    const dom = await loadPageWithBar('21500-y9998-sort-ascentdated.html', {
+        url: 'https://www.peakbagger.com/climber/PeakAscents.aspx?pid=21500&u=ft&y=9998&sort=ascentdated',
+        settings: { betaSortDateDesc: true }
+    });
+    await new Promise(resolve => setTimeout(resolve, 10));
+    assert.equal(sortParam(dom), 'ascentdated');
+    assert.equal(arrow(dom).textContent.trim(), '▼');
+});
+
+test('a header sort captured before settings resolve wins over the auto-flip', async () => {
+    const served = dateTexts(await loadPageWithBar(DEFAULT_RECENT, { url: DEFAULT_RECENT_URL }));
+
+    // Hold the one settings read open so the sorter wires up (buttons replace
+    // the native links) while the auto-flip is still pending.
+    let release;
+    const gate = new Promise(resolve => { release = resolve; });
+    const dom = await loadPage(DEFAULT_RECENT, {
+        url: DEFAULT_RECENT_URL,
+        settings: { betaSortDateDesc: true },
+        prepare: page => {
+            const realGet = page.chrome.storage.sync.get;
+            page.chrome.storage.sync.get = async (...args) => { await gate; return realGet(...args); };
+        }
+    });
+    await waitFor(dom, () => sortControl(dom));
+    assert.equal(bar(dom), null, 'the bar waits on settings, which are still gated');
+
+    // A native header anchor click the document-start guard captures and holds.
+    const th = dom.window.document.createElement('th');
+    th.innerHTML = '<a href="?pid=2296&sort=ascentdate&u=ft&y=9999">Ascent Date</a>';
+    dom.window.document.body.appendChild(th);
+    th.querySelector('a').dispatchEvent(
+        new dom.window.MouseEvent('click', { bubbles: true, cancelable: true }));
+
+    release();
+    await waitFor(dom, () => bar(dom));
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    assert.deepEqual(dateTexts(dom), served, 'the auto-flip must not reverse a user-chosen sort');
+    assert.equal(sortParam(dom), null, 'the skipped auto-flip left the URL alone');
+});
