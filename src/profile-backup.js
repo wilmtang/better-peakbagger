@@ -45,6 +45,7 @@ import { reportMarkup as Markup } from './report-markup.js';
         if (code === 'auth') return 'GitHub authorization expired. Reconnect in extension options.';
         if (code === 'rate-limit') return 'GitHub is rate-limiting requests. Try again in a few minutes.';
         if (code === 'no-access') return 'The backup repository is no longer reachable.';
+        if (code === 'repo-conflict') return 'The repository contains conflicting backup folders. Choose another in extension options.';
         if (code === 'network') return 'Could not reach GitHub. Check your connection and try again.';
         return (error && error.message) || 'The profile backup could not start.';
     };

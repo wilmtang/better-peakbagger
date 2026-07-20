@@ -112,17 +112,19 @@ markup outside the editor's supported syntax. See the
 
 Keep your own copy of every ascent in a GitHub repository you control. Turn on
 GitHub backup in Settings and connect once — you sign in with a short device
-code and pick a single repository on GitHub's own page, so no tokens are ever
-typed or pasted. After you save an ascent, a **Back up to GitHub** button
-appears on the ascent page; one click commits a folder with the trip report as
-real Markdown, every field you entered as JSON, and Peakbagger's stored GPS
-track. To archive older entries, open **My Ascents** and choose **Back up all
-ascents**. Existing folders are skipped, so interrupted runs resume safely when
-you start them again; **Refresh all** explicitly re-syncs every entry. Keep that
-Peakbagger tab open while the profile run works. Re-saving an ascent afterwards
-keeps its folder current. Backup only ever writes to your chosen repository,
-never touches your Peakbagger save, and can be turned off or disconnected at
-any time.
+code, then create a prefilled private backup repository on GitHub or grant the
+app access to one you already have. No tokens are ever typed or pasted. After
+you save an ascent, a **Back up to GitHub** button appears on the ascent page;
+one click commits a clearly named mountain folder at the repository root with
+the trip report as real Markdown, every field you entered as JSON, and
+Peakbagger's stored GPS track. To archive older entries, open **My Ascents** and
+choose **Back up all ascents**. Existing folders are skipped, so interrupted
+runs resume safely when you start them again; **Refresh all** explicitly
+re-syncs every entry. Keep that Peakbagger tab open while the profile run works.
+Re-saving an ascent afterwards keeps its folder current. A populated repository
+requires confirmation and its unrelated files are preserved. Backup only ever
+writes to your chosen repository, never touches your Peakbagger save, and can
+be turned off or disconnected at any time.
 
 ### Check summit conditions and recent imagery
 

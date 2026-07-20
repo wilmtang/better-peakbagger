@@ -24,6 +24,7 @@ import { ascentPage as AscentPage } from './ascent-page.js';
         'not-connected': 'Connect a GitHub repository in the extension options first.',
         'no-repo': 'Choose a backup repository in the extension options first.',
         archived: 'The backup repository is archived and read-only.',
+        'repo-conflict': 'The repository contains conflicting backup folders. Choose another in the extension options.',
         'branch-protected': 'The repository’s branch protection rejected the commit.',
         'branch-missing': 'The backup repository has no branch to commit to yet.',
         'rate-limit': 'GitHub is rate-limiting requests. Try again in a few minutes.',

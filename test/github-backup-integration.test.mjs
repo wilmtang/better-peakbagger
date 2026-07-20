@@ -131,14 +131,15 @@ test('a saved ascent is backed up: snapshot + page merge, one commit, snapshot c
     assert.equal(result.ok, true);
     assert.equal(result.result.commitUrl, 'https://github.com/me/backup/commit/C1');
     assert.equal(result.result.isUpdate, false);
-    assert.equal(result.result.folder, 'ascents/2026-07-12-mount-rainier-a7654321');
+    assert.equal(result.result.folder, '2026-07-12-mount-rainier-a7654321');
 
-    // The one tree carries all three files under the a<aid> folder.
+    // The one tree carries the repository marker and all three ascent files.
     const paths = backend.state.tree.tree.map(e => e.path).sort();
     assert.deepEqual(paths, [
-        'ascents/2026-07-12-mount-rainier-a7654321/ascent.json',
-        'ascents/2026-07-12-mount-rainier-a7654321/report.md',
-        'ascents/2026-07-12-mount-rainier-a7654321/track.gpx',
+        '.better-peakbagger.json',
+        '2026-07-12-mount-rainier-a7654321/ascent.json',
+        '2026-07-12-mount-rainier-a7654321/report.md',
+        '2026-07-12-mount-rainier-a7654321/track.gpx',
     ]);
 
     // ascent.json merges page peak metadata with the snapshot's entered fields.
@@ -177,7 +178,7 @@ test('profile backfill lists repository folders and pushes a direct snapshot thr
         type: 'GITHUB_BACKUP_PROFILE_ASCENT', aid: 7654321, snapshot, gpx: '<gpx/>',
     }, LIST_SENDER);
     assert.equal(result.ok, true);
-    assert.equal(result.result.folder, 'ascents/2026-07-12-mount-rainier-a7654321');
+    assert.equal(result.result.folder, '2026-07-12-mount-rainier-a7654321');
     const json = JSON.parse(Object.values(backend.state.blobs).find(content => content.includes('"schemaVersion"')));
     assert.equal(json.ascent.id, 7654321);
     assert.equal(json.backup.extensionVersion, '2.2.0');
@@ -287,9 +288,61 @@ test('the snapshot store rejects a non-Peakbagger sender', async () => {
     assert.equal(Object.keys(worker.session.bpbGithubSnapshots || {}).length, 0);
 });
 
+test('repository selection inspects populated content before storing the choice', async () => {
+    const extensionSender = { url: 'chrome-extension://test/options/options.html' };
+    const repo = { owner: 'me', name: 'project', fullName: 'me/project', defaultBranch: 'main', installationId: 7 };
+    const github = (method, path) => {
+        if (method === 'GET' && path === '/repos/me/project') return respond(200, {
+            default_branch: 'main', archived: false, size: 1, permissions: { push: true },
+        });
+        if (method === 'GET' && path === '/repos/me/project/git/ref/heads/main') return respond(200, { object: { sha: 'C0' } });
+        if (method === 'GET' && path === '/repos/me/project/git/commits/C0') return respond(200, { tree: { sha: 'T0' } });
+        if (method === 'GET' && path === '/repos/me/project/git/trees/T0') return respond(200, {
+            tree: [{ path: 'README.md', type: 'blob', sha: 'r' }],
+        });
+        return null;
+    };
+    const worker = createWorker({ auth: { token: 'gho_secret', account: { login: 'me' } }, github });
+
+    const first = await worker.send({ type: 'GITHUB_AUTH_SELECT_REPO', repo }, extensionSender);
+    assert.equal(first.needsConfirmation, true);
+    assert.equal(first.inspection.kind, 'existing');
+    assert.equal(worker.local.bpbGithubAuth.repo, undefined, 'inspection must not persist an unconfirmed repository');
+
+    const confirmed = await worker.send({ type: 'GITHUB_AUTH_SELECT_REPO', repo, confirmExisting: true }, extensionSender);
+    assert.equal(confirmed.connected, true);
+    assert.equal(worker.local.bpbGithubAuth.repo.fullName, 'me/project');
+    assert.equal(worker.local.bpbGithubAuth.installationId, 7);
+});
+
+test('repository selection rejects ambiguous root backup folders', async () => {
+    const extensionSender = { url: 'chrome-extension://test/options/options.html' };
+    const repo = { owner: 'me', name: 'project', fullName: 'me/project', defaultBranch: 'main' };
+    const github = (method, path) => {
+        if (method === 'GET' && path === '/repos/me/project') return respond(200, {
+            default_branch: 'main', archived: false, size: 1, permissions: { push: true },
+        });
+        if (method === 'GET' && path === '/repos/me/project/git/ref/heads/main') return respond(200, { object: { sha: 'C0' } });
+        if (method === 'GET' && path === '/repos/me/project/git/commits/C0') return respond(200, { tree: { sha: 'T0' } });
+        if (method === 'GET' && path === '/repos/me/project/git/trees/T0') return respond(200, {
+            tree: [{ path: '2026-07-12-some-peak-a123', type: 'tree', sha: 'F0' }],
+        });
+        return null;
+    };
+    const worker = createWorker({ auth: { token: 'gho_secret', account: { login: 'me' } }, github });
+    const result = await worker.send({ type: 'GITHUB_AUTH_SELECT_REPO', repo }, extensionSender);
+    assert.equal(result.connected, false);
+    assert.equal(result.error.code, 'repo-conflict');
+    assert.equal(worker.local.bpbGithubAuth.repo, undefined);
+});
+
 test('a restarted worker resumes a pending device flow from session storage', async () => {
     const session = {};
-    const local = {};
+    const local = { bpbGithubAuth: {
+        token: 'gho_old',
+        repo: { owner: 'old-account', name: 'old-repo', branch: 'main' },
+        installationId: 99,
+    } };
     const extensionSender = { url: 'chrome-extension://test/options/options.html' };
     const github = (method, path) => {
         if (method === 'POST' && path === 'https://github.com/login/device/code') return respond(200, {
@@ -316,5 +369,7 @@ test('a restarted worker resumes a pending device flow from session storage', as
     const resumed = await restartedWorker.send({ type: 'GITHUB_AUTH_STATE' }, extensionSender);
     assert.equal(resumed.phase, 'authorized');
     assert.equal(local.bpbGithubAuth.token, 'gho_resumed');
+    assert.equal(local.bpbGithubAuth.repo, null, 'a new authorization must require a fresh inspected repository choice');
+    assert.equal(local.bpbGithubAuth.installationId, null);
     assert.equal(session.bpbGithubAuthPending, undefined);
 });

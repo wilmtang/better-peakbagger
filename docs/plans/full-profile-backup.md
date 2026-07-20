@@ -86,7 +86,7 @@ The workflow, from the user's side:
 - **Media: URLs only.** Report markdown keeps any image/video/link URLs as
   they appear in the report source; no media files are downloaded or added to
   the repository.
-- **Existing-folder policy: skip by default.** An `ascents/*-a<aid>` folder
+- **Existing-folder policy: skip by default.** A root-level `*-a<aid>` folder
   that already exists (save-time backup or earlier backfill run) is skipped.
   Skipping is what makes the run resumable, keeps re-runs commit-silent, and
   preserves save-time `report.md` files, which can be sidecar-verbatim
@@ -95,7 +95,7 @@ The workflow, from the user's side:
   separate **Refresh all** option re-syncs every ascent through the existing
   Update path, for profiles edited on Peakbagger without the extension.
 - **The repository is the progress tracker.** Folder leaves end in `-a<aid>`,
-  and the GitHub client already lists `ascents/` one level at a time. Work
+  and the GitHub client lists the marked root layout. Work
   list = aids on the list page minus aids present in the tree. Each ascent is
   one atomic commit, so a crash never leaves a partial folder; a failed ascent
   leaves no folder and is retried on the next run. No separate checkpoint

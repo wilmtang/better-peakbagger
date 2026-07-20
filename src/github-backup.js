@@ -46,7 +46,6 @@
 // inventing a value. Idempotent: safe to inject more than once into the global.
 
     const SCHEMA_VERSION = 1;
-    const ASCENTS_DIR = 'ascents';
 
     // Peakbagger's public URLs are deterministic from the numeric ids, so they
     // are derived here rather than trusted from the snapshot.
@@ -134,7 +133,13 @@
         return `${datePrefix(ascent.date)}-${peakSlug(peak.name)}-a${ascent.id}`;
     };
 
-    const folderPath = snapshot => `${ASCENTS_DIR}/${folderName(snapshot)}`;
+    // Backups are intentionally first-class folders at the repository root.
+    // Keeping the stable ascent id in every leaf makes that flat layout safe to
+    // scan and keeps a dedicated backup repository pleasant to browse.
+    const folderPath = snapshot => folderName(snapshot);
+
+    const BACKUP_FOLDER_PATTERN = /^(?:undated|\d{4}(?:-\d{2}){0,2})-[a-z0-9](?:[a-z0-9-]{0,59})-a\d+$/;
+    const isBackupFolderName = name => typeof name === 'string' && BACKUP_FOLDER_PATTERN.test(name);
 
     // Find an already-committed folder for this ascent regardless of its slug,
     // so a re-save after a date or peak edit re-syncs the same ascent instead
@@ -143,7 +148,7 @@
     const matchExistingFolder = (names, ascentId) => {
         if (!Array.isArray(names) || ascentId == null) return null;
         const suffix = `-a${ascentId}`;
-        return names.find(name => typeof name === 'string' && name.endsWith(suffix)) || null;
+        return names.find(name => isBackupFolderName(name) && name.endsWith(suffix)) || null;
     };
 
     // ---- ascent.json -------------------------------------------------------
@@ -314,17 +319,17 @@
     };
 
     // The full logical commit payload for the GitHub client. `existingFolders`
-    // is the list of leaf names already under ascents/ (from the client's tree
-    // read); a matching a<ascentId> folder makes this an Update and, when its
-    // slug changed, names the old folder for atomic removal in the same commit.
+    // is the list of backup leaf names already found by the client; a matching
+    // a<ascentId> folder makes this an Update and, when its slug changed, names
+    // the old root folder for atomic removal in the same commit.
     const buildBackup = (snapshot, options = {}) => {
         const ascent = (snapshot && snapshot.ascent) || {};
         const leaf = folderName(snapshot);
-        const folder = `${ASCENTS_DIR}/${leaf}`;
+        const folder = leaf;
         const existingLeaf = matchExistingFolder(options.existingFolders, ascent.id);
         const isUpdate = existingLeaf != null;
         const previousFolder = existingLeaf && existingLeaf !== leaf
-            ? `${ASCENTS_DIR}/${existingLeaf}`
+            ? existingLeaf
             : null;
         return {
             isUpdate,
@@ -340,12 +345,12 @@
 
     const API = {
         SCHEMA_VERSION,
-        ASCENTS_DIR,
         peakSlug,
         datePrefix,
         isoDate,
         folderName,
         folderPath,
+        isBackupFolderName,
         matchExistingFolder,
         buildAscentJson,
         buildReportMarkdown,

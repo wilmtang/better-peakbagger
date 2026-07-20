@@ -44,13 +44,15 @@ Three existing mechanisms carry most of the weight:
 **Setup (once).** In the extension options, the user enables "GitHub backup",
 which requests the optional GitHub host permissions, then clicks **Connect
 GitHub**. The extension shows an eight-character code; the user enters it at
-`github.com/login/device` and approves. The extension then opens the app's
-installation page, where GitHub's own UI asks which repositories to grant —
-the user picks **Only select repositories** and chooses their one backup
-repo. Back in options, the extension discovers the granted repository through
-the API and shows it as connected. No tokens are typed or copied anywhere.
-If more than one repository was granted, the options page asks which one to
-use; if none, it links back to the install page.
+`github.com/login/device` and approves. The options page then offers a
+**Create repository on GitHub** button whose GitHub-owned form is prefilled
+with a private `better-peakbagger-backup` repository, or the user can grant the
+app access to an existing repository through GitHub's installation page. Back
+in options, the extension discovers every granted repository and asks the user
+to choose one explicitly. Empty and recognized backup repositories connect
+immediately; a populated repository is inspected and requires confirmation.
+Ambiguous root backup paths, archived repositories, and repositories without
+write access fail closed. No tokens are typed or copied anywhere.
 
 **Per save.** After the user saves an ascent and lands on the saved ascent
 page, a small dismissible affordance appears: **Back up to GitHub**. Clicking
@@ -66,7 +68,8 @@ revisiting an old ascent falls back to the manual button without pushing.
 
 **Full profile.** On the signed-in climber's own **My Ascents** page, **Back
 up all ascents** reads the complete all-years index, skips ascent ids already
-represented by an `ascents/*-a<aid>` folder, and commits each missing ascent.
+represented by a root-level `*-a<aid>` backup folder, and commits each missing
+ascent.
 The page tab owns the paced queue and must remain open; it can be paused or
 cancelled, and a later run resumes from the repository diff without local
 checkpoint state. A Peakbagger challenge pauses before the next request and
@@ -76,22 +79,29 @@ confirmation and re-syncs every ascent through the same Update path.
 ## Repository layout
 
 ```
-ascents/
-  2026-07-12-mount-rainier-a1234567/
-    report.md     # trip report as Markdown
-    ascent.json   # all structured fields + peak metadata + provenance
-    track.gpx     # Peakbagger's stored track (omitted when none exists)
+.better-peakbagger.json                  # repository ownership/layout marker
+2026-07-12-mount-rainier-a1234567/
+  report.md                              # trip report as Markdown
+  ascent.json                            # fields + peak metadata + provenance
+  track.gpx                              # stored track; omitted when none exists
 ```
 
 - The folder slug is `YYYY-MM-DD-<peak-slug>-a<ascentId>`. Date first for
   human sorting; the `a<ascentId>` suffix is the stable identity. Partial
   Peakbagger dates degrade gracefully (`2026-07-00…` → `2026-07`, undated →
   `undated`).
-- **Idempotency and renames:** re-saving an ascent re-syncs the same folder.
-  Before writing, the sync lists the `ascents/` tree and looks for an
-  existing folder ending in `-a<ascentId>`; if the slug changed (date or
-  peak edited), the old folder is removed and the new one written in the
-  same commit, so history stays clean and no stale duplicate survives.
+- **Repository ownership:** the first backup adds the marker in the same atomic
+  commit as the first mountain folder. Before selection and every write, an
+  unmarked repository with ambiguous root backup folders fails closed. Other
+  populated repositories require explicit confirmation; their existing paths
+  remain part of the base Git tree and are not modified.
+- **Idempotency and renames:** re-saving an ascent re-syncs the folder ending in
+  the same `-a<ascentId>`. If the slug changed, the extension writes the new
+  root folder and removes only its own `report.md`, `ascent.json`, and
+  `track.gpx` paths from the old folder in the same commit. User-added files are
+  preserved.
+- **Empty repositories:** the first backup creates the initial tree, root
+  commit, and default-branch ref; users do not need to initialize a README.
 - One ascent = one atomic commit: `Add ascent: Mount Rainier, 2026-07-12`
   (or `Update ascent: …` on re-sync).
 
@@ -187,7 +197,7 @@ background worker
 
 ClimbListC.aspx (isolated world, owner only)
   → parse or fetch the complete all-years ascent index
-  → worker lists existing ascents/ folder leaves (token never leaves worker)
+  → worker lists root backup folder leaves (token never leaves worker)
   → tab fetches each owned AscentEdit.aspx form and stored GPX, sequentially
   → worker receives one GITHUB_BACKUP_PROFILE_ASCENT snapshot at a time
   → same payload builder and atomic Git Data commit path as per-save backup
@@ -228,8 +238,9 @@ to leak. The flow:
    happens here, at installation: the token can reach only the intersection
    of the app's permissions and the installed repositories.
 4. Discover the granted repository with `GET /user/installations` and
-   `GET /user/installations/{id}/repositories`, and store the choice.
-   Exactly one granted repo means zero-typing setup.
+   `GET /user/installations/{id}/repositories`. The user explicitly selects a
+   repository; the worker inspects it before storing the choice. Populated
+   non-backup repositories require a second confirmation.
 
 The background worker persists the pending device code, expiry, interval, and
 next-poll time in `storage.session`. The options page advances one poll attempt
@@ -266,17 +277,19 @@ A classic OAuth app via `launchWebAuthFlow` remains ruled out: it needs an
 embedded client secret and its `repo` scope grants every repo.
 
 **Commit strategy — Git Data API, one atomic commit.** `GET` the branch ref →
-`POST` blobs (report.md, ascent.json, track.gpx as base64) → `POST` a tree
-based on the latest commit (including any old-slug folder removal) → `POST`
-the commit → `PATCH` the ref. On a non-fast-forward race, re-read the ref and
-retry once. The Contents API alternative (one `PUT` per file) is simpler but
-produces three commits per ascent and cannot move a renamed folder
-atomically.
+`POST` blobs (`report.md`, `ascent.json`, optional `track.gpx`, and the marker
+when first adopting the repository) → `POST` a tree based on the latest commit
+(including any owned old-slug paths) → `POST` the commit → `PATCH` the ref. An
+empty repository instead creates a parentless commit and `POST`s its first ref.
+On a non-fast-forward race, re-read the ref and retry once. The Contents API
+alternative (one `PUT` per file) is simpler but produces multiple commits per
+ascent and cannot move a renamed folder atomically.
 
-**Error taxonomy.** Authorization revoked or token invalid, app uninstalled
-or repository access withdrawn, repo archived, branch protection rejection,
-rate limit, network. Each maps to one actionable sentence in the affordance;
-auth problems also flag the options page.
+**Error taxonomy.** Authorization revoked or token invalid, app uninstalled or
+repository access withdrawn, repo archived, ambiguous repository paths, missing
+non-empty branch, branch protection rejection, rate limit, network. Each maps
+to one actionable sentence in the affordance; auth and selection problems also
+flag the options page.
 
 ## Manifest and privacy changes
 
@@ -327,12 +340,11 @@ begins, per the repository commit discipline.
    that produces it.
 3. **Pure GitHub client + tests.** **Done.** `src/github-client.js`: Git Data
    commit builder with an injected `fetch` and token — repo/branch pre-flight
-   (archived and no-push fail closed), ref read, blob/tree/commit creation,
-   rename-move *and* stale-file removal in one tree, single non-fast-forward
-   retry, and a `GithubBackupError` typed by `ERROR_CODES`. Existing folders
-   are listed one directory level at a time so a large archive never trips the
-   recursive-tree truncation limit. Tests run against a scripted fetch stub; no
-   network.
+   (archived, no-push, and ambiguous paths fail closed), empty-repository
+   initialization, root-layout marker and folder discovery, and owned-file-only
+   rename handling in one tree, plus a single non-fast-forward
+   retry and `GithubBackupError` taxonomy. Tests run against a scripted fetch
+   stub; no network.
 4. **App registration + device-flow client.** **Done.** The GitHub App is
    registered (device flow on, no webhook, *Contents: read and write*,
    installable on any account, user-token expiration opted out, no client
@@ -347,14 +359,15 @@ begins, per the repository commit discipline.
    (`options/github.js`, styled in `options.css`): the enable toggle requests
    both optional host permissions (added to `manifest.json`), **Connect
    GitHub** shows the user code and hands off to `github.com/login/device`,
-   discovery via `GET /user/installations` auto-selects a sole granted repo or
-   offers a picker (an install-page link when none), a clear connected state
-   names the account and repo, and **Disconnect** drops the local token (full
-   revocation is uninstalling the app on GitHub). The options page never sees
-   the token: it drives the background worker over `GITHUB_AUTH_*` messages,
-   gated to extension-page senders; `github-auth.js` joins the background
-   bundle. The `enableGithubBackup` gate is in `settings-schema.js`. Verified
-   against the rendered panel in light and dark, plus jsdom options tests.
+   offers a prefilled GitHub repository-creation form or GitHub's installation
+   access picker, then lists even a sole granted repository for explicit,
+   worker-inspected selection. Existing content requires confirmation. A clear
+   connected state names the account and repo, and **Disconnect** drops the
+   local token (full revocation is uninstalling the app on GitHub). The options
+   page never sees the token: it drives the background worker over
+   `GITHUB_AUTH_*` messages, gated to extension-page senders;
+   `github-auth.js` joins the background bundle. The `enableGithubBackup` gate
+   is in `settings-schema.js`.
 6. **Save-time snapshot.** **Done.** `src/ascent-snapshot.js` owns the
    ascentedit.aspx field-name mapping and turns the live Form1 fields plus the
    editor's report (mode, submitted bracket, exact Markdown sidecar) into the

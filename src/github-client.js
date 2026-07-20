@@ -23,11 +23,20 @@ import { githubBackup as Backup } from './github-backup.js';
 
     const API_ROOT = 'https://api.github.com';
     const BLOB_MODE = '100644';
+    const REPOSITORY_MARKER_PATH = '.better-peakbagger.json';
+    const REPOSITORY_MARKER_CONTENT = `${JSON.stringify({
+        schemaVersion: 1,
+        type: 'better-peakbagger-backup',
+        layout: 'repository-root',
+    }, null, 2)}\n`;
+    const REPOSITORY_MARKER_BASE64 = 'ewogICJzY2hlbWFWZXJzaW9uIjogMSwKICAidHlwZSI6ICJiZXR0ZXItcGVha2JhZ2dlci1iYWNrdXAiLAogICJsYXlvdXQiOiAicmVwb3NpdG9yeS1yb290Igp9Cg==';
+    const OWNED_FOLDER_FILES = new Set(['report.md', 'ascent.json', 'track.gpx']);
 
     const ERROR_CODES = Object.freeze({
         AUTH: 'auth',                 // token invalid or authorization revoked (401)
         NO_ACCESS: 'no-access',       // app uninstalled or repo access withdrawn (403/404)
         ARCHIVED: 'archived',         // repository is archived / read-only
+        REPO_CONFLICT: 'repo-conflict',
         BRANCH_PROTECTED: 'branch-protected',
         BRANCH_MISSING: 'branch-missing',
         RATE_LIMIT: 'rate-limit',
@@ -51,7 +60,7 @@ import { githubBackup as Backup } from './github-backup.js';
         /protected branch|branch protection|required status|required review|not authorized to push/i.test(message || '');
 
     const isFastForwardMessage = message =>
-        /fast forward|not a fast-forward|update is not a fast/i.test(message || '');
+        /fast forward|not a fast-forward|update is not a fast|reference already exists/i.test(message || '');
 
     // Map an HTTP failure to a stable, actionable code. `phase` distinguishes a
     // ref update (where a 422 is usually a race or branch protection) from the
@@ -85,7 +94,7 @@ import { githubBackup as Backup } from './github-backup.js';
 
         const repoBase = `${API_ROOT}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`;
 
-        const request = async (method, path, { body = undefined, phase = '' } = {}) => {
+        const request = async (method, path, { body = undefined, phase = '', allowNotFound = false } = {}) => {
             const url = path.startsWith('http') ? path : `${repoBase}${path}`;
             let res;
             try {
@@ -107,6 +116,7 @@ import { githubBackup as Backup } from './github-backup.js';
             let json = null;
             try { json = text ? JSON.parse(text) : null; } catch { json = null; }
             if (!res.ok) {
+                if (allowNotFound && res.status === 404) return null;
                 const message = (json && json.message) || text || `GitHub responded ${res.status}`;
                 throw new GithubBackupError(classify(res.status, message, res.headers, phase), message, { status: res.status });
             }
@@ -118,30 +128,62 @@ import { githubBackup as Backup } from './github-backup.js';
         const readTree = (sha, { recursive = false } = {}) =>
             request('GET', `/git/trees/${sha}${recursive ? '?recursive=1' : ''}`, { phase: 'read' });
 
-        // The ascent folder leaf names already committed under ascents/, read
-        // one directory level at a time so a huge archive never trips the
-        // recursive-tree truncation limit and misses a rename target.
-        const listAscentFolders = async baseTreeSha => {
-            const root = await readTree(baseTreeSha);
-            const entry = (root.tree || []).find(node => node.path === Backup.ASCENTS_DIR && node.type === 'tree');
-            if (!entry) return { folders: [], ascentsTree: null };
-            const ascentsTree = await readTree(entry.sha);
-            const folders = (ascentsTree.tree || [])
-                .filter(node => node.type === 'tree')
-                .map(node => node.path);
-            return { folders, ascentsTree };
+        // Root-level mountain folders plus the validated marker are the only
+        // repository layout. Keeping one representation avoids ambiguous
+        // ownership and makes repository inspection fail closed.
+        const inspectRootTree = async root => {
+            const entries = (root && root.tree) || [];
+            const markerEntry = entries.find(node => node.path === REPOSITORY_MARKER_PATH);
+            if (markerEntry && markerEntry.type !== 'blob') {
+                throw new GithubBackupError(ERROR_CODES.REPO_CONFLICT,
+                    `The repository already uses ${REPOSITORY_MARKER_PATH} for something else.`);
+            }
+            if (markerEntry) {
+                const markerBlob = await request('GET', `/git/blobs/${markerEntry.sha}`, { phase: 'read' });
+                const content = markerBlob && typeof markerBlob.content === 'string'
+                    ? markerBlob.content.replace(/\s/g, '')
+                    : '';
+                if (!markerBlob || markerBlob.encoding !== 'base64' || content !== REPOSITORY_MARKER_BASE64) {
+                    throw new GithubBackupError(ERROR_CODES.REPO_CONFLICT,
+                        `The repository's ${REPOSITORY_MARKER_PATH} file is not a Better Peakbagger marker.`);
+                }
+            }
+
+            const rootFolders = entries
+                .filter(node => node.type === 'tree' && Backup.isBackupFolderName(node.path))
+                .map(node => ({ leaf: node.path, path: node.path, treeSha: node.sha }));
+
+            // Without our marker, root folders that look exactly like the paths
+            // we own are ambiguous. Refuse to adopt and potentially prune them.
+            if (!markerEntry && rootFolders.length) {
+                throw new GithubBackupError(ERROR_CODES.REPO_CONFLICT,
+                    'This repository already contains root folders that look like Better Peakbagger backups.');
+            }
+
+            const records = rootFolders;
+            const kind = markerEntry ? 'backup' : entries.length ? 'existing' : 'empty';
+            return {
+                kind,
+                marker: !!markerEntry,
+                records,
+                rootEntryCount: entries.length,
+            };
         };
 
-        // Every blob path under an existing folder, so a re-sync can null out
-        // files the new payload no longer writes (a removed GPX) and a rename
-        // can drop the whole old folder — all in the one tree POST.
-        const oldFolderBlobPaths = async (ascentsTree, oldLeaf) => {
-            const entry = (ascentsTree.tree || []).find(node => node.path === oldLeaf && node.type === 'tree');
-            if (!entry) return [];
-            const sub = await readTree(entry.sha, { recursive: true });
+        const matchingRecords = (records, ascentId) => {
+            if (ascentId == null) return [];
+            const suffix = `-a${ascentId}`;
+            return records.filter(record => Backup.isBackupFolderName(record.leaf) && record.leaf.endsWith(suffix));
+        };
+
+        // Only files Better Peakbagger itself owns are pruned. User-added notes
+        // or other content survive an in-place refresh or folder rename.
+        const oldFolderOwnedPaths = async record => {
+            if (!record) return [];
+            const sub = await readTree(record.treeSha, { recursive: true });
             return (sub.tree || [])
-                .filter(node => node.type === 'blob')
-                .map(node => `${Backup.ASCENTS_DIR}/${oldLeaf}/${node.path}`);
+                .filter(node => node.type === 'blob' && OWNED_FOLDER_FILES.has(node.path))
+                .map(node => `${record.path}/${node.path}`);
         };
 
         // Resolve the target branch and fail closed on read-only / no-push repos
@@ -155,19 +197,57 @@ import { githubBackup as Backup } from './github-backup.js';
             if (info.permissions && info.permissions.push === false) {
                 throw new GithubBackupError(ERROR_CODES.NO_ACCESS, 'This token cannot write to the backup repository.', { status: 403 });
             }
-            return branch || info.default_branch || 'main';
+            return { info, targetBranch: branch || info.default_branch || 'main' };
         };
 
-        const commitOnce = async (snapshot, { gpx } = {}) => {
-            const targetBranch = await resolveRepo();
-            const ref = await request('GET', `/git/ref/heads/${encodeURIComponent(targetBranch)}`, { phase: 'ref' });
+        const readHead = async ({ info, targetBranch }) => {
+            const ref = await request('GET', `/git/ref/heads/${encodeURIComponent(targetBranch)}`, {
+                phase: 'ref', allowNotFound: true,
+            });
+            if (!ref) {
+                if (Number(info.size) === 0) return null;
+                throw new GithubBackupError(ERROR_CODES.BRANCH_MISSING,
+                    'The backup repository has no branch to commit to yet.', { status: 404 });
+            }
             const baseCommitSha = ref.object && ref.object.sha;
             const baseCommit = await request('GET', `/git/commits/${baseCommitSha}`, { phase: 'read' });
             const baseTreeSha = baseCommit.tree && baseCommit.tree.sha;
+            const root = await readTree(baseTreeSha);
+            return { baseCommitSha, baseTreeSha, root };
+        };
 
-            const { folders, ascentsTree } = await listAscentFolders(baseTreeSha);
+        const inspectRepository = async () => {
+            const resolved = await resolveRepo();
+            const head = await readHead(resolved);
+            if (!head) {
+                return {
+                    kind: 'empty', branch: resolved.targetBranch, hasBranch: false,
+                    folderCount: 0,
+                };
+            }
+            const state = await inspectRootTree(head.root);
+            return {
+                kind: state.kind,
+                branch: resolved.targetBranch,
+                hasBranch: true,
+                folderCount: state.records.length,
+            };
+        };
+
+        const writeBlob = async content => request('POST', '/git/blobs', {
+            body: { content, encoding: 'utf-8' },
+            phase: 'write',
+        });
+
+        const commitOnce = async (snapshot, { gpx } = {}) => {
+            const resolved = await resolveRepo();
+            const head = await readHead(resolved);
+            const state = head
+                ? await inspectRootTree(head.root)
+                : { kind: 'empty', marker: false, records: [], rootEntryCount: 0 };
+            const folders = state.records.map(record => record.leaf);
             const ascentId = snapshot && snapshot.ascent && snapshot.ascent.id;
-            const oldLeaf = Backup.matchExistingFolder(folders, ascentId);
+            const oldRecords = matchingRecords(state.records, ascentId);
 
             const backup = Backup.buildBackup(snapshot, { gpx, existingFolders: folders });
             const newPaths = new Set(backup.files.map(file => file.path));
@@ -175,34 +255,42 @@ import { githubBackup as Backup } from './github-backup.js';
             // Files under the old folder that the new payload will not overwrite
             // get a null sha in the tree, which deletes them relative to the base
             // tree — the rename move and stale-file prune in one atomic tree.
-            const removals = oldLeaf
-                ? (await oldFolderBlobPaths(ascentsTree, oldLeaf)).filter(path => !newPaths.has(path))
-                : [];
+            const removals = Array.from(new Set((await Promise.all(oldRecords.map(oldFolderOwnedPaths)))
+                .flat()
+                .filter(path => !newPaths.has(path))));
 
             const treeEntries = [];
             for (const file of backup.files) {
-                const blob = await request('POST', '/git/blobs', {
-                    body: { content: file.content, encoding: 'utf-8' },
-                    phase: 'write',
-                });
+                const blob = await writeBlob(file.content);
                 treeEntries.push({ path: file.path, mode: BLOB_MODE, type: 'blob', sha: blob.sha });
+            }
+            if (!state.marker) {
+                const marker = await writeBlob(REPOSITORY_MARKER_CONTENT);
+                treeEntries.push({ path: REPOSITORY_MARKER_PATH, mode: BLOB_MODE, type: 'blob', sha: marker.sha });
             }
             for (const path of removals) {
                 treeEntries.push({ path, mode: BLOB_MODE, type: 'blob', sha: null });
             }
 
             const tree = await request('POST', '/git/trees', {
-                body: { base_tree: baseTreeSha, tree: treeEntries },
+                body: { ...(head ? { base_tree: head.baseTreeSha } : {}), tree: treeEntries },
                 phase: 'write',
             });
             const commit = await request('POST', '/git/commits', {
-                body: { message: backup.message, tree: tree.sha, parents: [baseCommitSha] },
+                body: { message: backup.message, tree: tree.sha, parents: head ? [head.baseCommitSha] : [] },
                 phase: 'write',
             });
-            await request('PATCH', `/git/refs/heads/${encodeURIComponent(targetBranch)}`, {
-                body: { sha: commit.sha, force: false },
-                phase: 'ref',
-            });
+            if (head) {
+                await request('PATCH', `/git/refs/heads/${encodeURIComponent(resolved.targetBranch)}`, {
+                    body: { sha: commit.sha, force: false },
+                    phase: 'ref',
+                });
+            } else {
+                await request('POST', '/git/refs', {
+                    body: { ref: `refs/heads/${resolved.targetBranch}`, sha: commit.sha },
+                    phase: 'ref',
+                });
+            }
 
             return {
                 sha: commit.sha,
@@ -230,17 +318,21 @@ import { githubBackup as Backup } from './github-backup.js';
         // Read-only profile preflight: the repository tree is the resumability
         // checkpoint, so the list-page runner needs only the ascent folder leaves.
         const getAscentFolders = async () => {
-            const targetBranch = await resolveRepo();
-            const ref = await request('GET', `/git/ref/heads/${encodeURIComponent(targetBranch)}`, { phase: 'ref' });
-            const commitSha = ref.object && ref.object.sha;
-            const commit = await request('GET', `/git/commits/${commitSha}`, { phase: 'read' });
-            const { folders } = await listAscentFolders(commit.tree && commit.tree.sha);
-            return folders;
+            const resolved = await resolveRepo();
+            const head = await readHead(resolved);
+            if (!head) return [];
+            const state = await inspectRootTree(head.root);
+            return state.records.map(record => record.leaf);
         };
 
-        return { pushAscentBackup, getAscentFolders };
+        return { pushAscentBackup, getAscentFolders, inspectRepository };
     };
 
-    const API = { createGithubClient, GithubBackupError, ERROR_CODES };
+    const API = {
+        createGithubClient,
+        GithubBackupError,
+        ERROR_CODES,
+        REPOSITORY_MARKER_PATH,
+    };
 
     export const githubClient = API;

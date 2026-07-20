@@ -227,7 +227,8 @@ Freshness gates reject expired jobs, drafts, and backup snapshots on read. A
 five-minute alarm performs physical cleanup outside ordinary message handling;
 correctness does not depend on the alarm firing before an expired read.
 Full-profile backup intentionally stores no checkpoint: each ascent commit is
-atomic, and the next run diffs the list against `ascents/*-a<aid>` folder leaves.
+atomic, and the next run diffs the list against root-level `*-a<aid>` backup
+folder leaves.
 
 ## Verification boundaries
 

@@ -164,8 +164,11 @@ save; the extension never clicks a Peakbagger Save control.
   backup — after each save. During a profile run, the extension reads each
   owned ascent's edit form and stored GPX from Peakbagger in the signed-in tab,
   sends one ascent at a time to GitHub, and retains no separate progress record.
-  Existing repository folders are the resume checkpoint. No ascent is
-  transmitted without one of those opt-ins.
+  Existing repository folders are the resume checkpoint. Backups use named
+  mountain folders at the repository root plus a small repository marker; a
+  populated repository is inspected and requires explicit confirmation before
+  selection, and unrelated files are preserved. No ascent is transmitted
+  without one of those opt-ins.
 - **Ownership:** the backup affordance appears only on ascents the signed-in
   climber owns. Full-profile controls additionally require the signed-in
   climber's own **My Ascents** identity and an edit affordance for every parsed

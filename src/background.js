@@ -1071,14 +1071,17 @@ import { githubClient as GithubClient } from './github-client.js';
         };
     };
 
-    // Auto-select the sole granted repo (zero-typing setup); several or none
-    // leave the choice to the user.
-    const applyDiscoveredRepos = async repos => {
-        if (repos.length === 1) {
-            const r = repos[0];
-            await GithubAuth.authStore.setRepo({ owner: r.owner, name: r.name, branch: r.defaultBranch, id: r.id, fullName: r.fullName });
-            await GithubAuth.authStore.setInstallationId(r.installationId);
-        }
+    // Keep an existing choice only while it remains in the app installation.
+    // New connections always go through repository inspection; auto-selecting a
+    // sole repo would skip the populated-repository confirmation and collision
+    // checks that make this write boundary safe.
+    const reconcileDiscoveredRepo = async repos => {
+        const selected = await GithubAuth.authStore.getRepo();
+        if (!selected) return;
+        const stillGranted = repos.some(repo => repo.owner === selected.owner && repo.name === selected.name);
+        if (stillGranted) return;
+        await GithubAuth.authStore.setRepo(null);
+        await GithubAuth.authStore.setInstallationId(null);
     };
 
     const githubBeginAuth = async () => {
@@ -1129,6 +1132,8 @@ import { githubClient as GithubClient } from './github-client.js';
 
             const cred = result.credential;
             await GithubAuth.authStore.setCredential(cred);
+            await GithubAuth.authStore.setRepo(null);
+            await GithubAuth.authStore.setInstallationId(null);
             let account = null;
             try { account = await GithubAuth.fetchAccount({ fetch: netFetch, token: cred.token }); await GithubAuth.authStore.setAccount(account); } catch { /* non-fatal */ }
             let repos = [];
@@ -1137,7 +1142,7 @@ import { githubClient as GithubClient } from './github-client.js';
                 const discovered = await GithubAuth.listBackupRepositories({ fetch: netFetch, token: cred.token });
                 repos = discovered.repos;
                 installationCount = discovered.installationCount;
-                await applyDiscoveredRepos(repos);
+                await reconcileDiscoveredRepo(repos);
             } catch { /* the user may not have installed yet; discover again later */ }
             await clearPendingGithubAuth();
             return { phase: 'authorized', account, repos, installationCount };
@@ -1154,7 +1159,7 @@ import { githubClient as GithubClient } from './github-client.js';
         if (!token) return { phase: 'error', code: 'no-token' };
         try {
             const { repos, installationCount } = await GithubAuth.listBackupRepositories({ fetch: netFetch, token });
-            await applyDiscoveredRepos(repos);
+            await reconcileDiscoveredRepo(repos);
             return { installationCount, repos, repo: await GithubAuth.authStore.getRepo() };
         } catch (error) {
             return { phase: 'error', code: error.code || 'unknown' };
@@ -1164,9 +1169,41 @@ import { githubClient as GithubClient } from './github-client.js';
     const githubSelectRepo = async message => {
         const r = message && message.repo;
         if (!r || !r.owner || !r.name) return { error: 'invalid-repo' };
-        await GithubAuth.authStore.setRepo({ owner: r.owner, name: r.name, branch: r.branch || r.defaultBranch || 'main', id: r.id ?? null, fullName: r.fullName || `${r.owner}/${r.name}` });
+        const token = await GithubAuth.authStore.getToken();
+        if (!token) return { connected: false, error: { code: 'no-token' } };
+        const client = GithubClient.createGithubClient({
+            fetch: netFetch,
+            token,
+            owner: r.owner,
+            repo: r.name,
+            branch: r.branch || r.defaultBranch || undefined,
+        });
+        let inspection;
+        try {
+            inspection = await client.inspectRepository();
+        } catch (error) {
+            return {
+                connected: false,
+                error: { code: error.code || 'unknown', message: error.message || 'Could not inspect the repository.' },
+            };
+        }
+        if (inspection.kind === 'existing' && !message.confirmExisting) {
+            return {
+                connected: false,
+                needsConfirmation: true,
+                repo: r,
+                inspection,
+            };
+        }
+        await GithubAuth.authStore.setRepo({
+            owner: r.owner,
+            name: r.name,
+            branch: inspection.branch,
+            id: r.id ?? null,
+            fullName: r.fullName || `${r.owner}/${r.name}`,
+        });
         if (r.installationId != null) await GithubAuth.authStore.setInstallationId(r.installationId);
-        return githubStatus();
+        return { ...(await githubStatus()), inspection };
     };
 
     const githubDisconnect = async () => {

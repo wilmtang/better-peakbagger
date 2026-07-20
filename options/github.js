@@ -20,6 +20,11 @@ const ERROR_TEXT = {
     cancelled: 'Connection cancelled.',
     'device-flow-disabled': 'Device flow is not enabled for the app. Please report this.',
     'no-token': 'The GitHub connection was lost. Connect again.',
+    'no-access': 'This repository is not writable. Check its GitHub App access and try again.',
+    archived: 'This repository is archived and read-only. Choose another repository.',
+    'branch-missing': 'This repository has no usable default branch. Choose another repository.',
+    'repo-conflict': 'This repository already contains paths that Better Peakbagger cannot safely adopt. Choose another repository.',
+    'rate-limit': 'GitHub is rate-limiting requests. Try again in a few minutes.',
     unknown: 'Something went wrong talking to GitHub. Try again.',
 };
 const errorText = code => ERROR_TEXT[code] || ERROR_TEXT.unknown;
@@ -33,6 +38,7 @@ export function initGithubBackup({ extensionApi, flash, save }) {
     let pollTimer = null;
     let countdownTimer = null;
     let permissionError = false;
+    let choosingRepo = false;
     const stopPollTimer = () => { if (pollTimer) { clearTimeout(pollTimer); pollTimer = null; } };
     const stopTimers = () => {
         stopPollTimer();
@@ -66,6 +72,14 @@ export function initGithubBackup({ extensionApi, flash, save }) {
         el('button', { type: 'button', class: primary ? 'github-primary' : 'secondary', text: label, onclick: onClick });
     const openTab = url => { try { window.open(url, '_blank', 'noopener'); } catch { /* popup blocked */ } };
     const render = (...nodes) => { panelEl.replaceChildren(...nodes.filter(Boolean)); };
+    const newRepositoryUrl = status => {
+        const url = new URL('https://github.com/new');
+        url.searchParams.set('name', 'better-peakbagger-backup');
+        url.searchParams.set('description', 'Peakbagger ascent backups created by Better Peakbagger');
+        url.searchParams.set('visibility', 'private');
+        if (status && status.account && status.account.login) url.searchParams.set('owner', status.account.login);
+        return url.href;
+    };
 
     // ---- phase renderers ---------------------------------------------------
 
@@ -122,32 +136,57 @@ export function initGithubBackup({ extensionApi, flash, save }) {
     };
 
     const renderChooseRepo = (status, discovery) => {
+        choosingRepo = true;
         const repos = (discovery && discovery.repos) || [];
         const installUrl = status.installUrl;
-        if (repos.length > 1) {
+        const createButton = button('Create repository on GitHub', {
+            primary: repos.length === 0,
+            onClick: () => openTab(newRepositoryUrl(status)),
+        });
+        if (repos.length) {
             const list = el('div', { class: 'github-repo-list', role: 'list' },
                 repos.map(repo => el('button', {
                     type: 'button', class: 'github-repo', role: 'listitem', text: repo.fullName,
                     onclick: () => selectRepo(repo),
                 })));
             return render(
-                el('p', { class: 'github-line', text: 'You granted access to several repositories. Choose the one to back up to:' }),
+                el('p', { class: 'github-line', text: 'Choose a repository for your backups. A dedicated repository keeps everything tidy.' }),
                 list,
-                el('div', { class: 'github-actions' }, button('Change repositories on GitHub', { onClick: () => openTab(installUrl) })),
+                el('div', { class: 'github-actions' }, [
+                    createButton,
+                    button('Change GitHub access', { onClick: () => openTab(installUrl) }),
+                ]),
+                el('p', { class: 'github-hint', text: 'Created a new repository? Grant Better Peakbagger access to it on GitHub, then return here.' }),
             );
         }
-        // None granted yet (or the install page not visited): hand off to GitHub.
+        // None granted yet (or the install page not visited): offer the clean
+        // dedicated-repository path first, then GitHub's access picker.
         return render(
-            el('p', { class: 'github-line', text: 'Now choose which repository Better Peakbagger may write to. GitHub will ask you to pick “Only select repositories”.' }),
+            el('p', { class: 'github-line', text: 'Create a private backup repository, or grant access to one you already have.' }),
             el('div', { class: 'github-actions' }, [
-                button('Choose repository on GitHub', { primary: true, onClick: () => openTab(installUrl) }),
-                button('I’ve granted access', { onClick: refreshRepos }),
+                createButton,
+                button('Grant repository access', { onClick: () => openTab(installUrl) }),
+                button('Refresh list', { onClick: () => refreshRepos({ choose: true }) }),
             ]),
-            el('p', { class: 'github-hint', text: 'After granting access on GitHub, come back and select “I’ve granted access”.' }),
+            el('p', { class: 'github-hint', text: 'After creating a repository, grant Better Peakbagger access to it. Return here and the list will refresh.' }),
+        );
+    };
+
+    const renderExistingRepoConfirmation = repo => {
+        choosingRepo = true;
+        const fullName = repo.fullName || `${repo.owner}/${repo.name}`;
+        render(
+            el('p', { class: 'github-line', text: `${fullName} already contains files.` }),
+            el('p', { class: 'github-hint', text: 'Existing files will stay in place. Better Peakbagger will add clearly named mountain folders at the repository root.' }),
+            el('div', { class: 'github-actions' }, [
+                button('Use this repository', { primary: true, onClick: () => selectRepo(repo, { confirmExisting: true }) }),
+                button('Choose another', { onClick: () => refreshRepos({ choose: true }) }),
+            ]),
         );
     };
 
     const renderConnected = status => {
+        choosingRepo = false;
         const who = status.account && status.account.login ? `@${status.account.login}` : 'GitHub';
         const repo = status.repo ? status.repo.fullName || `${status.repo.owner}/${status.repo.name}` : '';
         const autoToggle = el('label', { class: 'github-auto', for: 'github-auto-backup' }, [
@@ -164,17 +203,17 @@ export function initGithubBackup({ extensionApi, flash, save }) {
             ]),
             autoToggle,
             el('div', { class: 'github-actions' }, [
-                button('Change repository', { onClick: refreshRepos }),
+                button('Change repository', { onClick: () => refreshRepos({ choose: true }) }),
                 button('Disconnect', { onClick: disconnect }),
             ]),
         );
     };
 
-    const renderError = (code, retry) => {
+    const renderError = (code, retry, actionLabel = 'Try again') => {
         stopTimers();
         render(
             el('p', { class: 'github-line github-error', text: errorText(code) }),
-            el('div', { class: 'github-actions' }, button('Try again', { primary: true, onClick: retry || connect })),
+            el('div', { class: 'github-actions' }, button(actionLabel, { primary: true, onClick: retry || connect })),
         );
     };
 
@@ -219,19 +258,24 @@ export function initGithubBackup({ extensionApi, flash, save }) {
         return renderChooseRepo(refreshed || status || {}, discovery);
     };
 
-    const refreshRepos = async () => {
+    const refreshRepos = async ({ choose = false } = {}) => {
         render(el('p', { class: 'github-line', text: 'Checking repository access…' }));
         const discovery = await send({ type: 'GITHUB_AUTH_DISCOVER' });
         if (discovery && discovery.phase === 'error') return renderError(discovery.code, refreshRepos);
         const status = await send({ type: 'GITHUB_AUTH_STATUS' });
-        if (status && status.connected) { flash('Repository selected'); return renderConnected(status); }
+        if (!choose && status && status.connected) { flash('Repository selected'); return renderConnected(status); }
         return renderChooseRepo(status || {}, discovery);
     };
 
-    const selectRepo = async repo => {
-        const status = await send({ type: 'GITHUB_AUTH_SELECT_REPO', repo });
+    const selectRepo = async (repo, { confirmExisting = false } = {}) => {
+        render(el('p', { class: 'github-line', text: 'Checking repository safety…' }));
+        const status = await send({ type: 'GITHUB_AUTH_SELECT_REPO', repo, confirmExisting });
         if (status && status.connected) { flash('Repository selected'); return renderConnected(status); }
-        return refreshRepos();
+        if (status && status.needsConfirmation) return renderExistingRepoConfirmation(repo);
+        if (status && status.error) {
+            return renderError(status.error.code, () => refreshRepos({ choose: true }), 'Choose another');
+        }
+        return refreshRepos({ choose: true });
     };
 
     const disconnect = async () => {
@@ -289,7 +333,10 @@ export function initGithubBackup({ extensionApi, flash, save }) {
 
     // Returning from the GitHub install page: re-check repo access.
     window.addEventListener('focus', () => {
-        if (!detailEl.hidden && !pollTimer) void renderFromStatus();
+        if (!detailEl.hidden && !pollTimer) {
+            if (choosingRepo) void refreshRepos({ choose: true });
+            else void renderFromStatus();
+        }
     });
 
     // populate runs on every settings change, but the panel's connected state

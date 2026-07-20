@@ -512,6 +512,80 @@ test('the device code is copyable and shows its remaining lifetime', async () =>
     dom.window.close();
 });
 
+test('repository setup offers a prefilled private GitHub repository', async () => {
+    const status = {
+        enabled: true, connected: false, hasToken: true,
+        account: { login: 'ada' }, installUrl: 'https://github.com/apps/better-peakbagger-backup/installations/new',
+    };
+    const repo = { owner: 'ada', name: 'existing', fullName: 'ada/existing', defaultBranch: 'main', installationId: 11 };
+    const dom = await loadOptions({ enableGithubBackup: true }, {
+        prepareChrome: chrome => {
+            chrome.permissions = { request: async () => true, contains: async () => true, remove: async () => true };
+            chrome.runtime.sendMessage = (message, callback) => {
+                const reply = message.type === 'GITHUB_AUTH_DISCOVER' ? { repos: [repo] } : status;
+                if (typeof callback === 'function') Promise.resolve().then(() => callback(reply));
+                return Promise.resolve(reply);
+            };
+        },
+    });
+    await waitFor(dom, () => Array.from(el(dom, 'github-panel').querySelectorAll('button'))
+        .some(button => button.textContent === 'Create repository on GitHub'));
+    assert.ok(Array.from(el(dom, 'github-panel').querySelectorAll('button'))
+        .some(button => button.textContent === 'ada/existing'), 'a sole granted repository must still be inspected by an explicit choice');
+
+    let opened = null;
+    dom.window.open = url => { opened = url; };
+    Array.from(el(dom, 'github-panel').querySelectorAll('button'))
+        .find(button => button.textContent === 'Create repository on GitHub').click();
+    const url = new URL(opened);
+    assert.equal(url.origin + url.pathname, 'https://github.com/new');
+    assert.equal(url.searchParams.get('name'), 'better-peakbagger-backup');
+    assert.equal(url.searchParams.get('owner'), 'ada');
+    assert.equal(url.searchParams.get('visibility'), 'private');
+    assert.match(url.searchParams.get('description'), /Peakbagger ascent backups/);
+});
+
+test('a populated repository requires an explicit confirmation before connection', async () => {
+    const repo = { owner: 'ada', name: 'project', fullName: 'ada/project', defaultBranch: 'main', installationId: 11 };
+    let connected = false;
+    const selectMessages = [];
+    const dom = await loadOptions({ enableGithubBackup: true }, {
+        prepareChrome: chrome => {
+            chrome.permissions = { request: async () => true, contains: async () => true, remove: async () => true };
+            chrome.runtime.sendMessage = (message, callback) => {
+                let reply;
+                if (message.type === 'GITHUB_AUTH_STATUS') {
+                    reply = {
+                        enabled: true, connected, hasToken: true, account: { login: 'ada' },
+                        repo: connected ? repo : null, installUrl: 'https://github.com/apps/example/installations/new',
+                    };
+                } else if (message.type === 'GITHUB_AUTH_DISCOVER') {
+                    reply = { repos: [repo] };
+                } else if (message.type === 'GITHUB_AUTH_SELECT_REPO') {
+                    selectMessages.push(message);
+                    if (!message.confirmExisting) reply = { connected: false, needsConfirmation: true, repo };
+                    else { connected = true; reply = { connected: true, hasToken: true, account: { login: 'ada' }, repo }; }
+                } else reply = {};
+                if (typeof callback === 'function') Promise.resolve().then(() => callback(reply));
+                return Promise.resolve(reply);
+            };
+        },
+    });
+
+    await waitFor(dom, () => Array.from(el(dom, 'github-panel').querySelectorAll('button'))
+        .some(button => button.textContent === 'ada/project'));
+    Array.from(el(dom, 'github-panel').querySelectorAll('button'))
+        .find(button => button.textContent === 'ada/project').click();
+    await waitFor(dom, () => /already contains files/.test(el(dom, 'github-panel').textContent));
+    assert.match(el(dom, 'github-panel').textContent, /Existing files will stay in place/);
+    assert.equal(connected, false);
+
+    Array.from(el(dom, 'github-panel').querySelectorAll('button'))
+        .find(button => button.textContent === 'Use this repository').click();
+    await waitFor(dom, () => /backing up to ada\/project/.test(el(dom, 'github-panel').textContent));
+    assert.deepEqual(selectMessages.map(message => !!message.confirmExisting), [false, true]);
+});
+
 test('a connected status renders the account and repository', async () => {
     const dom = await loadOptions({ enableGithubBackup: true }, {
         prepareChrome: withGithubBackground({

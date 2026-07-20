@@ -44,7 +44,7 @@ const baseSnapshot = () => ({
 
 test('folder name is date-first with a stable a<ascentId> suffix', () => {
     assert.equal(Backup.folderName(baseSnapshot()), '2026-07-12-mount-rainier-a1234567');
-    assert.equal(Backup.folderPath(baseSnapshot()), 'ascents/2026-07-12-mount-rainier-a1234567');
+    assert.equal(Backup.folderPath(baseSnapshot()), '2026-07-12-mount-rainier-a1234567');
 });
 
 test('partial and undated dates degrade gracefully in the folder name', () => {
@@ -73,7 +73,7 @@ test('peak slug strips diacritics, collapses punctuation, and caps length', () =
 // ---- rename / re-sync detection -------------------------------------------
 
 test('matchExistingFolder finds the ascent folder regardless of slug and never partial-matches the id', () => {
-    const names = ['2026-07-11-mount-baker-a999', '2026-06-01-mount-rainier-a1234567'];
+    const names = ['2026-07-11-mount-baker-a999', 'notes-a1234567', '2026-06-01-mount-rainier-a1234567'];
     assert.equal(Backup.matchExistingFolder(names, 1234567), '2026-06-01-mount-rainier-a1234567');
     // 123 must not match a folder ending in a1234567.
     assert.equal(Backup.matchExistingFolder(names, 123), null);
@@ -85,13 +85,13 @@ test('buildBackup flags a rename and names the old folder for atomic removal', (
     const existingFolders = ['2026-06-01-mount-rainier-a1234567'];
     const backup = Backup.buildBackup(snap, { existingFolders, gpx: '<gpx/>' });
     assert.equal(backup.isUpdate, true);
-    assert.equal(backup.folder, 'ascents/2026-07-12-mount-rainier-a1234567');
-    assert.equal(backup.previousFolder, 'ascents/2026-06-01-mount-rainier-a1234567');
+    assert.equal(backup.folder, '2026-07-12-mount-rainier-a1234567');
+    assert.equal(backup.previousFolder, '2026-06-01-mount-rainier-a1234567');
     assert.equal(backup.message, 'Update ascent: Mount Rainier, 2026-07-12');
     assert.deepEqual(backup.files.map(f => f.path), [
-        'ascents/2026-07-12-mount-rainier-a1234567/report.md',
-        'ascents/2026-07-12-mount-rainier-a1234567/ascent.json',
-        'ascents/2026-07-12-mount-rainier-a1234567/track.gpx',
+        '2026-07-12-mount-rainier-a1234567/report.md',
+        '2026-07-12-mount-rainier-a1234567/ascent.json',
+        '2026-07-12-mount-rainier-a1234567/track.gpx',
     ]);
 });
 
