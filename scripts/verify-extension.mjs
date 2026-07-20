@@ -803,6 +803,7 @@ try {
             // CSSOM exposes rgb(), so assert the raw color token that the
             // converter is required to preserve.
             const hexSource = 'Under [span style="color:#2471a3"]blue[/span] skies.';
+            const hexMarkdown = 'Under <span style="color:#2471a3">blue</span> skies.';
             await editorPage.locator('#bpb-report-editor').getByRole('button', {
                 name: 'Plain', exact: true
             }).click();
@@ -838,7 +839,7 @@ try {
                     .map(line => line.textContent).join('\n'),
                 previewStyle: document.querySelector('.bpb-re-preview span[style]')?.getAttribute('style')
             }));
-            check(markdownHex.source === `${hexSource} Clear weather.`
+            check(markdownHex.source === `${hexMarkdown} Clear weather.`
                 && /#2471a3/i.test(markdownHex.previewStyle || ''),
             `Markdown mode lost the hex source or preview color (state=${JSON.stringify(markdownHex)})`);
 
