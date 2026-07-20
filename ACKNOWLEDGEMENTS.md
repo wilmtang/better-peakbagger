@@ -74,3 +74,20 @@ Copyright (c) 2025 Nelson Wolf. The upstream project is available under the
 [MIT License](https://github.com/npwolf/peakbagger_gpx_ascent_logger/blob/main/LICENSE).
 It is credited here as design inspiration and is not distributed as a runtime
 dependency of Better Peakbagger.
+
+### peakbagger-cli
+
+The Cloudflare bypass strategy documented in the project's development
+guidelines — using Patchright with an isolated persistent Chrome profile,
+waiting for challenge clearance, and reusing only the minted cookies — follows
+the approach demonstrated in
+[peakbagger-cli](https://github.com/dreamiurg/peakbagger-cli)'s
+[browser transport](https://github.com/dreamiurg/peakbagger-cli/blob/main/peakbagger/browser_transport.py).
+The project's rate-limit spacing for Peakbagger page fetches also used
+peakbagger-cli's default as a reference point. No code from peakbagger-cli is
+distributed with or executed by Better Peakbagger.
+
+Copyright (c) 2025 PeakBagger CLI Contributors. The upstream project is available under the
+[MIT License](https://github.com/dreamiurg/peakbagger-cli/blob/main/LICENSE).
+It is credited here as design inspiration and is not distributed as a runtime
+dependency of Better Peakbagger.
