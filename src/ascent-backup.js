@@ -12,6 +12,7 @@
 
 import { ascentPage as AscentPage } from './ascent-page.js';
 import { githubError as GithubError } from './github-error.js';
+import { classifyResponse } from './profile-backup-core.js';
 
 (() => {
     'use strict';
@@ -68,8 +69,16 @@ import { githubError as GithubError } from './github-error.js';
         let gpx = null;
         if (info.gpxUrl) {
             // Fetched in the page's own session (same-origin, credentialed), the
-            // same place the analyzer reads the stored track.
-            try { const res = await fetch(info.gpxUrl); if (res.ok) gpx = await res.text(); } catch { /* no track */ }
+            // same place the analyzer reads the stored track. Classify the body
+            // with the shared classifier before trusting it: a 200 that is
+            // actually an error page (e.g. a renamed/redirected endpoint) must
+            // never be committed as track.gpx. On rejection, back up without a
+            // track rather than storing an error page.
+            try {
+                const res = await fetch(info.gpxUrl);
+                const text = res.ok ? await res.text() : '';
+                if (res.ok && classifyResponse(res.status, res.headers, text, { kind: 'gpx' }) === 'ok') gpx = text;
+            } catch { /* no track */ }
         }
         const page = {
             ascent: { id: info.ascentId, date: info.date || undefined },

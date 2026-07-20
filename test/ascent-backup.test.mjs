@@ -16,7 +16,7 @@ import { evalBundle, waitFor } from './helpers/load-page.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
-const loadSurface = async ({ status, onBackup, gpxOk = true, url = 'https://www.peakbagger.com/climber/ascent.aspx?aid=7654321' } = {}) => {
+const loadSurface = async ({ status, onBackup, gpxOk = true, gpxResponse = null, url = 'https://www.peakbagger.com/climber/ascent.aspx?aid=7654321' } = {}) => {
     const html = await readFile(path.join(root, 'test', 'fixtures', 'pages', 'climber-ascent.html'), 'utf8');
     const dom = new JSDOM(html, { url, runScripts: 'outside-only' });
     const sent = [];
@@ -34,9 +34,9 @@ const loadSurface = async ({ status, onBackup, gpxOk = true, url = 'https://www.
             },
         },
     };
-    dom.window.fetch = async () => (gpxOk
-        ? { ok: true, text: async () => '<gpx><trk><trkseg></trkseg></trk></gpx>' }
-        : { ok: false, text: async () => '' });
+    dom.window.fetch = async () => gpxResponse || (gpxOk
+        ? { ok: true, status: 200, headers: { get: () => 'text/gpx' }, text: async () => '<gpx><trk><trkseg></trkseg></trk></gpx>' }
+        : { ok: false, status: 404, headers: { get: () => null }, text: async () => '' });
     await evalBundle(dom.window, 'content/ascent-backup.js');
     return { dom, sent };
 };
@@ -80,6 +80,32 @@ test('clicking Back up fetches the track and sends the page fields, then shows s
     assert.equal(link.getAttribute('href'), 'https://github.com/me/backup/commit/abc');
     // Never touched a Peakbagger Save control (there are none on this page).
     assert.equal(sent.filter(m => m.type === 'GITHUB_BACKUP_ASCENT').length, 1);
+});
+
+test('a 200 error page for the track is not committed as track.gpx', async () => {
+    let received = null;
+    const { dom } = await loadSurface({
+        status: { enabled: true, connected: true },
+        // A 200 whose body is an HTML error page, not a GPX document — what a
+        // renamed/redirected endpoint would return.
+        gpxResponse: {
+            ok: true,
+            status: 200,
+            redirected: true,
+            url: 'https://www.peakbagger.com/PBError.aspx',
+            headers: { get: name => (/content-type/i.test(name) ? 'text/html; charset=utf-8' : null) },
+            text: async () => '<html><head><title>Error - Peakbagger.com</title></head><body>Something went wrong.</body></html>',
+        },
+        onBackup: message => { received = message; return { ok: true, result: {} }; },
+    });
+    await waitFor(dom, () => bar(dom));
+    bar(dom).querySelector('.bpb-gh-primary').dispatchEvent(new dom.window.Event('click'));
+    await waitFor(dom, () => /Backed up/.test(bar(dom).textContent));
+
+    assert.ok(received, 'a GITHUB_BACKUP_ASCENT message was sent');
+    // The error page was rejected: the ascent is backed up without a track,
+    // never with the HTML error page stored as the GPS track.
+    assert.equal(received.gpx, null);
 });
 
 test('a typed backup error shows an actionable message with a retry', async () => {

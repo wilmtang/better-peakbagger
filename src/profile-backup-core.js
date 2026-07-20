@@ -113,7 +113,10 @@ const CHALLENGE_MARKERS = [
 
 // Classify a completed Peakbagger response without trusting status alone. A
 // 200 login/challenge page is not ascent data, and must never reach the backup.
-const classifyResponse = (status, headers, bodyText, { kind = 'edit' } = {}) => {
+// Exported by name as well as on the object below so the per-save ascent backup
+// can share the exact classifier without pulling the whole runner into its
+// bundle (esbuild tree-shakes the rest away for a named import).
+export const classifyResponse = (status, headers, bodyText, { kind = 'edit' } = {}) => {
     const body = typeof bodyText === 'string' ? bodyText : '';
     if (/challenge/i.test(headerValue(headers, 'cf-mitigated'))
         || CHALLENGE_MARKERS.some(pattern => pattern.test(body))
