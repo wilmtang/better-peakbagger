@@ -46,7 +46,14 @@ test('build maps the ascentedit form fields into the backup snapshot', async () 
     setValue(form, 'EndFt', '5400');
     setValue(form, 'PointFt', '14411');
     setValue(form, 'RouteUp', 'Disappointment Cleaver');
-    setValue(form, 'OthersText', 'Rope team');
+    setValue(form, 'RouteDn', 'Emmons Glacier');
+    setValue(form, 'URLTB', 'https://example.com/trip');
+    setValue(form, 'OthersText', 'unfinished search text');
+    setValue(form, 'WeatherText', 'Clouds lifted at noon');
+    setValue(form, 'PrecipDD', '1');
+    setValue(form, 'TempDD', '4');
+    setValue(form, 'WindDD', '2');
+    setValue(form, 'VisDD', '1');
     setValue(form, 'UpHr', '7'); setValue(form, 'UpMin', '30');
     // The first gear item, whatever the fixture lists it as.
     const gear0 = form.elements['GearCheckBoxList$0'];
@@ -66,8 +73,20 @@ test('build maps the ascentedit form fields into the backup snapshot', async () 
     assert.equal(snapshot.ascent.distanceUpMi, '8');
     assert.equal(snapshot.ascent.pointFt, '14411');
     assert.equal(snapshot.ascent.route, 'Disappointment Cleaver');
+    assert.equal(snapshot.ascent.routeDown, 'Emmons Glacier');
+    assert.equal(snapshot.ascent.externalUrl, 'https://example.com/trip');
     assert.equal(snapshot.ascent.timeUp, '7:30');
-    assert.equal(snapshot.ascent.companions.others, 'Rope team');
+    assert.deepEqual(snapshot.ascent.companions, {
+        registered: [{ id: 900101, name: 'Jan Doe' }],
+        others: 'Sample Hiking Club',
+    });
+    assert.deepEqual(snapshot.ascent.weather, {
+        precip: 'No Precipitation',
+        temperature: 'Cold',
+        wind: 'Breezy',
+        visibility: 'Clear',
+        description: 'Clouds lifted at noon',
+    });
     // The default-checked ascent type radio yields its human label.
     assert.match(snapshot.ascent.type, /Successful/);
     assert.deepEqual(snapshot.ascent.gear, [gear0Label]);

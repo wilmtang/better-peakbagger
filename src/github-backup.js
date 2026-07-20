@@ -28,12 +28,12 @@
 //       date,                     // 'YYYY-MM-DD' (partial 'YYYY-MM-00'/'YYYY-00-00'
 //                                 //  or '' / null = undated), degrades gracefully
 //       suffix,                   // same-day alphabetical suffix, '' when none
-//       type, route,              // strings, omitted when blank
+//       type, route, routeDown, externalUrl, // strings, omitted when blank
 //       gainFt, lossFt, distanceUpMi, distanceDnMi, extraGainFt, extraLossFt,
 //       timeUp, timeDn, nightsOut, startFt, endFt, pointFt, quality,
 //       gear: [string],           // omitted when empty
 //       companions: { registered: [{ id?, name }], others },
-//       weather: { precip, temperature }
+//       weather: { precip, temperature, wind, visibility, description }
 //     },
 //     peak: { id, name, elevationFt, location },
 //     report: { markdown }        // the final Markdown body (sidecar-verbatim
@@ -173,15 +173,13 @@
 
     const buildWeather = weather => {
         const source = weather && typeof weather === 'object' ? weather : {};
-        const precip = trimString(source.precip);
-        const temperature = toNumber(source.temperature);
-        if (!precip && temperature === undefined) return undefined;
         const result = {};
-        if (precip) result.precip = precip;
-        // Temperature is kept explicit as null when a report has weather but no
-        // recorded number, so a reader can tell "unmeasured" from "omitted".
-        result.temperature = temperature === undefined ? null : temperature;
-        return result;
+        setString(result, 'precip', source.precip);
+        setString(result, 'temperature', source.temperature);
+        setString(result, 'wind', source.wind);
+        setString(result, 'visibility', source.visibility);
+        setString(result, 'description', source.description);
+        return Object.keys(result).length ? result : undefined;
     };
 
     // Serialize the snapshot into the versioned ascent.json object. Blank
@@ -200,6 +198,8 @@
         };
         setString(ascent, 'type', src.type);
         setString(ascent, 'route', src.route);
+        setString(ascent, 'routeDown', src.routeDown);
+        setString(ascent, 'externalUrl', src.externalUrl);
         setNumber(ascent, 'gainFt', src.gainFt);
         setNumber(ascent, 'lossFt', src.lossFt);
         setNumber(ascent, 'distanceUpMi', src.distanceUpMi);

@@ -97,6 +97,35 @@
         return '';
     };
 
+    // Added companions live in #OthersTable. OthersText is only the autocomplete
+    // search box and is cleared after each Add, so it is never backup data.
+    const readCompanions = form => {
+        const table = form && form.ownerDocument ? form.ownerDocument.getElementById('OthersTable') : null;
+        const registered = [];
+        const others = [];
+        if (!table) return { registered, others: '' };
+        for (const row of Array.from(table.rows).slice(1)) {
+            const cells = Array.from(row.cells);
+            if (!cells.length) continue;
+            const anchor = row.querySelector('a[href*="cid="]');
+            if (anchor) {
+                let id = null;
+                try {
+                    const rawId = new URL(anchor.href, 'https://peakbagger.com/').searchParams.get('cid');
+                    if (/^\d+$/.test(rawId || '')) id = Number(rawId);
+                } catch { /* malformed link */ }
+                const name = trim(anchor.textContent);
+                if (name) registered.push({ ...(Number.isFinite(id) ? { id } : {}), name });
+                continue;
+            }
+            // The last cell normally contains only a Remove control. Read the
+            // first cell so button labels and party-role controls cannot leak.
+            const name = trim(cells[0].textContent);
+            if (name) others.push(name);
+        }
+        return { registered, others: others.join(', ') };
+    };
+
     // The peak identity from the peak <select>, falling back to the URL's pid.
     const readPeak = (form, params) => {
         const select = field(form, 'PeakListBox');
@@ -128,6 +157,8 @@
             suffix: fieldValue(form, 'SuffixText'),
             type: checkedRadioLabel(form, 'AscentTypeRBL'),
             route: fieldValue(form, 'RouteUp'),
+            routeDown: fieldValue(form, 'RouteDn'),
+            externalUrl: fieldValue(form, 'URLTB'),
             gainFt: fieldValue(form, 'GainFt'),
             lossFt: fieldValue(form, 'LossFt'),
             distanceUpMi: fieldValue(form, 'UpMi'),
@@ -142,8 +173,14 @@
             pointFt: fieldValue(form, 'PointFt'),
             quality: fieldValue(form, 'AscentQuality'),
             gear: checkedList(form, 'GearCheckBoxList'),
-            companions: { registered: [], others: fieldValue(form, 'OthersText') },
-            weather: { precip: selectedText(form, 'PrecipDD'), temperature: null },
+            companions: readCompanions(form),
+            weather: {
+                precip: selectedText(form, 'PrecipDD'),
+                temperature: selectedText(form, 'TempDD'),
+                wind: selectedText(form, 'WindDD'),
+                visibility: selectedText(form, 'VisDD'),
+                description: fieldValue(form, 'WeatherText'),
+            },
         };
 
         const snapshot = {

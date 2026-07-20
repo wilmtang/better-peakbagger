@@ -23,6 +23,8 @@ const baseSnapshot = () => ({
         suffix: '',
         type: 'successful-summit',
         route: 'Disappointment Cleaver',
+        routeDown: 'Emmons Glacier',
+        externalUrl: 'https://example.com/trip',
         gainFt: '9000', lossFt: '9000',
         distanceUpMi: '8.0', distanceDnMi: '8.0',
         extraGainFt: '300', extraLossFt: '300',
@@ -31,7 +33,7 @@ const baseSnapshot = () => ({
         quality: '9',
         gear: ['Ice Axe', 'Crampons'],
         companions: { registered: [{ id: 42, name: 'Ada' }], others: 'Rope team' },
-        weather: { precip: 'None', temperature: '28' },
+        weather: { precip: 'None', temperature: 'Cold', wind: 'Breezy', visibility: 'Clear', description: 'Clouds lifted' },
     },
     peak: { id: 2296, name: 'Mount Rainier', elevationFt: '14411', location: 'Washington, USA' },
     report: { markdown: '**Great climb**' },
@@ -119,9 +121,13 @@ test('ascent.json coerces units and carries identity, peak, and provenance', () 
     assert.equal(json.ascent.gainFt, 9000);        // "9000" → 9000
     assert.equal(json.ascent.distanceUpMi, 8);      // "8.0" → 8
     assert.equal(json.ascent.quality, 9);
+    assert.equal(json.ascent.routeDown, 'Emmons Glacier');
+    assert.equal(json.ascent.externalUrl, 'https://example.com/trip');
     assert.deepEqual(json.ascent.gear, ['Ice Axe', 'Crampons']);
     assert.deepEqual(json.ascent.companions, { registered: [{ name: 'Ada', id: 42 }], others: 'Rope team' });
-    assert.deepEqual(json.ascent.weather, { precip: 'None', temperature: 28 });
+    assert.deepEqual(json.ascent.weather, {
+        precip: 'None', temperature: 'Cold', wind: 'Breezy', visibility: 'Clear', description: 'Clouds lifted',
+    });
     assert.deepEqual(json.peak, {
         id: 2296,
         url: 'https://peakbagger.com/peak.aspx?pid=2296',
@@ -153,14 +159,14 @@ test('blank and unparseable fields are omitted, never invented', () => {
     assert.equal(json.ascent.suffix, '');
 });
 
-test('weather with only a temperature keeps precip out and temperature explicit', () => {
+test('weather labels are serialized as entered and blank weather is omitted', () => {
     const snap = baseSnapshot();
-    snap.ascent.weather = { precip: '', temperature: '14' };
-    assert.deepEqual(Backup.buildAscentJson(snap).ascent.weather, { temperature: 14 });
+    snap.ascent.weather = { precip: '', temperature: 'Frigid' };
+    assert.deepEqual(Backup.buildAscentJson(snap).ascent.weather, { temperature: 'Frigid' });
 
-    const noTemp = baseSnapshot();
-    noTemp.ascent.weather = { precip: 'Snow', temperature: '' };
-    assert.deepEqual(Backup.buildAscentJson(noTemp).ascent.weather, { precip: 'Snow', temperature: null });
+    const descriptionOnly = baseSnapshot();
+    descriptionOnly.ascent.weather = { description: 'Changing conditions' };
+    assert.deepEqual(Backup.buildAscentJson(descriptionOnly).ascent.weather, { description: 'Changing conditions' });
 });
 
 test('a partial date serializes to the known components and undated to null', () => {
