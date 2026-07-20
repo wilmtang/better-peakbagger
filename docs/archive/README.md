@@ -39,3 +39,7 @@ living docs in [`docs/`](../).
   completed root-cause and fix for the "repository changed" pause: the GitHub
   client now sets `cache: 'no-store'`, folded into the living
   [pipeline design](../profile-backup-pipeline.md).
+- [Profile backup GPS-track endpoint rename fix](profile-backup-gpx-endpoint.md) —
+  completed root-cause and fix for the "Peakbagger returned HTTP 200" failures:
+  the profile backup now fetches tracks from `GPXFile.aspx`, with honest failure
+  reasons, folded into the living [pipeline design](../profile-backup-pipeline.md).
