@@ -134,6 +134,10 @@ or send coordinates to a timezone service. See
 
 - `src/gpx-analyzer.js`: ascent GPX analysis, chart, and map synchronization.
 - `src/ascent-filter.js`: PeakAscents filtering and in-DOM sorting.
+- `src/profile-backup.js`: the owner-only ClimbListC profile-backup panel and
+  long-running queue. `src/profile-backup-core.js` owns its pure list parser,
+  repository diff, response classifier, and pause/retry state machine. The tab,
+  not the MV3 worker, owns the multi-minute loop.
 - `src/ascent-draft.js`: validated draft filling and exactly-once Preview.
 - `src/report-markup.js`: allowlisted bracket, editor-DOM, and Markdown
   conversions.
@@ -156,7 +160,9 @@ or send coordinates to a timezone service. See
   in-progress device authorization in `storage.session` and advances it one
   interval-gated request per options-page status message, so worker suspension
   cannot lose the displayed code. The GitHub backup design lives in
-  [github-ascent-backup.md](github-ascent-backup.md).
+  [github-ascent-backup.md](github-ascent-backup.md); full-profile backfill and
+  its repository-as-checkpoint model are documented in
+  [full-profile-backup.md](plans/full-profile-backup.md).
 
 Extend the owning surface rather than adding cross-feature globals. The trip
 report format and safety contract are documented in
@@ -183,6 +189,8 @@ remain in the bounded cache.
 Freshness gates reject expired jobs, drafts, and backup snapshots on read. A
 five-minute alarm performs physical cleanup outside ordinary message handling;
 correctness does not depend on the alarm firing before an expired read.
+Full-profile backup intentionally stores no checkpoint: each ascent commit is
+atomic, and the next run diffs the list against `ascents/*-a<aid>` folder leaves.
 
 ## Verification boundaries
 

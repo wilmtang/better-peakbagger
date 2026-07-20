@@ -267,8 +267,10 @@ The real-extension and terrain checks are hidden/headless and use an isolated
 test profile. They establish browser loading, DOM behavior, and (for terrain)
 the reported WebGL renderer; they do not establish browser-chrome focus,
 window placement, permission-prompt appearance, or live Garmin/Strava DOM and
-export behavior. Live provider verification remains a minimal manual release
-check in both browser families.
+export behavior. The full-profile suites script list/edit/GPX responses and
+GitHub commits; they cannot prove live Peakbagger challenge markers or GitHub
+session behavior. Live provider and profile-backup verification therefore
+remains a minimal, rate-limited manual release check in both browser families.
 
 The planned Firefox runtime gate, cross-browser smoke matrix, packaged-build
 execution, and native capture release check are specified in the

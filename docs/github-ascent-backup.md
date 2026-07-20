@@ -1,6 +1,7 @@
 # GitHub ascent backup: design and execution plan
 
-Status: implemented. Steps 1–10 have landed, and the automated release checks
+Status: implemented, including full-profile backfill. Steps 1–10 have landed,
+and the automated release checks
 (`npm test`, `npm run lint:js`, `npm run verify:extension`, `web-ext lint`)
 pass. Step 11's live
 verification — a real device-flow authorization and installation against the
@@ -63,6 +64,15 @@ after save", performs the same push without the click, with the same visible
 success/failure state. It requires a fresh, precise save-time snapshot; merely
 revisiting an old ascent falls back to the manual button without pushing.
 
+**Full profile.** On the signed-in climber's own **My Ascents** page, **Back
+up all ascents** reads the complete all-years index, skips ascent ids already
+represented by an `ascents/*-a<aid>` folder, and commits each missing ascent.
+The page tab owns the paced queue and must remain open; it can be paused or
+cancelled, and a later run resumes from the repository diff without local
+checkpoint state. A Peakbagger challenge pauses before the next request and
+hands the human check to a normal tab. **Refresh all** has an explicit
+confirmation and re-syncs every ascent through the same Update path.
+
 ## Repository layout
 
 ```
@@ -100,15 +110,26 @@ versioned from the start:
     "suffix": "",             // Peakbagger's same-day alphabetical suffix
     "type": "successful-summit",
     "route": "Disappointment Cleaver",
+    "routeDown": "Emmons Glacier",
+    "externalUrl": "https://example.com/trip-report",
     "gainFt": 9000, "lossFt": 9000,
     "distanceUpMi": 8.0, "distanceDnMi": 8.0,
     "extraGainFt": 300, "extraLossFt": 300,
     "timeUp": "7:30", "timeDn": "4:15", "nightsOut": 1,
     "startFt": 5400, "endFt": 5400, "pointFt": 14411,
     "gear": ["Ice Axe", "Crampons"],
-    "companions": { "registered": [], "others": "" },
+    "companions": {
+      "registered": [{ "id": 42, "name": "Ada" }],
+      "others": "Sample Hiking Club"
+    },
     "quality": 9,
-    "weather": { "precip": "None", "temperature": null }
+    "weather": {
+      "precip": "No Precipitation",
+      "temperature": "Cold",
+      "wind": "Breezy",
+      "visibility": "Clear",
+      "description": "Clouds lifted at noon"
+    }
   },
   "peak": {
     "id": 2296,
@@ -126,9 +147,11 @@ versioned from the start:
 
 Field values come from the save-time form snapshot (names as in the
 `ascentedit.aspx` form: `DateText`, `GainFt`, `UpMi`/`DnMi`, `GearCheckBoxList`,
-`BuddyList`, `OthersText`, `AscentQuality`, `PrecipDD`, …), normalized into the
-units-explicit keys above. Fields left blank are omitted or `null`, never
-invented.
+`OthersTable`, `AscentQuality`, `PrecipDD`, …), normalized into the
+units-explicit keys above. `OthersText` is deliberately ignored because it is
+only the companion autocomplete input; committed companions come from
+`OthersTable`. Fields left blank and zero-valued dropdown placeholders are
+omitted, never invented.
 
 ### `report.md`
 
@@ -161,6 +184,13 @@ background worker
   → re-validate sender tab + snapshot identity (same discipline as drafts)
   → build folder payload via pure src/github-backup.js
   → push one commit via the GitHub client; return commit URL or typed error
+
+ClimbListC.aspx (isolated world, owner only)
+  → parse or fetch the complete all-years ascent index
+  → worker lists existing ascents/ folder leaves (token never leaves worker)
+  → tab fetches each owned AscentEdit.aspx form and stored GPX, sequentially
+  → worker receives one GITHUB_BACKUP_PROFILE_ASCENT snapshot at a time
+  → same payload builder and atomic Git Data commit path as per-save backup
 ```
 
 Notes:

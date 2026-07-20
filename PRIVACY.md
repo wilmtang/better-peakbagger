@@ -135,10 +135,17 @@ save; the extension never clicks a Peakbagger Save control.
   not the raw provider GPX, which still never leaves the activity page. It goes
   only to the single GitHub repository the user granted, over the GitHub API.
 - **When it leaves:** only on the user's explicit **Back up to GitHub** click,
-  or — if the user separately turns on automatic backup — after each save. No
-  ascent is transmitted without one of those opt-ins.
+  an explicit **Back up all ascents** or confirmed **Refresh all** run from the
+  user's own ascent list, or — if the user separately turns on automatic
+  backup — after each save. During a profile run, the extension reads each
+  owned ascent's edit form and stored GPX from Peakbagger in the signed-in tab,
+  sends one ascent at a time to GitHub, and retains no separate progress record.
+  Existing repository folders are the resume checkpoint. No ascent is
+  transmitted without one of those opt-ins.
 - **Ownership:** the backup affordance appears only on ascents the signed-in
-  climber owns; it fails closed otherwise.
+  climber owns. Full-profile controls additionally require the signed-in
+  climber's own **My Ascents** identity and an edit affordance for every parsed
+  row; they fail closed otherwise.
 - **Authorization:** sign-in uses GitHub's device flow with only the app's
   public client id (no client secret exists). Repository scope is chosen on
   GitHub's own installation page ("Only select repositories"). The resulting
@@ -165,8 +172,8 @@ save; the extension never clicks a Peakbagger Save control.
   follows their corresponding summit link.
 - **GitHub** receives ascent backups (fields, Markdown trip report, and
   Peakbagger's stored GPS track) only after the user enables GitHub backup,
-  connects a repository, and either clicks Back up or opts into automatic
-  backup. Data goes only to the user-chosen repository.
+  connects a repository, and clicks Back up, starts a profile backup/refresh,
+  or opts into automatic backup. Data goes only to the user-chosen repository.
 
 Better Peakbagger packages all extension code and libraries locally. A YouTube
 player is remote page content isolated in YouTube's cross-origin iframe; it is

@@ -1,6 +1,9 @@
 # Full profile backup: design
 
-Status: investigated, design agreed in conversation; not yet implemented.
+Status: implemented in focused commits `c986662`, `ba1de43`, `1cd7522`,
+`66acdca`, and `14a1a24`. Fixture, queue, UI, and built-worker coverage is
+automated. A real, rate-limited scratch-repository run remains a manual
+pre-release check because it requires the user's Peakbagger and GitHub sessions.
 
 The GitHub ascent backup (docs/github-ascent-backup.md) fires only on a fresh
 save: the edit-page flush hook snapshots the form, and the saved ascent page
@@ -248,19 +251,27 @@ extensions (new weather labels, routeDown, externalUrl). Additive keys keep
 
 ## Execution steps (each one focused commit)
 
-1. Snapshot completeness: `TempDD`/`WindDD`/`VisDD`/`WeatherText`,
-   `#OthersTable` companions, `RouteDn`, `URLTB`; extend the fixture with a
-   companions case; extend `github-backup.js` serialization + tests.
-2. Pure list-page parser (`ClimbListC.aspx` rows → {aid, pid, date, hasGpx,
+1. **Done.** Snapshot completeness: `TempDD`/`WindDD`/`VisDD`/`WeatherText`,
+   `#OthersTable` companions, `RouteDn`, `URLTB`; extend the fixture-based test
+   with masked synthetic companion rows; extend `github-backup.js`
+   serialization + tests.
+2. **Done.** Pure list-page parser (`ClimbListC.aspx` rows → {aid, pid, date, hasGpx,
    trWords}) against a masked list fixture, plus work-list diffing against
    existing folder leaves.
-3. Backfill runner in the list-page content script: queue, pacing, pause/
+3. **Done.** Backfill runner in the list-page content script: queue, pacing, pause/
    cancel, fail-closed per-ascent gates, and the three-class failure handling
    (challenge → pause/hand-off/resume, transient → backoff, wrong content →
    per-ascent failure), with the classifier unit tests and scripted-fetch/
    injected-clock runner tests from the Automated coverage section; worker
    handler reusing the existing backup path for provenance-stamped commits.
-4. Progress panel UI, light/dark, both browsers.
-5. Refresh-all mode.
-6. Release verification: fixtures + built-worker integration for the runner;
-   one minimal rate-limited live run against a scratch repo.
+4. **Done.** Progress panel UI with explicit light/dark styling and fixture
+   visual inspection. Real-browser extension loading is covered by
+   `npm run verify:extension`; final Firefox/manual UX smoke remains part of
+   release verification.
+5. **Done.** Refresh-all mode with an explicit confirmation before creating an
+   update commit for every ascent.
+6. **Automated portion done; manual live check pending.** Fixture parsing,
+   scripted queue behavior, built content surface, and built-worker Git Data
+   integration are covered. Before release, run one minimal, rate-limited live
+   backfill against a scratch repository in both browser families; do not try
+   to provoke or automate a Cloudflare challenge.
