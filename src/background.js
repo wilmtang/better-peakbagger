@@ -210,6 +210,91 @@ import { githubClient as GithubClient } from './github-client.js';
         return results[0].result;
     };
 
+    // Shared post-capture pipeline: sanitize → corridor lookup → detect →
+    // reduce → serialize → derive. Used by activity capture and the local-file
+    // GPX process flow so drafted values can never diverge between the two.
+    // Returns a discriminated result; job bookkeeping stays with the caller.
+    // boundPid names the peak the calling page is bound to. When the track
+    // encounters it below the visible-match bar, the result carries an
+    // explicit closest-approach fallback ("Use ⟨peak⟩ anyway") instead of
+    // silently promoting a weak match — detection itself stays fail-closed.
+    const analyzeTrack = async ({ segments, waypoints, metadata, capturePreferences, boundPid = null, onPhase = async () => {} }) => {
+        const sanitized = Core.sanitizeTrack(segments);
+        const cleanWaypoints = capturePreferences.retainWaypoints
+            ? Core.sanitizeWaypoints(waypoints)
+            : [];
+        const pointCount = sanitized.segments.reduce((sum, segment) => sum + segment.length, 0);
+        if (pointCount === 0) {
+            return { status: 'no-gps', message: 'The exported activity contains no usable route coordinates.' };
+        }
+        if (pointCount < 2) throw new Error('The exported GPX contains fewer than two usable track points.');
+        if (sanitized.segments.length > Core.MAX_TRACK_SEGMENTS) {
+            throw new Error(`The sanitized track has ${sanitized.segments.length} segments; Peakbagger allows 50.`);
+        }
+
+        const boxes = Core.buildQueryBoxes(sanitized.segments);
+        if (!boxes.length) throw new Error('No valid path remained for summit lookup.');
+        await onPhase('finding-peaks', { queryCount: boxes.length });
+        const peaks = await fetchPeaks(boxes);
+        const allMatches = Core.detectPeaks(sanitized.segments, peaks, sanitized.quality.score);
+        const visibleMatches = allMatches.filter(match => match.classification === 'strong' || match.classification === 'probable');
+        const boundBelowBar = boundPid === null ? null
+            : allMatches.find(match => match.id === Number(boundPid)
+                && !visibleMatches.some(visible => visible.id === match.id)) || null;
+        if (!visibleMatches.length && !boundBelowBar) {
+            return {
+                status: 'no-matches',
+                trackSummary: { originalPointCount: pointCount, removedPrivateData: true }
+            };
+        }
+        const trackPointLimit = Core.MAX_UPLOAD_POINTS - cleanWaypoints.length;
+        if (trackPointLimit < 2) {
+            const error = new Error(`The GPX has ${cleanWaypoints.length} waypoints, leaving no room for a usable track within Peakbagger’s 3,000-point limit.`);
+            error.code = 'too-many-waypoints';
+            throw error;
+        }
+        const anchorMatches = boundBelowBar ? [...visibleMatches, boundBelowBar] : visibleMatches;
+        const reduced = Core.reduceTrack(sanitized.segments, anchorMatches, trackPointLimit);
+        const uploadGpx = Core.serializeUploadGpx(reduced.segments, cleanWaypoints);
+        const matches = visibleMatches.map(match => ({
+            ...Core.publicMatch(match),
+            draftFields: Core.calculateDraftFields(sanitized.segments, match, metadata)
+        }));
+        const rawTripName = typeof metadata?.title === 'string' ? metadata.title : '';
+        const tripName = capturePreferences.fillTripInfo && matches.length > 1
+            ? rawTripName.replace(/\s+/g, ' ').trim().slice(0, 200)
+            : '';
+        const nightsOut = Core.calculateNightsOut(sanitized.segments, metadata);
+        const dayStats = capturePreferences.fillAscentDetails
+            ? Core.calculateDayStats(sanitized.segments, metadata)
+            : [];
+
+        const boundFallback = boundBelowBar ? {
+            ...Core.publicMatch(boundBelowBar),
+            selected: false,
+            closestApproachM: Math.round(boundBelowBar.encounter.distanceM),
+            draftFields: Core.calculateDraftFields(sanitized.segments, boundBelowBar, metadata)
+        } : null;
+
+        return {
+            status: 'ready',
+            matches,
+            boundFallback,
+            trackSummary: {
+                originalPointCount: reduced.originalPointCount,
+                retainedPointCount: reduced.retainedPointCount,
+                retainedWaypointCount: cleanWaypoints.length,
+                maxDeviationM: reduced.maxDeviationM,
+                removedPrivateData: true,
+                breakCounts: sanitized.quality
+            },
+            tripName,
+            nightsOut,
+            dayStats,
+            uploadGpx
+        };
+    };
+
     const processCapture = async (tabId, expectedUrl, capturePreferences) => {
         try {
             const tab = await ext.tabs.get(tabId);
@@ -261,78 +346,42 @@ import { githubClient as GithubClient } from './github-client.js';
             await setBadge(tabId, '');
 
             await updateJob(tabId, { phase: 'analyzing' });
-            const sanitized = Core.sanitizeTrack(capture.segments);
-            const waypoints = capturePreferences.retainWaypoints
-                ? Core.sanitizeWaypoints(capture.waypoints)
-                : [];
-            const pointCount = sanitized.segments.reduce((sum, segment) => sum + segment.length, 0);
-            if (pointCount === 0) {
-                await finishWithoutGps(tabId, 'The exported activity contains no usable route coordinates.');
+            const analysis = await analyzeTrack({
+                segments: capture.segments,
+                waypoints: capture.waypoints,
+                metadata: capture.metadata,
+                capturePreferences,
+                onPhase: (phase, extra) => updateJob(tabId, { phase, ...extra })
+            });
+            if (analysis.status === 'no-gps') {
+                await finishWithoutGps(tabId, analysis.message);
                 return;
             }
-            if (pointCount < 2) throw new Error('The exported GPX contains fewer than two usable track points.');
-            if (sanitized.segments.length > Core.MAX_TRACK_SEGMENTS) {
-                throw new Error(`The sanitized track has ${sanitized.segments.length} segments; Peakbagger allows 50.`);
-            }
-
-            const boxes = Core.buildQueryBoxes(sanitized.segments);
-            if (!boxes.length) throw new Error('No valid path remained for summit lookup.');
-            await updateJob(tabId, { phase: 'finding-peaks', queryCount: boxes.length });
-            const peaks = await fetchPeaks(boxes);
-            const allMatches = Core.detectPeaks(sanitized.segments, peaks, sanitized.quality.score);
-            const visibleMatches = allMatches.filter(match => match.classification === 'strong' || match.classification === 'probable');
-            if (!visibleMatches.length) {
+            if (analysis.status === 'no-matches') {
                 await updateJob(tabId, {
                     phase: 'no-matches',
                     matches: [],
                     selectedIds: [],
-                    trackSummary: { originalPointCount: pointCount, removedPrivateData: true },
+                    trackSummary: analysis.trackSummary,
                     uploadGpx: null,
                     error: null,
                     expiresAt: now() + JOB_TTL_MS
                 });
                 return;
             }
-            const trackPointLimit = Core.MAX_UPLOAD_POINTS - waypoints.length;
-            if (trackPointLimit < 2) {
-                const error = new Error(`The GPX has ${waypoints.length} waypoints, leaving no room for a usable track within Peakbagger’s 3,000-point limit.`);
-                error.code = 'too-many-waypoints';
-                throw error;
-            }
-            const reduced = Core.reduceTrack(sanitized.segments, visibleMatches, trackPointLimit);
-            const uploadGpx = Core.serializeUploadGpx(reduced.segments, waypoints);
-            const matches = visibleMatches.map(match => ({
-                ...Core.publicMatch(match),
-                draftFields: Core.calculateDraftFields(sanitized.segments, match, capture.metadata)
-            }));
-            const rawTripName = typeof capture.metadata?.title === 'string' ? capture.metadata.title : '';
-            const tripName = capturePreferences.fillTripInfo && matches.length > 1
-                ? rawTripName.replace(/\s+/g, ' ').trim().slice(0, 200)
-                : '';
-            const nightsOut = Core.calculateNightsOut(sanitized.segments, capture.metadata);
-            const dayStats = capturePreferences.fillAscentDetails
-                ? Core.calculateDayStats(sanitized.segments, capture.metadata)
-                : [];
 
             await updateJob(tabId, {
-                phase: matches.length ? 'ready' : 'no-matches',
+                phase: 'ready',
                 cid,
                 provider: capture.provider,
                 activityId: capture.activityId,
-                matches,
-                selectedIds: matches.filter(match => match.selected).map(match => match.id),
-                trackSummary: {
-                    originalPointCount: reduced.originalPointCount,
-                    retainedPointCount: reduced.retainedPointCount,
-                    retainedWaypointCount: waypoints.length,
-                    maxDeviationM: reduced.maxDeviationM,
-                    removedPrivateData: true,
-                    breakCounts: sanitized.quality
-                },
-                tripName,
-                nightsOut,
-                dayStats,
-                uploadGpx,
+                matches: analysis.matches,
+                selectedIds: analysis.matches.filter(match => match.selected).map(match => match.id),
+                trackSummary: analysis.trackSummary,
+                tripName: analysis.tripName,
+                nightsOut: analysis.nightsOut,
+                dayStats: analysis.dayStats,
+                uploadGpx: analysis.uploadGpx,
                 error: null,
                 expiresAt: now() + JOB_TTL_MS
             });
@@ -543,6 +592,257 @@ import { githubClient as GithubClient } from './github-client.js';
         return { tabIds, groupWarning, reused: false };
     };
 
+    // ---- Local-file GPX processing (ascentedit.aspx upload field) ----------
+    //
+    // The capture pipeline with a different entry point: the ascent form's own
+    // content script parses the chosen file on the page and sends only the
+    // allowlisted analysis fields here. Jobs share the capture job map, TTL,
+    // cleanup alarm, and the DRAFT_READY/DRAFT_PROCEED handshake; the current
+    // tab serves as its own draft tab after the same identity checks.
+
+    const uploadPageIdentity = sender => {
+        if (!isPeakbaggerSender(sender) || !Number.isInteger(sender.tab?.id)) return null;
+        let url;
+        try {
+            url = new URL(sender.url);
+        } catch {
+            return null;
+        }
+        if (!/\/climber\/ascentedit\.aspx$/i.test(url.pathname)) return null;
+        const pid = Number.parseInt(url.searchParams.get('pid'), 10);
+        const cid = url.searchParams.get('cid');
+        return {
+            tabId: sender.tab.id,
+            windowId: sender.tab.windowId,
+            pid: Number.isInteger(pid) ? pid : null,
+            cid: cid || null
+        };
+    };
+
+    const uploadMatchSummary = match => ({
+        id: match.id,
+        name: match.name,
+        location: match.location,
+        confidence: match.confidence,
+        classification: match.classification,
+        selected: match.selected,
+        date: match.draftFields?.date || '',
+        time: match.draftFields?.time || '',
+        upDistanceM: Number.isFinite(match.draftFields?.upDistanceM) ? match.draftFields.upDistanceM : null
+    });
+
+    const startGpxProcess = async (message, sender) => {
+        const page = uploadPageIdentity(sender);
+        if (!page) {
+            return { phase: 'error', error: { code: 'forbidden', message: 'GPX processing is only available on a Peakbagger ascent form.' } };
+        }
+        const tabId = page.tabId;
+        const capturePreferences = await readCapturePreferences();
+        const cid = await peakbaggerLogin();
+        if (!cid) {
+            return { phase: 'error', error: { code: 'peakbagger-signed-out', message: 'Your Peakbagger login could not be verified. Confirm you’re signed in, then try again.' } };
+        }
+        if (page.cid && String(page.cid) !== String(cid)) {
+            return { phase: 'error', error: { code: 'identity-mismatch', message: 'This ascent form belongs to a different Peakbagger account.' } };
+        }
+
+        // Re-picking a file supersedes any earlier job for this tab (same
+        // tab-keyed map rule capture uses); late results from a superseded run
+        // must never overwrite the newer job.
+        const job = {
+            id: makeId(),
+            sourceTabId: tabId,
+            provider: 'upload',
+            activityId: null,
+            boundPid: page.pid,
+            cid,
+            phase: 'starting',
+            matches: [],
+            selectedIds: [],
+            capturePreferences,
+            createdAt: now(),
+            updatedAt: now(),
+            expiresAt: now() + JOB_TTL_MS,
+            error: null
+        };
+        await mutateMap(JOBS_KEY, map => { map[tabId] = job; });
+        const finish = patch => mutateMap(JOBS_KEY, map => {
+            if (!map[tabId] || map[tabId].id !== job.id) return null;
+            map[tabId] = { ...map[tabId], ...patch, updatedAt: now(), expiresAt: now() + JOB_TTL_MS };
+            return map[tabId];
+        });
+
+        try {
+            const metadata = {
+                utcOffsetMinutes: Number.isFinite(message.utcOffsetMinutes) ? Number(message.utcOffsetMinutes) : null,
+                title: capturePreferences.fillTripInfo && typeof message.trackName === 'string' ? message.trackName : ''
+            };
+            const analysis = await analyzeTrack({
+                segments: Array.isArray(message.segments) ? message.segments : [],
+                waypoints: capturePreferences.retainWaypoints && Array.isArray(message.waypoints) ? message.waypoints : [],
+                metadata,
+                capturePreferences,
+                boundPid: page.pid
+            });
+            if (analysis.status === 'no-gps') {
+                await finish({ phase: 'no-gps', uploadGpx: null, message: analysis.message });
+                return { phase: 'no-gps', message: analysis.message };
+            }
+            if (analysis.status === 'no-matches') {
+                await finish({ phase: 'no-matches', trackSummary: analysis.trackSummary, uploadGpx: null });
+                return { phase: 'no-matches', boundPid: page.pid };
+            }
+            const updated = await finish({
+                phase: 'ready',
+                matches: analysis.matches,
+                boundFallback: analysis.boundFallback,
+                selectedIds: analysis.matches.filter(match => match.selected).map(match => match.id),
+                trackSummary: analysis.trackSummary,
+                tripName: analysis.tripName,
+                nightsOut: analysis.nightsOut,
+                dayStats: analysis.dayStats,
+                uploadGpx: analysis.uploadGpx
+            });
+            if (!updated) {
+                return { phase: 'error', error: { code: 'superseded', message: 'A newer GPX was chosen for this form; this result was discarded.' } };
+            }
+            return {
+                phase: 'ready',
+                jobId: job.id,
+                boundPid: page.pid,
+                matches: analysis.matches.map(uploadMatchSummary),
+                boundFallback: analysis.boundFallback ? {
+                    ...uploadMatchSummary(analysis.boundFallback),
+                    closestApproachM: analysis.boundFallback.closestApproachM
+                } : null
+            };
+        } catch (error) {
+            const failure = { code: error.code || 'process-failed', message: error.message || 'The GPX could not be processed.' };
+            await finish({ phase: 'error', error: failure });
+            return { phase: 'error', error: failure };
+        }
+    };
+
+    const applyGpxProcess = async (message, sender) => {
+        const page = uploadPageIdentity(sender);
+        if (!page) {
+            return { ok: false, error: { code: 'forbidden', message: 'GPX processing is only available on a Peakbagger ascent form.' } };
+        }
+        const tabId = page.tabId;
+        const jobs = await readMap(JOBS_KEY);
+        const job = jobs[tabId];
+        if (!isFresh(job) || job.provider !== 'upload' || job.id !== message.jobId
+            || job.phase !== 'ready' || !job.uploadGpx) {
+            return { ok: false, error: { code: 'job-expired', message: 'The processed GPX is no longer available. Process the file again.' } };
+        }
+        // The page's URL cid, when present, must match the job's verified
+        // login; a page without one relies on the login check alone.
+        if (page.cid !== null && String(page.cid) !== String(job.cid)) {
+            return { ok: false, error: { code: 'identity-mismatch', message: 'This ascent form belongs to a different Peakbagger account.' } };
+        }
+        const byId = new Map(job.matches.map(match => [String(match.id), match]));
+        if (job.boundFallback) byId.set(String(job.boundFallback.id), job.boundFallback);
+        const selectedIds = [...new Set((message.selectedIds || []).map(String))].filter(id => byId.has(id));
+        if (!selectedIds.length) {
+            return { ok: false, error: { code: 'no-selection', message: 'Select at least one detected peak.' } };
+        }
+        // The primary selection fills the current page. A bound page may fill
+        // itself only for its own peak; an unbound page becomes the primary's
+        // peak by navigation after its draft is registered.
+        const primaryId = message.primaryId !== null && message.primaryId !== undefined
+            && selectedIds.includes(String(message.primaryId)) ? String(message.primaryId) : null;
+        if (primaryId && page.pid !== null && primaryId !== String(page.pid)) {
+            return { ok: false, error: { code: 'identity-mismatch', message: 'This form is bound to a different peak.' } };
+        }
+
+        const selectedMatches = Core.assignDraftSuffixes(selectedIds.map(id => byId.get(id)));
+        const trackOrdered = selectedMatches.map((match, index) => ({ match, index }))
+            .sort((left, right) => {
+                const distance = left.match.draftFields.upDistanceM - right.match.draftFields.upDistanceM;
+                return Number.isFinite(distance) && distance !== 0 ? distance : left.index - right.index;
+            })
+            .map(({ match }) => match);
+        const sequenceById = new Map(trackOrdered.map((match, index) => [String(match.id), index + 1]));
+        const fallbackTripName = trackOrdered.map(match => match.name).join(' / ').slice(0, 200);
+        const useTripInfo = job.capturePreferences?.fillTripInfo && selectedMatches.length > 1;
+        const useWildernessNights = job.capturePreferences?.fillWildernessNights
+            && Number.isInteger(job.nightsOut) && job.nightsOut > 0;
+        const primaryMatch = primaryId ? selectedMatches.find(match => String(match.id) === primaryId) : null;
+        const siblings = selectedMatches.filter(match => match !== primaryMatch)
+            .sort((a, b) => b.confidence - a.confidence);
+
+        const makeDraft = (match, draftTabId, previewOrder, focusOnReady) => ({
+            tabId: draftTabId,
+            jobId: job.id,
+            sourceTabId: tabId,
+            pid: match.id,
+            cid: job.cid,
+            classification: match.classification,
+            confidence: match.confidence,
+            suffix: match.draftFields.suffix,
+            tripInfo: useTripInfo ? {
+                sequence: sequenceById.get(String(match.id)),
+                name: job.tripName || fallbackTripName,
+                nightsOut: Number.isInteger(job.nightsOut) ? job.nightsOut : null
+            } : null,
+            wildernessNightsOut: useWildernessNights ? job.nightsOut : null,
+            previewOrder,
+            previewStarted: false,
+            complete: false,
+            dayStatsPending: false,
+            focusOnReady,
+            expiresAt: now() + JOB_TTL_MS
+        });
+
+        // Every draft is registered before any tab changes URL, so a fast
+        // page load can never race its own identity checks.
+        let order = 0;
+        if (primaryMatch) {
+            const currentDraft = makeDraft(primaryMatch, tabId, order++, false);
+            await mutateMap(DRAFTS_KEY, drafts => { drafts[tabId] = currentDraft; });
+        }
+        const sourceTab = await ext.tabs.get(tabId);
+        const created = [];
+        for (const match of siblings) {
+            const tab = await ext.tabs.create({ url: 'about:blank', active: false, windowId: sourceTab.windowId });
+            const draft = makeDraft(match, tab.id, order++, !primaryMatch && created.length === 0);
+            await mutateMap(DRAFTS_KEY, drafts => { drafts[tab.id] = draft; });
+            created.push(draft);
+        }
+
+        let groupWarning = null;
+        if (created.length) {
+            try {
+                const groupId = await ext.tabs.group({
+                    tabIds: created.map(draft => draft.tabId),
+                    createProperties: { windowId: sourceTab.windowId }
+                });
+                await ext.tabGroups.update(groupId, { title: 'Peak Drafts', color: 'green', collapsed: false });
+            } catch (error) {
+                groupWarning = `Drafts opened, but tab grouping failed: ${error.message}`;
+            }
+        }
+        const tabIds = [...(primaryMatch ? [tabId] : []), ...created.map(draft => draft.tabId)];
+        await updateJob(tabId, { phase: 'opened', openedDraftTabIds: tabIds, groupWarning });
+        await Promise.all(created.map(draft => ext.tabs.update(draft.tabId, {
+            url: `https://peakbagger.com/climber/ascentedit.aspx?pid=${draft.pid}&cid=${draft.cid}`,
+            active: false
+        })));
+        if (primaryMatch) {
+            if (page.pid !== null) {
+                await notifyDraftToProceed({ tabId });
+            } else {
+                // Unbound page: peak selection on the native form is a
+                // postback, so the standard draft delivery fills the page
+                // this navigation reloads.
+                await ext.tabs.update(tabId, {
+                    url: `https://peakbagger.com/climber/ascentedit.aspx?pid=${primaryMatch.id}&cid=${job.cid}`
+                });
+            }
+        }
+        return { ok: true, tabIds, groupWarning };
+    };
+
     const validateDraftPage = (draft, message) => String(draft.pid) === String(message.pid)
         && String(draft.cid) === String(message.cid);
 
@@ -586,7 +886,10 @@ import { githubClient as GithubClient } from './github-client.js';
         // expires or closes.
         const job = Object.values(jobs).find(candidate => candidate.id === draft.jobId);
         if (!job) return { action: 'error', message: 'The private draft data expired. Capture the activity again.' };
-        const match = job.matches.find(candidate => candidate.id === draft.pid);
+        const match = job.matches.find(candidate => candidate.id === draft.pid)
+            // An upload job's bound peak may have been drafted through the
+            // explicit closest-approach override rather than a visible match.
+            || (job.boundFallback && job.boundFallback.id === draft.pid ? job.boundFallback : null);
         if (!match) return { action: 'error', message: 'The selected peak is no longer available.' };
 
         if (draft.complete) {
@@ -1088,8 +1391,12 @@ import { githubClient as GithubClient } from './github-client.js';
             case 'CAPTURE_START': return startCapture(message);
             case 'CAPTURE_STATUS': {
                 const jobs = await readMap(JOBS_KEY);
-                return publicJob(jobs[Number(message.tabId)] || null);
+                const job = jobs[Number(message.tabId)] || null;
+                // Local-file GPX jobs belong to the ascent form, not the popup.
+                return job && job.provider !== 'upload' ? publicJob(job) : null;
             }
+            case 'GPX_PROCESS_START': return startGpxProcess(message, sender);
+            case 'GPX_PROCESS_APPLY': return applyGpxProcess(message, sender);
             case 'CAPTURE_CANCEL': return cancelCapture(message);
             case 'CAPTURE_CLEAR': return clearCapture(message);
             case 'CAPTURE_SELECTION': return publicJob(await updateSelection(message));

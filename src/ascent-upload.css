@@ -1,0 +1,243 @@
+/* Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ *
+ * The ascent-editor ✦ Process button and its inline status text. The button
+ * replaces Peakbagger's native GPS Preview in place while a .gpx file is
+ * chosen: same box metrics as its native neighbors, with a quiet 1.5px
+ * conic-gradient ring that rotates on hover/focus and while processing.
+ * Dark mode keys off the extension's html[data-bpb-theme] attribute;
+ * prefers-reduced-motion disables all rotation and bloom. */
+
+@property --bpb-ring-angle {
+    syntax: '<angle>';
+    initial-value: 0deg;
+    inherits: false;
+}
+
+.bpb-native-preview-hidden { display: none !important; }
+
+.bpb-process-button {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 2px 12px;
+    margin: 0;
+    border: none;
+    border-radius: 7px;
+    background: #ffffff;
+    color: #3730a3;
+    font: 600 13px/1.6 system-ui, -apple-system, sans-serif;
+    cursor: pointer;
+    vertical-align: middle;
+    box-shadow: 0 0 8px rgba(139, 92, 246, 0.18);
+    transition: box-shadow 0.2s ease, transform 0.08s ease;
+}
+
+/* The gradient ring: a masked conic border drawn by the pseudo-element, so it
+ * never affects layout and animates by angle alone. */
+.bpb-process-button::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    padding: 1.5px;
+    pointer-events: none;
+    background: conic-gradient(from var(--bpb-ring-angle, 0deg),
+        #6366f1, #8b5cf6, #d946ef, #f59e0b, #6366f1);
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+}
+
+@keyframes bpb-process-ring {
+    to { --bpb-ring-angle: 360deg; }
+}
+
+.bpb-process-button:hover,
+.bpb-process-button:focus-visible {
+    box-shadow: 0 0 14px rgba(139, 92, 246, 0.4);
+}
+
+.bpb-process-button:hover::before,
+.bpb-process-button:focus-visible::before,
+.bpb-process-button[aria-busy='true']::before {
+    animation: bpb-process-ring 2.4s linear infinite;
+}
+
+.bpb-process-button:focus-visible {
+    outline: 2px solid #6366f1;
+    outline-offset: 2px;
+}
+
+.bpb-process-button:active:not(:disabled) { transform: scale(0.97); }
+
+.bpb-process-button:disabled { cursor: default; }
+
+.bpb-process-button[aria-busy='true'] { color: #4c1d95; }
+
+.bpb-process-glyph { font-size: 12px; line-height: 1; }
+
+.bpb-upload-status {
+    display: inline-block;
+    margin-left: 8px;
+    max-width: 46em;
+    font: 12px/1.5 system-ui, -apple-system, sans-serif;
+    vertical-align: middle;
+}
+
+.bpb-upload-status-error { color: #b42318; }
+.bpb-upload-status-info { color: #175cd3; }
+
+html[data-bpb-theme='dark'] .bpb-process-button {
+    background: #1d232b;
+    color: #c7d2fe;
+    box-shadow: 0 0 8px rgba(139, 92, 246, 0.28);
+}
+
+html[data-bpb-theme='dark'] .bpb-process-button[aria-busy='true'] { color: #ddd6fe; }
+html[data-bpb-theme='dark'] .bpb-upload-status-error { color: #f2a099; }
+html[data-bpb-theme='dark'] .bpb-upload-status-info { color: #8ab4f8; }
+
+/* Summit picker card — shown only when the track is ambiguous (several
+ * summits, or the bound peak off the track). Same visual language as the
+ * popup's match list: name, Strong/Probable chip, confidence, encounter. */
+
+.bpb-summit-card {
+    display: block;
+    box-sizing: border-box;
+    width: max-content;
+    min-width: 320px;
+    max-width: 560px;
+    margin: 8px 0;
+    padding: 12px 14px;
+    border: 1px solid #d0d5dd;
+    border-radius: 10px;
+    background: #ffffff;
+    box-shadow: 0 4px 16px rgba(16, 24, 40, 0.08);
+    font: 13px/1.5 system-ui, -apple-system, sans-serif;
+    color: #101828;
+    text-align: left;
+}
+
+.bpb-summit-card-title {
+    margin: 0 0 8px;
+    font: 600 13px/1.4 system-ui, -apple-system, sans-serif;
+    /* Peakbagger's own heading rules must not tint the card title. */
+    color: inherit;
+}
+
+.bpb-summit-note {
+    margin: 0 0 8px;
+    color: #475467;
+    font-size: 12px;
+}
+
+.bpb-summit-list {
+    list-style: none;
+    margin: 0 0 10px;
+    padding: 0;
+}
+
+.bpb-summit-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 6px;
+    border-radius: 7px;
+    cursor: pointer;
+}
+
+.bpb-summit-row:hover { background: #f9fafb; }
+
+.bpb-summit-check { margin: 0; accent-color: #6366f1; }
+
+.bpb-summit-name { font-weight: 600; }
+
+.bpb-summit-chip {
+    padding: 1px 7px;
+    border-radius: 999px;
+    border: 1px solid;
+    font: 600 11px/1.5 system-ui, -apple-system, sans-serif;
+    white-space: nowrap;
+}
+
+.bpb-summit-chip-strong { color: #067647; background: #ecfdf3; border-color: #a6f4c5; }
+.bpb-summit-chip-probable { color: #b54708; background: #fffaeb; border-color: #fedf89; }
+.bpb-summit-chip-off { color: #475467; background: #f2f4f7; border-color: #d0d5dd; }
+
+.bpb-summit-confidence { color: #475467; font-variant-numeric: tabular-nums; }
+
+.bpb-summit-meta {
+    flex: 1;
+    min-width: 0;
+    color: #667085;
+    font-size: 12px;
+    text-align: right;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.bpb-summit-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.bpb-summit-apply {
+    padding: 4px 14px;
+    border: none;
+    border-radius: 7px;
+    background: #4f46e5;
+    color: #ffffff;
+    font: 600 13px/1.6 system-ui, -apple-system, sans-serif;
+    cursor: pointer;
+}
+
+.bpb-summit-apply:hover:not(:disabled) { background: #4338ca; }
+.bpb-summit-apply:disabled { background: #e4e7ec; color: #98a2b3; cursor: default; }
+
+.bpb-summit-cancel {
+    padding: 4px 12px;
+    border: 1px solid #d0d5dd;
+    border-radius: 7px;
+    background: #ffffff;
+    color: #344054;
+    font: 600 13px/1.6 system-ui, -apple-system, sans-serif;
+    cursor: pointer;
+}
+
+.bpb-summit-cancel:hover:not(:disabled) { background: #f9fafb; }
+
+.bpb-summit-apply:focus-visible,
+.bpb-summit-cancel:focus-visible,
+.bpb-summit-check:focus-visible {
+    outline: 2px solid #6366f1;
+    outline-offset: 2px;
+}
+
+html[data-bpb-theme='dark'] .bpb-summit-card {
+    background: #1d232b;
+    border-color: #333c48;
+    color: #e5e9ef;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+}
+
+html[data-bpb-theme='dark'] .bpb-summit-row:hover { background: #232b35; }
+html[data-bpb-theme='dark'] .bpb-summit-note { color: #98a2b3; }
+html[data-bpb-theme='dark'] .bpb-summit-confidence { color: #98a2b3; }
+html[data-bpb-theme='dark'] .bpb-summit-meta { color: #8b96a5; }
+html[data-bpb-theme='dark'] .bpb-summit-chip-strong { color: #7ac78d; background: #173322; border-color: #28623c; }
+html[data-bpb-theme='dark'] .bpb-summit-chip-probable { color: #f7c66a; background: #332a18; border-color: #6b5518; }
+html[data-bpb-theme='dark'] .bpb-summit-chip-off { color: #98a2b3; background: #232b35; border-color: #3a4450; }
+html[data-bpb-theme='dark'] .bpb-summit-cancel { background: #232b35; border-color: #3a4450; color: #cfd6df; }
+html[data-bpb-theme='dark'] .bpb-summit-cancel:hover:not(:disabled) { background: #2a3340; }
+html[data-bpb-theme='dark'] .bpb-summit-apply:disabled { background: #2a3340; color: #667085; }
+
+@media (prefers-reduced-motion: reduce) {
+    .bpb-process-button { transition: none; }
+    .bpb-process-button:active:not(:disabled) { transform: none; }
+    .bpb-process-button::before { animation: none !important; }
+}

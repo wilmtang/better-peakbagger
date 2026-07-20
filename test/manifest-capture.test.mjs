@@ -43,7 +43,7 @@ test('the worker ships as one bundle for both Chrome and Firefox', () => {
     // The fail-closed coordinator is composed from these modules, in order.
     assert.deepEqual(bundleSources('background.js'),
         ['gpx-metrics.js', 'capture-core.js', 'provider-url.js', 'settings-schema.js', 'settings.js', 'github-auth.js', 'github-client.js', 'background.js']);
-    assert.deepEqual(bundleSources('provider-page.js'), ['provider-url.js', 'provider-page.js']);
+    assert.deepEqual(bundleSources('provider-page.js'), ['provider-url.js', 'gpx-parse.js', 'provider-page.js']);
     assert.deepEqual(manifest.browser_specific_settings.gecko.data_collection_permissions.required, ['locationInfo']);
 });
 
@@ -113,9 +113,12 @@ test('ascent editor integration is isolated to Peakbagger and runtime code never
     const draftEntry = contentEntry('content/ascent-editor.js');
     assert.ok(draftEntry);
     assert.ok(draftEntry.matches.every(pattern => pattern.includes('peakbagger.com/climber/')));
-    // The Markdown parser (a copied vendor script) must load before the bundle.
-    assert.deepEqual(draftEntry.js, ['vendor/marked.umd.js', 'content/ascent-editor.js']);
-    assert.deepEqual(bundleSources('content/ascent-editor.js'), ['ascent-draft.js', 'report-markup.js', 'report-editor.js']);
+    // The Markdown parser and the offline tz-lookup raster (copied vendor
+    // scripts) must load before the bundle that reads them.
+    assert.deepEqual(draftEntry.js, ['vendor/marked.umd.js', 'vendor/tz-lookup.js', 'content/ascent-editor.js']);
+    assert.deepEqual(draftEntry.css, ['css/report-editor.css', 'css/ascent-upload.css']);
+    assert.deepEqual(bundleSources('content/ascent-editor.js'),
+        ['ascent-draft.js', 'gpx-parse.js', 'settings-schema.js', 'settings.js', 'ascent-upload.js', 'report-markup.js', 'report-editor.js']);
     const runtimeSource = await Promise.all([
         'src/ascent-draft.js',
         'src/background.js',

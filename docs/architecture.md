@@ -86,6 +86,38 @@ Preview may be triggered exactly once. No extension path clicks a Peakbagger
 Save control. Cancelling capture deletes its job immediately; the transaction
 identity prevents late provider or lookup results from recreating it.
 
+### Local-file entry point (ascent-form GPX upload)
+
+The same pipeline has a second entry point on `ascentedit.aspx`. When a
+user-initiated file pick (`event.isTrusted`; the draft filler's synthetic
+change never qualifies) puts a `.gpx` in Peakbagger's GPS Track field,
+`src/ascent-upload.js` swaps the native Preview button for the extension's
+**Process** button. Processing parses the file on the page with the shared
+`src/gpx-parse.js` (the raw XML stays on the page, as with providers),
+resolves the climb's UTC offset offline from the packaged `tz-lookup` raster
+loaded ahead of the bundle, and sends only the allowlisted analysis fields to
+the worker. `GPX_PROCESS_START` verifies the Peakbagger login and the page's
+climber identity, runs the shared `analyzeTrack()` stage of `processCapture`
+under the same capture preferences, and stores a capture-shaped job in the
+same tab-keyed map (same TTL, cleanup, and supersede rules; hidden from the
+popup's status view). `GPX_PROCESS_APPLY` registers the current tab as its
+own draft tab — after the same identity checks — and hands off to the
+existing `DRAFT_READY`/`DRAFT_PROCEED` handshake, so filling, the
+privacy-validated cleaned upload replacing the chosen file, and the
+exactly-once GPS Preview are all the standard `src/ascent-draft.js` path.
+
+Multi-summit tracks follow the agreed hybrid: a single summit that is (or, on
+an unbound page, becomes) the page's peak fills immediately; several summits
+show an on-page picker card whose other selections open as confidence-ordered
+prepared draft tabs in the "Peak Drafts" group with capture's suffix and Trip
+Info parity. Every draft is registered before any tab navigates; an unbound
+page then navigates itself to the chosen peak and is filled by standard draft
+delivery. A bound peak the track only brushes (an encounter below the
+visible-match bar) surfaces as an explicit closest-approach "use anyway"
+fallback rather than a silently promoted match — detection stays fail-closed.
+The module also autofills today's date into an empty `#DateText`; a populated
+date (an existing ascent being edited) is never touched.
+
 The detailed user-facing disclosure is canonical in
 [../PRIVACY.md](../PRIVACY.md). Capture algorithms and their regression tests
 live in `src/capture-core.js` and the corresponding `test/` modules.
@@ -139,6 +171,11 @@ or send coordinates to a timezone service. See
   repository diff, response classifier, and pause/retry state machine. The tab,
   not the MV3 worker, owns the multi-minute loop.
 - `src/ascent-draft.js`: validated draft filling and exactly-once Preview.
+- `src/gpx-parse.js`: the pure GPX-text parser shared by the provider adapter
+  and the ascent-form upload flow (one parser for both entry points).
+- `src/ascent-upload.js`: ascent-form date autofill, the Process button and
+  its states, on-page parse + offline timezone resolve, the summit picker
+  card, and `GPX_PROCESS_*` messaging.
 - `src/report-markup.js`: allowlisted bracket, editor-DOM, and Markdown
   conversions.
 - `src/report-editor.js`: trip-report editing orchestration and local draft

@@ -65,6 +65,19 @@ short-lived job and ignores any provider or summit result that finishes later.
 
 <video src="store-assets/showcase-activity-capture.mp4" width="100%" autoplay loop muted playsinline></video>
 
+### Or just upload a GPX
+
+No Garmin or Strava page? Open a peak's **Add Ascent** form — the date is
+already set to today — and pick a GPX from your watch, a friend, or CalTopo in
+Peakbagger's own GPS Track field. A **✦ Process** button appears in place of
+Preview: one click reads the file right on the page, finds the summits along
+your track, and fills the form with the same date, elevation, distance, time,
+and gain details capture computes — with a privacy-reduced copy of the track
+(at most 3,000 points, so large files stop being rejected) attached and GPS
+Preview already run. A traverse over several peaks shows a summit picker that
+can open the other ascents as prepared drafts too. As always, you review and
+click Save yourself.
+
 ### Chart-synced map and track customization
 
 <video src="store-assets/showcase-gpx-map-sync.mp4" width="100%" autoplay loop muted playsinline></video>

@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- **Process an uploaded GPX on the ascent form.** Peakbagger's own Add Ascent
+  page now understands a plain GPX file: a fresh form gets today's date filled
+  in, and choosing a `.gpx` in the native GPS Track field swaps Preview for a
+  one-click **✦ Process** button. Processing parses the file on the page (the
+  raw XML never leaves it), resolves the climb's timezone offline from the
+  track's start, finds summits along the corridor in Peakbagger's database,
+  and fills the form with the same derived values activity capture computes —
+  attaching a privacy-reduced ≤3,000-point copy of the track (large files stop
+  hitting Peakbagger's point limit) and running GPS Preview exactly once.
+  Multi-peak traverses get a summit picker that can open the other ascents as
+  prepared draft tabs with capture's date-suffix and Trip Info coordination; a
+  bound peak the track only brushes is offered as an explicit
+  closest-approach "use anyway" choice. Review and Save stay manual.
+
 - **Back up ascents to GitHub.** An opt-in feature that saves each ascent to a
   GitHub repository you control. Turn it on in Settings and connect once via
   GitHub's device flow (only the app's public client id ships — no secret, no
