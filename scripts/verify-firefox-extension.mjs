@@ -315,6 +315,30 @@ async function main() {
     const editorUrl = `https://${fixtureHost}:${fixture.port}/climber/ascentedit.aspx?cid=900001`;
     await driver.get(editorUrl);
     await driver.wait(until.elementLocated(By.css(surfaceSelectors.editor)), 10_000);
+    await driver.findElement(By.id("GPXUpload")).sendKeys(fixture.gpxPath);
+    const uploadState = await waitForScript(driver, `
+      const process = document.querySelector(".bpb-process-button");
+      const date = document.getElementById("DateText")?.value || "";
+      const now = new Date();
+      const pad = value => String(value).padStart(2, "0");
+      const today = now.getFullYear() + "-" + pad(now.getMonth() + 1) + "-" + pad(now.getDate());
+      return process ? {
+        date,
+        today,
+        label: process.textContent,
+        ariaLabel: process.getAttribute("aria-label"),
+        nativePreviewHidden: document.getElementById("GPXPreview")
+          ?.classList.contains("bpb-native-preview-hidden") || false,
+      } : false;
+    `, "the Firefox GPX Process affordance");
+    assertState(
+      uploadState.date === uploadState.today
+        && /Process/.test(uploadState.label || "")
+        && uploadState.ariaLabel === "Process the chosen GPX and fill this form"
+        && uploadState.nativePreviewHidden,
+      "Firefox did not autofill the ascent date and swap trusted GPX selection to Process",
+      uploadState,
+    );
     const creditState = await waitForScript(driver, `
       const link = document.querySelector("#bpb-report-editor a[href*='better-peakbagger']");
       const textarea = document.getElementById("JournalText");
@@ -497,6 +521,7 @@ async function main() {
     console.log(`  - hidden/headless at ${verificationViewport.width}x${verificationViewport.height}`);
     console.log("  - real sync/local/session storage and storage.onChanged round-tripped");
     console.log("  - options, popup, ascent, editor, Peak, BigMap, PeakAscents, and profile-backup surfaces initialized");
+    console.log("  - a fresh ascent form autofilled its local date and trusted GPX selection swapped Preview for Process");
     console.log("  - AMO report credit, real editor input/draft recovery, filter/sort, and 3D frame passed");
     console.log("  - a real draft tab rejected wrong identity, attached GPX, filled fields, Previewed once, and never Saved");
     console.log("  - native toolbar activeTab grant, popup chrome, prompts, and window placement were not tested");

@@ -446,6 +446,29 @@ try {
         check(mounted, `the trip-report editor never mounted on the real form (errors=${JSON.stringify(editorErrors)})`);
 
         if (mounted) {
+            await editorPage.locator('#GPXUpload').setInputFiles(fixture.gpxPath);
+            const uploadState = await editorPage.waitForFunction(() => {
+                const process = document.querySelector('.bpb-process-button');
+                const date = document.getElementById('DateText')?.value || '';
+                const now = new Date();
+                const pad = value => String(value).padStart(2, '0');
+                const today = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+                return process ? {
+                    date,
+                    today,
+                    label: process.textContent,
+                    ariaLabel: process.getAttribute('aria-label'),
+                    nativePreviewHidden: document.getElementById('GPXPreview')
+                        ?.classList.contains('bpb-native-preview-hidden') || false
+                } : false;
+            }, null, { timeout: 5000 }).then(handle => handle.jsonValue()).catch(() => null);
+            check(uploadState?.date === uploadState?.today
+                && /Process/.test(uploadState?.label || '')
+                && uploadState?.ariaLabel === 'Process the chosen GPX and fill this form'
+                && uploadState?.nativePreviewHidden,
+            `the Chrome ascent editor did not autofill its date and swap trusted GPX selection to Process: ${
+                JSON.stringify(uploadState)}`);
+
             const creditState = await editorPage.waitForFunction(() => {
                 const link = document.querySelector('#bpb-report-editor a[href*="better-peakbagger"]');
                 const textarea = document.getElementById('JournalText');
@@ -1320,6 +1343,7 @@ console.log('  - the Peak Dynamic Map preserves its native frame and shows an en
 console.log('  - clicking Peak 3D creates the isolated frame with a route-free summit focus');
 console.log('  - the PeakAscents filter mounts, reveals rows, and sorts in place');
 console.log('  - the owner-only full-profile backup surface mounts with a connected fixture repository');
+console.log('  - a fresh ascent form autofills its local date and trusted GPX selection swaps Preview for Process');
 console.log('  - the opt-in report credit renders and serializes the Chrome Web Store URL');
 console.log('  - a real grouped draft tab rejects a wrong identity, attaches GPX, fills fields,');
 console.log('    submits Preview exactly once, and never submits Save');

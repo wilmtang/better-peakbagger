@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { execFile } from "node:child_process";
-import { readFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { createServer } from "node:https";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -209,6 +209,8 @@ export async function createBrowserFixtureServer({ temporaryRoot }) {
       "utf8",
     ),
   ]);
+  const gpxPath = path.join(temporaryRoot, "browser-verification.gpx");
+  await writeFile(gpxPath, gpx, "utf8");
   const requests = {
     previewPosts: 0,
     savePosts: 0,
@@ -290,6 +292,7 @@ export async function createBrowserFixtureServer({ temporaryRoot }) {
   });
   return {
     port: server.address().port,
+    gpxPath,
     requests,
     close: () => new Promise((resolve, reject) =>
       server.close(error => error ? reject(error) : resolve())),

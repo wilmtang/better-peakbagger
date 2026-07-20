@@ -112,8 +112,8 @@ only exist under `dist/` after a build.
 | `npm run build:release` | Minified production build (no source maps). |
 | `npm run watch` | Transactionally rebuild on change and re-copy static assets; does not launch or control a browser. |
 | `npm test` | `pretest` builds `dist/`, then runs `test/**/*.test.mjs`. |
-| `npm run verify:chrome` | Builds and loads the real unpacked `dist/` in hidden Chrome for Testing. |
-| `npm run verify:firefox` | Builds the derived Firefox source, temporarily installs it in hidden Firefox, and runs the same manifest-surface and draft-handoff smoke. |
+| `npm run verify:chrome` | Builds and loads the real unpacked `dist/` in hidden Chrome for Testing, including trusted GPX selection and the draft handoff. |
+| `npm run verify:firefox` | Builds the derived Firefox source, temporarily installs it in hidden Firefox, and runs the same manifest-surface, trusted GPX-selection, and draft-handoff smoke. |
 | `npm run verify:browsers` | Builds once, then runs the Chrome and Firefox extension gates. |
 | `npm run verify:extension` | Compatibility alias for `verify:chrome`; existing callers can migrate without losing coverage. |
 | `npm run verify:packages -- CHROME.zip FIREFOX.zip` | Executes the extracted minified Chrome package and the exact generated Firefox archive through the browser gates. |
@@ -130,6 +130,12 @@ jobs: Node tests/lint, the real Chrome extension smoke, and the real Firefox
 extension smoke. Each browser job installs its own runtime and reports failures
 separately. Release CI additionally executes both generated store archives
 before either publication job can start.
+
+The browser smokes select a fixture GPX through the native file input and
+confirm that a fresh ascent form receives its local date and replaces Preview
+with the extension's Process action. Exhaustive parsing, summit selection, and
+failure cases remain in `npm test`; the browser gates continue through the
+shared draft path to prove real file attachment and exactly-once Preview.
 
 Chrome stable 137+ rejects command-line `--load-extension`, so
 `start:chromium` needs a compatible Chromium/Chrome for Testing binary (pass

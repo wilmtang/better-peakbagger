@@ -210,7 +210,8 @@ Use one launch and profile per browser to cover all fixtures.
 - **Ascent:** theme initialized; analyzer rendered; settings bridge responds;
   3D toggle mounts and creates the extension frame.
 - **Ascent editor:** editor mounts with the native textarea retained inside
-  the form.
+  the form; a fresh form receives its browser-local date, and trusted native
+  GPX selection replaces Preview with the accessible Process action.
 - **Peak:** planning links and 3D integration mount.
 - **BigMap:** enhancer, settings bridge, and 3D integration mount.
 - **PeakAscents/ClimbListC:** filter mounts and one filter/sort operation
