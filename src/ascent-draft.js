@@ -197,6 +197,11 @@
         const writeText = preserveExistingFields ? setTextFieldIfEmpty : setTextField;
         const writeNumber = preserveExistingFields ? setFieldIfEmpty : setField;
         writeText('SuffixText', fields.suffix || '');
+        // The captured activity link goes into the external-trip-report field
+        // only when empty — a URL the user typed is never clobbered.
+        if (typeof fields.externalUrl === 'string' && fields.externalUrl) {
+            setTextFieldIfEmpty('URLTB', fields.externalUrl);
+        }
 
         if (fields.fillAscentDetails !== false) {
             await writeNumber('StartFt', fields.startElevationM === null ? null : fields.startElevationM * FEET_PER_METER);

@@ -115,7 +115,7 @@ test('settings are grouped by the surface they affect', async () => {
     assert.ok(general.querySelector('#add-report-credit'));
     assert.ok(general.querySelector('#enable-3d-map'));
     assert.equal(general.querySelector('#units'), null);
-    for (const id of ['retain-waypoints', 'fill-ascent-details', 'fill-trip-info', 'fill-wilderness-nights']) {
+    for (const id of ['retain-waypoints', 'fill-ascent-details', 'fill-trip-info', 'fill-wilderness-nights', 'fill-external-url']) {
         assert.ok(capture.querySelector(`#${id}`), `${id} should belong to Activity capture`);
     }
     for (const id of ['units', 'chart-series', 'map-route-color', 'remember-map-layer', 'map-viewport-width', 'terrain-cache-limit']) {
@@ -171,6 +171,7 @@ test('activity capture settings have documented defaults and persist changes', a
     assert.equal(el(dom, 'fill-ascent-details').checked, true);
     assert.equal(el(dom, 'fill-trip-info').checked, true);
     assert.equal(el(dom, 'fill-wilderness-nights').checked, true);
+    assert.equal(el(dom, 'fill-external-url').checked, true);
 
     el(dom, 'retain-waypoints').checked = false;
     el(dom, 'retain-waypoints').dispatchEvent(new dom.window.Event('change'));
@@ -180,12 +181,15 @@ test('activity capture settings have documented defaults and persist changes', a
     el(dom, 'fill-trip-info').dispatchEvent(new dom.window.Event('change'));
     el(dom, 'fill-wilderness-nights').checked = false;
     el(dom, 'fill-wilderness-nights').dispatchEvent(new dom.window.Event('change'));
+    el(dom, 'fill-external-url').checked = false;
+    el(dom, 'fill-external-url').dispatchEvent(new dom.window.Event('change'));
     await new Promise(r => dom.window.setTimeout(r, 20));
 
     assert.equal(dom.chrome._store.bpbSettings.retainWaypoints, false);
     assert.equal(dom.chrome._store.bpbSettings.fillAscentDetails, false);
     assert.equal(dom.chrome._store.bpbSettings.fillTripInfo, false);
     assert.equal(dom.chrome._store.bpbSettings.fillWildernessNights, false);
+    assert.equal(dom.chrome._store.bpbSettings.fillExternalUrl, false);
 });
 
 test('chart-series select populates from the stored setting', async () => {

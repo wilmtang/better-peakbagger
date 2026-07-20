@@ -7,7 +7,7 @@
 // The worker ships as one bundle; capture-core and settings (and their own
 // transitive deps: gpx-metrics, settings-schema) resolve through these imports.
 import { captureCore as Core } from './capture-core.js';
-import { providerFromUrl } from './provider-url.js';
+import { providerFromUrl, providerActivityUrl } from './provider-url.js';
 import { settings as Settings } from './settings.js';
 import { githubAuth as GithubAuth } from './github-auth.js';
 import { githubClient as GithubClient } from './github-client.js';
@@ -47,7 +47,8 @@ import { githubClient as GithubClient } from './github-client.js';
             retainWaypoints: settings.retainWaypoints,
             fillAscentDetails: settings.fillAscentDetails,
             fillTripInfo: settings.fillTripInfo,
-            fillWildernessNights: settings.fillWildernessNights
+            fillWildernessNights: settings.fillWildernessNights,
+            fillExternalUrl: settings.fillExternalUrl
         };
     };
 
@@ -55,7 +56,8 @@ import { githubClient as GithubClient } from './github-client.js';
         && left.retainWaypoints === right.retainWaypoints
         && left.fillAscentDetails === right.fillAscentDetails
         && left.fillTripInfo === right.fillTripInfo
-        && left.fillWildernessNights === right.fillWildernessNights;
+        && left.fillWildernessNights === right.fillWildernessNights
+        && left.fillExternalUrl === right.fillExternalUrl;
 
     const readMap = async key => (await storage().get(key))[key] || {};
     const mutateMap = (key, mutate) => {
@@ -984,6 +986,11 @@ import { githubClient as GithubClient } from './github-client.js';
                 ...match.draftFields,
                 suffix: draft.suffix || '',
                 fillAscentDetails: job.capturePreferences?.fillAscentDetails !== false,
+                // Rebuilt from provider+activityId (never the raw tab URL);
+                // null for local-GPX jobs (no activityId) or when the setting
+                // is off, so nothing is written into #URLTB.
+                externalUrl: job.capturePreferences?.fillExternalUrl !== false
+                    ? providerActivityUrl(job) : null,
                 dayStats: job.dayStats || [],
                 tripInfo: draft.tripInfo || null,
                 wildernessNightsOut: draft.wildernessNightsOut ?? null

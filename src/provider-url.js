@@ -21,3 +21,15 @@ export const providerFromUrl = urlValue => {
     }
     return null;
 };
+
+// The inverse: rebuild a canonical activity URL from the { provider,
+// activityId } a capture job already stores, so the raw tab URL never has to
+// be persisted. The Garmin form mirrors what providerFromUrl recognizes
+// (/app/activity/<id>). Junk ids or unknown providers yield null so nothing is
+// written into the form.
+export const providerActivityUrl = ({ provider, activityId } = {}) => {
+    if (!/^\d+$/.test(String(activityId))) return null;
+    if (provider === 'garmin') return `https://connect.garmin.com/app/activity/${activityId}`;
+    if (provider === 'strava') return `https://www.strava.com/activities/${activityId}`;
+    return null;
+};

@@ -166,6 +166,8 @@ test('background capture persists a private job, opens grouped drafts, and previ
     assert.equal(apply.action, 'apply');
     assert.equal(apply.fields.suffix, '');
     assert.equal(apply.fields.fillAscentDetails, true);
+    // Default-on: the captured Strava link is rebuilt from provider+activityId.
+    assert.equal(apply.fields.externalUrl, 'https://www.strava.com/activities/123');
     assert.match(apply.gpx, /<gpx/);
     assert.equal(await harness.send({ type: 'DRAFT_PREVIEW_STARTED', jobId: apply.jobId, pid: 7, cid: 77 }, { tab: { id: 100 } }).then(value => value.ok), true);
 
@@ -511,7 +513,7 @@ test('single-peak overnight captures fill wilderness nights without creating Tri
 
 test('disabled draft autofill settings leave ascent details, trip, and wilderness fields untouched', async () => {
     const harness = createHarness({
-        settings: { fillAscentDetails: false, fillTripInfo: false, fillWildernessNights: false },
+        settings: { fillAscentDetails: false, fillTripInfo: false, fillWildernessNights: false, fillExternalUrl: false },
         peakXml: '<p><t i="7" n="First Peak" a="0" o="0" e="426.51" r="100" l="Test Range"/><t i="8" n="Second Peak" a="0" o="0" e="426.51" r="100" l="Test Range"/></p>'
     });
     await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
@@ -521,6 +523,7 @@ test('disabled draft autofill settings leave ascent details, trip, and wildernes
     assert.deepEqual([...apply.fields.dayStats], []);
     assert.equal(apply.fields.tripInfo, null);
     assert.equal(apply.fields.wildernessNightsOut, null);
+    assert.equal(apply.fields.externalUrl, null, 'the external-URL setting off writes nothing');
 });
 
 test('changing capture settings invalidates a reusable job for the same activity', async () => {

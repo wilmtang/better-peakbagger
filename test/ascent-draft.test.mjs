@@ -12,7 +12,7 @@ const source = await fs.readFile(new URL('../dist/content/ascent-editor.js', imp
 const editorCss = await fs.readFile(new URL('../src/report-editor.css', import.meta.url), 'utf8');
 
 const formHtml = `<!doctype html><body><form>
-  <input id="DateText"><input id="SuffixText"><input id="StartFt"><input id="StartM"><input id="EndFt"><input id="EndM">
+  <input id="DateText"><input id="SuffixText"><input id="URLTB"><input id="StartFt"><input id="StartM"><input id="EndFt"><input id="EndM">
   <input id="GainFt" value="300"><input id="GainM" value="91"><input id="ExUpFt"><input id="ExUpM"><input id="ExDnFt"><input id="ExDnM">
   <input id="UpMi"><input id="UpKm"><input id="DnMi"><input id="DnKm"><input id="UpDay"><input id="UpHr"><input id="UpMin">
   <input id="DnDay"><input id="DnHr"><input id="DnMin"><input id="GPXUpload" type="file">
@@ -93,6 +93,46 @@ test('fills the expected fields, attaches reduced GPX with elevation and time, p
     assert.deepEqual(messages.map(message => message.type), ['DRAFT_READY', 'DRAFT_PREVIEW_STARTED']);
     assert.match(dom.window.document.getElementById('bpb-draft-banner').textContent, /91% confidence/);
     dom.window.close();
+});
+
+test('fills the external trip report URL only when the field is empty', async () => {
+    const base = {
+        action: 'apply', jobId: 'job', pid: '12', cid: '34', classification: 'strong', confidence: 91,
+        fields: {
+            date: '2026-07-01', suffix: '', startElevationM: 1000, endElevationM: 900,
+            upDistanceM: 5000, downDistanceM: 6000, upGainM: 1200, downGainM: 80,
+            upDuration: { days: 0, hours: 2, minutes: 5 },
+            downDuration: { days: 0, hours: 1, minutes: 55 }
+        },
+        gpx: '<gpx><trk><trkseg><trkpt lat="47" lon="-121"></trkpt></trkseg></trk></gpx>'
+    };
+
+    // Empty field → filled with the captured activity link.
+    let previewClicks = 0;
+    const filled = { ...base, fields: { ...base.fields, externalUrl: 'https://www.strava.com/activities/456' } };
+    let ctx = loadDraft(message => message.type === 'DRAFT_READY' ? filled : { ok: true });
+    ctx.dom.window.document.getElementById('GPXPreview').addEventListener('click', () => { previewClicks++; });
+    await waitForCondition(() => previewClicks === 1);
+    assert.equal(ctx.dom.window.document.getElementById('URLTB').value, 'https://www.strava.com/activities/456');
+    ctx.dom.window.close();
+
+    // Pre-filled field → the user's URL is never clobbered.
+    previewClicks = 0;
+    const prefilled = formHtml.replace('<input id="URLTB">', '<input id="URLTB" value="https://example.com/mine">');
+    ctx = loadDraft(message => message.type === 'DRAFT_READY' ? filled : { ok: true }, { html: prefilled });
+    ctx.dom.window.document.getElementById('GPXPreview').addEventListener('click', () => { previewClicks++; });
+    await waitForCondition(() => previewClicks === 1);
+    assert.equal(ctx.dom.window.document.getElementById('URLTB').value, 'https://example.com/mine');
+    ctx.dom.window.close();
+
+    // null externalUrl (setting off, or local GPX) → field untouched.
+    previewClicks = 0;
+    const none = { ...base, fields: { ...base.fields, externalUrl: null } };
+    ctx = loadDraft(message => message.type === 'DRAFT_READY' ? none : { ok: true });
+    ctx.dom.window.document.getElementById('GPXPreview').addEventListener('click', () => { previewClicks++; });
+    await waitForCondition(() => previewClicks === 1);
+    assert.equal(ctx.dom.window.document.getElementById('URLTB').value, '');
+    ctx.dom.window.close();
 });
 
 test('a processed upload preserves every populated ascent field', async () => {

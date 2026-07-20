@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **Carry the captured activity link into the trip-report field.** When you
+  capture a Garmin or Strava activity, its link now lands in Peakbagger's "URL
+  Link to External Trip Report" field on the draft — only when that field is
+  empty, so a link you typed is never overwritten. The link is rebuilt from the
+  activity id, never a stored raw tab URL. A new **External trip report link**
+  toggle in Activity capture (on by default) controls it.
+
 - **Link straight to a freshly saved ascent.** After Peakbagger confirms an
   ascent was added or saved, the success page now offers a **View the New
   Ascent** link next to "Go Back to Referring Page" — previously the new ascent

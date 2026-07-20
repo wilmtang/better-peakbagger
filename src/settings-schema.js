@@ -35,6 +35,9 @@
         fillAscentDetails: true,
         fillTripInfo: true,
         fillWildernessNights: true,
+        // Put the captured Garmin/Strava activity link into the ascent form's
+        // "URL Link to External Trip Report" field when it is empty.
+        fillExternalUrl: true,
         // Which GPX-chart series is shown by default: 'both', or only
         // 'distance' / 'time'. A legend click can still reveal the hidden one
         // for the current view without changing this preference.
@@ -131,7 +134,7 @@
         const s = { ...DEFAULTS, ...(raw && typeof raw === 'object' ? raw : {}) };
         if (!['auto', 'imperial', 'metric'].includes(s.units)) s.units = DEFAULTS.units;
         if (!['system', 'light', 'dark'].includes(s.theme)) s.theme = DEFAULTS.theme;
-        for (const key of ['enable3dMap', 'retainWaypoints', 'fillAscentDetails', 'fillTripInfo', 'fillWildernessNights', 'enableReportEditor', 'addReportCredit', 'enableGithubBackup', 'autoGithubBackup']) {
+        for (const key of ['enable3dMap', 'retainWaypoints', 'fillAscentDetails', 'fillTripInfo', 'fillWildernessNights', 'fillExternalUrl', 'enableReportEditor', 'addReportCredit', 'enableGithubBackup', 'autoGithubBackup']) {
             if (typeof s[key] !== 'boolean') s[key] = DEFAULTS[key];
         }
         // Auto-backup is meaningless without the feature enabled; never let it
