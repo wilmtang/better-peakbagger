@@ -80,9 +80,23 @@ visible in the AMO Developer Hub.
 
 ## Release checklist
 
-1. Manually verify current Garmin, Strava, and Peakbagger behavior in both
-   browser families. Automated fixtures cannot establish that live provider
-   DOM and export flows still work.
+1. In dedicated Chrome Stable and Firefox Stable test profiles, perform one
+   minimal owned-provider capture in each browser family:
+
+   - Open an owned Garmin or Strava activity and click Better Peakbagger's
+     actual toolbar action. Do not open `popup.html` directly; that bypasses the
+     native `activeTab` gesture being checked.
+   - Confirm capture reaches summit results, open one draft, and confirm the
+     fields, attached GPX, and GPS Preview are present.
+   - Confirm Save remains wholly manual. Do not click either Save control.
+   - Check the native popup presentation, permission prompts, Firefox inline
+     Preferences, and tab-group presentation while the dedicated profile is
+     visible.
+   - Discard the extension's capture state, close the draft and provider tabs,
+     and close the test profile. Keep the live check minimal and rate-limited.
+
+   Automated fixtures cover the repeatable paths but cannot establish the live
+   provider DOM/export, browser chrome, or native toolbar grant.
 2. Bump the version, stamp the changelog, and create the tag:
 
    ```sh
@@ -101,19 +115,23 @@ visible in the AMO Developer Hub.
    npm ci
    npm test
    npm run lint
-   npm run verify:extension
+   npm run verify:browsers
    npm run terrain:verify
+   npm run terrain:verify:firefox
    npm run package
    npm run build:firefox -- web-ext-artifacts/better_peakbagger-X.Y.Z.zip web-ext-artifacts/better_peakbagger-X.Y.Z-firefox.zip
    npm run release:verify-archive -- web-ext-artifacts/better_peakbagger-X.Y.Z.zip chrome
    npm run release:verify-archive -- web-ext-artifacts/better_peakbagger-X.Y.Z-firefox.zip firefox
+   npm run verify:packages -- web-ext-artifacts/better_peakbagger-X.Y.Z.zip web-ext-artifacts/better_peakbagger-X.Y.Z-firefox.zip
    ```
 
    `package` creates a minified, sourcemap-free `dist/` and the canonical Chrome
    ZIP; the Firefox command derives its ZIP from those exact bytes and changes
    only the options-page presentation. The archive verifier derives required
    runtime files from `scripts/build-config.mjs` and rejects missing bundles,
-   assets, or packaged licenses. If a new root-level development file is copied
+   assets, or packaged licenses. The package verifier then launches both
+   minified archives, including the browser-specific options presentation and
+   store credit, before publication. If a new root-level development file is copied
    into `dist/` intentionally, update the build config and archive policy
    together rather than relying on web-ext's old repository-root ignore list.
 
@@ -128,6 +146,11 @@ then run independently because the stores have no shared transaction. If one
 store job fails after the other succeeds, use GitHub's **Re-run failed jobs**
 action. Do not rerun all jobs: the successful store may reject the duplicate
 version.
+
+`npm run terrain:verify:firefox` fails closed on SwiftShader, llvmpipe, and other
+software renderers. Run it hidden on representative GPU hardware and record the
+reported Firefox version, renderer, and viewport in the release notes. Hosted
+CI does not run this command until its renderer can satisfy that condition.
 
 ## Store listing description
 

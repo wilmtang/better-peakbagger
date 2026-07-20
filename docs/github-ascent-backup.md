@@ -1,7 +1,7 @@
 # GitHub ascent backup: design and execution plan
 
 Status: implemented. Steps 1–10 have landed, and the automated release checks
-(`npm test`, `npm run lint:js`, `npm run verify:extension`, `web-ext lint`)
+(`npm test`, `npm run lint:js`, `npm run verify:browsers`, `web-ext lint`)
 pass. Step 11's live
 verification — a real device-flow authorization and installation against the
 registered app, and one rate-limited save on real Peakbagger landing a commit in
@@ -382,7 +382,7 @@ begins, per the repository commit discipline.
     surface. Covered by the integration, surface, and options suites.
 11. **Release verification.** Automated checks **Done**: `npm test` (full
     suite green, including the backup unit, surface, and built-worker
-    integration suites), `npm run verify:extension` (the worker boots with the
+    integration suites), `npm run verify:browsers` (the worker boots with the
     backup/auth handlers and every content script loads), and `web-ext lint`
     (0 errors). **Pending manual pre-release** (needs the user's sessions): one
     real device-flow authorization + installation against the registered app,

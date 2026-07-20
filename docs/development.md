@@ -14,13 +14,17 @@ Better Peakbagger module uses a global as an internal dependency.
 
 ## Prerequisites
 
-- Node.js 22 or newer (CI uses Node.js 22) and npm.
+- Node.js 22 or newer (CI uses Node.js 24) and npm.
 - `npm ci` to install the exact dependency graph in `package-lock.json`
-  (esbuild, runtime vendor packages, jsdom, Playwright, and web-ext).
-- For the real-extension checks: `npx playwright install chromium` (Chrome for
-  Testing — stable Chrome refuses `--load-extension`) and OpenSSL. The verifier
-  creates a one-day self-signed certificate inside its disposable test profile
-  so the local Peakbagger fixture exercises the production HTTPS-only manifest.
+  (esbuild, runtime vendor packages, jsdom, Playwright, Selenium, and web-ext).
+- For Chrome verification: `npx playwright install chromium` (Chrome for
+  Testing — stable Chrome refuses `--load-extension`).
+- For Firefox verification: Firefox Stable and `geckodriver` on `PATH`.
+  `npx playwright install firefox` additionally installs the isolated Firefox
+  build used by the GPU terrain check.
+- OpenSSL. Each extension verifier creates a one-day self-signed certificate
+  inside its disposable profile so the local fixture exercises the production
+  HTTPS-only manifest.
 
 ## Everyday workflow
 
@@ -108,24 +112,24 @@ only exist under `dist/` after a build.
 | `npm run build:release` | Minified production build (no source maps). |
 | `npm run watch` | Transactionally rebuild on change and re-copy static assets; does not launch or control a browser. |
 | `npm test` | `pretest` builds `dist/`, then runs `test/**/*.test.mjs`. |
-| `npm run verify:chrome` | Loads the **real** unpacked `dist/` in headless Chrome for Testing and drives the editor and maps through Chrome's manifest. |
+| `npm run verify:chrome` | Builds and loads the real unpacked `dist/` in hidden Chrome for Testing. |
+| `npm run verify:firefox` | Builds the derived Firefox source, temporarily installs it in hidden Firefox, and runs the same manifest-surface and draft-handoff smoke. |
+| `npm run verify:browsers` | Builds once, then runs the Chrome and Firefox extension gates. |
 | `npm run verify:extension` | Compatibility alias for `verify:chrome`; existing callers can migrate without losing coverage. |
-| `npm run terrain:verify` | Renders the real MapLibre terrain frame on the GPU with synthetic route, basemap, peak, and CORS-enabled DEM fixtures; it makes no live terrain-provider requests. |
+| `npm run verify:packages -- CHROME.zip FIREFOX.zip` | Executes the extracted minified Chrome package and the exact generated Firefox archive through the browser gates. |
+| `npm run terrain:verify` | Renders the real MapLibre terrain frame on Chrome's GPU with synthetic route, basemap, peak, and CORS-enabled DEM fixtures. |
+| `npm run terrain:verify:firefox` | Runs the focused Firefox GPU terrain/interaction check and refuses software WebGL. |
 | `npm run showcase:render` | Builds and renders the local UI showcase fixtures. |
 | `npm run lint:js` | Runs errors-only ESLint over source, extension surfaces, scripts, and tests. |
 | `npm run lint` | Builds, then runs `web-ext lint --source-dir dist`. |
 | `npm run package` | Release build + `web-ext build` from `dist/`; writes the canonical Chrome ZIP under `web-ext-artifacts/`. |
 | `npm run start:chromium` / `start:firefox` | Build, watch, launch a web-ext development browser, and auto-reload the extension after successful rebuilds. Firefox mirrors each complete build into its inline-Preferences source first. |
 
-Pushes and pull requests run `npm ci`, `npm test`, `npm run lint:js`, and bare
-`web-ext lint` in the least-privilege GitHub Actions workflow. The real-extension
-check remains local because it requires the separately installed Chrome for
-Testing binary; run it for the boundaries listed below.
-
-The intended browser command family is `verify:chrome`, `verify:firefox`, and
-`verify:browsers`. Only the Chrome command is implemented at this tier; do not
-infer Firefox runtime coverage from `npm test`, Firefox packaging checks, or the
-`verify:extension` compatibility alias.
+Pushes and pull requests use one least-privilege workflow with three independent
+jobs: Node tests/lint, the real Chrome extension smoke, and the real Firefox
+extension smoke. Each browser job installs its own runtime and reports failures
+separately. Release CI additionally executes both generated store archives
+before either publication job can start.
 
 Chrome stable 137+ rejects command-line `--load-extension`, so
 `start:chromium` needs a compatible Chromium/Chrome for Testing binary (pass
@@ -258,16 +262,21 @@ generalize this exception.
 - `npm run lint:js` checks undeclared names, unused bindings, and unsafe equality
   without rewriting source. `npm run lint` checks the built extension package;
   neither establishes browser behavior.
-- `npm run terrain:verify` renders the true MapLibre frame on the GPU, but its
-  showcase pages provide their own settings/chrome stubs and its Mapterhorn
+- `npm run terrain:verify` and `npm run terrain:verify:firefox` render the true MapLibre
+  frame on a reported hardware GPU, but their
+  showcase pages provide their own settings/chrome stubs and their Mapterhorn
   requests are intercepted with a synthetic CORS-enabled DEM, so it does not run
   the real settings or bridge code or exercise the live terrain service.
-- `npm run verify:extension` is the only check that loads the real unpacked
-  extension in Chrome for Testing. It drives an isolated self-signed HTTPS
-  Peakbagger fixture so the real manifest's scheme, path, load order, worlds,
-  and worker lifecycle all participate. Run it after touching `manifest.json`,
-  bundle composition, execution worlds, the worker, or anything a content
-  script relies on at load.
+- `npm run verify:browsers` loads the real Chrome and derived Firefox manifests.
+  The isolated HTTPS fixtures exercise extension origins, execution worlds,
+  worker/background startup, real storage, every manifest surface, store credit,
+  report editing, filtering, tab grouping when supported, sender-bound draft
+  handoff, native file assignment, exactly-once Preview, and the no-Save boundary.
+  Run it after touching `manifest.json`, bundle composition, execution worlds,
+  the worker, or anything a content script relies on at load.
+- `npm run verify:packages -- CHROME.zip FIREFOX.zip` runs those same gates against minified store bytes
+  and additionally pins Chrome's full-tab versus Firefox's inline Preferences
+  manifest presentation.
 
 The real-extension and terrain checks are hidden/headless and use an isolated
 test profile. They establish browser loading, DOM behavior, and (for terrain)
@@ -276,9 +285,9 @@ window placement, permission-prompt appearance, or live Garmin/Strava DOM and
 export behavior. Live provider verification remains a minimal manual release
 check in both browser families.
 
-The planned Firefox runtime gate, cross-browser smoke matrix, packaged-build
-execution, and native capture release check are specified in the
-[cross-browser extension verification plan](plans/cross-browser-verification.md).
+The runners open ordinary extension pages in hidden tabs; they do not establish
+native popup size, browser-chrome focus, permission-prompt presentation, or the
+toolbar click that grants `activeTab`. Those remain explicit release checks.
 
 ## Packaging and release rehearsal
 
@@ -291,6 +300,7 @@ npm run package
 npm run build:firefox -- web-ext-artifacts/better_peakbagger-X.Y.Z.zip web-ext-artifacts/better_peakbagger-X.Y.Z-firefox.zip
 npm run release:verify-archive -- web-ext-artifacts/better_peakbagger-X.Y.Z.zip chrome
 npm run release:verify-archive -- web-ext-artifacts/better_peakbagger-X.Y.Z-firefox.zip firefox
+npm run verify:packages -- web-ext-artifacts/better_peakbagger-X.Y.Z.zip web-ext-artifacts/better_peakbagger-X.Y.Z-firefox.zip
 ```
 
 The archive verifier derives required runtime files from

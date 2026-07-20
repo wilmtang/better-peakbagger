@@ -241,5 +241,6 @@ behavior and the rise leash below.
   behind-the-billboard terrain is farthest away, where layer-scoped events
   failed hardest. Zooming out clears dots and popup, and a group BigMap
   never queries the feed.
-- `npm run verify:extension` covers the packaged manifest and content-script
-  load. See [development.md](development.md) for what each check can establish.
+- `npm run verify:browsers` covers both real manifests and content-script loads;
+  `npm run terrain:verify:firefox` adds Firefox GPU interaction coverage. See
+  [development.md](development.md) for what each check can establish.
