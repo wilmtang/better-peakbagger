@@ -217,6 +217,56 @@ test('a GPS-flagged ascent fetches its track from the current GPXFile endpoint',
     assert.match(dom.window.document.getElementById('bpb-profile-backup').textContent, /Backed up 1; skipped 37; failed 0/);
 });
 
+test('a 200 error page for the track fails with an honest, redirect-naming reason', async () => {
+    const dom = await loadPage('climber-ascents.html', {
+        fixtures: PAGE_FIXTURES,
+        url: PAGE_URL,
+        bundles: ['content/profile-backup.js'],
+        prepare: dom => {
+            const firstAscent = dom.window.document.querySelector('a[href*="/ascent.aspx?aid=9100001"]');
+            const marker = dom.window.document.createElement('img');
+            marker.setAttribute('src', 'https://www.peakbagger.com/image/GPS.gif');
+            marker.setAttribute('title', 'Ascent has GPS track');
+            firstAscent.closest('tr').cells[0].appendChild(marker);
+
+            const aids = [...dom.window.document.querySelectorAll('a[href*="/ascent.aspx?aid="]')]
+                .map(anchor => Number(new dom.window.URL(anchor.href).searchParams.get('aid')));
+            const existing = aids.slice(1).map(aid => `2020-01-01-peak-a${aid}`);
+            prepareRuntime(dom, message => {
+                if (message.type === 'GITHUB_BACKUP_STATUS') return { enabled: true, connected: true, repo: { fullName: 'me/backup' } };
+                if (message.type === 'GITHUB_BACKUP_PROFILE_STATUS') return { ok: true, enabled: true, connected: true, folders: existing };
+                if (message.type === 'GITHUB_BACKUP_PROFILE_BATCH') return { ok: true, result: { count: message.entries.length } };
+                return null;
+            });
+            dom.window.fetch = async url => {
+                const href = String(url);
+                // The renamed endpoint's old name 302s to a 200 HTML error page;
+                // reproduce the redirected error the runner must classify.
+                if (/GPXFile\.aspx/i.test(href)) {
+                    return {
+                        ok: true,
+                        status: 200,
+                        redirected: true,
+                        url: 'https://www.peakbagger.com/PBError.aspx?aspxerrorpath=/climber/GPXFile.aspx',
+                        headers: { get: name => (/content-type/i.test(name) ? 'text/html; charset=utf-8' : null) },
+                        text: async () => '<html><head><title>Error - Peakbagger.com</title></head><body>Something went wrong.</body></html>',
+                    };
+                }
+                return { ok: true, status: 200, url: href, headers: { get: () => null }, text: async () => editHtml };
+            };
+        },
+    });
+    await waitFor(dom, () => dom.window.document.getElementById('bpb-profile-backup'));
+    dom.window.document.querySelector('.bpb-profile-primary').click();
+    await waitFor(dom, () => /Profile backup complete/.test(dom.window.document.getElementById('bpb-profile-backup').textContent));
+
+    const panel = dom.window.document.getElementById('bpb-profile-backup');
+    assert.match(panel.textContent, /Backed up 0; skipped 37; failed 1/);
+    assert.match(panel.textContent, /Peakbagger sent an error page instead of the GPS track/);
+    assert.match(panel.textContent, /redirected to PBError\.aspx/);
+    assert.doesNotMatch(panel.textContent, /HTTP 200/);
+});
+
 test('a GitHub write error pauses visibly and resume retries the same ascent', async () => {
     const pushed = [];
     const dom = await loadPage('climber-ascents.html', {

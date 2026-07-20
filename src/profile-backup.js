@@ -164,6 +164,24 @@ import { githubError as GithubError } from './github-error.js';
         );
     };
 
+    // What we asked Peakbagger for, for a failure message a user can act on.
+    const EXPECTED_CONTENT = { gpx: 'the GPS track', list: 'the ascent list', edit: 'the ascent form' };
+    const pageName = href => {
+        try { return new URL(href, location.href).pathname.split('/').filter(Boolean).pop() || ''; }
+        catch { return ''; }
+    };
+    // Explain a rejected response in terms of what happened, not just the status.
+    // A 2xx that failed classification is the status looking fine while the body
+    // is an error page (often reached by a redirect) — so reporting "HTTP 200"
+    // hides the diagnosis. Only a genuinely non-2xx status keeps the HTTP line.
+    const rejectionReason = (response, kind) => {
+        if (response.status < 200 || response.status >= 300) return `Peakbagger returned HTTP ${response.status}.`;
+        let reason = `Peakbagger sent an error page instead of ${EXPECTED_CONTENT[kind] || EXPECTED_CONTENT.edit}.`;
+        const destination = response.redirected ? pageName(response.url) : '';
+        if (destination) reason += ` (redirected to ${destination})`;
+        return reason;
+    };
+
     const responseText = async (url, kind) => {
         let response;
         try {
@@ -174,7 +192,7 @@ import { githubError as GithubError } from './github-error.js';
         let text = '';
         try { text = await response.text(); } catch { return { kind: 'transient', url, reason: 'The response could not be read.' }; }
         const classification = Core.classifyResponse(response.status, response.headers, text, { kind });
-        if (classification !== 'ok') return { kind: classification, url, reason: `Peakbagger returned HTTP ${response.status}.` };
+        if (classification !== 'ok') return { kind: classification, url: response.url || url, reason: rejectionReason(response, kind) };
         return { kind: 'ok', url: response.url || url, text };
     };
 
