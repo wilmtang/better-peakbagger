@@ -144,6 +144,9 @@ import { terrainCamera } from './terrain-camera.js';
     let focusPeakFeature = null;
     let peakPointerPoint = null;
     let peakPointerFrame = null;
+    // Throttles the bearing/pitch stream the page compass reads to one post per
+    // painted frame, like the peak-hover throttle.
+    let viewFrame = null;
     // Summit-snap verdicts by peak, recency-ordered so the least-recently used
     // entry trims first. ~10 dense screenfuls; a long pan session stays bounded.
     const peakSnapCache = new Map();
@@ -157,6 +160,23 @@ import { terrainCamera } from './terrain-camera.js';
             type,
             ...detail
         }, parentOrigin);
+    };
+
+    const prefersReducedMotion = () =>
+        !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+
+    // The page-world compass (next to the 2D/3D toggle) renders live bearing and
+    // pitch; feed it from the current camera, throttled to one post per frame.
+    const postView = () => {
+        if (!map || typeof map.getBearing !== 'function') return;
+        post('view', { bearing: map.getBearing(), pitch: map.getPitch() });
+    };
+    const scheduleView = () => {
+        if (viewFrame !== null) return;
+        viewFrame = requestAnimationFrame(() => {
+            viewFrame = null;
+            postView();
+        });
     };
 
     // Distance from the frame's bottom edge to the top of the bottom-right zoom
@@ -199,6 +219,10 @@ import { terrainCamera } from './terrain-camera.js';
         if (peakPointerFrame !== null) {
             cancelAnimationFrame(peakPointerFrame);
             peakPointerFrame = null;
+        }
+        if (viewFrame !== null) {
+            cancelAnimationFrame(viewFrame);
+            viewFrame = null;
         }
         if (map) {
             try { map.remove(); } catch (error) { /* The frame may already be unloading. */ }
@@ -1273,6 +1297,9 @@ import { terrainCamera } from './terrain-camera.js';
                     if (camera) post('camera', { camera });
                     schedulePeaksRequest();
                 });
+                terrainMap.on('move', () => {
+                    if (map === terrainMap) scheduleView();
+                });
                 loaded = true;
                 setTheme(activeTheme);
                 status.remove();
@@ -1281,6 +1308,7 @@ import { terrainCamera } from './terrain-camera.js';
                     navTop: measureNavTop(),
                     camera: terrainCamera.fromMapLibre(terrainMap)
                 });
+                postView();
                 schedulePeaksRequest();
             });
 
@@ -1322,7 +1350,11 @@ import { terrainCamera } from './terrain-camera.js';
                 post('camera', { camera, requestId: data.requestId });
             }
         } else if (data.type === 'highlight') setHighlight(data.coordinates, data.series);
-        else if (data.type === 'peaks') applyPeaks(data);
+        else if (data.type === 'resetNorth') {
+            if (map && typeof map.easeTo === 'function') {
+                map.easeTo({ bearing: 0, pitch: 0, duration: prefersReducedMotion() ? 0 : 600 });
+            }
+        } else if (data.type === 'peaks') applyPeaks(data);
         else if (data.type === 'update') {
             setRoutePaint(data.routeStyle);
             setTheme(data.theme);

@@ -278,6 +278,8 @@ import { terrainCamera } from './terrain-camera.js';
                 postToPage('destroyed');
             } else if (data.type === 'highlight') {
                 postToFrame('highlight', { coordinates: data.coordinates, series: data.series });
+            } else if (data.type === 'resetNorth') {
+                postToFrame('resetNorth');
             } else if (data.type === 'cameraRequest') {
                 if (Number.isSafeInteger(data.requestId) && data.requestId > 0) {
                     postToFrame('cameraRequest', { requestId: data.requestId });
@@ -314,6 +316,8 @@ import { terrainCamera } from './terrain-camera.js';
             });
         } else if (data.type === 'metrics') {
             postToPage('metrics', { navTop: data.navTop });
+        } else if (data.type === 'view') {
+            postToPage('view', { bearing: data.bearing, pitch: data.pitch });
         } else if (data.type === 'peaksRequest') {
             postToPage('peaksRequest', { requestId: data.requestId, bounds: data.bounds });
         } else if (data.type === 'error') {

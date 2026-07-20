@@ -9,6 +9,7 @@ import { settingsSchema as Schema } from './settings-schema.js';
 import { terrainBasemap } from './terrain-basemap.js';
 import { peakMarkers } from './peak-markers.js';
 import { terrainCamera as TerrainCamera } from './terrain-camera.js';
+import { terrainCompass as TerrainCompass } from './terrain-compass.js';
 
 // Kept as an IIFE for early-exit control flow (no page map → nothing to do);
 // dependencies are ES imports and the module publishes no globals.
@@ -99,6 +100,13 @@ import { terrainCamera as TerrainCamera } from './terrain-camera.js';
     terrainToggle.setAttribute('aria-pressed', 'false');
     mount.append(terrainToggle);
 
+    // A Google-Maps-style compass just above the toggle, shown only in 3D.
+    const terrainCompass = TerrainCompass.create({
+        container: mount,
+        toggle: terrainToggle,
+        onReset: () => postTerrain('resetNorth')
+    });
+
     const prefersDark = () => !!(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
     const effectiveTheme = () => (terrainThemePref === 'light' || terrainThemePref === 'dark')
         ? terrainThemePref
@@ -168,10 +176,13 @@ import { terrainCamera as TerrainCamera } from './terrain-camera.js';
         terrainToggle.style.bottom = bottom != null && bottom > 0
             ? `${Math.round(bottom + TERRAIN_TOGGLE_GAP)}px`
             : '';
+        terrainCompass.position();
     };
 
     const updateTerrainToggle = () => {
         terrainToggle.dataset.theme = effectiveTheme();
+        terrainCompass.element.dataset.theme = effectiveTheme();
+        terrainCompass.setVisible(terrainState === 'active' && !terrainStopPending);
         terrainToggle.classList.remove('bpb-map-3d-toggle-loading');
         terrainToggle.removeAttribute('aria-busy');
         if (terrainStopPending) {
@@ -315,6 +326,12 @@ import { terrainCamera as TerrainCamera } from './terrain-camera.js';
         } else if (data.type === 'metrics' && terrainState === 'active') {
             if (Number.isFinite(data.navTop)) terrainNavTop = data.navTop;
             positionTerrainToggle();
+        } else if (data.type === 'view' && terrainState === 'active') {
+            if (Number.isFinite(data.bearing) && Number.isFinite(data.pitch)) {
+                const bearing = ((data.bearing % 360) + 360) % 360;
+                const pitch = Math.min(85, Math.max(0, data.pitch));
+                terrainCompass.update(bearing, pitch);
+            }
         } else if (data.type === 'camera' && terrainState === 'active') {
             const camera = TerrainCamera.clean(data.camera);
             if (camera) terrainViewCamera = camera;

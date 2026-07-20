@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **Add a compass to 3D maps.** A Google-Maps-style compass now floats just
+  above the 3D button whenever a 3D terrain view is open. It tilts and rotates
+  with the camera, and clicking it snaps the view back to north-up looking
+  straight down. It respects reduced-motion and is not shown on the 2D map.
+
 - **Reorganize the settings page into two-level sections.** The options page
   now groups related settings under always-visible sub-sections — Activity
   creation splits into *GPX capture* and *Trip report editor*; Map & GPX chart

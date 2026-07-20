@@ -155,6 +155,51 @@ test('Peak pages wrap the Dynamic Map with a 3D toggle and open a validated summ
     dom.window.close();
 });
 
+test('Peak-page 3D shows a compass that tracks the view and resets north', async () => {
+    const { dom, window, messages } = loadPeakMap();
+    const toggle = window.document.getElementById('bpb-terrain-toggle');
+    const iframe = window.document.getElementById('Gmap');
+    iframe.contentWindow.mapsPlaceholder = {
+        eachLayer() {}, on() {},
+        getCenter() { return { lat: 48.84, lng: -121.59 }; },
+        getZoom() { return 15; }, setView() {}
+    };
+    const compass = window.document.getElementById('bpb-terrain-compass');
+    const disc = compass.querySelector('.bpb-map-compass-disc');
+    assert.ok(compass, 'the compass button exists next to the toggle');
+    assert.equal(compass.parentElement.id, 'bpb-map-viewport');
+    assert.equal(compass.title, 'Reset to north');
+    assert.equal(compass.hidden, true, 'hidden until 3D is active');
+
+    await waitFor(dom, () => toggle.dataset.theme === 'dark');
+    toggle.click();
+    await waitFor(dom, () => messages.some(message => message.__bpbTerrain === true && message.type === 'init'));
+
+    const dispatchPage = data => window.dispatchEvent(new window.MessageEvent('message', {
+        source: window, origin: window.location.origin,
+        data: { __bpbTerrain: true, dir: 'toPage', ...data }
+    }));
+    dispatchPage({ type: 'loaded', navTop: 88 });
+    assert.equal(compass.hidden, false, 'the compass shows once 3D is active');
+    assert.equal(compass.dataset.theme, 'dark');
+
+    // Bearing normalizes across full turns; pitch is passed through in range.
+    dispatchPage({ type: 'view', bearing: 720 + 45, pitch: 40 });
+    assert.equal(disc.style.transform, 'rotateX(40deg) rotateZ(-45deg)');
+    // A non-finite value is ignored — the disc keeps its last transform.
+    dispatchPage({ type: 'view', bearing: NaN, pitch: 10 });
+    assert.equal(disc.style.transform, 'rotateX(40deg) rotateZ(-45deg)');
+
+    compass.click();
+    assert.equal(messages.at(-1).type, 'resetNorth');
+    assert.equal(messages.at(-1).dir, 'toCS');
+
+    toggle.click(); // request the return to 2D
+    assert.equal(compass.hidden, true, 'hidden again once a stop is pending');
+    await new Promise(resolve => window.setTimeout(resolve, 0));
+    dom.window.close();
+});
+
 test('Peak-page 3D uses the extension-owned consent gate when the feature is off', async () => {
     const { dom, window, messages } = loadPeakMap({ enabled: false });
     const toggle = window.document.getElementById('bpb-terrain-toggle');

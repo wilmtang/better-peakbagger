@@ -344,6 +344,58 @@ test('Full Screen maps offer a 3D toggle that carries the native tracks into the
     dom.window.close();
 });
 
+test('Full Screen 3D shows a compass that tracks the view and resets north', async () => {
+    const fixture = await loadBigMap({ type: 'A', width: 6, settings: { enable3dMap: true } });
+    const { dom, window, messages, leaflet } = fixture;
+    const route = new leaflet.Polyline(
+        [{ lat: 44.15, lng: -121.78 }, { lat: 44.16, lng: -121.76 }, { lat: 44.17, lng: -121.75 }],
+        { color: '#d9483b', weight: 3 });
+    window.map = new leaflet.MapStub([route]);
+    fixture.evaluate();
+
+    const toggle = window.document.getElementById('bpb-terrain-toggle');
+    const compass = window.document.getElementById('bpb-terrain-compass');
+    const disc = compass.querySelector('.bpb-map-compass-disc');
+    assert.ok(compass, 'the compass lives next to the toggle in the fullscreen mount');
+    assert.equal(compass.parentElement.id, 'bpb-map-viewport');
+    assert.equal(compass.getAttribute('type'), 'button');
+    assert.equal(compass.getAttribute('aria-label'), 'Reset the view to north, looking straight down');
+    assert.equal(compass.hidden, true, 'hidden until 3D is active');
+
+    await waitFor(dom, () => toggle.disabled === false);
+    toggle.click();
+    await waitFor(dom, () => messages.some(message => message.__bpbTerrain === true && message.type === 'init'));
+    assert.equal(compass.hidden, true, 'still hidden while the frame loads');
+
+    const dispatchPage = data => window.dispatchEvent(new window.MessageEvent('message', {
+        source: window, origin: window.location.origin,
+        data: { __bpbTerrain: true, dir: 'toPage', ...data }
+    }));
+    dispatchPage({ type: 'loaded' });
+    assert.equal(compass.hidden, false, 'the compass appears with the terrain view');
+    assert.equal(compass.dataset.theme, 'light');
+
+    // A streamed view rotates the disc; bearing normalizes to [0,360), pitch clamps to [0,85].
+    dispatchPage({ type: 'view', bearing: 450, pitch: 60 });
+    assert.equal(disc.style.transform, 'rotateX(60deg) rotateZ(-90deg)');
+    dispatchPage({ type: 'view', bearing: -30, pitch: 120 });
+    assert.equal(disc.style.transform, 'rotateX(85deg) rotateZ(-330deg)');
+
+    // Clicking the compass posts a resetNorth command toward the frame.
+    compass.click();
+    assert.equal(messages.at(-1).type, 'resetNorth');
+    assert.equal(messages.at(-1).dir, 'toCS');
+
+    // Returning to 2D hides the compass — the moment a stop is pending, and after.
+    toggle.click();
+    assert.equal(compass.hidden, true, 'hidden the moment a stop is pending');
+    const cameraRequestId = messages.at(-1).requestId;
+    dispatchPage({ type: 'camera', requestId: cameraRequestId, camera: { center: [44.22, -121.69], zoom: 14.5 } });
+    assert.equal(compass.hidden, true, 'stays hidden after returning to 2D');
+    await new Promise(resolve => window.setTimeout(resolve, 0));
+    dom.window.close();
+});
+
 test('Full Screen 3D maps serve peak-dot requests from the native PLLBB feed', async () => {
     const fixture = await loadBigMap({ type: 'A', width: 6, settings: { enable3dMap: true } });
     const { dom, window, messages, leaflet } = fixture;

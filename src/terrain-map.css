@@ -123,6 +123,67 @@
     opacity: 0.55;
 }
 
+/* Compass, floating just above the 2D/3D toggle (its exact bottom is set inline
+   by JS to track the toggle). Same surface/theme treatment as the toggle; the
+   perspective lets the disc's rotateX read as a tilt, MapLibre's visualizePitch
+   look. Shown only while 3D is active. */
+.bpb-map-compass {
+    position: absolute;
+    right: 10px;
+    z-index: 3;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    border: 1px solid rgb(53 58 49 / 20%);
+    border-radius: 50%;
+    background: rgb(250 249 245 / 92%);
+    box-shadow: 0 1px 4px rgb(0 0 0 / 18%);
+    backdrop-filter: blur(8px);
+    perspective: 100px;
+    cursor: pointer;
+    pointer-events: auto;
+    -webkit-user-select: none;
+    user-select: none;
+}
+
+.bpb-map-compass[hidden] {
+    display: none;
+}
+
+.bpb-map-compass-disc {
+    display: block;
+    line-height: 0;
+    transform-origin: 50% 50%;
+    transition: transform 0.12s ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .bpb-map-compass-disc { transition: none; }
+}
+
+.bpb-map-compass[data-theme="dark"] {
+    border-color: rgb(255 255 255 / 16%);
+    background: rgb(31 35 33 / 90%);
+    box-shadow: 0 1px 5px rgb(0 0 0 / 38%);
+}
+
+.bpb-map-compass:hover {
+    background: rgb(255 255 255 / 98%);
+}
+
+.bpb-map-compass[data-theme="dark"]:hover {
+    background: rgb(40 45 42 / 96%);
+}
+
+.bpb-map-compass:focus-visible {
+    outline: 2px solid #2f6fd0;
+    outline-offset: 2px;
+}
+
 /* Extension-owned confirmation for the off-by-default 3D feature. It lives in
    the isolated world so the page can request the prompt but cannot write the
    feature gate. The full-page scrim also works on Full Screen Maps, whose map

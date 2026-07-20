@@ -146,6 +146,22 @@ test('3D terrain waits for the extension frame handshake before sending route co
         series: 'time'
     }, 'the isolated-world bridge preserves the series discriminator');
 
+    // Compass: the frame streams its bearing/pitch to the page…
+    window.dispatchEvent(new window.MessageEvent('message', {
+        source: frame.contentWindow,
+        origin: 'chrome-extension://test-id',
+        data: { __bpbTerrainFrame: true, dir: 'toParent', type: 'view', bearing: 12.5, pitch: 47 }
+    }));
+    assert.deepEqual(JSON.parse(JSON.stringify(pageMessages.at(-1))), {
+        __bpbTerrain: true, dir: 'toPage', type: 'view', bearing: 12.5, pitch: 47
+    }, 'the bridge relays the view stream to the page compass');
+
+    // …and the page's reset command travels back to the frame.
+    dispatchPage({ type: 'resetNorth' });
+    assert.deepEqual(JSON.parse(JSON.stringify(frameMessages.at(-1))), {
+        __bpbTerrainFrame: true, dir: 'toFrame', type: 'resetNorth'
+    }, 'the bridge relays the compass reset to the frame');
+
     await window.chrome.storage.sync.set({ bpbSettings: { enable3dMap: false } });
     await new Promise(resolve => window.setTimeout(resolve, 0));
     assert.equal(window.document.getElementById('bpb-terrain-frame'), null);

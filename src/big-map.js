@@ -11,6 +11,7 @@ import { gpxMetrics } from './gpx-metrics.js';
 import { terrainBasemap } from './terrain-basemap.js';
 import { peakMarkers } from './peak-markers.js';
 import { terrainCamera as TerrainCamera } from './terrain-camera.js';
+import { terrainCompass as TerrainCompass } from './terrain-compass.js';
 
 // Kept as an IIFE for early-exit control flow (non-Full-Screen-Map pages);
 // dependencies are ES imports and the module publishes no globals.
@@ -206,6 +207,7 @@ import { terrainCamera as TerrainCamera } from './terrain-camera.js';
     let terrainConsentPending = false;
     let terrainMount = null;
     let terrainToggle = null;
+    let terrainCompass = null;
     let terrainLoadTimer = null;
     let terrainNavTop = null;
     let terrainViewCamera = null;
@@ -247,6 +249,7 @@ import { terrainCamera as TerrainCamera } from './terrain-camera.js';
             bottom = measureNative2dZoomTop();
         }
         terrainToggle.style.bottom = bottom != null && bottom > 0 ? `${Math.round(bottom + TERRAIN_TOGGLE_GAP)}px` : '';
+        if (terrainCompass) terrainCompass.position();
     };
 
     const prefersDark = () => !!(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
@@ -361,6 +364,12 @@ import { terrainCamera as TerrainCamera } from './terrain-camera.js';
             startTerrain();
         });
         terrainMount.append(terrainToggle);
+        // A Google-Maps-style compass just above the toggle, shown only in 3D.
+        terrainCompass = TerrainCompass.create({
+            container: terrainMount,
+            toggle: terrainToggle,
+            onReset: () => postTerrain('resetNorth')
+        });
         document.body.append(terrainMount);
     };
 
@@ -368,6 +377,10 @@ import { terrainCamera as TerrainCamera } from './terrain-camera.js';
         ensureTerrainToggle();
         terrainMount.hidden = false;
         terrainToggle.dataset.theme = effectiveTheme();
+        if (terrainCompass) {
+            terrainCompass.element.dataset.theme = effectiveTheme();
+            terrainCompass.setVisible(terrainState === 'active' && !terrainStopPending);
+        }
         terrainToggle.classList.remove('bpb-map-3d-toggle-loading');
         terrainToggle.removeAttribute('aria-busy');
         if (terrainStopPending) {
@@ -517,6 +530,12 @@ import { terrainCamera as TerrainCamera } from './terrain-camera.js';
         } else if (data.type === 'metrics' && terrainState === 'active') {
             if (Number.isFinite(data.navTop)) terrainNavTop = data.navTop;
             positionTerrainToggle();
+        } else if (data.type === 'view' && terrainState === 'active') {
+            if (terrainCompass && Number.isFinite(data.bearing) && Number.isFinite(data.pitch)) {
+                const bearing = ((data.bearing % 360) + 360) % 360;
+                const pitch = Math.min(85, Math.max(0, data.pitch));
+                terrainCompass.update(bearing, pitch);
+            }
         } else if (data.type === 'camera' && terrainState === 'active') {
             const camera = TerrainCamera.clean(data.camera);
             if (camera) terrainViewCamera = camera;
