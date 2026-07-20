@@ -36,7 +36,9 @@ import {
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 // The unpacked extension is the built bundle tree, not the source root.
-const dist = path.join(root, 'dist');
+const dist = process.env.BPB_VERIFY_EXTENSION_SOURCE
+    ? path.resolve(process.env.BPB_VERIFY_EXTENSION_SOURCE)
+    : path.join(root, 'dist');
 
 let chromium;
 try {
@@ -120,13 +122,15 @@ try {
             return {
                 origin: location.origin,
                 version: chrome.runtime.getManifest().version,
+                optionsOpenInTab: chrome.runtime.getManifest().options_ui?.open_in_tab,
                 renderedVersion: document.getElementById('about-version')?.textContent,
                 values: [sync[keys.sync], local[keys.local], session[keys.session]],
                 onChanged
             };
         });
         check(storageProbe.origin.startsWith('chrome-extension://')
-            && storageProbe.renderedVersion === `Version ${storageProbe.version}`,
+            && storageProbe.renderedVersion === `Version ${storageProbe.version}`
+            && storageProbe.optionsOpenInTab === true,
         `the Chrome options origin or manifest version was wrong: ${JSON.stringify(storageProbe)}`);
         check(storageProbe.onChanged && storageProbe.values.join(',') === 'sync,local,session',
             `Chrome storage areas or storage.onChanged did not round-trip: ${JSON.stringify(storageProbe)}`);

@@ -71,7 +71,11 @@ async function main() {
   let driver;
   let addonId;
   try {
-    prepared = await prepareFirefoxSource({ temporaryRoot });
+    const suppliedSource = process.env.BPB_VERIFY_EXTENSION_SOURCE
+      ? path.resolve(process.env.BPB_VERIFY_EXTENSION_SOURCE)
+      : null;
+    if (!suppliedSource) prepared = await prepareFirefoxSource({ temporaryRoot });
+    const extensionSource = suppliedSource || prepared.sourceDir;
     fixture = await createBrowserFixtureServer({ temporaryRoot });
 
     const options = new firefox.Options()
@@ -99,7 +103,7 @@ async function main() {
       .build();
     await driver.manage().setTimeouts({ pageLoad: 20_000, script: 15_000 });
 
-    addonId = await driver.installAddon(prepared.sourceDir, true);
+    addonId = await driver.installAddon(extensionSource, true);
     const baseUrl = await extensionBaseUrl(driver, addonId);
     if (!baseUrl?.startsWith("moz-extension://")) {
       throw new Error(`Firefox reported an invalid extension origin: ${JSON.stringify(baseUrl)}`);
@@ -152,6 +156,7 @@ async function main() {
         done({
           origin: globalThis.location.origin,
           version: api.runtime.getManifest().version,
+          optionsOpenInTab: api.runtime.getManifest().options_ui?.open_in_tab,
           values: [sync[keys.sync], local[keys.local], session[keys.session]],
           onChanged,
         });
@@ -164,7 +169,7 @@ async function main() {
     );
     assertState(
       extensionState.version && await driver.findElement(By.id("about-version")).getText()
-        === `Version ${extensionState.version}`,
+        === `Version ${extensionState.version}` && extensionState.optionsOpenInTab === false,
       "Firefox options did not render the manifest version",
       extensionState,
     );

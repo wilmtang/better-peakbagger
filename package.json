@@ -34,6 +34,7 @@
     "verify:firefox": "npm run build && npm run verify:firefox:built",
     "verify:firefox:built": "node scripts/verify-firefox-extension.mjs",
     "verify:browsers": "npm run build && npm run verify:chrome:built && npm run verify:firefox:built",
+    "verify:packages": "node scripts/verify-packaged-extensions.mjs",
     "verify:extension": "npm run verify:chrome"
   },
   "devDependencies": {
