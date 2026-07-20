@@ -51,7 +51,7 @@ exception is an exact Markdown-source sidecar described below.
 | --- | --- | --- | --- |
 | Saved/form value | Peakbagger's `JournalText` textarea | String containing Peakbagger square-bracket markup and newlines | The only value submitted to Peakbagger and the interchange between modes |
 | Rich document | [TipTap](https://tiptap.dev)/ProseMirror | Schema-constrained ProseMirror document; `getHTML()` exposes a clean HTML serialization | Editable Rich-mode state only |
-| Markdown source | [CodeMirror 6](https://codemirror.net) | GFM Markdown string plus allowlisted Peakbagger bracket extensions | Editable Markdown-mode state only |
+| Markdown source | [CodeMirror 6](https://codemirror.net) | GFM Markdown string plus allowlisted inline HTML | Editable Markdown-mode state only |
 | Markdown source sidecar | `state.mdSource`, and `source` in a Markdown draft | Exact Markdown string | Preserves the user's Markdown spelling when a round trip through bracket markup would rewrite it |
 | Preview | A preview `<div>` | Generated safe HTML string | Read-only view of the current Markdown source; never parsed back |
 | Report AST | `src/report-markup.js` | Plain JavaScript block/inline objects | Temporary common semantic form used only inside a conversion |
@@ -60,7 +60,7 @@ exception is an exact Markdown-source sidecar described below.
 One report can therefore have several equivalent spellings:
 
 ```text
-Markdown source    We climbed **Baker** under [span style="color:#2471a3"]blue[/span] skies.
+Markdown source    We climbed **Baker** under <span style="color:#2471a3">blue</span> skies.
 Rich getHTML()     <p>We climbed <strong>Baker</strong> under <span style="color: rgb(36, 113, 163);" data-bpb-report-color="#2471a3">blue</span> skies.</p>
 Report AST         paragraph(text, bold(text), text, color("#2471a3", text), text)
 Saved JournalText  We climbed [b]Baker[/b] under [span style="color:#2471a3"]blue[/span] skies.
@@ -156,8 +156,8 @@ CodeMirror Markdown string
 
 [Marked 18.0.6](https://github.com/markedjs/marked/tree/v18.0.6) is used only as
 a GFM lexer. Its HTML renderer is never called. Raw HTML tokens become visible
-text, while Peakbagger bracket extensions embedded in a Markdown text token go
-through the same bracket-to-detached-DOM parser used when loading
+text, while allowlisted HTML embedded in Markdown goes through the same
+tag-to-detached-DOM parser used when loading
 `JournalText`.
 
 The preview and `JournalText` are printed from the same parsed semantics, so
@@ -191,12 +191,12 @@ canonical spelling or structure. Several components do only one of those jobs:
 | TipTap schema | Partial, structural first pass | Yes | Refuses nodes and marks its schema cannot represent; turns editing operations and pasted content into a ProseMirror document, carrying the parsed color token across CSSOM serialization |
 | CodeMirror | No | No | Stores a string, highlights syntax, continues lists, and manages Markdown undo history |
 | Marked lexer | No | No | Tokenizes GFM syntax; Better Peakbagger, not Marked, decides which token types enter the AST |
-| Markdown-token-to-AST mapper | Yes | Yes | Accepts known token types, validates links and images, sends bracket extensions through the bracket parser, and keeps raw HTML inert as visible text |
+| Markdown-token-to-AST mapper | Yes | Yes | Accepts known token types, validates links and images, parses only the documented inline HTML allowlist, and keeps other HTML inert as visible text |
 | Bracket-source parser | Yes | Yes | Requires balanced allowlisted tags, validates attributes, neutralizes unsupported tag-like source, and builds inert safe HTML |
 | DOM-to-AST parser | Yes, authoritative for DOM input | Yes | Drops dangerous DOM nodes, unwraps unsupported elements to safe visible content where appropriate, and revalidates links, image sources, dimensions, raw inline colors, and TipTap-preserved color tokens |
 | AST-to-bracket printer | No new validation | Yes | Serializes the already-validated AST, emitting canonical Peakbagger tags and escaping ordinary text that resembles HTML or bracket tags |
 | AST-to-HTML printer | No new validation | Yes | Serializes the already-validated AST into allowlisted preview/editor elements with escaped text and attributes |
-| AST-to-Markdown printer | No new validation | Yes | Serializes the already-validated AST into canonical Markdown plus bracket extensions for features with no standard Markdown form |
+| AST-to-Markdown printer | No new validation | Yes | Serializes the already-validated AST into canonical Markdown plus safe HTML for features with no standard Markdown form |
 | Preview `<div>` | No | No | Receives only AST-generated safe HTML and is never read back into source data |
 | Plain mode | No | No | Edits the submitted string verbatim |
 
@@ -313,16 +313,17 @@ aspect-locked corner handle or the left/right arrow keys.
 Height-only legacy media markup is represented canonically as `|x360`, so a
 Rich/Plain → Markdown → Rich round trip does not discard that dimension.
 
-Peakbagger-supported inline features without standard Markdown syntax remain
-available as bracket extensions inside Markdown:
+Peakbagger-supported inline features without standard Markdown syntax use
+allowlisted HTML inside Markdown, so Markdown mode remains portable text rather
+than exposing Peakbagger's private bracket dialect:
 
 ```markdown
-[u]underline[/u]
-[mark]highlight[/mark]
-H[sub]2[/sub]O and x[sup]2[/sup]
-[small]aside[/small]
-[q]inline quote[/q]
-[span style="color:red"]red[/span]
+<u>underline</u>
+<mark>highlight</mark>
+H<sub>2</sub>O and x<sup>2</sup>
+<small>aside</small>
+<q>inline quote</q>
+<span style="color:red">red</span>
 ```
 
 The extension accepts only a single safe `color` declaration on `span` (or the
@@ -374,7 +375,7 @@ Peakbagger therefore does **not** generate or execute:
 - iframes other than a canonical YouTube player, plus `audio`, `object`, or
   `embed`;
 - `script`, forms, controls, or event-handler attributes;
-- raw HTML embedded in Markdown;
+- HTML outside the documented inline allowlist;
 - `javascript:`, `data:`, filesystem, browser-internal, or protocol-relative
   URLs;
 - arbitrary `style` attributes.

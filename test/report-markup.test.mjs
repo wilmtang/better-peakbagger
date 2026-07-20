@@ -122,10 +122,13 @@ test('GFM blocks and inline syntax map to server-confirmed Peakbagger tags', () 
     assert.match(bracket, /\[hr\]$/);
 });
 
-test('safe bracket extensions cover Markdown features without standard syntax', () => {
-    const markdown = '[u]under[/u] [mark]marked[/mark] H[sub]2[/sub]O x[sup]2[/sup] '
-        + '[small]aside[/small] [q]quoted[/q] [span style="color:red"]red[/span]';
-    assert.equal(Markup.markdownToBracket(markdown), markdown);
+test('safe HTML extensions cover Markdown features without standard syntax', () => {
+    const markdown = '<u>under</u> <mark>marked</mark> H<sub>2</sub>O x<sup>2</sup> '
+        + '<small>*aside*</small> <q>quoted</q> <span style="color:red">red</span>';
+    const bracket = '[u]under[/u] [mark]marked[/mark] H[sub]2[/sub]O x[sup]2[/sup] '
+        + '[small][i]aside[/i][/small] [q]quoted[/q] [span style="color:red"]red[/span]';
+    assert.equal(Markup.markdownToBracket(markdown), bracket);
+    assert.equal(Markup.bracketToMarkdown(bracket), markdown);
 });
 
 test('images require HTTPS and raw Markdown HTML stays inert', () => {
@@ -276,9 +279,10 @@ test('server-confirmed inline aliases normalize without losing semantics', () =>
 test('hex colors survive every bracket, Markdown, editor, and preview conversion path', () => {
     for (const color of ['#abc', '#2471a3']) {
         const source = `[span style="color:${color}"]blue[/span]`;
+        const markdown = `<span style="color:${color}">blue</span>`;
         assert.equal(Markup.astToBracket(Markup.parseBracket(source)), source);
-        assert.equal(Markup.bracketToMarkdown(source), source);
-        assert.equal(Markup.markdownToBracket(source), source);
+        assert.equal(Markup.bracketToMarkdown(source), markdown);
+        assert.equal(Markup.markdownToBracket(markdown), source);
         assert.equal(Markup.domToBracket(body(Markup.bracketToEditorHtml(source))), source);
         assert.ok(Markup.bracketToPreviewHtml(source)
             .includes(`<span style="color:${color}">blue</span>`));
@@ -354,7 +358,7 @@ test('bracket ↔ markdown mode switching round-trips the supported formatting',
     assert.equal(markdown, [
         '**Summit day**',
         '',
-        'Went **up** the *north* side with [u]screws[/u], see [beta](https://example.com).',
+        'Went **up** the *north* side with <u>screws</u>, see [beta](https://example.com).',
         '',
         '- rope',
         '- pickets'
@@ -374,7 +378,7 @@ test('table cell line breaks stay inside one Markdown row', () => {
     const markdown = [
         '| Peak | Notes |',
         '| --- | --- |',
-        '| Baker | snow[br]ice |'
+        '| Baker | snow<br>ice |'
     ].join('\n');
 
     assert.equal(Markup.bracketToMarkdown(bracket), markdown);

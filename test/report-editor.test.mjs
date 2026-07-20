@@ -149,6 +149,10 @@ test('opt-in credit starts after the caret in Markdown and Plain modes', async (
     });
     await editorReady(markdownDom);
     assert.ok(editors(markdownDom).markdown.getValue().startsWith('\n\n'));
+    assert.match(editors(markdownDom).markdown.getValue(),
+        /<small>\*Created with <a href="[^"]+" target="_blank">Better Peakbagger<\/a>\.\*<\/small>$/,
+        'Markdown mode should expose portable HTML instead of Peakbagger bracket tags');
+    assert.doesNotMatch(editors(markdownDom).markdown.getValue(), /\[(?:small|a)\b/i);
     assert.equal(editors(markdownDom).markdown.view.state.selection.main.head, 0);
 
     const plainDom = await loadEditor({
@@ -429,16 +433,17 @@ test('an unrelated rich edit preserves an existing hex text color', async () => 
 });
 
 test('an unrelated Markdown edit preserves hex color in source, form, and preview', async () => {
-    const source = 'Under [span style="color:#2471a3"]blue[/span] skies.';
-    const dom = await loadEditor({ report: source });
+    const bracket = 'Under [span style="color:#2471a3"]blue[/span] skies.';
+    const markdown = 'Under <span style="color:#2471a3">blue</span> skies.';
+    const dom = await loadEditor({ report: bracket });
     const ui = await editorReady(dom);
     const doc = dom.window.document;
 
     modeButton(doc, 'Markdown').click();
-    assert.equal(editors(dom).markdown.getValue(), source);
-    typeMarkdown(dom, `${source} Clear weather.`);
+    assert.equal(editors(dom).markdown.getValue(), markdown);
+    typeMarkdown(dom, `${markdown} Clear weather.`);
     await waitFor(dom, () => doc.getElementById('JournalText').value.endsWith('Clear weather.'));
-    assert.equal(doc.getElementById('JournalText').value, `${source} Clear weather.`);
+    assert.equal(doc.getElementById('JournalText').value, `${bracket} Clear weather.`);
     assert.equal(ui.querySelector('.bpb-re-preview span')?.getAttribute('style'), 'color:#2471a3');
 });
 

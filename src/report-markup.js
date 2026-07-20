@@ -8,8 +8,8 @@
 // Markdown, preview HTML, and the native JournalText field therefore share a
 // small allowlisted AST. Markdown is tokenized by the vendored Marked parser;
 // Marked's HTML renderer is deliberately never used. Existing bracket markup
-// is parsed through a detached, sanitized DOM, and editor DOM is read back into
-// the same AST.
+// and allowlisted HTML embedded in Markdown are parsed through a detached,
+// sanitized DOM, and editor DOM is read back into the same AST.
 //
 // Supported blocks: paragraphs/line breaks, h1-h6, block quotes, nested ul/ol,
 // tables, preformatted code, and horizontal rules. Supported inline content:
@@ -18,10 +18,10 @@
 // span/font markup. P/div/br are accepted on import but normalized to
 // Peakbagger's newline convention.
 //
-// This module never accepts arbitrary HTML. Unsupported tags, raw Markdown
-// HTML, unsafe URLs, event attributes, and non-color styles become visible
-// text, and their tag delimiters are entity-escaped before submission. Plain
-// mode in report-editor.js remains the explicit verbatim escape hatch.
+// This module never accepts arbitrary HTML. Unsupported tags, unsafe URLs,
+// event attributes, and non-color styles become visible text, and their tag
+// delimiters are entity-escaped before submission. Plain mode in
+// report-editor.js remains the explicit verbatim escape hatch.
 // Idempotent: safe to inject more than once into the same global.
 
 
@@ -190,9 +190,13 @@
         const tag = normalizedTag(sourceName);
         if (!tag) return null;
 
-        if (INLINE_TAGS.has(sourceName)) return { tag, html: `<${tag}>`, self: false };
+        if (INLINE_TAGS.has(sourceName)) {
+            return { tag, html: `<${tag}>`, self: false, ast: { t: tag } };
+        }
         if (BLOCK_TAGS.has(sourceName)) return { tag, html: `<${tag}>`, self: false };
-        if (tag === 'br' || tag === 'hr') return { tag, html: `<${tag}>`, self: true };
+        if (tag === 'br' || tag === 'hr') {
+            return { tag, html: `<${tag}>`, self: true, ast: tag === 'br' ? BREAK : null };
+        }
         if (tag === 'a') {
             const href = sanitizeHref(readAttr(attrs, 'href'));
             if (!href) return null;
@@ -200,7 +204,8 @@
             return {
                 tag,
                 html: `<a href="${escapeAttribute(href)}"${blank ? ' target="_blank" rel="noopener noreferrer"' : ''}>`,
-                self: false
+                self: false,
+                ast: { t: 'a', href, blank }
             };
         }
         if (tag === 'img') {
@@ -213,7 +218,8 @@
                 tag,
                 html: `<img src="${escapeAttribute(src)}"${alt !== null ? ` alt="${escapeAttribute(alt)}"` : ''}${
                     width ? ` width="${width}"` : ''}${height ? ` height="${height}"` : ''}>`,
-                self: true
+                self: true,
+                ast: { t: 'img', src, alt: alt || '', width, height }
             };
         }
         if (tag === 'video') {
@@ -244,7 +250,12 @@
                 ? readAttr(attrs, 'color')
                 : styleColor && styleColor[1]);
             if (!color) return null;
-            return { tag, html: `<span style="color:${escapeAttribute(color)}">`, self: false };
+            return {
+                tag,
+                html: `<span style="color:${escapeAttribute(color)}">`,
+                self: false,
+                ast: { t: 'color', color }
+            };
         }
         return null;
     };
@@ -574,8 +585,151 @@
 
     // ---- Marked tokens -> AST ---------------------------------------------
 
-    const textWithBreaks = value => compactInlines(String(value ?? '').split('\n')
-        .flatMap((part, index) => index ? [BREAK, ...parseBracketInline(part)] : parseBracketInline(part)));
+    // Marked splits an inline HTML wrapper and the Markdown inside it into
+    // separate tokens. Protect validated HTML/bracket extensions before lexing
+    // so a source such as `<small>*aside*</small>` can be folded into the same
+    // nested AST as ordinary Markdown. Unsupported HTML is left for Marked's
+    // inert-html path below.
+    const protectMarkdownExtensions = source => {
+        const input = String(source ?? '');
+        let markerPrefix = '\uE000BPB';
+        while (input.includes(markerPrefix)) markerPrefix += '_';
+
+        TAG_TOKEN.lastIndex = 0;
+        const tokens = [];
+        for (let hit = TAG_TOKEN.exec(input); hit; hit = TAG_TOKEN.exec(input)) {
+            const bracket = hit[1] !== undefined;
+            const closing = (bracket ? hit[1] : hit[4]) === '/';
+            const name = (bracket ? hit[2] : hit[5]).toLowerCase();
+            const attrs = bracket ? hit[3] : hit[6];
+            tokens.push({
+                start: hit.index,
+                end: hit.index + hit[0].length,
+                raw: hit[0],
+                closing,
+                name,
+                attrs,
+                safe: null,
+                paired: false,
+                pair: null
+            });
+        }
+
+        const stack = [];
+        let pair = 0;
+        for (const token of tokens) {
+            if (!token.closing) {
+                const safe = safeOpening(token.name, token.attrs);
+                if (!safe?.ast) continue;
+                token.safe = safe;
+                if (safe.self) {
+                    token.paired = true;
+                    token.pair = pair++;
+                } else stack.push(token);
+                continue;
+            }
+            if (token.attrs.trim()) continue;
+            const closeTag = normalizedTag(token.name);
+            const open = stack[stack.length - 1];
+            if (open && closeTag && open.safe.tag === closeTag) {
+                stack.pop();
+                open.paired = true;
+                token.paired = true;
+                open.pair = pair;
+                token.pair = pair++;
+                token.safe = open.safe;
+            }
+        }
+
+        const markers = [];
+        let protectedSource = '';
+        let at = 0;
+        for (const token of tokens) {
+            protectedSource += input.slice(at, token.start);
+            if (token.paired && token.safe) {
+                const index = markers.length;
+                markers.push({
+                    raw: token.raw,
+                    closing: token.closing,
+                    self: token.safe.self,
+                    pair: token.pair,
+                    safe: token.safe
+                });
+                protectedSource += `${markerPrefix}${index}\uE001`;
+            } else protectedSource += token.raw;
+            at = token.end;
+        }
+        protectedSource += input.slice(at);
+
+        return {
+            source: protectedSource,
+            markers,
+            markerPattern: new RegExp(`${markerPrefix}(\\d+)\\uE001`, 'g')
+        };
+    };
+
+    const makeMarkdownExtensionNode = (safe, kids = []) => {
+        if (safe.ast === BREAK) return BREAK;
+        if (safe.ast.t === 'img') return { ...safe.ast };
+        return kids.length ? { ...safe.ast, kids } : null;
+    };
+
+    const foldMarkdownExtensions = nodes => {
+        const root = [];
+        const stack = [];
+        const append = node => {
+            if (!node) return;
+            (stack[stack.length - 1]?.kids || root).push(node);
+        };
+
+        for (const node of nodes) {
+            if (node.t !== 'markdown-extension') {
+                append(node);
+                continue;
+            }
+            if (node.self) {
+                append(makeMarkdownExtensionNode(node.safe));
+                continue;
+            }
+            if (!node.closing) {
+                stack.push({ ...node, kids: [] });
+                continue;
+            }
+            const open = stack[stack.length - 1];
+            if (!open || open.pair !== node.pair) {
+                append(text(node.raw));
+                continue;
+            }
+            stack.pop();
+            append(makeMarkdownExtensionNode(open.safe, compactInlines(open.kids)));
+        }
+
+        while (stack.length) {
+            const open = stack.pop();
+            const target = stack[stack.length - 1]?.kids || root;
+            target.push(text(open.raw), ...open.kids);
+        }
+        return compactInlines(root);
+    };
+
+    const markdownText = (value, extensions) => {
+        const input = String(value ?? '');
+        const nodes = [];
+        let at = 0;
+        extensions.markerPattern.lastIndex = 0;
+        for (let hit = extensions.markerPattern.exec(input); hit; hit = extensions.markerPattern.exec(input)) {
+            nodes.push(...parseBracketInline(input.slice(at, hit.index)));
+            nodes.push({ t: 'markdown-extension', ...extensions.markers[Number(hit[1])] });
+            at = hit.index + hit[0].length;
+        }
+        nodes.push(...parseBracketInline(input.slice(at)));
+        return nodes;
+    };
+
+    const textWithBreaks = (value, extensions) => compactInlines(String(value ?? '').split('\n')
+        .flatMap((part, index) => index
+            ? [BREAK, ...markdownText(part, extensions)]
+            : markdownText(part, extensions)));
 
     // Obsidian encodes image dimensions as the final segment of the alt text:
     // ![alt|width](url) or ![alt|widthxheight](url). Treat the suffix as size
@@ -609,24 +763,25 @@
     // character accepted by cleanUrlText (which already excludes `<`/`>`).
     const markdownMediaDestination = src => /[()]/.test(src) ? `<${src}>` : src;
 
-    const markedInlines = tokens => compactInlines((tokens || []).flatMap(token => {
+    const markedInlines = (tokens, extensions) => foldMarkdownExtensions((tokens || []).flatMap(token => {
         if (!token || typeof token !== 'object') return [];
         if (token.type === 'text' || token.type === 'escape') {
             return token.tokens && token.tokens !== tokens
-                ? markedInlines(token.tokens)
-                : textWithBreaks(token.text);
+                ? markedInlines(token.tokens, extensions)
+                : textWithBreaks(token.text, extensions);
         }
         if (token.type === 'strong' || token.type === 'em' || token.type === 'del') {
             const type = token.type === 'strong' ? 'b' : token.type === 'em' ? 'i' : 's';
-            const kids = markedInlines(token.tokens);
+            const kids = markedInlines(token.tokens, extensions);
             return kids.length ? [{ t: type, kids }] : [];
         }
         if (token.type === 'codespan') return [{ t: 'code', kids: [text(token.text)] }];
         if (token.type === 'br') return [BREAK];
         if (token.type === 'link') {
             const href = resolveLinkTarget(token.href);
-            const kids = markedInlines(token.tokens);
-            return href && kids.length ? [{ t: 'a', href, blank: false, kids }] : textWithBreaks(token.raw);
+            const kids = markedInlines(token.tokens, extensions);
+            return href && kids.length ? [{ t: 'a', href, blank: false, kids }]
+                : textWithBreaks(token.raw, extensions);
         }
         if (token.type === 'image') {
             const videoSrc = sanitizeVideoSrc(token.href);
@@ -647,31 +802,34 @@
             }
             const src = sanitizeImageSrc(token.href);
             return src ? [{ t: 'img', src, ...markdownImageAttributes(token) }]
-                : textWithBreaks(token.raw);
+                : textWithBreaks(token.raw, extensions);
         }
-        // Marked deliberately does not sanitize raw HTML. Keep it visible and
+        // Marked deliberately does not sanitize raw HTML. The allowlisted
+        // subset was protected before lexing; keep everything else visible and
         // inert instead of passing it to either innerHTML or Peakbagger.
         if (token.type === 'html') return [text(token.raw || token.text || '')];
-        return token.tokens ? markedInlines(token.tokens) : textWithBreaks(token.raw || token.text || '');
+        return token.tokens ? markedInlines(token.tokens, extensions)
+            : textWithBreaks(token.raw || token.text || '', extensions);
     }));
 
-    const markedBlocks = tokens => (tokens || []).flatMap(token => {
+    const markedBlocks = (tokens, extensions) => (tokens || []).flatMap(token => {
         if (!token || typeof token !== 'object' || token.type === 'space' || token.type === 'def') return [];
         if (token.type === 'paragraph' || token.type === 'text') {
-            const kids = trimInlines(markedInlines(token.tokens || [{ type: 'text', text: token.text || token.raw }]));
+            const kids = trimInlines(markedInlines(
+                token.tokens || [{ type: 'text', text: token.text || token.raw }], extensions));
             return kids.length ? [{ type: 'p', kids }] : [];
         }
         if (token.type === 'heading') {
-            const kids = trimInlines(markedInlines(token.tokens));
+            const kids = trimInlines(markedInlines(token.tokens, extensions));
             return kids.length ? [{ type: 'heading', level: Math.min(6, Math.max(1, token.depth)), kids }] : [];
         }
         if (token.type === 'blockquote') {
-            const blocks = markedBlocks(token.tokens);
+            const blocks = markedBlocks(token.tokens, extensions);
             return blocks.length ? [{ type: 'blockquote', blocks }] : [];
         }
         if (token.type === 'list') {
             const items = token.items.map(item => {
-                const blocks = markedBlocks(item.tokens);
+                const blocks = markedBlocks(item.tokens, extensions);
                 if (item.task) {
                     const marker = text(item.checked ? '☑ ' : '☐ ');
                     if (blocks[0]?.type === 'p') blocks[0].kids.unshift(marker);
@@ -683,10 +841,13 @@
         }
         if (token.type === 'table') {
             const rows = [
-                { header: true, cells: token.header.map(cell => trimInlines(markedInlines(cell.tokens))) },
+                {
+                    header: true,
+                    cells: token.header.map(cell => trimInlines(markedInlines(cell.tokens, extensions)))
+                },
                 ...token.rows.map(row => ({
                     header: false,
-                    cells: row.map(cell => trimInlines(markedInlines(cell.tokens)))
+                    cells: row.map(cell => trimInlines(markedInlines(cell.tokens, extensions)))
                 }))
             ];
             return [{ type: 'table', rows }];
@@ -727,7 +888,8 @@
                 return src ? `![Video${size}](${markdownMediaDestination(src)})` : raw;
             }
         );
-        return markedBlocks(lexer(input, { gfm: true, breaks: false }));
+        const extensions = protectMarkdownExtensions(input);
+        return markedBlocks(lexer(extensions.source, { gfm: true, breaks: false }), extensions);
     };
 
     // ---- AST -> Peakbagger bracket markup ---------------------------------
@@ -861,7 +1023,9 @@
                 const size = `${node.width}${node.height ? `x${node.height}` : ''}`;
                 return `![${escapeMarkdownText(node.alt || '')}|${size}](${node.src})`;
             }
-            if (node.height) return inlinesToBracket([node]);
+            if (node.height) {
+                return `<img src="${escapeAttribute(node.src)}" alt="${escapeAttribute(node.alt || '')}" height="${node.height}">`;
+            }
             return `![${escapeMarkdownText(node.alt || '')}](${node.src})`;
         }
         if (node.t === 'video') {
@@ -871,7 +1035,7 @@
         }
         if (node.t === 'youtube') {
             const watch = youtubeWatchUrl(node.src);
-            if (!watch) return inlinesToBracket([node]);
+            if (!watch) return '';
             const size = node.width ? `|${node.width}${node.height ? `x${node.height}` : ''}`
                 : node.height ? `|x${node.height}` : '';
             return `![YouTube${size}](${watch})`;
@@ -882,10 +1046,12 @@
         if (node.t === 's') return `~~${inner}~~`;
         if (node.t === 'code') return codeSpan((node.kids || []).map(kid => kid.text || '').join(''));
         if (node.t === 'a') {
-            return node.blank ? inlinesToBracket([node]) : `[${inner}](${node.href})`;
+            return node.blank
+                ? `<a href="${escapeAttribute(node.href)}" target="_blank">${inner}</a>`
+                : `[${inner}](${node.href})`;
         }
-        if (node.t === 'color') return `[span style="color:${node.color}"]${inner}[/span]`;
-        return `[${node.t}]${inner}[/${node.t}]`;
+        if (node.t === 'color') return `<span style="color:${escapeAttribute(node.color)}">${inner}</span>`;
+        return `<${node.t}>${inner}</${node.t}>`;
     }).join('');
 
     const tableToMarkdown = block => {
@@ -895,7 +1061,7 @@
         const header = first.header ? first : { header: true, cells: first.cells.map(() => []) };
         const body = first.header ? sourceRows.slice(1) : sourceRows;
         const row = cells => `| ${cells.map(cell => inlinesToMarkdown(cell)
-            .replace(/\n/g, '[br]')
+            .replace(/\n/g, '<br>')
             .replace(/\|/g, '\\|')).join(' | ')} |`;
         return [row(header.cells), `| ${header.cells.map(() => '---').join(' | ')} |`,
             ...body.map(item => row(item.cells))].join('\n');
