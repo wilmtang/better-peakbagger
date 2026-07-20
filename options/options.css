@@ -99,9 +99,44 @@ h1 { margin: 0; font-size: 18px; font-weight: 650; line-height: 1.2; }
     font-weight: 650;
     background: color-mix(in srgb, var(--accent) 15%, transparent);
 }
+/* A parent whose sub-item is the active one: accent text, but no filled pill —
+ * the filled state belongs to the exact sub-item the reader is looking at. */
+.nav-item.nav-parent-active {
+    color: var(--accent);
+}
+
+/* Always-visible level-2 links, indented under their parent with a hairline
+ * spine. Only ~6 sub-items total, so there is no collapse machinery. */
+.nav-sublist {
+    list-style: none;
+    margin: 2px 0 2px 12px;
+    padding-left: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    border-left: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
+}
+.nav-subitem {
+    display: block;
+    padding: 6px 10px;
+    border-radius: 7px;
+    color: var(--sub);
+    text-decoration: none;
+    font-size: 12.5px;
+    font-weight: 500;
+    line-height: 1.3;
+}
+.nav-subitem:hover { color: var(--text); background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.nav-subitem:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.nav-subitem[aria-current] {
+    color: var(--text);
+    font-weight: 650;
+    background: color-mix(in srgb, var(--accent) 15%, transparent);
+}
 
 /* Anchor landings clear the content's top padding without a JS offset fudge. */
 .settings-section { scroll-margin-top: 24px; }
+.subsection { scroll-margin-top: 24px; }
 
 .settings-section + .settings-section { margin-top: 22px; }
 .section-title {
@@ -110,6 +145,15 @@ h1 { margin: 0; font-size: 18px; font-weight: 650; line-height: 1.2; }
     font-size: 13px;
     font-weight: 650;
     letter-spacing: .01em;
+}
+
+/* Level-2 groups inside a section: each is its own titled card. */
+.subsection + .subsection { margin-top: 16px; }
+.subsection-title {
+    margin: 0 2px 7px;
+    color: var(--text);
+    font-size: 13.5px;
+    font-weight: 620;
 }
 
 .card {
@@ -307,6 +351,9 @@ button.github-repo:focus-visible { outline: 2px solid var(--accent); outline-off
     .head { margin-bottom: 14px; }
     .nav-list { flex-direction: row; overflow-x: auto; gap: 6px; }
     .nav-item { flex: 0 0 auto; white-space: nowrap; }
+    /* The horizontal chip row has no room for a second level; the level-1 chips
+     * cover every section on their own. */
+    .nav-sublist { display: none; }
 }
 
 @media (max-width: 480px) {

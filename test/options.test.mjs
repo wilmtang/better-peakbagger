@@ -92,10 +92,10 @@ test('settings are grouped by the surface they affect', async () => {
     const sections = Array.from(dom.window.document.querySelectorAll('.settings-section'));
     assert.deepEqual(sections.map(section => section.querySelector('h2').textContent), [
         'General',
-        'Activity capture',
+        'Activity creation',
         'Map & GPX chart',
-        'Ascent beta filters',
-        'GitHub backup',
+        'Ascent beta filter',
+        'Settings for nerds',
         'About'
     ]);
 
@@ -103,27 +103,41 @@ test('settings are grouped by the surface they affect', async () => {
     assert.ok(github.querySelector('#enable-github-backup'));
     assert.ok(github.querySelector('#github-panel'));
     assert.match(github.querySelector('.desc').textContent, /every ascent from every year/);
-    // Every settings section has a card; About is informational, not a card.
+    // Every settings section is labelled by its heading and carries at least
+    // one card; About is informational, not a card.
     for (const section of [general, capture, mapChart, beta, github]) {
         const heading = section.querySelector('h2');
         assert.equal(section.getAttribute('aria-labelledby'), heading.id);
-        assert.equal(section.querySelectorAll(':scope > .card').length, 1);
+        assert.ok(section.querySelector('.card'), 'the section carries a settings card');
     }
     assert.equal(about.getAttribute('aria-labelledby'), about.querySelector('h2').id);
     assert.ok(about.querySelector('.about-version'));
+
     assert.ok(general.querySelector('#theme'));
-    assert.ok(general.querySelector('#add-report-credit'));
     assert.ok(general.querySelector('#enable-3d-map'));
     assert.equal(general.querySelector('#units'), null);
+    // The trip-report controls moved out of General into Activity creation.
+    assert.equal(general.querySelector('#enable-report-editor'), null);
+    assert.equal(general.querySelector('#add-report-credit'), null);
+
+    // Activity creation → GPX capture / Trip report editor
     for (const id of ['retain-waypoints', 'fill-ascent-details', 'fill-trip-info', 'fill-wilderness-nights', 'fill-external-url']) {
-        assert.ok(capture.querySelector(`#${id}`), `${id} should belong to Activity capture`);
+        assert.ok(capture.querySelector(`#capture-gpx #${id}`), `${id} should belong to GPX capture`);
     }
-    for (const id of ['units', 'chart-series', 'map-route-color', 'remember-map-layer', 'map-viewport-width', 'terrain-cache-limit']) {
-        assert.ok(mapChart.querySelector(`#${id}`), `${id} should belong to Map & GPX chart`);
+    for (const id of ['enable-report-editor', 'add-report-credit']) {
+        assert.ok(capture.querySelector(`#capture-report #${id}`), `${id} should belong to Trip report editor`);
     }
-    for (const id of ['beta-tr', 'beta-tr-words', 'beta-gps', 'beta-link']) {
-        assert.ok(beta.querySelector(`#${id}`), `${id} should belong to Ascent beta filters`);
+    // Map & GPX chart → GPX chart / Map
+    for (const id of ['units', 'chart-series']) {
+        assert.ok(mapChart.querySelector(`#map-chart-chart #${id}`), `${id} should belong to GPX chart`);
     }
+    for (const id of ['map-route-color', 'remember-map-layer', 'terrain-cache-limit', 'map-viewport-width']) {
+        assert.ok(mapChart.querySelector(`#map-chart-map #${id}`), `${id} should belong to Map`);
+    }
+    for (const id of ['beta-tr', 'beta-tr-words', 'beta-gps', 'beta-link', 'beta-sort-date-desc']) {
+        assert.ok(beta.querySelector(`#${id}`), `${id} should belong to Ascent beta filter`);
+    }
+    assert.ok(github.querySelector('#github-backup #enable-github-backup'), 'GitHub backup lives in its subsection');
 });
 
 test('trip report credit is off by default and persists as an explicit opt-in', async () => {
@@ -361,8 +375,23 @@ test('the sidebar links every settings section, in order', async () => {
     assert.deepEqual(linkTargets, ['general', 'capture', 'map-chart', 'beta', 'github', 'about']);
 });
 
+test('the sidebar exposes always-visible sub-links for the grouped sections', async () => {
+    const dom = await loadOptions({});
+    const doc = dom.window.document;
+    const subLinks = Array.from(doc.querySelectorAll('.side-nav a.nav-subitem'));
+    assert.deepEqual(subLinks.map(link => link.getAttribute('href')),
+        ['#capture-gpx', '#capture-report', '#map-chart-chart', '#map-chart-map', '#github-backup']);
+    for (const link of subLinks) {
+        const target = doc.getElementById(link.getAttribute('href').slice(1));
+        assert.ok(target && target.classList.contains('subsection'),
+            `${link.getAttribute('href')} resolves to a subsection group`);
+        assert.equal(target.getAttribute('role'), 'group');
+        assert.equal(target.getAttribute('aria-labelledby'), target.querySelector('h3').id);
+    }
+});
+
 const activeLinks = dom =>
-    Array.from(dom.window.document.querySelectorAll('.nav-item[aria-current]'));
+    Array.from(dom.window.document.querySelectorAll('.nav-item[aria-current], .nav-subitem[aria-current]'));
 
 test('the sidebar marks the first section active on load', async () => {
     const dom = await loadOptions({});
@@ -385,6 +414,19 @@ test('hash navigation moves the active sidebar link', async () => {
     const active = activeLinks(dom);
     assert.equal(active.length, 1);
     assert.equal(active[0].getAttribute('href'), '#beta');
+});
+
+test('a deep link to a subsection activates its sub-item and marks the parent', async () => {
+    const dom = await loadOptions({}, { hash: '#capture-gpx' });
+    const doc = dom.window.document;
+    const current = activeLinks(dom);
+    assert.equal(current.length, 1, 'exactly one link is current');
+    assert.equal(current[0].getAttribute('href'), '#capture-gpx');
+    assert.ok(current[0].classList.contains('nav-subitem'));
+    // The parent nav-item is highlighted (accent) but not itself "current".
+    const parent = doc.querySelector('.side-nav a.nav-item[href="#capture"]');
+    assert.ok(parent.classList.contains('nav-parent-active'));
+    assert.equal(parent.hasAttribute('aria-current'), false);
 });
 
 test('the scroll-spy survives jsdom\'s zero-layout world', async () => {

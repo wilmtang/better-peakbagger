@@ -224,18 +224,30 @@ import { initGithubBackup } from './github.js';
         const nav = document.querySelector('.side-nav');
         const content = document.querySelector('.content');
         if (!nav || !content) return;
-        const entries = Array.from(nav.querySelectorAll('a.nav-item'))
+        // Level-1 links and always-visible level-2 links, in document order. A
+        // sub-item's section is its subsection div, which follows its parent
+        // section's heading in the DOM, so the last-top-≤-marker scan below
+        // activates sub-items with no extra ordering logic. Each sub-item also
+        // remembers its parent nav-item so the parent can be highlighted.
+        const entries = Array.from(nav.querySelectorAll('a.nav-item, a.nav-subitem'))
             .map(link => {
                 const section = link.hash ? document.getElementById(link.hash.slice(1)) : null;
-                return section ? { link, section } : null;
+                if (!section) return null;
+                const sublist = link.closest('.nav-sublist');
+                const parentLink = sublist ? sublist.closest('li').querySelector(':scope > a.nav-item') : null;
+                return { link, section, parentLink };
             })
             .filter(Boolean);
         if (!entries.length) return;
 
         const setActive = active => {
+            const activeParent = (entries.find(entry => entry.link === active) || {}).parentLink || null;
             for (const { link } of entries) {
                 if (link === active) link.setAttribute('aria-current', 'true');
                 else link.removeAttribute('aria-current');
+                // The parent of the active sub-item gets the accent (unfilled)
+                // treatment; every other link clears it.
+                link.classList.toggle('nav-parent-active', link === activeParent);
             }
         };
 

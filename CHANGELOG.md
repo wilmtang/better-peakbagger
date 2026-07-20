@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- **Reorganize the settings page into two-level sections.** The options page
+  now groups related settings under always-visible sub-sections — Activity
+  creation splits into *GPX capture* and *Trip report editor*; Map & GPX chart
+  into *GPX chart* and *Map* — with a matching two-level sidebar. Units stay
+  with the chart they govern, and the trip-report controls move beside the rest
+  of activity creation. Existing deep links (#general, #capture, #map-chart,
+  #beta, #github) still work.
+
 - **Open ascent lists newest-first (optional).** A new **Newest ascents first**
   toggle in Ascent beta filters (off by default) flips a default oldest-first
   ascent list to descending as soon as it loads, using the same instant reorder

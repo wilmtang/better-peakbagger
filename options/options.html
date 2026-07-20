@@ -20,10 +20,27 @@
         </header>
         <ul class="nav-list">
             <li><a class="nav-item" href="#general">General</a></li>
-            <li><a class="nav-item" href="#capture">Activity capture</a></li>
-            <li><a class="nav-item" href="#map-chart">Map &amp; GPX chart</a></li>
-            <li><a class="nav-item" href="#beta">Ascent beta filters</a></li>
-            <li><a class="nav-item" href="#github">GitHub backup</a></li>
+            <li>
+                <a class="nav-item" href="#capture">Activity creation</a>
+                <ul class="nav-sublist">
+                    <li><a class="nav-subitem" href="#capture-gpx">GPX capture</a></li>
+                    <li><a class="nav-subitem" href="#capture-report">Trip report editor</a></li>
+                </ul>
+            </li>
+            <li>
+                <a class="nav-item" href="#map-chart">Map &amp; GPX chart</a>
+                <ul class="nav-sublist">
+                    <li><a class="nav-subitem" href="#map-chart-chart">GPX chart</a></li>
+                    <li><a class="nav-subitem" href="#map-chart-map">Map</a></li>
+                </ul>
+            </li>
+            <li><a class="nav-item" href="#beta">Ascent beta filter</a></li>
+            <li>
+                <a class="nav-item" href="#github">Settings for nerds</a>
+                <ul class="nav-sublist">
+                    <li><a class="nav-subitem" href="#github-backup">GitHub trip backup</a></li>
+                </ul>
+            </li>
             <li><a class="nav-item" href="#about">About</a></li>
         </ul>
     </nav>
@@ -49,32 +66,6 @@
 
                 <div class="row">
                     <div class="label">
-                        <span class="title">Trip report editor</span>
-                        <span class="desc">Replace the ascent form’s trip report box with a rich text and Markdown editor that saves in Peakbagger’s own format, with drafts kept on this device. “Plain” mode inside the editor is the original textarea.</span>
-                    </div>
-                    <div class="control">
-                        <label class="check" for="enable-report-editor">
-                            <input type="checkbox" id="enable-report-editor">
-                            <span>Enable editor</span>
-                        </label>
-                    </div>
-                </div>
-
-                <div class="row">
-                    <div class="label">
-                        <span class="title">Credit Better Peakbagger in trip reports</span>
-                        <span class="desc">Add a small, editable store link to blank trip reports. You can change or remove it before saving.</span>
-                    </div>
-                    <div class="control">
-                        <label class="check" for="add-report-credit">
-                            <input type="checkbox" id="add-report-credit">
-                            <span>Add credit</span>
-                        </label>
-                    </div>
-                </div>
-
-                <div class="row">
-                    <div class="label">
                         <span class="title-line">
                             <span class="title">Enable experimental 3D map</span>
                             <span class="experimental-badge">Experimental</span>
@@ -92,70 +83,105 @@
         </section>
 
         <section id="capture" class="settings-section" aria-labelledby="capture-settings-heading">
-            <h2 class="section-title" id="capture-settings-heading">Activity capture</h2>
-            <div class="card">
-                <div class="row">
-                    <div class="label">
-                        <span class="title">Retain GPX waypoints</span>
-                        <span class="desc">Include waypoint names and coordinates in the GPX sent to Peakbagger. Other waypoint details remain excluded.</span>
+            <h2 class="section-title" id="capture-settings-heading">Activity creation</h2>
+
+            <div class="subsection" id="capture-gpx" role="group" aria-labelledby="capture-gpx-heading">
+                <h3 class="subsection-title" id="capture-gpx-heading">GPX capture</h3>
+                <div class="card">
+                    <div class="row">
+                        <div class="label">
+                            <span class="title">Retain GPX waypoints</span>
+                            <span class="desc">Include waypoint names and coordinates in the GPX sent to Peakbagger. Other waypoint details remain excluded.</span>
+                        </div>
+                        <div class="control">
+                            <label class="check" for="retain-waypoints">
+                                <input type="checkbox" id="retain-waypoints">
+                                <span>Include waypoints</span>
+                            </label>
+                        </div>
                     </div>
-                    <div class="control">
-                        <label class="check" for="retain-waypoints">
-                            <input type="checkbox" id="retain-waypoints">
-                            <span>Include waypoints</span>
-                        </label>
+
+                    <div class="row">
+                        <div class="label">
+                            <span class="title">Ascent details</span>
+                            <span class="desc">Fill elevation, distance, time, and gain for the route up and down, plus day-by-day statistics for overnight ascents.</span>
+                        </div>
+                        <div class="control">
+                            <label class="check" for="fill-ascent-details">
+                                <input type="checkbox" id="fill-ascent-details">
+                                <span>Fill automatically</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="row">
+                        <div class="label">
+                            <span class="title">Trip info for multiple peaks</span>
+                            <span class="desc">Create one Peakbagger trip, named after the activity, with peaks sequenced in track order.</span>
+                        </div>
+                        <div class="control">
+                            <label class="check" for="fill-trip-info">
+                                <input type="checkbox" id="fill-trip-info">
+                                <span>Fill automatically</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="row">
+                        <div class="label">
+                            <span class="title">Wilderness nights for overnight ascents</span>
+                            <span class="desc">Fill nights out from the GPX date span on every overnight draft and reveal Peakbagger’s day-by-day table.</span>
+                        </div>
+                        <div class="control">
+                            <label class="check" for="fill-wilderness-nights">
+                                <input type="checkbox" id="fill-wilderness-nights">
+                                <span>Fill automatically</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="row">
+                        <div class="label">
+                            <span class="title">External trip report link</span>
+                            <span class="desc">Put the captured Garmin or Strava link into Peakbagger’s “URL Link to External Trip Report” field when it is empty.</span>
+                        </div>
+                        <div class="control">
+                            <label class="check" for="fill-external-url">
+                                <input type="checkbox" id="fill-external-url">
+                                <span>Fill automatically</span>
+                            </label>
+                        </div>
                     </div>
                 </div>
+            </div>
 
-                <div class="row">
-                    <div class="label">
-                        <span class="title">Ascent details</span>
-                        <span class="desc">Fill elevation, distance, time, and gain for the route up and down, plus day-by-day statistics for overnight ascents.</span>
+            <div class="subsection" id="capture-report" role="group" aria-labelledby="capture-report-heading">
+                <h3 class="subsection-title" id="capture-report-heading">Trip report editor</h3>
+                <div class="card">
+                    <div class="row">
+                        <div class="label">
+                            <span class="title">Trip report editor</span>
+                            <span class="desc">Replace the ascent form’s trip report box with a rich text and Markdown editor that saves in Peakbagger’s own format, with drafts kept on this device. “Plain” mode inside the editor is the original textarea.</span>
+                        </div>
+                        <div class="control">
+                            <label class="check" for="enable-report-editor">
+                                <input type="checkbox" id="enable-report-editor">
+                                <span>Enable editor</span>
+                            </label>
+                        </div>
                     </div>
-                    <div class="control">
-                        <label class="check" for="fill-ascent-details">
-                            <input type="checkbox" id="fill-ascent-details">
-                            <span>Fill automatically</span>
-                        </label>
-                    </div>
-                </div>
 
-                <div class="row">
-                    <div class="label">
-                        <span class="title">Trip info for multiple peaks</span>
-                        <span class="desc">Create one Peakbagger trip, named after the activity, with peaks sequenced in track order.</span>
-                    </div>
-                    <div class="control">
-                        <label class="check" for="fill-trip-info">
-                            <input type="checkbox" id="fill-trip-info">
-                            <span>Fill automatically</span>
-                        </label>
-                    </div>
-                </div>
-
-                <div class="row">
-                    <div class="label">
-                        <span class="title">Wilderness nights for overnight ascents</span>
-                        <span class="desc">Fill nights out from the GPX date span on every overnight draft and reveal Peakbagger’s day-by-day table.</span>
-                    </div>
-                    <div class="control">
-                        <label class="check" for="fill-wilderness-nights">
-                            <input type="checkbox" id="fill-wilderness-nights">
-                            <span>Fill automatically</span>
-                        </label>
-                    </div>
-                </div>
-
-                <div class="row">
-                    <div class="label">
-                        <span class="title">External trip report link</span>
-                        <span class="desc">Put the captured Garmin or Strava link into Peakbagger’s “URL Link to External Trip Report” field when it is empty.</span>
-                    </div>
-                    <div class="control">
-                        <label class="check" for="fill-external-url">
-                            <input type="checkbox" id="fill-external-url">
-                            <span>Fill automatically</span>
-                        </label>
+                    <div class="row">
+                        <div class="label">
+                            <span class="title">Credit Better Peakbagger in trip reports</span>
+                            <span class="desc">Add a small, editable store link to blank trip reports. You can change or remove it before saving.</span>
+                        </div>
+                        <div class="control">
+                            <label class="check" for="add-report-credit">
+                                <input type="checkbox" id="add-report-credit">
+                                <span>Add credit</span>
+                            </label>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -163,110 +189,119 @@
 
         <section id="map-chart" class="settings-section" aria-labelledby="map-chart-settings-heading">
             <h2 class="section-title" id="map-chart-settings-heading">Map &amp; GPX chart</h2>
-            <div class="card">
-                <div class="row">
-                    <label class="label" for="units">
-                        <span class="title">Units</span>
-                        <span class="desc">Distance and elevation in the GPX chart. “Auto” matches whatever the ascent page shows.</span>
-                    </label>
-                    <div class="control">
-                        <select id="units">
-                            <option value="auto">Auto (match page)</option>
-                            <option value="imperial">Imperial (mi / ft)</option>
-                            <option value="metric">Metric (km / m)</option>
-                        </select>
+
+            <div class="subsection" id="map-chart-chart" role="group" aria-labelledby="map-chart-chart-heading">
+                <h3 class="subsection-title" id="map-chart-chart-heading">GPX chart</h3>
+                <div class="card">
+                    <div class="row">
+                        <label class="label" for="units">
+                            <span class="title">Units</span>
+                            <span class="desc">Distance and elevation in the GPX chart. “Auto” matches whatever the ascent page shows.</span>
+                        </label>
+                        <div class="control">
+                            <select id="units">
+                                <option value="auto">Auto (match page)</option>
+                                <option value="imperial">Imperial (mi / ft)</option>
+                                <option value="metric">Metric (km / m)</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="row">
+                        <label class="label" for="chart-series">
+                            <span class="title">GPX chart default series</span>
+                            <span class="desc">Which elevation curve the ascent-page chart shows on load. You can still click a legend entry to reveal the other one for that view — it won’t change this setting.</span>
+                        </label>
+                        <div class="control">
+                            <select id="chart-series">
+                                <option value="both">Distance &amp; time</option>
+                                <option value="distance">Elevation by distance only</option>
+                                <option value="time">Elevation by time only</option>
+                            </select>
+                        </div>
                     </div>
                 </div>
+            </div>
 
-                <div class="row">
-                    <label class="label" for="chart-series">
-                        <span class="title">GPX chart default series</span>
-                        <span class="desc">Which elevation curve the ascent-page chart shows on load. You can still click a legend entry to reveal the other one for that view — it won’t change this setting.</span>
-                    </label>
-                    <div class="control">
-                        <select id="chart-series">
-                            <option value="both">Distance &amp; time</option>
-                            <option value="distance">Elevation by distance only</option>
-                            <option value="time">Elevation by time only</option>
-                        </select>
+            <div class="subsection" id="map-chart-map" role="group" aria-labelledby="map-chart-map-heading">
+                <h3 class="subsection-title" id="map-chart-map-heading">Map</h3>
+                <div class="card">
+                    <div class="row">
+                        <div class="label">
+                            <span class="title">Map route appearance</span>
+                            <span class="desc">Style the ascent-page GPX overlay. Route width also applies to native GPS tracks on Full Screen Maps; their original colors, hover highlights, and click details remain unchanged.</span>
+                        </div>
+                        <fieldset class="control route-style" aria-label="Map route appearance">
+                            <label class="route-style-row" for="map-route-color">
+                                <span>Route</span>
+                                <input id="map-route-color" type="color" aria-label="Route color">
+                                <input id="map-route-width" class="route-width" type="number" min="1" max="12" step="1" inputmode="numeric" aria-label="Route width in pixels">
+                                <span>px</span>
+                            </label>
+                            <label class="route-style-row" for="map-route-casing-color">
+                                <span>Casing</span>
+                                <input id="map-route-casing-color" type="color" aria-label="Route casing color">
+                                <input id="map-route-casing-width" class="route-width" type="number" min="3" max="20" step="1" inputmode="numeric" aria-label="Route casing width in pixels">
+                                <span>px</span>
+                            </label>
+                        </fieldset>
                     </div>
-                </div>
 
-                <div class="row">
-                    <div class="label">
-                        <span class="title">Map route appearance</span>
-                        <span class="desc">Style the ascent-page GPX overlay. Route width also applies to native GPS tracks on Full Screen Maps; their original colors, hover highlights, and click details remain unchanged.</span>
+                    <div class="row">
+                        <div class="label">
+                            <span class="title">Remember map layer</span>
+                            <span class="desc">Load the layer you last selected on an ascent map. Turning this off forgets the saved layer.</span>
+                        </div>
+                        <div class="control">
+                            <label class="check" for="remember-map-layer">
+                                <input type="checkbox" id="remember-map-layer">
+                                <span>Use last selected</span>
+                            </label>
+                        </div>
                     </div>
-                    <fieldset class="control route-style" aria-label="Map route appearance">
-                        <label class="route-style-row" for="map-route-color">
-                            <span>Route</span>
-                            <input id="map-route-color" type="color" aria-label="Route color">
-                            <input id="map-route-width" class="route-width" type="number" min="1" max="12" step="1" inputmode="numeric" aria-label="Route width in pixels">
-                            <span>px</span>
-                        </label>
-                        <label class="route-style-row" for="map-route-casing-color">
-                            <span>Casing</span>
-                            <input id="map-route-casing-color" type="color" aria-label="Route casing color">
-                            <input id="map-route-casing-width" class="route-width" type="number" min="3" max="20" step="1" inputmode="numeric" aria-label="Route casing width in pixels">
-                            <span>px</span>
-                        </label>
-                    </fieldset>
-                </div>
 
-                <div class="row">
-                    <div class="label">
-                        <span class="title">Remember map layer</span>
-                        <span class="desc">Load the layer you last selected on an ascent map. Turning this off forgets the saved layer.</span>
+                    <div class="row" id="terrain-cache-row" hidden>
+                        <div class="label">
+                            <span class="title">3D terrain cache</span>
+                            <span class="desc">Keep elevation tiles on this device for faster repeat views. Your browser may remove them when space is tight.</span>
+                            <span class="cache-usage" id="terrain-cache-usage" role="status" aria-live="polite">Checking current cache…</span>
+                        </div>
+                        <div class="control">
+                            <label class="cache-limit" for="terrain-cache-limit">
+                                <span>Limit</span>
+                                <span class="cache-size">
+                                    <input id="terrain-cache-limit" type="number" min="0" max="2048" step="64" inputmode="numeric" aria-label="3D terrain cache limit in megabytes">
+                                    <span>MB</span>
+                                </span>
+                            </label>
+                        </div>
                     </div>
-                    <div class="control">
-                        <label class="check" for="remember-map-layer">
-                            <input type="checkbox" id="remember-map-layer">
-                            <span>Use last selected</span>
-                        </label>
-                    </div>
-                </div>
 
-                <div class="row" id="terrain-cache-row" hidden>
-                    <div class="label">
-                        <span class="title">3D terrain cache</span>
-                        <span class="desc">Keep elevation tiles on this device for faster repeat views. Your browser may remove them when space is tight.</span>
-                        <span class="cache-usage" id="terrain-cache-usage" role="status" aria-live="polite">Checking current cache…</span>
+                    <div class="row">
+                        <div class="label">
+                            <span class="title">Map viewport</span>
+                            <span class="desc">By default, ascent maps use Peakbagger’s original 450 × 450 px size. Drag the lower-right corner up to the page width; changes apply to every ascent page.</span>
+                        </div>
+                        <fieldset class="control viewport-size" aria-label="Map viewport size">
+                            <label class="viewport-size-row" for="map-viewport-width">
+                                <span>Width</span>
+                                <input id="map-viewport-width" type="number" min="320" max="4096" step="10" inputmode="numeric" aria-label="Map width in pixels">
+                                <span>px</span>
+                            </label>
+                            <label class="viewport-size-row" for="map-viewport-height">
+                                <span>Height</span>
+                                <input id="map-viewport-height" type="number" min="240" max="720" step="10" inputmode="numeric" aria-label="Map height in pixels">
+                                <span>px</span>
+                            </label>
+                            <button id="map-viewport-reset" class="secondary" type="button">Reset size</button>
+                        </fieldset>
                     </div>
-                    <div class="control">
-                        <label class="cache-limit" for="terrain-cache-limit">
-                            <span>Limit</span>
-                            <span class="cache-size">
-                                <input id="terrain-cache-limit" type="number" min="0" max="2048" step="64" inputmode="numeric" aria-label="3D terrain cache limit in megabytes">
-                                <span>MB</span>
-                            </span>
-                        </label>
-                    </div>
-                </div>
-
-                <div class="row">
-                    <div class="label">
-                        <span class="title">Map viewport</span>
-                        <span class="desc">By default, ascent maps use Peakbagger’s original 450 × 450 px size. Drag the lower-right corner up to the page width; changes apply to every ascent page.</span>
-                    </div>
-                    <fieldset class="control viewport-size" aria-label="Map viewport size">
-                        <label class="viewport-size-row" for="map-viewport-width">
-                            <span>Width</span>
-                            <input id="map-viewport-width" type="number" min="320" max="4096" step="10" inputmode="numeric" aria-label="Map width in pixels">
-                            <span>px</span>
-                        </label>
-                        <label class="viewport-size-row" for="map-viewport-height">
-                            <span>Height</span>
-                            <input id="map-viewport-height" type="number" min="240" max="720" step="10" inputmode="numeric" aria-label="Map height in pixels">
-                            <span>px</span>
-                        </label>
-                        <button id="map-viewport-reset" class="secondary" type="button">Reset size</button>
-                    </fieldset>
                 </div>
             </div>
         </section>
 
         <section id="beta" class="settings-section" aria-labelledby="beta-settings-heading">
-            <h2 class="section-title" id="beta-settings-heading">Ascent beta filters</h2>
+            <h2 class="section-title" id="beta-settings-heading">Ascent beta filter</h2>
             <div class="card">
                 <div class="row">
                     <div class="label">
@@ -307,23 +342,27 @@
         </section>
 
         <section id="github" class="settings-section" aria-labelledby="github-settings-heading">
-            <h2 class="section-title" id="github-settings-heading">GitHub backup</h2>
-            <div class="card">
-                <div class="row">
-                    <div class="label">
-                        <span class="title">Back up new ascents to GitHub</span>
-                        <span class="desc">Back up saved ascents individually, or open My Ascents to archive every ascent from every year — the trip report as Markdown, every field as JSON, and Peakbagger’s stored GPX track — to one GitHub repository you choose. It stays between your browser and that repository, and never touches your Peakbagger save.</span>
-                    </div>
-                    <div class="control">
-                        <label class="check" for="enable-github-backup">
-                            <input type="checkbox" id="enable-github-backup">
-                            <span>Enable backup</span>
-                        </label>
-                    </div>
-                </div>
+            <h2 class="section-title" id="github-settings-heading">Settings for nerds</h2>
 
-                <div class="row github-detail" id="github-detail" hidden>
-                    <div class="github-panel" id="github-panel" role="group" aria-label="GitHub connection"></div>
+            <div class="subsection" id="github-backup" role="group" aria-labelledby="github-backup-heading">
+                <h3 class="subsection-title" id="github-backup-heading">GitHub trip backup</h3>
+                <div class="card">
+                    <div class="row">
+                        <div class="label">
+                            <span class="title">Back up new ascents to GitHub</span>
+                            <span class="desc">Back up saved ascents individually, or open My Ascents to archive every ascent from every year — the trip report as Markdown, every field as JSON, and Peakbagger’s stored GPX track — to one GitHub repository you choose. It stays between your browser and that repository, and never touches your Peakbagger save.</span>
+                        </div>
+                        <div class="control">
+                            <label class="check" for="enable-github-backup">
+                                <input type="checkbox" id="enable-github-backup">
+                                <span>Enable backup</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="row github-detail" id="github-detail" hidden>
+                        <div class="github-panel" id="github-panel" role="group" aria-label="GitHub connection"></div>
+                    </div>
                 </div>
             </div>
         </section>
