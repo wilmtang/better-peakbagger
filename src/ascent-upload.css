@@ -79,6 +79,13 @@
 
 .bpb-process-glyph { font-size: 12px; line-height: 1; }
 
+.bpb-capture-hint {
+    margin: 8px 0 0;
+    max-width: 46em;
+    color: #475467;
+    font: 12px/1.45 system-ui, -apple-system, sans-serif;
+}
+
 .bpb-upload-status {
     display: inline-block;
     margin-left: 8px;
@@ -97,6 +104,7 @@ html[data-bpb-theme='dark'] .bpb-process-button {
 }
 
 html[data-bpb-theme='dark'] .bpb-process-button[aria-busy='true'] { color: #ddd6fe; }
+html[data-bpb-theme='dark'] .bpb-capture-hint { color: #98a2b3; }
 html[data-bpb-theme='dark'] .bpb-upload-status-error { color: #f2a099; }
 html[data-bpb-theme='dark'] .bpb-upload-status-info { color: #8ab4f8; }
 

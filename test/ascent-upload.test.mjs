@@ -107,6 +107,10 @@ test('a user-picked .gpx swaps native Preview for an accessible Process button',
     assert.equal(button.getAttribute('aria-label'), 'Process the chosen GPX and fill this form');
     assert.equal(button.textContent.includes('Process'), true);
     assert.equal(button.disabled, false);
+
+    const hint = dom.window.document.getElementById('bpb-capture-hint');
+    assert.equal(hint.parentElement, dom.window.document.getElementById('GPXUpload').closest('td'));
+    assert.match(hint.textContent, /Garmin or Strava.*browser toolbar.*capture it directly/);
     assert.equal(button.getAttribute('aria-busy'), null);
     const native = dom.window.document.getElementById('GPXPreview');
     assert.equal(native.classList.contains('bpb-native-preview-hidden'), true,
@@ -253,8 +257,13 @@ const MULTI_MATCHES = [
     { id: 8, name: 'Second Peak', confidence: 72, classification: 'probable', selected: false, date: '2026-07-01', time: '10:40', upDistanceM: 7800 }
 ];
 
-const loadCard = async ({ boundPid = 7, matches = MULTI_MATCHES, boundFallback = null, applyResult = { ok: true, tabIds: [5, 100] } } = {}) => {
+const loadCard = async ({
+    boundPid = 7, matches = MULTI_MATCHES, boundFallback = null,
+    applyResult = { ok: true, tabIds: [5, 100] }, settings = {}, prepare = null
+} = {}) => {
     const dom = await loadEditor({
+        settings,
+        prepare,
         respond: message => {
             if (message.type === 'DRAFT_READY') return { action: 'ignore' };
             if (message.type === 'GPX_PROCESS_START') {
@@ -289,7 +298,8 @@ test('several summits earn the picker card with strong and bound peaks preselect
     assert.deepEqual(
         [...card.querySelectorAll('.bpb-summit-chip')].map(chip => chip.textContent),
         ['Strong', 'Probable']);
-    assert.match(card.querySelector('.bpb-summit-meta').textContent, /at 08:12 · 3\.4 km/);
+    assert.match(card.querySelector('.bpb-summit-meta').textContent, /at 08:12 · 2\.1 mi/,
+        'Auto follows the fixture’s imperial-first native ascent fields');
     assert.equal(apply.textContent, 'Fill this ascent');
 
     checkboxes[1].click();
@@ -304,6 +314,22 @@ test('several summits earn the picker card with strong and bound peaks preselect
     const button = processButton(dom);
     assert.equal(button.getAttribute('aria-busy'), 'true');
     assert.equal(button.querySelector('.bpb-process-label').textContent, 'Filling form…');
+});
+
+test('summit distances honor explicit units and Auto follows metric-first page fields', async () => {
+    const explicitMetric = await loadCard({ settings: { units: 'metric' } });
+    assert.match(explicitMetric.window.document.querySelector('.bpb-summit-meta').textContent,
+        /at 08:12 · 3\.4 km/);
+
+    const autoMetric = await loadCard({
+        prepare: d => {
+            const miles = d.window.document.getElementById('UpMi');
+            const kilometers = d.window.document.getElementById('UpKm');
+            miles.parentNode.insertBefore(kilometers, miles);
+        }
+    });
+    assert.match(autoMetric.window.document.querySelector('.bpb-summit-meta').textContent,
+        /at 08:12 · 3\.4 km/);
 });
 
 test('Cancel dismisses the card and restores Peakbagger’s native path', async () => {
@@ -325,7 +351,7 @@ test('a bound peak off the track offers an explicit closest-approach override', 
     });
     const { card, checkboxes, apply } = cardParts(dom);
     assert.match(card.querySelector('.bpb-summit-note').textContent,
-        /closest approach to Bound Peak is 240 m from the summit/);
+        /closest approach to Bound Peak is 787 ft from the summit/);
     assert.match(card.textContent, /Off track/);
     assert.equal(checkboxes[1].checked, false, 'using the bound peak anyway is an explicit choice');
 
@@ -395,5 +421,6 @@ test('the stylesheet keeps its reduced-motion and dark-theme guards', async () =
     const css = await readFile(new globalThis.URL('../src/ascent-upload.css', import.meta.url), 'utf8');
     assert.match(css, /@media \(prefers-reduced-motion: reduce\)/);
     assert.match(css, /html\[data-bpb-theme='dark'\] \.bpb-process-button/);
+    assert.match(css, /html\[data-bpb-theme='dark'\] \.bpb-capture-hint/);
     assert.match(css, /animation: none !important/);
 });

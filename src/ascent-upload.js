@@ -23,6 +23,8 @@ import { settings as Settings } from './settings.js';
     if (!ext) return;
 
     const pad = value => String(value).padStart(2, '0');
+    const METERS_PER_MILE = 1609.344;
+    const FEET_PER_METER = 3.28084;
 
     const localToday = (nowDate = new Date()) =>
         `${nowDate.getFullYear()}-${pad(nowDate.getMonth() + 1)}-${pad(nowDate.getDate())}`;
@@ -83,12 +85,44 @@ import { settings as Settings } from './settings.js';
         return Math.round(start.lon / 15) * 60;
     };
 
+    // Peakbagger renders both values on the editor, but orders each unit pair
+    // according to the page preference. Auto follows that native order; an
+    // explicit extension choice remains authoritative.
+    const detectPageUnits = () => {
+        for (const [imperialId, metricId] of [['UpMi', 'UpKm'], ['StartFt', 'StartM']]) {
+            const fields = [...document.querySelectorAll(`#${imperialId}, #${metricId}`)];
+            if (fields.length === 2) return fields[0].id === metricId ? 'metric' : 'imperial';
+        }
+        return 'imperial';
+    };
+
+    const resolveDisplayUnits = settings => settings.units === 'metric' || settings.units === 'imperial'
+        ? settings.units
+        : detectPageUnits();
+
+    const formatTrackDistance = (meters, units) => units === 'metric'
+        ? `${(meters / 1000).toFixed(1)} km`
+        : `${(meters / METERS_PER_MILE).toFixed(1)} mi`;
+
+    const formatApproachDistance = (meters, units) => units === 'metric'
+        ? `${Math.round(meters)} m`
+        : `${Math.round(meters * FEET_PER_METER)} ft`;
+
     // ---- The ✦ Process button ---------------------------------------------
 
     const setupUploadProcessing = () => {
         const upload = document.getElementById('GPXUpload');
         const nativePreview = document.getElementById('GPXPreview');
         if (!upload || !nativePreview) return;
+
+        const uploadCell = upload.closest('td');
+        if (uploadCell && !document.getElementById('bpb-capture-hint')) {
+            const hint = document.createElement('p');
+            hint.id = 'bpb-capture-hint';
+            hint.className = 'bpb-capture-hint';
+            hint.textContent = 'Garmin or Strava activity? Open it there, then click Better Peakbagger in the browser toolbar to capture it directly.';
+            uploadCell.append(hint);
+        }
 
         let button = null;
         let labelElement = null;
@@ -212,14 +246,14 @@ import { settings as Settings } from './settings.js';
 
         // The card title already says "along this track"; keep each row's
         // encounter short enough to never truncate.
-        const encounterMeta = match => {
+        const encounterMeta = (match, units) => {
             const parts = [];
             if (match.time) parts.push(`at ${match.time}`);
-            if (Number.isFinite(match.upDistanceM)) parts.push(`${(match.upDistanceM / 1000).toFixed(1)} km`);
+            if (Number.isFinite(match.upDistanceM)) parts.push(formatTrackDistance(match.upDistanceM, units));
             return parts.join(' · ');
         };
 
-        const showSummitCard = (response, token) => {
+        const showSummitCard = (response, token, units) => {
             removeCard();
             clearStatus();
             setIdle();
@@ -265,8 +299,8 @@ import { settings as Settings } from './settings.js';
                 const meta = document.createElement('span');
                 meta.className = 'bpb-summit-meta';
                 meta.textContent = fallbackRow
-                    ? `${match.closestApproachM} m from the summit`
-                    : encounterMeta(match);
+                    ? `${formatApproachDistance(match.closestApproachM, units)} from the summit`
+                    : encounterMeta(match, units);
                 label.append(checkbox, name, summitChip(match), confidence, meta);
                 item.append(label);
                 return item;
@@ -277,7 +311,7 @@ import { settings as Settings } from './settings.js';
             if (fallback) {
                 const note = document.createElement('p');
                 note.className = 'bpb-summit-note';
-                note.textContent = `Your track’s closest approach to ${fallback.name} is ${fallback.closestApproachM} m from the summit. Check it to use ${fallback.name} anyway.`;
+                note.textContent = `Your track’s closest approach to ${fallback.name} is ${formatApproachDistance(fallback.closestApproachM, units)} from the summit. Check it to use ${fallback.name} anyway.`;
                 card.append(note);
                 list.append(summitRow(fallback, { fallbackRow: true }));
             } else if (boundPid !== null && !matches.some(match => String(match.id) === boundPid)) {
@@ -340,7 +374,7 @@ import { settings as Settings } from './settings.js';
             (button || nativePreview).insertAdjacentElement('afterend', card);
         };
 
-        const handleProcessResult = async (response, token) => {
+        const handleProcessResult = async (response, token, units) => {
             if (!response || response.phase === 'error') {
                 fail(response?.error?.message || 'The GPX could not be processed.');
                 return;
@@ -365,7 +399,7 @@ import { settings as Settings } from './settings.js';
                 await applySelection(response, [matches[0].id], matches[0].id, token);
                 return;
             }
-            showSummitCard(response, token);
+            showSummitCard(response, token, units);
         };
 
         const processFile = async () => {
@@ -376,6 +410,7 @@ import { settings as Settings } from './settings.js';
             setBusy('Reading track…');
             try {
                 const settings = await Settings.get();
+                const displayUnits = resolveDisplayUnits(settings);
                 const text = await file.text();
                 const parsed = gpxParse.parseGpxData(text, {
                     retainWaypoints: settings.retainWaypoints,
@@ -392,7 +427,7 @@ import { settings as Settings } from './settings.js';
                     utcOffsetMinutes
                 });
                 if (token !== requestToken) return;
-                await handleProcessResult(response, token);
+                await handleProcessResult(response, token, displayUnits);
             } catch (error) {
                 if (token !== requestToken) return;
                 fail(error?.code === 'no-gps-data'
