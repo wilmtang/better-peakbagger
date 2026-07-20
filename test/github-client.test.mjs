@@ -46,7 +46,7 @@ const makeFetch = routes => {
         const path = url.replace('https://api.github.com', '').split('?')[0];
         const key = `${method} ${path}`;
         const body = init.body ? JSON.parse(init.body) : undefined;
-        calls.push({ method, path, key, body, url, headers: init.headers });
+        calls.push({ method, path, key, body, url, headers: init.headers, cache: init.cache });
         const handler = routes[key];
         if (!handler) throw new Error(`unrouted request: ${key}`);
         const result = typeof handler === 'function'
@@ -138,6 +138,31 @@ test('ten ascents share one atomic tree, commit, and branch update', async () =>
     const tree = calls.find(call => call.key === 'POST /repos/me/backup/git/trees').body.tree;
     assert.equal(tree.length, 21, 'ten two-file ascents plus the ownership marker');
     assert.equal(new Set(tree.map(entry => entry.path)).size, tree.length);
+});
+
+test('every GitHub request bypasses the browser HTTP cache', async () => {
+    // The default `cache: 'default'` honors GitHub's `max-age=60` on
+    // authenticated ref GETs, and the singular-read/plural-write URL split
+    // means our own ref PATCH never evicts that cached read. A stale cached head
+    // makes a back-to-back batch commit on the wrong parent and the non-forced
+    // ref update fails as a non-fast-forward conflict. Pin `no-store` on every
+    // request so a future refactor cannot silently reintroduce that hazard.
+    const { fetch, calls } = makeFetch({
+        'GET /repos/me/backup': REPO_OK(),
+        'GET /repos/me/backup/git/ref/heads/main': REF('C0'),
+        'GET /repos/me/backup/git/commits/C0': COMMIT('C0', 'T0'),
+        'GET /repos/me/backup/git/trees/T0': () => respond(200, { tree: [] }),
+        'POST /repos/me/backup/git/trees': () => respond(201, { sha: 'T1' }),
+        'POST /repos/me/backup/git/commits': () => respond(201, { sha: 'C1', html_url: 'u' }),
+        'PATCH /repos/me/backup/git/refs/heads/main': () => respond(200, { object: { sha: 'C1' } }),
+    });
+    const client = Client.createGithubClient({ fetch, token: 't', owner: 'me', repo: 'backup' });
+    await client.pushAscentBackup(snapshot(), { gpx: '<gpx/>' });
+
+    assert.ok(calls.length > 0);
+    assert.ok(calls.every(call => call.cache === 'no-store'),
+        `every request must set cache: no-store; got ${
+            [...new Set(calls.map(call => `${call.key} → ${call.cache}`))].join(', ')}`);
 });
 
 test('an unusually large file keeps the explicit blob upload path', async () => {

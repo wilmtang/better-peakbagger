@@ -155,6 +155,22 @@ commit would not solve a changed parent. After the final retry, the UI pauses
 with the batch intact. Resume retries the same buffered data without fetching
 those ascents from Peakbagger again.
 
+That reread is only trustworthy if it observes the *live* head, and the browser
+HTTP cache silently broke that invariant. GitHub serves authenticated ref GETs
+with `Cache-Control: private, max-age=60`, so under the default `cache` mode the
+browser would replay a cached ref for up to a minute without revalidating.
+Browsers evict a cached entry when an unsafe method succeeds on the same URL,
+but the client reads the head through the singular `/git/ref/heads/…` endpoint
+while the ref update PATCHes the plural `/git/refs/heads/…` — different cache
+keys, so our own successful push never evicts its cached read. Profile backup is
+the one feature that lands batch commits back-to-back on one branch, so the next
+batch could read the pre-push sha, commit on the stale parent, and fail the
+non-forced update as a non-fast-forward. The bounded retries all fell inside the
+same 60-second freshness window (a cache hit does not reset an entry's age), so
+every reread returned the identical stale sha and the schedule exhausted
+deterministically. `src/github-client.js` therefore sets `cache: 'no-store'` on
+every request, so a reread always observes the live head.
+
 Authentication, authorization, branch protection, validation, network, and
 rate-limit errors remain typed separately. They are not blindly retried as
 conflicts. During the bounded conflict retries the producer may continue until

@@ -116,6 +116,13 @@ import { githubBackup as Backup } from './github-backup.js';
             try {
                 res = await fetch(url, {
                     method,
+                    // Bypass the browser HTTP cache. GitHub serves authenticated
+                    // ref GETs with `Cache-Control: private, max-age=60`, and the
+                    // singular-read/plural-write URL split means our own ref
+                    // PATCH never evicts that cached read. A cached stale head
+                    // makes the next batch commit on the wrong parent and the
+                    // non-forced ref update fails as a non-fast-forward conflict.
+                    cache: 'no-store',
                     headers: {
                         Authorization: `Bearer ${token}`,
                         Accept: 'application/vnd.github+json',

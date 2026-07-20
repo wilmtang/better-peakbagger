@@ -35,3 +35,7 @@ living docs in [`docs/`](../).
   execution plan, and deviations recorded during implementation.
 - [Codebase audit — 2026-07-19](codebase-audit-2026-07-19.md) — point-in-time
   audit and remediation plan.
+- [Profile backup HTTP-cached ref conflict fix](github-ref-cache-conflict-fix.md) —
+  completed root-cause and fix for the "repository changed" pause: the GitHub
+  client now sets `cache: 'no-store'`, folded into the living
+  [pipeline design](../profile-backup-pipeline.md).
