@@ -37,7 +37,7 @@ test('read extracts the ascent identity, peak, GPX link, and date', async () => 
     assert.equal(info.isOwner, true);
     assert.deepEqual(info.peak, { id: 2296, name: 'Mount Rainier' });
     assert.equal(info.date, '2026-07-12');
-    assert.match(info.gpxUrl, /GetAscentGPX\.aspx\?aid=7654321/);
+    assert.match(info.gpxUrl, /GPXFile\.aspx\?aid=7654321&sep=1/);
 });
 
 test('the report is converted to Markdown from the page DOM for the fallback path', async () => {

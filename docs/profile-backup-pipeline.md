@@ -64,6 +64,27 @@ because it has the authenticated same-origin Peakbagger session. The MV3
 background worker owns the GitHub token and the repository-wide write queue.
 No token crosses into the page.
 
+## What the producer reads from Peakbagger
+
+For each ascent the producer fetches the edit form (`AscentEdit.aspx?aid=<aid>`)
+for the snapshot fields and, when the list row carries the GPS-track marker, the
+stored track. The ascent-page analyzer and the per-save backup locate the track
+by scraping the download link's text on the live page, so they followed
+Peakbagger's endpoint renames automatically. The profile producer has no ascent
+page to scrape — only the list row — so it builds the track URL itself, and is
+the one surface that must be kept in step by hand. It mirrors the site's own
+ascent-page link, `GPXFile.aspx?aid=<aid>&sep=1` (the earlier `GetAscentGPX.aspx`
+name was retired and now redirects to a 200 HTML error page), so the backup
+stores byte-for-byte what a user clicking that link gets and what the analyzer
+reads.
+
+Every fetched body is classified before it is buffered — `<gpx` for a track, the
+`Form1` fields for the edit form — so a 200 whose body is actually an error page
+is rejected rather than committed. Because a rejected ascent commits no folder, a
+later run refetches exactly those ascents; the failure message reports what the
+body was (for example, an error page reached through a redirect), not the
+misleading `HTTP 200` status.
+
 ## Bounds and flush rules
 
 | Control | Default | Purpose |
