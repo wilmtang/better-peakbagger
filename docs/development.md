@@ -270,6 +270,10 @@ window placement, permission-prompt appearance, or live Garmin/Strava DOM and
 export behavior. Live provider verification remains a minimal manual release
 check in both browser families.
 
+The planned Firefox runtime gate, cross-browser smoke matrix, packaged-build
+execution, and native capture release check are specified in the
+[cross-browser extension verification plan](plans/cross-browser-verification.md).
+
 ## Packaging and release rehearsal
 
 `npm run package` first replaces `dist/` with a minified, sourcemap-free build,
