@@ -115,7 +115,7 @@ test('ascent editor integration is isolated to Peakbagger and runtime code never
     assert.ok(draftEntry.matches.every(pattern => pattern.includes('peakbagger.com/climber/')));
     // The Markdown parser (a copied vendor script) must load before the bundle.
     assert.deepEqual(draftEntry.js, ['vendor/marked.umd.js', 'content/ascent-editor.js']);
-    assert.deepEqual(bundleSources('content/ascent-editor.js'), ['ascent-draft.js', 'report-markup.js', 'report-editor.js']);
+    assert.deepEqual(bundleSources('content/ascent-editor.js'), ['ascent-draft.js', 'ascent-upload.js', 'report-markup.js', 'report-editor.js']);
     const runtimeSource = await Promise.all([
         'src/ascent-draft.js',
         'src/background.js',

@@ -344,12 +344,21 @@ test('a queued draft waits persistently and starts when the background releases 
     dom.window.close();
 });
 
-test('ordinary Peakbagger editor tabs are left completely untouched', async () => {
+test('ordinary Peakbagger editor tabs get only the fresh-form date autofill', async () => {
     const { dom, messages } = loadDraft(() => ({ action: 'ignore' }));
     await waitForAsync();
     assert.equal(messages.length, 1);
     assert.equal(dom.window.document.getElementById('bpb-draft-banner'), null);
-    assert.equal(dom.window.document.getElementById('DateText').value, '');
+    // The bundled ascent-upload module deliberately fills an empty Ascent Date
+    // with the local today; the draft machinery must fill nothing else.
+    const pad = value => String(value).padStart(2, '0');
+    const today = new Date();
+    assert.equal(dom.window.document.getElementById('DateText').value,
+        `${today.getFullYear()}-${pad(today.getMonth() + 1)}-${pad(today.getDate())}`);
+    for (const id of ['SuffixText', 'StartM', 'EndM', 'UpMi', 'TripNameText']) {
+        assert.equal(dom.window.document.getElementById(id).value, '', `${id} must stay untouched`);
+    }
+    assert.equal(dom.window.document.getElementById('GPXUpload').files.length, 0);
     dom.window.close();
 });
 
