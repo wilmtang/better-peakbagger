@@ -33,7 +33,7 @@ Preferences page.
 
 ### Open-source free 3D mapping
 
-![GPX analysis moving from a chart-synchronized 2D map into 3D terrain](store-assets/screenshot-gpx-terrain.gif)
+![GPX analysis moving from a chart-synchronized 2D map into 3D terrain](store-assets/screenshot-3D-map-sync-resize-billboard-1.5x.gif)
 
 User-uploaded GPX tracks on Peakbagger ascent pages and Full Screen GPS maps
 become full 3D terrain views at true vertical scale. Peak pages get the same
