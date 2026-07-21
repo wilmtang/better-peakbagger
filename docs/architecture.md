@@ -531,11 +531,11 @@ from acquiring map or settings privileges.
 
 ## Deep dive: ascent filtering and in-page sorting
 
-`src/ascent-filter.js` runs on `PeakAscents.aspx` and personal
-`ClimbListC.aspx` views. It resolves columns from header text because
-Peakbagger serves different column sets for year, unit, and detail variants.
-Rows are modeled from the page that was actually returned; the extension never
-follows a backend sort link to silently change the result set.
+`src/ascent-filter.js` runs on `PeakAscents.aspx`, personal `ClimbListC.aspx`
+views, and the Buddy List at `report/report.aspx?r=b`. It resolves columns from
+header text because Peakbagger serves different column sets for year, unit, and
+detail variants. Rows are modeled from the page that was actually returned; the
+extension never follows a backend sort link to silently change the result set.
 
 Filter chips compose with AND semantics. “Has beta” is calculated from the
 shared settings definition—trip report at or above the configured word count,
@@ -549,7 +549,10 @@ reversal preserves Peakbagger's served ordering, including partial or unusual
 dates. Non-date sorts hide year grouping; returning to date restores it. A
 capture-phase guard holds an early header click until the document-start sorter
 has either taken ownership or deliberately released the click back to normal
-navigation.
+navigation. The Buddy List's GridView exposes no beta fields and not every
+header has a native sort link, so all six displayed headers become frontend
+sort controls while the beta bar and ascent-list newest-first preference stay
+absent.
 
 Compact views without the necessary beta columns degrade to a link to the full
 all-years view. Missing headers or an unrecognized table opt out instead of

@@ -155,7 +155,9 @@
         "https://peakbagger.com/climber/PeakAscents.aspx*",
         "https://peakbagger.com/climber/peakascents.aspx*",
         "https://peakbagger.com/climber/ClimbListC.aspx*",
-        "https://peakbagger.com/climber/climblistc.aspx*"
+        "https://peakbagger.com/climber/climblistc.aspx*",
+        "https://www.peakbagger.com/report/report.aspx*",
+        "https://peakbagger.com/report/report.aspx*"
       ],
       "js": [
         "content/ascent-filter.js"

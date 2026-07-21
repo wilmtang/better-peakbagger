@@ -13,6 +13,7 @@ import assert from 'node:assert/strict';
 import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { JSDOM } from 'jsdom';
 import { containsFixtureBannedIdentifier } from '../scripts/privacy-guard.mjs';
 
 const FIXTURES = path.resolve(path.dirname(fileURLToPath(import.meta.url)), 'fixtures');
@@ -84,5 +85,37 @@ test('masking actually ran: live captures carry the masked climber id, and only 
         const ids = new Set([...text.matchAll(/\b(?:cid|c|d)=(\d+)/g)].map(m => m[1]));
         assert.deepEqual([...ids], [MASKED_CLIMBER_ID],
             `${path.basename(file)} references climber ids other than the masked one`);
+    }
+});
+
+test('the Buddy List fixture contains only the reviewed synthetic row data', async () => {
+    const html = await readFile(path.join(FIXTURES, 'pages', 'report-buddy-list.html'), 'utf8');
+    const document = new JSDOM(html).window.document;
+    const rows = [...document.querySelectorAll('#RGridView tr')].slice(1);
+    assert.equal(rows.length, 6);
+
+    const values = column => rows.map(row => row.cells[column].textContent.trim());
+    assert.deepEqual(values(0), [
+        'Alpine, Casey', 'Example, Rowan', 'Fixture, Sol',
+        'Mock, Quinn', 'Sample, Juniper', 'Synthetic, Arden'
+    ]);
+    assert.deepEqual(values(2), [
+        '2021-03-14', '2024-11-02', '2019-07-28',
+        '2023-01-09', '2020-05-21', '2025-08-30'
+    ]);
+    assert.deepEqual(values(3), [
+        'Granite Point', 'Juniper Dome', 'Echo Ridge',
+        'Fiction Peak', 'Northwind Hill', 'Placeholder Butte'
+    ]);
+    assert.deepEqual(values(5), [
+        'Test Range-North', 'Example Basin-West', 'Sample County-East',
+        'Mock Range-South', 'Fixture District-Central', 'Synthetic Province-North'
+    ]);
+
+    for (const row of rows) {
+        assert.match(row.cells[0].querySelector('a').href, /[?&]cid=710\d{3}$/);
+        assert.match(row.cells[1].querySelector('a').href, /[?&]cid=710\d{3}&sort=AscentDateD$/);
+        assert.match(row.cells[2].querySelector('a').href, /[?&]aid=810\d{3}$/);
+        assert.match(row.cells[3].querySelector('a').href, /[?&]pid=610\d{3}$/);
     }
 });

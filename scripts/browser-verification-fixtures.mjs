@@ -229,7 +229,7 @@ export async function createBrowserFixtureServer({ temporaryRoot }) {
   } catch (error) {
     throw new Error(`Could not create the isolated HTTPS fixture certificate: ${error.message}`);
   }
-  const [key, cert, ascentEditHtml, peakAscentsHtml, profileAscentsHtml] = await Promise.all([
+  const [key, cert, ascentEditHtml, peakAscentsHtml, profileAscentsHtml, buddyListHtml] = await Promise.all([
     readFile(keyPath),
     readFile(certificatePath),
     readFile(
@@ -242,6 +242,10 @@ export async function createBrowserFixtureServer({ temporaryRoot }) {
     ),
     readFile(
       path.join(projectRoot, "test", "fixtures", "pages", "climber-ascents.html"),
+      "utf8",
+    ),
+    readFile(
+      path.join(projectRoot, "test", "fixtures", "pages", "report-buddy-list.html"),
       "utf8",
     ),
   ]);
@@ -314,6 +318,10 @@ export async function createBrowserFixtureServer({ temporaryRoot }) {
     }
     if (/climblistc\.aspx/i.test(url.pathname)) {
       return send("text/html; charset=utf-8", profileAscentsHtml);
+    }
+    if (/\/report\/report\.aspx/i.test(url.pathname)
+        && (url.searchParams.get("r") || "").toLowerCase() === "b") {
+      return send("text/html; charset=utf-8", buddyListHtml);
     }
     if (/peak\.aspx/i.test(url.pathname)) return send("text/html; charset=utf-8", peakHtml);
     if (/bigmap\.aspx/i.test(url.pathname)) {

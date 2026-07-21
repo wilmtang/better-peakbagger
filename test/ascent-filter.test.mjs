@@ -352,6 +352,66 @@ test('personal all-years date URLs toggle in place', async () => {
     assert.equal(url.searchParams.get('sort'), 'ascentdated');
 });
 
+test('Buddy List sorts every displayed field without showing beta controls', async () => {
+    const pageUrl = 'https://peakbagger.com/report/report.aspx?r=b&cid=900001';
+    const dom = await loadPage('report-buddy-list.html', {
+        fixtures: PAGE_FIXTURES,
+        url: pageUrl
+    });
+    await waitFor(dom, () => dom.window.document.querySelectorAll('#RGridView .pbaf-table-sort').length === 6);
+
+    const buddyTable = dom.window.document.getElementById('RGridView');
+    const rows = () => [...buddyTable.rows].slice(1);
+    const controls = [...buddyTable.querySelectorAll('.pbaf-table-sort')];
+    const labels = controls.map(control => control.firstChild.textContent.trim());
+    assert.deepEqual(labels, [
+        'Climber', 'Ascent List', 'Ascent Date', 'Peak or Point', 'Elev-ft', 'Location'
+    ]);
+    assert.equal(bar(dom), null, 'the Buddy List must not show a beta filter or compact-view notice');
+    assert.equal(buddyTable.dataset.bpbInstantSort, 'ready');
+    assert.equal(tableSortControl(dom, 'Climber').closest('th').getAttribute('aria-sort'), 'ascending');
+
+    const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
+    const valueAt = (row, index) => {
+        const text = row.cells[index].textContent.trim();
+        return index === 4 ? parseFloat(text.replace(/,/g, '')) : text;
+    };
+    const compareAt = (left, right, index) => index === 4
+        ? left - right
+        : collator.compare(left, right);
+    const isOrdered = (values, compare) => values.every((value, index) =>
+        index === 0 || compare(values[index - 1], value) <= 0
+    );
+
+    for (const [columnIndex, control] of controls.entries()) {
+        control.click();
+        const ariaSort = control.closest('th').getAttribute('aria-sort');
+        assert.ok(ariaSort === 'ascending' || ariaSort === 'descending', `${labels[columnIndex]} did not activate`);
+        const values = rows().map(row => valueAt(row, columnIndex));
+        const direction = ariaSort === 'ascending' ? 1 : -1;
+        assert.ok(isOrdered(values, (left, right) => direction * compareAt(left, right, columnIndex)),
+            `${labels[columnIndex]} did not sort ${ariaSort}`);
+
+        control.click();
+        assert.notEqual(control.closest('th').getAttribute('aria-sort'), ariaSort,
+            `${labels[columnIndex]} did not toggle direction`);
+    }
+
+    assert.equal(dom.window.location.href, pageUrl,
+        'frontend Buddy sorting must not invent unsupported backend sort parameters');
+});
+
+test('other report modes remain untouched despite the query-agnostic manifest match', async () => {
+    const dom = await loadPage('report-buddy-list.html', {
+        fixtures: PAGE_FIXTURES,
+        url: 'https://peakbagger.com/report/report.aspx?r=p&cid=900001'
+    });
+    await new Promise(resolve => dom.window.setTimeout(resolve, 10));
+    assert.equal(dom.window.document.querySelectorAll('.pbaf-table-sort').length, 0);
+    assert.equal(dom.window.document.getElementById('RGridView').dataset.bpbInstantSort, undefined);
+    assert.equal(bar(dom), null);
+});
+
 test('renders on a non-date sort (flat table, no year sections)', async () => {
     const dom = await loadPageWithBar('8241-y9999-sort-quality.html', {
         url: 'https://www.peakbagger.com/climber/PeakAscents.aspx?pid=8241&u=ft&y=9999&sort=Quality'
