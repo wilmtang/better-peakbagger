@@ -133,9 +133,12 @@ click shows a provider and privacy confirmation. Declining keeps the feature
 off; it can still be enabled later in Settings.
 
 After confirmation, Mapterhorn receives DEM tile requests covering the route or
-summit area and subsequent map movements. Selecting OSM Vector sends tile
-requests to OpenFreeMap. Selecting a compatible Peakbagger Leaflet layer may
-request raster tiles from that layer's existing provider for the 3D camera's
+summit area and subsequent map movements. With 3D enabled, hovering or focusing
+the 3D button may also pre-request the elevation tiles for that view from
+Mapterhorn, so opening 3D paints from cache; this happens only on that explicit
+interaction, never merely because a map page loaded. Selecting OSM Vector sends
+tile requests to OpenFreeMap. Selecting a compatible Peakbagger Leaflet layer
+may request raster tiles from that layer's existing provider for the 3D camera's
 view. These requests necessarily disclose the viewed location and the user's IP
 address to the provider.
 
@@ -143,8 +146,8 @@ The renderer receives coordinate segments or a summit focus plus a bounded,
 transient map-layer descriptor. It does not receive source GPX, timestamps,
 elevation samples, activity metadata, or Peakbagger identity. Successful DEM
 responses may be reused from the bounded, best-effort local cache. Returning to
-2D destroys the renderer and stops that session's tile activity, but does not
-clear the cache.
+2D stops that session's tile activity — the renderer is parked idle for a few
+minutes to make re-entry instant, then released — but does not clear the cache.
 
 ## GitHub backup (optional)
 
@@ -184,7 +187,8 @@ save; the extension never clicks a Peakbagger Save control.
 
 - **Peakbagger** receives summit-corridor lookups and user-approved GPS Preview
   uploads.
-- **Mapterhorn** receives DEM tile requests only for an activated 3D view.
+- **Mapterhorn** receives DEM tile requests only for an activated 3D view, or a
+  bounded pre-request for the view when the enabled 3D button is hovered.
 - **OpenFreeMap** receives style and tile requests only when OSM Vector is
   selected.
 - **Selected map providers** may receive raster tile requests when their

@@ -436,11 +436,17 @@ the user switches. Bearing and pitch remain 3D-only. Full Screen maps preserve
 their native multi-track colors; ascent maps use the configured route color and
 casing.
 
-Returning to 2D destroys the MapLibre map and frame, releases the WebGL context,
-and stops that session's tile activity. Failed MapLibre startup, invalid input,
-missing WebGL, DEM failure, or a bounded load timeout removes the partial 3D
-surface and leaves the native map visible. A failed or incompatible selected
-raster falls back without taking down valid terrain.
+Returning to 2D stops that session's tile activity. Rather than tearing the
+renderer down on every switch, the `src/terrain-map.js` bridge parks the loaded
+frame in the DOM at opacity 0 and tells `src/terrain-frame.js` to suspend its
+ambient work (peak debounce, popup, pointer tracking); a quick 2D→3D→2D→3D
+re-entry then resumes the live MapLibre map with a fresh route/camera/theme
+instead of rebuilding the map, its CSP worker, and the terrain mesh. The parked
+frame is fully destroyed and its WebGL context released after a five-minute
+keep-alive TTL, or immediately when 3D is disabled. Failed MapLibre startup,
+invalid input, missing WebGL, DEM failure, or a bounded load timeout removes the
+partial 3D surface and leaves the native map visible. A failed or incompatible
+selected raster falls back without taking down valid terrain.
 
 ### Bounded DEM cache
 
@@ -452,6 +458,23 @@ storage, so cache loss simply returns to the network on the next 3D session.
 
 Only DEM response bytes are owned by this cache. OpenFreeMap and selected
 raster providers follow their own browser cache policies.
+
+### DEM prefetch on intent
+
+CacheStorage is origin-keyed, so only extension-origin contexts share the DEM
+cache — a Peakbagger content script cannot populate it. To make opening 3D paint
+from cache, hovering or focusing the idle 3D toggle (explicit intent, never page
+load) posts a bounded `prefetch` hint through the bridge, which the background
+worker turns into cache-warming tile fetches. The pure `src/terrain-tiles.js`
+mirrors the frame's fitBounds math (512-px tiles, `padding 46`, `maxZoom 15.5`)
+to enumerate the first-paint tiles for a route bounds or a peak center+zoom,
+plus their parent level, capped so a burst stays small. The worker fails closed
+unless 3D is enabled and the cache budget is non-zero (3D enablement is the
+consent gate for contacting Mapterhorn), accepts hints only from a Peakbagger
+tab, rate-limits each tab, dedupes recently-warmed tiles, and loads through the
+same bounded LRU cache the renderer reads. The head of `terrain/terrain.html`
+also preconnects to Mapterhorn so the first real tile request skips the TLS
+handshake.
 
 ## Deep dive: peak markers and non-ascent map surfaces
 
