@@ -36,7 +36,13 @@ export const makeChromeStub = (initial = {}, localInitial = {}) => {
     const localStore = { ...localInitial };
     const listeners = new Set();
     const makeStorageArea = (values, area) => ({
-        get: async key => (key === null ? { ...values } : { [key]: values[key] }),
+        get: async key => {
+            if (key === null) return { ...values };
+            if (Array.isArray(key)) return Object.fromEntries(key.map(item => [item, values[item]]));
+            if (key && typeof key === 'object') return Object.fromEntries(
+                Object.entries(key).map(([item, fallback]) => [item, values[item] ?? fallback]));
+            return { [key]: values[key] };
+        },
         set: async obj => {
             const changes = {};
             for (const [key, value] of Object.entries(obj)) {
@@ -101,6 +107,7 @@ export const waitFor = async (dom, predicate, ms = 5000) => {
 export const loadPage = async (fixture, {
     url,
     settings = {},
+    local = {},
     bundles = ['content/ascent-filter.js'],
     fixtures = FIXTURES,
     prepare = null
@@ -117,7 +124,7 @@ export const loadPage = async (fixture, {
     if (!dom.window.document.elementFromPoint) {
         dom.window.document.elementFromPoint = () => null;
     }
-    dom.chrome = makeChromeStub({ bpbSettings: settings });
+    dom.chrome = makeChromeStub({ bpbSettings: settings }, local);
     dom.window.chrome = dom.chrome;
     if (prepare) prepare(dom);
     await evalBundle(dom.window, ...bundles);

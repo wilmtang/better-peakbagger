@@ -6,10 +6,22 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import { loadPage, loadPageWithBar, PAGE_FIXTURES, waitFor } from './helpers/load-page.mjs';
 
 const RAINIER = '2296-rainier-y9999-sort-ascentdate.html';
 const RAINIER_URL = 'https://www.peakbagger.com/climber/PeakAscents.aspx?pid=2296&sort=AscentDate&u=ft&y=9999';
+const FAVORITES_KEY = 'bpbFavoriteClimbers';
+const BUDDY_CACHE_KEY = 'bpbBuddyCache';
+const SMALL = '1039-default-full-columns.html';
+const SMALL_URL = 'https://www.peakbagger.com/climber/PeakAscents.aspx?pid=1039';
+const smallFixture = await readFile(new URL('./fixtures/peakascents/1039-default-full-columns.html', import.meta.url), 'utf8');
+const buddyFixture = await readFile(new URL('./fixtures/pages/report-buddy-list.html', import.meta.url), 'utf8');
+const customCids = [...new Set([...smallFixture.matchAll(/climber\.aspx\?cid=(\d+)/gi)].map(match => Number(match[1])))].slice(0, 2);
+const favoriteStore = cids => ({
+    schemaVersion: 1,
+    entries: cids.map((cid, index) => ({ cid, name: `Favorite ${index + 1}`, addedAt: index + 1, source: 'manual' })),
+});
 
 const bar = dom => dom.window.document.getElementById('pbaf-bar');
 const table = dom => dom.window.document.querySelector('table.gray');
@@ -23,6 +35,10 @@ const chipCount = (dom, label) => chip(dom, label).querySelector('.pbaf-count').
 const dataRows = dom => [...table(dom).rows].filter(r => r.cells.length > 1 && r.cells[0].tagName === 'TD');
 const visibleRows = dom => dataRows(dom).filter(r => r.style.display === '');
 const sectionRows = dom => [...table(dom).rows].filter(r => r.cells.length === 1);
+const rowCid = row => {
+    const anchor = row.querySelector('a[href*="climber.aspx?cid="]');
+    return anchor ? Number(new URL(anchor.href).searchParams.get('cid')) : null;
+};
 
 test('parses the full Rainier table and filters to beta by default', async () => {
     const dom = await loadPageWithBar(RAINIER, { url: RAINIER_URL });
@@ -49,8 +65,152 @@ test('filter chips form one group without a divider after Has beta', async () =>
     assert.equal(bar(dom).querySelector('.pbaf-divider'), null);
     assert.deepEqual(
         [...bar(dom).querySelectorAll('.pbaf-chip')].map(control => control.childNodes[1].textContent.trim()),
-        ['Has beta', 'Trip report', 'GPS track', 'Link']
+        ['Has beta', 'Trip report', 'GPS track', 'Link', 'Favorites']
     );
+});
+
+test('custom Favorites counts climber rows and AND-composes with Has beta', async () => {
+    const dom = await loadPageWithBar(SMALL, {
+        url: SMALL_URL,
+        settings: { favoritesSource: 'custom' },
+        local: { [FAVORITES_KEY]: favoriteStore(customCids) },
+    });
+    const ids = new Set(customCids);
+    const favoriteRows = dataRows(dom).filter(row => ids.has(rowCid(row)));
+    const defaultVisibleFavorites = visibleRows(dom).filter(row => ids.has(rowCid(row)));
+    assert.ok(favoriteRows.length > 0);
+    assert.equal(chipCount(dom, 'Favorites'), String(favoriteRows.length));
+
+    chip(dom, 'Favorites').click();
+    assert.equal(visibleRows(dom).length, defaultVisibleFavorites.length);
+    assert.ok(visibleRows(dom).every(row => ids.has(rowCid(row))));
+});
+
+test('custom Favorites can filter independently and persists with the other chips', async () => {
+    const dom = await loadPage(SMALL, {
+        url: SMALL_URL,
+        settings: { favoritesSource: 'custom' },
+        local: { [FAVORITES_KEY]: favoriteStore(customCids) },
+        prepare: page => page.window.localStorage.setItem('pbAscentBetaFilter.v1', JSON.stringify({
+            beta: false, tr: false, minWords: 1, gps: false, link: false, fav: true,
+        })),
+    });
+    await waitFor(dom, () => bar(dom));
+    const ids = new Set(customCids);
+    assert.equal(visibleRows(dom).length, dataRows(dom).filter(row => ids.has(rowCid(row))).length);
+    assert.equal(chip(dom, 'Favorites').getAttribute('aria-pressed'), 'true');
+
+    dom.window.document.querySelector('.pbaf-reset').click();
+    assert.equal(visibleRows(dom).length, dataRows(dom).length);
+    assert.equal(JSON.parse(dom.window.localStorage.getItem('pbAscentBetaFilter.v1')).fav, false);
+});
+
+test('an empty custom list disables Favorites without hiding the ascent table', async () => {
+    const dom = await loadPage(SMALL, {
+        url: SMALL_URL,
+        settings: { favoritesSource: 'custom' },
+        local: { [FAVORITES_KEY]: favoriteStore([]) },
+        prepare: page => page.window.localStorage.setItem('pbAscentBetaFilter.v1', JSON.stringify({
+            beta: false, tr: false, minWords: 1, gps: false, link: false, fav: true,
+        })),
+    });
+    await waitFor(dom, () => bar(dom));
+    assert.equal(chip(dom, 'Favorites').disabled, true);
+    assert.match(chip(dom, 'Favorites').title, /No favorite climbers yet/);
+    assert.equal(chip(dom, 'Favorites').getAttribute('aria-pressed'), 'false');
+    assert.equal(visibleRows(dom).length, dataRows(dom).length);
+});
+
+test('local favorite changes update the custom filter live', async () => {
+    const dom = await loadPageWithBar(SMALL, {
+        url: SMALL_URL,
+        settings: { favoritesSource: 'custom' },
+        local: { [FAVORITES_KEY]: favoriteStore([]) },
+    });
+    assert.equal(chip(dom, 'Favorites').disabled, true);
+
+    await dom.chrome.storage.local.set({ [FAVORITES_KEY]: favoriteStore(customCids) });
+    await waitFor(dom, () => chip(dom, 'Favorites').disabled === false);
+    assert.equal(chipCount(dom, 'Favorites'), String(
+        dataRows(dom).filter(row => customCids.includes(rowCid(row))).length));
+});
+
+test('buddy mode reads the owner-scoped local cache', async () => {
+    const cache = {
+        ownerCid: 900001,
+        entries: customCids.map((cid, index) => ({ cid, name: `Buddy ${index + 1}` })),
+        fetchedAt: Date.now(),
+    };
+    const dom = await loadPageWithBar(SMALL, { url: SMALL_URL, local: { [BUDDY_CACHE_KEY]: cache } });
+    const expected = dataRows(dom).filter(row => customCids.includes(rowCid(row))).length;
+    assert.equal(chipCount(dom, 'Favorites'), String(expected));
+    assert.equal(chip(dom, 'Favorites').disabled, false);
+});
+
+test('a cache from another signed-in account is treated as absent', async () => {
+    const cache = {
+        ownerCid: 900099,
+        entries: [{ cid: customCids[0], name: 'Other Account Buddy' }],
+        fetchedAt: Date.now(),
+    };
+    const dom = await loadPageWithBar(SMALL, {
+        url: SMALL_URL,
+        local: { [BUDDY_CACHE_KEY]: cache },
+        prepare: page => {
+            const owner = page.window.document.createElement('a');
+            owner.href = '/climber/ClimbListC.aspx?cid=900001';
+            owner.textContent = 'My Ascents';
+            page.window.document.body.prepend(owner);
+        },
+    });
+    assert.equal(chipCount(dom, 'Favorites'), '0');
+    assert.equal(chip(dom, 'Favorites').disabled, false, 'the signed-in owner can load a fresh list');
+    assert.match(chip(dom, 'Favorites').title, /Load your Peakbagger Buddy List/);
+});
+
+test('an active stale buddy cache filters immediately and revalidates once', async () => {
+    const stale = {
+        ownerCid: 900001,
+        entries: [{ cid: customCids[0], name: 'Saved Buddy' }],
+        fetchedAt: 1,
+    };
+    let fetches = 0;
+    let fetchedUrl = '';
+    const dom = await loadPage(SMALL, {
+        url: SMALL_URL,
+        local: { [BUDDY_CACHE_KEY]: stale },
+        prepare: page => {
+            const owner = page.window.document.createElement('a');
+            owner.href = '/climber/ClimbListC.aspx?cid=900001';
+            owner.textContent = 'My Ascents';
+            page.window.document.body.prepend(owner);
+            page.window.localStorage.setItem('pbAscentBetaFilter.v1', JSON.stringify({
+                beta: false, tr: false, minWords: 1, gps: false, link: false, fav: true,
+            }));
+            page.window.fetch = async url => {
+                fetches++;
+                fetchedUrl = String(url);
+                return { status: 200, headers: {}, text: async () => buddyFixture };
+            };
+        },
+    });
+    await waitFor(dom, () => dom.chrome._localStore[BUDDY_CACHE_KEY]?.fetchedAt > 1);
+    assert.equal(fetches, 1);
+    assert.match(fetchedUrl, /report\/report\.aspx\?r=b&cid=900001$/);
+    assert.equal(dom.chrome._localStore[BUDDY_CACHE_KEY].ownerCid, 900001);
+    assert.equal(dom.chrome._localStore[BUDDY_CACHE_KEY].entries.length, 6);
+});
+
+test('visiting your own Buddy List refreshes the cache without another request', async () => {
+    let fetches = 0;
+    const dom = await loadPage('report-buddy-list.html', {
+        fixtures: PAGE_FIXTURES,
+        url: 'https://peakbagger.com/report/report.aspx?r=b&cid=900001',
+        prepare: page => { page.window.fetch = async () => { fetches++; throw new Error('unexpected fetch'); }; },
+    });
+    await waitFor(dom, () => dom.chrome._localStore[BUDDY_CACHE_KEY]?.entries?.length === 6);
+    assert.equal(fetches, 0);
+    assert.equal(dom.chrome._localStore[BUDDY_CACHE_KEY].ownerCid, 900001);
 });
 
 test('"Show all" reveals every row', async () => {

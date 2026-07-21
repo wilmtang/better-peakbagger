@@ -46,7 +46,7 @@ export const ENTRIES = [
     { out: 'content/ascent-bridge.js', sources: ['settings-schema.js', 'settings.js', 'bridge.js'] },
     { out: 'content/gpx-analyzer.js', sources: ['gpx-metrics.js', 'terrain-basemap.js', 'terrain-camera.js', 'terrain-compass.js', 'terrain-coordinator.js', 'terrain-failure.js', 'peak-markers.js', 'settings-schema.js', 'gpx-analyzer.js'] },
     { out: 'content/terrain-map.js', sources: ['terrain-camera.js', 'settings-schema.js', 'settings.js', 'terrain-map.js'] },
-    { out: 'content/ascent-filter.js', sources: ['settings-schema.js', 'settings.js', 'ascent-filter.js'] },
+    { out: 'content/ascent-filter.js', sources: ['settings-schema.js', 'settings.js', 'favorite-climbers.js', 'ascent-filter.js'] },
     { out: 'content/profile-backup.js', sources: ['profile-backup-core.js', 'ascent-snapshot.js', 'report-markup.js', 'ascent-backup-source.js', 'profile-backup.js'] },
     { out: 'content/peak-map-bridge.js', sources: ['settings-schema.js', 'settings.js', 'peak-map-bridge.js'] },
     { out: 'content/peak-links.js', sources: ['peak-links.js'] },

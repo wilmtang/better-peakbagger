@@ -8,10 +8,13 @@
 // Buddy List reuses only the sorter; it has no beta data or filter surface.
 
 import { settings as S } from './settings.js';
+import { favoriteClimbers as F } from './favorite-climbers.js';
+import { classifyResponse, numericParam, ownerClimberId } from './profile-backup-core.js';
 
     const pageParams = new URLSearchParams(location.search);
     const pagePathname = location.pathname.toLowerCase();
     const isAscentListPage = /\/climber\/(?:peakascents|climblistc)\.aspx$/.test(pagePathname);
+    const isPeakAscentsPage = pagePathname.endsWith('/climber/peakascents.aspx');
     const isBuddyListPage = pagePathname.endsWith('/report/report.aspx')
         && (pageParams.get('r') || '').toLowerCase() === 'b';
 
@@ -23,13 +26,16 @@ import { settings as S } from './settings.js';
     const settingsPromise = S && isAscentListPage
         ? S.get().catch(() => null)
         : Promise.resolve(null);
+    const favoritesPromise = isPeakAscentsPage
+        ? chrome.storage.local.get([F.FAVORITES_KEY, F.BUDDY_CACHE_KEY]).catch(() => ({}))
+        : Promise.resolve({});
 
     // Chip on/off states and the Trip report word-count threshold are per-page
     // UI state kept in page localStorage (below). The shared extension settings
     // (chrome.storage) own only the cross-cutting "has beta" definition.
 
     const STORAGE_KEY = 'pbAscentBetaFilter.v1';
-    const DEFAULT_STATE = { beta: true, tr: false, minWords: 1, gps: false, link: false };
+    const DEFAULT_STATE = { beta: true, tr: false, minWords: 1, gps: false, link: false, fav: false };
 
     const loadState = () => {
         try {
@@ -395,6 +401,8 @@ import { settings as S } from './settings.js';
 .pbaf-chip:hover { border-color: #2f6b3f; color: #2f6b3f; }
 .pbaf-chip:focus-visible { outline: 2px solid #2f6b3f; outline-offset: 2px; }
 .pbaf-chip[aria-pressed="true"] { background: #2f6b3f; border-color: #2f6b3f; color: #fff; }
+.pbaf-chip:disabled { cursor: default; opacity: .55; border-color: #c8c8c2; color: #666; }
+.pbaf-chip:disabled:hover { border-color: #c8c8c2; color: #666; }
 .pbaf-chip .pbaf-count { font-size: 11px; color: #8b8b84; font-variant-numeric: tabular-nums; }
 .pbaf-chip[aria-pressed="true"] .pbaf-count { color: #cfe3d4; }
 .pbaf-tick { display: none; font-weight: 700; }
@@ -433,6 +441,16 @@ import { settings as S } from './settings.js';
         label.textContent = 'Beta filter';
         bar.appendChild(label);
         return bar;
+    };
+
+    const cacheRenderedBuddyList = async () => {
+        const pageCid = numericParam(location.href, 'cid', document.baseURI);
+        const ownCid = ownerClimberId(document);
+        if (pageCid == null || ownCid == null || pageCid !== ownCid) return;
+        const entries = F.parseBuddyDocument(document);
+        await chrome.storage.local.set({
+            [F.BUDDY_CACHE_KEY]: { ownerCid: ownCid, entries, fetchedAt: Date.now() }
+        });
     };
 
     // The compact view (no y= in the URL) only renders Climber + Date columns,
@@ -507,6 +525,13 @@ import { settings as S } from './settings.js';
             const trMatch = /^TR-(\d+)/.exec(normalize(cell('tr') && cell('tr').textContent));
             const record = {
                 row,
+                climberId: (() => {
+                    const anchor = Array.from(row.querySelectorAll('a[href]')).find(candidate => {
+                        try { return /\/climber\/climber\.aspx$/i.test(new URL(candidate.href, document.baseURI).pathname); }
+                        catch (e) { return false; }
+                    });
+                    return anchor ? numericParam(anchor.href, 'cid', document.baseURI) : null;
+                })(),
                 words: trMatch ? parseInt(trMatch[1], 10) : 0,
                 gps: !!(cell('gps') && cell('gps').querySelector('img')),
                 link: !!(cell('link') && cell('link').querySelector('a[href]')),
@@ -532,7 +557,10 @@ import { settings as S } from './settings.js';
         // Buddy rows have no trip-report, GPS, or external-link beta signals.
         // Sorting is the complete feature on this surface: do not mount a
         // misleading filter/compact-view notice or apply ascent-list settings.
-        if (isBuddyListPage) return;
+        if (isBuddyListPage) {
+            void cacheRenderedBuddyList().catch(() => {});
+            return;
+        }
 
         // Newest-ascents-first (opt-in). Flip a default oldest-first list to
         // descending once settings resolve — the rows are already in the DOM, so
@@ -555,7 +583,8 @@ import { settings as S } from './settings.js';
             beta: dataRows.filter(r => r.beta).length,
             tr: dataRows.filter(r => r.words > 0).length,
             gps: dataRows.filter(r => r.gps).length,
-            link: dataRows.filter(r => r.link).length
+            link: dataRows.filter(r => r.link).length,
+            fav: 0,
         };
 
         // What "has beta" means is user-configurable (extension settings);
@@ -595,12 +624,29 @@ import { settings as S } from './settings.js';
         // The Trip report chip's word threshold is per-page UI state and lives
         // in localStorage (state.minWords, above). The "has beta" definition is
         // centralized in extension settings.
+        let currentSettings = null;
         if (S) {
             try {
                 const s = await settingsPromise;
-                if (s) betaCfg = betaCfgFrom(s);
+                if (s) {
+                    currentSettings = s;
+                    betaCfg = betaCfgFrom(s);
+                }
             } catch (e) { /* fall back to defaults */ }
         }
+        const initialFavorites = await favoritesPromise;
+        const ownCid = ownerClimberId(document);
+        const cacheForOwner = value => {
+            const cache = F.cleanBuddyCache(value);
+            return cache && ownCid != null && cache.ownerCid !== ownCid ? null : cache;
+        };
+        let favoritesSource = currentSettings && currentSettings.favoritesSource === 'custom' ? 'custom' : 'buddies';
+        let favorites = F.cleanFavorites(initialFavorites[F.FAVORITES_KEY]);
+        let buddyCache = cacheForOwner(initialFavorites[F.BUDDY_CACHE_KEY]);
+        let favoriteIds = new Set();
+        let favoriteAvailable = false;
+        let favoriteLoadError = '';
+        let buddyRefreshPromise = null;
         const bar = buildBarShell();
         const chips = {};
 
@@ -622,9 +668,77 @@ import { settings as S } from './settings.js';
                 state[key] = !state[key];
                 saveState(state);
                 render();
+                if (key === 'fav' && state.fav) void refreshBuddyCache();
             });
             chips[key] = button;
             return button;
+        };
+
+        const favoriteTooltip = () => {
+            if (favoriteLoadError) return favoriteLoadError;
+            if (favoritesSource === 'custom') {
+                return favorites.entries.length
+                    ? 'Only ascents logged by climbers in your custom favorites list. Remembered across visits.'
+                    : "No favorite climbers yet. Add them from a climber's page or in the extension settings.";
+            }
+            if (!buddyCache) {
+                return ownCid == null
+                    ? 'Sign in to Peakbagger to load your Buddy List.'
+                    : 'Load your Peakbagger Buddy List and show only ascents logged by those climbers.';
+            }
+            if (!buddyCache.entries.length) return 'Your Peakbagger Buddy List is empty.';
+            return F.isFresh(buddyCache)
+                ? 'Only ascents logged by climbers on your Peakbagger Buddy List. Remembered across visits.'
+                : 'Using your saved Buddy List while a fresh copy loads in the background.';
+        };
+
+        const refreshFavorites = () => {
+            favoriteIds = F.favoriteSet(favoritesSource, favorites, buddyCache);
+            favoriteAvailable = favoriteIds.size > 0;
+            counts.fav = 0;
+            for (const record of dataRows) {
+                record.fav = record.climberId != null && favoriteIds.has(record.climberId);
+                if (record.fav) counts.fav++;
+            }
+            if (chips.fav) {
+                chips.fav.querySelector('.pbaf-count').textContent = String(counts.fav);
+                chips.fav.title = favoriteTooltip();
+                const canInitialLoad = favoritesSource === 'buddies'
+                    && !buddyCache && ownCid != null && !favoriteLoadError;
+                chips.fav.disabled = !favoriteAvailable && !canInitialLoad;
+            }
+        };
+
+        const refreshBuddyCache = () => {
+            if (!isPeakAscentsPage || favoritesSource !== 'buddies' || !state.fav
+                || ownCid == null || F.isFresh(buddyCache) || buddyRefreshPromise) return buddyRefreshPromise;
+            favoriteLoadError = '';
+            if (chips.fav) chips.fav.title = buddyCache
+                ? 'Using your saved Buddy List while a fresh copy loads in the background.'
+                : 'Loading your Peakbagger Buddy List…';
+            const url = F.buddyListUrl(ownCid, location.origin);
+            buddyRefreshPromise = (async () => {
+                const response = await fetch(url, { credentials: 'include' });
+                const body = await response.text();
+                if (classifyResponse(response.status, response.headers, body, { kind: 'buddies' }) !== 'ok') {
+                    throw new Error('wrong Buddy List response');
+                }
+                const parsed = new DOMParser().parseFromString(body, 'text/html');
+                const nextCache = {
+                    ownerCid: ownCid,
+                    entries: F.parseBuddyDocument(parsed),
+                    fetchedAt: Date.now(),
+                };
+                buddyCache = nextCache;
+                await chrome.storage.local.set({ [F.BUDDY_CACHE_KEY]: nextCache });
+            })().catch(() => {
+                if (!buddyCache) favoriteLoadError = "Your Buddy List couldn't be loaded. Open peakbagger.com and try again.";
+            }).finally(() => {
+                buddyRefreshPromise = null;
+                refreshFavorites();
+                render();
+            });
+            return buddyRefreshPromise;
         };
 
         const wordsWrap = document.createElement('span');
@@ -661,11 +775,12 @@ import { settings as S } from './settings.js';
             state.tr = false;
             state.gps = false;
             state.link = false;
+            state.fav = false;
             saveState(state);
             render();
         });
 
-        bar.append(
+        const filterControls = [
             makeChip('beta', 'Has beta', ''),
             makeChip('tr', 'Trip report',
                 'Only ascents with a written trip report of at least the chosen word count.'),
@@ -674,15 +789,21 @@ import { settings as S } from './settings.js';
                 'Only ascents with a GPS track.'),
             makeChip('link', 'Link',
                 'Only ascents with an external link (blog, Strava, forum, ...).'),
+        ];
+        if (isPeakAscentsPage) filterControls.push(makeChip('fav', 'Favorites', ''));
+        bar.append(
+            ...filterControls,
             spacer,
             statusEl,
             resetButton
         );
         refreshBeta();
+        refreshFavorites();
 
         const render = () => {
             for (const [key, chip] of Object.entries(chips)) {
-                chip.setAttribute('aria-pressed', String(!!state[key]));
+                const active = !!state[key] && (key !== 'fav' || favoriteAvailable);
+                chip.setAttribute('aria-pressed', String(active));
             }
             wordsWrap.hidden = !state.tr;
 
@@ -694,6 +815,7 @@ import { settings as S } from './settings.js';
                 if (state.tr && record.words < minWords) visible = false;
                 if (state.gps && !record.gps) visible = false;
                 if (state.link && !record.link) visible = false;
+                if (state.fav && favoriteAvailable && !record.fav) visible = false;
                 record.visible = visible;
                 record.row.style.display = visible ? '' : 'none';
                 if (visible) shown++;
@@ -702,7 +824,8 @@ import { settings as S } from './settings.js';
                 section.row.style.display = section.items.some(item => item.visible) ? '' : 'none';
             }
 
-            const anyActive = state.beta || state.tr || state.gps || state.link;
+            const anyActive = state.beta || state.tr || state.gps || state.link
+                || (state.fav && favoriteAvailable);
             statusEl.textContent = '';
             const strong = document.createElement('b');
             if (anyActive) {
@@ -719,17 +842,45 @@ import { settings as S } from './settings.js';
 
         table.parentNode.insertBefore(bar, table);
         render();
+        if (state.fav) void refreshBuddyCache();
+
+        chrome.storage.onChanged.addListener((changes, area) => {
+            if (area !== 'local') return;
+            let changed = false;
+            if (changes[F.FAVORITES_KEY]) {
+                favorites = F.cleanFavorites(changes[F.FAVORITES_KEY].newValue);
+                changed = true;
+            }
+            if (changes[F.BUDDY_CACHE_KEY]) {
+                buddyCache = cacheForOwner(changes[F.BUDDY_CACHE_KEY].newValue);
+                favoriteLoadError = '';
+                changed = true;
+            }
+            if (!changed) return;
+            refreshFavorites();
+            render();
+        });
 
         // Re-apply the beta definition if it changes in the options page /
         // another tab. (The Trip report word threshold is local UI state.)
         if (S && S.subscribe) {
             S.subscribe(settings => {
                 const nextBeta = betaCfgFrom(settings);
+                const nextSource = settings.favoritesSource === 'custom' ? 'custom' : 'buddies';
+                let changed = false;
                 if (JSON.stringify(nextBeta) !== JSON.stringify(betaCfg)) {
                     betaCfg = nextBeta;
                     refreshBeta();
-                    render();
+                    changed = true;
                 }
+                if (nextSource !== favoritesSource) {
+                    favoritesSource = nextSource;
+                    favoriteLoadError = '';
+                    refreshFavorites();
+                    changed = true;
+                }
+                if (changed) render();
+                if (state.fav) void refreshBuddyCache();
             });
         }
     };

@@ -22,7 +22,8 @@ const findLink = (row, pathPattern) => Array.from(row.querySelectorAll('a[href]'
 export const ownerClimberId = doc => {
     const links = Array.from(doc.querySelectorAll('a[href]'));
     const owner = links.find(anchor => /^My Ascents$/i.test(trim(anchor.textContent)))
-        || links.find(anchor => /^Add Ascent$/i.test(trim(anchor.textContent)));
+        || links.find(anchor => /^Add Ascent$/i.test(trim(anchor.textContent)))
+        || links.find(anchor => /^My Home Page$/i.test(trim(anchor.textContent)));
     return owner ? numericParam(owner.href, 'cid', doc.baseURI) : null;
 };
 

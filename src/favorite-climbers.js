@@ -12,7 +12,7 @@ const BUDDY_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const LIMIT = 500;
 const NAME_LIMIT = 200;
 const CLIMBER_BASE = 'https://www.peakbagger.com/climber/climber.aspx';
-const collator = new Intl.Collator(undefined, { sensitivity: 'base', numeric: true });
+let collator = null;
 
 const trim = value => String(value ?? '').replace(/\u00a0/g, ' ').replace(/\s+/g, ' ').trim();
 const cleanName = value => trim(value).slice(0, NAME_LIMIT);
@@ -173,7 +173,11 @@ const favoriteSet = (mode, favorites, buddyCache) => new Set(
         .map(entry => entry.cid),
 );
 
-const byName = (left, right) => collator.compare(cleanName(left && left.name), cleanName(right && right.name))
+const compareNames = (left, right) => {
+    if (!collator) collator = new Intl.Collator(undefined, { sensitivity: 'base', numeric: true });
+    return collator.compare(left, right);
+};
+const byName = (left, right) => compareNames(cleanName(left && left.name), cleanName(right && right.name))
     || (cleanCid(left && left.cid) || 0) - (cleanCid(right && right.cid) || 0);
 const byAddedAtDesc = (left, right) => (Number(right && right.addedAt) || 0) - (Number(left && left.addedAt) || 0)
     || byName(left, right);

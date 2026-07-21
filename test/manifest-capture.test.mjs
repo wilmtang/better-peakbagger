@@ -149,7 +149,7 @@ test('the ascent sorter also reaches the Buddy List report endpoint', () => {
     assert.equal(sorter.run_at, 'document_start');
     assert.equal(sorter.world, undefined);
     assert.deepEqual(bundleSources('content/ascent-filter.js'),
-        ['settings-schema.js', 'settings.js', 'ascent-filter.js']);
+        ['settings-schema.js', 'settings.js', 'favorite-climbers.js', 'ascent-filter.js']);
     for (const host of ['https://www.peakbagger.com', 'https://peakbagger.com']) {
         assert.ok(sorter.matches.includes(`${host}/report/report.aspx*`));
     }
