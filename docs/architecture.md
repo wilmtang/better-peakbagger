@@ -385,6 +385,10 @@ publishes the Leaflet library as `L` and the map instance as
 `mapsPlaceholder`. These are private, undocumented page globals. The analyzer
 must run in MAIN world to read them; same-origin DOM access from an isolated
 content script would not grant access to the page realm's JavaScript objects.
+The iframe's `t` query parameter selects the native map context, while `d` is
+an overloaded subject ID whose meaning follows that context. The maintained
+mapping, including the distinction between `t=G` and `gt`, is documented in
+[peakbagger-map-types.md](peakbagger-map-types.md).
 
 The analyzer draws an extension-owned route line and casing without mutating
 Peakbagger's native layers. Both are non-interactive and sent behind the native

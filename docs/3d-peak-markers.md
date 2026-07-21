@@ -33,6 +33,9 @@ GET /Async/PLLBB.aspx?miny=&maxy=&minx=&maxx=&t=<mapType>[&pid=<peakId>][&cid=<c
 - Rows with prominence below the page's `hj` URL parameter are dropped
   client-side; a missing prominence never passes (`parseInt` semantics).
 - Only map types `P/A/K/W/I/E/U/J/S` load peaks; group maps (`G`) never do.
+  These are the peak-feed subset of the full native map-type table in
+  [peakbagger-map-types.md](peakbagger-map-types.md), not every value accepted
+  by `MasterMap.aspx`.
 - `pid` (the page's subject peak, excluded server-side) is passed for
   `P/K/I/U/E`; `cid` personalizes the climbed flag: `c="1"` climbed (green
   `GreenCircle16.gif`), `c="2"` unknown/anonymous (orange
