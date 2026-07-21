@@ -148,6 +148,19 @@
     },
     {
       "matches": [
+        "https://www.peakbagger.com/climber/climber.aspx*",
+        "https://www.peakbagger.com/climber/Climber.aspx*",
+        "https://peakbagger.com/climber/climber.aspx*",
+        "https://peakbagger.com/climber/Climber.aspx*"
+      ],
+      "js": [
+        "content/climber-favorite.js"
+      ],
+      "run_at": "document_end",
+      "all_frames": false
+    },
+    {
+      "matches": [
         "https://www.peakbagger.com/climber/PeakAscents.aspx*",
         "https://www.peakbagger.com/climber/peakascents.aspx*",
         "https://www.peakbagger.com/climber/ClimbListC.aspx*",

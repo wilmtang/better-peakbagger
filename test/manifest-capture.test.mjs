@@ -155,6 +155,17 @@ test('the ascent sorter also reaches the Buddy List report endpoint', () => {
     }
 });
 
+test('climber pages get only the custom favorite toggle in the extension world', () => {
+    const script = contentEntry('content/climber-favorite.js');
+    assert.ok(script);
+    assert.equal(script.run_at, 'document_end');
+    assert.equal(script.world, undefined);
+    assert.deepEqual(bundleSources('content/climber-favorite.js'),
+        ['settings-schema.js', 'settings.js', 'favorite-climbers.js', 'climber-favorite.js']);
+    assert.equal(script.matches.length, 4);
+    assert.ok(script.matches.every(pattern => /peakbagger\.com\/climber\/(?:C|c)limber\.aspx/.test(pattern)));
+});
+
 test('Peak-page 3D uses a narrow settings bridge, MAIN coordinator, and isolated renderer bridge', () => {
     const settingsBridge = contentEntry('content/peak-map-bridge.js');
     const pageCoordinator = contentEntry('content/peak-map.js');
