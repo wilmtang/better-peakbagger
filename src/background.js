@@ -1389,7 +1389,10 @@ import { githubClient as GithubClient } from './github-client.js';
     };
 
     // The save-time snapshot from the ascentedit content script: keep it in
-    // storage.session, keyed by identity, for the saved ascent page to back up.
+    // storage.session, keyed by identity and source tab, for the saved ascent
+    // page to back up. The tab namespace prevents two simultaneous new-ascent
+    // forms for the same climber/peak/date from overwriting one another before
+    // Peakbagger has assigned either ascent an id.
     // Accepted only from a Peakbagger tab and only while the feature is enabled;
     // the cleanup alarm expires it on the 30-minute horizon.
     const storeBackupSnapshot = async (message, sender) => {
@@ -1397,11 +1400,13 @@ import { githubClient as GithubClient } from './github-client.js';
         if (!message || !message.key || !message.snapshot) return { ok: false, reason: 'invalid' };
         const settings = await Settings.get();
         if (!settings.enableGithubBackup) return { ok: false, reason: 'disabled' };
+        const sourceTabId = sender.tab && Number.isInteger(sender.tab.id) ? sender.tab.id : null;
+        const storageKey = sourceTabId == null ? message.key : `${message.key}|tab:${sourceTabId}`;
         await mutateMap(SNAPSHOTS_KEY, snapshots => {
-            snapshots[message.key] = {
+            snapshots[storageKey] = {
                 identity: message.identity || null,
                 snapshot: message.snapshot,
-                sourceTabId: sender.tab ? sender.tab.id : null,
+                sourceTabId,
                 savedAt: now(),
                 expiresAt: now() + SNAPSHOT_TTL_MS,
             };
@@ -1485,7 +1490,7 @@ import { githubClient as GithubClient } from './github-client.js';
     // by peak+date. A peak-only match can attach a different ascent's report and
     // fields, so absence of a precise match is handled by the complete edit-form
     // snapshot supplied by the individual backup surface.
-    const findSnapshotForPage = async page => {
+    const findSnapshotForPage = async (page, sender) => {
         const snapshots = await readMap(SNAPSHOTS_KEY);
         const entries = Object.entries(snapshots)
             .filter(([, record]) => isFresh(record))
@@ -1495,8 +1500,11 @@ import { githubClient as GithubClient } from './github-client.js';
         const ascentId = page && page.ascent ? page.ascent.id : null;
         const peakId = page && page.peak ? page.peak.id : null;
         const date = page && page.ascent ? page.ascent.date : null;
-        let match = ascentId != null ? entries.find(e => idOf(e).ascentId === ascentId) : null;
-        if (!match && peakId != null && date) match = entries.find(e => idOf(e).peakId === peakId && idOf(e).date === date);
+        const sourceTabId = sender && sender.tab && Number.isInteger(sender.tab.id) ? sender.tab.id : null;
+        const find = predicate => (sourceTabId == null ? null : entries.find(e => e.record.sourceTabId === sourceTabId && predicate(e)))
+            || entries.find(predicate);
+        let match = ascentId != null ? find(e => idOf(e).ascentId === ascentId) : null;
+        if (!match && peakId != null && date) match = find(e => idOf(e).peakId === peakId && idOf(e).date === date);
         return match || null;
     };
 
@@ -1511,7 +1519,7 @@ import { githubClient as GithubClient } from './github-client.js';
         if (!auth || !auth.token) return { ok: false, error: { code: 'not-connected' } };
         if (!auth.repo || !auth.repo.owner || !auth.repo.name) return { ok: false, error: { code: 'no-repo' } };
 
-        const found = await findSnapshotForPage(message.page);
+        const found = await findSnapshotForPage(message.page, sender);
         // Automatic backup fires on every saved-ascent page load, so it must push
         // only right after a save — i.e. when a matching pending snapshot exists.
         // Without one (an old ascent merely being viewed) it declines quietly so

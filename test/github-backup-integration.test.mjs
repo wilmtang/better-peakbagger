@@ -111,6 +111,7 @@ const editSnapshot = () => ({
         backup: { extensionVersion: '2.2.0', syncedAt: null },
     },
 });
+const storedSnapshotKey = (snapshot = editSnapshot(), sender = EDIT_SENDER) => `${snapshot.key}|tab:${sender.tab.id}`;
 
 test('a saved ascent is backed up: snapshot + page merge, one commit, snapshot consumed', async () => {
     const backend = gitDataBackend();
@@ -119,7 +120,7 @@ test('a saved ascent is backed up: snapshot + page merge, one commit, snapshot c
     // 1. The edit page stores the save-time snapshot.
     const stored = await worker.send({ type: 'GITHUB_BACKUP_SNAPSHOT', ...editSnapshot() }, EDIT_SENDER);
     assert.equal(stored.ok, true);
-    assert.ok(worker.session.bpbGithubSnapshots['900001|2296|2026-07-12']);
+    assert.ok(worker.session.bpbGithubSnapshots[storedSnapshotKey()]);
 
     // 2. The saved ascent page checks status.
     const status = await worker.send({ type: 'GITHUB_BACKUP_STATUS' }, PEAK_SENDER);
@@ -180,7 +181,7 @@ test('a saved ascent is backed up: snapshot + page merge, one commit, snapshot c
     assert.match(mdBlob, /\*\*Great climb\*\* under blue skies\./);
 
     // The snapshot has served its purpose and is dropped.
-    assert.equal(worker.session.bpbGithubSnapshots['900001|2296|2026-07-12'], undefined);
+    assert.equal(worker.session.bpbGithubSnapshots[storedSnapshotKey()], undefined);
 });
 
 test('profile backfill lists repository folders and pushes a direct snapshot through the built worker', async () => {
@@ -446,8 +447,62 @@ test('an edited ascent matches its save snapshot by aid after peak and date chan
         .find(([path]) => path.endsWith('/report.md'))[1];
     assert.match(report, /Exact \*\*edited\*\* Markdown\./,
         'the aid match preserves the save-time exact Markdown sidecar');
-    assert.equal(worker.session.bpbGithubSnapshots[pending.key], undefined,
+    assert.equal(worker.session.bpbGithubSnapshots[storedSnapshotKey(pending)], undefined,
         'the edited-ascent snapshot is consumed after the push');
+});
+
+test('identical new ascents in separate tabs retain and consume their own save snapshots', async () => {
+    const backend = gitDataBackend();
+    const worker = createWorker({ settings: { enableGithubBackup: true, autoGithubBackup: true }, auth: AUTH, github: backend.handler });
+    const firstSender = { tab: { id: 41 }, url: EDIT_SENDER.url };
+    const secondSender = { tab: { id: 42 }, url: EDIT_SENDER.url };
+    const first = editSnapshot();
+    first.snapshot.report.markdown = 'First tab report.';
+    first.snapshot.ascent.gainFt = '4100';
+    const second = editSnapshot();
+    second.snapshot.report.markdown = 'Second tab report.';
+    second.snapshot.ascent.gainFt = '4200';
+
+    await worker.send({ type: 'GITHUB_BACKUP_SNAPSHOT', ...first }, firstSender);
+    await worker.send({ type: 'GITHUB_BACKUP_SNAPSHOT', ...second }, secondSender);
+    assert.ok(worker.session.bpbGithubSnapshots[storedSnapshotKey(first, firstSender)]);
+    assert.ok(worker.session.bpbGithubSnapshots[storedSnapshotKey(second, secondSender)]);
+
+    const page = aid => ({
+        ascent: { id: aid, date: '2026-07-12' },
+        peak: { id: 2296, name: 'Mount Rainier' },
+        report: { markdown: 'Persisted fallback.' },
+    });
+    const savedSender = (tabId, aid) => ({
+        tab: { id: tabId },
+        url: `https://www.peakbagger.com/climber/ascent.aspx?aid=${aid}`,
+    });
+
+    const firstPush = await worker.send({
+        type: 'GITHUB_BACKUP_ASCENT',
+        page: page(7000001),
+        pageComplete: true,
+        auto: true,
+    }, savedSender(41, 7000001));
+    assert.equal(firstPush.ok, true);
+    let report = Object.entries(backend.state.contents)
+        .find(([path]) => path.includes('a7000001/') && path.endsWith('/report.md'))[1];
+    assert.match(report, /First tab report/);
+    assert.equal(worker.session.bpbGithubSnapshots[storedSnapshotKey(first, firstSender)], undefined);
+    assert.ok(worker.session.bpbGithubSnapshots[storedSnapshotKey(second, secondSender)],
+        'consuming the first tab must leave the second tab pending');
+
+    const secondPush = await worker.send({
+        type: 'GITHUB_BACKUP_ASCENT',
+        page: page(7000002),
+        pageComplete: true,
+        auto: true,
+    }, savedSender(42, 7000002));
+    assert.equal(secondPush.ok, true);
+    report = Object.entries(backend.state.contents)
+        .find(([path]) => path.includes('a7000002/') && path.endsWith('/report.md'))[1];
+    assert.match(report, /Second tab report/);
+    assert.equal(worker.session.bpbGithubSnapshots[storedSnapshotKey(second, secondSender)], undefined);
 });
 
 test('individual backup never uses a different same-peak snapshot or accepts a sparse fallback', async () => {
@@ -498,7 +553,7 @@ test('individual backup never uses a different same-peak snapshot or accepts a s
     assert.equal(json.ascent.nightsOut, 0);
     assert.equal(json.ascent.pointFt, 4425);
     assert.equal(json.ascent.quality, 0);
-    assert.ok(worker.session.bpbGithubSnapshots['900001|2296|2026-07-12'],
+    assert.ok(worker.session.bpbGithubSnapshots[storedSnapshotKey()],
         'the unrelated same-peak snapshot was not consumed');
 });
 

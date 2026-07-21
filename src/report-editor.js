@@ -438,9 +438,10 @@ import { createMarkdownEditor } from './report-md-editor.js';
     //
     // When GitHub backup is enabled, capture the submitted ascent form plus the
     // exact Markdown-source sidecar at Save and hand it to the background worker,
-    // which keeps it (identity-keyed, 30-minute expiry) in storage.session for
-    // the saved ascent page to back up. Best-effort and gated: it never blocks or
-    // alters the Peakbagger save, and no snapshot is sent when the feature is off.
+    // which keeps it (identity + source-tab keyed, 30-minute expiry) in
+    // storage.session for the saved ascent page to back up. Best-effort and
+    // gated: it never blocks or alters the Peakbagger save, and no snapshot is
+    // sent when the feature is off.
     let backupEnabled = false;
     Settings.get().then(next => { backupEnabled = !!next.enableGithubBackup; }).catch(() => {});
     Settings.subscribe(next => { backupEnabled = !!next.enableGithubBackup; });

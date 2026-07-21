@@ -13,7 +13,9 @@
 //
 // The result also carries the identity the backup surface matches on later —
 // climber, ascent (when editing), peak, and the normalized date — plus a stable
-// `key` so a re-save overwrites its own pending snapshot rather than piling up.
+// `key` so a re-save in the same tab overwrites its own pending snapshot rather
+// than piling up. The worker adds the source-tab namespace because a new ascent
+// has no server-assigned aid yet.
 // It does NOT read the token or touch the network; it only reads the form.
 
     const trim = value => (typeof value === 'string' ? value : value == null ? '' : String(value)).trim();
@@ -210,8 +212,9 @@
         };
     };
 
-    // A stable match key: same climber + peak + submitted date. A re-save
-    // overwrites its own pending snapshot instead of accumulating duplicates.
+    // A stable match key: same climber + peak + submitted date. The worker adds
+    // the source tab before storage, so identical new ascents in different tabs
+    // cannot overwrite one another before Peakbagger assigns their aids.
     const identityKey = ({ climberId, peakId, date }) =>
         `${climberId ?? ''}|${peakId ?? ''}|${date ?? ''}`;
 
