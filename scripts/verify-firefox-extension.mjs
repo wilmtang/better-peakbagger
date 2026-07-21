@@ -79,7 +79,7 @@ async function main() {
     fixture = await createBrowserFixtureServer({ temporaryRoot });
 
     const options = new firefox.Options()
-      .addArguments("-headless", "-remote-allow-system-access")
+      .addArguments("-headless")
       .setProfile(profileTemplate)
       .setPreference("network.dns.localDomains", [
         fixtureHost,
@@ -97,9 +97,11 @@ async function main() {
     options.setAcceptInsecureCerts(true);
     if (process.env.FIREFOX_BIN) options.setBinary(process.env.FIREFOX_BIN);
 
+    const service = new firefox.ServiceBuilder().addArguments("--allow-system-access");
     driver = await new Builder()
       .forBrowser("firefox")
       .setFirefoxOptions(options)
+      .setFirefoxService(service)
       .build();
     await driver.manage().setTimeouts({ pageLoad: 20_000, script: 15_000 });
 
