@@ -22,6 +22,7 @@
 
 import { settings as Settings } from './settings.js';
 import { reportMarkup as Markup } from './report-markup.js';
+import { reportDrafts as ReportDrafts } from './report-drafts.js';
 import { ascentSnapshot as AscentSnapshot } from './ascent-snapshot.js';
 import { createRichEditor, richCommands, richState } from './report-rich-editor.js';
 import { createMarkdownEditor } from './report-md-editor.js';
@@ -38,9 +39,6 @@ import { createMarkdownEditor } from './report-md-editor.js';
     const form = textarea && textarea.form;
     if (!textarea || !form) return;
 
-    const DRAFT_PREFIX = 'bpbReportDraft:';
-    const DRAFT_TTL_MS = 14 * 24 * 60 * 60 * 1000;
-    const DRAFT_LIMIT = 30;
     const SYNC_DEBOUNCE_MS = 150;
     const AUTOSAVE_DEBOUNCE_MS = 800;
     const MODES = ['rich', 'markdown', 'plain'];
@@ -50,8 +48,11 @@ import { createMarkdownEditor } from './report-md-editor.js';
     const REPORT_CREDIT = `[small][i]Created with [a href="${STORE_URL}" target="_blank"]Better Peakbagger[/a].[/i][/small]`;
 
     const params = new URLSearchParams(location.search);
-    const draftKey = `${DRAFT_PREFIX}${params.get('cid') || '0'}:${
-        params.get('aid') ? `a${params.get('aid')}` : params.get('pid') ? `p${params.get('pid')}` : 'new'}`;
+    const draftKey = ReportDrafts.keyFor({
+        cid: params.get('cid'),
+        aid: params.get('aid'),
+        pid: params.get('pid')
+    });
 
     // The site's own hint row about bracket tags — superseded by the editor,
     // shown again in Plain mode where it applies verbatim.
@@ -505,7 +506,7 @@ import { createMarkdownEditor } from './report-md-editor.js';
             stored = (await localStore.get(draftKey))[draftKey];
         } catch (error) { return; }
         if (!stored || typeof stored.text !== 'string' || typeof stored.savedAt !== 'number') return;
-        if (Date.now() - stored.savedAt > DRAFT_TTL_MS) { clearDraft(); return; }
+        if (Date.now() - stored.savedAt > ReportDrafts.TTL_MS) { clearDraft(); return; }
         const storedText = normalized(stored.text);
         if (!storedText) { clearDraft(); return; }
         if (storedText === normalized(textarea.value)) {
@@ -525,11 +526,11 @@ import { createMarkdownEditor } from './report-md-editor.js';
         try {
             const everything = await localStore.get(null);
             const drafts = Object.entries(everything || {})
-                .filter(([key, value]) => key.startsWith(DRAFT_PREFIX) && value && typeof value.savedAt === 'number');
-            const expired = drafts.filter(([, value]) => Date.now() - value.savedAt > DRAFT_TTL_MS);
-            const fresh = drafts.filter(([, value]) => Date.now() - value.savedAt <= DRAFT_TTL_MS)
+                .filter(([key, value]) => key.startsWith(ReportDrafts.PREFIX) && value && typeof value.savedAt === 'number');
+            const expired = drafts.filter(([, value]) => Date.now() - value.savedAt > ReportDrafts.TTL_MS);
+            const fresh = drafts.filter(([, value]) => Date.now() - value.savedAt <= ReportDrafts.TTL_MS)
                 .sort((a, b) => b[1].savedAt - a[1].savedAt);
-            const excess = fresh.slice(DRAFT_LIMIT);
+            const excess = fresh.slice(ReportDrafts.LIMIT);
             const doomed = [...expired, ...excess].map(([key]) => key).filter(key => key !== draftKey);
             if (doomed.length) await localStore.remove(doomed);
         } catch (error) { /* best effort */ }
