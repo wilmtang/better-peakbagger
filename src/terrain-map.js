@@ -75,7 +75,11 @@ import { terrainCamera } from './terrain-camera.js';
     // checked TERRAIN_PREFETCH. Only fires while the feature is on; the worker
     // still re-validates the sender, the feature gate, and the numbers. The
     // reply is ignored — a warm cache is a best-effort optimization.
-    const forwardPrefetch = data => {
+    const forwardPrefetch = async data => {
+        // A hover can arrive in the same task that booted this bridge. Wait for
+        // the initial feature gate instead of treating its temporary false
+        // default as a durable opt-out and dropping the one warm-up hint.
+        await settingsReady;
         if (!terrainEnabled) return;
         const runtime = (globalThis.browser || globalThis.chrome)?.runtime;
         if (!runtime || typeof runtime.sendMessage !== 'function') return;
@@ -368,7 +372,7 @@ import { terrainCamera } from './terrain-camera.js';
                 // for a view the user signalled intent to open (toggle hover).
                 // Gated on the same feature flag as the frame; the worker
                 // re-checks the setting and the sender before any tile fetch.
-                forwardPrefetch(data);
+                void forwardPrefetch(data);
             } else if (data.type === 'cameraRequest') {
                 if (Number.isSafeInteger(data.requestId) && data.requestId > 0) {
                     postToFrame('cameraRequest', { requestId: data.requestId });

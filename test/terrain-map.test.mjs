@@ -1171,7 +1171,6 @@ test('the bridge relays a bounded DEM prefetch to the background worker only whi
     window.chrome.runtime.sendMessage = message => { sent.push(message); return Promise.resolve({ ok: true }); };
     window.postMessage = () => {};
     window.eval(bridgeBundle);
-    await new Promise(resolve => window.setTimeout(resolve, 0)); // settings.get() resolves → terrainEnabled
 
     const dispatchPage = data => window.dispatchEvent(new window.MessageEvent('message', {
         source: window, origin: window.location.origin,
@@ -1184,20 +1183,24 @@ test('the bridge relays a bounded DEM prefetch to the background worker only whi
         bounds: { minLat: 48.7, minLon: -121.82, maxLat: 48.76, maxLon: -121.8 },
         viewport: { width: 1280, height: 800 }
     });
+    await new Promise(resolve => window.setTimeout(resolve, 0));
     assert.equal(sent.length, 1);
-    assert.equal(sent[0].type, 'TERRAIN_PREFETCH');
+    assert.equal(sent[0].type, 'TERRAIN_PREFETCH',
+        'a hover racing the initial settings read is relayed after the enabled gate resolves');
     assert.deepEqual(JSON.parse(JSON.stringify(sent[0].bounds)), { minLat: 48.7, minLon: -121.82, maxLat: 48.76, maxLon: -121.8 });
     assert.deepEqual(JSON.parse(JSON.stringify(sent[0].viewport)), { width: 1280, height: 800 });
     assert.equal('center' in sent[0], false, 'a bounds prefetch does not also carry a centre');
 
     // A peak prefetch forwards center + zoom instead.
     dispatchPage({ type: 'prefetch', center: [48.83, -121.6], zoom: 13, viewport: { width: 1000, height: 425 } });
+    await new Promise(resolve => window.setTimeout(resolve, 0));
     assert.equal(sent.length, 2);
     assert.deepEqual(JSON.parse(JSON.stringify(sent[1].center)), [48.83, -121.6]);
     assert.equal(sent[1].zoom, 13);
 
     // A prefetch that names neither a valid bounds nor a valid centre is dropped.
     dispatchPage({ type: 'prefetch', viewport: { width: 1000, height: 425 } });
+    await new Promise(resolve => window.setTimeout(resolve, 0));
     assert.equal(sent.length, 2, 'a prefetch with no view is not forwarded');
 
     // Turning the feature off closes the relay: no prefetch reaches the worker.
@@ -1208,6 +1211,7 @@ test('the bridge relays a bounded DEM prefetch to the background worker only whi
         bounds: { minLat: 48.7, minLon: -121.82, maxLat: 48.76, maxLon: -121.8 },
         viewport: { width: 1280, height: 800 }
     });
+    await new Promise(resolve => window.setTimeout(resolve, 0));
     assert.equal(sent.length, 2, 'the bridge does not relay a prefetch while 3D is disabled');
     dom.window.close();
 });
