@@ -135,6 +135,7 @@ import { terrainCamera } from './terrain-camera.js';
     // line is painted data-driven from each feature instead of one flat color.
     let routeHasFeatureColors = false;
     let peakPopup = null;
+    let routePopup = null;
     let peaksRequestId = 0;
     let peaksDebounceTimer = null;
     let peaksUnavailable = false;
@@ -213,6 +214,10 @@ import { terrainCamera } from './terrain-camera.js';
             try { peakPopup.remove(); } catch (error) { /* Already detached with its map. */ }
             peakPopup = null;
         }
+        if (routePopup) {
+            try { routePopup.remove(); } catch (error) { /* Already detached with its map. */ }
+            routePopup = null;
+        }
         peaksRequestId = 0;
         peaksUnavailable = false;
         lastPeaksBoundsKey = null;
@@ -288,10 +293,19 @@ import { terrainCamera } from './terrain-camera.js';
         post('error', { reason });
     };
 
-    const validateRoute = (segments, colors) => {
+    const validateRoute = (segments, colors, links) => {
         if (!Array.isArray(segments) || !segments.length || segments.length > MAX_ROUTE_SEGMENTS) return null;
         const colorList = Array.isArray(colors) ? colors : [];
+        const linkList = Array.isArray(links) ? links : [];
         const hexColor = value => typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value) ? value : null;
+        const cleanLink = value => {
+            if (!value || typeof value !== 'object') return null;
+            const { id, label } = value;
+            if (!Number.isInteger(id) || id <= 0 || id > 1e9
+                || typeof label !== 'string' || !label || label.length > 200
+                || /[\u0000-\u001f\u007f]/.test(label)) return null;
+            return { id, label };
+        };
 
         let pointCount = 0;
         let minLat = Infinity, minLon = Infinity, maxLat = -Infinity, maxLon = -Infinity;
@@ -317,10 +331,11 @@ import { terrainCamera } from './terrain-camera.js';
                 if (pointCount > MAX_ROUTE_POINTS) return null;
             }
             const color = hexColor(colorList[index]);
+            const link = cleanLink(linkList[index]);
             if (color) hasFeatureColors = true;
             features.push({
                 type: 'Feature',
-                properties: color ? { color } : {},
+                properties: { ...(color ? { color } : {}), ...(link ? { ascentId: link.id, label: link.label } : {}) },
                 geometry: { type: 'LineString', coordinates: converted }
             });
         }
@@ -903,7 +918,22 @@ import { terrainCamera } from './terrain-camera.js';
 
     const updatePeakCursor = point => {
         const canvas = map && typeof map.getCanvas === 'function' ? map.getCanvas() : null;
-        if (canvas) canvas.style.cursor = peakFeatureAt(point) ? 'pointer' : '';
+        if (canvas) canvas.style.cursor = peakFeatureAt(point) || routeFeatureAt(point) ? 'pointer' : '';
+    };
+
+    const routeFeatureAt = point => {
+        if (!map || !loaded || typeof map.queryRenderedFeatures !== 'function' || !point) return null;
+        try {
+            const features = map.queryRenderedFeatures(point, { layers: ['bpb-route'] });
+            return Array.isArray(features) ? features.find(feature => {
+                const properties = feature && feature.properties;
+                return properties && Number.isInteger(Number(properties.ascentId))
+                    && Number(properties.ascentId) > 0
+                    && typeof properties.label === 'string' && properties.label;
+            }) || null : null;
+        } catch (error) {
+            return null;
+        }
     };
 
     // Hover hit tests are deferred to the next animation frame so a fast
@@ -1131,6 +1161,10 @@ import { terrainCamera } from './terrain-camera.js';
             try { peakPopup.remove(); } catch (error) { /* Already detached. */ }
             peakPopup = null;
         }
+        if (routePopup) {
+            try { routePopup.remove(); } catch (error) { /* Already detached. */ }
+            routePopup = null;
+        }
         const content = document.createElement('div');
         content.className = 'bpb-peak-popup';
         const link = document.createElement('a');
@@ -1150,9 +1184,42 @@ import { terrainCamera } from './terrain-camera.js';
             .addTo(map);
     };
 
+    const showRoutePopup = (feature, lngLat) => {
+        const maplibre = globalThis.maplibregl;
+        const properties = (feature && feature.properties) || {};
+        const id = Number(properties.ascentId);
+        const label = properties.label;
+        const position = lngLat && Number.isFinite(lngLat.lng) && Number.isFinite(lngLat.lat)
+            ? [lngLat.lng, lngLat.lat]
+            : null;
+        if (!Number.isInteger(id) || id <= 0 || id > 1e9
+            || typeof label !== 'string' || !label || !position || !parentOrigin
+            || !maplibre || typeof maplibre.Popup !== 'function') return;
+        if (peakPopup) {
+            try { peakPopup.remove(); } catch (error) { /* Already detached. */ }
+            peakPopup = null;
+        }
+        if (routePopup) {
+            try { routePopup.remove(); } catch (error) { /* Already detached. */ }
+            routePopup = null;
+        }
+        const content = document.createElement('div');
+        content.className = 'bpb-route-popup';
+        const link = document.createElement('a');
+        link.href = `${parentOrigin}/climber/ascent.aspx?aid=${id}`;
+        link.target = '_blank';
+        link.rel = 'noopener noreferrer';
+        link.textContent = label;
+        content.append(link);
+        routePopup = new maplibre.Popup({ closeButton: true, closeOnClick: true, maxWidth: '420px' })
+            .setLngLat(position)
+            .setDOMContent(content)
+            .addTo(map);
+    };
+
     const createTerrain = data => {
         if (map || mapElement) return;
-        const route = validateRoute(data.routeSegments, data.routeColors);
+        const route = validateRoute(data.routeSegments, data.routeColors, data.routeLinks);
         const focus = validateFocus(data.focus, data.focusZoom);
         const requestedCamera = terrainCamera.toMapLibre(data.camera);
         routeHasFeatureColors = Boolean(route && route.hasFeatureColors);
@@ -1312,6 +1379,10 @@ import { terrainCamera } from './terrain-camera.js';
                     if (map !== terrainMap || !event) return;
                     const feature = peakFeatureAt(event.point);
                     if (feature) showPeakPopup(feature);
+                    else {
+                        const routeFeature = routeFeatureAt(event.point);
+                        if (routeFeature) showRoutePopup(routeFeature, event.lngLat);
+                    }
                 });
                 terrainMap.on('mousemove', event => {
                     if (map === terrainMap && event && event.point) schedulePeakCursorUpdate(event.point);
@@ -1375,7 +1446,7 @@ import { terrainCamera } from './terrain-camera.js';
     // the caller boots fresh via createTerrain.
     const resumeTerrain = data => {
         if (!map || !loaded) return false;
-        const route = validateRoute(data.routeSegments, data.routeColors);
+        const route = validateRoute(data.routeSegments, data.routeColors, data.routeLinks);
         const focus = validateFocus(data.focus, data.focusZoom);
         if (!route && !focus) {
             fail('unavailable');
@@ -1395,6 +1466,10 @@ import { terrainCamera } from './terrain-camera.js';
         const routeSource = typeof map.getSource === 'function' ? map.getSource('bpb-route') : null;
         if (routeSource && typeof routeSource.setData === 'function') {
             routeSource.setData(route ? route.geojson : { type: 'FeatureCollection', features: [] });
+        }
+        if (routePopup) {
+            try { routePopup.remove(); } catch (error) { /* Already detached. */ }
+            routePopup = null;
         }
         setRoutePaint(data.routeStyle);
         setTheme(data.theme);

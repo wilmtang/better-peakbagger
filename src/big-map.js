@@ -54,6 +54,45 @@ import { terrainCompass as TerrainCompass } from './terrain-compass.js';
         return null;
     };
 
+    // Group-track popups are native Peakbagger HTML. Carry only the ascent id
+    // and plain-text label into the extension frame; the frame reconstructs
+    // the link instead of trusting or forwarding page-owned markup.
+    const nativeAscentLink = layer => {
+        const popup = layer && layer._popup;
+        if (!popup || !activeMapWin) return null;
+        let content;
+        try {
+            content = typeof popup.getContent === 'function'
+                ? popup.getContent()
+                : (popup._content ?? popup.content);
+        } catch (error) { return null; }
+
+        let anchors = [];
+        try {
+            if (typeof content === 'string') {
+                const parsed = new activeMapWin.DOMParser().parseFromString(content, 'text/html');
+                anchors = Array.from(parsed.querySelectorAll('a[href]'));
+            } else if (content && content.nodeType === 1) {
+                anchors = [
+                    ...(content.matches && content.matches('a[href]') ? [content] : []),
+                    ...Array.from(content.querySelectorAll('a[href]'))
+                ];
+            }
+        } catch (error) { return null; }
+        if (anchors.length !== 1) return null;
+
+        const anchor = anchors[0];
+        const label = String(anchor.textContent || '').replace(/\s+/g, ' ').trim();
+        let url;
+        try { url = new URL(anchor.getAttribute('href'), activeMapWin.location.href); }
+        catch (error) { return null; }
+        const rawId = url.searchParams.get('aid');
+        if (url.origin !== location.origin || !/\/climber\/ascent\.aspx$/i.test(url.pathname)
+            || typeof rawId !== 'string' || !/^[1-9]\d{0,8}$/.test(rawId)
+            || !label || label.length > 200 || /[\u0000-\u001f\u007f]/.test(label)) return null;
+        return { id: Number(rawId), label };
+    };
+
     const trackStyle = () => recolorTrack
         ? { color: routeStyle.color, weight: routeStyle.width }
         : { weight: routeStyle.width };
@@ -289,34 +328,45 @@ import { terrainCompass as TerrainCompass } from './terrain-compass.js';
 
     // Native GPS tracks (single-ascent: one; group: up to ten) flattened into
     // [[lat, lon], …] segments, reduced to the shared point/segment budget. On
-    // group maps each segment carries its track's native color (parallel to
-    // segments) so 3D can keep climbers apart the way the 2D map does; single-
-    // ascent maps recolor to the preferred color, so colors stay null there.
+    // group maps each segment carries its track's native color and validated
+    // ascent link (parallel to segments) so 3D can keep climbers distinct and
+    // clickable. Single-ascent maps recolor to the preferred color.
     const collectRoute = () => {
-        if (!activeMap || !activeMapWin || typeof activeMap.eachLayer !== 'function') return { segments: [], colors: [] };
+        if (!activeMap || !activeMapWin || typeof activeMap.eachLayer !== 'function') {
+            return { segments: [], colors: [], links: [] };
+        }
         const L = activeMapWin.L;
-        if (!L) return { segments: [], colors: [] };
+        if (!L) return { segments: [], colors: [], links: [] };
         const segments = [];
         const colors = [];
-        const pushLatLngs = (latLngs, color) => {
+        const links = [];
+        const pushLatLngs = (latLngs, color, link) => {
             if (!Array.isArray(latLngs) || !latLngs.length) return;
             if (latLngs.every(point => point && Number.isFinite(point.lat) && Number.isFinite(point.lng))) {
-                if (latLngs.length >= 2) { segments.push(latLngs.map(point => [point.lat, point.lng])); colors.push(color); }
+                if (latLngs.length >= 2) {
+                    segments.push(latLngs.map(point => [point.lat, point.lng]));
+                    colors.push(color);
+                    links.push(link);
+                }
                 return;
             }
-            latLngs.forEach(part => pushLatLngs(part, color));
+            latLngs.forEach(part => pushLatLngs(part, color, link));
         };
         try {
             activeMap.eachLayer(layer => {
                 if (casingLayers.has(layer) || !isNativeTrack(layer, L)) return;
                 const color = mapType === 'G' ? nativeTrackColor(layer) : null;
-                try { pushLatLngs(layer.getLatLngs(), color); } catch (error) { /* layer may be mid-removal */ }
+                const link = mapType === 'G' ? nativeAscentLink(layer) : null;
+                try { pushLatLngs(layer.getLatLngs(), color, link); } catch (error) { /* layer may be mid-removal */ }
             });
         } catch (error) { /* a live Leaflet layer collection can change during iteration */ }
         const limited = gpxMetrics ? gpxMetrics.limitMapRouteSegments(segments) : segments;
         // The reducer keeps segment order 1:1, or returns [] when it drops the
-        // whole overlay; only then do the parallel colors fall out of alignment.
-        return limited.length === segments.length ? { segments: limited, colors } : { segments: limited, colors: [] };
+        // whole overlay; only then do the parallel metadata arrays fall out of
+        // alignment and must be discarded together.
+        return limited.length === segments.length
+            ? { segments: limited, colors, links }
+            : { segments: limited, colors: [], links: [] };
     };
 
     // Layer events only need to enable or disable the idle toggle. Avoid
@@ -459,7 +509,7 @@ import { terrainCompass as TerrainCompass } from './terrain-compass.js';
 
     const startTerrain = (consentGranted = false) => {
         if ((!consentGranted && !terrainEnabled) || terrainState !== 'idle') return;
-        const { segments: routeSegments, colors: routeColors } = collectRoute();
+        const { segments: routeSegments, colors: routeColors, links: routeLinks } = collectRoute();
         if (!routeSegments.length) return;
         terrainState = 'loading';
         updateTerrainToggle();
@@ -468,6 +518,7 @@ import { terrainCompass as TerrainCompass } from './terrain-compass.js';
         postTerrain('init', {
             routeSegments,
             routeColors,
+            routeLinks,
             routeStyle: { ...routeStyle },
             theme: effectiveTheme(),
             basemap,

@@ -272,6 +272,7 @@ import { terrainCamera } from './terrain-camera.js';
     const buildInitPayload = data => ({
         routeSegments: data.routeSegments,
         routeColors: data.routeColors,
+        routeLinks: data.routeLinks,
         camera: terrainCamera.clean(data.camera),
         focus: data.focus,
         focusZoom: data.focusZoom,

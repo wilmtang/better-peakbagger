@@ -899,6 +899,36 @@ try {
     if (bigMapMetrics.gap < 0) throw new Error(`BigMap 3D toggle overlaps the zoom controls (gap ${bigMapMetrics.gap}px)`);
     if (bigMapMetrics.gap > 40) throw new Error(`BigMap 3D toggle floats too far above the zoom controls (gap ${bigMapMetrics.gap}px)`);
     await capture(cdp, path.join(outputDir, 'bigmap-3d.png'));
+    const routePoint = await evaluate(cdp, `(() => {
+        const frame = document.getElementById('bpb-terrain-frame');
+        const map = frame && frame.contentWindow && frame.contentWindow.__bpbTerrainTestMap;
+        if (!frame || !map || typeof map.project !== 'function') return null;
+        const projected = map.project([-121.816, 48.772]);
+        const rect = frame.getBoundingClientRect();
+        return projected && Number.isFinite(projected.x) && Number.isFinite(projected.y)
+            ? { x: rect.left + projected.x, y: rect.top + projected.y }
+            : null;
+    })()`);
+    if (!routePoint) throw new Error('Could not project the first group route for its click check');
+    await clickAt(cdp, routePoint.x, routePoint.y);
+    const routePopup = await waitForPageState(cdp, `(() => {
+        const frame = document.getElementById('bpb-terrain-frame');
+        const link = frame && frame.contentDocument
+            && frame.contentDocument.querySelector('.maplibregl-popup .bpb-route-popup a');
+        return link ? {
+            ready: true,
+            href: link.href,
+            text: link.textContent,
+            target: link.target,
+            rel: link.rel
+        } : { ready: false };
+    })()`);
+    if (!/\/climber\/ascent\.aspx\?aid=3230293$/.test(routePopup.href)
+        || routePopup.text !== '2026-06-12 - Fei (Kautz Glacier via Van Trump Approach) TR-98'
+        || routePopup.target !== '_blank' || !/noopener/.test(routePopup.rel || '')) {
+        throw new Error(`Group-route popup is wrong: ${JSON.stringify(routePopup)}`);
+    }
+    await capture(cdp, path.join(outputDir, 'bigmap-route-popup.png'));
     await assertPlainScrollZooms(cdp, 'BigMap 3D (group tracks)');
     if (peakFeedRequests.length !== peakFeedBeforeBigMap) {
         throw new Error('A group map queried the peak feed — the native map never shows other peaks there');

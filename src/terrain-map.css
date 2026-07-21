@@ -594,8 +594,9 @@ html:has(.bpb-terrain-frame-body),
     color: #aad0ff;
 }
 
-/* Peak-marker popup: the same white name-link bubble the 2D markers open. */
-#bpb-terrain-map .bpb-peak-popup {
+/* Native-style name/link bubbles for peak markers and clickable routes. */
+#bpb-terrain-map .bpb-peak-popup,
+#bpb-terrain-map .bpb-route-popup {
     font-family: arial, sans-serif;
     font-size: 13px;
     line-height: 1.35;
@@ -621,7 +622,8 @@ html:has(.bpb-terrain-frame-body),
     color: #e2ded5;
 }
 
-#bpb-terrain-map[data-theme="dark"] .bpb-peak-popup a {
+#bpb-terrain-map[data-theme="dark"] .bpb-peak-popup a,
+#bpb-terrain-map[data-theme="dark"] .bpb-route-popup a {
     color: #aad0ff;
 }
 

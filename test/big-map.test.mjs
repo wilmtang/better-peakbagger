@@ -344,6 +344,41 @@ test('Full Screen maps offer a 3D toggle that carries the native tracks into the
     dom.window.close();
 });
 
+test('Full Screen 3D group routes carry only validated native ascent-link metadata', async () => {
+    const fixture = await loadBigMap({ type: 'G', settings: { enable3dMap: true } });
+    const { dom, window, messages, leaflet } = fixture;
+    const routeA = new leaflet.Polyline(
+        [{ lat: 44.15, lng: -121.78 }, { lat: 44.16, lng: -121.76 }],
+        { color: '#e34a33', weight: 3 });
+    const routeB = new leaflet.Polyline(
+        [{ lat: 44.14, lng: -121.77 }, { lat: 44.17, lng: -121.74 }],
+        { color: '#3182bd', weight: 3 });
+    for (const route of [routeA, routeB]) {
+        route.on('mouseover', () => {});
+        route.on('click', () => {});
+    }
+    routeA._popup = {
+        getContent: () => "<a href='../climber/ascent.aspx?aid=3230293' target='_blank'> 2026-06-12 - Fei   (Kautz Glacier) TR-98 </a>"
+    };
+    routeB._popup = {
+        getContent: () => "<a href='https://example.com/climber/ascent.aspx?aid=7'>Untrusted destination</a>"
+    };
+    window.map = new leaflet.MapStub([routeA, routeB]);
+    fixture.evaluate();
+
+    await waitFor(dom, () => window.document.getElementById('bpb-terrain-toggle')?.disabled === false);
+    window.document.getElementById('bpb-terrain-toggle').click();
+    await waitFor(dom, () => messages.some(message => message.__bpbTerrain === true && message.type === 'init'));
+    const init = messages.find(message => message.__bpbTerrain === true && message.type === 'init');
+    assert.deepEqual(init.routeColors, ['#e34a33', '#3182bd']);
+    assert.deepEqual(init.routeLinks, [
+        { id: 3230293, label: '2026-06-12 - Fei (Kautz Glacier) TR-98' },
+        null
+    ], 'page-owned markup is reduced to a same-origin ascent id and plain-text label');
+
+    dom.window.close();
+});
+
 test('Full Screen 3D shows a compass that tracks the view and resets north', async () => {
     const fixture = await loadBigMap({ type: 'A', width: 6, settings: { enable3dMap: true } });
     const { dom, window, messages, leaflet } = fixture;

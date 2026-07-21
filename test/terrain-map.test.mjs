@@ -49,6 +49,7 @@ test('3D terrain waits for the extension frame handshake before sending route co
     dispatchPage({
         type: 'init',
         routeSegments: [[[48.7, -121.8], [48.71, -121.81]]],
+        routeLinks: [{ id: 3230293, label: '2026-06-12 - Fei (Kautz Glacier) TR-98' }],
         camera: { center: [48.72, -121.79], zoom: 12.5 },
         focus: [48.83115, -121.60214],
         focusZoom: 13,
@@ -78,6 +79,7 @@ test('3D terrain waits for the extension frame handshake before sending route co
     const init = frameMessages.find(message => message.type === 'init');
     assert.ok(init);
     assert.deepEqual(init.routeSegments, [[[48.7, -121.8], [48.71, -121.81]]]);
+    assert.deepEqual(init.routeLinks, [{ id: 3230293, label: '2026-06-12 - Fei (Kautz Glacier) TR-98' }]);
     assert.deepEqual(JSON.parse(JSON.stringify(init.camera)), { center: [48.72, -121.79], zoom: 12.5 });
     assert.deepEqual(init.focus, [48.83115, -121.60214]);
     assert.equal(init.focusZoom, 13);
@@ -448,6 +450,7 @@ test('3D terrain frame validates coordinate-only routes before loading public DE
     const messages = [];
     const maps = [];
     const protocolHandlers = new Map();
+    const popups = [];
     let workerUrl = '';
 
     class MapStub {
@@ -489,9 +492,18 @@ test('3D terrain frame validates coordinate-only routes before loading public DE
             return { lng: center[0], lat: center[1] };
         }
         getZoom() { return this.cameraZoom ?? this.options.zoom ?? 12; }
+        queryRenderedFeatures() { return this.routeHit ? [this.routeHit] : []; }
         resize() { this.renderCalls.push('resize'); }
         redraw() { this.renderCalls.push('redraw'); }
         remove() { this.removed = true; }
+    }
+
+    class PopupStub {
+        constructor(options) { this.options = options; popups.push(this); }
+        setLngLat(lngLat) { this.lngLat = lngLat; return this; }
+        setDOMContent(node) { this.node = node; return this; }
+        addTo(target) { this.target = target; return this; }
+        remove() { this.removedPopup = true; }
     }
 
     const resizeObservers = [];
@@ -508,6 +520,7 @@ test('3D terrain frame validates coordinate-only routes before loading public DE
     window.chrome = { runtime: { getURL: path => `chrome-extension://test-id/${path}` } };
     window.maplibregl = {
         Map: MapStub,
+        Popup: PopupStub,
         NavigationControl: class NavigationControl {},
         ScaleControl: class ScaleControl {},
         AttributionControl: class AttributionControl {},
@@ -547,6 +560,10 @@ test('3D terrain frame validates coordinate-only routes before loading public DE
     dispatch({
         type: 'init',
         routeSegments,
+        routeLinks: [
+            { id: 3230293, label: '2026-06-12 - Fei (Kautz Glacier) TR-98' },
+            { id: 7, label: 'bad\u0000label' }
+        ],
         routeStyle: { color: '#2457a7', width: 7, casingColor: '#f1eadc', casingWidth: 13 },
         theme: 'dark',
         cacheLimitMb: 384,
@@ -596,10 +613,22 @@ test('3D terrain frame validates coordinate-only routes before loading public DE
     assert.deepEqual(JSON.parse(JSON.stringify(map.sources.get('bpb-route').data)), {
         type: 'FeatureCollection',
         features: [
-            { type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: [[-121.8, 48.7], [-121.81, 48.71]] } },
+            {
+                type: 'Feature',
+                properties: { ascentId: 3230293, label: '2026-06-12 - Fei (Kautz Glacier) TR-98' },
+                geometry: { type: 'LineString', coordinates: [[-121.8, 48.7], [-121.81, 48.71]] }
+            },
             { type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: [[-121.82, 48.75], [-121.815, 48.76]] } }
         ]
     });
+    map.routeHit = map.sources.get('bpb-route').data.features[0];
+    map.handlers.get('click')({ point: { x: 200, y: 150 }, lngLat: { lng: -121.805, lat: 48.705 } });
+    assert.equal(popups.length, 1, 'clicking a route with validated metadata opens its ascent popup');
+    const routeLink = popups[0].node.querySelector('a');
+    assert.equal(routeLink.href, 'https://www.peakbagger.com/climber/ascent.aspx?aid=3230293');
+    assert.equal(routeLink.textContent, '2026-06-12 - Fei (Kautz Glacier) TR-98');
+    assert.equal(routeLink.target, '_blank');
+    assert.equal(routeLink.rel, 'noopener noreferrer');
     // The camera is framed on the route at construction, not re-fitted after
     // 'load' — fitting later would load a throwaway tileset for the placeholder
     // view and rebuild the terrain mesh, the dominant chunk of load time.

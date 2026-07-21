@@ -100,11 +100,15 @@
     window.routeA = new Polyline(points, { color: '#e34a33', weight: 3 }, document.getElementById('route-a'));
     window.routeB = new Polyline(pointsB, { color: '#3182bd', weight: 3 }, document.getElementById('route-b'));
     window.hoverEffect = new Polyline(points, { color: '#ffd92f', weight: 12 }, document.getElementById('hover-effect'));
-    for (const route of [routeA, routeB]) {
+    const routePopups = [
+      "<a href='../climber/ascent.aspx?aid=3230293' target='_blank'>2026-06-12 - Fei (Kautz Glacier via Van Trump Approach) TR-98</a>",
+      "<a href='../climber/ascent.aspx?aid=3237813' target='_blank'>2026-06-21 - Le (Disappointment Cleaver) TR-307</a>"
+    ];
+    for (const [index, route] of [routeA, routeB].entries()) {
       route.on('mouseover', () => route.setStyle({ weight: 11 }));
       route.on('mouseout', () => route.setStyle({ weight: 3 }));
       route.on('click', () => { document.getElementById('trip-details').style.display = 'block'; });
-      route._popup = { native: true };
+      route._popup = { getContent: () => routePopups[index] };
     }
     window.L = { Polyline, Polygon, Map: MapStub };
     window.mapsPlaceholder = new MapStub([routeA, routeB, hoverEffect]);
