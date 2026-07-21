@@ -1,14 +1,34 @@
 Upgrade your Peakbagger.com experience.
 
-Better Peakbagger seamlessly captures your Garmin and Strava activities, turning them into confidence-ranked ascent drafts—so you can spend less time logging data and more time in the mountains.
+Better Peakbagger turns Garmin and Strava activities—or a GPX file you already have—into review-ready ascent drafts. It also adds 3D terrain, richer GPX analysis, faster ways to find useful ascent beta, a modern trip-report editor, optional GitHub backup, and a polished dark theme.
 
-Features:
-• One-Click Logging: Instantly convert Garmin Connect and Strava activities into review-ready Peakbagger drafts.
-• 3D Terrain Maps: View peaks and routes in gorgeous, free 3D (powered by open-source Mapterhorn).
-• Advanced GPX Analyzer: Get interactive elevation profiles (by distance or time), detailed route metrics, and Strava-style chart-to-map hover tracking.
-• Beta Filters: Filter and sort ascent lists instantly by trip reports, GPS tracks, or external links.
-• Built for You: A beautiful Dark Mode, plus shared settings for themes, units, and beta signals.
+FEATURES
 
-Strictly Private:
-No analytics. No telemetry. No ads. No developer data servers. Ever.
-Read our privacy policy: https://github.com/wilmtang/better-peakbagger#privacy
+• Create ascent drafts from Garmin and Strava: Open an activity you own and click the extension. Better Peakbagger finds likely summit encounters, explains each Strong or Probable match, and opens the ascents you choose as prefilled drafts.
+
+• Process a GPX on Peakbagger: Choose a GPX file on an Add Ascent form to calculate distance, time, gain, multi-day details, and nearby summits. Large tracks are reduced to fit Peakbagger's limit, and multi-peak traverses can open coordinated drafts.
+
+• Review before saving: GPS Preview can be prepared for you, but Better Peakbagger never clicks Save. You remain in control of every ascent published to your account.
+
+• Explore free 3D terrain: View ascent routes, Full Screen GPS maps, and individual peaks in interactive 3D powered by MapLibre and open-data Mapterhorn elevation tiles. Use Peakbagger's compatible map layers, an optional OpenStreetMap-based vector layer, synchronized 2D/3D camera position, and an on-map compass. 3D is opt-in.
+
+• Understand GPX tracks: Add interactive elevation charts, distance and time views, detailed route metrics, grades, local clock times, multi-day camping details, and chart-to-map tracking to ascent pages. Customize route color, width, casing, and map size.
+
+• Find useful ascent beta: Filter ascent lists by trip report, GPS track, external link, or favorite climber, combine filters, and sort without reloading. Favorites can come from your Peakbagger Buddy List or a custom list you manage.
+
+• Write better trip reports: Replace bracket-tag editing with a rich-text editor or GitHub-flavored Markdown, including formatting, tables, images, video, syntax highlighting, and live preview. Device-local autosave helps recover interrupted drafts, and Settings provides one place to review, copy, or remove them.
+
+• Back up your ascents to GitHub: Optionally save one ascent or your full history to a repository you control, including the report as Markdown, entered fields as JSON, and Peakbagger's stored GPS track. You can also explicitly back up and restore a custom favorite-climber list.
+
+• Plan with better links: Open summit-specific weather, recent satellite imagery, modeled snow depth where available, and fire/smoke information from supported peak pages.
+
+• Use Peakbagger your way: Choose a site-wide light, dark, or system theme and adjust units, map behavior, GPX chart defaults, activity capture, the trip-report editor, and beta filters in one settings page.
+
+PRIVACY BY DESIGN
+
+No Better Peakbagger account. No analytics, telemetry, ads, or developer data server.
+
+Read the complete privacy policy:
+https://github.com/wilmtang/better-peakbagger/blob/main/PRIVACY.md
+
+Better Peakbagger works with Chrome, Edge, Brave, and Firefox. It is an independent, open-source project and is not affiliated with Peakbagger.com, Garmin, Strava, GitHub, Mapterhorn, or the linked planning services.
