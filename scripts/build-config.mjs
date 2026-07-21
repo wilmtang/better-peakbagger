@@ -50,9 +50,9 @@ export const ENTRIES = [
     { out: 'content/profile-backup.js', sources: ['profile-backup-core.js', 'ascent-snapshot.js', 'report-markup.js', 'ascent-backup-source.js', 'profile-backup.js'] },
     { out: 'content/peak-map-bridge.js', sources: ['settings-schema.js', 'settings.js', 'peak-map-bridge.js'] },
     { out: 'content/peak-links.js', sources: ['peak-links.js'] },
-    { out: 'content/peak-map.js', sources: ['terrain-basemap.js', 'terrain-camera.js', 'terrain-compass.js', 'terrain-failure.js', 'peak-markers.js', 'settings-schema.js', 'peak-map.js'] },
+    { out: 'content/peak-map.js', sources: ['terrain-basemap.js', 'terrain-camera.js', 'terrain-compass.js', 'terrain-coordinator.js', 'terrain-failure.js', 'peak-markers.js', 'settings-schema.js', 'peak-map.js'] },
     { out: 'content/big-map-bridge.js', sources: ['settings-schema.js', 'settings.js', 'big-map-bridge.js'] },
-    { out: 'content/big-map.js', sources: ['gpx-metrics.js', 'terrain-basemap.js', 'terrain-camera.js', 'terrain-compass.js', 'terrain-failure.js', 'peak-markers.js', 'settings-schema.js', 'big-map.js'] },
+    { out: 'content/big-map.js', sources: ['gpx-metrics.js', 'terrain-basemap.js', 'terrain-camera.js', 'terrain-compass.js', 'terrain-coordinator.js', 'terrain-failure.js', 'peak-markers.js', 'settings-schema.js', 'big-map.js'] },
 
     { out: 'terrain/terrain-frame.js', sources: ['terrain-camera.js', 'settings-schema.js', 'terrain-cache.js', 'terrain-frame.js'] },
     // The options page keeps its head/tail split: the head bundle applies the

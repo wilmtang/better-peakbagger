@@ -8,8 +8,8 @@
 import { settingsSchema as Schema } from './settings-schema.js';
 import { terrainBasemap } from './terrain-basemap.js';
 import { peakMarkers } from './peak-markers.js';
-import { terrainCamera as TerrainCamera } from './terrain-camera.js';
 import { terrainCompass as TerrainCompass } from './terrain-compass.js';
+import { terrainCoordinator as TerrainCoordinator } from './terrain-coordinator.js';
 import { terrainFailure as TerrainFailure } from './terrain-failure.js';
 
 // Kept as an IIFE for early-exit control flow (no page map → nothing to do);
@@ -68,19 +68,11 @@ import { terrainFailure as TerrainFailure } from './terrain-failure.js';
     const focusZoom = Math.max(0, Math.min(18, nativeZoom - 1));
     const focusPeak = { id: pagePid, name: peakName, lat, lon, state: peakState };
 
-    const TERRAIN_LOAD_TIMEOUT_MS = 17000;
-    const TERRAIN_CAMERA_TIMEOUT_MS = 1000;
     const TERRAIN_TOGGLE_GAP = 8;
     let terrainEnabled = false;
     let terrainThemePref = Schema.DEFAULTS.theme;
     let terrainCacheLimitMb = Schema.DEFAULTS.terrainCacheLimitMb;
-    let terrainState = 'idle';
     let terrainConsentPending = false;
-    let terrainLoadTimer = null;
-    let terrainNavTop = null;
-    let terrainViewCamera = null;
-    let terrainStopPending = false;
-    let terrainCameraRequestId = 0;
     let peaksClient = null;
     let peaksClientResolved = false;
     // Warm the DEM cache on explicit intent to open 3D (toggle hover/focus),
@@ -125,7 +117,7 @@ import { terrainFailure as TerrainFailure } from './terrain-failure.js';
     // it stays inside the same consent scope: warm the DEM cache for this peak's
     // already-validated center and zoom. Never on page load, never when 3D off.
     const maybePrefetchTerrain = () => {
-        if (terrainState !== 'idle' || !terrainEnabled) return;
+        if (!terrainCoordinator.isIdle() || !terrainEnabled) return;
         const nowMs = Date.now();
         if (nowMs - terrainPrefetchAt < TERRAIN_PREFETCH_THROTTLE_MS) return;
         terrainPrefetchAt = nowMs;
@@ -134,13 +126,6 @@ import { terrainFailure as TerrainFailure } from './terrain-failure.js';
             zoom: focusZoom,
             viewport: { width: window.innerWidth, height: window.innerHeight }
         });
-    };
-
-    const clearTerrainLoadTimer = () => {
-        if (terrainLoadTimer !== null) {
-            clearTimeout(terrainLoadTimer);
-            terrainLoadTimer = null;
-        }
     };
 
     const restoreNativeMap = () => {
@@ -183,13 +168,13 @@ import { terrainFailure as TerrainFailure } from './terrain-failure.js';
         } catch (error) { return null; }
     };
 
-    const positionTerrainToggle = () => {
+    const positionTerrainToggle = ({ state, navTop }) => {
         let bottom = null;
-        if (terrainState === 'active') {
+        if (state === 'active') {
             const frame = document.getElementById('bpb-terrain-frame');
-            if (frame && terrainNavTop != null) {
+            if (frame && navTop != null) {
                 bottom = Math.max(0, mount.getBoundingClientRect().bottom - frame.getBoundingClientRect().bottom)
-                    + terrainNavTop;
+                    + navTop;
             }
         } else {
             bottom = measureNative2dZoomTop();
@@ -201,116 +186,46 @@ import { terrainFailure as TerrainFailure } from './terrain-failure.js';
         terrainFailureNotice.position();
     };
 
-    const updateTerrainToggle = () => {
-        terrainToggle.dataset.theme = effectiveTheme();
-        terrainFailureNotice.setTheme(effectiveTheme());
-        terrainCompass.element.dataset.theme = effectiveTheme();
-        terrainCompass.setVisible(terrainState === 'active' && !terrainStopPending);
-        terrainToggle.classList.remove('bpb-map-3d-toggle-loading');
-        terrainToggle.removeAttribute('aria-busy');
-        if (terrainStopPending) {
-            terrainToggle.disabled = true;
-            terrainToggle.textContent = '2D';
-            terrainToggle.title = 'Returning to the 2D map…';
-            terrainToggle.setAttribute('aria-label', 'Returning to the 2D map');
-            terrainToggle.setAttribute('aria-pressed', 'true');
-        } else if (terrainState === 'loading') {
-            terrainToggle.disabled = false;
-            terrainToggle.textContent = '3D';
-            terrainToggle.classList.add('bpb-map-3d-toggle-loading');
-            terrainToggle.setAttribute('aria-busy', 'true');
-            terrainToggle.title = 'Cancel loading 3D terrain';
-            terrainToggle.setAttribute('aria-label', 'Cancel loading 3D terrain');
-            terrainToggle.setAttribute('aria-pressed', 'false');
-        } else if (terrainState === 'active') {
-            terrainToggle.disabled = false;
-            terrainToggle.textContent = '2D';
-            terrainToggle.title = 'Return to the 2D map';
-            terrainToggle.setAttribute('aria-label', 'Return to the 2D map');
-            terrainToggle.setAttribute('aria-pressed', 'true');
-        } else {
-            terrainToggle.disabled = false;
-            terrainToggle.textContent = '3D';
-            terrainToggle.title = 'View this peak on 3D terrain';
-            terrainToggle.setAttribute('aria-label', 'Show 3D terrain');
-            terrainToggle.setAttribute('aria-pressed', 'false');
-        }
-        positionTerrainToggle();
-    };
-
-    const failTerrain = reason => {
-        clearTerrainLoadTimer();
-        terrainState = 'idle';
-        terrainViewCamera = null;
-        terrainStopPending = false;
-        restoreNativeMap();
-        postTerrain('destroy');
-        updateTerrainToggle();
-        terrainFailureNotice.show(reason);
-    };
-
-    const startTerrain = (consentGranted = false) => {
-        if ((!consentGranted && !terrainEnabled) || terrainState !== 'idle') return;
-        terrainState = 'loading';
-        terrainFailureNotice.clear();
-        updateTerrainToggle();
+    const buildTerrainInit = () => {
         const { basemap, basemaps } = terrainBasemaps();
-        const mapContext = resolveMapContext();
-        terrainViewCamera = TerrainCamera.fromLeaflet(mapContext && mapContext.map);
-        postTerrain('init', {
+        return {
             focus: [lat, lon],
             focusZoom,
             focusPeak,
             theme: effectiveTheme(),
             basemap,
             basemaps,
-            cacheLimitMb: Schema.terrainCacheLimitMb(terrainCacheLimitMb),
-            ...(terrainViewCamera ? { camera: terrainViewCamera } : {})
-        });
-        terrainLoadTimer = setTimeout(() => {
-            if (terrainState === 'loading') failTerrain('timeout');
-        }, TERRAIN_LOAD_TIMEOUT_MS);
+            cacheLimitMb: Schema.terrainCacheLimitMb(terrainCacheLimitMb)
+        };
     };
 
-    const finishTerrainStop = () => {
-        clearTerrainLoadTimer();
-        const mapContext = resolveMapContext();
-        if (terrainState === 'active' && terrainViewCamera) {
-            TerrainCamera.applyToLeaflet(mapContext && mapContext.map, terrainViewCamera);
-        }
-        terrainState = 'idle';
-        terrainViewCamera = null;
-        terrainStopPending = false;
-        restoreNativeMap();
-        postTerrain('destroy');
-        terrainFailureNotice.clear();
-        updateTerrainToggle();
-    };
-
-    const stopTerrain = () => {
-        if (terrainState !== 'active') {
-            finishTerrainStop();
-            return;
-        }
-        if (terrainStopPending) return;
-        clearTerrainLoadTimer();
-        terrainStopPending = true;
-        updateTerrainToggle();
-        terrainCameraRequestId++;
-        postTerrain('cameraRequest', { requestId: terrainCameraRequestId });
-        terrainLoadTimer = setTimeout(finishTerrainStop, TERRAIN_CAMERA_TIMEOUT_MS);
-    };
-
-    terrainToggle.addEventListener('click', () => {
-        if (terrainState === 'active' || terrainState === 'loading') { stopTerrain(); return; }
-        if (terrainState !== 'idle') return;
-        if (!terrainEnabled) {
+    const terrainCoordinator = TerrainCoordinator.create({
+        toggle: terrainToggle,
+        compass: terrainCompass,
+        isEnabled: () => terrainEnabled,
+        idleUi: () => ({
+            disabled: false,
+            title: 'View this peak on 3D terrain',
+            ariaLabel: 'Show 3D terrain'
+        }),
+        buildInit: buildTerrainInit,
+        nativeMap: () => resolveMapContext()?.map,
+        hideNativeMap: () => {
+            iframe.style.visibility = 'hidden';
+            iframe.setAttribute('aria-hidden', 'true');
+        },
+        restoreNativeMap,
+        post: postTerrain,
+        requestConsent: () => {
             if (terrainConsentPending) return;
             terrainConsentPending = true;
             postTerrain('requestConsent');
-            return;
-        }
-        startTerrain();
+        },
+        clearFailure: () => terrainFailureNotice.clear(),
+        showFailure: reason => terrainFailureNotice.show(reason),
+        setFailureTheme: value => terrainFailureNotice.setTheme(value),
+        theme: effectiveTheme,
+        position: positionTerrainToggle
     });
     terrainToggle.addEventListener('pointerenter', maybePrefetchTerrain);
     terrainToggle.addEventListener('focus', maybePrefetchTerrain);
@@ -339,34 +254,10 @@ import { terrainFailure as TerrainFailure } from './terrain-failure.js';
         if (!data || data.__bpbTerrain !== true || data.dir !== 'toPage') return;
         if (data.type === 'consentResult' && terrainConsentPending) {
             terrainConsentPending = false;
-            if (data.enabled === true) startTerrain(true);
-        } else if (data.type === 'peaksRequest' && terrainState !== 'idle') {
+            if (data.enabled === true) terrainCoordinator.start(true);
+        } else if (data.type === 'peaksRequest' && !terrainCoordinator.isIdle()) {
             answerPeaksRequest(data);
-        } else if (data.type === 'loaded' && terrainState === 'loading') {
-            clearTerrainLoadTimer();
-            const camera = TerrainCamera.clean(data.camera);
-            if (camera) terrainViewCamera = camera;
-            terrainState = 'active';
-            terrainNavTop = Number.isFinite(data.navTop) ? data.navTop : null;
-            iframe.style.visibility = 'hidden';
-            iframe.setAttribute('aria-hidden', 'true');
-            updateTerrainToggle();
-        } else if (data.type === 'metrics' && terrainState === 'active') {
-            if (Number.isFinite(data.navTop)) terrainNavTop = data.navTop;
-            positionTerrainToggle();
-        } else if (data.type === 'view' && terrainState === 'active') {
-            if (Number.isFinite(data.bearing) && Number.isFinite(data.pitch)) {
-                const bearing = ((data.bearing % 360) + 360) % 360;
-                const pitch = Math.min(85, Math.max(0, data.pitch));
-                terrainCompass.update(bearing, pitch);
-            }
-        } else if (data.type === 'camera' && terrainState === 'active') {
-            const camera = TerrainCamera.clean(data.camera);
-            if (camera) terrainViewCamera = camera;
-            if (terrainStopPending && data.requestId === terrainCameraRequestId) finishTerrainStop();
-        } else if (data.type === 'error' && (terrainState === 'loading' || terrainState === 'active')) {
-            failTerrain(data.reason);
-        }
+        } else terrainCoordinator.handleMessage(data);
     });
 
     window.addEventListener('message', event => {
@@ -381,22 +272,22 @@ import { terrainFailure as TerrainFailure } from './terrain-failure.js';
         terrainEnabled = settings.enable3dMap;
         terrainThemePref = settings.theme;
         terrainCacheLimitMb = settings.terrainCacheLimitMb;
-        if (!terrainEnabled && terrainState !== 'idle') stopTerrain();
-        if (terrainState === 'active') postTerrain('update', { theme: effectiveTheme() });
-        updateTerrainToggle();
-        if (terrainEnabled && terrainConsentPending && terrainState === 'idle') {
+        if (!terrainEnabled && !terrainCoordinator.isIdle()) terrainCoordinator.stop();
+        if (terrainCoordinator.isActive()) postTerrain('update', { theme: effectiveTheme() });
+        terrainCoordinator.update();
+        if (terrainEnabled && terrainConsentPending && terrainCoordinator.isIdle()) {
             terrainConsentPending = false;
-            startTerrain();
+            terrainCoordinator.start();
         }
     });
 
-    window.addEventListener('resize', positionTerrainToggle);
+    window.addEventListener('resize', () => terrainCoordinator.position());
     iframe.addEventListener('load', () => {
         peaksClient = null;
         peaksClientResolved = false;
-        positionTerrainToggle();
+        terrainCoordinator.position();
     });
 
-    updateTerrainToggle();
+    terrainCoordinator.update();
     window.postMessage({ __bpbPeakMap: true, dir: 'toCS', type: 'get' }, location.origin);
 })();
