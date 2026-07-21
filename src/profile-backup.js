@@ -312,7 +312,12 @@ import { githubError as GithubError } from './github-error.js';
             ]);
             const table = Array.from(document.querySelectorAll('table.gray')).find(candidate => candidate.querySelector('a[href*="ascent.aspx?aid="]'));
             if (!table || !table.parentNode) return;
-            table.parentNode.insertBefore(panel, table);
+            // The filter and backup bundles initialize independently. Anchor to
+            // the existing filter when it won the race so the profile action
+            // remains above filtering controls in either load order.
+            const filterBar = document.getElementById('pbaf-bar');
+            const anchor = filterBar && filterBar.parentNode === table.parentNode ? filterBar : table;
+            table.parentNode.insertBefore(panel, anchor);
         }
         renderIdle(status);
     };

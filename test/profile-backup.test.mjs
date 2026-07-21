@@ -4,7 +4,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { loadPage, PAGE_FIXTURES, waitFor } from './helpers/load-page.mjs';
+import { evalBundle, loadPage, PAGE_FIXTURES, waitFor } from './helpers/load-page.mjs';
 
 const PAGE_URL = 'https://www.peakbagger.com/climber/ClimbListC.aspx?cid=900001&j=-1&y=9999';
 const YEAR_PAGE_URL = 'https://www.peakbagger.com/climber/ClimbListC.aspx?cid=900001&y=2024';
@@ -40,6 +40,24 @@ test('owned lists show a restrained full-profile backup entry point', async () =
     assert.match(panel.textContent, /Refresh every ascent\?/);
     assert.match(panel.textContent, /every ascent from every year/);
     assert.match(panel.textContent, /groups of up to 10/);
+});
+
+test('profile backup stays above an already-rendered beta filter', async () => {
+    const dom = await loadPage('climber-ascents.html', {
+        fixtures: PAGE_FIXTURES,
+        url: YEAR_PAGE_URL,
+        bundles: ['content/ascent-filter.js'],
+        prepare: dom => prepareRuntime(dom, message => message.type === 'GITHUB_BACKUP_STATUS'
+            ? { enabled: true, connected: true, repo: { fullName: 'me/backup' } }
+            : null),
+    });
+    await waitFor(dom, () => dom.window.document.getElementById('pbaf-bar'));
+    await evalBundle(dom.window, 'content/profile-backup.js');
+    await waitFor(dom, () => dom.window.document.getElementById('bpb-profile-backup'));
+
+    const panel = dom.window.document.getElementById('bpb-profile-backup');
+    const filter = dom.window.document.getElementById('pbaf-bar');
+    assert.equal(panel.nextElementSibling, filter);
 });
 
 test('public or mismatched climber lists never show profile backup', async () => {
