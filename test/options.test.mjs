@@ -261,6 +261,29 @@ test('map route appearance populates, enforces a visible casing, and saves edits
     assert.equal(dom.chrome._store.bpbSettings.mapRouteCasingColor, '#efe8d5');
 });
 
+test('map route appearance resets every style control to its default', async () => {
+    const defaults = settingsSchema.DEFAULTS;
+    const dom = await loadOptions({
+        mapRouteColor: '#2457a7',
+        mapRouteWidth: 11,
+        mapRouteCasingColor: '#efe8d5',
+        mapRouteCasingWidth: 20
+    });
+
+    el(dom, 'map-route-reset').dispatchEvent(new dom.window.Event('click'));
+
+    await waitFor(dom, () => dom.chrome._store.bpbSettings.mapRouteColor === defaults.mapRouteColor);
+    assert.equal(dom.chrome._store.bpbSettings.mapRouteWidth, defaults.mapRouteWidth);
+    assert.equal(dom.chrome._store.bpbSettings.mapRouteCasingColor, defaults.mapRouteCasingColor);
+    assert.equal(dom.chrome._store.bpbSettings.mapRouteCasingWidth, defaults.mapRouteCasingWidth);
+    assert.equal(el(dom, 'map-route-color').value, defaults.mapRouteColor);
+    assert.equal(el(dom, 'map-route-width').value, String(defaults.mapRouteWidth));
+    assert.equal(el(dom, 'map-route-casing-color').value, defaults.mapRouteCasingColor);
+    assert.equal(el(dom, 'map-route-casing-width').value, String(defaults.mapRouteCasingWidth));
+    assert.equal(el(dom, 'map-route-casing-width').min, String(defaults.mapRouteWidth + 2));
+    assert.equal(el(dom, 'status').textContent, 'Route appearance reset');
+});
+
 test('map viewport settings preserve and reset to Peakbagger\'s original size', async () => {
     const dom = await loadOptions({ mapViewportWidth: 100, mapViewportHeight: 2000 });
     assert.equal(el(dom, 'map-viewport-width').value, '450');

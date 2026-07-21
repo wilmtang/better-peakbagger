@@ -26,6 +26,7 @@ import { initGithubBackup } from './github.js';
     const mapRouteWidthEl = document.getElementById('map-route-width');
     const mapRouteCasingColorEl = document.getElementById('map-route-casing-color');
     const mapRouteCasingWidthEl = document.getElementById('map-route-casing-width');
+    const mapRouteResetEl = document.getElementById('map-route-reset');
     const mapViewportWidthEl = document.getElementById('map-viewport-width');
     const mapViewportHeightEl = document.getElementById('map-viewport-height');
     const mapViewportResetEl = document.getElementById('map-viewport-reset');
@@ -154,6 +155,17 @@ import { initGithubBackup } from './github.js';
     mapRouteWidthEl.addEventListener('change', () => save({ mapRouteWidth: mapRouteWidthEl.value }).then(populate));
     mapRouteCasingColorEl.addEventListener('change', () => save({ mapRouteCasingColor: mapRouteCasingColorEl.value }));
     mapRouteCasingWidthEl.addEventListener('change', () => save({ mapRouteCasingWidth: mapRouteCasingWidthEl.value }).then(populate));
+    mapRouteResetEl.addEventListener('click', () => {
+        save({
+            mapRouteColor: S.DEFAULTS.mapRouteColor,
+            mapRouteWidth: S.DEFAULTS.mapRouteWidth,
+            mapRouteCasingColor: S.DEFAULTS.mapRouteCasingColor,
+            mapRouteCasingWidth: S.DEFAULTS.mapRouteCasingWidth
+        }).then(settings => {
+            populate(settings);
+            flash('Route appearance reset');
+        });
+    });
     mapViewportWidthEl.addEventListener('change', () => save({ mapViewportWidth: mapViewportWidthEl.value }).then(populate));
     mapViewportHeightEl.addEventListener('change', () => save({ mapViewportHeight: mapViewportHeightEl.value }).then(populate));
     terrainCacheLimitEl.addEventListener('change', () => save({ terrainCacheLimitMb: terrainCacheLimitEl.value }).then(populate));
