@@ -917,6 +917,71 @@ test('autosave does not depend on the optional peak label control', async () => 
     assert.equal(draft.label?.peak, undefined);
 });
 
+test('page exit removes whitespace-only reports instead of retaining a draft', async () => {
+    for (const reportEditorMode of ['rich', 'markdown']) {
+        const dom = await loadEditor({
+            settings: { reportEditorMode },
+            report: ' \r\n\t \n',
+            drafts: {
+                [DRAFT_KEY]: { text: 'older recovery copy', mode: reportEditorMode, savedAt: Date.now() }
+            }
+        });
+        await editorReady(dom);
+
+        dom.window.dispatchEvent(new dom.window.Event('pagehide'));
+        await waitFor(dom, () => !dom.chrome._localStore[DRAFT_KEY]);
+        assert.equal(dom.window.document.querySelector('.bpb-re-status').textContent, '',
+            `${reportEditorMode} should not report an empty draft as saved`);
+    }
+});
+
+test('page exit removes an untouched generated-credit-only draft in Rich and Markdown modes', async () => {
+    for (const reportEditorMode of ['rich', 'markdown']) {
+        const dom = await loadEditor({
+            settings: { addReportCredit: true, reportEditorMode },
+            drafts: {
+                [DRAFT_KEY]: { text: 'older recovery copy', mode: reportEditorMode, savedAt: Date.now() }
+            }
+        });
+        await editorReady(dom);
+
+        dom.window.dispatchEvent(new dom.window.Event('pagehide'));
+        await waitFor(dom, () => !dom.chrome._localStore[DRAFT_KEY]);
+        assert.equal(dom.window.document.querySelector('.bpb-re-status').textContent, '',
+            `${reportEditorMode} should not report a credit scaffold as saved`);
+    }
+});
+
+test('Rich autosave keeps content plus the generated credit, then removes the credit-only remainder', async () => {
+    const dom = await loadEditor({ settings: { addReportCredit: true } });
+    await editorReady(dom);
+    const creditOnlyHtml = editors(dom).rich.getHTML();
+
+    typeRich(dom, `<p>Recover this report.</p>${creditOnlyHtml}`);
+    await waitFor(dom, () => dom.chrome._localStore[DRAFT_KEY]);
+    assert.match(dom.chrome._localStore[DRAFT_KEY].text, /^Recover this report\./);
+
+    typeRich(dom, creditOnlyHtml);
+    await waitFor(dom, () => !dom.chrome._localStore[DRAFT_KEY]);
+    assert.equal(dom.window.document.querySelector('.bpb-re-status').textContent, '');
+});
+
+test('Markdown autosave keeps content plus the generated credit, then removes the credit-only remainder', async () => {
+    const dom = await loadEditor({
+        settings: { addReportCredit: true, reportEditorMode: 'markdown' }
+    });
+    await editorReady(dom);
+    const creditOnlySource = editors(dom).markdown.getValue();
+
+    typeMarkdown(dom, `Recover this report.\n\n${creditOnlySource}`);
+    await waitFor(dom, () => dom.chrome._localStore[DRAFT_KEY]);
+    assert.equal(dom.chrome._localStore[DRAFT_KEY].source, `Recover this report.\n\n${creditOnlySource}`);
+
+    typeMarkdown(dom, ` \n\n${creditOnlySource}\n\t`);
+    await waitFor(dom, () => !dom.chrome._localStore[DRAFT_KEY]);
+    assert.equal(dom.window.document.querySelector('.bpb-re-status').textContent, '');
+});
+
 test('a differing stored draft offers management, and Restore applies it in its saved mode', async () => {
     const messages = [];
     const dom = await loadEditor({

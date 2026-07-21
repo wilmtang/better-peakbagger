@@ -47,6 +47,34 @@ import { createMarkdownEditor } from './report-md-editor.js';
         : 'https://chromewebstore.google.com/detail/better-peakbagger/kndjohodnpdoejmjkiiakejfehoodedn';
     const REPORT_CREDIT = `[small][i]Created with [a href="${STORE_URL}" target="_blank"]Better Peakbagger[/a].[/i][/small]`;
 
+    // Drafts exist to recover user-authored content, not an empty editor or the
+    // optional credit scaffold by itself. Compare the parser's canonical
+    // bracket representation so surrounding whitespace and editor round trips
+    // cannot make either case look substantive. The ignored document is
+    // derived from REPORT_CREDIT itself; draft policy does not duplicate or
+    // pattern-match the credit's wording, markup, or store URL.
+    const canonicalDraftText = value => Markup.astToBracket(Markup.parseBracket(value));
+    const creditOnlyDraftTexts = new Set();
+    const rememberCreditOnlyDraftText = value => {
+        try {
+            const canonical = canonicalDraftText(value);
+            if (canonical) creditOnlyDraftTexts.add(canonical);
+        } catch (error) { /* an unavailable representation is simply not ignored */ }
+    };
+    rememberCreditOnlyDraftText(REPORT_CREDIT);
+    rememberCreditOnlyDraftText(Markup.markdownToBracket(Markup.bracketToMarkdown(REPORT_CREDIT)));
+    const hasRecoverableDraftContent = value => {
+        if (!String(value ?? '').trim()) return false;
+        try {
+            const canonical = canonicalDraftText(value);
+            return !!canonical && !creditOnlyDraftTexts.has(canonical);
+        } catch (error) {
+            // Parsing uncertainty must preserve the user's source rather than
+            // risk deleting the only local recovery copy.
+            return true;
+        }
+    };
+
     const params = new URLSearchParams(location.search);
     const draftKey = ReportDrafts.keyFor({
         cid: params.get('cid'),
@@ -405,7 +433,7 @@ import { createMarkdownEditor } from './report-md-editor.js';
         if (state.mode === 'plain') return;   // native behavior, native risks
         flushSync();
         try {
-            if (!textarea.value.trim()) {
+            if (!hasRecoverableDraftContent(textarea.value)) {
                 await localStore.remove(draftKey);
                 status.textContent = '';
                 return;
@@ -782,6 +810,7 @@ import { createMarkdownEditor } from './report-md-editor.js';
                 .setContent(state.creditScaffold ? `<p></p>${editorHtml}` : editorHtml, { emitUpdate: false });
             if (state.creditScaffold) initialContent.setTextSelection(1);
             initialContent.run();
+            if (state.creditScaffold) rememberCreditOnlyDraftText(richBracket());
             state.richDirty = false;
             refreshToolbar();
         } else if (markdown) {
@@ -790,6 +819,9 @@ import { createMarkdownEditor } from './report-md-editor.js';
                 ? `\n\n${markdownSource}`
                 : markdownSource);
             state.mdSource = mdEditor.getValue();
+            if (state.creditScaffold) {
+                rememberCreditOnlyDraftText(Markup.markdownToBracket(state.mdSource));
+            }
             state.mdDirty = false;
             renderPreview();
         }
