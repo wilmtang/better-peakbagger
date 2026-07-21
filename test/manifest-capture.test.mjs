@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
-import { ENTRIES } from '../scripts/build-config.mjs';
+import { COPY_FILES, ENTRIES } from '../scripts/build-config.mjs';
 
 const manifest = JSON.parse(await fs.readFile(new URL('../manifest.json', import.meta.url), 'utf8'));
 const packageJson = JSON.parse(await fs.readFile(new URL('../package.json', import.meta.url), 'utf8'));
@@ -52,6 +52,15 @@ test('the canonical unpacked extension opens Chrome settings in a full tab', () 
         page: 'options/options.html',
         open_in_tab: true
     });
+});
+
+test('the Buddy refresh helper is a fixed first-party navigation', async () => {
+    assert.ok(COPY_FILES.some(([source, target]) =>
+        source === 'options/buddy-refresh.html' && target === 'options/buddy-refresh.html'));
+    const html = await fs.readFile(new URL('../options/buddy-refresh.html', import.meta.url), 'utf8');
+    assert.match(html,
+        /<meta http-equiv="refresh" content="0;url=https:\/\/www\.peakbagger\.com\/report\/report\.aspx\?r=b">/);
+    assert.doesNotMatch(html, /<script\b/i);
 });
 
 test('3D terrain is isolated from Peakbagger globals in an extension-owned frame', async () => {

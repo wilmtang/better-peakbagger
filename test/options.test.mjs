@@ -579,18 +579,85 @@ test('merge is additive while mirror replaces the custom list with Undo', async 
 
     el(dom, 'favorites-merge-buddies').click();
     await waitFor(dom, () => dom.chrome._localStore[favoriteKey]?.entries?.length === 7);
+    assert.match(el(dom, 'favorites-import-status').textContent, /Added 6 buddies to custom favorites/);
     assert.equal(dom.chrome._localStore[favoriteKey].entries[0].cid, manual.cid,
         'merge preserves the existing manual entry and its metadata');
 
     el(dom, 'favorites-mirror-buddies').click();
     await waitFor(dom, () => dom.chrome._localStore[favoriteKey].entries.length === 6
         && !dom.chrome._localStore[favoriteKey].entries.some(entry => entry.cid === manual.cid));
+    assert.match(el(dom, 'favorites-import-status').textContent, /Mirrored 6 buddies to custom favorites/);
     assert.equal(el(dom, 'favorites-undo-all').hidden, false);
     assert.match(el(dom, 'favorites-undo-message').textContent, /replaced with your Buddy List/);
 
     el(dom, 'favorites-undo-all-button').click();
     await waitFor(dom, () => dom.chrome._localStore[favoriteKey].entries.length === 7
         && dom.chrome._localStore[favoriteKey].entries.some(entry => entry.cid === manual.cid));
+});
+
+test('custom import opens a first-party helper when extension cookies look signed out', async () => {
+    const opened = [];
+    const updated = [];
+    const removed = [];
+    const dom = await loadOptions({ favoritesSource: 'custom' }, {
+        prepareChrome: chrome => {
+            chrome.runtime.getURL = path => `chrome-extension://test-extension/${path}`;
+            chrome.tabs = {
+                create: (details, callback) => {
+                    opened.push(structuredClone(details));
+                    callback({ id: 77 });
+                },
+                update: (tabId, details, callback) => {
+                    updated.push({ tabId, details: structuredClone(details) });
+                    setTimeout(() => { void chrome.storage.local.set({
+                        [buddyCacheKey]: {
+                            ownerCid: 900001,
+                            entries: [
+                                { cid: 900002, name: 'First Buddy' },
+                                { cid: 900003, name: 'Second Buddy' },
+                            ],
+                            fetchedAt: Date.now(),
+                        },
+                    }); }, 0);
+                    callback({ id: tabId, ...details });
+                },
+                remove: (tabId, callback) => {
+                    removed.push(tabId);
+                    callback();
+                },
+            };
+        },
+        prepareWindow: window => {
+            window.fetch = async () => pageResponse('<a href="/Default.aspx">Log In</a>');
+        },
+    });
+
+    el(dom, 'favorites-merge-buddies').click();
+    await waitFor(dom, () => dom.chrome._localStore[favoriteKey]?.entries?.length === 2);
+    assert.deepEqual(opened, [{
+        url: 'about:blank',
+        active: false,
+    }]);
+    assert.deepEqual(updated, [{
+        tabId: 77,
+        details: {
+            url: 'chrome-extension://test-extension/options/buddy-refresh.html',
+            active: false,
+        },
+    }]);
+    assert.deepEqual(removed, [77]);
+    assert.match(el(dom, 'favorites-import-status').textContent, /Added 2 buddies to custom favorites/);
+});
+
+test('custom import keeps a failed Buddy refresh visible beside the buttons', async () => {
+    const dom = await loadOptions({ favoritesSource: 'custom' }, {
+        prepareWindow: window => { window.fetch = async () => pageResponse('', 500); },
+    });
+    el(dom, 'favorites-mirror-buddies').click();
+    await waitFor(dom, () => /temporarily unavailable/.test(el(dom, 'favorites-import-status').textContent));
+    assert.equal(el(dom, 'favorites-import-status').hidden, false);
+    assert.equal(el(dom, 'favorites-import-status').querySelector('a').textContent, 'Open Buddy List');
+    assert.equal(dom.chrome._localStore[favoriteKey], undefined);
 });
 
 test('connected GitHub actions back up the validated list and restore with Undo', async () => {

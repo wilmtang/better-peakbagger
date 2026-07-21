@@ -448,7 +448,10 @@ import { numericParam, ownerClimberId } from './profile-backup-core.js';
     const cacheRenderedBuddyList = async () => {
         const pageCid = numericParam(location.href, 'cid', document.baseURI);
         const ownCid = ownerClimberId(document);
-        if (pageCid == null || ownCid == null || pageCid !== ownCid) return;
+        // The signed-in report endpoint omits cid and derives the owner from
+        // the session. An explicit cid must still match that owner so viewing
+        // another climber's report can never replace the local cache.
+        if (ownCid == null || (pageCid != null && pageCid !== ownCid)) return;
         const entries = F.parseBuddyDocument(document);
         await chrome.storage.local.set({
             [F.BUDDY_CACHE_KEY]: { ownerCid: ownCid, entries, fetchedAt: Date.now() }
@@ -544,6 +547,9 @@ import { numericParam, ownerClimberId } from './profile-backup-core.js';
             if (currentSection) currentSection.items.push(record);
             else preamble.push(record);
         }
+        // Cache even an empty signed-in Buddy List. Zero rows is valid data on
+        // this report, not a reason to preserve an older non-empty cache.
+        if (isBuddyListPage) void cacheRenderedBuddyList().catch(() => {});
         if (!dataRows.length) return optOutInstantSort();
 
         // Wire instant table sorting now — synchronously, before the awaited
@@ -560,7 +566,6 @@ import { numericParam, ownerClimberId } from './profile-backup-core.js';
         // Sorting is the complete feature on this surface: do not mount a
         // misleading filter/compact-view notice or apply ascent-list settings.
         if (isBuddyListPage) {
-            void cacheRenderedBuddyList().catch(() => {});
             return;
         }
 

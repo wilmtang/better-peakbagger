@@ -280,16 +280,35 @@ test('a refreshed Buddy List stays usable when only the local cache write fails'
         'the failed write does not pretend the persisted cache was refreshed');
 });
 
-test('visiting your own Buddy List refreshes the cache without another request', async () => {
+test('visiting the implicit signed-in Buddy List refreshes the cache without another request', async () => {
     let fetches = 0;
     const dom = await loadPage('report-buddy-list.html', {
         fixtures: PAGE_FIXTURES,
-        url: 'https://peakbagger.com/report/report.aspx?r=b&cid=900001',
+        url: 'https://peakbagger.com/report/report.aspx?r=b',
         prepare: page => { page.window.fetch = async () => { fetches++; throw new Error('unexpected fetch'); }; },
     });
     await waitFor(dom, () => dom.chrome._localStore[BUDDY_CACHE_KEY]?.entries?.length === 6);
     assert.equal(fetches, 0);
     assert.equal(dom.chrome._localStore[BUDDY_CACHE_KEY].ownerCid, 900001);
+});
+
+test('visiting an empty signed-in Buddy List replaces an older cached list', async () => {
+    const oldCache = {
+        ownerCid: 900001,
+        entries: [{ cid: 900002, name: 'Old Buddy' }],
+        fetchedAt: 1,
+    };
+    const dom = await loadPage('report-buddy-list.html', {
+        fixtures: PAGE_FIXTURES,
+        url: 'https://peakbagger.com/report/report.aspx?r=b',
+        local: { [BUDDY_CACHE_KEY]: oldCache },
+        prepare: page => {
+            const rows = Array.from(page.window.document.querySelectorAll('#RGridView tr'));
+            rows.slice(1).forEach(row => row.remove());
+        },
+    });
+    await waitFor(dom, () => dom.chrome._localStore[BUDDY_CACHE_KEY]?.fetchedAt > 1);
+    assert.equal(dom.chrome._localStore[BUDDY_CACHE_KEY].entries.length, 0);
 });
 
 test('trip-report chip applies its inline word threshold', async () => {

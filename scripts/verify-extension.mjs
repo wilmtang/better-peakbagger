@@ -158,13 +158,31 @@ try {
         });
 
         let buddyRequests = 0;
+        let fallbackReportRequests = 0;
         const signedInBuddyUrl = 'https://www.peakbagger.com/report/report.aspx?r=b';
-        await optionsPage.route(signedInBuddyUrl, route => {
-            buddyRequests++;
-            return buddyRequests === 1
-                ? route.fulfill({ status: 200, contentType: 'text/html', body: buddyListFixture })
-                : route.fulfill({ status: 500, contentType: 'text/plain', body: 'fixture failure' });
+        await context.route(signedInBuddyUrl, route => {
+            fallbackReportRequests++;
+            return route.fulfill({ status: 200, contentType: 'text/html', body: buddyListFixture });
         });
+        await optionsPage.evaluate(({ signedInBuddyUrl, buddyListFixture }) => {
+            window.__bpbNativeFetch = window.fetch;
+            window.__bpbBuddyRequests = 0;
+            window.fetch = async (input, init) => {
+                if (String(input) !== signedInBuddyUrl) return window.__bpbNativeFetch(input, init);
+                const request = ++window.__bpbBuddyRequests;
+                if (request === 1) {
+                    return { status: 200, headers: {}, text: async () => buddyListFixture };
+                }
+                if (request === 4) {
+                    return {
+                        status: 401,
+                        headers: {},
+                        text: async () => '<html><body><a href="/Default.aspx">Log In</a></body></html>',
+                    };
+                }
+                return { status: 500, headers: {}, text: async () => 'fixture failure' };
+            };
+        }, { signedInBuddyUrl, buddyListFixture });
         await optionsPage.locator('#favorites-refresh-buddies').click();
         const buddyRefresh = await optionsPage.waitForFunction(async () => {
             const cache = (await chrome.storage.local.get('bpbBuddyCache')).bpbBuddyCache;
@@ -173,6 +191,7 @@ try {
                 ? { ownerCid: cache.ownerCid, entries: cache.entries.length, status }
                 : false;
         }, null, { timeout: 5000 }).then(handle => handle.jsonValue()).catch(() => null);
+        buddyRequests = await optionsPage.evaluate(() => window.__bpbBuddyRequests);
         check(buddyRequests === 1 && buddyRefresh?.ownerCid === 900001 && buddyRefresh?.entries === 6,
             `the options Buddy refresh did not use the direct signed-in report: ${JSON.stringify({ buddyRequests, buddyRefresh })}`);
 
@@ -184,13 +203,69 @@ try {
                 ? { label: link.textContent, href: link.href }
                 : false;
         }, null, { timeout: 5000 }).then(handle => handle.jsonValue()).catch(() => null);
+        buddyRequests = await optionsPage.evaluate(() => window.__bpbBuddyRequests);
         check(buddyRequests === 2
             && buddyRecovery?.label === 'Open Buddy List'
             && buddyRecovery?.href === signedInBuddyUrl,
         `the options Buddy recovery did not point back to the direct report: ${JSON.stringify({ buddyRequests, buddyRecovery })}`);
+
+        await optionsPage.locator('input[name="favorites-source"][value="custom"]').check();
+        await optionsPage.locator('#favorites-mirror-buddies').click();
+        const importRecovery = await optionsPage.waitForFunction(() => {
+            const status = document.getElementById('favorites-import-status');
+            const link = status?.querySelector('a');
+            return !status?.hidden
+                && /temporarily unavailable \(HTTP 500\)/.test(status?.textContent || '')
+                && link
+                ? { label: link.textContent, href: link.href }
+                : false;
+        }, null, { timeout: 5000 }).then(handle => handle.jsonValue()).catch(() => null);
+        buddyRequests = await optionsPage.evaluate(() => window.__bpbBuddyRequests);
+        check(buddyRequests === 3
+            && importRecovery?.label === 'Open Buddy List'
+            && importRecovery?.href === signedInBuddyUrl,
+        `the custom import failure was not persistent and actionable: ${JSON.stringify({ buddyRequests, importRecovery })}`);
+
+        await optionsPage.locator('#favorites-merge-buddies').click();
+        await waitForCondition(
+            () => context.pages().some(page => page.url() === signedInBuddyUrl),
+            { description: 'the first-party Buddy helper navigation', timeoutMs: 5000 }
+        ).catch(() => false);
+        const fallbackImport = await optionsPage.waitForFunction(async () => {
+            const favorites = (await chrome.storage.local.get('bpbFavoriteClimbers')).bpbFavoriteClimbers;
+            const status = document.getElementById('favorites-import-status');
+            return favorites?.entries?.length === 6 && /Added 6 buddies/.test(status?.textContent || '')
+                ? { count: favorites.entries.length, status: status.textContent }
+                : false;
+        }, null, { timeout: 10000 }).then(handle => handle.jsonValue()).catch(() => null);
+        buddyRequests = await optionsPage.evaluate(() => window.__bpbBuddyRequests);
+        await optionsPage.evaluate(() => { window.fetch = window.__bpbNativeFetch; });
+        const fallbackDebug = await optionsPage.evaluate(async () => ({
+            importStatus: document.getElementById('favorites-import-status')?.textContent || '',
+            cache: (await chrome.storage.local.get('bpbBuddyCache')).bpbBuddyCache || null,
+            favorites: (await chrome.storage.local.get('bpbFavoriteClimbers')).bpbFavoriteClimbers || null,
+        }));
+        const fallbackPageUrls = context.pages().map(page => page.url());
+        const fallbackTabClosed = !fallbackPageUrls.includes(signedInBuddyUrl)
+            && !fallbackPageUrls.some(url => url.endsWith('/options/buddy-refresh.html'));
+        check(buddyRequests === 4
+            && fallbackReportRequests === 1
+            && fallbackImport?.count === 6
+            && fallbackTabClosed,
+        `the first-party Buddy import fallback failed or leaked its tab: ${JSON.stringify({
+            buddyRequests, fallbackReportRequests, fallbackImport, fallbackTabClosed, fallbackPageUrls,
+            fallbackDebug
+        })}`);
         if (process.env.BPB_VERIFY_FAVORITES_SCREENSHOT) {
             await optionsPage.locator('#favorites').screenshot({ path: process.env.BPB_VERIFY_FAVORITES_SCREENSHOT });
         }
+        if (process.env.BPB_VERIFY_FAVORITES_DARK_SCREENSHOT) {
+            await optionsPage.locator('#theme').selectOption('dark');
+            await optionsPage.waitForFunction(() => document.documentElement.getAttribute('data-bpb-theme') === 'dark');
+            await optionsPage.locator('#favorites').screenshot({ path: process.env.BPB_VERIFY_FAVORITES_DARK_SCREENSHOT });
+            await optionsPage.locator('#theme').selectOption('system');
+        }
+        await optionsPage.locator('input[name="favorites-source"][value="buddies"]').check();
         await optionsPage.close();
 
         const popupPage = await context.newPage();
@@ -1460,7 +1535,7 @@ if (failures.length) {
 console.log('Real-extension verification passed (hidden Chrome for Testing, new headless):');
 console.log('  - the MV3 service worker boots and answers messages (capture is alive)');
 console.log('  - sync/local/session storage, storage.onChanged, options persistence, and popup status passed');
-console.log('  - options loads the signed-in Buddy report directly and keeps stale-cache recovery actionable');
+console.log('  - options loads the signed-in Buddy report directly, falls back through a first-party tab, and keeps failures actionable');
 console.log('  - settings.js initialises in the isolated world and the bridge answers');
 console.log('  - the GPX analyzer renders stats from the real manifest load order');
 console.log('  - the 3D toggle stays visible when disabled and opens the provider/privacy confirmation');

@@ -650,8 +650,13 @@ pages through the shared Peakbagger request boundary, then parses validated
 documents with the shared pure modules. Buddy refresh goes directly to the
 signed-in account's `report/report.aspx?r=b` page, deriving the owner id from
 that same response so the cache remains owner-scoped without a separate
-home-page probe. Custom additions verify that the fetched public profile id
-matches the requested id. Delete, mirror, and GitHub restore are replace
+home-page probe. If browser cookie policy makes that extension-origin request
+appear signed out, the options page opens an inactive extension-owned redirect
+helper that navigates to the same first-party report. The existing report
+content script validates the rendered owner and refreshes
+the local cache; the options page accepts only that newly validated cache and
+closes its tab before completing the import. Custom additions verify that the
+fetched public profile id matches the requested id. Delete, mirror, and GitHub restore are replace
 operations with a brief local Undo snapshot; merge is additive.
 
 Both content scripts use the default isolated extension world, not Peakbagger's
@@ -849,7 +854,9 @@ The options manager supports these distinct operations:
 - **Merge buddies** is additive. It preserves every existing custom entry and
   its name, timestamp, order, and provenance; only missing Buddy ids are
   appended with one current timestamp and `source: 'buddy'`, stopping at the
-  500-entry bound. Existing names are not refreshed from the Buddy page.
+  500-entry bound. Existing names are not refreshed from the Buddy page. Its
+  progress, success count, or actionable failure remains visible beside the
+  controls instead of relying on the transient global save toast.
 - **Mirror buddy list** replaces the custom list completely. Every resulting
   entry receives the current timestamp and Buddy provenance. It offers a
   six-second in-memory Undo snapshot.

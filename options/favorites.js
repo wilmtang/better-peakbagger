@@ -10,6 +10,7 @@ import { fetchPeakbaggerDocument } from '../src/peakbagger-request.js';
 import { numericParam, ownerClimberId } from '../src/profile-backup-core.js';
 
 const UNDO_MS = 6000;
+const SITE_TAB_REFRESH_MS = 8000;
 const PEAKBAGGER_ORIGIN = 'https://www.peakbagger.com';
 
 export const initFavorites = ({ extensionApi, flash, save } = {}) => {
@@ -25,6 +26,7 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
     const sortEl = document.getElementById('favorites-sort');
     const mergeEl = document.getElementById('favorites-merge-buddies');
     const mirrorEl = document.getElementById('favorites-mirror-buddies');
+    const importStatusEl = document.getElementById('favorites-import-status');
     const emptyEl = document.getElementById('favorites-empty');
     const listEl = document.getElementById('favorites-list');
     const undoAllEl = document.getElementById('favorites-undo-all');
@@ -37,7 +39,7 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
 
     if (!store || !sourceEls.length || !buddyPanelEl || !customPanelEl || !buddyStatusEl
         || !refreshBuddiesEl || !addFormEl || !addInputEl || !addButtonEl || !sortEl
-        || !mergeEl || !mirrorEl || !emptyEl || !listEl || !undoAllEl || !undoMessageEl
+        || !mergeEl || !mirrorEl || !importStatusEl || !emptyEl || !listEl || !undoAllEl || !undoMessageEl
         || !undoAllButtonEl || !githubStatusEl || !githubActionsEl || !backupEl
         || !restoreEl) return { populate() {} };
 
@@ -81,7 +83,7 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
         mirrorEl.disabled = busy;
     };
 
-    const appendPeakbaggerLink = ({
+    const appendPeakbaggerLink = (target, {
         label = 'Open Buddy List',
         href = F.signedInBuddyListUrl(PEAKBAGGER_ORIGIN),
     } = {}) => {
@@ -90,15 +92,21 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
         link.target = '_blank';
         link.rel = 'noopener noreferrer';
         link.textContent = label;
-        buddyStatusEl.append(' ', link);
+        target.append(' ', link);
     };
 
-    const appendBuddyRecovery = error => {
+    const appendBuddyRecovery = (error, target = buddyStatusEl) => {
         const recovery = PeakbaggerError.recovery(error, {
             url: F.signedInBuddyListUrl(PEAKBAGGER_ORIGIN),
             label: 'Open Buddy List',
         });
-        if (recovery) appendPeakbaggerLink(recovery);
+        if (recovery) appendPeakbaggerLink(target, recovery);
+    };
+
+    const renderImportStatus = (message = '', error = null) => {
+        importStatusEl.textContent = message;
+        importStatusEl.hidden = !message;
+        if (message && error) appendBuddyRecovery(error, importStatusEl);
     };
 
     const renderBuddyStatus = () => {
@@ -262,10 +270,93 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
     const loadSignedInBuddies = async () => {
         const url = F.signedInBuddyListUrl(PEAKBAGGER_ORIGIN);
         const result = await fetchPeakbaggerDocument(url, { kind: 'buddies' });
-        if (result.kind !== 'ok') throw result.error;
+        if (result.kind !== 'ok') {
+            if (result.error?.code === 'signed-out') {
+                const pageCache = await loadBuddiesInSiteTab();
+                if (pageCache) return pageCache;
+            }
+            throw result.error;
+        }
         const ownerCid = ownerClimberId(result.document);
         if (ownerCid == null) throw PeakbaggerError.failure('signed-out', { resource: 'buddies' });
         return { ownerCid, entries: F.parseBuddyDocument(result.document) };
+    };
+
+    const loadBuddiesInSiteTab = async () => {
+        const tabs = extensionApi.tabs;
+        const changes = extensionApi.storage.onChanged;
+        const helperUrl = extensionApi.runtime.getURL?.('options/buddy-refresh.html');
+        if (!helperUrl || !tabs?.create || !tabs?.update || !tabs?.remove
+            || !changes?.addListener || !changes?.removeListener) return null;
+
+        const promiseTabs = typeof globalThis.browser !== 'undefined'
+            && extensionApi === globalThis.browser;
+        const createTab = details => promiseTabs
+            ? tabs.create(details)
+            : new Promise((resolve, reject) => {
+                tabs.create(details, created => {
+                    const error = extensionApi.runtime.lastError;
+                    if (error) reject(new Error(error.message || 'Could not open the Buddy List.'));
+                    else resolve(created);
+                });
+            });
+        const removeTab = tabId => {
+            if (promiseTabs) {
+                void tabs.remove(tabId).catch(() => {});
+                return;
+            }
+            tabs.remove(tabId, () => { void extensionApi.runtime.lastError; });
+        };
+        const navigateTab = (tabId, url) => {
+            if (promiseTabs) {
+                void tabs.update(tabId, { url, active: false }).catch(() => {});
+                return;
+            }
+            tabs.update(tabId, { url, active: false }, () => {
+                void extensionApi.runtime.lastError;
+            });
+        };
+
+        const startedAt = Date.now();
+        let listener = null;
+        let timer = null;
+        let tab = null;
+        const cachePromise = new Promise(resolve => {
+            const finish = value => {
+                if (timer != null) globalThis.clearTimeout(timer);
+                if (listener) changes.removeListener(listener);
+                listener = null;
+                timer = null;
+                resolve(value);
+            };
+            listener = (updates, area) => {
+                if (area !== 'local' || !updates[F.BUDDY_CACHE_KEY]) return;
+                const cache = F.cleanBuddyCache(updates[F.BUDDY_CACHE_KEY].newValue);
+                if (cache && cache.fetchedAt >= startedAt) finish(cache);
+            };
+            changes.addListener(listener);
+            timer = globalThis.setTimeout(() => finish(null), SITE_TAB_REFRESH_MS);
+        });
+
+        try {
+            // Chrome can leave an inactive tab at about:blank when create()
+            // receives a URL whose load does not settle. Create a literal
+            // blank tab first, then start the extension-helper navigation
+            // without making its callback part of the import lifecycle.
+            tab = await createTab({ url: 'about:blank', active: false });
+            if (!Number.isInteger(tab?.id)) return null;
+            navigateTab(tab.id, helperUrl);
+            return await cachePromise;
+        } catch {
+            return null;
+        } finally {
+            if (timer != null) globalThis.clearTimeout(timer);
+            if (listener) changes.removeListener(listener);
+            if (Number.isInteger(tab?.id)) {
+                try { removeTab(tab.id); }
+                catch { /* the user or browser already closed it */ }
+            }
+        }
     };
 
     const refreshBuddies = () => {
@@ -470,34 +561,49 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
     addFormEl.addEventListener('submit', event => { event.preventDefault(); void addClimber(); });
     sortEl.addEventListener('change', renderList);
     mergeEl.addEventListener('click', () => {
+        renderImportStatus('Loading your Buddy List…');
         void refreshBuddies().then(async cache => {
             if (!cache) {
-                flash(PeakbaggerError.message(buddyError));
+                const message = PeakbaggerError.message(buddyError);
+                renderImportStatus(message, buddyError);
+                flash(message);
                 return;
             }
             const before = favorites.entries.length;
             const next = F.mergeBuddies(favorites, cache.entries);
             const added = next.entries.length - before;
             if (!added) {
+                renderImportStatus('Your custom favorites already include all buddies.');
                 flash('Your favorites already include all buddies');
                 return;
             }
             try {
                 await writeFavorites(next);
+                renderImportStatus(`Added ${added} ${added === 1 ? 'buddy' : 'buddies'} to custom favorites.`);
                 flash(`Added ${added} ${added === 1 ? 'buddy' : 'buddies'}`);
             } catch (error) {
+                renderImportStatus("The Buddy List loaded, but the custom favorites couldn't be saved.");
                 flash("Couldn't merge buddies");
             }
         });
     });
     mirrorEl.addEventListener('click', () => {
+        renderImportStatus('Loading your Buddy List…');
         void refreshBuddies().then(async cache => {
             if (!cache) {
-                flash(PeakbaggerError.message(buddyError));
+                const message = PeakbaggerError.message(buddyError);
+                renderImportStatus(message, buddyError);
+                flash(message);
                 return;
             }
             const changed = await beginReplacement(F.mirrorBuddies(cache.entries), 'Custom list replaced with your Buddy List');
-            if (changed) flash('Buddy List mirrored');
+            if (changed) {
+                const count = cache.entries.length;
+                renderImportStatus(`Mirrored ${count} ${count === 1 ? 'buddy' : 'buddies'} to custom favorites.`);
+                flash('Buddy List mirrored');
+            } else {
+                renderImportStatus("The Buddy List loaded, but the custom favorites couldn't be saved.");
+            }
         });
     });
     undoAllButtonEl.addEventListener('click', () => { void undoReplacement(); });

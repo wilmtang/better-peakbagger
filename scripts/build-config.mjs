@@ -85,6 +85,7 @@ export const COPY_FILES = [
     ['src/peak-links.css', 'css/peak-links.css'],
     ['terrain/terrain.html', 'terrain/terrain.html'],
     ['options/options.html', 'options/options.html'],
+    ['options/buddy-refresh.html', 'options/buddy-refresh.html'],
     ['options/options.css', 'options/options.css'],
     ['popup/popup.html', 'popup/popup.html'],
     ['popup/popup.css', 'popup/popup.css'],
