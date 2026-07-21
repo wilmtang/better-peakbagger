@@ -396,6 +396,40 @@ test('Full Screen maps offer a 3D toggle that carries the native tracks into the
     dom.window.close();
 });
 
+test('Full Screen 3D loading can be canceled and renderer failures are announced', async () => {
+    const fixture = await loadBigMap({ type: 'A', settings: { enable3dMap: true } });
+    const { dom, window, messages, leaflet } = fixture;
+    window.map = new leaflet.MapStub([
+        new leaflet.Polyline([{ lat: 44.15, lng: -121.78 }, { lat: 44.16, lng: -121.76 }], { color: '#d9483b', weight: 3 })
+    ]);
+    fixture.evaluate();
+
+    const toggle = window.document.getElementById('bpb-terrain-toggle');
+    await waitFor(dom, () => toggle.disabled === false);
+    toggle.click();
+    await waitFor(dom, () => messages.some(message => message.__bpbTerrain === true && message.type === 'init'));
+    assert.equal(toggle.disabled, false);
+    assert.equal(toggle.getAttribute('aria-label'), 'Cancel loading 3D terrain');
+    toggle.click();
+    assert.equal(messages.at(-1).type, 'destroy');
+    assert.equal(toggle.textContent, '3D');
+
+    toggle.click();
+    await waitFor(dom, () => messages.filter(message => message.__bpbTerrain === true && message.type === 'init').length === 2);
+    window.dispatchEvent(new window.MessageEvent('message', {
+        source: window,
+        origin: window.location.origin,
+        data: { __bpbTerrain: true, dir: 'toPage', type: 'error', reason: 'maplibre' }
+    }));
+    const failure = window.document.getElementById('bpb-terrain-failure');
+    assert.equal(failure.getAttribute('role'), 'status');
+    assert.equal(failure.hidden, false);
+    assert.match(failure.textContent, /could not render 3D terrain/);
+    assert.equal(toggle.textContent, '3D');
+    await new Promise(resolve => window.setTimeout(resolve, 0));
+    dom.window.close();
+});
+
 test('Full Screen 3D group routes carry only validated native ascent-link metadata', async () => {
     const fixture = await loadBigMap({ type: 'G', settings: { enable3dMap: true } });
     const { dom, window, messages, leaflet } = fixture;

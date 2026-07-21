@@ -231,6 +231,8 @@ test('GPX analyzer adds a thick, segment-preserving route casing behind native L
     assert.equal(window.document.getElementById('bpb-terrain-message').textContent, '',
         'the toggle button is the only loading cue; no separate loading banner');
     assert.equal(window.document.getElementById('bpb-terrain-message').style.display, 'none');
+    assert.equal(terrainToggle.disabled, false, 'the loading state remains cancelable');
+    assert.equal(terrainToggle.getAttribute('aria-label'), 'Cancel loading 3D terrain');
     const terrainInit = terrainMessages.find(message => message.type === 'init');
     assert.deepEqual(JSON.parse(JSON.stringify(terrainInit.routeSegments)), expectedSegments);
     assert.deepEqual(Object.keys(terrainInit).sort(), ['__bpbTerrain', 'basemap', 'basemaps', 'cacheLimitMb', 'camera', 'dir', 'routeSegments', 'routeStyle', 'theme', 'type']);
@@ -264,6 +266,12 @@ test('GPX analyzer adds a thick, segment-preserving route casing behind native L
     });
     assert.equal(JSON.stringify(terrainInit).includes('<gpx'), false);
     assert.equal(JSON.stringify(terrainInit).includes('2026-07-10'), false);
+
+    terrainToggle.click();
+    assert.equal(terrainMessages.at(-1).type, 'destroy', 'clicking the loading toggle cancels the frame boot');
+    assert.equal(terrainToggle.textContent, '3D');
+    terrainToggle.click();
+    await waitFor(dom, () => terrainMessages.filter(message => message.type === 'init').length === 2);
 
     window.dispatchEvent(new window.MessageEvent('message', {
         source: window,
@@ -360,7 +368,7 @@ test('GPX analyzer adds a thick, segment-preserving route casing behind native L
 
     sendSettings({ units: 'imperial', theme: 'light', chartDefaultSeries: 'both', enable3dMap: true });
     terrainToggle.click();
-    await waitFor(dom, () => terrainMessages.filter(message => message.type === 'init').length === 2);
+    await waitFor(dom, () => terrainMessages.filter(message => message.type === 'init').length === initCountBeforeConsent + 1);
     window.dispatchEvent(new window.MessageEvent('message', {
         source: window,
         origin: window.location.origin,

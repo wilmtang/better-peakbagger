@@ -155,6 +155,37 @@ test('Peak pages wrap the Dynamic Map with a 3D toggle and open a validated summ
     dom.window.close();
 });
 
+test('Peak-page 3D loading can be canceled and renderer failures are announced', async () => {
+    const { dom, window, messages } = loadPeakMap();
+    const toggle = window.document.getElementById('bpb-terrain-toggle');
+    await waitFor(dom, () => toggle.dataset.theme === 'dark');
+
+    toggle.click();
+    await waitFor(dom, () => messages.some(message => message.__bpbTerrain === true && message.type === 'init'));
+    assert.equal(toggle.disabled, false);
+    assert.equal(toggle.getAttribute('aria-label'), 'Cancel loading 3D terrain');
+    toggle.click();
+    assert.equal(messages.at(-1).type, 'destroy');
+    assert.equal(toggle.textContent, '3D');
+
+    toggle.click();
+    await waitFor(dom, () => messages.filter(message => message.__bpbTerrain === true && message.type === 'init').length === 2);
+    window.dispatchEvent(new window.MessageEvent('message', {
+        source: window,
+        origin: window.location.origin,
+        data: { __bpbTerrain: true, dir: 'toPage', type: 'error', reason: 'unavailable' }
+    }));
+    const failure = window.document.getElementById('bpb-terrain-failure');
+    assert.equal(failure.getAttribute('role'), 'status');
+    assert.equal(failure.getAttribute('aria-live'), 'polite');
+    assert.equal(failure.hidden, false);
+    assert.match(failure.textContent, /unavailable for this map/);
+    assert.doesNotMatch(failure.textContent, /unavailable in this browser/);
+    assert.equal(toggle.textContent, '3D');
+    await new Promise(resolve => window.setTimeout(resolve, 0));
+    dom.window.close();
+});
+
 test('hovering the idle 3D toggle prefetches the peak DEM tiles once per window', async () => {
     const { dom, window, messages } = loadPeakMap();
     const toggle = window.document.getElementById('bpb-terrain-toggle');

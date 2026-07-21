@@ -73,6 +73,7 @@ const server = createServer(async (request, response) => {
         const showcaseRoutes = {
             '/climber/ascent.aspx': '/scripts/showcase/terrain.html',
             '/map/bigmap.aspx': '/scripts/showcase/big-map.html',
+            '/peak.aspx': '/scripts/showcase/peak-map.html',
             // The synthetic MasterMap pages are served at a real MasterMap.aspx
             // path so the peak-feed client can read its parameters from the
             // iframe URL exactly as it does on the live site.
@@ -414,6 +415,42 @@ const measureBigMap2dGap = cdp => evaluate(cdp, `(() => {
     const zr = zoom.getBoundingClientRect();
     return { toggleBottom: Math.round(tr.bottom), zoomTop: Math.round(ir.top + zr.top), gap: Math.round((ir.top + zr.top) - tr.bottom) };
 })()`);
+
+const showTerrainFailure = async (cdp, label, expectedTheme) => {
+    const started = await evaluate(cdp, `(() => {
+        const toggle = document.getElementById('bpb-terrain-toggle');
+        if (!toggle || toggle.disabled) return false;
+        toggle.click();
+        window.dispatchEvent(new MessageEvent('message', {
+            source: window,
+            origin: location.origin,
+            data: { __bpbTerrain: true, dir: 'toPage', type: 'error', reason: 'maplibre' }
+        }));
+        return true;
+    })()`);
+    if (!started) throw new Error(`${label}: the 3D toggle was not ready to exercise its failure state`);
+    const state = await waitForPageState(cdp, `(() => {
+        const toggle = document.getElementById('bpb-terrain-toggle');
+        const notice = document.getElementById('bpb-terrain-failure');
+        if (!toggle || !notice || notice.hidden) return { ready: false };
+        const tr = toggle.getBoundingClientRect();
+        const nr = notice.getBoundingClientRect();
+        return {
+            ready: true,
+            role: notice.getAttribute('role'),
+            text: notice.textContent,
+            theme: notice.dataset.theme,
+            insideViewport: nr.left >= 0 && nr.top >= 0 && nr.right <= innerWidth && nr.bottom <= innerHeight,
+            clearOfToggle: nr.right <= tr.left,
+            toggle: toggle.textContent
+        };
+    })()`);
+    if (state.role !== 'status' || !/could not render 3D terrain/.test(state.text || '')
+        || state.theme !== expectedTheme || !state.insideViewport || !state.clearOfToggle
+        || state.toggle !== '3D') {
+        throw new Error(`${label}: invalid failure notice ${JSON.stringify(state)}`);
+    }
+};
 
 // Plain scroll must zoom the 3D map directly — the same gesture the native 2D
 // map answers, with no ⌘/Ctrl modifier. The MapLibre scale control is the
@@ -921,6 +958,16 @@ try {
     if (bigMap2dMetrics.gap > 40) throw new Error(`BigMap 2D toggle floats too far above the native zoom (gap ${bigMap2dMetrics.gap}px)`);
     await capture(cdp, path.join(outputDir, 'bigmap-2d.png'));
 
+    await showTerrainFailure(cdp, 'BigMap light failure', 'light');
+    await capture(cdp, path.join(outputDir, 'bigmap-failure-light.png'));
+    await navigate(cdp, `${bigMapUrl}?t=G&theme=dark`, 1000, 760);
+    await waitForPageState(cdp, `(() => {
+        const toggle = document.getElementById('bpb-terrain-toggle');
+        return { ready: Boolean(toggle) && !toggle.disabled && toggle.dataset.theme === 'dark' };
+    })()`);
+    await showTerrainFailure(cdp, 'BigMap dark failure', 'dark');
+    await capture(cdp, path.join(outputDir, 'bigmap-failure-dark.png'));
+
     // …and flips the full-bleed 3D terrain over it, hiding the native map, when clicked.
     const bigMapBasemapBefore = basemapRequests.length;
     await navigate(cdp, `${bigMapUrl}?t=G&mode3d=1`, 1000, 760);
@@ -1016,6 +1063,20 @@ try {
     await waitForCondition(() => peakFeedRequests.length > peakFeedBeforePeakBigMap,
         () => 'Full Screen peak 3D did not request Peakbagger nearby dots');
     await capture(cdp, path.join(outputDir, 'bigmap-peak-3d.png'));
+
+    // Embedded Peak pages use a 425px map mount rather than a full viewport.
+    // Exercise the same status note in both themes and assert it stays inside
+    // the smaller mount-side layout without covering the toggle.
+    const peakPageUrl = `http://www.peakbagger.com:${serverPort}/peak.aspx`;
+    for (const theme of ['light', 'dark']) {
+        await navigate(cdp, `${peakPageUrl}?pid=2829&theme=${theme}`, 820, 620);
+        await waitForPageState(cdp, `(() => {
+            const toggle = document.getElementById('bpb-terrain-toggle');
+            return { ready: Boolean(toggle) && !toggle.disabled && toggle.dataset.theme === '${theme}' };
+        })()`);
+        await showTerrainFailure(cdp, `Peak page ${theme} failure`, theme);
+        await capture(cdp, path.join(outputDir, `peak-page-failure-${theme}.png`));
+    }
 
     const optionsUrl = `http://127.0.0.1:${serverPort}/options/options.html?visual=1`;
     await navigate(cdp, optionsUrl, 1000, 700);

@@ -184,6 +184,41 @@
     outline-offset: 2px;
 }
 
+/* Full Screen and Peak pages have no analyzer panel to carry a renderer error.
+   This compact live region sits beside the floating toggle, then auto-hides. */
+.bpb-terrain-failure {
+    position: absolute;
+    right: 60px;
+    bottom: 112px;
+    z-index: 3;
+    box-sizing: border-box;
+    max-width: min(320px, calc(100% - 80px));
+    margin: 0;
+    padding: 7px 10px;
+    border: 1px solid #dfb6b6;
+    border-radius: 8px;
+    background: rgb(255 240 240 / 96%);
+    color: #3b2020;
+    box-shadow: 0 1px 5px rgb(0 0 0 / 18%);
+    font: 500 12px/1.35 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    pointer-events: none;
+}
+
+.bpb-terrain-failure[hidden] {
+    display: none;
+}
+
+.bpb-terrain-failure[data-theme="dark"] {
+    border-color: #885359;
+    background: rgb(67 40 42 / 96%);
+    color: #f1eee7;
+    box-shadow: 0 1px 5px rgb(0 0 0 / 38%);
+}
+
+.bpb-terrain-mount-fullscreen .bpb-terrain-failure {
+    bottom: 94px;
+}
+
 /* Extension-owned confirmation for the off-by-default 3D feature. It lives in
    the isolated world so the page can request the prompt but cannot write the
    feature gate. The full-page scrim also works on Full Screen Maps, whose map

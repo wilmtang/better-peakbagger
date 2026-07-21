@@ -17,6 +17,7 @@ import { settingsSchema as Schema } from './settings-schema.js';
 import { peakMarkers } from './peak-markers.js';
 import { terrainBasemap } from './terrain-basemap.js';
 import { terrainCamera as TerrainCamera } from './terrain-camera.js';
+import { terrainFailure as TerrainFailure } from './terrain-failure.js';
 
 // Chart and tzlookup remain separately-loaded vendor globals (see manifest).
 const run = async () => {
@@ -624,12 +625,12 @@ const run = async () => {
                 terrainButton.setAttribute('aria-label', 'Returning to the 2D map');
                 terrainButton.setAttribute('aria-pressed', 'true');
             } else if (terrainState === 'loading') {
-                terrainButton.disabled = true;
+                terrainButton.disabled = false;
                 terrainButton.textContent = '3D';
                 terrainButton.classList.add('bpb-map-3d-toggle-loading');
                 terrainButton.setAttribute('aria-busy', 'true');
-                terrainButton.title = 'Loading 3D terrain…';
-                terrainButton.setAttribute('aria-label', 'Loading 3D terrain');
+                terrainButton.title = 'Cancel loading 3D terrain';
+                terrainButton.setAttribute('aria-label', 'Cancel loading 3D terrain');
                 terrainButton.setAttribute('aria-pressed', 'false');
             } else if (terrainState === 'active') {
                 terrainButton.disabled = false;
@@ -665,14 +666,6 @@ const run = async () => {
             showTerrainMessage(message, 'error');
         };
 
-        const terrainFailureMessage = reason => ({
-            frame: '3D terrain could not start in this browser. The 2D map is unchanged.',
-            unavailable: '3D terrain is unavailable in this browser. The 2D map is unchanged.',
-            maplibre: 'Your browser could not render 3D terrain. The 2D map is unchanged.',
-            renderer: 'Your browser could not render 3D terrain. The 2D map is unchanged.',
-            timeout: '3D terrain took too long to load. The 2D map is unchanged.'
-        })[reason] || '3D terrain could not load. The 2D map is unchanged.';
-
         const startTerrain = (consentGranted = false) => {
             if ((!consentGranted && BPB.get().enable3dMap !== true)
                 || terrainState !== 'idle' || !mapViewport || !mapIframe || !mapRouteSegments.length) return;
@@ -693,7 +686,7 @@ const run = async () => {
                 ...(terrainViewCamera ? { camera: terrainViewCamera } : {})
             });
             terrainLoadTimer = setTimeout(() => {
-                if (terrainState === 'loading') failTerrain(terrainFailureMessage('timeout'));
+                if (terrainState === 'loading') failTerrain(TerrainFailure.message('timeout'));
             }, TERRAIN_LOAD_TIMEOUT_MS);
         };
 
@@ -739,7 +732,7 @@ const run = async () => {
         };
 
         terrainButton.addEventListener('click', () => {
-            if (terrainState === 'active') {
+            if (terrainState === 'active' || terrainState === 'loading') {
                 stopTerrain();
                 return;
             }
@@ -806,7 +799,7 @@ const run = async () => {
             } else if (data.type === 'peaksRequest' && terrainState !== 'idle') {
                 answerPeaksRequest(data);
             } else if (data.type === 'error' && terrainState === 'loading') {
-                failTerrain(terrainFailureMessage(data.reason));
+                failTerrain(TerrainFailure.message(data.reason));
             }
         });
 

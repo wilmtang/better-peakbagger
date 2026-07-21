@@ -10,6 +10,7 @@ import { terrainBasemap } from './terrain-basemap.js';
 import { peakMarkers } from './peak-markers.js';
 import { terrainCamera as TerrainCamera } from './terrain-camera.js';
 import { terrainCompass as TerrainCompass } from './terrain-compass.js';
+import { terrainFailure as TerrainFailure } from './terrain-failure.js';
 
 // Kept as an IIFE for early-exit control flow (no page map → nothing to do);
 // dependencies are ES imports and the module publishes no globals.
@@ -118,6 +119,7 @@ import { terrainCompass as TerrainCompass } from './terrain-compass.js';
     const postTerrain = (type, detail = {}) => window.postMessage({
         __bpbTerrain: true, dir: 'toCS', type, ...detail
     }, location.origin);
+    const terrainFailureNotice = TerrainFailure.createNotice({ container: mount, toggle: terrainToggle });
 
     // Hovering or focusing the idle 3D toggle is explicit intent to open 3D, so
     // it stays inside the same consent scope: warm the DEM cache for this peak's
@@ -196,10 +198,12 @@ import { terrainCompass as TerrainCompass } from './terrain-compass.js';
             ? `${Math.round(bottom + TERRAIN_TOGGLE_GAP)}px`
             : '';
         terrainCompass.position();
+        terrainFailureNotice.position();
     };
 
     const updateTerrainToggle = () => {
         terrainToggle.dataset.theme = effectiveTheme();
+        terrainFailureNotice.setTheme(effectiveTheme());
         terrainCompass.element.dataset.theme = effectiveTheme();
         terrainCompass.setVisible(terrainState === 'active' && !terrainStopPending);
         terrainToggle.classList.remove('bpb-map-3d-toggle-loading');
@@ -211,12 +215,12 @@ import { terrainCompass as TerrainCompass } from './terrain-compass.js';
             terrainToggle.setAttribute('aria-label', 'Returning to the 2D map');
             terrainToggle.setAttribute('aria-pressed', 'true');
         } else if (terrainState === 'loading') {
-            terrainToggle.disabled = true;
+            terrainToggle.disabled = false;
             terrainToggle.textContent = '3D';
             terrainToggle.classList.add('bpb-map-3d-toggle-loading');
             terrainToggle.setAttribute('aria-busy', 'true');
-            terrainToggle.title = 'Loading 3D terrain…';
-            terrainToggle.setAttribute('aria-label', 'Loading 3D terrain');
+            terrainToggle.title = 'Cancel loading 3D terrain';
+            terrainToggle.setAttribute('aria-label', 'Cancel loading 3D terrain');
             terrainToggle.setAttribute('aria-pressed', 'false');
         } else if (terrainState === 'active') {
             terrainToggle.disabled = false;
@@ -234,7 +238,7 @@ import { terrainCompass as TerrainCompass } from './terrain-compass.js';
         positionTerrainToggle();
     };
 
-    const failTerrain = () => {
+    const failTerrain = reason => {
         clearTerrainLoadTimer();
         terrainState = 'idle';
         terrainViewCamera = null;
@@ -242,11 +246,13 @@ import { terrainCompass as TerrainCompass } from './terrain-compass.js';
         restoreNativeMap();
         postTerrain('destroy');
         updateTerrainToggle();
+        terrainFailureNotice.show(reason);
     };
 
     const startTerrain = (consentGranted = false) => {
         if ((!consentGranted && !terrainEnabled) || terrainState !== 'idle') return;
         terrainState = 'loading';
+        terrainFailureNotice.clear();
         updateTerrainToggle();
         const { basemap, basemaps } = terrainBasemaps();
         const mapContext = resolveMapContext();
@@ -262,7 +268,7 @@ import { terrainCompass as TerrainCompass } from './terrain-compass.js';
             ...(terrainViewCamera ? { camera: terrainViewCamera } : {})
         });
         terrainLoadTimer = setTimeout(() => {
-            if (terrainState === 'loading') failTerrain();
+            if (terrainState === 'loading') failTerrain('timeout');
         }, TERRAIN_LOAD_TIMEOUT_MS);
     };
 
@@ -277,6 +283,7 @@ import { terrainCompass as TerrainCompass } from './terrain-compass.js';
         terrainStopPending = false;
         restoreNativeMap();
         postTerrain('destroy');
+        terrainFailureNotice.clear();
         updateTerrainToggle();
     };
 
@@ -295,7 +302,7 @@ import { terrainCompass as TerrainCompass } from './terrain-compass.js';
     };
 
     terrainToggle.addEventListener('click', () => {
-        if (terrainState === 'active') { stopTerrain(); return; }
+        if (terrainState === 'active' || terrainState === 'loading') { stopTerrain(); return; }
         if (terrainState !== 'idle') return;
         if (!terrainEnabled) {
             if (terrainConsentPending) return;
@@ -358,7 +365,7 @@ import { terrainCompass as TerrainCompass } from './terrain-compass.js';
             if (camera) terrainViewCamera = camera;
             if (terrainStopPending && data.requestId === terrainCameraRequestId) finishTerrainStop();
         } else if (data.type === 'error' && terrainState === 'loading') {
-            failTerrain();
+            failTerrain(data.reason);
         }
     });
 

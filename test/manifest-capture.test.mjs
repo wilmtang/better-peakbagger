@@ -87,11 +87,12 @@ test('Full Screen GPS maps get a narrow read-only bridge and a MAIN-world Leafle
     assert.equal(bridgeEntry.world, undefined);
     assert.ok(pageEntry);
     // The MAIN-world enhancer also bundles the shared metrics + basemap +
-    // peak-feed modules the 3D coordinator depends on, before big-map.js.
+    // peak-feed and failure-semantics modules the 3D coordinator depends on,
+    // before big-map.js.
     assert.deepEqual(pageEntry.js, ['content/big-map.js']);
     assert.equal(pageEntry.world, 'MAIN');
     assert.deepEqual(bundleSources('content/big-map.js'),
-        ['gpx-metrics.js', 'terrain-basemap.js', 'terrain-camera.js', 'terrain-compass.js', 'peak-markers.js', 'settings-schema.js', 'big-map.js']);
+        ['gpx-metrics.js', 'terrain-basemap.js', 'terrain-camera.js', 'terrain-compass.js', 'terrain-failure.js', 'peak-markers.js', 'settings-schema.js', 'big-map.js']);
     assert.ok(pageEntry.matches.every(pattern => /bigmap/i.test(pattern)));
 
     // The shared 3D terrain bridge is injected on BigMap too (isolated world,
@@ -152,7 +153,7 @@ test('Peak-page 3D uses a narrow settings bridge, MAIN coordinator, and isolated
     assert.ok(pageCoordinator);
     assert.deepEqual(pageCoordinator.js, ['content/peak-map.js']);
     assert.deepEqual(bundleSources('content/peak-map.js'),
-        ['terrain-basemap.js', 'terrain-camera.js', 'terrain-compass.js', 'peak-markers.js', 'settings-schema.js', 'peak-map.js']);
+        ['terrain-basemap.js', 'terrain-camera.js', 'terrain-compass.js', 'terrain-failure.js', 'peak-markers.js', 'settings-schema.js', 'peak-map.js']);
     assert.equal(pageCoordinator.run_at, 'document_end');
     assert.equal(pageCoordinator.world, 'MAIN');
 
