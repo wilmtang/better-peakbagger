@@ -27,6 +27,7 @@ export const srcFile = f => path.join(root, 'src', f);
 const PAGE_LOCAL = {
     'options-theme.js': path.join(root, 'options', 'theme.js'),
     'options-main.js': path.join(root, 'options', 'options.js'),
+    'options-drafts.js': path.join(root, 'options', 'drafts.js'),
     'popup-main.js': path.join(root, 'popup', 'popup.js'),
 };
 export function resolvePageSource(name) {
@@ -57,7 +58,7 @@ export const ENTRIES = [
     // The options page keeps its head/tail split: the head bundle applies the
     // theme before first paint, the tail bundle runs the settings UI.
     { out: 'options/options-head.js', sources: ['settings-schema.js', 'settings.js', 'options-theme.js'], page: true },
-    { out: 'options/options.js', sources: ['terrain-cache.js', 'options-main.js'], page: true },
+    { out: 'options/options.js', sources: ['terrain-cache.js', 'report-markup.js', 'report-drafts.js', 'options-main.js', 'options-drafts.js'], page: true },
     { out: 'popup/popup.js', sources: ['popup-main.js'], page: true },
 ];
 

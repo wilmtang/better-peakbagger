@@ -130,6 +130,7 @@ There is no parallel raw-source worker list and no `importScripts` fallback.
 | Full Screen and Peak maps | `src/big-map.js`, `src/peak-map.js` | MAIN-world native-map coordinators |
 | Ascent lists | `src/ascent-filter.js`, `src/profile-backup.js` | Isolated-world filter/sort and owner-only backup pipeline |
 | Settings and theme | `src/settings-schema.js`, `src/settings.js`, `src/theme.js` | Pure schema, sync-storage access, synchronous page startup |
+| Report-draft manager | `src/report-drafts.js`, `options/drafts.js` | Shared pure draft contract plus device-local list/copy/delete UI |
 | Saved-ascent backup | `src/ascent-page.js`, `src/ascent-backup.js` | Owner-only page read and user-facing backup state |
 | GitHub integration | `src/github-auth.js`, `src/github-client.js`, `src/github-backup.js` | Worker-only credential, Git Data client, pure payload builder |
 
@@ -337,6 +338,11 @@ Opening a richer mode does not rewrite an untouched report. Before Preview,
 Save, implicit ASP.NET submission, or page exit, the active view flushes
 synchronously into the native textarea. Local drafts are keyed by ascent
 identity, bounded, expiring, and restored only after explicit user approval.
+`src/report-drafts.js` is the pure shared contract for those identities and
+lifetimes. The options-page owner in `options/drafts.js` uses it to list every
+device-local report draft, open the matching ascent form, copy Markdown, and
+offer reversible deletion without duplicating or bypassing the editor's
+restore gate.
 
 The editor's representations, sanitization boundaries, media restrictions,
 round trips, draft lifecycle, and known lossy-import limitation are maintained

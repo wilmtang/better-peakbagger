@@ -67,6 +67,8 @@ const loadOptions = async (settings = {}, {
 };
 
 const el = (dom, id) => dom.window.document.getElementById(id);
+const draftRow = (dom, key) => Array.from(dom.window.document.querySelectorAll('.draft-item'))
+    .find(row => row.dataset.draftKey === key);
 
 test('theme bootstrap loads before the options stylesheet', async () => {
     const dom = await loadOptions({});
@@ -96,22 +98,25 @@ test('settings are grouped by the surface they affect', async () => {
         'Map & GPX chart',
         'Ascent beta filter',
         'Settings for nerds',
+        'Report drafts',
         'About'
     ]);
 
-    const [general, capture, mapChart, beta, github, about] = sections;
+    const [general, capture, mapChart, beta, github, drafts, about] = sections;
     assert.ok(github.querySelector('#enable-github-backup'));
     assert.ok(github.querySelector('#github-panel'));
     assert.match(github.querySelector('.desc').textContent, /every ascent from every year/);
     // Every settings section is labelled by its heading and carries at least
     // one card; About is informational, not a card.
-    for (const section of [general, capture, mapChart, beta, github]) {
+    for (const section of [general, capture, mapChart, beta, github, drafts]) {
         const heading = section.querySelector('h2');
         assert.equal(section.getAttribute('aria-labelledby'), heading.id);
         assert.ok(section.querySelector('.card'), 'the section carries a settings card');
     }
     assert.equal(about.getAttribute('aria-labelledby'), about.querySelector('h2').id);
     assert.ok(about.querySelector('.about-version'));
+    assert.ok(drafts.querySelector('#drafts-list'));
+    assert.ok(drafts.querySelector('#drafts-delete-all'));
 
     assert.ok(general.querySelector('#theme'));
     assert.ok(general.querySelector('#enable-3d-map'));
@@ -352,6 +357,136 @@ test('the removed "minimum trip-report words" control is gone', async () => {
     assert.equal(el(dom, 'minwords'), null);
 });
 
+test('report drafts render newest-first with labels, fallbacks, and edit links', async () => {
+    const now = Date.now();
+    const local = {
+        'bpbReportDraft:900001:a123': {
+            text: '[b]Newest report[/b]', mode: 'rich', savedAt: now - 1000,
+            label: { peak: 'Glacier Peak', date: '7/12/2026' }
+        },
+        'bpbReportDraft:900001:p456': {
+            text: 'Peak draft', mode: 'rich', savedAt: now - 2000
+        },
+        'bpbReportDraft:900001:new': {
+            text: 'New ascent draft', mode: 'markdown', source: 'New ascent draft', savedAt: now - 3000
+        },
+        'bpbReportDraft:900001:a999': {
+            text: 'Expired', mode: 'rich', savedAt: now - 14 * 24 * 60 * 60 * 1000 - 1
+        }
+    };
+    const dom = await loadOptions({}, { local });
+    await waitFor(dom, () => dom.window.document.querySelectorAll('.draft-item').length === 3);
+
+    const rows = Array.from(dom.window.document.querySelectorAll('.draft-item'));
+    assert.deepEqual(rows.map(row => row.querySelector('.draft-title').textContent), [
+        'Glacier Peak · 7/12/2026',
+        'New ascent · peak #456',
+        'New ascent'
+    ]);
+    assert.deepEqual(rows.map(row => row.querySelector('.draft-mode').textContent), ['Rich', 'Rich', 'Markdown']);
+    assert.equal(rows[0].querySelector('.draft-excerpt').textContent, '**Newest report**');
+    assert.deepEqual(rows.map(row => row.querySelector('a.secondary').href), [
+        'https://peakbagger.com/climber/ascentedit.aspx?aid=123&cid=900001',
+        'https://peakbagger.com/climber/ascentedit.aspx?pid=456&cid=900001',
+        'https://peakbagger.com/climber/ascentedit.aspx?cid=900001'
+    ]);
+    assert.equal('bpbReportDraft:900001:a999' in dom.chrome._localStore, false,
+        'opening the manager should prune expired drafts');
+    assert.equal(el(dom, 'drafts-empty').hidden, true);
+    assert.equal(el(dom, 'drafts-delete-all').hidden, false);
+});
+
+test('copy Markdown preserves exact source or converts the stored bracket report', async () => {
+    const now = Date.now();
+    const richKey = 'bpbReportDraft:900001:a123';
+    const markdownKey = 'bpbReportDraft:900001:a124';
+    const dom = await loadOptions({}, { local: {
+        [richKey]: { text: '[u]under[/u]', mode: 'rich', savedAt: now },
+        [markdownKey]: {
+            text: '[b]normalized[/b]', mode: 'markdown', source: 'exact  **source**', savedAt: now - 1
+        }
+    } });
+    const writes = [];
+    Object.defineProperty(dom.window.navigator, 'clipboard', {
+        configurable: true,
+        value: { writeText: async value => { writes.push(value); } }
+    });
+
+    draftRow(dom, markdownKey).querySelector('[data-action="copy"]').click();
+    await waitFor(dom, () => writes.length === 1);
+    draftRow(dom, richKey).querySelector('[data-action="copy"]').click();
+    await waitFor(dom, () => writes.length === 2);
+    assert.deepEqual(writes, ['exact  **source**', '<u>under</u>']);
+    await waitFor(dom, () => el(dom, 'status').textContent === 'Copied');
+    assert.equal(el(dom, 'status').textContent, 'Copied');
+
+    Object.defineProperty(dom.window.navigator, 'clipboard', {
+        configurable: true,
+        value: { writeText: async () => { throw new Error('denied'); } }
+    });
+    draftRow(dom, richKey).querySelector('[data-action="copy"]').click();
+    await waitFor(dom, () => el(dom, 'status').textContent === 'Couldn’t copy Markdown');
+});
+
+test('deleting one draft is reversible and its Undo survives a live refresh', async () => {
+    const key = 'bpbReportDraft:900001:a123';
+    const otherKey = 'bpbReportDraft:900001:p456';
+    const record = { text: 'Held verbatim', mode: 'rich', savedAt: Date.now() };
+    const dom = await loadOptions({}, { local: { [key]: record } });
+    await waitFor(dom, () => draftRow(dom, key));
+
+    draftRow(dom, key).querySelector('[data-action="delete"]').click();
+    await waitFor(dom, () => !(key in dom.chrome._localStore));
+    assert.match(draftRow(dom, key).textContent, /Draft deleted\s*Undo/);
+
+    await dom.chrome.storage.local.set({
+        [otherKey]: { text: 'Arrived from another tab', mode: 'rich', savedAt: Date.now() + 1 }
+    });
+    await waitFor(dom, () => draftRow(dom, otherKey));
+    assert.match(draftRow(dom, key).textContent, /Draft deleted\s*Undo/,
+        'storage.onChanged must not strip an active Undo row');
+
+    draftRow(dom, key).querySelector('[data-action="undo"]').click();
+    await waitFor(dom, () => key in dom.chrome._localStore && draftRow(dom, key)?.querySelector('.draft-title'));
+    assert.deepEqual(JSON.parse(JSON.stringify(dom.chrome._localStore[key])), record);
+});
+
+test('delete all drafts has one undo that restores every record', async () => {
+    const firstKey = 'bpbReportDraft:900001:a123';
+    const secondKey = 'bpbReportDraft:900001:p456';
+    const records = {
+        [firstKey]: { text: 'First', mode: 'rich', savedAt: Date.now() },
+        [secondKey]: { text: 'Second', mode: 'markdown', source: 'Second', savedAt: Date.now() - 1 }
+    };
+    const dom = await loadOptions({}, { local: records });
+    await waitFor(dom, () => dom.window.document.querySelectorAll('.draft-item').length === 2);
+
+    el(dom, 'drafts-delete-all').click();
+    await waitFor(dom, () => !(firstKey in dom.chrome._localStore) && !(secondKey in dom.chrome._localStore));
+    assert.equal(el(dom, 'drafts-undo-all').hidden, false);
+    assert.match(el(dom, 'drafts-undo-all').textContent, /All drafts deleted\s*Undo/);
+
+    el(dom, 'drafts-undo-all-button').click();
+    await waitFor(dom, () => firstKey in dom.chrome._localStore && secondKey in dom.chrome._localStore);
+    assert.deepEqual(JSON.parse(JSON.stringify(dom.chrome._localStore)), records);
+});
+
+test('the drafts manager shows an empty state and refreshes when another tab autosaves', async () => {
+    const dom = await loadOptions({}, { local: { unrelated: 'preserved' } });
+    assert.equal(el(dom, 'drafts-empty').hidden, false);
+    assert.equal(el(dom, 'drafts-list').hidden, true);
+    assert.equal(el(dom, 'drafts-delete-all').hidden, true);
+
+    const key = 'bpbReportDraft:900001:new';
+    await dom.chrome.storage.local.set({
+        [key]: { text: 'Live draft', mode: 'rich', savedAt: Date.now() }
+    });
+    await waitFor(dom, () => draftRow(dom, key));
+    assert.equal(el(dom, 'drafts-empty').hidden, true);
+    assert.equal(draftRow(dom, key).querySelector('.draft-title').textContent, 'New ascent');
+    assert.equal(dom.chrome._localStore.unrelated, 'preserved');
+});
+
 test('the sidebar links every settings section, in order', async () => {
     const dom = await loadOptions({});
     const doc = dom.window.document;
@@ -372,7 +507,7 @@ test('the sidebar links every settings section, in order', async () => {
     const linkTargets = links.map(link => link.getAttribute('href').slice(1));
     const sectionIds = Array.from(doc.querySelectorAll('.content .settings-section'), section => section.id);
     assert.deepEqual(linkTargets, sectionIds);
-    assert.deepEqual(linkTargets, ['general', 'capture', 'map-chart', 'beta', 'github', 'about']);
+    assert.deepEqual(linkTargets, ['general', 'capture', 'map-chart', 'beta', 'github', 'drafts', 'about']);
 });
 
 test('the sidebar exposes always-visible sub-links for the grouped sections', async () => {
@@ -405,6 +540,15 @@ test('a deep-link hash is the active section on load', async () => {
     const active = activeLinks(dom);
     assert.equal(active.length, 1);
     assert.equal(active[0].getAttribute('href'), '#map-chart');
+});
+
+test('a drafts deep link activates the report-drafts manager', async () => {
+    const dom = await loadOptions({}, { hash: '#drafts' });
+    dom.window.document.querySelector('.content').dispatchEvent(new dom.window.Event('scrollend'));
+    const active = activeLinks(dom);
+    assert.equal(active.length, 1);
+    assert.equal(active[0].getAttribute('href'), '#drafts');
+    assert.equal(active[0].textContent, 'Report drafts');
 });
 
 test('hash navigation moves the active sidebar link', async () => {

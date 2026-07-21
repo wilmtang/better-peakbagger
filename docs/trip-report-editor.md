@@ -404,13 +404,16 @@ requesting browser's IP address or ordinary request metadata.
 
 ## Local drafts and cache limits
 
-Drafts autosave to extension-local storage every time you pause typing, and also save synchronously on page exit. They never leave your device. 
+Drafts autosave to extension-local storage every time you pause typing, and also save synchronously on page exit. They never leave your device. A record contains the submitted bracket `text`, editor `mode`, `savedAt` time, the exact Markdown `source` when available, and a bounded optional `label` with the peak name and raw ascent-date display text. The label is only for the local manager; older unlabeled records remain valid.
+
 To prevent storage unbounded growth and accidental overwrites, drafts have specific lifecycle rules:
+
 - **Identity:** Drafts are uniquely keyed by the climber ID and the ascent ID (or peak ID, for a new ascent).
 - **TTL:** Drafts expire after **14 days**.
 - **Limit:** The extension keeps a maximum of **30 drafts** globally. Excess drafts are pruned (oldest first).
 - **Restoration:** When you return to an ascent page, the extension compares its saved draft against the text the server just rendered. If they differ, it presents a banner offering to restore the draft. The extension **never silently applies** a draft; you must explicitly click "Restore draft". 
-- **Clearance:** A draft is permanently cleared when you click either Peakbagger Save button, click "Delete draft", or if you delete all text and it autosaves an empty state.
+- **Management:** Settings → **Report drafts** lists every valid draft on the device. Opening one returns to the matching Peakbagger form, where the same explicit Restore banner remains the only way to apply it. The manager can copy the exact Markdown sidecar (or convert bracket markup when no sidecar exists) and delete one or all drafts with a six-second Undo window.
+- **Clearance:** A draft is permanently cleared when you click either Peakbagger Save button, delete it and let the Undo window close, or delete all text and let the empty state autosave.
 
 ## Preview fidelity
 

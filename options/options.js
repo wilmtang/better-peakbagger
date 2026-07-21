@@ -272,24 +272,30 @@ import { initGithubBackup } from './github.js';
 
         // Nav lock: a click or hashchange pins the target active and suppresses
         // the scroll-spy so the highlight can't sweep through intermediate
-        // sections during the smooth scroll. Released on scrollend, with a
-        // timeout fallback for browsers that don't fire it.
+        // sections during the smooth scroll. Release on scrollend, or after a
+        // short period with no scroll events for browsers that omit scrollend.
+        // Do not recompute on release: a near-bottom target can be fully visible
+        // without reaching the marker, but the explicit deep link still wins.
         let navLocked = false;
         let navLockTimer = null;
+        const armIdleRelease = () => {
+            clearTimeout(navLockTimer);
+            navLockTimer = setTimeout(() => { navLocked = false; }, 250);
+        };
         const lockTo = link => {
             setActive(link);
             navLocked = true;
-            clearTimeout(navLockTimer);
-            navLockTimer = setTimeout(() => { navLocked = false; }, 1250);
+            armIdleRelease();
+            link.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
         };
 
         content.addEventListener('scroll', () => {
-            if (!navLocked) setActive(activeFromScroll());
+            if (navLocked) armIdleRelease();
+            else setActive(activeFromScroll());
         }, { passive: true });
         content.addEventListener('scrollend', () => {
             clearTimeout(navLockTimer);
             navLocked = false;
-            setActive(activeFromScroll());
         });
         for (const { link } of entries) {
             link.addEventListener('click', () => lockTo(link));
