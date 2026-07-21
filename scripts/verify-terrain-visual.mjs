@@ -519,10 +519,18 @@ try {
     const mockedTerrainResponses = [];
     const terrainMockFailures = [];
     const basemapRequests = [];
+    const pendingBasemapRequestIds = [];
+    let holdBasemapRequests = false;
     const peakFeedRequests = [];
     const runtimeErrors = [];
     cdp.on('Fetch.requestPaused', ({ requestId, request }) => {
+        const isBasemapRequest = /\/scripts\/showcase\/terrain-tiles\//.test(request.url);
         const fulfill = async () => {
+            if (isBasemapRequest) {
+                if (holdBasemapRequests) pendingBasemapRequestIds.push(requestId);
+                else await cdp.call('Fetch.continueRequest', { requestId });
+                return;
+            }
             if (request.method !== 'GET' || !isBoundedMapterhornTile(request.url)) {
                 throw new Error(`Refusing unexpected Mapterhorn request: ${request.method} ${request.url}`);
             }
@@ -543,6 +551,10 @@ try {
             mockedTerrainResponses.push(request.url);
         };
         void fulfill().catch(async error => {
+            // Disabling the temporary basemap interceptor, or navigating away,
+            // may invalidate a late local request between pause and continue.
+            // That says nothing about the DEM mock or product behavior.
+            if (isBasemapRequest && /Invalid InterceptionId/.test(error.message)) return;
             terrainMockFailures.push(error.stack || error.message);
             try {
                 await cdp.call('Fetch.failRequest', { requestId, errorReason: 'BlockedByClient' });
@@ -571,7 +583,8 @@ try {
         // closed instead of silently restoring live network traffic in this test.
         patterns: [
             { urlPattern: '*://mapterhorn.com/*', requestStage: 'Request' },
-            { urlPattern: '*://*.mapterhorn.com/*', requestStage: 'Request' }
+            { urlPattern: '*://*.mapterhorn.com/*', requestStage: 'Request' },
+            { urlPattern: '*scripts/showcase/terrain-tiles/*', requestStage: 'Request' }
         ]
     });
 
@@ -595,6 +608,43 @@ try {
     if (ascent2dMetrics.gap < 0) throw new Error(`Ascent 2D toggle overlaps the native zoom (gap ${ascent2dMetrics.gap}px)`);
     if (ascent2dMetrics.gap > 40) throw new Error(`Ascent 2D toggle floats too far above the native zoom (gap ${ascent2dMetrics.gap}px)`);
     await capture(cdp, path.join(outputDir, 'map-default-450.png'));
+
+    // Regression: a configured raster drape whose requests remain permanently
+    // pending must not hold MapLibre's initial load event and page handshake.
+    // Pause every fixture drape request at the protocol boundary, require the
+    // terrain surface to become active anyway, then release the requests before
+    // navigating so the test leaves no intercepted work behind.
+    holdBasemapRequests = true;
+    const pendingBasemapBefore = basemapRequests.length;
+    await navigate(cdp, `${baseUrl}?mode=terrain&map=wide`, 1280, 950);
+    await waitForCondition(() => pendingBasemapRequestIds.length > 0,
+        () => 'The pending-drape regression did not intercept a raster request');
+    await waitForPageState(cdp, `(() => {
+        const toggle = document.getElementById('bpb-terrain-toggle');
+        const frame = document.getElementById('bpb-terrain-frame');
+        const surface = frame && frame.contentDocument && frame.contentDocument.getElementById('bpb-terrain-map');
+        return {
+            ready: toggle && toggle.textContent === '2D' && frame && frame.style.opacity === '1' && surface,
+            toggle: toggle && toggle.textContent,
+            frameOpacity: frame && frame.style.opacity
+        };
+    })()`, 8000);
+    if (basemapRequests.length <= pendingBasemapBefore) {
+        throw new Error('The pending-drape regression observed no new raster request');
+    }
+    holdBasemapRequests = false;
+    await Promise.all(pendingBasemapRequestIds.splice(0).map(requestId =>
+        cdp.call('Fetch.continueRequest', { requestId })));
+    // The pending-drape probe is the only reason to intercept local rasters.
+    // Remove that pattern so later navigations cannot race a needless continue.
+    await cdp.call('Fetch.disable');
+    await cdp.call('Fetch.enable', {
+        patterns: [
+            { urlPattern: '*://mapterhorn.com/*', requestStage: 'Request' },
+            { urlPattern: '*://*.mapterhorn.com/*', requestStage: 'Request' }
+        ]
+    });
+    console.log('Pending-drape boot probe: terrain became active while raster requests were held.');
 
     await navigate(cdp, `${baseUrl}?mode=terrain&map=wide`, 1280, 950);
     const ready = await waitForPageState(cdp, `(() => {

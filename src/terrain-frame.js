@@ -121,6 +121,11 @@ import { terrainCamera } from './terrain-camera.js';
     // their choice; otherwise it re-resolves the drape from the page so a 2D
     // layer change is reflected.
     let userPickedBasemap = false;
+    // The picker is rendered before MapLibre finishes its terrain-only boot. A
+    // very fast user may choose a drape in that window; retain the choice and
+    // apply it as soon as the base style is ready instead of marking a swap that
+    // never happened.
+    let pendingBasemapSelection = null;
     let noticeElement = null;
     let terrainCache = null;
     let terrainProtocolRegistered = false;
@@ -261,6 +266,7 @@ import { terrainCamera } from './terrain-camera.js';
         basemapChecked = false;
         pickerElement = null;
         userPickedBasemap = false;
+        pendingBasemapSelection = null;
         noticeElement = null;
         loaded = false;
     };
@@ -468,7 +474,7 @@ import { terrainCamera } from './terrain-camera.js';
         5000, palette.relief[6]
     ];
 
-    const terrainStyle = (theme, basemap) => {
+    const terrainStyle = theme => {
         const palette = PALETTES[theme];
         const sources = {
             terrain: {
@@ -488,22 +494,6 @@ import { terrainCamera } from './terrain-camera.js';
                 paint: { 'color-relief-color': reliefExpression(palette), 'color-relief-opacity': 1 }
             }
         ];
-
-        if (basemap) {
-            sources.basemap = {
-                type: 'raster',
-                tiles: basemap.tiles,
-                tileSize: basemap.tileSize,
-                minzoom: basemap.minzoom,
-                maxzoom: basemap.maxzoom,
-                scheme: basemap.scheme,
-                attribution: basemap.attribution
-            };
-            layers.push({
-                id: 'basemap', type: 'raster', source: 'basemap',
-                paint: { 'raster-opacity': 0.78, 'raster-fade-duration': 0, 'raster-resampling': 'linear' }
-            });
-        }
 
         layers.push({
             id: 'terrain-hillshade', type: 'hillshade', source: 'terrain',
@@ -670,7 +660,7 @@ import { terrainCamera } from './terrain-camera.js';
     // selects the extension-provided vector basemap. Each swap re-arms the
     // one-shot CORS check so the new layer is judged on its own.
     const swapBasemap = selection => {
-        if (!map || !loaded) return;
+        if (!map || !loaded) return false;
         removeBasemapLayer();
         removeVectorBasemap();
         vectorSwapToken++;
@@ -694,13 +684,14 @@ import { terrainCamera } from './terrain-camera.js';
                     renderPicker();
                     showNotice(`${VECTOR_BASEMAP.name} is unavailable right now. Showing terrain only.`);
                 });
-            return;
+            return true;
         }
         const index = selection;
         activeBasemapIndex = index >= 0 && index < availableBasemaps.length && !failedBasemaps.has(index) ? index : -1;
         activeBasemap = activeBasemapIndex >= 0 ? availableBasemaps[activeBasemapIndex] : null;
         if (activeBasemap) addBasemapLayer(activeBasemap);
         renderPicker();
+        return true;
     };
 
     // A whole layer blocked by CORS renders no tile. Disable it in the picker,
@@ -1242,6 +1233,7 @@ import { terrainCamera } from './terrain-camera.js';
 
         resolveBasemaps(data);
         userPickedBasemap = false;
+        pendingBasemapSelection = null;
 
         mapElement = document.createElement('div');
         mapElement.id = 'bpb-terrain-map';
@@ -1262,10 +1254,14 @@ import { terrainCamera } from './terrain-camera.js';
         pickerElement.setAttribute('aria-label', 'Draped map layer');
         pickerElement.addEventListener('change', () => {
             showNotice('');
-            userPickedBasemap = true;
-            swapBasemap(pickerElement.value === 'terrain'
+            const selection = pickerElement.value === 'terrain'
                 ? -1
-                : pickerElement.value === 'vector' ? 'vector' : Number(pickerElement.value));
+                : pickerElement.value === 'vector' ? 'vector' : Number(pickerElement.value);
+            if (!loaded) {
+                pendingBasemapSelection = selection;
+                return;
+            }
+            if (swapBasemap(selection)) userPickedBasemap = true;
         });
         controls.appendChild(pickerElement);
         const notice = document.createElement('p');
@@ -1307,7 +1303,11 @@ import { terrainCamera } from './terrain-camera.js';
                 : { center: focus.center, zoom: focus.zoom });
             map = new maplibre.Map({
                 container: canvas,
-                style: terrainStyle(activeTheme, activeBasemap),
+                // A raster drape must never gate MapLibre's initial `load`:
+                // throttled or pending provider tiles can otherwise hold the
+                // entire 3D surface behind the page timeout. Add it only after
+                // the terrain style is ready, like every live picker swap.
+                style: terrainStyle(activeTheme),
                 ...initialCamera,
                 pitch: 60,
                 bearing: 0,
@@ -1352,9 +1352,6 @@ import { terrainCamera } from './terrain-camera.js';
             terrainMap.once('load', () => {
                 if (map !== terrainMap || !mapElement) return;
                 removeLoadTimer();
-                // The constructor style already carries the drape source, so it
-                // needs the same LOD treatment addBasemapLayer() gives later picks.
-                applyBasemapLod(activeBasemap);
                 terrainMap.addSource('bpb-route', {
                     type: 'geojson',
                     data: route ? route.geojson : { type: 'FeatureCollection', features: [] }
@@ -1408,6 +1405,18 @@ import { terrainCamera } from './terrain-camera.js';
                     if (map === terrainMap) scheduleView();
                 });
                 loaded = true;
+                try {
+                    if (pendingBasemapSelection !== null) {
+                        if (swapBasemap(pendingBasemapSelection)) userPickedBasemap = true;
+                    } else if (activeBasemap) {
+                        addBasemapLayer(activeBasemap);
+                    }
+                } catch (error) {
+                    fail('maplibre');
+                    return;
+                } finally {
+                    pendingBasemapSelection = null;
+                }
                 setTheme(activeTheme);
                 status.remove();
                 mapElement.style.pointerEvents = 'auto';

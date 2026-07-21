@@ -586,12 +586,14 @@ test('3D terrain frame validates coordinate-only routes before loading public DE
     assert.equal(map.options.style.sources.terrain.encoding, 'terrarium');
     assert.ok(protocolHandlers.has('bpb-dem'));
     assert.equal(map.options.style.terrain.exaggeration, 1, 'terrain must not distort mountaineering geometry');
-    assert.deepEqual(Object.keys(map.options.style.sources), ['terrain', 'basemap']);
-    assert.deepEqual(JSON.parse(JSON.stringify(map.options.style.sources.basemap.tiles)), ['https://a.tile.example.com/{z}/{x}/{y}.png']);
-    assert.equal(map.options.style.sources.basemap.tileSize, 256);
-    assert.match(map.options.style.sources.basemap.attribution, /https:\/\/example\.com\/copyright/);
-    assert.doesNotMatch(map.options.style.sources.basemap.attribution, /script|alert/i);
-    assert.equal(map.options.style.layers.find(layer => layer.id === 'basemap').paint['raster-opacity'], 0.78);
+    assert.deepEqual(Object.keys(map.options.style.sources), ['terrain'],
+        'the constructor style stays terrain-only so a pending drape cannot gate MapLibre load');
+    assert.equal(map.options.style.layers.some(layer => layer.id === 'basemap'), false);
+    assert.deepEqual(JSON.parse(JSON.stringify(map.getSource('basemap').tiles)), ['https://a.tile.example.com/{z}/{x}/{y}.png']);
+    assert.equal(map.getSource('basemap').tileSize, 256);
+    assert.match(map.getSource('basemap').attribution, /https:\/\/example\.com\/copyright/);
+    assert.doesNotMatch(map.getSource('basemap').attribution, /script|alert/i);
+    assert.equal(map.layers.find(layer => layer.id === 'basemap').paint['raster-opacity'], 0.78);
     assert.equal(map.options.style.layers.find(layer => layer.id === 'terrain-hillshade').paint['hillshade-illumination-anchor'], 'map',
         'hillshade is anchored to the map, so rotating/tilting the camera does not swing the light and flip the shading');
     const picker = () => window.document.querySelector('.bpb-terrain-picker');
@@ -638,6 +640,8 @@ test('3D terrain frame validates coordinate-only routes before loading public DE
     assert.equal(map.fitted, undefined, 'no redundant post-load fitBounds');
     assert.equal(window.document.getElementById('bpb-terrain-map').style.pointerEvents, 'auto');
     assert.equal(messages.at(-1).type, 'loaded');
+    assert.equal(map.handlers.has('data'), true,
+        'the frame reports loaded without waiting for a drape tile data event');
 
     // macOS Firefox rewrites Ctrl + primary-button mousedown to button=2 but
     // leaves buttons=1. MapLibre cannot continue that internally inconsistent
@@ -850,7 +854,7 @@ test('the 3D drape picker offers every layer and swaps the draped raster live', 
             maps.push(this);
         }
         addControl() {}
-        once(type, callback) { if (type === 'load') window.queueMicrotask(callback); }
+        once(type, callback) { if (type === 'load') this.loadCallback = callback; }
         on(type, callback) { this.handlers.set(type, callback); }
         addSource(id, source) { this.sources.set(id, { ...source, setData() {} }); }
         addLayer(layer) { this.layers.push(layer); }
@@ -891,8 +895,6 @@ test('the 3D drape picker offers every layer and swaps the draped raster live', 
             basemaps: [layer('CalTopo', 'ct.example.com'), layer('MyTopo', 'mt.example.com'), layer('OpenTopo', 'ot.example.com')]
         }
     }));
-    await new Promise(resolve => window.queueMicrotask(resolve));
-
     const picker = () => window.document.querySelector('.bpb-terrain-picker');
     const map = maps[0];
     assert.deepEqual(Array.from(picker().options, option => option.textContent),
@@ -906,9 +908,16 @@ test('the 3D drape picker offers every layer and swaps the draped raster live', 
         picker().dispatchEvent(new window.Event('change'));
     };
 
+    assert.deepEqual(Object.keys(map.options.style.sources), ['terrain'],
+        'even a configured drape is absent from the constructor style');
     swap('0');
+    assert.equal(map.getSource('basemap'), undefined,
+        'a picker change made during boot is queued instead of mutating an unloaded style');
+    map.loadCallback();
+    await new Promise(resolve => window.queueMicrotask(resolve));
     assert.deepEqual(JSON.parse(JSON.stringify(map.getSource('basemap').tiles)),
-        ['https://ct.example.com/{z}/{x}/{y}.png'], 'selecting a layer re-drapes it live');
+        ['https://ct.example.com/{z}/{x}/{y}.png'], 'the queued pre-load selection applies as soon as terrain is ready');
+    assert.equal(picker().options[picker().selectedIndex].textContent, 'CalTopo');
 
     swap('terrain');
     assert.equal(map.getSource('basemap'), undefined, 'terrain-only removes the drape');
