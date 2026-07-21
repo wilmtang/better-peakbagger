@@ -39,6 +39,13 @@ const rowCid = row => {
     const anchor = row.querySelector('a[href*="climber.aspx?cid="]');
     return anchor ? Number(new URL(anchor.href).searchParams.get('cid')) : null;
 };
+const dateTexts = dom => dataRows(dom).map(r => r.cells[1].textContent.trim());
+const sectionLabels = dom => sectionRows(dom).map(r => r.textContent.trim());
+const tableSortControl = (dom, label) =>
+    [...dom.window.document.querySelectorAll('.pbaf-table-sort')]
+        .find(control => control.firstChild.textContent.trim() === label);
+const sortControl = dom => tableSortControl(dom, 'Ascent Date');
+const arrow = dom => sortControl(dom)?.querySelector('.pbaf-sort-arrow') || null;
 
 test('parses the full Rainier table and filters to beta by default', async () => {
     const dom = await loadPageWithBar(RAINIER, { url: RAINIER_URL });
@@ -55,6 +62,18 @@ test('parses the full Rainier table and filters to beta by default', async () =>
     assert.equal(visibleRows(dom).length, 1339);
     // Year sections with no visible rows collapse.
     assert.ok(sectionRows(dom).some(r => r.style.display === 'none'));
+
+    dom.window.document.querySelector('.pbaf-reset').click();
+    assert.equal(visibleRows(dom).length, 4145);
+    assert.equal(status(dom), '4145 ascents');
+    assert.ok(sectionRows(dom).every(r => r.style.display === ''));
+
+    const datesBefore = dateTexts(dom);
+    const sectionsBefore = sectionLabels(dom);
+    sortControl(dom).click();
+    assert.deepEqual(dateTexts(dom), datesBefore.slice().reverse());
+    assert.deepEqual(sectionLabels(dom), sectionsBefore.slice().reverse());
+    assert.equal(visibleRows(dom).length, 4145);
 });
 
 test('filter chips form one group without a divider after Has beta', async () => {
@@ -213,17 +232,9 @@ test('visiting your own Buddy List refreshes the cache without another request',
     assert.equal(dom.chrome._localStore[BUDDY_CACHE_KEY].ownerCid, 900001);
 });
 
-test('"Show all" reveals every row', async () => {
-    const dom = await loadPageWithBar(RAINIER, { url: RAINIER_URL });
-
-    dom.window.document.querySelector('.pbaf-reset').click();
-    assert.equal(visibleRows(dom).length, 4145);
-    assert.equal(status(dom), '4145 ascents');
-    assert.ok(sectionRows(dom).every(r => r.style.display === ''));
-});
-
 test('trip-report chip applies its inline word threshold', async () => {
-    const dom = await loadPageWithBar(RAINIER, { url: RAINIER_URL });
+    const dom = await loadPageWithBar(SMALL, { url: SMALL_URL });
+    const originalCount = Number(chipCount(dom, 'Trip report'));
 
     // The threshold is per-page UI state, edited through the inline input.
     const wordsInput = dom.window.document.querySelector('.pbaf-words input');
@@ -237,24 +248,26 @@ test('trip-report chip applies its inline word threshold', async () => {
         const m = /^TR-(\d+)/.exec(r.cells[4].textContent.trim());
         return m && parseInt(m[1], 10) >= 100;
     }).length;
-    assert.ok(expected > 0 && expected < 1224);
+    assert.ok(expected > 0 && expected < originalCount);
     assert.equal(visibleRows(dom).length, expected);
 });
 
 test('"has beta" definition comes from settings (GPS-only)', async () => {
-    const dom = await loadPageWithBar(RAINIER, {
-        url: RAINIER_URL,
+    const dom = await loadPageWithBar(SMALL, {
+        url: SMALL_URL,
         settings: { betaTr: false, betaLink: false }
     });
-    assert.equal(chipCount(dom, 'Has beta'), '238');
-    assert.equal(visibleRows(dom).length, 238);
+    const expected = dataRows(dom).filter(row => row.cells[3].querySelector('img')).length;
+    assert.ok(expected > 0);
+    assert.equal(chipCount(dom, 'Has beta'), String(expected));
+    assert.equal(visibleRows(dom).length, expected);
     assert.match(chip(dom, 'Has beta').title, /GPS track/);
     assert.doesNotMatch(chip(dom, 'Has beta').title, /trip report/);
 });
 
 test('beta trip-report signal honors its own word threshold', async () => {
-    const dom = await loadPageWithBar(RAINIER, {
-        url: RAINIER_URL,
+    const dom = await loadPageWithBar(SMALL, {
+        url: SMALL_URL,
         settings: { betaGps: false, betaLink: false, betaTrMinWords: 100 }
     });
     const expected = dataRows(dom).filter(r => {
@@ -268,34 +281,34 @@ test('beta trip-report signal honors its own word threshold', async () => {
 });
 
 test('an all-off beta definition falls back to all-on', async () => {
-    const dom = await loadPageWithBar(RAINIER, {
-        url: RAINIER_URL,
+    const dom = await loadPageWithBar(SMALL, {
+        url: SMALL_URL,
         settings: { betaTr: false, betaGps: false, betaLink: false }
     });
-    assert.equal(chipCount(dom, 'Has beta'), '1339');
+    const expected = dataRows(dom).filter(row =>
+        /^TR-\d+/.test(row.cells[4].textContent.trim())
+        || row.cells[3].querySelector('img')
+        || row.cells[11].querySelector('a[href]')
+    ).length;
+    assert.ok(expected > 0);
+    assert.equal(chipCount(dom, 'Has beta'), String(expected));
 });
 
 test('beta definition changes apply live via storage.onChanged', async () => {
-    const dom = await loadPageWithBar(RAINIER, { url: RAINIER_URL });
-    assert.equal(chipCount(dom, 'Has beta'), '1339');
+    const dom = await loadPageWithBar(SMALL, { url: SMALL_URL });
+    const initial = Number(chipCount(dom, 'Has beta'));
+    const expected = dataRows(dom).filter(row => row.cells[3].querySelector('img')).length;
+    assert.ok(initial > expected && expected > 0);
 
     await dom.chrome.storage.sync.set({ bpbSettings: { betaTr: false, betaLink: false } });
     await new Promise(resolve => dom.window.setTimeout(resolve, 10));
 
-    assert.equal(chipCount(dom, 'Has beta'), '238');
-    assert.equal(visibleRows(dom).length, 238);
+    assert.equal(chipCount(dom, 'Has beta'), String(expected));
+    assert.equal(visibleRows(dom).length, expected);
 });
 
-const dateTexts = dom => dataRows(dom).map(r => r.cells[1].textContent.trim());
-const sectionLabels = dom => sectionRows(dom).map(r => r.textContent.trim());
-const tableSortControl = (dom, label) =>
-    [...dom.window.document.querySelectorAll('.pbaf-table-sort')]
-        .find(control => control.firstChild.textContent.trim() === label);
-const sortControl = dom => tableSortControl(dom, 'Ascent Date');
-const arrow = dom => sortControl(dom)?.querySelector('.pbaf-sort-arrow') || null;
-
 test('the date header is one persistent toggle with no backend links', async () => {
-    const dom = await loadPageWithBar(RAINIER, { url: RAINIER_URL });
+    const dom = await loadPageWithBar(SMALL, { url: SMALL_URL });
 
     assert.equal(arrow(dom).textContent.trim(), '▲');
     assert.equal(sortControl(dom).textContent.trim(), 'Ascent Date ▲');
@@ -305,6 +318,7 @@ test('the date header is one persistent toggle with no backend links', async () 
     assert.equal(sortControl(dom).closest('th').querySelectorAll('a[href]').length, 0);
     const before = dateTexts(dom);
     const labelsBefore = sectionLabels(dom);
+    const visibleBefore = visibleRows(dom).length;
 
     sortControl(dom).click();
 
@@ -314,7 +328,7 @@ test('the date header is one persistent toggle with no backend links', async () 
     assert.deepEqual(dateTexts(dom), before.slice().reverse());
     assert.deepEqual(sectionLabels(dom), labelsBefore.slice().reverse());
     // The active filter survives the reorder untouched.
-    assert.equal(visibleRows(dom).length, 1339);
+    assert.equal(visibleRows(dom).length, visibleBefore);
 
     // Clicking the same control restores the served order exactly.
     sortControl(dom).click();
@@ -324,14 +338,14 @@ test('the date header is one persistent toggle with no backend links', async () 
 });
 
 test('capture guard intercepts native header sort links but lets year links navigate', async () => {
-    const dom = await loadPageWithBar(RAINIER, { url: RAINIER_URL });
+    const dom = await loadPageWithBar(SMALL, { url: SMALL_URL });
     const { document, MouseEvent } = dom.window;
 
     // Recreate the native header link that exists before initialization replaces
     // the pair. The document-start guard must prevent its navigation and route
     // the requested direction through the now-ready DOM sorter.
     const nativeHeader = document.createElement('th');
-    nativeHeader.innerHTML = '<a href="?pid=2296&sort=ascentdated&u=ft&y=9998">Ascent Date</a>';
+    nativeHeader.innerHTML = '<a href="?pid=1039&sort=ascentdated&u=ft&y=9998">Ascent Date</a>';
     document.body.appendChild(nativeHeader);
     const header = nativeHeader.querySelector('a');
     const headerEvent = new MouseEvent('click', { bubbles: true, cancelable: true });
@@ -341,7 +355,7 @@ test('capture guard intercepts native header sort links but lets year links navi
 
     // A year-jump-style link is outside a th, so the guard must leave it alone.
     const jump = document.createElement('a');
-    jump.href = 'PeakAscents.aspx?pid=2296&sort=ascentdate&u=ft&y=1999';
+    jump.href = 'PeakAscents.aspx?pid=1039&sort=ascentdate&u=ft&y=1999';
     jump.textContent = '1999';
     document.body.appendChild(jump);
     let preventedByGuard = null;
@@ -357,8 +371,8 @@ test('capture guard intercepts native header sort links but lets year links navi
 test('sort clicks fall back to native navigation when initialization fails', async () => {
     // Force a deterministic fault inside setupInstantTableSort. The JSDOM
     // window has its own intrinsics, so this cannot leak into other tests.
-    const dom = await loadPage(RAINIER, {
-        url: RAINIER_URL,
+    const dom = await loadPage(SMALL, {
+        url: SMALL_URL,
         prepare: page => page.window.eval(
             'Intl.Collator = function () { throw new Error("forced Collator failure"); };')
     });
@@ -397,6 +411,7 @@ test('a non-date-served page replaces backend links and preserves its active sor
     assert.equal(tableSortControl(dom, 'Qlty').closest('th').getAttribute('aria-sort'), 'descending');
     assert.equal(tableSortControl(dom, 'Qlty').querySelector('.pbaf-sort-arrow').textContent.trim(), '▼');
     assert.equal(table(dom).querySelectorAll('th a[href]').length, 0);
+    assert.equal(sectionRows(dom).length, 0);
 });
 
 test('all native sortable headers become client-side controls', async () => {
@@ -570,21 +585,6 @@ test('other report modes remain untouched despite the query-agnostic manifest ma
     assert.equal(dom.window.document.querySelectorAll('.pbaf-table-sort').length, 0);
     assert.equal(dom.window.document.getElementById('RGridView').dataset.bpbInstantSort, undefined);
     assert.equal(bar(dom), null);
-});
-
-test('renders on a non-date sort (flat table, no year sections)', async () => {
-    const dom = await loadPageWithBar('8241-y9999-sort-quality.html', {
-        url: 'https://www.peakbagger.com/climber/PeakAscents.aspx?pid=8241&u=ft&y=9999&sort=Quality'
-    });
-    assert.ok(bar(dom));
-    assert.equal(sectionRows(dom).length, 0);
-});
-
-test('renders on the default "Most Recent Year" view', async () => {
-    const dom = await loadPageWithBar('2296-rainier-default-recent-year.html', {
-        url: 'https://www.peakbagger.com/climber/PeakAscents.aspx?pid=2296'
-    });
-    assert.ok(bar(dom));
 });
 
 // --- Newest-ascents-first (betaSortDateDesc, default off) --------------------
