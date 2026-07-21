@@ -213,9 +213,15 @@ test('Peak-page 3D shows a compass that tracks the view and resets north', async
     // Bearing normalizes across full turns; pitch is passed through in range.
     dispatchPage({ type: 'view', bearing: 720 + 45, pitch: 40 });
     assert.equal(disc.style.transform, 'rotateX(40deg) rotateZ(-45deg)');
+    dispatchPage({ type: 'view', bearing: 350, pitch: 40 });
+    const beforeNorth = Number(/rotateZ\((-?[\d.]+)deg\)/.exec(disc.style.transform)[1]);
+    dispatchPage({ type: 'view', bearing: 10, pitch: 40 });
+    const afterNorth = Number(/rotateZ\((-?[\d.]+)deg\)/.exec(disc.style.transform)[1]);
+    assert.ok(Math.abs(afterNorth - beforeNorth) < 180,
+        'crossing north advances the transformed needle along the short arc');
     // A non-finite value is ignored — the disc keeps its last transform.
     dispatchPage({ type: 'view', bearing: NaN, pitch: 10 });
-    assert.equal(disc.style.transform, 'rotateX(40deg) rotateZ(-45deg)');
+    assert.equal(disc.style.transform, `rotateX(40deg) rotateZ(${afterNorth}deg)`);
 
     compass.click();
     assert.equal(messages.at(-1).type, 'resetNorth');

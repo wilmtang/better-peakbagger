@@ -44,10 +44,27 @@ const create = ({ container, toggle, onReset }) => {
 
     const setVisible = visible => { button.hidden = !visible; };
 
+    // MapLibre reports bearing in the wrapped -180..180 range, while the page
+    // coordinators currently normalize it to 0..360. Neither representation is
+    // safe to feed directly to a transitioned CSS transform: crossing north
+    // jumps between values near 0 and 360, so CSS animates the long way around.
+    // Keep an unbounded bearing and advance it by only the shortest arc.
+    let unwrappedBearing = null;
+    const normalizeBearing = value => ((value % 360) + 360) % 360;
+
     // The transform encodes live camera state, so it is always applied; only the
     // CSS transition between states honors prefers-reduced-motion (in the sheet).
     const update = (bearing, pitch) => {
-        disc.style.transform = `rotateX(${pitch}deg) rotateZ(${-bearing}deg)`;
+        if (!Number.isFinite(bearing) || !Number.isFinite(pitch)) return;
+        const target = normalizeBearing(bearing);
+        if (unwrappedBearing === null) {
+            unwrappedBearing = target;
+        } else {
+            const current = normalizeBearing(unwrappedBearing);
+            const shortestDelta = ((target - current + 540) % 360) - 180;
+            unwrappedBearing += shortestDelta;
+        }
+        disc.style.transform = `rotateX(${pitch}deg) rotateZ(${-unwrappedBearing}deg)`;
     };
 
     // Sit one gap above the toggle, sharing its right inset (from CSS). Reads the
