@@ -47,7 +47,8 @@ test('edit URLs preserve the draft target and omit the unknown climber id', () =
         'https://peakbagger.com/climber/ascentedit.aspx');
 });
 
-test('fallback titles distinguish the three draft targets', () => {
+test('fallback titles distinguish the draft targets', () => {
+    assert.equal(Drafts.fallbackTitle(null), 'TR draft');
     assert.equal(Drafts.fallbackTitle(Drafts.parseKey('bpbReportDraft:77:a123')), 'Ascent #123');
     assert.equal(Drafts.fallbackTitle(Drafts.parseKey('bpbReportDraft:77:p456')), 'New ascent · peak #456');
     assert.equal(Drafts.fallbackTitle(Drafts.parseKey('bpbReportDraft:77:new')), 'New ascent');

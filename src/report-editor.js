@@ -292,7 +292,7 @@ import { createMarkdownEditor } from './report-md-editor.js';
     const status = el('span', 'bpb-re-status');
     status.setAttribute('role', 'status');
     status.setAttribute('aria-live', 'polite');
-    const manageDrafts = button('bpb-re-manage', 'Manage drafts', 'Manage report drafts');
+    const manageDrafts = button('bpb-re-manage', 'Manage TR drafts');
     manageDrafts.addEventListener('click', () => {
         try {
             const request = ext.runtime.sendMessage({ type: 'OPEN_DRAFTS_MANAGER' });

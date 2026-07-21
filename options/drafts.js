@@ -229,7 +229,7 @@ import { reportMarkup as Markup } from '../src/report-markup.js';
             if (revision !== refreshRevision) return;
             currentDrafts = [];
             render();
-            showStatus('Report drafts are unavailable');
+            showStatus('TR drafts are unavailable');
         }
     };
 

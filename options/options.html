@@ -35,13 +35,13 @@
                 </ul>
             </li>
             <li><a class="nav-item" href="#beta">Ascent beta filter</a></li>
+            <li><a class="nav-item" href="#drafts">TR drafts</a></li>
             <li>
                 <a class="nav-item" href="#github">Settings for nerds</a>
                 <ul class="nav-sublist">
                     <li><a class="nav-subitem" href="#github-backup">GitHub trip backup</a></li>
                 </ul>
             </li>
-            <li><a class="nav-item" href="#drafts">Report drafts</a></li>
             <li><a class="nav-item" href="#about">About</a></li>
         </ul>
     </nav>
@@ -342,6 +342,22 @@
             </div>
         </section>
 
+        <section id="drafts" class="settings-section" aria-labelledby="drafts-heading">
+            <h2 class="section-title" id="drafts-heading">TR drafts</h2>
+            <div class="card drafts-card">
+                <p class="drafts-intro">TR drafts autosave on this device while you write and expire after two weeks.</p>
+                <p class="drafts-empty" id="drafts-empty">No TR drafts on this device.</p>
+                <ul class="drafts-list" id="drafts-list" hidden></ul>
+                <div class="drafts-undo-all" id="drafts-undo-all" role="status" hidden>
+                    <span>All drafts deleted</span>
+                    <button class="draft-undo" id="drafts-undo-all-button" type="button">Undo</button>
+                </div>
+                <div class="drafts-footer">
+                    <button id="drafts-delete-all" class="secondary" type="button" hidden>Delete all drafts</button>
+                </div>
+            </div>
+        </section>
+
         <section id="github" class="settings-section" aria-labelledby="github-settings-heading">
             <h2 class="section-title" id="github-settings-heading">Settings for nerds</h2>
 
@@ -364,22 +380,6 @@
                     <div class="row github-detail" id="github-detail" hidden>
                         <div class="github-panel" id="github-panel" role="group" aria-label="GitHub connection"></div>
                     </div>
-                </div>
-            </div>
-        </section>
-
-        <section id="drafts" class="settings-section" aria-labelledby="drafts-heading">
-            <h2 class="section-title" id="drafts-heading">Report drafts</h2>
-            <div class="card drafts-card">
-                <p class="drafts-intro">Trip-report drafts autosave on this device while you write and expire after two weeks.</p>
-                <p class="drafts-empty" id="drafts-empty">No report drafts on this device.</p>
-                <ul class="drafts-list" id="drafts-list" hidden></ul>
-                <div class="drafts-undo-all" id="drafts-undo-all" role="status" hidden>
-                    <span>All drafts deleted</span>
-                    <button class="draft-undo" id="drafts-undo-all-button" type="button">Undo</button>
-                </div>
-                <div class="drafts-footer">
-                    <button id="drafts-delete-all" class="secondary" type="button" hidden>Delete all drafts</button>
                 </div>
             </div>
         </section>

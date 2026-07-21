@@ -2,11 +2,11 @@
 
 ## Unreleased
 
-- **Manage every trip-report draft in one place.** A new **Report drafts**
+- **Manage every trip-report draft in one place.** A new **TR drafts**
   section in Settings lists the reports autosaved on this device, newest first,
   with their ascent, save time, format, expiry, and a short preview. You can open
   the matching Peakbagger form, copy the report as Markdown, or delete one or all
-  drafts with a brief Undo window. A quiet **Manage drafts** link beside the
+  drafts with a brief Undo window. A quiet **Manage TR drafts** link beside the
   report editor opens the manager directly. Existing drafts without ascent
   labels remain available under an ID-based fallback name.
 

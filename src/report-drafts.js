@@ -51,7 +51,7 @@ const validRecord = value => !!value
     && Number.isFinite(value.savedAt);
 
 const fallbackTitle = parsed => {
-    if (!parsed) return 'Report draft';
+    if (!parsed) return 'TR draft';
     if (parsed.kind === 'ascent') return `Ascent #${parsed.id}`;
     if (parsed.kind === 'peak') return `New ascent · peak #${parsed.id}`;
     return 'New ascent';

@@ -97,12 +97,12 @@ test('settings are grouped by the surface they affect', async () => {
         'Activity creation',
         'Map & GPX chart',
         'Ascent beta filter',
+        'TR drafts',
         'Settings for nerds',
-        'Report drafts',
         'About'
     ]);
 
-    const [general, capture, mapChart, beta, github, drafts, about] = sections;
+    const [general, capture, mapChart, beta, drafts, github, about] = sections;
     assert.ok(github.querySelector('#enable-github-backup'));
     assert.ok(github.querySelector('#github-panel'));
     assert.match(github.querySelector('.desc').textContent, /every ascent from every year/);
@@ -507,7 +507,7 @@ test('the sidebar links every settings section, in order', async () => {
     const linkTargets = links.map(link => link.getAttribute('href').slice(1));
     const sectionIds = Array.from(doc.querySelectorAll('.content .settings-section'), section => section.id);
     assert.deepEqual(linkTargets, sectionIds);
-    assert.deepEqual(linkTargets, ['general', 'capture', 'map-chart', 'beta', 'github', 'drafts', 'about']);
+    assert.deepEqual(linkTargets, ['general', 'capture', 'map-chart', 'beta', 'drafts', 'github', 'about']);
 });
 
 test('the sidebar exposes always-visible sub-links for the grouped sections', async () => {
@@ -542,13 +542,13 @@ test('a deep-link hash is the active section on load', async () => {
     assert.equal(active[0].getAttribute('href'), '#map-chart');
 });
 
-test('a drafts deep link activates the report-drafts manager', async () => {
+test('a drafts deep link activates the TR-drafts manager', async () => {
     const dom = await loadOptions({}, { hash: '#drafts' });
     dom.window.document.querySelector('.content').dispatchEvent(new dom.window.Event('scrollend'));
     const active = activeLinks(dom);
     assert.equal(active.length, 1);
     assert.equal(active[0].getAttribute('href'), '#drafts');
-    assert.equal(active[0].textContent, 'Report drafts');
+    assert.equal(active[0].textContent, 'TR drafts');
 });
 
 test('hash navigation moves the active sidebar link', async () => {

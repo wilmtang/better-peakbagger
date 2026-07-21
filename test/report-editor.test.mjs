@@ -123,9 +123,9 @@ test('the editor always offers the device-wide report drafts manager', async () 
     const ui = await editorReady(dom);
     const manage = ui.querySelector('.bpb-re-manage');
 
-    assert.equal(manage?.textContent, 'Manage drafts');
+    assert.equal(manage?.textContent, 'Manage TR drafts');
     assert.equal(manage?.type, 'button');
-    assert.equal(manage?.getAttribute('aria-label'), 'Manage report drafts');
+    assert.equal(manage?.getAttribute('aria-label'), 'Manage TR drafts');
     manage.click();
     assert.deepEqual(JSON.parse(JSON.stringify(messages)), [{ type: 'OPEN_DRAFTS_MANAGER' }]);
 });
