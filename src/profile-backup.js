@@ -6,8 +6,7 @@
 // for repository preflight and serialized atomic batch commits.
 
 import { profileBackupCore as Core } from './profile-backup-core.js';
-import { ascentSnapshot as Snapshot } from './ascent-snapshot.js';
-import { reportMarkup as Markup } from './report-markup.js';
+import { ascentBackupSource as Source } from './ascent-backup-source.js';
 import { githubError as GithubError } from './github-error.js';
 
 (() => {
@@ -183,17 +182,9 @@ import { githubError as GithubError } from './github-error.js';
     };
 
     const responseText = async (url, kind) => {
-        let response;
-        try {
-            response = await fetch(url, { credentials: 'include', redirect: 'follow', cache: 'no-store' });
-        } catch (error) {
-            return { kind: 'transient', url, reason: error && error.message ? error.message : 'Network request failed.' };
-        }
-        let text = '';
-        try { text = await response.text(); } catch { return { kind: 'transient', url, reason: 'The response could not be read.' }; }
-        const classification = Core.classifyResponse(response.status, response.headers, text, { kind });
-        if (classification !== 'ok') return { kind: classification, url: response.url || url, reason: rejectionReason(response, kind) };
-        return { kind: 'ok', url: response.url || url, text };
+        const result = await Source.fetchPeakbaggerResource(url, { kind });
+        if (result.kind === 'ok') return result;
+        return { ...result, reason: result.reason || rejectionReason(result, kind) };
     };
 
     const completeList = async () => {
@@ -220,38 +211,30 @@ import { githubError as GithubError } from './github-error.js';
         const edit = await responseText(editUrl, 'edit');
         if (edit.kind !== 'ok') return edit;
         const doc = new DOMParser().parseFromString(edit.text, 'text/html');
-        const form = doc.getElementById('Form1') || doc.querySelector('form[name="Form1"]');
-        if (!form || !form.elements.JournalText || !form.elements.DateText || !form.elements.PeakListBox) {
-            return { kind: 'wrong-content', url: editUrl, reason: 'The ascent edit form was incomplete.' };
-        }
-        const params = new URLSearchParams({ aid: String(item.aid), cid: String(ownerId), pid: String(item.pid) });
-        const built = Snapshot.build({
-            form,
-            params,
-            report: { markdown: Markup.bracketToMarkdown(form.elements.JournalText.value || '') },
+        const parsed = Source.snapshotFromEditDocument({
+            doc,
+            editUrl,
+            baseUrl: location.href,
+            ascentId: item.aid,
+            peakId: item.pid,
+            climberId: ownerId,
+            fallbackDate: item.date,
+            fallbackPeakName: item.peakName,
             extensionVersion: ext.runtime.getManifest ? ext.runtime.getManifest().version : '',
         });
-        if (built.snapshot.ascent.id !== item.aid || built.snapshot.peak.id !== item.pid) {
-            return { kind: 'wrong-content', url: editUrl, reason: 'The ascent identity did not match the list.' };
-        }
-        // Peakbagger's edit form can leave the peak selector empty, and some
-        // responses omit DateText even though the owner list carries a complete
-        // date. Identity was just cross-checked, so the list is the safe
-        // human-readable fallback for those fields.
-        if (item.peakName) built.snapshot.peak.name = item.peakName;
-        if (!built.snapshot.ascent.date && item.date) built.snapshot.ascent.date = item.date;
+        if (!parsed.ok) return { kind: 'wrong-content', url: editUrl, reason: parsed.reason };
         let gpx = null;
         if (item.hasGpx) {
             // Mirror the site's own ascent-page link (GPXFile.aspx?…&sep=1) so the
             // backup stores byte-for-byte what a user clicking that link gets, and
             // what the GPX analyzer reads. The old GetAscentGPX.aspx endpoint was
             // renamed and now 302s to a 200 HTML error page.
-            const gpxUrl = new URL(`/climber/GPXFile.aspx?aid=${item.aid}&sep=1`, location.origin).toString();
+            const gpxUrl = Source.storedGpxUrl({ origin: location.origin, ascentId: item.aid });
             const track = await responseText(gpxUrl, 'gpx');
             if (track.kind !== 'ok') return track;
             gpx = track.text;
         }
-        return { kind: 'ok', data: { snapshot: built.snapshot, gpx } };
+        return { kind: 'ok', data: { snapshot: parsed.snapshot, gpx } };
     };
 
     const pushAscentBatch = async batch => {

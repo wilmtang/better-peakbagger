@@ -186,7 +186,16 @@ test('full-profile backup is isolated to ClimbListC with its own bundled surface
     assert.deepEqual(script.css, ['css/profile-backup.css']);
     assert.ok(script.matches.every(match => /climblistc\.aspx/i.test(match)));
     const entry = ENTRIES.find(candidate => candidate.out === 'content/profile-backup.js');
-    assert.deepEqual(entry.sources, ['profile-backup-core.js', 'ascent-snapshot.js', 'report-markup.js', 'profile-backup.js']);
+    assert.deepEqual(entry.sources, ['profile-backup-core.js', 'ascent-snapshot.js', 'report-markup.js', 'ascent-backup-source.js', 'profile-backup.js']);
+});
+
+test('individual and profile backups bundle the same Peakbagger source reader', () => {
+    const individual = contentEntry('content/ascent-backup.js');
+    assert.ok(individual);
+    assert.deepEqual(individual.css, ['css/ascent-backup.css']);
+    assert.deepEqual(bundleSources('content/ascent-backup.js'),
+        ['profile-backup-core.js', 'report-markup.js', 'ascent-snapshot.js', 'ascent-backup-source.js', 'ascent-page.js', 'ascent-backup.js']);
+    assert.ok(bundleSources('content/profile-backup.js').includes('ascent-backup-source.js'));
 });
 
 // The MV3 service worker resolves its dependencies through the bundle, not

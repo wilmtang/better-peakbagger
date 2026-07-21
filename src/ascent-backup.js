@@ -11,10 +11,8 @@
 // read-only toward Peakbagger and never touches a Save control.
 
 import { ascentPage as AscentPage } from './ascent-page.js';
-import { ascentSnapshot as Snapshot } from './ascent-snapshot.js';
-import { reportMarkup as Markup } from './report-markup.js';
+import { ascentBackupSource as Source } from './ascent-backup-source.js';
 import { githubError as GithubError } from './github-error.js';
-import { classifyResponse } from './profile-backup-core.js';
 
 (() => {
     'use strict';
@@ -73,19 +71,9 @@ import { classifyResponse } from './profile-backup-core.js';
     );
 
     const responseText = async (url, kind) => {
-        let response;
-        try {
-            response = await fetch(url, { credentials: 'include', redirect: 'follow', cache: 'no-store' });
-        } catch {
-            throw failure(kind === 'gpx' ? 'peakbagger-track' : 'peakbagger-read');
-        }
-        let text = '';
-        try { text = await response.text(); }
-        catch { throw failure(kind === 'gpx' ? 'peakbagger-track' : 'peakbagger-read'); }
-        if (classifyResponse(response.status, response.headers, text, { kind }) !== 'ok') {
-            throw failure(kind === 'gpx' ? 'peakbagger-track' : 'peakbagger-read');
-        }
-        return text;
+        const result = await Source.fetchPeakbaggerResource(url, { kind });
+        if (result.kind !== 'ok') throw failure(kind === 'gpx' ? 'peakbagger-track' : 'peakbagger-read');
+        return result.text;
     };
 
     // A manual backup can run long after the save-time session snapshot expired.
@@ -96,26 +84,18 @@ import { classifyResponse } from './profile-backup-core.js';
         if (!info.editUrl) throw failure('peakbagger-read');
         const html = await responseText(info.editUrl, 'edit');
         const doc = new DOMParser().parseFromString(html, 'text/html');
-        const form = doc.getElementById('Form1') || doc.querySelector('form[name="Form1"]');
-        if (!form || !form.elements.JournalText || !form.elements.DateText || !form.elements.PeakListBox) {
-            throw failure('peakbagger-read');
-        }
-        const params = new URL(info.editUrl, location.href).searchParams;
-        params.set('aid', String(info.ascentId));
-        if (info.peak.id != null) params.set('pid', String(info.peak.id));
-        const built = Snapshot.build({
-            form,
-            params,
-            report: { markdown: Markup.bracketToMarkdown(form.elements.JournalText.value || '') },
+        const parsed = Source.snapshotFromEditDocument({
+            doc,
+            editUrl: info.editUrl,
+            baseUrl: location.href,
+            ascentId: info.ascentId,
+            peakId: info.peak.id,
+            fallbackDate: info.date,
+            fallbackPeakName: info.peak.name,
             extensionVersion: ext.runtime.getManifest ? ext.runtime.getManifest().version : '',
         });
-        if (built.snapshot.ascent.id !== info.ascentId
-            || (info.peak.id != null && built.snapshot.peak.id !== info.peak.id)) {
-            throw failure('peakbagger-read');
-        }
-        if (!built.snapshot.ascent.date && info.date) built.snapshot.ascent.date = info.date;
-        if (!built.snapshot.peak.name && info.peak.name) built.snapshot.peak.name = info.peak.name;
-        return built.snapshot;
+        if (!parsed.ok) throw failure('peakbagger-read');
+        return parsed.snapshot;
     };
 
     const runBackup = async (info, { auto = false } = {}) => {
