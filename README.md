@@ -94,7 +94,11 @@ Full Screen GPS maps honor the same width and casing.
 
 Filter long ascent lists to trips with a report, GPS track, or external link.
 Filters combine naturally, show live result counts, and remember what you mean
-by “has beta.” Sortable columns reorder instantly without reloading the page.
+by “has beta.” The **Favorites** filter starts with your Peakbagger Buddy List,
+or you can switch to a custom list of up to 500 climbers and add people from
+their profile pages. Combine it with Trip report or GPS track to see useful beta
+from people you follow. Sortable columns reorder instantly without reloading the
+page.
 
 ![Ascent beta filters and in-page sorting](store-assets/showcase-2-beta-filter.png)
 
@@ -132,6 +136,12 @@ Re-saving an ascent afterwards keeps its folder current. A populated repository
 requires confirmation and its unrelated files are preserved. Backup only ever
 writes to your chosen repository, never touches your Peakbagger save, and can
 be turned off or disconnected at any time.
+
+Custom favorite climbers stay on this device by default. From the Favorite
+climbers section in Settings, **Back up favorites** writes one `favorites.json`
+to the same repository, and **Restore from backup** moves that list to another
+browser with a brief Undo window. Both actions require an explicit click;
+automatic ascent backup never includes favorites.
 
 ### Check summit conditions and recent imagery
 

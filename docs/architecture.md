@@ -24,7 +24,7 @@ flowchart TB
         popup["Popup and options"]
         worker["background.js<br/>capture jobs, summit lookup,<br/>draft identity, GitHub writes"]
         sync["storage.sync<br/>preferences"]
-        local["storage.local<br/>GitHub credential + repo,<br/>report drafts, terrain index"]
+        local["storage.local<br/>GitHub credential + repo,<br/>favorites, drafts, terrain index"]
         session["storage.session<br/>30-minute jobs, drafts,<br/>save snapshots, pending auth"]
     end
 
@@ -85,6 +85,7 @@ The diagram encodes five important boundaries:
 - [Opt-in 3D terrain](#deep-dive-opt-in-3d-terrain)
 - [Peak markers and non-ascent map surfaces](#deep-dive-peak-markers-and-non-ascent-map-surfaces)
 - [Ascent filtering and in-page sorting](#deep-dive-ascent-filtering-and-in-page-sorting)
+- [Favorite climbers](#deep-dive-favorite-climbers)
 - [GitHub ascent and full-profile backup](#deep-dive-github-ascent-and-full-profile-backup)
 - [Site-wide theme startup](#deep-dive-site-wide-theme-startup)
 - [Storage and lifecycle](#deep-dive-storage-and-lifecycle)
@@ -129,6 +130,7 @@ There is no parallel raw-source worker list and no `importScripts` fallback.
 | Terrain lifecycle, bridge, and renderer | `src/terrain-coordinator.js`, `src/terrain-map.js`, `src/terrain-frame.js` | Shared MAIN-world state machine, isolated bridge, extension-origin MapLibre frame |
 | Full Screen and Peak maps | `src/big-map.js`, `src/peak-map.js` | MAIN-world native-map coordinators |
 | Ascent lists | `src/ascent-filter.js`, `src/profile-backup.js` | Isolated-world filter/sort and owner-only backup pipeline |
+| Favorite climbers | `src/favorite-climbers.js`, `src/climber-favorite.js`, `options/favorites.js` | Pure local-data contract, climber-page toggle, and settings manager |
 | Settings and theme | `src/settings-schema.js`, `src/settings.js`, `src/theme.js` | Pure schema, sync-storage access, synchronous page startup |
 | Report-draft manager | `src/report-drafts.js`, `options/drafts.js` | Shared pure draft contract plus device-local list/copy/delete UI |
 | Saved-ascent backup | `src/ascent-page.js`, `src/ascent-backup.js` | Owner-only page read and user-facing backup state |
@@ -571,6 +573,21 @@ GPS, or external link—while the active chip state and per-page trip-report
 threshold live in Peakbagger `localStorage`. Year separators disappear when a
 filtered section is empty and return with their original rows.
 
+The full `PeakAscents.aspx` view also models the climber id from each row's
+profile link. Its Favorites chip intersects those ids with either the custom
+favorite list or the signed-in account's Buddy List cache. It is an ordinary
+AND filter: Favorites plus Trip report means a matching climber whose row also
+has a qualifying report. Compact views and personal `ClimbListC.aspx` omit the
+chip because their rows do not expose the required climber identity.
+
+Buddy mode is stale-while-revalidate. A saved cache filters immediately; only
+an active Favorites chip starts a same-origin Buddy List refresh when the cache
+is absent or older than seven days. Account identity scopes the cache, one page
+load issues at most one refresh, and a failed refresh leaves the previous set
+usable. Visiting the signed-in user's Buddy List reparses the rendered table
+and updates the cache without another request. Custom-list and cache changes
+propagate through `storage.onChanged`, so open ascent lists update in place.
+
 Native header sort links become accessible buttons that reorder existing DOM
 rows with type-aware stable comparisons. Exact ascending/descending date
 reversal preserves Peakbagger's served ordering, including partial or unusual
@@ -585,6 +602,41 @@ absent.
 Compact views without the necessary beta columns degrade to a link to the full
 all-years view. Missing headers or an unrecognized table opt out instead of
 guessing column positions.
+
+## Deep dive: favorite climbers
+
+`src/favorite-climbers.js` is the pure contract shared by every favorites
+surface. It validates and bounds schema-versioned entries, normalizes names,
+deduplicates by numeric climber id, parses Buddy List and climber-page DOM passed
+in by callers, and owns merge, mirror, effective-set, and sort semantics. It has
+no DOM globals or extension APIs.
+
+The source choice is the validated `favoritesSource` setting in
+`storage.sync`: `buddies` by default or `custom`. The data stays device-local:
+
+- `bpbFavoriteClimbers` stores at most 500 custom entries with id, name,
+  added-at timestamp, and manual/buddy provenance.
+- `bpbBuddyCache` stores the detected owner id, Buddy List ids/names, and fetch
+  time. Its seven-day value is a refresh threshold, not a correctness or
+  deletion deadline; stale data remains useful while a user-driven refresh is
+  unavailable.
+
+`options/favorites.js` owns management. It fetches authenticated Peakbagger
+pages from the extension origin, classifies login/challenge/wrong-content
+responses through `profile-backup-core.js`, and parses them with the shared pure
+module. Custom additions verify that the fetched public profile id matches the
+requested id. Delete, mirror, and GitHub restore are replace operations with a
+brief local Undo snapshot; merge is additive.
+
+`src/climber-favorite.js` is a separate isolated-world bundle on public climber
+pages. It renders only in custom mode and never on the detected signed-in
+climber's own page. Each click rereads local storage before writing so two open
+tabs cannot replace each other's additions from stale in-memory lists.
+
+Cross-browser transfer is explicit. When GitHub backup is enabled and connected,
+the options manager can serialize `favorites.json` to the chosen repository or
+restore a schema-checked copy. The worker keeps the token and fixed repository
+path; automatic ascent backup never reads or writes favorites.
 
 ## Deep dive: GitHub ascent and full-profile backup
 
@@ -609,7 +661,10 @@ optional `track.gpx` under a stable `*-a<aid>` folder. `src/github-client.js`
 writes one atomic Git Data commit, preserves unrelated repository paths and
 user-added files, handles owned-folder renames, and rebuilds the whole commit
 after a bounded non-fast-forward conflict. The worker serializes repository
-writes so per-save and profile batches cannot race each other.
+writes so per-save batches, profile batches, and the explicit root
+`favorites.json` backup cannot race each other. Root-file writes use the same
+marker validation, exact base tree, commit, non-forced ref update, and bounded
+conflict retry as ascent writes; restore is a read-only Contents API request.
 
 Full-profile backup runs its multi-minute producer in the owner’s
 `ClimbListC.aspx` tab, whose lifetime and authenticated Peakbagger session match
@@ -621,7 +676,7 @@ for Resume. The repository tree is the checkpoint, so closing the tab requires
 no separate progress record.
 
 The complete living contract is
-[github-ascent-backup.md](github-ascent-backup.md): the three entry points,
+[github-ascent-backup.md](github-ascent-backup.md): the three ascent entry points,
 source acquisition, save-time correlation, repository layout, authorization,
 batching, backpressure, pause/resume, conflict handling, incident findings, and
 security boundaries.
@@ -652,7 +707,7 @@ The focused rationale, first-visit compromises, and lockstep invariant are in
 | Store | Owned data | Lifecycle rule |
 | --- | --- | --- |
 | `storage.sync` | User preferences and feature gates | Validated by the single settings schema; no secrets |
-| `storage.local` | GitHub token/repository, report drafts, terrain-cache index | Device-local; report drafts are bounded and expiring |
+| `storage.local` | GitHub token/repository, custom favorites, Buddy List cache, report drafts, terrain-cache index | Device-local; favorites are bounded, Buddy cache is owner-scoped, report drafts expire |
 | `storage.session` | Capture jobs, prepared drafts, save-time backup snapshots, pending device auth | Short-lived and identity-bound; capture/backup records expire after 30 minutes |
 | CacheStorage | Successful Mapterhorn DEM responses | Best effort, bounded by the local LRU index |
 | Peakbagger `localStorage` | Filter UI state and early theme mirror | Page-local convenience state, never authoritative extension credentials |

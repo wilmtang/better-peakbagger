@@ -2,6 +2,16 @@
 
 ## 3.0.0 — 2026-07-20
 
+- **Filter ascent beta by favorite climbers.** The full Peak Ascents view now
+  has a Favorites chip that combines with Trip report, GPS track, Link, and Has
+  beta. It works immediately from the signed-in user's Buddy List, keeps an
+  owner-scoped local cache fresh without blocking the table, and can instead use
+  a custom list of up to 500 climbers. Settings can add, sort, merge, mirror,
+  remove, and Undo custom favorites; public climber pages get a compact add/remove
+  control only in custom mode. Connected GitHub backup can explicitly write or
+  restore the custom list as `favorites.json`; automatic ascent backup never
+  touches it.
+
 - **Manage every trip-report draft in one place.** A new **TR drafts**
   section in Settings lists the reports autosaved on this device, newest first,
   with their ascent, save time, format, expiry, and a short preview. You can open

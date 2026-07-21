@@ -31,6 +31,10 @@ living docs in [`docs/`](../).
 - [Full-profile backup](full-profile-backup.md) — original completed backfill
   design, superseded for batching and backpressure by the living
   [GitHub backup design](../github-ascent-backup.md#full-profile-producer-consumer-pipeline).
+- [Favorite climbers](favorite-climbers.md) — completed implementation plan for
+  Buddy List/custom filtering, local management, climber-page toggles, and
+  explicit GitHub backup/restore. Current behavior lives in the maintained
+  [architecture guide](../architecture.md#deep-dive-favorite-climbers).
 - [Options-page sidebar](options-sidebar.md) — completed investigation,
   execution plan, and deviations recorded during implementation.
 - [Trip-report drafts manager](trip-report-drafts-manager.md) — completed plan
