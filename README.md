@@ -43,8 +43,10 @@ present. The elevation model comes from
 Peakbagger's compatible 2D basemaps — CalTopo, ArcGIS, OpenTopoMap, and more —
 are offered in an on-map picker and draped over the terrain; an experimental
 OpenFreeMap vector style built from OpenStreetMap data is available there too.
-The feature is opt-in: no tile requests occur until you choose **3D** on a
-supported map and accept the first-use confirmation.
+The feature is opt-in: no tile requests occur before you enable it through the
+first-use confirmation or Settings. After 3D is enabled, choosing **3D** opens
+the map; hovering or keyboard-focusing its toggle may warm a small elevation-
+tile set so it opens faster.
 
 > Special thanks to [Mapterhorn](https://mapterhorn.com/) for providing
 > free, open-access global elevation data that makes this possible.
@@ -154,7 +156,9 @@ developer data server. Raw Garmin or Strava GPX is processed on the activity
 page and is never stored or sent to the extension developer. Peakbagger receives
 small corridor boxes for summit discovery and, only after you choose **Open
 drafts**, a privacy-reduced track for GPS Preview. The optional 3D view requests
-map tiles only after you choose 3D and accept the first-use confirmation. GitHub
+map tiles only after you enable it; once enabled, hovering or focusing its
+toggle may prefetch a small bounded elevation tile set before the view opens.
+GitHub
 backup is off until you enable it, sends an ascent only to the repository you
 choose, and keeps its access token in local extension storage, never synced.
 

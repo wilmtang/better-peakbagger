@@ -126,7 +126,7 @@ There is no parallel raw-source worker list and no `importScripts` fallback.
 | Provider extraction | `src/provider-page.js` | On-demand MAIN-world injection into the active owned activity |
 | Ascent editor | `src/ascent-draft.js`, `src/ascent-upload.js`, `src/report-editor.js` | Isolated-world form fill, local-file processing, report editing |
 | Ascent analysis | `src/gpx-analyzer.js` | MAIN-world GPX/chart/native-map integration |
-| Terrain bridge and renderer | `src/terrain-map.js`, `src/terrain-frame.js` | Isolated bridge plus extension-origin MapLibre frame |
+| Terrain lifecycle, bridge, and renderer | `src/terrain-coordinator.js`, `src/terrain-map.js`, `src/terrain-frame.js` | Shared MAIN-world state machine, isolated bridge, extension-origin MapLibre frame |
 | Full Screen and Peak maps | `src/big-map.js`, `src/peak-map.js` | MAIN-world native-map coordinators |
 | Ascent lists | `src/ascent-filter.js`, `src/profile-backup.js` | Isolated-world filter/sort and owner-only backup pipeline |
 | Settings and theme | `src/settings-schema.js`, `src/settings.js`, `src/theme.js` | Pure schema, sync-storage access, synchronous page startup |
@@ -156,6 +156,12 @@ state:
 - `src/big-map.js` identifies and restyles Peakbagger's native Full Screen GPS
   layers without replacing their interactions.
 - `src/peak-map.js` mirrors the native map context and peak feed into 3D.
+
+All three compose `src/terrain-coordinator.js` for the common
+idle/loading/active lifecycle, timeout recovery, camera handoff, toggle and
+compass state. Subject validation and init-payload construction stay in the
+owning surface so sharing lifecycle mechanics does not weaken page-specific
+eligibility checks.
 
 `src/provider-page.js` is also MAIN-world code, but it is injected only after a
 toolbar click into the active Garmin or Strava page. Its page realm owns the
@@ -412,6 +418,11 @@ default untouched.
 
 ## Deep dive: opt-in 3D terrain
 
+The complete maintained protocol, state machine, validation caps, failure
+taxonomy, request table, verification matrix, and interview-style design
+rationale live in [3d-map.md](3d-map.md). This section is the architecture-level
+summary.
+
 ### Height and imagery are separate
 
 The terrain surface comes from Mapterhorn DEM tiles. Its visible map can be
@@ -429,6 +440,8 @@ explain past decisions but are not current runtime contracts.
 The renderer is off by default. Choosing 3D while disabled opens an
 isolated-world consent dialog; only trusted user activation may enable the
 feature. No terrain or basemap request occurs merely because a page loaded.
+After the feature is enabled, hovering or focusing an idle 3D toggle may warm a
+bounded DEM tile set as an explicit intent signal.
 
 MapLibre and its CSP worker run in `terrain/terrain.html`, an extension-owned
 frame declared as a web-accessible resource. This avoids page-CSP and
@@ -440,13 +453,18 @@ Route input is bounded coordinate-only geometry with segment boundaries and a
 validated style. Summit-only Peak pages pass a bounded focus instead. Source
 GPX, timestamps, GPX elevations, health/device fields, activity metadata, and
 page settings outside the allowlist never enter the frame.
+The frame rechecks all-or-nothing route/focus, style, basemap, link, peak, and
+camera payloads even though the page and bridge already narrowed them.
 
 ### Camera, maps, and teardown
 
 The 2D and 3D renderers exchange validated center and equivalent zoom whenever
-the user switches. Bearing and pitch remain 3D-only. Full Screen maps preserve
-their native multi-track colors; ascent maps use the configured route color and
-casing.
+the user switches. Bearing and pitch remain 3D-only. The shared coordinator
+waits at most one second for the final camera, and the page's 17-second startup
+backstop deliberately outlasts the frame's 15-second MapLibre timeout. Loading
+is cancelable. Every surface exposes the same continuous shortest-arc compass
+and reset-to-north action. Full Screen maps preserve their native multi-track
+colors; ascent maps use the configured route color and casing.
 
 Returning to 2D stops that session's tile activity. Rather than tearing the
 renderer down on every switch, the `src/terrain-map.js` bridge parks the loaded
@@ -456,9 +474,17 @@ re-entry then resumes the live MapLibre map with a fresh route/camera/theme
 instead of rebuilding the map, its CSP worker, and the terrain mesh. The parked
 frame is fully destroyed and its WebGL context released after a five-minute
 keep-alive TTL, or immediately when 3D is disabled. Failed MapLibre startup,
-invalid input, missing WebGL, DEM failure, or a bounded load timeout removes the
-partial 3D surface and leaves the native map visible. A failed or incompatible
+invalid input, missing WebGL, WebGL context loss, a source-less post-load
+renderer error, DEM failure, or a bounded load timeout removes the partial 3D
+surface, restores the native map, and shows a shared accessible failure. A
+source-specific tile gap remains recoverable, and a failed or incompatible
 selected raster falls back without taking down valid terrain.
+
+MapLibre is constructed with a DEM-only style. Route and peak layers attach on
+`load`, and the selected raster/vector presentation is applied afterward. A
+slow OpenTopoMap or other drape therefore streams progressively instead of
+gating the entire 3D boot; a picker change made during boot is queued and
+applied after the base style becomes ready.
 
 ### Bounded DEM cache
 
@@ -486,7 +512,9 @@ consent gate for contacting Mapterhorn), accepts hints only from a Peakbagger
 tab, rate-limits each tab, dedupes recently-warmed tiles, and loads through the
 same bounded LRU cache the renderer reads. The head of `terrain/terrain.html`
 also preconnects to Mapterhorn so the first real tile request skips the TLS
-handshake.
+handshake. The bridge waits for its initial settings read before applying the
+feature gate, so the first intent hint is not lost to startup. Worker state is
+rate-limited per tab and pruned when that tab closes.
 
 ## Deep dive: peak markers and non-ascent map surfaces
 
