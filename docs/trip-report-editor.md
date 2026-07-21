@@ -408,52 +408,196 @@ TR drafts are recovery snapshots for the trip-report field. They are separate
 from the 30-minute prepared ascent drafts created by activity capture and from
 the optional GitHub save-time snapshot. A TR draft uses extension
 `storage.local`, not Peakbagger storage, `storage.sync`, or `storage.session`,
-and never leaves the device.
+and never leaves the browser profile. It is not synced to another browser or
+device and is not sent to Peakbagger, GitHub, or the extension developer.
 
 `src/report-editor.js` owns persistence and recovery. The pure
 `src/report-drafts.js` module is the shared identity, expiry, and limit contract
 used by the editor and the manager in `options/drafts.js`.
 
-### Write path and stored record
+### Identity: one key per climber and form target
+
+The key, rather than the stored object, carries the draft's editing target:
+
+```text
+bpbReportDraft:<cid>:a<aid>   existing ascent
+bpbReportDraft:<cid>:p<pid>   new ascent opened for a known peak
+bpbReportDraft:<cid>:new      new ascent with no ascent or peak id
+```
+
+`aid` takes precedence over `pid`, and a missing `cid` becomes the literal
+owner segment `0`. Keys read by the manager must match the all-digit grammar;
+an unrelated `storage.local` entry or malformed `bpbReportDraft:` key is never
+treated as a TR draft. Opening a parsed key reconstructs the corresponding
+`ascentedit.aspx` URL. The unknown owner `0` is omitted from that URL instead of
+being sent as a real climber id.
+
+Identity is form-scoped, not tab-scoped or revision-scoped. Two open tabs
+editing the same ascent, two new-ascent tabs for the same `pid`, or two generic
+new-ascent tabs for the same `cid` share one key and can replace each other's
+latest recovery snapshot. There is no merge or compare-and-swap layer. That is
+an important current limitation, not an invitation to add a tab id without
+designing how the manager and restore flow would resolve multiple candidates.
+
+### Exact stored record
+
+`storage.local` stores a structured object, not a JSON string. The current
+writer produces this shape:
+
+```ts
+type ReportDraftRecord = {
+  text: string;
+  mode: "rich" | "markdown";
+  savedAt: number;
+  source?: string;
+  label?: {
+    peak?: string;
+    date?: string;
+  };
+};
+```
+
+There is deliberately no schema version today. The fields have these exact
+roles and authority boundaries:
+
+| Field | New-write requirement | Meaning and constraints |
+| --- | --- | --- |
+| `text` | Required | The flushed `JournalText` value: Peakbagger bracket markup plus newlines. This is the recovery copy of the submitted representation. It is never TipTap HTML, a ProseMirror document, preview HTML, or Markdown. |
+| `mode` | Required | The initialized authoring mode at the write: `rich` or `markdown`. Plain and uninitialized or disabled editors cannot write a record. |
+| `savedAt` | Required | `Date.now()` in milliseconds at the write. It drives ordering, display, expiry, and pruning; it is not an ascent time or content revision id. |
+| `source` | Markdown only | The exact CodeMirror string, including the user's Markdown spelling and whitespace. It is an authoring-fidelity sidecar; `text` remains the Peakbagger-facing value. Rich writes omit it because a Rich edit invalidates any earlier Markdown spelling. |
+| `label.peak` | Optional | Display-only selected peak name, or the matching prepared-draft peak name when the native picker is not ready. It is trimmed and capped at 200 characters. The key, not this label, is identity. |
+| `label.date` | Optional | Display-only raw trimmed `DateText`, capped at 20 characters. It is intentionally not normalized into the backup date identity. |
+
+`label` is omitted when both members are empty. Label extraction is isolated in
+its own `try`/`catch`: missing or changed optional form controls may make the
+manager title less friendly, but cannot block saving the report. No other
+ascent fields, cookies, GPX points, coordinates, page/provider URL fields,
+preview HTML, report AST, or editor history are stored in a TR draft. The
+report strings can of course contain links the author put in the report.
+
+A normal Rich record has one report representation:
+
+```js
+{
+  text: "Windy [b]summit[/b] day.",
+  mode: "rich",
+  savedAt: 1780000000000,
+  label: { peak: "Example Peak", date: "7/21/2026" }
+}
+```
+
+A normal Markdown record carries two representations of the same intended
+report:
+
+```js
+{
+  text: "Windy [b]summit[/b] day.",
+  mode: "markdown",
+  source: "Windy **summit** day.",
+  savedAt: 1780000000000
+}
+```
+
+Why keep both? `text` can be restored directly into Peakbagger's form and is
+what Peakbagger would receive. `source` restores the exact Markdown editing
+experience and is what **Copy Markdown** returns. Reconstructing Markdown from
+`text` preserves supported meaning but can rewrite list markers, emphasis
+spelling, whitespace, or safe inline HTML. Neither field contains Rich editor
+state: Rich formatting survives because `text` encodes it as Peakbagger tags.
+
+### Runtime validation and backward compatibility
+
+The writer is stricter than the reader. New writes always provide the shape
+above, but the shared `validRecord()` guard intentionally requires only a
+non-array object with string `text` and finite numeric `savedAt`. This lets
+older records without `mode`, `source`, or `label` remain recoverable.
+
+Optional data is consumed defensively:
+
+- restore uses the stored mode only when it is recognized; otherwise it keeps
+  the current mode;
+- the exact Markdown sidecar is used only when `mode === "markdown"` and
+  `source` is a string;
+- malformed or missing label members are ignored in favor of a key-derived
+  fallback title;
+- malformed optional fields do not invalidate otherwise recoverable `text`.
+
+The minimal guard does not prove that `source` and `text` describe the same
+semantics, nor does it authenticate a record. Page scripts cannot directly
+access extension storage, but code changes and manual extension debugging can
+still create inconsistent records. On such a record, `text` controls form
+recovery while a qualifying `source` controls restored Markdown and the
+manager's **Copy Markdown** output.
+
+### Write path and decision order
 
 Only Rich and Markdown modes autosave. An edit restarts an 800 ms timer; after
-that pause, the editor synchronously flushes the active view into the native
-`JournalText` textarea and then asynchronously writes the recovery record to
-`storage.local`. A `pagehide` handler performs the same synchronous flush and
-starts a best-effort asynchronous storage write. Storage failure is deliberately
-non-blocking because the live form value still belongs to Peakbagger.
+that pause, `saveDraftNow()` runs this sequence:
+
+1. Cancel the pending autosave timer so the same edit does not leave a second
+   scheduled write behind this attempt.
+2. Return unless the editor has reached `rich` or `markdown`. This rejects
+   Plain mode, a disabled editor, and page exit racing initialization; those
+   states must not create `mode: null` records.
+3. Synchronously flush a dirty editor into `JournalText`. Classification then
+   sees the bracket representation a postback would submit, not stale private
+   editor state.
+4. Decide whether the flushed report contains recoverable content. Empty and
+   generated-credit-only reports remove the matching key instead of writing.
+5. Build `{ text, mode, savedAt }`, add exact Markdown `source` only in
+   Markdown mode, and best-effort add `label`.
+6. Replace the one value at the form key with `storage.local.set()` and show
+   the device-local saved timestamp after that promise resolves.
+
+A `pagehide` handler also synchronously flushes and starts a best-effort
+`saveDraftNow()`. Storage failure is deliberately non-blocking because the live
+form value still belongs to Peakbagger; the UI does not claim success unless
+the write resolves.
 
 Plain mode edits `JournalText` directly and deliberately does not write, update,
 or remove a TR draft. It therefore has the native textarea's recovery risks,
 and a draft previously written in Rich or Markdown mode can remain unchanged
 while the user continues in Plain mode.
 
-The key encodes the owner and form target:
+### What counts as no recoverable report
 
-| Form | Storage key |
-| --- | --- |
-| Existing ascent | `bpbReportDraft:<cid>:a<aid>` |
-| New ascent for a known peak | `bpbReportDraft:<cid>:p<pid>` |
-| New ascent without either ID | `bpbReportDraft:<cid>:new` |
+An empty editor is a deletion, not a zero-byte recovery snapshot. The writer
+removes the matching key and clears its saved-status text when either condition
+holds:
 
-A missing climber ID falls back to `0`. The stored value is:
+- `JournalText` contains only spaces, tabs, CR/LF line endings, or other source
+  whitespace after the active editor flushes; or
+- the canonical bracket document contains only the optional generated credit,
+  with surrounding blank space or newlines.
 
-| Field | Meaning |
-| --- | --- |
-| `text` | The Peakbagger bracket-markup string currently in `JournalText`; this is the submitted representation, not Rich HTML |
-| `mode` | The authoring mode, normally `rich` or `markdown` |
-| `savedAt` | Millisecond timestamp used for display, expiry, and pruning |
-| `source` | The exact CodeMirror Markdown string, present only for a Markdown draft |
-| `label` | Optional bounded display metadata: selected or prepared-draft peak name and raw ascent-date text |
+The credit test does not duplicate the credit sentence, markup, browser store
+URL, or a regular expression. At runtime the editor derives ignored canonical
+documents from the same `REPORT_CREDIT` value it inserts. It records the raw
+bracket form, the actual bracket → Markdown → bracket form, and, when a seeded
+credit enters an editor, the real Rich or Markdown serialization. Those forms
+matter because equivalent editor documents need not be byte-identical: TipTap
+can split nested marks around a link, while Markdown can use safe inline HTML
+for the `small` element.
 
-If the flushed Rich or Markdown report is empty after trimming, autosave removes
-the matching key instead of retaining an empty record.
+Candidate bracket source is parsed into the allowlisted AST and serialized back
+to canonical bracket markup. That removes insignificant outer whitespace and
+editor spelling differences before comparison. A report with any user content
+in addition to the credit remains recoverable and is stored normally. If
+parsing unexpectedly throws, the writer fails toward data retention and saves
+non-whitespace source; uncertainty must not delete the only local recovery
+copy.
+
+No credit marker or boolean is persisted. This is a write-time policy over
+runtime-derived representations, not an installation migration that scans and
+rewrites every historical draft.
 
 ### Recovery on form load
 
-The editor reads only the key for the current climber and form. It rejects a
-missing or malformed record, removes one older than 14 days, and removes a
-whitespace-only record. It compares the remaining draft with Peakbagger's
+The editor reads only the key for the current climber and form; it does not scan
+other drafts before deciding whether to offer recovery. It ignores a missing or
+structurally unusable record, removes one older than 14 days, and removes a
+whitespace-only stored `text`. It compares the remainder with Peakbagger's
 server-rendered `JournalText` after normalizing CRLF/CR line endings to LF and
 trimming both values.
 
@@ -466,6 +610,11 @@ trimming both values.
   reuses the exact Markdown sidecar when present. Opening a row from the manager
   returns to this same recovery gate; the manager cannot bypass it.
 
+Restore is intentionally not an immediate storage write. The record remains
+the recovery source until a later edit/autosave, explicit deletion, or
+Peakbagger Save clearing. The server copy is never overwritten merely because a
+draft exists or because the manager's **Open** link was used.
+
 ### Retention and management
 
 The nominal TTL is 14 days and the nominal global target is 30 drafts, newest
@@ -473,17 +622,34 @@ first. These are lazy cleanup rules, not timers or a hard write-time quota:
 
 - Opening an editor removes expired records and prunes fresh records after the
   newest 30, oldest first. It preserves the current form's key even when that
-  key falls in the excess set.
+  key falls in the excess set, so storage can temporarily contain 31 valid
+  records rather than delete the report currently being edited.
 - Opening Settings → **TR drafts** removes expired records, but does not enforce
   the 30-record target. A newly written 31st draft can therefore remain until a
   later editor initialization performs pruning.
 
-The manager lists valid records newest first, opens the matching Peakbagger
-form, and copies either the exact Markdown `source` or a bracket-to-Markdown
-conversion of `text`. Deleting one or all drafts removes the records from
-storage immediately and holds copies in the open manager page for a six-second
-Undo window. If that window closes without Undo, or the manager page itself is
-closed, those copies are no longer recoverable through the extension.
+These are lazy cleanup rules. There is no expiry timer, write-time quota, or
+background sweep, so expired or excess records can physically remain until an
+editor or the manager next performs the relevant cleanup.
+
+The manager reads all local storage but renders only parseable draft keys with
+minimally valid records, newest first:
+
+- title uses bounded `label.peak` and `label.date`, then a key-derived fallback;
+- the mode badge says Markdown only for `mode === "markdown"`; historical
+  records without that exact value follow the Rich-compatible fallback path;
+- the excerpt uses exact Markdown `source` when qualified, otherwise converts
+  bracket `text` to Markdown, collapses whitespace, and caps display at 160
+  characters;
+- **Copy Markdown** uses the same exact-source-or-convert rule;
+- **Open** reconstructs the form URL, but the destination editor's normal
+  compare-and-offer gate still owns Restore.
+
+Deleting one or all drafts removes storage immediately and holds copies only in
+the open manager page for a six-second Undo window. Live `storage.onChanged`
+refreshes preserve an active Undo row. If the window closes without Undo, or
+the manager itself closes, those in-memory copies are no longer recoverable
+through the extension.
 
 ### Clearing at Peakbagger Save
 
@@ -506,6 +672,29 @@ Treat those as current implementation risks, not desired product behavior. A
 future fix needs a terminal Save state and a regression test covering the real
 click → submit → pagehide sequence before this section can claim that every
 successful Save reliably clears its draft.
+
+### Reviewer questions this design must keep answering
+
+- **Can Rich HTML enter storage?** No. A dirty Rich document must pass through
+  `domToBracket()` before `text` is built; `getHTML()` and ProseMirror JSON are
+  never draft fields.
+- **Can Markdown be reconstructed exactly from `text`?** No. Exact spelling is
+  available only from qualifying `source`; conversion promises supported
+  semantics, not byte identity.
+- **Can an empty or generated-credit-only page create a timestamped row?** No.
+  The post-flush decision removes the key in Rich and Markdown, including after
+  real content is deleted back to only credit.
+- **Can a disabled, Plain, or not-yet-initialized editor write?** No. Only the
+  two initialized autosave modes cross the write boundary.
+- **Can display metadata retarget a draft?** No. Only the parsed key controls
+  the Open URL and recovery lookup; `label` is presentation-only.
+- **Can the manager silently apply a draft?** No. It can navigate, copy, and
+  delete; the destination editor owns explicit Restore.
+- **Does `storage.local` mean permanent or synced?** No. It is profile-local,
+  subject to browser and extension storage lifecycle, and bounded only by lazy
+  application cleanup.
+- **Does one key mean one editing tab?** No. It means one climber/form target;
+  same-target tabs are last-writer-wins.
 
 ## Preview fidelity
 
@@ -531,9 +720,16 @@ shows the exact bracket source.
   untouched-value preservation, expanded rich DOM, toolbar active states,
   image-source validation, hex-color preservation after Rich and Markdown
   edits, undo isolation across mode switches, mode switching (including
-  invalidation of stale Markdown source after a Plain edit), local drafts, and
-  pre-postback flushing, driving the TipTap and CodeMirror instances through
+  invalidation of stale Markdown source after a Plain edit), local drafts,
+  whitespace-only and runtime-derived credit-only suppression, deletion back
+  to credit-only in both editors, disabled-editor write rejection, and
+  pre-postback flushing. It drives the TipTap and CodeMirror instances through
   the mount's test handle.
+- `test/report-drafts.test.mjs` pins key construction/parsing, edit URLs,
+  compatibility record validation, fallback titles, and expiry arithmetic.
+- `test/options.test.mjs` pins manager ordering, labels, exact Markdown copy
+  versus bracket conversion, expiry cleanup, live refresh, and reversible
+  single/bulk deletion.
 - `test/manifest-capture.test.mjs` pins the vendored parser before the converter
   and editor in the real content-script list.
 - `npm run verify:browsers` loads the unpacked extension in hidden Chrome and
