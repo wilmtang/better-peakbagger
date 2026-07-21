@@ -16,8 +16,8 @@ import { gpxMetrics as GpxMetrics } from './gpx-metrics.js';
 import { settingsSchema as Schema } from './settings-schema.js';
 import { peakMarkers } from './peak-markers.js';
 import { terrainBasemap } from './terrain-basemap.js';
-import { terrainCamera as TerrainCamera } from './terrain-camera.js';
 import { terrainCompass as TerrainCompass } from './terrain-compass.js';
+import { terrainCoordinator as TerrainCoordinator } from './terrain-coordinator.js';
 import { terrainFailure as TerrainFailure } from './terrain-failure.js';
 
 // Chart and tzlookup remain separately-loaded vendor globals (see manifest).
@@ -30,9 +30,6 @@ const run = async () => {
     const MAP_VIEWPORT_MAX_HEIGHT = Schema.BOUNDS.viewportHeight.max;
     const MAP_RESIZE_RAIL_HEIGHT = 18;
     const MAP_RESIZE_PERSIST_DELAY_MS = 400;
-    const TERRAIN_LOAD_TIMEOUT_MS = 17000;
-    const TERRAIN_CAMERA_TIMEOUT_MS = 1000;
-
     const parseMapRouteSegments = xml => {
         const segments = [];
 
@@ -141,6 +138,7 @@ const run = async () => {
         let mapResizeHandle = null;
         let mapViewportSize = resolveMapViewportSize(BPB.get());
         let mapInvalidateFrame = null;
+        let terrainCoordinator = null;
 
         const renderedMapWidth = () => {
             if (!mapViewport) return mapViewportSize.width;
@@ -163,7 +161,7 @@ const run = async () => {
                 } catch (e) { /* Peakbagger may replace or discard its map while resizing. */ }
                 // Re-anchor the floating toggle: the native zoom's position (2D)
                 // and the viewport size can change as the map settles or resizes.
-                positionTerrainToggle();
+                terrainCoordinator?.position();
             };
             mapInvalidateFrame = typeof requestAnimationFrame === 'function'
                 ? requestAnimationFrame(invalidate)
@@ -528,13 +526,7 @@ const run = async () => {
         let mapLayerChangeHandler = null;
         let mapRetryTimer = null;
         let mapLayerRetryTimer = null;
-        let terrainState = 'idle';
         let terrainConsentPending = false;
-        let terrainLoadTimer = null;
-        let terrainNavTop = null;
-        let terrainViewCamera = null;
-        let terrainStopPending = false;
-        let terrainCameraRequestId = 0;
         let terrainCompass = null;
 
         const nativeLeafletMap = () => {
@@ -543,11 +535,6 @@ const run = async () => {
             } catch (error) {
                 return null;
             }
-        };
-
-        const rememberTerrainCamera = value => {
-            const camera = TerrainCamera.clean(value);
-            if (camera) terrainViewCamera = camera;
         };
 
         // Float the toggle just above the zoom stack in whichever map is showing:
@@ -569,26 +556,19 @@ const run = async () => {
                 return null;
             }
         };
-        const positionTerrainToggle = () => {
+        const positionTerrainToggle = ({ state, navTop }) => {
             let bottom = null;
-            if (terrainState === 'active') {
+            if (state === 'active') {
                 const frame = document.getElementById('bpb-terrain-frame');
-                if (frame && mapViewport && terrainNavTop != null) {
+                if (frame && mapViewport && navTop != null) {
                     const inset = Math.max(0, mapViewport.getBoundingClientRect().bottom - frame.getBoundingClientRect().bottom);
-                    bottom = inset + terrainNavTop;
+                    bottom = inset + navTop;
                 }
             } else {
                 bottom = measureNative2dZoomTop();
             }
             terrainButton.style.bottom = bottom != null && bottom > 0 ? `${Math.round(bottom + TERRAIN_TOGGLE_GAP)}px` : '';
             if (terrainCompass) terrainCompass.position();
-        };
-
-        const clearTerrainLoadTimer = () => {
-            if (terrainLoadTimer !== null) {
-                clearTimeout(terrainLoadTimer);
-                terrainLoadTimer = null;
-            }
         };
 
         const postTerrain = (type, detail = {}) => window.postMessage({
@@ -623,46 +603,6 @@ const run = async () => {
             terrainMessage.textContent = text;
         };
 
-        const updateTerrainButton = () => {
-            const hasRoute = mapRouteSegments.length > 0;
-            // The compact glyph ('3D'/'2D') is the label; the full intent lives
-            // in the title/aria-label. A spinner class covers the load.
-            terrainButton.classList.remove('bpb-map-3d-toggle-loading');
-            terrainButton.removeAttribute('aria-busy');
-            if (terrainCompass) {
-                terrainCompass.element.dataset.theme = effectiveTheme(BPB.get().theme);
-                terrainCompass.setVisible(terrainState === 'active' && !terrainStopPending);
-            }
-            if (terrainStopPending) {
-                terrainButton.disabled = true;
-                terrainButton.textContent = '2D';
-                terrainButton.title = 'Returning to the 2D map…';
-                terrainButton.setAttribute('aria-label', 'Returning to the 2D map');
-                terrainButton.setAttribute('aria-pressed', 'true');
-            } else if (terrainState === 'loading') {
-                terrainButton.disabled = false;
-                terrainButton.textContent = '3D';
-                terrainButton.classList.add('bpb-map-3d-toggle-loading');
-                terrainButton.setAttribute('aria-busy', 'true');
-                terrainButton.title = 'Cancel loading 3D terrain';
-                terrainButton.setAttribute('aria-label', 'Cancel loading 3D terrain');
-                terrainButton.setAttribute('aria-pressed', 'false');
-            } else if (terrainState === 'active') {
-                terrainButton.disabled = false;
-                terrainButton.textContent = '2D';
-                terrainButton.title = 'Return to the 2D map';
-                terrainButton.setAttribute('aria-label', 'Return to the 2D map');
-                terrainButton.setAttribute('aria-pressed', 'true');
-            } else {
-                terrainButton.disabled = !hasRoute;
-                terrainButton.textContent = '3D';
-                terrainButton.title = hasRoute ? 'View this route on 3D terrain' : 'Available after the GPX route loads';
-                terrainButton.setAttribute('aria-label', hasRoute ? 'Show 3D terrain' : '3D terrain available after the route loads');
-                terrainButton.setAttribute('aria-pressed', 'false');
-            }
-            positionTerrainToggle();
-        };
-
         const restoreNativeMap = () => {
             if (!mapIframe) return;
             mapIframe.style.visibility = 'visible';
@@ -670,96 +610,64 @@ const run = async () => {
             scheduleMapInvalidate();
         };
 
-        const failTerrain = message => {
-            clearTerrainLoadTimer();
-            terrainState = 'idle';
-            terrainViewCamera = null;
-            terrainStopPending = false;
-            restoreNativeMap();
-            postTerrain('destroy');
-            updateTerrainButton();
-            showTerrainMessage(message, 'error');
-        };
-
-        const startTerrain = (consentGranted = false) => {
-            if ((!consentGranted && BPB.get().enable3dMap !== true)
-                || terrainState !== 'idle' || !mapViewport || !mapIframe || !mapRouteSegments.length) return;
-            terrainState = 'loading';
-            // The toggle button's own "Loading 3D…" state is the loading cue;
-            // a second full-width banner would be redundant. The message box is
-            // reserved for errors and the drape-unsupported notice.
-            showTerrainMessage('');
-            updateTerrainButton();
-            terrainViewCamera = TerrainCamera.fromLeaflet(nativeLeafletMap());
-            postTerrain('init', {
+        const buildTerrainInit = () => {
+            if (!mapViewport || !mapIframe || !mapRouteSegments.length) return null;
+            return {
                 routeSegments: mapRouteSegments,
                 routeStyle: resolveMapRouteStyle(BPB.get()),
                 theme: effectiveTheme(BPB.get().theme),
                 basemap: getTerrainBasemap(),
                 basemaps: enumerateTerrainBasemaps(),
-                cacheLimitMb: resolveTerrainCacheLimitMb(BPB.get()),
-                ...(terrainViewCamera ? { camera: terrainViewCamera } : {})
-            });
-            terrainLoadTimer = setTimeout(() => {
-                if (terrainState === 'loading') failTerrain(TerrainFailure.message('timeout'));
-            }, TERRAIN_LOAD_TIMEOUT_MS);
+                cacheLimitMb: resolveTerrainCacheLimitMb(BPB.get())
+            };
         };
 
-        const finishTerrainStop = () => {
-            clearTerrainLoadTimer();
-            if (terrainState === 'active' && terrainViewCamera) {
-                TerrainCamera.applyToLeaflet(nativeLeafletMap(), terrainViewCamera);
-            }
-            terrainState = 'idle';
-            terrainViewCamera = null;
-            terrainStopPending = false;
-            restoreNativeMap();
-            postTerrain('destroy');
-            showTerrainMessage('');
-            updateTerrainButton();
-        };
-
-        const stopTerrain = () => {
-            if (terrainState !== 'active') {
-                finishTerrainStop();
-                return;
-            }
-            if (terrainStopPending) return;
-            clearTerrainLoadTimer();
-            terrainStopPending = true;
-            updateTerrainButton();
-            terrainCameraRequestId++;
-            postTerrain('cameraRequest', { requestId: terrainCameraRequestId });
-            terrainLoadTimer = setTimeout(finishTerrainStop, TERRAIN_CAMERA_TIMEOUT_MS);
-        };
+        terrainCoordinator = TerrainCoordinator.create({
+            toggle: terrainButton,
+            compass: terrainCompass,
+            isEnabled: () => BPB.get().enable3dMap === true,
+            idleUi: () => {
+                const hasRoute = mapRouteSegments.length > 0;
+                return {
+                    disabled: !hasRoute,
+                    title: hasRoute ? 'View this route on 3D terrain' : 'Available after the GPX route loads',
+                    ariaLabel: hasRoute ? 'Show 3D terrain' : '3D terrain available after the route loads'
+                };
+            },
+            buildInit: buildTerrainInit,
+            nativeMap: nativeLeafletMap,
+            hideNativeMap: () => {
+                if (!mapIframe) return;
+                mapIframe.style.visibility = 'hidden';
+                mapIframe.setAttribute('aria-hidden', 'true');
+            },
+            restoreNativeMap,
+            post: postTerrain,
+            requestConsent: () => {
+                if (terrainConsentPending || !mapRouteSegments.length) return;
+                terrainConsentPending = true;
+                postTerrain('requestConsent');
+            },
+            // The toggle's spinner is the loading cue. Reserve the panel message
+            // for actionable errors and the drape-unsupported notice.
+            clearFailure: () => showTerrainMessage(''),
+            showFailure: reason => showTerrainMessage(TerrainFailure.message(reason), 'error'),
+            theme: () => effectiveTheme(BPB.get().theme),
+            position: positionTerrainToggle
+        });
 
         const syncTerrainAvailability = settings => {
             const enabled = settings.enable3dMap === true;
             if (!enabled) {
-                if (terrainState === 'loading' || terrainState === 'active') stopTerrain();
+                if (terrainCoordinator.isOpen()) terrainCoordinator.stop();
                 else showTerrainMessage('');
             }
-            updateTerrainButton();
-            if (enabled && terrainConsentPending && terrainState === 'idle') {
+            terrainCoordinator.update();
+            if (enabled && terrainConsentPending && terrainCoordinator.isIdle()) {
                 terrainConsentPending = false;
-                startTerrain();
+                terrainCoordinator.start();
             }
         };
-
-        terrainButton.addEventListener('click', () => {
-            if (terrainState === 'active' || terrainState === 'loading') {
-                stopTerrain();
-                return;
-            }
-            if (terrainState !== 'idle') return;
-            if (BPB.get().enable3dMap !== true) {
-                if (terrainConsentPending || !mapRouteSegments.length) return;
-                terrainConsentPending = true;
-                postTerrain('requestConsent');
-                return;
-            }
-            startTerrain();
-        });
 
         // The 3D frame asks for Peakbagger's peak dots as its camera settles;
         // the request is served by the same-origin PLLBB feed the native 2D
@@ -795,33 +703,10 @@ const run = async () => {
 
             if (data.type === 'consentResult' && terrainConsentPending) {
                 terrainConsentPending = false;
-                if (data.enabled === true) startTerrain(true);
-            } else if (data.type === 'loaded' && terrainState === 'loading') {
-                clearTerrainLoadTimer();
-                rememberTerrainCamera(data.camera);
-                terrainState = 'active';
-                terrainNavTop = Number.isFinite(data.navTop) ? data.navTop : null;
-                mapIframe.style.visibility = 'hidden';
-                mapIframe.setAttribute('aria-hidden', 'true');
-                showTerrainMessage('');
-                updateTerrainButton();
-            } else if (data.type === 'metrics' && terrainState === 'active') {
-                if (Number.isFinite(data.navTop)) terrainNavTop = data.navTop;
-                positionTerrainToggle();
-            } else if (data.type === 'view' && terrainState === 'active') {
-                if (terrainCompass && Number.isFinite(data.bearing) && Number.isFinite(data.pitch)) {
-                    const bearing = ((data.bearing % 360) + 360) % 360;
-                    const pitch = Math.min(85, Math.max(0, data.pitch));
-                    terrainCompass.update(bearing, pitch);
-                }
-            } else if (data.type === 'camera' && terrainState === 'active') {
-                rememberTerrainCamera(data.camera);
-                if (terrainStopPending && data.requestId === terrainCameraRequestId) finishTerrainStop();
-            } else if (data.type === 'peaksRequest' && terrainState !== 'idle') {
+                if (data.enabled === true) terrainCoordinator.start(true);
+            } else if (data.type === 'peaksRequest' && !terrainCoordinator.isIdle()) {
                 answerPeaksRequest(data);
-            } else if (data.type === 'error' && (terrainState === 'loading' || terrainState === 'active')) {
-                failTerrain(TerrainFailure.message(data.reason));
-            }
+            } else terrainCoordinator.handleMessage(data);
         });
 
         syncTerrainAvailability(BPB.get());
@@ -1158,14 +1043,14 @@ const run = async () => {
                             if (candidate && Number.isFinite(candidate.lat) && Number.isFinite(candidate.lon)) hoveredPoint = candidate;
                         }
 
-                        if (terrainState === 'active') {
+                        if (terrainCoordinator.isActive()) {
                             postTerrain('highlight', {
                                 coordinates: hoveredPoint ? [hoveredPoint.lon, hoveredPoint.lat] : null,
                                 series: hoverSeries
                             });
                         }
 
-                        if (hoveredPoint && terrainState !== 'active' && iframeWin && iframeWin.mapsPlaceholder && iframeWin.L) {
+                        if (hoveredPoint && !terrainCoordinator.isActive() && iframeWin && iframeWin.mapsPlaceholder && iframeWin.L) {
                             ensureRouteOverlay();
                             const L = iframeWin.L;
                             const map = iframeWin.mapsPlaceholder;
@@ -1317,7 +1202,7 @@ const run = async () => {
                 scheduleRouteOverlay();
             }
             if (changed(['enable3dMap'])) syncTerrainAvailability(settings);
-            if (terrainState === 'loading' || terrainState === 'active') {
+            if (terrainCoordinator.isOpen()) {
                 if (changed(['mapRouteColor', 'mapRouteWidth', 'mapRouteCasingColor', 'mapRouteCasingWidth', 'theme'])) {
                     postTerrain('update', {
                         routeStyle: resolveMapRouteStyle(settings),
@@ -1342,7 +1227,7 @@ const run = async () => {
             if (!trkpts.length) return stats.textContent = "No track points found.";
 
             mapRouteSegments = parseMapRouteSegments(xml);
-            updateTerrainButton();
+            terrainCoordinator.update();
 
             const parsedPoints = trkpts.map(pt => {
                 const eleNode = pt.querySelector('ele');

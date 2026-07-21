@@ -55,6 +55,12 @@ test('the canonical unpacked extension opens Chrome settings in a full tab', () 
 });
 
 test('3D terrain is isolated from Peakbagger globals in an extension-owned frame', async () => {
+    const analyzerEntry = contentEntry('content/gpx-analyzer.js');
+    assert.ok(analyzerEntry);
+    assert.equal(analyzerEntry.world, 'MAIN');
+    assert.deepEqual(bundleSources('content/gpx-analyzer.js'),
+        ['gpx-metrics.js', 'terrain-basemap.js', 'terrain-camera.js', 'terrain-compass.js', 'terrain-coordinator.js', 'terrain-failure.js', 'peak-markers.js', 'settings-schema.js', 'gpx-analyzer.js']);
+
     const terrainEntry = manifest.content_scripts.find(entry =>
         entry.js.includes('content/terrain-map.js') && entry.matches.some(pattern => /ascent\.aspx/i.test(pattern)));
     assert.ok(terrainEntry);
