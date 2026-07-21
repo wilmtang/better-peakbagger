@@ -57,23 +57,25 @@ const loadSurface = async ({ status, onBackup, editOk = true, gpxOk = true, gpxR
     return { dom, sent };
 };
 
-const bar = dom => dom.window.document.querySelector('.bpb-gh-bar');
+const control = dom => dom.window.document.querySelector('.bpb-gh-control');
 
-test('the affordance mounts for the owner when enabled and connected', async () => {
+test('the affordance mounts as a compact control beside the native ascent actions', async () => {
     const { dom } = await loadSurface({ status: { enabled: true, connected: true } });
-    await waitFor(dom, () => bar(dom));
-    assert.match(bar(dom).textContent, /Back up this ascent to GitHub/);
-    assert.ok(bar(dom).querySelector('.bpb-gh-primary'));
+    await waitFor(dom, () => control(dom));
+    const actions = dom.window.document.getElementById('owneractions');
+    assert.equal(control(dom).parentElement, actions);
+    assert.equal(control(dom).textContent.trim(), 'Back up to GitHub');
+    assert.equal(dom.window.document.body.firstElementChild, dom.window.document.getElementById('page'));
 });
 
 test('no affordance when the feature is disabled or not connected', async () => {
     const off = await loadSurface({ status: { enabled: false, connected: false } });
     await new Promise(r => off.dom.window.setTimeout(r, 30));
-    assert.equal(bar(off.dom), null);
+    assert.equal(control(off.dom), null);
 
     const disconnected = await loadSurface({ status: { enabled: true, connected: false } });
     await new Promise(r => disconnected.dom.window.setTimeout(r, 30));
-    assert.equal(bar(disconnected.dom), null);
+    assert.equal(control(disconnected.dom), null);
 });
 
 test('clicking Back up fetches the track and sends the page fields, then shows success', async () => {
@@ -82,9 +84,9 @@ test('clicking Back up fetches the track and sends the page fields, then shows s
         status: { enabled: true, connected: true },
         onBackup: message => { received = message; return { ok: true, result: { commitUrl: 'https://github.com/me/backup/commit/abc', isUpdate: false } }; },
     });
-    await waitFor(dom, () => bar(dom));
-    bar(dom).querySelector('.bpb-gh-primary').dispatchEvent(new dom.window.Event('click'));
-    await waitFor(dom, () => /Backed up/.test(bar(dom).textContent));
+    await waitFor(dom, () => control(dom));
+    control(dom).querySelector('.bpb-gh-btn').dispatchEvent(new dom.window.Event('click'));
+    await waitFor(dom, () => /Backed up/.test(control(dom).textContent));
 
     assert.ok(received, 'a GITHUB_BACKUP_ASCENT message was sent');
     assert.equal(received.pageComplete, true);
@@ -97,7 +99,7 @@ test('clicking Back up fetches the track and sends the page fields, then shows s
     assert.match(received.page.report.markdown, /\*\*Great climb\*\*/);
     assert.match(received.gpx, /<gpx>/);           // fetched in the page session
     // Success state links to the commit.
-    const link = bar(dom).querySelector('.bpb-gh-link');
+    const link = control(dom).querySelector('.bpb-gh-link');
     assert.equal(link.getAttribute('href'), 'https://github.com/me/backup/commit/abc');
     // Never touched a Peakbagger Save control (there are none on this page).
     assert.equal(sent.filter(m => m.type === 'GITHUB_BACKUP_ASCENT').length, 1);
@@ -119,9 +121,9 @@ test('a 200 error page for a displayed track aborts without replacing the backup
         },
         onBackup: message => { received = message; return { ok: true, result: {} }; },
     });
-    await waitFor(dom, () => bar(dom));
-    bar(dom).querySelector('.bpb-gh-primary').dispatchEvent(new dom.window.Event('click'));
-    await waitFor(dom, () => /could not read the stored GPS track/i.test(bar(dom).textContent));
+    await waitFor(dom, () => control(dom));
+    control(dom).querySelector('.bpb-gh-btn').dispatchEvent(new dom.window.Event('click'));
+    await waitFor(dom, () => /could not read the stored GPS track/i.test(control(dom).textContent));
 
     assert.equal(received, null, 'an ambiguous track failure must not send a destructive replacement');
     assert.equal(sent.filter(m => m.type === 'GITHUB_BACKUP_ASCENT').length, 0);
@@ -132,9 +134,9 @@ test('an incomplete edit-form response aborts without sending a sparse backup', 
         status: { enabled: true, connected: true },
         editOk: false,
     });
-    await waitFor(dom, () => bar(dom));
-    bar(dom).querySelector('.bpb-gh-primary').dispatchEvent(new dom.window.Event('click'));
-    await waitFor(dom, () => /could not read the saved ascent form/i.test(bar(dom).textContent));
+    await waitFor(dom, () => control(dom));
+    control(dom).querySelector('.bpb-gh-btn').dispatchEvent(new dom.window.Event('click'));
+    await waitFor(dom, () => /could not read the saved ascent form/i.test(control(dom).textContent));
     assert.equal(sent.filter(m => m.type === 'GITHUB_BACKUP_ASCENT').length, 0);
 });
 
@@ -143,10 +145,10 @@ test('a typed backup error shows an actionable message with a retry', async () =
         status: { enabled: true, connected: true },
         onBackup: () => ({ ok: false, error: { code: 'rate-limit' } }),
     });
-    await waitFor(dom, () => bar(dom));
-    bar(dom).querySelector('.bpb-gh-primary').dispatchEvent(new dom.window.Event('click'));
-    await waitFor(dom, () => /rate-limiting/.test(bar(dom).textContent));
-    assert.ok(Array.from(bar(dom).querySelectorAll('button'), b => b.textContent).includes('Try again'));
+    await waitFor(dom, () => control(dom));
+    control(dom).querySelector('.bpb-gh-btn').dispatchEvent(new dom.window.Event('click'));
+    await waitFor(dom, () => /rate-limiting/.test(control(dom).textContent));
+    assert.ok(Array.from(control(dom).querySelectorAll('button'), b => b.textContent).includes('Try again'));
 });
 
 test('an unexpected backup error shows GitHub\'s bounded detail', async () => {
@@ -154,10 +156,10 @@ test('an unexpected backup error shows GitHub\'s bounded detail', async () => {
         status: { enabled: true, connected: true },
         onBackup: () => ({ ok: false, error: { code: 'unknown', message: 'Repository service is temporarily unavailable.' } }),
     });
-    await waitFor(dom, () => bar(dom));
-    bar(dom).querySelector('.bpb-gh-primary').dispatchEvent(new dom.window.Event('click'));
-    await waitFor(dom, () => /Repository service is temporarily unavailable/.test(bar(dom).textContent));
-    assert.doesNotMatch(bar(dom).textContent, /something went wrong/i);
+    await waitFor(dom, () => control(dom));
+    control(dom).querySelector('.bpb-gh-btn').dispatchEvent(new dom.window.Event('click'));
+    await waitFor(dom, () => /Repository service is temporarily unavailable/.test(control(dom).textContent));
+    assert.doesNotMatch(control(dom).textContent, /something went wrong/i);
 });
 
 test('automatic mode pushes on load without a click', async () => {
@@ -166,7 +168,7 @@ test('automatic mode pushes on load without a click', async () => {
         status: { enabled: true, connected: true, auto: true },
         onBackup: message => { received = message; return { ok: true, result: { commitUrl: 'https://github.com/me/backup/commit/z', isUpdate: false } }; },
     });
-    await waitFor(dom, () => bar(dom) && /Backed up/.test(bar(dom).textContent));
+    await waitFor(dom, () => control(dom) && /Backed up/.test(control(dom).textContent));
     assert.ok(received && received.auto === true, 'the push was flagged automatic');
 });
 
@@ -175,8 +177,8 @@ test('automatic mode on a revisit falls back to the manual button, not an error'
         status: { enabled: true, connected: true, auto: true },
         onBackup: () => ({ ok: false, error: { code: 'no-fresh-save' } }),
     });
-    await waitFor(dom, () => bar(dom) && /Back up this ascent/.test(bar(dom).textContent));
-    assert.ok(bar(dom).querySelector('.bpb-gh-primary'), 'the manual Back up button is offered');
+    await waitFor(dom, () => control(dom) && /Back up to GitHub/.test(control(dom).textContent));
+    assert.ok(control(dom).querySelector('.bpb-gh-btn'), 'the manual Back up button is offered');
 });
 
 test('a visitor viewing someone else’s ascent gets no affordance', async () => {
@@ -189,7 +191,7 @@ test('a visitor viewing someone else’s ascent gets no affordance', async () =>
     dom.window.fetch = async () => ({ ok: true, text: async () => '' });
     await evalBundle(dom.window, 'content/ascent-backup.js');
     await new Promise(r => dom.window.setTimeout(r, 30));
-    assert.equal(bar(dom), null);
+    assert.equal(control(dom), null);
     // Fails closed before even asking the background about status.
     assert.equal(statusAsked, false);
 });

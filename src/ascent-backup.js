@@ -45,12 +45,16 @@ import { classifyResponse } from './profile-backup-core.js';
         return node;
     };
 
-    let bar = null;
-    const setBody = (...nodes) => { if (bar) bar.querySelector('.bpb-gh-body').replaceChildren(...nodes.filter(Boolean)); };
+    let control = null;
+    const setBody = (...nodes) => { if (control) control.querySelector('.bpb-gh-body').replaceChildren(...nodes.filter(Boolean)); };
 
     const renderIdle = info => setBody(
-        el('span', { class: 'bpb-gh-label', text: 'Back up this ascent to GitHub' }),
-        el('button', { type: 'button', class: 'bpb-gh-btn bpb-gh-primary', text: 'Back up', onclick: () => runBackup(info) }),
+        el('button', {
+            type: 'button',
+            class: 'bpb-gh-btn',
+            text: 'Back up to GitHub',
+            onclick: () => runBackup(info),
+        }),
     );
 
     const renderWorking = () => setBody(el('span', { class: 'bpb-gh-label', text: 'Backing up to GitHub…' }));
@@ -135,12 +139,14 @@ import { classifyResponse } from './profile-backup-core.js';
         renderError(info, response && response.error);
     };
 
-    const mountBar = (info, { auto = false } = {}) => {
-        bar = el('div', { class: 'bpb-gh-bar', role: 'region', 'aria-label': 'GitHub backup' }, [
-            el('div', { class: 'bpb-gh-body' }),
-            el('button', { type: 'button', class: 'bpb-gh-dismiss', 'aria-label': 'Dismiss', text: '×', onclick: () => bar.remove() }),
+    const mountControl = (info, { auto = false } = {}) => {
+        const editLink = AscentPage.ascentEditLink(document, info.ascentId);
+        const actions = editLink && editLink.parentElement;
+        if (!actions) return;
+        control = el('span', { class: 'bpb-gh-control', role: 'group', 'aria-label': 'GitHub backup' }, [
+            el('span', { class: 'bpb-gh-body', 'aria-live': 'polite' }),
         ]);
-        document.body.insertBefore(bar, document.body.firstChild);
+        actions.append(document.createTextNode(' '), control);
         // Automatic mode pushes right away (declining quietly on a revisit);
         // manual mode waits for the click.
         if (auto) runBackup(info, { auto: true });
@@ -153,7 +159,7 @@ import { classifyResponse } from './profile-backup-core.js';
         if (info.ascentId == null || !info.isOwner) return;
         const status = await sendBg({ type: 'GITHUB_BACKUP_STATUS' });
         if (!status || !status.enabled || !status.connected) return;
-        mountBar(info, { auto: !!status.auto });
+        mountControl(info, { auto: !!status.auto });
     };
 
     void start();
