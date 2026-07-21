@@ -798,7 +798,7 @@ const run = async () => {
                 if (terrainStopPending && data.requestId === terrainCameraRequestId) finishTerrainStop();
             } else if (data.type === 'peaksRequest' && terrainState !== 'idle') {
                 answerPeaksRequest(data);
-            } else if (data.type === 'error' && terrainState === 'loading') {
+            } else if (data.type === 'error' && (terrainState === 'loading' || terrainState === 'active')) {
                 failTerrain(TerrainFailure.message(data.reason));
             }
         });

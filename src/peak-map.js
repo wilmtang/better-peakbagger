@@ -364,7 +364,7 @@ import { terrainFailure as TerrainFailure } from './terrain-failure.js';
             const camera = TerrainCamera.clean(data.camera);
             if (camera) terrainViewCamera = camera;
             if (terrainStopPending && data.requestId === terrainCameraRequestId) finishTerrainStop();
-        } else if (data.type === 'error' && terrainState === 'loading') {
+        } else if (data.type === 'error' && (terrainState === 'loading' || terrainState === 'active')) {
             failTerrain(data.reason);
         }
     });

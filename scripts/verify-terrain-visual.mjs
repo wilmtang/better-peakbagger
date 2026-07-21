@@ -1031,6 +1031,36 @@ try {
         throw new Error('A group map queried the peak feed — the native map never shows other peaks there');
     }
 
+    // Exercise a real WebGL context loss on the hardware-backed MapLibre
+    // canvas. The frame must abandon it, the bridge must remove the iframe,
+    // and the page coordinator must restore native 2D with an actionable note.
+    const contextLossStarted = await evaluate(cdp, `(() => {
+        const frame = document.getElementById('bpb-terrain-frame');
+        const map = frame && frame.contentWindow && frame.contentWindow.__bpbTerrainTestMap;
+        const canvas = map && typeof map.getCanvas === 'function' ? map.getCanvas() : null;
+        const gl = canvas && (canvas.getContext('webgl2') || canvas.getContext('webgl'));
+        const extension = gl && gl.getExtension('WEBGL_lose_context');
+        if (!extension) return false;
+        extension.loseContext();
+        return true;
+    })()`);
+    if (!contextLossStarted) throw new Error('BigMap 3D could not invoke WEBGL_lose_context');
+    const contextLossFallback = await waitForPageState(cdp, `(() => {
+        const toggle = document.getElementById('bpb-terrain-toggle');
+        const frame = document.getElementById('bpb-terrain-frame');
+        const nativeMap = document.getElementById('if');
+        const notice = document.getElementById('bpb-terrain-failure');
+        return {
+            ready: toggle && toggle.textContent === '3D' && !frame && nativeMap
+                && nativeMap.style.visibility === 'visible' && notice && !notice.hidden,
+            message: notice && notice.textContent
+        };
+    })()`, 8000);
+    if (!/could not render 3D terrain/.test(contextLossFallback.message || '')) {
+        throw new Error(`WebGL context loss showed the wrong fallback: ${JSON.stringify(contextLossFallback)}`);
+    }
+    await capture(cdp, path.join(outputDir, 'bigmap-context-loss-fallback.png'));
+
     // Full Screen peak maps have no route, but must expose the same 3D summit
     // view as the embedded Peak page and preserve the explicit subject marker.
     const peakFeedBeforePeakBigMap = peakFeedRequests.length;

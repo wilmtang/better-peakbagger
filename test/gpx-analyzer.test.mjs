@@ -372,6 +372,12 @@ test('GPX analyzer adds a thick, segment-preserving route casing behind native L
     window.dispatchEvent(new window.MessageEvent('message', {
         source: window,
         origin: window.location.origin,
+        data: { __bpbTerrain: true, dir: 'toPage', type: 'loaded' }
+    }));
+    assert.equal(iframe.style.visibility, 'hidden');
+    window.dispatchEvent(new window.MessageEvent('message', {
+        source: window,
+        origin: window.location.origin,
         data: { __bpbTerrain: true, dir: 'toPage', type: 'error', reason: 'maplibre' }
     }));
     assert.equal(iframe.style.visibility, 'visible');

@@ -104,6 +104,8 @@ import { terrainCamera } from './terrain-camera.js';
 
     let map = null;
     let mapElement = null;
+    let rendererCanvas = null;
+    let contextLostHandler = null;
     let resizeObserver = null;
     let loadTimer = null;
     let loaded = false;
@@ -238,9 +240,17 @@ import { terrainCamera } from './terrain-camera.js';
             cancelAnimationFrame(viewFrame);
             viewFrame = null;
         }
+        if (rendererCanvas && contextLostHandler && typeof rendererCanvas.removeEventListener === 'function') {
+            rendererCanvas.removeEventListener('webglcontextlost', contextLostHandler);
+        }
+        rendererCanvas = null;
+        contextLostHandler = null;
         if (map) {
-            try { map.remove(); } catch (error) { /* The frame may already be unloading. */ }
+            // Clear the identity before remove(): teardown may itself emit a
+            // final MapLibre error, which must not recurse through fail().
+            const terrainMap = map;
             map = null;
+            try { terrainMap.remove(); } catch (error) { /* The frame may already be unloading. */ }
         }
         if (terrainProtocolRegistered && globalThis.maplibregl && typeof globalThis.maplibregl.removeProtocol === 'function') {
             try { globalThis.maplibregl.removeProtocol(TerrainCache.PROTOCOL); } catch (error) { /* The frame may already be unloading. */ }
@@ -1317,6 +1327,18 @@ import { terrainCamera } from './terrain-camera.js';
                 fadeDuration: 0
             });
             const terrainMap = map;
+            rendererCanvas = typeof terrainMap.getCanvas === 'function' ? terrainMap.getCanvas() : null;
+            if (rendererCanvas && typeof rendererCanvas.addEventListener === 'function') {
+                contextLostHandler = event => {
+                    if (map !== terrainMap) return;
+                    // We are abandoning this renderer and falling back to the
+                    // native map, so suppress MapLibre's competing restoration
+                    // attempt before tearing its canvas down.
+                    if (event && typeof event.preventDefault === 'function') event.preventDefault();
+                    fail('renderer');
+                };
+                rendererCanvas.addEventListener('webglcontextlost', contextLostHandler);
+            }
             // Bottom-right, matching the native 2D map's zoom: a compact
             // attribution ("ⓘ") first so it can't wrap and shove the zoom upward,
             // then a zoom-only control (no compass) so the stack is the same
@@ -1331,7 +1353,12 @@ import { terrainCamera } from './terrain-camera.js';
                     basemapErrored = true;
                     return;
                 }
-                if (!loaded && map === terrainMap) fail('maplibre');
+                if (map !== terrainMap) return;
+                if (!loaded) fail('maplibre');
+                // Loaded source errors are ordinary network gaps and remain
+                // fail-open. A source-less error is a renderer/style failure,
+                // which cannot recover into a trustworthy interactive map.
+                else if (!event || !event.sourceId) fail('renderer');
             });
             // A raster tile that loads fires a 'source' data event carrying the
             // tile. One such event proves the drape can render, so a handful of

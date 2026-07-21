@@ -419,6 +419,12 @@ test('Full Screen 3D loading can be canceled and renderer failures are announced
     window.dispatchEvent(new window.MessageEvent('message', {
         source: window,
         origin: window.location.origin,
+        data: { __bpbTerrain: true, dir: 'toPage', type: 'loaded' }
+    }));
+    assert.equal(window.document.getElementById('map').style.visibility, 'hidden');
+    window.dispatchEvent(new window.MessageEvent('message', {
+        source: window,
+        origin: window.location.origin,
         data: { __bpbTerrain: true, dir: 'toPage', type: 'error', reason: 'maplibre' }
     }));
     const failure = window.document.getElementById('bpb-terrain-failure');
@@ -426,6 +432,8 @@ test('Full Screen 3D loading can be canceled and renderer failures are announced
     assert.equal(failure.hidden, false);
     assert.match(failure.textContent, /could not render 3D terrain/);
     assert.equal(toggle.textContent, '3D');
+    assert.equal(window.document.getElementById('map').style.visibility, 'visible',
+        'an active renderer failure restores the native map');
     await new Promise(resolve => window.setTimeout(resolve, 0));
     dom.window.close();
 });

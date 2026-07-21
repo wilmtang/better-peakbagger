@@ -463,6 +463,7 @@ test('3D terrain frame validates coordinate-only routes before loading public DE
             this.handlers = new Map();
             this.removed = false;
             this.renderCalls = [];
+            this.canvas = window.document.createElement('canvas');
             maps.push(this);
         }
         addControl(control, position) { this.controls.push({ control, position }); }
@@ -481,6 +482,7 @@ test('3D terrain frame validates coordinate-only routes before loading public DE
         getLayer(id) { return this.layers.find(layer => layer.id === id); }
         removeLayer(id) { this.layers = this.layers.filter(layer => layer.id !== id); }
         getSource(id) { return this.sources.get(id); }
+        getCanvas() { return this.canvas; }
         removeSource(id) { this.sources.delete(id); }
         setPaintProperty(...args) { this.paint.push(args); }
         fitBounds(bounds, options) { this.fitted = { bounds, options }; }
@@ -642,6 +644,9 @@ test('3D terrain frame validates coordinate-only routes before loading public DE
     assert.equal(messages.at(-1).type, 'loaded');
     assert.equal(map.handlers.has('data'), true,
         'the frame reports loaded without waiting for a drape tile data event');
+    map.handlers.get('error')({ sourceId: 'terrain', error: new Error('one DEM tile failed') });
+    assert.equal(map.removed, false, 'a post-load source error remains a recoverable coverage gap');
+    assert.equal(messages.at(-1).type, 'loaded', 'recoverable source errors stay silent to the page');
 
     // macOS Firefox rewrites Ctrl + primary-button mousedown to button=2 but
     // leaves buttons=1. MapLibre cannot continue that internally inconsistent
@@ -774,6 +779,10 @@ test('3D terrain frame validates coordinate-only routes before loading public DE
         requestId: 11,
         camera: { center: [47.64, -122.29], zoom: 13.5 }
     }, 'an explicit switch request reads the live camera instead of relying on event timing');
+    grouped.handlers.get('error')({ error: new Error('renderer stopped') });
+    assert.equal(grouped.removed, true, 'a source-less post-load renderer error tears down the dead canvas');
+    assert.equal(messages.at(-1).type, 'error');
+    assert.equal(messages.at(-1).reason, 'renderer');
 
     // A drape whose every tile fails (e.g. a whole layer blocked by CORS)
     // loads no tile, so it is dropped to terrain-only at the first idle.
@@ -832,6 +841,13 @@ test('3D terrain frame validates coordinate-only routes before loading public DE
     }]);
     dispatch({ type: 'peaks', unavailable: true });
     assert.equal(focusedPeaks().length, 1, 'the subject peak remains when the nearby feed is unavailable');
+
+    const contextLoss = new window.Event('webglcontextlost', { cancelable: true });
+    assert.equal(focused.canvas.dispatchEvent(contextLoss), false,
+        'the frame cancels MapLibre restoration when it deliberately falls back to 2D');
+    assert.equal(focused.removed, true, 'WebGL context loss tears down the unusable renderer');
+    assert.equal(messages.at(-1).type, 'error');
+    assert.equal(messages.at(-1).reason, 'renderer');
 
     dom.window.close();
 });
