@@ -558,7 +558,7 @@ test('overnight camping remains visible when the track starts at its highest poi
     dom.window.close();
 });
 
-test('a failed GPS track download reports the HTTP error instead of a parse message', async () => {
+test('a missing GPS track is reported as missing instead of a parse failure', async () => {
     const dom = new JSDOM(`<!doctype html><body>
       <p><a href="https://www.peakbagger.com/demo.gpx">Download this GPS track</a></p>
     </body>`, {
@@ -583,8 +583,8 @@ test('a failed GPS track download reports the HTTP error instead of a parse mess
     Object.defineProperty(window.document, 'readyState', { configurable: true, value: 'complete' });
     window.eval(analyzerBundle);
     const analysisText = () => window.document.getElementById('bpb-gpx-analysis')?.textContent || '';
-    await waitFor(dom, () => analysisText().includes('HTTP 404'));
-    assert.match(analysisText(), /The GPS track download failed \(HTTP 404\)\./);
+    await waitFor(dom, () => /could not find the requested GPS track/i.test(analysisText()));
+    assert.match(analysisText(), /Peakbagger could not find the requested GPS track\./);
     assert.doesNotMatch(analysisText(), /No track points found/);
 
     dom.window.close();

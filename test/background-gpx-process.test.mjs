@@ -210,7 +210,7 @@ test('a partial corridor lookup fails closed as an error, never as "no peaks"', 
         type: 'GPX_PROCESS_START', segments: SEGMENTS, waypoints: [], trackName: '', utcOffsetMinutes: 0
     });
     assert.equal(result.phase, 'error');
-    assert.match(result.error.message, /summit lookup failed/i);
+    assert.match(result.error.message, /could not reach Peakbagger for the nearby summit data/i);
     assert.equal(harness.values.bpbCaptureJobs['5'].phase, 'error');
     assert.equal(harness.values.bpbCaptureJobs['5'].uploadGpx, undefined);
 });

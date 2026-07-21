@@ -10,60 +10,14 @@
 
 import { ascentSnapshot as Snapshot } from './ascent-snapshot.js';
 import { reportMarkup as Markup } from './report-markup.js';
-import { classifyResponse } from './profile-backup-core.js';
+import {
+    fetchPeakbaggerDocument,
+    fetchPeakbaggerResource,
+} from './peakbagger-request.js';
 
 const trim = value => (typeof value === 'string' ? value : value == null ? '' : String(value)).trim();
 
-// Fetch inside the Peakbagger content-script session and classify both status
-// and body. Redirected login, challenge, and error pages frequently finish as
-// HTTP 200, so response.ok is never sufficient at this boundary.
-export const fetchPeakbaggerResource = async (url, { kind = 'edit', fetchFn = globalThis.fetch } = {}) => {
-    const requestedUrl = String(url || '');
-    let response;
-    try {
-        response = await fetchFn(requestedUrl, {
-            credentials: 'include',
-            redirect: 'follow',
-            cache: 'no-store',
-        });
-    } catch (error) {
-        return {
-            kind: 'transient',
-            requestedUrl,
-            url: requestedUrl,
-            status: 0,
-            redirected: false,
-            reason: trim(error && error.message) || 'Network request failed.',
-        };
-    }
-
-    const status = Number(response && response.status) || 0;
-    const resolvedUrl = trim(response && response.url) || requestedUrl;
-    const redirected = !!(response && response.redirected);
-    let text;
-    try {
-        text = await response.text();
-    } catch {
-        return {
-            kind: 'transient',
-            requestedUrl,
-            url: resolvedUrl,
-            status,
-            redirected,
-            reason: 'The response could not be read.',
-        };
-    }
-
-    const classification = classifyResponse(status, response && response.headers, text, { kind });
-    return {
-        kind: classification,
-        requestedUrl,
-        url: resolvedUrl,
-        status,
-        redirected,
-        ...(classification === 'ok' ? { text } : {}),
-    };
-};
+export { fetchPeakbaggerDocument, fetchPeakbaggerResource };
 
 // Parse the owner-only edit form into the single raw-field schema. Missing
 // required controls and mismatched identity are different failures, but neither
@@ -121,6 +75,7 @@ export const storedGpxUrl = ({ origin, ascentId } = {}) => {
 };
 
 export const ascentBackupSource = {
+    fetchPeakbaggerDocument,
     fetchPeakbaggerResource,
     snapshotFromEditDocument,
     storedGpxUrl,

@@ -13,6 +13,8 @@ import { terrainCache as TerrainCache } from './terrain-cache.js';
 import { settings as Settings } from './settings.js';
 import { githubAuth as GithubAuth } from './github-auth.js';
 import { githubClient as GithubClient } from './github-client.js';
+import { peakbaggerError as PeakbaggerError } from './peakbagger-error.js';
+import { fetchPeakbaggerResource } from './peakbagger-request.js';
 
 (() => {
     'use strict';
@@ -127,14 +129,9 @@ import { githubClient as GithubClient } from './github-client.js';
     };
 
     const peakbaggerLogin = async () => {
-        let response;
-        try {
-            response = await fetch('https://peakbagger.com/Default.aspx', { credentials: 'include', redirect: 'follow' });
-        } catch (_error) {
-            throw new Error('Could not reach Peakbagger to verify your login.');
-        }
-        if (!response.ok) throw new Error(`Peakbagger login check failed with HTTP ${response.status}.`);
-        const html = await response.text();
+        const response = await fetchPeakbaggerResource('https://peakbagger.com/Default.aspx', { kind: 'html' });
+        if (response.kind !== 'ok') throw PeakbaggerError.exception(response.error);
+        const html = response.text;
         const match = /href=["'][^"']*\bcid=(\d+)[^"']*["'][^>]*>[\s\S]{0,80}?My Home Page/i.exec(html)
             || /href=["'][^"']*\/climber\/(?:climberedit|ascentedit)\.aspx\?[^"']*\bcid=(\d+)[^"']*["'][^>]*>[\s\S]{0,80}?(?:Edit Account|Add Ascent)/i.exec(html);
         return match ? match[1] : null;
@@ -149,20 +146,15 @@ import { githubClient as GithubClient } from './github-client.js';
         });
         let lastError;
         for (let attempt = 0; attempt < 2; attempt++) {
-            try {
-                const response = await fetch(`https://peakbagger.com/Async/pllbb2.aspx?${params}`, {
-                    credentials: 'include',
-                    redirect: 'follow'
-                });
-                if (!response.ok) throw new Error(`HTTP ${response.status}`);
-                const text = await response.text();
-                if (/<html\b/i.test(text)) throw new Error('unexpected HTML response');
-                return text;
-            } catch (error) {
-                lastError = error;
-            }
+            const response = await fetchPeakbaggerResource(
+                `https://www.peakbagger.com/Async/pllbb2.aspx?${params}`,
+                { kind: 'peaks' }
+            );
+            if (response.kind === 'ok') return response.text;
+            lastError = PeakbaggerError.exception(response.error);
+            if (response.kind !== 'transient') break;
         }
-        throw new Error(`Peakbagger summit lookup failed after retry: ${lastError.message}`);
+        throw lastError;
     };
 
     const mapWithConcurrency = async (items, concurrency, worker) => {
@@ -1092,7 +1084,8 @@ import { githubClient as GithubClient } from './github-client.js';
             return {
                 ok: false,
                 error: {
-                    code: 'peakbagger-unavailable',
+                    source: error && error.source,
+                    code: error && error.code ? error.code : 'peakbagger-unavailable',
                     message: error && error.message
                         ? error.message
                         : 'Could not reach Peakbagger. Check your connection, then try again.',

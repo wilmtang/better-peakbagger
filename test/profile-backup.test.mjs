@@ -280,7 +280,7 @@ test('a 200 error page for the track fails with an honest, redirect-naming reaso
 
     const panel = dom.window.document.getElementById('bpb-profile-backup');
     assert.match(panel.textContent, /Backed up 0; skipped 37; failed 1/);
-    assert.match(panel.textContent, /Peakbagger sent an error page instead of the GPS track/);
+    assert.match(panel.textContent, /Peakbagger returned an unexpected page instead of the GPS track/);
     assert.match(panel.textContent, /redirected to PBError\.aspx/);
     assert.doesNotMatch(panel.textContent, /HTTP 200/);
 });

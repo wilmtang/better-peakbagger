@@ -9,7 +9,9 @@
 
 import { settings as S } from './settings.js';
 import { favoriteClimbers as F } from './favorite-climbers.js';
-import { classifyResponse, numericParam, ownerClimberId } from './profile-backup-core.js';
+import { peakbaggerError as PeakbaggerError } from './peakbagger-error.js';
+import { fetchPeakbaggerDocument } from './peakbagger-request.js';
+import { numericParam, ownerClimberId } from './profile-backup-core.js';
 
     const pageParams = new URLSearchParams(location.search);
     const pagePathname = location.pathname.toLowerCase();
@@ -718,21 +720,30 @@ import { classifyResponse, numericParam, ownerClimberId } from './profile-backup
                 : 'Loading your Peakbagger Buddy List…';
             const url = F.buddyListUrl(ownCid, location.origin);
             buddyRefreshPromise = (async () => {
-                const response = await fetch(url, { credentials: 'include' });
-                const body = await response.text();
-                if (classifyResponse(response.status, response.headers, body, { kind: 'buddies' }) !== 'ok') {
-                    throw new Error('wrong Buddy List response');
+                const result = await fetchPeakbaggerDocument(url, { kind: 'buddies' });
+                if (result.kind !== 'ok') throw result.error;
+                const responseOwner = ownerClimberId(result.document);
+                if (responseOwner !== ownCid) {
+                    throw PeakbaggerError.failure('identity-mismatch', { resource: 'buddies' });
                 }
-                const parsed = new DOMParser().parseFromString(body, 'text/html');
                 const nextCache = {
                     ownerCid: ownCid,
-                    entries: F.parseBuddyDocument(parsed),
+                    entries: F.parseBuddyDocument(result.document),
                     fetchedAt: Date.now(),
                 };
                 buddyCache = nextCache;
-                await chrome.storage.local.set({ [F.BUDDY_CACHE_KEY]: nextCache });
-            })().catch(() => {
-                if (!buddyCache) favoriteLoadError = "Your Buddy List couldn't be loaded. Open peakbagger.com and try again.";
+                try {
+                    await chrome.storage.local.set({ [F.BUDDY_CACHE_KEY]: nextCache });
+                } catch {
+                    favoriteLoadError = PeakbaggerError.message(
+                        PeakbaggerError.failure('storage', { resource: 'buddies' })
+                    );
+                }
+            })().catch(error => {
+                const message = PeakbaggerError.message(error && error.code
+                    ? error
+                    : PeakbaggerError.failure('network', { resource: 'buddies' }));
+                favoriteLoadError = buddyCache ? `Using your saved Buddy List. ${message}` : message;
             }).finally(() => {
                 buddyRefreshPromise = null;
                 refreshFavorites();

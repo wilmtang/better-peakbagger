@@ -93,11 +93,10 @@ test('the shared fetch reader uses the signed-in session and validates response 
         fetchFn,
     });
     assert.equal(ok.kind, 'ok');
-    assert.deepEqual(request.init, {
-        credentials: 'include',
-        redirect: 'follow',
-        cache: 'no-store',
-    });
+    assert.equal(request.init.credentials, 'include');
+    assert.equal(request.init.redirect, 'follow');
+    assert.equal(request.init.cache, 'no-store');
+    assert.ok(request.init.signal instanceof AbortSignal);
 
     const wrong = await Source.fetchPeakbaggerResource('https://www.peakbagger.com/climber/GPXFile.aspx?aid=7&sep=1', {
         kind: 'gpx',

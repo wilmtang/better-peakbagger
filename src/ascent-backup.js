@@ -13,6 +13,7 @@
 import { ascentPage as AscentPage } from './ascent-page.js';
 import { ascentBackupSource as Source } from './ascent-backup-source.js';
 import { githubError as GithubError } from './github-error.js';
+import { peakbaggerError as PeakbaggerError } from './peakbagger-error.js';
 
 (() => {
     'use strict';
@@ -20,11 +21,11 @@ import { githubError as GithubError } from './github-error.js';
     const ext = globalThis.browser || globalThis.chrome;
     if (!ext || !ext.runtime) return;
 
-    const errorText = error => GithubError.message(error, {
-        fallback: 'The extension did not return an error description. Reload this ascent and try again.',
-    });
-    const failure = code => Object.assign(new Error(code), { code });
-
+    const errorText = error => error && error.source === 'peakbagger'
+        ? PeakbaggerError.message(error)
+        : GithubError.message(error, {
+            fallback: 'The extension did not return an error description. Reload this ascent and try again.',
+        });
     // Promise form is shared by modern MV3 Chrome and Firefox's browser API;
     // callback form is not portable to Firefox's browser namespace.
     const sendBg = async message => {
@@ -72,7 +73,7 @@ import { githubError as GithubError } from './github-error.js';
 
     const responseText = async (url, kind) => {
         const result = await Source.fetchPeakbaggerResource(url, { kind });
-        if (result.kind !== 'ok') throw failure(kind === 'gpx' ? 'peakbagger-track' : 'peakbagger-read');
+        if (result.kind !== 'ok') throw result.error;
         return result.text;
     };
 
@@ -81,11 +82,11 @@ import { githubError as GithubError } from './github-error.js';
     // display page omits many fields and cannot distinguish an empty field from
     // a field it simply does not render.
     const readPersistedSnapshot = async info => {
-        if (!info.editUrl) throw failure('peakbagger-read');
-        const html = await responseText(info.editUrl, 'edit');
-        const doc = new DOMParser().parseFromString(html, 'text/html');
+        if (!info.editUrl) throw PeakbaggerError.failure('invalid-request', { resource: 'edit' });
+        const result = await Source.fetchPeakbaggerDocument(info.editUrl, { kind: 'edit' });
+        if (result.kind !== 'ok') throw result.error;
         const parsed = Source.snapshotFromEditDocument({
-            doc,
+            doc: result.document,
             editUrl: info.editUrl,
             baseUrl: location.href,
             ascentId: info.ascentId,
@@ -94,7 +95,11 @@ import { githubError as GithubError } from './github-error.js';
             fallbackPeakName: info.peak.name,
             extensionVersion: ext.runtime.getManifest ? ext.runtime.getManifest().version : '',
         });
-        if (!parsed.ok) throw failure('peakbagger-read');
+        if (!parsed.ok) {
+            throw PeakbaggerError.failure(parsed.code === 'identity' ? 'identity-mismatch' : 'parse', {
+                resource: 'edit',
+            });
+        }
         return parsed.snapshot;
     };
 

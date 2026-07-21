@@ -5,7 +5,9 @@
 
 import { favoriteClimbers as F } from '../src/favorite-climbers.js';
 import { githubError as GithubError } from '../src/github-error.js';
-import { classifyResponse, numericParam, ownerClimberId } from '../src/profile-backup-core.js';
+import { peakbaggerError as PeakbaggerError } from '../src/peakbagger-error.js';
+import { fetchPeakbaggerDocument } from '../src/peakbagger-request.js';
+import { numericParam, ownerClimberId } from '../src/profile-backup-core.js';
 
 const UNDO_MS = 6000;
 const PEAKBAGGER_ORIGIN = 'https://www.peakbagger.com';
@@ -43,7 +45,7 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
     let favorites = F.cleanFavorites(null);
     let buddyCache = null;
     let buddyState = 'idle';
-    let buddyError = '';
+    let buddyError = null;
     let refreshPromise = null;
     let refreshRevision = 0;
     let refreshTimer = null;
@@ -91,6 +93,14 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
         buddyStatusEl.append(' ', link);
     };
 
+    const appendBuddyRecovery = error => {
+        const recovery = PeakbaggerError.recovery(error, {
+            url: F.signedInBuddyListUrl(PEAKBAGGER_ORIGIN),
+            label: 'Open Buddy List',
+        });
+        if (recovery) appendPeakbaggerLink(recovery);
+    };
+
     const renderBuddyStatus = () => {
         buddyStatusEl.textContent = '';
         if (buddyState === 'loading') {
@@ -100,27 +110,15 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
         if (buddyCache) {
             const count = buddyCache.entries.length;
             buddyStatusEl.textContent = `${count} ${count === 1 ? 'buddy' : 'buddies'} · ${relativeAge(buddyCache.fetchedAt)}`;
-            if (buddyError === 'signed-out') {
-                buddyStatusEl.append(' · Sign in to update.');
-                appendPeakbaggerLink({
-                    label: 'Sign in to Peakbagger',
-                    href: `${PEAKBAGGER_ORIGIN}/Default.aspx`,
-                });
-            } else if (buddyError) {
-                buddyStatusEl.append(' · Refresh failed.');
-                appendPeakbaggerLink();
+            if (buddyError) {
+                buddyStatusEl.append(` · ${PeakbaggerError.message(buddyError)}`);
+                appendBuddyRecovery(buddyError);
             }
             return;
         }
-        if (buddyError === 'signed-out') {
-            buddyStatusEl.textContent = 'Sign in to Peakbagger to load your Buddy List.';
-            appendPeakbaggerLink({
-                label: 'Sign in to Peakbagger',
-                href: `${PEAKBAGGER_ORIGIN}/Default.aspx`,
-            });
-        } else if (buddyError) {
-            buddyStatusEl.textContent = "Your Buddy List couldn't be loaded.";
-            appendPeakbaggerLink();
+        if (buddyError) {
+            buddyStatusEl.textContent = PeakbaggerError.message(buddyError);
+            appendBuddyRecovery(buddyError);
         } else {
             buddyStatusEl.textContent = 'Never loaded';
         }
@@ -261,39 +259,35 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
         }
     };
 
-    const readResponse = async url => {
-        const response = await fetch(url, { credentials: 'include' });
-        const text = await response.text();
-        return { response, text };
-    };
-
     const loadSignedInBuddies = async () => {
         const url = F.signedInBuddyListUrl(PEAKBAGGER_ORIGIN);
-        const { response, text } = await readResponse(url);
-        const classification = classifyResponse(response.status, response.headers, text, { kind: 'buddies' });
-        if (classification === 'challenged' || classification === 'transient'
-            || response.status < 200 || response.status >= 300) throw Object.assign(new Error('unreachable'), { code: 'unreachable' });
-        const doc = new DOMParser().parseFromString(text, 'text/html');
-        const ownerCid = ownerClimberId(doc);
-        if (ownerCid == null) throw Object.assign(new Error('signed out'), { code: 'signed-out' });
-        if (classification !== 'ok') throw Object.assign(new Error('unreachable'), { code: 'unreachable' });
-        return { ownerCid, entries: F.parseBuddyDocument(doc) };
+        const result = await fetchPeakbaggerDocument(url, { kind: 'buddies' });
+        if (result.kind !== 'ok') throw result.error;
+        const ownerCid = ownerClimberId(result.document);
+        if (ownerCid == null) throw PeakbaggerError.failure('signed-out', { resource: 'buddies' });
+        return { ownerCid, entries: F.parseBuddyDocument(result.document) };
     };
 
     const refreshBuddies = () => {
         if (refreshPromise) return refreshPromise;
         buddyState = 'loading';
-        buddyError = '';
+        buddyError = null;
         setBusy(true);
         renderBuddyStatus();
         refreshPromise = (async () => {
             const { ownerCid, entries } = await loadSignedInBuddies();
             const next = { ownerCid, entries, fetchedAt: Date.now() };
             buddyCache = next;
-            await store.set({ [F.BUDDY_CACHE_KEY]: next });
+            try {
+                await store.set({ [F.BUDDY_CACHE_KEY]: next });
+            } catch {
+                buddyError = PeakbaggerError.failure('storage', { resource: 'buddies' });
+            }
             return next;
         })().catch(error => {
-            buddyError = error && error.code === 'signed-out' ? 'signed-out' : 'unreachable';
+            buddyError = error && error.code
+                ? error
+                : PeakbaggerError.failure('network', { resource: 'buddies' });
             return null;
         }).finally(() => {
             buddyState = 'idle';
@@ -434,47 +428,51 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
             return;
         }
         addButtonEl.disabled = true;
+        let name = '';
         try {
-            const { response, text } = await readResponse(F.climberPageUrl(cid));
-            if (classifyResponse(response.status, response.headers, text, { kind: 'climber' }) !== 'ok') {
-                if (response.status === 404) throw Object.assign(new Error('not found'), { code: 'not-found' });
-                throw Object.assign(new Error('unreachable'), { code: 'unreachable' });
-            }
-            const doc = new DOMParser().parseFromString(text, 'text/html');
+            const result = await fetchPeakbaggerDocument(F.climberPageUrl(cid), { kind: 'climber' });
+            if (result.kind !== 'ok') throw result.error;
+            const doc = result.document;
             const identityLink = doc.querySelector('a[href*="ClimbListC.aspx?cid="], a[href*="climblistc.aspx?cid="]');
             const pageCid = identityLink ? numericParam(identityLink.href, 'cid', doc.baseURI) : null;
-            const name = F.climberNameFromDocument(doc);
-            if (pageCid !== cid || !name) throw Object.assign(new Error('not found'), { code: 'not-found' });
-            if (favorites.entries.length >= F.LIMIT) {
-                flash(`Favorites can hold up to ${F.LIMIT} climbers`);
-                return;
-            }
+            name = F.climberNameFromDocument(doc);
+            if (pageCid !== cid || !name) throw PeakbaggerError.failure('not-found', { resource: 'climber' });
+        } catch (error) {
+            flash(PeakbaggerError.message(error, { resource: `climber page for ID ${cid}` }));
+            addButtonEl.disabled = false;
+            return;
+        }
+        if (favorites.entries.length >= F.LIMIT) {
+            flash(`Favorites can hold up to ${F.LIMIT} climbers`);
+            addButtonEl.disabled = false;
+            return;
+        }
+        try {
             await writeFavorites({
                 schemaVersion: F.SCHEMA_VERSION,
                 entries: [{ cid, name, addedAt: Date.now(), source: 'manual' }, ...favorites.entries],
             });
             addInputEl.value = '';
             flash(`${name} added to favorites`);
-        } catch (error) {
-            flash(error && error.code === 'not-found'
-                ? `No climber page found for ID ${cid}.`
-                : "Couldn't reach Peakbagger. Try again.");
+        } catch {
+            flash("The climber page loaded, but the favorite couldn't be saved on this device.");
         } finally {
             addButtonEl.disabled = false;
         }
     };
 
     refreshBuddiesEl.addEventListener('click', () => {
-        void refreshBuddies().then(cache => { if (cache) flash('Buddy List refreshed'); });
+        void refreshBuddies().then(cache => {
+            if (cache && !buddyError) flash('Buddy List refreshed');
+            else if (buddyError) flash(PeakbaggerError.message(buddyError));
+        });
     });
     addFormEl.addEventListener('submit', event => { event.preventDefault(); void addClimber(); });
     sortEl.addEventListener('change', renderList);
     mergeEl.addEventListener('click', () => {
         void refreshBuddies().then(async cache => {
             if (!cache) {
-                flash(buddyError === 'signed-out'
-                    ? 'Sign in to Peakbagger, then try again'
-                    : "Couldn't reach Peakbagger. Try again.");
+                flash(PeakbaggerError.message(buddyError));
                 return;
             }
             const before = favorites.entries.length;
@@ -495,9 +493,7 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
     mirrorEl.addEventListener('click', () => {
         void refreshBuddies().then(async cache => {
             if (!cache) {
-                flash(buddyError === 'signed-out'
-                    ? 'Sign in to Peakbagger, then try again'
-                    : "Couldn't reach Peakbagger. Try again.");
+                flash(PeakbaggerError.message(buddyError));
                 return;
             }
             const changed = await beginReplacement(F.mirrorBuddies(cache.entries), 'Custom list replaced with your Buddy List');

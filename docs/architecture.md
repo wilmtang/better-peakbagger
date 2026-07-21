@@ -134,12 +134,33 @@ There is no parallel raw-source worker list and no `importScripts` fallback.
 | Settings and theme | `src/settings-schema.js`, `src/settings.js`, `src/theme.js` | Pure schema, sync-storage access, synchronous page startup |
 | Report-draft manager | `src/report-drafts.js`, `options/drafts.js` | Shared pure draft contract plus device-local list/copy/delete UI |
 | Saved-ascent backup | `src/ascent-page.js`, `src/ascent-backup.js` | Owner-only page read and user-facing backup state |
+| Peakbagger request boundary | `src/peakbagger-request.js`, `src/peakbagger-response.js`, `src/peakbagger-error.js` | Authenticated fetch policy, response validation, typed failures, and recovery copy |
 | GitHub integration | `src/github-auth.js`, `src/github-client.js`, `src/github-backup.js` | Worker-only credential, Git Data client, pure payload builder |
 
 Extend the owning surface rather than publishing cross-feature globals. The one
 deliberate Better Peakbagger global is `globalThis.BPBProviderPage`: the worker
 injects functions into a provider's page realm, where an ES import cannot cross
 the worker-to-page boundary. It is an adapter API, not a general module seam.
+
+### Live Peakbagger reads
+
+User-triggered Peakbagger reads share one fail-closed boundary. The pure
+`src/peakbagger-response.js` validates both status and resource-specific body
+shape because a login page, Cloudflare challenge, or `PBError.aspx` redirect can
+finish as HTTP 200. `src/peakbagger-request.js` enforces the authenticated,
+no-cache fetch policy, a bounded timeout, response-body and DOM-parser handling,
+and Peakbagger-origin validation. `src/peakbagger-error.js` maps the resulting
+typed failures to consistent copy and recovery actions for Cloudflare, sign-out,
+network, timeout, rate limit, server, missing resource, page drift, parser,
+identity, and device-storage failures.
+
+The Buddy/favorites surfaces, profile and individual backup, saved-GPX analyzer,
+worker login check, and capture summit lookup all use that boundary. Callers may
+add stricter identity and schema checks, but do not translate transport failures
+again. Two reads deliberately keep surface-specific orchestration: provider GPX
+export is not a Peakbagger request, and native map-marker polling treats an
+aborted superseded camera request as normal. Neither exception duplicates the
+user-facing Peakbagger error mapper.
 
 ## Deep dive: execution worlds, settings, and message bridges
 
@@ -622,9 +643,8 @@ The source choice is the validated `favoritesSource` setting in
   unavailable.
 
 `options/favorites.js` owns management. It fetches authenticated Peakbagger
-pages from the extension origin, classifies login/challenge/wrong-content
-responses through `profile-backup-core.js`, and parses them with the shared pure
-module. Buddy refresh goes directly to the signed-in account's
+pages through the shared Peakbagger request boundary, then parses validated
+documents with the shared pure module. Buddy refresh goes directly to the signed-in account's
 `report/report.aspx?r=b` page, deriving the owner id from that same response so
 the cache remains owner-scoped without a separate home-page probe. Custom
 additions verify that the fetched public profile id matches the requested id.

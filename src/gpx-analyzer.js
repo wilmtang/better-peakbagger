@@ -13,6 +13,8 @@
 // and chart surfaces update live when settings change.
 
 import { gpxMetrics as GpxMetrics } from './gpx-metrics.js';
+import { peakbaggerError as PeakbaggerError } from './peakbagger-error.js';
+import { fetchPeakbaggerDocument } from './peakbagger-request.js';
 import { settingsSchema as Schema } from './settings-schema.js';
 import { peakMarkers } from './peak-markers.js';
 import { terrainBasemap } from './terrain-basemap.js';
@@ -1220,9 +1222,15 @@ const run = async () => {
         // 5. Native DOM XML Extraction Engine
         scheduleMapLayerSync();
         try {
-            const response = await fetch(gpxLink.href);
-            if (!response.ok) return stats.textContent = `The GPS track download failed (HTTP ${response.status}).`;
-            const xml = new DOMParser().parseFromString(await response.text(), "text/xml");
+            const response = await fetchPeakbaggerDocument(gpxLink.href, {
+                kind: 'gpx',
+                mimeType: 'text/xml',
+            });
+            if (response.kind !== 'ok') {
+                stats.textContent = PeakbaggerError.message(response.error);
+                return;
+            }
+            const xml = response.document;
             const trkpts = Array.from(xml.querySelectorAll('trkpt'));
             if (!trkpts.length) return stats.textContent = "No track points found.";
 

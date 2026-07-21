@@ -122,7 +122,7 @@ test('a 200 error page for a displayed track aborts without replacing the backup
     });
     await waitFor(dom, () => control(dom));
     control(dom).querySelector('.bpb-gh-btn').dispatchEvent(new dom.window.Event('click'));
-    await waitFor(dom, () => /could not read the stored GPS track/i.test(control(dom).textContent));
+    await waitFor(dom, () => /unexpected page instead of the GPS track/i.test(control(dom).textContent));
 
     assert.equal(received, null, 'an ambiguous track failure must not send a destructive replacement');
     assert.equal(sent.filter(m => m.type === 'GITHUB_BACKUP_ASCENT').length, 0);
@@ -135,7 +135,7 @@ test('an incomplete edit-form response aborts without sending a sparse backup', 
     });
     await waitFor(dom, () => control(dom));
     control(dom).querySelector('.bpb-gh-btn').dispatchEvent(new dom.window.Event('click'));
-    await waitFor(dom, () => /could not read the saved ascent form/i.test(control(dom).textContent));
+    await waitFor(dom, () => /temporarily unavailable \(HTTP 500\)/i.test(control(dom).textContent));
     assert.equal(sent.filter(m => m.type === 'GITHUB_BACKUP_ASCENT').length, 0);
 });
 

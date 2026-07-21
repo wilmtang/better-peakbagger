@@ -38,18 +38,18 @@ export function resolvePageSource(name) {
 // One record per bundle. `out` is the dist-relative output path; `sources` are
 // its explicit roots, ordered where sibling side effects depend on that order.
 export const ENTRIES = [
-    { out: 'background.js', sources: ['gpx-metrics.js', 'capture-core.js', 'provider-url.js', 'terrain-tiles.js', 'terrain-cache.js', 'settings-schema.js', 'settings.js', 'github-auth.js', 'github-client.js', 'background.js'] },
+    { out: 'background.js', sources: ['gpx-metrics.js', 'capture-core.js', 'provider-url.js', 'terrain-tiles.js', 'terrain-cache.js', 'settings-schema.js', 'settings.js', 'github-auth.js', 'github-client.js', 'peakbagger-response.js', 'peakbagger-error.js', 'peakbagger-request.js', 'background.js'] },
     { out: 'provider-page.js', sources: ['provider-url.js', 'gpx-parse.js', 'provider-page.js'] },
 
     { out: 'content/ascent-editor.js', sources: ['ascent-draft.js', 'gpx-parse.js', 'settings-schema.js', 'settings.js', 'ascent-upload.js', 'ascent-saved.js', 'report-markup.js', 'report-drafts.js', 'report-editor.js'] },
-    { out: 'content/ascent-backup.js', sources: ['profile-backup-core.js', 'report-markup.js', 'ascent-snapshot.js', 'ascent-backup-source.js', 'ascent-page.js', 'ascent-backup.js'] },
+    { out: 'content/ascent-backup.js', sources: ['peakbagger-response.js', 'peakbagger-error.js', 'peakbagger-request.js', 'profile-backup-core.js', 'report-markup.js', 'ascent-snapshot.js', 'ascent-backup-source.js', 'ascent-page.js', 'ascent-backup.js'] },
     { out: 'content/theme.js', sources: ['settings-schema.js', 'settings.js', 'site-dark-css.js', 'theme.js'] },
     { out: 'content/ascent-bridge.js', sources: ['settings-schema.js', 'settings.js', 'bridge.js'] },
-    { out: 'content/gpx-analyzer.js', sources: ['gpx-metrics.js', 'terrain-basemap.js', 'terrain-camera.js', 'terrain-compass.js', 'terrain-coordinator.js', 'terrain-failure.js', 'peak-markers.js', 'settings-schema.js', 'gpx-analyzer.js'] },
+    { out: 'content/gpx-analyzer.js', sources: ['gpx-metrics.js', 'terrain-basemap.js', 'terrain-camera.js', 'terrain-compass.js', 'terrain-coordinator.js', 'terrain-failure.js', 'peak-markers.js', 'peakbagger-response.js', 'peakbagger-error.js', 'peakbagger-request.js', 'settings-schema.js', 'gpx-analyzer.js'] },
     { out: 'content/terrain-map.js', sources: ['terrain-camera.js', 'settings-schema.js', 'settings.js', 'terrain-map.js'] },
-    { out: 'content/ascent-filter.js', sources: ['settings-schema.js', 'settings.js', 'favorite-climbers.js', 'ascent-filter.js'] },
+    { out: 'content/ascent-filter.js', sources: ['settings-schema.js', 'settings.js', 'favorite-climbers.js', 'peakbagger-response.js', 'peakbagger-error.js', 'peakbagger-request.js', 'profile-backup-core.js', 'ascent-filter.js'] },
     { out: 'content/climber-favorite.js', sources: ['settings-schema.js', 'settings.js', 'favorite-climbers.js', 'climber-favorite.js'] },
-    { out: 'content/profile-backup.js', sources: ['profile-backup-core.js', 'ascent-snapshot.js', 'report-markup.js', 'ascent-backup-source.js', 'profile-backup.js'] },
+    { out: 'content/profile-backup.js', sources: ['peakbagger-response.js', 'peakbagger-error.js', 'peakbagger-request.js', 'profile-backup-core.js', 'ascent-snapshot.js', 'report-markup.js', 'ascent-backup-source.js', 'profile-backup.js'] },
     { out: 'content/peak-map-bridge.js', sources: ['settings-schema.js', 'settings.js', 'peak-map-bridge.js'] },
     { out: 'content/peak-links.js', sources: ['peak-links.js'] },
     { out: 'content/peak-map.js', sources: ['terrain-basemap.js', 'terrain-camera.js', 'terrain-compass.js', 'terrain-coordinator.js', 'terrain-failure.js', 'peak-markers.js', 'settings-schema.js', 'peak-map.js'] },
@@ -60,7 +60,7 @@ export const ENTRIES = [
     // The options page keeps its head/tail split: the head bundle applies the
     // theme before first paint, the tail bundle runs the settings UI.
     { out: 'options/options-head.js', sources: ['settings-schema.js', 'settings.js', 'options-theme.js'], page: true },
-    { out: 'options/options.js', sources: ['terrain-cache.js', 'report-markup.js', 'report-drafts.js', 'favorite-climbers.js', 'options-main.js', 'options-drafts.js', 'options-favorites.js'], page: true },
+    { out: 'options/options.js', sources: ['terrain-cache.js', 'report-markup.js', 'report-drafts.js', 'favorite-climbers.js', 'peakbagger-response.js', 'peakbagger-error.js', 'peakbagger-request.js', 'profile-backup-core.js', 'options-main.js', 'options-drafts.js', 'options-favorites.js'], page: true },
     { out: 'popup/popup.js', sources: ['popup-main.js'], page: true },
 ];
 

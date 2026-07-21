@@ -489,11 +489,69 @@ test('failed Buddy refresh links to the Buddy List instead of the home page', as
         },
     });
     el(dom, 'favorites-refresh-buddies').click();
-    await waitFor(dom, () => /couldn't be loaded/.test(el(dom, 'favorites-buddy-status').textContent));
+    await waitFor(dom, () => /temporarily unavailable \(HTTP 500\)/.test(el(dom, 'favorites-buddy-status').textContent));
     const recovery = el(dom, 'favorites-buddy-status').querySelector('a');
     assert.deepEqual(requests, ['https://www.peakbagger.com/report/report.aspx?r=b']);
     assert.equal(recovery.textContent, 'Open Buddy List');
     assert.equal(recovery.href, 'https://www.peakbagger.com/report/report.aspx?r=b');
+});
+
+test('Buddy refresh distinguishes Cloudflare, network, and parser failures', async () => {
+    const cases = [
+        {
+            response: async () => pageResponse('<html><title>Just a moment...</title><script>window._cf_chl_opt={}</script></html>'),
+            expected: /asking for a human check/i,
+            action: 'Complete check on Peakbagger',
+        },
+        {
+            response: async () => { throw new TypeError('Failed to fetch'); },
+            expected: /could not reach Peakbagger/i,
+            action: 'Open Buddy List',
+        },
+    ];
+    for (const item of cases) {
+        const dom = await loadOptions({}, {
+            prepareWindow: window => { window.fetch = item.response; },
+        });
+        el(dom, 'favorites-refresh-buddies').click();
+        await waitFor(dom, () => item.expected.test(el(dom, 'favorites-buddy-status').textContent));
+        assert.equal(el(dom, 'favorites-buddy-status').querySelector('a').textContent, item.action);
+        assert.equal(dom.chrome._localStore[buddyCacheKey], undefined);
+    }
+
+    const parserDom = await loadOptions({}, {
+        prepareWindow: window => {
+            window.fetch = peakbaggerFetch();
+            Object.defineProperty(window, 'DOMParser', {
+                configurable: true,
+                value: class { parseFromString() { throw new Error('broken parser'); } },
+            });
+        },
+    });
+    el(parserDom, 'favorites-refresh-buddies').click();
+    await waitFor(parserDom, () => /could not parse the Buddy List/i.test(
+        el(parserDom, 'favorites-buddy-status').textContent
+    ));
+    assert.equal(parserDom.chrome._localStore[buddyCacheKey], undefined);
+});
+
+test('a Buddy cache write failure is not mislabeled as a Peakbagger request failure', async () => {
+    const dom = await loadOptions({}, {
+        prepareWindow: window => { window.fetch = peakbaggerFetch(); },
+    });
+    const originalSet = dom.chrome.storage.local.set;
+    dom.chrome.storage.local.set = async patch => {
+        if (buddyCacheKey in patch) throw new Error('storage unavailable');
+        return originalSet(patch);
+    };
+    el(dom, 'favorites-refresh-buddies').click();
+    await waitFor(dom, () => /loaded, but Better Peakbagger could not save it on this device/i.test(
+        el(dom, 'favorites-buddy-status').textContent
+    ));
+    assert.match(el(dom, 'favorites-buddy-status').textContent, /6 buddies/,
+        'the fetched list remains usable for this session');
+    assert.equal(el(dom, 'favorites-buddy-status').querySelector('a'), null,
+        'a local storage failure must not send the user to Peakbagger');
 });
 
 test('Buddy refresh fails closed when the report has no signed-in owner identity', async () => {

@@ -8,6 +8,7 @@
 import { profileBackupCore as Core } from './profile-backup-core.js';
 import { ascentBackupSource as Source } from './ascent-backup-source.js';
 import { githubError as GithubError } from './github-error.js';
+import { peakbaggerError as PeakbaggerError } from './peakbagger-error.js';
 
 (() => {
     'use strict';
@@ -163,28 +164,11 @@ import { githubError as GithubError } from './github-error.js';
         );
     };
 
-    // What we asked Peakbagger for, for a failure message a user can act on.
-    const EXPECTED_CONTENT = { gpx: 'the GPS track', list: 'the ascent list', edit: 'the ascent form' };
-    const pageName = href => {
-        try { return new URL(href, location.href).pathname.split('/').filter(Boolean).pop() || ''; }
-        catch { return ''; }
-    };
-    // Explain a rejected response in terms of what happened, not just the status.
-    // A 2xx that failed classification is the status looking fine while the body
-    // is an error page (often reached by a redirect) — so reporting "HTTP 200"
-    // hides the diagnosis. Only a genuinely non-2xx status keeps the HTTP line.
-    const rejectionReason = (response, kind) => {
-        if (response.status < 200 || response.status >= 300) return `Peakbagger returned HTTP ${response.status}.`;
-        let reason = `Peakbagger sent an error page instead of ${EXPECTED_CONTENT[kind] || EXPECTED_CONTENT.edit}.`;
-        const destination = response.redirected ? pageName(response.url) : '';
-        if (destination) reason += ` (redirected to ${destination})`;
-        return reason;
-    };
-
-    const responseText = async (url, kind) => {
-        const result = await Source.fetchPeakbaggerResource(url, { kind });
-        if (result.kind === 'ok') return result;
-        return { ...result, reason: result.reason || rejectionReason(result, kind) };
+    const responseText = (url, kind) => Source.fetchPeakbaggerResource(url, { kind });
+    const responseDocument = (url, kind) => Source.fetchPeakbaggerDocument(url, { kind });
+    const rejectedPage = (url, kind, code) => {
+        const error = PeakbaggerError.failure(code, { resource: kind });
+        return { kind: 'wrong-content', url, error, reason: PeakbaggerError.message(error) };
     };
 
     const completeList = async () => {
@@ -193,12 +177,12 @@ import { githubError as GithubError } from './github-error.js';
         if (current.searchParams.get('j') === '-1' && current.searchParams.get('y') === '9999') {
             return Core.parseAscentList(document, { url: location.href });
         }
-        const result = await responseText(target, 'list');
+        const result = await responseDocument(target, 'list');
         if (result.kind !== 'ok') return result;
-        const parsed = Core.parseAscentList(new DOMParser().parseFromString(result.text, 'text/html'), { url: target });
+        const parsed = Core.parseAscentList(result.document, { url: target });
         return parsed.isOwner && parsed.climberId === ownerId
             ? parsed
-            : { kind: 'wrong-content', reason: 'The complete ascent list could not be verified as yours.' };
+            : rejectedPage(target, 'list', 'identity-mismatch');
     };
 
     const loadAscent = async (item, { probeUrl = null } = {}) => {
@@ -208,11 +192,10 @@ import { githubError as GithubError } from './github-error.js';
             if (probe.kind !== 'ok') return probe;
         }
         const editUrl = new URL(`/climber/AscentEdit.aspx?aid=${item.aid}`, location.origin).toString();
-        const edit = await responseText(editUrl, 'edit');
+        const edit = await responseDocument(editUrl, 'edit');
         if (edit.kind !== 'ok') return edit;
-        const doc = new DOMParser().parseFromString(edit.text, 'text/html');
         const parsed = Source.snapshotFromEditDocument({
-            doc,
+            doc: edit.document,
             editUrl,
             baseUrl: location.href,
             ascentId: item.aid,
@@ -222,7 +205,9 @@ import { githubError as GithubError } from './github-error.js';
             fallbackPeakName: item.peakName,
             extensionVersion: ext.runtime.getManifest ? ext.runtime.getManifest().version : '',
         });
-        if (!parsed.ok) return { kind: 'wrong-content', url: editUrl, reason: parsed.reason };
+        if (!parsed.ok) {
+            return rejectedPage(editUrl, 'edit', parsed.code === 'identity' ? 'identity-mismatch' : 'parse');
+        }
         let gpx = null;
         if (item.hasGpx) {
             // Mirror the site's own ascent-page link (GPXFile.aspx?…&sep=1) so the

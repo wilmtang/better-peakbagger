@@ -180,7 +180,7 @@ try {
         const buddyRecovery = await optionsPage.waitForFunction(() => {
             const status = document.getElementById('favorites-buddy-status');
             const link = status?.querySelector('a');
-            return /Refresh failed/.test(status?.textContent || '') && link
+            return /temporarily unavailable \(HTTP 500\)/.test(status?.textContent || '') && link
                 ? { label: link.textContent, href: link.href }
                 : false;
         }, null, { timeout: 5000 }).then(handle => handle.jsonValue()).catch(() => null);

@@ -220,6 +220,66 @@ test('an active stale buddy cache filters immediately and revalidates once', asy
     assert.equal(dom.chrome._localStore[BUDDY_CACHE_KEY].entries.length, 6);
 });
 
+test('a refreshed Buddy List from another account is rejected while the stale cache remains usable', async () => {
+    const stale = {
+        ownerCid: 900001,
+        entries: [{ cid: customCids[0], name: 'Saved Buddy' }],
+        fetchedAt: 1,
+    };
+    const otherAccount = buddyFixture.replace(
+        'climber/climber.aspx?cid=900001">My Home Page',
+        'climber/climber.aspx?cid=900099">My Home Page'
+    );
+    const dom = await loadPage(SMALL, {
+        url: SMALL_URL,
+        local: { [BUDDY_CACHE_KEY]: stale },
+        prepare: page => {
+            const owner = page.window.document.createElement('a');
+            owner.href = '/climber/ClimbListC.aspx?cid=900001';
+            owner.textContent = 'My Ascents';
+            page.window.document.body.prepend(owner);
+            page.window.localStorage.setItem('pbAscentBetaFilter.v1', JSON.stringify({
+                beta: false, tr: false, minWords: 1, gps: false, link: false, fav: true,
+            }));
+            page.window.fetch = async () => ({ status: 200, headers: {}, text: async () => otherAccount });
+        },
+    });
+    await waitFor(dom, () => /different Peakbagger account/i.test(chip(dom, 'Favorites')?.title || ''));
+    assert.equal(dom.chrome._localStore[BUDDY_CACHE_KEY].fetchedAt, 1);
+    assert.match(chip(dom, 'Favorites').title, /Using your saved Buddy List/);
+    assert.equal(chip(dom, 'Favorites').disabled, false);
+});
+
+test('a refreshed Buddy List stays usable when only the local cache write fails', async () => {
+    const stale = {
+        ownerCid: 900001,
+        entries: [{ cid: customCids[0], name: 'Saved Buddy' }],
+        fetchedAt: 1,
+    };
+    const dom = await loadPage(SMALL, {
+        url: SMALL_URL,
+        local: { [BUDDY_CACHE_KEY]: stale },
+        prepare: page => {
+            const owner = page.window.document.createElement('a');
+            owner.href = '/climber/ClimbListC.aspx?cid=900001';
+            owner.textContent = 'My Ascents';
+            page.window.document.body.prepend(owner);
+            page.window.localStorage.setItem('pbAscentBetaFilter.v1', JSON.stringify({
+                beta: false, tr: false, minWords: 1, gps: false, link: false, fav: true,
+            }));
+            page.window.fetch = async () => ({ status: 200, headers: {}, text: async () => buddyFixture });
+            page.chrome.storage.local.set = async () => { throw new Error('storage unavailable'); };
+        },
+    });
+    await waitFor(dom, () => /loaded, but Better Peakbagger could not save it/i.test(
+        chip(dom, 'Favorites')?.title || ''
+    ));
+    assert.equal(chip(dom, 'Favorites').disabled, false,
+        'the freshly fetched non-empty list remains active in memory even when none match this peak');
+    assert.equal(dom.chrome._localStore[BUDDY_CACHE_KEY].fetchedAt, 1,
+        'the failed write does not pretend the persisted cache was refreshed');
+});
+
 test('visiting your own Buddy List refreshes the cache without another request', async () => {
     let fetches = 0;
     const dom = await loadPage('report-buddy-list.html', {

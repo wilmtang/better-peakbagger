@@ -4,6 +4,9 @@
 // Pure profile-backup primitives shared by the ClimbListC content script and
 // fixture/unit tests. No extension APIs or ambient document are read here.
 
+import { classifyResponse } from './peakbagger-response.js';
+export { classifyResponse } from './peakbagger-response.js';
+
 const trim = value => String(value ?? '').replace(/\u00a0/g, ' ').replace(/\s+/g, ' ').trim();
 
 export const numericParam = (href, name, base = 'https://peakbagger.com/') => {
@@ -94,54 +97,6 @@ const fullListUrl = rawUrl => {
     url.searchParams.set('y', '9999');
     if (!url.searchParams.has('sort')) url.searchParams.set('sort', 'AscentDate');
     return url.toString();
-};
-
-const headerValue = (headers, name) => {
-    if (!headers) return '';
-    if (typeof headers.get === 'function') return trim(headers.get(name));
-    const key = Object.keys(headers).find(candidate => candidate.toLowerCase() === name.toLowerCase());
-    return key ? trim(headers[key]) : '';
-};
-
-const CHALLENGE_MARKERS = [
-    /\bcf-chl-/i,
-    /\b_cf_chl_opt\b/i,
-    /challenge-platform/i,
-    /cloudflare[^<]{0,80}(?:challenge|human|verification)/i,
-    /<title>\s*just a moment/i,
-    /attention required[^<]{0,80}cloudflare/i,
-];
-
-// Classify a completed Peakbagger response without trusting status alone. A
-// 200 login/challenge page is not ascent data, and must never reach the backup.
-// Exported by name as well as on the object below so the per-save ascent backup
-// can share the exact classifier without pulling the whole runner into its
-// bundle (esbuild tree-shakes the rest away for a named import).
-export const classifyResponse = (status, headers, bodyText, { kind = 'edit' } = {}) => {
-    const body = typeof bodyText === 'string' ? bodyText : '';
-    if (/challenge/i.test(headerValue(headers, 'cf-mitigated'))
-        || CHALLENGE_MARKERS.some(pattern => pattern.test(body))
-        || status === 403 || status === 429 || status === 503) return 'challenged';
-    if (status === 0 || status >= 500) return 'transient';
-    if (status < 200 || status >= 300) return 'wrong-content';
-    if (kind === 'gpx') return /<gpx\b/i.test(body) ? 'ok' : 'wrong-content';
-    if (kind === 'list') {
-        return /ClimbListC\.aspx/i.test(body) && /(?:My Ascents|Ascent List)/i.test(body)
-            ? 'ok' : 'wrong-content';
-    }
-    if (kind === 'buddies') {
-        return /\bid=["']RGridView["']/i.test(body) && /Buddy List/i.test(body)
-            ? 'ok' : 'wrong-content';
-    }
-    if (kind === 'climber') {
-        return /<h1\b[^>]*>/i.test(body) && /ClimbListC\.aspx\?[^"'<>]*\bcid=\d+/i.test(body)
-            ? 'ok' : 'wrong-content';
-    }
-    return /<form\b[^>]*(?:id|name)=["']Form1["']/i.test(body)
-        && /\bJournalText\b/i.test(body)
-        && /\bDateText\b/i.test(body)
-        && /\bPeakListBox\b/i.test(body)
-        ? 'ok' : 'wrong-content';
 };
 
 const failureReason = result => trim(result && result.reason) || 'Peakbagger returned unexpected content.';
