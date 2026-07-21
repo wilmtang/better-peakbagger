@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 3.0.0 — 2026-07-20
 
 - **Manage every trip-report draft in one place.** A new **TR drafts**
   section in Settings lists the reports autosaved on this device, newest first,
@@ -22,7 +22,8 @@
   in the background for a few minutes instead of tearing it down, so switching
   2D→3D→2D→3D resumes in a frame rather than rebuilding MapLibre and its terrain
   worker each time. The renderer is fully released after five minutes of not
-  being used, or immediately if you turn 3D maps off.
+  being used, or immediately if you turn 3D maps off. Switching between 2D and
+  3D also preserves the live map center and zoom instead of reframing the route.
 
 - **Add a compass to 3D maps.** A Google-Maps-style compass now floats just
   above the 3D button whenever a 3D terrain view is open. It tilts and rotates
@@ -49,6 +50,14 @@
   empty, so a link you typed is never overwritten. The link is rebuilt from the
   activity id, never a stored raw tab URL. A new **External trip report link**
   toggle in Activity capture (on by default) controls it.
+
+- **Make activity capture easier to control and more complete.** You can cancel
+  an in-progress Garmin or Strava capture and immediately discard its temporary
+  job, even if provider or summit requests finish later. Multi-day captures can
+  now fill Peakbagger's per-day distance, gain, loss, high point, and camp rows,
+  controlled by a new default-on **Ascent details** setting. Track analysis also
+  preserves missing elevations as unknown instead of inventing zero-height
+  points, and recognizes camping on summit-first tracks.
 
 - **Link straight to a freshly saved ascent.** After Peakbagger confirms an
   ascent was added or saved, the success page now offers a **View the New
@@ -122,6 +131,17 @@
   converts through the same allowlisted model to Peakbagger's square-bracket
   format, and the preview remains the extension's own rendering of exactly
   what will be saved.
+
+- **Expand trip-report media without weakening the editor boundary.** Rich
+  reports can resize images and direct videos, understand Obsidian-style image
+  dimensions, and embed trusted YouTube links. The conversion path preserves
+  playable media, hex colors, table-cell line breaks, and portable HTML in
+  Markdown reports while continuing to reject unsafe or unsupported markup.
+  An optional setting can add a small Better Peakbagger credit to reports.
+
+- **Polish the extension's first-use and settings surfaces.** The toolbar popup
+  now shows a useful welcome state when no capture has started, and Settings has
+  an About section with the installed version and project/support links.
 
 - **ES-module build and development workflow.** Runtime source now uses ES
   imports and esbuild produces the unpacked `dist/` extension; browser vendor
