@@ -152,6 +152,7 @@ test('a processed upload produces a capture-shaped job and delivers the current-
     // The existing draft handshake takes over: apply → preview-once → banner.
     const apply = await harness.send({ type: 'DRAFT_READY', pid: '7', cid: '77' });
     assert.equal(apply.action, 'apply');
+    assert.equal(apply.peakName, 'Test Peak');
     assert.equal(apply.preserveExistingFields, true);
     assert.match(apply.gpx, /<gpx/);
     assert.equal(apply.fields.date, '2026-07-01');
@@ -488,6 +489,18 @@ test('end to end: user file pick → Process → filled form → exactly one GPS
     assert.equal(previewClicks, 1);
     assert.match(dom.window.document.getElementById('bpb-draft-banner').textContent, /confidence/);
 
+    // The native peak picker is empty on this pid-bound fixture. The prepared
+    // match name must still reach report autosave so the manager can render a
+    // human title while retaining the pid-based storage key.
+    const richEditor = dom.window.document.getElementById('bpb-report-editor')._bpbEditors.rich;
+    richEditor.commands.setContent('<p>Summit report</p>', { emitUpdate: true });
+    const reportKey = 'bpbReportDraft:77:p7';
+    await waitFor(dom, () => dom.chrome._localStore[reportKey]);
+    assert.deepEqual(JSON.parse(JSON.stringify(dom.chrome._localStore[reportKey].label)), {
+        peak: 'Test Peak',
+        date: '2026-07-01'
+    });
+
     // Simulated post-Preview reload: the second DRAFT_READY yields the banner,
     // never a second Preview.
     const afterReload = await harness.send({
@@ -495,5 +508,6 @@ test('end to end: user file pick → Process → filled form → exactly one GPS
         previewResult: { state: 'success', message: 'GPX file successfully uploaded.' }
     });
     assert.equal(afterReload.action, 'banner');
+    assert.equal(afterReload.peakName, 'Test Peak');
     assert.equal(previewClicks, 1);
 });

@@ -444,7 +444,7 @@ A missing climber ID falls back to `0`. The stored value is:
 | `mode` | The authoring mode, normally `rich` or `markdown` |
 | `savedAt` | Millisecond timestamp used for display, expiry, and pruning |
 | `source` | The exact CodeMirror Markdown string, present only for a Markdown draft |
-| `label` | Optional bounded display metadata: selected peak name and raw ascent-date text |
+| `label` | Optional bounded display metadata: selected or prepared-draft peak name and raw ascent-date text |
 
 If the flushed Rich or Markdown report is empty after trimming, autosave removes
 the matching key instead of retaining an empty record.

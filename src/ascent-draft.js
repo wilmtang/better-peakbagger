@@ -20,6 +20,20 @@
         return { pid: params.get('pid'), cid: params.get('cid') };
     };
 
+    // Peakbagger's peak picker is often empty on a pid-bound new-ascent page.
+    // Keep the already-validated match name beside the form as display-only
+    // metadata so report autosave can label the ID-keyed local draft. Dataset
+    // fields are not successful controls and therefore are never submitted.
+    const rememberPeakName = (response, ids) => {
+        const name = typeof response?.peakName === 'string'
+            ? response.peakName.replace(/\s+/g, ' ').trim().slice(0, 200)
+            : '';
+        const form = document.getElementById('Form1') || document.querySelector('form');
+        if (!name || !form || !ids.pid) return;
+        form.dataset.bpbDraftPeakId = ids.pid;
+        form.dataset.bpbDraftPeakName = name;
+    };
+
     const showBanner = (kind, message, options = {}) => {
         const { actionLabel = '', onAction = null, persistent = false } = options;
         const existing = document.getElementById(BANNER_ID);
@@ -338,6 +352,7 @@
                 showBanner('error', response?.message || 'This ascent draft could not be prepared.');
                 return;
             }
+            rememberPeakName(response, ids);
             if (response.action === 'banner') {
                 if (response.dayStatsPending) {
                     await fillDayStats(response.dayStats);

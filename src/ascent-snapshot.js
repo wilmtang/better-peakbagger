@@ -146,7 +146,12 @@
     // already carries identity; this is deliberately just the human label the
     // form currently shows, with conservative caps for options-page rendering.
     const label = ({ form, params } = {}) => {
-        const peak = trim(readPeak(form, params).name).slice(0, 200);
+        const selectedPeak = trim(readPeak(form, params).name);
+        const preparedPeak = form && params?.get('pid')
+            && form.dataset?.bpbDraftPeakId === params.get('pid')
+            ? trim(form.dataset.bpbDraftPeakName)
+            : '';
+        const peak = (selectedPeak || preparedPeak).slice(0, 200);
         const date = fieldValue(form, 'DateText').slice(0, 20);
         return {
             ...(peak ? { peak } : {}),

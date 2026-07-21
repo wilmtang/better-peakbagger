@@ -167,6 +167,7 @@ test('background capture persists a private job, opens grouped drafts, and previ
 
     const apply = await harness.send({ type: 'DRAFT_READY', pid: '7', cid: '77' }, { tab: { id: 100 } });
     assert.equal(apply.action, 'apply');
+    assert.equal(apply.peakName, 'Test Peak');
     assert.equal(apply.fields.suffix, '');
     assert.equal(apply.fields.fillAscentDetails, true);
     // Default-on: the captured Strava link is rebuilt from provider+activityId.
@@ -179,6 +180,7 @@ test('background capture persists a private job, opens grouped drafts, and previ
         previewResult: { state: 'success', message: 'Your file is now successfully uploaded.' }
     }, { tab: { id: 100 } });
     assert.equal(banner.action, 'banner');
+    assert.equal(banner.peakName, 'Test Peak');
     assert.equal(harness.values.bpbCaptureJobs['1'].phase, 'previewed');
     assert.equal(harness.values.bpbCaptureJobs['1'].uploadGpx, null);
 

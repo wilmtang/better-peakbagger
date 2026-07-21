@@ -909,10 +909,12 @@ import { githubClient as GithubClient } from './github-client.js';
             // explicit closest-approach override rather than a visible match.
             || (job.boundFallback && job.boundFallback.id === draft.pid ? job.boundFallback : null);
         if (!match) return { action: 'error', message: 'The selected peak is no longer available.' };
+        const peakName = typeof match.name === 'string' ? match.name : '';
 
         if (draft.complete) {
             return {
                 action: 'banner',
+                peakName,
                 classification: draft.classification,
                 confidence: draft.confidence,
                 ...(draft.dayStatsPending ? {
@@ -938,6 +940,7 @@ import { githubClient as GithubClient } from './github-client.js';
                     : 'Peakbagger did not confirm that GPS Preview succeeded.';
                 return {
                     action: 'preview-error',
+                    peakName,
                     message: `${explanation} The GPX and draft were kept.`
                 };
             }
@@ -955,6 +958,7 @@ import { githubClient as GithubClient } from './github-client.js';
             const completedDraft = currentDrafts[tabId];
             return {
                 action: 'banner',
+                peakName,
                 classification: draft.classification,
                 confidence: draft.confidence,
                 ...(completedDraft?.dayStatsPending ? {
@@ -969,7 +973,7 @@ import { githubClient as GithubClient } from './github-client.js';
 
         const currentDraft = firstPendingDraft(drafts, draft.jobId);
         if (!currentDraft || currentDraft.tabId !== tabId) {
-            return { action: 'wait', message: 'Waiting for the previous GPS Preview to finish.' };
+            return { action: 'wait', peakName, message: 'Waiting for the previous GPS Preview to finish.' };
         }
 
         if (draft.focusOnReady) {
@@ -978,6 +982,7 @@ import { githubClient as GithubClient } from './github-client.js';
         }
         return {
             action: 'apply',
+            peakName,
             jobId: job.id,
             pid: draft.pid,
             cid: draft.cid,

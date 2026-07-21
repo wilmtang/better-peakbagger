@@ -67,6 +67,7 @@ test('fills the expected fields, attaches reduced GPX with elevation and time, p
     let saveClicks = 0;
     const payload = {
         action: 'apply', jobId: 'job', pid: '12', cid: '34', classification: 'strong', confidence: 91,
+        peakName: 'Test Peak',
         preserveExistingFields: true,
         fields: {
             date: '2026-07-01', time: '08:45', suffix: 'a', startElevationM: 1000, endElevationM: 900,
@@ -87,6 +88,8 @@ test('fills the expected fields, attaches reduced GPX with elevation and time, p
     assert.equal(dom.window.document.getElementById('UpKm').value, '5.00');
     assert.equal(dom.window.document.getElementById('StartM').value, '1000');
     assert.equal(dom.window.document.getElementById('UpHr').value, '2');
+    assert.equal(dom.window.document.querySelector('form').dataset.bpbDraftPeakId, '12');
+    assert.equal(dom.window.document.querySelector('form').dataset.bpbDraftPeakName, 'Test Peak');
     assert.equal(dom.window.document.getElementById('GPXUpload').files.length, 1);
     assert.equal(previewClicks, 1);
     assert.equal(saveClicks, 0);
@@ -324,7 +327,7 @@ test('post-Preview day rows are filled once and acknowledged without another Pre
 
 test('a post-preview reload shows a dismissible, short-lived confidence toast without another submission', async () => {
     const { dom, messages } = loadDraft(
-        () => ({ action: 'banner', classification: 'probable', confidence: 71 }),
+        () => ({ action: 'banner', peakName: 'Test Peak', classification: 'probable', confidence: 71 }),
         { statusText: 'Your file is now successfully uploaded.' });
     let previewClicks = 0;
     dom.window.document.getElementById('GPXPreview').addEventListener('click', () => { previewClicks++; });
@@ -338,6 +341,7 @@ test('a post-preview reload shows a dismissible, short-lived confidence toast wi
     assert.match(banner.textContent, /Probable match · 71% confidence/);
     assert.match(banner.textContent, /Preview is ready/);
     assert.ok(banner.classList.contains('bpb-draft-banner-probable'));
+    assert.equal(dom.window.document.querySelector('form').dataset.bpbDraftPeakName, 'Test Peak');
     assert.equal(banner.style.position, '', 'layout and colors belong to the theme-aware stylesheet');
     assert.equal(banner.dataset.autoDismissMs, '4000');
     const dismiss = banner.querySelector('button[aria-label="Dismiss notification"]');

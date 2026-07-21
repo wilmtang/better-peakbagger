@@ -150,6 +150,21 @@ test('label omits unavailable display metadata', async () => {
     assert.deepEqual(Snapshot.label(), {});
 });
 
+test('label uses a matching prepared-draft peak name when the native picker is empty', async () => {
+    const { form } = await loadForm();
+    form.dataset.bpbDraftPeakId = '2296';
+    form.dataset.bpbDraftPeakName = 'Mount Rainier';
+
+    assert.deepEqual(Snapshot.label({
+        form,
+        params: new URLSearchParams('cid=900001&pid=2296')
+    }), { peak: 'Mount Rainier' });
+    assert.deepEqual(Snapshot.label({
+        form,
+        params: new URLSearchParams('cid=900001&pid=9999')
+    }), {}, 'display metadata from another peak must not label this draft');
+});
+
 test('an edited ascent carries its aid and an empty report yields an empty body', async () => {
     const { form } = await loadForm();
     setValue(form, 'DateText', '2026-07-12');
