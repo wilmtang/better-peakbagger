@@ -32,8 +32,8 @@ change:
 10. Full-profile backfill later reused the repository format and serialized
     writer. Its original plan is archived in
     [full-profile-backup.md](full-profile-backup.md); current batching and
-    backpressure live in
-    [profile-backup-pipeline.md](../profile-backup-pipeline.md).
+    backpressure live in the
+    [GitHub backup design](../github-ascent-backup.md#full-profile-producer-consumer-pipeline).
 
 Automated unit, bundle, real-extension, and package checks are part of the
 current verification matrix. The following remain manual pre-release checks

@@ -563,11 +563,13 @@ selection run through the worker; the token and chosen repository live in
 `storage.local`, never synced storage, and never enter a content script.
 
 On Save, `src/ascent-snapshot.js` captures the submitted form and report
-sidecar into a short-lived `storage.session` snapshot. Peakbagger leaves Add
-and Edit on an `ascentedit.aspx` success view, so `src/ascent-saved.js` links
-both cases to the saved ascent and follows that route when automatic backup is
-enabled. There, `src/ascent-page.js` verifies owner identity and reads
-Peakbagger's stored GPX link. `src/ascent-backup.js` offers manual backup and,
+sidecar into a short-lived, source-tab-namespaced `storage.session` snapshot.
+Peakbagger leaves Add and Edit on an `ascentedit.aspx` success view, so
+`src/ascent-saved.js` links both cases to the saved ascent and follows that route
+when automatic backup is enabled. There, `src/ascent-page.js` verifies owner
+identity and finds the stored GPX link, while `src/ascent-backup-source.js`
+fetches and validates the complete persisted edit form. The same shared source
+reader supplies profile backup. `src/ascent-backup.js` offers manual backup and,
 only with a fresh precise snapshot plus the separate opt-in, automatic backup.
 The backup uses Peakbagger's published track, never the raw provider GPX.
 
@@ -587,12 +589,11 @@ without consuming the affected ascent. A rejected GitHub batch remains ready
 for Resume. The repository tree is the checkpoint, so closing the tab requires
 no separate progress record.
 
-The living contracts are split by concern:
-
-- [github-ascent-backup.md](github-ascent-backup.md): repository layout,
-  authorization, per-save flow, payload, and security boundaries.
-- [profile-backup-pipeline.md](profile-backup-pipeline.md): batching,
-  backpressure, pause/resume, conflict, and tab-lifetime behavior.
+The complete living contract is
+[github-ascent-backup.md](github-ascent-backup.md): the three entry points,
+source acquisition, save-time correlation, repository layout, authorization,
+batching, backpressure, pause/resume, conflict handling, incident findings, and
+security boundaries.
 
 The original implementation records are archived in
 [archive/github-ascent-backup-plan.md](archive/github-ascent-backup-plan.md) and

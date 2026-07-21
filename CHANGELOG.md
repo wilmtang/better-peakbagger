@@ -71,7 +71,7 @@
   ride directly in the tree request, and every extension-owned GitHub writer is
   serialized before it reads the branch. Failed batches stay ready for Resume
   without another Peakbagger fetch. See the
-  [pipeline deep dive](docs/profile-backup-pipeline.md).
+  [GitHub backup deep dive](docs/github-ascent-backup.md#full-profile-producer-consumer-pipeline).
 
 - **Initialize empty GitHub backup repositories correctly.** The first backup
   now creates the repository marker and default branch through GitHub's

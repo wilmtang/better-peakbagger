@@ -21,8 +21,7 @@ These are living documents. Update them with the implementation when their
 subsystem changes.
 
 - [Trip-report editor: markup, Markdown, and safety](trip-report-editor.md)
-- [GitHub ascent backup](github-ascent-backup.md)
-- [Full-profile backup pipeline](profile-backup-pipeline.md)
+- [GitHub ascent backup: individual, automatic, and full-profile](github-ascent-backup.md)
 - [Peakbagger native map types](peakbagger-map-types.md)
 - [Peakbagger peak dots on 3D terrain](3d-peak-markers.md)
 - [Chart times in the climb's local timezone](mountain-local-time.md)

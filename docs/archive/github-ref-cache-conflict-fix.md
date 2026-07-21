@@ -43,8 +43,8 @@ The worker's serialized write queue and the runner's single consumer are
 working as designed; this is not a concurrency bug. The content-script side
 already passes `cache: 'no-store'` for Peakbagger fetches in
 `src/profile-backup.js`; the same hazard was missed on the GitHub client. The
-conflict-retry rationale in
-[profile-backup-pipeline.md](../profile-backup-pipeline.md) assumes a reread
+conflict-retry rationale in the
+[GitHub backup design](../github-ascent-backup.md#atomic-github-write-algorithm) assumes a reread
 observes the true head; the HTTP cache silently breaks that invariant.
 
 ## Plan
@@ -61,8 +61,8 @@ observes the true head; the HTTP cache silently breaks that invariant.
    `cache: 'no-store'`, so a future refactor cannot silently drop it. The
    existing "persistent ref conflict stops after the bounded retry schedule"
    test already pins the retry semantics; no change there.
-3. **Docs.** Update the "Conflict and failure semantics" section of
-   [profile-backup-pipeline.md](../profile-backup-pipeline.md) to record the
+3. **Docs.** Update the conflict semantics in the
+   [GitHub backup design](../github-ascent-backup.md#why-every-github-request-bypasses-browser-cache) to record the
    browser-HTTP-cache dimension (GitHub's 60-second `max-age`; the
    singular-read/plural-write URL mismatch that prevents same-URL
    invalidation) and that the client explicitly bypasses the cache so a reread
@@ -88,4 +88,4 @@ observes the true head; the HTTP cache silently breaks that invariant.
   `npm run verify:extension` is not required for this fix.
 
 Once shipped, move this plan to [archive/](../archive/) and fold the runtime
-behavior into [profile-backup-pipeline.md](../profile-backup-pipeline.md).
+behavior into the [GitHub backup design](../github-ascent-backup.md#why-every-github-request-bypasses-browser-cache).

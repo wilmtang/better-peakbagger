@@ -30,7 +30,7 @@ living docs in [`docs/`](../).
   implementation record and remaining manual live checks.
 - [Full-profile backup](full-profile-backup.md) — original completed backfill
   design, superseded for batching and backpressure by the living
-  [pipeline design](../profile-backup-pipeline.md).
+  [GitHub backup design](../github-ascent-backup.md#full-profile-producer-consumer-pipeline).
 - [Options-page sidebar](options-sidebar.md) — completed investigation,
   execution plan, and deviations recorded during implementation.
 - [Trip-report drafts manager](trip-report-drafts-manager.md) — completed plan
@@ -40,8 +40,8 @@ living docs in [`docs/`](../).
 - [Profile backup HTTP-cached ref conflict fix](github-ref-cache-conflict-fix.md) —
   completed root-cause and fix for the "repository changed" pause: the GitHub
   client now sets `cache: 'no-store'`, folded into the living
-  [pipeline design](../profile-backup-pipeline.md).
+  [GitHub backup design](../github-ascent-backup.md#why-every-github-request-bypasses-browser-cache).
 - [Profile backup GPS-track endpoint rename fix](profile-backup-gpx-endpoint.md) —
   completed root-cause and fix for the "Peakbagger returned HTTP 200" failures:
   the profile backup now fetches tracks from `GPXFile.aspx`, with honest failure
-  reasons, folded into the living [pipeline design](../profile-backup-pipeline.md).
+  reasons, folded into the living [GitHub backup design](../github-ascent-backup.md#gpx-semantics).

@@ -2,8 +2,8 @@
 
 > Archived implementation record. The original implementation below used one serial GitHub
 > commit per ascent. It has since been replaced by the bounded, atomic batch
-> pipeline documented in
-> [profile-backup-pipeline.md](../profile-backup-pipeline.md). The ownership,
+> pipeline documented in the
+> [GitHub backup design](../github-ascent-backup.md#full-profile-producer-consumer-pipeline). The ownership,
 > challenge, identity, and repository-diff decisions remain applicable.
 
 Status: implemented in focused commits `c986662`, `ba1de43`, `1cd7522`,

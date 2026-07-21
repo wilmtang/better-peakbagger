@@ -125,8 +125,8 @@ reason that names the GPS track and the redirect — and never says "HTTP 200".
 - [test/ascent-page.test.mjs:40](../../test/ascent-page.test.mjs): assert the
   new URL. This also keeps the text-based link matcher honest against the
   live wording.
-- Record the endpoint fact in the maintained deep dive
-  ([profile-backup-pipeline.md](../profile-backup-pipeline.md)); the archive
+- Record the endpoint fact in the maintained
+  [GitHub backup design](../github-ascent-backup.md#gpx-semantics); the archive
   research doc stays as a historical record per
   [docs/plans/README.md](README.md).
 
