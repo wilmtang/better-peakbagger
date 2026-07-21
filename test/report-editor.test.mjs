@@ -275,6 +275,57 @@ test('backup snapshots are captured only for Save or implicit form submissions',
         'an implicit submission must capture a backup snapshot');
 });
 
+test('Add and Edit saves capture the identities used by the backup handoff even when the editor is disabled', async () => {
+    const capture = async ({ url, saveId, peakId }) => {
+        const messages = [];
+        const dom = await loadEditor({
+            url,
+            settings: { enableReportEditor: false, enableGithubBackup: true },
+            prepare: d => {
+                const doc = d.window.document;
+                doc.getElementById('DateText').value = '2026-07-12';
+                doc.getElementById('JournalText').value = '[b]Saved report[/b]';
+                if (peakId) {
+                    const option = doc.createElement('option');
+                    option.value = String(peakId);
+                    option.textContent = 'Selected Peak';
+                    doc.getElementById('PeakListBox').append(option);
+                    doc.getElementById('PeakListBox').value = String(peakId);
+                }
+                d.chrome.runtime.sendMessage = async message => { messages.push(message); };
+            },
+        });
+        await new Promise(resolve => dom.window.setTimeout(resolve, 10));
+        assert.equal(dom.window.document.getElementById('bpb-report-editor'), null,
+            'snapshot capture must not depend on the enhanced editor UI');
+        dom.window.document.getElementById(saveId).click();
+        await waitFor(dom, () => messages.some(message => message.type === 'GITHUB_BACKUP_SNAPSHOT'));
+        const message = messages.find(candidate => candidate.type === 'GITHUB_BACKUP_SNAPSHOT');
+        dom.window.close();
+        return message;
+    };
+
+    const added = await capture({
+        url: 'https://www.peakbagger.com/climber/ascentedit.aspx?cid=900001&pid=2296',
+        saveId: 'SaveButton',
+    });
+    assert.deepEqual(JSON.parse(JSON.stringify(added.identity)), {
+        climberId: 900001, ascentId: null, peakId: 2296, date: '2026-07-12',
+    });
+    assert.equal(added.snapshot.report.markdown, '**Saved report**');
+
+    const edited = await capture({
+        url: 'https://www.peakbagger.com/climber/ascentedit.aspx?cid=900001&aid=7654321',
+        saveId: 'SaveButton2',
+        peakId: 875,
+    });
+    assert.deepEqual(JSON.parse(JSON.stringify(edited.identity)), {
+        climberId: 900001, ascentId: 7654321, peakId: 875, date: '2026-07-12',
+    });
+    assert.equal(edited.snapshot.ascent.id, 7654321);
+    assert.equal(edited.snapshot.report.markdown, '**Saved report**');
+});
+
 test('markdown mode converts to bracket markup and the live preview shows the final rendering', async () => {
     const dom = await loadEditor();
     await editorReady(dom);

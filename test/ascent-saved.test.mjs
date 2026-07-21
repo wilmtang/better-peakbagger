@@ -1,9 +1,9 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
-// The save-success "View the New Ascent" convenience link. src/ascent-saved.js
-// is a dependency-free IIFE, so these tests evaluate the module source directly
-// against synthetic success DOM (masked ids) and the real editor fixture.
+// The save-success route from ascentedit.aspx to the saved ascent. These tests
+// evaluate the dependency-free source against synthetic Add/Edit success DOM,
+// including the automatic-backup handoff to the ascent.aspx runner.
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -31,27 +31,87 @@ const successHtml = ({ subtitle = 'Ascent Added/Saved Successfully!', photo = tr
   </div>
 </body>`;
 
-const load = (html, { url = EDITOR_URL } = {}) => {
+const load = (html, { url = EDITOR_URL, status = null, navigations = null } = {}) => {
     const dom = new JSDOM(html, { url, runScripts: 'outside-only' });
+    dom.window.chrome = {
+        runtime: {
+            lastError: null,
+            sendMessage: async message => {
+                const response = message.type === 'GITHUB_BACKUP_STATUS' ? status : null;
+                return response;
+            },
+        },
+    };
+    if (navigations) {
+        dom.window.document.addEventListener('click', event => {
+            if (event.target?.id !== 'bpb-view-new-ascent') return;
+            event.preventDefault();
+            navigations.push(event.target.getAttribute('href'));
+        });
+    }
     dom.window.eval(source);
     return dom;
 };
 
 const links = dom => [...dom.window.document.querySelectorAll('#bpb-view-new-ascent')];
 
-test('inserts exactly one link to the new ascent after the referring-page anchor', () => {
+test('an Add success links the photo aid to the saved ascent runner', () => {
     const dom = load(successHtml());
     const inserted = links(dom);
     assert.equal(inserted.length, 1);
     assert.equal(inserted[0].getAttribute('href'), 'ascent.aspx?aid=778899');
-    assert.equal(inserted[0].textContent, 'View the New Ascent');
+    assert.equal(inserted[0].textContent, 'View the Saved Ascent');
 
     const back = [...dom.window.document.querySelectorAll('a')]
         .find(a => /go back to referring page/i.test(a.textContent));
-    // Reads: "Go Back to Referring Page, View the New Ascent, or, add a new ascent…"
+    // Reads: "Go Back to Referring Page, View the Saved Ascent, or, add a new ascent…"
     assert.equal(back.nextSibling.textContent, ', ');
     assert.equal(back.nextSibling.nextSibling, inserted[0]);
     dom.window.close();
+});
+
+test('an Edit success uses the stable URL aid even without a photo link', () => {
+    const dom = load(successHtml({ subtitle: 'Ascent Saved Successfully!', photo: false }), {
+        url: 'https://peakbagger.com/climber/ascentedit.aspx?aid=445566&cid=900001',
+    });
+    assert.equal(links(dom).length, 1);
+    assert.equal(links(dom)[0].getAttribute('href'), 'ascent.aspx?aid=445566');
+    dom.window.close();
+});
+
+test('automatic backup follows the saved-ascent route after Add or Edit success', async () => {
+    for (const scenario of [
+        { html: successHtml(), url: EDITOR_URL, href: 'ascent.aspx?aid=778899' },
+        {
+            html: successHtml({ subtitle: 'Ascent Saved Successfully!', photo: false }),
+            url: 'https://peakbagger.com/climber/ascentedit.aspx?aid=445566&cid=900001',
+            href: 'ascent.aspx?aid=445566',
+        },
+    ]) {
+        const navigations = [];
+        const dom = load(scenario.html, {
+            url: scenario.url,
+            status: { enabled: true, connected: true, auto: true },
+            navigations,
+        });
+        await tick();
+        assert.deepEqual(navigations, [scenario.href]);
+        dom.window.close();
+    }
+});
+
+test('manual or disconnected backup leaves navigation to the user', async () => {
+    for (const status of [
+        { enabled: true, connected: true, auto: false },
+        { enabled: true, connected: false, auto: true },
+    ]) {
+        const navigations = [];
+        const dom = load(successHtml(), { status, navigations });
+        await tick();
+        assert.deepEqual(navigations, []);
+        assert.equal(links(dom).length, 1);
+        dom.window.close();
+    }
 });
 
 test('re-running the module never duplicates the link', () => {
@@ -85,7 +145,7 @@ test('inserts nothing until the success view arrives, then reacts to the postbac
     dom.window.close();
 });
 
-test('does not insert when the success page carries no photo link (no aid)', () => {
+test('does not insert on an Add success page that carries no photo link (no aid)', () => {
     const dom = load(successHtml({ photo: false }));
     assert.equal(links(dom).length, 0);
     dom.window.close();

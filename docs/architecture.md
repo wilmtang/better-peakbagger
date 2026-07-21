@@ -563,8 +563,10 @@ selection run through the worker; the token and chosen repository live in
 `storage.local`, never synced storage, and never enter a content script.
 
 On Save, `src/ascent-snapshot.js` captures the submitted form and report
-sidecar into a short-lived `storage.session` snapshot. On the resulting saved
-ascent page, `src/ascent-page.js` verifies owner identity and reads
+sidecar into a short-lived `storage.session` snapshot. Peakbagger leaves Add
+and Edit on an `ascentedit.aspx` success view, so `src/ascent-saved.js` links
+both cases to the saved ascent and follows that route when automatic backup is
+enabled. There, `src/ascent-page.js` verifies owner identity and reads
 Peakbagger's stored GPX link. `src/ascent-backup.js` offers manual backup and,
 only with a fresh precise snapshot plus the separate opt-in, automatic backup.
 The backup uses Peakbagger's published track, never the raw provider GPX.

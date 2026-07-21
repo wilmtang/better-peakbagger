@@ -56,15 +56,19 @@ and opens that climber's all-years list; it does not guess or persist a climber
 id. A signed-out state names the problem and links directly to Peakbagger's
 sign-in page.
 
-**Per save.** After the user saves an ascent and lands on the saved ascent
-page, a small dismissible affordance appears: **Back up to GitHub**. Clicking
-it pushes one commit and replaces the affordance with a success state linking
-to the commit. Failures show an actionable message and a retry control.
-Backup never blocks or alters the Peakbagger save itself, and no extension
-path clicks either Peakbagger Save control.
+**Per save.** Peakbagger leaves both Add and Edit saves on an
+`ascentedit.aspx` success view. Better Peakbagger adds **View the Saved Ascent**
+there, resolving an edit from its URL `aid` and a new ascent from Peakbagger's
+photo link. The saved ascent page places a compact **Back up to GitHub** button
+beside Peakbagger's owner actions. Clicking it pushes one commit and replaces
+the control with a success state linking to the commit. Failures show an
+actionable message and a retry control. Backup never blocks or alters the
+Peakbagger save itself, and no extension path clicks either Peakbagger Save
+control.
 
 **Automatic mode.** A separate opt-in setting, "Back up automatically
-after save", performs the same push without the click, with the same visible
+after save", follows the saved-ascent route from a confirmed Add or Edit
+success and performs the same push without another click, with the same visible
 success/failure state. It requires a fresh, precise save-time snapshot; merely
 revisiting an old ascent falls back to the manual button without pushing.
 

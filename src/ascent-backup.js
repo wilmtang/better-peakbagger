@@ -27,11 +27,12 @@ import { classifyResponse } from './profile-backup-core.js';
     });
     const failure = code => Object.assign(new Error(code), { code });
 
-    const sendBg = message => new Promise(resolve => {
-        try {
-            ext.runtime.sendMessage(message, response => { void ext.runtime.lastError; resolve(response || null); });
-        } catch { resolve(null); }
-    });
+    // Promise form is shared by modern MV3 Chrome and Firefox's browser API;
+    // callback form is not portable to Firefox's browser namespace.
+    const sendBg = async message => {
+        try { return (await ext.runtime.sendMessage(message)) || null; }
+        catch { return null; }
+    };
 
     const el = (tag, props = {}, children = []) => {
         const node = document.createElement(tag);

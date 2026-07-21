@@ -33,13 +33,12 @@ const loadSurface = async ({ status, onBackup, editOk = true, gpxOk = true, gpxR
             id: 'test',
             lastError: null,
             getManifest: () => ({ version: '3.0.0' }),
-            sendMessage: (message, callback) => {
+            sendMessage: async message => {
                 sent.push(message);
                 let reply = null;
                 if (message.type === 'GITHUB_BACKUP_STATUS') reply = status;
                 else if (message.type === 'GITHUB_BACKUP_ASCENT') reply = onBackup ? onBackup(message) : { ok: true, result: {} };
-                if (typeof callback === 'function') Promise.resolve().then(() => callback(reply));
-                return Promise.resolve(reply);
+                return reply;
             },
         },
     };
@@ -187,7 +186,7 @@ test('a visitor viewing someone else’s ascent gets no affordance', async () =>
     const stripped = html.replace(/<a href="\/climber\/ascentedit\.aspx\?aid=7654321">[^<]*<\/a>/, '');
     const dom = new JSDOM(stripped, { url: 'https://www.peakbagger.com/climber/ascent.aspx?aid=7654321', runScripts: 'outside-only' });
     let statusAsked = false;
-    dom.window.chrome = { runtime: { id: 't', lastError: null, sendMessage: (m, cb) => { if (m.type === 'GITHUB_BACKUP_STATUS') statusAsked = true; if (cb) cb({ enabled: true, connected: true }); return Promise.resolve({ enabled: true, connected: true }); } } };
+    dom.window.chrome = { runtime: { id: 't', lastError: null, sendMessage: async m => { if (m.type === 'GITHUB_BACKUP_STATUS') statusAsked = true; return { enabled: true, connected: true }; } } };
     dom.window.fetch = async () => ({ ok: true, text: async () => '' });
     await evalBundle(dom.window, 'content/ascent-backup.js');
     await new Promise(r => dom.window.setTimeout(r, 30));

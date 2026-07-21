@@ -399,8 +399,55 @@ test('automatic backup declines on a revisit with no fresh snapshot, but pushes 
     assert.equal(pushed.result.commitUrl, 'https://github.com/me/backup/commit/C1');
 
     // The status query reports the auto preference to the surface.
-    const status = await worker.send({ type: 'GITHUB_BACKUP_STATUS' }, PEAK_SENDER);
+    const status = await worker.send({ type: 'GITHUB_BACKUP_STATUS' }, EDIT_SENDER);
     assert.equal(status.auto, true);
+});
+
+test('an edited ascent matches its save snapshot by aid after peak and date changes', async () => {
+    const backend = gitDataBackend();
+    const worker = createWorker({ settings: { enableGithubBackup: true, autoGithubBackup: true }, auth: AUTH, github: backend.handler });
+    const pending = editSnapshot();
+    pending.key = '900001|875|2026-07-13';
+    pending.identity = { climberId: 900001, ascentId: 7654321, peakId: 875, date: '2026-07-13' };
+    pending.snapshot.ascent = {
+        id: 7654321,
+        date: '2026-07-13',
+        suffix: 'b',
+        type: 'Successful Ascent (stood on the summit)',
+        gainFt: '4200',
+    };
+    pending.snapshot.peak = { id: 875, name: 'Mount Garibaldi' };
+    pending.snapshot.report = { markdown: 'Exact **edited** Markdown.' };
+
+    await worker.send({ type: 'GITHUB_BACKUP_SNAPSHOT', ...pending }, {
+        tab: { id: 4 },
+        url: 'https://www.peakbagger.com/climber/ascentedit.aspx?cid=900001&aid=7654321',
+    });
+    const result = await worker.send({
+        type: 'GITHUB_BACKUP_ASCENT',
+        auto: true,
+        pageComplete: true,
+        page: {
+            ascent: {
+                id: 7654321,
+                date: '2026-07-13',
+                suffix: 'b',
+                type: 'Successful Ascent (stood on the summit)',
+                gainFt: '4200',
+            },
+            peak: { id: 875, name: 'Mount Garibaldi', elevationFt: 8786 },
+            report: { markdown: 'Converted edited Markdown.' },
+        },
+    }, PEAK_SENDER);
+
+    assert.equal(result.ok, true);
+    assert.equal(result.result.folder, '2026-07-13-mount-garibaldi-a7654321');
+    const report = Object.entries(backend.state.contents)
+        .find(([path]) => path.endsWith('/report.md'))[1];
+    assert.match(report, /Exact \*\*edited\*\* Markdown\./,
+        'the aid match preserves the save-time exact Markdown sidecar');
+    assert.equal(worker.session.bpbGithubSnapshots[pending.key], undefined,
+        'the edited-ascent snapshot is consumed after the push');
 });
 
 test('individual backup never uses a different same-peak snapshot or accepts a sparse fallback', async () => {
