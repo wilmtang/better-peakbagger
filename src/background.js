@@ -23,8 +23,8 @@ import { githubClient as GithubClient } from './github-client.js';
     const JOBS_KEY = 'bpbCaptureJobs';
     const DRAFTS_KEY = 'bpbDraftTabs';
     const JOB_TTL_MS = 30 * 60 * 1000;
-    // Save-time GitHub backup snapshots, keyed by climber+peak+date, expiring on
-    // the same 30-minute horizon as a prepared draft.
+    // Save-time GitHub backup snapshots, keyed by climber+peak+date+source tab,
+    // expiring on the same 30-minute horizon as a prepared draft.
     const SNAPSHOTS_KEY = 'bpbGithubSnapshots';
     const GITHUB_AUTH_PENDING_KEY = 'bpbGithubAuthPending';
     const SNAPSHOT_TTL_MS = 30 * 60 * 1000;
@@ -1557,44 +1557,6 @@ import { githubClient as GithubClient } from './github-client.js';
         }
     };
 
-    // A backfill snapshot comes directly from the owner's fetched edit form,
-    // rather than the short-lived save hook. Restrict this more strongly than
-    // the per-ascent path: only ClimbListC senders, with matching numeric ids.
-    const backupProfileAscent = async (message, sender) => {
-        if (!isClimbListSender(sender)) return { ok: false, error: { code: 'forbidden' } };
-        const snapshot = message && message.snapshot;
-        const ascentId = snapshot && snapshot.ascent ? Number(snapshot.ascent.id) : NaN;
-        if (!Number.isFinite(ascentId) || ascentId <= 0 || ascentId !== Number(message.aid)) {
-            return { ok: false, error: { code: 'no-data' } };
-        }
-        const settings = await Settings.get();
-        if (!settings.enableGithubBackup) return { ok: false, error: { code: 'disabled' } };
-        const auth = await GithubAuth.authStore.read();
-        if (!auth || !auth.token) return { ok: false, error: { code: 'not-connected' } };
-        if (!auth.repo || !auth.repo.owner || !auth.repo.name) return { ok: false, error: { code: 'no-repo' } };
-
-        snapshot.backup = {
-            ...(snapshot.backup || {}),
-            syncedAt: new Date().toISOString(),
-            extensionVersion: ext.runtime.getManifest ? ext.runtime.getManifest().version : '',
-        };
-        const client = GithubClient.createGithubClient({
-            fetch: netFetch,
-            token: auth.token,
-            owner: auth.repo.owner,
-            repo: auth.repo.name,
-            branch: auth.repo.branch || undefined,
-        });
-        try {
-            return {
-                ok: true,
-                result: await enqueueGithubWrite(() => client.pushAscentBackup(snapshot, { gpx: message.gpx })),
-            };
-        } catch (error) {
-            return { ok: false, error: { code: error.code || 'unknown', message: error.message || 'The backup failed.' } };
-        }
-    };
-
     // A profile batch is one ordered branch mutation containing up to ten
     // independently identity-checked ascents. The content script never sees
     // the token, and a malformed entry rejects the entire batch before GitHub
@@ -1670,7 +1632,6 @@ import { githubClient as GithubClient } from './github-client.js';
             case 'GITHUB_BACKUP_STATUS': return githubBackupStatus(sender);
             case 'GITHUB_BACKUP_ASCENT': return backupAscent(message, sender);
             case 'GITHUB_BACKUP_PROFILE_STATUS': return githubProfileBackupStatus(sender);
-            case 'GITHUB_BACKUP_PROFILE_ASCENT': return backupProfileAscent(message, sender);
             case 'GITHUB_BACKUP_PROFILE_BATCH': return backupProfileBatch(message, sender);
             case 'OPEN_DRAFTS_MANAGER': return openDraftsManager(sender);
             case 'CAPTURE_START': return startCapture(message);

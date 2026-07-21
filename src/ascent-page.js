@@ -7,17 +7,14 @@
 // the ascent id (the definitive identity, and the only source of it for a newly
 // created ascent), whether the signed-in climber owns the ascent (an edit link
 // to this aid — the ownership gate fails closed), the peak the ascent belongs
-// to, the stored GPS-track download link, and, as a fallback for when no
-// save-time snapshot exists, the rendered trip report converted to Markdown
-// through the shared allowlisted AST.
+// to, and the stored GPS-track download link. Raw backup fields and report
+// content come from the owner-only edit form instead; the rendered display page
+// is intentionally not a backup data source.
 //
 // The reliable fields (aid, ownership, peak id/name, GPX link) come from stable
-// URL shapes; the date, elevation, and report are best-effort and marked as such
-// — they are cross-checked against, and usually superseded by, the save-time
-// snapshot in the background. Selectors here are validated against a masked
+// URL shapes; the date is best-effort and used only as a fallback when the
+// persisted form omits it. Selectors here are validated against a masked
 // ascent.aspx fixture and confirmed on live Peakbagger before release.
-
-import { reportMarkup as Markup } from './report-markup.js';
 
     const clean = value => (typeof value === 'string' ? value : '').replace(/\s+/g, ' ').trim();
 
@@ -70,25 +67,6 @@ import { reportMarkup as Markup } from './report-markup.js';
         return null;
     };
 
-    // Best-effort trip-report Markdown for the no-snapshot fallback. The report
-    // is inside an element tagged data-bpb-report by the analyzer, or the cell
-    // following a "Trip Report" heading; convert its DOM through the shared AST.
-    // Returns '' when the report container cannot be located.
-    const reportMarkdown = doc => {
-        let container = doc.querySelector('[data-bpb-report]');
-        if (!container) {
-            const marker = Array.from(doc.querySelectorAll('b, strong, h1, h2, h3, td'))
-                .find(node => /trip report/i.test(node.textContent || '') && (node.textContent || '').length < 40);
-            if (marker) {
-                const cell = marker.closest('td');
-                container = cell ? (cell.nextElementSibling || cell) : marker.parentElement;
-            }
-        }
-        if (!container) return '';
-        try { return Markup.astToMarkdown(Markup.domToAst(container)); }
-        catch { return ''; }
-    };
-
     // Peakbagger renders the display-page label as "Date:" (older fixtures and
     // some page variants use "Ascent Date:"). Parse a "Mon D, YYYY" or
     // bare-year string to ISO; '' when nothing parseable is found.
@@ -134,10 +112,9 @@ import { reportMarkup as Markup } from './report-markup.js';
             peak,
             date: parseDate(doc),
             gpxUrl: gpxUrl(doc),
-            reportMarkdown: reportMarkdown(doc),
         };
     };
 
-    const API = { read, ownsAscent, ascentEditLink, reportMarkdown, parseDate };
+    const API = { read, ownsAscent, ascentEditLink, parseDate };
 
     export const ascentPage = API;

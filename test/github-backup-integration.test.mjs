@@ -184,7 +184,7 @@ test('a saved ascent is backed up: snapshot + page merge, one commit, snapshot c
     assert.equal(worker.session.bpbGithubSnapshots[storedSnapshotKey()], undefined);
 });
 
-test('profile backfill lists repository folders and pushes a direct snapshot through the built worker', async () => {
+test('profile preflight lists repository folders without exposing the token', async () => {
     const backend = gitDataBackend();
     const worker = createWorker({ auth: AUTH, github: backend.handler });
     const status = await worker.send({ type: 'GITHUB_BACKUP_PROFILE_STATUS' }, LIST_SENDER);
@@ -192,22 +192,6 @@ test('profile backfill lists repository folders and pushes a direct snapshot thr
     assert.deepEqual(Array.from(status.folders), []);
     assert.equal('token' in status, false);
 
-    const snapshot = {
-        ascent: { id: 7654321, date: '2026-07-12', suffix: '', route: 'Disappointment Cleaver' },
-        peak: { id: 2296, name: 'Mount Rainier' },
-        report: { markdown: 'Backfilled **report**.' },
-        backup: { extensionVersion: '', syncedAt: null },
-    };
-    const result = await worker.send({
-        type: 'GITHUB_BACKUP_PROFILE_ASCENT', aid: 7654321, snapshot, gpx: '<gpx/>',
-    }, LIST_SENDER);
-    assert.equal(result.ok, true);
-    assert.equal(result.result.folder, '2026-07-12-mount-rainier-a7654321');
-    const json = JSON.parse(Object.entries(backend.state.contents)
-        .find(([path]) => path.endsWith('/ascent.json'))[1]);
-    assert.equal(json.ascent.id, 7654321);
-    assert.equal(json.backup.extensionVersion, '2.2.0');
-    assert.ok(json.backup.syncedAt);
 });
 
 test('profile backfill validates and commits multiple ascents as one batch', async () => {
@@ -325,9 +309,13 @@ test('profile messages require ClimbListC and matching ascent identity', async (
     const backend = gitDataBackend();
     const worker = createWorker({ auth: AUTH, github: backend.handler });
     const snapshot = { ascent: { id: 7 }, peak: { id: 8, name: 'Peak' }, report: { markdown: '' } };
-    const wrongSurface = await worker.send({ type: 'GITHUB_BACKUP_PROFILE_ASCENT', aid: 7, snapshot }, PEAK_SENDER);
+    const wrongSurface = await worker.send({
+        type: 'GITHUB_BACKUP_PROFILE_BATCH', entries: [{ aid: 7, snapshot }],
+    }, PEAK_SENDER);
     assert.equal(wrongSurface.error.code, 'forbidden');
-    const mismatched = await worker.send({ type: 'GITHUB_BACKUP_PROFILE_ASCENT', aid: 9, snapshot }, LIST_SENDER);
+    const mismatched = await worker.send({
+        type: 'GITHUB_BACKUP_PROFILE_BATCH', entries: [{ aid: 9, snapshot }],
+    }, LIST_SENDER);
     assert.equal(mismatched.error.code, 'no-data');
 });
 
