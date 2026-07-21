@@ -224,7 +224,10 @@ test('GPX analyzer adds a thick, segment-preserving route casing behind native L
     assert.ok(calls.every(call => call.broughtToBack));
 
     const terrainToggle = window.document.getElementById('bpb-terrain-toggle');
+    const terrainCompass = window.document.getElementById('bpb-terrain-compass');
+    const terrainCompassDisc = terrainCompass.querySelector('.bpb-map-compass-disc');
     assert.equal(terrainToggle.disabled, false);
+    assert.equal(terrainCompass.hidden, true, 'the analyzer compass stays hidden in 2D and while loading');
     assert.equal(window.document.getElementById('bpb-terrain-disclosure'), null);
     terrainToggle.click();
     await waitFor(dom, () => terrainMessages.some(message => message.type === 'init'));
@@ -282,6 +285,16 @@ test('GPX analyzer adds a thick, segment-preserving route casing behind native L
     assert.equal(iframe.getAttribute('aria-hidden'), 'true');
     assert.equal(terrainToggle.textContent, '2D');
     assert.equal(terrainToggle.getAttribute('aria-pressed'), 'true');
+    assert.equal(terrainCompass.hidden, false, 'the analyzer exposes the same north-reset affordance once 3D is active');
+    assert.equal(terrainCompass.dataset.theme, 'light');
+    window.dispatchEvent(new window.MessageEvent('message', {
+        source: window,
+        origin: window.location.origin,
+        data: { __bpbTerrain: true, dir: 'toPage', type: 'view', bearing: 30, pitch: 55 }
+    }));
+    assert.equal(terrainCompassDisc.style.transform, 'rotateX(55deg) rotateZ(-30deg)');
+    terrainCompass.click();
+    assert.equal(terrainMessages.at(-1).type, 'resetNorth');
     // The floating toggle overlays the map, not the panel below it.
     assert.equal(terrainToggle.parentElement.id, 'bpb-map-viewport');
 
@@ -354,6 +367,7 @@ test('GPX analyzer adds a thick, segment-preserving route casing behind native L
     assert.equal(iframe.hasAttribute('aria-hidden'), false);
     assert.equal(terrainMessages.at(-1).type, 'destroy');
     assert.equal(terrainToggle.textContent, '3D');
+    assert.equal(terrainCompass.hidden, true, 'the compass hides as soon as the analyzer returns to 2D');
 
     const initCountBeforeConsent = terrainMessages.filter(message => message.type === 'init').length;
     terrainToggle.click();

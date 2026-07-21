@@ -44,7 +44,7 @@ export const ENTRIES = [
     { out: 'content/ascent-backup.js', sources: ['profile-backup-core.js', 'report-markup.js', 'ascent-snapshot.js', 'ascent-backup-source.js', 'ascent-page.js', 'ascent-backup.js'] },
     { out: 'content/theme.js', sources: ['settings-schema.js', 'settings.js', 'site-dark-css.js', 'theme.js'] },
     { out: 'content/ascent-bridge.js', sources: ['settings-schema.js', 'settings.js', 'bridge.js'] },
-    { out: 'content/gpx-analyzer.js', sources: ['gpx-metrics.js', 'terrain-basemap.js', 'terrain-camera.js', 'terrain-failure.js', 'peak-markers.js', 'settings-schema.js', 'gpx-analyzer.js'] },
+    { out: 'content/gpx-analyzer.js', sources: ['gpx-metrics.js', 'terrain-basemap.js', 'terrain-camera.js', 'terrain-compass.js', 'terrain-failure.js', 'peak-markers.js', 'settings-schema.js', 'gpx-analyzer.js'] },
     { out: 'content/terrain-map.js', sources: ['terrain-camera.js', 'settings-schema.js', 'settings.js', 'terrain-map.js'] },
     { out: 'content/ascent-filter.js', sources: ['settings-schema.js', 'settings.js', 'ascent-filter.js'] },
     { out: 'content/profile-backup.js', sources: ['profile-backup-core.js', 'ascent-snapshot.js', 'report-markup.js', 'ascent-backup-source.js', 'profile-backup.js'] },

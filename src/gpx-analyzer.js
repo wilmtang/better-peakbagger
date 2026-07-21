@@ -17,6 +17,7 @@ import { settingsSchema as Schema } from './settings-schema.js';
 import { peakMarkers } from './peak-markers.js';
 import { terrainBasemap } from './terrain-basemap.js';
 import { terrainCamera as TerrainCamera } from './terrain-camera.js';
+import { terrainCompass as TerrainCompass } from './terrain-compass.js';
 import { terrainFailure as TerrainFailure } from './terrain-failure.js';
 
 // Chart and tzlookup remain separately-loaded vendor globals (see manifest).
@@ -534,6 +535,7 @@ const run = async () => {
         let terrainViewCamera = null;
         let terrainStopPending = false;
         let terrainCameraRequestId = 0;
+        let terrainCompass = null;
 
         const nativeLeafletMap = () => {
             try {
@@ -579,6 +581,7 @@ const run = async () => {
                 bottom = measureNative2dZoomTop();
             }
             terrainButton.style.bottom = bottom != null && bottom > 0 ? `${Math.round(bottom + TERRAIN_TOGGLE_GAP)}px` : '';
+            if (terrainCompass) terrainCompass.position();
         };
 
         const clearTerrainLoadTimer = () => {
@@ -594,6 +597,14 @@ const run = async () => {
             type,
             ...detail
         }, location.origin);
+
+        if (mapViewport) {
+            terrainCompass = TerrainCompass.create({
+                container: mapViewport,
+                toggle: terrainButton,
+                onReset: () => postTerrain('resetNorth')
+            });
+        }
 
         const showTerrainMessage = (text, tone = 'info') => {
             if (!text) {
@@ -618,6 +629,10 @@ const run = async () => {
             // in the title/aria-label. A spinner class covers the load.
             terrainButton.classList.remove('bpb-map-3d-toggle-loading');
             terrainButton.removeAttribute('aria-busy');
+            if (terrainCompass) {
+                terrainCompass.element.dataset.theme = effectiveTheme(BPB.get().theme);
+                terrainCompass.setVisible(terrainState === 'active' && !terrainStopPending);
+            }
             if (terrainStopPending) {
                 terrainButton.disabled = true;
                 terrainButton.textContent = '2D';
@@ -793,6 +808,12 @@ const run = async () => {
             } else if (data.type === 'metrics' && terrainState === 'active') {
                 if (Number.isFinite(data.navTop)) terrainNavTop = data.navTop;
                 positionTerrainToggle();
+            } else if (data.type === 'view' && terrainState === 'active') {
+                if (terrainCompass && Number.isFinite(data.bearing) && Number.isFinite(data.pitch)) {
+                    const bearing = ((data.bearing % 360) + 360) % 360;
+                    const pitch = Math.min(85, Math.max(0, data.pitch));
+                    terrainCompass.update(bearing, pitch);
+                }
             } else if (data.type === 'camera' && terrainState === 'active') {
                 rememberTerrainCamera(data.camera);
                 if (terrainStopPending && data.requestId === terrainCameraRequestId) finishTerrainStop();

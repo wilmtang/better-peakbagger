@@ -689,10 +689,15 @@ try {
         const frame = document.getElementById('bpb-terrain-frame');
         const surface = frame && frame.contentDocument && frame.contentDocument.getElementById('bpb-terrain-map');
         const message = document.getElementById('bpb-terrain-message');
+        const compass = document.getElementById('bpb-terrain-compass');
+        const toggleRect = toggle && toggle.getBoundingClientRect();
+        const compassRect = compass && compass.getBoundingClientRect();
         return {
-            ready: toggle && toggle.textContent === '2D' && frame && frame.style.opacity === '1' && surface,
+            ready: toggle && toggle.textContent === '2D' && frame && frame.style.opacity === '1'
+                && surface && compass && !compass.hidden,
             toggle: toggle && toggle.textContent,
             message: message && message.textContent,
+            compassGap: toggleRect && compassRect ? Math.round(toggleRect.top - compassRect.bottom) : null,
             badge: (() => {
                 const select = surface && surface.querySelector('.bpb-terrain-picker');
                 return select && select.selectedIndex >= 0 ? select.options[select.selectedIndex].textContent : '';
@@ -703,6 +708,9 @@ try {
             }
         };
     })()`);
+    if (ready.compassGap < 0 || ready.compassGap > 16) {
+        throw new Error(`Analyzer compass is not aligned above the 3D toggle (gap ${ready.compassGap}px)`);
+    }
     // Read the picker fresh rather than trusting the snapshot taken the instant
     // the frame surfaced: the drape is applied a beat later, so that snapshot
     // reported "Terrain only" on a loaded machine and failed a working build.
