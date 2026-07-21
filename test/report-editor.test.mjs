@@ -115,6 +115,21 @@ test('the editor mounts on the ascent form and hides the native textarea', async
         'undo starts disabled with an empty history');
 });
 
+test('the editor always offers the device-wide report drafts manager', async () => {
+    const messages = [];
+    const dom = await loadEditor({
+        prepare: d => { d.chrome.runtime.sendMessage = async message => { messages.push(message); }; }
+    });
+    const ui = await editorReady(dom);
+    const manage = ui.querySelector('.bpb-re-manage');
+
+    assert.equal(manage?.textContent, 'Manage drafts');
+    assert.equal(manage?.type, 'button');
+    assert.equal(manage?.getAttribute('aria-label'), 'Manage report drafts');
+    manage.click();
+    assert.deepEqual(JSON.parse(JSON.stringify(messages)), [{ type: 'OPEN_DRAFTS_MANAGER' }]);
+});
+
 test('opt-in credit leaves blank writing space and links Chrome reports to the Chrome store', async () => {
     const dom = await loadEditor({
         settings: { addReportCredit: true },

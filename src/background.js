@@ -1280,6 +1280,16 @@ import { githubClient as GithubClient } from './github-client.js';
         catch { return false; }
     };
 
+    const openDraftsManager = async sender => {
+        if (!isPeakbaggerSender(sender) || !Number.isInteger(sender.tab?.id)) {
+            return { ok: false, reason: 'forbidden' };
+        }
+        const tab = await ext.tabs.create({
+            url: `${ext.runtime.getURL('options/options.html')}#drafts`
+        });
+        return { ok: true, tabId: Number.isInteger(tab?.id) ? tab.id : null };
+    };
+
     // DEM prefetch: warm the extension-origin tile cache from the background
     // worker so opening 3D paints from cache instead of the network. CacheStorage
     // is origin-keyed, so only extension contexts share bpb-mapterhorn-dem-v1 —
@@ -1639,6 +1649,7 @@ import { githubClient as GithubClient } from './github-client.js';
             case 'GITHUB_BACKUP_PROFILE_STATUS': return githubProfileBackupStatus(sender);
             case 'GITHUB_BACKUP_PROFILE_ASCENT': return backupProfileAscent(message, sender);
             case 'GITHUB_BACKUP_PROFILE_BATCH': return backupProfileBatch(message, sender);
+            case 'OPEN_DRAFTS_MANAGER': return openDraftsManager(sender);
             case 'CAPTURE_START': return startCapture(message);
             case 'CAPTURE_STATUS': {
                 const jobs = await readMap(JOBS_KEY);

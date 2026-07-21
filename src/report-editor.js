@@ -292,7 +292,14 @@ import { createMarkdownEditor } from './report-md-editor.js';
     const status = el('span', 'bpb-re-status');
     status.setAttribute('role', 'status');
     status.setAttribute('aria-live', 'polite');
-    foot.append(status);
+    const manageDrafts = button('bpb-re-manage', 'Manage drafts', 'Manage report drafts');
+    manageDrafts.addEventListener('click', () => {
+        try {
+            const request = ext.runtime.sendMessage({ type: 'OPEN_DRAFTS_MANAGER' });
+            if (request && typeof request.catch === 'function') request.catch(() => {});
+        } catch (error) { /* discovery link is best-effort; editing remains available */ }
+    });
+    foot.append(status, manageDrafts);
 
     // Contextual controls sit above the entire toolbar region, including a
     // visible draft-recovery bar. They must not become normal-flow rows or

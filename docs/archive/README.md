@@ -33,6 +33,8 @@ living docs in [`docs/`](../).
   [pipeline design](../profile-backup-pipeline.md).
 - [Options-page sidebar](options-sidebar.md) — completed investigation,
   execution plan, and deviations recorded during implementation.
+- [Trip-report drafts manager](trip-report-drafts-manager.md) — completed plan
+  for the device-wide manager in Settings and its editor discovery link.
 - [Codebase audit — 2026-07-19](codebase-audit-2026-07-19.md) — point-in-time
   audit and remediation plan.
 - [Profile backup HTTP-cached ref conflict fix](github-ref-cache-conflict-fix.md) —

@@ -59,7 +59,10 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
                 set: async patch => Object.assign(syncValues, structuredClone(patch))
             }
         },
-        runtime: { onMessage: runtimeMessage },
+        runtime: {
+            onMessage: runtimeMessage,
+            getURL: path => `chrome-extension://test-extension/${path}`
+        },
         scripting: {
             executeScript: async details => {
                 scriptCalls.push(structuredClone({ files: details.files, args: details.args, world: details.world }));
@@ -181,6 +184,28 @@ test('background capture persists a private job, opens grouped drafts, and previ
 
     const duplicate = await harness.send({ type: 'DRAFT_PREVIEW_STARTED', jobId: apply.jobId, pid: 7, cid: 77 }, { tab: { id: 100 } });
     assert.equal(duplicate.ok, false);
+});
+
+test('only a Peakbagger tab can open the report drafts manager', async () => {
+    const harness = createHarness();
+    const allowed = await harness.send(
+        { type: 'OPEN_DRAFTS_MANAGER' },
+        { tab: { id: 5 }, url: 'https://www.peakbagger.com/climber/ascentedit.aspx?aid=1' }
+    );
+    assert.deepEqual(JSON.parse(JSON.stringify(allowed)), { ok: true, tabId: 100 });
+    assert.equal(harness.tabs.get(100).url,
+        'chrome-extension://test-extension/options/options.html#drafts');
+
+    const before = harness.tabs.size;
+    assert.deepEqual(JSON.parse(JSON.stringify(await harness.send(
+        { type: 'OPEN_DRAFTS_MANAGER' },
+        { tab: { id: 6 }, url: 'https://peakbagger.com.evil.example/climber/ascentedit.aspx' }
+    ))), { ok: false, reason: 'forbidden' });
+    assert.deepEqual(JSON.parse(JSON.stringify(await harness.send(
+        { type: 'OPEN_DRAFTS_MANAGER' },
+        { url: 'https://www.peakbagger.com/climber/ascentedit.aspx' }
+    ))), { ok: false, reason: 'forbidden' });
+    assert.equal(harness.tabs.size, before, 'forbidden senders must not create a tab');
 });
 
 test('Peakbagger login accepts signed-in account controls and reports ambiguous pages honestly', async () => {

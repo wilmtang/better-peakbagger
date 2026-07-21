@@ -342,7 +342,9 @@ identity, bounded, expiring, and restored only after explicit user approval.
 lifetimes. The options-page owner in `options/drafts.js` uses it to list every
 device-local report draft, open the matching ascent form, copy Markdown, and
 offer reversible deletion without duplicating or bypassing the editor's
-restore gate.
+restore gate. The editor's discovery link sends `OPEN_DRAFTS_MANAGER`; the
+worker accepts it only from a Peakbagger tab and opens the extension-owned
+`options/options.html#drafts` URL.
 
 The editor's representations, sanitization boundaries, media restrictions,
 round trips, draft lifecycle, and known lossy-import limitation are maintained
