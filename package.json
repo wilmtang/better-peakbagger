@@ -30,6 +30,7 @@
     "start:firefox": "node scripts/run-development.mjs firefox",
     "start:chromium": "node scripts/run-development.mjs chromium",
     "test": "node --test \"test/**/*.test.mjs\"",
+    "test:scale": "node --test \"test/scale/**/*.scale.mjs\"",
     "verify:chrome": "npm run build && npm run verify:chrome:built",
     "verify:chrome:built": "node scripts/verify-extension.mjs",
     "verify:firefox": "npm run build && npm run verify:firefox:built",

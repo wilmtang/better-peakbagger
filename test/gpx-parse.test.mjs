@@ -75,12 +75,12 @@ test('trackless and waypoint-only files throw the coded no-GPS error', () => {
     assert.equal(noGpsError().code, 'no-gps-data');
 });
 
-test('a large synthetic track parses completely', () => {
-    const points = Array.from({ length: 20000 }, (_, index) =>
+test('parsing does not apply Peakbagger\'s 3,000-point upload budget', () => {
+    const points = Array.from({ length: 3001 }, (_, index) =>
         `<trkpt lat="${(47 + index * 1e-5).toFixed(5)}" lon="-121"><ele>${index % 500}</ele></trkpt>`).join('');
     const parsed = parseGpxData(`<gpx><trk><trkseg>${points}</trkseg></trk></gpx>`);
-    assert.equal(parsed.segments[0].length, 20000);
-    assert.equal(parsed.segments[0][19999].lat, 47.19999);
+    assert.equal(parsed.segments[0].length, 3001);
+    assert.equal(parsed.segments[0][3000].lat, 47.03);
 });
 
 test('names decode entities and normalize to 200 characters of single-spaced text', () => {

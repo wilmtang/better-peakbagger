@@ -732,6 +732,8 @@ No single green command proves the extension works:
 - `npm test` builds `dist/`, imports pure modules, and evaluates shipped IIFE
   bundles in jsdom. It covers algorithms, fixtures, privacy gates, DOM behavior,
   and worker state, but no browser interprets the real manifest.
+- `npm run test:scale` separately parses a synthetic 20,000-point provider GPX
+  so the default local loop can stay fast without losing large-input coverage.
 - `npm run lint:js` catches JavaScript errors without rewriting source.
   `npm run lint` checks the built extension package. Neither establishes
   runtime behavior.

@@ -39,6 +39,28 @@ jobs:
       - name: Lint extension
         run: npm run lint
 
+  scale:
+    name: GPX scale test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out source
+        # actions/checkout v7.0.0
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+
+      - name: Set up Node.js
+        # actions/setup-node v7.0.0
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Parse a production-scale GPX track
+        run: npm run test:scale
+
   chrome:
     name: Chrome extension smoke
     runs-on: ubuntu-latest

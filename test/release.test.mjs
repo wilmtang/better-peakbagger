@@ -120,6 +120,7 @@ test("release and browser development commands use the dist build", async () => 
     workflow,
     /- name: Build store packages[\s\S]*?npm run package[\s\S]*?chrome_archive=/,
   );
+  assert.match(workflow, /- name: Run GPX scale test\s+run: npm run test:scale/);
 });
 
 test("bare web-ext commands use only the dist build", async () => {
@@ -131,9 +132,10 @@ test("bare web-ext commands use only the dist build", async () => {
 test("CI tests, lints, and exercises both real browser extensions", async () => {
   const workflow = await readFile(new URL("../.github/workflows/test.yml", import.meta.url), "utf8");
   assert.match(workflow, /node:\s*\n[\s\S]*?run: npm test[\s\S]*?run: npm run lint/);
+  assert.match(workflow, /scale:\s*\n[\s\S]*?run: npm run test:scale/);
   assert.match(workflow, /chrome:\s*\n[\s\S]*?run: npm run verify:chrome/);
   assert.match(workflow, /firefox:\s*\n[\s\S]*?run: npm run verify:firefox/);
-  assert.equal(workflow.match(/run: npm ci/g)?.length, 3);
+  assert.equal(workflow.match(/run: npm ci/g)?.length, 4);
   assert.match(workflow, /permissions:\s*\n\s+contents: read/);
   await assert.rejects(
     lstat(new URL("../.github/workflows/ci.yml", import.meta.url)),

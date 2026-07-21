@@ -114,6 +114,7 @@ visible in the AMO Developer Hub.
    ```sh
    npm ci
    npm test
+   npm run test:scale
    npm run lint
    npm run verify:browsers
    npm run terrain:verify

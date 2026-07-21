@@ -112,6 +112,7 @@ only exist under `dist/` after a build.
 | `npm run build:release` | Minified production build (no source maps). |
 | `npm run watch` | Transactionally rebuild on change and re-copy static assets; does not launch or control a browser. |
 | `npm test` | `pretest` builds `dist/`, then runs `test/**/*.test.mjs`. |
+| `npm run test:scale` | Parses a synthetic 20,000-point provider track completely; CI and release checks run this separately from the fast default suite. |
 | `npm run verify:chrome` | Builds and loads the real unpacked `dist/` in hidden Chrome for Testing, including trusted GPX selection and the draft handoff. |
 | `npm run verify:firefox` | Builds the derived Firefox source, temporarily installs it in hidden Firefox, and runs the same manifest-surface, trusted GPX-selection, and draft-handoff smoke. |
 | `npm run verify:browsers` | Builds once, then runs the Chrome and Firefox extension gates. |
@@ -125,11 +126,11 @@ only exist under `dist/` after a build.
 | `npm run package` | Release build + `web-ext build` from `dist/`; writes the canonical Chrome ZIP under `web-ext-artifacts/`. |
 | `npm run start:chromium` / `start:firefox` | Build, watch, launch a web-ext development browser, and auto-reload the extension after successful rebuilds. Firefox mirrors each complete build into its inline-Preferences source first. |
 
-Pushes and pull requests use one least-privilege workflow with three independent
-jobs: Node tests/lint, the real Chrome extension smoke, and the real Firefox
-extension smoke. Each browser job installs its own runtime and reports failures
-separately. Release CI additionally executes both generated store archives
-before either publication job can start.
+Pushes and pull requests use one least-privilege workflow with four independent
+jobs: Node tests/lint, the GPX scale test, the real Chrome extension smoke, and
+the real Firefox extension smoke. Each job installs its own runtime and reports
+failures separately. Release CI additionally runs the scale test and executes
+both generated store archives before either publication job can start.
 
 The browser smokes select a fixture GPX through the native file input and
 confirm that a fresh ascent form receives its local date and replaces Preview
@@ -265,6 +266,9 @@ generalize this exception.
   the shipped bundles, but it does not exercise the real manifest — execution
   worlds, injection order, and the live service-worker lifecycle are invisible
   to it.
+- `npm run test:scale` keeps the expensive 20,000-point GPX completeness case
+  out of the fast local loop. It still uses jsdom rather than a browser and does
+  not impose a cross-machine timing threshold.
 - `npm run lint:js` checks undeclared names, unused bindings, and unsafe equality
   without rewriting source. `npm run lint` checks the built extension package;
   neither establishes browser behavior.
