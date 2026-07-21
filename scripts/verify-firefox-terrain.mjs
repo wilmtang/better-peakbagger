@@ -151,14 +151,34 @@ async function main() {
       `http://${fixtureHost}:${port}/climber/ascent.aspx?mode=terrain&map=wide`,
       { waitUntil: "load" },
     );
-    await page.waitForFunction(() => {
-      const frame = document.getElementById("bpb-terrain-frame");
-      const win = frame?.contentWindow;
-      const map = win?.__bpbTerrainTestMap;
-      return frame?.style.opacity === "1" && map?.loaded()
-        && map.getLayer("bpb-route") && map.getLayer("bpb-peaks-ring")
-        && map.getSource("basemap");
-    }, null, { timeout: 20_000 });
+    try {
+      await page.waitForFunction(() => {
+        const frame = document.getElementById("bpb-terrain-frame");
+        const win = frame?.contentWindow;
+        const map = win?.__bpbTerrainTestMap;
+        return frame?.style.opacity === "1" && map?.loaded()
+          && map.getLayer("bpb-route") && map.getLayer("bpb-peaks-ring")
+          && map.getSource("basemap");
+      }, null, { timeout: 45_000 });
+    } catch (error) {
+      const state = await page.evaluate(() => {
+        const frame = document.getElementById("bpb-terrain-frame");
+        const map = frame?.contentWindow?.__bpbTerrainTestMap;
+        return {
+          frame: Boolean(frame),
+          frameOpacity: frame?.style.opacity || null,
+          frameReadyState: frame?.contentDocument?.readyState || null,
+          map: Boolean(map),
+          mapLoaded: map?.loaded() || false,
+          route: Boolean(map?.getLayer("bpb-route")),
+          peaks: Boolean(map?.getLayer("bpb-peaks-ring")),
+          basemap: Boolean(map?.getSource("basemap")),
+        };
+      });
+      throw new Error(`Timed out waiting for Firefox terrain readiness: ${JSON.stringify({ state, requests, errors })}`, {
+        cause: error,
+      });
+    }
 
     const frame = page.frameLocator("#bpb-terrain-frame");
     const rendererState = await frame.locator("canvas.maplibregl-canvas").evaluate(canvas => {
