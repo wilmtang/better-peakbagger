@@ -37,7 +37,7 @@ jobs:
       - name: Run tests
         run: npm test
 
-      - name: Run GPX scale test
+      - name: Run scale tests
         run: npm run test:scale
 
       - name: Lint extension

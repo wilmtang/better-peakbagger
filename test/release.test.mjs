@@ -120,7 +120,7 @@ test("release and browser development commands use the dist build", async () => 
     workflow,
     /- name: Build store packages[\s\S]*?npm run package[\s\S]*?chrome_archive=/,
   );
-  assert.match(workflow, /- name: Run GPX scale test\s+run: npm run test:scale/);
+  assert.match(workflow, /- name: Run scale tests\s+run: npm run test:scale/);
 });
 
 test("bare web-ext commands use only the dist build", async () => {

@@ -40,7 +40,7 @@ jobs:
         run: npm run lint
 
   scale:
-    name: GPX scale test
+    name: Scale tests
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -58,7 +58,7 @@ jobs:
       - name: Install locked dependencies
         run: npm ci
 
-      - name: Parse a production-scale GPX track
+      - name: Run scale tests
         run: npm run test:scale
 
   chrome:
