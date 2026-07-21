@@ -866,7 +866,8 @@ test('autosave does not depend on the optional peak label control', async () => 
     assert.equal(draft.label?.peak, undefined);
 });
 
-test('a differing stored draft is offered, and Restore applies it in its saved mode', async () => {
+test('a differing stored draft offers management, and Restore applies it in its saved mode', async () => {
+    const messages = [];
     const dom = await loadEditor({
         report: 'server copy',
         drafts: {
@@ -876,15 +877,22 @@ test('a differing stored draft is offered, and Restore applies it in its saved m
                 mode: 'markdown',
                 savedAt: Date.now() - 60000
             }
-        }
+        },
+        prepare: d => { d.chrome.runtime.sendMessage = async message => { messages.push(message); }; }
     });
     await editorReady(dom);
     const doc = dom.window.document;
 
     const draftBar = doc.querySelector('.bpb-re-draft');
     assert.equal(draftBar.hidden, false, 'the draft offer should be visible');
+    const actions = [...draftBar.querySelectorAll('button')];
+    assert.deepEqual(actions.map(button => button.textContent), [
+        'Restore draft', 'Delete draft', 'Manage drafts'
+    ]);
+    actions[2].click();
+    assert.deepEqual(JSON.parse(JSON.stringify(messages)), [{ type: 'OPEN_DRAFTS_MANAGER' }]);
 
-    [...draftBar.querySelectorAll('button')].find(b => b.textContent === 'Restore draft').click();
+    actions[0].click();
     assert.equal(doc.getElementById('bpb-report-editor').dataset.mode, 'markdown');
     assert.equal(editors(dom).markdown.getValue(), 'draft copy with **md**');
     assert.equal(doc.getElementById('JournalText').value, 'draft copy with **md**');

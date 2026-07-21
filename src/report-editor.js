@@ -292,13 +292,14 @@ import { createMarkdownEditor } from './report-md-editor.js';
     const status = el('span', 'bpb-re-status');
     status.setAttribute('role', 'status');
     status.setAttribute('aria-live', 'polite');
-    const manageDrafts = button('bpb-re-manage', 'Manage TR drafts');
-    manageDrafts.addEventListener('click', () => {
+    const openDraftsManager = () => {
         try {
             const request = ext.runtime.sendMessage({ type: 'OPEN_DRAFTS_MANAGER' });
             if (request && typeof request.catch === 'function') request.catch(() => {});
         } catch (error) { /* discovery link is best-effort; editing remains available */ }
-    });
+    };
+    const manageDrafts = button('bpb-re-manage', 'Manage TR drafts');
+    manageDrafts.addEventListener('click', openDraftsManager);
     foot.append(status, manageDrafts);
 
     // Contextual controls sit above the entire toolbar region, including a
@@ -487,6 +488,7 @@ import { createMarkdownEditor } from './report-md-editor.js';
             `A locally saved draft of this report (${timeLabel(stored.savedAt)}) differs from what’s shown.`);
         const restore = button('bpb-re-draft-restore', 'Restore draft');
         const discard = button('bpb-re-draft-discard', 'Delete draft');
+        const manage = button('bpb-re-draft-manage', 'Manage drafts');
         restore.addEventListener('click', () => {
             textarea.value = stored.text;
             state.creditScaffold = false;
@@ -503,7 +505,8 @@ import { createMarkdownEditor } from './report-md-editor.js';
             clearDraft();
             draftBar.hidden = true;
         });
-        draftBar.append(label, restore, discard);
+        manage.addEventListener('click', openDraftsManager);
+        draftBar.append(label, restore, discard, manage);
         draftBar.hidden = false;
     };
 
