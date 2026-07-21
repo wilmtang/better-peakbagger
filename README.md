@@ -33,7 +33,7 @@ Preferences page.
 
 ### Open-source free 3D mapping
 
-<video src="store-assets/screenshot-3D-map-sync-resize-billboard-1.5x.mp4" width="100%" autoplay loop muted playsinline></video>
+![GPX analysis moving from a chart-synchronized 2D map into 3D terrain](store-assets/screenshot-3D-map-sync-resize-billboard-1.5x.gif)
 
 User-uploaded GPX tracks on Peakbagger ascent pages and Full Screen GPS maps
 become full 3D terrain views at true vertical scale. Peak pages get the same
@@ -63,7 +63,7 @@ receive Peakbagger's `a`, `b`, … suffixes in track order so the ascents remain
 distinct. While a capture is working, **Cancel** immediately discards its
 short-lived job and ignores any provider or summit result that finishes later.
 
-<video src="store-assets/showcase-activity-capture.mp4" width="100%" autoplay loop muted playsinline></video>
+![Garmin and Strava activity capture with privacy-reduced Peakbagger drafts](store-assets/showcase-activity-capture.gif)
 
 ### Or just upload a GPX
 
@@ -80,7 +80,7 @@ click Save yourself.
 
 ### Chart-synced map and track customization
 
-<video src="store-assets/showcase-gpx-map-sync.mp4" width="100%" autoplay loop muted playsinline></video>
+![Three-day GPX analysis with chart-synchronized map marker and custom route](store-assets/showcase-gpx-map-sync.gif)
 
 Ascent pages gain an interactive elevation chart with distance and time views,
 route metrics, grades, timing, and multi-day camping details. Hover over the
@@ -108,6 +108,8 @@ Plain mode keeps the exact native textarea one click away, does not participate
 in draft autosave, and is the safe choice for an existing report that uses
 markup outside the editor's supported syntax. See the
 [supported syntax and safety contract](https://github.com/wilmtang/better-peakbagger/blob/main/docs/trip-report-editor.md).
+
+![Rich-text trip report editor with formatting controls and local draft recovery](store-assets/showcase-5-trip-report-editor-light.png)
 
 ### Back up ascents to GitHub
 
