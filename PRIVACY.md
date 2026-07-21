@@ -110,10 +110,13 @@ Peakbagger ascent page and processes it locally. Cross-page preferences live in
 account. Page-specific filter state and the early theme mirror stay in
 Peakbagger's `localStorage`.
 
-Trip-report drafts are stored locally by the extension. They are keyed to the
-climber and ascent or peak, expire after 14 days, and are limited to 30 drafts.
-The editor offers a differing draft for explicit restoration; it does not
-silently replace the server's text.
+Rich- and Markdown-mode trip-report drafts are stored locally by the extension.
+They are keyed to the climber and ascent or peak, become eligible for lazy
+cleanup after 14 days, and are pruned toward 30 drafts when the editor performs
+maintenance. Plain mode does not write these drafts. The editor offers a
+differing draft for explicit restoration; it does not silently replace the
+server's text. The complete lifecycle and current Save-boundary limitations are
+documented in [the trip-report editor design](docs/trip-report-editor.md#device-local-tr-draft-lifecycle).
 
 When a Rich editor or Markdown preview displays a user-provided remote image,
 direct video, or YouTube embed, the browser may request that media from its

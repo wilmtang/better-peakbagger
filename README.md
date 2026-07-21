@@ -102,9 +102,10 @@ The ascent form's trip report box becomes a real editor. Write in rich text —
 with live formatting states, tables, images, and markdown-style typing
 shortcuts — or in GitHub-flavored Markdown with syntax highlighting and a live
 side-by-side preview. Saving produces
-Peakbagger's square-bracket format, while local draft autosave offers your work
-back if the page is closed or a save is lost. Plain mode keeps the exact native
-textarea one click away and is the safe choice for an existing report that uses
+Peakbagger's square-bracket format. In Rich and Markdown modes, device-local
+draft autosave offers your work back after an interrupted editing session.
+Plain mode keeps the exact native textarea one click away, does not participate
+in draft autosave, and is the safe choice for an existing report that uses
 markup outside the editor's supported syntax. See the
 [supported syntax and safety contract](https://github.com/wilmtang/better-peakbagger/blob/main/docs/trip-report-editor.md).
 

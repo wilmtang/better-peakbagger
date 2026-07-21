@@ -402,18 +402,110 @@ someone reads the report. Direct videos retain no-referrer in saved markup;
 remote images use Peakbagger's page policy. These policies do not hide the
 requesting browser's IP address or ordinary request metadata.
 
-## Local drafts and cache limits
+## Device-local TR draft lifecycle
 
-Drafts autosave to extension-local storage every time you pause typing, and also save synchronously on page exit. They never leave your device. A record contains the submitted bracket `text`, editor `mode`, `savedAt` time, the exact Markdown `source` when available, and a bounded optional `label` with the peak name and raw ascent-date display text. The label is only for the local manager; older unlabeled records remain valid.
+TR drafts are recovery snapshots for the trip-report field. They are separate
+from the 30-minute prepared ascent drafts created by activity capture and from
+the optional GitHub save-time snapshot. A TR draft uses extension
+`storage.local`, not Peakbagger storage, `storage.sync`, or `storage.session`,
+and never leaves the device.
 
-To prevent storage unbounded growth and accidental overwrites, drafts have specific lifecycle rules:
+`src/report-editor.js` owns persistence and recovery. The pure
+`src/report-drafts.js` module is the shared identity, expiry, and limit contract
+used by the editor and the manager in `options/drafts.js`.
 
-- **Identity:** Drafts are uniquely keyed by the climber ID and the ascent ID (or peak ID, for a new ascent).
-- **TTL:** Drafts expire after **14 days**.
-- **Limit:** The extension keeps a maximum of **30 drafts** globally. Excess drafts are pruned (oldest first).
-- **Restoration:** When you return to an ascent page, the extension compares its saved draft against the text the server just rendered. If they differ, it presents a banner offering to restore the draft. The extension **never silently applies** a draft; you must explicitly click "Restore draft". 
-- **Management:** Settings → **TR drafts** lists every valid draft on the device; the editor's **Manage TR drafts** link opens that section through a background-owned extension tab. Opening one returns to the matching Peakbagger form, where the same explicit Restore banner remains the only way to apply it. The manager can copy the exact Markdown sidecar (or convert bracket markup when no sidecar exists) and delete one or all drafts with a six-second Undo window.
-- **Clearance:** A draft is permanently cleared when you click either Peakbagger Save button, delete it and let the Undo window close, or delete all text and let the empty state autosave.
+### Write path and stored record
+
+Only Rich and Markdown modes autosave. An edit restarts an 800 ms timer; after
+that pause, the editor synchronously flushes the active view into the native
+`JournalText` textarea and then asynchronously writes the recovery record to
+`storage.local`. A `pagehide` handler performs the same synchronous flush and
+starts a best-effort asynchronous storage write. Storage failure is deliberately
+non-blocking because the live form value still belongs to Peakbagger.
+
+Plain mode edits `JournalText` directly and deliberately does not write, update,
+or remove a TR draft. It therefore has the native textarea's recovery risks,
+and a draft previously written in Rich or Markdown mode can remain unchanged
+while the user continues in Plain mode.
+
+The key encodes the owner and form target:
+
+| Form | Storage key |
+| --- | --- |
+| Existing ascent | `bpbReportDraft:<cid>:a<aid>` |
+| New ascent for a known peak | `bpbReportDraft:<cid>:p<pid>` |
+| New ascent without either ID | `bpbReportDraft:<cid>:new` |
+
+A missing climber ID falls back to `0`. The stored value is:
+
+| Field | Meaning |
+| --- | --- |
+| `text` | The Peakbagger bracket-markup string currently in `JournalText`; this is the submitted representation, not Rich HTML |
+| `mode` | The authoring mode, normally `rich` or `markdown` |
+| `savedAt` | Millisecond timestamp used for display, expiry, and pruning |
+| `source` | The exact CodeMirror Markdown string, present only for a Markdown draft |
+| `label` | Optional bounded display metadata: selected peak name and raw ascent-date text |
+
+If the flushed Rich or Markdown report is empty after trimming, autosave removes
+the matching key instead of retaining an empty record.
+
+### Recovery on form load
+
+The editor reads only the key for the current climber and form. It rejects a
+missing or malformed record, removes one older than 14 days, and removes a
+whitespace-only record. It compares the remaining draft with Peakbagger's
+server-rendered `JournalText` after normalizing CRLF/CR line endings to LF and
+trimming both values.
+
+- If the values match, no recovery prompt appears. For a Markdown draft, the
+  exact `source` sidecar is adopted so a postback does not needlessly rewrite
+  the user's Markdown spelling.
+- If the values differ, the editor offers **Restore draft**, **Delete draft**,
+  and **Manage drafts**. It never applies a differing draft silently.
+- Restoring replaces `JournalText`, restores the recorded mode when valid, and
+  reuses the exact Markdown sidecar when present. Opening a row from the manager
+  returns to this same recovery gate; the manager cannot bypass it.
+
+### Retention and management
+
+The nominal TTL is 14 days and the nominal global target is 30 drafts, newest
+first. These are lazy cleanup rules, not timers or a hard write-time quota:
+
+- Opening an editor removes expired records and prunes fresh records after the
+  newest 30, oldest first. It preserves the current form's key even when that
+  key falls in the excess set.
+- Opening Settings → **TR drafts** removes expired records, but does not enforce
+  the 30-record target. A newly written 31st draft can therefore remain until a
+  later editor initialization performs pruning.
+
+The manager lists valid records newest first, opens the matching Peakbagger
+form, and copies either the exact Markdown `source` or a bracket-to-Markdown
+conversion of `text`. Deleting one or all drafts removes the records from
+storage immediately and holds copies in the open manager page for a six-second
+Undo window. If that window closes without Undo, or the manager page itself is
+closed, those copies are no longer recoverable through the extension.
+
+### Clearing at Peakbagger Save
+
+The intended boundary is that clicking either Peakbagger **Save Ascent** button
+flushes `JournalText` and clears the matching TR draft; the extension never
+clicks Save itself. Removal happens before Peakbagger confirms success. If the
+server rejects the save, the posted report may round-trip in Peakbagger's form,
+but the local draft has already been scheduled for removal.
+
+The current implementation does not fully guarantee that intended boundary:
+
+- Draft clearing is attached to clicks on `SaveButton` and `SaveButton2`, not
+  to every form-submit path. A submit without either click does not clear it.
+- A successful Save navigation also reaches the general `pagehide` handler.
+  There is no terminal "saving" state, so its asynchronous `saveDraftNow()` can
+  race with, or follow, the earlier asynchronous removal and recreate the
+  non-empty draft.
+
+Treat those as current implementation risks, not desired product behavior. A
+future fix needs a terminal Save state and a regression test covering the real
+click → submit → pagehide sequence before this section can claim that every
+successful Save reliably clears its draft.
 
 ## Preview fidelity
 
