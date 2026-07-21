@@ -37,6 +37,11 @@ living docs in [`docs/`](../).
   for the device-wide manager in Settings and its editor discovery link.
 - [Codebase audit — 2026-07-19](codebase-audit-2026-07-19.md) — point-in-time
   audit and remediation plan.
+- [3D map audit — 2026-07-21](3d-map-audit-2026-07-21.md) — completed audit and
+  implementation record for compass continuity, progressive drape boot,
+  cancelable loading, visible/fatal renderer recovery, shared lifecycle,
+  prefetch startup, and final browser/GPU verification. Current behavior lives
+  in the maintained [3D map design](../3d-map.md).
 - [Profile backup HTTP-cached ref conflict fix](github-ref-cache-conflict-fix.md) —
   completed root-cause and fix for the "repository changed" pause: the GitHub
   client now sets `cache: 'no-store'`, folded into the living
