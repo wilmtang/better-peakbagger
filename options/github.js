@@ -235,7 +235,7 @@ export function initGithubBackup({ extensionApi, flash, save }) {
             el('span', { text: 'Back up automatically after each save' }),
         ]);
         const historyHint = el('p', { class: 'github-hint github-history' }, [
-            document.createTextNode('For earlier ascents, '),
+            document.createTextNode('Auto backup on new and edits. To backup all earlier ascents, '),
             el('button', { type: 'button', class: 'github-link', text: 'Open My Ascents', onclick: openMyAscents }),
             document.createTextNode(' and choose Back up all ascents. It always includes every year.'),
         ]);
