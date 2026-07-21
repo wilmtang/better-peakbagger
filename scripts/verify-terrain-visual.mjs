@@ -591,7 +591,7 @@ try {
             // Disabling the temporary basemap interceptor, or navigating away,
             // may invalidate a late local request between pause and continue.
             // That says nothing about the DEM mock or product behavior.
-            if (isBasemapRequest && /Invalid InterceptionId/.test(error.message)) return;
+            if (isBasemapRequest && /Invalid InterceptionId|Fetch domain is not enabled/.test(error.message)) return;
             terrainMockFailures.push(error.stack || error.message);
             try {
                 await cdp.call('Fetch.failRequest', { requestId, errorReason: 'BlockedByClient' });
@@ -673,8 +673,8 @@ try {
     await Promise.all(pendingBasemapRequestIds.splice(0).map(requestId =>
         cdp.call('Fetch.continueRequest', { requestId })));
     // The pending-drape probe is the only reason to intercept local rasters.
-    // Remove that pattern so later navigations cannot race a needless continue.
-    await cdp.call('Fetch.disable');
+    // Update the enabled Fetch domain in place: disabling it first races late
+    // requestPaused handlers that are still continuing local raster requests.
     await cdp.call('Fetch.enable', {
         patterns: [
             { urlPattern: '*://mapterhorn.com/*', requestStage: 'Request' },
