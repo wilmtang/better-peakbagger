@@ -470,6 +470,102 @@ test('merge is additive while mirror replaces the custom list with Undo', async 
         && dom.chrome._localStore[favoriteKey].entries.some(entry => entry.cid === manual.cid));
 });
 
+test('connected GitHub actions back up the validated list and restore with Undo', async () => {
+    const original = { cid: 900002, name: 'Original Favorite', addedAt: 10, source: 'manual' };
+    const restored = { cid: 900003, name: 'Restored Favorite', addedAt: 20, source: 'buddy' };
+    const messages = [];
+    const status = {
+        enabled: true, connected: true, hasToken: true,
+        repo: { owner: 'ada', name: 'peaks', fullName: 'ada/peaks' },
+    };
+    const dom = await loadOptions({ favoritesSource: 'custom', enableGithubBackup: true }, {
+        local: { [favoriteKey]: favoriteStore([original]) },
+        prepareChrome: chrome => {
+            chrome.permissions = { request: async () => true, contains: async () => true, remove: async () => true };
+            chrome.runtime.sendMessage = (message, callback) => {
+                messages.push(JSON.parse(JSON.stringify(message)));
+                let reply = {};
+                if (message.type === 'GITHUB_AUTH_STATUS') reply = status;
+                if (message.type === 'GITHUB_FAVORITES_BACKUP') reply = { ok: true, result: { path: 'favorites.json' } };
+                if (message.type === 'GITHUB_FAVORITES_RESTORE') reply = {
+                    ok: true,
+                    content: JSON.stringify({
+                        schemaVersion: 1,
+                        exportedAt: '2026-07-21T12:00:00.000Z',
+                        entries: [restored],
+                    }),
+                };
+                if (typeof callback === 'function') Promise.resolve().then(() => callback(reply));
+                return Promise.resolve(reply);
+            };
+        },
+    });
+    await waitFor(dom, () => !el(dom, 'favorites-github-actions').hidden);
+    assert.match(el(dom, 'favorites-github-status').textContent, /ada\/peaks/);
+
+    el(dom, 'favorites-backup').click();
+    await waitFor(dom, () => messages.some(message => message.type === 'GITHUB_FAVORITES_BACKUP'));
+    const backup = messages.find(message => message.type === 'GITHUB_FAVORITES_BACKUP');
+    const exported = JSON.parse(backup.content);
+    assert.equal(exported.schemaVersion, 1);
+    assert.match(exported.exportedAt, /^\d{4}-\d{2}-\d{2}T/);
+    assert.deepEqual(exported.entries, [original]);
+    assert.equal(messages.some(message => message.type === 'GITHUB_FAVORITES_BACKUP' && message.auto), false,
+        'favorites backup is only the explicit button message');
+
+    await waitFor(dom, () => !el(dom, 'favorites-restore').disabled);
+    el(dom, 'favorites-restore').click();
+    await waitFor(dom, () => dom.chrome._localStore[favoriteKey]?.entries?.[0]?.cid === restored.cid);
+    assert.equal(el(dom, 'favorites-undo-all').hidden, false);
+    assert.match(el(dom, 'favorites-undo-message').textContent, /restored from GitHub/);
+
+    el(dom, 'favorites-undo-all-button').click();
+    await waitFor(dom, () => dom.chrome._localStore[favoriteKey]?.entries?.[0]?.cid === original.cid);
+});
+
+test('favorites restore fails closed on an unknown backup schema', async () => {
+    const original = { cid: 900002, name: 'Keep Me', addedAt: 10, source: 'manual' };
+    const dom = await loadOptions({ favoritesSource: 'custom', enableGithubBackup: true }, {
+        local: { [favoriteKey]: favoriteStore([original]) },
+        prepareChrome: chrome => {
+            chrome.permissions = { request: async () => true, contains: async () => true, remove: async () => true };
+            chrome.runtime.sendMessage = (message, callback) => {
+                const reply = message.type === 'GITHUB_FAVORITES_RESTORE'
+                    ? { ok: true, content: JSON.stringify({ schemaVersion: 2, entries: [] }) }
+                    : {
+                        enabled: true, connected: true, hasToken: true,
+                        repo: { owner: 'ada', name: 'peaks', fullName: 'ada/peaks' },
+                    };
+                if (typeof callback === 'function') Promise.resolve().then(() => callback(reply));
+                return Promise.resolve(reply);
+            };
+        },
+    });
+    await waitFor(dom, () => !el(dom, 'favorites-github-actions').hidden);
+    el(dom, 'favorites-restore').click();
+    await waitFor(dom, () => /newer format/.test(el(dom, 'status').textContent));
+    assert.deepEqual(dom.chrome._localStore[favoriteKey].entries, [original]);
+    assert.equal(el(dom, 'favorites-undo-all').hidden, true);
+});
+
+test('favorites points disconnected users to GitHub setup instead of showing dead actions', async () => {
+    const dom = await loadOptions({ favoritesSource: 'custom' }, {
+        prepareChrome: chrome => {
+            chrome.permissions = { request: async () => true, contains: async () => true, remove: async () => true };
+            chrome.runtime.sendMessage = (message, callback) => {
+                const reply = message.type === 'GITHUB_AUTH_STATUS'
+                    ? { enabled: false, connected: false, hasToken: false }
+                    : {};
+                if (typeof callback === 'function') Promise.resolve().then(() => callback(reply));
+                return Promise.resolve(reply);
+            };
+        },
+    });
+    await waitFor(dom, () => /move this list between browsers/.test(el(dom, 'favorites-github-status').textContent));
+    assert.equal(el(dom, 'favorites-github-actions').hidden, true);
+    assert.equal(el(dom, 'favorites-github-status').querySelector('a').getAttribute('href'), '#github-backup');
+});
+
 test('report drafts render newest-first with labels, fallbacks, and edit links', async () => {
     const now = Date.now();
     const local = {

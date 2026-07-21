@@ -295,6 +295,25 @@ import { githubBackup as Backup } from './github-backup.js';
 
         const contentBytes = content => new TextEncoder().encode(content).byteLength;
 
+        const rootFilePath = path => {
+            if (typeof path !== 'string' || !path || path === '.' || path === '..'
+                || path.includes('/') || path.includes('\\') || path === REPOSITORY_MARKER_PATH) {
+                throw new TypeError('github client requires a non-reserved root file path');
+            }
+            return path;
+        };
+
+        const decodeBase64Utf8 = value => {
+            try {
+                const binary = atob(value.replace(/\s/g, ''));
+                const bytes = Uint8Array.from(binary, character => character.charCodeAt(0));
+                return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+            } catch (cause) {
+                throw new GithubBackupError(ERROR_CODES.INVALID,
+                    'GitHub returned invalid base64 file content.', { cause });
+            }
+        };
+
         const normalizeBatch = entries => {
             if (!Array.isArray(entries) || entries.length === 0) {
                 throw new TypeError('github client requires at least one ascent backup');
@@ -393,14 +412,13 @@ import { githubBackup as Backup } from './github-backup.js';
         };
 
         // Re-read and rebuild after a bounded backoff when GitHub reports a
-        // transient repository/ref conflict. Immediate retries can hit the same
-        // propagation window; the bounded schedule absorbs brief 409s without
-        // hiding a persistent conflict or looping forever.
-        const pushAscentBackups = async entries => {
-            const normalized = normalizeBatch(entries);
+        // transient repository/ref conflict. Every branch-mutating operation
+        // shares this schedule so root-file and ascent commits have identical
+        // compare-and-swap behavior.
+        const withConflictRetry = async operation => {
             for (let attempt = 0; ; attempt += 1) {
                 try {
-                    return await commitBatchOnce(normalized);
+                    return await operation();
                 } catch (error) {
                     if (!(error instanceof GithubBackupError)
                         || error.code !== ERROR_CODES.CONFLICT
@@ -408,6 +426,11 @@ import { githubBackup as Backup } from './github-backup.js';
                     await sleep(CONFLICT_RETRY_DELAYS[attempt]);
                 }
             }
+        };
+
+        const pushAscentBackups = async entries => {
+            const normalized = normalizeBatch(entries);
+            return withConflictRetry(() => commitBatchOnce(normalized));
         };
 
         const pushAscentBackup = async (snapshot, { gpx } = {}) => {
@@ -430,7 +453,78 @@ import { githubBackup as Backup } from './github-backup.js';
             return state.records.map(record => record.leaf);
         };
 
-        return { pushAscentBackup, pushAscentBackups, getAscentFolders, inspectRepository };
+        const readRootFile = async path => {
+            const filePath = rootFilePath(path);
+            const resolved = await resolveRepo();
+            const file = await request('GET',
+                `/contents/${encodeURIComponent(filePath)}?ref=${encodeURIComponent(resolved.targetBranch)}`,
+                { phase: 'read', allowNotFound: true });
+            if (file == null) return null;
+            if (file.type !== 'file' || file.encoding !== 'base64' || typeof file.content !== 'string') {
+                throw new GithubBackupError(ERROR_CODES.INVALID,
+                    `GitHub did not return ${filePath} as a base64 file.`);
+            }
+            return decodeBase64Utf8(file.content);
+        };
+
+        const putRootFileOnce = async (path, content, commitMessage) => {
+            const filePath = rootFilePath(path);
+            if (typeof content !== 'string' || typeof commitMessage !== 'string' || !commitMessage.trim()) {
+                throw new TypeError('github client requires string content and a commit message');
+            }
+            const resolved = await resolveRepo();
+            const head = await readHead(resolved) || await initializeEmptyRepository(resolved);
+            const state = await inspectRootTree(head.root);
+            const existing = (head.root.tree || []).find(entry => entry.path === filePath);
+            if (existing && existing.type !== 'blob') {
+                throw new GithubBackupError(ERROR_CODES.REPO_CONFLICT,
+                    `The repository already uses ${filePath} for something other than a file.`);
+            }
+            const treeEntries = [{
+                path: filePath,
+                mode: BLOB_MODE,
+                type: 'blob',
+                content,
+            }];
+            if (!state.marker) {
+                treeEntries.push({
+                    path: REPOSITORY_MARKER_PATH,
+                    mode: BLOB_MODE,
+                    type: 'blob',
+                    content: REPOSITORY_MARKER_CONTENT,
+                });
+            }
+            const tree = await request('POST', '/git/trees', {
+                body: { base_tree: head.baseTreeSha, tree: treeEntries },
+                phase: 'write',
+            });
+            const commit = await request('POST', '/git/commits', {
+                body: { message: commitMessage.trim(), tree: tree.sha, parents: [head.baseCommitSha] },
+                phase: 'write',
+            });
+            await request('PATCH', `/git/refs/heads/${encodeURIComponent(resolved.targetBranch)}`, {
+                body: { sha: commit.sha, force: false },
+                phase: 'ref',
+            });
+            return {
+                sha: commit.sha,
+                commitUrl: commit.html_url || `https://github.com/${owner}/${repo}/commit/${commit.sha}`,
+                message: commitMessage.trim(),
+                path: filePath,
+            };
+        };
+
+        const putRootFile = (path, content, commitMessage) =>
+            withConflictRetry(() => putRootFileOnce(path, content, commitMessage));
+
+        return {
+            pushAscentBackup,
+            pushAscentBackups,
+            getAscentFolders,
+            inspectRepository,
+            readRootFile,
+            putRootFile,
+        };
     };
 
     const API = {

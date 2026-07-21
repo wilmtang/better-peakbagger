@@ -1614,6 +1614,52 @@ import { githubClient as GithubClient } from './github-client.js';
         }
     };
 
+    const favoritesGithubClient = async () => {
+        const settings = await Settings.get();
+        if (!settings.enableGithubBackup) return { error: { code: 'disabled' } };
+        const auth = await GithubAuth.authStore.read();
+        if (!auth || !auth.token) return { error: { code: 'not-connected' } };
+        if (!auth.repo || !auth.repo.owner || !auth.repo.name) return { error: { code: 'no-repo' } };
+        return {
+            client: GithubClient.createGithubClient({
+                fetch: netFetch,
+                token: auth.token,
+                owner: auth.repo.owner,
+                repo: auth.repo.name,
+                branch: auth.repo.branch || undefined,
+            }),
+        };
+    };
+
+    // Favorites are intentionally manual-only. The options page owns schema
+    // validation and serialization; the worker owns the token, gate, mutable
+    // branch queue, and fixed repository path.
+    const backupFavorites = async message => {
+        if (!message || typeof message.content !== 'string' || !message.content) {
+            return { ok: false, error: { code: 'no-data' } };
+        }
+        const access = await favoritesGithubClient();
+        if (access.error) return { ok: false, error: access.error };
+        try {
+            const result = await enqueueGithubWrite(() => access.client.putRootFile(
+                'favorites.json', message.content, 'Back up favorite climbers'
+            ));
+            return { ok: true, result };
+        } catch (error) {
+            return { ok: false, error: { code: error.code || 'unknown', message: error.message || 'The favorites backup failed.' } };
+        }
+    };
+
+    const restoreFavorites = async () => {
+        const access = await favoritesGithubClient();
+        if (access.error) return { ok: false, error: access.error };
+        try {
+            return { ok: true, content: await access.client.readRootFile('favorites.json') };
+        } catch (error) {
+            return { ok: false, error: { code: error.code || 'unknown', message: error.message || 'The favorites backup could not be read.' } };
+        }
+    };
+
     ext.runtime.onMessage.addListener((message, sender, sendResponse) => {
         const run = async () => {
             const type = message?.type;
@@ -1621,6 +1667,8 @@ import { githubClient as GithubClient } from './github-client.js';
             // neither the GitHub token nor the signed-in climber identity
             // crosses to a content script.
             const extensionOnly = type === 'PEAKBAGGER_MY_ASCENTS'
+                || type === 'GITHUB_FAVORITES_BACKUP'
+                || type === 'GITHUB_FAVORITES_RESTORE'
                 || (typeof type === 'string' && type.startsWith('GITHUB_AUTH_'));
             if (extensionOnly && !isExtensionPage(sender)) {
                 return { error: 'forbidden' };
@@ -1638,6 +1686,8 @@ import { githubClient as GithubClient } from './github-client.js';
             case 'GITHUB_BACKUP_ASCENT': return backupAscent(message, sender);
             case 'GITHUB_BACKUP_PROFILE_STATUS': return githubProfileBackupStatus(sender);
             case 'GITHUB_BACKUP_PROFILE_BATCH': return backupProfileBatch(message, sender);
+            case 'GITHUB_FAVORITES_BACKUP': return backupFavorites(message);
+            case 'GITHUB_FAVORITES_RESTORE': return restoreFavorites();
             case 'OPEN_DRAFTS_MANAGER': return openDraftsManager(sender);
             case 'CAPTURE_START': return startCapture(message);
             case 'CAPTURE_STATUS': {

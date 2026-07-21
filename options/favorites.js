@@ -4,6 +4,7 @@
 // Better Peakbagger — Favorite climbers settings manager.
 
 import { favoriteClimbers as F } from '../src/favorite-climbers.js';
+import { githubError as GithubError } from '../src/github-error.js';
 import { classifyResponse, numericParam, ownerClimberId } from '../src/profile-backup-core.js';
 
 const UNDO_MS = 6000;
@@ -27,11 +28,16 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
     const undoAllEl = document.getElementById('favorites-undo-all');
     const undoMessageEl = document.getElementById('favorites-undo-message');
     const undoAllButtonEl = document.getElementById('favorites-undo-all-button');
+    const githubStatusEl = document.getElementById('favorites-github-status');
+    const githubActionsEl = document.getElementById('favorites-github-actions');
+    const backupEl = document.getElementById('favorites-backup');
+    const restoreEl = document.getElementById('favorites-restore');
 
     if (!store || !sourceEls.length || !buddyPanelEl || !customPanelEl || !buddyStatusEl
         || !refreshBuddiesEl || !addFormEl || !addInputEl || !addButtonEl || !sortEl
         || !mergeEl || !mirrorEl || !emptyEl || !listEl || !undoAllEl || !undoMessageEl
-        || !undoAllButtonEl) return { populate() {} };
+        || !undoAllButtonEl || !githubStatusEl || !githubActionsEl || !backupEl
+        || !restoreEl) return { populate() {} };
 
     let source = 'buddies';
     let favorites = F.cleanFavorites(null);
@@ -42,7 +48,19 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
     let refreshRevision = 0;
     let refreshTimer = null;
     let pendingBulk = null;
+    let githubStatus = null;
+    let githubBusy = false;
+    let githubRevision = 0;
     const pendingDeletes = new Map();
+
+    const send = message => new Promise(resolve => {
+        try {
+            extensionApi.runtime.sendMessage(message, response => {
+                void extensionApi.runtime.lastError;
+                resolve(response || null);
+            });
+        } catch { resolve(null); }
+    });
 
     const relativeAge = fetchedAt => {
         const elapsed = Math.max(0, Date.now() - fetchedAt);
@@ -174,6 +192,36 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
         customPanelEl.hidden = source !== 'custom';
         renderBuddyStatus();
         renderList();
+    };
+
+    const githubRepoName = () => githubStatus?.repo?.fullName
+        || (githubStatus?.repo?.owner && githubStatus?.repo?.name
+            ? `${githubStatus.repo.owner}/${githubStatus.repo.name}`
+            : 'the connected repository');
+
+    const renderGithub = () => {
+        const connected = !!(githubStatus?.enabled && githubStatus?.connected);
+        githubActionsEl.hidden = !connected;
+        backupEl.disabled = githubBusy;
+        restoreEl.disabled = githubBusy;
+        githubStatusEl.textContent = '';
+        if (githubBusy) {
+            githubStatusEl.textContent = 'Working with GitHub…';
+        } else if (connected) {
+            githubStatusEl.textContent = `Save or restore this custom list in ${githubRepoName()}.`;
+        } else {
+            githubStatusEl.append('Connect ', Object.assign(document.createElement('a'), {
+                href: '#github-backup', textContent: 'GitHub trip backup',
+            }), ' to move this list between browsers.');
+        }
+    };
+
+    const refreshGithubStatus = async () => {
+        const revision = ++githubRevision;
+        const status = await send({ type: 'GITHUB_AUTH_STATUS' });
+        if (revision !== githubRevision) return;
+        githubStatus = status;
+        renderGithub();
     };
 
     const writeFavorites = async value => {
@@ -323,6 +371,54 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
         }
     };
 
+    const withGithubBusy = async operation => {
+        if (githubBusy) return;
+        githubBusy = true;
+        renderGithub();
+        try { await operation(); }
+        finally { githubBusy = false; renderGithub(); }
+    };
+
+    const backupFavorites = () => withGithubBusy(async () => {
+        const exported = {
+            schemaVersion: F.SCHEMA_VERSION,
+            exportedAt: new Date().toISOString(),
+            entries: F.cleanFavorites(favorites).entries,
+        };
+        const response = await send({
+            type: 'GITHUB_FAVORITES_BACKUP',
+            content: `${JSON.stringify(exported, null, 2)}\n`,
+        });
+        if (!response?.ok) {
+            flash(GithubError.message(response?.error));
+            return;
+        }
+        flash(`Favorites backed up to ${githubRepoName()}`);
+    });
+
+    const restoreFavorites = () => withGithubBusy(async () => {
+        const response = await send({ type: 'GITHUB_FAVORITES_RESTORE' });
+        if (!response?.ok) {
+            flash(GithubError.message(response?.error));
+            return;
+        }
+        if (response.content == null) {
+            flash(`No favorites backup found in ${githubRepoName()}.`);
+            return;
+        }
+        let parsed;
+        try { parsed = JSON.parse(response.content); }
+        catch { parsed = null; }
+        if (!parsed || parsed.schemaVersion !== F.SCHEMA_VERSION || !Array.isArray(parsed.entries)
+            || parsed.entries.length > F.LIMIT
+            || F.cleanFavorites(parsed).entries.length !== parsed.entries.length) {
+            flash('This favorites backup is not valid or uses a newer format.');
+            return;
+        }
+        const changed = await beginReplacement(F.cleanFavorites(parsed), 'Favorites restored from GitHub');
+        if (changed) flash(`Favorites restored from ${githubRepoName()}`);
+    });
+
     const addClimber = async () => {
         const cid = F.parseClimberInput(addInputEl.value);
         if (cid == null) {
@@ -405,6 +501,8 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
         });
     });
     undoAllButtonEl.addEventListener('click', () => { void undoReplacement(); });
+    backupEl.addEventListener('click', () => { void backupFavorites(); });
+    restoreEl.addEventListener('click', () => { void restoreFavorites(); });
 
     for (const radio of sourceEls) {
         radio.addEventListener('change', () => {
@@ -417,18 +515,23 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
 
     if (extensionApi.storage.onChanged) {
         extensionApi.storage.onChanged.addListener((changes, area) => {
-            if (area !== 'local' || (!changes[F.FAVORITES_KEY] && !changes[F.BUDDY_CACHE_KEY])) return;
-            globalThis.clearTimeout(refreshTimer);
-            refreshTimer = globalThis.setTimeout(() => { void refresh(); }, 20);
+            if (area === 'local' && (changes[F.FAVORITES_KEY] || changes[F.BUDDY_CACHE_KEY])) {
+                globalThis.clearTimeout(refreshTimer);
+                refreshTimer = globalThis.setTimeout(() => { void refresh(); }, 20);
+            }
+            if (area === 'local' && changes.bpbGithubAuth) void refreshGithubStatus();
+            if (area === 'sync' && changes.bpbSettings) void refreshGithubStatus();
         });
     }
 
     void refresh();
+    void refreshGithubStatus();
 
     return {
         populate(settings) {
             source = settings && settings.favoritesSource === 'custom' ? 'custom' : 'buddies';
             renderPanels();
+            void refreshGithubStatus();
         },
     };
 };
