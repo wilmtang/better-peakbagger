@@ -140,20 +140,21 @@ h1 { margin: 0; font-size: 18px; font-weight: 650; line-height: 1.2; }
 
 .settings-section + .settings-section { margin-top: 22px; }
 .section-title {
-    margin: 0 2px 8px;
-    color: var(--sub);
-    font-size: 13px;
-    font-weight: 650;
-    letter-spacing: .01em;
+    margin: 0 2px 9px;
+    color: var(--text);
+    font-size: 16px;
+    font-weight: 680;
+    letter-spacing: -.01em;
 }
 
 /* Level-2 groups inside a section: each is its own titled card. */
 .subsection + .subsection { margin-top: 16px; }
 .subsection-title {
     margin: 0 2px 7px;
-    color: var(--text);
-    font-size: 13.5px;
-    font-weight: 620;
+    color: var(--sub);
+    font-size: 13px;
+    font-weight: 650;
+    letter-spacing: .01em;
 }
 
 .card {
