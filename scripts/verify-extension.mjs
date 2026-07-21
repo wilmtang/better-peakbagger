@@ -1240,10 +1240,30 @@ try {
                     selectedIds: [2829]
                 });
                 if (!reply?.tabIds?.length) return { reply };
-                const tab = await chrome.tabs.get(reply.tabIds[0]);
-                return { reply, tab };
+                return { reply };
             }, { sourceTabId: seeded.sourceTabId, job });
             const draftTabId = opened.reply?.tabIds?.[0];
+            if (Number.isInteger(draftTabId)) {
+                try {
+                    opened.tab = await waitForCondition(() => controlPage.evaluate(
+                        async ({ draftTabId, requireGroup }) => {
+                            const tab = await chrome.tabs.get(draftTabId);
+                            const url = tab.pendingUrl || tab.url || '';
+                            const identityReady = /peakbagger\.com\/climber\/ascentedit\.aspx\?pid=2829&cid=900001/i.test(url);
+                            const groupReady = !requireGroup || Number(tab.groupId) >= 0;
+                            return identityReady && groupReady ? tab : null;
+                        },
+                        { draftTabId, requireGroup: !opened.reply?.groupWarning },
+                    ), {
+                        description: 'the Chrome worker to create and group the identity-bound draft tab',
+                        timeoutMs: 15_000,
+                    });
+                } catch (error) {
+                    opened.waitError = error.message;
+                    opened.tab = await controlPage.evaluate(async tabId =>
+                        chrome.tabs.get(tabId), draftTabId).catch(readError => ({ error: String(readError) }));
+                }
+            }
             check(Number.isInteger(draftTabId)
                 && /peakbagger\.com\/climber\/ascentedit\.aspx\?pid=2829&cid=900001/i.test(
                     opened.tab?.pendingUrl || opened.tab?.url || ''),
