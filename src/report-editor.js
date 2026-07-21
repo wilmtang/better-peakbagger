@@ -404,6 +404,10 @@ import { createMarkdownEditor } from './report-md-editor.js';
             }
             const record = { text: textarea.value, mode: state.mode, savedAt: Date.now() };
             if (state.mode === 'markdown') record.source = mdEditor.getValue();
+            try {
+                const label = AscentSnapshot.label({ form, params });
+                if (Object.keys(label).length) record.label = label;
+            } catch (error) { /* optional display metadata must never block autosave */ }
             await localStore.set({ [draftKey]: record });
             status.textContent = `Draft saved on this device · ${timeLabel(record.savedAt)}`;
         } catch (error) { /* storage unavailable — the form value is still live */ }

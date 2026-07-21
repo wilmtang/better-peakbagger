@@ -140,6 +140,18 @@
         return { id: Number.isFinite(id) ? id : null, name };
     };
 
+    // Compact, device-local display metadata for a report draft. The draft key
+    // already carries identity; this is deliberately just the human label the
+    // form currently shows, with conservative caps for options-page rendering.
+    const label = ({ form, params } = {}) => {
+        const peak = trim(readPeak(form, params).name).slice(0, 200);
+        const date = fieldValue(form, 'DateText').slice(0, 20);
+        return {
+            ...(peak ? { peak } : {}),
+            ...(date ? { date } : {})
+        };
+    };
+
     // ---- snapshot ----------------------------------------------------------
 
     // Build the save-time snapshot from the live form and the editor's report.
@@ -203,6 +215,6 @@
     const identityKey = ({ climberId, peakId, date }) =>
         `${climberId ?? ''}|${peakId ?? ''}|${date ?? ''}`;
 
-    const API = { build, identityKey, normalizeDate };
+    const API = { build, identityKey, normalizeDate, label };
 
     export const ascentSnapshot = API;

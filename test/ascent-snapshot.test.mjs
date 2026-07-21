@@ -125,6 +125,31 @@ test('a selected peak in the list box wins over the URL pid', async () => {
     assert.equal(snapshot.peak.name, 'Glacier Peak');
 });
 
+test('label reads bounded display metadata from the ascent form', async () => {
+    const { doc, form } = await loadForm();
+    const select = form.elements['PeakListBox'];
+    const option = doc.createElement('option');
+    option.value = '1234';
+    option.textContent = `  ${'Glacier Peak '.repeat(20)}  `;
+    select.appendChild(option);
+    select.value = '1234';
+    setValue(form, 'DateText', '  7/12/2026  ');
+
+    const label = Snapshot.label({
+        form,
+        params: new URLSearchParams('cid=900001&pid=2296')
+    });
+    assert.equal(label.peak.length, 200);
+    assert.match(label.peak, /^Glacier Peak/);
+    assert.equal(label.date, '7/12/2026');
+});
+
+test('label omits unavailable display metadata', async () => {
+    const { form } = await loadForm();
+    assert.deepEqual(Snapshot.label({ form, params: new URLSearchParams() }), {});
+    assert.deepEqual(Snapshot.label(), {});
+});
+
 test('an edited ascent carries its aid and an empty report yields an empty body', async () => {
     const { form } = await loadForm();
     setValue(form, 'DateText', '2026-07-12');

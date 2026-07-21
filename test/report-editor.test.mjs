@@ -813,7 +813,18 @@ test('editing in rich mode neutralizes unsupported embed markup before submissio
 });
 
 test('edits autosave a local draft keyed to this climber and form', async () => {
-    const dom = await loadEditor();
+    const dom = await loadEditor({
+        prepare: d => {
+            const doc = d.window.document;
+            const select = doc.getElementById('PeakListBox');
+            const option = doc.createElement('option');
+            option.value = '1234';
+            option.textContent = 'Glacier Peak';
+            select.append(option);
+            select.value = '1234';
+            doc.getElementById('DateText').value = '7/12/2026';
+        }
+    });
     await editorReady(dom);
 
     typeRich(dom, '<p>autosave me</p>');
@@ -822,8 +833,22 @@ test('edits autosave a local draft keyed to this climber and form', async () => 
     assert.equal(draft.text, 'autosave me');
     assert.equal(draft.mode, 'rich');
     assert.equal(typeof draft.savedAt, 'number');
+    assert.deepEqual(JSON.parse(JSON.stringify(draft.label)), { peak: 'Glacier Peak', date: '7/12/2026' });
     assert.match(dom.window.document.querySelector('.bpb-re-status').textContent,
         /Draft saved on this device · \d{1,2}:\d{2}:\d{2}(?:\s[AP]M)?$/);
+});
+
+test('autosave does not depend on the optional peak label control', async () => {
+    const dom = await loadEditor({
+        prepare: d => d.window.document.getElementById('PeakListBox').remove()
+    });
+    await editorReady(dom);
+
+    typeRich(dom, '<p>safe without a peak select</p>');
+    await waitFor(dom, () => dom.chrome._localStore[DRAFT_KEY]);
+    const draft = dom.chrome._localStore[DRAFT_KEY];
+    assert.equal(draft.text, 'safe without a peak select');
+    assert.equal(draft.label?.peak, undefined);
 });
 
 test('a differing stored draft is offered, and Restore applies it in its saved mode', async () => {
