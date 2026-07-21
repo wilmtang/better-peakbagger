@@ -82,6 +82,10 @@ import { terrainCompass as TerrainCompass } from './terrain-compass.js';
     let terrainCameraRequestId = 0;
     let peaksClient = null;
     let peaksClientResolved = false;
+    // Warm the DEM cache on explicit intent to open 3D (toggle hover/focus),
+    // throttled so a lingering cursor posts at most one hint per window.
+    const TERRAIN_PREFETCH_THROTTLE_MS = 15 * 1000;
+    let terrainPrefetchAt = 0;
 
     const mount = document.createElement('div');
     mount.id = 'bpb-map-viewport';
@@ -114,6 +118,21 @@ import { terrainCompass as TerrainCompass } from './terrain-compass.js';
     const postTerrain = (type, detail = {}) => window.postMessage({
         __bpbTerrain: true, dir: 'toCS', type, ...detail
     }, location.origin);
+
+    // Hovering or focusing the idle 3D toggle is explicit intent to open 3D, so
+    // it stays inside the same consent scope: warm the DEM cache for this peak's
+    // already-validated center and zoom. Never on page load, never when 3D off.
+    const maybePrefetchTerrain = () => {
+        if (terrainState !== 'idle' || !terrainEnabled) return;
+        const nowMs = Date.now();
+        if (nowMs - terrainPrefetchAt < TERRAIN_PREFETCH_THROTTLE_MS) return;
+        terrainPrefetchAt = nowMs;
+        postTerrain('prefetch', {
+            center: [lat, lon],
+            zoom: focusZoom,
+            viewport: { width: window.innerWidth, height: window.innerHeight }
+        });
+    };
 
     const clearTerrainLoadTimer = () => {
         if (terrainLoadTimer !== null) {
@@ -286,6 +305,8 @@ import { terrainCompass as TerrainCompass } from './terrain-compass.js';
         }
         startTerrain();
     });
+    terrainToggle.addEventListener('pointerenter', maybePrefetchTerrain);
+    terrainToggle.addEventListener('focus', maybePrefetchTerrain);
 
     const answerPeaksRequest = data => {
         const requestId = data.requestId;

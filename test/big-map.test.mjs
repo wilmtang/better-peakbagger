@@ -396,6 +396,44 @@ test('Full Screen 3D shows a compass that tracks the view and resets north', asy
     dom.window.close();
 });
 
+test('hovering the idle 3D toggle prefetches the route DEM tiles once per window', async () => {
+    const fixture = await loadBigMap({ type: 'A', width: 6, settings: { enable3dMap: true } });
+    const { dom, window, messages, leaflet } = fixture;
+    const route = new leaflet.Polyline([
+        { lat: 44.15, lng: -121.78 },
+        { lat: 44.16, lng: -121.76 },
+        { lat: 44.17, lng: -121.75 }
+    ], { color: '#d9483b', weight: 3 });
+    window.map = new leaflet.MapStub([route]);
+    fixture.evaluate();
+
+    // Wait for the configured width to land, which proves the settings message
+    // (and thus terrainEnabled) has been applied — not just the route bound.
+    await waitFor(dom, () => route.options.weight === 6);
+    const toggle = window.document.getElementById('bpb-terrain-toggle');
+    assert.equal(toggle.disabled, false);
+
+    const prefetches = () => messages.filter(message => message.__bpbTerrain === true && message.type === 'prefetch');
+    assert.equal(prefetches().length, 0, 'no prefetch merely because the page loaded');
+
+    toggle.dispatchEvent(new window.Event('pointerenter'));
+    assert.equal(prefetches().length, 1, 'hover warms the cache exactly once');
+    const prefetch = prefetches()[0];
+    assert.equal(prefetch.dir, 'toCS');
+    assert.deepEqual(prefetch.bounds, { minLat: 44.15, minLon: -121.78, maxLat: 44.17, maxLon: -121.75 },
+        'the route bounds seed the prefetch');
+    assert.equal(Number.isFinite(prefetch.viewport.width) && prefetch.viewport.width > 0, true);
+    assert.equal(Number.isFinite(prefetch.viewport.height) && prefetch.viewport.height > 0, true);
+
+    // A second hover inside the throttle window posts nothing more.
+    toggle.dispatchEvent(new window.Event('focus'));
+    toggle.dispatchEvent(new window.Event('pointerenter'));
+    assert.equal(prefetches().length, 1, 'the 15 s throttle suppresses a second hover');
+    // Let the queued postMessage dispatches drain before closing the window.
+    await new Promise(resolve => window.setTimeout(resolve, 0));
+    dom.window.close();
+});
+
 test('Full Screen 3D maps serve peak-dot requests from the native PLLBB feed', async () => {
     const fixture = await loadBigMap({ type: 'A', width: 6, settings: { enable3dMap: true } });
     const { dom, window, messages, leaflet } = fixture;

@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **Warm 3D terrain before you open it.** With 3D enabled, hovering or focusing
+  the 3D button now quietly pre-requests the elevation tiles for the view, so
+  the map opens from cache instead of waiting on the network. The pre-request is
+  bounded, rate-limited, and only ever fires from that deliberate interaction —
+  never merely because a map page loaded — and only while 3D is on.
+
 - **Make returning to 3D near-instant.** Leaving a 3D map now parks its renderer
   in the background for a few minutes instead of tearing it down, so switching
   2D→3D→2D→3D resumes in a frame rather than rebuilding MapLibre and its terrain

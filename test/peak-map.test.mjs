@@ -155,6 +155,33 @@ test('Peak pages wrap the Dynamic Map with a 3D toggle and open a validated summ
     dom.window.close();
 });
 
+test('hovering the idle 3D toggle prefetches the peak DEM tiles once per window', async () => {
+    const { dom, window, messages } = loadPeakMap();
+    const toggle = window.document.getElementById('bpb-terrain-toggle');
+    // The dark theme landing proves the settings message (and terrainEnabled)
+    // has been applied.
+    await waitFor(dom, () => toggle.dataset.theme === 'dark');
+
+    const prefetches = () => messages.filter(message => message.__bpbTerrain === true && message.type === 'prefetch');
+    assert.equal(prefetches().length, 0, 'no prefetch merely because the page loaded');
+
+    toggle.dispatchEvent(new window.Event('pointerenter'));
+    assert.equal(prefetches().length, 1, 'hover warms the cache exactly once');
+    const prefetch = prefetches()[0];
+    assert.equal(prefetch.dir, 'toCS');
+    assert.deepEqual(prefetch.center, [48.83115, -121.60214], 'the validated peak coordinate seeds the prefetch');
+    assert.equal(prefetch.zoom, 13, 'the summit MapLibre zoom seeds the prefetch');
+    assert.ok(Number.isFinite(prefetch.viewport.width) && prefetch.viewport.width > 0);
+    assert.ok(Number.isFinite(prefetch.viewport.height) && prefetch.viewport.height > 0);
+
+    // A second hover inside the throttle window posts nothing more.
+    toggle.dispatchEvent(new window.Event('focus'));
+    toggle.dispatchEvent(new window.Event('pointerenter'));
+    assert.equal(prefetches().length, 1, 'the 15 s throttle suppresses a second hover');
+    await new Promise(resolve => window.setTimeout(resolve, 0));
+    dom.window.close();
+});
+
 test('Peak-page 3D shows a compass that tracks the view and resets north', async () => {
     const { dom, window, messages } = loadPeakMap();
     const toggle = window.document.getElementById('bpb-terrain-toggle');

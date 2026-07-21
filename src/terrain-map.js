@@ -71,6 +71,39 @@ import { terrainCamera } from './terrain-camera.js';
         postToPage('error', { reason: ALLOWED_FAILURES.has(reason) ? reason : 'renderer' });
     };
 
+    // Relay a page prefetch hint to the background worker as a bounded, sanity-
+    // checked TERRAIN_PREFETCH. Only fires while the feature is on; the worker
+    // still re-validates the sender, the feature gate, and the numbers. The
+    // reply is ignored — a warm cache is a best-effort optimization.
+    const forwardPrefetch = data => {
+        if (!terrainEnabled) return;
+        const runtime = (globalThis.browser || globalThis.chrome)?.runtime;
+        if (!runtime || typeof runtime.sendMessage !== 'function') return;
+        const viewport = data && data.viewport;
+        if (!viewport || !Number.isFinite(viewport.width) || !Number.isFinite(viewport.height)) return;
+        const payload = { type: 'TERRAIN_PREFETCH', viewport: { width: viewport.width, height: viewport.height } };
+        const bounds = data.bounds;
+        if (bounds && typeof bounds === 'object'
+            && [bounds.minLat, bounds.minLon, bounds.maxLat, bounds.maxLon].every(Number.isFinite)) {
+            payload.bounds = {
+                minLat: bounds.minLat, minLon: bounds.minLon,
+                maxLat: bounds.maxLat, maxLon: bounds.maxLon
+            };
+        } else if (Array.isArray(data.center) && data.center.length === 2
+            && data.center.every(Number.isFinite) && Number.isFinite(data.zoom)) {
+            payload.center = [data.center[0], data.center[1]];
+            payload.zoom = data.zoom;
+        } else {
+            return;
+        }
+        try {
+            const reply = runtime.sendMessage(payload);
+            if (reply && typeof reply.then === 'function') reply.catch(() => {});
+        } catch (error) {
+            // A torn-down worker channel is a normal transient; nothing to warm.
+        }
+    };
+
     const applySettings = settings => {
         terrainEnabled = settings && settings.enable3dMap === true;
         terrainTheme = settings && typeof settings.theme === 'string' ? settings.theme : 'system';
@@ -329,6 +362,12 @@ import { terrainCamera } from './terrain-camera.js';
                 postToFrame('highlight', { coordinates: data.coordinates, series: data.series });
             } else if (data.type === 'resetNorth') {
                 postToFrame('resetNorth');
+            } else if (data.type === 'prefetch') {
+                // Ask the background worker to warm the origin-keyed DEM cache
+                // for a view the user signalled intent to open (toggle hover).
+                // Gated on the same feature flag as the frame; the worker
+                // re-checks the setting and the sender before any tile fetch.
+                forwardPrefetch(data);
             } else if (data.type === 'cameraRequest') {
                 if (Number.isSafeInteger(data.requestId) && data.requestId > 0) {
                     postToFrame('cameraRequest', { requestId: data.requestId });

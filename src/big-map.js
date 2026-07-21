@@ -214,6 +214,11 @@ import { terrainCompass as TerrainCompass } from './terrain-compass.js';
     let terrainStopPending = false;
     let terrainCameraRequestId = 0;
     const TERRAIN_TOGGLE_GAP = 8;
+    // Warm the DEM cache when the user signals intent to open 3D by hovering or
+    // focusing the toggle. Throttled so a mouse lingering over the button posts
+    // at most one hint per window; the worker enforces its own rate limit too.
+    const TERRAIN_PREFETCH_THROTTLE_MS = 15 * 1000;
+    let terrainPrefetchAt = 0;
 
     // Float the toggle just above the zoom stack of whichever map is showing:
     // the 3D frame reports its stack height (cross-origin), the native 2D zoom is
@@ -330,6 +335,32 @@ import { terrainCompass as TerrainCompass } from './terrain-compass.js';
         return found;
     };
 
+    // Hovering or focusing the idle 3D toggle is explicit intent to open 3D, so
+    // it stays inside the same consent scope as opening it: warm the DEM cache
+    // for the route's bounds. Never on page load, and never when 3D is off.
+    const maybePrefetchTerrain = () => {
+        if (terrainState !== 'idle' || !terrainEnabled) return;
+        const nowMs = Date.now();
+        if (nowMs - terrainPrefetchAt < TERRAIN_PREFETCH_THROTTLE_MS) return;
+        const { segments } = collectRoute();
+        if (!segments.length) return;
+        let minLat = Infinity, minLon = Infinity, maxLat = -Infinity, maxLon = -Infinity;
+        for (const segment of segments) {
+            for (const [lat, lon] of segment) {
+                if (lat < minLat) minLat = lat;
+                if (lat > maxLat) maxLat = lat;
+                if (lon < minLon) minLon = lon;
+                if (lon > maxLon) maxLon = lon;
+            }
+        }
+        if (![minLat, minLon, maxLat, maxLon].every(Number.isFinite)) return;
+        terrainPrefetchAt = nowMs;
+        postTerrain('prefetch', {
+            bounds: { minLat, minLon, maxLat, maxLon },
+            viewport: { width: window.innerWidth, height: window.innerHeight }
+        });
+    };
+
     const terrainBasemaps = () => {
         const B = terrainBasemap;
         if (!B) return { basemap: null, basemaps: [] };
@@ -363,6 +394,8 @@ import { terrainCompass as TerrainCompass } from './terrain-compass.js';
             }
             startTerrain();
         });
+        terrainToggle.addEventListener('pointerenter', maybePrefetchTerrain);
+        terrainToggle.addEventListener('focus', maybePrefetchTerrain);
         terrainMount.append(terrainToggle);
         // A Google-Maps-style compass just above the toggle, shown only in 3D.
         terrainCompass = TerrainCompass.create({
