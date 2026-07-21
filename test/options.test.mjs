@@ -11,7 +11,7 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { JSDOM } from 'jsdom';
-import { makeChromeStub, waitFor, evalBundle } from './helpers/load-page.mjs';
+import { accelerateTimeout, makeChromeStub, waitFor, evalBundle } from './helpers/load-page.mjs';
 import { settingsSchema } from '../src/settings-schema.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -58,7 +58,8 @@ const loadOptions = async (settings = {}, {
     cachedTheme = null,
     hash = '',
     prepareChrome = null,
-    prepareWindow = null
+    prepareWindow = null,
+    accelerateGithubPoll = false
 } = {}) => {
     const html = await readFile(path.join(root, 'options', 'options.html'), 'utf8');
     const dom = new JSDOM(html, {
@@ -72,6 +73,7 @@ const loadOptions = async (settings = {}, {
     if (prepareChrome) prepareChrome(dom.chrome);
     dom.window.chrome = dom.chrome;
     dom.window.caches = cacheStorage;
+    if (accelerateGithubPoll) dom.githubPollDelays = accelerateTimeout(dom, 2000);
     if (prepareWindow) prepareWindow(dom.window);
     if (cachedTheme !== null) dom.window.localStorage.setItem('bpbThemePref', cachedTheme);
     // The options page loads the head bundle (settings + theme, pre-paint) then
@@ -895,6 +897,7 @@ test('a denied host-permission request reverts the toggle and leaves the gate of
 
 test('a lost device flow stops polling and offers to reconnect', async () => {
     const dom = await loadOptions({ enableGithubBackup: true }, {
+        accelerateGithubPoll: true,
         prepareChrome: chrome => {
             chrome.permissions = { request: async () => true, contains: async () => true, remove: async () => true };
             chrome.runtime.sendMessage = (message, callback) => {
@@ -915,6 +918,7 @@ test('a lost device flow stops polling and offers to reconnect', async () => {
         .find(button => button.textContent === 'Connect GitHub').click();
     await waitFor(dom, () => /connection was lost/i.test(el(dom, 'github-panel').textContent), 3000);
 
+    assert.deepEqual([...new Set(dom.githubPollDelays)], [2000]);
     assert.ok(Array.from(el(dom, 'github-panel').querySelectorAll('button'))
         .some(button => button.textContent === 'Reconnect GitHub'));
 });

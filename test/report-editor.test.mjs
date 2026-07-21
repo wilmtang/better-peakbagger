@@ -13,7 +13,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { loadPage, waitFor, PAGE_FIXTURES } from './helpers/load-page.mjs';
+import { accelerateTimeout, loadPage, waitFor, PAGE_FIXTURES } from './helpers/load-page.mjs';
 
 const FIXTURE = 'climber-ascentedit.html';
 const URL = 'https://www.peakbagger.com/climber/ascentedit.aspx?cid=900001';
@@ -34,7 +34,7 @@ const BUNDLES = [
 
 const loadEditor = async ({
     settings = {}, report = '', drafts = {}, url = URL, firefox = false,
-    browserAlias = firefox, prepare = null
+    browserAlias = firefox, prepare = null, accelerateAutosave = false
 } = {}) => {
     const dom = await loadPage(FIXTURE, {
         url,
@@ -42,6 +42,7 @@ const loadEditor = async ({
         bundles: BUNDLES,
         fixtures: PAGE_FIXTURES,
         prepare: d => {
+            if (accelerateAutosave) d.autosaveDelays = accelerateTimeout(d, 800);
             d.window.document.getElementById('JournalText').value = report;
             Object.assign(d.chrome._localStore, drafts);
             d.chrome.runtime.getURL = path =>
@@ -880,6 +881,7 @@ test('editing in rich mode neutralizes unsupported embed markup before submissio
 
 test('edits autosave a local draft keyed to this climber and form', async () => {
     const dom = await loadEditor({
+        accelerateAutosave: true,
         prepare: d => {
             const doc = d.window.document;
             const select = doc.getElementById('PeakListBox');
@@ -899,6 +901,7 @@ test('edits autosave a local draft keyed to this climber and form', async () => 
     assert.equal(draft.text, 'autosave me');
     assert.equal(draft.mode, 'rich');
     assert.equal(typeof draft.savedAt, 'number');
+    assert.deepEqual([...new Set(dom.autosaveDelays)], [800]);
     assert.deepEqual(JSON.parse(JSON.stringify(draft.label)), { peak: 'Glacier Peak', date: '7/12/2026' });
     assert.match(dom.window.document.querySelector('.bpb-re-status').textContent,
         /Draft saved on this device · \d{1,2}:\d{2}:\d{2}(?:\s[AP]M)?$/);
@@ -906,6 +909,7 @@ test('edits autosave a local draft keyed to this climber and form', async () => 
 
 test('autosave does not depend on the optional peak label control', async () => {
     const dom = await loadEditor({
+        accelerateAutosave: true,
         prepare: d => d.window.document.getElementById('PeakListBox').remove()
     });
     await editorReady(dom);
@@ -953,7 +957,7 @@ test('page exit removes an untouched generated-credit-only draft in Rich and Mar
 });
 
 test('Rich autosave keeps content plus the generated credit, then removes the credit-only remainder', async () => {
-    const dom = await loadEditor({ settings: { addReportCredit: true } });
+    const dom = await loadEditor({ settings: { addReportCredit: true }, accelerateAutosave: true });
     await editorReady(dom);
     const creditOnlyHtml = editors(dom).rich.getHTML();
 
@@ -968,7 +972,8 @@ test('Rich autosave keeps content plus the generated credit, then removes the cr
 
 test('Markdown autosave keeps content plus the generated credit, then removes the credit-only remainder', async () => {
     const dom = await loadEditor({
-        settings: { addReportCredit: true, reportEditorMode: 'markdown' }
+        settings: { addReportCredit: true, reportEditorMode: 'markdown' },
+        accelerateAutosave: true
     });
     await editorReady(dom);
     const creditOnlySource = editors(dom).markdown.getValue();
@@ -1114,7 +1119,8 @@ test('disabling the setting live hands the form back to the native textarea', as
 
 test('draft keys distinguish editing an ascent from adding one', async () => {
     const dom = await loadEditor({
-        url: 'https://www.peakbagger.com/climber/ascentedit.aspx?aid=123456&cid=900001'
+        url: 'https://www.peakbagger.com/climber/ascentedit.aspx?aid=123456&cid=900001',
+        accelerateAutosave: true
     });
     await editorReady(dom);
     typeRich(dom, '<p>edit of an existing ascent</p>');
