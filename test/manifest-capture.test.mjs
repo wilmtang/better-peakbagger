@@ -143,6 +143,18 @@ test('peak planning links are isolated to Peak.aspx in the extension world', () 
     assert.ok(peakLinks.matches.every(pattern => /peakbagger\.com\/(?:P|p)eak\.aspx/.test(pattern)));
 });
 
+test('the ascent sorter also reaches the Buddy List report endpoint', () => {
+    const sorter = contentEntry('content/ascent-filter.js');
+    assert.ok(sorter);
+    assert.equal(sorter.run_at, 'document_start');
+    assert.equal(sorter.world, undefined);
+    assert.deepEqual(bundleSources('content/ascent-filter.js'),
+        ['settings-schema.js', 'settings.js', 'ascent-filter.js']);
+    for (const host of ['https://www.peakbagger.com', 'https://peakbagger.com']) {
+        assert.ok(sorter.matches.includes(`${host}/report/report.aspx*`));
+    }
+});
+
 test('Peak-page 3D uses a narrow settings bridge, MAIN coordinator, and isolated renderer bridge', () => {
     const settingsBridge = contentEntry('content/peak-map-bridge.js');
     const pageCoordinator = contentEntry('content/peak-map.js');

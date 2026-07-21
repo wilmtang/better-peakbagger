@@ -314,6 +314,31 @@ async function main() {
     );
 
     await driver.get(
+      `https://${fixtureHost}:${fixture.port}/report/report.aspx?r=b&cid=900001`,
+    );
+    await driver.wait(until.elementLocated(By.css("#RGridView .pbaf-table-sort")), 10_000);
+    const buddyStateBefore = await driver.executeScript(`return {
+      labels: [...document.querySelectorAll("#RGridView .pbaf-table-sort")]
+        .map(control => control.firstChild.textContent.trim()),
+      betaBar: Boolean(document.getElementById("pbaf-bar")),
+      firstPeak: document.querySelector("#RGridView tr:nth-child(2) td:nth-child(4)")?.textContent.trim(),
+    };`);
+    const buddyControls = await driver.findElements(By.css("#RGridView .pbaf-table-sort"));
+    await buddyControls[3].click();
+    const buddyStateAfter = await driver.executeScript(`return {
+      firstPeak: document.querySelector("#RGridView tr:nth-child(2) td:nth-child(4)")?.textContent.trim(),
+      sort: document.querySelector("#RGridView th:nth-child(4)")?.getAttribute("aria-sort"),
+    };`);
+    assertState(
+      buddyStateBefore.labels.length === 6
+        && buddyStateBefore.betaBar === false
+        && buddyStateAfter.sort === "ascending"
+        && buddyStateAfter.firstPeak !== buddyStateBefore.firstPeak,
+      "Firefox Buddy List did not expose six sorter-only controls",
+      { before: buddyStateBefore, after: buddyStateAfter },
+    );
+
+    await driver.get(
       `https://${fixtureHost}:${fixture.port}/climber/ClimbListC.aspx?cid=900001&j=-1&y=9999`,
     );
     await driver.wait(until.elementLocated(By.css(surfaceSelectors.profileBackup)), 10_000);
@@ -539,7 +564,7 @@ async function main() {
     console.log(`  - ${capabilities.getBrowserName()} ${capabilities.getBrowserVersion()}`);
     console.log(`  - hidden/headless at ${verificationViewport.width}x${verificationViewport.height}`);
     console.log("  - real sync/local/session storage and storage.onChanged round-tripped");
-    console.log("  - options, popup, ascent, editor, Peak, BigMap, PeakAscents, and profile-backup surfaces initialized");
+    console.log("  - options, popup, ascent, editor, Peak, BigMap, PeakAscents, Buddy List, and profile-backup surfaces initialized");
     console.log("  - a fresh ascent form autofilled its local date and trusted GPX selection swapped Preview for Process");
     console.log("  - AMO report credit, real editor input/draft recovery, filter/sort, and 3D frame passed");
     console.log("  - a real draft tab rejected wrong identity, attached GPX, filled fields, Previewed once, and never Saved");

@@ -2,17 +2,27 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // Better Peakbagger — ascent-list filter and instant table-sort content script.
-// Runs in the default isolated content-script world: it only reads ascent-table
+// Runs in the default isolated content-script world: it only reads list-table
 // DOM, reorders existing rows, and persists PeakAscents chip preferences in the
-// page's (same-origin) localStorage, so no page-global access is needed.
+// page's (same-origin) localStorage, so no page-global access is needed. The
+// Buddy List reuses only the sorter; it has no beta data or filter surface.
 
 import { settings as S } from './settings.js';
+
+    const pageParams = new URLSearchParams(location.search);
+    const pagePathname = location.pathname.toLowerCase();
+    const isAscentListPage = /\/climber\/(?:peakascents|climblistc)\.aspx$/.test(pagePathname);
+    const isBuddyListPage = pagePathname.endsWith('/report/report.aspx')
+        && (pageParams.get('r') || '').toLowerCase() === 'b';
 
     // This script runs at document_start; kick off the one settings read now, at
     // module load, so both the newest-first auto-sort and the "has beta"
     // definition reuse it instead of adding a storage round-trip to the critical
-    // path. Resolves to the cleaned settings, or null on any read failure.
-    const settingsPromise = S ? S.get().catch(() => null) : Promise.resolve(null);
+    // path. Buddy/report pages do not need ascent settings. Resolves to the
+    // cleaned settings, or null on any read failure.
+    const settingsPromise = S && isAscentListPage
+        ? S.get().catch(() => null)
+        : Promise.resolve(null);
 
     // Chip on/off states and the Trip report word-count threshold are per-page
     // UI state kept in page localStorage (below). The shared extension settings
@@ -42,6 +52,7 @@ import { settings as S } from './settings.js';
     // sort-link clicks until the sorter has decided whether it owns this table.
     // Links outside table headers (year jumps, unit toggles, etc.) are untouched.
     const tableSortTarget = target => {
+        if (!isAscentListPage && !isBuddyListPage) return null;
         const anchor = target && target.closest ? target.closest('a[href]') : null;
         if (!anchor) return null;
         const header = anchor.closest('th');
@@ -49,12 +60,15 @@ import { settings as S } from './settings.js';
         let url;
         try { url = new URL(anchor.href, location.href); } catch (e) { return null; }
         const rawKey = url.searchParams.get('sort') || '';
-        if (!rawKey) return null;
+        const isBuddyHeader = isBuddyListPage && !!header.closest('#RGridView');
+        if (!rawKey && !isBuddyHeader) return null;
         const lowerKey = rawKey.toLowerCase();
+        const fallbackKey = normalize(header.textContent).toLowerCase().replace(/[^a-z0-9]+/g, '');
+        if (!lowerKey && !fallbackKey) return null;
         return {
             href: anchor.href,
             columnIndex: header.cellIndex,
-            key: lowerKey === 'ascentdated' ? 'ascentdate' : lowerKey,
+            key: lowerKey === 'ascentdated' ? 'ascentdate' : (lowerKey || fallbackKey),
             dir: lowerKey === 'ascentdated' ? 'desc' : (lowerKey === 'ascentdate' ? 'asc' : null)
         };
     };
@@ -96,7 +110,9 @@ import { settings as S } from './settings.js';
     // order so Unknown, partial, and malformed dates retain backend semantics.
     // Other columns use values already present in their cells; their sort is
     // stable and type-aware for numbers, presence flags, icons, and dates.
-    const setupInstantTableSort = ({ headerRow, sections, preamble, rows, dataRows }) => {
+    const setupInstantTableSort = ({
+        headerRow, sections, preamble, rows, dataRows, sortEveryHeader = false
+    }) => {
         const keyOf = anchor => {
             try { return new URL(anchor.href, location.href).searchParams.get('sort') || ''; }
             catch (e) { return ''; }
@@ -113,11 +129,12 @@ import { settings as S } from './settings.js';
         const sortable = Array.from(headerRow.cells).flatMap((cell, index) => {
             const anchors = Array.from(cell.querySelectorAll('a[href]'));
             const primary = anchors.find(anchor => keyOf(anchor).toLowerCase() !== 'ascentdated');
-            if (!primary) return [];
-            const rawKey = keyOf(primary);
-            if (!rawKey) return [];
-            const key = rawKey.toLowerCase();
-            const label = normalize(primary.textContent) || normalize(cell.textContent);
+            const rawKey = primary ? keyOf(primary) : '';
+            if (!rawKey && !sortEveryHeader) return [];
+            const label = normalize(primary && primary.textContent) || normalize(cell.textContent);
+            const key = rawKey.toLowerCase()
+                || label.toLowerCase().replace(/[^a-z0-9]+/g, '');
+            if (!key || !label) return [];
             return [{
                 id: `${index}:${key}`,
                 index,
@@ -129,7 +146,10 @@ import { settings as S } from './settings.js';
                 arrow: null
             }];
         });
-        if (!sortable.length) return optOutInstantSort();
+        if (!sortable.length) {
+            optOutInstantSort();
+            return false;
+        }
 
         dataRows.forEach((record, index) => {
             record.sortIndex = index;
@@ -195,18 +215,21 @@ import { settings as S } from './settings.js';
         const inferDirection = column => {
             let ascending = true;
             let descending = true;
+            let varied = false;
             for (let i = 1; i < dataRows.length && (ascending || descending); i++) {
                 const compared = compareRecords(dataRows[i - 1], dataRows[i], column, 'asc', false);
+                if (compared) varied = true;
                 if (compared > 0) ascending = false;
                 if (compared < 0) descending = false;
             }
-            if (ascending) return 'asc';
-            if (descending) return 'desc';
+            if (varied && ascending) return 'asc';
+            if (varied && descending) return 'desc';
             return null;
         };
 
-        const urlSort = (new URLSearchParams(location.search).get('sort') || 'ascentdate').toLowerCase();
-        const dateServed = urlSort === 'ascentdate' || urlSort === 'ascentdated';
+        const requestedSort = (new URLSearchParams(location.search).get('sort') || '').toLowerCase();
+        const urlSort = requestedSort || (sortEveryHeader ? '' : 'ascentdate');
+        const dateServed = !sortEveryHeader && (urlSort === 'ascentdate' || urlSort === 'ascentdated');
         const years = sections
             .map(section => parseInt(normalize(section.row.textContent), 10))
             .filter(Number.isFinite);
@@ -240,7 +263,18 @@ import { settings as S } from './settings.js';
 
         let currentColumn = null;
         let currentDir = null;
-        if (dateServed) {
+        if (sortEveryHeader) {
+            // GridView pages do not expose their active sort in the URL. Mark a
+            // column active only when its displayed values prove a direction;
+            // all-equal action columns are not evidence of a served sort.
+            for (const column of sortable) {
+                const direction = inferDirection(column);
+                if (!direction) continue;
+                currentColumn = column;
+                currentDir = direction;
+                break;
+            }
+        } else if (dateServed) {
             currentColumn = sortable.find(column => column.key === 'ascentdate') || null;
             currentDir = currentColumn ? servedDateDir : null;
         } else {
@@ -296,7 +330,7 @@ import { settings as S } from './settings.js';
 
             // Date has native ascending/descending URL keys. Preserve the current
             // row-set parameters without adopting defaults from a header link.
-            if (column.key === 'ascentdate') {
+            if (column.key === 'ascentdate' && !sortEveryHeader) {
                 try {
                     const url = new URL(location.href);
                     url.searchParams.set('sort', dir === 'asc' ? 'ascentdate' : 'ascentdated');
@@ -345,6 +379,7 @@ import { settings as S } from './settings.js';
             applyInstantSort(target);
         }
         paint();
+        return true;
     };
 
     const STYLE = `
@@ -425,8 +460,11 @@ import { settings as S } from './settings.js';
 
     const init = async () => {
         if (document.getElementById('pbaf-bar')) return;
-        const table = document.querySelector('table.gray');
+        if (!isAscentListPage && !isBuddyListPage) return optOutInstantSort();
+
+        const table = document.querySelector(isBuddyListPage ? '#RGridView' : 'table.gray');
         if (!table) return optOutInstantSort();
+        if (table.dataset.bpbInstantSort === 'ready') return;
 
         const rows = Array.from(table.rows);
         const headerRow = rows.find(row => row.cells.length > 1 && row.cells[0].tagName === 'TH');
@@ -484,7 +522,17 @@ import { settings as S } from './settings.js';
         // Wire instant table sorting now — synchronously, before the awaited
         // settings read below — so the click guard is released (and any held
         // click replayed) as early as possible, not after the storage round-trip.
-        setupInstantTableSort({ headerRow, sections, preamble, rows, dataRows });
+        const sorterMounted = setupInstantTableSort({
+            headerRow, sections, preamble, rows, dataRows,
+            sortEveryHeader: isBuddyListPage
+        });
+        if (!sorterMounted) return;
+        table.dataset.bpbInstantSort = 'ready';
+
+        // Buddy rows have no trip-report, GPS, or external-link beta signals.
+        // Sorting is the complete feature on this surface: do not mount a
+        // misleading filter/compact-view notice or apply ascent-list settings.
+        if (isBuddyListPage) return;
 
         // Newest-ascents-first (opt-in). Flip a default oldest-first list to
         // descending once settings resolve — the rows are already in the DOM, so

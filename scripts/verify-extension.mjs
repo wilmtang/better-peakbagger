@@ -453,6 +453,36 @@ try {
         await profilePage.close();
     }
 
+    // --- Buddy List sorter-only surface ------------------------------------
+    {
+        const buddyPage = await context.newPage();
+        await buddyPage.goto(
+            `https://www.peakbagger.com:${port}/report/report.aspx?r=b&cid=900001`,
+            { waitUntil: 'load' }
+        );
+        const controls = buddyPage.locator('#RGridView .pbaf-table-sort');
+        const mounted = await controls.first().waitFor({ state: 'visible', timeout: 10000 })
+            .then(() => true).catch(() => false);
+        check(mounted, 'the Chrome Buddy List sorter never mounted through the real manifest');
+        if (mounted) {
+            const before = await buddyPage.evaluate(() => ({
+                labels: [...document.querySelectorAll('#RGridView .pbaf-table-sort')]
+                    .map(control => control.firstChild.textContent.trim()),
+                betaBar: !!document.getElementById('pbaf-bar'),
+                firstPeak: document.querySelector('#RGridView tr:nth-child(2) td:nth-child(4)')?.textContent.trim()
+            }));
+            await buddyPage.getByRole('button', { name: /^Peak or Point\./ }).click();
+            const after = await buddyPage.evaluate(() => ({
+                firstPeak: document.querySelector('#RGridView tr:nth-child(2) td:nth-child(4)')?.textContent.trim(),
+                sort: document.querySelector('#RGridView th:nth-child(4)')?.getAttribute('aria-sort')
+            }));
+            check(before.labels.length === 6 && before.betaBar === false
+                && after.sort === 'ascending' && after.firstPeak !== before.firstPeak,
+            `the Chrome Buddy List did not expose six sorter-only controls: ${JSON.stringify({ before, after })}`);
+        }
+        await buddyPage.close();
+    }
+
     // --- Trip-report editor on the real ascent form --------------------------
     // Real typing, real keyboard shortcuts, and real input rules against the
     // TipTap surface and the CodeMirror markdown pane, which jsdom cannot
@@ -1402,6 +1432,7 @@ console.log('  - the Full Screen BigMap receives settings and shows an enabled 3
 console.log('  - the Peak Dynamic Map preserves its native frame and shows an enabled 3D toggle');
 console.log('  - clicking Peak 3D creates the isolated frame with a route-free summit focus');
 console.log('  - the PeakAscents filter mounts, reveals rows, and sorts in place');
+console.log('  - the Buddy List exposes six in-place sort controls and no beta filter');
 console.log('  - the owner-only full-profile backup surface mounts with a connected fixture repository');
 console.log('  - a fresh ascent form autofills its local date and trusted GPX selection swaps Preview for Process');
 console.log('  - the opt-in report credit renders and serializes the Chrome Web Store URL');
