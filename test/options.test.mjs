@@ -42,7 +42,8 @@ const loadOptions = async (settings = {}, {
     local = {},
     cachedTheme = null,
     hash = '',
-    prepareChrome = null
+    prepareChrome = null,
+    prepareWindow = null
 } = {}) => {
     const html = await readFile(path.join(root, 'options', 'options.html'), 'utf8');
     const dom = new JSDOM(html, {
@@ -56,6 +57,7 @@ const loadOptions = async (settings = {}, {
     if (prepareChrome) prepareChrome(dom.chrome);
     dom.window.chrome = dom.chrome;
     dom.window.caches = cacheStorage;
+    if (prepareWindow) prepareWindow(dom.window);
     if (cachedTheme !== null) dom.window.localStorage.setItem('bpbThemePref', cachedTheme);
     // The options page loads the head bundle (settings + theme, pre-paint) then
     // the tail bundle (terrain-cache + the settings UI), as options.html does.
@@ -543,12 +545,33 @@ test('a deep-link hash is the active section on load', async () => {
 });
 
 test('a drafts deep link activates the TR-drafts manager', async () => {
-    const dom = await loadOptions({}, { hash: '#drafts' });
-    dom.window.document.querySelector('.content').dispatchEvent(new dom.window.Event('scrollend'));
+    const dom = await loadOptions({}, {
+        hash: '#drafts',
+        prepareWindow: window => {
+            const nativeRect = window.HTMLElement.prototype.getBoundingClientRect;
+            window.HTMLElement.prototype.getBoundingClientRect = function () {
+                if (this.classList?.contains('content')) return { top: 100 };
+                if (this.id === 'drafts') return { top: 450 };
+                return nativeRect.call(this);
+            };
+            const nativeStyle = window.getComputedStyle.bind(window);
+            window.getComputedStyle = element => element.id === 'drafts'
+                ? { scrollMarginTop: '24px' }
+                : nativeStyle(element);
+        }
+    });
+    const content = dom.window.document.querySelector('.content');
     const active = activeLinks(dom);
     assert.equal(active.length, 1);
     assert.equal(active[0].getAttribute('href'), '#drafts');
     assert.equal(active[0].textContent, 'TR drafts');
+    assert.equal(content.style.scrollBehavior, 'auto',
+        'the initial native fragment landing must not inherit smooth scrolling');
+    content.dispatchEvent(new dom.window.Event('scrollend'));
+    assert.equal(content.scrollTop, 326,
+        'the nested content scroller should align the target to its scroll margin');
+    assert.equal(content.style.scrollBehavior, '',
+        'normal sidebar navigation should regain stylesheet-controlled smooth scrolling');
 });
 
 test('hash navigation moves the active sidebar link', async () => {

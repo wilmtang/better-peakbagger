@@ -240,6 +240,27 @@ import { initGithubBackup } from './github.js';
             .filter(Boolean);
         if (!entries.length) return;
 
+        // Initial fragment navigation happens after this script runs. Override
+        // the pane's CSS smooth behavior until that one native landing finishes;
+        // otherwise a newly opened deep link visibly travels down the page.
+        let initialScrollOverride = false;
+        let initialScrollTarget = null;
+        const finishInitialScroll = alignTarget => {
+            if (!initialScrollOverride) return;
+            initialScrollOverride = false;
+            if (alignTarget && initialScrollTarget) {
+                // Narrow layouts put the content scroller below the horizontal
+                // nav. Chromium's initial fragment landing can account for that
+                // offset twice, so normalize against the actual scroll container.
+                const margin = parseFloat(getComputedStyle(initialScrollTarget).scrollMarginTop) || 0;
+                const delta = initialScrollTarget.getBoundingClientRect().top
+                    - content.getBoundingClientRect().top - margin;
+                if (Math.abs(delta) > 1) content.scrollTop += delta;
+            }
+            initialScrollTarget = null;
+            content.style.removeProperty('scroll-behavior');
+        };
+
         const setActive = active => {
             const activeParent = (entries.find(entry => entry.link === active) || {}).parentLink || null;
             for (const { link } of entries) {
@@ -296,21 +317,28 @@ import { initGithubBackup } from './github.js';
         content.addEventListener('scrollend', () => {
             clearTimeout(navLockTimer);
             navLocked = false;
+            finishInitialScroll(true);
         });
         for (const { link } of entries) {
-            link.addEventListener('click', () => lockTo(link));
+            link.addEventListener('click', () => {
+                finishInitialScroll(false);
+                lockTo(link);
+            });
         }
         window.addEventListener('hashchange', () => {
+            finishInitialScroll(false);
             const target = entries.find(entry => entry.link.hash === location.hash);
             if (target) lockTo(target.link);
         });
 
         // Initial state: honor a deep-link hash, otherwise the first section.
-        // A deep link locks like a click, because the browser animates the
-        // initial fragment scroll under scroll-behavior: smooth — without the
-        // lock the highlight would sweep through the sections it scrolls past.
         const initial = entries.find(entry => entry.link.hash === location.hash);
-        if (initial) lockTo(initial.link);
+        if (initial) {
+            initialScrollOverride = true;
+            initialScrollTarget = initial.section;
+            content.style.scrollBehavior = 'auto';
+            lockTo(initial.link);
+        }
         else setActive(entries[0].link);
     };
     initSectionNav();

@@ -6,9 +6,11 @@
   section in Settings lists the reports autosaved on this device, newest first,
   with their ascent, save time, format, expiry, and a short preview. You can open
   the matching Peakbagger form, copy the report as Markdown, or delete one or all
-  drafts with a brief Undo window. A quiet **Manage TR drafts** link beside the
-  report editor opens the manager directly. Existing drafts without ascent
-  labels remain available under an ID-based fallback name.
+  drafts with a brief Undo window. Quiet **Manage TR drafts** links beside the
+  report editor and in its draft-recovery banner open the manager directly,
+  landing on the section without scrolling through unrelated settings first.
+  Existing drafts without ascent labels remain available under an ID-based
+  fallback name.
 
 - **Warm 3D terrain before you open it.** With 3D enabled, hovering or focusing
   the 3D button now quietly pre-requests the elevation tiles for the view, so
