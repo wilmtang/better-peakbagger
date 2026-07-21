@@ -626,40 +626,372 @@ guessing column positions.
 
 ## Deep dive: favorite climbers
 
-`src/favorite-climbers.js` is the pure contract shared by every favorites
-surface. It validates and bounds schema-versioned entries, normalizes names,
-deduplicates by numeric climber id, parses Buddy List and climber-page DOM passed
-in by callers, and owns merge, mirror, effective-set, and sort semantics. It has
-no DOM globals or extension APIs.
+Favorite Climbers is not one interchangeable list. It is a source selector, two
+device-local datasets with different lifecycles, one page-local filter state,
+three ingestion paths, and an optional explicit transfer path. Keeping those
+roles separate is the central invariant: changing source must not copy or delete
+data, a stale Buddy cache must not become a custom list implicitly, and browser
+sync must never acquire the third-party names stored in either local dataset.
 
-The source choice is the validated `favoritesSource` setting in
-`storage.sync`: `buddies` by default or `custom`. The data stays device-local:
+### Runtime topology and ownership
 
-- `bpbFavoriteClimbers` stores at most 500 custom entries with id, name,
-  added-at timestamp, and manual/buddy provenance.
-- `bpbBuddyCache` stores the detected owner id, Buddy List ids/names, and fetch
-  time. Its seven-day value is a refresh threshold, not a correctness or
-  deletion deadline; stale data remains useful while a user-driven refresh is
-  unavailable.
+| Module or surface | Runtime boundary | Owns | Does not own |
+| --- | --- | --- | --- |
+| `src/favorite-climbers.js` | Pure ES module bundled into each caller | Validation, normalization, bounds, parsers, merge/mirror semantics, effective membership, and comparators | DOM globals, storage, fetch, extension messaging, or UI |
+| `src/ascent-filter.js` | Isolated content script at `document_start` | Peak-ascent row identities, Favorites chip state/count, automatic Buddy revalidation, and opportunistic Buddy-page caching | Custom-list management or GitHub transfer |
+| `src/climber-favorite.js` | Separate isolated content script at `document_end` | The add/remove control on a public climber page | Buddy-mode editing or arbitrary profile lookup |
+| `options/favorites.js` | Extension options page | Source selection, Buddy refresh status, custom-list management, reversible bulk actions, and GitHub backup/restore UI | GitHub token access or repository writes |
+| `src/profile-backup-core.js` | Pure shared module | Signed-in owner discovery and numeric URL identity | Favorites persistence or request orchestration |
+| `src/peakbagger-request.js`, `src/peakbagger-response.js`, and `src/peakbagger-error.js` | Shared request boundary | Authenticated fetch policy, response classification, parsing failures, and actionable error copy | Favorites schema or persistence |
+| `src/background.js` plus `src/github-client.js` | Extension worker | GitHub feature gate, token, fixed `favorites.json` path, repository validation, serialized writes, and restore reads | Interpreting or mutating the favorites schema |
 
 `options/favorites.js` owns management. It fetches authenticated Peakbagger
 pages through the shared Peakbagger request boundary, then parses validated
-documents with the shared pure module. Buddy refresh goes directly to the signed-in account's
-`report/report.aspx?r=b` page, deriving the owner id from that same response so
-the cache remains owner-scoped without a separate home-page probe. Custom
-additions verify that the fetched public profile id matches the requested id.
-Delete, mirror, and GitHub restore are replace operations with a brief local
-Undo snapshot; merge is additive.
+documents with the shared pure modules. Buddy refresh goes directly to the
+signed-in account's `report/report.aspx?r=b` page, deriving the owner id from
+that same response so the cache remains owner-scoped without a separate
+home-page probe. Custom additions verify that the fetched public profile id
+matches the requested id. Delete, mirror, and GitHub restore are replace
+operations with a brief local Undo snapshot; merge is additive.
 
-`src/climber-favorite.js` is a separate isolated-world bundle on public climber
-pages. It renders only in custom mode and never on the detected signed-in
-climber's own page. Each click rereads local storage before writing so two open
-tabs cannot replace each other's additions from stale in-memory lists.
+Both content scripts use the default isolated extension world, not Peakbagger's
+MAIN world. They can read the rendered DOM and extension storage without exposing
+privileged APIs through a page global or `postMessage` bridge. The manifest
+loads the ascent-filter bundle on `PeakAscents.aspx`, `ClimbListC.aspx`, and the
+Buddy report endpoint; the smaller climber-favorite bundle loads only on public
+`climber.aspx` pages. `scripts/build-config.mjs` composes both bundles with the
+single settings schema and favorite-climbers contract.
 
-Cross-browser transfer is explicit. When GitHub backup is enabled and connected,
-the options manager can serialize `favorites.json` to the chosen repository or
-restore a schema-checked copy. The worker keeps the token and fixed repository
-path; automatic ascent backup never reads or writes favorites.
+### Persisted state and schemas
+
+There are four relevant persistence locations:
+
+| Location | Key | Shape and authority | Lifecycle |
+| --- | --- | --- | --- |
+| `storage.sync` | `bpbSettings.favoritesSource` | `buddies` or `custom`; validated by `settings-schema.js`; defaults to `buddies` | Syncs as a preference through the browser account |
+| `storage.local` | `bpbFavoriteClimbers` | Authoritative custom list | Device-local until edited, restored, extension data is cleared, or the extension is removed |
+| `storage.local` | `bpbBuddyCache` | Last successfully parsed Buddy List plus owner and fetch time | Device-local stale-while-revalidate cache; no expiry deletion |
+| Peakbagger `localStorage` | `pbAscentBetaFilter.v1.fav` | Whether the Favorites chip is selected | Page-origin UI convenience; independent of the source and datasets |
+
+The custom list is schema-versioned:
+
+```js
+{
+  schemaVersion: 1,
+  entries: [
+    {
+      cid: 900002,
+      name: "Example Climber",
+      addedAt: 1784667845000,
+      source: "manual" // or "buddy"
+    }
+  ]
+}
+```
+
+The Buddy cache is intentionally narrower and is not a custom-list snapshot:
+
+```js
+{
+  ownerCid: 900001,
+  entries: [
+    { cid: 900002, name: "Example Climber" }
+  ],
+  fetchedAt: 1784667845000
+}
+```
+
+`source` on a custom entry records provenance only. It says whether that entry
+was added manually or copied by merge/mirror; it does not select the effective
+mode, keep the entry synchronized with Peakbagger, or make it part of the live
+Buddy cache.
+
+Every reader cleans data through `src/favorite-climbers.js` before use. Climber
+ids must be positive safe integers. Names replace non-breaking spaces, collapse
+whitespace, trim, and retain at most 200 UTF-16 code units. Added-at values must
+be finite and non-negative, and custom provenance must be exactly `manual` or
+`buddy`. Lists preserve the first valid occurrence of each climber id and input
+order, discard later duplicates or invalid entries, and stop after 500 entries.
+Unknown properties do not survive cleaning.
+
+The two envelopes fail differently by design. An absent, non-object, or unknown
+custom `schemaVersion` becomes an empty version-1 custom list. An invalid Buddy
+owner or fetch time invalidates the whole cache and becomes `null`; invalid
+individual Buddy rows are skipped. The cache has no schema version, so a future
+incompatible cache shape requires either backward-compatible structural cleaning
+or a new storage key. GitHub restore is stricter than an ordinary local read: it
+rejects the entire import if its schema is unknown, it exceeds 500 raw entries,
+or cleaning would remove even one malformed or duplicate entry.
+
+The 500-entry bound is a product guardrail, not a Peakbagger or browser hard
+limit. Peakbagger's Buddy List is capped at 100, while the custom mode is meant
+to outgrow it. The current options UI renders the entire list and every mutation
+rewrites one JSON object, so an unbounded import would make storage, rendering,
+and backup costs attacker- or accident-controlled. Raising the bound requires
+large-list UI and backup verification; removing it does not create genuinely
+unlimited browser storage.
+
+### Effective membership and filtering
+
+`favoriteSet(mode, favorites, buddyCache)` chooses exactly one source and returns
+a `Set` of numeric climber ids:
+
+```text
+mode == custom  -> cleaned bpbFavoriteClimbers entries
+otherwise       -> cleaned bpbBuddyCache entries
+```
+
+There is no automatic union. Switching from Buddy to custom mode leaves both
+datasets untouched and merely changes which one supplies the set. This also
+means the synced mode can arrive on a second browser while its device-local
+custom list is empty; the user must populate it locally or explicitly restore
+`favorites.json`.
+
+On a full `PeakAscents.aspx` page, `src/ascent-filter.js` extracts the first
+`climber.aspx?cid=...` profile identity from each ascent row. Rows without a
+valid climber id never match. It then marks each record by `Set.has(cid)` and
+shows in the Favorites chip the number of matching ascent rows, not the number
+of stored favorite climbers. The chip composes with every other filter using
+AND semantics.
+
+An empty or unavailable effective set deliberately does not hide the entire
+ascent table. The chip becomes disabled and a persisted `fav: true` state is
+temporarily ineffective. If a later storage or source change makes the set
+available, the same saved state becomes active again and the open table is
+re-filtered. Compact Peak Ascents views deliberately retain the existing
+“open the full details view” notice instead of mounting only part of the filter
+bar. Personal `ClimbListC.aspx` pages omit Favorites because every row belongs
+to the one listed climber and does not expose a meaningful cross-climber filter.
+
+### Buddy acquisition and cache state machine
+
+Peakbagger exposes no Buddy API used by this feature. Network refreshes read the
+authenticated HTML report at one of these forms:
+
+```text
+options page:  /report/report.aspx?r=b
+ascent filter: /report/report.aspx?r=b&cid=<signed-in-owner-cid>
+```
+
+The options page omits `cid` so Peakbagger resolves the current account and the
+extension derives `ownerCid` from that same response. The ascent filter already
+knows the rendered page owner, includes that id, and requires the response owner
+to match.
+
+The shared request boundary uses authenticated, no-cache fetches with a bounded
+timeout, then applies `classifyResponse(..., { kind: 'buddies' })` before parsing.
+A Cloudflare marker, failed or rate-limited response, login page, or body without
+both the Buddy List marker and `RGridView` is rejected and mapped to a typed,
+actionable error. The parser then examines only cell zero of each `#RGridView`
+row, accepts an exact
+`/climber/climber.aspx?cid=...` link, and persists only the normalized id/name
+pair. The fetched HTML, other Buddy columns, and ascent history are never
+persisted.
+
+The cache can be populated through three paths:
+
+1. **Active filter revalidation.** On `PeakAscents.aspx`, the content script
+   discovers the current account from rendered “My Ascents”, “Add Ascent”, or
+   “My Home Page” navigation. It fetches from `location.origin` only when Buddy
+   mode and the Favorites chip are active, the owner is known, and the cache is
+   absent or stale. A fresh cache causes no request.
+2. **Options actions.** The extension page cannot trust a Peakbagger page DOM for
+   current identity, so it fetches the signed-in Buddy endpoint without `cid` and
+   derives the owner from that validated response. **Refresh now**, merge, and
+   mirror each request the current report even when the stored cache is fresh;
+   simultaneous actions join the same in-flight request.
+3. **Zero-network opportunistic refresh.** When the user visits a Buddy report
+   whose URL `cid` equals the owner detected in that rendered page, the ascent
+   content script parses the already displayed table and rewrites the cache
+   after the Buddy table has passed normal sorter initialization. This happens
+   regardless of the selected source and issues no extra request.
+
+Cache states have precise behavior:
+
+| State | Filter behavior | Refresh behavior |
+| --- | --- | --- |
+| Fresh, matching owner | Uses cached ids immediately | Automatic filter path skips the request; options refresh, merge, and mirror still request the current report |
+| Stale, matching owner, non-empty | Uses stale ids immediately | An active Favorites chip revalidates in the background |
+| Stale refresh fails | Keeps using the stale ids | A later eligible user trigger may retry |
+| Matching owner, empty entries | Represents a valid empty Buddy List; Favorites is unavailable | Options refresh, a later Buddy-page visit, or eligible revalidation after it becomes stale can replace it |
+| Different detectable owner | Treats the cache as absent without deleting it | Fetches the current owner's list when eligible |
+| Owner cannot be detected | A previously stored cache remains usable, but an absent cache cannot load | No automatic page request; options reports sign-in state after validating the Buddy response |
+| Invalid cache envelope | Treats it as absent | A successful eligible refresh replaces it |
+
+Seven days is only the freshness boundary:
+
+```text
+fresh := now - fetchedAt <= 7 days
+```
+
+There is no deletion timer. Stale data can remain useful indefinitely until a
+successful refresh replaces it or extension data is cleared. Assigning the
+new cache before `storage.local.set()` also lets the current page use a parsed
+result if persistence fails, but that result will be lost on reload and the old
+stored value remains authoritative for other pages.
+
+The automatic-filter and options refreshers each keep one in-flight promise, so
+simultaneous triggers on that surface join the same request. That is a concurrency
+coalescer, not a one-request-per-page budget: once a failed request settles, a
+later eligible trigger can retry. After a successful refresh the new `fetchedAt`
+normally makes further automatic triggers no-ops.
+
+### Custom-list mutation paths
+
+The options manager supports these distinct operations:
+
+- **Add by id or link** accepts a positive id or an exact Peakbagger
+  `climber.aspx?cid=...` URL. It fetches the canonical public profile, rejects
+  challenge/login/wrong-content responses, requires a `ClimbListC.aspx` identity
+  link whose id equals the requested id, and derives the stored name from the
+  page heading. This prevents a redirect or unrelated HTML page from assigning
+  the wrong identity.
+- **Merge buddies** is additive. It preserves every existing custom entry and
+  its name, timestamp, order, and provenance; only missing Buddy ids are
+  appended with one current timestamp and `source: 'buddy'`, stopping at the
+  500-entry bound. Existing names are not refreshed from the Buddy page.
+- **Mirror buddy list** replaces the custom list completely. Every resulting
+  entry receives the current timestamp and Buddy provenance. It offers a
+  six-second in-memory Undo snapshot.
+- **Delete** persists removal immediately but leaves a six-second inline Undo
+  row. Undo reinserts the exact prior entry. Sorting by name or added date only
+  changes rendered order; it does not rewrite storage order.
+- **GitHub restore** is another complete replacement with the same bulk Undo
+  mechanism. Closing or reloading the options page discards the Undo snapshot,
+  not the already persisted replacement.
+
+On public climber pages, `src/climber-favorite.js` mounts only when custom mode
+is active, the page exposes a valid id/name, and the page id is not the detected
+owner id. Add creates a manual entry from the already rendered, identity-bound
+page; remove deletes the matching id. The control is disabled while its write is
+pending and when a new entry would exceed the bound. A click rereads local
+storage before its read-modify-write, which narrows the stale-tab window, but
+`storage.local` provides no compare-and-swap transaction: truly overlapping
+writes from two tabs remain last-writer-wins. In the narrow race where another
+tab reaches the limit after this control was painted, cleaning keeps the newly
+prepended entry and truncates the tail to 500; the visual limit check is not an
+atomic reservation.
+
+Custom profile names are snapshots, not a synchronized directory. They change
+only when an operation writes a new entry; merge deliberately preserves the
+existing entry for a duplicate id. Removing and re-adding, or mirroring from a
+new Buddy fetch, is what records a newer displayed name.
+
+### Live convergence and source changes
+
+Open ascent lists and climber pages subscribe to `storage.onChanged`. A local
+custom-list or Buddy-cache write is cleaned again, the effective set and row
+counts are recomputed, and the current DOM is rerendered without navigation.
+They separately subscribe to the validated settings module so a source change
+switches the effective set and mounts or unmounts the climber-page control live.
+The options page debounces its own local-storage change refresh to avoid
+rerendering between closely related writes.
+
+These notifications provide eventual convergence, not atomic multi-tab edits.
+The options manager mutates its current cleaned snapshot, and the climber page
+performs a fresh get followed by a set; two writes that overlap can still replace
+one another. This is acceptable for low-frequency human actions but must be
+revisited before adding bulk background mutations or automatic cross-device
+sync.
+
+### GitHub transfer and privacy boundary
+
+Custom favorites are device-local by default. When GitHub backup is enabled and
+connected, the options page can explicitly serialize:
+
+```js
+{
+  schemaVersion: 1,
+  exportedAt: "2026-07-21T21:04:05.000Z",
+  entries: [/* cleaned custom entries */]
+}
+```
+
+It sends that string in `GITHUB_FAVORITES_BACKUP`; it never receives the GitHub
+token. The worker accepts those messages only from an extension page, reuses the
+existing GitHub feature gate and selected repository, and writes the fixed root
+path `favorites.json` through the same repository-marker check, exact base tree,
+non-forced ref update, serialized write queue, and bounded conflict retry as
+ascent backup. Restore is an extension-only read; a missing file is reported as
+“no backup” and does not become an empty replacement.
+
+The options page, not the worker, owns serialization and restore validation.
+`exportedAt` is informational; restore authority comes from `schemaVersion` and
+the exact validity of every entry. Buddy cache entries, `ownerCid`, `fetchedAt`,
+filter-chip state, and the selected source are never exported. Automatic ascent
+backup does not read or write `favorites.json`; favorite transfer happens only
+after the explicit options-page action.
+
+Peakbagger HTML and authenticated cookies remain within the Peakbagger/browser
+boundary. The extension persists only the ids, displayed names, provenance and
+timestamps described above. Of those, only an explicitly backed-up custom list
+leaves the browser for the user-selected GitHub repository.
+
+### Failure semantics and troubleshooting
+
+| Symptom or failure | Expected behavior | First evidence to inspect |
+| --- | --- | --- |
+| Favorites chip is disabled with no cache | No rows are hidden; signed-out pages cannot start a Buddy request | Whether owner navigation exposes a numeric `cid`, then `bpbBuddyCache` |
+| A different account signs in | Old cache remains stored but is ignored when the new owner is detectable | Current DOM owner id versus cached `ownerCid` |
+| Buddy request receives login, Cloudflare, rate-limit, or unexpected HTML | Response is rejected; stale cache survives; an absent cache shows an actionable error | Network status/body classification and the chip/options status |
+| Buddy refresh appears successful only until reload | The parsed in-memory result may have been usable while `storage.local.set()` failed | Extension storage errors and persisted `fetchedAt` |
+| Custom add reports no climber | No write occurs when the requested id, returned identity link, and heading cannot be proven consistent | Canonical profile response and `ClimbListC.aspx?cid=` identity link |
+| Switching source appears to lose people | No data was deleted; the other dataset became effective | `favoritesSource`, then both local storage keys |
+| Restore reports a newer/invalid format | Existing custom list is untouched and no Undo state is created | Raw `favorites.json`, version, duplicates, entry count, and required fields |
+| Two simultaneous edits lose one change | Storage writes are whole-object and last-writer-wins | Timing of each tab's `storage.local.get/set` pair |
+
+From an extension-page DevTools console, the authoritative diagnostic reads are:
+
+```js
+await chrome.storage.sync.get('bpbSettings')
+await chrome.storage.local.get(['bpbFavoriteClimbers', 'bpbBuddyCache'])
+```
+
+Do not infer a networking problem from an old `fetchedAt` alone: automatic
+revalidation is intentionally gated by Buddy mode, an active Favorites chip, a
+detectable owner, staleness, and the absence of another in-flight refresh.
+
+The response classifier and parser form two separate defenses. The classifier
+prevents a login or challenge page from poisoning the cache. It cannot, however,
+distinguish a genuinely empty Buddy List from a future markup change that leaves
+the “Buddy List” and `RGridView` shell intact but moves profile links out of the
+first column. In that case the current parser can persist an empty cache. This is
+a known live-markup risk, not something fixture tests can prove away.
+
+### Verification coverage and blind spots
+
+The focused automated evidence is deliberately split by boundary:
+
+- `test/favorite-climbers.test.mjs` covers schema cleaning, deduplication, name
+  normalization, TTL edge behavior, URL/input parsing, synthetic Buddy parsing,
+  merge/mirror semantics, effective source selection, and comparators.
+- `test/profile-backup-core.test.mjs` covers Buddy/climber response acceptance
+  and rejection of wrong or challenged content.
+- `test/peakbagger-request.test.mjs` covers origin and fetch policy, timeouts,
+  response classification, typed failures, and document parsing.
+- `test/ascent-filter.test.mjs` covers custom AND-filtering, persisted chip state,
+  live storage updates, owner-scoped cache use, stale-while-revalidate fetch,
+  and zero-network Buddy-page caching.
+- `test/options.test.mjs` covers source switching, identity-checked add, reversible
+  delete/mirror/restore, Buddy refresh, merge, and explicit GitHub messages.
+- `test/climber-favorite.test.mjs` covers add/remove, self exclusion, Buddy-mode
+  absence, and live source/list changes.
+- `test/github-client.test.mjs` and `test/github-backup-integration.test.mjs`
+  cover fixed-root-file Git mechanics, conflicts, feature gates, extension-only
+  messaging, missing restore files, and token confinement.
+- `test/settings-schema.test.mjs`, `test/manifest-capture.test.mjs`, and the
+  fixture-privacy guard pin the default/allowlist, isolated-world routes and
+  bundle composition, and synthetic third-party fixture data.
+
+Those tests use jsdom, stubbed fetch/storage, and a reduced synthetic Buddy
+fixture. They do not prove the current live Peakbagger markup, an authenticated
+cookie flow, Cloudflare behavior, real browser interpretation of the manifest,
+the exact 500/501 truncation and oversized-restore boundary, visual usability
+near that bound, simultaneous multi-tab conflict behavior, or the
+empty-list-versus-markup-drift ambiguity. `npm run verify:extension` covers real
+unpacked-Chrome startup and injection, but an authenticated, minimal, read-only
+browser check is still required before a release that changes Buddy parsing,
+owner detection, request classification, or the live options/climber UI.
 
 ## Deep dive: GitHub ascent and full-profile backup
 
