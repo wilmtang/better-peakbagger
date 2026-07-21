@@ -430,7 +430,7 @@ import { createMarkdownEditor } from './report-md-editor.js';
             globalThis.clearTimeout(state.autosaveTimer);
             state.autosaveTimer = null;
         }
-        if (state.mode === 'plain') return;   // native behavior, native risks
+        if (!['rich', 'markdown'].includes(state.mode)) return; // uninitialized/Plain: native behavior, native risks
         flushSync();
         try {
             if (!hasRecoverableDraftContent(textarea.value)) {

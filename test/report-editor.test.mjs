@@ -1089,6 +1089,18 @@ test('the editor stays out of the way when disabled in settings', async () => {
     assert.equal(doc.getElementById('JournalText').classList.contains('bpb-re-hidden'), false);
 });
 
+test('page exit cannot write a mode-less draft while the editor is disabled', async () => {
+    const dom = await loadEditor({
+        settings: { enableReportEditor: false },
+        report: 'Peakbagger owns this native report.'
+    });
+    await new Promise(resolve => setTimeout(resolve, 120));
+
+    dom.window.dispatchEvent(new dom.window.Event('pagehide'));
+    await new Promise(resolve => setTimeout(resolve, 20));
+    assert.equal(dom.chrome._localStore[DRAFT_KEY], undefined);
+});
+
 test('disabling the setting live hands the form back to the native textarea', async () => {
     const dom = await loadEditor();
     await editorReady(dom);
