@@ -23,7 +23,6 @@ const favoriteStore = (entries = []) => ({ schemaVersion: 1, entries });
 const pageResponse = (text, status = 200) => ({ status, headers: {}, text: async () => text });
 const peakbaggerFetch = ({ climberCid = 900002 } = {}) => async rawUrl => {
     const url = new URL(String(rawUrl));
-    if (url.pathname === '/Default.aspx') return pageResponse(climberPageFixture);
     if (url.pathname === '/report/report.aspx') return pageResponse(buddyPageFixture);
     if (/\/climber\/climber\.aspx$/i.test(url.pathname)) {
         return pageResponse(climberPageFixture.replaceAll('900001', String(climberCid)));
@@ -462,13 +461,54 @@ test('removing a custom favorite is reversible and list sorting is explicit', as
 });
 
 test('Refresh now stores the signed-in owner Buddy List cache', async () => {
+    const requests = [];
     const dom = await loadOptions({}, {
-        prepareWindow: window => { window.fetch = peakbaggerFetch(); },
+        prepareWindow: window => {
+            const respond = peakbaggerFetch();
+            window.fetch = url => {
+                requests.push(String(url));
+                return respond(url);
+            };
+        },
     });
     el(dom, 'favorites-refresh-buddies').click();
     await waitFor(dom, () => dom.chrome._localStore[buddyCacheKey]?.entries?.length === 6);
     assert.equal(dom.chrome._localStore[buddyCacheKey].ownerCid, 900001);
     assert.match(el(dom, 'favorites-buddy-status').textContent, /6 buddies · updated just now/);
+    assert.deepEqual(requests, ['https://www.peakbagger.com/report/report.aspx?r=b']);
+});
+
+test('failed Buddy refresh links to the Buddy List instead of the home page', async () => {
+    const requests = [];
+    const dom = await loadOptions({}, {
+        prepareWindow: window => {
+            window.fetch = async url => {
+                requests.push(String(url));
+                return pageResponse('', 500);
+            };
+        },
+    });
+    el(dom, 'favorites-refresh-buddies').click();
+    await waitFor(dom, () => /couldn't be loaded/.test(el(dom, 'favorites-buddy-status').textContent));
+    const recovery = el(dom, 'favorites-buddy-status').querySelector('a');
+    assert.deepEqual(requests, ['https://www.peakbagger.com/report/report.aspx?r=b']);
+    assert.equal(recovery.textContent, 'Open Buddy List');
+    assert.equal(recovery.href, 'https://www.peakbagger.com/report/report.aspx?r=b');
+});
+
+test('Buddy refresh fails closed when the report has no signed-in owner identity', async () => {
+    const signedOutReport = buddyPageFixture.replace('>My Home Page<', '>Public profile<');
+    const dom = await loadOptions({}, {
+        prepareWindow: window => {
+            window.fetch = async () => pageResponse(signedOutReport);
+        },
+    });
+    el(dom, 'favorites-refresh-buddies').click();
+    await waitFor(dom, () => /Sign in to Peakbagger/.test(el(dom, 'favorites-buddy-status').textContent));
+    const recovery = el(dom, 'favorites-buddy-status').querySelector('a');
+    assert.equal(dom.chrome._localStore[buddyCacheKey], undefined);
+    assert.equal(recovery.textContent, 'Sign in to Peakbagger');
+    assert.equal(recovery.href, 'https://www.peakbagger.com/Default.aspx');
 });
 
 test('merge is additive while mirror replaces the custom list with Undo', async () => {

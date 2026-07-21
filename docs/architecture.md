@@ -624,9 +624,12 @@ The source choice is the validated `favoritesSource` setting in
 `options/favorites.js` owns management. It fetches authenticated Peakbagger
 pages from the extension origin, classifies login/challenge/wrong-content
 responses through `profile-backup-core.js`, and parses them with the shared pure
-module. Custom additions verify that the fetched public profile id matches the
-requested id. Delete, mirror, and GitHub restore are replace operations with a
-brief local Undo snapshot; merge is additive.
+module. Buddy refresh goes directly to the signed-in account's
+`report/report.aspx?r=b` page, deriving the owner id from that same response so
+the cache remains owner-scoped without a separate home-page probe. Custom
+additions verify that the fetched public profile id matches the requested id.
+Delete, mirror, and GitHub restore are replace operations with a brief local
+Undo snapshot; merge is additive.
 
 `src/climber-favorite.js` is a separate isolated-world bundle on public climber
 pages. It renders only in custom mode and never on the detected signed-in

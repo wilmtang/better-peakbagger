@@ -91,16 +91,23 @@ const numericParam = (href, name, base = 'https://www.peakbagger.com/') => {
     catch { return null; }
 };
 
-const buddyListUrl = (ownCid, origin = 'https://www.peakbagger.com') => {
-    const cid = cleanCid(ownCid);
-    if (cid == null) return null;
+const signedInBuddyListUrl = (origin = 'https://www.peakbagger.com') => {
     try {
         const url = new URL('/report/report.aspx', origin);
         url.search = '';
         url.searchParams.set('r', 'b');
-        url.searchParams.set('cid', String(cid));
         return url.toString();
     } catch { return null; }
+};
+
+const buddyListUrl = (ownCid, origin = 'https://www.peakbagger.com') => {
+    const cid = cleanCid(ownCid);
+    if (cid == null) return null;
+    const directUrl = signedInBuddyListUrl(origin);
+    if (!directUrl) return null;
+    const url = new URL(directUrl);
+    url.searchParams.set('cid', String(cid));
+    return url.toString();
 };
 
 const parseBuddyDocument = doc => {
@@ -193,6 +200,7 @@ export const favoriteClimbers = {
     cleanFavorites,
     cleanBuddyCache,
     isFresh,
+    signedInBuddyListUrl,
     buddyListUrl,
     parseBuddyDocument,
     parseClimberInput,

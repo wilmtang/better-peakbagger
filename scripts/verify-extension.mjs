@@ -52,6 +52,7 @@ try {
 const profile = await mkdtemp(path.join(os.tmpdir(), 'better-peakbagger-extension-'));
 const fixture = await createBrowserFixtureServer({ temporaryRoot: profile });
 const port = fixture.port;
+const buddyListFixture = await readFile(path.join(root, 'test', 'fixtures', 'pages', 'report-buddy-list.html'), 'utf8');
 
 const failureCollector = createFailureCollector();
 const { failures, check } = failureCollector;
@@ -155,6 +156,41 @@ try {
                 })
             ]);
         });
+
+        let buddyRequests = 0;
+        const signedInBuddyUrl = 'https://www.peakbagger.com/report/report.aspx?r=b';
+        await optionsPage.route(signedInBuddyUrl, route => {
+            buddyRequests++;
+            return buddyRequests === 1
+                ? route.fulfill({ status: 200, contentType: 'text/html', body: buddyListFixture })
+                : route.fulfill({ status: 500, contentType: 'text/plain', body: 'fixture failure' });
+        });
+        await optionsPage.locator('#favorites-refresh-buddies').click();
+        const buddyRefresh = await optionsPage.waitForFunction(async () => {
+            const cache = (await chrome.storage.local.get('bpbBuddyCache')).bpbBuddyCache;
+            const status = document.getElementById('favorites-buddy-status')?.textContent || '';
+            return cache?.entries?.length === 6 && /6 buddies/.test(status)
+                ? { ownerCid: cache.ownerCid, entries: cache.entries.length, status }
+                : false;
+        }, null, { timeout: 5000 }).then(handle => handle.jsonValue()).catch(() => null);
+        check(buddyRequests === 1 && buddyRefresh?.ownerCid === 900001 && buddyRefresh?.entries === 6,
+            `the options Buddy refresh did not use the direct signed-in report: ${JSON.stringify({ buddyRequests, buddyRefresh })}`);
+
+        await optionsPage.locator('#favorites-refresh-buddies').click();
+        const buddyRecovery = await optionsPage.waitForFunction(() => {
+            const status = document.getElementById('favorites-buddy-status');
+            const link = status?.querySelector('a');
+            return /Refresh failed/.test(status?.textContent || '') && link
+                ? { label: link.textContent, href: link.href }
+                : false;
+        }, null, { timeout: 5000 }).then(handle => handle.jsonValue()).catch(() => null);
+        check(buddyRequests === 2
+            && buddyRecovery?.label === 'Open Buddy List'
+            && buddyRecovery?.href === signedInBuddyUrl,
+        `the options Buddy recovery did not point back to the direct report: ${JSON.stringify({ buddyRequests, buddyRecovery })}`);
+        if (process.env.BPB_VERIFY_FAVORITES_SCREENSHOT) {
+            await optionsPage.locator('#favorites').screenshot({ path: process.env.BPB_VERIFY_FAVORITES_SCREENSHOT });
+        }
         await optionsPage.close();
 
         const popupPage = await context.newPage();
@@ -1424,6 +1460,7 @@ if (failures.length) {
 console.log('Real-extension verification passed (hidden Chrome for Testing, new headless):');
 console.log('  - the MV3 service worker boots and answers messages (capture is alive)');
 console.log('  - sync/local/session storage, storage.onChanged, options persistence, and popup status passed');
+console.log('  - options loads the signed-in Buddy report directly and keeps stale-cache recovery actionable');
 console.log('  - settings.js initialises in the isolated world and the bridge answers');
 console.log('  - the GPX analyzer renders stats from the real manifest load order');
 console.log('  - the 3D toggle stays visible when disabled and opens the provider/privacy confirmation');

@@ -63,6 +63,7 @@ test('parses climber ids, builds canonical URLs, and extracts the profile name',
     assert.equal(F.parseClimberInput('https://example.com/climber/climber.aspx?cid=900003'), null);
     assert.equal(F.parseClimberInput('https://peakbagger.com/climber/ClimbListC.aspx?cid=900003'), null);
     assert.equal(F.climberPageUrl(900002), 'https://www.peakbagger.com/climber/climber.aspx?cid=900002');
+    assert.equal(F.signedInBuddyListUrl('https://peakbagger.com'), 'https://peakbagger.com/report/report.aspx?r=b');
     assert.equal(F.buddyListUrl(900001, 'https://peakbagger.com'), 'https://peakbagger.com/report/report.aspx?r=b&cid=900001');
 
     const dom = new JSDOM(climberFixture, { url: F.climberPageUrl(900001) });

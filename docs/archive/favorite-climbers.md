@@ -187,8 +187,9 @@ Undo, 20 ms-debounced `storage.onChanged` refresh, `#status` flash), exposed as
 - Buddy panel: "N buddies · updated X ago" + **Refresh now**. The options page
   fetches and parses itself — extension pages get cross-origin fetch with
   cookies from the existing peakbagger host permissions, and have `DOMParser`
-  (the MV3 worker does not) — so no new worker plumbing. Own cid comes from
-  fetching `Default.aspx` and running `ownerClimberId` over it. States:
+  (the MV3 worker does not) — so no new worker plumbing. It requests the
+  signed-in `report/report.aspx?r=b` page without a cid and derives the owner cid
+  from that same response. States:
   "Refreshing…", "Never loaded", challenged/signed-out → sign-in link (reuse
   the `options/github.js` pattern).
 - Custom panel: add-by-id/URL input (fetch the public `climber.aspx?cid=N`,
