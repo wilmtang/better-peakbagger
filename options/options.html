@@ -35,6 +35,7 @@
                 </ul>
             </li>
             <li><a class="nav-item" href="#beta">Ascent beta filter</a></li>
+            <li><a class="nav-item" href="#favorites">Favorite climbers</a></li>
             <li><a class="nav-item" href="#drafts">TR drafts</a></li>
             <li>
                 <a class="nav-item" href="#github">Settings for nerds</a>
@@ -338,6 +339,69 @@
                             <input type="checkbox" id="beta-sort-date-desc">
                             <span>Sort newest first</span>
                         </label>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="favorites" class="settings-section" aria-labelledby="favorites-heading">
+            <h2 class="section-title" id="favorites-heading">Favorite climbers</h2>
+            <div class="card favorites-card">
+                <div class="row">
+                    <div class="label">
+                        <span class="title">Favorites source</span>
+                        <span class="desc">Choose who the Favorites chip shows on a peak’s ascent list.</span>
+                    </div>
+                    <fieldset class="control favorites-source" aria-label="Favorite climbers source">
+                        <label><input type="radio" name="favorites-source" value="buddies"> <span>Use my Peakbagger Buddy List</span></label>
+                        <label><input type="radio" name="favorites-source" value="custom"> <span>Use a custom list</span></label>
+                    </fieldset>
+                </div>
+
+                <div class="favorites-panel" id="favorites-buddy-panel">
+                    <div class="favorites-summary">
+                        <p id="favorites-buddy-status" class="favorites-status" role="status">Never loaded</p>
+                        <button id="favorites-refresh-buddies" class="secondary" type="button">Refresh now</button>
+                    </div>
+                </div>
+
+                <div class="favorites-panel" id="favorites-custom-panel" hidden>
+                    <form id="favorites-add-form" class="favorites-add">
+                        <label for="favorites-add-input">
+                            <span class="title">Add a climber</span>
+                            <span class="desc">Paste a Peakbagger climber-page link or enter the climber id.</span>
+                        </label>
+                        <span class="favorites-add-controls">
+                            <input id="favorites-add-input" type="text" inputmode="numeric" autocomplete="off" placeholder="Climber link or id">
+                            <button id="favorites-add-button" class="secondary" type="submit">Add</button>
+                        </span>
+                    </form>
+
+                    <div class="favorites-tools">
+                        <label for="favorites-sort">Sort</label>
+                        <select id="favorites-sort">
+                            <option value="newest">Newest first</option>
+                            <option value="name">Name</option>
+                        </select>
+                        <button id="favorites-merge-buddies" class="secondary" type="button">Merge buddies into favorites</button>
+                        <button id="favorites-mirror-buddies" class="secondary" type="button">Mirror buddy list</button>
+                    </div>
+                    <p class="favorites-hint">Replaces your custom list with your current Peakbagger buddies.</p>
+                    <p class="favorites-empty" id="favorites-empty">No favorite climbers yet.</p>
+                    <ul class="favorites-list" id="favorites-list" hidden></ul>
+                    <div class="favorites-undo-all" id="favorites-undo-all" role="status" hidden>
+                        <span id="favorites-undo-message">Custom list replaced</span>
+                        <button class="favorite-undo" id="favorites-undo-all-button" type="button">Undo</button>
+                    </div>
+                    <div class="favorites-github" id="favorites-github">
+                        <div>
+                            <span class="title">GitHub backup</span>
+                            <p class="favorites-hint" id="favorites-github-status" role="status">Checking connection…</p>
+                        </div>
+                        <div class="favorites-github-actions" id="favorites-github-actions" hidden>
+                            <button id="favorites-backup" class="secondary" type="button">Back up favorites</button>
+                            <button id="favorites-restore" class="secondary" type="button">Restore from backup</button>
+                        </div>
                     </div>
                 </div>
             </div>

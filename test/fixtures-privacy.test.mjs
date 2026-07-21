@@ -28,6 +28,11 @@ const WAYBACK = new Set([
 ]);
 
 const MASKED_CLIMBER_ID = '900001';
+// The public-climber fixture deliberately represents a second synthetic person
+// so the favorite control can prove that it never appears on the owner's page.
+const REVIEWED_CLIMBER_IDS = new Map([
+    ['climber-other.html', [MASKED_CLIMBER_ID, '900002']],
+]);
 const SOCIAL = /strava\.com|instagram\.com|facebook\.com|youtube\.com|youtu\.be|mountainproject\.com|flickr\.com|twitter\.com|linkedin\.com|@gmail\.|@outlook\.|@yahoo\./i;
 
 const walk = async dir => {
@@ -76,15 +81,17 @@ test('masking actually ran: live captures carry the masked climber id, and only 
             `${path.basename(file)} should carry the masked climber id (was this capture masked?)`);
     }
 
-    // The personal pages are entirely the account holder's data, so every
-    // climber-id URL param on them must be the masked id.
+    // Personal pages are entirely synthetic. Most represent only the masked
+    // account holder; explicitly reviewed interaction fixtures may include a
+    // second synthetic identity.
     const climberPages = live.filter(f => path.basename(f).startsWith('climber-'));
     assert.ok(climberPages.length >= 2, 'expected the personal climber-* pages');
     for (const file of climberPages) {
         const text = await readFile(file, 'utf8');
         const ids = new Set([...text.matchAll(/\b(?:cid|c|d)=(\d+)/g)].map(m => m[1]));
-        assert.deepEqual([...ids], [MASKED_CLIMBER_ID],
-            `${path.basename(file)} references climber ids other than the masked one`);
+        const expected = REVIEWED_CLIMBER_IDS.get(path.basename(file)) ?? [MASKED_CLIMBER_ID];
+        assert.deepEqual([...ids].sort(), [...expected].sort(),
+            `${path.basename(file)} references unreviewed climber ids`);
     }
 });
 

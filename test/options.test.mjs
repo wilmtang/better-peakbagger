@@ -15,6 +15,21 @@ import { makeChromeStub, waitFor, evalBundle } from './helpers/load-page.mjs';
 import { settingsSchema } from '../src/settings-schema.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const climberPageFixture = await readFile(path.join(root, 'test', 'fixtures', 'pages', 'climber-home.html'), 'utf8');
+const buddyPageFixture = await readFile(path.join(root, 'test', 'fixtures', 'pages', 'report-buddy-list.html'), 'utf8');
+const favoriteKey = 'bpbFavoriteClimbers';
+const buddyCacheKey = 'bpbBuddyCache';
+const favoriteStore = (entries = []) => ({ schemaVersion: 1, entries });
+const pageResponse = (text, status = 200) => ({ status, headers: {}, text: async () => text });
+const peakbaggerFetch = ({ climberCid = 900002 } = {}) => async rawUrl => {
+    const url = new URL(String(rawUrl));
+    if (url.pathname === '/Default.aspx') return pageResponse(climberPageFixture);
+    if (url.pathname === '/report/report.aspx') return pageResponse(buddyPageFixture);
+    if (/\/climber\/climber\.aspx$/i.test(url.pathname)) {
+        return pageResponse(climberPageFixture.replaceAll('900001', String(climberCid)));
+    }
+    return pageResponse('', 404);
+};
 
 const makeCacheStorage = (initial = {}) => {
     const entries = new Map(Object.entries(initial));
@@ -71,6 +86,8 @@ const loadOptions = async (settings = {}, {
 const el = (dom, id) => dom.window.document.getElementById(id);
 const draftRow = (dom, key) => Array.from(dom.window.document.querySelectorAll('.draft-item'))
     .find(row => row.dataset.draftKey === key);
+const favoriteRow = (dom, cid) => Array.from(dom.window.document.querySelectorAll('.favorite-item'))
+    .find(row => row.dataset.cid === String(cid));
 
 test('theme bootstrap loads before the options stylesheet', async () => {
     const dom = await loadOptions({});
@@ -99,18 +116,19 @@ test('settings are grouped by the surface they affect', async () => {
         'Activity creation',
         'Map & GPX chart',
         'Ascent beta filter',
+        'Favorite climbers',
         'TR drafts',
         'Settings for nerds',
         'About'
     ]);
 
-    const [general, capture, mapChart, beta, drafts, github, about] = sections;
+    const [general, capture, mapChart, beta, favorites, drafts, github, about] = sections;
     assert.ok(github.querySelector('#enable-github-backup'));
     assert.ok(github.querySelector('#github-panel'));
     assert.match(github.querySelector('.desc').textContent, /every ascent from every year/);
     // Every settings section is labelled by its heading and carries at least
     // one card; About is informational, not a card.
-    for (const section of [general, capture, mapChart, beta, github, drafts]) {
+    for (const section of [general, capture, mapChart, beta, favorites, github, drafts]) {
         const heading = section.querySelector('h2');
         assert.equal(section.getAttribute('aria-labelledby'), heading.id);
         assert.ok(section.querySelector('.card'), 'the section carries a settings card');
@@ -144,6 +162,9 @@ test('settings are grouped by the surface they affect', async () => {
     for (const id of ['beta-tr', 'beta-tr-words', 'beta-gps', 'beta-link', 'beta-sort-date-desc']) {
         assert.ok(beta.querySelector(`#${id}`), `${id} should belong to Ascent beta filter`);
     }
+    assert.ok(favorites.querySelector('#favorites-buddy-panel'));
+    assert.ok(favorites.querySelector('#favorites-custom-panel'));
+    assert.ok(favorites.querySelector('#favorites-list'));
     assert.ok(github.querySelector('#github-backup #enable-github-backup'), 'GitHub backup lives in its subsection');
 });
 
@@ -382,6 +403,192 @@ test('the removed "minimum trip-report words" control is gone', async () => {
     assert.equal(el(dom, 'minwords'), null);
 });
 
+test('favorite source defaults to buddies and switching to custom persists', async () => {
+    const dom = await loadOptions({});
+    const buddies = dom.window.document.querySelector('input[name="favorites-source"][value="buddies"]');
+    const custom = dom.window.document.querySelector('input[name="favorites-source"][value="custom"]');
+    assert.equal(buddies.checked, true);
+    assert.equal(el(dom, 'favorites-buddy-panel').hidden, false);
+    assert.equal(el(dom, 'favorites-custom-panel').hidden, true);
+
+    custom.checked = true;
+    custom.dispatchEvent(new dom.window.Event('change'));
+    await waitFor(dom, () => dom.chrome._store.bpbSettings.favoritesSource === 'custom');
+    assert.equal(el(dom, 'favorites-buddy-panel').hidden, true);
+    assert.equal(el(dom, 'favorites-custom-panel').hidden, false);
+});
+
+test('adding a climber by id resolves and validates the public profile', async () => {
+    const dom = await loadOptions({ favoritesSource: 'custom' }, {
+        prepareWindow: window => { window.fetch = peakbaggerFetch({ climberCid: 900002 }); },
+    });
+    el(dom, 'favorites-add-input').value = '900002';
+    el(dom, 'favorites-add-form').dispatchEvent(new dom.window.Event('submit', { bubbles: true, cancelable: true }));
+    await waitFor(dom, () => dom.chrome._localStore[favoriteKey]?.entries?.length === 1);
+
+    const entry = dom.chrome._localStore[favoriteKey].entries[0];
+    assert.equal(entry.cid, 900002);
+    assert.equal(entry.name, 'Alex Doe');
+    assert.equal(entry.source, 'manual');
+    assert.equal(favoriteRow(dom, 900002).querySelector('.favorite-name').textContent, 'Alex Doe');
+    assert.match(favoriteRow(dom, 900002).textContent, /#900002.*Manual/);
+});
+
+test('removing a custom favorite is reversible and list sorting is explicit', async () => {
+    const entries = [
+        { cid: 900002, name: 'Zulu Climber', addedAt: 20, source: 'manual' },
+        { cid: 900003, name: 'Alpha Climber', addedAt: 10, source: 'buddy' },
+    ];
+    const dom = await loadOptions({ favoritesSource: 'custom' }, {
+        local: { [favoriteKey]: favoriteStore(entries) },
+    });
+    await waitFor(dom, () => dom.window.document.querySelectorAll('.favorite-item').length === 2);
+    assert.deepEqual(Array.from(dom.window.document.querySelectorAll('.favorite-name'), node => node.textContent),
+        ['Zulu Climber', 'Alpha Climber'], 'newest-first is the initial sort');
+    el(dom, 'favorites-sort').value = 'name';
+    el(dom, 'favorites-sort').dispatchEvent(new dom.window.Event('change'));
+    assert.deepEqual(Array.from(dom.window.document.querySelectorAll('.favorite-name'), node => node.textContent),
+        ['Alpha Climber', 'Zulu Climber']);
+
+    favoriteRow(dom, 900002).querySelector('[data-action="delete"]').click();
+    await waitFor(dom, () => dom.chrome._localStore[favoriteKey].entries.length === 1);
+    assert.match(favoriteRow(dom, 900002).textContent, /Favorite removed\s*Undo/);
+    favoriteRow(dom, 900002).querySelector('[data-action="undo"]').click();
+    await waitFor(dom, () => dom.chrome._localStore[favoriteKey].entries.length === 2
+        && favoriteRow(dom, 900002)?.querySelector('.favorite-name'));
+    assert.equal(dom.chrome._localStore[favoriteKey].entries.some(entry => entry.cid === 900002), true);
+});
+
+test('Refresh now stores the signed-in owner Buddy List cache', async () => {
+    const dom = await loadOptions({}, {
+        prepareWindow: window => { window.fetch = peakbaggerFetch(); },
+    });
+    el(dom, 'favorites-refresh-buddies').click();
+    await waitFor(dom, () => dom.chrome._localStore[buddyCacheKey]?.entries?.length === 6);
+    assert.equal(dom.chrome._localStore[buddyCacheKey].ownerCid, 900001);
+    assert.match(el(dom, 'favorites-buddy-status').textContent, /6 buddies · updated just now/);
+});
+
+test('merge is additive while mirror replaces the custom list with Undo', async () => {
+    const manual = { cid: 900099, name: 'Manual Favorite', addedAt: 1, source: 'manual' };
+    const dom = await loadOptions({ favoritesSource: 'custom' }, {
+        local: { [favoriteKey]: favoriteStore([manual]) },
+        prepareWindow: window => { window.fetch = peakbaggerFetch(); },
+    });
+    await waitFor(dom, () => favoriteRow(dom, manual.cid));
+
+    el(dom, 'favorites-merge-buddies').click();
+    await waitFor(dom, () => dom.chrome._localStore[favoriteKey]?.entries?.length === 7);
+    assert.equal(dom.chrome._localStore[favoriteKey].entries[0].cid, manual.cid,
+        'merge preserves the existing manual entry and its metadata');
+
+    el(dom, 'favorites-mirror-buddies').click();
+    await waitFor(dom, () => dom.chrome._localStore[favoriteKey].entries.length === 6
+        && !dom.chrome._localStore[favoriteKey].entries.some(entry => entry.cid === manual.cid));
+    assert.equal(el(dom, 'favorites-undo-all').hidden, false);
+    assert.match(el(dom, 'favorites-undo-message').textContent, /replaced with your Buddy List/);
+
+    el(dom, 'favorites-undo-all-button').click();
+    await waitFor(dom, () => dom.chrome._localStore[favoriteKey].entries.length === 7
+        && dom.chrome._localStore[favoriteKey].entries.some(entry => entry.cid === manual.cid));
+});
+
+test('connected GitHub actions back up the validated list and restore with Undo', async () => {
+    const original = { cid: 900002, name: 'Original Favorite', addedAt: 10, source: 'manual' };
+    const restored = { cid: 900003, name: 'Restored Favorite', addedAt: 20, source: 'buddy' };
+    const messages = [];
+    const status = {
+        enabled: true, connected: true, hasToken: true,
+        repo: { owner: 'ada', name: 'peaks', fullName: 'ada/peaks' },
+    };
+    const dom = await loadOptions({ favoritesSource: 'custom', enableGithubBackup: true }, {
+        local: { [favoriteKey]: favoriteStore([original]) },
+        prepareChrome: chrome => {
+            chrome.permissions = { request: async () => true, contains: async () => true, remove: async () => true };
+            chrome.runtime.sendMessage = (message, callback) => {
+                messages.push(JSON.parse(JSON.stringify(message)));
+                let reply = {};
+                if (message.type === 'GITHUB_AUTH_STATUS') reply = status;
+                if (message.type === 'GITHUB_FAVORITES_BACKUP') reply = { ok: true, result: { path: 'favorites.json' } };
+                if (message.type === 'GITHUB_FAVORITES_RESTORE') reply = {
+                    ok: true,
+                    content: JSON.stringify({
+                        schemaVersion: 1,
+                        exportedAt: '2026-07-21T12:00:00.000Z',
+                        entries: [restored],
+                    }),
+                };
+                if (typeof callback === 'function') Promise.resolve().then(() => callback(reply));
+                return Promise.resolve(reply);
+            };
+        },
+    });
+    await waitFor(dom, () => !el(dom, 'favorites-github-actions').hidden);
+    assert.match(el(dom, 'favorites-github-status').textContent, /ada\/peaks/);
+
+    el(dom, 'favorites-backup').click();
+    await waitFor(dom, () => messages.some(message => message.type === 'GITHUB_FAVORITES_BACKUP'));
+    const backup = messages.find(message => message.type === 'GITHUB_FAVORITES_BACKUP');
+    const exported = JSON.parse(backup.content);
+    assert.equal(exported.schemaVersion, 1);
+    assert.match(exported.exportedAt, /^\d{4}-\d{2}-\d{2}T/);
+    assert.deepEqual(exported.entries, [original]);
+    assert.equal(messages.some(message => message.type === 'GITHUB_FAVORITES_BACKUP' && message.auto), false,
+        'favorites backup is only the explicit button message');
+
+    await waitFor(dom, () => !el(dom, 'favorites-restore').disabled);
+    el(dom, 'favorites-restore').click();
+    await waitFor(dom, () => dom.chrome._localStore[favoriteKey]?.entries?.[0]?.cid === restored.cid);
+    assert.equal(el(dom, 'favorites-undo-all').hidden, false);
+    assert.match(el(dom, 'favorites-undo-message').textContent, /restored from GitHub/);
+
+    el(dom, 'favorites-undo-all-button').click();
+    await waitFor(dom, () => dom.chrome._localStore[favoriteKey]?.entries?.[0]?.cid === original.cid);
+});
+
+test('favorites restore fails closed on an unknown backup schema', async () => {
+    const original = { cid: 900002, name: 'Keep Me', addedAt: 10, source: 'manual' };
+    const dom = await loadOptions({ favoritesSource: 'custom', enableGithubBackup: true }, {
+        local: { [favoriteKey]: favoriteStore([original]) },
+        prepareChrome: chrome => {
+            chrome.permissions = { request: async () => true, contains: async () => true, remove: async () => true };
+            chrome.runtime.sendMessage = (message, callback) => {
+                const reply = message.type === 'GITHUB_FAVORITES_RESTORE'
+                    ? { ok: true, content: JSON.stringify({ schemaVersion: 2, entries: [] }) }
+                    : {
+                        enabled: true, connected: true, hasToken: true,
+                        repo: { owner: 'ada', name: 'peaks', fullName: 'ada/peaks' },
+                    };
+                if (typeof callback === 'function') Promise.resolve().then(() => callback(reply));
+                return Promise.resolve(reply);
+            };
+        },
+    });
+    await waitFor(dom, () => !el(dom, 'favorites-github-actions').hidden);
+    el(dom, 'favorites-restore').click();
+    await waitFor(dom, () => /newer format/.test(el(dom, 'status').textContent));
+    assert.deepEqual(dom.chrome._localStore[favoriteKey].entries, [original]);
+    assert.equal(el(dom, 'favorites-undo-all').hidden, true);
+});
+
+test('favorites points disconnected users to GitHub setup instead of showing dead actions', async () => {
+    const dom = await loadOptions({ favoritesSource: 'custom' }, {
+        prepareChrome: chrome => {
+            chrome.permissions = { request: async () => true, contains: async () => true, remove: async () => true };
+            chrome.runtime.sendMessage = (message, callback) => {
+                const reply = message.type === 'GITHUB_AUTH_STATUS'
+                    ? { enabled: false, connected: false, hasToken: false }
+                    : {};
+                if (typeof callback === 'function') Promise.resolve().then(() => callback(reply));
+                return Promise.resolve(reply);
+            };
+        },
+    });
+    await waitFor(dom, () => /move this list between browsers/.test(el(dom, 'favorites-github-status').textContent));
+    assert.equal(el(dom, 'favorites-github-actions').hidden, true);
+    assert.equal(el(dom, 'favorites-github-status').querySelector('a').getAttribute('href'), '#github-backup');
+});
+
 test('report drafts render newest-first with labels, fallbacks, and edit links', async () => {
     const now = Date.now();
     const local = {
@@ -532,7 +739,7 @@ test('the sidebar links every settings section, in order', async () => {
     const linkTargets = links.map(link => link.getAttribute('href').slice(1));
     const sectionIds = Array.from(doc.querySelectorAll('.content .settings-section'), section => section.id);
     assert.deepEqual(linkTargets, sectionIds);
-    assert.deepEqual(linkTargets, ['general', 'capture', 'map-chart', 'beta', 'drafts', 'github', 'about']);
+    assert.deepEqual(linkTargets, ['general', 'capture', 'map-chart', 'beta', 'favorites', 'drafts', 'github', 'about']);
 });
 
 test('the sidebar exposes always-visible sub-links for the grouped sections', async () => {

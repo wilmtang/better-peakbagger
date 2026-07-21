@@ -21,7 +21,7 @@ These are living documents. Update them with the implementation when their
 subsystem changes.
 
 - [Trip-report editor: markup, Markdown, and safety](trip-report-editor.md)
-- [GitHub ascent backup: individual, automatic, and full-profile](github-ascent-backup.md)
+- [GitHub backup: ascent entry points and favorite-list transfer](github-ascent-backup.md)
 - [Peakbagger native map types](peakbagger-map-types.md)
 - [3D map architecture and runtime contract](3d-map.md)
 - [Peakbagger peak dots on 3D terrain](3d-peak-markers.md)

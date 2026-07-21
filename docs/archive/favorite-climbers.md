@@ -1,5 +1,11 @@
 # Favorite climbers
 
+> **Status:** Implemented on `codex/favorite-climbers` on 2026-07-21. This is the
+> completed execution record; maintained behavior lives in
+> [`docs/architecture.md`](../architecture.md),
+> [`docs/github-ascent-backup.md`](../github-ascent-backup.md), and
+> [`PRIVACY.md`](../../PRIVACY.md).
+
 ## Why
 
 Peakbagger's Buddy List (`report/report.aspx?r=b&cid=<your id>`) is a dead end:

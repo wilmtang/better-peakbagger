@@ -7,12 +7,15 @@ or credit decisions.
 
 Captured activity data leaves the browser only for the Peakbagger summit lookup
 and GPS Preview actions described below. Optional 3D map providers receive tile
-requests for the viewed area only after the user enables that feature.
+requests for the viewed area only after the user enables that feature. A custom
+favorite-climber list reaches GitHub only when the user explicitly backs it up
+to their connected repository.
 
 ## Browser permissions
 
-- **`storage`** saves theme, units, chart, map, capture, editor, and beta-filter
-  preferences in `storage.sync`. It keeps the bounded DEM cache index and
+- **`storage`** saves theme, units, chart, map, capture, editor, beta-filter,
+  and favorite-source preferences in `storage.sync`. It keeps the bounded DEM
+  cache index, custom favorite-climber list, owner-scoped Buddy List cache, and
   GitHub backup token/repository in `storage.local`; short-lived capture jobs,
   prepared drafts, save-time backup snapshots, and an in-progress GitHub device
   authorization live in `storage.session`. Capture, draft, and snapshot records
@@ -31,8 +34,9 @@ requests for the viewed area only after the user enables that feature.
 - **`alarms`** runs cleanup every five minutes so expired capture jobs and
   draft payloads are removed from session storage.
 - **Peakbagger host access** enables GPX analysis, ascent filtering, theme,
-  login and summit checks, and validated draft filling on Peakbagger. There is
-  no persistent Garmin Connect or Strava host access.
+  login and summit checks, validated draft filling, and user-initiated favorite
+  management on Peakbagger. There is no persistent Garmin Connect or Strava
+  host access.
 - **Optional GitHub host access** (`github.com`, `api.github.com`) is requested
   only when the user turns on GitHub backup, and only then. It authorizes the
   extension to sign in via GitHub's device flow and to write ascent backups to
@@ -110,6 +114,22 @@ Peakbagger ascent page and processes it locally. Cross-page preferences live in
 account. Page-specific filter state and the early theme mirror stay in
 Peakbagger's `localStorage`.
 
+The Favorites ascent filter uses one of two device-local data sources. In Buddy
+List mode, the extension fetches the signed-in user's own Buddy List only when
+the filter needs an absent or stale copy, or when the user clicks **Refresh
+now**. Visiting that Buddy List updates the cache from the rendered page without
+another request. The cache contains third-party climber ids and displayed names
+plus the signed-in owner's id and fetch time. Seven days is its automatic
+refresh interval; a stale copy may remain locally and usable when refresh fails,
+until a later refresh replaces it or extension data is cleared.
+
+In custom mode, the extension stores up to 500 climber ids, displayed names,
+added-at timestamps, and manual/Buddy provenance in `storage.local`. Adding by
+id or link fetches that public Peakbagger climber page to verify its identity and
+name. The list remains on the device until the user edits it, restores a backup,
+clears extension data, or uninstalls the extension. It is not sent through
+browser sync.
+
 Rich- and Markdown-mode trip-report drafts are stored locally by the extension.
 They are keyed to the climber and ascent or peak, become eligible for lazy
 cleanup after 14 days, and are pruned toward 30 drafts when the editor performs
@@ -164,6 +184,10 @@ save; the extension never clicks a Peakbagger Save control.
   reduced, user-approved track Peakbagger already publishes on the ascent page,
   not the raw provider GPX, which still never leaves the activity page. It goes
   only to the single GitHub repository the user granted, over the GitHub API.
+  An explicit **Back up favorites** action separately sends `favorites.json`
+  containing the custom list's climber ids, displayed names, added-at timestamps,
+  provenance, and export time to that same repository. It contains no ascent,
+  activity, GPS, or Buddy-cache owner data.
 - **When it leaves:** only on the user's explicit **Back up to GitHub** click,
   an explicit **Back up all ascents** or confirmed **Refresh all** run from the
   user's own ascent list, or — if the user separately turns on automatic
@@ -174,7 +198,9 @@ save; the extension never clicks a Peakbagger Save control.
   mountain folders at the repository root plus a small repository marker; a
   populated repository is inspected and requires explicit confirmation before
   selection, and unrelated files are preserved. No ascent is transmitted
-  without one of those opt-ins.
+  without one of those opt-ins. Favorite backup and restore occur only when the
+  corresponding Settings button is clicked; automatic ascent backup never
+  includes or updates `favorites.json`.
 - **Ownership:** the backup affordance appears only on ascents the signed-in
   climber owns. Full-profile controls additionally require the signed-in
   climber's own **My Ascents** identity and an edit affordance for every parsed
@@ -207,7 +233,10 @@ save; the extension never clicks a Peakbagger Save control.
 - **GitHub** receives ascent backups (fields, Markdown trip report, and
   Peakbagger's stored GPS track) only after the user enables GitHub backup,
   connects a repository, and clicks Back up, starts a profile backup/refresh,
-  or opts into automatic backup. Data goes only to the user-chosen repository.
+  or opts into automatic backup. It receives the custom favorite-climber list
+  only on an explicit **Back up favorites** click, and returns that file only on
+  an explicit **Restore from backup** click. Data goes only to the user-chosen
+  repository.
 
 Better Peakbagger packages all extension code and libraries locally. A YouTube
 player is remote page content isolated in YouTube's cross-origin iframe; it is

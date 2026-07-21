@@ -42,6 +42,14 @@ test('a casing always stays wider than the route it sits behind', () => {
     assert.equal(style.casingWidth, 14);
 });
 
+test('favorite climber source defaults to buddies and accepts only known modes', () => {
+    assert.equal(Schema.DEFAULTS.favoritesSource, 'buddies');
+    assert.equal(Schema.clean({}).favoritesSource, 'buddies');
+    assert.equal(Schema.clean({ favoritesSource: 'custom' }).favoritesSource, 'custom');
+    assert.equal(Schema.clean({ favoritesSource: 'shared' }).favoritesSource, 'buddies');
+    assert.equal(Schema.clean({ favoritesSource: null }).favoritesSource, 'buddies');
+});
+
 test('routeStyle() rejects untrusted values back to the shared defaults', () => {
     const style = Schema.routeStyle({
         color: 'javascript:alert(1)',

@@ -6,7 +6,7 @@
 
 const trim = value => String(value ?? '').replace(/\u00a0/g, ' ').replace(/\s+/g, ' ').trim();
 
-const numericParam = (href, name, base = 'https://peakbagger.com/') => {
+export const numericParam = (href, name, base = 'https://peakbagger.com/') => {
     try {
         const raw = new URL(href, base).searchParams.get(name);
         return /^-?\d+$/.test(raw || '') ? Number(raw) : null;
@@ -19,10 +19,11 @@ const findLink = (row, pathPattern) => Array.from(row.querySelectorAll('a[href]'
     catch { return false; }
 }) || null;
 
-const ownerClimberId = doc => {
+export const ownerClimberId = doc => {
     const links = Array.from(doc.querySelectorAll('a[href]'));
     const owner = links.find(anchor => /^My Ascents$/i.test(trim(anchor.textContent)))
-        || links.find(anchor => /^Add Ascent$/i.test(trim(anchor.textContent)));
+        || links.find(anchor => /^Add Ascent$/i.test(trim(anchor.textContent)))
+        || links.find(anchor => /^My Home Page$/i.test(trim(anchor.textContent)));
     return owner ? numericParam(owner.href, 'cid', doc.baseURI) : null;
 };
 
@@ -126,6 +127,14 @@ export const classifyResponse = (status, headers, bodyText, { kind = 'edit' } = 
     if (kind === 'gpx') return /<gpx\b/i.test(body) ? 'ok' : 'wrong-content';
     if (kind === 'list') {
         return /ClimbListC\.aspx/i.test(body) && /(?:My Ascents|Ascent List)/i.test(body)
+            ? 'ok' : 'wrong-content';
+    }
+    if (kind === 'buddies') {
+        return /\bid=["']RGridView["']/i.test(body) && /Buddy List/i.test(body)
+            ? 'ok' : 'wrong-content';
+    }
+    if (kind === 'climber') {
+        return /<h1\b[^>]*>/i.test(body) && /ClimbListC\.aspx\?[^"'<>]*\bcid=\d+/i.test(body)
             ? 'ok' : 'wrong-content';
     }
     return /<form\b[^>]*(?:id|name)=["']Form1["']/i.test(body)
@@ -403,6 +412,8 @@ const createRunner = ({
 };
 
 export const profileBackupCore = {
+    numericParam,
+    ownerClimberId,
     parseAscentList,
     ascentIdsFromFolders,
     buildWorkList,

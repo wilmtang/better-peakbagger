@@ -61,6 +61,7 @@
         rememberMapLayer: false, mapLastLayer: '',
         // What the ascent filter's "Has beta" chip counts: an ascent
         // qualifies if it has any of the enabled signals.
+        favoritesSource: 'buddies',
         betaTr: true, betaTrMinWords: 1, betaGps: true, betaLink: true,
         // Open a default (oldest-first) ascent list sorted newest-first. A sort
         // chosen by clicking a column, or carried in the URL, always wins.
@@ -144,6 +145,7 @@
         // stand on its own.
         if (!s.enableGithubBackup) s.autoGithubBackup = false;
         if (!['both', 'distance', 'time'].includes(s.chartDefaultSeries)) s.chartDefaultSeries = DEFAULTS.chartDefaultSeries;
+        if (!['buddies', 'custom'].includes(s.favoritesSource)) s.favoritesSource = DEFAULTS.favoritesSource;
         if (!['rich', 'markdown', 'plain'].includes(s.reportEditorMode)) s.reportEditorMode = DEFAULTS.reportEditorMode;
         s.mapRouteColor = routeColor(s.mapRouteColor);
         s.mapRouteWidth = routeWidth(s.mapRouteWidth);

@@ -28,6 +28,7 @@ const PAGE_LOCAL = {
     'options-theme.js': path.join(root, 'options', 'theme.js'),
     'options-main.js': path.join(root, 'options', 'options.js'),
     'options-drafts.js': path.join(root, 'options', 'drafts.js'),
+    'options-favorites.js': path.join(root, 'options', 'favorites.js'),
     'popup-main.js': path.join(root, 'popup', 'popup.js'),
 };
 export function resolvePageSource(name) {
@@ -46,7 +47,8 @@ export const ENTRIES = [
     { out: 'content/ascent-bridge.js', sources: ['settings-schema.js', 'settings.js', 'bridge.js'] },
     { out: 'content/gpx-analyzer.js', sources: ['gpx-metrics.js', 'terrain-basemap.js', 'terrain-camera.js', 'terrain-compass.js', 'terrain-coordinator.js', 'terrain-failure.js', 'peak-markers.js', 'settings-schema.js', 'gpx-analyzer.js'] },
     { out: 'content/terrain-map.js', sources: ['terrain-camera.js', 'settings-schema.js', 'settings.js', 'terrain-map.js'] },
-    { out: 'content/ascent-filter.js', sources: ['settings-schema.js', 'settings.js', 'ascent-filter.js'] },
+    { out: 'content/ascent-filter.js', sources: ['settings-schema.js', 'settings.js', 'favorite-climbers.js', 'ascent-filter.js'] },
+    { out: 'content/climber-favorite.js', sources: ['settings-schema.js', 'settings.js', 'favorite-climbers.js', 'climber-favorite.js'] },
     { out: 'content/profile-backup.js', sources: ['profile-backup-core.js', 'ascent-snapshot.js', 'report-markup.js', 'ascent-backup-source.js', 'profile-backup.js'] },
     { out: 'content/peak-map-bridge.js', sources: ['settings-schema.js', 'settings.js', 'peak-map-bridge.js'] },
     { out: 'content/peak-links.js', sources: ['peak-links.js'] },
@@ -58,7 +60,7 @@ export const ENTRIES = [
     // The options page keeps its head/tail split: the head bundle applies the
     // theme before first paint, the tail bundle runs the settings UI.
     { out: 'options/options-head.js', sources: ['settings-schema.js', 'settings.js', 'options-theme.js'], page: true },
-    { out: 'options/options.js', sources: ['terrain-cache.js', 'report-markup.js', 'report-drafts.js', 'options-main.js', 'options-drafts.js'], page: true },
+    { out: 'options/options.js', sources: ['terrain-cache.js', 'report-markup.js', 'report-drafts.js', 'favorite-climbers.js', 'options-main.js', 'options-drafts.js', 'options-favorites.js'], page: true },
     { out: 'popup/popup.js', sources: ['popup-main.js'], page: true },
 ];
 

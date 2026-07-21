@@ -1,16 +1,17 @@
 # GitHub ascent backup: complete design and failure model
 
-This is the single maintained design for GitHub ascent backup. It covers the
+This is the single maintained design for GitHub backup. It covers the
 manual saved-ascent action, automatic backup after Add/Edit, full-profile
 backup, source-data acquisition, snapshot correlation, batching, repository
-writes, authentication, failure handling, and the regressions that established
-the current invariants.
+writes, the manual custom-favorites companion file, authentication, failure
+handling, and the regressions that established the current invariants.
 
 The completed implementation records remain in
 [archive/github-ascent-backup-plan.md](archive/github-ascent-backup-plan.md) and
-[archive/full-profile-backup.md](archive/full-profile-backup.md). Those files are
-historical. When they disagree with this document or current code, this document
-and current code win.
+[archive/full-profile-backup.md](archive/full-profile-backup.md), with favorite
+climbers in [archive/favorite-climbers.md](archive/favorite-climbers.md). Those
+files are historical. When they disagree with this document or current code,
+this document and current code win.
 
 Real GitHub device authorization, a rate-limited live Peakbagger Add/Edit, live
 stored-GPX timing, and a scratch-repository commit remain manual pre-release
@@ -30,7 +31,12 @@ deliberately different way to discover whether a GPX exists, but its form
 fields, response validation, GPX body validation, snapshot schema, and GitHub
 writer are shared.
 
-## The three shipped entry points
+The custom favorite-climber list is a separate, manual root-file operation. It
+shares the worker's credential gate, write queue, repository marker validation,
+atomic commit, and conflict retry, but never enters any ascent payload or
+automatic-backup path.
+
+## The three shipped ascent entry points
 
 | Concern | Full profile | Automatic after Add/Edit | Manual saved-ascent action |
 | --- | --- | --- | --- |
@@ -98,6 +104,7 @@ link, which automatically tracks endpoint query changes.
 | `src/ascent-backup.js` | Compact saved-ascent control and the shared manual/automatic individual orchestration | Form mapping, GitHub credentials |
 | `src/profile-backup-core.js` | Pure owner-list parsing, response classifier, work diff, producer/consumer state machine and limits | Browser APIs, tokens, DOM globals |
 | `src/profile-backup.js` | Owner-list UI, full-list fetch, per-ascent production, progress/pause/resume | Raw field mapping, GitHub credentials |
+| `options/favorites.js` | Validate/serialize explicit favorites backup and schema-check reversible restore | GitHub credentials or repository mutation |
 | `src/background.js` | Sender gates, session snapshots, auth lookup, timestamping, write serialization, message routing | Peakbagger DOM parsing |
 | `src/github-backup.js` | Pure folder naming and JSON/Markdown/file payload serialization | DOM, tokens, network |
 | `src/github-client.js` | Repository inspection, atomic Git Data writes, owned-file pruning, conflict retry | Peakbagger data acquisition or UI |
@@ -452,16 +459,21 @@ disclosure.
 | `GITHUB_BACKUP_ASCENT` | Owner saved-ascent surface | Peakbagger hostname; feature/auth/repo; fresh snapshot for auto; complete data requirement; final aid present before the client enforces a positive identity | Commit metadata or typed error |
 | `GITHUB_BACKUP_PROFILE_STATUS` | `ClimbListC.aspx` | Peakbagger hostname and exact list pathname | Folder leaves, never token |
 | `GITHUB_BACKUP_PROFILE_BATCH` | `ClimbListC.aspx` | Exact list pathname; 1–10 entries; each positive `aid` equals snapshot id; no duplicate ids; feature/auth/repo | Batch commit metadata or typed error |
+| `GITHUB_FAVORITES_BACKUP` | Extension options page | Extension origin; feature/auth/repo; nonempty serialized content; fixed `favorites.json` path | Commit metadata, never token |
+| `GITHUB_FAVORITES_RESTORE` | Extension options page | Extension origin; feature/auth/repo; fixed `favorites.json` path | File text or `null`, never token |
 
 The individual worker gate is hostname-level; the content surface supplies the
 stricter owner proof by requiring an edit link for the same aid before it even
 asks for status. The profile worker gate is path-level because batch messages
-are valid only from the owner-list surface.
+are valid only from the owner-list surface. Favorite messages are extension-page
+only: the options page applies the shared favorites schema before export and
+again before replacing local state on restore.
 
 ## Repository layout and schema
 
 ```text
 .better-peakbagger.json
+favorites.json     # optional; written only by the explicit favorites action
 2026-07-12-mount-rainier-a1234567/
   report.md
   ascent.json
@@ -481,6 +493,29 @@ Re-sync finds the exact aid suffix regardless of slug. A rename writes the new
 folder and deletes only Better Peakbagger-owned `report.md`, `ascent.json`, and
 `track.gpx` paths from old matching folders in the same tree. User-added files
 under an ascent folder survive.
+
+### `favorites.json` schema version 1
+
+```jsonc
+{
+  "schemaVersion": 1,
+  "exportedAt": "2026-07-21T21:04:05.000Z",
+  "entries": [
+    {
+      "cid": 900002,
+      "name": "Example Climber",
+      "addedAt": 1784667845000,
+      "source": "manual"
+    }
+  ]
+}
+```
+
+The file is a complete export of the device-local custom list, capped at 500
+entries. Restore rejects an unknown schema, malformed entry, duplicate id, or
+oversized list before changing local storage, then offers a six-second Undo.
+Buddy List cache metadata and owner identity are never exported. A missing file
+is reported as an empty backup state, not treated as an empty list to restore.
 
 ### `ascent.json` schema version 1
 
@@ -604,6 +639,13 @@ For each attempt the client:
 7. creates one commit with the read head as parent; and
 8. updates the branch with `force: false`.
 
+Explicit favorite backup uses the same sequence with one root blob entry for
+`favorites.json` (and the marker when adopting a confirmed unmarked repository).
+It does not use a Contents API update, so it has the same compare-and-swap
+behavior as ascent commits. Restore reads `favorites.json` from the selected
+branch through GitHub's Contents endpoint, validates file/base64/UTF-8 shape in
+the worker client, and leaves schema validation to the options-page owner.
+
 No ascent in a batch is visible on the branch before step 8. A failed earlier
 operation leaves the branch unchanged. A failed final ref update leaves an
 unreferenced commit object, not a partial folder update.
@@ -614,8 +656,9 @@ read `Refresh N ascents`.
 
 ### Internal and external concurrency
 
-The worker's `githubWriteQueue` serializes all extension-owned writers before
-they read the branch. A separate browser, GitHub web edit, or another
+The worker's `githubWriteQueue` serializes all extension-owned writers—including
+explicit favorite backup—before they read the branch. A separate browser,
+GitHub web edit, or another
 integration can still race externally.
 
 On retryable 409 or non-fast-forward ref conflict, the client waits 0.5, 2, then
@@ -742,7 +785,9 @@ consumes its own snapshot.
 - Auto revisit without a fresh save returns to the manual action.
 - Concurrent same-identity new-ascent snapshots are isolated by tab.
 - The obsolete one-at-a-time profile worker message has been removed; there are
-  exactly three shipped entry points and one profile batch message.
+  exactly three shipped ascent entry points and one profile batch message.
+- Favorite backup/restore is manual-only, extension-page-only, and does not
+  change the ascent entry-point contract.
 
 ## Verification matrix and what it cannot prove
 
@@ -753,8 +798,8 @@ consumes its own snapshot.
 | `test/ascent-backup.test.mjs` | Compact action, persisted form + actual GPX, manual/auto message shape, fail-closed UI | Real Save transition or GitHub service |
 | `test/ascent-saved.test.mjs` | Add/Edit success variants, aid extraction, UpdatePanel observation, auto routing | Peakbagger changing its success markup |
 | `test/profile-backup*.test.mjs` | Owner gates, all-years diff, pipeline bounds, retry/pause/backpressure | A multi-hour live profile sweep |
-| `test/github-backup-integration.test.mjs` | Built worker gates, merge precedence, tab correlation, atomic batch calls | Real extension worker eviction timing |
-| `test/github-client.test.mjs` | Git tree construction, owned deletion, cache mode, conflicts, error taxonomy | GitHub service-side policy changes |
+| `test/github-backup-integration.test.mjs` | Built worker gates, merge precedence, tab correlation, atomic batch/root-file calls | Real extension worker eviction timing |
+| `test/github-client.test.mjs` | Git tree/root-file construction, owned deletion, root-file decode, cache mode, conflicts, error taxonomy | GitHub service-side policy changes |
 | `npm test` | Current built IIFE bundles in jsdom plus pure modules | Real manifest interpretation and browser worker lifecycle |
 | `npm run verify:browsers` | Real unpacked Chrome/Firefox startup, worker messaging, content-script load | Signed-in Peakbagger/GitHub flows and visible native chrome |
 | Manual release check | Real Add/Edit, device flow, stored GPX, scratch commit | Repeatable regression coverage |

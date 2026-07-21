@@ -64,3 +64,21 @@ test('full-list URL preserves climber and units while forcing complete coverage'
     assert.equal(url.searchParams.get('y'), '9999');
     assert.equal(url.searchParams.get('sort'), 'AscentDate');
 });
+
+test('exports shared numeric and signed-in owner identity parsing', () => {
+    const dom = new JSDOM(fixture, { url: 'https://www.peakbagger.com/climber/ClimbListC.aspx?cid=900001' });
+    assert.equal(Core.numericParam('/climber/climber.aspx?cid=900002', 'cid'), 900002);
+    assert.equal(Core.numericParam('/climber/climber.aspx?cid=not-a-number', 'cid'), null);
+    assert.equal(Core.ownerClimberId(dom.window.document), 900001);
+});
+
+test('classifies buddy and climber pages without accepting login or challenge pages', () => {
+    const buddyPage = '<h1>Buddy List for Test</h1><table id="RGridView"></table>';
+    const climberPage = '<h1>Peakbagging Page for Test</h1><a href="ClimbListC.aspx?cid=900002">Ascents</a>';
+    assert.equal(Core.classifyResponse(200, {}, buddyPage, { kind: 'buddies' }), 'ok');
+    assert.equal(Core.classifyResponse(200, {}, climberPage, { kind: 'climber' }), 'ok');
+    assert.equal(Core.classifyResponse(200, {}, '<form id="login">Sign in</form>', { kind: 'buddies' }), 'wrong-content');
+    assert.equal(Core.classifyResponse(200, {}, '<h1>Sign in</h1>', { kind: 'climber' }), 'wrong-content');
+    assert.equal(Core.classifyResponse(403, { 'cf-mitigated': 'challenge' }, buddyPage, { kind: 'buddies' }), 'challenged');
+    assert.equal(Core.classifyResponse(200, {}, '<title>Just a moment...</title>', { kind: 'climber' }), 'challenged');
+});

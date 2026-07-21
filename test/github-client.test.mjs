@@ -419,6 +419,152 @@ test('a persistent ref conflict stops after the bounded retry schedule', async (
     assert.deepEqual(delays, [500, 2000, 5000]);
 });
 
+test('a root file is decoded from the selected branch and a missing file returns null', async () => {
+    const encoded = Buffer.from('{"name":"Café"}\n', 'utf8').toString('base64');
+    const { fetch, calls } = makeFetch({
+        'GET /repos/me/backup': REPO_OK(),
+        'GET /repos/me/backup/contents/favorites.json': () => respond(200, {
+            type: 'file', encoding: 'base64', content: encoded,
+        }),
+        'GET /repos/me/backup/contents/missing.json': () => respond(404, { message: 'Not Found' }),
+    });
+    const client = Client.createGithubClient({ fetch, token: 't', owner: 'me', repo: 'backup' });
+
+    assert.equal(await client.readRootFile('favorites.json'), '{"name":"Café"}\n');
+    assert.equal(await client.readRootFile('missing.json'), null);
+    const contentReads = calls.filter(call => call.path.includes('/contents/'));
+    assert.ok(contentReads.every(call => new URL(call.url).searchParams.get('ref') === 'main'));
+});
+
+test('a root file commit preserves the base tree, adopts the repo, and fast-forwards without force', async () => {
+    const { fetch, calls } = makeFetch({
+        'GET /repos/me/backup': REPO_OK(),
+        'GET /repos/me/backup/git/ref/heads/main': REF('C0'),
+        'GET /repos/me/backup/git/commits/C0': COMMIT('C0', 'T0'),
+        'GET /repos/me/backup/git/trees/T0': () => respond(200, { tree: [
+            { path: 'README.md', type: 'blob', sha: 'readme' },
+        ] }),
+        'POST /repos/me/backup/git/trees': () => respond(201, { sha: 'T1' }),
+        'POST /repos/me/backup/git/commits': () => respond(201, {
+            sha: 'C1', html_url: 'https://github.com/me/backup/commit/C1',
+        }),
+        'PATCH /repos/me/backup/git/refs/heads/main': () => respond(200, { object: { sha: 'C1' } }),
+    });
+    const client = Client.createGithubClient({ fetch, token: 't', owner: 'me', repo: 'backup' });
+    const result = await client.putRootFile('favorites.json', '{"schemaVersion":1}\n', 'Back up favorite climbers');
+
+    assert.equal(result.path, 'favorites.json');
+    assert.equal(result.commitUrl, 'https://github.com/me/backup/commit/C1');
+    const treeCall = calls.find(call => call.key === 'POST /repos/me/backup/git/trees');
+    assert.equal(treeCall.body.base_tree, 'T0');
+    assert.deepEqual(treeCall.body.tree.map(entry => entry.path).sort(), [
+        '.better-peakbagger.json', 'favorites.json',
+    ]);
+    assert.equal(treeCall.body.tree.find(entry => entry.path === 'favorites.json').content,
+        '{"schemaVersion":1}\n');
+    const commitCall = calls.find(call => call.key === 'POST /repos/me/backup/git/commits');
+    assert.deepEqual(commitCall.body.parents, ['C0']);
+    assert.equal(commitCall.body.message, 'Back up favorite climbers');
+    assert.deepEqual(calls.find(call => call.key === 'PATCH /repos/me/backup/git/refs/heads/main').body,
+        { sha: 'C1', force: false });
+});
+
+test('a root file conflict retries from the newly read head', async () => {
+    let refReads = 0;
+    let patches = 0;
+    const delays = [];
+    const { fetch, calls } = makeFetch({
+        'GET /repos/me/backup': REPO_OK(),
+        'GET /repos/me/backup/git/ref/heads/main': () => {
+            const sha = `C${refReads}`;
+            refReads += 1;
+            return respond(200, { object: { sha } });
+        },
+        'GET /repos/me/backup/git/commits/C0': COMMIT('C0', 'T0'),
+        'GET /repos/me/backup/git/commits/C1': COMMIT('C1', 'T1'),
+        'GET /repos/me/backup/git/trees/T0': () => respond(200, { tree: [MARKER] }),
+        'GET /repos/me/backup/git/trees/T1': () => respond(200, { tree: [MARKER] }),
+        'GET /repos/me/backup/git/blobs/marker': MARKER_BLOB,
+        'POST /repos/me/backup/git/trees': number => respond(201, { sha: `TNEW${number}` }),
+        'POST /repos/me/backup/git/commits': number => respond(201, { sha: `CNEW${number}` }),
+        'PATCH /repos/me/backup/git/refs/heads/main': () => {
+            patches += 1;
+            return patches === 1
+                ? respond(422, { message: 'Update is not a fast forward' })
+                : respond(200, { object: { sha: 'CNEW2' } });
+        },
+    });
+    const client = Client.createGithubClient({
+        fetch, token: 't', owner: 'me', repo: 'backup', sleep: async delay => delays.push(delay),
+    });
+    await client.putRootFile('favorites.json', '{}\n', 'Back up favorite climbers');
+
+    assert.equal(refReads, 2);
+    assert.deepEqual(delays, [500]);
+    assert.deepEqual(calls.filter(call => call.key === 'POST /repos/me/backup/git/trees')
+        .map(call => call.body.base_tree), ['T0', 'T1']);
+    assert.deepEqual(calls.filter(call => call.key === 'POST /repos/me/backup/git/commits')
+        .map(call => call.body.parents), [['C0'], ['C1']]);
+});
+
+test('root file writes fail closed on a foreign marker or path collision', async () => {
+    const foreign = makeFetch({
+        'GET /repos/me/backup': REPO_OK(),
+        'GET /repos/me/backup/git/ref/heads/main': REF('C0'),
+        'GET /repos/me/backup/git/commits/C0': COMMIT('C0', 'T0'),
+        'GET /repos/me/backup/git/trees/T0': () => respond(200, { tree: [MARKER] }),
+        'GET /repos/me/backup/git/blobs/marker': () => respond(200, {
+            encoding: 'base64', content: Buffer.from('foreign').toString('base64'),
+        }),
+    });
+    await assert.rejects(
+        Client.createGithubClient({ fetch: foreign.fetch, token: 't', owner: 'me', repo: 'backup' })
+            .putRootFile('favorites.json', '{}', 'Back up favorite climbers'),
+        error => error.code === Client.ERROR_CODES.REPO_CONFLICT,
+    );
+    assert.ok(foreign.calls.every(call => call.method === 'GET'));
+
+    const collision = makeFetch({
+        'GET /repos/me/backup': REPO_OK(),
+        'GET /repos/me/backup/git/ref/heads/main': REF('C0'),
+        'GET /repos/me/backup/git/commits/C0': COMMIT('C0', 'T0'),
+        'GET /repos/me/backup/git/trees/T0': () => respond(200, { tree: [
+            MARKER, { path: 'favorites.json', type: 'tree', sha: 'folder' },
+        ] }),
+        'GET /repos/me/backup/git/blobs/marker': MARKER_BLOB,
+    });
+    await assert.rejects(
+        Client.createGithubClient({ fetch: collision.fetch, token: 't', owner: 'me', repo: 'backup' })
+            .putRootFile('favorites.json', '{}', 'Back up favorite climbers'),
+        error => error.code === Client.ERROR_CODES.REPO_CONFLICT,
+    );
+    assert.ok(collision.calls.every(call => call.method === 'GET'));
+});
+
+test('an empty repository is initialized before its first root file commit', async () => {
+    const { fetch, calls } = makeFetch({
+        'GET /repos/me/backup': () => respond(200, {
+            default_branch: 'main', archived: false, size: 0, permissions: { push: true },
+        }),
+        'GET /repos/me/backup/git/ref/heads/main': () => respond(409, { message: 'Git Repository is empty.' }),
+        'PUT /repos/me/backup/contents/.better-peakbagger.json': () => respond(201, {
+            commit: { sha: 'C0', tree: { sha: 'T0' } },
+        }),
+        'GET /repos/me/backup/git/trees/T0': () => respond(200, { tree: [MARKER] }),
+        'GET /repos/me/backup/git/blobs/marker': MARKER_BLOB,
+        'POST /repos/me/backup/git/trees': () => respond(201, { sha: 'T1' }),
+        'POST /repos/me/backup/git/commits': () => respond(201, { sha: 'C1' }),
+        'PATCH /repos/me/backup/git/refs/heads/main': () => respond(200, { object: { sha: 'C1' } }),
+    });
+    const client = Client.createGithubClient({ fetch, token: 't', owner: 'me', repo: 'backup' });
+    await client.putRootFile('favorites.json', '{}\n', 'Back up favorite climbers');
+
+    assert.ok(calls.some(call => call.key === 'PUT /repos/me/backup/contents/.better-peakbagger.json'));
+    const tree = calls.find(call => call.key === 'POST /repos/me/backup/git/trees').body;
+    assert.equal(tree.base_tree, 'T0');
+    assert.deepEqual(tree.tree.map(entry => entry.path), ['favorites.json']);
+});
+
 // ---- error taxonomy -------------------------------------------------------
 
 const failingRepoFetch = repoResponse => makeFetch({ 'GET /repos/me/backup': () => repoResponse }).fetch;

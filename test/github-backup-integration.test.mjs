@@ -61,7 +61,8 @@ const createWorker = ({ settings = { enableGithubBackup: true }, auth = null, gi
         return reply;
     };
     const context = vm.createContext({
-        browser, fetch, URL, URLSearchParams, Math, Date, console, structuredClone, AbortController, TextEncoder,
+        browser, fetch, URL, URLSearchParams, Math, Date, console, structuredClone, AbortController,
+        TextEncoder, TextDecoder, atob,
     });
     context.globalThis = context;
     context.self = context;
@@ -303,6 +304,64 @@ test('the worker serializes competing profile batches before either reads the br
     assert.equal(secondResult.ok, true);
     assert.equal(repoReads, 2);
     assert.equal(currentCommit, 'C2');
+});
+
+test('favorites backup and restore stay extension-only and keep the token in the worker', async () => {
+    const backend = gitDataBackend();
+    const restoreContent = '{"schemaVersion":1,"exportedAt":"2026-07-21T12:00:00.000Z","entries":[]}\n';
+    const github = (method, path, body) => {
+        if (method === 'GET' && path === '/repos/me/backup/contents/favorites.json') {
+            return respond(200, {
+                type: 'file', encoding: 'base64', content: Buffer.from(restoreContent).toString('base64'),
+            });
+        }
+        return backend.handler(method, path, body);
+    };
+    const worker = createWorker({ auth: AUTH, github });
+    const exported = '{"schemaVersion":1,"exportedAt":"2026-07-21T13:00:00.000Z","entries":[{"cid":900002}]}\n';
+
+    const backup = await worker.send({ type: 'GITHUB_FAVORITES_BACKUP', content: exported }, EXTENSION_SENDER);
+    assert.equal(backup.ok, true);
+    assert.equal(backup.result.path, 'favorites.json');
+    assert.equal(backend.state.contents['favorites.json'], exported);
+    assert.equal(backend.state.tree.tree.find(entry => entry.path === 'favorites.json').type, 'blob');
+    assert.equal('token' in backup, false);
+
+    const restore = await worker.send({ type: 'GITHUB_FAVORITES_RESTORE' }, EXTENSION_SENDER);
+    assert.equal(restore.ok, true);
+    assert.equal(restore.content, restoreContent);
+    assert.equal('token' in restore, false);
+
+    const forbidden = await worker.send({ type: 'GITHUB_FAVORITES_RESTORE' }, PEAK_SENDER);
+    assert.equal(forbidden.error, 'forbidden');
+});
+
+test('favorites restore reports an absent file and backup reuses the GitHub feature gates', async () => {
+    const missing = (method, path) => {
+        if (method === 'GET' && path === '/repos/me/backup') {
+            return respond(200, { default_branch: 'main', archived: false, permissions: { push: true } });
+        }
+        if (method === 'GET' && path === '/repos/me/backup/contents/favorites.json') {
+            return respond(404, { message: 'Not Found' });
+        }
+        return null;
+    };
+    const connected = createWorker({ auth: AUTH, github: missing });
+    const absent = await connected.send({ type: 'GITHUB_FAVORITES_RESTORE' }, EXTENSION_SENDER);
+    assert.equal(absent.ok, true);
+    assert.equal(absent.content, null);
+
+    const disabled = createWorker({
+        settings: { enableGithubBackup: false }, auth: AUTH, github: missing,
+    });
+    assert.equal((await disabled.send({
+        type: 'GITHUB_FAVORITES_BACKUP', content: '{}',
+    }, EXTENSION_SENDER)).error.code, 'disabled');
+
+    const disconnected = createWorker({ auth: null, github: missing });
+    assert.equal((await disconnected.send({
+        type: 'GITHUB_FAVORITES_RESTORE',
+    }, EXTENSION_SENDER)).error.code, 'not-connected');
 });
 
 test('profile messages require ClimbListC and matching ascent identity', async () => {
