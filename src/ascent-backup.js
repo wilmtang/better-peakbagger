@@ -11,6 +11,8 @@
 // read-only toward Peakbagger and never touches a Save control.
 
 import { ascentPage as AscentPage } from './ascent-page.js';
+import { ascentSnapshot as Snapshot } from './ascent-snapshot.js';
+import { reportMarkup as Markup } from './report-markup.js';
 import { githubError as GithubError } from './github-error.js';
 import { classifyResponse } from './profile-backup-core.js';
 
@@ -23,6 +25,7 @@ import { classifyResponse } from './profile-backup-core.js';
     const errorText = error => GithubError.message(error, {
         fallback: 'The extension did not return an error description. Reload this ascent and try again.',
     });
+    const failure = code => Object.assign(new Error(code), { code });
 
     const sendBg = message => new Promise(resolve => {
         try {
@@ -64,28 +67,67 @@ import { classifyResponse } from './profile-backup-core.js';
         el('button', { type: 'button', class: 'bpb-gh-btn', text: 'Try again', onclick: () => runBackup(info) }),
     );
 
+    const responseText = async (url, kind) => {
+        let response;
+        try {
+            response = await fetch(url, { credentials: 'include', redirect: 'follow', cache: 'no-store' });
+        } catch {
+            throw failure(kind === 'gpx' ? 'peakbagger-track' : 'peakbagger-read');
+        }
+        let text = '';
+        try { text = await response.text(); }
+        catch { throw failure(kind === 'gpx' ? 'peakbagger-track' : 'peakbagger-read'); }
+        if (classifyResponse(response.status, response.headers, text, { kind }) !== 'ok') {
+            throw failure(kind === 'gpx' ? 'peakbagger-track' : 'peakbagger-read');
+        }
+        return text;
+    };
+
+    // A manual backup can run long after the save-time session snapshot expired.
+    // Read the owner-only edit form so the replacement is still complete. The
+    // display page omits many fields and cannot distinguish an empty field from
+    // a field it simply does not render.
+    const readPersistedSnapshot = async info => {
+        if (!info.editUrl) throw failure('peakbagger-read');
+        const html = await responseText(info.editUrl, 'edit');
+        const doc = new DOMParser().parseFromString(html, 'text/html');
+        const form = doc.getElementById('Form1') || doc.querySelector('form[name="Form1"]');
+        if (!form || !form.elements.JournalText || !form.elements.DateText || !form.elements.PeakListBox) {
+            throw failure('peakbagger-read');
+        }
+        const params = new URL(info.editUrl, location.href).searchParams;
+        params.set('aid', String(info.ascentId));
+        if (info.peak.id != null) params.set('pid', String(info.peak.id));
+        const built = Snapshot.build({
+            form,
+            params,
+            report: { markdown: Markup.bracketToMarkdown(form.elements.JournalText.value || '') },
+            extensionVersion: ext.runtime.getManifest ? ext.runtime.getManifest().version : '',
+        });
+        if (built.snapshot.ascent.id !== info.ascentId
+            || (info.peak.id != null && built.snapshot.peak.id !== info.peak.id)) {
+            throw failure('peakbagger-read');
+        }
+        if (!built.snapshot.ascent.date && info.date) built.snapshot.ascent.date = info.date;
+        if (!built.snapshot.peak.name && info.peak.name) built.snapshot.peak.name = info.peak.name;
+        return built.snapshot;
+    };
+
     const runBackup = async (info, { auto = false } = {}) => {
         renderWorking();
-        let gpx = null;
-        if (info.gpxUrl) {
-            // Fetched in the page's own session (same-origin, credentialed), the
-            // same place the analyzer reads the stored track. Classify the body
-            // with the shared classifier before trusting it: a 200 that is
-            // actually an error page (e.g. a renamed/redirected endpoint) must
-            // never be committed as track.gpx. On rejection, back up without a
-            // track rather than storing an error page.
-            try {
-                const res = await fetch(info.gpxUrl);
-                const text = res.ok ? await res.text() : '';
-                if (res.ok && classifyResponse(res.status, res.headers, text, { kind: 'gpx' }) === 'ok') gpx = text;
-            } catch { /* no track */ }
+        let page;
+        let gpx;
+        try {
+            page = await readPersistedSnapshot(info);
+            // A missing link authoritatively means Peakbagger stores no track. If
+            // a link exists, however, a failed read is ambiguous and must abort;
+            // treating failure as absence would delete an older track.gpx.
+            gpx = info.gpxUrl ? await responseText(info.gpxUrl, 'gpx') : null;
+        } catch (error) {
+            renderError(info, error);
+            return;
         }
-        const page = {
-            ascent: { id: info.ascentId, date: info.date || undefined },
-            peak: { id: info.peak.id, name: info.peak.name },
-            report: { markdown: info.reportMarkdown || '' },
-        };
-        const response = await sendBg({ type: 'GITHUB_BACKUP_ASCENT', page, gpx, auto });
+        const response = await sendBg({ type: 'GITHUB_BACKUP_ASCENT', page, pageComplete: true, gpx, auto });
         if (response && response.ok) { renderSuccess(response.result); return; }
         // Automatic mode on an already-backed-up revisit: fall back to the manual
         // affordance rather than showing an error the user did not trigger.

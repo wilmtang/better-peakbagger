@@ -36,16 +36,18 @@ import { reportMarkup as Markup } from './report-markup.js';
         return null;
     };
 
-    // Ownership: the signed-in climber sees an edit link for THIS ascent. No such
-    // link (a visitor viewing someone else's ascent) means no affordance.
-    const ownsAscent = (doc, ascentId) => {
-        if (ascentId == null) return false;
+    // Ownership: the signed-in climber sees an edit link for THIS ascent. Keep
+    // the exact link as well as the boolean so the backup surface can read the
+    // complete persisted form instead of rebuilding from the lossy display page.
+    const ascentEditLink = (doc, ascentId) => {
+        if (ascentId == null) return null;
         for (const a of doc.querySelectorAll('a[href]')) {
             const href = a.getAttribute('href') || '';
-            if (/ascentedit\.aspx\?/i.test(href) && String(paramFrom(href, 'aid')) === String(ascentId)) return true;
+            if (/ascentedit\.aspx\?/i.test(href) && String(paramFrom(href, 'aid')) === String(ascentId)) return a;
         }
-        return false;
+        return null;
     };
+    const ownsAscent = (doc, ascentId) => ascentEditLink(doc, ascentId) != null;
 
     const readPeak = doc => {
         const link = findLink(doc, 'peak\\.aspx', 'pid');
@@ -87,9 +89,9 @@ import { reportMarkup as Markup } from './report-markup.js';
         catch { return ''; }
     };
 
-    // Peakbagger renders the date as "Ascent Date: Jul 12, 2026" (day/month may
-    // be absent on a partial date). Parse a "Mon D, YYYY" or bare-year string to
-    // ISO; '' when nothing parseable is found.
+    // Peakbagger renders the display-page label as "Date:" (older fixtures and
+    // some page variants use "Ascent Date:"). Parse a "Mon D, YYYY" or
+    // bare-year string to ISO; '' when nothing parseable is found.
     const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
     const parseDateText = text => {
         const value = clean(text);
@@ -104,17 +106,16 @@ import { reportMarkup as Markup } from './report-markup.js';
         return yearOnly ? `${yearOnly[1]}-00-00` : '';
     };
     const parseDate = doc => {
-        // The date and its label usually live in adjacent cells, so read the
-        // cell that follows the "Ascent Date" label first, then fall back to a
-        // scan of the page text.
+        // The date and its label live in adjacent cells. Match the complete
+        // label so unrelated table cells containing the word "date" cannot win.
         const label = Array.from(doc.querySelectorAll('td, th'))
-            .find(cell => /ascent date/i.test(cell.textContent || '') && (cell.textContent || '').length < 40);
+            .find(cell => /^(?:ascent\s+)?date\s*:?$/i.test(clean(cell.textContent || '')));
         if (label && label.nextElementSibling) {
             const parsed = parseDateText(label.nextElementSibling.textContent);
             if (parsed) return parsed;
         }
         const text = clean(doc.body ? doc.body.textContent : '');
-        const near = text.match(/Ascent Date:?\s*(.{0,24})/i);
+        const near = text.match(/(?:Ascent\s+)?Date:?\s*(.{0,24})/i);
         return near ? parseDateText(near[1]) : '';
     };
 
@@ -125,9 +126,11 @@ import { reportMarkup as Markup } from './report-markup.js';
         const aidRaw = params.get('aid');
         const ascentId = aidRaw && Number.isFinite(Number(aidRaw)) ? Number(aidRaw) : null;
         const peak = readPeak(doc);
+        const editLink = ascentEditLink(doc, ascentId);
         return {
             ascentId,
-            isOwner: ownsAscent(doc, ascentId),
+            isOwner: editLink != null,
+            editUrl: editLink ? (editLink.href || editLink.getAttribute('href')) : null,
             peak,
             date: parseDate(doc),
             gpxUrl: gpxUrl(doc),
@@ -135,6 +138,6 @@ import { reportMarkup as Markup } from './report-markup.js';
         };
     };
 
-    const API = { read, ownsAscent, reportMarkdown, parseDate };
+    const API = { read, ownsAscent, ascentEditLink, reportMarkdown, parseDate };
 
     export const ascentPage = API;

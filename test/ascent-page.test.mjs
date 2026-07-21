@@ -35,6 +35,7 @@ test('read extracts the ascent identity, peak, GPX link, and date', async () => 
     const info = AscentPage.read({ doc, search: '?aid=7654321' });
     assert.equal(info.ascentId, 7654321);
     assert.equal(info.isOwner, true);
+    assert.match(info.editUrl, /ascentedit\.aspx\?aid=7654321/i);
     assert.deepEqual(info.peak, { id: 2296, name: 'Mount Rainier' });
     assert.equal(info.date, '2026-07-12');
     assert.match(info.gpxUrl, /GPXFile\.aspx\?aid=7654321&sep=1/);

@@ -41,7 +41,7 @@ export const ENTRIES = [
     { out: 'provider-page.js', sources: ['provider-url.js', 'gpx-parse.js', 'provider-page.js'] },
 
     { out: 'content/ascent-editor.js', sources: ['ascent-draft.js', 'gpx-parse.js', 'settings-schema.js', 'settings.js', 'ascent-upload.js', 'ascent-saved.js', 'report-markup.js', 'report-drafts.js', 'report-editor.js'] },
-    { out: 'content/ascent-backup.js', sources: ['report-markup.js', 'ascent-page.js', 'ascent-backup.js'] },
+    { out: 'content/ascent-backup.js', sources: ['report-markup.js', 'ascent-snapshot.js', 'ascent-page.js', 'ascent-backup.js'] },
     { out: 'content/theme.js', sources: ['settings-schema.js', 'settings.js', 'site-dark-css.js', 'theme.js'] },
     { out: 'content/ascent-bridge.js', sources: ['settings-schema.js', 'settings.js', 'bridge.js'] },
     { out: 'content/gpx-analyzer.js', sources: ['gpx-metrics.js', 'terrain-basemap.js', 'terrain-camera.js', 'peak-markers.js', 'settings-schema.js', 'gpx-analyzer.js'] },

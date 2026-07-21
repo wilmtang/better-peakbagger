@@ -16,14 +16,23 @@ import { evalBundle, waitFor } from './helpers/load-page.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
-const loadSurface = async ({ status, onBackup, gpxOk = true, gpxResponse = null, url = 'https://www.peakbagger.com/climber/ascent.aspx?aid=7654321' } = {}) => {
+const loadSurface = async ({ status, onBackup, editOk = true, gpxOk = true, gpxResponse = null, url = 'https://www.peakbagger.com/climber/ascent.aspx?aid=7654321' } = {}) => {
     const html = await readFile(path.join(root, 'test', 'fixtures', 'pages', 'climber-ascent.html'), 'utf8');
+    const rawEditHtml = await readFile(path.join(root, 'test', 'fixtures', 'pages', 'climber-ascentedit.html'), 'utf8');
+    const editDom = new JSDOM(rawEditHtml);
+    const editDoc = editDom.window.document;
+    editDoc.getElementById('DateText').setAttribute('value', '2026-07-12');
+    editDoc.getElementById('PointFt').setAttribute('value', '14411');
+    editDoc.getElementById('PeakListBox').innerHTML = '<option value="2296" selected>Mount Rainier</option>';
+    editDoc.getElementById('JournalText').textContent = '[b]Great climb[/b] under blue skies.';
+    const editHtml = editDom.serialize();
     const dom = new JSDOM(html, { url, runScripts: 'outside-only' });
     const sent = [];
     dom.window.chrome = {
         runtime: {
             id: 'test',
             lastError: null,
+            getManifest: () => ({ version: '3.0.0' }),
             sendMessage: (message, callback) => {
                 sent.push(message);
                 let reply = null;
@@ -34,9 +43,16 @@ const loadSurface = async ({ status, onBackup, gpxOk = true, gpxResponse = null,
             },
         },
     };
-    dom.window.fetch = async () => gpxResponse || (gpxOk
-        ? { ok: true, status: 200, headers: { get: () => 'text/gpx' }, text: async () => '<gpx><trk><trkseg></trkseg></trk></gpx>' }
-        : { ok: false, status: 404, headers: { get: () => null }, text: async () => '' });
+    dom.window.fetch = async target => {
+        if (/ascentedit\.aspx/i.test(String(target))) {
+            return editOk
+                ? { ok: true, status: 200, url: String(target), redirected: false, headers: { get: () => 'text/html' }, text: async () => editHtml }
+                : { ok: false, status: 500, url: String(target), redirected: false, headers: { get: () => 'text/html' }, text: async () => '' };
+        }
+        return gpxResponse || (gpxOk
+            ? { ok: true, status: 200, headers: { get: () => 'text/gpx' }, text: async () => '<gpx><trk><trkseg></trkseg></trk></gpx>' }
+            : { ok: false, status: 404, headers: { get: () => null }, text: async () => '' });
+    };
     await evalBundle(dom.window, 'content/ascent-backup.js');
     return { dom, sent };
 };
@@ -71,9 +87,14 @@ test('clicking Back up fetches the track and sends the page fields, then shows s
     await waitFor(dom, () => /Backed up/.test(bar(dom).textContent));
 
     assert.ok(received, 'a GITHUB_BACKUP_ASCENT message was sent');
+    assert.equal(received.pageComplete, true);
     assert.equal(received.page.ascent.id, 7654321);
+    assert.equal(received.page.ascent.date, '2026-07-12');
+    assert.equal(received.page.ascent.type, 'Successful Ascent (stood on the summit)');
+    assert.equal(received.page.ascent.pointFt, '14411');
     assert.equal(received.page.peak.id, 2296);
     assert.equal(received.page.peak.name, 'Mount Rainier');
+    assert.match(received.page.report.markdown, /\*\*Great climb\*\*/);
     assert.match(received.gpx, /<gpx>/);           // fetched in the page session
     // Success state links to the commit.
     const link = bar(dom).querySelector('.bpb-gh-link');
@@ -82,9 +103,9 @@ test('clicking Back up fetches the track and sends the page fields, then shows s
     assert.equal(sent.filter(m => m.type === 'GITHUB_BACKUP_ASCENT').length, 1);
 });
 
-test('a 200 error page for the track is not committed as track.gpx', async () => {
+test('a 200 error page for a displayed track aborts without replacing the backup', async () => {
     let received = null;
-    const { dom } = await loadSurface({
+    const { dom, sent } = await loadSurface({
         status: { enabled: true, connected: true },
         // A 200 whose body is an HTML error page, not a GPX document — what a
         // renamed/redirected endpoint would return.
@@ -100,12 +121,21 @@ test('a 200 error page for the track is not committed as track.gpx', async () =>
     });
     await waitFor(dom, () => bar(dom));
     bar(dom).querySelector('.bpb-gh-primary').dispatchEvent(new dom.window.Event('click'));
-    await waitFor(dom, () => /Backed up/.test(bar(dom).textContent));
+    await waitFor(dom, () => /could not read the stored GPS track/i.test(bar(dom).textContent));
 
-    assert.ok(received, 'a GITHUB_BACKUP_ASCENT message was sent');
-    // The error page was rejected: the ascent is backed up without a track,
-    // never with the HTML error page stored as the GPS track.
-    assert.equal(received.gpx, null);
+    assert.equal(received, null, 'an ambiguous track failure must not send a destructive replacement');
+    assert.equal(sent.filter(m => m.type === 'GITHUB_BACKUP_ASCENT').length, 0);
+});
+
+test('an incomplete edit-form response aborts without sending a sparse backup', async () => {
+    const { dom, sent } = await loadSurface({
+        status: { enabled: true, connected: true },
+        editOk: false,
+    });
+    await waitFor(dom, () => bar(dom));
+    bar(dom).querySelector('.bpb-gh-primary').dispatchEvent(new dom.window.Event('click'));
+    await waitFor(dom, () => /could not read the saved ascent form/i.test(bar(dom).textContent));
+    assert.equal(sent.filter(m => m.type === 'GITHUB_BACKUP_ASCENT').length, 0);
 });
 
 test('a typed backup error shows an actionable message with a retry', async () => {

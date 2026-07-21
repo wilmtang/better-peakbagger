@@ -196,9 +196,11 @@ ascent.aspx (isolated world)
   → verify the logged-in climber owns this ascent (fail closed)
   → match a PENDING_BACKUP snapshot; freshness heuristics: referrer from
     ascentedit + matching identity
+  → fetch and validate the owner-only ascentedit form; serialize its complete
+    persisted fields so an expired/missing snapshot never produces a sparse update
   → locate the "Download this GPS track" link; fetch same-origin if present
   → show the Back up to GitHub affordance
-  → on click: send GITHUB_BACKUP_ASCENT {snapshot key, page fields, gpx text}
+  → on click: send GITHUB_BACKUP_ASCENT {complete form snapshot, gpx text}
     to the background worker
 
 background worker
@@ -218,13 +220,15 @@ ClimbListC.aspx (isolated world, owner only)
 
 Notes:
 
-- The saved-page fields cross-check the snapshot; where they disagree (the
-  user edited between snapshot and save in another tab), the saved page wins
-  and the mismatch is logged to the affordance, not silently merged.
-- If no snapshot matches (user edited an old ascent without the extension's
-  flush path, or the snapshot expired), the ascent-page surface can still
-  offer a backup built from the saved page alone; `report.md` then comes from
-  the bracket-markup conversion.
+- The persisted edit-form fields cross-check the pending snapshot; where they
+  disagree, the saved form wins. The pending snapshot still supplies the exact
+  Markdown sidecar captured during Save when one exists.
+- If no pending snapshot matches (user edited an old ascent without the
+  extension's flush path, or the snapshot expired), the ascent-page surface
+  builds a complete replacement from the persisted edit form. An incomplete
+  form response fails without changing GitHub. If a displayed GPX link cannot
+  be read and validated, backup likewise fails rather than deleting a previously
+  stored `track.gpx`.
 - The GPX fetch happens in the page's session context where the analyzer
   already fetches it; the background worker never fetches from Peakbagger
   for this feature.

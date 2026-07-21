@@ -1452,15 +1452,24 @@ import { githubClient as GithubClient } from './github-client.js';
     // The saved page is authoritative for the identity and the fields it renders
     // (aid, date, suffix, peak name/elevation/location); the snapshot supplies
     // the fields the page does not (the entered numbers) and the resolved report.
-    const mergeBackupSnapshot = (snap, page = {}) => {
+    const mergeBackupSnapshot = (snap, page = {}, { pageComplete = false } = {}) => {
         const p = page && typeof page === 'object' ? page : {};
         const base = snap && typeof snap === 'object' ? snap : null;
         if (!base && !p.ascent && !p.peak) return null;
         const ascent = { ...(base ? base.ascent : {}) };
         const pAscent = p.ascent || {};
-        if (pAscent.id != null) ascent.id = pAscent.id;
-        if (pAscent.date) ascent.date = pAscent.date;
-        if (typeof pAscent.suffix === 'string' && pAscent.suffix) ascent.suffix = pAscent.suffix;
+        if (pageComplete) {
+            // A parsed edit form is the complete persisted record. Copy explicit
+            // blanks too so a field the user cleared does not survive from the
+            // pending save-time snapshot.
+            for (const [key, value] of Object.entries(pAscent)) {
+                if (value !== undefined) ascent[key] = value;
+            }
+        } else {
+            if (pAscent.id != null) ascent.id = pAscent.id;
+            if (pAscent.date) ascent.date = pAscent.date;
+            if (typeof pAscent.suffix === 'string' && pAscent.suffix) ascent.suffix = pAscent.suffix;
+        }
         const peak = { ...(base && base.peak ? base.peak : {}) };
         for (const [key, value] of Object.entries(p.peak || {})) {
             if (value != null && value !== '') peak[key] = value;
@@ -1473,9 +1482,10 @@ import { githubClient as GithubClient } from './github-client.js';
 
     // Find the pending snapshot for a saved ascent page. A new ascent had no aid
     // when it was snapshotted, so match by ascent id first (re-saves/edits), then
-    // by peak+date, then by peak alone (most recent) when the page date could not
-    // be parsed. Returns { key, record } or null.
-    const findSnapshotForPage = async (page, { allowPeakOnly = true } = {}) => {
+    // by peak+date. A peak-only match can attach a different ascent's report and
+    // fields, so absence of a precise match is handled by the complete edit-form
+    // snapshot supplied by the individual backup surface.
+    const findSnapshotForPage = async page => {
         const snapshots = await readMap(SNAPSHOTS_KEY);
         const entries = Object.entries(snapshots)
             .filter(([, record]) => isFresh(record))
@@ -1487,7 +1497,6 @@ import { githubClient as GithubClient } from './github-client.js';
         const date = page && page.ascent ? page.ascent.date : null;
         let match = ascentId != null ? entries.find(e => idOf(e).ascentId === ascentId) : null;
         if (!match && peakId != null && date) match = entries.find(e => idOf(e).peakId === peakId && idOf(e).date === date);
-        if (!match && allowPeakOnly && peakId != null) match = entries.find(e => idOf(e).peakId === peakId);
         return match || null;
     };
 
@@ -1502,13 +1511,19 @@ import { githubClient as GithubClient } from './github-client.js';
         if (!auth || !auth.token) return { ok: false, error: { code: 'not-connected' } };
         if (!auth.repo || !auth.repo.owner || !auth.repo.name) return { ok: false, error: { code: 'no-repo' } };
 
-        const found = await findSnapshotForPage(message.page, { allowPeakOnly: !message.auto });
+        const found = await findSnapshotForPage(message.page);
         // Automatic backup fires on every saved-ascent page load, so it must push
         // only right after a save — i.e. when a matching pending snapshot exists.
         // Without one (an old ascent merely being viewed) it declines quietly so
         // it never re-pushes on a revisit; the manual button is still offered.
         if (message.auto && !found) return { ok: false, error: { code: 'no-fresh-save' } };
-        const snapshot = mergeBackupSnapshot(found && found.record.snapshot, message.page);
+        // Without a pending save snapshot, only a complete owner edit-form read
+        // is safe to commit. A sparse display-page payload would erase fields an
+        // existing backup already holds.
+        if (!found && !message.pageComplete) return { ok: false, error: { code: 'no-data' } };
+        const snapshot = mergeBackupSnapshot(found && found.record.snapshot, message.page, {
+            pageComplete: !!message.pageComplete,
+        });
         if (!snapshot || snapshot.ascent.id == null) return { ok: false, error: { code: 'no-data' } };
         snapshot.backup = {
             ...(snapshot.backup || {}),

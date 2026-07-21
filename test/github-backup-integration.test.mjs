@@ -132,8 +132,17 @@ test('a saved ascent is backed up: snapshot + page merge, one commit, snapshot c
     //    fuller peak metadata come from the page; the report from the snapshot.
     const result = await worker.send({
         type: 'GITHUB_BACKUP_ASCENT',
+        pageComplete: true,
         page: {
-            ascent: { id: 7654321, date: '2026-07-12' },
+            ascent: {
+                id: 7654321,
+                date: '2026-07-12',
+                suffix: '',
+                type: 'Successful Ascent (stood on the summit)',
+                gainFt: '9000',
+                route: 'Disappointment Cleaver',
+                gear: ['Ice Axe'],
+            },
             peak: { id: 2296, name: 'Mount Rainier', elevationFt: 14411, location: 'Washington, USA' },
             report: { markdown: '' },
         },
@@ -394,7 +403,7 @@ test('automatic backup declines on a revisit with no fresh snapshot, but pushes 
     assert.equal(status.auto, true);
 });
 
-test('automatic backup rejects a peak-only snapshot match that manual backup may use', async () => {
+test('individual backup never uses a different same-peak snapshot or accepts a sparse fallback', async () => {
     const backend = gitDataBackend();
     const worker = createWorker({ settings: { enableGithubBackup: true, autoGithubBackup: true }, auth: AUTH, github: backend.handler });
     const pageWithoutDate = {
@@ -411,10 +420,39 @@ test('automatic backup rejects a peak-only snapshot match that manual backup may
     assert.equal(automatic.error.code, 'no-fresh-save',
         'auto mode must not merge a different same-peak ascent when the page date is unavailable');
 
-    const manual = await worker.send({
+    const sparseManual = await worker.send({
         type: 'GITHUB_BACKUP_ASCENT', page: pageWithoutDate,
     }, PEAK_SENDER);
-    assert.equal(manual.ok, true, 'the visible manual action keeps the best-effort peak-only fallback');
+    assert.equal(sparseManual.ok, false);
+    assert.equal(sparseManual.error.code, 'no-data');
+
+    const persistedPage = {
+        ascent: {
+            id: 7654321,
+            date: '2022-06-04',
+            suffix: '',
+            type: 'Successful Ascent (stood on the summit)',
+            nightsOut: '0',
+            pointFt: '4425',
+            quality: '0',
+        },
+        peak: { id: 2296, name: 'Mount Rainier' },
+        report: { markdown: '' },
+    };
+    const manual = await worker.send({
+        type: 'GITHUB_BACKUP_ASCENT', page: persistedPage, pageComplete: true,
+    }, PEAK_SENDER);
+    assert.equal(manual.ok, true);
+    assert.equal(manual.result.folder, '2022-06-04-mount-rainier-a7654321');
+    const jsonBlob = Object.entries(backend.state.contents).find(([path]) => path.endsWith('/ascent.json'))[1];
+    const json = JSON.parse(jsonBlob);
+    assert.equal(json.ascent.date, '2022-06-04');
+    assert.equal(json.ascent.type, 'Successful Ascent (stood on the summit)');
+    assert.equal(json.ascent.nightsOut, 0);
+    assert.equal(json.ascent.pointFt, 4425);
+    assert.equal(json.ascent.quality, 0);
+    assert.ok(worker.session.bpbGithubSnapshots['900001|2296|2026-07-12'],
+        'the unrelated same-peak snapshot was not consumed');
 });
 
 test('a GitHub failure surfaces its typed code without throwing', async () => {
@@ -425,6 +463,7 @@ test('a GitHub failure surfaces its typed code without throwing', async () => {
     const worker = createWorker({ auth: AUTH, github: failing });
     const result = await worker.send({
         type: 'GITHUB_BACKUP_ASCENT',
+        pageComplete: true,
         page: { ascent: { id: 7654321 }, peak: { id: 2296, name: 'Mount Rainier' } },
     }, PEAK_SENDER);
     assert.equal(result.ok, false);
