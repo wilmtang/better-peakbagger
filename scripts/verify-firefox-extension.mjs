@@ -270,6 +270,23 @@ async function main() {
     );
 
     await driver.get(
+      `https://${fixtureHost}:${fixture.port}/map/BigMap.aspx?cy=48.83115&cx=-121.60214&z=14&t=P&d=2829&c=0&hj=300&cyn=0`,
+    );
+    const peakBigMapState = await waitForScript(driver, `
+      const button = document.querySelector(${JSON.stringify(surfaceSelectors.terrainToggle)});
+      const iframe = document.getElementById("if");
+      return button && !button.disabled && document.getElementById("bpb-map-viewport") ? {
+        title: button.title,
+        markerReady: Boolean(iframe?.contentWindow?.mapsPlaceholder),
+      } : false;
+    `, "the Firefox Full Screen peak map surface");
+    assertState(
+      peakBigMapState.title === "View this peak on 3D terrain" && peakBigMapState.markerReady,
+      "Firefox Full Screen peak map did not expose the 3D toggle",
+      peakBigMapState,
+    );
+
+    await driver.get(
       `https://${fixtureHost}:${fixture.port}/climber/PeakAscents.aspx?pid=1039`,
     );
     await driver.wait(until.elementLocated(By.id("pbaf-bar")), 10_000);

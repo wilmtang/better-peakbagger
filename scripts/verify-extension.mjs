@@ -302,6 +302,46 @@ try {
             `the BigMap toggle should enable once its native route is ready (state=${JSON.stringify(bigMapToggle)})`);
         await bigMapPage.close();
 
+        const peakBigMapPage = await context.newPage();
+        const peakBigMapErrors = [];
+        peakBigMapPage.on('pageerror', error => peakBigMapErrors.push(String(error)));
+        await peakBigMapPage.goto(
+            `https://www.peakbagger.com:${port}/map/BigMap.aspx?cy=48.83115&cx=-121.60214&z=14&t=P&d=2829&c=0&hj=300&cyn=0`,
+            { waitUntil: 'load' }
+        );
+        const peakBigMapToggle = await peakBigMapPage.locator('#bpb-terrain-toggle')
+            .waitFor({ state: 'visible', timeout: 10000 })
+            .then(async () => peakBigMapPage.locator('#bpb-terrain-toggle').isEnabled())
+            .catch(() => false);
+        check(peakBigMapToggle,
+            `the Full Screen peak map must show an enabled 3D toggle (errors=${JSON.stringify(peakBigMapErrors)})`);
+        await peakBigMapPage.evaluate(() => {
+            window.__bpbPeakBigMapTerrainInit = null;
+            window.addEventListener('message', event => {
+                const data = event.data;
+                if (event.source === window && data?.__bpbTerrain === true
+                    && data.dir === 'toCS' && data.type === 'init') {
+                    window.__bpbPeakBigMapTerrainInit = data;
+                }
+            });
+        });
+        await peakBigMapPage.locator('#bpb-terrain-toggle').click();
+        const peakBigMapInit = await peakBigMapPage.waitForFunction(
+            () => window.__bpbPeakBigMapTerrainInit, null, { timeout: 5000 }
+        ).then(handle => handle.jsonValue()).catch(() => null);
+        check(JSON.stringify(peakBigMapInit?.focus) === JSON.stringify([48.83115, -121.60214])
+            && peakBigMapInit?.focusZoom === 13
+            && peakBigMapInit?.focusPeak?.id === 2829
+            && peakBigMapInit?.focusPeak?.name === 'Mount Shuksan'
+            && peakBigMapInit?.focusPeak?.state === 'unclimbed'
+            && !Object.hasOwn(peakBigMapInit || {}, 'routeSegments'),
+            `the Full Screen peak map did not start a route-free summit view (init=${JSON.stringify(peakBigMapInit)})`);
+        const peakBigMapFrameCreated = await peakBigMapPage.locator('#bpb-terrain-frame')
+            .waitFor({ state: 'attached', timeout: 3000 }).then(() => true).catch(() => false);
+        check(peakBigMapFrameCreated,
+            'the Full Screen peak map did not create the extension-owned terrain frame');
+        await peakBigMapPage.close();
+
         const peakPage = await context.newPage();
         const peakErrors = [];
         peakPage.on('pageerror', error => peakErrors.push(String(error)));

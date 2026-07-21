@@ -58,6 +58,14 @@
       fire(type) { for (const handler of this._events[type] || []) handler({ type, target: this }); }
     }
     class Polygon extends Polyline {}
+    class Marker {
+      constructor(point, iconUrl) {
+        this.point = point;
+        this.options = { icon: { options: { iconUrl } } };
+        this._map = null;
+      }
+      getLatLng() { return this.point; }
+    }
     class MapStub {
       constructor(layers) {
         this.layers = [];
@@ -110,8 +118,17 @@
       route.on('click', () => { document.getElementById('trip-details').style.display = 'block'; });
       route._popup = { getContent: () => routePopups[index] };
     }
-    window.L = { Polyline, Polygon, Map: MapStub };
-    window.mapsPlaceholder = new MapStub([routeA, routeB, hoverEffect]);
+    const mapType = (new URLSearchParams(location.search).get('t') || '').toUpperCase();
+    const subjectPeak = new Marker(
+      { lat: 48.83115, lng: -121.60214 }, '../image/MainPeakPinkCircle.gif');
+    window.L = { Polyline, Polygon, Marker, Map: MapStub };
+    window.mapsPlaceholder = new MapStub(mapType === 'P'
+      ? [subjectPeak]
+      : [routeA, routeB, hoverEffect]);
+    if (mapType === 'P') {
+      window.mapsPlaceholder.center = { lat: 48.83115, lng: -121.60214 };
+      window.mapsPlaceholder.zoom = 14;
+    }
     // Mirror the live page, where window.map is the map container element and the
     // Leaflet map lives on mapsPlaceholder (resolveMapContext picks the latter).
     window.map = document.getElementById('map');

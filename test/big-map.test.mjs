@@ -39,6 +39,14 @@ const makeLeaflet = window => {
         }
     }
     class Polygon extends Polyline {}
+    class Marker {
+        constructor(latLng, iconUrl) {
+            this.latLng = latLng;
+            this.options = { icon: { options: { iconUrl } } };
+            this._map = null;
+        }
+        getLatLng() { return this.latLng; }
+    }
     class MapStub {
         constructor(layers = []) {
             this.layers = [];
@@ -65,13 +73,13 @@ const makeLeaflet = window => {
             return this;
         }
     }
-    window.L = { Polyline, Polygon, Map: MapStub };
-    return { Polyline, Polygon, MapStub };
+    window.L = { Polyline, Polygon, Marker, Map: MapStub };
+    return { Polyline, Polygon, Marker, MapStub };
 };
 
-const loadBigMap = async ({ type = 'G', width = 7, settings = {} } = {}) => {
-    const dom = new JSDOM('<!doctype html><body><div id="map"></div></body>', {
-        url: `https://www.peakbagger.com/Map/BigMap.aspx?t=${type}&d=2414&gt=rc`,
+const loadBigMap = async ({ type = 'G', width = 7, settings = {}, html, query } = {}) => {
+    const dom = new JSDOM(html || '<!doctype html><body><div id="map"></div></body>', {
+        url: `https://www.peakbagger.com/Map/BigMap.aspx?${query || `t=${type}&d=2414&gt=rc`}`,
         runScripts: 'outside-only'
     });
     const { window } = dom;
@@ -256,15 +264,59 @@ test('Full Screen maps case native tracks that live in the MasterMap child ifram
     dom.window.close();
 });
 
-test('non-GPS BigMap modes are left entirely native', async () => {
-    const fixture = await loadBigMap({ type: 'P', width: 10 });
-    const { dom, window, leaflet } = fixture;
+test('Full Screen peak maps offer route-free 3D terrain without styling native lines', async () => {
+    const fixture = await loadBigMap({
+        type: 'P',
+        width: 10,
+        settings: { enable3dMap: true },
+        html: '<!doctype html><body><a href="../peak.aspx?pid=2414">Mount Hood</a><div id="map"></div></body>',
+        query: 't=P&d=2414&cy=45.373496&cx=-121.695937&z=14&c=900001&cyn=1'
+    });
+    const { dom, window, messages, leaflet } = fixture;
     const line = new leaflet.Polyline([{ lat: 44.15, lng: -121.78 }, { lat: 44.16, lng: -121.76 }], { color: '#555555', weight: 2 });
-    window.mapsPlaceholder = new leaflet.MapStub([line]);
+    const marker = new leaflet.Marker(
+        { lat: 45.373496, lng: -121.695937 }, '../image/MainPeakGreenCircle.gif');
+    window.mapsPlaceholder = new leaflet.MapStub([marker, line]);
+    window.mapsPlaceholder.center = { lat: 45.373496, lng: -121.695937 };
+    window.mapsPlaceholder.zoom = 14;
     fixture.evaluate();
-    await new Promise(resolve => window.setTimeout(resolve, 20));
+
+    await waitFor(dom, () => window.document.getElementById('bpb-terrain-toggle')?.disabled === false);
     assert.equal(line.options.weight, 2);
     assert.equal(line.styleCalls.length, 0);
+    const toggle = window.document.getElementById('bpb-terrain-toggle');
+    assert.equal(toggle.title, 'View this peak on 3D terrain');
+    toggle.click();
+    await waitFor(dom, () => messages.some(message => message.__bpbTerrain === true && message.type === 'init'));
+    const init = messages.find(message => message.__bpbTerrain === true && message.type === 'init');
+    assert.deepEqual(init.focus, [45.373496, -121.695937]);
+    assert.equal(init.focusZoom, 13);
+    assert.deepEqual(init.focusPeak, {
+        id: 2414,
+        name: 'Mount Hood',
+        lat: 45.373496,
+        lon: -121.695937,
+        state: 'climbed'
+    });
+    assert.equal(Object.hasOwn(init, 'routeSegments'), false,
+        'a summit-only map must not reinterpret unrelated native lines as a route');
+    dom.window.close();
+});
+
+test('Full Screen peak maps fail closed when the heading and subject marker do not agree', async () => {
+    const fixture = await loadBigMap({
+        type: 'P',
+        settings: { enable3dMap: true },
+        html: '<!doctype html><body><a href="../peak.aspx?pid=999">Wrong peak</a><div id="map"></div></body>',
+        query: 't=P&d=2414&cy=45.373496&cx=-121.695937&z=14'
+    });
+    const { dom, window, leaflet } = fixture;
+    window.mapsPlaceholder = new leaflet.MapStub([
+        new leaflet.Marker({ lat: 45.373496, lng: -121.695937 }, '../image/MainPeakGreenCircle.gif')
+    ]);
+    fixture.evaluate();
+    await new Promise(resolve => window.setTimeout(resolve, 20));
+    assert.equal(window.document.getElementById('bpb-terrain-toggle'), null);
     dom.window.close();
 });
 

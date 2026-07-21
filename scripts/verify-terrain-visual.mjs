@@ -934,6 +934,39 @@ try {
         throw new Error('A group map queried the peak feed — the native map never shows other peaks there');
     }
 
+    // Full Screen peak maps have no route, but must expose the same 3D summit
+    // view as the embedded Peak page and preserve the explicit subject marker.
+    const peakFeedBeforePeakBigMap = peakFeedRequests.length;
+    await navigate(cdp,
+        `${bigMapUrl}?t=P&d=2829&cy=48.83115&cx=-121.60214&z=14&c=0&hj=300&cyn=0&mode3d=1`,
+        1000, 760);
+    const peakBigMap3d = await waitForPageState(cdp, `(() => {
+        const toggle = document.getElementById('bpb-terrain-toggle');
+        const frame = document.getElementById('bpb-terrain-frame');
+        const map = frame && frame.contentWindow && frame.contentWindow.__bpbTerrainTestMap;
+        const routeSource = map && map.getSource('bpb-route');
+        const peakSource = map && map.getSource('bpb-peaks');
+        const routeData = routeSource && typeof routeSource.serialize === 'function'
+            ? routeSource.serialize().data : null;
+        const peakData = peakSource && typeof peakSource.serialize === 'function'
+            ? peakSource.serialize().data : null;
+        return {
+            ready: toggle && toggle.textContent === '2D' && frame && frame.style.opacity === '1'
+                && routeData && peakData,
+            mount: frame && frame.parentElement && frame.parentElement.id,
+            routeCount: routeData && routeData.features && routeData.features.length,
+            subject: peakData && peakData.features && peakData.features.find(feature => feature.properties.id === 2829)
+        };
+    })()`);
+    if (peakBigMap3d.mount !== 'bpb-map-viewport' || peakBigMap3d.routeCount !== 0
+        || peakBigMap3d.subject?.properties?.name !== 'Mount Shuksan'
+        || peakBigMap3d.subject?.properties?.state !== 'unclimbed') {
+        throw new Error(`Full Screen peak terrain state is wrong: ${JSON.stringify(peakBigMap3d)}`);
+    }
+    await waitForCondition(() => peakFeedRequests.length > peakFeedBeforePeakBigMap,
+        () => 'Full Screen peak 3D did not request Peakbagger nearby dots');
+    await capture(cdp, path.join(outputDir, 'bigmap-peak-3d.png'));
+
     const optionsUrl = `http://127.0.0.1:${serverPort}/options/options.html?visual=1`;
     await navigate(cdp, optionsUrl, 1000, 700);
     const disclosure = await waitForPageState(cdp, `(() => {

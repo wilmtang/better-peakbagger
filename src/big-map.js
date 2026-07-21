@@ -1,9 +1,9 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
-// Better Peakbagger — preserve Peakbagger's native Full Screen Map tracks and
-// interactions while applying the user's preferred base route width, a matching
-// white casing, and (on single-ascent maps) the preferred route color.
+// Better Peakbagger — enhance Peakbagger's Full Screen Map: preserve native
+// tracks and interactions while styling GPS routes, and add the shared 3D view
+// to route maps and summit-focused peak maps.
 // Runs in MAIN world because the Leaflet map and layers are page-owned globals.
 
 import { settingsSchema as Schema } from './settings-schema.js';
@@ -20,7 +20,39 @@ import { terrainCompass as TerrainCompass } from './terrain-compass.js';
 
     const params = new URLSearchParams(location.search);
     const mapType = (params.get('t') || '').toUpperCase();
-    if (!['A', 'G'].includes(mapType)) return;
+    if (!['A', 'G', 'P'].includes(mapType)) return;
+    const isRouteMap = mapType === 'A' || mapType === 'G';
+
+    // A Full Screen peak map has no route to discover. Its own URL, heading
+    // link, and later Leaflet subject marker must agree before 3D is offered.
+    // This mirrors the fail-closed identity checks on the embedded Peak page.
+    const peakIdentity = (() => {
+        if (mapType !== 'P') return null;
+        const rawId = params.get('d');
+        const id = typeof rawId === 'string' && /^-?\d{1,9}$/.test(rawId.trim())
+            ? Number(rawId)
+            : NaN;
+        const lat = Number(params.get('cy'));
+        const lon = Number(params.get('cx'));
+        const nativeZoom = Number(params.get('z'));
+        if (!Number.isInteger(id) || id === 0 || Math.abs(id) > 1e9
+            || !Number.isFinite(lat) || Math.abs(lat) > 85.0511287
+            || !Number.isFinite(lon) || Math.abs(lon) > 180
+            || !Number.isFinite(nativeZoom) || nativeZoom < 0 || nativeZoom > 19) return null;
+
+        const subjectLink = Array.from(document.querySelectorAll('a[href]')).find(link => {
+            try {
+                const url = new URL(link.href, location.href);
+                return url.origin === location.origin
+                    && /\/peak\.aspx$/i.test(url.pathname)
+                    && Number(url.searchParams.get('pid')) === id;
+            } catch (error) { return false; }
+        });
+        const name = String(subjectLink && subjectLink.textContent || '').replace(/\s+/g, ' ').trim();
+        if (!name || name.length > 120 || /[\u0000-\u001f\u007f]/.test(name)) return null;
+        return { id, name, lat, lon, focusZoom: Math.max(0, Math.min(18, nativeZoom - 1)) };
+    })();
+    if (mapType === 'P' && !peakIdentity) return;
 
     // Single-ascent maps ('A') show one track, so it is safe to recolor it to
     // the preferred route color. Group maps ('G') use color to tell climbers
@@ -105,6 +137,7 @@ import { terrainCompass as TerrainCompass } from './terrain-compass.js';
     };
 
     const isNativeTrack = (layer, L) => {
+        if (!isRouteMap) return false;
         if (!layer || typeof layer.setStyle !== 'function' || typeof layer.getLatLngs !== 'function') return false;
         if (typeof L.Polyline !== 'function' || !(layer instanceof L.Polyline)) return false;
         if ((typeof L.Polygon === 'function' && layer instanceof L.Polygon) || layer.options?.fill === true) return false;
@@ -385,13 +418,51 @@ import { terrainCompass as TerrainCompass } from './terrain-compass.js';
         return found;
     };
 
+    // Confirm the URL/header identity against the actual MainPeak Leaflet
+    // marker. Nearby peak markers have popups and different icon names; only
+    // the subject marker at the exact requested coordinates is accepted.
+    const collectPeakFocus = () => {
+        if (!peakIdentity || !activeMap || !activeMapWin || typeof activeMap.eachLayer !== 'function') return null;
+        const L = activeMapWin.L;
+        if (!L || typeof L.Marker !== 'function') return null;
+        let state = null;
+        try {
+            activeMap.eachLayer(layer => {
+                if (state || !(layer instanceof L.Marker) || typeof layer.getLatLng !== 'function') return;
+                const point = layer.getLatLng();
+                if (!point || !Number.isFinite(point.lat) || !Number.isFinite(point.lng)
+                    || Math.abs(point.lat - peakIdentity.lat) > 1e-6
+                    || Math.abs(point.lng - peakIdentity.lon) > 1e-6) return;
+                const iconUrl = layer.options?.icon?.options?.iconUrl;
+                if (typeof iconUrl !== 'string' || !/mainpeak[^/]*circle\.gif(?:$|[?#])/i.test(iconUrl)) return;
+                state = /mainpeakgreencircle\.gif(?:$|[?#])/i.test(iconUrl)
+                    ? 'climbed'
+                    : /mainpeakpinkcircle\.gif(?:$|[?#])/i.test(iconUrl) ? 'unclimbed' : 'unknown';
+            });
+        } catch (error) { return null; }
+        return state ? { ...peakIdentity, state } : null;
+    };
+
+    const hasTerrainSubject = () => mapType === 'P' ? Boolean(collectPeakFocus()) : hasNativeRoute();
+
     // Hovering or focusing the idle 3D toggle is explicit intent to open 3D, so
     // it stays inside the same consent scope as opening it: warm the DEM cache
-    // for the route's bounds. Never on page load, and never when 3D is off.
+    // for the route bounds or summit focus. Never on page load or when 3D is off.
     const maybePrefetchTerrain = () => {
         if (terrainState !== 'idle' || !terrainEnabled) return;
         const nowMs = Date.now();
         if (nowMs - terrainPrefetchAt < TERRAIN_PREFETCH_THROTTLE_MS) return;
+        if (mapType === 'P') {
+            const focusPeak = collectPeakFocus();
+            if (!focusPeak) return;
+            terrainPrefetchAt = nowMs;
+            postTerrain('prefetch', {
+                center: [focusPeak.lat, focusPeak.lon],
+                zoom: focusPeak.focusZoom,
+                viewport: { width: window.innerWidth, height: window.innerHeight }
+            });
+            return;
+        }
         const { segments } = collectRoute();
         if (!segments.length) return;
         let minLat = Infinity, minLon = Infinity, maxLat = -Infinity, maxLon = -Infinity;
@@ -437,7 +508,7 @@ import { terrainCompass as TerrainCompass } from './terrain-compass.js';
             if (terrainState === 'active') { stopTerrain(); return; }
             if (terrainState !== 'idle') return;
             if (!terrainEnabled) {
-                if (terrainConsentPending || !collectRoute().segments.length) return;
+                if (terrainConsentPending || !hasTerrainSubject()) return;
                 terrainConsentPending = true;
                 postTerrain('requestConsent');
                 return;
@@ -487,11 +558,15 @@ import { terrainCompass as TerrainCompass } from './terrain-compass.js';
             terrainToggle.setAttribute('aria-label', 'Return to the 2D map');
             terrainToggle.setAttribute('aria-pressed', 'true');
         } else {
-            const hasRoute = hasNativeRoute();
-            terrainToggle.disabled = !hasRoute;
+            const hasSubject = hasTerrainSubject();
+            terrainToggle.disabled = !hasSubject;
             terrainToggle.textContent = '3D';
-            terrainToggle.title = hasRoute ? 'View this route on 3D terrain' : 'Available once the map has a GPS track';
-            terrainToggle.setAttribute('aria-label', hasRoute ? 'Show 3D terrain' : '3D terrain available once the map has a GPS track');
+            terrainToggle.title = hasSubject
+                ? `View this ${mapType === 'P' ? 'peak' : 'route'} on 3D terrain`
+                : `Available once the ${mapType === 'P' ? 'peak' : 'map has a GPS track'}`;
+            terrainToggle.setAttribute('aria-label', hasSubject
+                ? 'Show 3D terrain'
+                : `3D terrain available once the ${mapType === 'P' ? 'peak' : 'map has a GPS track'}`);
             terrainToggle.setAttribute('aria-pressed', 'false');
         }
         positionTerrainToggle();
@@ -510,16 +585,29 @@ import { terrainCompass as TerrainCompass } from './terrain-compass.js';
     const startTerrain = (consentGranted = false) => {
         if ((!consentGranted && !terrainEnabled) || terrainState !== 'idle') return;
         const { segments: routeSegments, colors: routeColors, links: routeLinks } = collectRoute();
-        if (!routeSegments.length) return;
+        const focusPeak = collectPeakFocus();
+        if (!routeSegments.length && !focusPeak) return;
         terrainState = 'loading';
         updateTerrainToggle();
         const { basemap, basemaps } = terrainBasemaps();
         terrainViewCamera = TerrainCamera.fromLeaflet(activeMap);
         postTerrain('init', {
-            routeSegments,
-            routeColors,
-            routeLinks,
-            routeStyle: { ...routeStyle },
+            ...(focusPeak ? {
+                focus: [focusPeak.lat, focusPeak.lon],
+                focusZoom: focusPeak.focusZoom,
+                focusPeak: {
+                    id: focusPeak.id,
+                    name: focusPeak.name,
+                    lat: focusPeak.lat,
+                    lon: focusPeak.lon,
+                    state: focusPeak.state
+                }
+            } : {
+                routeSegments,
+                routeColors,
+                routeLinks,
+                routeStyle: { ...routeStyle }
+            }),
             theme: effectiveTheme(),
             basemap,
             basemaps,

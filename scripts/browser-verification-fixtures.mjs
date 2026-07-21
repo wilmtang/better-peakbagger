@@ -131,6 +131,11 @@ const bigMapHtml = `<!doctype html><html><head><title>Full Screen Map</title></h
 <iframe id="if" src="/map/MasterMap.aspx?t=A&d=2296&c=900001&hj=300"></iframe>
 </body></html>`;
 
+const peakBigMapHtml = `<!doctype html><html><head><title>Full Screen Peak Map</title></head><body>
+<a href="/peak.aspx?pid=2829">Mount Shuksan</a>
+<iframe id="if" src="/map/MasterMap.aspx?cy=48.83115&cx=-121.60214&z=14&t=P&d=2829&c=0&hj=300&cyn=0"></iframe>
+</body></html>`;
+
 const peakHtml = `<!doctype html><html><head><title>Mount Shuksan</title></head><body>
 <h1>Mount Shuksan, Washington</h1>
 <table>
@@ -178,6 +183,37 @@ const masterMapHtml = `<!doctype html><html><body>
   };
   window.mapsPlaceholder = new MapStub([
     new Polyline([{ lat: 46.85, lng: -121.76 }, { lat: 46.87, lng: -121.74 }], { color: "#d9483b", weight: 3 })
+  ]);
+</script></body></html>`;
+
+const peakMasterMapHtml = `<!doctype html><html><body>
+<select id="selmap"><option value="L_CT">Topo</option></select>
+<div class="leaflet-control-zoom" style="position:absolute;bottom:10px;right:10px;width:30px;height:60px"></div>
+<script>
+  class Marker {
+    constructor(latLng, iconUrl) {
+      this.latLng = latLng;
+      this.options = { icon: { options: { iconUrl } } };
+    }
+    getLatLng() { return this.latLng; }
+  }
+  class MapStub {
+    constructor(layers = []) {
+      this.layers = layers;
+      this.events = {};
+      this.center = { lat: 48.83115, lng: -121.60214 };
+      this.zoom = 14;
+      for (const layer of layers) layer._map = this;
+    }
+    eachLayer(callback) { this.layers.slice().forEach(callback); }
+    on(type, handler) { (this.events[type] ||= []).push(handler); return this; }
+    getCenter() { return this.center; }
+    getZoom() { return this.zoom; }
+    setView(center, zoom) { this.center = { lat: center[0], lng: center[1] }; this.zoom = zoom; return this; }
+  }
+  window.L = { Marker, Map: MapStub };
+  window.mapsPlaceholder = new MapStub([
+    new Marker({ lat: 48.83115, lng: -121.60214 }, "/image/MainPeakPinkCircle.gif")
   ]);
 </script></body></html>`;
 
@@ -280,8 +316,14 @@ export async function createBrowserFixtureServer({ temporaryRoot }) {
       return send("text/html; charset=utf-8", profileAscentsHtml);
     }
     if (/peak\.aspx/i.test(url.pathname)) return send("text/html; charset=utf-8", peakHtml);
-    if (/bigmap\.aspx/i.test(url.pathname)) return send("text/html; charset=utf-8", bigMapHtml);
-    if (/mastermap\.aspx/i.test(url.pathname)) return send("text/html; charset=utf-8", masterMapHtml);
+    if (/bigmap\.aspx/i.test(url.pathname)) {
+      return send("text/html; charset=utf-8",
+        (url.searchParams.get("t") || "").toUpperCase() === "P" ? peakBigMapHtml : bigMapHtml);
+    }
+    if (/mastermap\.aspx/i.test(url.pathname)) {
+      return send("text/html; charset=utf-8",
+        (url.searchParams.get("t") || "").toUpperCase() === "P" ? peakMasterMapHtml : masterMapHtml);
+    }
     if (/track\.gpx/i.test(url.pathname)) return send("application/gpx+xml", gpx);
     response.writeHead(404);
     response.end("not found");

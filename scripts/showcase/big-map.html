@@ -35,7 +35,13 @@
   </script>
 </head>
 <body>
+  <a id="subject-peak" href="/peak.aspx?pid=2829" hidden>Mount Shuksan</a>
   <iframe id="if" src="/map/MasterMap.aspx?big=1&cy=48.74&cx=-121.81&z=13&t=G&d=1&c=900001" title="Synthetic Peakbagger route map"></iframe>
+  <script>
+    if ((new URLSearchParams(location.search).get('t') || '').toUpperCase() === 'P') {
+      document.getElementById('if').src = '/map/MasterMap.aspx?big=1&cy=48.83115&cx=-121.60214&z=14&t=P&d=2829&c=0&hj=300&cyn=0';
+    }
+  </script>
 
   <script src="/dist/content/big-map-bridge.js"></script>
   <script src="/dist/content/big-map.js"></script>
