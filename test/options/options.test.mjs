@@ -126,7 +126,7 @@ test('settings are grouped by the surface they affect', async () => {
         'Ascent beta filter',
         'Favorite climbers',
         'Trip report drafts',
-        'Sync for nerds',
+        'Backup & sync',
         'About'
     ]);
 
@@ -149,6 +149,9 @@ test('settings are grouped by the surface they affect', async () => {
     assert.equal(favorites.querySelector('input[value="custom"] + span').textContent,
         'Use a custom list managed here');
     assert.equal(github.querySelector('#github-connection-heading').textContent, 'GitHub connection');
+    assert.equal(dom.window.document.querySelector('.side-nav a[href="#github"]').textContent,
+        'Backup & sync');
+    assert.equal(github.id, 'github', 'the established deep-link anchor stays stable');
 
     assert.ok(general.querySelector('#theme'));
     assert.ok(general.querySelector('#enable-3d-map'));
