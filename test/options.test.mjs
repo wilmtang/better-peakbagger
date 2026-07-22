@@ -595,6 +595,23 @@ test('merge is additive while mirror replaces the custom list with Undo', async 
         && dom.chrome._localStore[favoriteKey].entries.some(entry => entry.cid === manual.cid));
 });
 
+test('custom import accepts a valid 200 Buddy report carrying Cloudflare metadata', async () => {
+    const dom = await loadOptions({ favoritesSource: 'custom' }, {
+        prepareWindow: window => {
+            window.fetch = async () => ({
+                status: 200,
+                headers: { 'cf-mitigated': 'challenge' },
+                text: async () => `${buddyPageFixture}<script>window._cf_chl_opt={}</script>`,
+            });
+        },
+    });
+
+    el(dom, 'favorites-merge-buddies').click();
+    await waitFor(dom, () => dom.chrome._localStore[favoriteKey]?.entries?.length === 6);
+    assert.match(el(dom, 'favorites-import-status').textContent, /Added 6 buddies to custom favorites/);
+    assert.doesNotMatch(el(dom, 'favorites-import-status').textContent, /human check/i);
+});
+
 test('custom import opens a first-party helper when extension cookies look signed out', async () => {
     const opened = [];
     const updated = [];

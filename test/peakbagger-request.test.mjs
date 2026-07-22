@@ -54,10 +54,26 @@ test('the shared request sends the authenticated no-cache policy and returns onl
     assert.ok(request.init.signal instanceof AbortSignal);
 });
 
+test('a valid 200 Buddy report wins over misleading Cloudflare metadata', async () => {
+    const result = await fetchPeakbaggerResource(URL, {
+        kind: 'buddies',
+        fetchFn: async () => response({
+            headers: new Headers({ 'cf-mitigated': 'challenge' }),
+            body: `${BUDDIES}<script>window._cf_chl_opt={}</script>`,
+        }),
+    });
+    assert.equal(result.kind, 'ok');
+    assert.equal(result.status, 200);
+    assert.match(result.text, /id="RGridView"/);
+});
+
 test('Cloudflare is detected from a 200 body or mitigation header', async () => {
     for (const challenged of [
         response({ body: '<html><title>Just a moment...</title><script>window._cf_chl_opt={}</script></html>' }),
-        response({ headers: new Headers({ 'cf-mitigated': 'challenge' }) }),
+        response({
+            body: '<html><title>Attention required</title></html>',
+            headers: new Headers({ 'cf-mitigated': 'challenge' }),
+        }),
     ]) {
         const result = await fetchPeakbaggerResource(URL, {
             kind: 'buddies', fetchFn: async () => challenged,

@@ -76,6 +76,7 @@ test('classifies buddy and climber pages without accepting login or challenge pa
     const buddyPage = '<h1>Buddy List for Test</h1><table id="RGridView"></table>';
     const climberPage = '<h1>Peakbagging Page for Test</h1><a href="ClimbListC.aspx?cid=900002">Ascents</a>';
     assert.equal(Core.classifyResponse(200, {}, buddyPage, { kind: 'buddies' }), 'ok');
+    assert.equal(Core.classifyResponse(200, { 'cf-mitigated': 'challenge' }, buddyPage, { kind: 'buddies' }), 'ok');
     assert.equal(Core.classifyResponse(200, {}, climberPage, { kind: 'climber' }), 'ok');
     assert.equal(Core.classifyResponse(200, {}, '<form id="login">Sign in</form>', { kind: 'buddies' }), 'wrong-content');
     assert.equal(Core.classifyResponse(200, {}, '<h1>Sign in</h1>', { kind: 'climber' }), 'wrong-content');
