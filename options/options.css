@@ -283,7 +283,6 @@ input[type="number"].mini { min-width: 0; width: 72px; padding: 4px 8px; }
 .favorites-add input[type="text"]:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .favorites-add button.secondary { align-self: auto; }
 .favorites-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 16px; color: var(--sub); font-size: 12.5px; }
-.favorites-tools select { min-width: 130px; padding: 5px 9px; }
 .favorites-tools button.secondary { align-self: auto; }
 button.secondary.favorites-mirror-trigger { color: var(--danger); border-color: var(--danger-border); }
 button.secondary.favorites-mirror-trigger:hover { color: var(--danger); background: var(--danger-bg); border-color: var(--danger); }
@@ -326,6 +325,31 @@ button.secondary.favorites-mirror-trigger:focus-visible { outline-color: var(--d
 .favorites-mirror-confirm:hover { filter: brightness(.92); }
 .favorites-mirror-confirm:focus-visible { outline: 2px solid var(--danger); outline-offset: 2px; }
 .favorites-mirror-confirm:disabled { cursor: wait; opacity: .58; }
+.favorites-list-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    margin-top: 18px;
+}
+.favorites-count { margin: 0; color: var(--text); font-size: 13px; font-weight: 650; white-space: nowrap; }
+.favorites-list-controls { display: flex; align-items: center; justify-content: flex-end; gap: 9px; min-width: 0; }
+.favorites-list-controls input[type="search"] {
+    width: min(250px, 34vw);
+    min-width: 170px;
+    padding: 6px 10px;
+    color: var(--text);
+    background: var(--input-bg);
+    border: 1px solid var(--input-border);
+    border-radius: 8px;
+    font: inherit;
+}
+.favorites-list-controls input[type="search"]:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+}
+.favorites-sort { display: flex; align-items: center; gap: 7px; color: var(--sub); font-size: 12.5px; }
+.favorites-sort select { min-width: 130px; padding: 5px 9px; }
 .favorites-empty { margin-top: 18px; }
 .favorites-list { list-style: none; margin: 14px -18px 0; padding: 0; border-top: 1px solid var(--border); }
 .favorite-item {
@@ -573,6 +597,9 @@ button.github-repo:focus-visible { outline: 2px solid var(--accent); outline-off
 @media (max-width: 600px) {
     .favorites-mirror-confirmation { align-items: stretch; flex-direction: column; gap: 10px; }
     .favorites-mirror-confirmation-actions { justify-content: flex-end; }
+    .favorites-list-toolbar { align-items: stretch; flex-direction: column; gap: 9px; }
+    .favorites-list-controls { justify-content: flex-start; }
+    .favorites-list-controls input[type="search"] { flex: 1 1 auto; width: auto; }
 }
 
 @media (max-width: 480px) {
@@ -586,6 +613,10 @@ button.github-repo:focus-visible { outline: 2px solid var(--accent); outline-off
     .favorites-add { align-items: stretch; flex-direction: column; gap: 10px; }
     .favorites-add-controls { align-items: stretch; }
     .favorites-add input[type="text"] { min-width: 0; width: 100%; }
+    .favorites-list-controls { align-items: stretch; flex-direction: column; }
+    .favorites-list-controls input[type="search"] { min-width: 0; width: 100%; }
+    .favorites-sort { justify-content: space-between; }
+    .favorites-sort select { width: auto; }
     .favorites-github { align-items: stretch; flex-direction: column; gap: 10px; }
     .favorites-github-actions { justify-content: flex-start; }
     .favorite-item { align-items: flex-start; }

@@ -23,7 +23,9 @@ test('settings renders and backs up the full 1,500-entry custom list', async () 
     const html = await readFile(path.join(root, 'options', 'options.html'), 'utf8');
     const entries = Array.from({ length: LIMIT }, (_, index) => ({
         cid: 100000 + index,
-        name: `Scale Climber ${String(index + 1).padStart(4, '0')}`,
+        name: index === 1498
+            ? 'Scale Alpine Climber 1499'
+            : `Scale Climber ${String(index + 1).padStart(4, '0')}`,
         addedAt: index,
         source: index % 2 ? 'buddy' : 'manual',
     }));
@@ -71,6 +73,17 @@ test('settings renders and backs up the full 1,500-entry custom list', async () 
     assert.equal(rows[0].dataset.cid, '101499', 'newest sort renders the last stored entry first');
     assert.equal(rows[LIMIT - 1].dataset.cid, '100000');
     assert.match(dom.window.document.getElementById('favorites-add-form').textContent, /1,500 climbers/);
+    assert.equal(dom.window.document.getElementById('favorites-count').textContent, '1,500 favorites');
+
+    const search = dom.window.document.getElementById('favorites-search');
+    search.value = 'alpin clmber 1499';
+    search.dispatchEvent(new dom.window.Event('input'));
+    assert.equal(dom.window.document.querySelectorAll('.favorite-item').length, 1);
+    assert.equal(dom.window.document.querySelector('.favorite-name').textContent, 'Scale Alpine Climber 1499');
+    assert.equal(dom.window.document.getElementById('favorites-count').textContent, '1 of 1,500 favorites');
+    search.value = '';
+    search.dispatchEvent(new dom.window.Event('input'));
+    assert.equal(dom.window.document.querySelectorAll('.favorite-item').length, LIMIT);
 
     await waitFor(dom, () => !dom.window.document.getElementById('favorites-github-actions').hidden);
     dom.window.document.getElementById('favorites-backup').click();

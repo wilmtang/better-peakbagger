@@ -189,6 +189,101 @@ const byName = (left, right) => compareNames(cleanName(left && left.name), clean
 const byAddedAtDesc = (left, right) => (Number(right && right.addedAt) || 0) - (Number(left && left.addedAt) || 0)
     || byName(left, right);
 
+const normalizeSearch = value => trim(value)
+    .normalize('NFKD')
+    .replace(/\p{M}/gu, '')
+    .toLocaleLowerCase();
+
+const damerauLevenshtein = (left, right) => {
+    let beforePrevious = null;
+    let previous = Array.from({ length: right.length + 1 }, (_, index) => index);
+    for (let i = 1; i <= left.length; i++) {
+        const current = new Array(right.length + 1).fill(0);
+        current[0] = i;
+        for (let j = 1; j <= right.length; j++) {
+            const substitution = left[i - 1] === right[j - 1] ? 0 : 1;
+            current[j] = Math.min(
+                previous[j] + 1,
+                current[j - 1] + 1,
+                previous[j - 1] + substitution,
+            );
+            if (i > 1 && j > 1
+                && left[i - 1] === right[j - 2]
+                && left[i - 2] === right[j - 1]) {
+                current[j] = Math.min(current[j], beforePrevious[j - 2] + 1);
+            }
+        }
+        beforePrevious = previous;
+        previous = current;
+    }
+    return previous[right.length];
+};
+
+const tokenScore = (query, candidate) => {
+    if (!query || !candidate) return null;
+    if (candidate === query) return 0;
+    if (candidate.startsWith(query)) return 2 + (candidate.length - query.length) / 100;
+    const containedAt = candidate.indexOf(query);
+    if (containedAt >= 0) return 8 + containedAt + (candidate.length - query.length) / 100;
+
+    if (query.length >= 2) {
+        let previous = -1;
+        let gaps = 0;
+        for (const char of query) {
+            const index = candidate.indexOf(char, previous + 1);
+            if (index < 0) {
+                previous = -1;
+                break;
+            }
+            if (previous >= 0) gaps += index - previous - 1;
+            previous = index;
+        }
+        if (previous >= 0) return 16 + gaps + (candidate.length - query.length) / 100;
+    }
+
+    const typoAllowance = query.length >= 8 ? 2 : query.length >= 4 ? 1 : 0;
+    if (!typoAllowance || Math.abs(candidate.length - query.length) > typoAllowance) return null;
+    const distance = damerauLevenshtein(query, candidate);
+    return distance <= typoAllowance ? 28 + distance * 4 : null;
+};
+
+const fuzzyScore = (entry, query) => {
+    const normalizedQuery = normalizeSearch(query).slice(0, NAME_LIMIT);
+    if (!normalizedQuery) return 0;
+    const name = normalizeSearch(entry && entry.name);
+    const cid = cleanCid(entry && entry.cid);
+    if (!name || cid == null) return null;
+
+    const combined = `${name} ${cid}`;
+    const phraseAt = combined.indexOf(normalizedQuery);
+    if (phraseAt >= 0) return phraseAt;
+
+    const nameTokens = name.split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+    const initials = nameTokens.map(token => token[0]).join('');
+    const candidates = [...nameTokens, initials];
+    const cidText = String(cid);
+    let total = 0;
+    for (const queryToken of normalizedQuery.split(/[^\p{L}\p{N}]+/u).filter(Boolean)) {
+        let best = null;
+        const numericQuery = /^\d+$/.test(queryToken);
+        for (const candidate of candidates) {
+            const candidateAt = numericQuery ? candidate.indexOf(queryToken) : -1;
+            const score = numericQuery
+                ? (candidateAt < 0 ? null : candidateAt === 0 ? 2 : 8 + candidateAt)
+                : tokenScore(queryToken, candidate);
+            if (score != null && (best == null || score < best)) best = score;
+        }
+        const cidAt = cidText.indexOf(queryToken);
+        if (cidAt >= 0) {
+            const cidScore = cidAt === 0 ? 2 + (cidText.length - queryToken.length) / 100 : 8 + cidAt;
+            if (best == null || cidScore < best) best = cidScore;
+        }
+        if (best == null) return null;
+        total += best;
+    }
+    return total;
+};
+
 export const favoriteClimbers = {
     SCHEMA_VERSION,
     FAVORITES_KEY,
@@ -211,4 +306,5 @@ export const favoriteClimbers = {
     favoriteSet,
     byName,
     byAddedAtDesc,
+    fuzzyScore,
 };

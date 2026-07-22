@@ -116,3 +116,15 @@ test('effective sets follow the selected source and comparators are stable', () 
     assert.deepEqual(favorites.entries.slice().sort(F.byName).map(entry => entry.cid), [900002, 900003]);
     assert.deepEqual(favorites.entries.slice().sort(F.byAddedAtDesc).map(entry => entry.cid), [900002, 900003]);
 });
+
+test('fuzzy search matches names, ids, accents, initials, and small typos', () => {
+    const climber = { cid: 18950, name: 'Kríshna Dase, KD' };
+    for (const query of ['krsh dse', 'krsihna', 'KD', '1895']) {
+        assert.notEqual(F.fuzzyScore(climber, query), null, `${query} should match`);
+    }
+    assert.equal(F.fuzzyScore(climber, 'Nick'), null);
+    assert.equal(F.fuzzyScore(climber, '18951'), null, 'numeric ids are never typo-matched');
+    assert.equal(F.fuzzyScore({ cid: 999, name: 'Climber 1498' }, '1499'), null,
+        'numeric name tokens are never typo-matched');
+    assert.equal(F.fuzzyScore(climber, '   '), 0);
+});

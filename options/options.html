@@ -380,11 +380,6 @@
                     </form>
 
                     <div class="favorites-tools">
-                        <label for="favorites-sort">Sort</label>
-                        <select id="favorites-sort">
-                            <option value="newest">Newest first</option>
-                            <option value="name">Name</option>
-                        </select>
                         <button id="favorites-merge-buddies" class="secondary" type="button">Merge buddies into favorites</button>
                         <button id="favorites-mirror-buddies" class="secondary favorites-mirror-trigger" type="button">Mirror Buddy List…</button>
                     </div>
@@ -403,6 +398,20 @@
                         <div class="favorites-mirror-confirmation-actions">
                             <button id="favorites-mirror-cancel" class="secondary" type="button">Cancel</button>
                             <button id="favorites-mirror-confirm" class="favorites-mirror-confirm" type="button">Replace custom list</button>
+                        </div>
+                    </div>
+                    <div class="favorites-list-toolbar">
+                        <p class="favorites-count" id="favorites-count" aria-live="polite">0 favorites</p>
+                        <div class="favorites-list-controls">
+                            <input id="favorites-search" type="search" autocomplete="off" maxlength="200"
+                                aria-label="Search favorite climbers" placeholder="Search by name or id">
+                            <label class="favorites-sort" for="favorites-sort">
+                                <span>Sort</span>
+                                <select id="favorites-sort">
+                                    <option value="newest">Newest first</option>
+                                    <option value="name">Name</option>
+                                </select>
+                            </label>
                         </div>
                     </div>
                     <p class="favorites-empty" id="favorites-empty">No favorite climbers yet.</p>

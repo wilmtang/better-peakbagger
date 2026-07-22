@@ -466,6 +466,37 @@ test('removing a custom favorite is reversible and list sorting is explicit', as
     assert.equal(dom.chrome._localStore[favoriteKey].entries.some(entry => entry.cid === 900002), true);
 });
 
+test('custom favorites show a live total and fuzzy-search names and ids', async () => {
+    const entries = [
+        { cid: 18950, name: 'Kríshna Dase, KD', addedAt: 30, source: 'manual' },
+        { cid: 900003, name: 'Nick McMillen', addedAt: 20, source: 'manual' },
+        { cid: 900004, name: 'Alpine Casey', addedAt: 10, source: 'buddy' },
+    ];
+    const dom = await loadOptions({ favoritesSource: 'custom' }, {
+        local: { [favoriteKey]: favoriteStore(entries) },
+    });
+    await waitFor(dom, () => dom.window.document.querySelectorAll('.favorite-item').length === 3);
+    assert.equal(el(dom, 'favorites-count').textContent, '3 favorites');
+
+    const search = el(dom, 'favorites-search');
+    search.value = 'krsihna dse';
+    search.dispatchEvent(new dom.window.Event('input'));
+    assert.equal(el(dom, 'favorites-count').textContent, '1 of 3 favorites');
+    assert.deepEqual(Array.from(dom.window.document.querySelectorAll('.favorite-name'), node => node.textContent),
+        ['Kríshna Dase, KD']);
+
+    search.value = '900003';
+    search.dispatchEvent(new dom.window.Event('input'));
+    assert.deepEqual(Array.from(dom.window.document.querySelectorAll('.favorite-name'), node => node.textContent),
+        ['Nick McMillen']);
+
+    search.value = 'no such climber';
+    search.dispatchEvent(new dom.window.Event('input'));
+    assert.equal(el(dom, 'favorites-count').textContent, '0 of 3 favorites');
+    assert.equal(el(dom, 'favorites-list').hidden, true);
+    assert.equal(el(dom, 'favorites-empty').textContent, 'No favorites match “no such climber”.');
+});
+
 test('Refresh now stores the signed-in owner Buddy List cache', async () => {
     const requests = [];
     const dom = await loadOptions({}, {

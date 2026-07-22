@@ -26,6 +26,8 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
     const addButtonEl = document.getElementById('favorites-add-button');
     const limitEl = document.getElementById('favorites-limit');
     const sortEl = document.getElementById('favorites-sort');
+    const searchEl = document.getElementById('favorites-search');
+    const countEl = document.getElementById('favorites-count');
     const mergeEl = document.getElementById('favorites-merge-buddies');
     const mirrorEl = document.getElementById('favorites-mirror-buddies');
     const importStatusEl = document.getElementById('favorites-import-status');
@@ -46,7 +48,7 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
 
     if (!store || !sourceEls.length || !buddyPanelEl || !customPanelEl || !buddyStatusEl
         || !refreshBuddiesEl || !addFormEl || !addInputEl || !addButtonEl || !limitEl || !sortEl
-        || !mergeEl || !mirrorEl || !importStatusEl || !mirrorConfirmationEl
+        || !searchEl || !countEl || !mergeEl || !mirrorEl || !importStatusEl || !mirrorConfirmationEl
         || !mirrorConfirmationImpactEl || !mirrorConfirmationSummaryEl
         || !mirrorCancelEl || !mirrorConfirmEl
         || !emptyEl || !listEl || !undoAllEl || !undoMessageEl
@@ -242,16 +244,33 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
 
     const renderList = () => {
         const compare = sortEl.value === 'name' ? F.byName : F.byAddedAtDesc;
-        const rows = favorites.entries
+        const query = searchEl.value.trim();
+        const activeRows = favorites.entries
             .filter(entry => !pendingDeletes.has(entry.cid))
-            .map(entry => ({ entry, item: renderFavoriteRow(entry) }));
+            .map(entry => ({ entry, score: F.fuzzyScore(entry, query) }))
+            .filter(row => row.score != null);
+        activeRows.sort((left, right) => query
+            ? left.score - right.score || compare(left.entry, right.entry)
+            : compare(left.entry, right.entry));
+        const rows = activeRows.map(({ entry }) => ({ entry, item: renderFavoriteRow(entry) }));
         for (const pending of pendingDeletes.values()) {
+            if (F.fuzzyScore(pending.entry, query) == null) continue;
             rows.push({ entry: pending.entry, item: renderDeletedRow(pending.entry) });
         }
-        rows.sort((left, right) => compare(left.entry, right.entry));
+        if (!query) rows.sort((left, right) => compare(left.entry, right.entry));
         listEl.textContent = '';
         listEl.append(...rows.map(row => row.item));
         listEl.hidden = rows.length === 0;
+        const total = favorites.entries.length;
+        const noun = total === 1 ? 'favorite' : 'favorites';
+        const formattedTotal = total.toLocaleString('en-US');
+        const formattedMatches = activeRows.length.toLocaleString('en-US');
+        countEl.textContent = query
+            ? `${formattedMatches} of ${formattedTotal} ${noun}`
+            : `${formattedTotal} ${noun}`;
+        emptyEl.textContent = query
+            ? `No favorites match “${query}”.`
+            : 'No favorite climbers yet.';
         emptyEl.hidden = rows.length > 0;
         undoAllEl.hidden = !pendingBulk;
     };
@@ -642,6 +661,7 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
     });
     addFormEl.addEventListener('submit', event => { event.preventDefault(); void addClimber(); });
     sortEl.addEventListener('change', renderList);
+    searchEl.addEventListener('input', renderList);
     mergeEl.addEventListener('click', () => {
         dismissMirrorConfirmation();
         renderImportStatus('Loading your Buddy List…');
