@@ -8,9 +8,9 @@
   owner-scoped local cache fresh without blocking the table, and can instead use
   a custom list of up to 500 climbers. Settings can add, sort, merge, mirror,
   remove, and Undo custom favorites; public climber pages get a compact add/remove
-  control only in custom mode. Connected GitHub backup can explicitly write or
-  restore the custom list as `favorites.json`; automatic ascent backup never
-  touches it.
+  control only in custom mode. A shared GitHub connection can explicitly write
+  or restore the custom list as `favorites.json` even when ascent backup is off;
+  automatic ascent backup never touches it.
 
 - **Manage every trip-report draft in one place.** A new **TR drafts**
   section in Settings lists the reports autosaved on this device, newest first,

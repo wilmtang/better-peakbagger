@@ -8,6 +8,7 @@ import { githubError as GithubError } from '../src/github-error.js';
 import { peakbaggerError as PeakbaggerError } from '../src/peakbagger-error.js';
 import { fetchPeakbaggerDocument } from '../src/peakbagger-request.js';
 import { numericParam, ownerClimberId } from '../src/profile-backup-core.js';
+import { hasGithubPermission } from './github.js';
 
 const UNDO_MS = 6000;
 const SITE_TAB_REFRESH_MS = 8000;
@@ -215,7 +216,7 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
             : 'the connected repository');
 
     const renderGithub = () => {
-        const connected = !!(githubStatus?.enabled && githubStatus?.connected);
+        const connected = !!(githubStatus?.permissionGranted && githubStatus?.connected);
         githubActionsEl.hidden = !connected;
         backupEl.disabled = githubBusy;
         restoreEl.disabled = githubBusy;
@@ -225,17 +226,20 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
         } else if (connected) {
             githubStatusEl.textContent = `Save or restore this custom list in ${githubRepoName()}.`;
         } else {
-            githubStatusEl.append('Connect ', Object.assign(document.createElement('a'), {
-                href: '#github-backup', textContent: 'GitHub trip backup',
-            }), ' to move this list between browsers.');
+            githubStatusEl.append(Object.assign(document.createElement('a'), {
+                href: '#github-connection', textContent: 'Connect GitHub',
+            }), ' to move this custom list between browsers.');
         }
     };
 
     const refreshGithubStatus = async () => {
         const revision = ++githubRevision;
-        const status = await send({ type: 'GITHUB_AUTH_STATUS' });
+        const [status, permissionGranted] = await Promise.all([
+            send({ type: 'GITHUB_AUTH_STATUS' }),
+            hasGithubPermission(extensionApi),
+        ]);
         if (revision !== githubRevision) return;
-        githubStatus = status;
+        githubStatus = { ...(status || {}), permissionGranted };
         renderGithub();
     };
 

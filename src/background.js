@@ -1608,8 +1608,6 @@ import { fetchPeakbaggerResource } from './peakbagger-request.js';
     };
 
     const favoritesGithubClient = async () => {
-        const settings = await Settings.get();
-        if (!settings.enableGithubBackup) return { error: { code: 'disabled' } };
         const auth = await GithubAuth.authStore.read();
         if (!auth || !auth.token) return { error: { code: 'not-connected' } };
         if (!auth.repo || !auth.repo.owner || !auth.repo.name) return { error: { code: 'no-repo' } };
@@ -1625,8 +1623,8 @@ import { fetchPeakbaggerResource } from './peakbagger-request.js';
     };
 
     // Favorites are intentionally manual-only. The options page owns schema
-    // validation and serialization; the worker owns the token, gate, mutable
-    // branch queue, and fixed repository path.
+    // validation and serialization; the worker owns the shared connection,
+    // mutable branch queue, and fixed repository path.
     const backupFavorites = async message => {
         if (!message || typeof message.content !== 'string' || !message.content) {
             return { ok: false, error: { code: 'no-data' } };

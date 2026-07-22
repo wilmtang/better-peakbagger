@@ -119,14 +119,14 @@ test('settings are grouped by the surface they affect', async () => {
         'Ascent beta filter',
         'Favorite climbers',
         'TR drafts',
-        'Settings for nerds',
+        'GitHub',
         'About'
     ]);
 
     const [general, capture, mapChart, beta, favorites, drafts, github, about] = sections;
     assert.ok(github.querySelector('#enable-github-backup'));
     assert.ok(github.querySelector('#github-panel'));
-    assert.match(github.querySelector('.desc').textContent, /every ascent from every year/);
+    assert.match(github.querySelector('.desc').textContent, /manual backup controls/i);
     // Every settings section is labelled by its heading and carries at least
     // one card; About is informational, not a card.
     for (const section of [general, capture, mapChart, beta, favorites, github, drafts]) {
@@ -660,7 +660,7 @@ test('custom import keeps a failed Buddy refresh visible beside the buttons', as
     assert.equal(dom.chrome._localStore[favoriteKey], undefined);
 });
 
-test('connected GitHub actions back up the validated list and restore with Undo', async () => {
+test('connected GitHub actions work with ascent backup off and restore with Undo', async () => {
     const original = { cid: 900002, name: 'Original Favorite', addedAt: 10, source: 'manual' };
     const restored = { cid: 900003, name: 'Restored Favorite', addedAt: 20, source: 'buddy' };
     const messages = [];
@@ -668,7 +668,7 @@ test('connected GitHub actions back up the validated list and restore with Undo'
         enabled: true, connected: true, hasToken: true,
         repo: { owner: 'ada', name: 'peaks', fullName: 'ada/peaks' },
     };
-    const dom = await loadOptions({ favoritesSource: 'custom', enableGithubBackup: true }, {
+    const dom = await loadOptions({ favoritesSource: 'custom', enableGithubBackup: false }, {
         local: { [favoriteKey]: favoriteStore([original]) },
         prepareChrome: chrome => {
             chrome.permissions = { request: async () => true, contains: async () => true, remove: async () => true };
@@ -738,7 +738,7 @@ test('favorites restore fails closed on an unknown backup schema', async () => {
     assert.equal(el(dom, 'favorites-undo-all').hidden, true);
 });
 
-test('favorites points disconnected users to GitHub setup instead of showing dead actions', async () => {
+test('favorites points disconnected users to the shared GitHub connection instead of ascent backup', async () => {
     const dom = await loadOptions({ favoritesSource: 'custom' }, {
         prepareChrome: chrome => {
             chrome.permissions = { request: async () => true, contains: async () => true, remove: async () => true };
@@ -751,9 +751,10 @@ test('favorites points disconnected users to GitHub setup instead of showing dea
             };
         },
     });
-    await waitFor(dom, () => /move this list between browsers/.test(el(dom, 'favorites-github-status').textContent));
+    await waitFor(dom, () => /move this custom list between browsers/.test(el(dom, 'favorites-github-status').textContent));
     assert.equal(el(dom, 'favorites-github-actions').hidden, true);
-    assert.equal(el(dom, 'favorites-github-status').querySelector('a').getAttribute('href'), '#github-backup');
+    assert.equal(el(dom, 'favorites-github-status').querySelector('a').textContent, 'Connect GitHub');
+    assert.equal(el(dom, 'favorites-github-status').querySelector('a').getAttribute('href'), '#github-connection');
 });
 
 test('report drafts render newest-first with labels, fallbacks, and edit links', async () => {
@@ -914,7 +915,7 @@ test('the sidebar exposes always-visible sub-links for the grouped sections', as
     const doc = dom.window.document;
     const subLinks = Array.from(doc.querySelectorAll('.side-nav a.nav-subitem'));
     assert.deepEqual(subLinks.map(link => link.getAttribute('href')),
-        ['#capture-gpx', '#capture-report', '#map-chart-chart', '#map-chart-map', '#github-backup']);
+        ['#capture-gpx', '#capture-report', '#map-chart-chart', '#map-chart-map', '#github-connection', '#github-backup']);
     for (const link of subLinks) {
         const target = doc.getElementById(link.getAttribute('href').slice(1));
         assert.ok(target && target.classList.contains('subsection'),
@@ -1003,7 +1004,7 @@ test('the scroll-spy survives jsdom\'s zero-layout world', async () => {
     assert.equal(activeLinks(dom).length, 1);
 });
 
-// ---- GitHub backup setup --------------------------------------------------
+// ---- GitHub connection and ascent-backup setup ----------------------------
 
 // Wire the options page's GITHUB_AUTH_* messages to a scripted background and a
 // grantable optional-permission request, so the setup panel can be driven in
@@ -1017,13 +1018,15 @@ const withGithubBackground = (status, { grant = true } = {}) => chrome => {
     };
 };
 
-test('the GitHub backup section is off by default and hides its detail panel', async () => {
+test('the shared GitHub connection stays visible while ascent backup is off by default', async () => {
     const dom = await loadOptions({}, { prepareChrome: withGithubBackground({ enabled: false }) });
     assert.equal(el(dom, 'enable-github-backup').checked, false);
-    assert.equal(el(dom, 'github-detail').hidden, true);
+    assert.equal(el(dom, 'github-detail').hidden, false);
+    assert.equal(el(dom, 'github-ascent-detail').hidden, true);
+    assert.match(el(dom, 'github-panel').textContent, /Connect a GitHub account/);
 });
 
-test('enabling GitHub backup requests the github host permissions and persists the gate', async () => {
+test('enabling ascent backup persists only the ascent gate and leaves GitHub connection separate', async () => {
     let requested = null;
     const dom = await loadOptions({}, {
         prepareChrome: chrome => {
@@ -1036,18 +1039,19 @@ test('enabling GitHub backup requests the github host permissions and persists t
     toggle.checked = true;
     toggle.dispatchEvent(new dom.window.Event('change'));
     await new Promise(r => dom.window.setTimeout(r, 30));
-    // Compare by value: the requested object originates in the jsdom realm.
-    assert.equal(JSON.stringify(requested), JSON.stringify({ origins: ['https://github.com/*', 'https://api.github.com/*'] }));
+    assert.equal(requested, null);
     assert.equal(dom.chrome._store.bpbSettings.enableGithubBackup, true);
+    assert.equal(el(dom, 'github-ascent-detail').hidden, false);
+    assert.match(el(dom, 'github-ascent-panel').textContent, /Connect GitHub above/);
 });
 
-test('a denied host-permission request reverts the toggle and leaves the gate off', async () => {
+test('the shared Connect GitHub action requests host permission and keeps denial actionable', async () => {
     const dom = await loadOptions({}, { prepareChrome: withGithubBackground({ enabled: false }, { grant: false }) });
-    const toggle = el(dom, 'enable-github-backup');
-    toggle.checked = true;
-    toggle.dispatchEvent(new dom.window.Event('change'));
+    const connect = Array.from(el(dom, 'github-panel').querySelectorAll('button'))
+        .find(button => button.textContent === 'Connect GitHub');
+    connect.click();
     await new Promise(r => dom.window.setTimeout(r, 30));
-    assert.equal(toggle.checked, false);
+    assert.equal(el(dom, 'enable-github-backup').checked, false);
     assert.notEqual(dom.chrome._store.bpbSettings.enableGithubBackup, true);
     assert.equal(el(dom, 'github-detail').hidden, false);
     assert.match(el(dom, 'github-panel').textContent, /GitHub access wasn’t granted/);
@@ -1058,6 +1062,50 @@ test('a denied host-permission request reverts the toggle and leaves the gate of
     await new Promise(r => dom.window.setTimeout(r, 10));
     assert.match(el(dom, 'github-panel').textContent, /GitHub access wasn’t granted/,
         'the actionable permission error must survive focus changes');
+});
+
+test('the shared Connect GitHub action grants permission without enabling ascent backup', async () => {
+    let permissionGranted = false;
+    let requested = null;
+    let began = false;
+    const dom = await loadOptions({}, {
+        prepareChrome: chrome => {
+            chrome.permissions = {
+                contains: async () => permissionGranted,
+                request: async value => {
+                    requested = value;
+                    permissionGranted = true;
+                    return true;
+                },
+                remove: async () => true,
+            };
+            chrome.runtime.sendMessage = (message, callback) => {
+                let reply = {};
+                if (message.type === 'GITHUB_AUTH_STATUS') {
+                    reply = { enabled: false, connected: false, hasToken: false };
+                } else if (message.type === 'GITHUB_AUTH_BEGIN') {
+                    began = true;
+                    reply = {
+                        phase: 'polling', userCode: 'ABCD-EFGH',
+                        verificationUri: 'https://github.com/login/device', expiresIn: 900,
+                    };
+                }
+                if (typeof callback === 'function') Promise.resolve().then(() => callback(reply));
+                return Promise.resolve(reply);
+            };
+        },
+    });
+
+    Array.from(el(dom, 'github-panel').querySelectorAll('button'))
+        .find(button => button.textContent === 'Connect GitHub').click();
+    await waitFor(dom, () => el(dom, 'github-panel').querySelector('.github-code'));
+
+    assert.equal(JSON.stringify(requested), JSON.stringify({
+        origins: ['https://github.com/*', 'https://api.github.com/*'],
+    }));
+    assert.equal(began, true);
+    assert.notEqual(dom.chrome._store.bpbSettings.enableGithubBackup, true);
+    dom.window.close();
 });
 
 test('a lost device flow stops polling and offers to reconnect', async () => {
@@ -1155,7 +1203,7 @@ test('repository setup offers a prefilled private GitHub repository', async () =
     assert.equal(url.searchParams.get('name'), 'better-peakbagger-backup');
     assert.equal(url.searchParams.get('owner'), 'ada');
     assert.equal(url.searchParams.get('visibility'), 'private');
-    assert.match(url.searchParams.get('description'), /Peakbagger ascent backups/);
+    assert.match(url.searchParams.get('description'), /Backups and transfers/);
 });
 
 test('a populated repository requires an explicit confirmation before connection', async () => {
@@ -1195,7 +1243,7 @@ test('a populated repository requires an explicit confirmation before connection
 
     Array.from(el(dom, 'github-panel').querySelectorAll('button'))
         .find(button => button.textContent === 'Use this repository').click();
-    await waitFor(dom, () => /backing up to ada\/project/.test(el(dom, 'github-panel').textContent));
+    await waitFor(dom, () => /Repository ada\/project/.test(el(dom, 'github-panel').textContent));
     assert.deepEqual(selectMessages.map(message => !!message.confirmExisting), [false, true]);
 });
 
@@ -1266,11 +1314,11 @@ test('the connected state opens the signed-in climber\'s all-years My Ascents pa
             };
         },
     });
-    await waitFor(dom, () => Array.from(el(dom, 'github-panel').querySelectorAll('button'))
+    await waitFor(dom, () => Array.from(el(dom, 'github-ascent-panel').querySelectorAll('button'))
         .some(button => button.textContent === 'Open My Ascents'));
-    assert.match(el(dom, 'github-panel').textContent, /always includes every year/);
+    assert.match(el(dom, 'github-ascent-panel').textContent, /always includes every year/);
 
-    Array.from(el(dom, 'github-panel').querySelectorAll('button'))
+    Array.from(el(dom, 'github-ascent-panel').querySelectorAll('button'))
         .find(button => button.textContent === 'Open My Ascents').click();
     await waitFor(dom, () => opened);
     assert.equal(opened, target);
@@ -1300,15 +1348,15 @@ test('the My Ascents action explains when Peakbagger is signed out', async () =>
             };
         },
     });
-    await waitFor(dom, () => Array.from(el(dom, 'github-panel').querySelectorAll('button'))
+    await waitFor(dom, () => Array.from(el(dom, 'github-ascent-panel').querySelectorAll('button'))
         .some(button => button.textContent === 'Open My Ascents'));
-    Array.from(el(dom, 'github-panel').querySelectorAll('button'))
+    Array.from(el(dom, 'github-ascent-panel').querySelectorAll('button'))
         .find(button => button.textContent === 'Open My Ascents').click();
-    await waitFor(dom, () => /could not find a signed-in account/i.test(el(dom, 'github-panel').textContent));
+    await waitFor(dom, () => /could not find a signed-in account/i.test(el(dom, 'github-ascent-panel').textContent));
 
-    assert.match(el(dom, 'github-panel').textContent, /Sign in to Peakbagger, then try again/);
-    assert.doesNotMatch(el(dom, 'github-panel').textContent, /something went wrong/i);
-    const signIn = Array.from(el(dom, 'github-panel').querySelectorAll('button'))
+    assert.match(el(dom, 'github-ascent-panel').textContent, /Sign in to Peakbagger, then try again/);
+    assert.doesNotMatch(el(dom, 'github-ascent-panel').textContent, /something went wrong/i);
+    const signIn = Array.from(el(dom, 'github-ascent-panel').querySelectorAll('button'))
         .find(button => button.textContent === 'Sign in to Peakbagger');
     assert.ok(signIn, 'the signed-out error offers a direct recovery action');
     signIn.click();

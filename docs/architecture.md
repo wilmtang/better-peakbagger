@@ -640,10 +640,10 @@ sync must never acquire the third-party names stored in either local dataset.
 | `src/favorite-climbers.js` | Pure ES module bundled into each caller | Validation, normalization, bounds, parsers, merge/mirror semantics, effective membership, and comparators | DOM globals, storage, fetch, extension messaging, or UI |
 | `src/ascent-filter.js` | Isolated content script at `document_start` | Peak-ascent row identities, Favorites chip state/count, automatic Buddy revalidation, and opportunistic Buddy-page caching | Custom-list management or GitHub transfer |
 | `src/climber-favorite.js` | Separate isolated content script at `document_end` | The add/remove control on a public climber page | Buddy-mode editing or arbitrary profile lookup |
-| `options/favorites.js` | Extension options page | Source selection, Buddy refresh status, custom-list management, reversible bulk actions, and GitHub backup/restore UI | GitHub token access or repository writes |
+| `options/favorites.js` | Extension options page | Source selection, Buddy refresh status, custom-list management, reversible bulk actions, and GitHub transfer UI | GitHub token access or repository writes |
 | `src/profile-backup-core.js` | Pure shared module | Signed-in owner discovery and numeric URL identity | Favorites persistence or request orchestration |
 | `src/peakbagger-request.js`, `src/peakbagger-response.js`, and `src/peakbagger-error.js` | Shared request boundary | Authenticated fetch policy, response classification, parsing failures, and actionable error copy | Favorites schema or persistence |
-| `src/background.js` plus `src/github-client.js` | Extension worker | GitHub feature gate, token, fixed `favorites.json` path, repository validation, serialized writes, and restore reads | Interpreting or mutating the favorites schema |
+| `src/background.js` plus `src/github-client.js` | Extension worker | Shared GitHub connection, token, fixed `favorites.json` path, repository validation, serialized writes, and restore reads | Interpreting or mutating the favorites schema |
 
 `options/favorites.js` owns management. It fetches authenticated Peakbagger
 pages through the shared Peakbagger request boundary, then parses validated
@@ -903,8 +903,8 @@ sync.
 
 ### GitHub transfer and privacy boundary
 
-Custom favorites are device-local by default. When GitHub backup is enabled and
-connected, the options page can explicitly serialize:
+Custom favorites are device-local by default. When GitHub is connected, the
+options page can explicitly serialize:
 
 ```js
 {
@@ -916,7 +916,7 @@ connected, the options page can explicitly serialize:
 
 It sends that string in `GITHUB_FAVORITES_BACKUP`; it never receives the GitHub
 token. The worker accepts those messages only from an extension page, reuses the
-existing GitHub feature gate and selected repository, and writes the fixed root
+shared GitHub connection and selected repository, and writes the fixed root
 path `favorites.json` through the same repository-marker check, exact base tree,
 non-forced ref update, serialized write queue, and bounded conflict retry as
 ascent backup. Restore is an extension-only read; a missing file is reported as
@@ -928,6 +928,10 @@ the exact validity of every entry. Buddy cache entries, `ownerCid`, `fetchedAt`,
 filter-chip state, and the selected source are never exported. Automatic ascent
 backup does not read or write `favorites.json`; favorite transfer happens only
 after the explicit options-page action.
+
+The GitHub connection is independent of the ascent-backup setting. Turning
+ascent backup off removes ascent capture and backup affordances without
+disconnecting GitHub or disabling explicit favorite backup and restore.
 
 Peakbagger HTML and authenticated cookies remain within the Peakbagger/browser
 boundary. The extension persists only the ids, displayed names, provenance and

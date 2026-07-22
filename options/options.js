@@ -135,8 +135,8 @@ import { initFavorites } from './favorites.js';
         return saveQueue;
     };
 
-    // GitHub backup setup owns its own panel; it drives the background worker
-    // through GITHUB_AUTH_* messages and never sees the token.
+    // GitHub connection and ascent-backup setup own their panels together; the
+    // options page drives GITHUB_AUTH_* messages and never sees the token.
     const githubBackup = initGithubBackup({ extensionApi, flash, save });
     const favorites = initFavorites({ extensionApi, flash, save });
 

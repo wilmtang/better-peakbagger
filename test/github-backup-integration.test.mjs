@@ -306,7 +306,7 @@ test('the worker serializes competing profile batches before either reads the br
     assert.equal(currentCommit, 'C2');
 });
 
-test('favorites backup and restore stay extension-only and keep the token in the worker', async () => {
+test('favorites backup and restore stay extension-only, ignore the ascent gate, and keep the token in the worker', async () => {
     const backend = gitDataBackend();
     const restoreContent = '{"schemaVersion":1,"exportedAt":"2026-07-21T12:00:00.000Z","entries":[]}\n';
     const github = (method, path, body) => {
@@ -317,7 +317,7 @@ test('favorites backup and restore stay extension-only and keep the token in the
         }
         return backend.handler(method, path, body);
     };
-    const worker = createWorker({ auth: AUTH, github });
+    const worker = createWorker({ settings: { enableGithubBackup: false }, auth: AUTH, github });
     const exported = '{"schemaVersion":1,"exportedAt":"2026-07-21T13:00:00.000Z","entries":[{"cid":900002}]}\n';
 
     const backup = await worker.send({ type: 'GITHUB_FAVORITES_BACKUP', content: exported }, EXTENSION_SENDER);
@@ -336,7 +336,7 @@ test('favorites backup and restore stay extension-only and keep the token in the
     assert.equal(forbidden.error, 'forbidden');
 });
 
-test('favorites restore reports an absent file and backup reuses the GitHub feature gates', async () => {
+test('favorites restore reports an absent file and ignores the ascent-backup feature gate', async () => {
     const missing = (method, path) => {
         if (method === 'GET' && path === '/repos/me/backup') {
             return respond(200, { default_branch: 'main', archived: false, permissions: { push: true } });
@@ -354,9 +354,9 @@ test('favorites restore reports an absent file and backup reuses the GitHub feat
     const disabled = createWorker({
         settings: { enableGithubBackup: false }, auth: AUTH, github: missing,
     });
-    assert.equal((await disabled.send({
-        type: 'GITHUB_FAVORITES_BACKUP', content: '{}',
-    }, EXTENSION_SENDER)).error.code, 'disabled');
+    const independent = await disabled.send({ type: 'GITHUB_FAVORITES_RESTORE' }, EXTENSION_SENDER);
+    assert.equal(independent.ok, true);
+    assert.equal(independent.content, null);
 
     const disconnected = createWorker({ auth: null, github: missing });
     assert.equal((await disconnected.send({

@@ -119,11 +119,11 @@ markup outside the editor's supported syntax. See the
 
 ### Back up ascents to GitHub
 
-Keep your own copy of every ascent in a GitHub repository you control. Turn on
-GitHub backup in Settings and connect once — you sign in with a short device
-code, then create a prefilled private backup repository on GitHub or grant the
-app access to one you already have. No tokens are ever typed or pasted. After
-you save an ascent, a **Back up to GitHub** button appears on the ascent page;
+Keep your own copy of every ascent in a GitHub repository you control. Connect
+GitHub once in Settings — you sign in with a short device code, then create a
+prefilled private backup repository on GitHub or grant the app access to one you
+already have. No tokens are ever typed or pasted. Enable **Ascent backup** to
+show a **Back up to GitHub** button after you save an ascent;
 one click commits a clearly named mountain folder at the repository root with
 the trip report as real Markdown, every field you entered as JSON, and
 Peakbagger's stored GPS track. To archive older entries, open **My Ascents** and
@@ -140,7 +140,8 @@ be turned off or disconnected at any time.
 Custom favorite climbers stay on this device by default. From the Favorite
 climbers section in Settings, **Back up favorites** writes one `favorites.json`
 to the same repository, and **Restore from backup** moves that list to another
-browser with a brief Undo window. Both actions require an explicit click;
+browser with a brief Undo window. These actions need the shared GitHub
+connection, but not Ascent backup. Both require an explicit click;
 automatic ascent backup never includes favorites.
 
 ### Check summit conditions and recent imagery

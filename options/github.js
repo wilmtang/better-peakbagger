@@ -1,18 +1,24 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
-// Better Peakbagger — options-page GitHub backup setup.
+// Better Peakbagger — options-page GitHub connection and ascent-backup setup.
 //
 // This is the setup surface only. It never sees the token: the background
 // worker owns the device-flow poll and the storage.local token/repo, and this
 // page drives it through GITHUB_AUTH_* messages, showing the user code, handing
 // off to GitHub's own install page for repository scoping, then discovering and
-// selecting the granted repo. Enabling the feature first requests the optional
-// github.com / api.github.com host permissions that the worker needs.
+// selecting the granted repo. The shared Connect action requests the optional
+// github.com / api.github.com host permissions that the worker needs; the
+// ascent-backup setting controls only ascent-specific affordances and writes.
 
 import { githubError as GithubError } from '../src/github-error.js';
 
-const GITHUB_ORIGINS = ['https://github.com/*', 'https://api.github.com/*'];
+export const GITHUB_ORIGINS = ['https://github.com/*', 'https://api.github.com/*'];
+export const hasGithubPermission = async extensionApi => {
+    if (!extensionApi?.permissions?.contains) return false;
+    try { return !!(await extensionApi.permissions.contains({ origins: GITHUB_ORIGINS })); }
+    catch { return false; }
+};
 const errorText = error => GithubError.message(error, {
     fallback: 'GitHub did not return a usable response. Reload Settings and try again.',
 });
@@ -21,12 +27,18 @@ export function initGithubBackup({ extensionApi, flash, save }) {
     const enableEl = document.getElementById('enable-github-backup');
     const detailEl = document.getElementById('github-detail');
     const panelEl = document.getElementById('github-panel');
-    if (!enableEl || !detailEl || !panelEl) return { populate() {} };
+    const ascentDetailEl = document.getElementById('github-ascent-detail');
+    const ascentPanelEl = document.getElementById('github-ascent-panel');
+    if (!enableEl || !detailEl || !panelEl || !ascentDetailEl || !ascentPanelEl) {
+        return { populate() {} };
+    }
 
     let pollTimer = null;
     let countdownTimer = null;
     let permissionError = false;
     let choosingRepo = false;
+    let currentSettings = { enableGithubBackup: false, autoGithubBackup: false };
+    let currentStatus = null;
     const stopPollTimer = () => { if (pollTimer) { clearTimeout(pollTimer); pollTimer = null; } };
     const stopTimers = () => {
         stopPollTimer();
@@ -66,11 +78,13 @@ export function initGithubBackup({ extensionApi, flash, save }) {
         }
         openTab(url);
     };
-    const render = (...nodes) => { panelEl.replaceChildren(...nodes.filter(Boolean)); };
+    const renderInto = (target, ...nodes) => { target.replaceChildren(...nodes.filter(Boolean)); };
+    const render = (...nodes) => { renderInto(panelEl, ...nodes); };
+    const renderAscent = (...nodes) => { renderInto(ascentPanelEl, ...nodes); };
     const newRepositoryUrl = status => {
         const url = new URL('https://github.com/new');
         url.searchParams.set('name', 'better-peakbagger-backup');
-        url.searchParams.set('description', 'Peakbagger ascent backups created by Better Peakbagger');
+        url.searchParams.set('description', 'Backups and transfers created by Better Peakbagger');
         url.searchParams.set('visibility', 'private');
         if (status && status.account && status.account.login) url.searchParams.set('owner', status.account.login);
         return url.href;
@@ -79,16 +93,16 @@ export function initGithubBackup({ extensionApi, flash, save }) {
     // ---- phase renderers ---------------------------------------------------
 
     const renderDisconnected = () => render(
-        el('p', { class: 'github-line', text: 'Connect a GitHub account, then pick one repository to hold your ascent backups.' }),
-        el('div', { class: 'github-actions' }, button('Connect GitHub', { primary: true, onClick: connect })),
+        el('p', { class: 'github-line', text: 'Connect a GitHub account, then choose one repository for Better Peakbagger backups and transfers.' }),
+        el('div', { class: 'github-actions' }, button('Connect GitHub', { primary: true, onClick: ensureConnection })),
     );
 
     const renderPermissionDenied = () => {
         stopTimers();
         detailEl.hidden = false;
         render(
-            el('p', { class: 'github-line github-error', text: 'GitHub access wasn’t granted. Allow access to GitHub to enable backups.' }),
-            el('div', { class: 'github-actions' }, button('Try again', { primary: true, onClick: requestGithubPermission })),
+            el('p', { class: 'github-line github-error', text: 'GitHub access wasn’t granted. Allow access to GitHub to connect.' }),
+            el('div', { class: 'github-actions' }, button('Try again', { primary: true, onClick: ensureConnection })),
         );
     };
 
@@ -145,7 +159,7 @@ export function initGithubBackup({ extensionApi, flash, save }) {
                     onclick: () => selectRepo(repo),
                 })));
             return render(
-                el('p', { class: 'github-line', text: 'Choose a repository for your backups. A dedicated repository keeps everything tidy.' }),
+                el('p', { class: 'github-line', text: 'Choose a repository for Better Peakbagger. A dedicated repository keeps everything tidy.' }),
                 list,
                 el('div', { class: 'github-actions' }, [
                     createButton,
@@ -172,7 +186,7 @@ export function initGithubBackup({ extensionApi, flash, save }) {
         const fullName = repo.fullName || `${repo.owner}/${repo.name}`;
         render(
             el('p', { class: 'github-line', text: `${fullName} already contains files.` }),
-            el('p', { class: 'github-hint', text: 'Existing files will stay in place. Better Peakbagger will add clearly named mountain folders at the repository root.' }),
+            el('p', { class: 'github-hint', text: 'Existing files will stay in place. Better Peakbagger will add its own files and mountain folders at the repository root.' }),
             el('div', { class: 'github-actions' }, [
                 button('Use this repository', { primary: true, onClick: () => selectRepo(repo, { confirmExisting: true }) }),
                 button('Choose another', { onClick: () => refreshRepos({ choose: true }) }),
@@ -184,6 +198,19 @@ export function initGithubBackup({ extensionApi, flash, save }) {
         choosingRepo = false;
         const who = status.account && status.account.login ? `@${status.account.login}` : 'GitHub';
         const repo = status.repo ? status.repo.fullName || `${status.repo.owner}/${status.repo.name}` : '';
+        render(
+            el('p', { class: 'github-line github-connected' }, [
+                el('span', { class: 'github-dot' }),
+                el('span', { text: `Connected as ${who} · Repository ${repo}` }),
+            ]),
+            el('div', { class: 'github-actions' }, [
+                button('Change repository', { onClick: () => refreshRepos({ choose: true }) }),
+                button('Disconnect', { onClick: disconnect }),
+            ]),
+        );
+    };
+
+    const renderAscentConnected = () => {
         const historyStatus = el('p', { class: 'github-hint github-error github-history-status', role: 'status' });
         historyStatus.hidden = true;
         const showHistoryError = (message, { offerSignIn = false } = {}) => {
@@ -229,7 +256,7 @@ export function initGithubBackup({ extensionApi, flash, save }) {
         };
         const autoToggle = el('label', { class: 'github-auto', for: 'github-auto-backup' }, [
             el('input', {
-                type: 'checkbox', id: 'github-auto-backup', checked: !!status.auto,
+                type: 'checkbox', id: 'github-auto-backup', checked: !!currentSettings.autoGithubBackup,
                 onchange: event => { void save({ autoGithubBackup: event.target.checked }); },
             }),
             el('span', { text: 'Back up automatically after each save' }),
@@ -239,19 +266,34 @@ export function initGithubBackup({ extensionApi, flash, save }) {
             el('button', { type: 'button', class: 'github-link', text: 'Open My Ascents', onclick: openMyAscents }),
             document.createTextNode(' and choose Back up all ascents. It always includes every year.'),
         ]);
-        render(
-            el('p', { class: 'github-line github-connected' }, [
-                el('span', { class: 'github-dot' }),
-                el('span', { text: `Connected as ${who} · backing up to ${repo}` }),
-            ]),
+        renderAscent(
             autoToggle,
             historyHint,
             historyStatus,
-            el('div', { class: 'github-actions' }, [
-                button('Change repository', { onClick: () => refreshRepos({ choose: true }) }),
-                button('Disconnect', { onClick: disconnect }),
-            ]),
         );
+    };
+
+    const renderAscentStatus = (status = currentStatus) => {
+        const enabled = !!currentSettings.enableGithubBackup;
+        ascentDetailEl.hidden = !enabled;
+        if (!enabled) {
+            renderAscent();
+            return;
+        }
+        if (status?.permissionGranted && status.connected) {
+            renderAscentConnected();
+            return;
+        }
+        renderAscent(el('p', {
+            class: 'github-line',
+            text: 'Connect GitHub above to back up ascents.',
+        }));
+    };
+
+    const rememberStatus = status => {
+        currentStatus = status || null;
+        renderAscentStatus();
+        return currentStatus;
     };
 
     const renderError = (error, retry, actionLabel = 'Try again') => {
@@ -281,7 +323,7 @@ export function initGithubBackup({ extensionApi, flash, save }) {
     const cancelConnect = async () => {
         stopTimers();
         await send({ type: 'GITHUB_AUTH_DISCONNECT' });
-        renderDisconnected();
+        await renderFromStatus();
     };
 
     const pollAuth = () => {
@@ -300,12 +342,20 @@ export function initGithubBackup({ extensionApi, flash, save }) {
     const afterAuthorized = async () => {
         stopTimers();
         const status = await send({ type: 'GITHUB_AUTH_STATUS' });
-        if (status && status.connected) { flash('GitHub connected'); return renderConnected(status); }
+        if (status && status.connected) {
+            const connected = rememberStatus({ ...status, permissionGranted: true });
+            flash('GitHub connected');
+            return renderConnected(connected);
+        }
         const discovery = await send({ type: 'GITHUB_AUTH_DISCOVER' });
         if (discovery && discovery.phase === 'error') return renderError(discovery, afterAuthorized);
         const refreshed = await send({ type: 'GITHUB_AUTH_STATUS' });
-        if (refreshed && refreshed.connected) { flash('GitHub connected'); return renderConnected(refreshed); }
-        return renderChooseRepo(refreshed || status || {}, discovery);
+        if (refreshed && refreshed.connected) {
+            const connected = rememberStatus({ ...refreshed, permissionGranted: true });
+            flash('GitHub connected');
+            return renderConnected(connected);
+        }
+        return renderChooseRepo(rememberStatus({ ...(refreshed || status || {}), permissionGranted: true }), discovery);
     };
 
     const refreshRepos = async ({ choose = false } = {}) => {
@@ -313,14 +363,19 @@ export function initGithubBackup({ extensionApi, flash, save }) {
         const discovery = await send({ type: 'GITHUB_AUTH_DISCOVER' });
         if (discovery && discovery.phase === 'error') return renderError(discovery, refreshRepos);
         const status = await send({ type: 'GITHUB_AUTH_STATUS' });
-        if (!choose && status && status.connected) { flash('Repository selected'); return renderConnected(status); }
-        return renderChooseRepo(status || {}, discovery);
+        const next = rememberStatus({ ...(status || {}), permissionGranted: true });
+        if (!choose && next.connected) { flash('Repository selected'); return renderConnected(next); }
+        return renderChooseRepo(next, discovery);
     };
 
     const selectRepo = async (repo, { confirmExisting = false } = {}) => {
         render(el('p', { class: 'github-line', text: 'Checking repository safety…' }));
         const status = await send({ type: 'GITHUB_AUTH_SELECT_REPO', repo, confirmExisting });
-        if (status && status.connected) { flash('Repository selected'); return renderConnected(status); }
+        if (status && status.connected) {
+            const connected = rememberStatus({ ...status, permissionGranted: true });
+            flash('Repository selected');
+            return renderConnected(connected);
+        }
         if (status && status.needsConfirmation) return renderExistingRepoConfirmation(repo);
         if (status && status.error) {
             if (['network', 'rate-limit', 'conflict', 'invalid', 'unknown'].includes(status.error.code)) {
@@ -334,84 +389,96 @@ export function initGithubBackup({ extensionApi, flash, save }) {
     const reconnect = async () => {
         stopTimers();
         await send({ type: 'GITHUB_AUTH_DISCONNECT' });
-        await connect();
+        await ensureConnection();
     };
 
     const disconnect = async () => {
         stopTimers();
         await send({ type: 'GITHUB_AUTH_DISCONNECT' });
         flash('GitHub disconnected');
-        renderDisconnected();
+        await renderFromStatus();
     };
 
     // Show the connection state for the current stored status.
     const renderFromStatus = async () => {
         if (permissionError) return renderPermissionDenied();
-        const status = await send({ type: 'GITHUB_AUTH_STATUS' });
-        if (!status || !status.enabled) { detailEl.hidden = true; stopTimers(); return; }
         detailEl.hidden = false;
-        if (status.connected) return renderConnected(status);
-        if (status.hasToken) {
+        const permissionGranted = await hasGithubPermission(extensionApi);
+        const status = await send({ type: 'GITHUB_AUTH_STATUS' });
+        const next = rememberStatus({ ...(status || {}), permissionGranted });
+        if (!permissionGranted) {
+            stopTimers();
+            return renderDisconnected();
+        }
+        if (next.connected) return renderConnected(next);
+        if (next.hasToken) {
             const discovery = await send({ type: 'GITHUB_AUTH_DISCOVER' });
             if (discovery && discovery.phase === 'error') return renderError(discovery, renderFromStatus);
             const after = await send({ type: 'GITHUB_AUTH_STATUS' });
-            if (after && after.connected) return renderConnected(after);
-            return renderChooseRepo(after || status, discovery);
+            const refreshed = rememberStatus({ ...(after || next), permissionGranted: true });
+            if (refreshed.connected) return renderConnected(refreshed);
+            return renderChooseRepo(refreshed, discovery);
         }
         return renderDisconnected();
     };
 
     // ---- toggle ------------------------------------------------------------
 
-    async function requestGithubPermission() {
+    async function ensureConnection() {
         permissionError = false;
-        let granted = false;
-        try {
-            granted = await extensionApi.permissions.request({ origins: GITHUB_ORIGINS });
-        } catch { granted = false; }
-        if (!granted) {
-            enableEl.checked = false;
-            permissionError = true;
-            renderPermissionDenied();
+        if (!(await hasGithubPermission(extensionApi))) {
+            let granted = false;
+            try {
+                granted = await extensionApi.permissions.request({ origins: GITHUB_ORIGINS });
+            } catch { granted = false; }
+            if (!granted) {
+                permissionError = true;
+                renderPermissionDenied();
+                return;
+            }
+        }
+        const status = await send({ type: 'GITHUB_AUTH_STATUS' });
+        if (status?.connected) {
+            await renderFromStatus();
             return;
         }
-        enableEl.checked = true;
-        await save({ enableGithubBackup: true });
-        await renderFromStatus();
+        await connect();
     }
 
     enableEl.addEventListener('change', async () => {
-        if (enableEl.checked) {
-            await requestGithubPermission();
-        } else {
-            permissionError = false;
-            stopTimers();
-            await save({ enableGithubBackup: false, autoGithubBackup: false });
-            detailEl.hidden = true;
-        }
+        currentSettings = {
+            ...currentSettings,
+            enableGithubBackup: enableEl.checked,
+            ...(!enableEl.checked && { autoGithubBackup: false }),
+        };
+        renderAscentStatus();
+        await save({
+            enableGithubBackup: enableEl.checked,
+            ...(!enableEl.checked && { autoGithubBackup: false }),
+        });
     });
 
     // Returning from the GitHub install page: re-check repo access.
     window.addEventListener('focus', () => {
-        if (!detailEl.hidden && !pollTimer) {
+        if (!pollTimer) {
             if (choosingRepo) void refreshRepos({ choose: true });
             else void renderFromStatus();
         }
     });
 
-    // populate runs on every settings change, but the panel's connected state
-    // comes from the background, not settings — so only re-render when the gate
-    // itself flips (or on first paint), never on an unrelated save.
+    // Connection state comes from the background and browser permission API;
+    // settings control only whether ascent-specific actions are exposed.
     let painted = false;
-    let lastEnabled = null;
     return {
         populate(settings) {
-            const enabled = !!settings.enableGithubBackup;
-            enableEl.checked = enabled;
-            if (!enabled && permissionError) { detailEl.hidden = false; return; }
-            if (!painted || enabled !== lastEnabled) {
+            currentSettings = {
+                enableGithubBackup: !!settings.enableGithubBackup,
+                autoGithubBackup: !!settings.autoGithubBackup,
+            };
+            enableEl.checked = currentSettings.enableGithubBackup;
+            renderAscentStatus();
+            if (!painted) {
                 painted = true;
-                lastEnabled = enabled;
                 if (!pollTimer) void renderFromStatus();
             }
         },

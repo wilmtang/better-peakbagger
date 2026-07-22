@@ -459,8 +459,8 @@ disclosure.
 | `GITHUB_BACKUP_ASCENT` | Owner saved-ascent surface | Peakbagger hostname; feature/auth/repo; fresh snapshot for auto; complete data requirement; final aid present before the client enforces a positive identity | Commit metadata or typed error |
 | `GITHUB_BACKUP_PROFILE_STATUS` | `ClimbListC.aspx` | Peakbagger hostname and exact list pathname | Folder leaves, never token |
 | `GITHUB_BACKUP_PROFILE_BATCH` | `ClimbListC.aspx` | Exact list pathname; 1–10 entries; each positive `aid` equals snapshot id; no duplicate ids; feature/auth/repo | Batch commit metadata or typed error |
-| `GITHUB_FAVORITES_BACKUP` | Extension options page | Extension origin; feature/auth/repo; nonempty serialized content; fixed `favorites.json` path | Commit metadata, never token |
-| `GITHUB_FAVORITES_RESTORE` | Extension options page | Extension origin; feature/auth/repo; fixed `favorites.json` path | File text or `null`, never token |
+| `GITHUB_FAVORITES_BACKUP` | Extension options page | Extension origin; auth/repo; nonempty serialized content; fixed `favorites.json` path | Commit metadata, never token |
+| `GITHUB_FAVORITES_RESTORE` | Extension options page | Extension origin; auth/repo; fixed `favorites.json` path | File text or `null`, never token |
 
 The individual worker gate is hostname-level; the content surface supplies the
 stricter owner proof by requiring an edit link for the same aid before it even
@@ -871,9 +871,12 @@ expected GPX failure as `null`, or bypassing the worker write queue.
 
 - GitHub host access is optional: `https://github.com/*` for device flow and
   `https://api.github.com/*` for repository APIs.
-- `enableGithubBackup` and `autoGithubBackup` are synced booleans; disabling the
-  parent gate forces auto off.
+- `enableGithubBackup` and `autoGithubBackup` are synced ascent-backup booleans;
+  disabling the parent gate forces auto off. Neither gates explicit favorite
+  backup or restore.
 - Token and chosen repository are local auth state, not sync-schema settings.
+- The options page presents that local auth/repository state as one shared
+  GitHub connection used by ascent backup and favorite transfer.
 - Ascent fields, report, and Peakbagger's stored GPX go only to the selected
   repository, after explicit backup action or the separate automatic opt-in.
 - Firefox's `locationInfo` declaration covers the stored GPS track.

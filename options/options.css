@@ -340,7 +340,7 @@ input[type="number"].mini { min-width: 0; width: 72px; padding: 4px 8px; }
 .favorites-github-actions button.secondary { align-self: auto; }
 .favorites-github-actions button:disabled { cursor: wait; opacity: .55; }
 
-/* GitHub backup setup panel. The detail row spans the card width and is a
+/* GitHub connection and ascent-backup panels. Each detail row spans the card width and is a
    plain block rather than the label/control split the other rows use. */
 .github-detail { display: block; }
 .github-detail[hidden] { display: none; }

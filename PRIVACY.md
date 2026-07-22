@@ -172,11 +172,14 @@ responses may be reused from the bounded, best-effort local cache. Returning to
 2D stops that session's tile activity — the renderer is parked idle for a few
 minutes to make re-entry instant, then released — but does not clear the cache.
 
-## GitHub backup (optional)
+## GitHub connection and backup (optional)
 
-GitHub backup is off by default and takes effect only after the user enables it
-in Settings and connects a repository. It never blocks or alters the Peakbagger
-save; the extension never clicks a Peakbagger Save control.
+GitHub is disconnected by default. The user must explicitly grant GitHub host
+access, authorize the extension, and select a repository. Ascent backup is a
+separate setting and remains off until enabled; favorite backup and restore can
+use the connection without enabling ascent backup. None of these features block
+or alter the Peakbagger save, and the extension never clicks a Peakbagger Save
+control.
 
 - **What leaves the browser:** for an ascent the user chooses to back up, the
   extension sends that ascent's structured fields (the values the user entered),
