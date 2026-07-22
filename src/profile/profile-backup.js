@@ -7,7 +7,7 @@
 
 import { profileBackupCore as Core } from './profile-backup-core.js';
 import { ascentBackupSource as Source } from '../ascent/ascent-backup-source.js';
-import { githubError as GithubError } from '../github/github-error.js';
+import { githubError as GithubError } from '../github/github-error-copy.js';
 import { peakbaggerCloudflare as Cloudflare } from '../peakbagger/peakbagger-cloudflare.js';
 import { peakbaggerError as PeakbaggerError } from '../peakbagger/peakbagger-error.js';
 import { dom as Dom } from '../ui/dom.js';

@@ -5,7 +5,7 @@
 
 import { settings as S } from '../src/settings/settings.js';
 import { settingsTransfer as Transfer } from '../src/settings/settings-transfer.js';
-import { githubError as GithubError } from '../src/github/github-error.js';
+import { githubError as GithubError } from '../src/github/github-error-copy.js';
 import { hasGithubPermission } from './github.js';
 import { optionsUtils as OptionsUtils } from './options-utils.js';
 

@@ -5,7 +5,7 @@
 
 import { favoriteClimbers as F } from '../src/favorites/favorite-climbers.js';
 import { STORAGE_KEY as GITHUB_AUTH_STORAGE_KEY } from '../src/github/github-auth.js';
-import { githubError as GithubError } from '../src/github/github-error.js';
+import { githubError as GithubError } from '../src/github/github-error-copy.js';
 import { peakbaggerError as PeakbaggerError } from '../src/peakbagger/peakbagger-error.js';
 import { fetchPeakbaggerDocument } from '../src/peakbagger/peakbagger-request.js';
 import { numericParam, ownerClimberId } from '../src/profile/profile-backup-core.js';

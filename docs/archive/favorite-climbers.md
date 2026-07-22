@@ -239,7 +239,7 @@ the `backupAscent` guard sequence (settings gate → `authStore` → token/repo)
   `cleanFavorites` and serializes `favorite-climbers.json`; the worker wraps
   `client.putRootFile('favorite-climbers.json', …)` in the existing GitHub write queue
   so it can never race an ascent commit. Returns `{ok, result}` /
-  `{ok:false, error}` mapped through `src/github/github-error.js` on the page.
+  `{ok:false, error}` mapped through `src/github/github-error-copy.js` on the page.
 - `GITHUB_FAVORITES_RESTORE {}` — worker returns `{ok, content|null}`; the
   options page parses/validates (fail closed on unknown `schemaVersion`),
   snapshots the current list, writes, and shows the Undo bar. Keeps
