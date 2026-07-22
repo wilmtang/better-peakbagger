@@ -195,6 +195,12 @@ test('background capture persists a private job, opens grouped drafts, and previ
     assert.equal(harness.values.bpbCaptureJobs['1'].phase, 'previewed');
     assert.equal(harness.values.bpbCaptureJobs['1'].uploadGpx, null);
 
+    const reopened = await harness.send({ type: 'CAPTURE_OPEN_DRAFTS', tabId: 1, selectedIds: [7] });
+    assert.deepEqual([...reopened.tabIds], [100]);
+    assert.equal(reopened.reused, true,
+        'a previewed job must still refocus its draft for the user to review and save');
+    assert.equal(harness.tabs.get(100).active, true);
+
     const duplicate = await harness.send({ type: 'DRAFT_PREVIEW_STARTED', jobId: apply.jobId, pid: 7, cid: 77 }, { tab: { id: 100 } });
     assert.equal(duplicate.ok, false);
 });

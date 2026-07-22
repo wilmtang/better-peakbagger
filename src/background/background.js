@@ -593,9 +593,23 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
 
     const openDrafts = async message => {
         const tabId = Number(message.tabId);
-        await updateSelection(message);
         const jobs = await readMap(JOBS_KEY);
-        const job = jobs[tabId];
+        const existingJob = jobs[tabId];
+        if (!isFresh(existingJob)) {
+            throw new Error('Capture results are no longer available. Capture the activity again.');
+        }
+
+        const existingDrafts = await readMap(DRAFTS_KEY);
+        const existingForJob = Object.values(existingDrafts)
+            .filter(draft => isFresh(draft) && draft.jobId === existingJob.id)
+            .sort((a, b) => b.confidence - a.confidence);
+        if (existingForJob.length) {
+            for (const draft of existingForJob) await ext.tabs.update(draft.tabId, { active: false });
+            await ext.tabs.update(existingForJob[0].tabId, { active: true });
+            return { tabIds: existingForJob.map(draft => draft.tabId), reused: true };
+        }
+
+        const job = await updateSelection(message);
         if (!isFresh(job) || !job.uploadGpx || (job.phase !== 'ready' && job.phase !== 'opened')) {
             throw new Error('Capture results are no longer available. Capture the activity again.');
         }
@@ -605,16 +619,6 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
             tabId
         );
         if (!opening.matches.length) throw new Error('Select at least one detected peak.');
-
-        const existingDrafts = await readMap(DRAFTS_KEY);
-        const existingForJob = Object.values(existingDrafts)
-            .filter(draft => isFresh(draft) && draft.jobId === job.id)
-            .sort((a, b) => b.confidence - a.confidence);
-        if (existingForJob.length) {
-            for (const draft of existingForJob) await ext.tabs.update(draft.tabId, { active: false });
-            await ext.tabs.update(existingForJob[0].tabId, { active: true });
-            return { tabIds: existingForJob.map(draft => draft.tabId), reused: true };
-        }
 
         const { created, groupWarning } = await openNewDraftTabs({
             sourceTabId: tabId,

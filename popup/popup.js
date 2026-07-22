@@ -145,8 +145,8 @@ import { capturePhases as CapturePhases } from '../src/capture/capture-phases.js
         selectionCount.textContent = `${count} selected`;
         if (currentJob?.phase === 'opened' || currentJob?.phase === 'previewed') {
             selectionLockHint.hidden = false;
-            openButton.textContent = currentJob.phase === 'opened' ? 'Show opened drafts' : 'Preview submitted';
-            openButton.disabled = currentJob.phase === 'previewed';
+            openButton.textContent = 'Show opened drafts';
+            openButton.disabled = false;
             return;
         }
         selectionLockHint.hidden = true;

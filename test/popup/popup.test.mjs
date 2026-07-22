@@ -280,6 +280,86 @@ test('popup locks an opened selection and keeps its existing drafts discoverable
     dom.window.close();
 });
 
+test('popup keeps previewed drafts reachable for manual review and Save', async () => {
+    const dom = new JSDOM(html, {
+        url: 'chrome-extension://better-peakbagger/popup/popup.html',
+        runScripts: 'outside-only'
+    });
+    const job = {
+        phase: 'previewed', provider: 'garmin', hasCachedGpx: false, selectedIds: [1],
+        trackSummary: { originalPointCount: 2, retainedPointCount: 2, maxDeviationM: 0 },
+        matches: [{
+            id: 1, name: 'Previewed Peak', classification: 'strong', confidence: 95,
+            evidence: { distanceM: 5, elevationDeltaM: 2, trackQuality: 1 }
+        }]
+    };
+    const messages = [];
+    dom.window.chrome = {
+        tabs: { query: async () => [{ id: 9 }] },
+        runtime: {
+            sendMessage: async message => {
+                messages.push(message);
+                if (message.type === 'CAPTURE_START' || message.type === 'CAPTURE_STATUS') return job;
+                if (message.type === 'CAPTURE_OPEN_DRAFTS') return { tabIds: [20], reused: true };
+                return { ok: true };
+            }
+        }
+    };
+
+    dom.window.eval(source);
+    const openButton = dom.window.document.getElementById('open-drafts');
+    await waitFor(() => openButton.textContent === 'Show opened drafts');
+    assert.equal(openButton.disabled, false);
+    assert.equal(dom.window.document.querySelector('#peak-list input').disabled, true);
+    openButton.click();
+    await waitFor(() => messages.some(message => message.type === 'CAPTURE_OPEN_DRAFTS'));
+    await waitFor(() => openButton.textContent === 'Show opened drafts' && !openButton.disabled);
+    assert.equal(openButton.textContent, 'Show opened drafts');
+    assert.equal(openButton.disabled, false);
+    dom.window.close();
+});
+
+test('popup explains when every previewed draft tab is gone and offers recovery', async () => {
+    const dom = new JSDOM(html, {
+        url: 'chrome-extension://better-peakbagger/popup/popup.html',
+        runScripts: 'outside-only'
+    });
+    const job = {
+        phase: 'previewed', provider: 'strava', hasCachedGpx: false, selectedIds: [1],
+        trackSummary: { originalPointCount: 2, retainedPointCount: 2, maxDeviationM: 0 },
+        matches: [{
+            id: 1, name: 'Closed Peak', classification: 'strong', confidence: 95,
+            evidence: { distanceM: 5, elevationDeltaM: 2, trackQuality: 1 }
+        }]
+    };
+    dom.window.chrome = {
+        tabs: { query: async () => [{ id: 9 }] },
+        runtime: {
+            sendMessage: async message => {
+                if (message.type === 'CAPTURE_START' || message.type === 'CAPTURE_STATUS') return job;
+                if (message.type === 'CAPTURE_OPEN_DRAFTS') {
+                    throw new Error('Capture results are no longer available. Capture the activity again.');
+                }
+                return { ok: true };
+            }
+        }
+    };
+
+    dom.window.eval(source);
+    const openButton = dom.window.document.getElementById('open-drafts');
+    await waitFor(() => openButton.textContent === 'Show opened drafts');
+    openButton.click();
+    await waitFor(() => /Draft opening stopped/.test(dom.window.document.getElementById('state').textContent));
+    assert.match(dom.window.document.getElementById('state').textContent, /Capture the activity again/);
+    const back = [...dom.window.document.querySelectorAll('#state button')]
+        .find(element => element.textContent === 'Back to results');
+    assert.ok(back);
+    back.click();
+    assert.equal(openButton.textContent, 'Show opened drafts');
+    assert.equal(openButton.disabled, false);
+    dom.window.close();
+});
+
 test('popup restores the singular draft label after opening fails', async () => {
     const dom = new JSDOM(html, {
         url: 'chrome-extension://better-peakbagger/popup/popup.html',
