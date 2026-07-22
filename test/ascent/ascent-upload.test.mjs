@@ -269,7 +269,9 @@ const loadCard = async ({
             if (message.type === 'GPX_PROCESS_START') {
                 return { phase: 'ready', jobId: 'job-2', boundPid, matches, boundFallback };
             }
-            if (message.type === 'GPX_PROCESS_APPLY') return applyResult;
+            if (message.type === 'GPX_PROCESS_APPLY') {
+                return typeof applyResult === 'function' ? applyResult(message) : applyResult;
+            }
             return undefined;
         }
     });
@@ -314,6 +316,21 @@ test('several summits earn the picker card with strong and bound peaks preselect
     const button = processButton(dom);
     assert.equal(button.getAttribute('aria-busy'), 'true');
     assert.equal(button.querySelector('.bpb-process-label').textContent, 'Filling form…');
+});
+
+test('a rejected Apply restores the native path with an actionable error', async () => {
+    const dom = await loadCard({
+        applyResult: () => { throw new Error('Extension context invalidated.'); }
+    });
+    cardParts(dom).apply.click();
+
+    await waitFor(dom, () => uploadStatus(dom));
+    assert.match(uploadStatus(dom).textContent, /Extension context invalidated/);
+    assert.equal(uploadStatus(dom).getAttribute('role'), 'alert');
+    assert.equal(dom.window.document.querySelector('.bpb-summit-card'), null);
+    assert.equal(processButton(dom), null, 'the dead-worker path must not remain stuck at Filling form');
+    assert.equal(dom.window.document.getElementById('GPXPreview')
+        .classList.contains('bpb-native-preview-hidden'), false);
 });
 
 test('summit distances honor explicit units and Auto follows metric-first page fields', async () => {

@@ -206,12 +206,19 @@ import { settings as Settings } from '../settings/settings.js';
 
         const applySelection = async (response, selectedIds, primaryId, token) => {
             setBusy(primaryId !== null ? 'Filling form…' : 'Opening drafts…');
-            const applied = await ext.runtime.sendMessage({
-                type: 'GPX_PROCESS_APPLY',
-                jobId: response.jobId,
-                selectedIds,
-                primaryId
-            });
+            let applied;
+            try {
+                applied = await ext.runtime.sendMessage({
+                    type: 'GPX_PROCESS_APPLY',
+                    jobId: response.jobId,
+                    selectedIds,
+                    primaryId
+                });
+            } catch (error) {
+                if (token !== requestToken) return;
+                fail(error?.message || 'The prepared draft could not be delivered.');
+                return;
+            }
             if (token !== requestToken) return;
             if (!applied?.ok) {
                 removeCard();
