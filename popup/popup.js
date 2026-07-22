@@ -183,8 +183,11 @@
             list.append(row);
         });
         refreshSelection();
-        if (job.phase === 'opened' || job.phase === 'previewed') {
-            openButton.textContent = job.phase === 'previewed' ? 'Preview submitted' : 'Drafts opened';
+        if (job.phase === 'opened') {
+            openButton.textContent = 'Show opened drafts';
+            openButton.disabled = false;
+        } else if (job.phase === 'previewed') {
+            openButton.textContent = 'Preview submitted';
             openButton.disabled = true;
         }
     };
@@ -290,10 +293,10 @@
                 selectedIds: selectedIds()
             });
             if (response?.phase === 'error') throw new Error(response.error?.message || 'Drafts could not be opened.');
-            openButton.textContent = response?.groupWarning ? 'Drafts opened without group' : 'Drafts opened';
-        } catch (error) {
+            openButton.textContent = response?.groupWarning ? 'Drafts opened without group' : 'Show opened drafts';
             openButton.disabled = false;
-            openButton.textContent = `Open ${selectedIds().length} drafts`;
+        } catch (error) {
+            refreshSelection();
             stateCard('Draft opening stopped', error.message, { kind: 'error', action: { label: 'Back to results', onClick: () => renderResults(currentJob) } });
         }
     });

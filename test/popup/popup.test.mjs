@@ -192,6 +192,78 @@ test('popup lets a no-match capture bypass the cached terminal job and check aga
     dom.window.close();
 });
 
+test('popup keeps opened drafts discoverable and refocuses their existing tabs', async () => {
+    const dom = new JSDOM(html, {
+        url: 'chrome-extension://better-peakbagger/popup/popup.html',
+        runScripts: 'outside-only'
+    });
+    const job = {
+        phase: 'opened', provider: 'strava', hasCachedGpx: true, selectedIds: [1],
+        trackSummary: { originalPointCount: 2, retainedPointCount: 2, maxDeviationM: 0 },
+        matches: [{
+            id: 1, name: 'Opened Peak', classification: 'strong', confidence: 95,
+            evidence: { distanceM: 5, elevationDeltaM: 2, trackQuality: 1 }
+        }]
+    };
+    const messages = [];
+    dom.window.chrome = {
+        tabs: { query: async () => [{ id: 9 }] },
+        runtime: {
+            sendMessage: async message => {
+                messages.push(message);
+                if (message.type === 'CAPTURE_START' || message.type === 'CAPTURE_STATUS') return job;
+                if (message.type === 'CAPTURE_OPEN_DRAFTS') return { tabIds: [20], reused: true };
+                return { ok: true };
+            }
+        }
+    };
+
+    dom.window.eval(source);
+    const openButton = dom.window.document.getElementById('open-drafts');
+    await waitFor(() => openButton.textContent === 'Show opened drafts');
+    assert.equal(openButton.disabled, false);
+    openButton.click();
+    await waitFor(() => messages.some(message => message.type === 'CAPTURE_OPEN_DRAFTS'));
+    await waitFor(() => openButton.textContent === 'Show opened drafts');
+    assert.equal(openButton.textContent, 'Show opened drafts');
+    assert.equal(openButton.disabled, false);
+    dom.window.close();
+});
+
+test('popup restores the singular draft label after opening fails', async () => {
+    const dom = new JSDOM(html, {
+        url: 'chrome-extension://better-peakbagger/popup/popup.html',
+        runScripts: 'outside-only'
+    });
+    const job = {
+        phase: 'ready', provider: 'garmin', hasCachedGpx: true, selectedIds: [1],
+        trackSummary: { originalPointCount: 2, retainedPointCount: 2, maxDeviationM: 0 },
+        matches: [{
+            id: 1, name: 'One Peak', classification: 'strong', confidence: 95,
+            evidence: { distanceM: 5, elevationDeltaM: 2, trackQuality: 1 }
+        }]
+    };
+    dom.window.chrome = {
+        tabs: { query: async () => [{ id: 9 }] },
+        runtime: {
+            sendMessage: async message => {
+                if (message.type === 'CAPTURE_START' || message.type === 'CAPTURE_STATUS') return job;
+                if (message.type === 'CAPTURE_OPEN_DRAFTS') throw new Error('Opening failed.');
+                return { ok: true };
+            }
+        }
+    };
+
+    dom.window.eval(source);
+    const openButton = dom.window.document.getElementById('open-drafts');
+    await waitFor(() => openButton.textContent === 'Open 1 draft');
+    openButton.click();
+    await waitFor(() => /Draft opening stopped/.test(dom.window.document.getElementById('state').textContent));
+    assert.equal(openButton.textContent, 'Open 1 draft');
+    assert.equal(openButton.disabled, false);
+    dom.window.close();
+});
+
 test('popup stops status polling when capture finishes without storing a job', async () => {
     const dom = new JSDOM(html, {
         url: 'chrome-extension://better-peakbagger/popup/popup.html',
