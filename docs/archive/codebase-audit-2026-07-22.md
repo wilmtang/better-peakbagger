@@ -8,7 +8,7 @@ copy across `options.html`, `popup.html`, and content-script strings.
 Baseline: clean tree at `5a32aed`; `npm test` passes (671/671); `npm run
 lint:js` is clean.
 
-Relationship to [codebase-audit-2026-07-19](../archive/codebase-audit-2026-07-19.md):
+Relationship to [codebase-audit-2026-07-19](codebase-audit-2026-07-19.md):
 that audit was fully executed (all B/E/U items landed or were deliberately
 closed). This audit does not re-litigate its closed decisions — popup/status
 polling stays as-is per its E2 rationale. The findings below are almost
