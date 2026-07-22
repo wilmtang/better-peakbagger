@@ -254,6 +254,8 @@ button.secondary:focus-visible { outline: 2px solid var(--accent); outline-offse
 /* Settings export/import and GitHub backup. */
 .settings-backup-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 7px; }
 .settings-backup-actions button.secondary { align-self: auto; }
+.settings-backup-github-actions { display: flex; flex-direction: column; align-items: flex-end; gap: 10px; }
+.settings-backup-github-actions[hidden] { display: none; }
 .settings-backup-confirmation {
     display: flex;
     align-items: center;
@@ -678,6 +680,8 @@ button.github-repo:focus-visible { outline: 2px solid var(--accent); outline-off
 }
 
 @media (max-width: 600px) {
+    .settings-backup-confirmation { align-items: stretch; flex-direction: column; gap: 10px; }
+    .settings-backup-confirmation-actions { justify-content: flex-end; }
     .favorites-mirror-confirmation { align-items: stretch; flex-direction: column; gap: 10px; }
     .favorites-mirror-confirmation-actions { justify-content: flex-end; }
     .favorites-list-toolbar { align-items: stretch; flex-direction: column; gap: 9px; }
@@ -702,5 +706,7 @@ button.github-repo:focus-visible { outline: 2px solid var(--accent); outline-off
     .favorites-sort select { width: auto; }
     .favorites-github { align-items: stretch; flex-direction: column; gap: 10px; }
     .favorites-github-actions { justify-content: flex-start; }
+    .settings-backup-actions { justify-content: flex-start; }
+    .settings-backup-github-actions { align-items: flex-start; }
     .favorite-item { align-items: flex-start; }
 }

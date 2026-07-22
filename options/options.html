@@ -512,6 +512,22 @@
                             <button id="settings-backup-confirm" class="settings-backup-confirm" type="button">Import settings</button>
                         </div>
                     </div>
+                    <div class="row">
+                        <div class="label">
+                            <span class="title">GitHub settings backup</span>
+                            <span class="desc" id="settings-backup-github-status" role="status">Checking connection…</span>
+                        </div>
+                        <div class="control settings-backup-github-actions" id="settings-backup-github-actions" hidden>
+                            <div class="settings-backup-actions">
+                                <button id="settings-backup-github-backup" class="secondary" type="button">Back up settings</button>
+                                <button id="settings-backup-github-restore" class="secondary" type="button">Restore from GitHub</button>
+                            </div>
+                            <label class="check" for="settings-backup-auto">
+                                <input type="checkbox" id="settings-backup-auto">
+                                <span>Keep settings backed up automatically</span>
+                            </label>
+                        </div>
+                    </div>
                 </div>
             </div>
 

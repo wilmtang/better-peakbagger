@@ -5,6 +5,7 @@
 
 import { settings as S } from '../src/settings/settings.js';
 import { settingsTransfer as Transfer } from '../src/settings/settings-transfer.js';
+import { githubError as GithubError } from '../src/github/github-error.js';
 
 const invalidFileMessage = reason => reason === 'newer-version'
     ? 'This settings file was made by a newer version of the extension.'
@@ -18,12 +19,35 @@ export function initSettingsBackup({ extensionApi, flash, save }) {
     const confirmationNameEl = document.getElementById('settings-backup-confirmation-name');
     const confirmEl = document.getElementById('settings-backup-confirm');
     const cancelEl = document.getElementById('settings-backup-cancel');
+    const githubStatusEl = document.getElementById('settings-backup-github-status');
+    const githubActionsEl = document.getElementById('settings-backup-github-actions');
+    const githubBackupEl = document.getElementById('settings-backup-github-backup');
+    const githubRestoreEl = document.getElementById('settings-backup-github-restore');
+    const autoBackupEl = document.getElementById('settings-backup-auto');
     if (!exportEl || !importEl || !fileEl || !confirmationEl || !confirmationNameEl
-        || !confirmEl || !cancelEl) {
+        || !confirmEl || !cancelEl || !githubStatusEl || !githubActionsEl
+        || !githubBackupEl || !githubRestoreEl || !autoBackupEl) {
         return { populate() {} };
     }
 
     let pendingImport = null;
+    let githubStatus = null;
+    let githubBusy = false;
+
+    const send = message => new Promise(resolve => {
+        try {
+            extensionApi.runtime.sendMessage(message, response => {
+                void extensionApi.runtime.lastError;
+                resolve(response || null);
+            });
+        } catch {
+            resolve(null);
+        }
+    });
+
+    const repoName = () => githubStatus?.repo?.fullName
+        || (githubStatus?.repo?.owner && githubStatus?.repo?.name
+            ? `${githubStatus.repo.owner}/${githubStatus.repo.name}` : 'the connected repository');
 
     const hideConfirmation = () => {
         pendingImport = null;
@@ -31,8 +55,8 @@ export function initSettingsBackup({ extensionApi, flash, save }) {
         confirmationNameEl.textContent = '';
     };
 
-    const showConfirmation = (name, settings) => {
-        pendingImport = settings;
+    const showConfirmation = (name, settings, successMessage = 'Settings imported') => {
+        pendingImport = { settings, successMessage };
         confirmationNameEl.textContent = name;
         confirmationEl.hidden = false;
         confirmEl.focus();
@@ -78,11 +102,82 @@ export function initSettingsBackup({ extensionApi, flash, save }) {
     cancelEl.addEventListener('click', hideConfirmation);
     confirmEl.addEventListener('click', async () => {
         if (!pendingImport) return;
-        const settings = pendingImport;
+        const pending = pendingImport;
         hideConfirmation();
-        await save(settings);
-        flash('Settings imported');
+        await save(pending.settings);
+        flash(pending.successMessage);
     });
 
-    return { populate() {} };
+    const renderGithub = () => {
+        const connected = githubStatus?.connected === true;
+        githubActionsEl.hidden = !connected;
+        githubBackupEl.disabled = githubBusy;
+        githubRestoreEl.disabled = githubBusy;
+        autoBackupEl.disabled = githubBusy;
+        githubStatusEl.textContent = connected
+            ? `Stored as settings.json in ${repoName()}.`
+            : 'Connect GitHub above to back up settings.';
+    };
+
+    const refreshGithub = async () => {
+        githubStatus = await send({ type: 'GITHUB_AUTH_STATUS' });
+        renderGithub();
+    };
+
+    const withGithubBusy = async operation => {
+        if (githubBusy) return;
+        githubBusy = true;
+        renderGithub();
+        try {
+            await operation();
+        } finally {
+            githubBusy = false;
+            renderGithub();
+        }
+    };
+
+    githubBackupEl.addEventListener('click', () => withGithubBusy(async () => {
+        const response = await send({ type: 'GITHUB_SETTINGS_BACKUP' });
+        if (!response?.ok) {
+            flash(GithubError.message(response?.error));
+            return;
+        }
+        flash(`Settings backed up to ${repoName()}`);
+    }));
+
+    githubRestoreEl.addEventListener('click', () => withGithubBusy(async () => {
+        const response = await send({ type: 'GITHUB_SETTINGS_RESTORE' });
+        if (!response?.ok) {
+            flash(GithubError.message(response?.error));
+            return;
+        }
+        if (response.content == null) {
+            flash(`No settings backup found in ${repoName()}.`);
+            return;
+        }
+        const parsed = Transfer.parse(response.content);
+        if (!parsed.ok) {
+            flash(invalidFileMessage(parsed.reason));
+            return;
+        }
+        showConfirmation(`settings.json from ${repoName()}`, parsed.settings,
+            `Settings restored from ${repoName()}`);
+    }));
+
+    autoBackupEl.addEventListener('change', () => {
+        void save({ autoSettingsBackup: autoBackupEl.checked });
+    });
+
+    window.addEventListener('focus', () => { void refreshGithub(); });
+
+    let painted = false;
+    return {
+        populate(settings) {
+            autoBackupEl.checked = settings?.autoSettingsBackup === true;
+            if (!painted) {
+                painted = true;
+                void refreshGithub();
+            }
+        }
+    };
 }

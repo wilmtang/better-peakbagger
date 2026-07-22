@@ -12,6 +12,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import vm from 'node:vm';
+import { settingsSchema as Schema } from '../../src/settings/settings-schema.js';
+import { settingsTransfer as Transfer } from '../../src/settings/settings-transfer.js';
 
 const workerBundle = await fs.readFile(new URL('../../dist/background.js', import.meta.url), 'utf8');
 
@@ -22,6 +24,13 @@ const respond = (status, body) => ({
     headers: { get: () => null },
     text: async () => (typeof body === 'string' ? body : JSON.stringify(body ?? {})),
 });
+const waitFor = async (predicate, ms = 1000) => {
+    const started = Date.now();
+    while (!predicate()) {
+        if (Date.now() - started > ms) throw new Error('waitFor timed out');
+        await new Promise(resolve => setTimeout(resolve, 0));
+    }
+};
 
 const createWorker = ({ settings = { enableGithubBackup: true }, auth = null, github, session: sharedSession = null,
     local: sharedLocal = null, peakbaggerLoginHtml = '<a href="climber/climber.aspx?cid=900001">My Home Page</a>' } = {}) => {
@@ -34,8 +43,14 @@ const createWorker = ({ settings = { enableGithubBackup: true }, auth = null, gi
         remove: async key => { delete values[key]; },
     });
     const runtimeMessage = event();
+    const storageChanged = event();
+    const alarms = {
+        created: [],
+        create(name, info) { this.created.push({ name, info: info || null }); },
+        onAlarm: event(),
+    };
     const browser = {
-        storage: { session: area(session), sync: area(sync), local: area(local), onChanged: { addListener: () => {} } },
+        storage: { session: area(session), sync: area(sync), local: area(local), onChanged: storageChanged },
         runtime: {
             id: 'test',
             onMessage: runtimeMessage,
@@ -43,7 +58,7 @@ const createWorker = ({ settings = { enableGithubBackup: true }, auth = null, gi
             getURL: p => `chrome-extension://test/${p || ''}`,
         },
         tabs: { onRemoved: event() },
-        alarms: { create: () => {}, onAlarm: event() },
+        alarms,
     };
     const githubCalls = [];
     const fetch = async (url, init = {}) => {
@@ -69,12 +84,16 @@ const createWorker = ({ settings = { enableGithubBackup: true }, auth = null, gi
     vm.runInContext(workerBundle, context, { filename: 'dist/background.js' });
     const listener = runtimeMessage.listeners[0];
     const send = (message, sender = {}) => new Promise(resolve => { listener(message, sender, resolve); });
-    return { send, session, local };
+    return {
+        send, session, local, sync, alarms,
+        fireStorageChange: (changes, areaName) => storageChanged.listeners.forEach(l => l(changes, areaName)),
+        fireAlarm: name => alarms.onAlarm.listeners.forEach(l => l({ name })),
+    };
 };
 
 // A scripted GitHub Git Data backend that records the tree it is asked to write.
 const gitDataBackend = () => {
-    const state = { blobs: {}, contents: {}, tree: null, n: 0 };
+    const state = { blobs: {}, contents: {}, tree: null, n: 0, commits: 0 };
     const handler = (method, path, body) => {
         if (method === 'GET' && path === '/repos/me/backup') return respond(200, { default_branch: 'main', archived: false, permissions: { push: true } });
         if (method === 'GET' && path === '/repos/me/backup/git/ref/heads/main') return respond(200, { object: { sha: 'C0' } });
@@ -89,7 +108,10 @@ const gitDataBackend = () => {
             }
             return respond(201, { sha: 'T1' });
         }
-        if (method === 'POST' && path === '/repos/me/backup/git/commits') return respond(201, { sha: 'C1', html_url: 'https://github.com/me/backup/commit/C1' });
+        if (method === 'POST' && path === '/repos/me/backup/git/commits') {
+            state.commits += 1;
+            return respond(201, { sha: 'C1', html_url: 'https://github.com/me/backup/commit/C1' });
+        }
         if (method === 'PATCH' && path === '/repos/me/backup/git/refs/heads/main') return respond(200, { object: { sha: 'C1' } });
         return null;
     };
@@ -444,6 +466,111 @@ test('favorites restore reports an absent file and ignores the ascent-backup fea
     assert.equal((await disconnected.send({
         type: 'GITHUB_FAVORITES_RESTORE',
     }, EXTENSION_SENDER)).error.code, 'not-connected');
+});
+
+test('settings backup and restore stay extension-only and ignore the ascent-backup gate', async () => {
+    const backend = gitDataBackend();
+    const restorePayload = Transfer.buildPayload({ theme: 'light', units: 'metric' }, {
+        extensionVersion: '2.1.0',
+        exportedAt: '2026-07-21T12:00:00.000Z',
+    });
+    const restoreContent = Transfer.serialize(restorePayload);
+    const github = (method, path, body) => {
+        if (method === 'GET' && path === '/repos/me/backup/contents/settings.json') {
+            return respond(200, {
+                type: 'file', encoding: 'base64', content: Buffer.from(restoreContent).toString('base64'),
+            });
+        }
+        return backend.handler(method, path, body);
+    };
+    const worker = createWorker({
+        settings: { enableGithubBackup: false, theme: 'dark' }, auth: AUTH, github,
+    });
+
+    const backup = await worker.send({ type: 'GITHUB_SETTINGS_BACKUP' }, EXTENSION_SENDER);
+    assert.equal(backup.ok, true);
+    assert.equal(backup.result.path, 'settings.json');
+    const committed = JSON.parse(backend.state.contents['settings.json']);
+    assert.equal(committed.kind, Transfer.KIND);
+    assert.equal(committed.extensionVersion, '2.2.0');
+    assert.equal(committed.settings.theme, 'dark');
+    assert.deepEqual(Object.keys(committed.settings), Object.keys(Schema.DEFAULTS));
+    assert.equal(worker.local.bpbSettingsBackupState.signature,
+        Transfer.signature(Schema.clean({ enableGithubBackup: false, theme: 'dark' })));
+    assert.equal('token' in backup, false);
+
+    const restore = await worker.send({ type: 'GITHUB_SETTINGS_RESTORE' }, EXTENSION_SENDER);
+    assert.equal(restore.ok, true);
+    assert.equal(restore.content, restoreContent);
+    assert.equal('token' in restore, false);
+
+    const forbidden = await worker.send({ type: 'GITHUB_SETTINGS_BACKUP' }, PEAK_SENDER);
+    assert.equal(forbidden.error, 'forbidden');
+});
+
+test('settings auto backup debounces changes, commits once, and skips an equal signature', async () => {
+    const backend = gitDataBackend();
+    const worker = createWorker({
+        settings: { enableGithubBackup: false, autoSettingsBackup: true, theme: 'dark' },
+        auth: AUTH,
+        github: backend.handler,
+    });
+
+    worker.fireStorageChange({
+        bpbSettings: { newValue: structuredClone(worker.sync.bpbSettings) },
+    }, 'sync');
+    await waitFor(() => worker.alarms.created.some(alarm => alarm.name === 'bpb-settings-backup'));
+    assert.deepEqual(structuredClone(worker.alarms.created.find(alarm => alarm.name === 'bpb-settings-backup')), {
+        name: 'bpb-settings-backup', info: { delayInMinutes: 1 },
+    });
+
+    worker.fireAlarm('bpb-settings-backup');
+    await waitFor(() => worker.local.bpbSettingsBackupState?.syncedAt);
+    assert.equal(backend.state.commits, 1);
+    const payload = JSON.parse(backend.state.contents['settings.json']);
+    assert.equal(payload.settings.theme, 'dark');
+    assert.equal(payload.settings.autoSettingsBackup, true);
+
+    worker.fireAlarm('bpb-settings-backup');
+    await new Promise(resolve => setTimeout(resolve, 20));
+    assert.equal(backend.state.commits, 1, 'an unchanged signature must not create another commit');
+});
+
+test('settings auto backup stays inert while off and retries failures only twice', async () => {
+    const off = createWorker({
+        settings: { autoSettingsBackup: false }, auth: AUTH, github: gitDataBackend().handler,
+    });
+    off.fireStorageChange({ bpbSettings: { newValue: {} } }, 'sync');
+    await new Promise(resolve => setTimeout(resolve, 20));
+    assert.equal(off.alarms.created.some(alarm => alarm.name === 'bpb-settings-backup'), false);
+
+    const failing = (method, path) => {
+        if (method === 'GET' && path === '/repos/me/backup') return respond(500, { message: 'Nope' });
+        return null;
+    };
+    const worker = createWorker({ settings: { autoSettingsBackup: true }, auth: AUTH, github: failing });
+    for (let attempts = 1; attempts <= 3; attempts++) {
+        worker.fireAlarm('bpb-settings-backup');
+        await waitFor(() => worker.local.bpbSettingsBackupState?.attempts === attempts);
+    }
+    const retries = worker.alarms.created.filter(alarm => alarm.name === 'bpb-settings-backup');
+    assert.deepEqual(structuredClone(retries), [
+        { name: 'bpb-settings-backup', info: { delayInMinutes: 10 } },
+        { name: 'bpb-settings-backup', info: { delayInMinutes: 10 } },
+    ]);
+});
+
+test('settings backup reports disconnected and missing-repository states', async () => {
+    const github = gitDataBackend().handler;
+    const disconnected = createWorker({ auth: null, github });
+    assert.equal((await disconnected.send({
+        type: 'GITHUB_SETTINGS_BACKUP',
+    }, EXTENSION_SENDER)).error.code, 'not-connected');
+
+    const missingRepo = createWorker({ auth: { token: 'gho_secret' }, github });
+    assert.equal((await missingRepo.send({
+        type: 'GITHUB_SETTINGS_RESTORE',
+    }, EXTENSION_SENDER)).error.code, 'no-repo');
 });
 
 test('profile messages require ClimbListC and matching ascent identity', async () => {

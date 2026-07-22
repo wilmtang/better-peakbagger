@@ -54,6 +54,10 @@
         // per-save click once the manual path is enabled.
         enableGithubBackup: false,
         autoGithubBackup: false,
+        // Automatic GitHub push of the settings backup file on change.
+        // Deliberately independent of enableGithubBackup (that gate belongs to
+        // ascent backup); inert without a device-local token/repository.
+        autoSettingsBackup: false,
         mapRouteColor: ROUTE_STYLE.color, mapRouteWidth: ROUTE_STYLE.width,
         mapRouteCasingColor: ROUTE_STYLE.casingColor, mapRouteCasingWidth: ROUTE_STYLE.casingWidth,
         mapViewportWidth: VIEWPORT.width, mapViewportHeight: VIEWPORT.height,
@@ -141,7 +145,7 @@
         const s = { ...DEFAULTS, ...(raw && typeof raw === 'object' ? raw : {}) };
         if (!['auto', 'imperial', 'metric'].includes(s.units)) s.units = DEFAULTS.units;
         if (!['system', 'light', 'dark'].includes(s.theme)) s.theme = DEFAULTS.theme;
-        for (const key of ['enable3dMap', 'retainWaypoints', 'fillAscentDetails', 'fillTripInfo', 'fillWildernessNights', 'fillExternalUrl', 'enableReportEditor', 'addReportCredit', 'enableGithubBackup', 'autoGithubBackup', 'removeFavoriteWhenBuddyRemoved', 'betaSortDateDesc']) {
+        for (const key of ['enable3dMap', 'retainWaypoints', 'fillAscentDetails', 'fillTripInfo', 'fillWildernessNights', 'fillExternalUrl', 'enableReportEditor', 'addReportCredit', 'enableGithubBackup', 'autoGithubBackup', 'autoSettingsBackup', 'removeFavoriteWhenBuddyRemoved', 'betaSortDateDesc']) {
             if (typeof s[key] !== 'boolean') s[key] = DEFAULTS[key];
         }
         // Auto-backup is meaningless without the feature enabled; never let it

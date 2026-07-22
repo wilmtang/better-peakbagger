@@ -58,6 +58,16 @@ test('removing a Buddy from custom favorites is opt-in', () => {
     assert.equal(Schema.clean({ removeFavoriteWhenBuddyRemoved: 'yes' }).removeFavoriteWhenBuddyRemoved, false);
 });
 
+test('automatic settings backup is opt-in and independent of ascent backup', () => {
+    assert.equal(Schema.DEFAULTS.autoSettingsBackup, false);
+    assert.equal(Schema.clean({}).autoSettingsBackup, false);
+    assert.equal(Schema.clean({
+        enableGithubBackup: false,
+        autoSettingsBackup: true
+    }).autoSettingsBackup, true);
+    assert.equal(Schema.clean({ autoSettingsBackup: 'yes' }).autoSettingsBackup, false);
+});
+
 test('routeStyle() rejects untrusted values back to the shared defaults', () => {
     const style = Schema.routeStyle({
         color: 'javascript:alert(1)',

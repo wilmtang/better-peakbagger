@@ -261,6 +261,72 @@ test('settings import rejects invalid and newer files without changing settings'
     assert.equal(el(dom, 'settings-backup-confirmation').hidden, true);
 });
 
+test('settings GitHub controls back up, confirm restore, and persist automatic backup', async () => {
+    const messages = [];
+    const status = {
+        connected: true,
+        hasToken: true,
+        repo: { owner: 'ada', name: 'peaks', fullName: 'ada/peaks' },
+    };
+    const restored = settingsTransfer.buildPayload({ theme: 'light', units: 'metric' }, {
+        extensionVersion: '3.0.0',
+        exportedAt: '2026-07-22T12:00:00.000Z'
+    });
+    const dom = await loadOptions({ theme: 'dark', units: 'imperial' }, {
+        prepareChrome: chrome => {
+            chrome.permissions = { request: async () => true, contains: async () => true, remove: async () => true };
+            chrome.runtime.sendMessage = (message, callback) => {
+                messages.push(structuredClone(message));
+                let reply = {};
+                if (message.type === 'GITHUB_AUTH_STATUS') reply = status;
+                if (message.type === 'GITHUB_SETTINGS_BACKUP') reply = {
+                    ok: true,
+                    result: { path: 'settings.json', commitUrl: 'https://github.com/ada/peaks/commit/settings123' }
+                };
+                if (message.type === 'GITHUB_SETTINGS_RESTORE') reply = {
+                    ok: true,
+                    content: settingsTransfer.serialize(restored)
+                };
+                if (typeof callback === 'function') Promise.resolve().then(() => callback(reply));
+                return Promise.resolve(reply);
+            };
+        }
+    });
+
+    await waitFor(dom, () => !el(dom, 'settings-backup-github-actions').hidden);
+    assert.match(el(dom, 'settings-backup-github-status').textContent, /settings\.json.*ada\/peaks/);
+
+    el(dom, 'settings-backup-github-backup').click();
+    await waitFor(dom, () => messages.some(message => message.type === 'GITHUB_SETTINGS_BACKUP'));
+    assert.deepEqual(messages.find(message => message.type === 'GITHUB_SETTINGS_BACKUP'), {
+        type: 'GITHUB_SETTINGS_BACKUP'
+    });
+    await waitFor(dom, () => !el(dom, 'settings-backup-github-restore').disabled);
+
+    el(dom, 'settings-backup-github-restore').click();
+    await waitFor(dom, () => el(dom, 'settings-backup-confirmation').hidden === false);
+    assert.match(el(dom, 'settings-backup-confirmation').textContent,
+        /settings\.json from ada\/peaks.*Replaces your current settings/s);
+    assert.equal(dom.chrome._store.bpbSettings.theme, 'dark');
+
+    el(dom, 'settings-backup-confirm').click();
+    await waitFor(dom, () => dom.chrome._store.bpbSettings.theme === 'light');
+    assert.equal(dom.chrome._store.bpbSettings.units, 'metric');
+
+    const auto = el(dom, 'settings-backup-auto');
+    auto.checked = true;
+    auto.dispatchEvent(new dom.window.Event('change'));
+    await waitFor(dom, () => dom.chrome._store.bpbSettings.autoSettingsBackup === true);
+});
+
+test('settings GitHub controls point disconnected users to the shared connection', async () => {
+    const dom = await loadOptions({}, {
+        prepareChrome: withGithubBackground({ connected: false, hasToken: false })
+    });
+    await waitFor(dom, () => /Connect GitHub above/.test(el(dom, 'settings-backup-github-status').textContent));
+    assert.equal(el(dom, 'settings-backup-github-actions').hidden, true);
+});
+
 test('trip report credit is off by default and persists as an explicit opt-in', async () => {
     const dom = await loadOptions({});
     const checkbox = el(dom, 'add-report-credit');

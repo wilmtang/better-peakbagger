@@ -11,6 +11,7 @@ import { providerFromUrl, providerActivityUrl } from '../capture/provider-url.js
 import { terrainTiles as TerrainTiles } from '../terrain/terrain-tiles.js';
 import { terrainCache as TerrainCache } from '../terrain/terrain-cache.js';
 import { settings as Settings } from '../settings/settings.js';
+import { settingsTransfer as Transfer } from '../settings/settings-transfer.js';
 import { githubAuth as GithubAuth } from '../github/github-auth.js';
 import { githubClient as GithubClient } from '../github/github-client.js';
 import { githubErrors as GithubErrors } from '../github/github-errors.js';
@@ -31,6 +32,11 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
     const SNAPSHOTS_KEY = 'bpbGithubSnapshots';
     const GITHUB_AUTH_PENDING_KEY = 'bpbGithubAuthPending';
     const FAVORITE_CLIMBERS_BACKUP_PATH = 'favorite-climbers.json';
+    const SETTINGS_BACKUP_ALARM = 'bpb-settings-backup';
+    const SETTINGS_BACKUP_STATE_KEY = 'bpbSettingsBackupState';
+    const AUTO_BACKUP_DELAY_MINUTES = 1;
+    const AUTO_BACKUP_RETRY_MINUTES = 10;
+    const AUTO_BACKUP_MAX_RETRIES = 2;
     const SNAPSHOT_TTL_MS = 30 * 60 * 1000;
     const SNAPSHOT_LIMIT = 10;
     const PROFILE_BACKUP_BATCH_LIMIT = 10;
@@ -1639,7 +1645,7 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
         }
     };
 
-    const favoritesGithubClient = async () => {
+    const optionsGithubClient = async () => {
         const auth = await GithubAuth.authStore.read();
         if (!auth || !auth.token) return { error: { code: 'not-connected' } };
         if (!auth.repo || !auth.repo.owner || !auth.repo.name) return { error: { code: 'no-repo' } };
@@ -1654,6 +1660,94 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
         };
     };
 
+    // Debounced, signature-gated automatic backup shared by the settings and
+    // favorites paths. Replacing a named alarm gives us trailing-edge debounce
+    // that survives MV3 worker teardown; fire() rechecks every gate so stale or
+    // spurious alarms are harmless.
+    const createAutoBackup = ({ alarmName, stateKey, path, commitMessage, enabled, build }) => {
+        const readState = async () => (await ext.storage.local.get(stateKey))[stateKey] || null;
+        const markSynced = signature => ext.storage.local.set({
+            [stateKey]: { signature, syncedAt: new Date().toISOString() }
+        });
+
+        const schedule = () => {
+            if (!ext.alarms) return;
+            ext.alarms.create(alarmName, { delayInMinutes: AUTO_BACKUP_DELAY_MINUTES });
+            // A fresh change grants a fresh retry budget.
+            void readState().then(state => {
+                if (state && state.attempts) {
+                    return ext.storage.local.set({ [stateKey]: { ...state, attempts: 0 } });
+                }
+                return undefined;
+            });
+        };
+
+        const fire = async () => {
+            if (!(await enabled())) return;
+            const access = await optionsGithubClient();
+            if (access.error) return;
+            const { text, signature } = await build();
+            const state = await readState();
+            if (state && state.signature === signature) return;
+            try {
+                await enqueueGithubWrite(() => access.client.putRootFile(path, text, commitMessage));
+                await markSynced(signature);
+            } catch {
+                // Silent bounded retry; the manual buttons remain the loud path.
+                const attempts = ((state && state.attempts) || 0) + 1;
+                await ext.storage.local.set({ [stateKey]: { ...(state || {}), attempts } });
+                if (attempts <= AUTO_BACKUP_MAX_RETRIES) {
+                    ext.alarms.create(alarmName, { delayInMinutes: AUTO_BACKUP_RETRY_MINUTES });
+                }
+            }
+        };
+
+        return { schedule, fire, markSynced };
+    };
+
+    const buildSettingsBackup = async () => {
+        const settings = await Settings.get();
+        const payload = Transfer.buildPayload(settings, {
+            extensionVersion: ext.runtime.getManifest ? ext.runtime.getManifest().version : '',
+            exportedAt: new Date().toISOString()
+        });
+        return { text: Transfer.serialize(payload), signature: Transfer.signature(settings) };
+    };
+
+    const settingsAutoBackup = createAutoBackup({
+        alarmName: SETTINGS_BACKUP_ALARM,
+        stateKey: SETTINGS_BACKUP_STATE_KEY,
+        path: Transfer.BACKUP_PATH,
+        commitMessage: 'Back up settings',
+        enabled: async () => (await Settings.get()).autoSettingsBackup,
+        build: buildSettingsBackup
+    });
+
+    const backupSettings = async () => {
+        const access = await optionsGithubClient();
+        if (access.error) return { ok: false, error: access.error };
+        const { text, signature } = await buildSettingsBackup();
+        try {
+            const result = await enqueueGithubWrite(() => access.client.putRootFile(
+                Transfer.BACKUP_PATH, text, 'Back up settings'
+            ));
+            await settingsAutoBackup.markSynced(signature);
+            return { ok: true, result };
+        } catch (error) {
+            return { ok: false, error: GithubErrors.publicError(error, 'The settings backup failed.') };
+        }
+    };
+
+    const restoreSettings = async () => {
+        const access = await optionsGithubClient();
+        if (access.error) return { ok: false, error: access.error };
+        try {
+            return { ok: true, content: await access.client.readRootFile(Transfer.BACKUP_PATH) };
+        } catch (error) {
+            return { ok: false, error: GithubErrors.publicError(error, 'The settings backup could not be read.') };
+        }
+    };
+
     // Favorites are intentionally manual-only. The options page owns schema
     // validation and serialization; the worker owns the shared connection,
     // mutable branch queue, and fixed repository path.
@@ -1661,7 +1755,7 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
         if (!message || typeof message.content !== 'string' || !message.content) {
             return { ok: false, error: { code: 'no-data' } };
         }
-        const access = await favoritesGithubClient();
+        const access = await optionsGithubClient();
         if (access.error) return { ok: false, error: access.error };
         try {
             const result = await enqueueGithubWrite(() => access.client.putRootFile(
@@ -1674,7 +1768,7 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
     };
 
     const restoreFavorites = async () => {
-        const access = await favoritesGithubClient();
+        const access = await optionsGithubClient();
         if (access.error) return { ok: false, error: access.error };
         try {
             return { ok: true, content: await access.client.readRootFile(FAVORITE_CLIMBERS_BACKUP_PATH) };
@@ -1692,6 +1786,8 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
             const extensionOnly = type === 'PEAKBAGGER_MY_ASCENTS'
                 || type === 'GITHUB_FAVORITES_BACKUP'
                 || type === 'GITHUB_FAVORITES_RESTORE'
+                || type === 'GITHUB_SETTINGS_BACKUP'
+                || type === 'GITHUB_SETTINGS_RESTORE'
                 || (typeof type === 'string' && type.startsWith('GITHUB_AUTH_'));
             if (extensionOnly && !isExtensionPage(sender)) {
                 return { error: 'forbidden' };
@@ -1712,6 +1808,8 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
             case 'GITHUB_BACKUP_PROFILE_BATCH': return backupProfileBatch(message, sender);
             case 'GITHUB_FAVORITES_BACKUP': return backupFavorites(message);
             case 'GITHUB_FAVORITES_RESTORE': return restoreFavorites();
+            case 'GITHUB_SETTINGS_BACKUP': return backupSettings();
+            case 'GITHUB_SETTINGS_RESTORE': return restoreSettings();
             case 'OPEN_DRAFTS_MANAGER': return openDraftsManager(sender);
             case 'CAPTURE_START': return startCapture(message);
             case 'CAPTURE_STATUS': {
@@ -1778,10 +1876,18 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
         })();
     });
 
+    // Register synchronously: a storage event can be the event that wakes the
+    // MV3 worker. The alarm is replaced on each change, producing a durable
+    // trailing-edge debounce.
+    Settings.subscribe(settings => {
+        if (settings.autoSettingsBackup) settingsAutoBackup.schedule();
+    });
+
     if (ext.alarms) {
         ext.alarms.create(CLEANUP_ALARM, { periodInMinutes: 5 });
         ext.alarms.onAlarm.addListener(alarm => {
             if (alarm.name === CLEANUP_ALARM) void cleanup();
+            if (alarm.name === SETTINGS_BACKUP_ALARM) void settingsAutoBackup.fire();
         });
     }
 })();
