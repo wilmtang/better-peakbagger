@@ -30,6 +30,7 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
     const countEl = document.getElementById('favorites-count');
     const mergeEl = document.getElementById('favorites-merge-buddies');
     const mirrorEl = document.getElementById('favorites-mirror-buddies');
+    const removeWithBuddyEl = document.getElementById('favorites-remove-with-buddy');
     const importStatusEl = document.getElementById('favorites-import-status');
     const mirrorConfirmationEl = document.getElementById('favorites-mirror-confirmation');
     const mirrorConfirmationImpactEl = document.getElementById('favorites-mirror-confirmation-impact');
@@ -48,7 +49,8 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
 
     if (!store || !sourceEls.length || !buddyPanelEl || !customPanelEl || !buddyStatusEl
         || !refreshBuddiesEl || !addFormEl || !addInputEl || !addButtonEl || !limitEl || !sortEl
-        || !searchEl || !countEl || !mergeEl || !mirrorEl || !importStatusEl || !mirrorConfirmationEl
+        || !searchEl || !countEl || !mergeEl || !mirrorEl || !removeWithBuddyEl
+        || !importStatusEl || !mirrorConfirmationEl
         || !mirrorConfirmationImpactEl || !mirrorConfirmationSummaryEl
         || !mirrorCancelEl || !mirrorConfirmEl
         || !emptyEl || !listEl || !undoAllEl || !undoMessageEl
@@ -662,6 +664,9 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
     addFormEl.addEventListener('submit', event => { event.preventDefault(); void addClimber(); });
     sortEl.addEventListener('change', renderList);
     searchEl.addEventListener('input', renderList);
+    removeWithBuddyEl.addEventListener('change', () => {
+        void save({ removeFavoriteWhenBuddyRemoved: removeWithBuddyEl.checked });
+    });
     mergeEl.addEventListener('click', () => {
         dismissMirrorConfirmation();
         renderImportStatus('Loading your Buddy List…');
@@ -774,6 +779,7 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
     return {
         populate(settings) {
             source = settings && settings.favoritesSource === 'custom' ? 'custom' : 'buddies';
+            removeWithBuddyEl.checked = settings?.removeFavoriteWhenBuddyRemoved === true;
             if (source !== 'custom') dismissMirrorConfirmation();
             renderPanels();
             void refreshGithubStatus();

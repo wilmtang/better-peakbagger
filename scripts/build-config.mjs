@@ -48,7 +48,7 @@ export const ENTRIES = [
     { out: 'content/gpx-analyzer.js', sources: ['gpx-metrics.js', 'terrain-basemap.js', 'terrain-camera.js', 'terrain-compass.js', 'terrain-coordinator.js', 'terrain-failure.js', 'peak-markers.js', 'peakbagger-cloudflare.js', 'peakbagger-response.js', 'peakbagger-error.js', 'peakbagger-request.js', 'settings-schema.js', 'gpx-analyzer.js'] },
     { out: 'content/terrain-map.js', sources: ['terrain-camera.js', 'settings-schema.js', 'settings.js', 'terrain-map.js'] },
     { out: 'content/ascent-filter.js', sources: ['settings-schema.js', 'settings.js', 'favorite-climbers.js', 'peakbagger-cloudflare.js', 'peakbagger-response.js', 'peakbagger-error.js', 'peakbagger-request.js', 'profile-backup-core.js', 'ascent-filter.js'] },
-    { out: 'content/climber-favorite.js', sources: ['settings-schema.js', 'settings.js', 'favorite-climbers.js', 'climber-favorite.js'] },
+    { out: 'content/climber-favorite.js', sources: ['settings-schema.js', 'settings.js', 'favorite-climbers.js', 'peakbagger-cloudflare.js', 'peakbagger-response.js', 'peakbagger-error.js', 'peakbagger-request.js', 'profile-backup-core.js', 'climber-favorite.js'] },
     { out: 'content/profile-backup.js', sources: ['peakbagger-cloudflare.js', 'peakbagger-response.js', 'peakbagger-error.js', 'peakbagger-request.js', 'profile-backup-core.js', 'ascent-snapshot.js', 'report-markup.js', 'ascent-backup-source.js', 'profile-backup.js'] },
     { out: 'content/peak-map-bridge.js', sources: ['settings-schema.js', 'settings.js', 'peak-map-bridge.js'] },
     { out: 'content/peak-links.js', sources: ['peak-links.js'] },

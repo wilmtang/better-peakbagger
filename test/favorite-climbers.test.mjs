@@ -102,6 +102,34 @@ test('merge is additive while mirror replaces and marks buddy entries', () => {
     ]);
 });
 
+test('Buddy controls are identified semantically without accepting ambiguous labels', () => {
+    assert.equal(F.buddyMutationAction('Add to My Buddy List'), 'add');
+    assert.equal(F.buddyMutationAction('BuddyButton Add'), 'add');
+    assert.equal(F.buddyMutationAction('Remove from Buddy List'), 'remove');
+    assert.equal(F.buddyMutationAction('Delete Buddy'), 'remove');
+    assert.equal(F.buddyMutationAction('Add or remove buddies'), null);
+    assert.equal(F.buddyMutationAction('Add favorite'), null);
+});
+
+test('confirmed Buddy additions sync custom favorites while removals remain opt-in', () => {
+    const existing = { cid: 900003, name: 'Existing', addedAt: 1, source: 'manual' };
+    const favorites = { schemaVersion: 1, entries: [existing] };
+    const buddy = { cid: 900002, name: 'New Buddy' };
+    const added = F.applyBuddyMutationToFavorites(favorites, buddy, 'add', { now: 10 });
+    assert.deepEqual(added.entries, [
+        { cid: 900002, name: 'New Buddy', addedAt: 10, source: 'buddy' },
+        existing,
+    ]);
+    assert.deepEqual(F.applyBuddyMutationToFavorites(added, buddy, 'add', { now: 20 }), added,
+        'reconfirming an existing Buddy preserves its favorite metadata');
+    assert.deepEqual(F.applyBuddyMutationToFavorites(added, buddy, 'remove'), added,
+        'removal is non-destructive by default');
+    assert.deepEqual(
+        F.applyBuddyMutationToFavorites(added, buddy, 'remove', { removeFavorite: true }).entries,
+        [existing],
+    );
+});
+
 test('effective sets follow the selected source and comparators are stable', () => {
     const favorites = {
         schemaVersion: 1,

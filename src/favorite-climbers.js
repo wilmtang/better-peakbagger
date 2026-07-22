@@ -180,6 +180,41 @@ const favoriteSet = (mode, favorites, buddyCache) => new Set(
         .map(entry => entry.cid),
 );
 
+const buddyMutationAction = value => {
+    const label = trim(value)
+        .replace(/([a-z])([A-Z])/g, '$1 $2')
+        .toLocaleLowerCase();
+    if (!/\bbudd(?:y|ies)\b/.test(label)) return null;
+    const add = /\badd(?:ed|ing)?\b/.test(label);
+    const remove = /\b(?:remove|delete)(?:d|ing)?\b/.test(label);
+    if (add === remove) return null;
+    return add ? 'add' : 'remove';
+};
+
+const applyBuddyMutationToFavorites = (
+    favorites,
+    buddy,
+    action,
+    { removeFavorite = false, now = Date.now() } = {},
+) => {
+    const current = cleanFavorites(favorites);
+    const entry = cleanBuddyEntry(buddy);
+    if (!entry || (action !== 'add' && action !== 'remove')) return current;
+    const exists = current.entries.some(candidate => candidate.cid === entry.cid);
+    if (action === 'add') {
+        if (exists || current.entries.length >= LIMIT) return current;
+        return {
+            schemaVersion: SCHEMA_VERSION,
+            entries: [{ ...entry, addedAt: now, source: 'buddy' }, ...current.entries],
+        };
+    }
+    if (!removeFavorite || !exists) return current;
+    return {
+        schemaVersion: SCHEMA_VERSION,
+        entries: current.entries.filter(candidate => candidate.cid !== entry.cid),
+    };
+};
+
 const compareNames = (left, right) => {
     if (!collator) collator = new Intl.Collator(undefined, { sensitivity: 'base', numeric: true });
     return collator.compare(left, right);
@@ -304,6 +339,8 @@ export const favoriteClimbers = {
     mergeBuddies,
     mirrorBuddies,
     favoriteSet,
+    buddyMutationAction,
+    applyBuddyMutationToFavorites,
     byName,
     byAddedAtDesc,
     fuzzyScore,

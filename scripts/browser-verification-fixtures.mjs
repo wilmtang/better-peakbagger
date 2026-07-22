@@ -259,6 +259,9 @@ export async function createBrowserFixtureServer({ temporaryRoot }) {
     previewPosts: 0,
     savePosts: 0,
     lastPreview: null,
+    buddyMutations: 0,
+    buddyReports: 0,
+    buddyReportStates: [],
   };
   const relativeAscentEditHtml = ascentEditHtml.replace(
     /action="https:\/\/www\.peakbagger\.com\/climber\/ascentedit\.aspx\?cid=900001"/i,
@@ -268,10 +271,22 @@ export async function createBrowserFixtureServer({ temporaryRoot }) {
     /(<span id="GPXStatusLabel"[^>]*>)[\s\S]*?(<\/span>)/i,
     "$1Your file was successfully uploaded. Preview is ready.$2",
   );
-  const otherClimberHtml = climberHtml.replace(
-    "Peakbagging Page for Alex Doe",
-    "Peakbagging Page for Morgan Longlastname",
+  const otherClimberBaseHtml = climberHtml
+    .replace("Peakbagging Page for Alex Doe", "Peakbagging Page for Morgan Longlastname")
+    .replace(
+      'action="https://www.peakbagger.com/climber/climber.aspx?cid=900001"',
+      'action=""',
+    );
+  let otherClimberIsBuddy = false;
+  const renderOtherClimber = () => otherClimberBaseHtml.replace(
+    '<span id="TitleLabel"><h1>Peakbagging Page for Morgan Longlastname</h1></span>',
+    `<span id="TitleLabel"><h1>Peakbagging Page for Morgan Longlastname</h1></span>
+     <input id="BuddyButton" name="BuddyButton" type="submit"
+       value="${otherClimberIsBuddy ? 'Remove from My Buddy List' : 'Add to My Buddy List'}">`,
   );
+  const renderBuddyList = () => otherClimberIsBuddy
+    ? buddyListHtml.replaceAll('710483', '900002').replaceAll('Alpine, Casey', 'Morgan Longlastname')
+    : buddyListHtml;
   const readRequestBody = request => new Promise((resolve, reject) => {
     const chunks = [];
     let length = 0;
@@ -328,11 +343,20 @@ export async function createBrowserFixtureServer({ temporaryRoot }) {
       return send("text/html; charset=utf-8", profileAscentsHtml);
     }
     if (/\/climber\/climber\.aspx/i.test(url.pathname)) {
-      return send("text/html; charset=utf-8", otherClimberHtml);
+      if (request.method === "POST") {
+        const body = new URLSearchParams(await readRequestBody(request));
+        const action = body.get("BuddyButton") || "";
+        if (/^Add\b/i.test(action)) otherClimberIsBuddy = true;
+        else if (/^Remove\b/i.test(action)) otherClimberIsBuddy = false;
+        requests.buddyMutations += 1;
+      }
+      return send("text/html; charset=utf-8", renderOtherClimber());
     }
     if (/\/report\/report\.aspx/i.test(url.pathname)
         && (url.searchParams.get("r") || "").toLowerCase() === "b") {
-      return send("text/html; charset=utf-8", buddyListHtml);
+      requests.buddyReports += 1;
+      requests.buddyReportStates.push(otherClimberIsBuddy);
+      return send("text/html; charset=utf-8", renderBuddyList());
     }
     if (/peak\.aspx/i.test(url.pathname)) return send("text/html; charset=utf-8", peakHtml);
     if (/bigmap\.aspx/i.test(url.pathname)) {

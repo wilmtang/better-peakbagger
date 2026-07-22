@@ -50,6 +50,13 @@ test('favorite climber source defaults to buddies and accepts only known modes',
     assert.equal(Schema.clean({ favoritesSource: null }).favoritesSource, 'buddies');
 });
 
+test('removing a Buddy from custom favorites is opt-in', () => {
+    assert.equal(Schema.DEFAULTS.removeFavoriteWhenBuddyRemoved, false);
+    assert.equal(Schema.clean({}).removeFavoriteWhenBuddyRemoved, false);
+    assert.equal(Schema.clean({ removeFavoriteWhenBuddyRemoved: true }).removeFavoriteWhenBuddyRemoved, true);
+    assert.equal(Schema.clean({ removeFavoriteWhenBuddyRemoved: 'yes' }).removeFavoriteWhenBuddyRemoved, false);
+});
+
 test('routeStyle() rejects untrusted values back to the shared defaults', () => {
     const style = Schema.routeStyle({
         color: 'javascript:alert(1)',

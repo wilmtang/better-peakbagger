@@ -1,6 +1,13 @@
 # Changelog
 ## Unreleased
 
+- **Find and keep up with favorite climbers.** Custom favorites now show a live
+  total and support typo-tolerant name search plus strict ID search. Native
+  Peakbagger Buddy additions and removals refresh the saved Buddy List
+  immediately;
+  additions also join a selected custom list, while removals preserve the
+  favorite unless the new opt-in removal setting is enabled.
+
 - **Keep settings navigation responsive with large favorite lists.** Sidebar
   links still animate nearby moves, but long jumps now land immediately instead
   of scrolling through hundreds or thousands of climber rows.

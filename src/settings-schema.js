@@ -62,6 +62,9 @@
         // What the ascent filter's "Has beta" chip counts: an ascent
         // qualifies if it has any of the enabled signals.
         favoritesSource: 'buddies',
+        // Custom favorites always absorb a newly added Buddy. Removing the
+        // corresponding favorite is destructive, so it remains opt-in.
+        removeFavoriteWhenBuddyRemoved: false,
         betaTr: true, betaTrMinWords: 1, betaGps: true, betaLink: true,
         // Open a default (oldest-first) ascent list sorted newest-first. A sort
         // chosen by clicking a column, or carried in the URL, always wins.
@@ -138,7 +141,7 @@
         const s = { ...DEFAULTS, ...(raw && typeof raw === 'object' ? raw : {}) };
         if (!['auto', 'imperial', 'metric'].includes(s.units)) s.units = DEFAULTS.units;
         if (!['system', 'light', 'dark'].includes(s.theme)) s.theme = DEFAULTS.theme;
-        for (const key of ['enable3dMap', 'retainWaypoints', 'fillAscentDetails', 'fillTripInfo', 'fillWildernessNights', 'fillExternalUrl', 'enableReportEditor', 'addReportCredit', 'enableGithubBackup', 'autoGithubBackup', 'betaSortDateDesc']) {
+        for (const key of ['enable3dMap', 'retainWaypoints', 'fillAscentDetails', 'fillTripInfo', 'fillWildernessNights', 'fillExternalUrl', 'enableReportEditor', 'addReportCredit', 'enableGithubBackup', 'autoGithubBackup', 'removeFavoriteWhenBuddyRemoved', 'betaSortDateDesc']) {
             if (typeof s[key] !== 'boolean') s[key] = DEFAULTS[key];
         }
         // Auto-backup is meaningless without the feature enabled; never let it

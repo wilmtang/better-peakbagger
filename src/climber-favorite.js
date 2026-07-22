@@ -5,7 +5,11 @@
 
 import { settings as S } from './settings.js';
 import { favoriteClimbers as F } from './favorite-climbers.js';
+import { fetchPeakbaggerDocument } from './peakbagger-request.js';
 import { numericParam, ownerClimberId } from './profile-backup-core.js';
+
+const BUDDY_MUTATION_SESSION_KEY = 'bpbPendingBuddyMutation';
+const BUDDY_MUTATION_MAX_AGE_MS = 5 * 60 * 1000;
 
 (() => {
     'use strict';
@@ -23,6 +27,110 @@ import { numericParam, ownerClimberId } from './profile-backup-core.js';
     let button = null;
     let busy = false;
     let errorMessage = '';
+
+    const takePendingBuddyMutation = () => {
+        let raw = null;
+        try {
+            raw = sessionStorage.getItem(BUDDY_MUTATION_SESSION_KEY);
+            sessionStorage.removeItem(BUDDY_MUTATION_SESSION_KEY);
+        } catch { return null; }
+        if (!raw) return null;
+        let value = null;
+        try { value = JSON.parse(raw); }
+        catch { return null; }
+        const age = Date.now() - Number(value?.at);
+        return value?.version === 1
+            && value.cid === pageCid
+            && (value.action === 'add' || value.action === 'remove')
+            && Number.isFinite(age) && age >= 0 && age <= BUDDY_MUTATION_MAX_AGE_MS
+            ? { action: value.action, cid: pageCid }
+            : null;
+    };
+
+    const buddyActionForControl = control => {
+        if (!control || control.disabled) return null;
+        const form = control.form;
+        return F.buddyMutationAction([
+            control.value,
+            control.textContent,
+            control.getAttribute?.('aria-label'),
+            control.title,
+            control.id,
+            control.getAttribute?.('name'),
+            form?.id,
+            form?.getAttribute?.('name'),
+        ].filter(Boolean).join(' '));
+    };
+
+    const rememberBuddyMutation = control => {
+        const action = buddyActionForControl(control);
+        if (!action) return;
+        try {
+            sessionStorage.setItem(BUDDY_MUTATION_SESSION_KEY, JSON.stringify({
+                version: 1,
+                action,
+                cid: pageCid,
+                at: Date.now(),
+            }));
+        } catch { /* a blocked page store only disables automatic refresh */ }
+    };
+
+    const installBuddyMutationListener = () => {
+        if (ownCid == null) return;
+        document.addEventListener('click', event => {
+            if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+            const control = event.target?.closest?.(
+                'button, input[type="submit"], input[type="button"], input[type="image"], a[href]'
+            );
+            rememberBuddyMutation(control);
+        }, true);
+        document.addEventListener('submit', event => {
+            const fallback = event.target?.querySelector?.(
+                'button[type="submit"], input[type="submit"], input[type="image"]'
+            );
+            rememberBuddyMutation(event.submitter || fallback);
+        }, true);
+    };
+
+    const refreshAfterBuddyMutation = async mutation => {
+        if (!mutation || ownCid == null) return;
+        try {
+            const [settings, result] = await Promise.all([
+                S.get(),
+                fetchPeakbaggerDocument(F.signedInBuddyListUrl(location.origin), { kind: 'buddies' }),
+            ]);
+            if (result.kind !== 'ok') return;
+            const responseOwner = ownerClimberId(result.document);
+            if (responseOwner !== ownCid) return;
+            const entries = F.parseBuddyDocument(result.document);
+            const target = entries.find(entry => entry.cid === pageCid);
+            const confirmed = mutation.action === 'add' ? !!target : !target;
+            const patch = {
+                [F.BUDDY_CACHE_KEY]: { ownerCid: ownCid, entries, fetchedAt: Date.now() },
+            };
+            if (confirmed && settings.favoritesSource === 'custom') {
+                const stored = await store.get(F.FAVORITES_KEY);
+                const current = F.cleanFavorites(stored[F.FAVORITES_KEY]);
+                const next = F.applyBuddyMutationToFavorites(
+                    current,
+                    target || { cid: pageCid, name },
+                    mutation.action,
+                    {
+                        removeFavorite: settings.removeFavoriteWhenBuddyRemoved,
+                        now: Date.now(),
+                    },
+                );
+                if (JSON.stringify(next.entries) !== JSON.stringify(current.entries)) {
+                    patch[F.FAVORITES_KEY] = next;
+                }
+            }
+            await store.set(patch);
+        } catch { /* preserve the last valid cache and custom list on any failure */ }
+    };
+
+    const pendingBuddyMutation = takePendingBuddyMutation();
+    installBuddyMutationListener();
+    void refreshAfterBuddyMutation(pendingBuddyMutation);
 
     const injectStyle = () => {
         if (document.getElementById('bpb-climber-favorite-style')) return;

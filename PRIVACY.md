@@ -116,19 +116,24 @@ Peakbagger's `localStorage`.
 
 The Favorites ascent filter uses one of two device-local data sources. In Buddy
 List mode, the extension fetches the signed-in user's own Buddy List only when
-the filter needs an absent or stale copy, or when the user clicks **Refresh
-now**. Visiting that Buddy List updates the cache from the rendered page without
-another request. The cache contains third-party climber ids and displayed names
-plus the signed-in owner's id and fetch time. Seven days is its automatic
-refresh interval; a stale copy may remain locally and usable when refresh fails,
-until a later refresh replaces it or extension data is cleared.
+the filter needs an absent or stale copy, when the user requests a refresh or
+Buddy import in Settings, or after the user uses Peakbagger's native Add/Remove
+Buddy control. Visiting the Buddy List itself updates the cache from the
+rendered page without another request. The cache contains third-party climber
+ids and displayed names plus the signed-in owner's id and fetch time. Seven
+days is its ordinary automatic refresh interval; a stale copy may remain
+locally and usable when refresh fails, until a later refresh replaces it or
+extension data is cleared.
 
 In custom mode, the extension stores up to 1,500 climber ids, displayed names,
 added-at timestamps, and manual/Buddy provenance in `storage.local`. Adding by
 id or link fetches that public Peakbagger climber page to verify its identity and
 name. The list remains on the device until the user edits it, restores a backup,
 clears extension data, or uninstalls the extension. It is not sent through
-browser sync.
+browser sync. After a validated native Buddy addition, custom mode also adds the
+confirmed climber locally. Native Buddy removal leaves the custom favorite
+alone unless the user enables the synced removal setting; only the boolean
+preference, not the favorite list, uses browser sync.
 
 Rich- and Markdown-mode trip-report drafts are stored locally by the extension.
 They are keyed to the climber and ascent or peak, become eligible for lazy

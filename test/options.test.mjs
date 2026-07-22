@@ -410,9 +410,11 @@ test('favorite source defaults to buddies and switching to custom persists', asy
     const dom = await loadOptions({});
     const buddies = dom.window.document.querySelector('input[name="favorites-source"][value="buddies"]');
     const custom = dom.window.document.querySelector('input[name="favorites-source"][value="custom"]');
+    const removeWithBuddy = el(dom, 'favorites-remove-with-buddy');
     assert.equal(buddies.checked, true);
     assert.equal(el(dom, 'favorites-buddy-panel').hidden, false);
     assert.equal(el(dom, 'favorites-custom-panel').hidden, true);
+    assert.equal(removeWithBuddy.checked, false, 'removing a Buddy is non-destructive by default');
     assert.match(el(dom, 'favorites-buddy-cache-hint').textContent,
         /saved copy of your Buddy List for up to 7 days/);
     assert.match(el(dom, 'favorites-buddy-cache-hint').textContent,
@@ -423,6 +425,10 @@ test('favorite source defaults to buddies and switching to custom persists', asy
     await waitFor(dom, () => dom.chrome._store.bpbSettings.favoritesSource === 'custom');
     assert.equal(el(dom, 'favorites-buddy-panel').hidden, true);
     assert.equal(el(dom, 'favorites-custom-panel').hidden, false);
+
+    removeWithBuddy.checked = true;
+    removeWithBuddy.dispatchEvent(new dom.window.Event('change'));
+    await waitFor(dom, () => dom.chrome._store.bpbSettings.removeFavoriteWhenBuddyRemoved === true);
 });
 
 test('adding a climber by id resolves and validates the public profile', async () => {

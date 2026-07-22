@@ -631,7 +631,7 @@ guessing column positions.
 
 Favorite Climbers is not one interchangeable list. It is a source selector, two
 device-local datasets with different lifecycles, one page-local filter state,
-three ingestion paths, and an optional explicit transfer path. Keeping those
+four ingestion paths, and an optional explicit transfer path. Keeping those
 roles separate is the central invariant: changing source must not copy or delete
 data, a stale Buddy cache must not become a custom list implicitly, and browser
 sync must never acquire the third-party names stored in either local dataset.
@@ -640,9 +640,9 @@ sync must never acquire the third-party names stored in either local dataset.
 
 | Module or surface | Runtime boundary | Owns | Does not own |
 | --- | --- | --- | --- |
-| `src/favorite-climbers.js` | Pure ES module bundled into each caller | Validation, normalization, bounds, parsers, merge/mirror semantics, effective membership, and comparators | DOM globals, storage, fetch, extension messaging, or UI |
+| `src/favorite-climbers.js` | Pure ES module bundled into each caller | Validation, normalization, bounds, parsers, merge/mirror and confirmed-Buddy-mutation semantics, effective membership, comparators, and fuzzy scoring | DOM globals, storage, fetch, extension messaging, or UI |
 | `src/ascent-filter.js` | Isolated content script at `document_start` | Peak-ascent row identities, Favorites chip state/count, automatic Buddy revalidation, and opportunistic Buddy-page caching | Custom-list management or GitHub transfer |
-| `src/climber-favorite.js` | Separate isolated content script at `document_end` | The add/remove control on a public climber page | Buddy-mode editing or arbitrary profile lookup |
+| `src/climber-favorite.js` | Separate isolated content script at `document_end` | The custom-favorite control plus native Buddy-action detection, post-navigation refresh, and confirmed custom-list synchronization | Arbitrary profile lookup or trusting an unconfirmed click as a successful Buddy mutation |
 | `options/favorites.js` | Extension options page | Source selection, Buddy refresh status, custom-list management, reversible bulk actions, and GitHub transfer UI | GitHub token access or repository writes |
 | `src/profile-backup-core.js` | Pure shared module | Signed-in owner discovery and numeric URL identity | Favorites persistence or request orchestration |
 | `src/peakbagger-request.js`, `src/peakbagger-response.js`, and `src/peakbagger-error.js` | Shared request boundary | Authenticated fetch policy, response classification, parsing failures, and actionable error copy | Favorites schema or persistence |
@@ -672,11 +672,12 @@ single settings schema and favorite-climbers contract.
 
 ### Persisted state and schemas
 
-There are four relevant persistence locations:
+There are five relevant persisted values:
 
 | Location | Key | Shape and authority | Lifecycle |
 | --- | --- | --- | --- |
 | `storage.sync` | `bpbSettings.favoritesSource` | `buddies` or `custom`; validated by `settings-schema.js`; defaults to `buddies` | Syncs as a preference through the browser account |
+| `storage.sync` | `bpbSettings.removeFavoriteWhenBuddyRemoved` | Whether a confirmed native Buddy removal also removes that climber from the custom list; defaults to `false` | Syncs as an explicit destructive-behavior preference through the browser account |
 | `storage.local` | `bpbFavoriteClimbers` | Authoritative custom list | Device-local until edited, restored, extension data is cleared, or the extension is removed |
 | `storage.local` | `bpbBuddyCache` | Last successfully parsed Buddy List plus owner and fetch time | Device-local stale-while-revalidate cache; no expiry deletion |
 | Peakbagger `localStorage` | `pbAscentBetaFilter.v1.fav` | Whether the Favorites chip is selected | Page-origin UI convenience; independent of the source and datasets |
@@ -710,9 +711,10 @@ The Buddy cache is intentionally narrower and is not a custom-list snapshot:
 ```
 
 `source` on a custom entry records provenance only. It says whether that entry
-was added manually or copied by merge/mirror; it does not select the effective
-mode, keep the entry synchronized with Peakbagger, or make it part of the live
-Buddy cache.
+was added manually or copied from a Buddy operation; it does not select the
+effective mode, opt the entry into removal synchronization, or make it part of
+the live Buddy cache. The global removal preference controls confirmed native
+Buddy removals regardless of an individual favorite's provenance.
 
 Every reader cleans data through `src/favorite-climbers.js` before use. Climber
 ids must be positive safe integers. Names replace non-breaking spaces, collapse
@@ -800,7 +802,7 @@ examines only cell zero of each `#RGridView` row, accepts an exact
 pair. The fetched HTML, other Buddy columns, and ascent history are never
 persisted.
 
-The cache can be populated through three paths:
+The cache can be populated through four paths:
 
 1. **Active filter revalidation.** On `PeakAscents.aspx`, the content script
    discovers the current account from rendered “My Ascents”, “Add Ascent”, or
@@ -817,6 +819,15 @@ The cache can be populated through three paths:
    content script parses the already displayed table and rewrites the cache
    after the Buddy table has passed normal sorter initialization. This happens
    regardless of the selected source and issues no extra request.
+4. **Confirmed native Buddy mutation.** On another climber's public profile,
+   the content script recognizes only an unambiguous native Add/Remove Buddy
+   control and leaves a five-minute, tab-origin navigation marker. After
+   Peakbagger completes the navigation, the new document consumes the marker
+   and fetches the signed-in Buddy report. The owner must match the current
+   signed-in identity and the target's membership must match the intended
+   action before the custom list changes. The validated report refreshes the
+   Buddy cache even when an action is unconfirmed; request, identity, or parse
+   failure preserves both previously stored datasets.
 
 Cache states have precise behavior:
 
@@ -852,6 +863,14 @@ normally makes further automatic triggers no-ops.
 
 The options manager supports these distinct operations:
 
+- **Search and total** always report the complete custom-list size, or the
+  matching and total sizes while filtering. Search is accent-insensitive and
+  ranks exact, prefix, substring, initials, ordered-subsequence, and bounded
+  typo matches across name tokens. Numeric name/id tokens stay strict so a
+  neighboring climber id never appears as a typo match. Relevance uses the
+  selected name/newest ordering as its stable tie-breaker and never rewrites
+  storage order.
+
 - **Add by id or link** accepts a positive id or an exact Peakbagger
   `climber.aspx?cid=...` URL. It fetches the canonical public profile, rejects
   challenge/login/wrong-content responses, requires a `ClimbListC.aspx` identity
@@ -878,6 +897,12 @@ The options manager supports these distinct operations:
 - **GitHub restore** is another complete replacement with the same bulk Undo
   mechanism. Closing or reloading the options page discards the Undo snapshot,
   not the already persisted replacement.
+- **Native Buddy changes** always refresh the owner-scoped Buddy cache after
+  Peakbagger completes the profile-page action. In custom mode, a confirmed add
+  prepends a missing `source: 'buddy'` favorite without rewriting existing
+  metadata. A confirmed removal preserves the custom favorite by default; the
+  **Keep Buddy removals in sync** setting opts into removal. Full lists and
+  unconfirmed/failed actions fail non-destructively.
 
 On public climber pages, `src/climber-favorite.js` mounts a compact outlined or
 filled star beside the page title only when custom mode is active, the page

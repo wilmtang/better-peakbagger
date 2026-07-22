@@ -164,13 +164,13 @@ test('the ascent sorter also reaches the Buddy List report endpoint', () => {
     }
 });
 
-test('climber pages get only the custom favorite toggle in the extension world', () => {
+test('climber pages get the favorite toggle and confirmed Buddy refresh in the extension world', () => {
     const script = contentEntry('content/climber-favorite.js');
     assert.ok(script);
     assert.equal(script.run_at, 'document_end');
     assert.equal(script.world, undefined);
     assert.deepEqual(bundleSources('content/climber-favorite.js'),
-        ['settings-schema.js', 'settings.js', 'favorite-climbers.js', 'climber-favorite.js']);
+        ['settings-schema.js', 'settings.js', 'favorite-climbers.js', 'peakbagger-cloudflare.js', 'peakbagger-response.js', 'peakbagger-error.js', 'peakbagger-request.js', 'profile-backup-core.js', 'climber-favorite.js']);
     assert.equal(script.matches.length, 4);
     assert.ok(script.matches.every(pattern => /peakbagger\.com\/climber\/(?:C|c)limber\.aspx/.test(pattern)));
 });

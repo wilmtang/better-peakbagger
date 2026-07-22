@@ -185,7 +185,9 @@ async function main() {
       const api = globalThis.browser || globalThis.chrome;
       const entries = Array.from({ length: 1500 }, (_, index) => ({
         cid: 100000 + index,
-        name: `Navigation Scale Climber ${String(index + 1).padStart(4, "0")}`,
+        name: index === 1498
+          ? "Navigation Alpine Climber 1499"
+          : `Navigation Scale Climber ${String(index + 1).padStart(4, "0")}`,
         addedAt: index,
         source: index % 2 ? "buddy" : "manual",
       }));
@@ -219,6 +221,32 @@ async function main() {
       driver,
       "return document.querySelectorAll('.favorite-item').length === 1500;",
       "the full Firefox favorite-climber scale list",
+    );
+    const fullFavoriteCount = await driver.findElement(By.id("favorites-count")).getText();
+    await driver.findElement(By.id("favorites-search")).sendKeys("alpin clmber 1499");
+    const fuzzyFavoriteSearch = await waitForScript(driver, `
+      const rows = [...document.querySelectorAll(".favorite-item")];
+      const count = document.getElementById("favorites-count")?.textContent || "";
+      return rows.length === 1 && count === "1 of 1,500 favorites" ? {
+        name: rows[0].querySelector(".favorite-name")?.textContent || "",
+        count,
+      } : false;
+    `, "the Firefox favorite-climber fuzzy search");
+    assertState(
+      fullFavoriteCount === "1,500 favorites"
+        && fuzzyFavoriteSearch.name === "Navigation Alpine Climber 1499",
+      "Firefox did not report or fuzzy-filter the full favorite-climber list",
+      { fullFavoriteCount, fuzzyFavoriteSearch },
+    );
+    await driver.executeScript(`
+      const search = document.getElementById("favorites-search");
+      search.value = "";
+      search.dispatchEvent(new Event("input", { bubbles: true }));
+    `);
+    await waitForScript(
+      driver,
+      "return document.querySelectorAll('.favorite-item').length === 1500;",
+      "the restored Firefox favorite-climber scale list",
     );
     const longDistanceBefore = await driver.executeScript(`
       const content = document.querySelector(".content");
@@ -265,11 +293,89 @@ async function main() {
       "the 1,500-row Firefox options list did not make long-distance sidebar navigation instant",
       longDistanceNavigation,
     );
+
     await driver.executeAsyncScript(done => {
       const api = globalThis.browser || globalThis.chrome;
       api.storage.sync.get("bpbSettings").then(({ bpbSettings = {} }) => Promise.all([
         api.storage.sync.set({
-          bpbSettings: { ...bpbSettings, favoritesSource: "buddies" },
+          bpbSettings: {
+            ...bpbSettings,
+            favoritesSource: "custom",
+            removeFavoriteWhenBuddyRemoved: false,
+          },
+        }),
+        api.storage.local.set({
+          bpbFavoriteClimbers: { schemaVersion: 1, entries: [] },
+        }),
+      ])).then(() => done(true), error => done(String(error)));
+    });
+    const buddyMutationBaseline = { ...fixture.requests };
+    const otherClimberUrl = `https://${fixtureHost}:${fixture.port}/climber/climber.aspx?cid=900002`;
+    await driver.get(otherClimberUrl);
+    await driver.wait(until.elementLocated(By.id("BuddyButton")), 10_000);
+    await driver.wait(until.elementLocated(By.id("bpb-climber-favorite")), 10_000);
+    await driver.findElement(By.id("BuddyButton")).click();
+    const buddyAdded = await waitForScript(driver, `
+      const nativeButton = document.getElementById("BuddyButton");
+      const favorite = document.getElementById("bpb-climber-favorite");
+      return /^Remove\\b/.test(nativeButton?.value || "") && favorite?.textContent === "★" ? {
+        native: nativeButton.value,
+        favorite: favorite.textContent,
+      } : false;
+    `, "the confirmed Firefox Buddy addition");
+    await driver.findElement(By.id("BuddyButton")).click();
+    const removalPreserved = await waitForScript(driver, `
+      const nativeButton = document.getElementById("BuddyButton");
+      const favorite = document.getElementById("bpb-climber-favorite");
+      return /^Add\\b/.test(nativeButton?.value || "") && favorite?.textContent === "★";
+    `, "the default Firefox Buddy removal policy");
+    assertState(
+      buddyAdded.favorite === "★" && removalPreserved,
+      "Firefox did not add a confirmed Buddy or preserve the favorite on default removal",
+      { buddyAdded, removalPreserved },
+    );
+
+    await driver.get(optionsUrl);
+    const removeWithBuddy = await driver.findElement(By.id("favorites-remove-with-buddy"));
+    assertState(!(await removeWithBuddy.isSelected()),
+      "Firefox rendered destructive Buddy removal sync on by default");
+    await removeWithBuddy.click();
+    const removalPreferenceSaved = await driver.wait(() => driver.executeAsyncScript(done => {
+      const api = globalThis.browser || globalThis.chrome;
+      api.storage.sync.get("bpbSettings")
+        .then(({ bpbSettings }) => done(bpbSettings?.removeFavoriteWhenBuddyRemoved === true));
+    }), 5_000);
+    assertState(removalPreferenceSaved, "Firefox did not persist the Buddy removal preference");
+    await driver.get(otherClimberUrl);
+    await driver.wait(until.elementLocated(By.id("BuddyButton")), 10_000);
+    await driver.findElement(By.id("BuddyButton")).click();
+    await waitForScript(driver, `
+      return /^Remove\\b/.test(document.getElementById("BuddyButton")?.value || "")
+        && document.getElementById("bpb-climber-favorite")?.textContent === "★";
+    `, "the second confirmed Firefox Buddy addition");
+    await driver.findElement(By.id("BuddyButton")).click();
+    const removalSynced = await waitForScript(driver, `
+      return /^Add\\b/.test(document.getElementById("BuddyButton")?.value || "")
+        && document.getElementById("bpb-climber-favorite")?.textContent === "☆";
+    `, "the opted-in Firefox Buddy removal policy");
+    assertState(
+      removalSynced
+        && fixture.requests.buddyMutations - buddyMutationBaseline.buddyMutations === 4
+        && fixture.requests.buddyReports - buddyMutationBaseline.buddyReports === 4,
+      "Firefox Buddy mutation sync did not issue one confirmed refresh per native action",
+      { before: buddyMutationBaseline, after: fixture.requests, removalSynced },
+    );
+
+    await driver.get(optionsUrl);
+    await driver.executeAsyncScript(done => {
+      const api = globalThis.browser || globalThis.chrome;
+      api.storage.sync.get("bpbSettings").then(({ bpbSettings = {} }) => Promise.all([
+        api.storage.sync.set({
+          bpbSettings: {
+            ...bpbSettings,
+            favoritesSource: "buddies",
+            removeFavoriteWhenBuddyRemoved: false,
+          },
         }),
         api.storage.local.set({
           bpbFavoriteClimbers: { schemaVersion: 1, entries: [] },
@@ -633,7 +739,8 @@ async function main() {
     console.log(`  - ${capabilities.getBrowserName()} ${capabilities.getBrowserVersion()}`);
     console.log(`  - hidden/headless at ${verificationViewport.width}x${verificationViewport.height}`);
     console.log("  - real sync/local/session storage and storage.onChanged round-tripped");
-    console.log("  - sidebar navigation jumped instantly across the real 1,500-row favorite-climber list");
+    console.log("  - the real 1,500-row favorite list reported its total, fuzzy-searched, and kept long navigation instant");
+    console.log("  - four native Buddy actions refreshed/synced custom favorites under both removal policies");
     console.log("  - options, popup, ascent, editor, Peak, BigMap, PeakAscents, Buddy List, and profile-backup surfaces initialized");
     console.log("  - a fresh ascent form autofilled its local date and trusted GPX selection swapped Preview for Process");
     console.log("  - AMO report credit, real editor input/draft recovery, filter/sort, and 3D frame passed");
