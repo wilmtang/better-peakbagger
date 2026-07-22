@@ -352,6 +352,31 @@ test('settings GitHub controls point disconnected users to the shared connection
     assert.equal(el(dom, 'settings-backup-github-actions').hidden, true);
 });
 
+test('settings GitHub controls refresh after an in-page repository selection', async () => {
+    let status = { connected: false, hasToken: false };
+    const dom = await loadOptions({}, {
+        prepareChrome: chrome => {
+            chrome.permissions = { request: async () => true, contains: async () => true, remove: async () => true };
+            chrome.runtime.sendMessage = (message, callback) => {
+                const reply = message.type === 'GITHUB_AUTH_STATUS' ? status : {};
+                if (typeof callback === 'function') Promise.resolve().then(() => callback(reply));
+                return Promise.resolve(reply);
+            };
+        }
+    });
+    await waitFor(dom, () => /Connect GitHub above/.test(el(dom, 'settings-backup-github-status').textContent));
+
+    status = {
+        connected: true,
+        hasToken: true,
+        repo: { owner: 'ada', name: 'peaks', fullName: 'ada/peaks' },
+    };
+    await dom.chrome.storage.local.set({ bpbGithubAuth: { repo: status.repo } });
+
+    await waitFor(dom, () => !el(dom, 'settings-backup-github-actions').hidden);
+    assert.match(el(dom, 'settings-backup-github-status').textContent, /settings\.json.*ada\/peaks/);
+});
+
 test('settings GitHub controls hide when the optional host permission is revoked', async () => {
     const dom = await loadOptions({}, {
         prepareChrome: withGithubBackground({

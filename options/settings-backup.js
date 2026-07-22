@@ -5,9 +5,12 @@
 
 import { settings as S } from '../src/settings/settings.js';
 import { settingsTransfer as Transfer } from '../src/settings/settings-transfer.js';
+import { STORAGE_KEY as GITHUB_AUTH_STORAGE_KEY } from '../src/github/github-auth.js';
 import { githubError as GithubError } from '../src/github/github-error-copy.js';
 import { hasGithubPermission } from './github.js';
 import { optionsUtils as OptionsUtils } from './options-utils.js';
+
+const SETTINGS_STORAGE_KEY = S.STORAGE_KEY;
 
 const invalidFileMessage = reason => reason === 'newer-version'
     ? 'This settings file was made by a newer version of the extension.'
@@ -168,6 +171,12 @@ export function initSettingsBackup({ extensionApi, flash, save }) {
     });
 
     window.addEventListener('focus', () => { void refreshGithub(); });
+    if (extensionApi.storage.onChanged) {
+        extensionApi.storage.onChanged.addListener((changes, area) => {
+            if (area === 'local' && changes[GITHUB_AUTH_STORAGE_KEY]) void refreshGithub();
+            if (area === 'sync' && changes[SETTINGS_STORAGE_KEY]) void refreshGithub();
+        });
+    }
 
     let painted = false;
     return {
