@@ -16,6 +16,7 @@ import { gpxMetrics as GpxMetrics } from './gpx-metrics.js';
 import { peakbaggerError as PeakbaggerError } from '../peakbagger/peakbagger-error.js';
 import { fetchPeakbaggerDocument } from '../peakbagger/peakbagger-request.js';
 import { settingsSchema as Schema } from '../settings/settings-schema.js';
+import { themeResolve as ThemeResolve } from '../theme/theme-resolve.js';
 import { peakMarkers } from '../maps/peak-markers.js';
 import { terrainBasemap } from '../terrain/terrain-basemap.js';
 import { terrainCompass as TerrainCompass } from '../terrain/terrain-compass.js';
@@ -71,8 +72,7 @@ const run = async () => {
             chartText: '#b6b0a6', chartGrid: 'rgba(255,255,255,0.12)', axisTitle: '#e6e1d8', timeAxis: '#6ab0de'
         }
     };
-    const prefersDark = () => !!(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
-    const effectiveTheme = pref => (pref === 'light' || pref === 'dark') ? pref : (prefersDark() ? 'dark' : 'light');
+    const effectiveTheme = preference => ThemeResolve.resolve(preference);
 
     // Bridge client: swaps settings with the isolated-world bridge over postMessage.
     const BPB = (() => {

@@ -6,6 +6,7 @@
 // MasterMap frame while settings and the renderer remain extension-isolated.
 
 import { settingsSchema as Schema } from '../settings/settings-schema.js';
+import { themeResolve as ThemeResolve } from '../theme/theme-resolve.js';
 import { terrainBasemap } from '../terrain/terrain-basemap.js';
 import { peakMarkers } from './peak-markers.js';
 import { terrainCompass as TerrainCompass } from '../terrain/terrain-compass.js';
@@ -104,10 +105,7 @@ import { terrainFailure as TerrainFailure } from '../terrain/terrain-failure.js'
         onReset: () => postTerrain('resetNorth')
     });
 
-    const prefersDark = () => !!(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
-    const effectiveTheme = () => (terrainThemePref === 'light' || terrainThemePref === 'dark')
-        ? terrainThemePref
-        : (prefersDark() ? 'dark' : 'light');
+    const effectiveTheme = () => ThemeResolve.resolve(terrainThemePref);
     const postTerrain = (type, detail = {}) => window.postMessage({
         __bpbTerrain: true, dir: 'toCS', type, ...detail
     }, location.origin);

@@ -7,6 +7,7 @@
 // Runs in MAIN world because the Leaflet map and layers are page-owned globals.
 
 import { settingsSchema as Schema } from '../settings/settings-schema.js';
+import { themeResolve as ThemeResolve } from '../theme/theme-resolve.js';
 import { gpxMetrics } from '../gpx/gpx-metrics.js';
 import { terrainBasemap } from '../terrain/terrain-basemap.js';
 import { peakMarkers } from './peak-markers.js';
@@ -325,10 +326,7 @@ import { terrainFailure as TerrainFailure } from '../terrain/terrain-failure.js'
         if (terrainFailureNotice) terrainFailureNotice.position();
     };
 
-    const prefersDark = () => !!(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
-    const effectiveTheme = () => (terrainThemePref === 'light' || terrainThemePref === 'dark')
-        ? terrainThemePref
-        : (prefersDark() ? 'dark' : 'light');
+    const effectiveTheme = () => ThemeResolve.resolve(terrainThemePref);
 
     const postTerrain = (type, detail = {}) => window.postMessage({
         __bpbTerrain: true, dir: 'toCS', type, ...detail
