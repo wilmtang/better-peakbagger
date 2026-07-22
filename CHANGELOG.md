@@ -1,6 +1,5 @@
 # Changelog
-
-## 3.0.0 — 2026-07-20
+## Unreleased
 
 - **Filter ascent beta by favorite climbers.** The full Peak Ascents view now
   has a Favorites chip that combines with Trip report, GPS track, Link, and Has
@@ -11,6 +10,8 @@
   control only in custom mode. A shared GitHub connection can explicitly write
   or restore the custom list as `favorites.json` even when ascent backup is off;
   automatic ascent backup never touches it.
+  
+## 3.0.0 — 2026-07-20
 
 - **Manage every trip-report draft in one place.** A new **TR drafts**
   section in Settings lists the reports autosaved on this device, newest first,
