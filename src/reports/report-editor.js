@@ -26,6 +26,7 @@ import { reportDrafts as ReportDrafts } from './report-drafts.js';
 import { ascentSnapshot as AscentSnapshot } from '../ascent/ascent-snapshot.js';
 import { createRichEditor, richCommands, richState } from './report-rich-editor.js';
 import { createMarkdownEditor } from './report-md-editor.js';
+import { dom as Dom } from '../ui/dom.js';
 
 // Kept as an IIFE for early-exit control flow (no editor form → nothing to do);
 // dependencies are ES imports and no globals are published.
@@ -107,12 +108,7 @@ import { createMarkdownEditor } from './report-md-editor.js';
 
     // ---- DOM ----------------------------------------------------------------
 
-    const el = (tag, className, text) => {
-        const node = document.createElement(tag);
-        if (className) node.className = className;
-        if (text !== undefined) node.textContent = text;
-        return node;
-    };
+    const el = (tag, className, text) => Dom.element(tag, { class: className, text });
 
     const button = (className, label, title, html) => {
         const node = el('button', className);

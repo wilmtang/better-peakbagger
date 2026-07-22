@@ -11,6 +11,7 @@ import { fetchPeakbaggerDocument } from '../src/peakbagger/peakbagger-request.js
 import { numericParam, ownerClimberId } from '../src/profile/profile-backup-core.js';
 import { STORAGE_KEY as SETTINGS_STORAGE_KEY } from '../src/settings/settings.js';
 import { hasGithubPermission } from './github.js';
+import { optionsUtils as OptionsUtils } from './options-utils.js';
 
 const UNDO_MS = 6000;
 const SITE_TAB_REFRESH_MS = 8000;
@@ -83,14 +84,7 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
     let githubBackupResult = null;
     const pendingDeletes = new Map();
 
-    const send = message => new Promise(resolve => {
-        try {
-            extensionApi.runtime.sendMessage(message, response => {
-                void extensionApi.runtime.lastError;
-                resolve(response || null);
-            });
-        } catch { resolve(null); }
-    });
+    const send = message => OptionsUtils.send(extensionApi, message);
 
     const relativeAge = fetchedAt => {
         const elapsed = Math.max(0, Date.now() - fetchedAt);
@@ -325,10 +319,7 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
         renderList();
     };
 
-    const githubRepoName = () => githubStatus?.repo?.fullName
-        || (githubStatus?.repo?.owner && githubStatus?.repo?.name
-            ? `${githubStatus.repo.owner}/${githubStatus.repo.name}`
-            : 'the connected repository');
+    const githubRepoName = () => OptionsUtils.githubRepoName(githubStatus);
 
     const renderGithub = () => {
         const connected = !!(githubStatus?.permissionGranted && githubStatus?.connected);
@@ -598,13 +589,10 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
         }
     };
 
-    const withGithubBusy = async operation => {
-        if (githubBusy) return;
-        githubBusy = true;
-        renderGithub();
-        try { await operation(); }
-        finally { githubBusy = false; renderGithub(); }
-    };
+    const withGithubBusy = operation => OptionsUtils.withBusy({
+        isBusy: () => githubBusy,
+        setBusy: value => { githubBusy = value; renderGithub(); },
+    }, operation);
 
     const backupFavorites = () => withGithubBusy(async () => {
         const response = await send({ type: 'GITHUB_FAVORITES_BACKUP' });

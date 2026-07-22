@@ -1,0 +1,46 @@
+// Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { optionsUtils as Utils } from '../../options/options-utils.js';
+
+test('options messaging normalizes callback responses and failures', async () => {
+    const replies = {
+        runtime: {
+            lastError: null,
+            sendMessage(message, callback) { callback({ echoed: message.type }); }
+        }
+    };
+    assert.deepEqual(await Utils.send(replies, { type: 'PING' }), { echoed: 'PING' });
+    assert.equal(await Utils.send({ runtime: { sendMessage() { throw new Error('gone'); } } }, {}), null);
+});
+
+test('options busy runner rejects overlap and always clears its state', async () => {
+    let busy = false;
+    let release;
+    let calls = 0;
+    const state = {
+        isBusy: () => busy,
+        setBusy: value => { busy = value; },
+    };
+    const first = Utils.withBusy(state, async () => {
+        calls++;
+        await new Promise(resolve => { release = resolve; });
+    });
+    await Utils.withBusy(state, async () => { calls++; });
+    assert.equal(calls, 1);
+    assert.equal(busy, true);
+    release();
+    await first;
+    assert.equal(busy, false);
+
+    await assert.rejects(Utils.withBusy(state, async () => { throw new Error('failed'); }), /failed/);
+    assert.equal(busy, false);
+});
+
+test('options repository names prefer the canonical full name', () => {
+    assert.equal(Utils.githubRepoName({ repo: { fullName: 'ada/peaks', owner: 'x', name: 'y' } }), 'ada/peaks');
+    assert.equal(Utils.githubRepoName({ repo: { owner: 'ada', name: 'peaks' } }), 'ada/peaks');
+    assert.equal(Utils.githubRepoName(null), 'the connected repository');
+});

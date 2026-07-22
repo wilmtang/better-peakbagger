@@ -14,6 +14,7 @@ import { ascentPage as AscentPage } from './ascent-page.js';
 import { ascentBackupSource as Source } from './ascent-backup-source.js';
 import { githubError as GithubError } from '../github/github-error.js';
 import { peakbaggerError as PeakbaggerError } from '../peakbagger/peakbagger-error.js';
+import { dom as Dom } from '../ui/dom.js';
 
 (() => {
     'use strict';
@@ -33,17 +34,7 @@ import { peakbaggerError as PeakbaggerError } from '../peakbagger/peakbagger-err
         catch { return null; }
     };
 
-    const el = (tag, props = {}, children = []) => {
-        const node = document.createElement(tag);
-        for (const [key, value] of Object.entries(props)) {
-            if (key === 'class') node.className = value;
-            else if (key === 'text') node.textContent = value;
-            else if (key.startsWith('on') && typeof value === 'function') node.addEventListener(key.slice(2), value);
-            else if (value != null) node.setAttribute(key, value);
-        }
-        for (const child of [].concat(children)) if (child) node.appendChild(child);
-        return node;
-    };
+    const el = Dom.element;
 
     let control = null;
     const setBody = (...nodes) => { if (control) control.querySelector('.bpb-gh-body').replaceChildren(...nodes.filter(Boolean)); };

@@ -7,6 +7,7 @@ import { settings as S } from '../src/settings/settings.js';
 import { settingsTransfer as Transfer } from '../src/settings/settings-transfer.js';
 import { githubError as GithubError } from '../src/github/github-error.js';
 import { hasGithubPermission } from './github.js';
+import { optionsUtils as OptionsUtils } from './options-utils.js';
 
 const invalidFileMessage = reason => reason === 'newer-version'
     ? 'This settings file was made by a newer version of the extension.'
@@ -35,20 +36,9 @@ export function initSettingsBackup({ extensionApi, flash, save }) {
     let githubStatus = null;
     let githubBusy = false;
 
-    const send = message => new Promise(resolve => {
-        try {
-            extensionApi.runtime.sendMessage(message, response => {
-                void extensionApi.runtime.lastError;
-                resolve(response || null);
-            });
-        } catch {
-            resolve(null);
-        }
-    });
+    const send = message => OptionsUtils.send(extensionApi, message);
 
-    const repoName = () => githubStatus?.repo?.fullName
-        || (githubStatus?.repo?.owner && githubStatus?.repo?.name
-            ? `${githubStatus.repo.owner}/${githubStatus.repo.name}` : 'the connected repository');
+    const repoName = () => OptionsUtils.githubRepoName(githubStatus);
 
     const hideConfirmation = () => {
         pendingImport = null;
@@ -129,17 +119,10 @@ export function initSettingsBackup({ extensionApi, flash, save }) {
         renderGithub();
     };
 
-    const withGithubBusy = async operation => {
-        if (githubBusy) return;
-        githubBusy = true;
-        renderGithub();
-        try {
-            await operation();
-        } finally {
-            githubBusy = false;
-            renderGithub();
-        }
-    };
+    const withGithubBusy = operation => OptionsUtils.withBusy({
+        isBusy: () => githubBusy,
+        setBusy: value => { githubBusy = value; renderGithub(); },
+    }, operation);
 
     githubBackupEl.addEventListener('click', () => withGithubBusy(async () => {
         const response = await send({ type: 'GITHUB_SETTINGS_BACKUP' });

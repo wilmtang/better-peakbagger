@@ -13,6 +13,8 @@
 
 import { githubError as GithubError } from '../src/github/github-error.js';
 import { githubErrors as GithubErrors } from '../src/github/github-errors.js';
+import { dom as Dom } from '../src/ui/dom.js';
+import { optionsUtils as OptionsUtils } from './options-utils.js';
 
 const { ERROR_CODES } = GithubErrors;
 
@@ -48,29 +50,11 @@ export function initGithubBackup({ extensionApi, flash, save }) {
         if (countdownTimer) { clearTimeout(countdownTimer); countdownTimer = null; }
     };
 
-    const send = message => new Promise(resolve => {
-        try {
-            extensionApi.runtime.sendMessage(message, response => {
-                void extensionApi.runtime.lastError; // reading clears the warning
-                resolve(response || null);
-            });
-        } catch { resolve(null); }
-    });
+    const send = message => OptionsUtils.send(extensionApi, message);
 
     // ---- small DOM builders ------------------------------------------------
 
-    const el = (tag, props = {}, children = []) => {
-        const node = document.createElement(tag);
-        for (const [key, value] of Object.entries(props)) {
-            if (key === 'class') node.className = value;
-            else if (key === 'text') node.textContent = value;
-            else if (key === 'checked') node.checked = !!value;
-            else if (key.startsWith('on') && typeof value === 'function') node.addEventListener(key.slice(2), value);
-            else if (value != null) node.setAttribute(key, value);
-        }
-        for (const child of [].concat(children)) if (child) node.appendChild(child);
-        return node;
-    };
+    const el = Dom.element;
     const button = (label, { primary = false, onClick } = {}) =>
         el('button', { type: 'button', class: primary ? 'github-primary' : 'secondary', text: label, onclick: onClick });
     const openTab = url => { try { window.open(url, '_blank', 'noopener'); } catch { /* popup blocked */ } };

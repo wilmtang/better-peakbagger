@@ -10,6 +10,7 @@ import { ascentBackupSource as Source } from '../ascent/ascent-backup-source.js'
 import { githubError as GithubError } from '../github/github-error.js';
 import { peakbaggerCloudflare as Cloudflare } from '../peakbagger/peakbagger-cloudflare.js';
 import { peakbaggerError as PeakbaggerError } from '../peakbagger/peakbagger-error.js';
+import { dom as Dom } from '../ui/dom.js';
 
 (() => {
     'use strict';
@@ -22,17 +23,7 @@ import { peakbaggerError as PeakbaggerError } from '../peakbagger/peakbagger-err
             ext.runtime.sendMessage(message, response => { void ext.runtime.lastError; resolve(response || null); });
         } catch { resolve(null); }
     });
-    const node = (tag, props = {}, children = []) => {
-        const result = document.createElement(tag);
-        for (const [key, value] of Object.entries(props)) {
-            if (key === 'class') result.className = value;
-            else if (key === 'text') result.textContent = value;
-            else if (key.startsWith('on') && typeof value === 'function') result.addEventListener(key.slice(2), value);
-            else if (value != null) result.setAttribute(key, value);
-        }
-        for (const child of [].concat(children)) if (child) result.append(child);
-        return result;
-    };
+    const node = Dom.element;
 
     let panel;
     let runner;
