@@ -13,6 +13,7 @@ import { hasGithubPermission } from './github.js';
 const UNDO_MS = 6000;
 const SITE_TAB_REFRESH_MS = 8000;
 const PEAKBAGGER_ORIGIN = 'https://www.peakbagger.com';
+const SOURCE_FILTERS = ['all', 'buddy', 'manual'];
 
 export const initFavorites = ({ extensionApi, flash, save } = {}) => {
     const store = extensionApi?.storage?.local;
@@ -27,6 +28,8 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
     const limitEl = document.getElementById('favorites-limit');
     const sortEl = document.getElementById('favorites-sort');
     const searchEl = document.getElementById('favorites-search');
+    const sourceFilterEls = SOURCE_FILTERS.map(value =>
+        document.querySelector(`[data-favorites-source-filter="${value}"]`));
     const countEl = document.getElementById('favorites-count');
     const mergeEl = document.getElementById('favorites-merge-buddies');
     const mirrorEl = document.getElementById('favorites-mirror-buddies');
@@ -49,7 +52,8 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
 
     if (!store || !sourceEls.length || !buddyPanelEl || !customPanelEl || !buddyStatusEl
         || !refreshBuddiesEl || !addFormEl || !addInputEl || !addButtonEl || !limitEl || !sortEl
-        || !searchEl || !countEl || !mergeEl || !mirrorEl || !removeWithBuddyEl
+        || !searchEl || sourceFilterEls.some(element => !element)
+        || !countEl || !mergeEl || !mirrorEl || !removeWithBuddyEl
         || !importStatusEl || !mirrorConfirmationEl
         || !mirrorConfirmationImpactEl || !mirrorConfirmationSummaryEl
         || !mirrorCancelEl || !mirrorConfirmEl
@@ -60,6 +64,7 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
     limitEl.textContent = F.LIMIT.toLocaleString('en-US');
 
     let source = 'buddies';
+    let sourceFilter = 'all';
     let favorites = F.cleanFavorites(null);
     let buddyCache = null;
     let buddyState = 'idle';
@@ -247,8 +252,30 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
     const renderList = () => {
         const compare = sortEl.value === 'name' ? F.byName : F.byAddedAtDesc;
         const query = searchEl.value.trim();
+        const matchesSource = entry => sourceFilter === 'all' || entry.source === sourceFilter;
+        const sourceCounts = favorites.entries.reduce((counts, entry) => {
+            counts[entry.source]++;
+            return counts;
+        }, { buddy: 0, manual: 0 });
+        sourceCounts.all = favorites.entries.length;
+        for (const button of sourceFilterEls) {
+            const value = button.dataset.favoritesSourceFilter;
+            const count = sourceCounts[value];
+            const countNode = button.querySelector('[data-favorites-source-count]');
+            if (countNode) countNode.textContent = count.toLocaleString('en-US');
+            button.setAttribute('aria-pressed', String(value === sourceFilter));
+            const formattedCount = count.toLocaleString('en-US');
+            const noun = count === 1 ? 'favorite' : 'favorites';
+            const label = value === 'buddy'
+                ? `Show ${formattedCount} ${noun} added from buddies`
+                : value === 'manual'
+                    ? `Show ${formattedCount} manually added ${noun}`
+                    : `Show all ${formattedCount} ${noun}`;
+            button.setAttribute('aria-label', label);
+        }
         const activeRows = favorites.entries
             .filter(entry => !pendingDeletes.has(entry.cid))
+            .filter(matchesSource)
             .map(entry => ({ entry, score: F.fuzzyScore(entry, query) }))
             .filter(row => row.score != null);
         activeRows.sort((left, right) => query
@@ -256,6 +283,7 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
             : compare(left.entry, right.entry));
         const rows = activeRows.map(({ entry }) => ({ entry, item: renderFavoriteRow(entry) }));
         for (const pending of pendingDeletes.values()) {
+            if (!matchesSource(pending.entry)) continue;
             if (F.fuzzyScore(pending.entry, query) == null) continue;
             rows.push({ entry: pending.entry, item: renderDeletedRow(pending.entry) });
         }
@@ -267,12 +295,21 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
         const noun = total === 1 ? 'favorite' : 'favorites';
         const formattedTotal = total.toLocaleString('en-US');
         const formattedMatches = activeRows.length.toLocaleString('en-US');
-        countEl.textContent = query
+        countEl.textContent = query || sourceFilter !== 'all'
             ? `${formattedMatches} of ${formattedTotal} ${noun}`
             : `${formattedTotal} ${noun}`;
+        const sourceDescription = sourceFilter === 'buddy' ? 'added from buddies'
+            : sourceFilter === 'manual' ? 'manually added'
+                : '';
         emptyEl.textContent = query
-            ? `No favorites match “${query}”.`
-            : 'No favorite climbers yet.';
+            ? sourceFilter === 'buddy'
+                ? `No favorites added from buddies match “${query}”.`
+                : `No ${sourceDescription ? `${sourceDescription} ` : ''}favorites match “${query}”.`
+            : sourceDescription
+                ? sourceFilter === 'buddy'
+                    ? 'No favorites added from buddies yet.'
+                    : `No ${sourceDescription} favorites yet.`
+                : 'No favorite climbers yet.';
         emptyEl.hidden = rows.length > 0;
         undoAllEl.hidden = !pendingBulk;
     };
@@ -664,6 +701,12 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
     addFormEl.addEventListener('submit', event => { event.preventDefault(); void addClimber(); });
     sortEl.addEventListener('change', renderList);
     searchEl.addEventListener('input', renderList);
+    for (const button of sourceFilterEls) {
+        button.addEventListener('click', () => {
+            sourceFilter = button.dataset.favoritesSourceFilter;
+            renderList();
+        });
+    }
     removeWithBuddyEl.addEventListener('change', () => {
         void save({ removeFavoriteWhenBuddyRemoved: removeWithBuddyEl.checked });
     });

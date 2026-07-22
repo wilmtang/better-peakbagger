@@ -74,6 +74,15 @@ test('settings renders and backs up the full 1,500-entry custom list', async () 
     assert.equal(rows[LIMIT - 1].dataset.cid, '100000');
     assert.match(dom.window.document.getElementById('favorites-add-form').textContent, /1,500 climbers/);
     assert.equal(dom.window.document.getElementById('favorites-count').textContent, '1,500 favorites');
+    const sourceCount = source => dom.window.document.querySelector(
+        `[data-favorites-source-filter="${source}"] [data-favorites-source-count]`
+    ).textContent;
+    assert.deepEqual(['all', 'buddy', 'manual'].map(sourceCount), ['1,500', '750', '750']);
+    dom.window.document.querySelector('[data-favorites-source-filter="buddy"]').click();
+    assert.equal(dom.window.document.querySelectorAll('.favorite-item').length, 750);
+    assert.equal(dom.window.document.getElementById('favorites-count').textContent, '750 of 1,500 favorites');
+    dom.window.document.querySelector('[data-favorites-source-filter="all"]').click();
+    assert.equal(dom.window.document.querySelectorAll('.favorite-item').length, LIMIT);
 
     const search = dom.window.document.getElementById('favorites-search');
     search.value = 'alpin clmber 1499';

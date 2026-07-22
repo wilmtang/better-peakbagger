@@ -421,6 +421,24 @@
                             </label>
                         </div>
                     </div>
+                    <div class="favorites-source-filter" id="favorites-source-filter"
+                        role="group" aria-label="Filter favorites by source">
+                        <button type="button" data-favorites-source-filter="all"
+                            aria-controls="favorites-list" aria-pressed="true">
+                            <span>All</span>
+                            <span class="favorites-filter-count" data-favorites-source-count="all">0</span>
+                        </button>
+                        <button type="button" data-favorites-source-filter="buddy"
+                            aria-controls="favorites-list" aria-pressed="false">
+                            <span>From buddies</span>
+                            <span class="favorites-filter-count" data-favorites-source-count="buddy">0</span>
+                        </button>
+                        <button type="button" data-favorites-source-filter="manual"
+                            aria-controls="favorites-list" aria-pressed="false">
+                            <span>Manual</span>
+                            <span class="favorites-filter-count" data-favorites-source-count="manual">0</span>
+                        </button>
+                    </div>
                     <p class="favorites-empty" id="favorites-empty">No favorite climbers yet.</p>
                     <ul class="favorites-list" id="favorites-list" hidden></ul>
                     <div class="favorites-undo-all" id="favorites-undo-all" role="status" hidden>

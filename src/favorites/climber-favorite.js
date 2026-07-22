@@ -160,8 +160,8 @@ html[data-bpb-theme="dark"] #bpb-climber-favorite[aria-pressed="true"] { border-
         if (!button) return;
         const active = included();
         const actionLabel = active
-            ? `Remove ${name} from your favorites`
-            : `Add ${name} to your favorites`;
+            ? `Remove ${name} from your Better Peakbagger favorite`
+            : `Add ${name} to your Better Peakbagger favorites`;
         button.textContent = active ? '★' : '☆';
         button.setAttribute('aria-pressed', String(active));
         button.setAttribute('aria-label', actionLabel);

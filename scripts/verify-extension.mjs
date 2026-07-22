@@ -281,6 +281,34 @@ try {
                 : window.__bpbNativeFetch(input, init);
         }, { signedInBuddyUrl, buddyListFixture });
         await optionsPage.locator('.favorite-item[data-cid="900099"]').waitFor({ state: 'visible', timeout: 5000 });
+        const favoriteSourceCounts = await optionsPage.evaluate(() => Object.fromEntries(
+            [...document.querySelectorAll('[data-favorites-source-filter]')].map(button => [
+                button.dataset.favoritesSourceFilter,
+                button.querySelector('[data-favorites-source-count]')?.textContent || '',
+            ])
+        ));
+        await optionsPage.locator('[data-favorites-source-filter="manual"]').click();
+        const manualFavoritesFiltered = await optionsPage.waitForFunction(() => {
+            const rows = [...document.querySelectorAll('.favorite-item')];
+            return rows.length === 1 && rows[0].dataset.cid === '900099'
+                && document.getElementById('favorites-count')?.textContent === '1 of 7 favorites';
+        }, null, { timeout: 5000 }).then(() => true).catch(() => false);
+        await optionsPage.locator('[data-favorites-source-filter="buddy"]').click();
+        const buddyFavoritesFiltered = await optionsPage.waitForFunction(() =>
+            document.querySelectorAll('.favorite-item').length === 6
+                && !document.querySelector('.favorite-item[data-cid="900099"]')
+                && document.getElementById('favorites-count')?.textContent === '6 of 7 favorites',
+        null, { timeout: 5000 }).then(() => true).catch(() => false);
+        check(favoriteSourceCounts.all === '7'
+            && favoriteSourceCounts.buddy === '6'
+            && favoriteSourceCounts.manual === '1'
+            && manualFavoritesFiltered
+            && buddyFavoritesFiltered,
+        `the custom Favorites source counts or filters were wrong: ${JSON.stringify({
+            favoriteSourceCounts, manualFavoritesFiltered, buddyFavoritesFiltered
+        })}`);
+        await optionsPage.locator('[data-favorites-source-filter="all"]').click();
+        await optionsPage.locator('.favorite-item[data-cid="900099"]').waitFor({ state: 'visible', timeout: 5000 });
         await optionsPage.locator('#favorites-mirror-buddies').click();
         const mirrorConfirmation = await optionsPage.waitForFunction(async () => {
             const dialog = document.getElementById('favorites-mirror-confirmation');
@@ -327,6 +355,13 @@ try {
 
         if (process.env.BPB_VERIFY_FAVORITES_SCREENSHOT) {
             await optionsPage.locator('#favorites').screenshot({ path: process.env.BPB_VERIFY_FAVORITES_SCREENSHOT });
+        }
+        if (process.env.BPB_VERIFY_FAVORITES_NARROW_SCREENSHOT) {
+            const previousViewport = optionsPage.viewportSize();
+            await optionsPage.setViewportSize({ width: 480, height: 760 });
+            await optionsPage.locator('#favorites-source-filter').scrollIntoViewIfNeeded();
+            await optionsPage.screenshot({ path: process.env.BPB_VERIFY_FAVORITES_NARROW_SCREENSHOT });
+            if (previousViewport) await optionsPage.setViewportSize(previousViewport);
         }
         if (process.env.BPB_VERIFY_FAVORITES_DARK_SCREENSHOT) {
             await optionsPage.locator('#theme').selectOption('dark');

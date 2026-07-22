@@ -377,6 +377,30 @@ button.secondary.favorites-mirror-trigger:focus-visible { outline-color: var(--d
 }
 .favorites-sort { display: flex; align-items: center; gap: 7px; color: var(--sub); font-size: 12.5px; }
 .favorites-sort select { min-width: 130px; padding: 5px 9px; }
+.favorites-source-filter { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 11px; }
+.favorites-source-filter button {
+    appearance: none;
+    display: inline-flex;
+    align-items: baseline;
+    gap: 6px;
+    padding: 4px 10px;
+    color: var(--sub);
+    background: var(--input-bg);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    font: inherit;
+    font-size: 12px;
+    cursor: pointer;
+}
+.favorites-source-filter button:hover { color: var(--text); border-color: var(--input-border); }
+.favorites-source-filter button[aria-pressed="true"] {
+    color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 9%, var(--input-bg));
+    border-color: color-mix(in srgb, var(--accent) 38%, var(--border));
+    font-weight: 650;
+}
+.favorites-source-filter button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.favorites-filter-count { font-variant-numeric: tabular-nums; }
 .favorites-empty { margin-top: 18px; }
 .favorites-list { list-style: none; margin: 14px -18px 0; padding: 0; border-top: 1px solid var(--border); }
 .favorite-item {

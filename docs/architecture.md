@@ -643,7 +643,7 @@ sync must never acquire the third-party names stored in either local dataset.
 | `src/favorites/favorite-climbers.js` | Pure ES module bundled into each caller | Validation, normalization, bounds, parsers, merge/mirror and confirmed-Buddy-mutation semantics, effective membership, comparators, and fuzzy scoring | DOM globals, storage, fetch, extension messaging, or UI |
 | `src/ascent/ascent-filter.js` | Isolated content script at `document_start` | Peak-ascent row identities, Favorites chip state/count, automatic Buddy revalidation, and opportunistic Buddy-page caching | Custom-list management or GitHub transfer |
 | `src/favorites/climber-favorite.js` | Separate isolated content script at `document_end` | The custom-favorite control plus native Buddy-action detection, post-navigation refresh, and confirmed custom-list synchronization | Arbitrary profile lookup or trusting an unconfirmed click as a successful Buddy mutation |
-| `options/favorites.js` | Extension options page | Source selection, Buddy refresh status, custom-list management, reversible bulk actions, and GitHub transfer UI | GitHub token access or repository writes |
+| `options/favorites.js` | Extension options page | Source selection, Buddy refresh status, custom-list provenance counts/filtering, reversible bulk actions, and GitHub transfer UI | GitHub token access or repository writes |
 | `src/profile/profile-backup-core.js` | Pure shared module | Signed-in owner discovery and numeric URL identity | Favorites persistence or request orchestration |
 | `src/peakbagger/peakbagger-request.js`, `src/peakbagger/peakbagger-response.js`, and `src/peakbagger/peakbagger-error.js` | Shared request boundary | Authenticated fetch policy, response classification, parsing failures, and actionable error copy | Favorites schema or persistence |
 | `src/background/background.js` plus `src/github/github-client.js` | Extension worker | Shared GitHub connection, token, fixed `favorite-climbers.json` path, repository validation, serialized writes, and restore reads | Interpreting or mutating the favorites schema |
@@ -660,7 +660,9 @@ content script validates the rendered owner and refreshes
 the local cache; the options page accepts only that newly validated cache and
 closes its tab before completing the import. Custom additions verify that the
 fetched public profile id matches the requested id. Delete, mirror, and GitHub restore are replace
-operations with a brief local Undo snapshot; merge is additive.
+operations with a brief local Undo snapshot; merge is additive. The manager's
+Buddy/manual counts describe entry provenance in the authoritative custom list,
+and its source filter composes with the name/id search without changing storage.
 
 Both content scripts use the default isolated extension world, not Peakbagger's
 MAIN world. They can read the rendered DOM and extension storage without exposing
@@ -1023,8 +1025,9 @@ The focused automated evidence is deliberately split by boundary:
 - `test/ascent/ascent-filter.test.mjs` covers custom AND-filtering, persisted chip state,
   live storage updates, owner-scoped cache use, stale-while-revalidate fetch,
   and zero-network Buddy-page caching.
-- `test/options/options.test.mjs` covers source switching, identity-checked add, reversible
-  delete/mirror/restore, Buddy refresh, merge, and explicit GitHub messages.
+- `test/options/options.test.mjs` covers source switching, provenance counts/filtering,
+  identity-checked add, reversible delete/mirror/restore, Buddy refresh, merge,
+  and explicit GitHub messages.
 - `test/favorites/climber-favorite.test.mjs` covers add/remove, self exclusion, Buddy-mode
   absence, and live source/list changes.
 - `test/scale/favorites/favorite-climbers.scale.mjs` renders the full 1,500-entry options

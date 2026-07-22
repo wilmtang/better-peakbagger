@@ -165,6 +165,7 @@ test('settings are grouped by the surface they affect', async () => {
     }
     assert.ok(favorites.querySelector('#favorites-buddy-panel'));
     assert.ok(favorites.querySelector('#favorites-custom-panel'));
+    assert.equal(favorites.querySelectorAll('#favorites-source-filter button').length, 3);
     assert.ok(favorites.querySelector('#favorites-list'));
     assert.match(favorites.querySelector('#favorites-add-form .desc').textContent,
         /Stored only on this device unless you choose Back up favorites below\. Up to 1,500 climbers\./);
@@ -501,6 +502,46 @@ test('custom favorites show a live total and fuzzy-search names and ids', async 
     assert.equal(el(dom, 'favorites-count').textContent, '0 of 3 favorites');
     assert.equal(el(dom, 'favorites-list').hidden, true);
     assert.equal(el(dom, 'favorites-empty').textContent, 'No favorites match “no such climber”.');
+});
+
+test('custom favorites show source counts and compose source filtering with search', async () => {
+    const entries = [
+        { cid: 18950, name: 'Kríshna Dase, KD', addedAt: 30, source: 'manual' },
+        { cid: 900003, name: 'Nick McMillen', addedAt: 20, source: 'manual' },
+        { cid: 900004, name: 'Alpine Casey', addedAt: 10, source: 'buddy' },
+    ];
+    const dom = await loadOptions({ favoritesSource: 'custom' }, {
+        local: { [favoriteKey]: favoriteStore(entries) },
+    });
+    await waitFor(dom, () => dom.window.document.querySelectorAll('.favorite-item').length === 3);
+    const filter = source => dom.window.document.querySelector(`[data-favorites-source-filter="${source}"]`);
+    const sourceCount = source => filter(source).querySelector('[data-favorites-source-count]').textContent;
+
+    assert.deepEqual(['all', 'buddy', 'manual'].map(sourceCount), ['3', '1', '2']);
+    assert.equal(filter('all').getAttribute('aria-pressed'), 'true');
+    assert.equal(filter('buddy').getAttribute('aria-label'), 'Show 1 favorite added from buddies');
+    assert.equal(filter('manual').getAttribute('aria-label'), 'Show 2 manually added favorites');
+
+    filter('buddy').click();
+    assert.equal(filter('buddy').getAttribute('aria-pressed'), 'true');
+    assert.equal(el(dom, 'favorites-count').textContent, '1 of 3 favorites');
+    assert.deepEqual(Array.from(dom.window.document.querySelectorAll('.favorite-name'), node => node.textContent),
+        ['Alpine Casey']);
+
+    const search = el(dom, 'favorites-search');
+    search.value = 'nick';
+    search.dispatchEvent(new dom.window.Event('input'));
+    assert.equal(el(dom, 'favorites-count').textContent, '0 of 3 favorites');
+    assert.equal(el(dom, 'favorites-empty').textContent, 'No favorites added from buddies match “nick”.');
+
+    filter('manual').click();
+    assert.equal(el(dom, 'favorites-count').textContent, '1 of 3 favorites');
+    assert.deepEqual(Array.from(dom.window.document.querySelectorAll('.favorite-name'), node => node.textContent),
+        ['Nick McMillen']);
+    search.value = '';
+    search.dispatchEvent(new dom.window.Event('input'));
+    assert.deepEqual(Array.from(dom.window.document.querySelectorAll('.favorite-name'), node => node.textContent),
+        ['Kríshna Dase, KD', 'Nick McMillen']);
 });
 
 test('Refresh now stores the signed-in owner Buddy List cache', async () => {
