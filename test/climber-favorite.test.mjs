@@ -24,8 +24,15 @@ test('custom mode toggles the viewed climber without replacing other favorites',
     });
     await waitFor(dom, () => dom.window.document.getElementById('bpb-climber-favorite'));
     const button = dom.window.document.getElementById('bpb-climber-favorite');
-    assert.equal(button.textContent, '☆ Add to favorites');
+    const heading = dom.window.document.querySelector('#TitleLabel h1');
+    assert.equal(button.textContent, '☆');
+    assert.equal(button.getAttribute('aria-label'), 'Add Casey Alpine to your favorites');
+    assert.equal(button.title, 'Add Casey Alpine to your favorites');
     assert.equal(button.getAttribute('aria-pressed'), 'false');
+    assert.equal(button.parentElement, heading.parentElement,
+        'the compact action belongs beside the title instead of on a separate row');
+    assert.equal(heading.nextElementSibling, button);
+    assert.equal(button.parentElement.classList.contains('bpb-climber-favorite-host'), true);
 
     button.click();
     await waitFor(dom, () => dom.chrome._localStore[key].entries.some(entry => entry.cid === 900002));
@@ -34,11 +41,12 @@ test('custom mode toggles the viewed climber without replacing other favorites',
         JSON.parse(JSON.stringify(dom.chrome._localStore[key].entries.find(entry => entry.cid === 900003))),
         existing
     );
-    assert.equal(button.textContent, '★ In your favorites — remove');
+    assert.equal(button.textContent, '★');
+    assert.equal(button.getAttribute('aria-label'), 'Remove Casey Alpine from your favorites');
 
     button.click();
     await waitFor(dom, () => !dom.chrome._localStore[key].entries.some(entry => entry.cid === 900002));
-    assert.equal(button.textContent, '☆ Add to favorites');
+    assert.equal(button.textContent, '☆');
 });
 
 test('Buddy List mode renders no custom favorite control', async () => {
@@ -69,8 +77,9 @@ test('the control follows live list and source changes', async () => {
             entries: [{ cid: 900002, name: 'Casey Alpine', addedAt: 1, source: 'manual' }],
         },
     });
-    assert.equal(button.textContent, '★ In your favorites — remove');
+    assert.equal(button.textContent, '★');
 
     await dom.chrome.storage.sync.set({ bpbSettings: { favoritesSource: 'buddies' } });
     await waitFor(dom, () => !dom.window.document.getElementById('bpb-climber-favorite'));
+    assert.equal(dom.window.document.getElementById('TitleLabel').classList.contains('bpb-climber-favorite-host'), false);
 });

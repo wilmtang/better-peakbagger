@@ -13,8 +13,9 @@ import { numericParam, ownerClimberId } from './profile-backup-core.js';
     const pageCid = numericParam(location.href, 'cid', document.baseURI);
     const ownCid = ownerClimberId(document);
     const heading = document.querySelector('#TitleLabel h1');
+    const host = heading?.parentElement;
     const name = F.climberNameFromDocument(document);
-    if (pageCid == null || pageCid === ownCid || !heading || !name) return;
+    if (pageCid == null || pageCid === ownCid || !heading || !host || !name) return;
 
     const store = chrome.storage.local;
     let mode = 'buddies';
@@ -28,14 +29,20 @@ import { numericParam, ownerClimberId } from './profile-backup-core.js';
         const style = document.createElement('style');
         style.id = 'bpb-climber-favorite-style';
         style.textContent = `
-#bpb-climber-favorite { appearance: none; display: inline-flex; align-items: center; margin: 4px 0 8px;
-    padding: 4px 10px; border: 1px solid #aeb8ae; border-radius: 999px; background: #fff; color: #2f6b3f;
-    font: 600 12px/1.35 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; cursor: pointer; }
-#bpb-climber-favorite:hover { border-color: #2f6b3f; background: #f3f8f4; }
+#TitleLabel.bpb-climber-favorite-host { display: inline-flex; align-items: center; justify-content: center;
+    flex-wrap: nowrap; gap: 8px; max-width: 100%; vertical-align: middle; }
+#TitleLabel.bpb-climber-favorite-host > h1 { flex: 0 1 auto; min-width: 0; }
+#bpb-climber-favorite { appearance: none; display: inline-flex; flex: 0 0 auto; align-items: center;
+    justify-content: center; width: 30px; height: 30px; margin: 0; padding: 0 0 2px;
+    border: 1px solid #8fab96; border-radius: 50%; background: #f3f8f4; color: #2f6b3f;
+    font: 700 20px/1 Arial, Helvetica, sans-serif; cursor: pointer; }
+#bpb-climber-favorite:hover { border-color: #2f6b3f; background: #e7f1e9; transform: translateY(-1px); }
 #bpb-climber-favorite:focus-visible { outline: 2px solid #2f6b3f; outline-offset: 2px; }
+#bpb-climber-favorite[aria-pressed="true"] { border-color: #2f6b3f; background: #2f6b3f; color: #fff; }
 #bpb-climber-favorite:disabled { cursor: wait; opacity: .58; }
-html[data-bpb-theme="dark"] #bpb-climber-favorite { border-color: #667066; background: #23262a; color: #8fc99c; }
-html[data-bpb-theme="dark"] #bpb-climber-favorite:hover { border-color: #8fc99c; background: #29322b; }
+html[data-bpb-theme="dark"] #bpb-climber-favorite { border-color: #71927a; background: #29322b; color: #b5e0bf; }
+html[data-bpb-theme="dark"] #bpb-climber-favorite:hover { border-color: #9ad5a7; background: #334238; }
+html[data-bpb-theme="dark"] #bpb-climber-favorite[aria-pressed="true"] { border-color: #8fc99c; background: #3f8a54; color: #fff; }
 `;
         document.head.appendChild(style);
     };
@@ -44,20 +51,22 @@ html[data-bpb-theme="dark"] #bpb-climber-favorite:hover { border-color: #8fc99c;
     const paint = () => {
         if (!button) return;
         const active = included();
-        button.textContent = active ? '★ In your favorites — remove' : '☆ Add to favorites';
-        button.setAttribute('aria-pressed', String(active));
-        button.setAttribute('aria-label', active
+        const actionLabel = active
             ? `Remove ${name} from your favorites`
-            : `Add ${name} to your favorites`);
+            : `Add ${name} to your favorites`;
+        button.textContent = active ? '★' : '☆';
+        button.setAttribute('aria-pressed', String(active));
+        button.setAttribute('aria-label', actionLabel);
         button.disabled = busy || (!active && favorites.entries.length >= F.LIMIT);
-        button.title = !active && favorites.entries.length >= F.LIMIT
+        button.title = errorMessage || (!active && favorites.entries.length >= F.LIMIT
             ? `Favorites can hold up to ${F.LIMIT} climbers.`
-            : errorMessage;
+            : actionLabel);
     };
 
     const unmount = () => {
         if (button) button.remove();
         button = null;
+        host.classList.remove('bpb-climber-favorite-host');
     };
 
     const toggle = async () => {
@@ -90,6 +99,7 @@ html[data-bpb-theme="dark"] #bpb-climber-favorite:hover { border-color: #8fc99c;
             button.id = 'bpb-climber-favorite';
             button.type = 'button';
             button.addEventListener('click', () => { void toggle(); });
+            host.classList.add('bpb-climber-favorite-host');
             heading.insertAdjacentElement('afterend', button);
         }
         paint();

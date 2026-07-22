@@ -875,12 +875,14 @@ The options manager supports these distinct operations:
   mechanism. Closing or reloading the options page discards the Undo snapshot,
   not the already persisted replacement.
 
-On public climber pages, `src/climber-favorite.js` mounts only when custom mode
-is active, the page exposes a valid id/name, and the page id is not the detected
-owner id. Add creates a manual entry from the already rendered, identity-bound
-page; remove deletes the matching id. The control is disabled while its write is
-pending and when a new entry would exceed the bound. A click rereads local
-storage before its read-modify-write, which narrows the stale-tab window, but
+On public climber pages, `src/climber-favorite.js` mounts a compact outlined or
+filled star beside the page title only when custom mode is active, the page
+exposes a valid id/name, and the page id is not the detected owner id. Its full
+add/remove action remains in the accessible label and tooltip. Add creates a
+manual entry from the already rendered, identity-bound page; remove deletes the
+matching id. The control is disabled while its write is pending and when a new
+entry would exceed the bound. A click rereads local storage before its
+read-modify-write, which narrows the stale-tab window, but
 `storage.local` provides no compare-and-swap transaction: truly overlapping
 writes from two tabs remain last-writer-wins. In the narrow race where another
 tab reaches the limit after this control was painted, cleaning keeps the newly

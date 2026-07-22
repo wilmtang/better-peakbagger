@@ -325,7 +325,73 @@ try {
             await optionsPage.locator('#favorites').screenshot({ path: process.env.BPB_VERIFY_FAVORITES_DARK_SCREENSHOT });
             await optionsPage.locator('#theme').selectOption('system');
         }
+
+        await optionsPage.evaluate(async () => {
+            const { bpbSettings = {} } = await chrome.storage.sync.get('bpbSettings');
+            await Promise.all([
+                chrome.storage.sync.set({
+                    bpbSettings: { ...bpbSettings, favoritesSource: 'custom', theme: 'dark' },
+                }),
+                chrome.storage.local.set({
+                    bpbFavoriteClimbers: { schemaVersion: 1, entries: [] },
+                }),
+            ]);
+        });
+        const climberPage = await context.newPage();
+        await climberPage.setViewportSize({ width: 536, height: 500 });
+        await climberPage.goto(`https://www.peakbagger.com:${port}/climber/climber.aspx?cid=900002`, { waitUntil: 'load' });
+        await climberPage.locator('#bpb-climber-favorite').waitFor({ state: 'visible', timeout: 5000 });
+        const favoriteToggle = await climberPage.evaluate(() => {
+            const heading = document.querySelector('#TitleLabel h1');
+            const host = document.getElementById('TitleLabel');
+            const button = document.getElementById('bpb-climber-favorite');
+            const headingRect = heading.getBoundingClientRect();
+            const buttonRect = button.getBoundingClientRect();
+            return {
+                text: button.textContent,
+                label: button.getAttribute('aria-label'),
+                title: button.title,
+                pressed: button.getAttribute('aria-pressed'),
+                hostDisplay: getComputedStyle(host).display,
+                sameHost: button.parentElement === host && heading.parentElement === host,
+                buttonWidth: buttonRect.width,
+                followsHeading: buttonRect.left >= headingRect.right - 1,
+                verticallyAligned: buttonRect.top < headingRect.bottom && buttonRect.bottom > headingRect.top,
+                theme: document.documentElement.getAttribute('data-bpb-theme'),
+            };
+        });
+        check(favoriteToggle?.text === '☆'
+            && favoriteToggle?.label === 'Add Morgan Longlastname to your favorites'
+            && favoriteToggle?.title === favoriteToggle?.label
+            && favoriteToggle?.pressed === 'false'
+            && favoriteToggle?.hostDisplay === 'inline-flex'
+            && favoriteToggle?.sameHost
+            && favoriteToggle?.buttonWidth === 30
+            && favoriteToggle?.followsHeading
+            && favoriteToggle?.verticallyAligned
+            && favoriteToggle?.theme === 'dark',
+        `the climber favorite toggle was not compact and inline with the title: ${JSON.stringify(favoriteToggle)}`);
+        if (process.env.BPB_VERIFY_CLIMBER_FAVORITE_SCREENSHOT) {
+            await climberPage.screenshot({ path: process.env.BPB_VERIFY_CLIMBER_FAVORITE_SCREENSHOT });
+        }
+        await climberPage.locator('#bpb-climber-favorite').click();
+        const favoriteAppliedUi = await climberPage.waitForFunction(() => {
+            const button = document.getElementById('bpb-climber-favorite');
+            return button?.textContent === '★'
+                && button.getAttribute('aria-pressed') === 'true'
+                ? { text: button.textContent, pressed: button.getAttribute('aria-pressed') }
+                : false;
+        }, null, { timeout: 5000 }).then(handle => handle.jsonValue()).catch(() => null);
+        const favoriteAppliedStorage = await optionsPage.waitForFunction(async () => {
+            const favorites = (await chrome.storage.local.get('bpbFavoriteClimbers')).bpbFavoriteClimbers;
+            return favorites?.entries?.some(entry => entry.cid === 900002) ? favorites : false;
+        }, null, { timeout: 5000 }).then(handle => handle.jsonValue()).catch(() => null);
+        check(!!favoriteAppliedUi && !!favoriteAppliedStorage,
+            `the compact climber favorite toggle did not persist or fill after clicking: ${JSON.stringify({ favoriteAppliedUi, favoriteAppliedStorage })}`);
+        await climberPage.close();
+
         await optionsPage.locator('input[name="favorites-source"][value="buddies"]').check();
+        await optionsPage.locator('#theme').selectOption('system');
         await optionsPage.close();
 
         const popupPage = await context.newPage();
@@ -1597,6 +1663,7 @@ console.log('  - the MV3 service worker boots and answers messages (capture is a
 console.log('  - sync/local/session storage, storage.onChanged, options persistence, and popup status passed');
 console.log('  - options loads the signed-in Buddy report directly, falls back through a first-party tab, and keeps failures actionable');
 console.log('  - Buddy mirroring names removals, requires confirmation, and preserves favorites on cancel');
+console.log('  - the public climber favorite is a compact title-line star and persists its filled state');
 console.log('  - settings.js initialises in the isolated world and the bridge answers');
 console.log('  - the GPX analyzer renders stats from the real manifest load order');
 console.log('  - the 3D toggle stays visible when disabled and opens the provider/privacy confirmation');

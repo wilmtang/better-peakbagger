@@ -229,7 +229,7 @@ export async function createBrowserFixtureServer({ temporaryRoot }) {
   } catch (error) {
     throw new Error(`Could not create the isolated HTTPS fixture certificate: ${error.message}`);
   }
-  const [key, cert, ascentEditHtml, peakAscentsHtml, profileAscentsHtml, buddyListHtml] = await Promise.all([
+  const [key, cert, ascentEditHtml, peakAscentsHtml, profileAscentsHtml, buddyListHtml, climberHtml] = await Promise.all([
     readFile(keyPath),
     readFile(certificatePath),
     readFile(
@@ -248,6 +248,10 @@ export async function createBrowserFixtureServer({ temporaryRoot }) {
       path.join(projectRoot, "test", "fixtures", "pages", "report-buddy-list.html"),
       "utf8",
     ),
+    readFile(
+      path.join(projectRoot, "test", "fixtures", "pages", "climber-home.html"),
+      "utf8",
+    ),
   ]);
   const gpxPath = path.join(temporaryRoot, "browser-verification.gpx");
   await writeFile(gpxPath, gpx, "utf8");
@@ -263,6 +267,10 @@ export async function createBrowserFixtureServer({ temporaryRoot }) {
   const previewSuccessHtml = relativeAscentEditHtml.replace(
     /(<span id="GPXStatusLabel"[^>]*>)[\s\S]*?(<\/span>)/i,
     "$1Your file was successfully uploaded. Preview is ready.$2",
+  );
+  const otherClimberHtml = climberHtml.replace(
+    "Peakbagging Page for Alex Doe",
+    "Peakbagging Page for Morgan Longlastname",
   );
   const readRequestBody = request => new Promise((resolve, reject) => {
     const chunks = [];
@@ -318,6 +326,9 @@ export async function createBrowserFixtureServer({ temporaryRoot }) {
     }
     if (/climblistc\.aspx/i.test(url.pathname)) {
       return send("text/html; charset=utf-8", profileAscentsHtml);
+    }
+    if (/\/climber\/climber\.aspx/i.test(url.pathname)) {
+      return send("text/html; charset=utf-8", otherClimberHtml);
     }
     if (/\/report\/report\.aspx/i.test(url.pathname)
         && (url.searchParams.get("r") || "").toLowerCase() === "b") {
