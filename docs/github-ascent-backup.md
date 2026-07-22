@@ -575,6 +575,10 @@ included. Import and GitHub restore reject another kind or a newer schema,
 re-clean every value, and require inline confirmation before wholesale
 replacement. Older schema versions are accepted so current defaults can fill
 new fields. A missing GitHub file is reported without changing settings.
+During a manual GitHub write, the Settings row reports that the backup is in
+progress; after GitHub accepts the commit, it keeps **Settings backed up ✓** and
+a commit link visible until the backed-up settings change or the repository is
+changed.
 
 ### Debounced settings and favorites backup
 

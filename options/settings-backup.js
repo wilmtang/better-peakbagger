@@ -50,6 +50,9 @@ export function initSettingsBackup({ extensionApi, flash, save }) {
     let pendingImport = null;
     let githubStatus = null;
     let githubBusy = false;
+    let githubOperation = null;
+    let githubBackupResult = null;
+    let settingsSignature = Transfer.signature({});
 
     const send = RuntimeMessage.bind(extensionApi);
 
@@ -116,13 +119,35 @@ export function initSettingsBackup({ extensionApi, flash, save }) {
 
     const renderGithub = () => {
         const connected = githubStatus?.permissionGranted && githubStatus?.connected === true;
+        const showBackupResult = connected
+            && githubBackupResult?.repo === repoName()
+            && githubBackupResult?.signature === settingsSignature;
         githubActionsEl.hidden = !connected;
         githubBackupEl.disabled = githubBusy;
         githubRestoreEl.disabled = githubBusy;
         autoBackupEl.disabled = githubBusy;
-        githubStatusEl.textContent = connected
-            ? `Stored as settings.json in ${repoName()}.`
-            : 'Connect GitHub above to back up settings.';
+        githubStatusEl.classList.remove('settings-backup-github-success');
+        githubStatusEl.textContent = '';
+        if (githubBusy) {
+            githubStatusEl.textContent = githubOperation === 'backup'
+                ? 'Backing up settings to GitHub…'
+                : 'Working with GitHub…';
+        } else if (showBackupResult) {
+            githubStatusEl.classList.add('settings-backup-github-success');
+            githubStatusEl.textContent = 'Settings backed up ✓';
+            if (githubBackupResult.commitUrl) {
+                githubStatusEl.append(' ', Object.assign(document.createElement('a'), {
+                    href: githubBackupResult.commitUrl,
+                    target: '_blank',
+                    rel: 'noopener noreferrer',
+                    textContent: 'View commit',
+                }));
+            }
+        } else if (connected) {
+            githubStatusEl.textContent = `Stored as settings.json in ${repoName()}.`;
+        } else {
+            githubStatusEl.textContent = 'Connect GitHub above to back up settings.';
+        }
     };
 
     const refreshGithub = async () => {
@@ -139,14 +164,28 @@ export function initSettingsBackup({ extensionApi, flash, save }) {
         setBusy: value => { githubBusy = value; renderGithub(); },
     }, operation);
 
-    githubBackupEl.addEventListener('click', () => withGithubBusy(async () => {
-        const response = await send({ type: 'GITHUB_SETTINGS_BACKUP' });
-        if (!response?.ok) {
-            flash(GithubError.message(response?.error));
-            return;
-        }
-        flash(`Settings backed up to ${repoName()}`);
-    }));
+    githubBackupEl.addEventListener('click', () => {
+        const requestedRepo = repoName();
+        const requestedSignature = settingsSignature;
+        githubOperation = 'backup';
+        void withGithubBusy(async () => {
+            const response = await send({ type: 'GITHUB_SETTINGS_BACKUP' });
+            if (!response?.ok) {
+                githubBackupResult = null;
+                flash(GithubError.message(response?.error));
+                return;
+            }
+            githubBackupResult = {
+                ...(response.result || {}),
+                repo: requestedRepo,
+                signature: requestedSignature,
+            };
+            flash(`Settings backed up to ${requestedRepo}`);
+        }).finally(() => {
+            githubOperation = null;
+            renderGithub();
+        });
+    });
 
     githubRestoreEl.addEventListener('click', () => withGithubBusy(async () => {
         const response = await send({ type: 'GITHUB_SETTINGS_RESTORE' });
@@ -182,7 +221,9 @@ export function initSettingsBackup({ extensionApi, flash, save }) {
     let painted = false;
     return {
         populate(settings) {
+            settingsSignature = Transfer.signature(settings || {});
             autoBackupEl.checked = settings?.autoSettingsBackup === true;
+            renderGithub();
             if (!painted) {
                 painted = true;
                 void refreshGithub();

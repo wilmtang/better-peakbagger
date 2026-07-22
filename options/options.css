@@ -256,6 +256,8 @@ button.secondary:focus-visible { outline: 2px solid var(--accent); outline-offse
 .settings-backup-actions button.secondary { align-self: auto; }
 .settings-backup-github-actions { display: flex; flex-direction: column; align-items: flex-end; gap: 10px; }
 .settings-backup-github-actions[hidden] { display: none; }
+.settings-backup-github-success { color: var(--link); font-weight: 600; }
+.settings-backup-github-success a { color: inherit; }
 .settings-backup-confirmation {
     display: flex;
     align-items: center;

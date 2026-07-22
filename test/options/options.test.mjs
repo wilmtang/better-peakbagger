@@ -332,6 +332,12 @@ test('settings GitHub controls back up, confirm restore, and persist automatic b
     assert.deepEqual(messages.find(message => message.type === 'GITHUB_SETTINGS_BACKUP'), {
         type: 'GITHUB_SETTINGS_BACKUP'
     });
+    await waitFor(dom, () => /Settings backed up ✓/.test(el(dom, 'settings-backup-github-status').textContent));
+    const commitLink = el(dom, 'settings-backup-github-status').querySelector('a');
+    assert.equal(commitLink.textContent, 'View commit');
+    assert.equal(commitLink.getAttribute('href'), 'https://github.com/ada/peaks/commit/settings123');
+    assert.equal(commitLink.getAttribute('target'), '_blank');
+    assert.equal(commitLink.getAttribute('rel'), 'noopener noreferrer');
     await waitFor(dom, () => !el(dom, 'settings-backup-github-restore').disabled);
 
     el(dom, 'settings-backup-github-restore').click();
@@ -343,11 +349,49 @@ test('settings GitHub controls back up, confirm restore, and persist automatic b
     el(dom, 'settings-backup-confirm').click();
     await waitFor(dom, () => dom.chrome._store.bpbSettings.theme === 'light');
     assert.equal(dom.chrome._store.bpbSettings.units, 'metric');
+    await waitFor(dom, () => /Stored as settings\.json/.test(el(dom, 'settings-backup-github-status').textContent));
+    assert.equal(el(dom, 'settings-backup-github-status').querySelector('a'), null,
+        'changing settings must clear the success state for the older payload');
 
     const auto = el(dom, 'settings-backup-auto');
     auto.checked = true;
     auto.dispatchEvent(new dom.window.Event('change'));
     await waitFor(dom, () => dom.chrome._store.bpbSettings.autoSettingsBackup === true);
+});
+
+test('settings backup reports in-row progress before its persistent success state', async () => {
+    let finishBackup;
+    const backupResponse = new Promise(resolve => { finishBackup = resolve; });
+    const status = {
+        connected: true,
+        hasToken: true,
+        repo: { owner: 'ada', name: 'peaks', fullName: 'ada/peaks' },
+    };
+    const dom = await loadOptions({ theme: 'dark' }, {
+        prepareChrome: chrome => {
+            chrome.permissions = { request: async () => true, contains: async () => true, remove: async () => true };
+            chrome.runtime.sendMessage = message => {
+                if (message.type === 'GITHUB_AUTH_STATUS') return Promise.resolve(status);
+                if (message.type === 'GITHUB_SETTINGS_BACKUP') return backupResponse;
+                return Promise.resolve({});
+            };
+        },
+    });
+
+    await waitFor(dom, () => !el(dom, 'settings-backup-github-actions').hidden);
+    el(dom, 'settings-backup-github-backup').click();
+    await waitFor(dom, () => /Backing up settings to GitHub/.test(el(dom, 'settings-backup-github-status').textContent));
+    assert.equal(el(dom, 'settings-backup-github-backup').disabled, true);
+    assert.equal(el(dom, 'settings-backup-github-restore').disabled, true);
+    assert.equal(el(dom, 'settings-backup-auto').disabled, true);
+
+    finishBackup({
+        ok: true,
+        result: { path: 'settings.json', commitUrl: 'https://github.com/ada/peaks/commit/settings456' },
+    });
+    await waitFor(dom, () => /Settings backed up ✓/.test(el(dom, 'settings-backup-github-status').textContent));
+    assert.equal(el(dom, 'settings-backup-github-backup').disabled, false);
+    assert.equal(el(dom, 'settings-backup-github-status').querySelector('a').textContent, 'View commit');
 });
 
 test('settings GitHub controls point disconnected users to the shared connection', async () => {
