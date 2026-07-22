@@ -183,6 +183,10 @@ try {
                 return { status: 500, headers: {}, text: async () => 'fixture failure' };
             };
         }, { signedInBuddyUrl, buddyListFixture });
+        const buddyCacheHint = await optionsPage.locator('#favorites-buddy-cache-hint').textContent();
+        check(/saved copy of your Buddy List for up to 7 days/.test(buddyCacheHint || '')
+            && /may not appear immediately; choose Refresh now/.test(buddyCacheHint || ''),
+        `the Buddy source did not explain its saved-copy freshness: ${JSON.stringify(buddyCacheHint)}`);
         await optionsPage.locator('#favorites-refresh-buddies').click();
         const buddyRefresh = await optionsPage.waitForFunction(async () => {
             const cache = (await chrome.storage.local.get('bpbBuddyCache')).bpbBuddyCache;
@@ -194,6 +198,9 @@ try {
         buddyRequests = await optionsPage.evaluate(() => window.__bpbBuddyRequests);
         check(buddyRequests === 1 && buddyRefresh?.ownerCid === 900001 && buddyRefresh?.entries === 6,
             `the options Buddy refresh did not use the direct signed-in report: ${JSON.stringify({ buddyRequests, buddyRefresh })}`);
+        if (process.env.BPB_VERIFY_FAVORITES_BUDDY_SCREENSHOT) {
+            await optionsPage.locator('#favorites').screenshot({ path: process.env.BPB_VERIFY_FAVORITES_BUDDY_SCREENSHOT });
+        }
 
         await optionsPage.locator('#favorites-refresh-buddies').click();
         const buddyRecovery = await optionsPage.waitForFunction(() => {

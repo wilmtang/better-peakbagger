@@ -413,6 +413,10 @@ test('favorite source defaults to buddies and switching to custom persists', asy
     assert.equal(buddies.checked, true);
     assert.equal(el(dom, 'favorites-buddy-panel').hidden, false);
     assert.equal(el(dom, 'favorites-custom-panel').hidden, true);
+    assert.match(el(dom, 'favorites-buddy-cache-hint').textContent,
+        /saved copy of your Buddy List for up to 7 days/);
+    assert.match(el(dom, 'favorites-buddy-cache-hint').textContent,
+        /Changes made on Peakbagger may not appear immediately; choose Refresh now after editing your buddies/);
 
     custom.checked = true;
     custom.dispatchEvent(new dom.window.Event('change'));
