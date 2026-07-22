@@ -5,6 +5,11 @@
 > [`docs/architecture.md`](../architecture.md),
 > [`docs/github-ascent-backup.md`](../github-ascent-backup.md), and
 > [`PRIVACY.md`](../../PRIVACY.md).
+>
+> A later follow-up added live totals, fuzzy search, automatic cache refresh
+> after native Buddy actions, automatic custom-list additions, and an opt-in
+> removal policy. Those additions are intentionally documented only in the
+> maintained guides above; the implementation plan below remains historical.
 
 ## Why
 

@@ -125,15 +125,25 @@ days is its ordinary automatic refresh interval; a stale copy may remain
 locally and usable when refresh fails, until a later refresh replaces it or
 extension data is cleared.
 
+To verify a native Add/Remove Buddy action after Peakbagger navigates, the
+current Peakbagger tab briefly stores the target climber id, intended action,
+and timestamp in that site's tab-scoped `sessionStorage`. The marker is consumed
+and removed on the next supported climber-page load; values older than five
+minutes are ignored. It is never copied to extension storage, browser sync, or
+GitHub. The click alone is not treated as success: the extension fetches the
+signed-in user's Buddy List, verifies the response owner, and checks the target's
+actual membership before changing custom favorites. A valid report may refresh
+the Buddy cache even when it does not confirm the intended action.
+
 In custom mode, the extension stores up to 1,500 climber ids, displayed names,
 added-at timestamps, and manual/Buddy provenance in `storage.local`. Adding by
 id or link fetches that public Peakbagger climber page to verify its identity and
 name. The list remains on the device until the user edits it, restores a backup,
 clears extension data, or uninstalls the extension. It is not sent through
-browser sync. After a validated native Buddy addition, custom mode also adds the
-confirmed climber locally. Native Buddy removal leaves the custom favorite
-alone unless the user enables the synced removal setting; only the boolean
-preference, not the favorite list, uses browser sync.
+browser sync. After a confirmed native Buddy addition, custom mode also adds the
+climber locally when space remains. Native Buddy removal leaves the custom
+favorite alone unless the user enables **Keep Buddy removals in sync**; only
+that boolean preference, not the favorite list, uses browser sync.
 
 Rich- and Markdown-mode trip-report drafts are stored locally by the extension.
 They are keyed to the climber and ascent or peak, become eligible for lazy

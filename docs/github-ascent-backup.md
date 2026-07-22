@@ -531,8 +531,10 @@ under an ascent folder survive.
 The file is a complete export of the device-local custom list, capped at 1,500
 entries. Restore rejects an unknown schema, malformed entry, duplicate id, or
 oversized list before changing local storage, then offers a six-second Undo.
-Buddy List cache metadata and owner identity are never exported. A missing file
-is reported as an empty backup state, not treated as an empty list to restore.
+Buddy List cache metadata, owner identity, the selected source, the Buddy-removal
+preference, and settings-page search/sort state are never exported or changed by
+restore. A missing file is reported as an empty backup state, not treated as an
+empty list to restore.
 
 ### `ascent.json` schema version 1
 

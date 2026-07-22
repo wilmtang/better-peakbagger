@@ -96,11 +96,12 @@ Filter long ascent lists to trips with a report, GPS track, or external link.
 Filters combine naturally, show live result counts, and remember what you mean
 by “has beta.” The **Favorites** filter starts with your Peakbagger Buddy List,
 or you can switch to a custom list of up to 1,500 climbers and add people from
-their profile pages. Settings shows the total and fuzzy-searches that custom
-list. Adding a Peakbagger Buddy also adds them to custom favorites; removing a
-Buddy keeps the favorite unless you explicitly enable synced removals. Combine
-it with Trip report or GPS track to see useful beta from people you follow.
-Sortable columns reorder instantly without reloading the page.
+their profile pages. Settings shows the total (and matching total while
+searching), with accent- and typo-tolerant name search plus strict climber-id
+search. Adding a Peakbagger Buddy also adds them to custom favorites; removing a
+Buddy keeps the favorite unless you turn on **Keep Buddy removals in sync**.
+Combine it with Trip report or GPS track to see useful beta from people you
+follow. Sortable columns reorder instantly without reloading the page.
 
 ![Ascent beta filters and in-page sorting](store-assets/showcase-2-beta-filter.png)
 
