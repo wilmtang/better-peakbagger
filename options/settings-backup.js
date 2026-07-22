@@ -6,6 +6,7 @@
 import { settings as S } from '../src/settings/settings.js';
 import { settingsTransfer as Transfer } from '../src/settings/settings-transfer.js';
 import { githubError as GithubError } from '../src/github/github-error.js';
+import { hasGithubPermission } from './github.js';
 
 const invalidFileMessage = reason => reason === 'newer-version'
     ? 'This settings file was made by a newer version of the extension.'
@@ -109,7 +110,7 @@ export function initSettingsBackup({ extensionApi, flash, save }) {
     });
 
     const renderGithub = () => {
-        const connected = githubStatus?.connected === true;
+        const connected = githubStatus?.permissionGranted && githubStatus?.connected === true;
         githubActionsEl.hidden = !connected;
         githubBackupEl.disabled = githubBusy;
         githubRestoreEl.disabled = githubBusy;
@@ -120,7 +121,11 @@ export function initSettingsBackup({ extensionApi, flash, save }) {
     };
 
     const refreshGithub = async () => {
-        githubStatus = await send({ type: 'GITHUB_AUTH_STATUS' });
+        const [status, permissionGranted] = await Promise.all([
+            send({ type: 'GITHUB_AUTH_STATUS' }),
+            hasGithubPermission(extensionApi),
+        ]);
+        githubStatus = { ...(status || {}), permissionGranted };
         renderGithub();
     };
 

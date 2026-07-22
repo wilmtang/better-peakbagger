@@ -327,6 +327,18 @@ test('settings GitHub controls point disconnected users to the shared connection
     assert.equal(el(dom, 'settings-backup-github-actions').hidden, true);
 });
 
+test('settings GitHub controls hide when the optional host permission is revoked', async () => {
+    const dom = await loadOptions({}, {
+        prepareChrome: withGithubBackground({
+            connected: true,
+            hasToken: true,
+            repo: { owner: 'ada', name: 'peaks', fullName: 'ada/peaks' },
+        }, { grant: false })
+    });
+    await waitFor(dom, () => /Connect GitHub above/.test(el(dom, 'settings-backup-github-status').textContent));
+    assert.equal(el(dom, 'settings-backup-github-actions').hidden, true);
+});
+
 test('trip report credit is off by default and persists as an explicit opt-in', async () => {
     const dom = await loadOptions({});
     const checkbox = el(dom, 'add-report-credit');
