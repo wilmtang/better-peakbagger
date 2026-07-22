@@ -666,10 +666,13 @@ import { numericParam, ownerClimberId } from './profile-backup-core.js';
             const tick = document.createElement('span');
             tick.className = 'pbaf-tick';
             tick.textContent = '✓';
+            const labelEl = document.createElement('span');
+            labelEl.className = 'pbaf-chip-label';
+            labelEl.textContent = label;
             const count = document.createElement('span');
             count.className = 'pbaf-count';
             count.textContent = String(counts[key]);
-            button.append(tick, label, count);
+            button.append(tick, labelEl, count);
 
             button.addEventListener('click', () => {
                 state[key] = !state[key];
@@ -708,7 +711,13 @@ import { numericParam, ownerClimberId } from './profile-backup-core.js';
                 if (record.fav) counts.fav++;
             }
             if (chips.fav) {
-                chips.fav.querySelector('.pbaf-count').textContent = String(counts.fav);
+                chips.fav.querySelector('.pbaf-chip-label').textContent = favoritesSource === 'custom'
+                    ? 'Fav climbers'
+                    : 'Climbing buddies';
+                const count = chips.fav.querySelector('.pbaf-count');
+                const countKnown = favoritesSource === 'custom' || buddyCache !== null;
+                count.hidden = !countKnown;
+                count.textContent = countKnown ? String(counts.fav) : '';
                 chips.fav.title = favoriteTooltip();
                 const canInitialLoad = favoritesSource === 'buddies'
                     && !buddyCache && ownCid != null && !favoriteLoadError;
@@ -806,7 +815,7 @@ import { numericParam, ownerClimberId } from './profile-backup-core.js';
             makeChip('link', 'Link',
                 'Only ascents with an external link (blog, Strava, forum, ...).'),
         ];
-        if (isPeakAscentsPage) filterControls.push(makeChip('fav', 'Favorites', ''));
+        if (isPeakAscentsPage) filterControls.push(makeChip('fav', '', ''));
         bar.append(
             ...filterControls,
             spacer,

@@ -757,10 +757,12 @@ custom list is empty; the user must populate it locally or explicitly restore
 
 On a full `PeakAscents.aspx` page, `src/ascent-filter.js` extracts the first
 `climber.aspx?cid=...` profile identity from each ascent row. Rows without a
-valid climber id never match. It then marks each record by `Set.has(cid)` and
-shows in the Favorites chip the number of matching ascent rows, not the number
-of stored favorite climbers. The chip composes with every other filter using
-AND semantics.
+valid climber id never match. It then marks each record by `Set.has(cid)`. The
+source-specific chip reads **Climbing buddies** or **Fav climbers** and shows
+the number of matching ascent rows, not the number of stored climbers. Buddy
+mode omits the count until a valid owner-matching Buddy List has been loaded;
+after a valid empty list is loaded, `0` is meaningful and displayed. The chip
+composes with every other filter using AND semantics.
 
 An empty or unavailable effective set deliberately does not hide the entire
 ascent table. The chip becomes disabled and a persisted `fav: true` state is

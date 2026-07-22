@@ -25,7 +25,8 @@ const bar = dom => dom.window.document.getElementById('pbaf-bar');
 const table = dom => dom.window.document.querySelector('table.gray');
 const status = dom => dom.window.document.querySelector('.pbaf-status').textContent;
 const chip = (dom, label) =>
-    [...dom.window.document.querySelectorAll('.pbaf-chip')].find(c => c.textContent.includes(label));
+    [...dom.window.document.querySelectorAll('.pbaf-chip')]
+        .find(c => c.querySelector('.pbaf-chip-label')?.textContent === label);
 const chipCount = (dom, label) => chip(dom, label).querySelector('.pbaf-count').textContent;
 
 // Same row classification the content script uses: table.rows skips rows of
@@ -84,11 +85,11 @@ test('filter chips form one group without a divider after Has beta', async () =>
     assert.equal(bar(dom).querySelector('.pbaf-divider'), null);
     assert.deepEqual(
         [...bar(dom).querySelectorAll('.pbaf-chip')].map(control => control.childNodes[1].textContent.trim()),
-        ['Has beta', 'Trip report', 'GPS track', 'Link', 'Favorites']
+        ['Has beta', 'Trip report', 'GPS track', 'Link', 'Climbing buddies']
     );
 });
 
-test('custom Favorites counts climber rows and AND-composes with Has beta', async () => {
+test('Fav climbers counts climber rows and AND-composes with Has beta', async () => {
     const dom = await loadPageWithBar(SMALL, {
         url: SMALL_URL,
         settings: { favoritesSource: 'custom' },
@@ -98,14 +99,14 @@ test('custom Favorites counts climber rows and AND-composes with Has beta', asyn
     const favoriteRows = dataRows(dom).filter(row => ids.has(rowCid(row)));
     const defaultVisibleFavorites = visibleRows(dom).filter(row => ids.has(rowCid(row)));
     assert.ok(favoriteRows.length > 0);
-    assert.equal(chipCount(dom, 'Favorites'), String(favoriteRows.length));
+    assert.equal(chipCount(dom, 'Fav climbers'), String(favoriteRows.length));
 
-    chip(dom, 'Favorites').click();
+    chip(dom, 'Fav climbers').click();
     assert.equal(visibleRows(dom).length, defaultVisibleFavorites.length);
     assert.ok(visibleRows(dom).every(row => ids.has(rowCid(row))));
 });
 
-test('custom Favorites can filter independently and persists with the other chips', async () => {
+test('Fav climbers can filter independently and persists with the other chips', async () => {
     const dom = await loadPage(SMALL, {
         url: SMALL_URL,
         settings: { favoritesSource: 'custom' },
@@ -117,14 +118,14 @@ test('custom Favorites can filter independently and persists with the other chip
     await waitFor(dom, () => bar(dom));
     const ids = new Set(customCids);
     assert.equal(visibleRows(dom).length, dataRows(dom).filter(row => ids.has(rowCid(row))).length);
-    assert.equal(chip(dom, 'Favorites').getAttribute('aria-pressed'), 'true');
+    assert.equal(chip(dom, 'Fav climbers').getAttribute('aria-pressed'), 'true');
 
     dom.window.document.querySelector('.pbaf-reset').click();
     assert.equal(visibleRows(dom).length, dataRows(dom).length);
     assert.equal(JSON.parse(dom.window.localStorage.getItem('pbAscentBetaFilter.v1')).fav, false);
 });
 
-test('an empty custom list disables Favorites without hiding the ascent table', async () => {
+test('an empty custom list disables Fav climbers without hiding the ascent table', async () => {
     const dom = await loadPage(SMALL, {
         url: SMALL_URL,
         settings: { favoritesSource: 'custom' },
@@ -134,9 +135,9 @@ test('an empty custom list disables Favorites without hiding the ascent table', 
         })),
     });
     await waitFor(dom, () => bar(dom));
-    assert.equal(chip(dom, 'Favorites').disabled, true);
-    assert.match(chip(dom, 'Favorites').title, /No favorite climbers yet/);
-    assert.equal(chip(dom, 'Favorites').getAttribute('aria-pressed'), 'false');
+    assert.equal(chip(dom, 'Fav climbers').disabled, true);
+    assert.match(chip(dom, 'Fav climbers').title, /No favorite climbers yet/);
+    assert.equal(chip(dom, 'Fav climbers').getAttribute('aria-pressed'), 'false');
     assert.equal(visibleRows(dom).length, dataRows(dom).length);
 });
 
@@ -146,11 +147,11 @@ test('local favorite changes update the custom filter live', async () => {
         settings: { favoritesSource: 'custom' },
         local: { [FAVORITES_KEY]: favoriteStore([]) },
     });
-    assert.equal(chip(dom, 'Favorites').disabled, true);
+    assert.equal(chip(dom, 'Fav climbers').disabled, true);
 
     await dom.chrome.storage.local.set({ [FAVORITES_KEY]: favoriteStore(customCids) });
-    await waitFor(dom, () => chip(dom, 'Favorites').disabled === false);
-    assert.equal(chipCount(dom, 'Favorites'), String(
+    await waitFor(dom, () => chip(dom, 'Fav climbers').disabled === false);
+    assert.equal(chipCount(dom, 'Fav climbers'), String(
         dataRows(dom).filter(row => customCids.includes(rowCid(row))).length));
 });
 
@@ -162,8 +163,8 @@ test('buddy mode reads the owner-scoped local cache', async () => {
     };
     const dom = await loadPageWithBar(SMALL, { url: SMALL_URL, local: { [BUDDY_CACHE_KEY]: cache } });
     const expected = dataRows(dom).filter(row => customCids.includes(rowCid(row))).length;
-    assert.equal(chipCount(dom, 'Favorites'), String(expected));
-    assert.equal(chip(dom, 'Favorites').disabled, false);
+    assert.equal(chipCount(dom, 'Climbing buddies'), String(expected));
+    assert.equal(chip(dom, 'Climbing buddies').disabled, false);
 });
 
 test('a cache from another signed-in account is treated as absent', async () => {
@@ -182,9 +183,11 @@ test('a cache from another signed-in account is treated as absent', async () => 
             page.window.document.body.prepend(owner);
         },
     });
-    assert.equal(chipCount(dom, 'Favorites'), '0');
-    assert.equal(chip(dom, 'Favorites').disabled, false, 'the signed-in owner can load a fresh list');
-    assert.match(chip(dom, 'Favorites').title, /Load your Peakbagger Buddy List/);
+    const buddyChip = chip(dom, 'Climbing buddies');
+    assert.equal(buddyChip.querySelector('.pbaf-count').hidden, true);
+    assert.equal(chipCount(dom, 'Climbing buddies'), '', 'an unknown Buddy count must not look like a known zero');
+    assert.equal(buddyChip.disabled, false, 'the signed-in owner can load a fresh list');
+    assert.match(buddyChip.title, /Load your Peakbagger Buddy List/);
 });
 
 test('an active stale buddy cache filters immediately and revalidates once', async () => {
@@ -244,10 +247,10 @@ test('a refreshed Buddy List from another account is rejected while the stale ca
             page.window.fetch = async () => ({ status: 200, headers: {}, text: async () => otherAccount });
         },
     });
-    await waitFor(dom, () => /different Peakbagger account/i.test(chip(dom, 'Favorites')?.title || ''));
+    await waitFor(dom, () => /different Peakbagger account/i.test(chip(dom, 'Climbing buddies')?.title || ''));
     assert.equal(dom.chrome._localStore[BUDDY_CACHE_KEY].fetchedAt, 1);
-    assert.match(chip(dom, 'Favorites').title, /Using your saved Buddy List/);
-    assert.equal(chip(dom, 'Favorites').disabled, false);
+    assert.match(chip(dom, 'Climbing buddies').title, /Using your saved Buddy List/);
+    assert.equal(chip(dom, 'Climbing buddies').disabled, false);
 });
 
 test('a refreshed Buddy List stays usable when only the local cache write fails', async () => {
@@ -272,9 +275,9 @@ test('a refreshed Buddy List stays usable when only the local cache write fails'
         },
     });
     await waitFor(dom, () => /loaded, but Better Peakbagger could not save it/i.test(
-        chip(dom, 'Favorites')?.title || ''
+        chip(dom, 'Climbing buddies')?.title || ''
     ));
-    assert.equal(chip(dom, 'Favorites').disabled, false,
+    assert.equal(chip(dom, 'Climbing buddies').disabled, false,
         'the freshly fetched non-empty list remains active in memory even when none match this peak');
     assert.equal(dom.chrome._localStore[BUDDY_CACHE_KEY].fetchedAt, 1,
         'the failed write does not pretend the persisted cache was refreshed');
