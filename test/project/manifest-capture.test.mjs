@@ -42,7 +42,7 @@ test('the worker ships as one bundle for both Chrome and Firefox', () => {
     assert.deepEqual(manifest.background.scripts, ['background.js']);
     // The fail-closed coordinator is composed from these modules, in order.
     assert.deepEqual(bundleSources('background.js'),
-        ['gpx/gpx-metrics.js', 'capture/capture-core.js', 'capture/provider-url.js', 'terrain/terrain-tiles.js', 'terrain/terrain-cache.js', 'settings/settings-schema.js', 'settings/settings.js', 'settings/settings-transfer.js', 'favorites/favorite-climbers.js', 'github/github-errors.js', 'github/github-api.js', 'github/github-auth.js', 'github/github-client.js', 'peakbagger/peakbagger-cloudflare.js', 'peakbagger/peakbagger-response.js', 'peakbagger/peakbagger-error.js', 'peakbagger/peakbagger-request.js', 'background/background.js']);
+        ['gpx/gpx-metrics.js', 'capture/capture-core.js', 'capture/capture-phases.js', 'capture/provider-url.js', 'terrain/terrain-tiles.js', 'terrain/terrain-cache.js', 'settings/settings-schema.js', 'settings/settings.js', 'settings/settings-transfer.js', 'favorites/favorite-climbers.js', 'github/github-errors.js', 'github/github-api.js', 'github/github-auth.js', 'github/github-client.js', 'peakbagger/peakbagger-cloudflare.js', 'peakbagger/peakbagger-response.js', 'peakbagger/peakbagger-error.js', 'peakbagger/peakbagger-request.js', 'background/background.js']);
     assert.deepEqual(bundleSources('provider-page.js'), ['capture/provider-url.js', 'gpx/gpx-parse.js', 'capture/provider-page.js']);
     assert.deepEqual(manifest.browser_specific_settings.gecko.data_collection_permissions.required, ['locationInfo']);
 });
@@ -59,6 +59,7 @@ test('extension panels share one pre-paint theme bootstrap', () => {
         ['settings/settings-schema.js', 'settings/settings.js', 'theme/panel-theme.js']);
     assert.deepEqual(bundleSources('popup/popup-head.js'),
         ['settings/settings-schema.js', 'settings/settings.js', 'theme/panel-theme.js']);
+    assert.deepEqual(bundleSources('popup/popup.js'), ['capture/capture-phases.js', 'popup-main.js']);
 });
 
 test('the Buddy refresh helper is a fixed first-party navigation', async () => {

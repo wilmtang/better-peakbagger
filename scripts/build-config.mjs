@@ -37,7 +37,7 @@ export function resolvePageSource(name) {
 // One record per bundle. `out` is the dist-relative output path; `sources` are
 // its explicit roots, ordered where sibling side effects depend on that order.
 export const ENTRIES = [
-    { out: 'background.js', sources: ['gpx/gpx-metrics.js', 'capture/capture-core.js', 'capture/provider-url.js', 'terrain/terrain-tiles.js', 'terrain/terrain-cache.js', 'settings/settings-schema.js', 'settings/settings.js', 'settings/settings-transfer.js', 'favorites/favorite-climbers.js', 'github/github-errors.js', 'github/github-api.js', 'github/github-auth.js', 'github/github-client.js', 'peakbagger/peakbagger-cloudflare.js', 'peakbagger/peakbagger-response.js', 'peakbagger/peakbagger-error.js', 'peakbagger/peakbagger-request.js', 'background/background.js'] },
+    { out: 'background.js', sources: ['gpx/gpx-metrics.js', 'capture/capture-core.js', 'capture/capture-phases.js', 'capture/provider-url.js', 'terrain/terrain-tiles.js', 'terrain/terrain-cache.js', 'settings/settings-schema.js', 'settings/settings.js', 'settings/settings-transfer.js', 'favorites/favorite-climbers.js', 'github/github-errors.js', 'github/github-api.js', 'github/github-auth.js', 'github/github-client.js', 'peakbagger/peakbagger-cloudflare.js', 'peakbagger/peakbagger-response.js', 'peakbagger/peakbagger-error.js', 'peakbagger/peakbagger-request.js', 'background/background.js'] },
     { out: 'provider-page.js', sources: ['capture/provider-url.js', 'gpx/gpx-parse.js', 'capture/provider-page.js'] },
 
     { out: 'content/ascent-editor.js', sources: ['ascent/ascent-draft.js', 'gpx/gpx-parse.js', 'settings/settings-schema.js', 'settings/settings.js', 'ascent/ascent-upload.js', 'ascent/ascent-saved.js', 'reports/report-markup.js', 'reports/report-drafts.js', 'reports/report-editor.js'] },
@@ -61,7 +61,7 @@ export const ENTRIES = [
     { out: 'options/options-head.js', sources: ['settings/settings-schema.js', 'settings/settings.js', 'theme/panel-theme.js'], page: true },
     { out: 'options/options.js', sources: ['terrain/terrain-cache.js', 'reports/report-markup.js', 'reports/report-drafts.js', 'favorites/favorite-climbers.js', 'peakbagger/peakbagger-cloudflare.js', 'peakbagger/peakbagger-response.js', 'peakbagger/peakbagger-error.js', 'peakbagger/peakbagger-request.js', 'profile/profile-backup-core.js', 'options-main.js', 'options-drafts.js', 'options-favorites.js'], page: true },
     { out: 'popup/popup-head.js', sources: ['settings/settings-schema.js', 'settings/settings.js', 'theme/panel-theme.js'], page: true },
-    { out: 'popup/popup.js', sources: ['popup-main.js'], page: true },
+    { out: 'popup/popup.js', sources: ['capture/capture-phases.js', 'popup-main.js'], page: true },
 ];
 
 // Absolute source paths for one entry's bundle, in order.

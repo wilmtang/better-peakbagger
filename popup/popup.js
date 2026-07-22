@@ -1,6 +1,8 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+import { capturePhases as CapturePhases } from '../src/capture/capture-phases.js';
+
 (() => {
     'use strict';
 
@@ -18,7 +20,6 @@
     let currentJob = null;
     let pollTimer = null;
     let capturePending = false;
-    const TERMINAL_PHASES = new Set(['ready', 'no-matches', 'no-gps', 'error', 'opened', 'previewed']);
 
     const clear = element => { while (element.firstChild) element.firstChild.remove(); };
 
@@ -225,7 +226,7 @@
         try {
             const job = await ext.runtime.sendMessage({ type: 'CAPTURE_STATUS', tabId: activeTab.id });
             if (job) render(job);
-            if ((!job && capturePending) || (job && !TERMINAL_PHASES.has(job.phase))) {
+            if ((!job && capturePending) || (job && !CapturePhases.isTerminal(job.phase))) {
                 pollTimer = setTimeout(poll, 450);
             } else {
                 pollTimer = null;
@@ -245,7 +246,7 @@
             .then(job => {
                 capturePending = false;
                 if (job) render(job);
-                if (!job || TERMINAL_PHASES.has(job.phase)) {
+                if (!job || CapturePhases.isTerminal(job.phase)) {
                     clearTimeout(pollTimer);
                     pollTimer = null;
                 }

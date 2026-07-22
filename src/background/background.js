@@ -7,6 +7,7 @@
 // The worker ships as one bundle; capture-core and settings (and their own
 // transitive deps: gpx-metrics, settings-schema) resolve through these imports.
 import { captureCore as Core } from '../capture/capture-core.js';
+import { capturePhases as CapturePhases } from '../capture/capture-phases.js';
 import { providerFromUrl, providerActivityUrl } from '../capture/provider-url.js';
 import { terrainTiles as TerrainTiles } from '../terrain/terrain-tiles.js';
 import { terrainCache as TerrainCache } from '../terrain/terrain-cache.js';
@@ -433,9 +434,8 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
                 return publicJob(completed);
             }
         }
-        const terminalPhases = new Set(['ready', 'no-matches', 'no-gps', 'error', 'opened', 'previewed']);
         if (!message.force && sameActivity && sameCapturePreferences(current.capturePreferences, capturePreferences)
-            && current.expiresAt > now() && terminalPhases.has(current.phase)) {
+            && current.expiresAt > now() && CapturePhases.isTerminal(current.phase)) {
             return publicJob(current);
         }
         await setBadge(tabId, '');
@@ -504,12 +504,11 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
     const cancelCapture = async message => {
         const tabId = Number(message.tabId);
         if (!Number.isInteger(tabId)) throw new Error('Activity tab identity is unavailable.');
-        const terminalPhases = new Set(['ready', 'no-matches', 'no-gps', 'error', 'opened', 'previewed']);
         let cancelled = false;
         let current = null;
         await mutateMap(JOBS_KEY, jobs => {
             current = jobs[tabId] || null;
-            if (!current || terminalPhases.has(current.phase)) return;
+            if (!current || CapturePhases.isTerminal(current.phase)) return;
             delete jobs[tabId];
             cancelled = true;
         });
