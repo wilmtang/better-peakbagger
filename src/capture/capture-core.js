@@ -886,6 +886,23 @@ import { gpxMetrics as Metrics } from '../gpx/gpx-metrics.js';
         return result;
     };
 
+    const prepareDraftSelection = matches => {
+        const selected = assignDraftSuffixes(matches);
+        const trackOrdered = selected.map((match, index) => ({ match, index }))
+            .sort((left, right) => {
+                const distance = left.match.draftFields.upDistanceM - right.match.draftFields.upDistanceM;
+                return Number.isFinite(distance) && distance !== 0 ? distance : left.index - right.index;
+            })
+            .map(({ match }) => match);
+        return {
+            matches: selected,
+            confidenceOrdered: [...selected].sort((left, right) => right.confidence - left.confidence),
+            trackOrdered,
+            sequenceById: new Map(trackOrdered.map((match, index) => [String(match.id), index + 1])),
+            fallbackTripName: trackOrdered.map(match => match.name).join(' / ').slice(0, 200),
+        };
+    };
+
     const publicMatch = match => ({
         id: match.id,
         name: match.name,
@@ -912,6 +929,7 @@ import { gpxMetrics as Metrics } from '../gpx/gpx-metrics.js';
         calculateNightsOut,
         calculateDayStats,
         assignDraftSuffixes,
+        prepareDraftSelection,
         publicMatch,
         formatEncounterDateTime
     };

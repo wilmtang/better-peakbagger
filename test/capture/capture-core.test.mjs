@@ -285,3 +285,19 @@ test('same-day draft suffixes follow encounter order without mutating matches', 
     assert.deepEqual(assigned.map(match => match.draftFields.suffix), ['c', '', 'a', 'b']);
     assert.equal(matches[0].draftFields.suffix, undefined);
 });
+
+test('draft selection prepares one track order, confidence order, and fallback trip name', () => {
+    const matches = [
+        { id: 7, name: 'Later', confidence: 80, draftFields: { date: '2026-07-01', upDistanceM: 300 } },
+        { id: 8, name: 'Earlier', confidence: 95, draftFields: { date: '2026-07-01', upDistanceM: 100 } },
+    ];
+
+    const prepared = Core.prepareDraftSelection(matches);
+
+    assert.deepEqual(prepared.trackOrdered.map(match => match.id), [8, 7]);
+    assert.deepEqual(prepared.confidenceOrdered.map(match => match.id), [8, 7]);
+    assert.deepEqual(Array.from(prepared.sequenceById), [['8', 1], ['7', 2]]);
+    assert.equal(prepared.fallbackTripName, 'Earlier / Later');
+    assert.deepEqual(prepared.matches.map(match => match.draftFields.suffix), ['b', 'a']);
+    assert.equal(matches[0].draftFields.suffix, undefined);
+});

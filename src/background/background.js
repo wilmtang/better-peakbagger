@@ -530,6 +530,84 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
         });
     };
 
+    const prepareDraftOpening = (job, matches, sourceTabId) => {
+        const selection = Core.prepareDraftSelection(matches);
+        const useTripInfo = job.capturePreferences?.fillTripInfo && selection.matches.length > 1;
+        const useWildernessNights = job.capturePreferences?.fillWildernessNights
+            && Number.isInteger(job.nightsOut) && job.nightsOut > 0;
+        const makeDraft = (match, {
+            tabId,
+            previewOrder,
+            focusOnReady,
+            preserveExistingFields = false,
+        }) => ({
+            tabId,
+            jobId: job.id,
+            sourceTabId,
+            pid: match.id,
+            cid: job.cid,
+            classification: match.classification,
+            confidence: match.confidence,
+            suffix: match.draftFields.suffix,
+            tripInfo: useTripInfo ? {
+                sequence: selection.sequenceById.get(String(match.id)),
+                name: job.tripName || selection.fallbackTripName,
+                nightsOut: Number.isInteger(job.nightsOut) ? job.nightsOut : null
+            } : null,
+            wildernessNightsOut: useWildernessNights ? job.nightsOut : null,
+            previewOrder,
+            previewStarted: false,
+            complete: false,
+            dayStatsPending: false,
+            focusOnReady,
+            preserveExistingFields,
+            expiresAt: now() + JOB_TTL_MS
+        });
+        return { ...selection, makeDraft };
+    };
+
+    const openNewDraftTabs = async ({
+        sourceTabId,
+        matches,
+        makeDraft,
+        startOrder = 0,
+        focusFirst = false,
+        onBeforeNavigate = null,
+    }) => {
+        const sourceTab = await ext.tabs.get(sourceTabId);
+        const created = [];
+        for (let index = 0; index < matches.length; index++) {
+            const match = matches[index];
+            const tab = await ext.tabs.create({ url: 'about:blank', active: false, windowId: sourceTab.windowId });
+            const draft = makeDraft(match, {
+                tabId: tab.id,
+                previewOrder: startOrder + index,
+                focusOnReady: focusFirst && index === 0,
+            });
+            await mutateMap(DRAFTS_KEY, drafts => { drafts[tab.id] = draft; });
+            created.push(draft);
+        }
+
+        let groupWarning = null;
+        if (created.length) {
+            try {
+                const groupId = await ext.tabs.group({
+                    tabIds: created.map(draft => draft.tabId),
+                    createProperties: { windowId: sourceTab.windowId }
+                });
+                await ext.tabGroups.update(groupId, { title: 'Peak Drafts', color: 'green', collapsed: false });
+            } catch (error) {
+                groupWarning = `Drafts opened, but tab grouping failed: ${error.message}`;
+            }
+        }
+        if (onBeforeNavigate) await onBeforeNavigate({ created, groupWarning });
+        await Promise.all(created.map(draft => ext.tabs.update(draft.tabId, {
+            url: `https://peakbagger.com/climber/ascentedit.aspx?pid=${draft.pid}&cid=${draft.cid}`,
+            active: false
+        })));
+        return { created, groupWarning };
+    };
+
     const openDrafts = async message => {
         const tabId = Number(message.tabId);
         await updateSelection(message);
@@ -538,21 +616,12 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
         if (!isFresh(job) || !job.uploadGpx || (job.phase !== 'ready' && job.phase !== 'opened')) {
             throw new Error('Capture results are no longer available. Capture the activity again.');
         }
-        const selectedWithSuffixes = Core.assignDraftSuffixes(job.matches
-            .filter(match => job.selectedIds.includes(match.id)));
-        if (!selectedWithSuffixes.length) throw new Error('Select at least one detected peak.');
-        const trackOrdered = selectedWithSuffixes.map((match, index) => ({ match, index }))
-            .sort((left, right) => {
-                const distance = left.match.draftFields.upDistanceM - right.match.draftFields.upDistanceM;
-                return Number.isFinite(distance) && distance !== 0 ? distance : left.index - right.index;
-            })
-            .map(({ match }) => match);
-        const sequenceById = new Map(trackOrdered.map((match, index) => [String(match.id), index + 1]));
-        const fallbackTripName = trackOrdered.map(match => match.name).join(' / ').slice(0, 200);
-        const useTripInfo = job.capturePreferences?.fillTripInfo && selectedWithSuffixes.length > 1;
-        const useWildernessNights = job.capturePreferences?.fillWildernessNights
-            && Number.isInteger(job.nightsOut) && job.nightsOut > 0;
-        const selected = selectedWithSuffixes.sort((a, b) => b.confidence - a.confidence);
+        const opening = prepareDraftOpening(
+            job,
+            job.matches.filter(match => job.selectedIds.includes(match.id)),
+            tabId
+        );
+        if (!opening.matches.length) throw new Error('Select at least one detected peak.');
 
         const existingDrafts = await readMap(DRAFTS_KEY);
         const existingForJob = Object.values(existingDrafts)
@@ -564,49 +633,13 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
             return { tabIds: existingForJob.map(draft => draft.tabId), reused: true };
         }
 
-        const sourceTab = await ext.tabs.get(tabId);
-        const created = [];
-        for (let index = 0; index < selected.length; index++) {
-            const match = selected[index];
-            const tab = await ext.tabs.create({ url: 'about:blank', active: false, windowId: sourceTab.windowId });
-            const draft = {
-                tabId: tab.id,
-                jobId: job.id,
-                sourceTabId: tabId,
-                pid: match.id,
-                cid: job.cid,
-                classification: match.classification,
-                confidence: match.confidence,
-                suffix: match.draftFields.suffix,
-                tripInfo: useTripInfo ? {
-                    sequence: sequenceById.get(String(match.id)),
-                    name: job.tripName || fallbackTripName,
-                    nightsOut: Number.isInteger(job.nightsOut) ? job.nightsOut : null
-                } : null,
-                wildernessNightsOut: useWildernessNights ? job.nightsOut : null,
-                previewOrder: index,
-                previewStarted: false,
-                complete: false,
-                dayStatsPending: false,
-                focusOnReady: index === 0,
-                expiresAt: now() + JOB_TTL_MS
-            };
-            await mutateMap(DRAFTS_KEY, drafts => { drafts[tab.id] = draft; });
-            created.push(draft);
-        }
-
+        const { created, groupWarning } = await openNewDraftTabs({
+            sourceTabId: tabId,
+            matches: opening.confidenceOrdered,
+            makeDraft: opening.makeDraft,
+            focusFirst: true,
+        });
         const tabIds = created.map(draft => draft.tabId);
-        let groupWarning = null;
-        try {
-            const groupId = await ext.tabs.group({ tabIds, createProperties: { windowId: sourceTab.windowId } });
-            await ext.tabGroups.update(groupId, { title: 'Peak Drafts', color: 'green', collapsed: false });
-        } catch (error) {
-            groupWarning = `Drafts opened, but tab grouping failed: ${error.message}`;
-        }
-        await Promise.all(created.map(draft => ext.tabs.update(draft.tabId, {
-            url: `https://peakbagger.com/climber/ascentedit.aspx?pid=${draft.pid}&cid=${draft.cid}`,
-            active: false
-        })));
         await updateJob(tabId, { phase: 'opened', openedDraftTabIds: tabIds, groupWarning });
         return { tabIds, groupWarning, reused: false };
     };
@@ -774,80 +807,36 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
             return { ok: false, error: { code: 'identity-mismatch', message: 'This form is bound to a different peak.' } };
         }
 
-        const selectedMatches = Core.assignDraftSuffixes(selectedIds.map(id => byId.get(id)));
-        const trackOrdered = selectedMatches.map((match, index) => ({ match, index }))
-            .sort((left, right) => {
-                const distance = left.match.draftFields.upDistanceM - right.match.draftFields.upDistanceM;
-                return Number.isFinite(distance) && distance !== 0 ? distance : left.index - right.index;
-            })
-            .map(({ match }) => match);
-        const sequenceById = new Map(trackOrdered.map((match, index) => [String(match.id), index + 1]));
-        const fallbackTripName = trackOrdered.map(match => match.name).join(' / ').slice(0, 200);
-        const useTripInfo = job.capturePreferences?.fillTripInfo && selectedMatches.length > 1;
-        const useWildernessNights = job.capturePreferences?.fillWildernessNights
-            && Number.isInteger(job.nightsOut) && job.nightsOut > 0;
-        const primaryMatch = primaryId ? selectedMatches.find(match => String(match.id) === primaryId) : null;
-        const siblings = selectedMatches.filter(match => match !== primaryMatch)
-            .sort((a, b) => b.confidence - a.confidence);
-
-        const makeDraft = (match, draftTabId, previewOrder, focusOnReady) => ({
-            tabId: draftTabId,
-            jobId: job.id,
-            sourceTabId: tabId,
-            pid: match.id,
-            cid: job.cid,
-            classification: match.classification,
-            confidence: match.confidence,
-            suffix: match.draftFields.suffix,
-            tripInfo: useTripInfo ? {
-                sequence: sequenceById.get(String(match.id)),
-                name: job.tripName || fallbackTripName,
-                nightsOut: Number.isInteger(job.nightsOut) ? job.nightsOut : null
-            } : null,
-            wildernessNightsOut: useWildernessNights ? job.nightsOut : null,
-            previewOrder,
-            previewStarted: false,
-            complete: false,
-            dayStatsPending: false,
-            focusOnReady,
-            preserveExistingFields: draftTabId === tabId,
-            expiresAt: now() + JOB_TTL_MS
-        });
+        const opening = prepareDraftOpening(job, selectedIds.map(id => byId.get(id)), tabId);
+        const primaryMatch = primaryId
+            ? opening.matches.find(match => String(match.id) === primaryId)
+            : null;
+        const siblings = opening.confidenceOrdered.filter(match => match !== primaryMatch);
 
         // Every draft is registered before any tab changes URL, so a fast
         // page load can never race its own identity checks.
         let order = 0;
         if (primaryMatch) {
-            const currentDraft = makeDraft(primaryMatch, tabId, order++, false);
+            const currentDraft = opening.makeDraft(primaryMatch, {
+                tabId,
+                previewOrder: order++,
+                focusOnReady: false,
+                preserveExistingFields: true,
+            });
             await mutateMap(DRAFTS_KEY, drafts => { drafts[tabId] = currentDraft; });
         }
-        const sourceTab = await ext.tabs.get(tabId);
-        const created = [];
-        for (const match of siblings) {
-            const tab = await ext.tabs.create({ url: 'about:blank', active: false, windowId: sourceTab.windowId });
-            const draft = makeDraft(match, tab.id, order++, !primaryMatch && created.length === 0);
-            await mutateMap(DRAFTS_KEY, drafts => { drafts[tab.id] = draft; });
-            created.push(draft);
-        }
-
-        let groupWarning = null;
-        if (created.length) {
-            try {
-                const groupId = await ext.tabs.group({
-                    tabIds: created.map(draft => draft.tabId),
-                    createProperties: { windowId: sourceTab.windowId }
-                });
-                await ext.tabGroups.update(groupId, { title: 'Peak Drafts', color: 'green', collapsed: false });
-            } catch (error) {
-                groupWarning = `Drafts opened, but tab grouping failed: ${error.message}`;
-            }
-        }
-        const tabIds = [...(primaryMatch ? [tabId] : []), ...created.map(draft => draft.tabId)];
-        await updateJob(tabId, { phase: 'opened', openedDraftTabIds: tabIds, groupWarning });
-        await Promise.all(created.map(draft => ext.tabs.update(draft.tabId, {
-            url: `https://peakbagger.com/climber/ascentedit.aspx?pid=${draft.pid}&cid=${draft.cid}`,
-            active: false
-        })));
+        let tabIds = [];
+        const { groupWarning } = await openNewDraftTabs({
+            sourceTabId: tabId,
+            matches: siblings,
+            makeDraft: opening.makeDraft,
+            startOrder: order,
+            focusFirst: !primaryMatch,
+            onBeforeNavigate: async ({ created: pending, groupWarning: warning }) => {
+                tabIds = [...(primaryMatch ? [tabId] : []), ...pending.map(draft => draft.tabId)];
+                await updateJob(tabId, { phase: 'opened', openedDraftTabIds: tabIds, groupWarning: warning });
+            },
+        });
         if (primaryMatch) {
             if (page.pid !== null) {
                 await notifyDraftToProceed({ tabId });

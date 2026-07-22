@@ -27,6 +27,11 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
         windowId: 9,
         url: 'https://www.strava.com/activities/123',
         active: true
+    }], [5, {
+        id: 5,
+        windowId: 9,
+        url: 'https://www.peakbagger.com/climber/ascentedit.aspx?pid=7&cid=77',
+        active: false
     }]]);
     let nextTabId = 100;
     const runtimeMessage = event();
@@ -192,6 +197,59 @@ test('background capture persists a private job, opens grouped drafts, and previ
 
     const duplicate = await harness.send({ type: 'DRAFT_PREVIEW_STARTED', jobId: apply.jobId, pid: 7, cid: 77 }, { tab: { id: 100 } });
     assert.equal(duplicate.ok, false);
+});
+
+test('toolbar capture and local GPX create identical new sibling draft records', async () => {
+    const harness = createHarness({
+        peakXml: '<p><t i="7" n="First Peak" a="0" o="0" e="426.51" r="100" l="Test Range"/><t i="8" n="Second Peak" a="0" o="0.0005" e="426.51" r="100" l="Test Range"/></p>',
+        captureResult: {
+            ok: true,
+            provider: 'strava',
+            activityId: '123',
+            metadata: { title: 'Test Traverse', utcOffsetMinutes: 0 },
+            segments: [[
+                { lat: 0, lon: -0.001, ele: 100, time: Date.UTC(2026, 6, 1, 15, 0) },
+                { lat: 0, lon: 0, ele: 130, time: Date.UTC(2026, 6, 1, 16, 0) },
+                { lat: 0, lon: 0.001, ele: 100, time: Date.UTC(2026, 6, 1, 17, 0) }
+            ]]
+        }
+    });
+    await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    await harness.send({ type: 'CAPTURE_OPEN_DRAFTS', tabId: 1, selectedIds: [7, 8] });
+    const captureSibling = Object.values(harness.values.bpbDraftTabs)
+        .find(draft => draft.sourceTabId === 1 && draft.pid === 8);
+
+    const sender = {
+        tab: { id: 5, windowId: 9 },
+        url: 'https://www.peakbagger.com/climber/ascentedit.aspx?pid=7&cid=77'
+    };
+    const processed = await harness.send({
+        type: 'GPX_PROCESS_START',
+        trackName: 'Test Traverse',
+        utcOffsetMinutes: 0,
+        waypoints: [],
+        segments: [[
+            { lat: 0, lon: -0.001, ele: 100, time: Date.UTC(2026, 6, 1, 15, 0) },
+            { lat: 0, lon: 0, ele: 130, time: Date.UTC(2026, 6, 1, 16, 0) },
+            { lat: 0, lon: 0.001, ele: 100, time: Date.UTC(2026, 6, 1, 17, 0) }
+        ]]
+    }, sender);
+    assert.equal(processed.phase, 'ready');
+    await harness.send({
+        type: 'GPX_PROCESS_APPLY', jobId: processed.jobId, selectedIds: [7, 8], primaryId: 7
+    }, sender);
+    const uploadSibling = Object.values(harness.values.bpbDraftTabs)
+        .find(draft => draft.sourceTabId === 5 && draft.pid === 8);
+
+    const comparable = draft => {
+        const copy = structuredClone(draft);
+        for (const key of ['tabId', 'jobId', 'sourceTabId', 'expiresAt']) delete copy[key];
+        return copy;
+    };
+    assert.ok(captureSibling && uploadSibling);
+    assert.equal(captureSibling.preserveExistingFields, false);
+    assert.equal(uploadSibling.preserveExistingFields, false);
+    assert.deepEqual(comparable(captureSibling), comparable(uploadSibling));
 });
 
 test('only a Peakbagger tab can open the report drafts manager', async () => {
