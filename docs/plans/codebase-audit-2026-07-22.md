@@ -327,6 +327,17 @@ at real popup/options sizes for UI steps, hidden per the real-browser rules).
     identical (undo window, rollback on storage failure, bulk semantics);
     if extraction forces behavior changes on either surface, stop and record
     why in this plan instead of forcing it.
+
+    **Execution result (2026-07-22): deliberately not unified.** The two
+    surfaces share presentation but not the same transaction. Drafts remove
+    independent storage keys, clear a pending tombstone before a restore, and
+    implement bulk undo as delete-all. Favorites rewrites one aggregate list,
+    retains a pending undo until restoration succeeds, and uses bulk undo for
+    arbitrary merge/mirror replacements that may supersede an earlier timer.
+    Preserving those failure and retry semantics would require a callback-heavy
+    framework with no common state transition beyond the six-second timer.
+    The existing focused tests pin both behaviors, so extraction would add
+    indirection without establishing a useful shared invariant.
 12. **E6**: loud missing-id logging in the options section guards.
 
 ### P3 — structure
