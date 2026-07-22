@@ -134,7 +134,7 @@ There is no parallel raw-source worker list and no `importScripts` fallback.
 | Settings and theme | `src/settings-schema.js`, `src/settings.js`, `src/theme.js` | Pure schema, sync-storage access, synchronous page startup |
 | Report-draft manager | `src/report-drafts.js`, `options/drafts.js` | Shared pure draft contract plus device-local list/copy/delete UI |
 | Saved-ascent backup | `src/ascent-page.js`, `src/ascent-backup.js` | Owner-only page read and user-facing backup state |
-| Peakbagger request boundary | `src/peakbagger-request.js`, `src/peakbagger-response.js`, `src/peakbagger-error.js` | Authenticated fetch policy, response validation, typed failures, and recovery copy |
+| Peakbagger request boundary | `src/peakbagger-request.js`, `src/peakbagger-response.js`, `src/peakbagger-error.js`, `src/peakbagger-cloudflare.js` | Authenticated fetch policy, response validation, typed failures, and managed-challenge detection/recovery copy |
 | GitHub integration | `src/github-auth.js`, `src/github-client.js`, `src/github-backup.js` | Worker-only credential, Git Data client, pure payload builder |
 
 Extend the owning surface rather than publishing cross-feature globals. The one
@@ -146,13 +146,16 @@ the worker-to-page boundary. It is an adapter API, not a general module seam.
 
 User-triggered Peakbagger reads share one fail-closed boundary. The pure
 `src/peakbagger-response.js` validates both status and resource-specific body
-shape because a login page, Cloudflare challenge, or `PBError.aspx` redirect can
-finish as HTTP 200. `src/peakbagger-request.js` enforces the authenticated,
-no-cache fetch policy, a bounded timeout, response-body and DOM-parser handling,
-and Peakbagger-origin validation. `src/peakbagger-error.js` maps the resulting
-typed failures to consistent copy and recovery actions for Cloudflare, sign-out,
-network, timeout, rate limit, server, missing resource, page drift, parser,
-identity, and device-storage failures.
+shape because a login page or `PBError.aspx` redirect can finish as HTTP 200.
+`src/peakbagger-cloudflare.js` separately owns the stricter managed-challenge
+signature used by peakbagger-cli: status 403 plus either `cf-mitigated:
+challenge` or `Just a moment` within the first 2,000 body characters. It also
+owns the shared human-check copy and recovery action. `src/peakbagger-request.js`
+enforces the authenticated, no-cache fetch policy, a bounded timeout,
+response-body and DOM-parser handling, and Peakbagger-origin validation.
+`src/peakbagger-error.js` maps the remaining typed failures to consistent copy
+and recovery actions for sign-out, network, timeout, rate limit, server, missing
+resource, page drift, parser, identity, and device-storage failures.
 
 The Buddy/favorites surfaces, profile and individual backup, saved-GPX analyzer,
 worker login check, and capture summit lookup all use that boundary. Callers may
@@ -785,10 +788,11 @@ to match.
 
 The shared request boundary uses authenticated, no-cache fetches with a bounded
 timeout, then applies `classifyResponse(..., { kind: 'buddies' })` before parsing.
-A Cloudflare marker, failed or rate-limited response, login page, or body without
-both the Buddy List marker and `RGridView` is rejected and mapped to a typed,
-actionable error. The parser then examines only cell zero of each `#RGridView`
-row, accepts an exact
+A confirmed managed challenge, failed or rate-limited response, login page, or
+body without both the Buddy List marker and `RGridView` is rejected and mapped
+to a typed, actionable error. Cloudflare scripts or headers on an otherwise
+successful response do not override that resource validation. The parser then
+examines only cell zero of each `#RGridView` row, accepts an exact
 `/climber/climber.aspx?cid=...` link, and persists only the normalized id/name
 pair. The fetched HTML, other Buddy columns, and ascent history are never
 persisted.

@@ -5,6 +5,8 @@
 // failures from peakbagger-request.js instead of translating transport and
 // page-shape failures independently on every surface.
 
+import { peakbaggerCloudflare as Cloudflare } from './peakbagger-cloudflare.js';
+
 const RESOURCE_NAMES = Object.freeze({
     buddies: 'Buddy List',
     climber: 'climber page',
@@ -30,7 +32,7 @@ const message = (error, { resource, fallback = 'Peakbagger could not complete th
     const destination = cleanDetail(error && error.redirectedTo);
     const redirected = destination ? ` (redirected to ${destination})` : '';
     const messages = {
-        cloudflare: 'Peakbagger is asking for a human check. Open Peakbagger, complete the check, then try again.',
+        cloudflare: Cloudflare.copy.message,
         'signed-out': `Peakbagger could not verify your signed-in account while loading the ${name}. Sign in, then try again.`,
         network: `Better Peakbagger could not reach Peakbagger for the ${name}. Check your connection and try again.`,
         timeout: `Peakbagger took too long to return the ${name}. Try again.`,
@@ -54,7 +56,7 @@ const recovery = (error, { url = 'https://www.peakbagger.com/', label = 'Open Pe
     if (code === 'signed-out') {
         return { label: 'Sign in to Peakbagger', href: 'https://www.peakbagger.com/Default.aspx' };
     }
-    if (code === 'cloudflare') return { label: 'Complete check on Peakbagger', href: url };
+    if (code === 'cloudflare') return Cloudflare.recovery({ url });
     return { label, href: url };
 };
 

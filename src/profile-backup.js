@@ -8,6 +8,7 @@
 import { profileBackupCore as Core } from './profile-backup-core.js';
 import { ascentBackupSource as Source } from './ascent-backup-source.js';
 import { githubError as GithubError } from './github-error.js';
+import { peakbaggerCloudflare as Cloudflare } from './peakbagger-cloudflare.js';
 import { peakbaggerError as PeakbaggerError } from './peakbagger-error.js';
 
 (() => {
@@ -76,7 +77,7 @@ import { peakbaggerError as PeakbaggerError } from './peakbagger-error.js';
 
     const renderChallenge = state => body(
         node('div', { class: 'bpb-profile-copy' }, [
-            node('strong', { text: 'Peakbagger is asking for a human check' }),
+            node('strong', { text: Cloudflare.copy.title }),
             node('span', { text: 'Complete the check in the new tab, then resume here. The interrupted ascent will be retried.' }),
         ]),
         node('div', { class: 'bpb-profile-actions' }, [
@@ -243,7 +244,7 @@ import { peakbaggerError as PeakbaggerError } from './peakbagger-error.js';
         if (!list || list.kind) {
             if (list && list.kind === 'challenged') {
                 return body(
-                    node('div', { class: 'bpb-profile-copy' }, [node('strong', { text: 'Peakbagger is asking for a human check' }), node('span', { text: 'Complete the check, then retry the backup.' })]),
+                    node('div', { class: 'bpb-profile-copy' }, [node('strong', { text: Cloudflare.copy.title }), node('span', { text: 'Complete the check, then retry the backup.' })]),
                     node('div', { class: 'bpb-profile-actions' }, [
                         button('Open check', () => window.open(list.url, '_blank', 'noopener'), true),
                         button('Retry', () => startBackup(refreshAll)), button('Cancel', () => initialize()),

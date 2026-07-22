@@ -499,7 +499,7 @@ test('failed Buddy refresh links to the Buddy List instead of the home page', as
 test('Buddy refresh distinguishes Cloudflare, network, and parser failures', async () => {
     const cases = [
         {
-            response: async () => pageResponse('<html><title>Just a moment...</title><script>window._cf_chl_opt={}</script></html>'),
+            response: async () => pageResponse('<html><title>Just a moment...</title></html>', 403),
             expected: /asking for a human check/i,
             action: 'Complete check on Peakbagger',
         },

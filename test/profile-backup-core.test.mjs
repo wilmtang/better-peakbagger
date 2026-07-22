@@ -81,5 +81,5 @@ test('classifies buddy and climber pages without accepting login or challenge pa
     assert.equal(Core.classifyResponse(200, {}, '<form id="login">Sign in</form>', { kind: 'buddies' }), 'wrong-content');
     assert.equal(Core.classifyResponse(200, {}, '<h1>Sign in</h1>', { kind: 'climber' }), 'wrong-content');
     assert.equal(Core.classifyResponse(403, { 'cf-mitigated': 'challenge' }, buddyPage, { kind: 'buddies' }), 'challenged');
-    assert.equal(Core.classifyResponse(200, {}, '<title>Just a moment...</title>', { kind: 'climber' }), 'challenged');
+    assert.equal(Core.classifyResponse(403, {}, '<title>Just a moment...</title>', { kind: 'climber' }), 'challenged');
 });

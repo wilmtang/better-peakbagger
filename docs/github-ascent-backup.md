@@ -155,9 +155,10 @@ flowchart LR
 
 The classification does not trust `response.ok`:
 
-- Cloudflare markers, `cf-mitigated`, and status 403/429/503 classify as
-  `challenged`.
-- status 0 and other 5xx responses classify as `transient`.
+- A Cloudflare managed challenge requires status 403 plus either
+  `cf-mitigated: challenge` or `Just a moment` in the first 2,000 body
+  characters; this strict detector lives in `src/peakbagger-cloudflare.js`.
+- status 0, 429, and 5xx responses classify as `transient`.
 - other non-2xx responses classify as `wrong-content`.
 - a GPX response is valid only if its body contains a `<gpx` root marker.
 - an edit response is valid only if the body contains `Form1`, `JournalText`,

@@ -19,7 +19,7 @@ test('response classifier distinguishes edit data, challenge, transient, and wro
     assert.equal(Core.classifyResponse(200, {}, editFixture), 'ok');
     assert.equal(Core.classifyResponse(200, {}, '<html><form id="login">Sign in</form></html>'), 'wrong-content');
     assert.equal(Core.classifyResponse(403, { 'cf-mitigated': 'challenge' }, '<html/>'), 'challenged');
-    assert.equal(Core.classifyResponse(200, {}, '<title>Just a moment...</title><script src="/cdn-cgi/challenge-platform/x"></script>'), 'challenged');
+    assert.equal(Core.classifyResponse(403, {}, '<title>Just a moment...</title>'), 'challenged');
     assert.equal(Core.classifyResponse(500, {}, ''), 'transient');
     assert.equal(Core.classifyResponse(200, {}, '<?xml version="1.0"?><gpx/>', { kind: 'gpx' }), 'ok');
     assert.equal(Core.classifyResponse(200, {}, '<html>not a track</html>', { kind: 'gpx' }), 'wrong-content');

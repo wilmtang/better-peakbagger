@@ -54,7 +54,7 @@ test('the shared request sends the authenticated no-cache policy and returns onl
     assert.ok(request.init.signal instanceof AbortSignal);
 });
 
-test('a valid 200 Buddy report wins over misleading Cloudflare metadata', async () => {
+test('a valid 200 Buddy report ignores Cloudflare metadata', async () => {
     const result = await fetchPeakbaggerResource(URL, {
         kind: 'buddies',
         fetchFn: async () => response({
@@ -67,10 +67,11 @@ test('a valid 200 Buddy report wins over misleading Cloudflare metadata', async 
     assert.match(result.text, /id="RGridView"/);
 });
 
-test('Cloudflare is detected from a 200 body or mitigation header', async () => {
+test('Cloudflare is detected only from a 403 managed-challenge response', async () => {
     for (const challenged of [
-        response({ body: '<html><title>Just a moment...</title><script>window._cf_chl_opt={}</script></html>' }),
+        response({ status: 403, body: '<html><title>Just a moment...</title></html>' }),
         response({
+            status: 403,
             body: '<html><title>Attention required</title></html>',
             headers: new Headers({ 'cf-mitigated': 'challenge' }),
         }),
@@ -83,6 +84,15 @@ test('Cloudflare is detected from a 200 body or mitigation header', async () => 
         assert.match(result.reason, /human check/i);
         assert.equal(result.text, undefined, 'challenge HTML must not escape the request boundary');
     }
+});
+
+test('a bare HTTP 403 is not mislabeled as Cloudflare', async () => {
+    const result = await fetchPeakbaggerResource(URL, {
+        kind: 'buddies', fetchFn: async () => response({ status: 403, body: 'Forbidden' }),
+    });
+    assert.equal(result.kind, 'wrong-content');
+    assert.equal(result.error.code, 'http');
+    assert.doesNotMatch(result.reason, /human check/i);
 });
 
 test('rate limits and server failures remain transient but are not mislabeled as Cloudflare', async () => {

@@ -102,6 +102,10 @@ waiting for challenge clearance, and reusing only the minted cookies — follows
 the approach demonstrated in
 [peakbagger-cli](https://github.com/dreamiurg/peakbagger-cli)'s
 [browser transport](https://github.com/dreamiurg/peakbagger-cli/blob/main/peakbagger/browser_transport.py).
+The runtime managed-challenge signature follows its
+[HTTP client](https://github.com/dreamiurg/peakbagger-cli/blob/main/peakbagger/client.py):
+status 403 plus either the `cf-mitigated: challenge` header or `Just a moment`
+near the start of the response body.
 The project's rate-limit spacing for Peakbagger page fetches also used
 peakbagger-cli's default as a reference point.
 
