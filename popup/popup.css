@@ -68,6 +68,10 @@ h2 { font-size: 14px; }
 
 @keyframes spin { to { transform: rotate(360deg); } }
 
+@media (prefers-reduced-motion: reduce) {
+  .spinner { animation: none; }
+}
+
 button, .button-link {
   display: inline-flex;
   justify-content: center;

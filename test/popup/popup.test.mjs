@@ -8,11 +8,16 @@ import { JSDOM } from 'jsdom';
 
 const html = await fs.readFile(new URL('../../popup/popup.html', import.meta.url), 'utf8');
 const source = await fs.readFile(new URL('../../dist/popup/popup.js', import.meta.url), 'utf8');
+const css = await fs.readFile(new URL('../../popup/popup.css', import.meta.url), 'utf8');
 const waitFor = async condition => {
     for (let attempt = 0; attempt < 50 && !condition(); attempt++) {
         await new Promise(resolve => setTimeout(resolve, 10));
     }
 };
+
+test('popup stops spinner motion when the user requests reduced motion', () => {
+    assert.match(css, /@media\s*\(prefers-reduced-motion:\s*reduce\)\s*{[^}]*\.spinner\s*{[^}]*animation:\s*none/s);
+});
 
 test('popup explains both match class and confidence percentage', async () => {
     const dom = new JSDOM(html, {
