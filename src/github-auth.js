@@ -26,6 +26,11 @@
 //
 // Idempotent: safe to inject more than once into the same global.
 
+import { githubApi as GithubApi } from './github-api.js';
+import { githubErrors as GithubErrors } from './github-errors.js';
+
+    const { ERROR_CODES, GithubError } = GithubErrors;
+
     // The registered Better Peakbagger backup app. Public by design.
     const CLIENT_ID = 'Iv23liZpTdD1iZfT3eL1';
     // The app's public URL name (github.com/apps/<slug>), used to hand the user
@@ -39,25 +44,6 @@
     const VERIFICATION_URI = 'https://github.com/login/device';
     const DEVICE_GRANT = 'urn:ietf:params:oauth:grant-type:device_code';
 
-    const AUTH_ERROR_CODES = Object.freeze({
-        NETWORK: 'network',
-        AUTH: 'auth',                       // a stored token was rejected (401)
-        DEVICE_FLOW_DISABLED: 'device-flow-disabled',
-        DENIED: 'denied',                 // the user rejected the authorization
-        EXPIRED: 'expired',               // the user code lapsed before approval
-        CANCELLED: 'cancelled',           // the extension aborted the wait
-        UNSUPPORTED: 'unsupported',
-        UNKNOWN: 'unknown',
-    });
-
-    class GithubAuthError extends Error {
-        constructor(code, message) {
-            super(message || code);
-            this.name = 'GithubAuthError';
-            this.code = code;
-        }
-    }
-
     const defaultWait = ms => new Promise(resolve => setTimeout(resolve, ms));
     const defaultNow = () => Date.now();
 
@@ -66,11 +52,11 @@
     // the poll loop and never reach here.
     const mapOAuthError = error => {
         switch (error) {
-            case 'access_denied': return AUTH_ERROR_CODES.DENIED;
-            case 'expired_token': return AUTH_ERROR_CODES.EXPIRED;
-            case 'device_flow_disabled': return AUTH_ERROR_CODES.DEVICE_FLOW_DISABLED;
-            case 'unsupported_grant_type': return AUTH_ERROR_CODES.UNSUPPORTED;
-            default: return AUTH_ERROR_CODES.UNKNOWN;
+            case 'access_denied': return ERROR_CODES.DENIED;
+            case 'expired_token': return ERROR_CODES.EXPIRED;
+            case 'device_flow_disabled': return ERROR_CODES.DEVICE_FLOW_DISABLED;
+            case 'unsupported_grant_type': return ERROR_CODES.UNSUPPORTED;
+            default: return ERROR_CODES.UNKNOWN;
         }
     };
 
@@ -89,7 +75,7 @@
                     body: new URLSearchParams(params).toString(),
                 });
             } catch (cause) {
-                throw new GithubAuthError(AUTH_ERROR_CODES.NETWORK, 'Could not reach GitHub.');
+                throw new GithubError(ERROR_CODES.NETWORK, 'Could not reach GitHub.', { cause });
             }
             let text = '';
             try { text = await res.text(); } catch { text = ''; }
@@ -97,8 +83,9 @@
             try { json = text ? JSON.parse(text) : null; } catch { json = null; }
             if (json && json.error) return json;
             if (!res || !res.ok || !json) {
-                throw new GithubAuthError(AUTH_ERROR_CODES.UNKNOWN,
-                    (json && (json.error_description || json.message)) || 'GitHub returned an unexpected response.');
+                throw new GithubError(ERROR_CODES.UNKNOWN,
+                    (json && (json.error_description || json.message)) || 'GitHub returned an unexpected response.',
+                    { status: res ? res.status : null });
             }
             return json;
         };
@@ -106,7 +93,7 @@
         // Step 1: ask GitHub for a user_code and device_code.
         const requestCode = async () => {
             const data = await post(DEVICE_CODE_URL, { client_id: clientId });
-            if (data.error) throw new GithubAuthError(mapOAuthError(data.error), data.error_description);
+            if (data.error) throw new GithubError(mapOAuthError(data.error), data.error_description);
             return {
                 deviceCode: data.device_code,
                 userCode: data.user_code,
@@ -134,7 +121,7 @@
             }
             if (data.error === 'authorization_pending') return { phase: 'pending' };
             if (data.error === 'slow_down') return { phase: 'slow-down', interval: Number(data.interval) || 0 };
-            throw new GithubAuthError(mapOAuthError(data.error), data.error_description);
+            throw new GithubError(mapOAuthError(data.error), data.error_description);
         };
 
         // Step 2: poll for the token, honoring the server interval and any
@@ -144,10 +131,10 @@
             let interval = Math.max(1, Number(code.interval) || 5);
             const deadline = now() + (Number(code.expiresIn) || 900) * 1000;
             for (;;) {
-                if (signal && signal.aborted) throw new GithubAuthError(AUTH_ERROR_CODES.CANCELLED, 'Authorization cancelled.');
+                if (signal && signal.aborted) throw new GithubError(ERROR_CODES.CANCELLED, 'Authorization cancelled.');
                 await wait(interval * 1000);
-                if (signal && signal.aborted) throw new GithubAuthError(AUTH_ERROR_CODES.CANCELLED, 'Authorization cancelled.');
-                if (now() > deadline) throw new GithubAuthError(AUTH_ERROR_CODES.EXPIRED, 'The authorization code expired.');
+                if (signal && signal.aborted) throw new GithubError(ERROR_CODES.CANCELLED, 'Authorization cancelled.');
+                if (now() > deadline) throw new GithubError(ERROR_CODES.EXPIRED, 'The authorization code expired.');
                 const result = await pollTokenOnce(code);
                 if (result.phase === 'authorized') return result.credential;
                 if (result.phase === 'pending') continue;
@@ -172,37 +159,6 @@
 
     // ---- Installation / repository discovery -------------------------------
 
-    const API_ROOT = 'https://api.github.com';
-
-    // A GET against the GitHub REST API with the user token. A dead token
-    // surfaces as AUTH so it is not confused with an expired device code;
-    // anything else is network/unknown. Discovery is best-effort read-only.
-    const apiGetResponse = async (fetch, token, path) => {
-        const url = new URL(path, API_ROOT);
-        if (url.origin !== API_ROOT) throw new GithubAuthError(AUTH_ERROR_CODES.UNKNOWN, 'GitHub returned an invalid pagination link.');
-        let res;
-        try {
-            res = await fetch(url.href, {
-                headers: {
-                    Authorization: `Bearer ${token}`,
-                    Accept: 'application/vnd.github+json',
-                    'X-GitHub-Api-Version': '2022-11-28',
-                },
-            });
-        } catch {
-            throw new GithubAuthError(AUTH_ERROR_CODES.NETWORK, 'Could not reach GitHub.');
-        }
-        if (res.status === 401) throw new GithubAuthError(AUTH_ERROR_CODES.AUTH, 'The GitHub authorization is no longer valid.');
-        let text = '';
-        try { text = await res.text(); } catch { text = ''; }
-        let json = null;
-        try { json = text ? JSON.parse(text) : null; } catch { json = null; }
-        if (!res.ok || !json) throw new GithubAuthError(AUTH_ERROR_CODES.UNKNOWN, 'GitHub returned an unexpected response.');
-        return { json, link: res.headers && typeof res.headers.get === 'function' ? res.headers.get('link') : null };
-    };
-
-    const apiGet = async (fetch, token, path) => (await apiGetResponse(fetch, token, path)).json;
-
     const nextPage = link => {
         if (!link) return null;
         for (const part of link.split(',')) {
@@ -212,24 +168,28 @@
         return null;
     };
 
-    const apiGetAll = async (fetch, token, path, key) => {
+    const apiGetAll = async (api, path, key) => {
         const items = [];
         const seen = new Set();
         let next = path;
         while (next) {
-            const url = new URL(next, API_ROOT);
-            if (seen.has(url.href)) throw new GithubAuthError(AUTH_ERROR_CODES.UNKNOWN, 'GitHub returned a pagination loop.');
+            const url = api.resolveUrl(next);
+            if (seen.has(url.href)) throw new GithubError(ERROR_CODES.UNKNOWN, 'GitHub returned a pagination loop.');
             seen.add(url.href);
-            const page = await apiGetResponse(fetch, token, url.href);
-            if (Array.isArray(page.json[key])) items.push(...page.json[key]);
-            next = nextPage(page.link);
+            const page = await api.request('GET', url.href, { withResponse: true });
+            if (Array.isArray(page.data[key])) items.push(...page.data[key]);
+            const link = page.headers && typeof page.headers.get === 'function'
+                ? page.headers.get('link')
+                : null;
+            next = nextPage(link);
         }
         return items;
     };
 
     // The account login behind the token, for a human-readable connected state.
     const fetchAccount = async ({ fetch, token }) => {
-        const user = await apiGet(fetch, token, '/user');
+        const api = GithubApi.createGithubApi({ fetch, token });
+        const user = await api.request('GET', '/user');
         return { login: user.login || '', id: user.id ?? null };
     };
 
@@ -239,11 +199,12 @@
     // app's installations too, so the UI can tell "none granted" (link to
     // install) from "installed but no repos".
     const listBackupRepositories = async ({ fetch, token, appSlug = APP_SLUG }) => {
-        const owned = await apiGetAll(fetch, token, '/user/installations?per_page=100', 'installations');
+        const api = GithubApi.createGithubApi({ fetch, token });
+        const owned = await apiGetAll(api, '/user/installations?per_page=100', 'installations');
         const installations = owned.filter(inst => inst.app_slug === appSlug);
         const repos = [];
         for (const inst of installations) {
-            const granted = await apiGetAll(fetch, token, `/user/installations/${inst.id}/repositories?per_page=100`, 'repositories');
+            const granted = await apiGetAll(api, `/user/installations/${inst.id}/repositories?per_page=100`, 'repositories');
             for (const repo of granted) {
                 repos.push({
                     owner: repo.owner && repo.owner.login,
@@ -324,8 +285,6 @@
         INSTALL_URL,
         APP_URL,
         VERIFICATION_URI,
-        AUTH_ERROR_CODES,
-        GithubAuthError,
         createDeviceFlow,
         fetchAccount,
         listBackupRepositories,

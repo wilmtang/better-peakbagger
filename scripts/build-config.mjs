@@ -38,7 +38,7 @@ export function resolvePageSource(name) {
 // One record per bundle. `out` is the dist-relative output path; `sources` are
 // its explicit roots, ordered where sibling side effects depend on that order.
 export const ENTRIES = [
-    { out: 'background.js', sources: ['gpx-metrics.js', 'capture-core.js', 'provider-url.js', 'terrain-tiles.js', 'terrain-cache.js', 'settings-schema.js', 'settings.js', 'github-auth.js', 'github-client.js', 'peakbagger-cloudflare.js', 'peakbagger-response.js', 'peakbagger-error.js', 'peakbagger-request.js', 'background.js'] },
+    { out: 'background.js', sources: ['gpx-metrics.js', 'capture-core.js', 'provider-url.js', 'terrain-tiles.js', 'terrain-cache.js', 'settings-schema.js', 'settings.js', 'github-errors.js', 'github-api.js', 'github-auth.js', 'github-client.js', 'peakbagger-cloudflare.js', 'peakbagger-response.js', 'peakbagger-error.js', 'peakbagger-request.js', 'background.js'] },
     { out: 'provider-page.js', sources: ['provider-url.js', 'gpx-parse.js', 'provider-page.js'] },
 
     { out: 'content/ascent-editor.js', sources: ['ascent-draft.js', 'gpx-parse.js', 'settings-schema.js', 'settings.js', 'ascent-upload.js', 'ascent-saved.js', 'report-markup.js', 'report-drafts.js', 'report-editor.js'] },

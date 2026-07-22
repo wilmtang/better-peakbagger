@@ -107,8 +107,10 @@ link, which automatically tracks endpoint query changes.
 | `options/favorites.js` | Validate/serialize explicit favorites backup and schema-check reversible restore | GitHub credentials or repository mutation |
 | `src/background.js` | Sender gates, session snapshots, auth lookup, timestamping, write serialization, message routing | Peakbagger DOM parsing |
 | `src/github-backup.js` | Pure folder naming and JSON/Markdown/file payload serialization | DOM, tokens, network |
+| `src/github-errors.js` | One stable GitHub integration error code set, error type, and worker-safe serialization | HTTP requests or user-interface copy |
+| `src/github-api.js` | Every authenticated `api.github.com` request: origin validation, headers, no-cache policy, JSON parsing, and HTTP classification | OAuth device-flow form posts or repository algorithms |
 | `src/github-client.js` | Repository inspection, atomic Git Data writes, owned-file pruning, conflict retry | Peakbagger data acquisition or UI |
-| `src/github-auth.js` | Device flow and local token/repository storage | Synced settings or content-script exposure |
+| `src/github-auth.js` | Device-flow protocol, paginated installation/repository discovery through the shared REST transport, and local token/repository storage | Synced settings or content-script exposure |
 
 The bundle composition in `scripts/build-config.mjs` pins
 `ascent-backup-source.js` into both individual and profile bundles. Tests pin
@@ -697,7 +699,9 @@ See GitHub's [Git Trees API][github-trees] and
 
 ### GitHub-side typed errors
 
-The UI distinguishes invalid/revoked auth, withdrawn repo access, missing
+`src/github-errors.js` is the single code/type authority, and
+`src/github-api.js` is the only authenticated REST response classifier. The UI
+distinguishes invalid/revoked auth, withdrawn repo access, missing
 selection, archived repository, branch protection, missing branch in a nonempty
 repo, ambiguous backup paths, rate limits, network errors, validation, and
 persistent conflicts. Profile GitHub errors pause with the entire rejected
@@ -800,7 +804,8 @@ consumes its own snapshot.
 | `test/ascent-saved.test.mjs` | Add/Edit success variants, aid extraction, UpdatePanel observation, auto routing | Peakbagger changing its success markup |
 | `test/profile-backup*.test.mjs` | Owner gates, all-years diff, pipeline bounds, retry/pause/backpressure | A multi-hour live profile sweep |
 | `test/github-backup-integration.test.mjs` | Built worker gates, merge precedence, tab correlation, atomic batch/root-file calls | Real extension worker eviction timing |
-| `test/github-client.test.mjs` | Git tree/root-file construction, owned deletion, root-file decode, cache mode, conflicts, error taxonomy | GitHub service-side policy changes |
+| `test/github-api.test.mjs` | Shared authenticated request policy, origin gate, response parsing, and status taxonomy | GitHub service-side policy changes |
+| `test/github-client.test.mjs` | Git tree/root-file construction, owned deletion, root-file decode, and conflicts | GitHub service-side policy changes |
 | `npm test` | Current built IIFE bundles in jsdom plus pure modules | Real manifest interpretation and browser worker lifecycle |
 | `npm run verify:browsers` | Real unpacked Chrome/Firefox startup, worker messaging, content-script load | Signed-in Peakbagger/GitHub flows and visible native chrome |
 | Manual release check | Real Add/Edit, device flow, stored GPX, scratch commit | Repeatable regression coverage |

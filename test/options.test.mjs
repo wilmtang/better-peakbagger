@@ -119,7 +119,7 @@ test('settings are grouped by the surface they affect', async () => {
         'Ascent beta filter',
         'Favorite climbers',
         'TR drafts',
-        'GitHub sync for nerds',
+        'Sync for nerds',
         'About'
     ]);
 

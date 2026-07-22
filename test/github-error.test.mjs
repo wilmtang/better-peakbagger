@@ -3,14 +3,12 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { githubAuth as Auth } from '../src/github-auth.js';
-import { githubClient as Client } from '../src/github-client.js';
 import { githubError as GithubError } from '../src/github-error.js';
+import { githubErrors as GithubErrors } from '../src/github-errors.js';
 
 test('every typed GitHub auth and backup failure has specific user-facing copy', () => {
     const codes = new Set([
-        ...Object.values(Auth.AUTH_ERROR_CODES),
-        ...Object.values(Client.ERROR_CODES),
+        ...Object.values(GithubErrors.ERROR_CODES),
         'no-token', 'not-connected', 'no-repo', 'no-data', 'disabled',
     ]);
     for (const code of codes) {

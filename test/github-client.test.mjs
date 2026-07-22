@@ -20,6 +20,8 @@ vm.runInContext(await readFile(new URL('../node_modules/marked/lib/marked.umd.js
 globalThis.marked = markedContext.marked;
 
 const { githubClient: Client } = await import('../src/github-client.js');
+const { githubErrors: GithubErrors } = await import('../src/github-errors.js');
+const { ERROR_CODES } = GithubErrors;
 
 const snapshot = (overrides = {}) => ({
     ascent: { id: 1234567, date: '2026-07-12', suffix: '', route: 'DC', gainFt: '9000', ...overrides.ascent },
@@ -288,7 +290,7 @@ test('an unmarked root backup collision is rejected before any write', async () 
         ] }),
     });
     const client = Client.createGithubClient({ fetch, token: 't', owner: 'me', repo: 'backup' });
-    await assert.rejects(client.inspectRepository(), error => error.code === Client.ERROR_CODES.REPO_CONFLICT);
+    await assert.rejects(client.inspectRepository(), error => error.code === ERROR_CODES.REPO_CONFLICT);
     assert.ok(calls.every(call => call.method === 'GET'));
 });
 
@@ -413,7 +415,7 @@ test('a persistent ref conflict stops after the bounded retry schedule', async (
     });
     await assert.rejects(
         client.pushAscentBackup(snapshot(), {}),
-        err => err.code === Client.ERROR_CODES.CONFLICT,
+        err => err.code === ERROR_CODES.CONFLICT,
     );
     assert.equal(patchCount, 4);
     assert.deepEqual(delays, [500, 2000, 5000]);
@@ -520,7 +522,7 @@ test('root file writes fail closed on a foreign marker or path collision', async
     await assert.rejects(
         Client.createGithubClient({ fetch: foreign.fetch, token: 't', owner: 'me', repo: 'backup' })
             .putRootFile('favorites.json', '{}', 'Back up favorite climbers'),
-        error => error.code === Client.ERROR_CODES.REPO_CONFLICT,
+        error => error.code === ERROR_CODES.REPO_CONFLICT,
     );
     assert.ok(foreign.calls.every(call => call.method === 'GET'));
 
@@ -536,7 +538,7 @@ test('root file writes fail closed on a foreign marker or path collision', async
     await assert.rejects(
         Client.createGithubClient({ fetch: collision.fetch, token: 't', owner: 'me', repo: 'backup' })
             .putRootFile('favorites.json', '{}', 'Back up favorite climbers'),
-        error => error.code === Client.ERROR_CODES.REPO_CONFLICT,
+        error => error.code === ERROR_CODES.REPO_CONFLICT,
     );
     assert.ok(collision.calls.every(call => call.method === 'GET'));
 });
@@ -571,28 +573,28 @@ const failingRepoFetch = repoResponse => makeFetch({ 'GET /repos/me/backup': () 
 
 test('an invalid token maps to auth', async () => {
     const client = Client.createGithubClient({ fetch: failingRepoFetch(respond(401, { message: 'Bad credentials' })), token: 't', owner: 'me', repo: 'backup' });
-    await assert.rejects(client.pushAscentBackup(snapshot(), {}), err => err.code === Client.ERROR_CODES.AUTH);
+    await assert.rejects(client.pushAscentBackup(snapshot(), {}), err => err.code === ERROR_CODES.AUTH);
 });
 
 test('a withdrawn repository (404) maps to no-access', async () => {
     const client = Client.createGithubClient({ fetch: failingRepoFetch(respond(404, { message: 'Not Found' })), token: 't', owner: 'me', repo: 'backup' });
-    await assert.rejects(client.pushAscentBackup(snapshot(), {}), err => err.code === Client.ERROR_CODES.NO_ACCESS);
+    await assert.rejects(client.pushAscentBackup(snapshot(), {}), err => err.code === ERROR_CODES.NO_ACCESS);
 });
 
 test('an archived repository is caught pre-flight', async () => {
     const client = Client.createGithubClient({ fetch: failingRepoFetch(respond(200, { default_branch: 'main', archived: true, permissions: { push: true } })), token: 't', owner: 'me', repo: 'backup' });
-    await assert.rejects(client.pushAscentBackup(snapshot(), {}), err => err.code === Client.ERROR_CODES.ARCHIVED);
+    await assert.rejects(client.pushAscentBackup(snapshot(), {}), err => err.code === ERROR_CODES.ARCHIVED);
 });
 
 test('a read-only permission is caught pre-flight as no-access', async () => {
     const client = Client.createGithubClient({ fetch: failingRepoFetch(respond(200, { default_branch: 'main', archived: false, permissions: { push: false } })), token: 't', owner: 'me', repo: 'backup' });
-    await assert.rejects(client.pushAscentBackup(snapshot(), {}), err => err.code === Client.ERROR_CODES.NO_ACCESS);
+    await assert.rejects(client.pushAscentBackup(snapshot(), {}), err => err.code === ERROR_CODES.NO_ACCESS);
 });
 
 test('a 403 with an exhausted rate limit maps to rate-limit, not no-access', async () => {
     const fetch = makeFetch({ 'GET /repos/me/backup': () => respond(403, { message: 'API rate limit exceeded' }, { 'x-ratelimit-remaining': '0' }) }).fetch;
     const client = Client.createGithubClient({ fetch, token: 't', owner: 'me', repo: 'backup' });
-    await assert.rejects(client.pushAscentBackup(snapshot(), {}), err => err.code === Client.ERROR_CODES.RATE_LIMIT);
+    await assert.rejects(client.pushAscentBackup(snapshot(), {}), err => err.code === ERROR_CODES.RATE_LIMIT);
 });
 
 test('branch protection on the ref update maps to branch-protected', async () => {
@@ -607,13 +609,13 @@ test('branch protection on the ref update maps to branch-protected', async () =>
         'PATCH /repos/me/backup/git/refs/heads/main': () => respond(422, { message: 'Required status check is expected. Protected branch update failed.' }),
     }).fetch;
     const client = Client.createGithubClient({ fetch, token: 't', owner: 'me', repo: 'backup' });
-    await assert.rejects(client.pushAscentBackup(snapshot(), {}), err => err.code === Client.ERROR_CODES.BRANCH_PROTECTED);
+    await assert.rejects(client.pushAscentBackup(snapshot(), {}), err => err.code === ERROR_CODES.BRANCH_PROTECTED);
 });
 
 test('a thrown fetch maps to network', async () => {
     const fetch = async () => { throw new TypeError('Failed to fetch'); };
     const client = Client.createGithubClient({ fetch, token: 't', owner: 'me', repo: 'backup' });
-    await assert.rejects(client.pushAscentBackup(snapshot(), {}), err => err.code === Client.ERROR_CODES.NETWORK);
+    await assert.rejects(client.pushAscentBackup(snapshot(), {}), err => err.code === ERROR_CODES.NETWORK);
 });
 
 test('the factory validates its required config', () => {

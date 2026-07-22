@@ -12,6 +12,9 @@
 // ascent-backup setting controls only ascent-specific affordances and writes.
 
 import { githubError as GithubError } from '../src/github-error.js';
+import { githubErrors as GithubErrors } from '../src/github-errors.js';
+
+const { ERROR_CODES } = GithubErrors;
 
 export const GITHUB_ORIGINS = ['https://github.com/*', 'https://api.github.com/*'];
 export const hasGithubPermission = async extensionApi => {
@@ -378,7 +381,13 @@ export function initGithubBackup({ extensionApi, flash, save }) {
         }
         if (status && status.needsConfirmation) return renderExistingRepoConfirmation(repo);
         if (status && status.error) {
-            if (['network', 'rate-limit', 'conflict', 'invalid', 'unknown'].includes(status.error.code)) {
+            if ([
+                ERROR_CODES.NETWORK,
+                ERROR_CODES.RATE_LIMIT,
+                ERROR_CODES.CONFLICT,
+                ERROR_CODES.INVALID,
+                ERROR_CODES.UNKNOWN,
+            ].includes(status.error.code)) {
                 return renderError(status.error, () => selectRepo(repo, { confirmExisting }), 'Try again');
             }
             return renderError(status.error, () => refreshRepos({ choose: true }), 'Choose another');

@@ -135,7 +135,7 @@ There is no parallel raw-source worker list and no `importScripts` fallback.
 | Report-draft manager | `src/report-drafts.js`, `options/drafts.js` | Shared pure draft contract plus device-local list/copy/delete UI |
 | Saved-ascent backup | `src/ascent-page.js`, `src/ascent-backup.js` | Owner-only page read and user-facing backup state |
 | Peakbagger request boundary | `src/peakbagger-request.js`, `src/peakbagger-response.js`, `src/peakbagger-error.js`, `src/peakbagger-cloudflare.js` | Authenticated fetch policy, response validation, typed failures, and managed-challenge detection/recovery copy |
-| GitHub integration | `src/github-auth.js`, `src/github-client.js`, `src/github-backup.js` | Worker-only credential, Git Data client, pure payload builder |
+| GitHub integration | `src/github-errors.js`, `src/github-api.js`, `src/github-auth.js`, `src/github-client.js`, `src/github-backup.js` | Shared typed errors and authenticated REST transport, worker-only credential/device flow, Git Data client, pure payload builder |
 
 Extend the owning surface rather than publishing cross-feature globals. The one
 deliberate Better Peakbagger global is `globalThis.BPBProviderPage`: the worker

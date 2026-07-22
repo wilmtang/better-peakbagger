@@ -18,13 +18,15 @@
 // injected token: it holds no globals, no chrome APIs, and no ambient
 // credentials, so the background worker owns the token and messaging while the
 // commit mechanics stay unit-testable against a scripted fetch stub. Every
-// failure surfaces as a GithubBackupError with a stable `code` from ERROR_CODES
+// failure surfaces as the shared GithubError with a stable code
 // so callers map one actionable sentence per case (see the error taxonomy in
 // docs/github-ascent-backup.md). Idempotent to inject more than once.
 
 import { githubBackup as Backup } from './github-backup.js';
+import { githubApi as GithubApi } from './github-api.js';
+import { githubErrors as GithubErrors } from './github-errors.js';
 
-    const API_ROOT = 'https://api.github.com';
+    const { ERROR_CODES, GithubError } = GithubErrors;
     const BLOB_MODE = '100644';
     const CONFLICT_RETRY_DELAYS = [500, 2000, 5000];
     const DEFAULT_INLINE_FILE_LIMIT_BYTES = 1024 * 1024;
@@ -37,61 +39,6 @@ import { githubBackup as Backup } from './github-backup.js';
     const REPOSITORY_MARKER_BASE64 = 'ewogICJzY2hlbWFWZXJzaW9uIjogMSwKICAidHlwZSI6ICJiZXR0ZXItcGVha2JhZ2dlci1iYWNrdXAiLAogICJsYXlvdXQiOiAicmVwb3NpdG9yeS1yb290Igp9Cg==';
     const OWNED_FOLDER_FILES = new Set(['report.md', 'ascent.json', 'track.gpx']);
 
-    const ERROR_CODES = Object.freeze({
-        AUTH: 'auth',                 // token invalid or authorization revoked (401)
-        NO_ACCESS: 'no-access',       // app uninstalled or repo access withdrawn (403/404)
-        ARCHIVED: 'archived',         // repository is archived / read-only
-        REPO_CONFLICT: 'repo-conflict',
-        BRANCH_PROTECTED: 'branch-protected',
-        BRANCH_MISSING: 'branch-missing',
-        RATE_LIMIT: 'rate-limit',
-        CONFLICT: 'conflict',         // non-fast-forward or transient 409; bounded retries
-        NETWORK: 'network',
-        INVALID: 'invalid',           // malformed request GitHub rejected (422, not the above)
-        UNKNOWN: 'unknown',
-    });
-
-    class GithubBackupError extends Error {
-        constructor(code, message, { status = null, cause = null } = {}) {
-            super(message || code);
-            this.name = 'GithubBackupError';
-            this.code = code;
-            this.status = status;
-            if (cause) this.cause = cause;
-        }
-    }
-
-    const isProtectionMessage = message =>
-        /protected branch|branch protection|required status|required review|not authorized to push/i.test(message || '');
-
-    const isFastForwardMessage = message =>
-        /fast forward|not a fast-forward|update is not a fast|reference already exists/i.test(message || '');
-
-    // Map an HTTP failure to a stable, actionable code. `phase` distinguishes a
-    // ref update (where a 422 is usually a race or branch protection) from the
-    // read/build phases (where a 422 is a malformed request).
-    const classify = (status, message, headers, phase) => {
-        const remaining = headers && typeof headers.get === 'function'
-            ? headers.get('x-ratelimit-remaining')
-            : null;
-        if (status === 401) return ERROR_CODES.AUTH;
-        if (status === 429) return ERROR_CODES.RATE_LIMIT;
-        if (status === 403) {
-            if (remaining === '0' || /rate limit|secondary rate|abuse/i.test(message)) return ERROR_CODES.RATE_LIMIT;
-            if (/archiv/i.test(message)) return ERROR_CODES.ARCHIVED;
-            if (isProtectionMessage(message)) return ERROR_CODES.BRANCH_PROTECTED;
-            return ERROR_CODES.NO_ACCESS;
-        }
-        if (status === 404) return phase === 'ref' ? ERROR_CODES.BRANCH_MISSING : ERROR_CODES.NO_ACCESS;
-        if (status === 409) return ERROR_CODES.CONFLICT;
-        if (status === 422) {
-            if (phase === 'ref' && isFastForwardMessage(message)) return ERROR_CODES.CONFLICT;
-            if (isProtectionMessage(message)) return ERROR_CODES.BRANCH_PROTECTED;
-            return ERROR_CODES.INVALID;
-        }
-        return ERROR_CODES.UNKNOWN;
-    };
-
     const createGithubClient = ({
         fetch,
         token,
@@ -101,50 +48,19 @@ import { githubBackup as Backup } from './github-backup.js';
         sleep = ms => new Promise(resolve => setTimeout(resolve, ms)),
         inlineFileLimitBytes = DEFAULT_INLINE_FILE_LIMIT_BYTES,
     } = {}) => {
-        if (typeof fetch !== 'function') throw new TypeError('github client requires an injected fetch');
-        if (!token) throw new TypeError('github client requires a token');
+        const api = GithubApi.createGithubApi({ fetch, token });
         if (!owner || !repo) throw new TypeError('github client requires owner and repo');
         if (!Number.isFinite(inlineFileLimitBytes) || inlineFileLimitBytes < 0) {
             throw new TypeError('github client requires a non-negative inline file limit');
         }
 
-        const repoBase = `${API_ROOT}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`;
+        const repoBase = `${GithubApi.API_ROOT}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`;
 
-        const request = async (method, path, { body = undefined, phase = '', allowNotFound = false } = {}) => {
-            const url = path.startsWith('http') ? path : `${repoBase}${path}`;
-            let res;
-            try {
-                res = await fetch(url, {
-                    method,
-                    // Bypass the browser HTTP cache. GitHub serves authenticated
-                    // ref GETs with `Cache-Control: private, max-age=60`, and the
-                    // singular-read/plural-write URL split means our own ref
-                    // PATCH never evicts that cached read. A cached stale head
-                    // makes the next batch commit on the wrong parent and the
-                    // non-forced ref update fails as a non-fast-forward conflict.
-                    cache: 'no-store',
-                    headers: {
-                        Authorization: `Bearer ${token}`,
-                        Accept: 'application/vnd.github+json',
-                        'X-GitHub-Api-Version': '2022-11-28',
-                        ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
-                    },
-                    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-                });
-            } catch (cause) {
-                throw new GithubBackupError(ERROR_CODES.NETWORK, 'Network request to GitHub failed.', { cause });
-            }
-            let text = '';
-            try { text = await res.text(); } catch { text = ''; }
-            let json = null;
-            try { json = text ? JSON.parse(text) : null; } catch { json = null; }
-            if (!res.ok) {
-                if (allowNotFound && res.status === 404) return null;
-                const message = (json && json.message) || text || `GitHub responded ${res.status}`;
-                throw new GithubBackupError(classify(res.status, message, res.headers, phase), message, { status: res.status });
-            }
-            return json;
-        };
+        const request = (method, path, options = {}) => api.request(
+            method,
+            path.startsWith('http') ? path : `${repoBase}${path}`,
+            options,
+        );
 
         // A tree read, one level unless recursive. Missing trees surface as
         // read-phase errors (no-access) rather than throwing raw.
@@ -158,7 +74,7 @@ import { githubBackup as Backup } from './github-backup.js';
             const entries = (root && root.tree) || [];
             const markerEntry = entries.find(node => node.path === REPOSITORY_MARKER_PATH);
             if (markerEntry && markerEntry.type !== 'blob') {
-                throw new GithubBackupError(ERROR_CODES.REPO_CONFLICT,
+                throw new GithubError(ERROR_CODES.REPO_CONFLICT,
                     `The repository already uses ${REPOSITORY_MARKER_PATH} for something else.`);
             }
             if (markerEntry) {
@@ -167,7 +83,7 @@ import { githubBackup as Backup } from './github-backup.js';
                     ? markerBlob.content.replace(/\s/g, '')
                     : '';
                 if (!markerBlob || markerBlob.encoding !== 'base64' || content !== REPOSITORY_MARKER_BASE64) {
-                    throw new GithubBackupError(ERROR_CODES.REPO_CONFLICT,
+                    throw new GithubError(ERROR_CODES.REPO_CONFLICT,
                         `The repository's ${REPOSITORY_MARKER_PATH} file is not a Better Peakbagger marker.`);
                 }
             }
@@ -179,7 +95,7 @@ import { githubBackup as Backup } from './github-backup.js';
             // Without our marker, root folders that look exactly like the paths
             // we own are ambiguous. Refuse to adopt and potentially prune them.
             if (!markerEntry && rootFolders.length) {
-                throw new GithubBackupError(ERROR_CODES.REPO_CONFLICT,
+                throw new GithubError(ERROR_CODES.REPO_CONFLICT,
                     'This repository already contains root folders that look like Better Peakbagger backups.');
             }
 
@@ -215,10 +131,10 @@ import { githubBackup as Backup } from './github-backup.js';
         const resolveRepo = async () => {
             const info = await request('GET', '', { phase: 'read' });
             if (info.archived) {
-                throw new GithubBackupError(ERROR_CODES.ARCHIVED, 'The backup repository is archived and read-only.', { status: 403 });
+                throw new GithubError(ERROR_CODES.ARCHIVED, 'The backup repository is archived and read-only.', { status: 403 });
             }
             if (info.permissions && info.permissions.push === false) {
-                throw new GithubBackupError(ERROR_CODES.NO_ACCESS, 'This token cannot write to the backup repository.', { status: 403 });
+                throw new GithubError(ERROR_CODES.NO_ACCESS, 'This token cannot write to the backup repository.', { status: 403 });
             }
             return { info, targetBranch: branch || info.default_branch || 'main' };
         };
@@ -238,7 +154,7 @@ import { githubBackup as Backup } from './github-backup.js';
             }
             if (!ref) {
                 if (Number(info.size) === 0) return null;
-                throw new GithubBackupError(ERROR_CODES.BRANCH_MISSING,
+                throw new GithubError(ERROR_CODES.BRANCH_MISSING,
                     'The backup repository has no branch to commit to yet.', { status: 404 });
             }
             const baseCommitSha = ref.object && ref.object.sha;
@@ -264,7 +180,7 @@ import { githubBackup as Backup } from './github-backup.js';
             const baseCommitSha = commit && commit.sha;
             const baseTreeSha = commit && commit.tree && commit.tree.sha;
             if (!baseCommitSha || !baseTreeSha) {
-                throw new GithubBackupError(ERROR_CODES.INVALID,
+                throw new GithubError(ERROR_CODES.INVALID,
                     'GitHub did not return the initialized repository commit.');
             }
             return { baseCommitSha, baseTreeSha, root: await readTree(baseTreeSha) };
@@ -309,7 +225,7 @@ import { githubBackup as Backup } from './github-backup.js';
                 const bytes = Uint8Array.from(binary, character => character.charCodeAt(0));
                 return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
             } catch (cause) {
-                throw new GithubBackupError(ERROR_CODES.INVALID,
+                throw new GithubError(ERROR_CODES.INVALID,
                     'GitHub returned invalid base64 file content.', { cause });
             }
         };
@@ -420,7 +336,7 @@ import { githubBackup as Backup } from './github-backup.js';
                 try {
                     return await operation();
                 } catch (error) {
-                    if (!(error instanceof GithubBackupError)
+                    if (!(error instanceof GithubError)
                         || error.code !== ERROR_CODES.CONFLICT
                         || attempt >= CONFLICT_RETRY_DELAYS.length) throw error;
                     await sleep(CONFLICT_RETRY_DELAYS[attempt]);
@@ -461,7 +377,7 @@ import { githubBackup as Backup } from './github-backup.js';
                 { phase: 'read', allowNotFound: true });
             if (file == null) return null;
             if (file.type !== 'file' || file.encoding !== 'base64' || typeof file.content !== 'string') {
-                throw new GithubBackupError(ERROR_CODES.INVALID,
+                throw new GithubError(ERROR_CODES.INVALID,
                     `GitHub did not return ${filePath} as a base64 file.`);
             }
             return decodeBase64Utf8(file.content);
@@ -477,7 +393,7 @@ import { githubBackup as Backup } from './github-backup.js';
             const state = await inspectRootTree(head.root);
             const existing = (head.root.tree || []).find(entry => entry.path === filePath);
             if (existing && existing.type !== 'blob') {
-                throw new GithubBackupError(ERROR_CODES.REPO_CONFLICT,
+                throw new GithubError(ERROR_CODES.REPO_CONFLICT,
                     `The repository already uses ${filePath} for something other than a file.`);
             }
             const treeEntries = [{
@@ -529,8 +445,6 @@ import { githubBackup as Backup } from './github-backup.js';
 
     const API = {
         createGithubClient,
-        GithubBackupError,
-        ERROR_CODES,
         DEFAULT_INLINE_FILE_LIMIT_BYTES,
         REPOSITORY_MARKER_PATH,
     };

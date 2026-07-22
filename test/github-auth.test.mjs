@@ -10,6 +10,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { githubAuth as Auth } from '../src/github-auth.js';
+import { githubErrors as GithubErrors } from '../src/github-errors.js';
+
+const { ERROR_CODES } = GithubErrors;
 
 // A controllable clock: wait() advances virtual time so a poll deadline can be
 // reached without real delays.
@@ -37,7 +40,7 @@ const makeFetch = routes => {
     const counts = {};
     const fetch = async (url, init = {}) => {
         counts[url] = (counts[url] || 0) + 1;
-        calls.push({ url, body: init.body, headers: init.headers });
+        calls.push({ url, method: init.method, cache: init.cache, body: init.body, headers: init.headers });
         const handler = routes[url];
         if (!handler) throw new Error(`unrouted: ${url}`);
         const result = handler(counts[url]);
@@ -102,7 +105,7 @@ test('a denied authorization maps to the denied code', async () => {
     const flow = Auth.createDeviceFlow({ fetch, wait: clock.wait, now: clock.now });
     await assert.rejects(
         flow.pollForToken({ deviceCode: 'DC', interval: 5, expiresIn: 900 }),
-        err => err.code === Auth.AUTH_ERROR_CODES.DENIED,
+        err => err.code === ERROR_CODES.DENIED,
     );
 });
 
@@ -114,7 +117,7 @@ test('a structured non-2xx OAuth response keeps its typed error', async () => {
     const flow = Auth.createDeviceFlow({ fetch, wait: clock.wait, now: clock.now });
     await assert.rejects(
         flow.pollForToken({ deviceCode: 'DC', interval: 5, expiresIn: 900 }),
-        err => err.code === Auth.AUTH_ERROR_CODES.DENIED && /declined/.test(err.message),
+        err => err.code === ERROR_CODES.DENIED && /declined/.test(err.message),
     );
 });
 
@@ -124,7 +127,7 @@ test('an expired user code maps to expired', async () => {
     const flow = Auth.createDeviceFlow({ fetch, wait: clock.wait, now: clock.now });
     await assert.rejects(
         flow.pollForToken({ deviceCode: 'DC', interval: 5, expiresIn: 900 }),
-        err => err.code === Auth.AUTH_ERROR_CODES.EXPIRED,
+        err => err.code === ERROR_CODES.EXPIRED,
     );
 });
 
@@ -135,7 +138,7 @@ test('the poll stops with expired once the deadline passes', async () => {
     const flow = Auth.createDeviceFlow({ fetch, wait: clock.wait, now: clock.now });
     await assert.rejects(
         flow.pollForToken({ deviceCode: 'DC', interval: 5, expiresIn: 30 }),
-        err => err.code === Auth.AUTH_ERROR_CODES.EXPIRED,
+        err => err.code === ERROR_CODES.EXPIRED,
     );
 });
 
@@ -148,20 +151,20 @@ test('an abort signal cancels a pending authorization', async () => {
     const flow = Auth.createDeviceFlow({ fetch, wait: clock.wait, now: clock.now });
     await assert.rejects(
         flow.pollForToken({ deviceCode: 'DC', interval: 5, expiresIn: 900 }, { signal: controller.signal }),
-        err => err.code === Auth.AUTH_ERROR_CODES.CANCELLED,
+        err => err.code === ERROR_CODES.CANCELLED,
     );
 });
 
 test('a disabled device flow surfaces its own code from the code request', async () => {
     const { fetch } = makeFetch({ [DEVICE]: () => respond(200, { error: 'device_flow_disabled' }) });
     const flow = Auth.createDeviceFlow({ fetch });
-    await assert.rejects(flow.requestCode(), err => err.code === Auth.AUTH_ERROR_CODES.DEVICE_FLOW_DISABLED);
+    await assert.rejects(flow.requestCode(), err => err.code === ERROR_CODES.DEVICE_FLOW_DISABLED);
 });
 
 test('a network failure surfaces the network code', async () => {
     const fetch = async () => { throw new TypeError('offline'); };
     const flow = Auth.createDeviceFlow({ fetch });
-    await assert.rejects(flow.requestCode(), err => err.code === Auth.AUTH_ERROR_CODES.NETWORK);
+    await assert.rejects(flow.requestCode(), err => err.code === ERROR_CODES.NETWORK);
 });
 
 test('authorize requests a code, reports it, then resolves with the token', async () => {
@@ -215,8 +218,26 @@ test('a dead stored token during discovery maps to auth, not an expired device c
     const { fetch } = makeFetch({ [`${API}/user/installations?per_page=100`]: () => respond(401, { message: 'Bad credentials' }) });
     await assert.rejects(
         Auth.listBackupRepositories({ fetch, token: 't' }),
-        err => err.code === Auth.AUTH_ERROR_CODES.AUTH,
+        err => err.code === ERROR_CODES.AUTH,
     );
+});
+
+test('repository discovery uses the shared REST policy and preserves rate-limit errors', async () => {
+    const { fetch, calls } = makeFetch({
+        [`${API}/user/installations?per_page=100`]: () => respond(403,
+            { message: 'API rate limit exceeded' },
+            { 'x-ratelimit-remaining': '0' }),
+    });
+    await assert.rejects(
+        Auth.listBackupRepositories({ fetch, token: 't' }),
+        error => error instanceof GithubErrors.GithubError
+            && error.code === ERROR_CODES.RATE_LIMIT
+            && error.status === 403,
+    );
+    assert.equal(calls[0].method, 'GET');
+    assert.equal(calls[0].cache, 'no-store');
+    assert.equal(calls[0].headers.Authorization, 'Bearer t');
+    assert.equal(calls[0].headers['X-GitHub-Api-Version'], '2022-11-28');
 });
 
 test('repository discovery follows installation and repository pagination', async () => {

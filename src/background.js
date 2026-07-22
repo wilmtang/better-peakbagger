@@ -13,6 +13,7 @@ import { terrainCache as TerrainCache } from './terrain-cache.js';
 import { settings as Settings } from './settings.js';
 import { githubAuth as GithubAuth } from './github-auth.js';
 import { githubClient as GithubClient } from './github-client.js';
+import { githubErrors as GithubErrors } from './github-errors.js';
 import { peakbaggerError as PeakbaggerError } from './peakbagger-error.js';
 import { fetchPeakbaggerResource } from './peakbagger-request.js';
 
@@ -1145,7 +1146,7 @@ import { fetchPeakbaggerResource } from './peakbagger-request.js';
         try {
             code = await flow.requestCode();
         } catch (error) {
-            return { phase: 'error', code: error.code || 'unknown', message: error.message || '' };
+            return { phase: 'error', ...GithubErrors.publicError(error) };
         }
         const startedAt = now();
         const pending = {
@@ -1202,7 +1203,7 @@ import { fetchPeakbaggerResource } from './peakbagger-request.js';
             return { phase: 'authorized', account, repos, installationCount };
         } catch (error) {
             await clearPendingGithubAuth();
-            return { phase: 'error', code: (error && error.code) || 'unknown', message: (error && error.message) || '' };
+            return { phase: 'error', ...GithubErrors.publicError(error) };
         }
     };
 
@@ -1216,7 +1217,7 @@ import { fetchPeakbaggerResource } from './peakbagger-request.js';
             await reconcileDiscoveredRepo(repos);
             return { installationCount, repos, repo: await GithubAuth.authStore.getRepo() };
         } catch (error) {
-            return { phase: 'error', code: error.code || 'unknown', message: error.message || '' };
+            return { phase: 'error', ...GithubErrors.publicError(error) };
         }
     };
 
@@ -1238,7 +1239,7 @@ import { fetchPeakbaggerResource } from './peakbagger-request.js';
         } catch (error) {
             return {
                 connected: false,
-                error: { code: error.code || 'unknown', message: error.message || 'Could not inspect the repository.' },
+                error: GithubErrors.publicError(error, 'Could not inspect the repository.'),
             };
         }
         if (inspection.kind === 'existing' && !message.confirmExisting) {
@@ -1447,7 +1448,7 @@ import { fetchPeakbaggerResource } from './peakbagger-request.js';
         try {
             return { ok: true, ...status, folders: await client.getAscentFolders() };
         } catch (error) {
-            return { ok: false, ...status, error: { code: error.code || 'unknown', message: error.message || 'Could not read the backup repository.' } };
+            return { ok: false, ...status, error: GithubErrors.publicError(error, 'Could not read the backup repository.') };
         }
     };
 
@@ -1551,7 +1552,7 @@ import { fetchPeakbaggerResource } from './peakbagger-request.js';
             if (found) await mutateMap(SNAPSHOTS_KEY, m => { delete m[found.key]; });
             return { ok: true, result };
         } catch (error) {
-            return { ok: false, error: { code: error.code || 'unknown', message: error.message || 'The backup failed.' } };
+            return { ok: false, error: GithubErrors.publicError(error, 'The backup failed.') };
         }
     };
 
@@ -1603,7 +1604,7 @@ import { fetchPeakbaggerResource } from './peakbagger-request.js';
             }))));
             return { ok: true, result };
         } catch (error) {
-            return { ok: false, error: { code: error.code || 'unknown', message: error.message || 'The backup failed.' } };
+            return { ok: false, error: GithubErrors.publicError(error, 'The backup failed.') };
         }
     };
 
@@ -1637,7 +1638,7 @@ import { fetchPeakbaggerResource } from './peakbagger-request.js';
             ));
             return { ok: true, result };
         } catch (error) {
-            return { ok: false, error: { code: error.code || 'unknown', message: error.message || 'The favorites backup failed.' } };
+            return { ok: false, error: GithubErrors.publicError(error, 'The favorites backup failed.') };
         }
     };
 
@@ -1647,7 +1648,7 @@ import { fetchPeakbaggerResource } from './peakbagger-request.js';
         try {
             return { ok: true, content: await access.client.readRootFile('favorites.json') };
         } catch (error) {
-            return { ok: false, error: { code: error.code || 'unknown', message: error.message || 'The favorites backup could not be read.' } };
+            return { ok: false, error: GithubErrors.publicError(error, 'The favorites backup could not be read.') };
         }
     };
 
