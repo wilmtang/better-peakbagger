@@ -528,7 +528,7 @@ under an ascent folder survive.
 }
 ```
 
-The file is a complete export of the device-local custom list, capped at 500
+The file is a complete export of the device-local custom list, capped at 1,500
 entries. Restore rejects an unknown schema, malformed entry, duplicate id, or
 oversized list before changing local storage, then offers a six-second Undo.
 Buddy List cache metadata and owner identity are never exported. A missing file

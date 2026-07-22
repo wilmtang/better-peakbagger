@@ -719,7 +719,7 @@ ids must be positive safe integers. Names replace non-breaking spaces, collapse
 whitespace, trim, and retain at most 200 UTF-16 code units. Added-at values must
 be finite and non-negative, and custom provenance must be exactly `manual` or
 `buddy`. Lists preserve the first valid occurrence of each climber id and input
-order, discard later duplicates or invalid entries, and stop after 500 entries.
+order, discard later duplicates or invalid entries, and stop after 1,500 entries.
 Unknown properties do not survive cleaning.
 
 The two envelopes fail differently by design. An absent, non-object, or unknown
@@ -728,15 +728,16 @@ owner or fetch time invalidates the whole cache and becomes `null`; invalid
 individual Buddy rows are skipped. The cache has no schema version, so a future
 incompatible cache shape requires either backward-compatible structural cleaning
 or a new storage key. GitHub restore is stricter than an ordinary local read: it
-rejects the entire import if its schema is unknown, it exceeds 500 raw entries,
+rejects the entire import if its schema is unknown, it exceeds 1,500 raw entries,
 or cleaning would remove even one malformed or duplicate entry.
 
-The 500-entry bound is a product guardrail, not a Peakbagger or browser hard
+The 1,500-entry bound is a product guardrail, not a Peakbagger or browser hard
 limit. Peakbagger's Buddy List is capped at 100, while the custom mode is meant
 to outgrow it. The current options UI renders the entire list and every mutation
 rewrites one JSON object, so an unbounded import would make storage, rendering,
-and backup costs attacker- or accident-controlled. Raising the bound requires
-large-list UI and backup verification; removing it does not create genuinely
+and backup costs attacker- or accident-controlled. The scale gate renders and
+serializes all 1,500 entries; raising the bound again requires repeating that
+large-list UI and backup verification. Removing it does not create genuinely
 unlimited browser storage.
 
 ### Effective membership and filtering
@@ -860,7 +861,7 @@ The options manager supports these distinct operations:
 - **Merge buddies** is additive. It preserves every existing custom entry and
   its name, timestamp, order, and provenance; only missing Buddy ids are
   appended with one current timestamp and `source: 'buddy'`, stopping at the
-  500-entry bound. Existing names are not refreshed from the Buddy page. Its
+  1,500-entry bound. Existing names are not refreshed from the Buddy page. Its
   progress, success count, or actionable failure remains visible beside the
   controls instead of relying on the transient global save toast.
 - **Mirror buddy list** first fetches the current report, then shows an explicit
@@ -886,7 +887,7 @@ read-modify-write, which narrows the stale-tab window, but
 `storage.local` provides no compare-and-swap transaction: truly overlapping
 writes from two tabs remain last-writer-wins. In the narrow race where another
 tab reaches the limit after this control was painted, cleaning keeps the newly
-prepended entry and truncates the tail to 500; the visual limit check is not an
+prepended entry and truncates the tail to 1,500; the visual limit check is not an
 atomic reservation.
 
 Custom profile names are snapshots, not a synchronized directory. They change
@@ -998,6 +999,8 @@ The focused automated evidence is deliberately split by boundary:
   delete/mirror/restore, Buddy refresh, merge, and explicit GitHub messages.
 - `test/climber-favorite.test.mjs` covers add/remove, self exclusion, Buddy-mode
   absence, and live source/list changes.
+- `test/scale/favorite-climbers.scale.mjs` renders the full 1,500-entry options
+  list and serializes all entries through the explicit GitHub backup action.
 - `test/github-client.test.mjs` and `test/github-backup-integration.test.mjs`
   cover fixed-root-file Git mechanics, conflicts, feature gates, extension-only
   messaging, missing restore files, and token confinement.
@@ -1008,9 +1011,9 @@ The focused automated evidence is deliberately split by boundary:
 Those tests use jsdom, stubbed fetch/storage, and a reduced synthetic Buddy
 fixture. They do not prove the current live Peakbagger markup, an authenticated
 cookie flow, Cloudflare behavior, real browser interpretation of the manifest,
-the exact 500/501 truncation and oversized-restore boundary, visual usability
-near that bound, simultaneous multi-tab conflict behavior, or the
-empty-list-versus-markup-drift ambiguity. `npm run verify:extension` covers real
+visual usability near the 1,500-entry bound, simultaneous multi-tab conflict
+behavior, or the empty-list-versus-markup-drift ambiguity.
+`npm run verify:extension` covers real
 unpacked-Chrome startup and injection, but an authenticated, minimal, read-only
 browser check is still required before a release that changes Buddy parsing,
 owner detection, request classification, or the live options/climber UI.

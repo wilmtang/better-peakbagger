@@ -166,6 +166,8 @@ test('settings are grouped by the surface they affect', async () => {
     assert.ok(favorites.querySelector('#favorites-buddy-panel'));
     assert.ok(favorites.querySelector('#favorites-custom-panel'));
     assert.ok(favorites.querySelector('#favorites-list'));
+    assert.match(favorites.querySelector('#favorites-add-form .desc').textContent,
+        /Stored only on this device unless you choose Back up favorites below\. Up to 1,500 climbers\./);
     assert.ok(github.querySelector('#github-backup #enable-github-backup'), 'GitHub backup lives in its subsection');
 });
 
@@ -788,6 +790,36 @@ test('favorites restore fails closed on an unknown backup schema', async () => {
     await waitFor(dom, () => /newer format/.test(el(dom, 'status').textContent));
     assert.deepEqual(dom.chrome._localStore[favoriteKey].entries, [original]);
     assert.equal(el(dom, 'favorites-undo-all').hidden, true);
+});
+
+test('favorites restore rejects a backup above the 1,500-entry bound', async () => {
+    const original = { cid: 900002, name: 'Keep Me', addedAt: 10, source: 'manual' };
+    const oversized = Array.from({ length: 1501 }, (_, index) => ({
+        cid: 100000 + index,
+        name: `Climber ${index + 1}`,
+        addedAt: index,
+        source: 'manual',
+    }));
+    const dom = await loadOptions({ favoritesSource: 'custom' }, {
+        local: { [favoriteKey]: favoriteStore([original]) },
+        prepareChrome: chrome => {
+            chrome.permissions = { request: async () => true, contains: async () => true, remove: async () => true };
+            chrome.runtime.sendMessage = (message, callback) => {
+                const reply = message.type === 'GITHUB_FAVORITES_RESTORE'
+                    ? { ok: true, content: JSON.stringify({ schemaVersion: 1, entries: oversized }) }
+                    : {
+                        enabled: true, connected: true, hasToken: true,
+                        repo: { owner: 'ada', name: 'peaks', fullName: 'ada/peaks' },
+                    };
+                if (typeof callback === 'function') Promise.resolve().then(() => callback(reply));
+                return Promise.resolve(reply);
+            };
+        },
+    });
+    await waitFor(dom, () => !el(dom, 'favorites-github-actions').hidden);
+    el(dom, 'favorites-restore').click();
+    await waitFor(dom, () => /not valid/.test(el(dom, 'status').textContent));
+    assert.deepEqual(dom.chrome._localStore[favoriteKey].entries, [original]);
 });
 
 test('favorites points disconnected users to the shared GitHub connection instead of ascent backup', async () => {

@@ -12,9 +12,10 @@
   has a Favorites chip that combines with Trip report, GPS track, Link, and Has
   beta. It works immediately from the signed-in user's Buddy List, keeps an
   owner-scoped local cache fresh without blocking the table, and can instead use
-  a custom list of up to 500 climbers. Settings can add, sort, merge, mirror,
-  remove, and Undo custom favorites; public climber pages get a compact add/remove
-  control only in custom mode. A shared GitHub connection can explicitly write
+  a device-local custom list of up to 1,500 climbers. Settings makes that local
+  storage boundary explicit and can add, sort, merge, mirror, remove, and Undo
+  custom favorites; public climber pages get a compact add/remove control only
+  in custom mode. A shared GitHub connection can explicitly write
   or restore the custom list as `favorites.json` even when ascent backup is off,
   with a link to the successful backup commit; automatic ascent backup never
   touches it.

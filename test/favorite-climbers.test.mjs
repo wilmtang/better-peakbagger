@@ -30,6 +30,19 @@ test('cleans favorite storage, dedupes ids, and fails closed on unknown schemas'
     });
 });
 
+test('the custom list keeps exactly the 1,500-entry product bound', () => {
+    assert.equal(F.LIMIT, 1500);
+    const values = Array.from({ length: F.LIMIT + 1 }, (_, index) => ({
+        cid: index + 1,
+        name: `Climber ${index + 1}`,
+        addedAt: index,
+        source: 'manual',
+    }));
+    const cleaned = F.cleanFavorites({ schemaVersion: F.SCHEMA_VERSION, entries: values });
+    assert.equal(cleaned.entries.length, F.LIMIT);
+    assert.equal(cleaned.entries.at(-1).cid, F.LIMIT);
+});
+
 test('cleans buddy cache and applies the seven-day TTL', () => {
     const now = 20 * 24 * 60 * 60 * 1000;
     const cache = F.cleanBuddyCache({

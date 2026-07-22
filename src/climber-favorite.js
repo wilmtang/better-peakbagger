@@ -59,7 +59,7 @@ html[data-bpb-theme="dark"] #bpb-climber-favorite[aria-pressed="true"] { border-
         button.setAttribute('aria-label', actionLabel);
         button.disabled = busy || (!active && favorites.entries.length >= F.LIMIT);
         button.title = errorMessage || (!active && favorites.entries.length >= F.LIMIT
-            ? `Favorites can hold up to ${F.LIMIT} climbers.`
+            ? `Favorites can hold up to ${F.LIMIT.toLocaleString('en-US')} climbers.`
             : actionLabel);
     };
 

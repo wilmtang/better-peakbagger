@@ -24,6 +24,7 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
     const addFormEl = document.getElementById('favorites-add-form');
     const addInputEl = document.getElementById('favorites-add-input');
     const addButtonEl = document.getElementById('favorites-add-button');
+    const limitEl = document.getElementById('favorites-limit');
     const sortEl = document.getElementById('favorites-sort');
     const mergeEl = document.getElementById('favorites-merge-buddies');
     const mirrorEl = document.getElementById('favorites-mirror-buddies');
@@ -44,13 +45,15 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
     const restoreEl = document.getElementById('favorites-restore');
 
     if (!store || !sourceEls.length || !buddyPanelEl || !customPanelEl || !buddyStatusEl
-        || !refreshBuddiesEl || !addFormEl || !addInputEl || !addButtonEl || !sortEl
+        || !refreshBuddiesEl || !addFormEl || !addInputEl || !addButtonEl || !limitEl || !sortEl
         || !mergeEl || !mirrorEl || !importStatusEl || !mirrorConfirmationEl
         || !mirrorConfirmationImpactEl || !mirrorConfirmationSummaryEl
         || !mirrorCancelEl || !mirrorConfirmEl
         || !emptyEl || !listEl || !undoAllEl || !undoMessageEl
         || !undoAllButtonEl || !githubStatusEl || !githubActionsEl || !backupEl
         || !restoreEl) return { populate() {} };
+
+    limitEl.textContent = F.LIMIT.toLocaleString('en-US');
 
     let source = 'buddies';
     let favorites = F.cleanFavorites(null);
@@ -600,7 +603,7 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
             return;
         }
         if (favorites.entries.length >= F.LIMIT) {
-            flash(`Favorites can hold up to ${F.LIMIT} climbers`);
+            flash(`Favorites can hold up to ${F.LIMIT.toLocaleString('en-US')} climbers`);
             addButtonEl.disabled = false;
             return;
         }

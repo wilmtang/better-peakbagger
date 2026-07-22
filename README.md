@@ -95,7 +95,7 @@ Full Screen GPS maps honor the same width and casing.
 Filter long ascent lists to trips with a report, GPS track, or external link.
 Filters combine naturally, show live result counts, and remember what you mean
 by “has beta.” The **Favorites** filter starts with your Peakbagger Buddy List,
-or you can switch to a custom list of up to 500 climbers and add people from
+or you can switch to a custom list of up to 1,500 climbers and add people from
 their profile pages. Combine it with Trip report or GPS track to see useful beta
 from people you follow. Sortable columns reorder instantly without reloading the
 page.

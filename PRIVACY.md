@@ -123,7 +123,7 @@ plus the signed-in owner's id and fetch time. Seven days is its automatic
 refresh interval; a stale copy may remain locally and usable when refresh fails,
 until a later refresh replaces it or extension data is cleared.
 
-In custom mode, the extension stores up to 500 climber ids, displayed names,
+In custom mode, the extension stores up to 1,500 climber ids, displayed names,
 added-at timestamps, and manual/Buddy provenance in `storage.local`. Adding by
 id or link fetches that public Peakbagger climber page to verify its identity and
 name. The list remains on the device until the user edits it, restores a backup,
