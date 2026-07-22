@@ -131,6 +131,42 @@ test('the backup control light preference overrides every dark semantic color', 
     assert.ok(contrast('#b42318', '#ffffff') >= NORMAL, 'light error text must meet AA');
 });
 
+test('popup explicit light and dark themes keep their text contrast', async () => {
+    const css = (await readFile(path.join(root, 'popup/popup.css'), 'utf8'))
+        .replace(/\/\*[\s\S]*?\*\//g, '');
+    const rules = new Map();
+    for (const [, selectorText, declarationText] of css.matchAll(/([^{}]+)\{([^}]*)\}/g)) {
+        const declarations = {};
+        for (const declaration of declarationText.split(';')) {
+            const separator = declaration.indexOf(':');
+            if (separator < 0) continue;
+            declarations[declaration.slice(0, separator).trim()] = declaration.slice(separator + 1).trim();
+        }
+        for (const selector of selectorText.split(',').map(value => value.trim())) {
+            rules.set(selector, { ...(rules.get(selector) || {}), ...declarations });
+        }
+    }
+    const color = selector => rules.get(selector)?.color;
+    const background = selector => rules.get(selector)?.background;
+    const pairs = [
+        ['popup dark body', ':root[data-bpb-theme="dark"]', ':root[data-bpb-theme="dark"] body', NORMAL],
+        ['popup dark detail', ':root[data-bpb-theme="dark"] .state-detail', ':root[data-bpb-theme="dark"] .state-card', NORMAL],
+        ['popup dark button', ':root[data-bpb-theme="dark"] button', ':root[data-bpb-theme="dark"] button', NORMAL],
+        ['popup dark empty cue', ':root[data-bpb-theme="dark"] .state-card.empty .state-title::before', ':root[data-bpb-theme="dark"] .state-card.empty .state-title::before', NORMAL],
+        ['popup light body', ':root[data-bpb-theme="light"]', ':root[data-bpb-theme="light"] body', NORMAL],
+        ['popup light detail', ':root[data-bpb-theme="light"] .state-detail', ':root[data-bpb-theme="light"] .state-card', NORMAL],
+        ['popup light button', ':root[data-bpb-theme="light"] button', ':root[data-bpb-theme="light"] button', NORMAL],
+        ['popup light empty cue', ':root[data-bpb-theme="light"] .state-card.empty .state-title::before', ':root[data-bpb-theme="light"] .state-card.empty .state-title::before', NORMAL],
+    ];
+    for (const [name, foregroundSelector, backgroundSelector, minimum] of pairs) {
+        const foreground = color(foregroundSelector);
+        const surface = background(backgroundSelector);
+        assert.ok(foreground && surface, `${name} must declare both colors explicitly`);
+        const ratio = contrast(foreground, surface);
+        assert.ok(ratio >= minimum, `${name}: ${foreground} on ${surface} = ${ratio.toFixed(2)}:1`);
+    }
+});
+
 test('dark theme preserves the native mountain motif behind page content', () => {
     const body = RULES.get(`${P} body`);
     const motif = RULES.get(`${P} body::before`);

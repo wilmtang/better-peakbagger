@@ -7,6 +7,7 @@ import fs from 'node:fs/promises';
 import { JSDOM } from 'jsdom';
 
 const html = await fs.readFile(new URL('../../popup/popup.html', import.meta.url), 'utf8');
+const headSource = await fs.readFile(new URL('../../dist/popup/popup-head.js', import.meta.url), 'utf8');
 const source = await fs.readFile(new URL('../../dist/popup/popup.js', import.meta.url), 'utf8');
 const css = await fs.readFile(new URL('../../popup/popup.css', import.meta.url), 'utf8');
 const waitFor = async condition => {
@@ -17,6 +18,35 @@ const waitFor = async condition => {
 
 test('popup stops spinner motion when the user requests reduced motion', () => {
     assert.match(css, /@media\s*\(prefers-reduced-motion:\s*reduce\)\s*{[^}]*\.spinner\s*{[^}]*animation:\s*none/s);
+});
+
+test('popup theme bootstrap loads before the stylesheet', () => {
+    const dom = new JSDOM(html);
+    const resources = Array.from(dom.window.document.head.querySelectorAll('script[src], link[rel="stylesheet"]'))
+        .map(node => node.getAttribute('src') || node.getAttribute('href'));
+    assert.deepEqual(resources, ['popup-head.js', 'popup.css']);
+});
+
+test('popup paints from the cached theme and reconciles the synced preference', async () => {
+    const dom = new JSDOM(html, {
+        url: 'https://popup.better-peakbagger.test/popup/popup.html',
+        runScripts: 'outside-only'
+    });
+    dom.window.localStorage.setItem('bpbThemePref', 'dark');
+    dom.window.matchMedia = query => ({ matches: query === '(prefers-color-scheme: dark)' });
+    dom.window.chrome = {
+        storage: {
+            sync: { get: async () => ({ bpbSettings: { theme: 'light' } }) },
+            onChanged: { addListener() {}, removeListener() {} }
+        }
+    };
+
+    dom.window.eval(headSource);
+    assert.equal(dom.window.document.documentElement.getAttribute('data-bpb-theme'), 'dark',
+        'the synchronous cache owns the first paint');
+    await waitFor(() => dom.window.document.documentElement.getAttribute('data-bpb-theme') === 'light');
+    assert.equal(dom.window.localStorage.getItem('bpbThemePref'), 'light');
+    dom.window.close();
 });
 
 test('popup explains both match class and confidence percentage', async () => {

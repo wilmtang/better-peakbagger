@@ -162,3 +162,46 @@ button:focus-visible, .button-link:focus-visible { outline: 2px solid #1570ef; o
   button.primary { border-color: #1570ef; background: #1570ef; }
   .state-card.error, .state-card.locked { border-color: #d92d20; background: #3b1515; }
 }
+
+/* The explicit panel preference wins over the OS color scheme. */
+:root[data-bpb-theme="dark"],
+:root[data-bpb-theme="dark"] body { color: #f2f4f7; background: #101828; }
+:root[data-bpb-theme="dark"] .brand p,
+:root[data-bpb-theme="dark"] .state-detail,
+:root[data-bpb-theme="dark"] .summary,
+:root[data-bpb-theme="dark"] #selection-count,
+:root[data-bpb-theme="dark"] .peak-evidence,
+:root[data-bpb-theme="dark"] .privacy-note { color: #98a2b3; }
+:root[data-bpb-theme="dark"] .state-card,
+:root[data-bpb-theme="dark"] .summary,
+:root[data-bpb-theme="dark"] .peak-row { border-color: #475467; background: #1d2939; }
+:root[data-bpb-theme="dark"] .summary strong { color: #e4e7ec; }
+:root[data-bpb-theme="dark"] button,
+:root[data-bpb-theme="dark"] .button-link { border-color: #667085; color: #e4e7ec; background: #344054; }
+:root[data-bpb-theme="dark"] .settings-button { border-color: transparent; color: #98a2b3; background: transparent; }
+:root[data-bpb-theme="dark"] .settings-button:hover { color: #f2f4f7; background: #344054; }
+:root[data-bpb-theme="dark"] .state-card.empty .state-title::before { color: #84adff; background: #102a56; }
+:root[data-bpb-theme="dark"] button.primary { border-color: #1570ef; color: #fff; background: #1570ef; }
+:root[data-bpb-theme="dark"] .state-card.error,
+:root[data-bpb-theme="dark"] .state-card.locked { border-color: #d92d20; background: #3b1515; }
+
+:root[data-bpb-theme="light"],
+:root[data-bpb-theme="light"] body { color: #182230; background: #f8fafc; }
+:root[data-bpb-theme="light"] .brand p,
+:root[data-bpb-theme="light"] #selection-count,
+:root[data-bpb-theme="light"] .peak-evidence,
+:root[data-bpb-theme="light"] .privacy-note { color: #667085; }
+:root[data-bpb-theme="light"] .state-detail,
+:root[data-bpb-theme="light"] .summary { color: #475467; }
+:root[data-bpb-theme="light"] .state-card,
+:root[data-bpb-theme="light"] .summary,
+:root[data-bpb-theme="light"] .peak-row { border-color: #d0d5dd; background: #fff; }
+:root[data-bpb-theme="light"] .summary strong { color: #344054; }
+:root[data-bpb-theme="light"] button,
+:root[data-bpb-theme="light"] .button-link { border-color: #d0d5dd; color: #344054; background: #fff; }
+:root[data-bpb-theme="light"] .settings-button { border-color: transparent; color: #667085; background: transparent; }
+:root[data-bpb-theme="light"] .settings-button:hover { color: #344054; background: #eaecf0; }
+:root[data-bpb-theme="light"] .state-card.empty .state-title::before { color: #175cd3; background: #eff8ff; }
+:root[data-bpb-theme="light"] button.primary { border-color: #175cd3; color: #fff; background: #175cd3; }
+:root[data-bpb-theme="light"] .state-card.error,
+:root[data-bpb-theme="light"] .state-card.locked { border-color: #fda29b; background: #fef3f2; }

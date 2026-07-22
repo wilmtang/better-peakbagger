@@ -25,7 +25,6 @@ export const srcFile = f => path.join(root, 'src', f);
 // Page bundles (options, popup) mix shared src/ modules with page-local files.
 // Page-local names resolve here; every other name falls back to src/.
 const PAGE_LOCAL = {
-    'options-theme.js': path.join(root, 'options', 'theme.js'),
     'options-main.js': path.join(root, 'options', 'options.js'),
     'options-drafts.js': path.join(root, 'options', 'drafts.js'),
     'options-favorites.js': path.join(root, 'options', 'favorites.js'),
@@ -59,8 +58,9 @@ export const ENTRIES = [
     { out: 'terrain/terrain-frame.js', sources: ['terrain/terrain-camera.js', 'settings/settings-schema.js', 'terrain/terrain-cache.js', 'terrain/terrain-frame.js'] },
     // The options page keeps its head/tail split: the head bundle applies the
     // theme before first paint, the tail bundle runs the settings UI.
-    { out: 'options/options-head.js', sources: ['settings/settings-schema.js', 'settings/settings.js', 'options-theme.js'], page: true },
+    { out: 'options/options-head.js', sources: ['settings/settings-schema.js', 'settings/settings.js', 'theme/panel-theme.js'], page: true },
     { out: 'options/options.js', sources: ['terrain/terrain-cache.js', 'reports/report-markup.js', 'reports/report-drafts.js', 'favorites/favorite-climbers.js', 'peakbagger/peakbagger-cloudflare.js', 'peakbagger/peakbagger-response.js', 'peakbagger/peakbagger-error.js', 'peakbagger/peakbagger-request.js', 'profile/profile-backup-core.js', 'options-main.js', 'options-drafts.js', 'options-favorites.js'], page: true },
+    { out: 'popup/popup-head.js', sources: ['settings/settings-schema.js', 'settings/settings.js', 'theme/panel-theme.js'], page: true },
     { out: 'popup/popup.js', sources: ['popup-main.js'], page: true },
 ];
 

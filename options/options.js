@@ -5,7 +5,7 @@
 
 import { settings as S } from '../src/settings/settings.js';
 import { terrainCache as TerrainCache } from '../src/terrain/terrain-cache.js';
-import { optionsTheme as Theme } from './theme.js';
+import { panelTheme as Theme } from '../src/theme/panel-theme.js';
 import { initGithubBackup } from './github.js';
 import { initFavorites } from './favorites.js';
 import { initSettingsBackup } from './settings-backup.js';

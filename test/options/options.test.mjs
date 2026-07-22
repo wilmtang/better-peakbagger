@@ -76,7 +76,7 @@ const loadOptions = async (settings = {}, {
     if (accelerateGithubPoll) dom.githubPollDelays = accelerateTimeout(dom, 2000);
     if (prepareWindow) prepareWindow(dom.window);
     if (cachedTheme !== null) dom.window.localStorage.setItem('bpbThemePref', cachedTheme);
-    // The options page loads the head bundle (settings + theme, pre-paint) then
+    // The options page loads the head bundle (settings + panel theme, pre-paint) then
     // the tail bundle (terrain-cache + the settings UI), as options.html does.
     await evalBundle(dom.window, 'options/options-head.js');
     dom.initialTheme = dom.window.document.documentElement.getAttribute('data-bpb-theme');

@@ -54,6 +54,13 @@ test('the canonical unpacked extension opens Chrome settings in a full tab', () 
     });
 });
 
+test('extension panels share one pre-paint theme bootstrap', () => {
+    assert.deepEqual(bundleSources('options/options-head.js'),
+        ['settings/settings-schema.js', 'settings/settings.js', 'theme/panel-theme.js']);
+    assert.deepEqual(bundleSources('popup/popup-head.js'),
+        ['settings/settings-schema.js', 'settings/settings.js', 'theme/panel-theme.js']);
+});
+
 test('the Buddy refresh helper is a fixed first-party navigation', async () => {
     assert.ok(COPY_FILES.some(([source, target]) =>
         source === 'options/buddy-refresh.html' && target === 'options/buddy-refresh.html'));
