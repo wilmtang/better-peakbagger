@@ -305,6 +305,12 @@ background status check never strands the user. There is no fixed or sticky
 banner, and none of these reads run while the feature is disabled or GitHub is
 disconnected.
 
+The Settings ascent-backup panel performs a separate, extension-page-only
+repository summary read. It reports either **No ascents backed up yet** or the
+count of marker-validated ascent folders and links to the selected repository.
+It refreshes when Settings regains focus, so returning from a bulk or individual
+backup gives durable confirmation without exposing folder names to the page.
+
 Both manual click and automatic entry call the same `runBackup(info, {auto})`:
 
 1. fetch and validate the exact owner edit URL;
@@ -479,6 +485,7 @@ disclosure.
 | `GITHUB_BACKUP_STATUS` | Peakbagger tab | Peakbagger hostname | Only enabled/auto/connected and repository display name |
 | `GITHUB_CHECK_ASCENT_BACKUP` | Owner saved-ascent surface | Peakbagger hostname; feature/auth/repo; complete persisted payload and final aid; marker/folder/blob validation | Boolean current state or typed error, never token |
 | `GITHUB_BACKUP_ASCENT` | Owner saved-ascent surface | Peakbagger hostname; feature/auth/repo; fresh snapshot for auto; complete data requirement; final aid present before the client enforces a positive identity | Commit metadata or typed error |
+| `GITHUB_ASCENT_BACKUP_SUMMARY` | Extension options page | Extension origin; auth/repo; marker-validated repository tree | Ascent count only, never folder names or token |
 | `GITHUB_BACKUP_PROFILE_STATUS` | `ClimbListC.aspx` | Peakbagger hostname and exact list pathname | Folder leaves, never token |
 | `GITHUB_BACKUP_PROFILE_BATCH` | `ClimbListC.aspx` | Exact list pathname; 1–10 entries; each positive `aid` equals snapshot id; no duplicate ids; feature/auth/repo | Batch commit metadata or typed error |
 | `GITHUB_FAVORITES_BACKUP` | Extension options page | Extension origin; auth/repo; worker reads and cleans `bpbFavoriteClimbers`; fixed `favorite-climbers.json` path | Commit metadata, never token |

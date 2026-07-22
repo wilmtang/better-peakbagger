@@ -516,6 +516,8 @@ button.secondary.favorites-mirror-trigger:focus-visible { outline-color: var(--d
 .github-link:disabled { color: var(--sub); cursor: wait; text-decoration: none; }
 .github-history-status[hidden] { display: none; }
 .github-error { color: #d0453b; }
+.github-backup-summary { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 6px; }
+.github-backup-confirmed { color: var(--link); font-weight: 600; }
 .github-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .github-actions button.secondary { align-self: auto; }
 button.github-primary {

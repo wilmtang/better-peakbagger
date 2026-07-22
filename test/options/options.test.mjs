@@ -1524,10 +1524,12 @@ test('the scroll-spy survives jsdom\'s zero-layout world', async () => {
 // Wire the options page's GITHUB_AUTH_* messages to a scripted background and a
 // grantable optional-permission request, so the setup panel can be driven in
 // jsdom without a browser or network.
-const withGithubBackground = (status, { grant = true } = {}) => chrome => {
+const withGithubBackground = (status, { grant = true, ascentCount = 0 } = {}) => chrome => {
     chrome.permissions = { request: async () => grant, contains: async () => grant, remove: async () => true };
     chrome.runtime.sendMessage = (message, callback) => {
-        const reply = message.type === 'GITHUB_AUTH_STATUS' ? status : {};
+        let reply = {};
+        if (message.type === 'GITHUB_AUTH_STATUS') reply = status;
+        if (message.type === 'GITHUB_ASCENT_BACKUP_SUMMARY') reply = { ok: true, count: ascentCount };
         if (typeof callback === 'function') Promise.resolve().then(() => callback(reply));
         return Promise.resolve(reply);
     };
@@ -1808,6 +1810,40 @@ test('a connected status renders the account and repository', async () => {
     // The connected state offers a disconnect control.
     const buttons = Array.from(el(dom, 'github-panel').querySelectorAll('button'), b => b.textContent);
     assert.ok(buttons.includes('Disconnect'));
+});
+
+test('the connected ascent panel reports repository-backed progress and refreshes on focus', async () => {
+    let ascentCount = 0;
+    let summaryReads = 0;
+    const status = {
+        enabled: true, connected: true, hasToken: true,
+        account: { login: 'ada' }, repo: { owner: 'ada', name: 'peaks', fullName: 'ada/peaks' },
+    };
+    const dom = await loadOptions({ enableGithubBackup: true }, {
+        prepareChrome: chrome => {
+            chrome.permissions = { request: async () => true, contains: async () => true, remove: async () => true };
+            chrome.runtime.sendMessage = (message, callback) => {
+                let reply = {};
+                if (message.type === 'GITHUB_AUTH_STATUS') reply = status;
+                if (message.type === 'GITHUB_ASCENT_BACKUP_SUMMARY') {
+                    summaryReads++;
+                    reply = { ok: true, count: ascentCount };
+                }
+                if (typeof callback === 'function') Promise.resolve().then(() => callback(reply));
+                return Promise.resolve(reply);
+            };
+        },
+    });
+
+    await waitFor(dom, () => /No ascents backed up yet/.test(el(dom, 'github-ascent-panel').textContent));
+    const repositoryLink = el(dom, 'github-ascent-panel').querySelector('a[href="https://github.com/ada/peaks"]');
+    assert.ok(repositoryLink);
+    assert.equal(repositoryLink.textContent, 'View repository');
+
+    ascentCount = 3;
+    dom.window.dispatchEvent(new dom.window.Event('focus'));
+    await waitFor(dom, () => /3 ascents backed up to ada\/peaks/.test(el(dom, 'github-ascent-panel').textContent));
+    assert.ok(summaryReads >= 2, 'returning to Settings must re-read the repository summary');
 });
 
 test('the connected state opens the signed-in climber\'s all-years My Ascents page', async () => {

@@ -300,6 +300,46 @@ test('profile preflight lists repository folders without exposing the token', as
 
 });
 
+test('options summary reports only the marker-validated ascent count', async () => {
+    const marker = `${JSON.stringify({
+        schemaVersion: 1,
+        type: 'better-peakbagger-backup',
+        layout: 'repository-root',
+    }, null, 2)}\n`;
+    const github = (method, path) => {
+        if (method === 'GET' && path === '/repos/me/backup') {
+            return respond(200, { default_branch: 'main', archived: false, permissions: { push: true } });
+        }
+        if (method === 'GET' && path === '/repos/me/backup/git/ref/heads/main') {
+            return respond(200, { object: { sha: 'C0' } });
+        }
+        if (method === 'GET' && path === '/repos/me/backup/git/commits/C0') {
+            return respond(200, { tree: { sha: 'T0' } });
+        }
+        if (method === 'GET' && path === '/repos/me/backup/git/trees/T0') {
+            return respond(200, { tree: [
+                { path: '.better-peakbagger.json', type: 'blob', sha: 'marker' },
+                { path: '2026-01-01-one-a1', type: 'tree', sha: 'F1' },
+                { path: '2026-01-02-two-a2', type: 'tree', sha: 'F2' },
+                { path: 'settings.json', type: 'blob', sha: 'settings' },
+            ] });
+        }
+        if (method === 'GET' && path === '/repos/me/backup/git/blobs/marker') {
+            return respond(200, { encoding: 'base64', content: Buffer.from(marker).toString('base64') });
+        }
+        return null;
+    };
+    const worker = createWorker({ auth: AUTH, github });
+
+    const summary = structuredClone(await worker.send({ type: 'GITHUB_ASCENT_BACKUP_SUMMARY' }, EXTENSION_SENDER));
+    assert.deepEqual(summary, { ok: true, count: 2 });
+    assert.equal('folders' in summary, false);
+    assert.equal('token' in summary, false);
+
+    const forbidden = await worker.send({ type: 'GITHUB_ASCENT_BACKUP_SUMMARY' }, PEAK_SENDER);
+    assert.equal(forbidden.error, 'forbidden');
+});
+
 test('profile backfill validates and commits multiple ascents as one batch', async () => {
     const backend = gitDataBackend();
     const worker = createWorker({ auth: AUTH, github: backend.handler });

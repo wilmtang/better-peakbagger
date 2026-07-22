@@ -324,6 +324,23 @@ export function createGithubRoutes({
         }
     };
 
+    // The options page needs one durable answer to "did anything get backed
+    // up?" without receiving ascent identities or the repository tree. Count
+    // only marker-validated backup folders and keep this route extension-only.
+    const githubAscentBackupSummary = async () => {
+        const access = await connectedGithubClient();
+        if (access.error) return { ok: false, error: access.error };
+        try {
+            const folders = await access.client.getAscentFolders();
+            return { ok: true, count: folders.length };
+        } catch (error) {
+            return {
+                ok: false,
+                error: GithubErrors.publicError(error, 'Could not check the existing ascent backups.'),
+            };
+        }
+    };
+
     // Merge the pending save-time snapshot with the saved ascent page's fields.
     // The saved page is authoritative for the identity and the fields it renders
     // (aid, date, suffix, peak name/elevation/location); the snapshot supplies
@@ -627,6 +644,7 @@ export function createGithubRoutes({
         GITHUB_BACKUP_STATUS: (_message, sender) => githubBackupStatus(sender),
         GITHUB_CHECK_ASCENT_BACKUP: (message, sender) => checkAscentBackup(message, sender),
         GITHUB_BACKUP_ASCENT: (message, sender) => backupAscent(message, sender),
+        GITHUB_ASCENT_BACKUP_SUMMARY: () => githubAscentBackupSummary(),
         GITHUB_BACKUP_PROFILE_STATUS: (_message, sender) => githubProfileBackupStatus(sender),
         GITHUB_BACKUP_PROFILE_BATCH: (message, sender) => backupProfileBatch(message, sender),
         GITHUB_FAVORITES_BACKUP: () => backupFavorites(),
@@ -637,6 +655,7 @@ export function createGithubRoutes({
 
     const extensionOnly = new Set([
         'PEAKBAGGER_MY_ASCENTS',
+        'GITHUB_ASCENT_BACKUP_SUMMARY',
         'GITHUB_FAVORITES_BACKUP',
         'GITHUB_FAVORITES_RESTORE',
         'GITHUB_SETTINGS_BACKUP',

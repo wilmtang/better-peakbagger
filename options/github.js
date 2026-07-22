@@ -51,6 +51,8 @@ export function initGithubBackup({ extensionApi, flash, save }) {
     let choosingRepo = false;
     let currentSettings = { enableGithubBackup: false, autoGithubBackup: false };
     let currentStatus = null;
+    let currentAscentSummary = null;
+    let ascentSummaryRevision = 0;
     const stopPollTimer = () => { if (pollTimer) { clearTimeout(pollTimer); pollTimer = null; } };
     const stopTimers = () => {
         stopPollTimer();
@@ -204,7 +206,64 @@ export function initGithubBackup({ extensionApi, flash, save }) {
         );
     };
 
-    const renderAscentConnected = () => {
+    const repositoryUrl = status => {
+        const owner = status?.repo?.owner;
+        const name = status?.repo?.name;
+        if (!owner || !name) return null;
+        return `https://github.com/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`;
+    };
+
+    const paintAscentSummary = (summaryEl, status, summary) => {
+        summaryEl.classList.toggle('github-error', !!summary && !summary.ok);
+        summaryEl.classList.toggle('github-backup-confirmed', !!summary && summary.ok && summary.count > 0);
+        if (!summary) {
+            summaryEl.textContent = 'Checking existing backups…';
+            return;
+        }
+        if (!summary.ok) {
+            summaryEl.replaceChildren(
+                document.createTextNode(`Couldn’t check existing backups. ${errorText(summary.error)}`),
+                document.createTextNode(' '),
+                el('button', {
+                    type: 'button', class: 'github-link', text: 'Try again',
+                    onclick: () => { currentAscentSummary = null; void refreshAscentSummary(summaryEl, status); },
+                }),
+            );
+            return;
+        }
+        const count = Number.isInteger(summary.count) && summary.count >= 0 ? summary.count : 0;
+        const repo = status?.repo?.fullName || `${status?.repo?.owner}/${status?.repo?.name}`;
+        const copy = count === 0
+            ? 'No ascents backed up yet.'
+            : `${count} ascent${count === 1 ? '' : 's'} backed up to ${repo}.`;
+        const children = [document.createTextNode(copy)];
+        const url = repositoryUrl(status);
+        if (url) {
+            children.push(
+                document.createTextNode(' '),
+                el('a', {
+                    class: 'github-link', href: url, target: '_blank', rel: 'noopener noreferrer', text: 'View repository',
+                }),
+            );
+        }
+        summaryEl.replaceChildren(...children);
+    };
+
+    const refreshAscentSummary = async (summaryEl, status) => {
+        const revision = ++ascentSummaryRevision;
+        paintAscentSummary(summaryEl, status, null);
+        const response = await send({ type: 'GITHUB_ASCENT_BACKUP_SUMMARY' });
+        if (revision !== ascentSummaryRevision || !summaryEl.isConnected) return;
+        currentAscentSummary = response && typeof response === 'object'
+            ? response
+            : { ok: false, error: null };
+        paintAscentSummary(summaryEl, status, currentAscentSummary);
+    };
+
+    const renderAscentConnected = status => {
+        const summaryEl = el('p', {
+            class: 'github-line github-backup-summary', role: 'status', 'aria-live': 'polite',
+        });
         const historyStatus = el('p', { class: 'github-hint github-error github-history-status', role: 'status' });
         historyStatus.hidden = true;
         const showHistoryError = (message, { offerSignIn = false } = {}) => {
@@ -261,13 +320,17 @@ export function initGithubBackup({ extensionApi, flash, save }) {
             document.createTextNode(' and choose Back up all ascents (it covers every year).'),
         ]);
         renderAscent(
+            summaryEl,
             autoToggle,
             historyHint,
             historyStatus,
         );
+        if (currentAscentSummary) paintAscentSummary(summaryEl, status, currentAscentSummary);
+        else void refreshAscentSummary(summaryEl, status);
     };
 
     const renderAscentStatus = (status = currentStatus) => {
+        ascentSummaryRevision++;
         const enabled = !!currentSettings.enableGithubBackup;
         ascentDetailEl.hidden = !enabled;
         if (!enabled) {
@@ -275,7 +338,7 @@ export function initGithubBackup({ extensionApi, flash, save }) {
             return;
         }
         if (status?.permissionGranted && status.connected) {
-            renderAscentConnected();
+            renderAscentConnected(status);
             return;
         }
         renderAscent(el('p', {
@@ -285,6 +348,10 @@ export function initGithubBackup({ extensionApi, flash, save }) {
     };
 
     const rememberStatus = status => {
+        const connectedRepo = value => value?.permissionGranted && value.connected
+            ? `${value.repo?.owner || ''}/${value.repo?.name || ''}`
+            : '';
+        if (connectedRepo(currentStatus) !== connectedRepo(status)) currentAscentSummary = null;
         currentStatus = status || null;
         renderAscentStatus();
         return currentStatus;
@@ -461,6 +528,7 @@ export function initGithubBackup({ extensionApi, flash, save }) {
     // Returning from the GitHub install page: re-check repo access.
     window.addEventListener('focus', () => {
         if (!pollTimer) {
+            currentAscentSummary = null;
             if (choosingRepo) void refreshRepos({ choose: true });
             else void renderFromStatus();
         }
