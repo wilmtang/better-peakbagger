@@ -1,8 +1,8 @@
 /* Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
  * SPDX-License-Identifier: AGPL-3.0-or-later
  * Better Peakbagger — saved ascent page GitHub backup affordance. A compact
- * secondary action beside Peakbagger's native ascent links, with inline status
- * only after the user acts. */
+ * secondary action beside Peakbagger's native ascent links, with a quiet
+ * read-only current-state check and inline action results. */
 
 .bpb-gh-control {
     display: inline-flex;

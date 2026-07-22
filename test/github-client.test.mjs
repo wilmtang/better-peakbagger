@@ -20,6 +20,7 @@ vm.runInContext(await readFile(new URL('../node_modules/marked/lib/marked.umd.js
 globalThis.marked = markedContext.marked;
 
 const { githubClient: Client } = await import('../src/github-client.js');
+const { githubBackup: Backup } = await import('../src/github-backup.js');
 const { githubErrors: GithubErrors } = await import('../src/github-errors.js');
 const { ERROR_CODES } = GithubErrors;
 
@@ -140,6 +141,49 @@ test('ten ascents share one atomic tree, commit, and branch update', async () =>
     const tree = calls.find(call => call.key === 'POST /repos/me/backup/git/trees').body.tree;
     assert.equal(tree.length, 21, 'ten two-file ascents plus the ownership marker');
     assert.equal(new Set(tree.map(entry => entry.path)).size, tree.length);
+});
+
+test('individual read-only comparison validates the folder and owned file contents', async () => {
+    const current = snapshot({ backup: { syncedAt: '2026-07-13T00:00:00Z', extensionVersion: '3.0.0' } });
+    const files = Backup.buildFiles(current, { gpx: '<gpx/>' });
+    const blobRoutes = Object.fromEntries(files.map((file, index) => [
+        `GET /repos/me/backup/git/blobs/file${index}`,
+        () => respond(200, { encoding: 'base64', content: Buffer.from(file.content).toString('base64') }),
+    ]));
+    const { fetch, calls } = makeFetch({
+        'GET /repos/me/backup': REPO_OK(),
+        'GET /repos/me/backup/git/ref/heads/main': REF('C0'),
+        'GET /repos/me/backup/git/commits/C0': COMMIT('C0', 'T0'),
+        'GET /repos/me/backup/git/trees/T0': () => respond(200, { tree: [
+            MARKER,
+            { path: '2026-07-12-mount-rainier-a1234567', type: 'tree', sha: 'TF' },
+        ] }),
+        'GET /repos/me/backup/git/blobs/marker': MARKER_BLOB,
+        'GET /repos/me/backup/git/trees/TF': () => respond(200, { tree: files.map((file, index) => ({
+            path: file.name, type: 'blob', sha: `file${index}`,
+        })) }),
+        ...blobRoutes,
+    });
+    const client = Client.createGithubClient({ fetch, token: 't', owner: 'me', repo: 'backup' });
+
+    assert.equal(await client.isAscentBackupCurrent(snapshot(), { gpx: '<gpx/>' }), true,
+        'provenance-only differences do not make the page stale');
+    assert.equal(await client.isAscentBackupCurrent(snapshot({ ascent: { route: 'Emmons' } }), {
+        gpx: '<gpx/>',
+    }), false);
+    assert.ok(calls.every(call => call.method === 'GET'), 'comparison must stay read-only');
+});
+
+test('individual comparison is false when the stable folder is absent', async () => {
+    const { fetch } = makeFetch({
+        'GET /repos/me/backup': REPO_OK(),
+        'GET /repos/me/backup/git/ref/heads/main': REF('C0'),
+        'GET /repos/me/backup/git/commits/C0': COMMIT('C0', 'T0'),
+        'GET /repos/me/backup/git/trees/T0': () => respond(200, { tree: [MARKER] }),
+        'GET /repos/me/backup/git/blobs/marker': MARKER_BLOB,
+    });
+    const client = Client.createGithubClient({ fetch, token: 't', owner: 'me', repo: 'backup' });
+    assert.equal(await client.isAscentBackupCurrent(snapshot(), {}), false);
 });
 
 test('every GitHub request bypasses the browser HTTP cache', async () => {

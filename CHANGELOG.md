@@ -1,6 +1,13 @@
 # Changelog
 ## Unreleased
 
+- **See when an individual ascent is already backed up.** On an owned saved
+  ascent, the GitHub control now checks the connected repository in the
+  background and shows **Backed up ✓** when the structured ascent, report, and
+  stored GPX still match. A changed or absent copy keeps the normal backup
+  action, and the check never runs when ascent backup is disabled or GitHub is
+  not connected.
+
 - **Filter ascent beta by favorite climbers.** The full Peak Ascents view now
   has a Favorites chip that combines with Trip report, GPS track, Link, and Has
   beta. It works immediately from the signed-in user's Buddy List, keeps an

@@ -16,7 +16,7 @@ import { evalBundle, waitFor } from './helpers/load-page.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
-const loadSurface = async ({ status, onBackup, editOk = true, gpxOk = true, gpxResponse = null, url = 'https://www.peakbagger.com/climber/ascent.aspx?aid=7654321' } = {}) => {
+const loadSurface = async ({ status, onBackup, onCheck, editOk = true, gpxOk = true, gpxResponse = null, url = 'https://www.peakbagger.com/climber/ascent.aspx?aid=7654321' } = {}) => {
     const html = await readFile(path.join(root, 'test', 'fixtures', 'pages', 'climber-ascent.html'), 'utf8');
     const rawEditHtml = await readFile(path.join(root, 'test', 'fixtures', 'pages', 'climber-ascentedit.html'), 'utf8');
     const editDom = new JSDOM(rawEditHtml);
@@ -37,6 +37,9 @@ const loadSurface = async ({ status, onBackup, editOk = true, gpxOk = true, gpxR
                 sent.push(message);
                 let reply = null;
                 if (message.type === 'GITHUB_BACKUP_STATUS') reply = status;
+                else if (message.type === 'GITHUB_CHECK_ASCENT_BACKUP') reply = onCheck
+                    ? onCheck(message)
+                    : { ok: true, current: false };
                 else if (message.type === 'GITHUB_BACKUP_ASCENT') reply = onBackup ? onBackup(message) : { ok: true, result: {} };
                 return reply;
             },
@@ -60,11 +63,25 @@ const control = dom => dom.window.document.querySelector('.bpb-gh-control');
 
 test('the affordance mounts as a compact control beside the native ascent actions', async () => {
     const { dom } = await loadSurface({ status: { enabled: true, connected: true } });
-    await waitFor(dom, () => control(dom));
+    await waitFor(dom, () => control(dom)?.querySelector('.bpb-gh-btn'));
     const actions = dom.window.document.getElementById('owneractions');
     assert.equal(control(dom).parentElement, actions);
     assert.equal(control(dom).textContent.trim(), 'Back up to GitHub');
     assert.equal(dom.window.document.body.firstElementChild, dom.window.document.getElementById('page'));
+});
+
+test('a current GitHub payload renders an affirmative state without writing', async () => {
+    let checked = null;
+    const { dom, sent } = await loadSurface({
+        status: { enabled: true, connected: true },
+        onCheck: message => { checked = message; return { ok: true, current: true }; },
+    });
+    await waitFor(dom, () => control(dom) && /Backed up ✓/.test(control(dom).textContent));
+    assert.equal(checked.pageComplete, true);
+    assert.equal(checked.page.ascent.id, 7654321);
+    assert.match(checked.gpx, /<gpx>/);
+    assert.equal(control(dom).querySelector('.bpb-gh-btn'), null);
+    assert.equal(sent.some(message => message.type === 'GITHUB_BACKUP_ASCENT'), false);
 });
 
 test('no affordance when the feature is disabled or not connected', async () => {
@@ -175,9 +192,20 @@ test('automatic mode on a revisit falls back to the manual button, not an error'
     const { dom } = await loadSurface({
         status: { enabled: true, connected: true, auto: true },
         onBackup: () => ({ ok: false, error: { code: 'no-fresh-save' } }),
+        onCheck: () => ({ ok: true, current: false }),
     });
     await waitFor(dom, () => control(dom) && /Back up to GitHub/.test(control(dom).textContent));
     assert.ok(control(dom).querySelector('.bpb-gh-btn'), 'the manual Back up button is offered');
+});
+
+test('automatic mode on an unchanged revisit reports the existing backup', async () => {
+    const { dom } = await loadSurface({
+        status: { enabled: true, connected: true, auto: true },
+        onBackup: () => ({ ok: false, error: { code: 'no-fresh-save' } }),
+        onCheck: () => ({ ok: true, current: true }),
+    });
+    await waitFor(dom, () => control(dom) && /Backed up ✓/.test(control(dom).textContent));
+    assert.equal(control(dom).querySelector('.bpb-gh-btn'), null);
 });
 
 test('a visitor viewing someone else’s ascent gets no affordance', async () => {

@@ -57,7 +57,13 @@ import { peakbaggerError as PeakbaggerError } from './peakbagger-error.js';
         }),
     );
 
+    const renderChecking = () => setBody(el('span', { class: 'bpb-gh-label', text: 'Checking backup…' }));
+
     const renderWorking = () => setBody(el('span', { class: 'bpb-gh-label', text: 'Backing up to GitHub…' }));
+
+    const renderCurrent = () => setBody(
+        el('span', { class: 'bpb-gh-label bpb-gh-ok', text: 'Backed up ✓' }),
+    );
 
     const renderSuccess = result => setBody(
         el('span', { class: 'bpb-gh-label bpb-gh-ok', text: result && result.isUpdate ? 'Backup updated ✓' : 'Backed up ✓' }),
@@ -103,25 +109,52 @@ import { peakbaggerError as PeakbaggerError } from './peakbagger-error.js';
         return parsed.snapshot;
     };
 
+    const readCurrentBackup = async info => ({
+        page: await readPersistedSnapshot(info),
+        // A missing link authoritatively means Peakbagger stores no track. If
+        // a link exists, a failed read is ambiguous and the passive check must
+        // fall back to the manual action rather than assert either state.
+        gpx: info.gpxUrl ? await responseText(info.gpxUrl, 'gpx') : null,
+    });
+
+    const checkBackup = async (info, current = null) => {
+        renderChecking();
+        let source = current;
+        try { source = source || await readCurrentBackup(info); }
+        catch { renderIdle(info); return; }
+        const response = await sendBg({
+            type: 'GITHUB_CHECK_ASCENT_BACKUP',
+            page: source.page,
+            pageComplete: true,
+            gpx: source.gpx,
+        });
+        if (response && response.ok && response.current) renderCurrent();
+        else renderIdle(info);
+    };
+
     const runBackup = async (info, { auto = false } = {}) => {
         renderWorking();
-        let page;
-        let gpx;
+        let current;
         try {
-            page = await readPersistedSnapshot(info);
-            // A missing link authoritatively means Peakbagger stores no track. If
-            // a link exists, however, a failed read is ambiguous and must abort;
-            // treating failure as absence would delete an older track.gpx.
-            gpx = info.gpxUrl ? await responseText(info.gpxUrl, 'gpx') : null;
+            current = await readCurrentBackup(info);
         } catch (error) {
             renderError(info, error);
             return;
         }
-        const response = await sendBg({ type: 'GITHUB_BACKUP_ASCENT', page, pageComplete: true, gpx, auto });
+        const response = await sendBg({
+            type: 'GITHUB_BACKUP_ASCENT',
+            page: current.page,
+            pageComplete: true,
+            gpx: current.gpx,
+            auto,
+        });
         if (response && response.ok) { renderSuccess(response.result); return; }
-        // Automatic mode on an already-backed-up revisit: fall back to the manual
-        // affordance rather than showing an error the user did not trigger.
-        if (auto && response && response.error && response.error.code === 'no-fresh-save') { renderIdle(info); return; }
+        // Automatic mode on a revisit must not commit. Reuse the complete page
+        // read to report whether GitHub already holds the same owned payload.
+        if (auto && response && response.error && response.error.code === 'no-fresh-save') {
+            await checkBackup(info, current);
+            return;
+        }
         renderError(info, response && response.error);
     };
 
@@ -134,9 +167,9 @@ import { peakbaggerError as PeakbaggerError } from './peakbagger-error.js';
         ]);
         actions.append(document.createTextNode(' '), control);
         // Automatic mode pushes right away (declining quietly on a revisit);
-        // manual mode waits for the click.
+        // manual mode passively compares before offering the click.
         if (auto) runBackup(info, { auto: true });
-        else renderIdle(info);
+        else void checkBackup(info);
     };
 
     const start = async () => {

@@ -185,6 +185,88 @@ test('a saved ascent is backed up: snapshot + page merge, one commit, snapshot c
     assert.equal(worker.session.bpbGithubSnapshots[storedSnapshotKey()], undefined);
 });
 
+test('the worker compares a complete owner page with GitHub without writing', async () => {
+    const backend = gitDataBackend();
+    const writer = createWorker({ auth: AUTH, github: backend.handler });
+    const page = {
+        ascent: {
+            id: 7654321,
+            date: '2026-07-12',
+            suffix: '',
+            type: 'Successful Ascent (stood on the summit)',
+            route: 'Disappointment Cleaver',
+        },
+        peak: { id: 2296, name: 'Mount Rainier', elevationFt: 14411, location: 'Washington, USA' },
+        report: { markdown: '**Great climb** under blue skies.' },
+    };
+    const gpx = '<gpx><trk></trk></gpx>';
+    const pushed = await writer.send({
+        type: 'GITHUB_BACKUP_ASCENT', pageComplete: true, page, gpx,
+    }, PEAK_SENDER);
+    assert.equal(pushed.ok, true);
+
+    const folder = pushed.result.folder;
+    const owned = Object.entries(backend.state.contents)
+        .filter(([filePath]) => filePath.startsWith(`${folder}/`));
+    let writes = 0;
+    const reader = createWorker({ auth: AUTH, github: (method, requestPath) => {
+        if (method !== 'GET') writes += 1;
+        if (method === 'GET' && requestPath === '/repos/me/backup') {
+            return respond(200, { default_branch: 'main', archived: false, permissions: { push: true } });
+        }
+        if (method === 'GET' && requestPath === '/repos/me/backup/git/ref/heads/main') {
+            return respond(200, { object: { sha: 'C1' } });
+        }
+        if (method === 'GET' && requestPath === '/repos/me/backup/git/commits/C1') {
+            return respond(200, { sha: 'C1', tree: { sha: 'TROOT' } });
+        }
+        if (method === 'GET' && requestPath === '/repos/me/backup/git/trees/TROOT') {
+            return respond(200, { tree: [
+                { path: '.better-peakbagger.json', type: 'blob', sha: 'marker' },
+                { path: folder, type: 'tree', sha: 'TFOLDER' },
+            ] });
+        }
+        if (method === 'GET' && requestPath === '/repos/me/backup/git/blobs/marker') {
+            return respond(200, {
+                encoding: 'base64',
+                content: Buffer.from(backend.state.contents['.better-peakbagger.json']).toString('base64'),
+            });
+        }
+        if (method === 'GET' && requestPath === '/repos/me/backup/git/trees/TFOLDER') {
+            return respond(200, { tree: owned.map(([filePath], index) => ({
+                path: filePath.slice(folder.length + 1),
+                type: 'blob',
+                sha: `owned${index}`,
+            })) });
+        }
+        const blobMatch = requestPath.match(/\/git\/blobs\/owned(\d+)$/);
+        if (method === 'GET' && blobMatch) {
+            return respond(200, {
+                encoding: 'base64', content: Buffer.from(owned[Number(blobMatch[1])][1]).toString('base64'),
+            });
+        }
+        return null;
+    } });
+
+    const current = await reader.send({
+        type: 'GITHUB_CHECK_ASCENT_BACKUP', pageComplete: true, page, gpx,
+    }, PEAK_SENDER);
+    assert.deepEqual(structuredClone(current), { ok: true, current: true });
+
+    const changedPage = structuredClone(page);
+    changedPage.ascent.route = 'Emmons Glacier';
+    const changed = await reader.send({
+        type: 'GITHUB_CHECK_ASCENT_BACKUP', pageComplete: true, page: changedPage, gpx,
+    }, PEAK_SENDER);
+    assert.deepEqual(structuredClone(changed), { ok: true, current: false });
+    assert.equal(writes, 0, 'passive comparison must issue no GitHub mutations');
+
+    const forbidden = await reader.send({
+        type: 'GITHUB_CHECK_ASCENT_BACKUP', pageComplete: true, page, gpx,
+    }, { tab: { id: 1 }, url: 'https://evil.example/ascent.aspx' });
+    assert.equal(forbidden.error.code, 'forbidden');
+});
+
 test('profile preflight lists repository folders without exposing the token', async () => {
     const backend = gitDataBackend();
     const worker = createWorker({ auth: AUTH, github: backend.handler });

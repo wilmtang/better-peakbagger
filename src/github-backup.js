@@ -300,6 +300,48 @@
         return files;
     };
 
+    // Compare the user-owned payload of a committed folder with what a fresh
+    // backup would write. The backup block is provenance, not ascent-page
+    // content: syncedAt necessarily changes on every push and the extension
+    // version can change without the saved ascent changing. Everything else,
+    // including report and GPX bytes and track presence, must still match.
+    const stableJson = value => {
+        if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`;
+        if (value && typeof value === 'object') {
+            return `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${stableJson(value[key])}`).join(',')}}`;
+        }
+        return JSON.stringify(value);
+    };
+
+    const comparableAscentJson = content => {
+        try {
+            const parsed = JSON.parse(content);
+            if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+            const pageContent = { ...parsed };
+            delete pageContent.backup;
+            return stableJson(pageContent);
+        } catch {
+            return null;
+        }
+    };
+
+    const matchesBackupFiles = (snapshot, { gpx, contents } = {}) => {
+        if (!contents || typeof contents !== 'object' || Array.isArray(contents)) return false;
+        const expected = buildFiles(snapshot, { gpx });
+        const expectedNames = new Set(expected.map(file => file.name));
+        const actualNames = Object.keys(contents);
+        if (actualNames.length !== expectedNames.size
+            || actualNames.some(name => !expectedNames.has(name))) return false;
+        return expected.every(file => {
+            const actual = contents[file.name];
+            if (typeof actual !== 'string') return false;
+            if (file.name !== 'ascent.json') return actual === file.content;
+            const expectedJson = comparableAscentJson(file.content);
+            const actualJson = comparableAscentJson(actual);
+            return expectedJson != null && actualJson != null && expectedJson === actualJson;
+        });
+    };
+
     // One human date for the commit subject; the folder prefix rules, minus the
     // 'undated' placeholder, which reads better simply omitted from a sentence.
     const commitDate = date => {
@@ -355,6 +397,7 @@
         buildAscentJson,
         buildReportMarkdown,
         buildFiles,
+        matchesBackupFiles,
         commitSubject,
         buildBackup,
     };

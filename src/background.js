@@ -1556,6 +1556,36 @@ import { fetchPeakbaggerResource } from './peakbagger-request.js';
         }
     };
 
+    // Passive, read-only comparison for an owner ascent page. It accepts only
+    // the same complete edit-form snapshot that a manual backup would write,
+    // so an incomplete page can never be labelled current from a sparse view.
+    const checkAscentBackup = async (message, sender) => {
+        if (!isPeakbaggerSender(sender)) return { ok: false, error: { code: 'forbidden' } };
+        const settings = await Settings.get();
+        if (!settings.enableGithubBackup) return { ok: false, error: { code: 'disabled' } };
+        const auth = await GithubAuth.authStore.read();
+        if (!auth || !auth.token) return { ok: false, error: { code: 'not-connected' } };
+        if (!auth.repo || !auth.repo.owner || !auth.repo.name) return { ok: false, error: { code: 'no-repo' } };
+        if (!message || !message.pageComplete) return { ok: false, error: { code: 'no-data' } };
+        const snapshot = mergeBackupSnapshot(null, message.page, { pageComplete: true });
+        if (!snapshot || snapshot.ascent.id == null) return { ok: false, error: { code: 'no-data' } };
+        const client = GithubClient.createGithubClient({
+            fetch: netFetch,
+            token: auth.token,
+            owner: auth.repo.owner,
+            repo: auth.repo.name,
+            branch: auth.repo.branch || undefined,
+        });
+        try {
+            return {
+                ok: true,
+                current: await client.isAscentBackupCurrent(snapshot, { gpx: message.gpx }),
+            };
+        } catch (error) {
+            return { ok: false, error: GithubErrors.publicError(error, 'Could not check the existing backup.') };
+        }
+    };
+
     // A profile batch is one ordered branch mutation containing up to ten
     // independently identity-checked ascents. The content script never sees
     // the token, and a malformed entry rejects the entire batch before GitHub
@@ -1675,6 +1705,7 @@ import { fetchPeakbaggerResource } from './peakbagger-request.js';
             case 'GITHUB_AUTH_DISCONNECT': return githubDisconnect();
             case 'GITHUB_BACKUP_SNAPSHOT': return storeBackupSnapshot(message, sender);
             case 'GITHUB_BACKUP_STATUS': return githubBackupStatus(sender);
+            case 'GITHUB_CHECK_ASCENT_BACKUP': return checkAscentBackup(message, sender);
             case 'GITHUB_BACKUP_ASCENT': return backupAscent(message, sender);
             case 'GITHUB_BACKUP_PROFILE_STATUS': return githubProfileBackupStatus(sender);
             case 'GITHUB_BACKUP_PROFILE_BATCH': return backupProfileBatch(message, sender);

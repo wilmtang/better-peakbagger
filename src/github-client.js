@@ -230,6 +230,15 @@ import { githubErrors as GithubErrors } from './github-errors.js';
             }
         };
 
+        const readBlobText = async sha => {
+            const blob = await request('GET', `/git/blobs/${sha}`, { phase: 'read' });
+            if (!blob || blob.encoding !== 'base64' || typeof blob.content !== 'string') {
+                throw new GithubError(ERROR_CODES.INVALID,
+                    'GitHub returned an invalid backup file.');
+            }
+            return decodeBase64Utf8(blob.content);
+        };
+
         const normalizeBatch = entries => {
             if (!Array.isArray(entries) || entries.length === 0) {
                 throw new TypeError('github client requires at least one ascent backup');
@@ -369,6 +378,31 @@ import { githubErrors as GithubErrors } from './github-errors.js';
             return state.records.map(record => record.leaf);
         };
 
+        // Read-only comparison for the individual ascent affordance. Validate
+        // the repository marker and stable folder identity first, then fetch
+        // only the two or three extension-owned blobs in that ascent folder.
+        // User-added files in the folder are deliberately ignored.
+        const isAscentBackupCurrent = async (snapshot, { gpx } = {}) => {
+            const ascentId = snapshot && snapshot.ascent ? Number(snapshot.ascent.id) : NaN;
+            if (!Number.isFinite(ascentId) || ascentId <= 0) {
+                throw new TypeError('github client requires a positive ascent id');
+            }
+            const resolved = await resolveRepo();
+            const head = await readHead(resolved);
+            if (!head) return false;
+            const state = await inspectRootTree(head.root);
+            const records = matchingRecords(state.records, ascentId);
+            if (records.length !== 1 || records[0].leaf !== Backup.folderName(snapshot)) return false;
+            const folder = await readTree(records[0].treeSha);
+            const ownedEntries = (folder.tree || []).filter(entry => OWNED_FOLDER_FILES.has(entry.path));
+            if (ownedEntries.some(entry => entry.type !== 'blob' || !entry.sha)) return false;
+            const contents = {};
+            await Promise.all(ownedEntries.map(async entry => {
+                contents[entry.path] = await readBlobText(entry.sha);
+            }));
+            return Backup.matchesBackupFiles(snapshot, { gpx, contents });
+        };
+
         const readRootFile = async path => {
             const filePath = rootFilePath(path);
             const resolved = await resolveRepo();
@@ -437,6 +471,7 @@ import { githubErrors as GithubErrors } from './github-errors.js';
             pushAscentBackup,
             pushAscentBackups,
             getAscentFolders,
+            isAscentBackupCurrent,
             inspectRepository,
             readRootFile,
             putRootFile,

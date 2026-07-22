@@ -228,6 +228,27 @@ test('ascent.json file content is pretty-printed and newline-terminated', () => 
     assert.deepEqual(JSON.parse(json.content), Backup.buildAscentJson(baseSnapshot()));
 });
 
+test('backup comparison ignores provenance but pins report, ascent, and track content', () => {
+    const committed = baseSnapshot();
+    committed.backup = { syncedAt: '2026-07-13T00:00:00Z', extensionVersion: '3.0.0' };
+    const contents = Object.fromEntries(Backup.buildFiles(committed, { gpx: '<gpx/>' })
+        .map(file => [file.name, file.content]));
+
+    assert.equal(Backup.matchesBackupFiles(baseSnapshot(), { gpx: '<gpx/>', contents }), true,
+        'sync time and extension version are not ascent-page content');
+
+    const changedRoute = baseSnapshot();
+    changedRoute.ascent.route = 'Emmons';
+    assert.equal(Backup.matchesBackupFiles(changedRoute, { gpx: '<gpx/>', contents }), false);
+    assert.equal(Backup.matchesBackupFiles(baseSnapshot(), {
+        gpx: '<gpx/>', contents: { ...contents, 'report.md': `${contents['report.md']}changed\n` },
+    }), false);
+    assert.equal(Backup.matchesBackupFiles(baseSnapshot(), { gpx: '<different/>', contents }), false);
+    assert.equal(Backup.matchesBackupFiles(baseSnapshot(), {
+        gpx: null, contents,
+    }), false, 'a stale track file makes a no-track page different');
+});
+
 // ---- commit subject -------------------------------------------------------
 
 test('commit subject reads as a sentence and drops an unknown date', () => {

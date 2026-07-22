@@ -1036,8 +1036,13 @@ The backup uses Peakbagger's published track, never the raw provider GPX.
 optional `track.gpx` under a stable `*-a<aid>` folder. `src/github-client.js`
 writes one atomic Git Data commit, preserves unrelated repository paths and
 user-added files, handles owned-folder renames, and rebuilds the whole commit
-after a bounded non-fast-forward conflict. The worker serializes repository
-writes so per-save batches, profile batches, and the explicit root
+after a bounded non-fast-forward conflict. On an owned individual ascent, the
+same modules also perform a read-only current-state comparison after the
+enabled-and-connected gate: the stable folder, structured page fields, report,
+and stored GPX must match, while sync timestamp and extension-version
+provenance are ignored. A match renders **Backed up ✓**; a difference or passive
+check failure leaves the ordinary backup action available. The worker
+serializes repository writes so per-save batches, profile batches, and the explicit root
 `favorites.json` backup cannot race each other. Root-file writes use the same
 marker validation, exact base tree, commit, non-forced ref update, and bounded
 conflict retry as ascent writes; restore is a read-only Contents API request.

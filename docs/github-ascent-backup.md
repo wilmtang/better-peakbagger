@@ -47,7 +47,7 @@ automatic-backup path.
 | GPX existence | Owner-list GPS marker | Actual GPX link on `ascent.aspx` | Actual GPX link on `ascent.aspx` |
 | GPX URL | Shared canonical `GPXFile.aspx?aid=<aid>&sep=1` builder | The exact display-page link | The exact display-page link |
 | GPX validation | Shared response/body classifier requires `<gpx` | Same | Same |
-| Worker message | `GITHUB_BACKUP_PROFILE_BATCH` | `GITHUB_BACKUP_ASCENT` with `auto: true` | `GITHUB_BACKUP_ASCENT` with `auto: false` |
+| Worker message | `GITHUB_BACKUP_PROFILE_BATCH` | `GITHUB_BACKUP_ASCENT` with `auto: true`; `GITHUB_CHECK_ASCENT_BACKUP` on an ordinary revisit | `GITHUB_CHECK_ASCENT_BACKUP`, then `GITHUB_BACKUP_ASCENT` with `auto: false` only when clicked |
 | GitHub unit | Up to ten ascents in one atomic commit | One ascent in one atomic commit | One ascent in one atomic commit |
 | Durable resume point | Repository folder leaves | Repository state; pending save snapshot is only a short-lived report aid | Repository state |
 
@@ -91,6 +91,10 @@ link, which automatically tracks endpoint query changes.
     intentionally cleared. The safe operation is to reject the sparse read.
 12. **The repository is the full-profile checkpoint.** In-memory pipeline state
     is bounded and disposable; committed `-a<aid>` folders determine later work.
+13. **Current means page content, not provenance.** The passive comparison pins
+    structured ascent and peak fields, `report.md`, and optional `track.gpx`.
+    It ignores only `ascent.json.backup`, whose sync time and extension version
+    can change without the Peakbagger record changing.
 
 ## Runtime ownership
 
@@ -286,8 +290,15 @@ The rendered report and other display fields are intentionally not backup
 sources. The display page is presentation, not a lossless record.
 
 After `GITHUB_BACKUP_STATUS` confirms enabled + connected, the extension mounts
-a compact inline action beside Peakbagger's native owner actions. There is no
-fixed or sticky banner.
+a compact inline control beside Peakbagger's native owner actions. It reads the
+same complete edit form and optional stored GPX used by manual backup, then sends
+`GITHUB_CHECK_ASCENT_BACKUP`. The worker validates the marker and stable ascent
+folder and compares only the extension-owned files. Matching content renders
+**Backed up ✓**; a missing or changed backup renders the ordinary action. A
+passive Peakbagger or GitHub read failure also falls back to the action so a
+background status check never strands the user. There is no fixed or sticky
+banner, and none of these reads run while the feature is disabled or GitHub is
+disconnected.
 
 Both manual click and automatic entry call the same `runBackup(info, {auto})`:
 
@@ -299,8 +310,10 @@ Both manual click and automatic entry call the same `runBackup(info, {auto})`:
 6. render the commit link or a typed, retryable error.
 
 Automatic mode has one additional worker rule: if no fresh save-time snapshot
-matches, return `no-fresh-save`. The surface quietly returns to the manual
-button. This is how an ordinary revisit avoids a surprise commit.
+matches, return `no-fresh-save`. The surface reuses its complete page read for
+the same passive comparison, showing **Backed up ✓** or the manual action. This
+is how an ordinary revisit avoids a surprise commit without losing current-state
+feedback.
 
 ### Merge precedence at the worker
 
@@ -459,6 +472,7 @@ disclosure.
 | --- | --- | --- | --- |
 | `GITHUB_BACKUP_SNAPSHOT` | Peakbagger Add/Edit tab | Peakbagger hostname, feature enabled, nonempty key/snapshot; worker adds source tab and expiry | No token returned |
 | `GITHUB_BACKUP_STATUS` | Peakbagger tab | Peakbagger hostname | Only enabled/auto/connected and repository display name |
+| `GITHUB_CHECK_ASCENT_BACKUP` | Owner saved-ascent surface | Peakbagger hostname; feature/auth/repo; complete persisted payload and final aid; marker/folder/blob validation | Boolean current state or typed error, never token |
 | `GITHUB_BACKUP_ASCENT` | Owner saved-ascent surface | Peakbagger hostname; feature/auth/repo; fresh snapshot for auto; complete data requirement; final aid present before the client enforces a positive identity | Commit metadata or typed error |
 | `GITHUB_BACKUP_PROFILE_STATUS` | `ClimbListC.aspx` | Peakbagger hostname and exact list pathname | Folder leaves, never token |
 | `GITHUB_BACKUP_PROFILE_BATCH` | `ClimbListC.aspx` | Exact list pathname; 1–10 entries; each positive `aid` equals snapshot id; no duplicate ids; feature/auth/repo | Batch commit metadata or typed error |
