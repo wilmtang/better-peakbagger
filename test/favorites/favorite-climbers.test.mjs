@@ -43,6 +43,63 @@ test('the custom list keeps exactly the 1,500-entry product bound', () => {
     assert.equal(cleaned.entries.at(-1).cid, F.LIMIT);
 });
 
+test('favorite backup payload round-trips with a stable entry signature', () => {
+    const favorites = {
+        schemaVersion: F.SCHEMA_VERSION,
+        entries: [
+            { cid: 900002, name: 'First Climber', addedAt: 10, source: 'manual' },
+            { cid: 900003, name: 'Second Climber', addedAt: 20, source: 'buddy' },
+        ],
+    };
+    const first = F.buildBackupPayload(favorites, { exportedAt: '2026-07-21T00:00:00.000Z' });
+    const second = F.buildBackupPayload(favorites, { exportedAt: '2026-07-22T00:00:00.000Z' });
+    const text = F.serializeBackup(first);
+    const parsed = F.parseBackup(text);
+
+    assert.match(text, /\n$/);
+    assert.deepEqual(parsed, { ok: true, favorites });
+    assert.equal(F.backupSignature(first), F.backupSignature(second));
+    assert.equal(F.backupSignature(favorites), F.backupSignature(parsed.favorites));
+});
+
+test('favorite backup parsing rejects unsupported, oversized, or lossy entry lists', () => {
+    const validEntry = index => ({
+        cid: index + 1,
+        name: `Climber ${index + 1}`,
+        addedAt: index,
+        source: 'manual',
+    });
+    assert.deepEqual(F.parseBackup('{'), { ok: false });
+    assert.deepEqual(F.parseBackup(JSON.stringify({ schemaVersion: 2, entries: [] })), { ok: false });
+    assert.deepEqual(F.parseBackup(JSON.stringify({ schemaVersion: 1, entries: {} })), { ok: false });
+    assert.deepEqual(F.parseBackup(JSON.stringify({
+        schemaVersion: 1,
+        entries: Array.from({ length: F.LIMIT + 1 }, (_, index) => validEntry(index)),
+    })), { ok: false });
+    assert.deepEqual(F.parseBackup(JSON.stringify({
+        schemaVersion: 1,
+        entries: [validEntry(0), { ...validEntry(1), name: '' }],
+    })), { ok: false });
+    assert.deepEqual(F.parseBackup(JSON.stringify({
+        schemaVersion: 1,
+        entries: [validEntry(0), { ...validEntry(1), cid: 1 }],
+    })), { ok: false });
+});
+
+test('favorite backup signature changes for additions, removals, and renames', () => {
+    const first = { cid: 1, name: 'First', addedAt: 1, source: 'manual' };
+    const second = { cid: 2, name: 'Second', addedAt: 2, source: 'buddy' };
+    const base = { schemaVersion: 1, entries: [first] };
+    const signature = F.backupSignature(base);
+
+    assert.notEqual(F.backupSignature({ schemaVersion: 1, entries: [first, second] }), signature);
+    assert.notEqual(F.backupSignature({ schemaVersion: 1, entries: [] }), signature);
+    assert.notEqual(F.backupSignature({
+        schemaVersion: 1,
+        entries: [{ ...first, name: 'Renamed' }],
+    }), signature);
+});
+
 test('cleans buddy cache and applies the seven-day TTL', () => {
     const now = 20 * 24 * 60 * 60 * 1000;
     const cache = F.cleanBuddyCache({

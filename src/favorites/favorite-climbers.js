@@ -70,6 +70,33 @@ const cleanFavorites = value => {
     };
 };
 
+const buildBackupPayload = (favorites, { exportedAt }) => ({
+    schemaVersion: SCHEMA_VERSION,
+    exportedAt,
+    entries: cleanFavorites(favorites).entries,
+});
+
+const serializeBackup = payload => `${JSON.stringify(payload, null, 2)}\n`;
+
+const parseBackup = text => {
+    let parsed;
+    try {
+        parsed = JSON.parse(text);
+    } catch {
+        return { ok: false };
+    }
+    if (!parsed || parsed.schemaVersion !== SCHEMA_VERSION || !Array.isArray(parsed.entries)
+        || parsed.entries.length > LIMIT
+        || cleanFavorites(parsed).entries.length !== parsed.entries.length) {
+        return { ok: false };
+    }
+    return { ok: true, favorites: cleanFavorites(parsed) };
+};
+
+// cleanEntry() fixes field order, so this is stable across a serialized backup
+// round-trip and deliberately excludes exportedAt.
+const backupSignature = favorites => JSON.stringify(cleanFavorites(favorites).entries);
+
 const cleanBuddyCache = value => {
     if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
     const ownerCid = cleanCid(value.ownerCid);
@@ -328,6 +355,10 @@ export const favoriteClimbers = {
     NAME_LIMIT,
     validEntry,
     cleanFavorites,
+    buildBackupPayload,
+    serializeBackup,
+    parseBackup,
+    backupSignature,
     cleanBuddyCache,
     isFresh,
     signedInBuddyListUrl,

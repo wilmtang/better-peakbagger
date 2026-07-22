@@ -132,7 +132,7 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
         if (message && error) appendBuddyRecovery(error, importStatusEl);
     };
 
-    const favoritesSignature = () => JSON.stringify(favorites.entries);
+    const favoritesSignature = () => F.backupSignature(favorites);
 
     const membershipChanges = (currentEntries, nextEntries) => {
         const currentIds = new Set(currentEntries.map(entry => entry.cid));
@@ -604,14 +604,10 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
     };
 
     const backupFavorites = () => withGithubBusy(async () => {
-        const exported = {
-            schemaVersion: F.SCHEMA_VERSION,
-            exportedAt: new Date().toISOString(),
-            entries: F.cleanFavorites(favorites).entries,
-        };
+        const exported = F.buildBackupPayload(favorites, { exportedAt: new Date().toISOString() });
         const response = await send({
             type: 'GITHUB_FAVORITES_BACKUP',
-            content: `${JSON.stringify(exported, null, 2)}\n`,
+            content: F.serializeBackup(exported),
         });
         if (!response?.ok) {
             flash(GithubError.message(response?.error));
@@ -635,16 +631,12 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
             flash(`No favorites backup found in ${githubRepoName()}.`);
             return;
         }
-        let parsed;
-        try { parsed = JSON.parse(response.content); }
-        catch { parsed = null; }
-        if (!parsed || parsed.schemaVersion !== F.SCHEMA_VERSION || !Array.isArray(parsed.entries)
-            || parsed.entries.length > F.LIMIT
-            || F.cleanFavorites(parsed).entries.length !== parsed.entries.length) {
+        const parsed = F.parseBackup(response.content);
+        if (!parsed.ok) {
             flash('This favorites backup is not valid or uses a newer format.');
             return;
         }
-        const changed = await beginReplacement(F.cleanFavorites(parsed), 'Favorites restored from GitHub');
+        const changed = await beginReplacement(parsed.favorites, 'Favorites restored from GitHub');
         if (changed) flash(`Favorites restored from ${githubRepoName()}`);
     });
 
