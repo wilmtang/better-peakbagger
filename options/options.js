@@ -8,6 +8,7 @@ import { terrainCache as TerrainCache } from '../src/terrain/terrain-cache.js';
 import { panelTheme as Theme } from '../src/theme/panel-theme.js';
 import { initGithubBackup } from './github.js';
 import { initFavorites } from './favorites.js';
+import { initDrafts } from './drafts.js';
 import { initSettingsBackup } from './settings-backup.js';
 import { initSectionNav } from './section-nav.js';
 
@@ -142,6 +143,7 @@ import { initSectionNav } from './section-nav.js';
     // options page drives GITHUB_AUTH_* messages and never sees the token.
     const githubBackup = initGithubBackup({ extensionApi, flash, save });
     const favorites = initFavorites({ extensionApi, flash, save });
+    initDrafts({ extensionApi, flash });
     const settingsBackup = initSettingsBackup({ extensionApi, flash, save });
 
     unitsEl.addEventListener('change', () => save({ units: unitsEl.value }));

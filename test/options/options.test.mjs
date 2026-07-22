@@ -206,6 +206,12 @@ test('options sections log the missing ids before degrading to no-op controllers
     assert.ok(errors.some(message => /draft manager.*drafts-list/.test(message)));
 });
 
+test('the options controller exclusively owns shared status timing', async () => {
+    const draftsSource = await readFile(path.join(root, 'options', 'drafts.js'), 'utf8');
+    assert.match(draftsSource, /export const initDrafts/);
+    assert.doesNotMatch(draftsSource, /getElementById\(['"]status['"]\)|2200/);
+});
+
 test('settings export downloads a parseable known-key-only payload', async () => {
     const download = {};
     const dom = await loadOptions({ theme: 'dark', unknownSetting: 'private' }, {
@@ -1290,6 +1296,8 @@ test('deleting one draft is reversible and its Undo survives a live refresh', as
     draftRow(dom, key).querySelector('[data-action="undo"]').click();
     await waitFor(dom, () => key in dom.chrome._localStore && draftRow(dom, key)?.querySelector('.draft-title'));
     assert.deepEqual(JSON.parse(JSON.stringify(dom.chrome._localStore[key])), record);
+    assert.equal(el(dom, 'status').textContent, 'Draft restored');
+    assert.equal(el(dom, 'status').classList.contains('show'), true);
 });
 
 test('delete all drafts has one undo that restores every record', async () => {

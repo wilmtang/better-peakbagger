@@ -7,25 +7,20 @@ import { reportDrafts as Drafts } from '../src/reports/report-drafts.js';
 import { reportMarkup as Markup } from '../src/reports/report-markup.js';
 import { optionsUtils as OptionsUtils } from './options-utils.js';
 
-(() => {
-    'use strict';
-
-    const extensionApi = globalThis.browser || globalThis.chrome;
+export const initDrafts = ({ extensionApi = globalThis.browser || globalThis.chrome, flash } = {}) => {
     const store = extensionApi?.storage?.local;
     const listEl = document.getElementById('drafts-list');
     const emptyEl = document.getElementById('drafts-empty');
     const deleteAllEl = document.getElementById('drafts-delete-all');
     const undoAllEl = document.getElementById('drafts-undo-all');
     const undoAllButtonEl = document.getElementById('drafts-undo-all-button');
-    const statusEl = document.getElementById('status');
     if (!store || OptionsUtils.logMissingElements('draft manager', {
         'drafts-list': listEl,
         'drafts-empty': emptyEl,
         'drafts-delete-all': deleteAllEl,
         'drafts-undo-all': undoAllEl,
         'drafts-undo-all-button': undoAllButtonEl,
-        status: statusEl,
-    })) return;
+    })) return { refresh() {} };
 
     const DAY_MS = 24 * 60 * 60 * 1000;
     const UNDO_MS = 6000;
@@ -34,14 +29,6 @@ import { optionsUtils as OptionsUtils } from './options-utils.js';
     let currentDrafts = [];
     let refreshRevision = 0;
     let refreshTimer = null;
-    let statusTimer = null;
-
-    const showStatus = message => {
-        statusEl.textContent = message;
-        statusEl.classList.add('show');
-        globalThis.clearTimeout(statusTimer);
-        statusTimer = globalThis.setTimeout(() => statusEl.classList.remove('show'), 2200);
-    };
 
     const draftTitle = draft => {
         const label = draft.record.label && typeof draft.record.label === 'object'
@@ -94,10 +81,10 @@ import { optionsUtils as OptionsUtils } from './options-utils.js';
         render();
         try {
             await store.set({ [key]: pending.record });
-            showStatus('Draft restored');
+            flash('Draft restored');
             await refresh();
         } catch (error) {
-            showStatus('Couldn’t restore the draft');
+            flash('Couldn’t restore the draft');
         }
     };
 
@@ -122,7 +109,7 @@ import { optionsUtils as OptionsUtils } from './options-utils.js';
             globalThis.clearTimeout(pending.timer);
             pendingDeletes.delete(draft.key);
             render();
-            showStatus('Couldn’t delete the draft');
+            flash('Couldn’t delete the draft');
         }
     };
 
@@ -132,12 +119,12 @@ import { optionsUtils as OptionsUtils } from './options-utils.js';
             if (!clipboard || typeof clipboard.writeText !== 'function') throw new Error('Clipboard unavailable');
             await clipboard.writeText(markdownFor(draft.record));
             control.textContent = 'Copied';
-            showStatus('Copied');
+            flash('Copied');
             globalThis.setTimeout(() => {
                 if (control.isConnected) control.textContent = 'Copy Markdown';
             }, 1400);
         } catch (error) {
-            showStatus('Couldn’t copy Markdown');
+            flash('Couldn’t copy Markdown');
         }
     };
 
@@ -237,7 +224,7 @@ import { optionsUtils as OptionsUtils } from './options-utils.js';
             if (revision !== refreshRevision) return;
             currentDrafts = [];
             render();
-            showStatus('Trip report drafts are unavailable');
+            flash('Trip report drafts are unavailable');
         }
     };
 
@@ -261,7 +248,7 @@ import { optionsUtils as OptionsUtils } from './options-utils.js';
             globalThis.clearTimeout(pending.timer);
             if (pendingBulk === pending) pendingBulk = null;
             render();
-            showStatus('Couldn’t delete the drafts');
+            flash('Couldn’t delete the drafts');
         }
     };
 
@@ -273,10 +260,10 @@ import { optionsUtils as OptionsUtils } from './options-utils.js';
         render();
         try {
             await store.set(Object.fromEntries(pending.records));
-            showStatus('Drafts restored');
+            flash('Drafts restored');
             await refresh();
         } catch (error) {
-            showStatus('Couldn’t restore the drafts');
+            flash('Couldn’t restore the drafts');
         }
     };
 
@@ -292,4 +279,5 @@ import { optionsUtils as OptionsUtils } from './options-utils.js';
     }
 
     void refresh();
-})();
+    return { refresh };
+};
