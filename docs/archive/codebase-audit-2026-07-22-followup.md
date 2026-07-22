@@ -1,7 +1,7 @@
 # Codebase audit — 2026-07-22 follow-up
 
 Scope: verification of every item in the executed
-[codebase-audit-2026-07-22](../archive/codebase-audit-2026-07-22.md) (21
+[codebase-audit-2026-07-22](codebase-audit-2026-07-22.md) (21
 commits, `29ade5b..909328d`), then a fresh read of the refactored background
 worker (`background.js`, `github-routes.js`, `terrain-prefetch.js`), the popup,
 all options-page modules and the new shared modules (`options-utils.js`,
@@ -9,6 +9,32 @@ all options-page modules and the new shared modules (`options-utils.js`,
 `ui/dom.js`), the GitHub client/auth/backup domain, and the ascent-backup,
 ascent-upload, and profile-backup content surfaces. Baseline: clean tree at
 `909328d`; `npm test` passes (692/692); `npm run lint:js` is clean.
+
+## Execution result
+
+Implemented every behavior, engineering, and UX finding in eight focused
+commits (`50c503b..56035ab`). The popup locks selections after drafts exist and
+keeps previewed drafts reachable; settings backup refreshes after in-page
+repository changes; ascent Apply failures recover; runtime messaging has one
+cross-browser owner; repository marker encoding is derived; the options
+controller exclusively owns status timing; and GitHub favorites restore now
+shows impact counts and requires confirmation before replacement.
+
+Final verification on the completed tree:
+
+- `npm test`: 697 passed.
+- `npm run lint:js`: passed.
+- `npm run verify:browsers`: hidden Chrome for Testing and hidden Firefox
+  153.0 passed at their harness viewports; no visible browser was launched.
+- The attempted focused local visual preview was blocked by the browser tool's
+  `data:` URL policy before navigation. The existing responsive confirmation
+  component and its regular/narrow CSS were reused unchanged, and behavior is
+  covered, but a separate rendered spacing review of that one dialog was not
+  established.
+
+The optional E5 indentation cleanup was deliberately omitted as blame churn,
+and the independent theme-mirror literals were not adjacent to any required
+change. Neither item represented a runtime defect.
 
 ## Verification of the executed 2026-07-22 plan
 
