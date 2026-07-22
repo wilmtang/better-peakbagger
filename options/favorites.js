@@ -4,10 +4,12 @@
 // Better Peakbagger — Favorite climbers settings manager.
 
 import { favoriteClimbers as F } from '../src/favorites/favorite-climbers.js';
+import { STORAGE_KEY as GITHUB_AUTH_STORAGE_KEY } from '../src/github/github-auth.js';
 import { githubError as GithubError } from '../src/github/github-error.js';
 import { peakbaggerError as PeakbaggerError } from '../src/peakbagger/peakbagger-error.js';
 import { fetchPeakbaggerDocument } from '../src/peakbagger/peakbagger-request.js';
 import { numericParam, ownerClimberId } from '../src/profile/profile-backup-core.js';
+import { STORAGE_KEY as SETTINGS_STORAGE_KEY } from '../src/settings/settings.js';
 import { hasGithubPermission } from './github.js';
 
 const UNDO_MS = 6000;
@@ -803,8 +805,8 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
                 globalThis.clearTimeout(refreshTimer);
                 refreshTimer = globalThis.setTimeout(() => { void refresh(); }, 20);
             }
-            if (area === 'local' && changes.bpbGithubAuth) void refreshGithubStatus();
-            if (area === 'sync' && changes.bpbSettings) void refreshGithubStatus();
+            if (area === 'local' && changes[GITHUB_AUTH_STORAGE_KEY]) void refreshGithubStatus();
+            if (area === 'sync' && changes[SETTINGS_STORAGE_KEY]) void refreshGithubStatus();
         });
     }
 

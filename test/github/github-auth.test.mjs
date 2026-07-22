@@ -9,10 +9,15 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { githubAuth as Auth } from '../../src/github/github-auth.js';
+import { githubAuth as Auth, STORAGE_KEY } from '../../src/github/github-auth.js';
 import { githubErrors as GithubErrors } from '../../src/github/github-errors.js';
 
 const { ERROR_CODES } = GithubErrors;
+
+test('GitHub auth publishes its local storage key', () => {
+    assert.equal(STORAGE_KEY, 'bpbGithubAuth');
+    assert.equal(Auth.STORAGE_KEY, STORAGE_KEY);
+});
 
 // A controllable clock: wait() advances virtual time so a poll deadline can be
 // reached without real delays.

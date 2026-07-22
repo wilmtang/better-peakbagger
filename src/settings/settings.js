@@ -15,7 +15,7 @@
 import { settingsSchema as Schema } from './settings-schema.js';
 
     const api = (typeof browser !== 'undefined' && browser.storage) ? browser : chrome;
-    const STORAGE_KEY = 'bpbSettings';
+    export const STORAGE_KEY = 'bpbSettings';
     const { DEFAULTS, clean } = Schema;
 
     // Resolve a theme preference to a concrete 'light' | 'dark'. This reads

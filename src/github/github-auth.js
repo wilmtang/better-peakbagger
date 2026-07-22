@@ -221,7 +221,7 @@ import { githubErrors as GithubErrors } from './github-errors.js';
 
     // ---- Token / repo storage (chrome.storage.local only) ------------------
 
-    const STORAGE_KEY = 'bpbGithubAuth';
+    export const STORAGE_KEY = 'bpbGithubAuth';
 
     const resolveLocalArea = () => {
         const api = (typeof browser !== 'undefined' && browser.storage) ? browser
@@ -285,6 +285,7 @@ import { githubErrors as GithubErrors } from './github-errors.js';
         INSTALL_URL,
         APP_URL,
         VERIFICATION_URI,
+        STORAGE_KEY,
         createDeviceFlow,
         fetchAccount,
         listBackupRepositories,
