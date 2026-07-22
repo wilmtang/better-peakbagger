@@ -38,17 +38,17 @@ Five features, ordered as independently committable units:
 
 Key architecture facts (verified):
 
-- **Settings**: single `chrome.storage.sync` object under key `bpbSettings`; schema/`DEFAULTS`/`clean()` in `src/settings-schema.js` (pure, no deps); storage API `settings.get/set/subscribe` in `src/settings.js`. Options page: `options/options.html|css|js` — left sidebar `nav.side-nav` + scrolling `main.content`, scroll-spy `initSectionNav()` at `options/options.js:216-291`. MAIN-world code can't touch `chrome.storage`; bridges relay via `window.postMessage` (`src/bridge.js` `WRITABLE_KEYS` pattern — do NOT add new keys there; none of the new keys are page-writable).
-- **3D map**: page-world coordinators `src/big-map.js` (BigMap.aspx) and `src/peak-map.js` (Peak.aspx) own the floating `#bpb-terrain-toggle` (big-map.js:339-402); isolated-world bridge `src/terrain-map.js` creates/destroys an extension iframe `terrain/terrain.html` (`createFrame` :222-262, `removeFrame` :35-40, `postToPage`/`postToFrame` helpers :28-52); `src/terrain-frame.js` runs MapLibre GL inside (NavigationControl `showCompass:false` at :1199-1201, deliberate — keeps the ctrl stack the same height as the 2D zoom stack; comment at :1193-1198). Frame measures `navTop` (`measureNavTop` :165-169) and posts it in `loaded`/`metrics`; page positions the toggle at `bottom = navTop + TERRAIN_TOGGLE_GAP` (`positionTerrainToggle` big-map.js:235-250; peak-map.js:157-171). Camera preserved 2D↔3D via `src/terrain-camera.js` (center+zoom only). Every toggle currently boots a fresh iframe + MapLibre + CSP worker and destroys all on exit. DEM tiles: `raster-dem` terrarium via custom protocol `bpb-dem://{z}/{x}/{y}.webp` backed by LRU CacheStorage cache `bpb-mapterhorn-dem-v1` (`src/terrain-cache.js`, tiles from `https://tiles.mapterhorn.com`, injectable `fetchFn`/`cacheStorage` for tests).
+- **Settings**: single `chrome.storage.sync` object under key `bpbSettings`; schema/`DEFAULTS`/`clean()` in `src/settings/settings-schema.js` (pure, no deps); storage API `settings.get/set/subscribe` in `src/settings/settings.js`. Options page: `options/options.html|css|js` — left sidebar `nav.side-nav` + scrolling `main.content`, scroll-spy `initSectionNav()` at `options/options.js:216-291`. MAIN-world code can't touch `chrome.storage`; bridges relay via `window.postMessage` (`src/settings/bridge.js` `WRITABLE_KEYS` pattern — do NOT add new keys there; none of the new keys are page-writable).
+- **3D map**: page-world coordinators `src/maps/big-map.js` (BigMap.aspx) and `src/maps/peak-map.js` (Peak.aspx) own the floating `#bpb-terrain-toggle` (big-map.js:339-402); isolated-world bridge `src/terrain/terrain-map.js` creates/destroys an extension iframe `terrain/terrain.html` (`createFrame` :222-262, `removeFrame` :35-40, `postToPage`/`postToFrame` helpers :28-52); `src/terrain/terrain-frame.js` runs MapLibre GL inside (NavigationControl `showCompass:false` at :1199-1201, deliberate — keeps the ctrl stack the same height as the 2D zoom stack; comment at :1193-1198). Frame measures `navTop` (`measureNavTop` :165-169) and posts it in `loaded`/`metrics`; page positions the toggle at `bottom = navTop + TERRAIN_TOGGLE_GAP` (`positionTerrainToggle` big-map.js:235-250; peak-map.js:157-171). Camera preserved 2D↔3D via `src/terrain/terrain-camera.js` (center+zoom only). Every toggle currently boots a fresh iframe + MapLibre + CSP worker and destroys all on exit. DEM tiles: `raster-dem` terrarium via custom protocol `bpb-dem://{z}/{x}/{y}.webp` backed by LRU CacheStorage cache `bpb-mapterhorn-dem-v1` (`src/terrain/terrain-cache.js`, tiles from `https://tiles.mapterhorn.com`, injectable `fetchFn`/`cacheStorage` for tests).
 - **Ascent editor** (`ascentedit.aspx`) bundle `content/ascent-editor.js` = `[ascent-draft.js, gpx-parse.js, settings-schema.js, settings.js, ascent-upload.js, report-markup.js, report-editor.js]` (build-config.mjs:42). After save, the SAME URL shows success: `span#SubTitle` = "Ascent Added/Saved Successfully!" + `<a>Go Back to Referring Page</a>, or, add a new ascent on this page.` + a photo link `Photo.aspx?aid=<NEWID>&pid=…` — the only place the new aid appears. The page uses an ASP.NET UpdatePanel (`div#UpdatePanelAE`) so the success view can arrive via async partial postback → MutationObserver needed.
-- **Capture flow**: `src/background.js` `draftReady()` (:888-994) builds the draft `fields` payload; the capture job stores `provider` + `activityId` (:439-440) but the activity URL never reaches the form today. `src/ascent-draft.js` `fillForm()` (:186-239) writes fields; helper `setTextFieldIfEmpty(id, value, {replaceAutofilled})` exists at ascent-draft.js:102. The target field is `#URLTB` ("URL Link to External Trip Report", fixture `test/fixtures/pages/climber-ascentedit.html:257`).
-- **Ascent lists**: `src/ascent-filter.js` (document_start on `PeakAscents.aspx` + `ClimbListC.aspx`; imports `settings as S`). Instant client-side sorter `setupInstantTableSort()`; `applyInstantSort = target => {…}` (:325-329) resolves `target.columnIndex` then falls back to `target.key`, then `apply(column, target.dir || column.defaultDir)`. `apply()` (:268-295) reorders via DocumentFragment; for the served-ascending date column it uses a precomputed `reversedDateOrder` and rewrites the URL `sort` param (`ascentdate`/`ascentdated`) via `history.replaceState`. Early click-guard holds header clicks before the sorter is ready (:38-80, module-scope `let applyInstantSort = null; let sortReady` around :59-65). `init()` wires the sorter synchronously at :476, BEFORE the compact-view early return (:478-481) and before the awaited settings read (`betaCfgFrom(await S.get())` ~:531).
+- **Capture flow**: `src/background/background.js` `draftReady()` (:888-994) builds the draft `fields` payload; the capture job stores `provider` + `activityId` (:439-440) but the activity URL never reaches the form today. `src/ascent/ascent-draft.js` `fillForm()` (:186-239) writes fields; helper `setTextFieldIfEmpty(id, value, {replaceAutofilled})` exists at ascent-draft.js:102. The target field is `#URLTB` ("URL Link to External Trip Report", fixture `test/fixtures/pages/climber-ascentedit.html:257`).
+- **Ascent lists**: `src/ascent/ascent-filter.js` (document_start on `PeakAscents.aspx` + `ClimbListC.aspx`; imports `settings as S`). Instant client-side sorter `setupInstantTableSort()`; `applyInstantSort = target => {…}` (:325-329) resolves `target.columnIndex` then falls back to `target.key`, then `apply(column, target.dir || column.defaultDir)`. `apply()` (:268-295) reorders via DocumentFragment; for the served-ascending date column it uses a precomputed `reversedDateOrder` and rewrites the URL `sort` param (`ascentdate`/`ascentdated`) via `history.replaceState`. Early click-guard holds header clicks before the sorter is ready (:38-80, module-scope `let applyInstantSort = null; let sortReady` around :59-65). `init()` wires the sorter synchronously at :476, BEFORE the compact-view early return (:478-481) and before the awaited settings read (`betaCfgFrom(await S.get())` ~:531).
 
 ---
 
 ## Unit 1 — "View the New Ascent" link on the save-success page — ✅ DONE (`c7d5b64`)
 
-**New file** `src/ascent-saved.js` (isolated world, IIFE style like `ascent-upload.js`, no setting gate — pure convenience link). **Bundle**: append `'ascent-saved.js'` to the `content/ascent-editor.js` entry in `scripts/build-config.mjs:42`.
+**New file** `src/ascent/ascent-saved.js` (isolated world, IIFE style like `ascent-upload.js`, no setting gate — pure convenience link). **Bundle**: append `'ascent-saved.js'` to the `content/ascent-editor.js` entry in `scripts/build-config.mjs:42`.
 
 `tryInsert()` logic:
 1. Idempotency: bail if `document.getElementById('bpb-view-new-ascent')` exists.
@@ -57,20 +57,20 @@ Key architecture facts (verified):
 4. Find the anchor whose text matches `/go back to referring page/i`; insert after it: a text node `", "` + `<a id="bpb-view-new-ascent" href="ascent.aspx?aid=<aid>">View the New Ascent</a>`. Result reads: "Go Back to Referring Page, View the New Ascent, or, add a new ascent on this page."
 5. Run once at load AND from a MutationObserver on `#UpdatePanelAE`'s **parent** (or `document.body`) with `{childList:true, subtree:true}` — observing the panel itself breaks if ASP.NET replaces the whole element. Debounce bursts (scheduled-flag/microtask). Wrap in try/catch so failures never affect the draft-fill pipeline sharing the bundle.
 
-**Tests**: new `test/ascent-saved.test.mjs` (follow existing jsdom test patterns): success DOM with masked ids → exactly one link with correct href; double-run/observer-refire → no duplicate; no photo link → no insert; form-state fixture `climber-ascentedit.html` → no insert. Any new success fixture must use masked ids and pass the fixtures-privacy test.
+**Tests**: new `test/ascent/ascent-saved.test.mjs` (follow existing jsdom test patterns): success DOM with masked ids → exactly one link with correct href; double-run/observer-refire → no duplicate; no photo link → no insert; form-state fixture `climber-ascentedit.html` → no insert. Any new success fixture must use masked ids and pass the fixtures-privacy test.
 
 ---
 
 ## Unit 2 — Captured activity URL → `#URLTB` (new setting, default ON) — ✅ DONE (`9b49eb2`)
 
-**Setting** `fillExternalUrl: true` in `DEFAULTS` (`src/settings-schema.js:31-62`) + boolean coercion in `clean()`. Options row lands in "Activity creation → GPX capture" (Unit 4); wire checkbox `id="fill-external-url"` in `options/options.js` like the other booleans (title "External trip report link"; desc: puts the captured Garmin/Strava link into Peakbagger's "URL Link to External Trip Report" field when empty).
+**Setting** `fillExternalUrl: true` in `DEFAULTS` (`src/settings/settings-schema.js:31-62`) + boolean coercion in `clean()`. Options row lands in "Activity creation → GPX capture" (Unit 4); wire checkbox `id="fill-external-url"` in `options/options.js` like the other booleans (title "External trip report link"; desc: puts the captured Garmin/Strava link into Peakbagger's "URL Link to External Trip Report" field when empty).
 
 **Data path** (activity URL is NOT in the draft payload today — rebuild it from `provider` + `activityId`, don't persist raw tab URLs):
-1. `src/provider-url.js`: export pure `providerActivityUrl({provider, activityId})` → `https://connect.garmin.com/app/activity/<id>` / `https://www.strava.com/activities/<id>`, null for junk (`/^\d+$/` on id). `/app/` matches what `providerFromUrl` recognizes (provider-url.js:11).
-2. `src/background.js`: add `fillExternalUrl` to `readCapturePreferences()` (:44-52) and `sameCapturePreferences()` (:54-58); in `draftReady()`'s fields object (:983-990) add `externalUrl: job.capturePreferences?.fillExternalUrl !== false ? providerActivityUrl(job) : null`. Local-GPX jobs have `activityId: null` → builder returns null → nothing written (correct).
-3. `src/ascent-draft.js` `fillForm()`: after the `SuffixText` write (~:199), `if (typeof fields.externalUrl === 'string' && fields.externalUrl) setTextFieldIfEmpty('URLTB', fields.externalUrl);` — always if-empty, never clobber a user-entered URL.
+1. `src/capture/provider-url.js`: export pure `providerActivityUrl({provider, activityId})` → `https://connect.garmin.com/app/activity/<id>` / `https://www.strava.com/activities/<id>`, null for junk (`/^\d+$/` on id). `/app/` matches what `providerFromUrl` recognizes (provider-url.js:11).
+2. `src/background/background.js`: add `fillExternalUrl` to `readCapturePreferences()` (:44-52) and `sameCapturePreferences()` (:54-58); in `draftReady()`'s fields object (:983-990) add `externalUrl: job.capturePreferences?.fillExternalUrl !== false ? providerActivityUrl(job) : null`. Local-GPX jobs have `activityId: null` → builder returns null → nothing written (correct).
+3. `src/ascent/ascent-draft.js` `fillForm()`: after the `SuffixText` write (~:199), `if (typeof fields.externalUrl === 'string' && fields.externalUrl) setTextFieldIfEmpty('URLTB', fields.externalUrl);` — always if-empty, never clobber a user-entered URL.
 
-**Tests**: `providerActivityUrl` unit cases (garmin/strava/junk/unknown); `test/ascent-draft.test.mjs` — fills empty `#URLTB`, leaves pre-filled untouched, null → untouched; `test/background-capture.test.mjs` — DRAFT payload carries `externalUrl` when on, null when off; options control persists.
+**Tests**: `providerActivityUrl` unit cases (garmin/strava/junk/unknown); `test/ascent/ascent-draft.test.mjs` — fills empty `#URLTB`, leaves pre-filled untouched, null → untouched; `test/background/background-capture.test.mjs` — DRAFT payload carries `externalUrl` when on, null when off; options control persists.
 
 ---
 
@@ -78,7 +78,7 @@ Key architecture facts (verified):
 
 **Setting** `betaSortDateDesc: false` in `DEFAULTS` + boolean coercion in `clean()` — do NOT put it in the `['betaTr','betaGps','betaLink']` at-least-one-signal invariant loop (settings-schema.js:155). Options row in the beta section: checkbox `id="beta-sort-date-desc"`, title "Newest ascents first", desc "Open ascent lists sorted by date, newest first, when the page arrives in its default oldest-first order. A sort you choose by clicking a column always wins."
 
-**Hook in `src/ascent-filter.js`**:
+**Hook in `src/ascent/ascent-filter.js`**:
 1. Module scope: `const settingsPromise = S ? S.get().catch(() => null) : Promise.resolve(null);` kicked off at top level (script runs document_start; this removes the storage round-trip from the critical path). Reuse it later for `betaCfg` (`betaCfgFrom(await settingsPromise)` replacing `await S.get()` ~:531).
 2. Module scope `let userSorted = false;` set inside the early click-guard whenever a header sort target is captured (~:61-67) — covers clicks held before wiring AND replayed clicks.
 3. Immediately after `setupInstantTableSort(...)` (:476) and **before** the compact-view early return (:478-481):
@@ -92,13 +92,13 @@ Key architecture facts (verified):
    ```
    Mechanics (verified): `columnIndex: -1` matches nothing → falls to the `key` lookup → `apply(column, 'desc')` → `reversedDateOrder` fragment reorder preserving year sections; `apply()` also rewrites the URL to `sort=ascentdated` (keep this — reload/back then serve descending natively; a manual click behaves identically). Already-descending pages are reached only via a `sort` param, so the URL check skips them; pages with no date column → `applyInstantSort` finds nothing, no-op. Rows exist at DOMContentLoaded; the flip lands ~ms after, acceptable given default-off.
 
-**Tests** (`test/ascent-filter.test.mjs`, existing fixtures in `test/fixtures/peakascents/`): `2296-rainier-default-recent-year.html` + setting on → newest date first, year sections contiguous, URL rewritten to `sort=ascentdated`; `21500-y9999-sort-ascentdate.html` (explicit sort param) → untouched; `21500-y9998-sort-ascentdated.html` → untouched; setting off → untouched; header click before settings resolve → auto-flip skipped, click honored.
+**Tests** (`test/ascent/ascent-filter.test.mjs`, existing fixtures in `test/fixtures/peakascents/`): `2296-rainier-default-recent-year.html` + setting on → newest date first, year sections contiguous, URL rewritten to `sort=ascentdated`; `21500-y9999-sort-ascentdate.html` (explicit sort param) → untouched; `21500-y9998-sort-ascentdated.html` → untouched; setting off → untouched; header click before settings resolve → auto-flip skipped, click honored.
 
 ---
 
 ## Unit 4 — Two-level settings navigation + IA restructure — ✅ DONE (`ed6a4bc`)
 
-**Files**: `options/options.html`, `options/options.css`, `options/options.js` (`initSectionNav` :216-291), `test/options.test.mjs`. Single scrolling page + scroll-spy stays (matches Sidebery's look); level-2 items are always-visible indented sub-links (no collapse machinery — only ~6 sub-items total).
+**Files**: `options/options.html`, `options/options.css`, `options/options.js` (`initSectionNav` :216-291), `test/options/options.test.mjs`. Single scrolling page + scroll-spy stays (matches Sidebery's look); level-2 items are always-visible indented sub-links (no collapse machinery — only ~6 sub-items total).
 
 **Final IA** (keep existing section ids so deep links survive; control element ids unchanged so persistence tests keep passing):
 - **General** (`#general`): Theme, Enable experimental 3D map. (Trip-report rows move out.)
@@ -127,7 +127,7 @@ Key architecture facts (verified):
 
 **Decision: page-overlay compass next to `#bpb-terrain-toggle`** (NOT inside the iframe): the requirement is "above the 3D button" which lives in the host page, and the in-frame ctrl stack is deliberately compass-free so its height matches the 2D zoom stack (adding there would shift `measureNavTop` and break toggle alignment). Cost: one throttled view stream + one command message.
 
-**New shared page-world module** `src/terrain-compass.js` exporting `terrainCompass.create({container, toggle, onReset}) → {setVisible, update, position, element}`:
+**New shared page-world module** `src/terrain/terrain-compass.js` exporting `terrainCompass.create({container, toggle, onReset}) → {setVisible, update, position, element}`:
 - `button#bpb-terrain-compass.bpb-map-compass` (`type="button"`, initially hidden, `aria-label="Reset the view to north, looking straight down"`, `title="Reset to north"`), inline SVG needle (red north half / neutral south) inside `span.bpb-map-compass-disc`.
 - `update(bearing, pitch)`: `disc.style.transform = rotateX(pitch) rotateZ(-bearing)` (button gets `perspective:100px` in CSS so pitch reads as tilt — MapLibre `visualizePitch` treatment). Transform is state, not decoration — always applied; only *transitions* respect `prefers-reduced-motion`.
 - `position()`: `el.style.bottom = round(parseFloat(getComputedStyle(toggle).bottom) + toggle.offsetHeight + 8) + 'px'` (`right:10px` from CSS) — works for both measured-navTop and CSS-fallback toggle positions.
@@ -136,14 +136,14 @@ Key architecture facts (verified):
 
 **Protocol**:
 - Frame → parent: on map `'move'` (alongside the `'moveend'` handler ~terrain-frame.js:1270) post `'view'` `{bearing, pitch}` throttled via requestAnimationFrame (one post per painted frame, like the peak-hover throttle :830-837); post one `'view'` right after `'loaded'`.
-- Bridge `src/terrain-map.js`: relay toParent `'view'` → `postToPage('view', {bearing, pitch})` (next to the `'metrics'` branch :315-316); relay toCS `'resetNorth'` → `postToFrame('resetNorth')` (next to `'highlight'` :279-280).
+- Bridge `src/terrain/terrain-map.js`: relay toParent `'view'` → `postToPage('view', {bearing, pitch})` (next to the `'metrics'` branch :315-316); relay toCS `'resetNorth'` → `postToFrame('resetNorth')` (next to `'highlight'` :279-280).
 - Frame handles `'resetNorth'` (message switch ~:1315-1329): `map.easeTo({bearing:0, pitch:0, duration: prefersReducedMotion ? 0 : 600})`.
 
-**Coordinators** (`src/big-map.js` + `src/peak-map.js`, symmetric): create the compass once next to the toggle (big-map: in `ensureTerrainToggle()` appending to the same mount; peak-map: next to `mount.append(terrainToggle)` :95-100) with `onReset: () => postTerrain('resetNorth')`. Visible only when `terrainState === 'active'` and no stop pending (show on `'loaded'`, hide in `finishTerrainStop`/`failTerrain`/`updateTerrainToggle`). Call `compass.position()` at the end of `positionTerrainToggle()` in both files. `'view'` handler: validate `Number.isFinite`, normalize bearing to [0,360), clamp pitch [0,85], then `compass.update(...)`. Theme: mirror the toggle's `dataset.theme` in `updateTerrainToggle()`.
+**Coordinators** (`src/maps/big-map.js` + `src/maps/peak-map.js`, symmetric): create the compass once next to the toggle (big-map: in `ensureTerrainToggle()` appending to the same mount; peak-map: next to `mount.append(terrainToggle)` :95-100) with `onReset: () => postTerrain('resetNorth')`. Visible only when `terrainState === 'active'` and no stop pending (show on `'loaded'`, hide in `finishTerrainStop`/`failTerrain`/`updateTerrainToggle`). Call `compass.position()` at the end of `positionTerrainToggle()` in both files. `'view'` handler: validate `Number.isFinite`, normalize bearing to [0,360), clamp pitch [0,85], then `compass.update(...)`. Theme: mirror the toggle's `dataset.theme` in `updateTerrainToggle()`.
 
-**CSS** (`src/terrain-map.css`): `.bpb-map-compass` — 36px circle, `position:absolute; right:10px; z-index:3`, same surface/dark-theme/focus-visible treatment as `.bpb-map-3d-toggle` (:27-51), `perspective:100px`, disc `transition: transform .12s` guarded by reduced-motion.
+**CSS** (`src/terrain/terrain-map.css`): `.bpb-map-compass` — 36px circle, `position:absolute; right:10px; z-index:3`, same surface/dark-theme/focus-visible treatment as `.bpb-map-3d-toggle` (:27-51), `perspective:100px`, disc `transition: transform .12s` guarded by reduced-motion.
 
-**Tests**: bridge relays `'view'` toPage / `'resetNorth'` toFrame (`test/terrain-map.test.mjs`); coordinator tests — hidden at idle, appears after synthetic `'loaded'`, `'view'` rotates disc transform, click posts `resetNorth`, hidden after stop. Real behavior via `npm run terrain:verify` + hidden Chrome-for-Testing pass per AGENTS.md.
+**Tests**: bridge relays `'view'` toPage / `'resetNorth'` toFrame (`test/terrain/terrain-map.test.mjs`); coordinator tests — hidden at idle, appears after synthetic `'loaded'`, `'view'` rotates disc transform, click posts `resetNorth`, hidden after stop. Real behavior via `npm run terrain:verify` + hidden Chrome-for-Testing pass per AGENTS.md.
 
 ---
 
@@ -151,13 +151,13 @@ Key architecture facts (verified):
 
 **Design: all logic in bridge + frame; the page coordinators change zero lines** — they keep sending `'init'`/`'destroy'` and waiting for `'loaded'` (toggle state machine untouched; re-entry just resolves fast).
 
-**Bridge (`src/terrain-map.js`)**:
+**Bridge (`src/terrain/terrain-map.js`)**:
 - State: `let suspended = false, suspendTimer = null, frameLoaded = false;` `SUSPEND_TTL_MS = 5 * 60 * 1000`.
 - On page `'destroy'` (:275-278): if frame exists AND `frameLoaded` → post `'suspend'` to frame, set `frame.style.opacity='0'; frame.style.pointerEvents='none'` (same pre-load state used at :304-305), `suspended = true`, start TTL timer → on expiry `postToFrame('destroy'); removeFrame()`. If not loaded (destroy raced boot) → hard destroy as today. Keep posting `'destroyed'` to the page either way.
 - In `createFrame(data)` (:222-262): if `suspended && frame?.contentWindow` → clear timer, `suspended = false`, `postToFrame('resume', payload)` instead of building an iframe. Frame replies with normal `'loaded'` → existing branch restores opacity and forwards navTop+camera unchanged.
 - `frameLoaded`: set on `'loaded'`, cleared on sending `'init'`/`'resume'` and in `removeFrame()`. `removeFrame()` also clears `suspended`/timer (so the settings-disable path `fail('unavailable')` tears everything down).
 
-**Frame (`src/terrain-frame.js`)**:
+**Frame (`src/terrain/terrain-frame.js`)**:
 - `'suspend'`: stop ambient work (clear peaks debounce timer, remove peak popup, cancel pointer rAF). Map, cache, protocol, DOM stay alive (idle MapLibre at opacity 0 renders nothing).
 - `'resume'` (guard: requires live loaded map, else fall through to `createTerrain(data)`): re-validate payload with the same helpers `createTerrain` uses (route, focus, camera via `terrainCamera`, style, theme); `setData` the route source + refresh route paint/theme/focus feature; camera — `jumpTo(requestedCamera)` if present, else `fitBounds(route.bounds, {padding:46, maxZoom:15.5, pitch:60, bearing:0, duration:0})`, else focus jump (bearing/pitch reset to defaults = today's fresh-boot behavior); basemap — keep the user's in-3D picker choice if they made one (new `userPickedBasemap` flag set in the picker change handler ~:1137-1142), else re-run the init-time basemap resolution so a 2D layer change is reflected; peaks — reset `peaksUnavailable`/bounds key and reschedule; `map.resize()`; then `post('loaded', {navTop: measureNavTop(), camera: …})` + one `'view'` (Unit 5).
 - `'destroy'` remains a full teardown; `terrainCache.flush()` still runs on real destroy.
@@ -171,9 +171,9 @@ Key architecture facts (verified):
 
 **Constraint: CacheStorage is origin-keyed** — the content script's `caches` is peakbagger.com's; only extension-origin contexts share `bpb-mapterhorn-dem-v1`. **Prefetch must run in the background worker.**
 
-**New pure module** `src/terrain-tiles.js` (node-testable, exports `terrainTiles`): slippy math `lonToTileX`/`latToTileY`; `fitZoom(bounds, viewport, {padding:46, maxZoom:15.5})` mirroring the frame's fitBounds for 512-px tiles; `tilesForView({bounds | center+zoom, viewport, cap:32})` → `[{z,x,y}]` covering rectangle at `zt = floor(min(fitZoom, 15.5))` plus the parent-level rectangle at `zt-1` (MapLibre fetches ancestors); if over cap, decrement `zt` and retry; clamp lat to ±85.0511287, no antimeridian wrap (frame already rejects >180° spans).
+**New pure module** `src/terrain/terrain-tiles.js` (node-testable, exports `terrainTiles`): slippy math `lonToTileX`/`latToTileY`; `fitZoom(bounds, viewport, {padding:46, maxZoom:15.5})` mirroring the frame's fitBounds for 512-px tiles; `tilesForView({bounds | center+zoom, viewport, cap:32})` → `[{z,x,y}]` covering rectangle at `zt = floor(min(fitZoom, 15.5))` plus the parent-level rectangle at `zt-1` (MapLibre fetches ancestors); if over cap, decrement `zt` and retry; clamp lat to ±85.0511287, no antimeridian wrap (frame already rejects >180° spans).
 
-**Background handler** (`src/background.js` message switch ~:1547): `case 'TERRAIN_PREFETCH'`:
+**Background handler** (`src/background/background.js` message switch ~:1547): `case 'TERRAIN_PREFETCH'`:
 - Peakbagger-tab senders only; read settings and **fail closed unless `enable3dMap === true` and `terrainCacheLimitMb > 0`** (3D enablement is the consent gate for contacting Mapterhorn).
 - Validate payload numbers (finite; viewport 100–8192).
 - Compute tiles, dedupe against a module-level recently-done/in-flight Set (keyed `z/x/y`, ~10 min expiry), run `cache.load({url: 'bpb-dem://z/x/y.webp'})` concurrency 4, swallow per-tile errors. Lazy module-level `terrainCache.create({limitMb})`, recreated if the limit setting changed. Cap ≈32 tiles ≈ 1.3 MB per burst; LRU trim enforces the byte budget.
@@ -181,15 +181,15 @@ Key architecture facts (verified):
 - Build config: add `'terrain-cache.js'` + `'terrain-tiles.js'` to the `background.js` entry (build-config.mjs:39).
 
 **Trigger — toggle hover/focus (explicit intent, stays inside 3D consent scope; NOT on page load)**:
-- `src/big-map.js`: `pointerenter`/`focus` on the toggle, when `terrainState === 'idle' && terrainEnabled` and a native route exists → compute route bounds, throttle 15 s, `postTerrain('prefetch', {bounds, viewport:{width:innerWidth, height:innerHeight}})`.
-- `src/peak-map.js`: same trigger; payload `{center:[lat,lon], zoom, viewport}` from the already-validated peak values.
+- `src/maps/big-map.js`: `pointerenter`/`focus` on the toggle, when `terrainState === 'idle' && terrainEnabled` and a native route exists → compute route bounds, throttle 15 s, `postTerrain('prefetch', {bounds, viewport:{width:innerWidth, height:innerHeight}})`.
+- `src/maps/peak-map.js`: same trigger; payload `{center:[lat,lon], zoom, viewport}` from the already-validated peak values.
 - Bridge: new toCS `'prefetch'` case — only when terrain enabled; sanity-check finiteness; forward via `ext.runtime.sendMessage({type:'TERRAIN_PREFETCH', …})`, ignore reply.
 
 **Preconnect**: `<link rel="preconnect" href="https://tiles.mapterhorn.com" crossorigin>` in `terrain/terrain.html` head.
 
 **Docs**: one sentence in `PRIVACY.md` (with 3D enabled, hovering the 3D button may pre-request elevation tiles for the visible area from Mapterhorn); update `docs/architecture.md` terrain section for suspend/resume + prefetch; CHANGELOG per unit.
 
-**Tests**: new `test/terrain-tiles.test.mjs` (known lon/lat→tile values, fitZoom hand-checks, cap behavior, clamping); background handler — gate closed when 3D off or limit 0, tile cap, rate limit, `cache.load` called with `bpb-dem://` URLs (inject `fetchFn`/`cacheStorage` fakes via `terrainCache.create`); coordinator/bridge — hover posts one `'prefetch'`, 15 s throttle respected. Confirm worker→Mapterhorn CORS once in the real `verify:extension` run (prefetch `{ok:true}` + cache-usage increase on the options page).
+**Tests**: new `test/terrain/terrain-tiles.test.mjs` (known lon/lat→tile values, fitZoom hand-checks, cap behavior, clamping); background handler — gate closed when 3D off or limit 0, tile cap, rate limit, `cache.load` called with `bpb-dem://` URLs (inject `fetchFn`/`cacheStorage` fakes via `terrainCache.create`); coordinator/bridge — hover posts one `'prefetch'`, 15 s throttle respected. Confirm worker→Mapterhorn CORS once in the real `verify:extension` run (prefetch `{ok:true}` + cache-usage increase on the options page).
 
 ---
 
@@ -197,7 +197,7 @@ Key architecture facts (verified):
 
 - **Commits**: ~7 focused conventional commits straight to `main` (schema + options row + consumer for one setting = one commit), bodies listing checks actually run (AGENTS.md).
 - **Checks**: `npm test` always; `npm run verify:extension` after Units 5–7 and any build-config/manifest change; `npm run terrain:verify` for Units 5–6; visual options-page inspection (Unit 4) and compass/keep-alive in hidden Chrome-for-Testing (hardware renderer, never SwiftShader).
-- **Settings discipline**: new keys only in `settings-schema.js`; readers use `!== false`/`=== true` on cleaned settings; `WRITABLE_KEYS` in `src/bridge.js` untouched.
+- **Settings discipline**: new keys only in `settings-schema.js`; readers use `!== false`/`=== true` on cleaned settings; `WRITABLE_KEYS` in `src/settings/bridge.js` untouched.
 - **Fixtures**: masked identifiers only; fixtures-privacy test must pass.
 
 ## Risks / notes

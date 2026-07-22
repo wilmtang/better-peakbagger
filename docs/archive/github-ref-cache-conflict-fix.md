@@ -9,8 +9,8 @@ approved fix.
 
 The batch commit path reads the branch head through the browser's HTTP cache.
 
-1. `netFetch` in `src/background.js` is plain `fetch(url, init)`, and
-   `request()` in `src/github-client.js` never sets `cache`. The default
+1. `netFetch` in `src/background/background.js` is plain `fetch(url, init)`, and
+   `request()` in `src/github/github-client.js` never sets `cache`. The default
    `cache: 'default'` honors the browser HTTP cache. GitHub's REST API serves
    authenticated GETs with `Cache-Control: private, max-age=60, s-maxage=60`,
    so `GET /repos/{owner}/{repo}/git/ref/heads/{branch}` is stored and served
@@ -42,7 +42,7 @@ has expired by then — which made it look like a genuine transient race.
 The worker's serialized write queue and the runner's single consumer are
 working as designed; this is not a concurrency bug. The content-script side
 already passes `cache: 'no-store'` for Peakbagger fetches in
-`src/profile-backup.js`; the same hazard was missed on the GitHub client. The
+`src/profile/profile-backup.js`; the same hazard was missed on the GitHub client. The
 conflict-retry rationale in the
 [GitHub backup design](../github-ascent-backup.md#atomic-github-write-algorithm) assumes a reread
 observes the true head; the HTTP cache silently breaks that invariant.
@@ -51,12 +51,12 @@ observes the true head; the HTTP cache silently breaks that invariant.
 
 1. **Root fix — bypass the HTTP cache in the GitHub client.** Add
    `cache: 'no-store'` to the fetch init inside `request()` in
-   `src/github-client.js`. One line covers every call site (ref/repo/tree/blob
+   `src/github/github-client.js`. One line covers every call site (ref/repo/tree/blob
    reads and all writes) for the profile batch path and both single-ascent
    paths, in Chrome and Firefox. The fix belongs in the client rather than
    `netFetch` because the client is the pure, unit-testable seam that owns the
    commit protocol's correctness.
-2. **Regression test.** In `test/github-client.test.mjs`, assert in the
+2. **Regression test.** In `test/github/github-client.test.mjs`, assert in the
    scripted-fetch harness that every GitHub request carries
    `cache: 'no-store'`, so a future refactor cannot silently drop it. The
    existing "persistent ref conflict stops after the bounded retry schedule"

@@ -47,7 +47,7 @@ The route cases relevant to Better Peakbagger's 3D terrain coordinator are:
 - `t=P`: a peak rather than a GPS route. The 3D view uses the peak coordinates
   as its subject and may fetch surrounding peak markers separately.
 
-`src/big-map.js` intentionally admits only these three contexts. Adding another
+`src/maps/big-map.js` intentionally admits only these three contexts. Adding another
 native type to that allowlist requires defining what bounded geometry becomes
 the terrain subject; recognition by Peakbagger alone is not enough.
 

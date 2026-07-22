@@ -18,7 +18,7 @@ capture), and mixing the two concepts in that small surface invites confusion.
 
 ## Context — verified facts
 
-- **Draft store** (`src/report-editor.js`): `storage.local`, key
+- **Draft store** (`src/reports/report-editor.js`): `storage.local`, key
   `bpbReportDraft:<cid>:<a{aid}|p{pid}|new>` built at report-editor.js:52-54
   (`cid` falls back to `'0'`). Record `{ text, mode, savedAt, source? }` written
   by `saveDraftNow()` (:391-409) — `text` is bracket markup, `mode` is
@@ -35,7 +35,7 @@ capture), and mixing the two concepts in that small surface invites confusion.
 - **No display metadata**: the record carries no peak name or ascent date; only
   IDs live in the key. The editor page's form has both: `#PeakListBox`
   (fixture `test/fixtures/pages/climber-ascentedit.html:236`) and `#DateText`
-  (:194). `src/ascent-snapshot.js` is the one module allowed to know
+  (:194). `src/ascent/ascent-snapshot.js` is the one module allowed to know
   ascentedit's field names (its header, :6-11); its internal
   `readPeak(form, params)` :131-140 already resolves `{ id, name }` from
   `PeakListBox` with a URL-`pid` fallback. `report-editor.js` already imports
@@ -45,7 +45,7 @@ capture), and mixing the two concepts in that small surface invites confusion.
   (background.js:603, :844).
 - **Markdown rule**: `reportMarkdownBody()` (report-editor.js:438-441) — exact
   Markdown source when authored in markdown, else
-  `Markup.bracketToMarkdown(text)`. `src/report-markup.js` is pure and exports
+  `Markup.bracketToMarkdown(text)`. `src/reports/report-markup.js` is pure and exports
   `reportMarkup.bracketToMarkdown` (:1119).
 - **Options page**: flat single-level nav (`options/options.html:22-27`),
   sections `#general #capture #map-chart #beta #github #about`; section markup
@@ -71,9 +71,9 @@ capture), and mixing the two concepts in that small surface invites confusion.
   `chrome-extension://` URL that is not web-accessible. The background worker
   can `tabs.create` its own extension URLs without any extra permission — route
   through a background message.
-- **Tests**: `test/options.test.mjs` drives the real options page in jsdom via
+- **Tests**: `test/options/options.test.mjs` drives the real options page in jsdom via
   `loadOptions()`, whose harness already accepts a `local` storage seed and a
-  `hash` deep-link. `test/report-editor.test.mjs` covers editor/draft behavior
+  `hash` deep-link. `test/reports/report-editor.test.mjs` covers editor/draft behavior
   against the masked ascentedit fixture. Never write real user identifiers;
   the fixtures-privacy test guards this.
 
@@ -81,7 +81,7 @@ Four units, ordered as independently committable pieces.
 
 ---
 
-## Unit 1 — shared pure module `src/report-drafts.js`
+## Unit 1 — shared pure module `src/reports/report-drafts.js`
 
 The options page must parse keys the editor builds; a shared pure module keeps
 the two from drifting (same arrangement as `settings-schema.js` /
@@ -106,11 +106,11 @@ Export `reportDrafts` with:
   `'New ascent'` — display for pre-existing records without a label.
 - `remainingMs(record, now)` → `TTL_MS - (now - savedAt)` for expiry display.
 
-**Refactor** `src/report-editor.js` to import the constants and `keyFor`
+**Refactor** `src/reports/report-editor.js` to import the constants and `keyFor`
 (behavior byte-identical — existing report-editor tests are the regression
 net). Add `'report-drafts.js'` to the `content/ascent-editor.js` sources entry.
 
-**Tests**: new `test/report-drafts.test.mjs` — keyFor/parseKey round-trips for
+**Tests**: new `test/reports/report-drafts.test.mjs` — keyFor/parseKey round-trips for
 all three kinds plus the `'0'`-cid fallback, junk-key rejection, editUrl
 shapes, fallback titles.
 
@@ -118,12 +118,12 @@ shapes, fallback titles.
 
 ## Unit 2 — label metadata at autosave
 
-- `src/ascent-snapshot.js`: export a small `label({ form, params })` →
+- `src/ascent/ascent-snapshot.js`: export a small `label({ form, params })` →
   `{ peak, date }` reusing internal `readPeak` (:131-140) for the peak name and
   the raw trimmed `DateText` field value for the date (display string, not the
   normalized identity date). Cap peak at 200 chars, date at 20. This keeps the
   field-name knowledge inside the module that owns it.
-- `src/report-editor.js` `saveDraftNow()` (:404-406): attach
+- `src/reports/report-editor.js` `saveDraftNow()` (:404-406): attach
   `record.label = AscentSnapshot.label({ form, params })`, dropping empty
   members and omitting `label` entirely when both are empty. Wrap in
   try/catch — a label failure must never block the autosave.
@@ -133,10 +133,10 @@ shapes, fallback titles.
   holds the full report text; nothing new leaves the device, `PRIVACY.md`
   unchanged.
 
-**Tests**: `test/ascent-snapshot.test.mjs` — `label()` from the ascentedit
+**Tests**: `test/ascent/ascent-snapshot.test.mjs` — `label()` from the ascentedit
 fixture (peak name from the selected `PeakListBox` option, date from
 `DateText`; empty form → empty members dropped).
-`test/report-editor.test.mjs` — an autosaved record carries the expected
+`test/reports/report-editor.test.mjs` — an autosaved record carries the expected
 `label`; autosave still succeeds when the peak select is absent.
 
 ---
@@ -199,7 +199,7 @@ focus-visible treatments, existing theme variables for light/dark.
 **A11y**: real list semantics; per-row buttons carry aria-labels including the
 draft title; status feedback through the existing `role=status` line.
 
-**Tests** (`test/options.test.mjs`; harness already takes `local` and `hash`):
+**Tests** (`test/options/options.test.mjs`; harness already takes `local` and `hash`):
 seeded drafts render sorted newest-first with labels and fallbacks; an expired
 seed is deleted on load and not rendered; Open hrefs for all three key kinds;
 Copy uses `source` for markdown records and `bracketToMarkdown` otherwise
@@ -212,21 +212,21 @@ activates it.
 
 ## Unit 4 — "Manage drafts" entry in the report editor
 
-- **Editor** (`src/report-editor.js`): one quiet static link-style button
+- **Editor** (`src/reports/report-editor.js`): one quiet static link-style button
   `bpb-re-manage` ("Manage drafts") in the foot next to `status` (:291-294).
   Always visible in the editor — it is the discovery point for drafts from
   *other* ascents, so gating it on this page's draft state would defeat it.
   Click → `ext.runtime.sendMessage({ type: 'OPEN_DRAFTS_MANAGER' })`.
-- **Background** (`src/background.js`, in the message switch): handle
+- **Background** (`src/background/background.js`, in the message switch): handle
   `OPEN_DRAFTS_MANAGER` from Peakbagger-tab senders only →
   `ext.tabs.create({ url: ext.runtime.getURL('options/options.html') + '#drafts' })`.
   No new permission (`tabs.create` with an own-extension URL needs none), no
   `web_accessible_resources` change. The `#drafts` fragment deep-links via the
   existing scroll-spy hash handling.
-- **CSS** (`src/report-editor.css`): style as a small quiet link matching the
+- **CSS** (`src/reports/report-editor.css`): style as a small quiet link matching the
   foot's status text; visible focus state.
 
-**Tests**: `test/report-editor.test.mjs` — link present, click sends the
+**Tests**: `test/reports/report-editor.test.mjs` — link present, click sends the
 message. Background test (beside the other handshake tests) — the message from
 a Peakbagger tab creates a tab with the options URL + `#drafts`; a
 non-Peakbagger sender is refused.

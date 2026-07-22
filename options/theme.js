@@ -5,7 +5,7 @@
 // storage is asynchronous, so keep a synchronous, page-local mirror and let
 // options.js reconcile it with the authoritative setting after the page loads.
 
-import { settings as S } from '../src/settings.js';
+import { settings as S } from '../src/settings/settings.js';
 
 const CACHE_KEY = 'bpbThemePref';
 const root = document.documentElement;

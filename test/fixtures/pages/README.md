@@ -26,7 +26,7 @@ it has been **masked** before committing:
   data. The fixture is a reduced structural extraction of the downloaded MHTML,
   not a retained copy of any buddy's activity history.
 
-`test/fixtures-privacy.test.mjs` fails the build if a raw identifier reappears
+`test/project/fixtures-privacy.test.mjs` fails the build if a raw identifier reappears
 (e.g. when refreshing a capture) — the banned identifiers live there only as
 salted hashes, so the guard itself discloses nothing. Re-run the masking when
 adding new captures.
@@ -55,5 +55,5 @@ MHTML `cid:` stylesheet leftovers are dropped.
 - Every banner link is an `<a>` with inline
   `style="... text-decoration:none; color:black"`. The dark theme's global
   `a { color: #7ab6ff !important }` would otherwise override that inline black and
-  wash the links out over the light photo, so `src/site-dark-css.js` re-darkens
+  wash the links out over the light photo, so `src/theme/site-dark-css.js` re-darkens
   `.mainbanner a` / `.mainmenu a` back to `#000`.

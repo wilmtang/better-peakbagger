@@ -70,7 +70,7 @@ view, so that half of the machinery is irrelevant.
 - Sections (headings already carry ids via `aria-labelledby`): General
   (`#general-settings-heading`), Activity capture, Map & GPX chart, Ascent beta
   filters.
-- `options/options.js` — populate/save controller over `src/settings.js`; no
+- `options/options.js` — populate/save controller over `src/settings/settings.js`; no
   navigation code. `options/theme.js` applies the theme pre-paint.
 - Build (`scripts/build-config.mjs:57-58,79-80`): `options.html` and
   `options.css` are copied verbatim; `options.js` is the entry of the already
@@ -78,7 +78,7 @@ view, so that half of the machinery is irrelevant.
   needs no build-config or manifest change.**
 - `manifest.json` has `options_ui.open_in_tab: true`, so the page always gets a
   full tab — a sidebar layout is viable.
-- `test/options.test.mjs` drives the real page end-to-end in jsdom. jsdom has
+- `test/options/options.test.mjs` drives the real page end-to-end in jsdom. jsdom has
   **no layout** (`offsetTop` is always 0 and nothing scrolls), which bounds what
   the scroll-spy tests can assert.
 
@@ -142,7 +142,7 @@ Each step is a commit-sized unit; run `npm test` before committing.
    above. Guard the whole feature on the nav's presence so the module stays
    inert if markup is absent. Initial state: honor `location.hash` if present,
    else first section.
-4. **Tests** — extend `test/options.test.mjs`:
+4. **Tests** — extend `test/options/options.test.mjs`:
    - every nav link's `href` hash resolves to an existing section id (guards
      drift when sections are added or renamed);
    - exactly one link has `aria-current` after load, and `hashchange`
@@ -177,7 +177,7 @@ Each step is a commit-sized unit; run `npm test` before committing.
 ## Deviations from the plan
 
 Recorded during implementation (steps executed against
-`options/options.{html,css,js}` and `test/options.test.mjs`):
+`options/options.{html,css,js}` and `test/options/options.test.mjs`):
 
 - **Scroll-spy uses `getBoundingClientRect`, not `offsetTop`.** The plan
   specified Sidebery's bottom-up `offsetTop` walk. An `offsetTop` comparison is

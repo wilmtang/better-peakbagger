@@ -11,7 +11,7 @@ Cloudflare challenge for non-browser clients).
   name → `Alex Doe`, real climber id → `900001`, the user's own ascent ids →
   fakes, and every non-Peakbagger link (Strava/etc.) → `https://example.com/`
   (href *and* visible text). The `<a href>` structure is preserved, so link counts
-  are unchanged. `test/fixtures-privacy.test.mjs` fails the build if a raw
+  are unchanged. `test/project/fixtures-privacy.test.mjs` fails the build if a raw
   identifier reappears; re-run the masking (see `../pages/README.md`) when
   refreshing these.
 - **wayback** — raw Wayback Machine `id_` captures (no archive.org rewriting), of

@@ -80,7 +80,7 @@ preserve, not new decisions:
   delivered only after tab/job/peak/climber identity checks.
 - GPS Preview fires exactly once per draft; Save is always manual.
 - Peakbagger login is verified before anything is prepared.
-- Shared math stays in `src/gpx-metrics.js` / `src/capture-core.js`; no
+- Shared math stays in `src/gpx/gpx-metrics.js` / `src/capture/capture-core.js`; no
   second implementation of gain, distance, or detection.
 
 ## 3. Design
@@ -91,7 +91,7 @@ preserve, not new decisions:
   `ascentedit.aspx` (isolated world, `document_end`).
 - Behavior: if `#DateText` exists and its value is empty, set it to the
   browser's local date as `yyyy-mm-dd` and dispatch `input`/`change`
-  (matching `setTextField` in `src/ascent-draft.js`).
+  (matching `setTextField` in `src/ascent/ascent-draft.js`).
 - An edit page (existing ascent) arrives with the date populated, so the
   if-empty guard is the create/edit discriminator — no URL heuristics.
 - The capture draft flow sets the date unconditionally after its handshake,
@@ -126,7 +126,7 @@ colorful but composed, not a strobe):
   keeps its static gradient identity. Light and dark themes both get
   sufficient contrast; focus ring and `aria-label`/`aria-busy` are provided.
 - Styles ship in the existing ascent-editor stylesheet
-  (`src/report-editor.css` is already delivered on this page; the button
+  (`src/reports/report-editor.css` is already delivered on this page; the button
   styles land beside it or in a small dedicated CSS file added to the same
   manifest entry).
 
@@ -157,15 +157,15 @@ user picks file (ascentedit.aspx)
   -> [worker] GPX_PROCESS_APPLY (selection): register prepared drafts —
      the current tab first when its peak is selected, sibling tabs for the
      rest — then DRAFT_PROCEED to the current tab
-  -> [page] src/ascent-draft.js fills, attaches the cleaned GPX, triggers
+  -> [page] src/ascent/ascent-draft.js fills, attaches the cleaned GPX, triggers
      GPS Preview exactly once; the chain proceeds tab by tab as today
   -> user reviews and clicks Save
 ```
 
 Key points:
 
-- **Parser sharing.** `parseGpxData` moves from `src/provider-page.js` into
-  a new pure `src/gpx-parse.js` imported by both the provider adapter and
+- **Parser sharing.** `parseGpxData` moves from `src/capture/provider-page.js` into
+  a new pure `src/gpx/gpx-parse.js` imported by both the provider adapter and
   the new upload module, so a Garmin export and a hand-made file are read by
   the same code. (`provider-page.js` keeps its provider-specific ownership
   and metadata logic.)
@@ -267,11 +267,11 @@ Cross-cutting rules (apply to whichever option is chosen):
 
 | Module | Change |
 | --- | --- |
-| `src/gpx-parse.js` (new, pure) | GPX text → segments/waypoints/name. Moved from `provider-page.js`. |
-| `src/ascent-upload.js` (new, isolated world) | Date autofill, file-change detection, Process button + states, on-page parse + tz resolve, summit card, `GPX_PROCESS_*` messaging. Joins the `content/ascent-editor.js` bundle. |
-| `src/background.js` | Extract shared `analyzeTrack()`; add `GPX_PROCESS_START` / `GPX_PROCESS_APPLY` handlers reusing the job/draft maps and handshake. |
-| `src/ascent-draft.js` | Unchanged in behavior; it already fills any identity-verified draft tab and honors `DRAFT_PROCEED`. |
-| `src/capture-core.js`, `src/gpx-metrics.js` | Unchanged. |
+| `src/gpx/gpx-parse.js` (new, pure) | GPX text → segments/waypoints/name. Moved from `provider-page.js`. |
+| `src/ascent/ascent-upload.js` (new, isolated world) | Date autofill, file-change detection, Process button + states, on-page parse + tz resolve, summit card, `GPX_PROCESS_*` messaging. Joins the `content/ascent-editor.js` bundle. |
+| `src/background/background.js` | Extract shared `analyzeTrack()`; add `GPX_PROCESS_START` / `GPX_PROCESS_APPLY` handlers reusing the job/draft maps and handshake. |
+| `src/ascent/ascent-draft.js` | Unchanged in behavior; it already fills any identity-verified draft tab and honors `DRAFT_PROCEED`. |
+| `src/capture/capture-core.js`, `src/gpx/gpx-metrics.js` | Unchanged. |
 | `manifest.json`, `scripts/build-config.mjs` | `vendor/tz-lookup.js` added to the ascentedit script list; bundle composition updated; CSS entry for the button/card. |
 | `PRIVACY.md`, `docs/architecture.md` | Document the local-file entry point: file parsed on-page, only derived fields to the worker, corridor boxes to peakbagger.com as with capture, cleaned upload replaces the original. |
 
@@ -308,10 +308,10 @@ Steps 1–3 are safe to land before the 3.4 decision; step 5 depends on it.
 
 Mirroring the repo's boundary-per-test-file convention:
 
-- **`test/gpx-parse.test.mjs`** — parser unit tests: multi-segment, multi
+- **`test/gpx/gpx-parse.test.mjs`** — parser unit tests: multi-segment, multi
   track, waypoints, missing ele/time, malformed XML, huge files, entity
   decoding; provider-page tests keep covering ownership/export.
-- **`test/ascent-upload.test.mjs`** (jsdom + `climber-ascentedit.html`
+- **`test/ascent/ascent-upload.test.mjs`** (jsdom + `climber-ascentedit.html`
   fixture):
   - Date autofill: empty → today; pre-filled → untouched; dispatches
     `input`/`change`.
@@ -323,7 +323,7 @@ Mirroring the repo's boundary-per-test-file convention:
   - Summit card: rendering, preselection (strong + bound peak), action
     label ("Fill this ascent" vs "Fill + open N drafts"), closest-approach
     override row.
-- **`test/background-gpx-process.test.mjs`** (stubbed fetch/tabs/storage):
+- **`test/background/background-gpx-process.test.mjs`** (stubbed fetch/tabs/storage):
   - Pipeline: segments in → job with matches/uploadGpx/dayStats out; job
     shape identical to a capture job; fail-closed on partial corridor
     responses and signed-out Peakbagger.

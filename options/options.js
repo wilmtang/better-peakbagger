@@ -3,8 +3,8 @@
 //
 // Better Peakbagger — options page controller.
 
-import { settings as S } from '../src/settings.js';
-import { terrainCache as TerrainCache } from '../src/terrain-cache.js';
+import { settings as S } from '../src/settings/settings.js';
+import { terrainCache as TerrainCache } from '../src/terrain/terrain-cache.js';
 import { optionsTheme as Theme } from './theme.js';
 import { initGithubBackup } from './github.js';
 import { initFavorites } from './favorites.js';

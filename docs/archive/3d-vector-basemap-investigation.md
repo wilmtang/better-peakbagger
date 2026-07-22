@@ -204,8 +204,8 @@ existing OpenStreetMap raster layer remains available in 2D.
 
 ## Prototype notes (what `OSM Vector (experimental)` does)
 
-- The entry lives in `src/terrain-frame.js` (`VECTOR_BASEMAP`), not in
-  `src/terrain-basemap.js` — it is extension-provided, not mirrored from
+- The entry lives in `src/terrain/terrain-frame.js` (`VECTOR_BASEMAP`), not in
+  `src/terrain/terrain-basemap.js` — it is extension-provided, not mirrored from
   Peakbagger's Leaflet menu, so the 2D-menu mirror stays untouched.
 - On selection the frame fetches the Liberty style once per frame lifetime,
   then grafts it into the live inline style: sources and layers are added

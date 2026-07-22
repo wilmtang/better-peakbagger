@@ -1,0 +1,744 @@
+// Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
+// SPDX-License-Identifier: AGPL-3.0-or-later
+//
+// Fixture-based tests for the Ascent Beta Filter content script.
+// Run with: npm test
+
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import { loadPage, loadPageWithBar, PAGE_FIXTURES, waitFor } from '../helpers/load-page.mjs';
+
+const FAVORITES_KEY = 'bpbFavoriteClimbers';
+const BUDDY_CACHE_KEY = 'bpbBuddyCache';
+const SMALL = '1039-default-full-columns.html';
+const SMALL_URL = 'https://www.peakbagger.com/climber/PeakAscents.aspx?pid=1039';
+const smallFixture = await readFile(new URL('../fixtures/peakascents/1039-default-full-columns.html', import.meta.url), 'utf8');
+const buddyFixture = await readFile(new URL('../fixtures/pages/report-buddy-list.html', import.meta.url), 'utf8');
+const customCids = [...new Set([...smallFixture.matchAll(/climber\.aspx\?cid=(\d+)/gi)].map(match => Number(match[1])))].slice(0, 2);
+const favoriteStore = cids => ({
+    schemaVersion: 1,
+    entries: cids.map((cid, index) => ({ cid, name: `Favorite ${index + 1}`, addedAt: index + 1, source: 'manual' })),
+});
+
+const bar = dom => dom.window.document.getElementById('pbaf-bar');
+const table = dom => dom.window.document.querySelector('table.gray');
+const status = dom => dom.window.document.querySelector('.pbaf-status').textContent;
+const chip = (dom, label) =>
+    [...dom.window.document.querySelectorAll('.pbaf-chip')]
+        .find(c => c.querySelector('.pbaf-chip-label')?.textContent === label);
+const chipCount = (dom, label) => chip(dom, label).querySelector('.pbaf-count').textContent;
+
+// Same row classification the content script uses: table.rows skips rows of
+// nested icon tables; >1 cells excludes year-separator and stray empty rows.
+const dataRows = dom => [...table(dom).rows].filter(r => r.cells.length > 1 && r.cells[0].tagName === 'TD');
+const visibleRows = dom => dataRows(dom).filter(r => r.style.display === '');
+const sectionRows = dom => [...table(dom).rows].filter(r => r.cells.length === 1);
+const rowCid = row => {
+    const anchor = row.querySelector('a[href*="climber.aspx?cid="]');
+    return anchor ? Number(new URL(anchor.href).searchParams.get('cid')) : null;
+};
+const rowHasTripReport = row => /^TR-\d+/.test(row.cells[4].textContent.trim());
+const rowHasGps = row => !!row.cells[3].querySelector('img');
+const rowHasLink = row => !!row.cells[11].querySelector('a[href]');
+const defaultBetaRows = dom => dataRows(dom).filter(row =>
+    rowHasTripReport(row) || rowHasGps(row) || rowHasLink(row));
+const dateTexts = dom => dataRows(dom).map(r => r.cells[1].textContent.trim());
+const sectionLabels = dom => sectionRows(dom).map(r => r.textContent.trim());
+const tableSortControl = (dom, label) =>
+    [...dom.window.document.querySelectorAll('.pbaf-table-sort')]
+        .find(control => control.firstChild.textContent.trim() === label);
+const sortControl = dom => tableSortControl(dom, 'Ascent Date');
+const arrow = dom => sortControl(dom)?.querySelector('.pbaf-sort-arrow') || null;
+
+test('parses an ascent table and filters to beta by default', async () => {
+    const dom = await loadPageWithBar(SMALL, { url: SMALL_URL });
+    const rows = dataRows(dom);
+    const betaRows = defaultBetaRows(dom);
+    const tripReportCount = rows.filter(rowHasTripReport).length;
+    const gpsCount = rows.filter(rowHasGps).length;
+    const linkCount = rows.filter(rowHasLink).length;
+
+    assert.ok(rows.length > 0 && betaRows.length > 0);
+    assert.equal(chipCount(dom, 'Has beta'), String(betaRows.length));
+    assert.equal(chipCount(dom, 'Trip report'), String(tripReportCount));
+    assert.equal(chipCount(dom, 'GPS track'), String(gpsCount));
+    assert.equal(chipCount(dom, 'Link'), String(linkCount));
+
+    // "Has beta" is on by default.
+    assert.equal(status(dom), `Showing ${betaRows.length} of ${rows.length} ascents`);
+    assert.equal(visibleRows(dom).length, betaRows.length);
+    // Year sections with no visible rows collapse.
+    assert.ok(sectionRows(dom).some(r => r.style.display === 'none'));
+
+    dom.window.document.querySelector('.pbaf-reset').click();
+    assert.equal(visibleRows(dom).length, rows.length);
+    assert.equal(status(dom), `${rows.length} ascents`);
+    assert.ok(sectionRows(dom).every(r => r.style.display === ''));
+});
+
+test('filter chips form one group without a divider after Has beta', async () => {
+    const dom = await loadPageWithBar('1039-default-full-columns.html', {
+        url: 'https://www.peakbagger.com/climber/PeakAscents.aspx?pid=1039'
+    });
+
+    assert.equal(bar(dom).querySelector('.pbaf-divider'), null);
+    assert.deepEqual(
+        [...bar(dom).querySelectorAll('.pbaf-chip')].map(control => control.childNodes[1].textContent.trim()),
+        ['Has beta', 'Trip report', 'GPS track', 'Link', 'Climbing buddies']
+    );
+});
+
+test('Fav climbers counts climber rows and AND-composes with Has beta', async () => {
+    const dom = await loadPageWithBar(SMALL, {
+        url: SMALL_URL,
+        settings: { favoritesSource: 'custom' },
+        local: { [FAVORITES_KEY]: favoriteStore(customCids) },
+    });
+    const ids = new Set(customCids);
+    const favoriteRows = dataRows(dom).filter(row => ids.has(rowCid(row)));
+    const defaultVisibleFavorites = visibleRows(dom).filter(row => ids.has(rowCid(row)));
+    assert.ok(favoriteRows.length > 0);
+    assert.equal(chipCount(dom, 'Fav climbers'), String(favoriteRows.length));
+
+    chip(dom, 'Fav climbers').click();
+    assert.equal(visibleRows(dom).length, defaultVisibleFavorites.length);
+    assert.ok(visibleRows(dom).every(row => ids.has(rowCid(row))));
+});
+
+test('Fav climbers can filter independently and persists with the other chips', async () => {
+    const dom = await loadPage(SMALL, {
+        url: SMALL_URL,
+        settings: { favoritesSource: 'custom' },
+        local: { [FAVORITES_KEY]: favoriteStore(customCids) },
+        prepare: page => page.window.localStorage.setItem('pbAscentBetaFilter.v1', JSON.stringify({
+            beta: false, tr: false, minWords: 1, gps: false, link: false, fav: true,
+        })),
+    });
+    await waitFor(dom, () => bar(dom));
+    const ids = new Set(customCids);
+    assert.equal(visibleRows(dom).length, dataRows(dom).filter(row => ids.has(rowCid(row))).length);
+    assert.equal(chip(dom, 'Fav climbers').getAttribute('aria-pressed'), 'true');
+
+    dom.window.document.querySelector('.pbaf-reset').click();
+    assert.equal(visibleRows(dom).length, dataRows(dom).length);
+    assert.equal(JSON.parse(dom.window.localStorage.getItem('pbAscentBetaFilter.v1')).fav, false);
+});
+
+test('an empty custom list disables Fav climbers without hiding the ascent table', async () => {
+    const dom = await loadPage(SMALL, {
+        url: SMALL_URL,
+        settings: { favoritesSource: 'custom' },
+        local: { [FAVORITES_KEY]: favoriteStore([]) },
+        prepare: page => page.window.localStorage.setItem('pbAscentBetaFilter.v1', JSON.stringify({
+            beta: false, tr: false, minWords: 1, gps: false, link: false, fav: true,
+        })),
+    });
+    await waitFor(dom, () => bar(dom));
+    assert.equal(chip(dom, 'Fav climbers').disabled, true);
+    assert.match(chip(dom, 'Fav climbers').title, /No favorite climbers yet/);
+    assert.equal(chip(dom, 'Fav climbers').getAttribute('aria-pressed'), 'false');
+    assert.equal(visibleRows(dom).length, dataRows(dom).length);
+});
+
+test('local favorite changes update the custom filter live', async () => {
+    const dom = await loadPageWithBar(SMALL, {
+        url: SMALL_URL,
+        settings: { favoritesSource: 'custom' },
+        local: { [FAVORITES_KEY]: favoriteStore([]) },
+    });
+    assert.equal(chip(dom, 'Fav climbers').disabled, true);
+
+    await dom.chrome.storage.local.set({ [FAVORITES_KEY]: favoriteStore(customCids) });
+    await waitFor(dom, () => chip(dom, 'Fav climbers').disabled === false);
+    assert.equal(chipCount(dom, 'Fav climbers'), String(
+        dataRows(dom).filter(row => customCids.includes(rowCid(row))).length));
+});
+
+test('buddy mode reads the owner-scoped local cache', async () => {
+    const cache = {
+        ownerCid: 900001,
+        entries: customCids.map((cid, index) => ({ cid, name: `Buddy ${index + 1}` })),
+        fetchedAt: Date.now(),
+    };
+    const dom = await loadPageWithBar(SMALL, { url: SMALL_URL, local: { [BUDDY_CACHE_KEY]: cache } });
+    const expected = dataRows(dom).filter(row => customCids.includes(rowCid(row))).length;
+    assert.equal(chipCount(dom, 'Climbing buddies'), String(expected));
+    assert.equal(chip(dom, 'Climbing buddies').disabled, false);
+});
+
+test('a cache from another signed-in account is treated as absent', async () => {
+    const cache = {
+        ownerCid: 900099,
+        entries: [{ cid: customCids[0], name: 'Other Account Buddy' }],
+        fetchedAt: Date.now(),
+    };
+    const dom = await loadPageWithBar(SMALL, {
+        url: SMALL_URL,
+        local: { [BUDDY_CACHE_KEY]: cache },
+        prepare: page => {
+            const owner = page.window.document.createElement('a');
+            owner.href = '/climber/ClimbListC.aspx?cid=900001';
+            owner.textContent = 'My Ascents';
+            page.window.document.body.prepend(owner);
+        },
+    });
+    const buddyChip = chip(dom, 'Climbing buddies');
+    assert.equal(buddyChip.querySelector('.pbaf-count').hidden, true);
+    assert.equal(chipCount(dom, 'Climbing buddies'), '', 'an unknown Buddy count must not look like a known zero');
+    assert.equal(buddyChip.disabled, false, 'the signed-in owner can load a fresh list');
+    assert.match(buddyChip.title, /Load your Peakbagger Buddy List/);
+});
+
+test('an active stale buddy cache filters immediately and revalidates once', async () => {
+    const stale = {
+        ownerCid: 900001,
+        entries: [{ cid: customCids[0], name: 'Saved Buddy' }],
+        fetchedAt: 1,
+    };
+    let fetches = 0;
+    let fetchedUrl = '';
+    const dom = await loadPage(SMALL, {
+        url: SMALL_URL,
+        local: { [BUDDY_CACHE_KEY]: stale },
+        prepare: page => {
+            const owner = page.window.document.createElement('a');
+            owner.href = '/climber/ClimbListC.aspx?cid=900001';
+            owner.textContent = 'My Ascents';
+            page.window.document.body.prepend(owner);
+            page.window.localStorage.setItem('pbAscentBetaFilter.v1', JSON.stringify({
+                beta: false, tr: false, minWords: 1, gps: false, link: false, fav: true,
+            }));
+            page.window.fetch = async url => {
+                fetches++;
+                fetchedUrl = String(url);
+                return { status: 200, headers: {}, text: async () => buddyFixture };
+            };
+        },
+    });
+    await waitFor(dom, () => dom.chrome._localStore[BUDDY_CACHE_KEY]?.fetchedAt > 1);
+    assert.equal(fetches, 1);
+    assert.match(fetchedUrl, /report\/report\.aspx\?r=b&cid=900001$/);
+    assert.equal(dom.chrome._localStore[BUDDY_CACHE_KEY].ownerCid, 900001);
+    assert.equal(dom.chrome._localStore[BUDDY_CACHE_KEY].entries.length, 6);
+});
+
+test('a refreshed Buddy List from another account is rejected while the stale cache remains usable', async () => {
+    const stale = {
+        ownerCid: 900001,
+        entries: [{ cid: customCids[0], name: 'Saved Buddy' }],
+        fetchedAt: 1,
+    };
+    const otherAccount = buddyFixture.replace(
+        'climber/climber.aspx?cid=900001">My Home Page',
+        'climber/climber.aspx?cid=900099">My Home Page'
+    );
+    const dom = await loadPage(SMALL, {
+        url: SMALL_URL,
+        local: { [BUDDY_CACHE_KEY]: stale },
+        prepare: page => {
+            const owner = page.window.document.createElement('a');
+            owner.href = '/climber/ClimbListC.aspx?cid=900001';
+            owner.textContent = 'My Ascents';
+            page.window.document.body.prepend(owner);
+            page.window.localStorage.setItem('pbAscentBetaFilter.v1', JSON.stringify({
+                beta: false, tr: false, minWords: 1, gps: false, link: false, fav: true,
+            }));
+            page.window.fetch = async () => ({ status: 200, headers: {}, text: async () => otherAccount });
+        },
+    });
+    await waitFor(dom, () => /different Peakbagger account/i.test(chip(dom, 'Climbing buddies')?.title || ''));
+    assert.equal(dom.chrome._localStore[BUDDY_CACHE_KEY].fetchedAt, 1);
+    assert.match(chip(dom, 'Climbing buddies').title, /Using your saved Buddy List/);
+    assert.equal(chip(dom, 'Climbing buddies').disabled, false);
+});
+
+test('a refreshed Buddy List stays usable when only the local cache write fails', async () => {
+    const stale = {
+        ownerCid: 900001,
+        entries: [{ cid: customCids[0], name: 'Saved Buddy' }],
+        fetchedAt: 1,
+    };
+    const dom = await loadPage(SMALL, {
+        url: SMALL_URL,
+        local: { [BUDDY_CACHE_KEY]: stale },
+        prepare: page => {
+            const owner = page.window.document.createElement('a');
+            owner.href = '/climber/ClimbListC.aspx?cid=900001';
+            owner.textContent = 'My Ascents';
+            page.window.document.body.prepend(owner);
+            page.window.localStorage.setItem('pbAscentBetaFilter.v1', JSON.stringify({
+                beta: false, tr: false, minWords: 1, gps: false, link: false, fav: true,
+            }));
+            page.window.fetch = async () => ({ status: 200, headers: {}, text: async () => buddyFixture });
+            page.chrome.storage.local.set = async () => { throw new Error('storage unavailable'); };
+        },
+    });
+    await waitFor(dom, () => /loaded, but Better Peakbagger could not save it/i.test(
+        chip(dom, 'Climbing buddies')?.title || ''
+    ));
+    assert.equal(chip(dom, 'Climbing buddies').disabled, false,
+        'the freshly fetched non-empty list remains active in memory even when none match this peak');
+    assert.equal(dom.chrome._localStore[BUDDY_CACHE_KEY].fetchedAt, 1,
+        'the failed write does not pretend the persisted cache was refreshed');
+});
+
+test('visiting the implicit signed-in Buddy List refreshes the cache without another request', async () => {
+    let fetches = 0;
+    const dom = await loadPage('report-buddy-list.html', {
+        fixtures: PAGE_FIXTURES,
+        url: 'https://peakbagger.com/report/report.aspx?r=b',
+        prepare: page => { page.window.fetch = async () => { fetches++; throw new Error('unexpected fetch'); }; },
+    });
+    await waitFor(dom, () => dom.chrome._localStore[BUDDY_CACHE_KEY]?.entries?.length === 6);
+    assert.equal(fetches, 0);
+    assert.equal(dom.chrome._localStore[BUDDY_CACHE_KEY].ownerCid, 900001);
+});
+
+test('visiting an empty signed-in Buddy List replaces an older cached list', async () => {
+    const oldCache = {
+        ownerCid: 900001,
+        entries: [{ cid: 900002, name: 'Old Buddy' }],
+        fetchedAt: 1,
+    };
+    const dom = await loadPage('report-buddy-list.html', {
+        fixtures: PAGE_FIXTURES,
+        url: 'https://peakbagger.com/report/report.aspx?r=b',
+        local: { [BUDDY_CACHE_KEY]: oldCache },
+        prepare: page => {
+            const rows = Array.from(page.window.document.querySelectorAll('#RGridView tr'));
+            rows.slice(1).forEach(row => row.remove());
+        },
+    });
+    await waitFor(dom, () => dom.chrome._localStore[BUDDY_CACHE_KEY]?.fetchedAt > 1);
+    assert.equal(dom.chrome._localStore[BUDDY_CACHE_KEY].entries.length, 0);
+});
+
+test('trip-report chip applies its inline word threshold', async () => {
+    const dom = await loadPageWithBar(SMALL, { url: SMALL_URL });
+    const originalCount = Number(chipCount(dom, 'Trip report'));
+
+    // The threshold is per-page UI state, edited through the inline input.
+    const wordsInput = dom.window.document.querySelector('.pbaf-words input');
+    wordsInput.value = '100';
+    wordsInput.dispatchEvent(new dom.window.Event('input'));
+
+    chip(dom, 'Trip report').click();
+    // Independent expectation: rows whose TR cell reports >= 100 words.
+    // (Every such row also counts as beta, so stacking with "Has beta" is a no-op.)
+    const expected = dataRows(dom).filter(r => {
+        const m = /^TR-(\d+)/.exec(r.cells[4].textContent.trim());
+        return m && parseInt(m[1], 10) >= 100;
+    }).length;
+    assert.ok(expected > 0 && expected < originalCount);
+    assert.equal(visibleRows(dom).length, expected);
+});
+
+test('"has beta" definition comes from settings (GPS-only)', async () => {
+    const dom = await loadPageWithBar(SMALL, {
+        url: SMALL_URL,
+        settings: { betaTr: false, betaLink: false }
+    });
+    const expected = dataRows(dom).filter(rowHasGps).length;
+    assert.ok(expected > 0);
+    assert.equal(chipCount(dom, 'Has beta'), String(expected));
+    assert.equal(visibleRows(dom).length, expected);
+    assert.match(chip(dom, 'Has beta').title, /GPS track/);
+    assert.doesNotMatch(chip(dom, 'Has beta').title, /trip report/);
+});
+
+test('beta trip-report signal honors its own word threshold', async () => {
+    const dom = await loadPageWithBar(SMALL, {
+        url: SMALL_URL,
+        settings: { betaGps: false, betaLink: false, betaTrMinWords: 100 }
+    });
+    const expected = dataRows(dom).filter(r => {
+        const m = /^TR-(\d+)/.exec(r.cells[4].textContent.trim());
+        return m && parseInt(m[1], 10) >= 100;
+    }).length;
+    assert.ok(expected > 0);
+    assert.equal(chipCount(dom, 'Has beta'), String(expected));
+    assert.equal(visibleRows(dom).length, expected);
+    assert.match(chip(dom, 'Has beta').title, /≥ 100 words/);
+});
+
+test('an all-off beta definition falls back to all-on', async () => {
+    const dom = await loadPageWithBar(SMALL, {
+        url: SMALL_URL,
+        settings: { betaTr: false, betaGps: false, betaLink: false }
+    });
+    const expected = defaultBetaRows(dom).length;
+    assert.ok(expected > 0);
+    assert.equal(chipCount(dom, 'Has beta'), String(expected));
+});
+
+test('beta definition changes apply live via storage.onChanged', async () => {
+    const dom = await loadPageWithBar(SMALL, { url: SMALL_URL });
+    const initial = Number(chipCount(dom, 'Has beta'));
+    const expected = dataRows(dom).filter(rowHasGps).length;
+    assert.ok(initial > expected && expected > 0);
+
+    await dom.chrome.storage.sync.set({ bpbSettings: { betaTr: false, betaLink: false } });
+    await new Promise(resolve => dom.window.setTimeout(resolve, 10));
+
+    assert.equal(chipCount(dom, 'Has beta'), String(expected));
+    assert.equal(visibleRows(dom).length, expected);
+});
+
+test('the date header is one persistent toggle with no backend links', async () => {
+    const dom = await loadPageWithBar(SMALL, { url: SMALL_URL });
+
+    assert.equal(arrow(dom).textContent.trim(), '▲');
+    assert.equal(sortControl(dom).textContent.trim(), 'Ascent Date ▲');
+    assert.equal(sortControl(dom).tagName, 'BUTTON');
+    assert.equal(sortControl(dom).type, 'button');
+    assert.equal(sortControl(dom).closest('th').getAttribute('aria-sort'), 'ascending');
+    assert.equal(sortControl(dom).closest('th').querySelectorAll('a[href]').length, 0);
+    const before = dateTexts(dom);
+    const labelsBefore = sectionLabels(dom);
+    const visibleBefore = visibleRows(dom).length;
+
+    sortControl(dom).click();
+
+    assert.equal(arrow(dom).textContent.trim(), '▼');
+    assert.equal(sortControl(dom).closest('th').getAttribute('aria-sort'), 'descending');
+    assert.match(dom.window.location.search, /sort=ascentdated(&|$)/i);
+    assert.deepEqual(dateTexts(dom), before.slice().reverse());
+    assert.deepEqual(sectionLabels(dom), labelsBefore.slice().reverse());
+    // The active filter survives the reorder untouched.
+    assert.equal(visibleRows(dom).length, visibleBefore);
+
+    // Clicking the same control restores the served order exactly.
+    sortControl(dom).click();
+    assert.deepEqual(dateTexts(dom), before);
+    assert.equal(arrow(dom).textContent.trim(), '▲');
+    assert.ok(dom.window.location.search.match(/sort=ascentdate(&|$)/i));
+});
+
+test('capture guard intercepts native header sort links but lets year links navigate', async () => {
+    const dom = await loadPageWithBar(SMALL, { url: SMALL_URL });
+    const { document, MouseEvent } = dom.window;
+
+    // Recreate the native header link that exists before initialization replaces
+    // the pair. The document-start guard must prevent its navigation and route
+    // the requested direction through the now-ready DOM sorter.
+    const nativeHeader = document.createElement('th');
+    nativeHeader.innerHTML = '<a href="?pid=1039&sort=ascentdated&u=ft&y=9998">Ascent Date</a>';
+    document.body.appendChild(nativeHeader);
+    const header = nativeHeader.querySelector('a');
+    const headerEvent = new MouseEvent('click', { bubbles: true, cancelable: true });
+    header.dispatchEvent(headerEvent);
+    assert.equal(headerEvent.defaultPrevented, true);
+    assert.equal(arrow(dom).textContent.trim(), '▼');
+
+    // A year-jump-style link is outside a th, so the guard must leave it alone.
+    const jump = document.createElement('a');
+    jump.href = 'PeakAscents.aspx?pid=1039&sort=ascentdate&u=ft&y=1999';
+    jump.textContent = '1999';
+    document.body.appendChild(jump);
+    let preventedByGuard = null;
+    jump.addEventListener('click', event => {
+        preventedByGuard = event.defaultPrevented;
+        event.preventDefault(); // Keep jsdom from attempting a real navigation.
+    });
+    const jumpEvent = new MouseEvent('click', { bubbles: true, cancelable: true });
+    jump.dispatchEvent(jumpEvent);
+    assert.equal(preventedByGuard, false);
+});
+
+test('sort clicks fall back to native navigation when initialization fails', async () => {
+    // Force a deterministic fault inside setupInstantTableSort. The JSDOM
+    // window has its own intrinsics, so this cannot leak into other tests.
+    const dom = await loadPage(SMALL, {
+        url: SMALL_URL,
+        prepare: page => page.window.eval(
+            'Intl.Collator = function () { throw new Error("forced Collator failure"); };')
+    });
+    await new Promise(resolve => setTimeout(resolve, 20));
+    assert.equal(bar(dom), null, 'the filter bar must not appear after the forced failure');
+
+    const header = dom.window.document.querySelector('th a[href*="sort="]');
+    assert.ok(header, 'the native sort links must remain in place');
+    let preventedByGuard = null;
+    header.addEventListener('click', event => {
+        preventedByGuard = event.defaultPrevented;
+        event.preventDefault(); // Keep jsdom from attempting a real navigation.
+    });
+    header.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, cancelable: true }));
+    assert.equal(preventedByGuard, false,
+        'a failed initialization must release sort clicks to native navigation');
+});
+
+test('a desc-served page starts with the ▼ indicator and reverses to asc', async () => {
+    const dom = await loadPageWithBar('21500-y9998-sort-ascentdated.html', {
+        url: 'https://www.peakbagger.com/climber/PeakAscents.aspx?pid=21500&u=ft&y=9998&sort=ascentdated'
+    });
+    assert.equal(arrow(dom).textContent.trim(), '▼');
+    const before = dateTexts(dom);
+    sortControl(dom).click();
+    assert.deepEqual(dateTexts(dom), before.slice().reverse());
+    assert.equal(arrow(dom).textContent.trim(), '▲');
+});
+
+test('a non-date-served page replaces backend links and preserves its active sort', async () => {
+    const dom = await loadPageWithBar('8241-y9999-sort-quality.html', {
+        url: 'https://www.peakbagger.com/climber/PeakAscents.aspx?pid=8241&u=ft&y=9999&sort=Quality'
+    });
+
+    assert.ok(sortControl(dom));
+    assert.equal(tableSortControl(dom, 'Qlty').closest('th').getAttribute('aria-sort'), 'descending');
+    assert.equal(tableSortControl(dom, 'Qlty').querySelector('.pbaf-sort-arrow').textContent.trim(), '▼');
+    assert.equal(table(dom).querySelectorAll('th a[href]').length, 0);
+    assert.equal(sectionRows(dom).length, 0);
+});
+
+test('all native sortable headers become client-side controls', async () => {
+    const dom = await loadPageWithBar('1039-default-full-columns.html', {
+        url: 'https://www.peakbagger.com/climber/PeakAscents.aspx?pid=1039'
+    });
+    const header = [...table(dom).rows].find(row => row.cells[0]?.tagName === 'TH');
+    const labels = [...header.querySelectorAll('.pbaf-table-sort')]
+        .map(control => control.firstChild.textContent.trim());
+
+    assert.deepEqual(labels, [
+        'Climber', 'Ascent Date', 'Type', 'GPS', 'TR-Words', 'Route',
+        'Gain-Ft', 'Mi', 'Route Icons', 'Gear Icons', 'Qlty', 'Link'
+    ]);
+    assert.equal(header.querySelectorAll('a[href]').length, 0);
+    assert.ok([...header.querySelectorAll('.pbaf-table-sort')].every(control => control.type === 'button'));
+});
+
+test('text and numeric controls sort existing rows in both directions', async () => {
+    const dom = await loadPageWithBar('1039-default-full-columns.html', {
+        url: 'https://www.peakbagger.com/climber/PeakAscents.aspx?pid=1039'
+    });
+    const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
+    const climbers = () => dataRows(dom).map(row => row.cells[0].textContent.trim());
+    const words = () => dataRows(dom).map(row => {
+        const match = /TR-(\d+)/.exec(row.cells[4].textContent.trim());
+        return match ? parseInt(match[1], 10) : 0;
+    });
+    const isOrdered = (values, compare) => values.every((value, index) =>
+        index === 0 || compare(values[index - 1], value) <= 0
+    );
+
+    tableSortControl(dom, 'Climber').click();
+    assert.ok(isOrdered(climbers(), (left, right) => collator.compare(left, right)));
+    assert.ok(sectionRows(dom).every(row => row.hidden));
+
+    tableSortControl(dom, 'Climber').click();
+    assert.ok(isOrdered(climbers(), (left, right) => collator.compare(right, left)));
+
+    tableSortControl(dom, 'TR-Words').click();
+    assert.ok(isOrdered(words(), (left, right) => right - left));
+    tableSortControl(dom, 'TR-Words').click();
+    assert.ok(isOrdered(words(), (left, right) => left - right));
+});
+
+test('switching back to date restores exact rows and year separators', async () => {
+    const dom = await loadPageWithBar('1039-default-full-columns.html', {
+        url: 'https://www.peakbagger.com/climber/PeakAscents.aspx?pid=1039'
+    });
+    const datesBefore = dateTexts(dom);
+    const sectionsBefore = sectionLabels(dom);
+
+    tableSortControl(dom, 'GPS').click();
+    assert.ok(sectionRows(dom).every(row => row.hidden));
+
+    sortControl(dom).click();
+    assert.deepEqual(dateTexts(dom), datesBefore);
+    assert.deepEqual(sectionLabels(dom), sectionsBefore);
+    assert.ok(sectionRows(dom).every(row => !row.hidden));
+});
+
+test('default views sort their current rows without adopting backend-link params', async () => {
+    // The native links add y=9998, but the current table is already a complete
+    // sortable row set. Reordering it must preserve the default-view URL.
+    const dom = await loadPageWithBar('2296-rainier-default-recent-year.html', {
+        url: 'https://www.peakbagger.com/climber/PeakAscents.aspx?pid=2296'
+    });
+    const before = dateTexts(dom);
+    sortControl(dom).click();
+    assert.deepEqual(dateTexts(dom), before.slice().reverse());
+    assert.equal(new dom.window.URL(dom.window.location.href).searchParams.get('y'), null);
+    assert.equal(new dom.window.URL(dom.window.location.href).searchParams.get('sort'), 'ascentdated');
+});
+
+test('personal ClimbListC pages retain the beta bar and persistent date toggle', async () => {
+    const dom = await loadPage('climber-ascents.html', {
+        fixtures: PAGE_FIXTURES,
+        url: 'https://www.peakbagger.com/climber/ClimbListC.aspx?cid=40786'
+    });
+    await waitFor(dom, () => bar(dom) && sortControl(dom));
+
+    assert.ok(bar(dom));
+    assert.match(status(dom), /^Showing \d+ of 38 ascents$/);
+    assert.equal(sortControl(dom).textContent.trim(), 'Ascent Date ▲');
+    assert.equal(sortControl(dom).tabIndex, 0);
+    const visibleBefore = visibleRows(dom).length;
+    const before = dateTexts(dom);
+    sortControl(dom).dispatchEvent(new dom.window.KeyboardEvent('keydown', {
+        key: ' ', bubbles: true, cancelable: true
+    }));
+    assert.deepEqual(dateTexts(dom), before.slice().reverse());
+    assert.equal(visibleRows(dom).length, visibleBefore);
+    const url = new dom.window.URL(dom.window.location.href);
+    assert.equal(url.searchParams.get('cid'), '40786');
+    assert.equal(url.searchParams.get('y'), null);
+    assert.equal(url.searchParams.get('sort'), 'ascentdated');
+});
+
+test('personal all-years date URLs toggle in place', async () => {
+    const dom = await loadPage('climber-ascents.html', {
+        fixtures: PAGE_FIXTURES,
+        url: 'https://www.peakbagger.com/climber/ClimbListC.aspx?cid=40786&sort=AscentDate&u=ft&j=-1&y=9999'
+    });
+    await waitFor(dom, () => bar(dom) && sortControl(dom));
+
+    assert.ok(bar(dom));
+    const before = dateTexts(dom);
+    sortControl(dom).click();
+    assert.deepEqual(dateTexts(dom), before.slice().reverse());
+    const url = new dom.window.URL(dom.window.location.href);
+    assert.equal(url.searchParams.get('y'), '9999');
+    assert.equal(url.searchParams.get('j'), '-1');
+    assert.equal(url.searchParams.get('sort'), 'ascentdated');
+});
+
+test('Buddy List sorts every displayed field without showing beta controls', async () => {
+    const pageUrl = 'https://peakbagger.com/report/report.aspx?r=b&cid=900001';
+    const dom = await loadPage('report-buddy-list.html', {
+        fixtures: PAGE_FIXTURES,
+        url: pageUrl
+    });
+    await waitFor(dom, () => dom.window.document.querySelectorAll('#RGridView .pbaf-table-sort').length === 6);
+
+    const buddyTable = dom.window.document.getElementById('RGridView');
+    const rows = () => [...buddyTable.rows].slice(1);
+    const controls = [...buddyTable.querySelectorAll('.pbaf-table-sort')];
+    const labels = controls.map(control => control.firstChild.textContent.trim());
+    assert.deepEqual(labels, [
+        'Climber', 'Ascent List', 'Ascent Date', 'Peak or Point', 'Elev-ft', 'Location'
+    ]);
+    assert.equal(bar(dom), null, 'the Buddy List must not show a beta filter or compact-view notice');
+    assert.equal(buddyTable.dataset.bpbInstantSort, 'ready');
+    assert.equal(tableSortControl(dom, 'Climber').closest('th').getAttribute('aria-sort'), 'ascending');
+
+    const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
+    const valueAt = (row, index) => {
+        const text = row.cells[index].textContent.trim();
+        return index === 4 ? parseFloat(text.replace(/,/g, '')) : text;
+    };
+    const compareAt = (left, right, index) => index === 4
+        ? left - right
+        : collator.compare(left, right);
+    const isOrdered = (values, compare) => values.every((value, index) =>
+        index === 0 || compare(values[index - 1], value) <= 0
+    );
+
+    for (const [columnIndex, control] of controls.entries()) {
+        control.click();
+        const ariaSort = control.closest('th').getAttribute('aria-sort');
+        assert.ok(ariaSort === 'ascending' || ariaSort === 'descending', `${labels[columnIndex]} did not activate`);
+        const values = rows().map(row => valueAt(row, columnIndex));
+        const direction = ariaSort === 'ascending' ? 1 : -1;
+        assert.ok(isOrdered(values, (left, right) => direction * compareAt(left, right, columnIndex)),
+            `${labels[columnIndex]} did not sort ${ariaSort}`);
+
+        control.click();
+        assert.notEqual(control.closest('th').getAttribute('aria-sort'), ariaSort,
+            `${labels[columnIndex]} did not toggle direction`);
+    }
+
+    assert.equal(dom.window.location.href, pageUrl,
+        'frontend Buddy sorting must not invent unsupported backend sort parameters');
+});
+
+test('other report modes remain untouched despite the query-agnostic manifest match', async () => {
+    const dom = await loadPage('report-buddy-list.html', {
+        fixtures: PAGE_FIXTURES,
+        url: 'https://peakbagger.com/report/report.aspx?r=p&cid=900001'
+    });
+    await new Promise(resolve => dom.window.setTimeout(resolve, 10));
+    assert.equal(dom.window.document.querySelectorAll('.pbaf-table-sort').length, 0);
+    assert.equal(dom.window.document.getElementById('RGridView').dataset.bpbInstantSort, undefined);
+    assert.equal(bar(dom), null);
+});
+
+// --- Newest-ascents-first (betaSortDateDesc, default off) --------------------
+
+const DEFAULT_RECENT = '2296-rainier-default-recent-year.html';
+const DEFAULT_RECENT_URL = 'https://www.peakbagger.com/climber/PeakAscents.aspx?pid=2296';
+const sortParam = dom => new dom.window.URL(dom.window.location.href).searchParams.get('sort');
+
+test('newest-first flips a default oldest-first list to descending and rewrites the URL', async () => {
+    const served = dateTexts(await loadPageWithBar(DEFAULT_RECENT, { url: DEFAULT_RECENT_URL }));
+
+    const dom = await loadPageWithBar(DEFAULT_RECENT, {
+        url: DEFAULT_RECENT_URL,
+        settings: { betaSortDateDesc: true }
+    });
+    await waitFor(dom, () => sortParam(dom) === 'ascentdated');
+    assert.deepEqual(dateTexts(dom), served.slice().reverse());
+    assert.equal(arrow(dom).textContent.trim(), '▼');
+});
+
+test('newest-first off leaves the served oldest-first order untouched', async () => {
+    const dom = await loadPageWithBar(DEFAULT_RECENT, { url: DEFAULT_RECENT_URL });
+    await new Promise(resolve => setTimeout(resolve, 10));
+    assert.equal(sortParam(dom), null, 'no sort param is added when the setting is off');
+    assert.equal(arrow(dom).textContent.trim(), '▲');
+});
+
+test('newest-first respects an explicit URL sort and never rewrites it', async () => {
+    const dom = await loadPageWithBar('21500-y9999-sort-ascentdate.html', {
+        url: 'https://www.peakbagger.com/climber/PeakAscents.aspx?pid=21500&u=ft&y=9999&sort=ascentdate',
+        settings: { betaSortDateDesc: true }
+    });
+    await new Promise(resolve => setTimeout(resolve, 10)); // let a mis-firing flip land, if any
+    assert.equal(sortParam(dom), 'ascentdate');
+    assert.equal(arrow(dom).textContent.trim(), '▲');
+});
+
+test('newest-first leaves an already-descending served page untouched', async () => {
+    const dom = await loadPageWithBar('21500-y9998-sort-ascentdated.html', {
+        url: 'https://www.peakbagger.com/climber/PeakAscents.aspx?pid=21500&u=ft&y=9998&sort=ascentdated',
+        settings: { betaSortDateDesc: true }
+    });
+    await new Promise(resolve => setTimeout(resolve, 10));
+    assert.equal(sortParam(dom), 'ascentdated');
+    assert.equal(arrow(dom).textContent.trim(), '▼');
+});
+
+test('a header sort captured before settings resolve wins over the auto-flip', async () => {
+    const served = dateTexts(await loadPageWithBar(DEFAULT_RECENT, { url: DEFAULT_RECENT_URL }));
+
+    // Hold the one settings read open so the sorter wires up (buttons replace
+    // the native links) while the auto-flip is still pending.
+    let release;
+    const gate = new Promise(resolve => { release = resolve; });
+    const dom = await loadPage(DEFAULT_RECENT, {
+        url: DEFAULT_RECENT_URL,
+        settings: { betaSortDateDesc: true },
+        prepare: page => {
+            const realGet = page.chrome.storage.sync.get;
+            page.chrome.storage.sync.get = async (...args) => { await gate; return realGet(...args); };
+        }
+    });
+    await waitFor(dom, () => sortControl(dom));
+    assert.equal(bar(dom), null, 'the bar waits on settings, which are still gated');
+
+    // A native header anchor click the document-start guard captures and holds.
+    const th = dom.window.document.createElement('th');
+    th.innerHTML = '<a href="?pid=2296&sort=ascentdate&u=ft&y=9999">Ascent Date</a>';
+    dom.window.document.body.appendChild(th);
+    th.querySelector('a').dispatchEvent(
+        new dom.window.MouseEvent('click', { bubbles: true, cancelable: true }));
+
+    release();
+    await waitFor(dom, () => bar(dom));
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    assert.deepEqual(dateTexts(dom), served, 'the auto-flip must not reverse a user-chosen sort');
+    assert.equal(sortParam(dom), null, 'the skipped auto-flip left the URL alone');
+});

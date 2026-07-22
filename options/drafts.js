@@ -3,8 +3,8 @@
 //
 // Better Peakbagger — device-local trip-report draft manager.
 
-import { reportDrafts as Drafts } from '../src/report-drafts.js';
-import { reportMarkup as Markup } from '../src/report-markup.js';
+import { reportDrafts as Drafts } from '../src/reports/report-drafts.js';
+import { reportMarkup as Markup } from '../src/reports/report-markup.js';
 
 (() => {
     'use strict';

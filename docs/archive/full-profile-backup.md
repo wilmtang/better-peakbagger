@@ -78,7 +78,7 @@ The workflow, from the user's side:
 - **The edit page is the highest-fidelity field source.** `AscentEdit.aspx?aid=`
   (owner only) serves the same `Form1` the save-time snapshot reads, including
   `JournalText` with the trip report's **raw bracket-markup source** — not the
-  rendered HTML. `src/ascent-snapshot.js` already owns this form's field
+  rendered HTML. `src/ascent/ascent-snapshot.js` already owns this form's field
   mapping and can be reused nearly verbatim on a `DOMParser`-parsed fetch.
 - **No Cloudflare friction for same-origin, logged-in traffic.** The list and
   edit pages loaded normally in the user's session. Backfill fetches run from
@@ -232,7 +232,7 @@ never abort the run.
 
 ## Snapshot completeness (also improves the per-save backup)
 
-`src/ascent-snapshot.js` currently captures only a subset of the edit form.
+`src/ascent/ascent-snapshot.js` currently captures only a subset of the edit form.
 Live inspection of the form shows these gaps, all wanted for both the
 per-save snapshot and the backfill:
 
@@ -249,7 +249,7 @@ per-save snapshot and the backfill:
   `URLTB` (external trip-report URL), and the trip fields (`TripDD`,
   `TripSeqText`) if we choose to record trip membership.
 
-`src/github-backup.js` already serializes registered companions and weather;
+`src/github/github-backup.js` already serializes registered companions and weather;
 the changes concentrate in the snapshot reader plus small payload-builder
 extensions (new weather labels, routeDown, externalUrl). Additive keys keep
 `schemaVersion: 1`; nothing previously emitted changes meaning, because

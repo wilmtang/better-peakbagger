@@ -15,7 +15,7 @@ missing. It works for *some* layers, which is what makes it look flaky rather
 than broken.
 
 In the failing case the drape picker falls back to **"Terrain only"** and a
-short notice explains why (`markBasemapFailed` in `src/terrain-frame.js`),
+short notice explains why (`markBasemapFailed` in `src/terrain/terrain-frame.js`),
 instead of keeping the selected layer name.
 
 ## What the pieces are
@@ -23,7 +23,7 @@ instead of keeping the selected layer name.
 The 3D view is a MapLibre GL scene rendered inside an extension-owned iframe
 (`terrain/terrain.html`), kept off Peakbagger's origin so MapLibre and its
 worker run with a real extension origin. The scene stacks four things
-(`src/terrain-frame.js:245-286`):
+(`src/terrain/terrain-frame.js:245-286`):
 
 1. `terrain-background` — a flat background color.
 2. `terrain-relief` — color-relief computed from the DEM.
@@ -37,10 +37,10 @@ itself. The missing piece is item 3, the `basemap` drape.
 The drape's tile URL is lifted out of Peakbagger's live Leaflet map: the
 selected layer's tile template is read from the `MasterMap.aspx` iframe,
 its `{s}`/`{r}` placeholders are expanded, and it is normalized to a
-`{z}/{x}/{y}` template (`src/gpx-analyzer.js:808-844`, helper
+`{z}/{x}/{y}` template (`src/gpx/gpx-analyzer.js:808-844`, helper
 `expandLeafletTileUrl` at `:776-806`). That template is handed to the terrain
 frame, validated, and used to build the `basemap` raster source
-(`src/terrain-frame.js:253-267`).
+(`src/terrain/terrain-frame.js:253-267`).
 
 ## Root cause: the drape's tiles fail a CORS check
 
@@ -151,8 +151,8 @@ of the three asking to read.
 
 The DEM never touches an `<img>`. It is fetched through the `bpb-dem://`
 custom protocol whose handler does its own `fetch()` and returns raw
-`ArrayBuffer` bytes to MapLibre (`src/terrain-frame.js:378-381`,
-`src/terrain-cache.js:189-206`). MapLibre builds the texture from bytes already
+`ArrayBuffer` bytes to MapLibre (`src/terrain/terrain-frame.js:378-381`,
+`src/terrain/terrain-cache.js:189-206`). MapLibre builds the texture from bytes already
 in JS memory — there is no cross-origin image element, so there is no taint to
 trip over. (Mapterhorn also sends ACAO, but the bytes path is the structural
 reason.) This is exactly the trick the fix borrows.
@@ -160,7 +160,7 @@ reason.) This is exactly the trick the fix borrows.
 ## Why "most of the time," not always
 
 Providers that *do* send `ACAO: *` drape fine — e.g. OpenTopoMap, which is the
-layer hard-coded in the passing test at `test/terrain-map.test.mjs:72`.
+layer hard-coded in the passing test at `test/terrain/terrain-map.test.mjs:72`.
 Peakbagger's default and many of its layers (USGS topo, aerials, and other
 providers consumed by Leaflet as plain images) send no ACAO and fail. So the
 outcome splits by which layer happens to be selected, which reads to the user
@@ -171,7 +171,7 @@ as flakiness.
 The error handling is all-or-nothing. A single `error` event tagged
 `sourceId: 'basemap'` — one 404 edge tile, one transient blip — sets
 `basemapFailed` and removes the entire layer
-(`src/terrain-frame.js:398-405`, and again on `load` at `:428`, via
+(`src/terrain/terrain-frame.js:398-405`, and again on `load` at `:428`, via
 `removeFailedBasemap` at `:295-303`). So even a CORS-capable provider is
 fragile: one missing tile collapses the drape to "Terrain only."
 
@@ -181,7 +181,7 @@ The behavior is deliberate graceful degradation, not an accidental crash. The
 existing test asserts it by name:
 
 ```js
-// test/terrain-map.test.mjs — a layer that fails CORS reverts to terrain-only
+// test/terrain/terrain-map.test.mjs — a layer that fails CORS reverts to terrain-only
 // and explains why in the notice, without taking down the terrain renderer.
 assert.equal(picker().options[picker().selectedIndex].textContent, 'Terrain only');
 assert.match(window.document.querySelector('.bpb-terrain-notice').textContent, /can’t be draped/);
@@ -202,7 +202,7 @@ share Peakbagger's origin. It does not work, for two independent reasons.
 claim `https://www.peakbagger.com` — that relabeling is precisely what the
 same-origin policy exists to prevent. The frame is on the extension origin on
 purpose, so MapLibre and its worker run with extension privileges rather than a
-content-script sandbox (`src/terrain-map.js:4-6`).
+content-script sandbox (`src/terrain/terrain-map.js:4-6`).
 
 **Even if you could, it would fix nothing.** The CORS check compares the *tile
 server's* origin against the *document's* origin — not the frame against
@@ -256,9 +256,9 @@ partial coverage gaps. The design is fail-safe: removal requires a real error,
 so a fully working layer is never dropped even if success detection misses.
 
 This makes every CORS-capable provider drape reliably and fully. It does not
-help the non-CORS majority — that is Tier 2. See `src/terrain-frame.js`
+help the non-CORS majority — that is Tier 2. See `src/terrain/terrain-frame.js`
 (`basemapErrored` / `basemapContentLoaded` / `basemapChecked` and the
-`error`/`data`/`idle` handlers), covered by `test/terrain-map.test.mjs`.
+`error`/`data`/`idle` handlers), covered by `test/terrain/terrain-map.test.mjs`.
 
 ### Tier 2 — make non-CORS providers work (the actual feature fix)
 
@@ -267,7 +267,7 @@ help the non-CORS majority — that is Tier 2. See `src/terrain-frame.js`
    validated real template in a frame variable, and in the handler substitute
    `{z}/{x}/{y}`, `fetch()` the real tile, and return `{ data }`. Bytes via
    `addProtocol` produce a CORS-clean texture — no `crossOrigin`, no taint.
-   (Bonus: the LRU cache in `src/terrain-cache.js` can be generalized to cache
+   (Bonus: the LRU cache in `src/terrain/terrain-cache.js` can be generalized to cache
    basemap tiles too.)
 2. The handler's `fetch()` still needs cross-origin permission, so add
    `optional_host_permissions` and request it at runtime, gated behind the
@@ -294,21 +294,21 @@ today's safe default for anyone who declines.
 
 Per the fixtures workflow, the live site is Cloudflare-blocked, so Tier 2 can't
 be exercised end-to-end against real providers locally. It will rely on the
-stubbed MapLibre harness in `test/terrain-map.test.mjs` plus a manual check in a
+stubbed MapLibre harness in `test/terrain/terrain-map.test.mjs` plus a manual check in a
 real browser against a known non-CORS Peakbagger layer.
 
 ## Reference index
 
 | Concern | Location |
 | --- | --- |
-| Terrain scene / layer stack | `src/terrain-frame.js:245-286` |
-| `basemap` raster source built from raw https tiles | `src/terrain-frame.js:253-267` |
-| Basemap keep/drop decision (Tier 1: error/data/idle handlers) | `src/terrain-frame.js:404-425` |
-| `markBasemapFailed` / "Terrain only" fallback + notice | `src/terrain-frame.js` |
-| DEM via custom protocol (the working path) | `src/terrain-frame.js:378-381`, `src/terrain-cache.js:189-206` |
-| Tile URL extraction from Leaflet | `src/gpx-analyzer.js:808-844`, `:776-806` |
-| Consent gesture to gate a permission request | `src/gpx-analyzer.js:719-722` |
+| Terrain scene / layer stack | `src/terrain/terrain-frame.js:245-286` |
+| `basemap` raster source built from raw https tiles | `src/terrain/terrain-frame.js:253-267` |
+| Basemap keep/drop decision (Tier 1: error/data/idle handlers) | `src/terrain/terrain-frame.js:404-425` |
+| `markBasemapFailed` / "Terrain only" fallback + notice | `src/terrain/terrain-frame.js` |
+| DEM via custom protocol (the working path) | `src/terrain/terrain-frame.js:378-381`, `src/terrain/terrain-cache.js:189-206` |
+| Tile URL extraction from Leaflet | `src/gpx/gpx-analyzer.js:808-844`, `:776-806` |
+| Consent gesture to gate a permission request | `src/gpx/gpx-analyzer.js:719-722` |
 | MapLibre `crossOrigin` / same-origin test | `vendor/maplibre-gl-csp.js` (`_t`) |
-| Test acknowledging CORS failure | `test/terrain-map.test.mjs:309-311` |
-| Extension-origin rationale for the frame | `src/terrain-map.js:4-6` |
+| Test acknowledging CORS failure | `test/terrain/terrain-map.test.mjs:309-311` |
+| Extension-origin rationale for the frame | `src/terrain/terrain-map.js:4-6` |
 | Host permissions (peakbagger only) | `manifest.json:20-23` |

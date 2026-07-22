@@ -45,7 +45,7 @@ invisible.
 
 ### Fix
 
-`src/terrain-frame.js` calls MapLibre's `setSourceTileLodParams` to tighten
+`src/terrain/terrain-frame.js` calls MapLibre's `setSourceTileLodParams` to tighten
 the spread to 4 zoom levels for the raster drape source only.  At that
 spread the centre tile holds z15 through pitch 60, which covers every pitch
 the 3D view actually uses.
@@ -121,7 +121,7 @@ cannot.
 
 ## Verification
 
-The drape LOD tests are in `test/terrain-basemap.test.mjs`: they pin that
+The drape LOD tests are in `test/terrain/terrain-basemap.test.mjs`: they pin that
 OpenTopoMap and live Leaflet layers keep `stockLod: true`, and that every
 other known host takes the tuned LOD.  The GPU renderer assertion runs at
 the start of every `npm run terrain:verify` invocation.  Both changes were
