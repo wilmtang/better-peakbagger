@@ -7,16 +7,18 @@ or credit decisions.
 
 Captured activity data leaves the browser only for the Peakbagger summit lookup
 and GPS Preview actions described below. Optional 3D map providers receive tile
-requests for the viewed area only after the user enables that feature. A custom
-favorite-climber list reaches GitHub only when the user explicitly backs it up
-to their connected repository.
+requests for the viewed area only after the user enables that feature. Settings
+and a custom favorite-climber list reach GitHub only through the user's connected
+repository, either on an explicit backup click or after the user separately
+enables automatic backup for that data.
 
 ## Browser permissions
 
 - **`storage`** saves theme, units, chart, map, capture, editor, beta-filter,
-  and favorite-source preferences in `storage.sync`. It keeps the bounded DEM
-  cache index, custom favorite-climber list, owner-scoped Buddy List cache, and
-  GitHub backup token/repository in `storage.local`; short-lived capture jobs,
+  favorite-source, and backup-toggle preferences in `storage.sync`. It keeps
+  the bounded DEM cache index, custom favorite-climber list, owner-scoped Buddy
+  List cache, GitHub backup token/repository, and automatic-backup signatures
+  and retry state in `storage.local`; short-lived capture jobs,
   prepared drafts, save-time backup snapshots, and an in-progress GitHub device
   authorization live in `storage.session`. Capture, draft, and snapshot records
   expire after 30 minutes; pending authorization is removed when its GitHub
@@ -32,15 +34,18 @@ to their connected repository.
 - **`tabGroups`** groups newly opened ascent drafts under **Peak Drafts**. It
   does not inspect or reorganize unrelated groups.
 - **`alarms`** runs cleanup every five minutes so expired capture jobs and
-  draft payloads are removed from session storage.
+  draft payloads are removed from session storage. It also provides the
+  one-minute debounce and bounded delayed retries for user-enabled automatic
+  settings and favorite-climber backups.
 - **Peakbagger host access** enables GPX analysis, ascent filtering, theme,
   login and summit checks, validated draft filling, and user-initiated favorite
   management on Peakbagger. There is no persistent Garmin Connect or Strava
   host access.
 - **Optional GitHub host access** (`github.com`, `api.github.com`) is requested
-  only when the user turns on GitHub backup, and only then. It authorizes the
-  extension to sign in via GitHub's device flow and to write ascent backups to
-  the one repository the user grants. The GitHub user token lives in
+  only when the user connects GitHub backup. It authorizes the extension to
+  sign in via GitHub's device flow and to write the selected ascent, settings,
+  and favorite-climber backups to the one repository the user grants. The
+  GitHub user token lives in
   `storage.local` (never `storage.sync`), is held only by the background worker,
   and is never exposed to any web page.
 - **Firefox `locationInfo` disclosure** reports that activity coordinates are
@@ -191,10 +196,11 @@ minutes to make re-entry instant, then released — but does not clear the cache
 
 GitHub is disconnected by default. The user must explicitly grant GitHub host
 access, authorize the extension, and select a repository. Ascent backup is a
-separate setting and remains off until enabled; favorite backup and restore can
-use the connection without enabling ascent backup. None of these features block
-or alter the Peakbagger save, and the extension never clicks a Peakbagger Save
-control.
+separate setting and remains off until enabled; settings and favorite backup or
+restore can use the connection without enabling ascent backup. Their automatic
+backup toggles are also separate and off by default. None of these features
+block or alter the Peakbagger save, and the extension never clicks a
+Peakbagger Save control.
 
 - **What leaves the browser:** for an ascent the user chooses to back up, the
   extension sends that ascent's structured fields (the values the user entered),
@@ -202,10 +208,13 @@ control.
   reduced, user-approved track Peakbagger already publishes on the ascent page,
   not the raw provider GPX, which still never leaves the activity page. It goes
   only to the single GitHub repository the user granted, over the GitHub API.
-  An explicit **Back up favorites** action separately sends `favorite-climbers.json`
+  A favorite-climber backup separately sends `favorite-climbers.json`
   containing the custom list's climber ids, displayed names, added-at timestamps,
-  provenance, and export time to that same repository. It contains no ascent,
-  activity, GPS, or Buddy-cache owner data.
+  provenance, and export time. A settings backup sends `settings.json`, containing
+  only the extension's validated settings schema values, export time, schema
+  version, and extension version. It never contains the GitHub token or selected
+  repository, favorites, drafts, caches, ascent, activity, or GPS data. These two
+  transfers write only those fixed root files in the same selected repository.
 - **When it leaves:** only on the user's explicit **Back up to GitHub** click,
   an explicit **Back up all ascents** or confirmed **Refresh all** run from the
   user's own ascent list, or — if the user separately turns on automatic
@@ -216,9 +225,12 @@ control.
   mountain folders at the repository root plus a small repository marker; a
   populated repository is inspected and requires explicit confirmation before
   selection, and unrelated files are preserved. No ascent is transmitted
-  without one of those opt-ins. Favorite backup and restore occur only when the
-  corresponding Settings button is clicked; automatic ascent backup never
-  includes or updates `favorite-climbers.json`.
+  without one of those opt-ins. Settings and favorites leave on an explicit
+  backup click, or automatically after their stored value changes while that
+  data type's user-enabled automatic-backup toggle is on. Restore is always an
+  explicit Settings action with a confirmation and never runs automatically.
+  Automatic ascent backup never includes or updates `settings.json` or
+  `favorite-climbers.json`.
 - **Ownership:** the backup affordance appears only on ascents the signed-in
   climber owns. Full-profile controls additionally require the signed-in
   climber's own **My Ascents** identity and an edit affordance for every parsed
@@ -229,6 +241,12 @@ control.
   token can reach only that repository's contents and is revocable at any time
   by disconnecting in Settings or uninstalling the app on GitHub. The token is
   stored in `storage.local` and never synced.
+
+Settings can also be exported as a JSON file downloaded by the browser and
+imported into another profile without GitHub. Export happens only when the user
+clicks **Export settings**. Import validates the file through the current
+settings schema and requires an inline confirmation before replacing the current
+settings; it does not upload the file anywhere.
 
 ## Third-party services
 
@@ -251,10 +269,11 @@ control.
 - **GitHub** receives ascent backups (fields, Markdown trip report, and
   Peakbagger's stored GPS track) only after the user enables GitHub backup,
   connects a repository, and clicks Back up, starts a profile backup/refresh,
-  or opts into automatic backup. It receives the custom favorite-climber list
-  only on an explicit **Back up favorites** click, and returns that file only on
-  an explicit **Restore from backup** click. Data goes only to the user-chosen
-  repository.
+  or opts into automatic backup. It receives settings or the custom
+  favorite-climber list on an explicit backup click, or after a change while
+  the corresponding automatic-backup toggle is enabled. It returns either fixed
+  root file only on an explicit restore click. Data goes only to the
+  user-chosen repository.
 
 Better Peakbagger packages all extension code and libraries locally. A YouTube
 player is remote page content isolated in YouTube's cross-origin iframe; it is

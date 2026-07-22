@@ -1,6 +1,15 @@
 # Changelog
 ## Unreleased
 
+- **Move settings safely and keep small personal data backed up.** Settings can
+  now be exported to or restored from a validated JSON file, with confirmation
+  before replacement. A connected GitHub repository can likewise store the
+  same settings as `settings.json`, manually or through a separate default-off
+  automatic toggle. Favorite climbers gain their own default-off automatic
+  backup, updating `favorite-climbers.json` after list changes while preserving
+  explicit, confirmed restores. Both automatic paths debounce changes, skip
+  identical content, retry briefly, and share the existing atomic write queue.
+
 - **Find and keep up with favorite climbers.** Custom favorites now show a live
   Buddy/manual breakdown, filter by source, and support typo-tolerant name
   search plus strict ID search. Native Peakbagger Buddy controls retain clear

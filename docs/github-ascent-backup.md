@@ -3,8 +3,8 @@
 This is the single maintained design for GitHub backup. It covers the
 manual saved-ascent action, automatic backup after Add/Edit, full-profile
 backup, source-data acquisition, snapshot correlation, batching, repository
-writes, the manual custom-favorites companion file, authentication, failure
-handling, and the regressions that established the current invariants.
+writes, the settings and custom-favorites companion files, authentication,
+failure handling, and the regressions that established the current invariants.
 
 The completed implementation records remain in
 [archive/github-ascent-backup-plan.md](archive/github-ascent-backup-plan.md) and
@@ -31,10 +31,11 @@ deliberately different way to discover whether a GPX exists, but its form
 fields, response validation, GPX body validation, snapshot schema, and GitHub
 writer are shared.
 
-The custom favorite-climber list is a separate, manual root-file operation. It
-shares the worker's credential gate, write queue, repository marker validation,
-atomic commit, and conflict retry, but never enters any ascent payload or
-automatic-backup path.
+Settings and the custom favorite-climber list are separate fixed root-file
+operations. Each has a manual backup and restore action plus an independent,
+default-off automatic backup toggle. They share the worker's credential gate,
+write queue, repository marker validation, atomic commit, and conflict retry,
+but never enter an ascent payload or the ascent automatic-backup path.
 
 ## The three shipped ascent entry points
 
@@ -108,8 +109,11 @@ link, which automatically tracks endpoint query changes.
 | `src/ascent/ascent-backup.js` | Compact saved-ascent control and the shared manual/automatic individual orchestration | Form mapping, GitHub credentials |
 | `src/profile/profile-backup-core.js` | Pure owner-list parsing, response classifier, work diff, producer/consumer state machine and limits | Browser APIs, tokens, DOM globals |
 | `src/profile/profile-backup.js` | Owner-list UI, full-list fetch, per-ascent production, progress/pause/resume | Raw field mapping, GitHub credentials |
-| `options/favorites.js` | Validate/serialize explicit favorites backup and schema-check reversible restore | GitHub credentials or repository mutation |
-| `src/background/background.js` | Sender gates, session snapshots, auth lookup, timestamping, write serialization, message routing | Peakbagger DOM parsing |
+| `src/favorites/favorite-climbers.js` | Pure favorites cleaning, backup serialization, parsing, and stable signatures | DOM, storage, GitHub access |
+| `src/settings/settings-transfer.js` | Pure known-key settings payload, parsing, serialization, and stable signatures through the shared schema | DOM, storage, GitHub access |
+| `options/favorites.js` | Favorites transfer controls, auto toggle, and schema-checked reversible restore | Backup serialization, GitHub credentials, or repository mutation |
+| `options/settings-backup.js` | File transfer, GitHub transfer controls, auto toggle, and confirmed settings replacement | GitHub credentials or repository mutation |
+| `src/background/background.js` | Sender gates, session snapshots, auth lookup, root-file serialization, automatic-backup alarms/state, write serialization, message routing | Peakbagger DOM parsing |
 | `src/github/github-backup.js` | Pure folder naming and JSON/Markdown/file payload serialization | DOM, tokens, network |
 | `src/github/github-errors.js` | One stable GitHub integration error code set, error type, and worker-safe serialization | HTTP requests or user-interface copy |
 | `src/github/github-api.js` | Every authenticated `api.github.com` request: origin validation, headers, no-cache policy, JSON parsing, and HTTP classification | OAuth device-flow form posts or repository algorithms |
@@ -476,21 +480,25 @@ disclosure.
 | `GITHUB_BACKUP_ASCENT` | Owner saved-ascent surface | Peakbagger hostname; feature/auth/repo; fresh snapshot for auto; complete data requirement; final aid present before the client enforces a positive identity | Commit metadata or typed error |
 | `GITHUB_BACKUP_PROFILE_STATUS` | `ClimbListC.aspx` | Peakbagger hostname and exact list pathname | Folder leaves, never token |
 | `GITHUB_BACKUP_PROFILE_BATCH` | `ClimbListC.aspx` | Exact list pathname; 1–10 entries; each positive `aid` equals snapshot id; no duplicate ids; feature/auth/repo | Batch commit metadata or typed error |
-| `GITHUB_FAVORITES_BACKUP` | Extension options page | Extension origin; auth/repo; nonempty serialized content; fixed `favorite-climbers.json` path | Commit metadata, never token |
+| `GITHUB_FAVORITES_BACKUP` | Extension options page | Extension origin; auth/repo; worker reads and cleans `bpbFavoriteClimbers`; fixed `favorite-climbers.json` path | Commit metadata, never token |
 | `GITHUB_FAVORITES_RESTORE` | Extension options page | Extension origin; auth/repo; fixed `favorite-climbers.json` path | File text or `null`, never token |
+| `GITHUB_SETTINGS_BACKUP` | Extension options page | Extension origin; auth/repo; worker reads settings through the shared schema and exports known keys only; fixed `settings.json` path | Commit metadata, never token |
+| `GITHUB_SETTINGS_RESTORE` | Extension options page | Extension origin; auth/repo; fixed `settings.json` path | File text or `null`, never token |
 
 The individual worker gate is hostname-level; the content surface supplies the
 stricter owner proof by requiring an edit link for the same aid before it even
 asks for status. The profile worker gate is path-level because batch messages
-are valid only from the owner-list surface. Favorite messages are extension-page
-only: the options page applies the shared favorites schema before export and
-again before replacing local state on restore.
+are valid only from the owner-list surface. Settings and favorite messages are
+extension-page only. The worker builds both backup files from cleaned storage;
+the options page parses through the same pure module and requires confirmation
+before replacing local state on restore.
 
 ## Repository layout and schema
 
 ```text
 .better-peakbagger.json
-favorite-climbers.json     # optional; written only by the explicit favorites action
+settings.json              # optional fixed root file; manual or automatic
+favorite-climbers.json     # optional fixed root file; manual or automatic
 2026-07-12-mount-rainier-a1234567/
   report.md
   ascent.json
@@ -535,6 +543,50 @@ Buddy List cache metadata, owner identity, the selected source, the Buddy-remova
 preference, and settings-page search/sort state are never exported or changed by
 restore. A missing file is reported as an empty backup state, not treated as an
 empty list to restore.
+
+### `settings.json` schema version 1
+
+```jsonc
+{
+  "kind": "better-peakbagger-settings",
+  "schemaVersion": 1,
+  "exportedAt": "2026-07-22T18:04:05.000Z",
+  "extensionVersion": "3.0.0",
+  "settings": {
+    "theme": "system",
+    "units": "auto"
+  }
+}
+```
+
+The example abbreviates `settings`; the real file is a complete, deterministic
+pick of every key owned by `settings-schema.js`, after that schema cleans values
+and fills defaults. Unknown keys are excluded. The GitHub token and repository,
+favorite climbers, drafts, caches, and other local/session data are never
+included. Import and GitHub restore reject another kind or a newer schema,
+re-clean every value, and require inline confirmation before wholesale
+replacement. Older schema versions are accepted so current defaults can fill
+new fields. A missing GitHub file is reported without changing settings.
+
+### Debounced settings and favorites backup
+
+The two automatic root-file writers share one worker helper but remain separate
+opt-ins. A settings change replaces the `bpb-settings-backup` alarm; a
+`bpbFavoriteClimbers` change replaces `bpb-favorites-backup`. Each named alarm
+fires after one minute, which gives a durable trailing-edge debounce across MV3
+worker shutdowns. The alarm rechecks the toggle and device-local GitHub
+connection, builds a cleaned payload, and compares a content-only signature
+against `bpbSettingsBackupState` or `bpbFavoritesBackupState` in
+`storage.local`. An unchanged signature skips the write; timestamps do not
+defeat that check. Manual backup records the same signature, so it also prevents
+an immediately redundant automatic commit.
+
+A failed automatic write records its attempt count and re-arms the same alarm
+after ten minutes, with at most two retry alarms for that change. A new change
+resets the retry budget. Automatic failures stay quiet; the manual action is the
+user-visible retry path. Both automatic writers still enter the single
+`githubWriteQueue`, so they cannot race ascent, profile, or each other on the
+mutable branch. Restore is never automatic.
 
 ### `ascent.json` schema version 1
 
@@ -658,14 +710,14 @@ For each attempt the client:
 7. creates one commit with the read head as parent; and
 8. updates the branch with `force: false`.
 
-Explicit favorite backup uses the same sequence with one root blob entry for
-`favorite-climbers.json` (and the marker when adopting a confirmed unmarked repository).
-It does not use a Contents API update, so it has the same compare-and-swap
-behavior as ascent commits. Settings keeps the returned commit URL visible as
-**View commit** after a successful transfer. Restore reads `favorite-climbers.json`
-from the selected branch through GitHub's Contents endpoint, validates
-file/base64/UTF-8 shape in
-the worker client, and leaves schema validation to the options-page owner.
+Settings and favorite backups use the same sequence with one root blob entry
+for `settings.json` or `favorite-climbers.json` (and the marker when adopting a
+confirmed unmarked repository). They do not use a Contents API update, so they
+have the same compare-and-swap behavior as ascent commits. Settings keeps the
+returned commit URL visible as **View commit** after a successful manual
+transfer. Restore reads the fixed file from the selected branch through
+GitHub's Contents endpoint, validates file/base64/UTF-8 shape in the worker
+client, and leaves payload-schema validation to the options-page owner.
 
 No ascent in a batch is visible on the branch before step 8. A failed earlier
 operation leaves the branch unchanged. A failed final ref update leaves an
@@ -678,8 +730,8 @@ read `Refresh N ascents`.
 ### Internal and external concurrency
 
 The worker's `githubWriteQueue` serializes all extension-owned writers—including
-explicit favorite backup—before they read the branch. A separate browser,
-GitHub web edit, or another
+manual and automatic settings and favorite backups—before they read the branch.
+A separate browser, GitHub web edit, or another
 integration can still race externally.
 
 On retryable 409 or non-fast-forward ref conflict, the client waits 0.5, 2, then
@@ -896,11 +948,13 @@ expected GPX failure as `null`, or bypassing the worker write queue.
 - GitHub host access is optional: `https://github.com/*` for device flow and
   `https://api.github.com/*` for repository APIs.
 - `enableGithubBackup` and `autoGithubBackup` are synced ascent-backup booleans;
-  disabling the parent gate forces auto off. Neither gates explicit favorite
-  backup or restore.
+  disabling the parent gate forces auto off. Neither gates settings or favorite
+  transfer.
+- `autoSettingsBackup` and `autoFavoritesBackup` are independent, synced,
+  default-off booleans. Without the device-local connection they are inert.
 - Token and chosen repository are local auth state, not sync-schema settings.
 - The options page presents that local auth/repository state as one shared
-  GitHub connection used by ascent backup and favorite transfer.
+  GitHub connection used by ascent, settings, and favorite transfer.
 - Ascent fields, report, and Peakbagger's stored GPX go only to the selected
   repository, after explicit backup action or the separate automatic opt-in.
 - Firefox's `locationInfo` declaration covers the stored GPS track.

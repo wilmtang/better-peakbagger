@@ -35,6 +35,10 @@ living docs in [`docs/`](../).
   Buddy List/custom filtering, local management, climber-page toggles, and
   explicit GitHub backup/restore. Current behavior lives in the maintained
   [architecture guide](../architecture.md#deep-dive-favorite-climbers).
+- [Settings and favorites transfer](settings-export-import-github-backup.md) —
+  completed implementation plan for settings file transfer, fixed-root GitHub
+  settings backup, and automatic settings/favorites backup. Current behavior
+  lives in the maintained [GitHub backup design](../github-ascent-backup.md).
 - [Options-page sidebar](options-sidebar.md) — completed investigation,
   execution plan, and deviations recorded during implementation.
 - [Trip-report drafts manager](trip-report-drafts-manager.md) — completed plan

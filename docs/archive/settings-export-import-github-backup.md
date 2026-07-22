@@ -1,4 +1,4 @@
-# Settings export/import, GitHub settings backup, and favorites auto backup
+# Settings export/import, GitHub settings backup, and favorites auto backup (completed plan)
 
 Two related gaps, one shared mechanism:
 
