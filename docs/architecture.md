@@ -865,10 +865,13 @@ The options manager supports these distinct operations:
   progress, success count, or actionable failure remains visible beside the
   controls instead of relying on the transient global save toast.
 - **Mirror buddy list** first fetches the current report, then shows an explicit
-  confirmation naming how many custom favorites are not buddies and will be
-  removed. Cancel or Escape leaves storage untouched; only the destructive
-  confirmation replaces the list. Every resulting entry receives the current
-  timestamp and Buddy provenance, followed by a six-second in-memory Undo.
+  confirmation naming both how many buddies will be added and how many custom
+  favorites will be removed. Cancel or Escape leaves storage untouched; only
+  the destructive confirmation replaces the list. Every resulting entry
+  receives the current timestamp and Buddy provenance, followed by a six-second
+  in-memory Undo. Both merge and mirror leave a persistent summary with the
+  added count, removed count, and resulting custom-list size; merge also reports
+  buddies skipped when the 1,500-entry limit prevents an addition.
 - **Delete** persists removal immediately but leaves a six-second inline Undo
   row. Undo reinserts the exact prior entry. Sorting by name or added date only
   changes rendered order; it does not rewrite storage order.

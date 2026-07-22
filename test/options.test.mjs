@@ -581,7 +581,8 @@ test('merge is additive while mirror requires destructive confirmation and suppo
 
     el(dom, 'favorites-merge-buddies').click();
     await waitFor(dom, () => dom.chrome._localStore[favoriteKey]?.entries?.length === 7);
-    assert.match(el(dom, 'favorites-import-status').textContent, /Added 6 buddies to custom favorites/);
+    assert.equal(el(dom, 'favorites-import-status').textContent,
+        'Merge complete: 6 added, 0 removed. Custom list now has 7 climbers.');
     assert.equal(dom.chrome._localStore[favoriteKey].entries[0].cid, manual.cid,
         'merge preserves the existing manual entry and its metadata');
 
@@ -591,10 +592,11 @@ test('merge is additive while mirror requires destructive confirmation and suppo
         'loading the mirror preview must not mutate favorites');
     assert.equal(dom.chrome._localStore[favoriteKey].entries.some(entry => entry.cid === manual.cid), true);
     assert.match(el(dom, 'favorites-mirror-confirmation-detail').textContent,
-        /1 favorite climber who isn't on your Buddy List will be removed/);
-    assert.match(el(dom, 'favorites-mirror-confirmation-detail').textContent, /contain 6 current buddies/);
+        /0 buddies will be added\. 1 custom favorite will be removed\./);
+    assert.match(el(dom, 'favorites-mirror-confirmation-detail').textContent,
+        /exactly match your 6 current buddies/);
     assert.match(el(dom, 'favorites-mirror-confirmation-detail').textContent, /undo for 6 seconds/);
-    assert.equal(el(dom, 'favorites-mirror-confirm').textContent, 'Remove 1 & mirror');
+    assert.equal(el(dom, 'favorites-mirror-confirm').textContent, 'Replace custom list');
     assert.equal(dom.window.document.activeElement, el(dom, 'favorites-mirror-cancel'));
 
     el(dom, 'favorites-mirror-cancel').click();
@@ -607,14 +609,62 @@ test('merge is additive while mirror requires destructive confirmation and suppo
     el(dom, 'favorites-mirror-confirm').click();
     await waitFor(dom, () => dom.chrome._localStore[favoriteKey].entries.length === 6
         && !dom.chrome._localStore[favoriteKey].entries.some(entry => entry.cid === manual.cid)
-        && /Mirrored 6 buddies to custom favorites/.test(el(dom, 'favorites-import-status').textContent));
-    assert.match(el(dom, 'favorites-import-status').textContent, /Mirrored 6 buddies to custom favorites/);
+        && /Mirror complete/.test(el(dom, 'favorites-import-status').textContent));
+    assert.equal(el(dom, 'favorites-import-status').textContent,
+        'Mirror complete: 0 added, 1 removed. Custom list now has 6 climbers.');
     assert.equal(el(dom, 'favorites-undo-all').hidden, false);
     assert.match(el(dom, 'favorites-undo-message').textContent, /replaced with your Buddy List/);
 
     el(dom, 'favorites-undo-all-button').click();
     await waitFor(dom, () => dom.chrome._localStore[favoriteKey].entries.length === 7
         && dom.chrome._localStore[favoriteKey].entries.some(entry => entry.cid === manual.cid));
+});
+
+test('mirror reports additions and zero removals before and after replacement', async () => {
+    const existingBuddy = { cid: 710195, name: 'Existing Buddy', addedAt: 1, source: 'manual' };
+    const dom = await loadOptions({ favoritesSource: 'custom' }, {
+        local: { [favoriteKey]: favoriteStore([existingBuddy]) },
+        prepareWindow: window => { window.fetch = peakbaggerFetch(); },
+    });
+    await waitFor(dom, () => favoriteRow(dom, existingBuddy.cid));
+
+    el(dom, 'favorites-mirror-buddies').click();
+    await waitFor(dom, () => el(dom, 'favorites-mirror-confirmation').hidden === false);
+    assert.match(el(dom, 'favorites-mirror-confirmation-detail').textContent,
+        /5 buddies will be added\. 0 custom favorites will be removed\./);
+    assert.match(el(dom, 'favorites-mirror-confirmation-detail').textContent,
+        /exactly match your 6 current buddies/);
+
+    el(dom, 'favorites-mirror-confirm').click();
+    await waitFor(dom, () => /Mirror complete/.test(el(dom, 'favorites-import-status').textContent));
+    assert.equal(el(dom, 'favorites-import-status').textContent,
+        'Mirror complete: 5 added, 0 removed. Custom list now has 6 climbers.');
+
+    el(dom, 'favorites-merge-buddies').click();
+    await waitFor(dom, () => /Merge complete/.test(el(dom, 'favorites-import-status').textContent));
+    assert.equal(el(dom, 'favorites-import-status').textContent,
+        'Merge complete: 0 added, 0 removed. Custom list now has 6 climbers.');
+});
+
+test('merge reports buddies skipped when custom favorites are full', async () => {
+    const fullList = Array.from({ length: 1500 }, (_, index) => ({
+        cid: index + 1,
+        name: `Favorite ${index + 1}`,
+        addedAt: 1,
+        source: 'manual',
+    }));
+    const dom = await loadOptions({ favoritesSource: 'custom' }, {
+        local: { [favoriteKey]: favoriteStore(fullList) },
+        prepareWindow: window => { window.fetch = peakbaggerFetch(); },
+    });
+    await waitFor(dom, () => favoriteRow(dom, 1500));
+
+    el(dom, 'favorites-merge-buddies').click();
+    await waitFor(dom, () => /Merge complete/.test(el(dom, 'favorites-import-status').textContent));
+    assert.equal(el(dom, 'favorites-import-status').textContent,
+        'Merge complete: 0 added, 0 removed. Custom list now has 1500 climbers. '
+        + '6 buddies were not added because custom favorites can hold up to 1,500 climbers.');
+    assert.equal(dom.chrome._localStore[favoriteKey].entries.length, 1500);
 });
 
 test('custom import accepts a valid 200 Buddy report carrying Cloudflare metadata', async () => {
@@ -630,7 +680,7 @@ test('custom import accepts a valid 200 Buddy report carrying Cloudflare metadat
 
     el(dom, 'favorites-merge-buddies').click();
     await waitFor(dom, () => dom.chrome._localStore[favoriteKey]?.entries?.length === 6);
-    assert.match(el(dom, 'favorites-import-status').textContent, /Added 6 buddies to custom favorites/);
+    assert.match(el(dom, 'favorites-import-status').textContent, /Merge complete: 6 added, 0 removed/);
     assert.doesNotMatch(el(dom, 'favorites-import-status').textContent, /human check/i);
 });
 
@@ -685,7 +735,7 @@ test('custom import opens a first-party helper when extension cookies look signe
         },
     }]);
     assert.deepEqual(removed, [77]);
-    assert.match(el(dom, 'favorites-import-status').textContent, /Added 2 buddies to custom favorites/);
+    assert.match(el(dom, 'favorites-import-status').textContent, /Merge complete: 2 added, 0 removed/);
 });
 
 test('custom import keeps a failed Buddy refresh visible beside the buttons', async () => {

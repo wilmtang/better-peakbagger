@@ -234,7 +234,8 @@ try {
         const fallbackImport = await optionsPage.waitForFunction(async () => {
             const favorites = (await chrome.storage.local.get('bpbFavoriteClimbers')).bpbFavoriteClimbers;
             const status = document.getElementById('favorites-import-status');
-            return favorites?.entries?.length === 6 && /Added 6 buddies/.test(status?.textContent || '')
+            return favorites?.entries?.length === 6
+                && /Merge complete: 6 added, 0 removed/.test(status?.textContent || '')
                 ? { count: favorites.entries.length, status: status.textContent }
                 : false;
         }, null, { timeout: 10000 }).then(handle => handle.jsonValue()).catch(() => null);
@@ -287,9 +288,10 @@ try {
                 : false;
         }, null, { timeout: 5000 }).then(handle => handle.jsonValue()).catch(() => null);
         check(mirrorConfirmation?.role === 'alertdialog'
-            && /1 favorite climber who isn't on your Buddy List will be removed/.test(mirrorConfirmation.text)
+            && /0 buddies will be added\. 1 custom favorite will be removed\./.test(mirrorConfirmation.text)
+            && /exactly match your 6 current buddies/.test(mirrorConfirmation.text)
             && /undo for 6 seconds/.test(mirrorConfirmation.text)
-            && mirrorConfirmation.confirm === 'Remove 1 & mirror'
+            && mirrorConfirmation.confirm === 'Replace custom list'
             && mirrorConfirmation.focused === 'favorites-mirror-cancel',
         `the Buddy mirror did not stop at an explicit destructive confirmation: ${JSON.stringify(mirrorConfirmation)}`);
         if (process.env.BPB_VERIFY_FAVORITES_MIRROR_SCREENSHOT) {
@@ -311,7 +313,7 @@ try {
             const status = document.getElementById('favorites-import-status')?.textContent || '';
             return favorites?.entries?.length === 6
                 && !favorites.entries.some(entry => entry.cid === 900099)
-                && /Mirrored 6 buddies/.test(status);
+                && /Mirror complete: 0 added, 1 removed/.test(status);
         }, null, { timeout: 5000 }).then(() => true).catch(() => false);
         check(mirrorApplied, 'confirming the Buddy mirror did not replace the custom list');
         await optionsPage.evaluate(() => { window.fetch = window.__bpbNativeFetch; });
@@ -1662,7 +1664,7 @@ console.log('Real-extension verification passed (hidden Chrome for Testing, new 
 console.log('  - the MV3 service worker boots and answers messages (capture is alive)');
 console.log('  - sync/local/session storage, storage.onChanged, options persistence, and popup status passed');
 console.log('  - options loads the signed-in Buddy report directly, falls back through a first-party tab, and keeps failures actionable');
-console.log('  - Buddy mirroring names removals, requires confirmation, and preserves favorites on cancel');
+console.log('  - Buddy merge/mirror reports additions and removals, requires confirmation, and preserves favorites on cancel');
 console.log('  - the public climber favorite is a compact title-line star and persists its filled state');
 console.log('  - settings.js initialises in the isolated world and the bridge answers');
 console.log('  - the GPX analyzer renders stats from the real manifest load order');

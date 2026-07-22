@@ -570,6 +570,11 @@ button.github-repo:focus-visible { outline: 2px solid var(--accent); outline-off
     .nav-sublist { display: none; }
 }
 
+@media (max-width: 600px) {
+    .favorites-mirror-confirmation { align-items: stretch; flex-direction: column; gap: 10px; }
+    .favorites-mirror-confirmation-actions { justify-content: flex-end; }
+}
+
 @media (max-width: 480px) {
     .row { flex-direction: column; align-items: stretch; }
     .control { width: 100%; }
@@ -584,6 +589,4 @@ button.github-repo:focus-visible { outline: 2px solid var(--accent); outline-off
     .favorites-github { align-items: stretch; flex-direction: column; gap: 10px; }
     .favorites-github-actions { justify-content: flex-start; }
     .favorite-item { align-items: flex-start; }
-    .favorites-mirror-confirmation { align-items: stretch; flex-direction: column; gap: 10px; }
-    .favorites-mirror-confirmation-actions { justify-content: flex-end; }
 }

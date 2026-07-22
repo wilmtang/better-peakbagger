@@ -125,6 +125,23 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
 
     const favoritesSignature = () => JSON.stringify(favorites.entries);
 
+    const membershipChanges = (currentEntries, nextEntries) => {
+        const currentIds = new Set(currentEntries.map(entry => entry.cid));
+        const nextIds = new Set(nextEntries.map(entry => entry.cid));
+        return {
+            added: nextEntries.filter(entry => !currentIds.has(entry.cid)).length,
+            removed: currentEntries.filter(entry => !nextIds.has(entry.cid)).length,
+        };
+    };
+
+    const completionCopy = (operation, { added, removed, total, skipped = 0 }) => {
+        const climbers = total === 1 ? 'climber' : 'climbers';
+        const skippedCopy = skipped > 0
+            ? ` ${skipped} ${skipped === 1 ? 'buddy was' : 'buddies were'} not added because custom favorites can hold up to ${F.LIMIT.toLocaleString('en-US')} climbers.`
+            : '';
+        return `${operation} complete: ${added} added, ${removed} removed. Custom list now has ${total} ${climbers}.${skippedCopy}`;
+    };
+
     const dismissMirrorConfirmation = ({ restoreFocus = false } = {}) => {
         pendingMirror = null;
         mirrorConfirmationEl.hidden = true;
@@ -132,20 +149,16 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
     };
 
     const showMirrorConfirmation = (buddyEntries, { focus = true } = {}) => {
-        const buddyIds = new Set(buddyEntries.map(entry => entry.cid));
-        const removed = favorites.entries.filter(entry => !buddyIds.has(entry.cid)).length;
+        const { added, removed } = membershipChanges(favorites.entries, buddyEntries);
         const buddyCount = buddyEntries.length;
-        const removalCopy = removed === 0
-            ? 'No favorite climbers will be removed, but mirroring still replaces the custom list.'
-            : `${removed} favorite ${removed === 1 ? "climber who isn't" : "climbers who aren't"} on your Buddy List will be removed from the custom list.`;
-        mirrorConfirmationImpactEl.textContent = removalCopy;
-        mirrorConfirmationSummaryEl.textContent = ` It will contain ${buddyCount} current ${buddyCount === 1 ? 'buddy' : 'buddies'}. You can undo for 6 seconds after replacement.`;
-        mirrorConfirmEl.textContent = removed > 0
-            ? `Remove ${removed} & mirror`
-            : 'Replace custom list';
+        mirrorConfirmationImpactEl.textContent = `${added} ${added === 1 ? 'buddy' : 'buddies'} will be added. ${removed} custom ${removed === 1 ? 'favorite' : 'favorites'} will be removed.`;
+        mirrorConfirmationSummaryEl.textContent = ` The custom list will then exactly match your ${buddyCount} current ${buddyCount === 1 ? 'buddy' : 'buddies'}. You can undo for 6 seconds after replacement.`;
+        mirrorConfirmEl.textContent = 'Replace custom list';
         pendingMirror = {
             buddyEntries: buddyEntries.map(entry => ({ ...entry })),
             favoritesSignature: favoritesSignature(),
+            added,
+            removed,
         };
         mirrorConfirmationEl.hidden = false;
         if (focus) mirrorCancelEl.focus();
@@ -642,15 +655,20 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
             const before = favorites.entries.length;
             const next = F.mergeBuddies(favorites, cache.entries);
             const added = next.entries.length - before;
+            const missing = membershipChanges(favorites.entries, cache.entries).added;
+            const skipped = missing - added;
+            const summary = completionCopy('Merge', {
+                added, removed: 0, total: next.entries.length, skipped,
+            });
             if (!added) {
-                renderImportStatus('Your custom favorites already include all buddies.');
-                flash('Your favorites already include all buddies');
+                renderImportStatus(summary);
+                flash(skipped > 0 ? 'Custom favorites are full' : 'No changes to custom favorites');
                 return;
             }
             try {
                 await writeFavorites(next);
-                renderImportStatus(`Added ${added} ${added === 1 ? 'buddy' : 'buddies'} to custom favorites.`);
-                flash(`Added ${added} ${added === 1 ? 'buddy' : 'buddies'}`);
+                renderImportStatus(summary);
+                flash(`Merge complete: ${added} added, 0 removed`);
             } catch (error) {
                 renderImportStatus("The Buddy List loaded, but the custom favorites couldn't be saved.");
                 flash("Couldn't merge buddies");
@@ -678,7 +696,7 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
             showMirrorConfirmation(pendingMirror.buddyEntries);
             return;
         }
-        const { buddyEntries } = pendingMirror;
+        const { buddyEntries, added, removed } = pendingMirror;
         setBusy(true);
         mirrorCancelEl.disabled = true;
         mirrorConfirmEl.disabled = true;
@@ -687,9 +705,10 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
             .then(changed => {
                 dismissMirrorConfirmation();
                 if (changed) {
-                    const count = buddyEntries.length;
-                    renderImportStatus(`Mirrored ${count} ${count === 1 ? 'buddy' : 'buddies'} to custom favorites.`);
-                    flash('Buddy List mirrored');
+                    renderImportStatus(completionCopy('Mirror', {
+                        added, removed, total: buddyEntries.length,
+                    }));
+                    flash(`Mirror complete: ${added} added, ${removed} removed`);
                 } else {
                     renderImportStatus("The Buddy List loaded, but the custom favorites couldn't be saved.");
                 }
