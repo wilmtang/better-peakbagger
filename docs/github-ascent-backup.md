@@ -659,8 +659,10 @@ For each attempt the client:
 Explicit favorite backup uses the same sequence with one root blob entry for
 `favorites.json` (and the marker when adopting a confirmed unmarked repository).
 It does not use a Contents API update, so it has the same compare-and-swap
-behavior as ascent commits. Restore reads `favorites.json` from the selected
-branch through GitHub's Contents endpoint, validates file/base64/UTF-8 shape in
+behavior as ascent commits. Settings keeps the returned commit URL visible as
+**View commit** after a successful transfer. Restore reads `favorites.json`
+from the selected branch through GitHub's Contents endpoint, validates
+file/base64/UTF-8 shape in
 the worker client, and leaves schema validation to the options-page owner.
 
 No ascent in a batch is visible on the branch before step 8. A failed earlier

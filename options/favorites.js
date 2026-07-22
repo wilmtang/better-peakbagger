@@ -65,6 +65,7 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
     let githubStatus = null;
     let githubBusy = false;
     let githubRevision = 0;
+    let githubBackupResult = null;
     const pendingDeletes = new Map();
 
     const send = message => new Promise(resolve => {
@@ -254,12 +255,27 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
 
     const renderGithub = () => {
         const connected = !!(githubStatus?.permissionGranted && githubStatus?.connected);
+        const showBackupResult = connected
+            && githubBackupResult?.repo === githubRepoName()
+            && githubBackupResult?.signature === favoritesSignature();
         githubActionsEl.hidden = !connected;
         backupEl.disabled = githubBusy;
         restoreEl.disabled = githubBusy;
+        githubStatusEl.classList.remove('favorites-github-success');
         githubStatusEl.textContent = '';
         if (githubBusy) {
             githubStatusEl.textContent = 'Working with GitHub…';
+        } else if (showBackupResult) {
+            githubStatusEl.classList.add('favorites-github-success');
+            githubStatusEl.textContent = 'Favorites backed up ✓';
+            if (githubBackupResult.commitUrl) {
+                githubStatusEl.append(' ', Object.assign(document.createElement('a'), {
+                    href: githubBackupResult.commitUrl,
+                    target: '_blank',
+                    rel: 'noopener noreferrer',
+                    textContent: 'View commit',
+                }));
+            }
         } else if (connected) {
             githubStatusEl.textContent = `Save or restore this custom list in ${githubRepoName()}.`;
         } else {
@@ -284,12 +300,14 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
         const previous = favorites;
         favorites = F.cleanFavorites(value);
         renderList();
+        renderGithub();
         try {
             await store.set({ [F.FAVORITES_KEY]: favorites });
             return favorites;
         } catch (error) {
             favorites = previous;
             renderList();
+            renderGithub();
             throw error;
         }
     };
@@ -302,6 +320,7 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
             favorites = F.cleanFavorites(values[F.FAVORITES_KEY]);
             buddyCache = F.cleanBuddyCache(values[F.BUDDY_CACHE_KEY]);
             renderPanels();
+            renderGithub();
             if (pendingMirror) showMirrorConfirmation(pendingMirror.buddyEntries, { focus: false });
         } catch (error) {
             if (revision !== refreshRevision) return;
@@ -524,6 +543,11 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
             flash(GithubError.message(response?.error));
             return;
         }
+        githubBackupResult = {
+            ...(response.result || {}),
+            repo: githubRepoName(),
+            signature: favoritesSignature(),
+        };
         flash(`Favorites backed up to ${githubRepoName()}`);
     });
 

@@ -15,8 +15,9 @@
   a custom list of up to 500 climbers. Settings can add, sort, merge, mirror,
   remove, and Undo custom favorites; public climber pages get a compact add/remove
   control only in custom mode. A shared GitHub connection can explicitly write
-  or restore the custom list as `favorites.json` even when ascent backup is off;
-  automatic ascent backup never touches it.
+  or restore the custom list as `favorites.json` even when ascent backup is off,
+  with a link to the successful backup commit; automatic ascent backup never
+  touches it.
   
 ## 3.0.0 — 2026-07-20
 

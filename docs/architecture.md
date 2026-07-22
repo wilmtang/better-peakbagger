@@ -937,7 +937,8 @@ The options page, not the worker, owns serialization and restore validation.
 the exact validity of every entry. Buddy cache entries, `ownerCid`, `fetchedAt`,
 filter-chip state, and the selected source are never exported. Automatic ascent
 backup does not read or write `favorites.json`; favorite transfer happens only
-after the explicit options-page action.
+after the explicit options-page action. A successful write leaves an affirmative
+status and the worker-returned commit link visible without exposing the token.
 
 The GitHub connection is independent of the ascent-backup setting. Turning
 ascent backup off removes ascent capture and backup affordances without

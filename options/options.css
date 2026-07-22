@@ -378,6 +378,7 @@ button.secondary.favorites-mirror-trigger:focus-visible { outline-color: var(--d
 }
 .favorites-github .favorites-hint { margin-top: 3px; }
 .favorites-github .favorites-hint a { color: var(--link); }
+.favorites-github .favorites-github-success { color: var(--link); font-weight: 600; }
 .favorites-github-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
 .favorites-github-actions[hidden] { display: none; }
 .favorites-github-actions button.secondary { align-self: auto; }

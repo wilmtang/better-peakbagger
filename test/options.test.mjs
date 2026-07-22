@@ -713,7 +713,13 @@ test('connected GitHub actions work with ascent backup off and restore with Undo
                 messages.push(JSON.parse(JSON.stringify(message)));
                 let reply = {};
                 if (message.type === 'GITHUB_AUTH_STATUS') reply = status;
-                if (message.type === 'GITHUB_FAVORITES_BACKUP') reply = { ok: true, result: { path: 'favorites.json' } };
+                if (message.type === 'GITHUB_FAVORITES_BACKUP') reply = {
+                    ok: true,
+                    result: {
+                        path: 'favorites.json',
+                        commitUrl: 'https://github.com/ada/peaks/commit/favorite123',
+                    },
+                };
                 if (message.type === 'GITHUB_FAVORITES_RESTORE') reply = {
                     ok: true,
                     content: JSON.stringify({
@@ -739,12 +745,21 @@ test('connected GitHub actions work with ascent backup off and restore with Undo
     assert.deepEqual(exported.entries, [original]);
     assert.equal(messages.some(message => message.type === 'GITHUB_FAVORITES_BACKUP' && message.auto), false,
         'favorites backup is only the explicit button message');
+    await waitFor(dom, () => /Favorites backed up ✓/.test(el(dom, 'favorites-github-status').textContent));
+    const commitLink = el(dom, 'favorites-github-status').querySelector('a');
+    assert.equal(commitLink.textContent, 'View commit');
+    assert.equal(commitLink.getAttribute('href'), 'https://github.com/ada/peaks/commit/favorite123');
+    assert.equal(commitLink.getAttribute('target'), '_blank');
+    assert.equal(commitLink.getAttribute('rel'), 'noopener noreferrer');
 
     await waitFor(dom, () => !el(dom, 'favorites-restore').disabled);
     el(dom, 'favorites-restore').click();
     await waitFor(dom, () => dom.chrome._localStore[favoriteKey]?.entries?.[0]?.cid === restored.cid);
     assert.equal(el(dom, 'favorites-undo-all').hidden, false);
     assert.match(el(dom, 'favorites-undo-message').textContent, /restored from GitHub/);
+    assert.match(el(dom, 'favorites-github-status').textContent, /Save or restore/,
+        'the prior commit result must not imply that a changed local list is current');
+    assert.equal(el(dom, 'favorites-github-status').querySelector('a'), null);
 
     el(dom, 'favorites-undo-all-button').click();
     await waitFor(dom, () => dom.chrome._localStore[favoriteKey]?.entries?.[0]?.cid === original.cid);
