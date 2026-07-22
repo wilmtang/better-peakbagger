@@ -3,12 +3,11 @@
 
 - **Find and keep up with favorite climbers.** Custom favorites now show a live
   Buddy/manual breakdown, filter by source, and support typo-tolerant name
-  search plus strict ID search. Native
-  Peakbagger Buddy controls retain clear hover feedback, and additions or
-  removals refresh the saved Buddy List immediately even when Peakbagger
-  updates the page in place;
-  additions also join a selected custom list, while removals preserve the
-  favorite unless the new opt-in removal setting is enabled.
+  search plus strict ID search. Native Peakbagger Buddy controls retain clear
+  hover feedback, and confirmed additions or removals refresh the saved Buddy
+  List immediately even when Peakbagger updates the page in place; additions
+  also join a selected custom list, while removals preserve the favorite unless
+  **Keep Buddy removals in sync** is enabled.
 
 - **Organize source and tests by ownership.** Runtime modules now live in named
   domain directories under `src/`, with matching test directories under
@@ -17,8 +16,9 @@
   behavior are unchanged.
 
 - **Keep settings navigation responsive with large favorite lists.** Sidebar
-  links still animate nearby moves, but long jumps now land immediately instead
-  of scrolling through hundreds or thousands of climber rows.
+  links still animate nearby moves, but jumps beyond two viewports or 1,200 px
+  now land immediately instead of scrolling through hundreds or thousands of
+  climber rows. Initial deep links also land without an animated tour.
 
 - **See when an individual ascent is already backed up.** On an owned saved
   ascent, the GitHub control now checks the connected repository in the

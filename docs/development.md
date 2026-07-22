@@ -146,9 +146,9 @@ only exist under `dist/` after a build.
 | `npm run build:release` | Minified production build (no source maps). |
 | `npm run watch` | Transactionally rebuild on change and re-copy static assets; does not launch or control a browser. |
 | `npm test` | `pretest` builds `dist/`, then runs `test/**/*.test.mjs`. |
-| `npm run test:scale` | Exercises the 4,145-row ascent fixture and a synthetic 20,000-point provider track; CI and release checks run these separately from the fast default suite. |
-| `npm run verify:chrome` | Builds and loads the real unpacked `dist/` in hidden Chrome for Testing, including trusted GPX selection and the draft handoff. |
-| `npm run verify:firefox` | Builds the derived Firefox source, temporarily installs it in hidden Firefox, and runs the same manifest-surface, trusted GPX-selection, and draft-handoff smoke. |
+| `npm run test:scale` | Exercises the 4,145-row ascent fixture, a synthetic 20,000-point provider track, and the full 1,500-entry favorite manager/search/backup path; CI and release checks run these separately from the fast default suite. |
+| `npm run verify:chrome` | Builds and loads the real unpacked `dist/` in hidden Chrome for Testing, including trusted GPX selection, draft handoff, 1,500-row favorite management, long settings navigation, and native Buddy synchronization. |
+| `npm run verify:firefox` | Builds the derived Firefox source, temporarily installs it in hidden Firefox, and runs the same manifest-surface and feature smoke. |
 | `npm run verify:browsers` | Builds once, then runs the Chrome and Firefox extension gates. |
 | `npm run verify:extension` | Compatibility alias for `verify:chrome`; existing callers can migrate without losing coverage. |
 | `npm run verify:packages -- CHROME.zip FIREFOX.zip` | Executes the extracted minified Chrome package and the exact generated Firefox archive through the browser gates. |
@@ -161,16 +161,19 @@ only exist under `dist/` after a build.
 | `npm run start:chromium` / `start:firefox` | Build, watch, launch a web-ext development browser, and auto-reload the extension after successful rebuilds. Firefox mirrors each complete build into its inline-Preferences source first. |
 
 Pushes and pull requests use one least-privilege workflow with four independent
-jobs: Node tests/lint, the GPX scale test, the real Chrome extension smoke, and
+jobs: Node tests/lint, the scale suite, the real Chrome extension smoke, and
 the real Firefox extension smoke. Each job installs its own runtime and reports
 failures separately. Release CI additionally runs the scale test and executes
 both generated store archives before either publication job can start.
 
 The browser smokes select a fixture GPX through the native file input and
 confirm that a fresh ascent form receives its local date and replaces Preview
-with the extension's Process action. Exhaustive parsing, summit selection, and
-failure cases remain in `npm test`; the browser gates continue through the
-shared draft path to prove real file attachment and exactly-once Preview.
+with the extension's Process action. They also exercise the 1,500-entry favorite
+total and fuzzy search, the distance-aware jump over that list, and native Buddy
+add/remove convergence under both removal policies. Exhaustive parsing, summit
+selection, and failure cases remain in `npm test`; the browser gates continue
+through the shared draft path to prove real file attachment and exactly-once
+Preview.
 
 Chrome stable 137+ rejects command-line `--load-extension`, so
 `start:chromium` needs a compatible Chromium/Chrome for Testing binary (pass
@@ -301,10 +304,10 @@ generalize this exception.
   the shipped bundles, but it does not exercise the real manifest — execution
   worlds, injection order, and the live service-worker lifecycle are invisible
   to it.
-- `npm run test:scale` keeps the expensive 4,145-row ascent fixture and
-  20,000-point GPX completeness case out of the fast local loop. It still uses
-  jsdom rather than a browser and does not impose a cross-machine timing
-  threshold.
+- `npm run test:scale` keeps the expensive 4,145-row ascent fixture,
+  20,000-point GPX completeness case, and 1,500-entry favorite
+  render/search/backup path out of the fast local loop. It still uses jsdom
+  rather than a browser and does not impose a cross-machine timing threshold.
 - `npm run lint:js` checks undeclared names, unused bindings, and unsafe equality
   without rewriting source. `npm run lint` checks the built extension package;
   neither establishes browser behavior.
@@ -318,8 +321,10 @@ generalize this exception.
   worker/background startup, real storage, every manifest surface, store credit,
   report editing, filtering, the owner-only profile-backup entry point, tab
   grouping when supported, sender-bound draft handoff, native file assignment,
-  exactly-once Preview, and the no-Save boundary. The profile-backup mount uses
-  a fixture-only local credential and makes no GitHub request.
+  exactly-once Preview, the no-Save boundary, a 1,500-entry favorite total and
+  fuzzy search, a long settings-navigation jump, and native Buddy add/remove
+  convergence under both removal policies. The profile-backup mount uses a
+  fixture-only local credential and makes no GitHub request.
   Run it after touching `manifest.json`, bundle composition, execution worlds,
   the worker, or anything a content script relies on at load.
 - `npm run verify:packages -- CHROME.zip FIREFOX.zip` runs those same gates against minified store bytes
@@ -334,6 +339,8 @@ export behavior. The full-profile suites script list/edit/GPX responses and
 GitHub commits; they cannot prove live Peakbagger challenge markers or GitHub
 session behavior. Live provider and profile-backup verification therefore
 remains a minimal, rate-limited manual release check in both browser families.
+The Buddy scenarios also use validated synthetic Peakbagger pages; they do not
+prove current live control labels, authenticated cookies, or report markup.
 
 The runners open ordinary extension pages in hidden tabs; they do not establish
 native popup size, browser-chrome focus, permission-prompt presentation, or the

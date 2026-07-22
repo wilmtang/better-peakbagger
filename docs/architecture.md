@@ -131,7 +131,7 @@ There is no parallel raw-source worker list and no `importScripts` fallback.
 | Full Screen and Peak maps | `src/maps/big-map.js`, `src/maps/peak-map.js` | MAIN-world native-map coordinators |
 | Ascent lists | `src/ascent/ascent-filter.js`, `src/profile/profile-backup.js` | Isolated-world filter/sort and owner-only backup pipeline |
 | Favorite climbers | `src/favorites/favorite-climbers.js`, `src/favorites/climber-favorite.js`, `options/favorites.js` | Pure local-data contract, climber-page toggle, and settings manager |
-| Settings and theme | `src/settings/settings-schema.js`, `src/settings/settings.js`, `src/theme/theme.js` | Pure schema, sync-storage access, synchronous page startup |
+| Settings and theme | `src/settings/settings-schema.js`, `src/settings/settings.js`, `src/theme/theme.js`, `options/options.js` | Pure schema, sync-storage access, synchronous page startup, and options-page section navigation |
 | Report-draft manager | `src/reports/report-drafts.js`, `options/drafts.js` | Shared pure draft contract plus device-local list/copy/delete UI |
 | Saved-ascent backup | `src/ascent/ascent-page.js`, `src/ascent/ascent-backup.js` | Owner-only page read and user-facing backup state |
 | Peakbagger request boundary | `src/peakbagger/peakbagger-request.js`, `src/peakbagger/peakbagger-response.js`, `src/peakbagger/peakbagger-error.js`, `src/peakbagger/peakbagger-cloudflare.js` | Authenticated fetch policy, response validation, typed failures, and managed-challenge detection/recovery copy |
@@ -164,6 +164,38 @@ again. Two reads deliberately keep surface-specific orchestration: provider GPX
 export is not a Peakbagger request, and native map-marker polling treats an
 aborted superseded camera request as normal. Neither exception duplicates the
 user-facing Peakbagger error mapper.
+
+### Options-page navigation
+
+Settings remains one continuous document inside the `.content` scroll
+container. Sidebar entries are ordinary fragment links, so the URL, history,
+keyboard behavior, and modified-click behavior stay browser-native. The
+controller in `options/options.js` adds only active-section tracking, a nav lock
+that prevents the highlight from sweeping through intermediate sections, and a
+distance-aware override of the CSS motion.
+
+A normal click keeps smooth scrolling only when the target is no farther than:
+
+```text
+min(2 * content viewport height, 1,200 px)
+```
+
+Longer jumps temporarily set the nested scroller to `scroll-behavior: auto`,
+then restore stylesheet control after the browser has performed the fragment
+scroll. CSS independently disables smooth scrolling for reduced-motion users.
+Initial fragment loads are also forced to land immediately and then normalized
+against the nested scroller's `scroll-margin-top`; users should never watch the
+page travel through a dynamically tall favorite-climber list merely to reach a
+later section. Nearby jumps retain motion because it still conveys spatial
+context without becoming a delay.
+
+The distance calculation uses current bounding rectangles rather than list
+length, so it covers any dynamically tall section, browser zoom level, and
+viewport size. A zero-height test environment falls back to ordinary anchor
+behavior. `test/options/options.test.mjs` pins the threshold, initial deep-link
+override, nav lock, scroll spy, bottom clamp, and modified-click boundary; the
+real browser verifier exercises a 1,500-row favorite list and a long jump in
+both browser families.
 
 ## Deep dive: execution worlds, settings, and message bridges
 
@@ -674,7 +706,7 @@ single settings schema and favorite-climbers contract.
 
 ### Persisted state and schemas
 
-There are five relevant persisted values:
+There are six relevant persisted values:
 
 | Location | Key | Shape and authority | Lifecycle |
 | --- | --- | --- | --- |
@@ -683,6 +715,7 @@ There are five relevant persisted values:
 | `storage.local` | `bpbFavoriteClimbers` | Authoritative custom list | Device-local until edited, restored, extension data is cleared, or the extension is removed |
 | `storage.local` | `bpbBuddyCache` | Last successfully parsed Buddy List plus owner and fetch time | Device-local stale-while-revalidate cache; no expiry deletion |
 | Peakbagger `localStorage` | `pbAscentBetaFilter.v1.fav` | Whether the Favorites chip is selected | Page-origin UI convenience; independent of the source and datasets |
+| Peakbagger `sessionStorage` | `bpbPendingBuddyMutation` | Versioned intended action, target climber id, and capture time | Tab-scoped navigation handoff; consumed on the next supported climber-page load, ignored after five minutes, or discarded when the tab closes |
 
 The custom list is schema-versioned:
 
@@ -823,16 +856,18 @@ The cache can be populated through four paths:
    regardless of the selected source and issues no extra request.
 4. **Confirmed native Buddy mutation.** On another climber's public profile,
    the content script recognizes only an unambiguous native Add/Remove Buddy
-   control and leaves a five-minute, tab-origin navigation marker. A full-page
-   postback is handled when the new document consumes that marker. An ASP.NET
-   partial postback is handled when the existing document observes the native
-   control change to the opposite action; it consumes the same marker without
-   waiting for navigation. Either path then fetches the signed-in Buddy report.
-   The owner must match the current signed-in identity and the target's
-   membership must match the intended action before the custom list changes.
-   The validated report refreshes the Buddy cache even when an action is
-   unconfirmed; request, identity, or parse failure preserves both previously
-   stored datasets.
+   control on an unmodified primary click or form submission. It writes a
+   `{version, action, cid, at}` marker to Peakbagger's tab-scoped
+   `sessionStorage`; a full-page postback is handled when the next supported
+   climber-page document consumes and deletes that marker, accepting it only for
+   the same target within five minutes. An ASP.NET partial postback is handled
+   when the existing document observes the native control change to the opposite
+   action; it consumes the same marker without waiting for navigation. Either
+   path then fetches the signed-in Buddy report. The response owner must match
+   the current signed-in identity and the target's membership must match the
+   intended action before the custom list changes. The validated report refreshes
+   the Buddy cache even when an action is unconfirmed; request, identity, parse,
+   or storage failure preserves both previously stored datasets.
 
 Cache states have precise behavior:
 
@@ -1020,7 +1055,8 @@ The focused automated evidence is deliberately split by boundary:
 
 - `test/favorites/favorite-climbers.test.mjs` covers schema cleaning, deduplication, name
   normalization, TTL edge behavior, URL/input parsing, synthetic Buddy parsing,
-  merge/mirror semantics, effective source selection, and comparators.
+  merge/mirror and Buddy-mutation semantics, effective source selection,
+  comparators, and fuzzy scoring.
 - `test/profile/profile-backup-core.test.mjs` covers Buddy/climber response acceptance
   and rejection of wrong or challenged content.
 - `test/peakbagger/peakbagger-request.test.mjs` covers origin and fetch policy, timeouts,
@@ -1029,12 +1065,15 @@ The focused automated evidence is deliberately split by boundary:
   live storage updates, owner-scoped cache use, stale-while-revalidate fetch,
   and zero-network Buddy-page caching.
 - `test/options/options.test.mjs` covers source switching, provenance counts/filtering,
-  identity-checked add, reversible delete/mirror/restore, Buddy refresh, merge,
+  identity-checked add, live totals and fuzzy search, reversible delete/mirror/restore,
+  Buddy refresh, merge, the default-off removal preference, distance-aware navigation,
   and explicit GitHub messages.
-- `test/favorites/climber-favorite.test.mjs` covers add/remove, self exclusion, Buddy-mode
-  absence, and live source/list changes.
+- `test/favorites/climber-favorite.test.mjs` covers manual add/remove, self exclusion,
+  Buddy-mode absence, live source/list changes, native action detection, owner
+  validation, and both Buddy-removal policies.
 - `test/scale/favorites/favorite-climbers.scale.mjs` renders the full 1,500-entry options
-  list and serializes all entries through the explicit GitHub backup action.
+  list, searches it, and serializes all entries through the explicit GitHub
+  backup action.
 - `test/github/github-client.test.mjs` and `test/github/github-backup-integration.test.mjs`
   cover fixed-root-file Git mechanics, conflicts, feature gates, extension-only
   messaging, missing restore files, and token confinement.
@@ -1045,12 +1084,13 @@ The focused automated evidence is deliberately split by boundary:
 Those tests use jsdom, stubbed fetch/storage, and a reduced synthetic Buddy
 fixture. They do not prove the current live Peakbagger markup, an authenticated
 cookie flow, Cloudflare behavior, real browser interpretation of the manifest,
-visual usability near the 1,500-entry bound, simultaneous multi-tab conflict
-behavior, or the empty-list-versus-markup-drift ambiguity.
-`npm run verify:extension` covers real
-unpacked-Chrome startup and injection, but an authenticated, minimal, read-only
-browser check is still required before a release that changes Buddy parsing,
-owner detection, request classification, or the live options/climber UI.
+simultaneous multi-tab conflict behavior, or the empty-list-versus-markup-drift
+ambiguity. The hidden Chrome and Firefox verifiers load the real manifests and
+exercise a 1,500-row total/search/long-navigation path plus confirmed native
+Buddy add/remove flows under both removal policies. They still use synthetic
+HTML and storage, so an authenticated, minimal, read-only browser check is
+required before a release that changes Buddy parsing, owner detection, request
+classification, or the live options/climber UI.
 
 ## Deep dive: GitHub ascent and full-profile backup
 
@@ -1130,6 +1170,7 @@ The focused rationale, first-visit compromises, and lockstep invariant are in
 | `storage.session` | Capture jobs, prepared drafts, save-time backup snapshots, pending device auth | Short-lived and identity-bound; capture/backup records expire after 30 minutes |
 | CacheStorage | Successful Mapterhorn DEM responses | Best effort, bounded by the local LRU index |
 | Peakbagger `localStorage` | Filter UI state and early theme mirror | Page-local convenience state, never authoritative extension credentials |
+| Peakbagger `sessionStorage` | Pending native Buddy action marker | Tab-scoped navigation handoff; consumed on the next supported climber page, ignored after five minutes, and never treated as proof of success |
 
 Freshness checks reject expired jobs, drafts, snapshots, and authorization
 records on read. A five-minute alarm performs physical cleanup, but correctness
@@ -1151,17 +1192,19 @@ No single green command proves the extension works:
 - `npm test` builds `dist/`, imports pure modules, and evaluates shipped IIFE
   bundles in jsdom. It covers algorithms, fixtures, privacy gates, DOM behavior,
   and worker state, but no browser interprets the real manifest.
-- `npm run test:scale` separately exercises the 4,145-row ascent fixture and a
-  synthetic 20,000-point provider GPX so the default local loop can stay fast
-  without losing large-input coverage.
+- `npm run test:scale` separately exercises the 4,145-row ascent fixture, a
+  synthetic 20,000-point provider GPX, and the complete 1,500-entry favorite
+  manager/search/backup path so the default local loop can stay fast without
+  losing large-input coverage.
 - `npm run lint:js` catches JavaScript errors without rewriting source.
   `npm run lint` checks the built extension package. Neither establishes
   runtime behavior.
 - `npm run verify:browsers` loads the real unpacked Chrome and derived Firefox
   manifests in hidden isolated profiles. It exercises runtime origins,
   execution worlds, storage, worker/background startup, manifest surfaces,
-  native file assignment, draft identity, exactly-once Preview, and the no-Save
-  boundary.
+  native file assignment, draft identity, exactly-once Preview, the no-Save
+  boundary, 1,500-row favorite search and settings navigation, and native Buddy
+  synchronization under both removal policies.
 - `npm run verify:packages -- CHROME.zip FIREFOX.zip` runs those gates against
   the exact minified store archives.
 - `npm run terrain:verify` and `npm run terrain:verify:firefox` render packaged

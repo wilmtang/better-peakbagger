@@ -4,16 +4,16 @@ Better Peakbagger turns Garmin and Strava activities—or a GPX file you already
 
 **Features**
 
-- **Create ascent drafts from Garmin and Strava.** Open an activity you own and click the extension. Better Peakbagger finds likely summit encounters, explains each Strong or Probable match, and opens the ascents you choose as prefilled drafts.
-- **Process a GPX on Peakbagger.** Choose a GPX file on an Add Ascent form to calculate distance, time, gain, multi-day details, and nearby summits. Large tracks are reduced to fit Peakbagger's limit, and multi-peak traverses can open coordinated drafts.
-- **Review before saving.** GPS Preview can be prepared for you, but Better Peakbagger never clicks Save. You remain in control of every ascent published to your account.
-- **Explore free 3D terrain.** View ascent routes, Full Screen GPS maps, and individual peaks in interactive 3D powered by [MapLibre](https://maplibre.org/) and open-data [Mapterhorn](https://mapterhorn.com/) elevation tiles. Use Peakbagger's compatible map layers, an optional OpenStreetMap-based vector layer, synchronized 2D/3D camera position, and an on-map compass. 3D is opt-in.
-- **Understand GPX tracks.** Add interactive elevation charts, distance and time views, detailed route metrics, grades, local clock times, multi-day camping details, and chart-to-map tracking to ascent pages. Customize route color, width, casing, and map size.
-- **Find useful ascent beta.** Filter ascent lists by trip report, GPS track, external link, or favorite climber, combine filters, and sort without reloading. Favorites can come from your Peakbagger Buddy List or a custom list you manage.
-- **Write better trip reports.** Replace bracket-tag editing with a rich-text editor or GitHub-flavored Markdown, including formatting, tables, images, video, syntax highlighting, and live preview. Device-local autosave helps recover interrupted drafts, and Settings provides one place to review, copy, or remove them.
-- **Back up your ascents to GitHub.** Optionally save one ascent or your full history to a repository you control, including the report as Markdown, entered fields as JSON, and Peakbagger's stored GPS track. You can also explicitly back up and restore a custom favorite-climber list.
-- **Plan with better links.** Open summit-specific weather, recent satellite imagery, modeled snow depth where available, and fire/smoke information from supported peak pages.
-- **Use Peakbagger your way.** Choose a site-wide light, dark, or system theme and adjust units, map behavior, GPX chart defaults, activity capture, the trip-report editor, and beta filters in one settings page.
+- **Create ascent drafts from Garmin and Strava:** Turn an activity you own into prefilled ascent drafts with explained summit matches.
+- **Process a GPX on Peakbagger:** Analyze a GPX for route stats, nearby summits, and coordinated multi-peak drafts.
+- **Review before saving:** Prepare GPS Preview while keeping every final Save click under your control.
+- **Explore free 3D terrain:** Explore routes and maps in opt-in interactive 3D with compatible layers, synced views, and a compass.
+- **Understand GPX tracks:** See interactive charts, local times, route metrics, and map tracking with customizable route styling.
+- **Find useful ascent beta:** Filter and sort ascent lists without reloading, using Buddy List or custom favorites.
+- **Write better trip reports:** Draft rich-text or GitHub-flavored Markdown reports with media, previews, and device-local recovery.
+- **Back up your ascents to GitHub:** Explicitly back up ascents, history, and favorite climbers to a GitHub repository you control.
+- **Plan with better links:** Open weather, imagery, snow-depth, and fire or smoke information for supported summits.
+- **Use Peakbagger your way:** Set your theme and preferences for units, maps, GPX charts, activity capture, reports, and beta filters.
 
 **Privacy by design**
 

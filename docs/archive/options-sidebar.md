@@ -1,6 +1,9 @@
 # Options page sidebar navigation — investigation and execution plan
 
-Status: implemented 2026-07-19. See "Deviations from the plan" at the end.
+Status: implemented 2026-07-19. See "Deviations from the plan" at the end. A
+later distance-aware motion bound is documented in the maintained
+[architecture guide](../architecture.md#options-page-navigation); this plan
+remains a record of the original sidebar rollout.
 
 Goal: give the extension's settings page (`options/options.html`) a left sidebar
 that lists the settings sections, like Sidebery's setup page — clicking an entry
