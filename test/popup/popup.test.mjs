@@ -156,6 +156,42 @@ test('popup presents a trackless manual activity as a neutral retryable state', 
     dom.window.close();
 });
 
+test('popup lets a no-match capture bypass the cached terminal job and check again', async () => {
+    const dom = new JSDOM(html, {
+        url: 'chrome-extension://better-peakbagger/popup/popup.html',
+        runScripts: 'outside-only'
+    });
+    const job = {
+        id: 'no-matches-job',
+        phase: 'no-matches',
+        provider: 'garmin',
+        hasCachedGpx: true
+    };
+    const captureStarts = [];
+    dom.window.chrome = {
+        tabs: { query: async () => [{ id: 9 }] },
+        runtime: {
+            sendMessage: async message => {
+                if (message.type === 'CAPTURE_START') captureStarts.push(message);
+                return job;
+            }
+        }
+    };
+
+    dom.window.eval(source);
+    await waitFor(() => /No confident summit matches/.test(dom.window.document.getElementById('state').textContent));
+
+    const card = dom.window.document.querySelector('.state-card');
+    const checkAgain = [...card.querySelectorAll('button')].find(element => element.textContent === 'Check again');
+    assert.ok(checkAgain);
+    assert.equal(checkAgain.classList.contains('primary'), true);
+    checkAgain.click();
+    await waitFor(() => captureStarts.length === 2);
+    assert.equal(captureStarts[1].force, true);
+    await new Promise(resolve => setTimeout(resolve, 30));
+    dom.window.close();
+});
+
 test('popup stops status polling when capture finishes without storing a job', async () => {
     const dom = new JSDOM(html, {
         url: 'chrome-extension://better-peakbagger/popup/popup.html',

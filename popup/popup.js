@@ -205,7 +205,11 @@
             return;
         }
         if (job.phase === 'no-matches') {
-            stateCard('No confident summit matches', 'Possible and weak results are intentionally hidden. Nothing was opened or uploaded.');
+            stateCard(
+                'No confident summit matches',
+                'Possible and weak results are intentionally hidden. Nothing was opened or uploaded.',
+                { action: { label: 'Check again', primary: true, onClick: retry } }
+            );
             return;
         }
         if (job.phase === 'ready' || job.phase === 'opened' || job.phase === 'previewed') return renderResults(job);
