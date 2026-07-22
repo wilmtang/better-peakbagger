@@ -54,7 +54,7 @@ exception is an exact Markdown-source sidecar described below.
 | Markdown source | [CodeMirror 6](https://codemirror.net) | GFM Markdown string plus allowlisted inline HTML | Editable Markdown-mode state only |
 | Markdown source sidecar | `state.mdSource`, and `source` in a Markdown draft | Exact Markdown string | Preserves the user's Markdown spelling when a round trip through bracket markup would rewrite it |
 | Preview | A preview `<div>` | Generated safe HTML string | Read-only view of the current Markdown source; never parsed back |
-| Report AST | `src/report-markup.js` | Plain JavaScript block/inline objects | Temporary common semantic form used only inside a conversion |
+| Report AST | `src/reports/report-markup.js` | Plain JavaScript block/inline objects | Temporary common semantic form used only inside a conversion |
 | Plain editor | The original `JournalText` textarea | The same bracket-markup string that will be submitted | Verbatim editing with no converter |
 
 One report can therefore have several equivalent spellings:
@@ -70,10 +70,10 @@ Preview HTML       <p>We climbed <b>Baker</b> under <span style="color:#2471a3">
 These values are semantically related, not byte-for-byte mirrors. Only
 `JournalText` has submission authority.
 
-Module ownership follows the same boundary: `src/report-editor.js` orchestrates
-mode switches, dirty state, drafts, and `JournalText`; `src/report-rich-editor.js`
-owns the TipTap schema and commands; `src/report-md-editor.js` owns only the
-CodeMirror surface; and `src/report-markup.js` owns every format conversion,
+Module ownership follows the same boundary: `src/reports/report-editor.js` orchestrates
+mode switches, dirty state, drafts, and `JournalText`; `src/reports/report-rich-editor.js`
+owns the TipTap schema and commands; `src/reports/report-md-editor.js` owns only the
+CodeMirror surface; and `src/reports/report-markup.js` owns every format conversion,
 sanitizer, and canonical serializer.
 
 ## Exact conversion paths
@@ -411,8 +411,8 @@ the optional GitHub save-time snapshot. A TR draft uses extension
 and never leaves the browser profile. It is not synced to another browser or
 device and is not sent to Peakbagger, GitHub, or the extension developer.
 
-`src/report-editor.js` owns persistence and recovery. The pure
-`src/report-drafts.js` module is the shared identity, expiry, and limit contract
+`src/reports/report-editor.js` owns persistence and recovery. The pure
+`src/reports/report-drafts.js` module is the shared identity, expiry, and limit contract
 used by the editor and the manager in `options/drafts.js`.
 
 ### Identity: one key per climber and form target
@@ -713,10 +713,10 @@ shows the exact bracket source.
   is no parser diagnostic or mode-level guardrail for a lossy import. A future
   guardrail must distinguish actual dropped or neutralized source from allowed
   canonical normalization.
-- `test/report-markup.test.mjs` pins Markdown tokens, bracket aliases, DOM
+- `test/reports/report-markup.test.mjs` pins Markdown tokens, bracket aliases, DOM
   import, canonical output, unsafe-input neutralization, raw color validation,
   TipTap color-token revalidation, and round trips.
-- `test/report-editor.test.mjs` pins the native-textarea source of truth,
+- `test/reports/report-editor.test.mjs` pins the native-textarea source of truth,
   untouched-value preservation, expanded rich DOM, toolbar active states,
   image-source validation, hex-color preservation after Rich and Markdown
   edits, undo isolation across mode switches, mode switching (including
@@ -725,12 +725,12 @@ shows the exact bracket source.
   to credit-only in both editors, disabled-editor write rejection, and
   pre-postback flushing. It drives the TipTap and CodeMirror instances through
   the mount's test handle.
-- `test/report-drafts.test.mjs` pins key construction/parsing, edit URLs,
+- `test/reports/report-drafts.test.mjs` pins key construction/parsing, edit URLs,
   compatibility record validation, fallback titles, and expiry arithmetic.
-- `test/options.test.mjs` pins manager ordering, labels, exact Markdown copy
+- `test/options/options.test.mjs` pins manager ordering, labels, exact Markdown copy
   versus bracket conversion, expiry cleanup, live refresh, and reversible
   single/bulk deletion.
-- `test/manifest-capture.test.mjs` pins the vendored parser before the converter
+- `test/project/manifest-capture.test.mjs` pins the vendored parser before the converter
   and editor in the real content-script list.
 - `npm run verify:browsers` loads the unpacked extension in hidden Chrome and
   Firefox and exercises each store-specific credit, real typing, Ctrl/Cmd+B,

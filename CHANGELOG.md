@@ -8,6 +8,12 @@
   additions also join a selected custom list, while removals preserve the
   favorite unless the new opt-in removal setting is enabled.
 
+- **Organize source and tests by ownership.** Runtime modules now live in named
+  domain directories under `src/`, with matching test directories under
+  `test/`; build configuration, imports, safety scans, and maintained
+  documentation follow the same structure. Shipped `dist/` paths and extension
+  behavior are unchanged.
+
 - **Keep settings navigation responsive with large favorite lists.** Sidebar
   links still animate nearby moves, but long jumps now land immediately instead
   of scrolling through hundreds or thousands of climber rows.
@@ -320,7 +326,7 @@
 - **Tighter page-world settings bridge.** Page scripts can write only the six
   GPX-analyzer-owned settings keys; feature gates, capture privacy options,
   and the theme remain writable solely from extension-owned surfaces.
-- **Internals.** The pure GPX metrics pipeline moved to `src/gpx-metrics.js`
+- **Internals.** The pure GPX metrics pipeline moved to `src/gpx/gpx-metrics.js`
   and is shared with the background capture core, so drafted and displayed
   distance/gain math cannot diverge; analyzer UI text is built with DOM nodes
   instead of dynamic `innerHTML`.
@@ -407,7 +413,7 @@
   holder's identity is masked: real name → a pseudonym, real climber/ascent ids
   → fakes, and external social links (Strava/Instagram/etc.) → placeholders,
   with the personal pages fully genericized (peaks, dates, ranges). New
-  `test/fixtures-privacy.test.mjs` fails the build if a raw identifier reappears
+  `test/project/fixtures-privacy.test.mjs` fails the build if a raw identifier reappears
   (the banned identifiers are stored only as salted hashes, so the guard itself
   discloses nothing). Golden chip counts updated for the larger (~4,145-row)
   Rainier capture; the smaller peak fixtures (21500/8241/1039) stay as Wayback
@@ -428,10 +434,10 @@
   attribute set with no sheet, which renders the self-themed GPX chart dark on
   an otherwise-light page (the reported "dark only in the chart on Chrome";
   reproducible when an unpacked build is reloaded with Peakbagger tabs open).
-  `src/theme.js` now injects the sheet through an idempotent `ensureSheet()`
+  `src/theme/theme.js` now injects the sheet through an idempotent `ensureSheet()`
   tied to every `apply()`, so the authoritative settings read and every live
   toggle re-assert the sheet — the attribute can no longer exist without it. New
-  `test/theme-inject.test.mjs` locks in the invariant.
+  `test/theme/theme-inject.test.mjs` locks in the invariant.
 - **Instant date sort: both directions clickable, and no premature reload.**
   The active-direction header link is no longer made inert — both "Ascent Date"
   and "[sort desc]" stay live, clickable links at all times (the active one is
@@ -462,10 +468,10 @@ contrast with a test.
   land synchronously, but the dark stylesheet itself was still injected through
   the manifest `content_scripts.css` array — a separate renderer channel that
   doesn't reliably apply before first paint (Brave, cache-served loads), so the
-  flash persisted. `src/theme.js` now injects the sheet from JS as a `<style>`
+  flash persisted. `src/theme/theme.js` now injects the sheet from JS as a `<style>`
   in `<html>` at `document_start`, in the same synchronous tick that sets the
   attribute — the approach Dark Reader uses. The rules moved from
-  `src/site-dark.css` (removed) to `src/site-dark-css.js` as `window.BPBDarkCSS`;
+  `src/site-dark.css` (removed) to `src/theme/site-dark-css.js` as `window.BPBDarkCSS`;
   the manifest no longer uses a `css` entry. Details in
   `docs/dark-mode-flash.md`.
 - **Legible header banner.** The site header sits on the (light) `header.jpg`
@@ -473,7 +479,7 @@ contrast with a test.
   global `a { color: … }` was overriding that black with the light-on-dark link
   color, washing the links out over the photo. `.mainbanner a` / `.mainmenu a`
   are now re-darkened to `#000`.
-- **WCAG AA contrast guard.** New `test/dark-contrast.test.mjs` parses the
+- **WCAG AA contrast guard.** New `test/theme/dark-contrast.test.mjs` parses the
   shipped dark stylesheet and asserts every text/background pair meets WCAG 2.1
   AA (4.5:1 normal, 3:1 large), grounded against the captured fixtures. Fixing
   the pre-existing failures nudged a few muted colors lighter (placeholder,
@@ -504,7 +510,7 @@ Instant date sorting, a user-defined "has beta", and a dark mode fix.
   README) and a jsdom harness (`npm test`) running the real content
   scripts against them — no live-site access needed for development.
 - **Fixed the flash of the light page on load with dark mode enabled**
-  (most visible in Brave). `src/theme.js` now mirrors the theme preference
+  (most visible in Brave). `src/theme/theme.js` now mirrors the theme preference
   into page `localStorage` and applies it synchronously at `document_start`,
   before first paint, instead of waiting for the async `chrome.storage` read
   (which stays authoritative and reconciles afterwards). Details in
@@ -518,11 +524,11 @@ Site-wide dark mode and a centralized settings page.
   (auto / imperial / metric), theme (follow system / light / dark), and the
   ascent filter's default minimum trip-report words. Changes apply live to open
   Peakbagger tabs.
-- **Dark mode** across all of Peakbagger via `src/theme.js` (sets
+- **Dark mode** across all of Peakbagger via `src/theme/theme.js` (sets
   `data-bpb-theme` on `<html>`) and `src/site-dark.css` (dark rules scoped under
   that attribute, injected but inert until enabled). The GPX chart and filter
   bar theme themselves to match.
-- **Settings bridge** (`src/bridge.js`): the MAIN-world GPX analyzer can't read
+- **Settings bridge** (`src/settings/bridge.js`): the MAIN-world GPX analyzer can't read
   `chrome.storage`, so it exchanges settings with the isolated world over
   `window.postMessage`. Units and theme now come from the shared settings; the
   in-chart unit dropdown and the filter's word input write back to the same
@@ -539,10 +545,10 @@ Initial release as a standalone Chrome + Firefox extension (Manifest V3).
 Migrated from two Tampermonkey userscripts, previously maintained in
 `wilmtang/tampermonkey-scripts`:
 
-- **Peakbagger GPX Analyzer** (was v13.13) → `src/gpx-analyzer.js`, running in
+- **Peakbagger GPX Analyzer** (was v13.13) → `src/gpx/gpx-analyzer.js`, running in
   the page's main world with Chart.js 4.5.1 now vendored locally instead of
   pulled from a CDN.
-- **Peakbagger Ascent Beta Filter** (was v0.1.0) → `src/ascent-filter.js`,
+- **Peakbagger Ascent Beta Filter** (was v0.1.0) → `src/ascent/ascent-filter.js`,
   running as an isolated content script.
 
 Feature behavior is unchanged from the userscripts. Because both features read

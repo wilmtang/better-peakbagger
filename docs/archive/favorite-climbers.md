@@ -92,13 +92,13 @@ keeps its existing "no beta data" notice), and filtering your own
 
 ## Data model
 
-Synced setting (inside the existing `bpbSettings` item, `src/settings-schema.js`):
+Synced setting (inside the existing `bpbSettings` item, `src/settings/settings-schema.js`):
 
 - `favoritesSource: 'buddies' | 'custom'`, default `'buddies'`, cleaned like
   `chartDefaultSeries`. No on/off gate — the Favorites button is part of the
   always-on Beta filter bar like every other button there.
 
-`storage.local` (keys owned by the new pure module `src/favorite-climbers.js`):
+`storage.local` (keys owned by the new pure module `src/favorites/favorite-climbers.js`):
 
 - `bpbFavoriteClimbers` → `{ schemaVersion: 1, entries: [{ cid, name, addedAt,
   source: 'buddy'|'manual' }] }` — deduped by cid, names trimmed ≤ 200 chars,
@@ -109,13 +109,13 @@ Synced setting (inside the existing `bpbSettings` item, `src/settings-schema.js`
 
 GitHub backup file: `favorites.json` at the backup-repo root:
 `{ schemaVersion: 1, exportedAt, entries }`. Safe by construction:
-`inspectRootTree` (`src/github-client.js:157-194`) considers only the marker
+`inspectRootTree` (`src/github/github-client.js:157-194`) considers only the marker
 blob and `type === 'tree'` folders, so ascent commits neither prune nor trip
 over a root file (verified against current source).
 
 ## Implementation
 
-### New `src/favorite-climbers.js` — pure module (pattern: `src/report-drafts.js`)
+### New `src/favorites/favorite-climbers.js` — pure module (pattern: `src/reports/report-drafts.js`)
 
 No DOM or extension APIs; Documents are passed in, so the content script,
 options page, and tests all share one implementation. Exports
@@ -131,7 +131,7 @@ prefix — grounded by `test/fixtures/pages/climber-home.html:175`);
 `favoriteSet(mode, favorites, buddyCache)` → the effective cid set for the
 filter; comparators `byName` (Intl.Collator) and `byAddedAtDesc`.
 
-### Modified `src/profile-backup-core.js`
+### Modified `src/profile/profile-backup-core.js`
 
 Add named exports for `numericParam` and `ownerClimberId` (currently
 module-internal; `classifyResponse` already sets the named-export precedent).
@@ -139,7 +139,7 @@ Extend `classifyResponse` with two kinds so login/Cloudflare pages keep getting
 rejected by the one shared classifier: `'buddies'` (ok ⇢ body has `RGridView`
 and `Buddy List`) and `'climber'` (ok ⇢ `<h1>` and `ClimbListC.aspx?cid=`).
 
-### Modified `src/ascent-filter.js` — the Favorites filter button
+### Modified `src/ascent/ascent-filter.js` — the Favorites filter button
 
 - Row records (init loop ~493-519): parse `record.climberId` from the row's
   `climber.aspx` anchor via `numericParam`; rows without one never match.
@@ -165,7 +165,7 @@ and `Buddy List`) and `'climber'` (ok ⇢ `<h1>` and `ClimbListC.aspx?cid=`).
 - Live updates: `storage.onChanged` (local, both keys) plus the existing
   `S.subscribe` (for `favoritesSource`) → refresh the set and re-render.
 
-### New `src/climber-favorite.js` — content script on `climber.aspx`
+### New `src/favorites/climber-favorite.js` — content script on `climber.aspx`
 
 Renders only in custom mode, and only when the page cid ≠ own cid (no
 favoriting yourself). Injects a small style block (same pattern as
@@ -207,7 +207,7 @@ Undo, 20 ms-debounced `storage.onChanged` refresh, `#status` flash), exposed as
   from backup** (restore = replace with Undo snapshot; "No favorites backup
   found in <repo>." when absent).
 
-### Modified `src/github-client.js`
+### Modified `src/github/github-client.js`
 
 Two additions on the client object, both via the **atomic Git Data path** (not
 a Contents-API PUT), sharing a factored `withConflictRetry(fn)` with
@@ -225,7 +225,7 @@ a Contents-API PUT), sharing a factored `withConflictRetry(fn)` with
   head. Reuses marker validation, empty-repo bootstrap, and the `classify()`
   error taxonomy for free — all things a Contents-API path would duplicate.
 
-### Modified `src/background.js` — two worker messages
+### Modified `src/background/background.js` — two worker messages
 
 Both added to the `extensionOnly` guard (`background.js:1623`) and both reuse
 the `backupAscent` guard sequence (settings gate → `authStore` → token/repo):
@@ -234,7 +234,7 @@ the `backupAscent` guard sequence (settings gate → `authStore` → token/repo)
   `cleanFavorites` and serializes `favorites.json`; the worker wraps
   `client.putRootFile('favorites.json', …)` in the existing GitHub write queue
   so it can never race an ascent commit. Returns `{ok, result}` /
-  `{ok:false, error}` mapped through `src/github-error.js` on the page.
+  `{ok:false, error}` mapped through `src/github/github-error.js` on the page.
 - `GITHUB_FAVORITES_RESTORE {}` — worker returns `{ok, content|null}`; the
   options page parses/validates (fail closed on unknown `schemaVersion`),
   snapshots the current list, writes, and shows the Undo bar. Keeps
@@ -253,30 +253,30 @@ the `backupAscent` guard sequence (settings gate → `authStore` → token/repo)
 
 ## Tests (all fixture data synthetic — `fixtures-privacy` guard; 900001-style ids)
 
-- New `test/favorite-climbers.test.mjs`: clean/TTL/validation,
+- New `test/favorites/favorite-climbers.test.mjs`: clean/TTL/validation,
   `parseBuddyDocument` against `report-buddy-list.html`,
   `climberNameFromDocument` against `climber-home.html`, input parsing,
   merge/mirror semantics, `favoriteSet` per mode, comparators.
-- `test/profile-backup-core.test.mjs`: the two new classifier kinds
+- `test/profile/profile-backup-core.test.mjs`: the two new classifier kinds
   (ok / wrong-content / challenged).
-- `test/settings-schema.test.mjs`: `favoritesSource` cleaning.
-- `test/ascent-filter.test.mjs`: extend the `loadPage` helper to seed
+- `test/settings/settings-schema.test.mjs`: `favoritesSource` cleaning.
+- `test/ascent/ascent-filter.test.mjs`: extend the `loadPage` helper to seed
   `storage.local` (as `options.test.mjs` already does); button render + count;
   custom-mode filtering with cids read from the fixture's first-column links;
   AND-composition with "Has beta"; disabled-empty state; buddies mode reads
   `bpbBuddyCache`; stale cache triggers one revalidation fetch (stubbed
   `window.fetch`, assert the `report.aspx?r=b` URL and the cache write);
   persisted button state; Buddy List page rewrites the cache from its DOM.
-- New `test/climber-favorite.test.mjs` + new synthetic fixture
+- New `test/favorites/climber-favorite.test.mjs` + new synthetic fixture
   `test/fixtures/pages/climber-other.html` (page cid 900002, logged-in nav cid
   900001): toggle add/remove in custom mode; nothing in buddies mode; nothing
   on your own page.
-- `test/options.test.mjs`: source radio persists; add-by-id resolves a name
+- `test/options/options.test.mjs`: source radio persists; add-by-id resolves a name
   from stubbed fetch; remove + Undo; merge/mirror + Undo against a seeded
   cache; Refresh now writes the cache; backup/restore exchange
   `GITHUB_FAVORITES_*` via a stubbed `runtime.sendMessage`, restore replace +
   Undo.
-- `test/github-client.test.mjs`: `putRootFile` tree includes `base_tree` +
+- `test/github/github-client.test.mjs`: `putRootFile` tree includes `base_tree` +
   single entry (+ marker when absent), non-forced ref PATCH, conflict retry
   rebuilds on the re-read head, foreign marker → `REPO_CONFLICT`, empty-repo
   bootstrap; `readRootFile` decode and 404 → null.
@@ -298,7 +298,7 @@ the `backupAscent` guard sequence (settings gate → `authStore` → token/repo)
 ## Commit sequence (each an independent conventional commit; checks before each)
 
 1. `feat: pure favorite-climbers module and shared classifier kinds` —
-   `src/favorite-climbers.js`, `profile-backup-core` exports/kinds, their
+   `src/favorites/favorite-climbers.js`, `profile-backup-core` exports/kinds, their
    tests. Verify: targeted `node --test`, then `npm test`.
 2. `feat: favoritesSource setting` — schema + test. Verify: `npm test`.
 3. `feat: favorites filter on peak ascent lists` — `ascent-filter.js`,

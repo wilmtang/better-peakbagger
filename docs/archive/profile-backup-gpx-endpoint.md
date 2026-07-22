@@ -13,7 +13,7 @@ makes them unreadable.
 ### 1. Peakbagger renamed its GPS-track download endpoint
 
 The profile backup constructs the track URL from the ascent id
-([profile-backup.js:227](../../src/profile-backup.js)):
+([profile-backup.js:227](../../src/profile/profile-backup.js)):
 
 ```
 /climber/GetAscentGPX.aspx?aid=<aid>
@@ -46,7 +46,7 @@ uses):
 So for **every track-bearing ascent**, `loadAscent` fetches the dead endpoint,
 follows the redirect, and gets a 200 HTML error page.
 `classifyResponse(..., { kind: 'gpx' })`
-([profile-backup-core.js:116-133](../../src/profile-backup-core.js)) correctly
+([profile-backup-core.js:116-133](../../src/profile/profile-backup-core.js)) correctly
 rejects it (`no <gpx` in body → `wrong-content`), and `loadAscent` fails the
 whole ascent — deliberately, because re-runs skip existing folders, so a
 committed folder must be complete. That policy is right; the URL is wrong.
@@ -64,8 +64,8 @@ This explains the exact failure set:
   the fix retries exactly those ten.
 
 Why every other GPX surface kept working: the ascent-page analyzer
-([gpx-analyzer.js:127](../../src/gpx-analyzer.js)) and the per-save backup
-([ascent-page.js:57-62](../../src/ascent-page.js)) find the download link **by
+([gpx-analyzer.js:127](../../src/gpx/gpx-analyzer.js)) and the per-save backup
+([ascent-page.js:57-62](../../src/ascent/ascent-page.js)) find the download link **by
 its link text** on the live page ("Download this GPS track…" still prefix-
 matches the new wording), so they followed the rename automatically. Only the
 profile backup builds the URL itself — it has no ascent page to scrape, only
@@ -73,7 +73,7 @@ the list row.
 
 ### 2. The failure message reports the status even when the status was fine
 
-`responseText` ([profile-backup.js:167-179](../../src/profile-backup.js))
+`responseText` ([profile-backup.js:167-179](../../src/profile/profile-backup.js))
 formats **every** non-`ok` classification as
 `Peakbagger returned HTTP ${response.status}.` — even when the status is 200
 and the classifier rejected the *body*. It also returns the requested URL,
@@ -88,14 +88,14 @@ Three units, independently committable, smallest-safe-change each
 
 ### Unit 1 — `fix:` fetch tracks from the current endpoint
 
-- [profile-backup.js:227](../../src/profile-backup.js): build
+- [profile-backup.js:227](../../src/profile/profile-backup.js): build
   `/climber/GPXFile.aspx?aid=${item.aid}&sep=1` (mirror the site's own link,
   including `sep=1`, so the backup stores byte-for-byte what a user clicking
   the page link gets — and what the analyzer reads).
-- [profile-backup.js:197](../../src/profile-backup.js): the challenge-probe
+- [profile-backup.js:197](../../src/profile/profile-backup.js): the challenge-probe
   kind detection must recognize the new path —
   `/GPXFile\.aspx|GetAscentGPX\.aspx/i`.
-- Tests: `test/profile-backup.test.mjs` currently stubs pages with **no
+- Tests: `test/profile/profile-backup.test.mjs` currently stubs pages with **no
   GPS-flagged rows**, so the GPX branch of `loadAscent` is never exercised at
   the page level — the gap that let this ship. Add a scenario with a
   GPS-icon row: assert the fetched URL is `GPXFile.aspx?aid=<aid>&sep=1` and
@@ -103,7 +103,7 @@ Three units, independently committable, smallest-safe-change each
 
 ### Unit 2 — `fix:` failure reasons that describe what actually happened
 
-In `responseText` ([profile-backup.js:167-179](../../src/profile-backup.js)):
+In `responseText` ([profile-backup.js:167-179](../../src/profile/profile-backup.js)):
 
 - Status outside 2xx → keep `Peakbagger returned HTTP ${status}.`
 - 2xx with a rejected body → per-kind copy in plain language, e.g.
@@ -122,7 +122,7 @@ reason that names the GPS track and the redirect — and never says "HTTP 200".
 - [test/fixtures/pages/climber-ascent.html:37](../../test/fixtures/pages/climber-ascent.html):
   update the captured link to `GPXFile.aspx?aid=7654321&sep=1` with the new
   link text, keeping the masked ids (fixtures-privacy stays green).
-- [test/ascent-page.test.mjs:40](../../test/ascent-page.test.mjs): assert the
+- [test/ascent/ascent-page.test.mjs:40](../../test/ascent/ascent-page.test.mjs): assert the
   new URL. This also keeps the text-based link matcher honest against the
   live wording.
 - Record the endpoint fact in the maintained
@@ -132,7 +132,7 @@ reason that names the GPS track and the redirect — and never says "HTTP 200".
 
 ### Optional hardening (flagged, not required for the fix)
 
-- [ascent-backup.js:72](../../src/ascent-backup.js) (per-save flow) accepts
+- [ascent-backup.js:72](../../src/ascent/ascent-backup.js) (per-save flow) accepts
   any `res.ok` body as the track with no `<gpx` validation — had that flow
   also constructed URLs, this rename would have **silently committed HTML
   error pages as `track.gpx`**. Run the fetched text through

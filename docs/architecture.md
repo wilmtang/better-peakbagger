@@ -123,19 +123,19 @@ There is no parallel raw-source worker list and no `importScripts` fallback.
 
 | Shipped surface | Primary owner | Boundary |
 | --- | --- | --- |
-| Background coordination | `src/background.js` | Browser APIs, capture jobs, Peakbagger lookup, draft handshakes, GitHub auth/writes |
-| Provider extraction | `src/provider-page.js` | On-demand MAIN-world injection into the active owned activity |
-| Ascent editor | `src/ascent-draft.js`, `src/ascent-upload.js`, `src/report-editor.js` | Isolated-world form fill, local-file processing, report editing |
-| Ascent analysis | `src/gpx-analyzer.js` | MAIN-world GPX/chart/native-map integration |
-| Terrain lifecycle, bridge, and renderer | `src/terrain-coordinator.js`, `src/terrain-map.js`, `src/terrain-frame.js` | Shared MAIN-world state machine, isolated bridge, extension-origin MapLibre frame |
-| Full Screen and Peak maps | `src/big-map.js`, `src/peak-map.js` | MAIN-world native-map coordinators |
-| Ascent lists | `src/ascent-filter.js`, `src/profile-backup.js` | Isolated-world filter/sort and owner-only backup pipeline |
-| Favorite climbers | `src/favorite-climbers.js`, `src/climber-favorite.js`, `options/favorites.js` | Pure local-data contract, climber-page toggle, and settings manager |
-| Settings and theme | `src/settings-schema.js`, `src/settings.js`, `src/theme.js` | Pure schema, sync-storage access, synchronous page startup |
-| Report-draft manager | `src/report-drafts.js`, `options/drafts.js` | Shared pure draft contract plus device-local list/copy/delete UI |
-| Saved-ascent backup | `src/ascent-page.js`, `src/ascent-backup.js` | Owner-only page read and user-facing backup state |
-| Peakbagger request boundary | `src/peakbagger-request.js`, `src/peakbagger-response.js`, `src/peakbagger-error.js`, `src/peakbagger-cloudflare.js` | Authenticated fetch policy, response validation, typed failures, and managed-challenge detection/recovery copy |
-| GitHub integration | `src/github-errors.js`, `src/github-api.js`, `src/github-auth.js`, `src/github-client.js`, `src/github-backup.js` | Shared typed errors and authenticated REST transport, worker-only credential/device flow, Git Data client, pure payload builder |
+| Background coordination | `src/background/background.js` | Browser APIs, capture jobs, Peakbagger lookup, draft handshakes, GitHub auth/writes |
+| Provider extraction | `src/capture/provider-page.js` | On-demand MAIN-world injection into the active owned activity |
+| Ascent editor | `src/ascent/ascent-draft.js`, `src/ascent/ascent-upload.js`, `src/reports/report-editor.js` | Isolated-world form fill, local-file processing, report editing |
+| Ascent analysis | `src/gpx/gpx-analyzer.js` | MAIN-world GPX/chart/native-map integration |
+| Terrain lifecycle, bridge, and renderer | `src/terrain/terrain-coordinator.js`, `src/terrain/terrain-map.js`, `src/terrain/terrain-frame.js` | Shared MAIN-world state machine, isolated bridge, extension-origin MapLibre frame |
+| Full Screen and Peak maps | `src/maps/big-map.js`, `src/maps/peak-map.js` | MAIN-world native-map coordinators |
+| Ascent lists | `src/ascent/ascent-filter.js`, `src/profile/profile-backup.js` | Isolated-world filter/sort and owner-only backup pipeline |
+| Favorite climbers | `src/favorites/favorite-climbers.js`, `src/favorites/climber-favorite.js`, `options/favorites.js` | Pure local-data contract, climber-page toggle, and settings manager |
+| Settings and theme | `src/settings/settings-schema.js`, `src/settings/settings.js`, `src/theme/theme.js` | Pure schema, sync-storage access, synchronous page startup |
+| Report-draft manager | `src/reports/report-drafts.js`, `options/drafts.js` | Shared pure draft contract plus device-local list/copy/delete UI |
+| Saved-ascent backup | `src/ascent/ascent-page.js`, `src/ascent/ascent-backup.js` | Owner-only page read and user-facing backup state |
+| Peakbagger request boundary | `src/peakbagger/peakbagger-request.js`, `src/peakbagger/peakbagger-response.js`, `src/peakbagger/peakbagger-error.js`, `src/peakbagger/peakbagger-cloudflare.js` | Authenticated fetch policy, response validation, typed failures, and managed-challenge detection/recovery copy |
+| GitHub integration | `src/github/github-errors.js`, `src/github/github-api.js`, `src/github/github-auth.js`, `src/github/github-client.js`, `src/github/github-backup.js` | Shared typed errors and authenticated REST transport, worker-only credential/device flow, Git Data client, pure payload builder |
 
 Extend the owning surface rather than publishing cross-feature globals. The one
 deliberate Better Peakbagger global is `globalThis.BPBProviderPage`: the worker
@@ -145,15 +145,15 @@ the worker-to-page boundary. It is an adapter API, not a general module seam.
 ### Live Peakbagger reads
 
 User-triggered Peakbagger reads share one fail-closed boundary. The pure
-`src/peakbagger-response.js` validates both status and resource-specific body
+`src/peakbagger/peakbagger-response.js` validates both status and resource-specific body
 shape because a login page or `PBError.aspx` redirect can finish as HTTP 200.
-`src/peakbagger-cloudflare.js` separately owns the stricter managed-challenge
+`src/peakbagger/peakbagger-cloudflare.js` separately owns the stricter managed-challenge
 signature used by peakbagger-cli: status 403 plus either `cf-mitigated:
 challenge` or `Just a moment` within the first 2,000 body characters. It also
-owns the shared human-check copy and recovery action. `src/peakbagger-request.js`
+owns the shared human-check copy and recovery action. `src/peakbagger/peakbagger-request.js`
 enforces the authenticated, no-cache fetch policy, a bounded timeout,
 response-body and DOM-parser handling, and Peakbagger-origin validation.
-`src/peakbagger-error.js` maps the remaining typed failures to consistent copy
+`src/peakbagger/peakbagger-error.js` maps the remaining typed failures to consistent copy
 and recovery actions for sign-out, network, timeout, rate limit, server, missing
 resource, page drift, parser, identity, and device-storage failures.
 
@@ -177,19 +177,19 @@ backup controls, and the terrain frame bridge.
 Three coordinators run in the page's MAIN world because they need page-owned
 state:
 
-- `src/gpx-analyzer.js` reads Peakbagger's same-origin MasterMap frame and its
+- `src/gpx/gpx-analyzer.js` reads Peakbagger's same-origin MasterMap frame and its
   Leaflet globals for route and hover synchronization.
-- `src/big-map.js` identifies and restyles Peakbagger's native Full Screen GPS
+- `src/maps/big-map.js` identifies and restyles Peakbagger's native Full Screen GPS
   layers without replacing their interactions.
-- `src/peak-map.js` mirrors the native map context and peak feed into 3D.
+- `src/maps/peak-map.js` mirrors the native map context and peak feed into 3D.
 
-All three compose `src/terrain-coordinator.js` for the common
+All three compose `src/terrain/terrain-coordinator.js` for the common
 idle/loading/active lifecycle, timeout recovery, camera handoff, toggle and
 compass state. Subject validation and init-payload construction stay in the
 owning surface so sharing lifecycle mechanics does not weaken page-specific
 eligibility checks.
 
-`src/provider-page.js` is also MAIN-world code, but it is injected only after a
+`src/capture/provider-page.js` is also MAIN-world code, but it is injected only after a
 toolbar click into the active Garmin or Strava page. Its page realm owns the
 authenticated same-origin export request.
 
@@ -200,9 +200,9 @@ data it can observe; it is an architecture change, not a packaging detail.
 
 ### One settings schema
 
-`src/settings-schema.js` is the only source of settings defaults, bounds, and
+`src/settings/settings-schema.js` is the only source of settings defaults, bounds, and
 validators. It is pure so storage writers, MAIN-world readers, and the terrain
-frame can all import the same checks. `src/settings.js` adds
+frame can all import the same checks. `src/settings/settings.js` adds
 `chrome.storage.sync` access and subscription behavior; it does not redefine
 the schema.
 
@@ -213,14 +213,14 @@ terrain consumer validates it again.
 
 ### The bridges
 
-The ascent-page `src/bridge.js` exchanges settings with the MAIN-world analyzer
+The ascent-page `src/settings/bridge.js` exchanges settings with the MAIN-world analyzer
 and pushes live storage changes back to it. Page-world writes are restricted to
 the analyzer-owned controls: units, route/casing colors, map viewport size, and
 the remembered map layer. Theme, feature gates, capture privacy preferences,
 and every other setting remain writable only from extension-owned surfaces.
 
 The BigMap and Peak-page bridges are read-only and send only the fields their
-coordinators need. `src/terrain-map.js` separately validates messages between a
+coordinators need. `src/terrain/terrain-map.js` separately validates messages between a
 page coordinator and the extension-owned frame. Tags, direction fields, source
 and origin checks, bounded payload validators, and all-or-nothing parsing keep
 unrelated or malformed page messages from becoming renderer input.
@@ -264,7 +264,7 @@ fall through to a second scraping strategy.
 
 ### 2. One parser and two representations
 
-`src/gpx-parse.js` is the shared on-page parser for provider exports and local
+`src/gpx/gpx-parse.js` is the shared on-page parser for provider exports and local
 file selection. It returns track segments with latitude, longitude, optional
 elevation and time; optional waypoint latitude, longitude, and normalized name;
 and an optional normalized first track name. It never returns source XML.
@@ -282,8 +282,8 @@ cleaned upload. The original disk file is never changed.
 
 ### 3. Validation and complete summit lookup
 
-`src/background.js` funnels both entry points through `analyzeTrack()` and the
-pure algorithms in `src/capture-core.js`. The pipeline sanitizes coordinates,
+`src/background/background.js` funnels both entry points through `analyzeTrack()` and the
+pure algorithms in `src/capture/capture-core.js`. The pipeline sanitizes coordinates,
 preserves segment boundaries, rejects unusable time/elevation data, and computes
 corridor boxes from the validated track.
 
@@ -293,7 +293,7 @@ equivalent to “no peaks,” because presenting it would silently omit summits 
 could create the wrong drafts.
 
 Shared distance, elevation-gain, and scoring primitives live in
-`src/gpx-metrics.js` and `src/capture-core.js`. The ascent-page analyzer and the
+`src/gpx/gpx-metrics.js` and `src/capture/capture-core.js`. The ascent-page analyzer and the
 draft pipeline must not grow independent versions of the same math.
 
 ### 4. Confidence is evidence
@@ -326,7 +326,7 @@ The newly serialized GPX contains only trackpoint latitude/longitude, available
 elevation/time, segment structure, and—when enabled—waypoint
 latitude/longitude/name. It excludes provider extensions, device and health
 fields, source descriptions, waypoint symbols/elevation/time, and arbitrary
-XML. `src/ascent-draft.js` validates this private GPX again before attaching it
+XML. `src/ascent/ascent-draft.js` validates this private GPX again before attaching it
 to Peakbagger's form.
 
 ### 6. Draft identity, ordering, and exactly-once Preview
@@ -345,7 +345,7 @@ Multi-peak trip names prefer the first GPX track name, then the activity page
 heading, then selected summit names in track order. Every candidate is
 whitespace-normalized and limited to 200 characters.
 
-`src/ascent-draft.js` may trigger GPS Preview exactly once. A reload or repeated
+`src/ascent/ascent-draft.js` may trigger GPS Preview exactly once. A reload or repeated
 handshake offers recovery instead of clicking Preview again. No extension path
 clicks either Save control; the user reviews all derived values and saves.
 
@@ -360,17 +360,17 @@ The field-level data disclosure is canonical in [PRIVACY.md](../PRIVACY.md).
 
 ## Deep dive: trip-report editor
 
-`src/report-editor.js` keeps Peakbagger's native `JournalText` textarea as the
+`src/reports/report-editor.js` keeps Peakbagger's native `JournalText` textarea as the
 form source of truth while offering Rich, Markdown, and Plain views. Rich mode
 uses a schema-locked TipTap editor; Markdown mode uses CodeMirror plus a
 structural preview; Plain mode exposes the exact native bracket source.
 
-All conversions pass through the allowlisted model in `src/report-markup.js`.
+All conversions pass through the allowlisted model in `src/reports/report-markup.js`.
 Opening a richer mode does not rewrite an untouched report. Before Preview,
 Save, implicit ASP.NET submission, or page exit, the active view flushes
 synchronously into the native textarea. Local drafts are keyed by ascent
 identity, bounded, expiring, and restored only after explicit user approval.
-`src/report-drafts.js` is the pure shared contract for those identities and
+`src/reports/report-drafts.js` is the pure shared contract for those identities and
 lifetimes. The options-page owner in `options/drafts.js` uses it to list every
 device-local report draft, open the matching ascent form, copy Markdown, and
 offer reversible deletion without duplicating or bypassing the editor's
@@ -388,12 +388,12 @@ matrix.
 
 ### Extraction and metrics
 
-`src/gpx-analyzer.js` runs only when an ascent page exposes Peakbagger's stored
+`src/gpx/gpx-analyzer.js` runs only when an ascent page exposes Peakbagger's stored
 GPX download link. It fetches that saved track in the page session, parses
 trackpoints and segment breaks, and builds chronological chart data. Invalid
 points split map geometry rather than joining a route across a gap.
 
-Distance and gain come from `src/gpx-metrics.js`. The analyzer reports adjusted
+Distance and gain come from `src/gpx/gpx-metrics.js`. The analyzer reports adjusted
 metrics and shows a raw-versus-adjusted note when the difference is material.
 Timestamped tracks add elapsed time, time-to-summit/back, local clock labels,
 multi-day boundaries, and possible camping stops.
@@ -472,7 +472,7 @@ bounded DEM tile set as an explicit intent signal.
 MapLibre and its CSP worker run in `terrain/terrain.html`, an extension-owned
 frame declared as a web-accessible resource. This avoids page-CSP and
 content-script-world differences between Chrome and Firefox. The isolated
-`src/terrain-map.js` bridge creates and tears down the frame, owns consent, and
+`src/terrain/terrain-map.js` bridge creates and tears down the frame, owns consent, and
 passes only validated messages between it and the MAIN-world coordinator.
 
 Route input is bounded coordinate-only geometry with segment boundaries and a
@@ -493,8 +493,8 @@ and reset-to-north action. Full Screen maps preserve their native multi-track
 colors; ascent maps use the configured route color and casing.
 
 Returning to 2D stops that session's tile activity. Rather than tearing the
-renderer down on every switch, the `src/terrain-map.js` bridge parks the loaded
-frame in the DOM at opacity 0 and tells `src/terrain-frame.js` to suspend its
+renderer down on every switch, the `src/terrain/terrain-map.js` bridge parks the loaded
+frame in the DOM at opacity 0 and tells `src/terrain/terrain-frame.js` to suspend its
 ambient work (peak debounce, popup, pointer tracking); a quick 2D→3D→2D→3D
 re-entry then resumes the live MapLibre map with a fresh route/camera/theme
 instead of rebuilding the map, its CSP worker, and the terrain mesh. The parked
@@ -529,7 +529,7 @@ CacheStorage is origin-keyed, so only extension-origin contexts share the DEM
 cache — a Peakbagger content script cannot populate it. To make opening 3D paint
 from cache, hovering or focusing the idle 3D toggle (explicit intent, never page
 load) posts a bounded `prefetch` hint through the bridge, which the background
-worker turns into cache-warming tile fetches. The pure `src/terrain-tiles.js`
+worker turns into cache-warming tile fetches. The pure `src/terrain/terrain-tiles.js`
 mirrors the frame's fitBounds math (512-px tiles, `padding 46`, `maxZoom 15.5`)
 to enumerate the first-paint tiles for a route bounds or a peak center+zoom,
 plus their parent level, capped so a burst stays small. The worker fails closed
@@ -550,7 +550,7 @@ the native map context, requests the same feed in the page session, and relays a
 validated all-or-nothing reply. New camera positions abort stale requests.
 
 MapLibre's terrain-aware layer events do not reliably hit billboarded rings on
-a pitched camera, so `src/terrain-frame.js` projects anchors and performs
+a pitched camera, so `src/terrain/terrain-frame.js` projects anchors and performs
 screen-space hit testing. Peak anchors may be snapped to a nearby rendered DEM
 maximum within a leash. The exact feed mapping, subject-peak preservation,
 screen-space interaction, snapping rules, privacy boundary, and known limits
@@ -558,7 +558,7 @@ are maintained in [3d-peak-markers.md](3d-peak-markers.md).
 
 ### Full Screen GPS maps
 
-`src/big-map.js` enhances Peakbagger's existing GPS layers rather than parsing a
+`src/maps/big-map.js` enhances Peakbagger's existing GPS layers rather than parsing a
 second GPX. On group maps, it identifies genuine interactive native polylines,
 preserves their color palette and popups, changes only the configured width,
 and traces non-interactive casing underneath. A single-ascent map may also take
@@ -577,15 +577,15 @@ trip-report behavior in 2D.
 
 ### Peak pages
 
-`src/peak-map.js` supplies summit focus, subject identity, native map context,
-and peak-feed replies for Peak pages. `src/peak-links.js` separately owns
+`src/maps/peak-map.js` supplies summit focus, subject identity, native map context,
+and peak-feed replies for Peak pages. `src/maps/peak-links.js` separately owns
 user-invoked weather, snow, fire/smoke, and imagery links. Keeping planning
 links separate from the map coordinator prevents remote navigation features
 from acquiring map or settings privileges.
 
 ## Deep dive: ascent filtering and in-page sorting
 
-`src/ascent-filter.js` runs on `PeakAscents.aspx`, personal `ClimbListC.aspx`
+`src/ascent/ascent-filter.js` runs on `PeakAscents.aspx`, personal `ClimbListC.aspx`
 views, and the Buddy List at `report/report.aspx?r=b`. It resolves columns from
 header text because Peakbagger serves different column sets for year, unit, and
 detail variants. Rows are modeled from the page that was actually returned; the
@@ -640,13 +640,13 @@ sync must never acquire the third-party names stored in either local dataset.
 
 | Module or surface | Runtime boundary | Owns | Does not own |
 | --- | --- | --- | --- |
-| `src/favorite-climbers.js` | Pure ES module bundled into each caller | Validation, normalization, bounds, parsers, merge/mirror and confirmed-Buddy-mutation semantics, effective membership, comparators, and fuzzy scoring | DOM globals, storage, fetch, extension messaging, or UI |
-| `src/ascent-filter.js` | Isolated content script at `document_start` | Peak-ascent row identities, Favorites chip state/count, automatic Buddy revalidation, and opportunistic Buddy-page caching | Custom-list management or GitHub transfer |
-| `src/climber-favorite.js` | Separate isolated content script at `document_end` | The custom-favorite control plus native Buddy-action detection, post-navigation refresh, and confirmed custom-list synchronization | Arbitrary profile lookup or trusting an unconfirmed click as a successful Buddy mutation |
+| `src/favorites/favorite-climbers.js` | Pure ES module bundled into each caller | Validation, normalization, bounds, parsers, merge/mirror and confirmed-Buddy-mutation semantics, effective membership, comparators, and fuzzy scoring | DOM globals, storage, fetch, extension messaging, or UI |
+| `src/ascent/ascent-filter.js` | Isolated content script at `document_start` | Peak-ascent row identities, Favorites chip state/count, automatic Buddy revalidation, and opportunistic Buddy-page caching | Custom-list management or GitHub transfer |
+| `src/favorites/climber-favorite.js` | Separate isolated content script at `document_end` | The custom-favorite control plus native Buddy-action detection, post-navigation refresh, and confirmed custom-list synchronization | Arbitrary profile lookup or trusting an unconfirmed click as a successful Buddy mutation |
 | `options/favorites.js` | Extension options page | Source selection, Buddy refresh status, custom-list management, reversible bulk actions, and GitHub transfer UI | GitHub token access or repository writes |
-| `src/profile-backup-core.js` | Pure shared module | Signed-in owner discovery and numeric URL identity | Favorites persistence or request orchestration |
-| `src/peakbagger-request.js`, `src/peakbagger-response.js`, and `src/peakbagger-error.js` | Shared request boundary | Authenticated fetch policy, response classification, parsing failures, and actionable error copy | Favorites schema or persistence |
-| `src/background.js` plus `src/github-client.js` | Extension worker | Shared GitHub connection, token, fixed `favorites.json` path, repository validation, serialized writes, and restore reads | Interpreting or mutating the favorites schema |
+| `src/profile/profile-backup-core.js` | Pure shared module | Signed-in owner discovery and numeric URL identity | Favorites persistence or request orchestration |
+| `src/peakbagger/peakbagger-request.js`, `src/peakbagger/peakbagger-response.js`, and `src/peakbagger/peakbagger-error.js` | Shared request boundary | Authenticated fetch policy, response classification, parsing failures, and actionable error copy | Favorites schema or persistence |
+| `src/background/background.js` plus `src/github/github-client.js` | Extension worker | Shared GitHub connection, token, fixed `favorites.json` path, repository validation, serialized writes, and restore reads | Interpreting or mutating the favorites schema |
 
 `options/favorites.js` owns management. It fetches authenticated Peakbagger
 pages through the shared Peakbagger request boundary, then parses validated
@@ -716,7 +716,7 @@ effective mode, opt the entry into removal synchronization, or make it part of
 the live Buddy cache. The global removal preference controls confirmed native
 Buddy removals regardless of an individual favorite's provenance.
 
-Every reader cleans data through `src/favorite-climbers.js` before use. Climber
+Every reader cleans data through `src/favorites/favorite-climbers.js` before use. Climber
 ids must be positive safe integers. Names replace non-breaking spaces, collapse
 whitespace, trim, and retain at most 200 UTF-16 code units. Added-at values must
 be finite and non-negative, and custom provenance must be exactly `manual` or
@@ -758,7 +758,7 @@ means the synced mode can arrive on a second browser while its device-local
 custom list is empty; the user must populate it locally or explicitly restore
 `favorites.json`.
 
-On a full `PeakAscents.aspx` page, `src/ascent-filter.js` extracts the first
+On a full `PeakAscents.aspx` page, `src/ascent/ascent-filter.js` extracts the first
 `climber.aspx?cid=...` profile identity from each ascent row. Rows without a
 valid climber id never match. It then marks each record by `Set.has(cid)`. The
 source-specific chip reads **Climbing buddies** or **Fav climbers** and shows
@@ -904,7 +904,7 @@ The options manager supports these distinct operations:
   **Keep Buddy removals in sync** setting opts into removal. Full lists and
   unconfirmed/failed actions fail non-destructively.
 
-On public climber pages, `src/climber-favorite.js` mounts a compact outlined or
+On public climber pages, `src/favorites/climber-favorite.js` mounts a compact outlined or
 filled star beside the page title only when custom mode is active, the page
 exposes a valid id/name, and the page id is not the detected owner id. Its full
 add/remove action remains in the accessible label and tooltip. Add creates a
@@ -1013,26 +1013,26 @@ a known live-markup risk, not something fixture tests can prove away.
 
 The focused automated evidence is deliberately split by boundary:
 
-- `test/favorite-climbers.test.mjs` covers schema cleaning, deduplication, name
+- `test/favorites/favorite-climbers.test.mjs` covers schema cleaning, deduplication, name
   normalization, TTL edge behavior, URL/input parsing, synthetic Buddy parsing,
   merge/mirror semantics, effective source selection, and comparators.
-- `test/profile-backup-core.test.mjs` covers Buddy/climber response acceptance
+- `test/profile/profile-backup-core.test.mjs` covers Buddy/climber response acceptance
   and rejection of wrong or challenged content.
-- `test/peakbagger-request.test.mjs` covers origin and fetch policy, timeouts,
+- `test/peakbagger/peakbagger-request.test.mjs` covers origin and fetch policy, timeouts,
   response classification, typed failures, and document parsing.
-- `test/ascent-filter.test.mjs` covers custom AND-filtering, persisted chip state,
+- `test/ascent/ascent-filter.test.mjs` covers custom AND-filtering, persisted chip state,
   live storage updates, owner-scoped cache use, stale-while-revalidate fetch,
   and zero-network Buddy-page caching.
-- `test/options.test.mjs` covers source switching, identity-checked add, reversible
+- `test/options/options.test.mjs` covers source switching, identity-checked add, reversible
   delete/mirror/restore, Buddy refresh, merge, and explicit GitHub messages.
-- `test/climber-favorite.test.mjs` covers add/remove, self exclusion, Buddy-mode
+- `test/favorites/climber-favorite.test.mjs` covers add/remove, self exclusion, Buddy-mode
   absence, and live source/list changes.
-- `test/scale/favorite-climbers.scale.mjs` renders the full 1,500-entry options
+- `test/scale/favorites/favorite-climbers.scale.mjs` renders the full 1,500-entry options
   list and serializes all entries through the explicit GitHub backup action.
-- `test/github-client.test.mjs` and `test/github-backup-integration.test.mjs`
+- `test/github/github-client.test.mjs` and `test/github/github-backup-integration.test.mjs`
   cover fixed-root-file Git mechanics, conflicts, feature gates, extension-only
   messaging, missing restore files, and token confinement.
-- `test/settings-schema.test.mjs`, `test/manifest-capture.test.mjs`, and the
+- `test/settings/settings-schema.test.mjs`, `test/project/manifest-capture.test.mjs`, and the
   fixture-privacy guard pin the default/allowlist, isolated-world routes and
   bundle composition, and synthetic third-party fixture data.
 
@@ -1053,19 +1053,19 @@ requested only when the feature is enabled. GitHub device flow and repository
 selection run through the worker; the token and chosen repository live in
 `storage.local`, never synced storage, and never enter a content script.
 
-On Save, `src/ascent-snapshot.js` captures the submitted form and report
+On Save, `src/ascent/ascent-snapshot.js` captures the submitted form and report
 sidecar into a short-lived, source-tab-namespaced `storage.session` snapshot.
 Peakbagger leaves Add and Edit on an `ascentedit.aspx` success view, so
-`src/ascent-saved.js` links both cases to the saved ascent and follows that route
-when automatic backup is enabled. There, `src/ascent-page.js` verifies owner
-identity and finds the stored GPX link, while `src/ascent-backup-source.js`
+`src/ascent/ascent-saved.js` links both cases to the saved ascent and follows that route
+when automatic backup is enabled. There, `src/ascent/ascent-page.js` verifies owner
+identity and finds the stored GPX link, while `src/ascent/ascent-backup-source.js`
 fetches and validates the complete persisted edit form. The same shared source
-reader supplies profile backup. `src/ascent-backup.js` offers manual backup and,
+reader supplies profile backup. `src/ascent/ascent-backup.js` offers manual backup and,
 only with a fresh precise snapshot plus the separate opt-in, automatic backup.
 The backup uses Peakbagger's published track, never the raw provider GPX.
 
-`src/github-backup.js` builds a versioned `ascent.json`, `report.md`, and
-optional `track.gpx` under a stable `*-a<aid>` folder. `src/github-client.js`
+`src/github/github-backup.js` builds a versioned `ascent.json`, `report.md`, and
+optional `track.gpx` under a stable `*-a<aid>` folder. `src/github/github-client.js`
 writes one atomic Git Data commit, preserves unrelated repository paths and
 user-added files, handles owned-folder renames, and rebuilds the whole commit
 after a bounded non-fast-forward conflict. On an owned individual ascent, the
@@ -1101,7 +1101,7 @@ The original implementation records are archived in
 ## Deep dive: site-wide theme startup
 
 Dark mode requires both the stylesheet and `data-bpb-theme="dark"` on `<html>`
-before first paint. `src/theme.js` therefore imports the dark CSS text and
+before first paint. `src/theme/theme.js` therefore imports the dark CSS text and
 injects it synchronously at `document_start`, then reads a small page-local
 mirror of the `system`/`light`/`dark` preference and applies the attribute in
 the same tick.

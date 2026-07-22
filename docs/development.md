@@ -6,7 +6,7 @@ it is what you load in a browser, what the release packagers zip, and what the
 real-extension checks exercise. You never load the repo root directly.
 
 If you worked on this project before the build step existed: the old model was
-"build-free"—the browser loaded raw `src/*.js` IIFEs and extension modules
+"build-free"—the browser loaded raw files from `src/` and extension modules
 found each other through `globalThis.BPB*`. That is gone. Modules now use ES
 imports. Third-party browser builds still expose their documented globals, and
 the provider adapter has one deliberate cross-world API described below; no
@@ -25,6 +25,40 @@ Better Peakbagger module uses a global as an internal dependency.
 - OpenSSL. Each extension verifier creates a one-day self-signed certificate
   inside its disposable profile so the local fixture exercises the production
   HTTPS-only manifest.
+
+## Source and test layout
+
+Runtime modules are grouped by the behavior they own. The directory is an
+ownership boundary for maintainers; esbuild bundles may still import modules
+from several directories when a shipped surface crosses those boundaries.
+
+| Directory | Ownership |
+| --- | --- |
+| `src/ascent/` | Ascent form filling, filtering, snapshots, upload, and saved-ascent backup |
+| `src/background/` | Extension service-worker coordination |
+| `src/capture/` | Provider adapters, ownership checks, and pure capture analysis |
+| `src/favorites/` | Favorite-climber data and climber-page controls |
+| `src/github/` | GitHub authentication, API transport, repository writes, and backup payloads |
+| `src/gpx/` | Shared GPX parsing, metrics, and ascent-page analysis |
+| `src/maps/` | BigMap and Peak map coordinators, bridges, links, and peak markers |
+| `src/peakbagger/` | Authenticated Peakbagger request and response policy |
+| `src/profile/` | Full-profile backup parsing, pipeline, and UI |
+| `src/reports/` | Trip-report conversion, editing, and local drafts |
+| `src/settings/` | Settings schema, storage, and the page-world bridge |
+| `src/terrain/` | 3D lifecycle, renderer, camera, cache, tiles, and styling |
+| `src/theme/` | Theme startup and the packaged dark stylesheet |
+
+Tests mirror those names under `test/<domain>/`. Cross-cutting build, manifest,
+release, and repository-policy tests live in `test/project/`; extension-page
+tests live in `test/options/` and `test/popup/`; shared fixtures and helpers
+remain under `test/fixtures/` and `test/helpers/`. Scale tests add one more
+level, `test/scale/<domain>/`, so no executable test is loose in `test/`.
+
+Put a new module in the directory that owns its behavior and place focused
+coverage in the matching test directory. Do not add loose files directly under
+`src/` or `test/`. A generic `shared/` directory is intentionally avoided:
+reusable code still needs one domain owner, and cross-domain imports make that
+dependency visible.
 
 ## Everyday workflow
 
@@ -187,8 +221,9 @@ build config.
 
 ## Adding or changing a source module
 
-1. Write `src/foo.js` as an ES module: `export` what other modules need, and
-   `import` your own dependencies. Do **not** publish a `globalThis` global.
+1. Write `src/<domain>/foo.js` as an ES module: `export` what other modules
+   need, and `import` your own dependencies. Do **not** publish a `globalThis`
+   global.
    - Modules that only run for side effects and need an early `return` (e.g. "no
      matching DOM, do nothing") may keep a small `(() => { … })()` IIFE for
      control flow. That is fine as long as they publish no globals.
@@ -198,7 +233,7 @@ build config.
 3. If it's a brand-new entry point (a new content script, page, or worker), add
    an `ENTRIES` record **and** wire it into `manifest.json` (or the page HTML).
 4. Add focused coverage and run `npm test`.
-   `test/manifest-capture.test.mjs` cross-checks that every manifest bundle
+   `test/project/manifest-capture.test.mjs` cross-checks that every manifest bundle
    reference is a declared build output and pins security-sensitive bundle
    composition.
 
@@ -210,8 +245,8 @@ build config does not ship.
 ### Testing a module
 
 - **Pure logic** (no DOM/chrome/vendor globals): `import` it directly in a
-  `test/*.test.mjs` and call it. Set any ambient browser global the module reads
-  (`DOMParser`, `location`, …) from a throwaway jsdom.
+  `test/<domain>/*.test.mjs` and call it. Set any ambient browser global the
+  module reads (`DOMParser`, `location`, …) from a throwaway jsdom.
 - **Content-script behaviour**: evaluate the *built bundle* into a jsdom page
   with `evalBundle` from `test/helpers/load-page.mjs`. This runs exactly what
   ships and needs no Better Peakbagger module globals. Feed settings through a
@@ -254,7 +289,7 @@ To add or update a runtime dependency:
 
 ### The intentional provider API
 
-`src/provider-page.js` publishes `globalThis.BPBProviderPage`. That is a narrow,
+`src/capture/provider-page.js` publishes `globalThis.BPBProviderPage`. That is a narrow,
 deliberate boundary rather than a module dependency: `background.js` injects
 the built adapter into a provider page, then injects inline functions that call
 the API across the worker→page boundary, where an ES import cannot reach. Do not

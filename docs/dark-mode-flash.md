@@ -14,7 +14,7 @@ browser's first paint:
 1. **The stylesheet** — the dark rules, every one scoped under
    `html[data-bpb-theme="dark"]` (inert until that attribute exists).
 2. **The attribute** — `data-bpb-theme="dark"` on `<html>`, set by
-   `src/theme.js`.
+   `src/theme/theme.js`.
 
 If either lands after the first paint, the user sees a frame (or several) of
 the native light site. Peakbagger pages are light HTML that paint almost
@@ -44,10 +44,10 @@ the stylesheet from JavaScript at `document_start`, in the **same synchronous
 tick** that sets the attribute, so the parser and renderer can't get ahead of
 either one:
 
-1. `src/site-dark-css.js` exports the dark rules as a string, and
-   `src/theme.js` imports them. esbuild puts both ES modules in the single
+1. `src/theme/site-dark-css.js` exports the dark rules as a string, and
+   `src/theme/theme.js` imports them. esbuild puts both ES modules in the single
    `content/theme.js` bundle that the manifest runs at `document_start`.
-2. `src/theme.js` creates a `<style>` with that text and
+2. `src/theme/theme.js` creates a `<style>` with that text and
    appends it to `document.documentElement`. `<html>` exists this early even
    though `<head>` does not yet; a `<style>` in `<html>` applies fine, and its
    `!important` author rules outrank the site's own sheets regardless of order.
@@ -74,7 +74,7 @@ guarded by the `bpb-site-dark` id) and tied to **every** `apply()` — not just 
 one `document_start` pass. So the authoritative `chrome.storage` read and every
 live toggle re-assert the sheet before setting the attribute; if the initial
 injection was ever skipped or the node was removed, the next `apply()` restores
-it. `test/theme-inject.test.mjs` locks in the invariant.
+it. `test/theme/theme-inject.test.mjs` locks in the invariant.
 
 The mirror stores the *preference* (`system` / `light` / `dark`), not the
 resolved color, so a `system` user whose OS theme changed between visits still

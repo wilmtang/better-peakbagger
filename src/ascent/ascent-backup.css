@@ -1,0 +1,64 @@
+/* Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ * Better Peakbagger — saved ascent page GitHub backup affordance. A compact
+ * secondary action beside Peakbagger's native ascent links, with a quiet
+ * read-only current-state check and inline action results. */
+
+.bpb-gh-control {
+    display: inline-flex;
+    align-items: center;
+    margin-left: 8px;
+    vertical-align: middle;
+    font: 11px/1.35 Verdana, Arial, Helvetica, sans-serif;
+    color: #1c1c1a;
+}
+.bpb-gh-body { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.bpb-gh-label { font-weight: 600; }
+.bpb-gh-ok { color: #2f6b3f; }
+.bpb-gh-err { color: #b42318; font-weight: 500; }
+.bpb-gh-link { color: #2f6b3f; font-weight: 600; text-decoration: underline; }
+
+.bpb-gh-btn {
+    font: inherit;
+    color: #1c1c1a;
+    background: #fff;
+    border: 1px solid #c8c8c2;
+    border-radius: 4px;
+    padding: 2px 7px;
+    cursor: pointer;
+}
+.bpb-gh-btn:hover {
+    color: #2f6b3f;
+    background: #f3f6f3;
+    border-color: #2f6b3f;
+}
+.bpb-gh-btn:focus-visible { outline: 2px solid #2f6b3f; outline-offset: 2px; }
+
+@media (prefers-color-scheme: dark) {
+    .bpb-gh-control { color: #e6e1d8; }
+    .bpb-gh-ok { color: #7ac78d; }
+    .bpb-gh-err { color: #f2a099; }
+    .bpb-gh-link { color: #7ac78d; }
+    .bpb-gh-btn { color: #e6e1d8; background: #2b2f34; border-color: #4a5058; }
+    .bpb-gh-btn:hover { color: #7ac78d; background: #23262a; border-color: #7ac78d; }
+    .bpb-gh-btn:focus-visible { outline-color: #7ac78d; }
+}
+
+/* The extension's own site dark theme, set as data-bpb-theme="dark" on <html>
+ * (see src/theme/theme.js). Explicit so the control follows the chosen theme, not only
+ * the OS preference. */
+:root[data-bpb-theme="dark"] .bpb-gh-control { color: #e6e1d8; }
+:root[data-bpb-theme="dark"] .bpb-gh-ok { color: #7ac78d; }
+:root[data-bpb-theme="dark"] .bpb-gh-err { color: #f2a099; }
+:root[data-bpb-theme="dark"] .bpb-gh-link { color: #7ac78d; }
+:root[data-bpb-theme="dark"] .bpb-gh-btn { color: #e6e1d8; background: #2b2f34; border-color: #4a5058; }
+:root[data-bpb-theme="dark"] .bpb-gh-btn:hover { color: #7ac78d; background: #23262a; border-color: #7ac78d; }
+:root[data-bpb-theme="dark"] .bpb-gh-btn:focus-visible { outline-color: #7ac78d; }
+/* A light preference must win even when the OS is dark. */
+:root[data-bpb-theme="light"] .bpb-gh-control { color: #1c1c1a; }
+:root[data-bpb-theme="light"] .bpb-gh-ok { color: #2f6b3f; }
+:root[data-bpb-theme="light"] .bpb-gh-err { color: #b42318; }
+:root[data-bpb-theme="light"] .bpb-gh-link { color: #2f6b3f; }
+:root[data-bpb-theme="light"] .bpb-gh-btn { color: #1c1c1a; background: #fff; border-color: #c8c8c2; }
+:root[data-bpb-theme="light"] .bpb-gh-btn:hover { color: #2f6b3f; background: #f3f6f3; border-color: #2f6b3f; }
+:root[data-bpb-theme="light"] .bpb-gh-btn:focus-visible { outline-color: #2f6b3f; }

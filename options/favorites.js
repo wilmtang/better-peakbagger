@@ -3,11 +3,11 @@
 //
 // Better Peakbagger — Favorite climbers settings manager.
 
-import { favoriteClimbers as F } from '../src/favorite-climbers.js';
-import { githubError as GithubError } from '../src/github-error.js';
-import { peakbaggerError as PeakbaggerError } from '../src/peakbagger-error.js';
-import { fetchPeakbaggerDocument } from '../src/peakbagger-request.js';
-import { numericParam, ownerClimberId } from '../src/profile-backup-core.js';
+import { favoriteClimbers as F } from '../src/favorites/favorite-climbers.js';
+import { githubError as GithubError } from '../src/github/github-error.js';
+import { peakbaggerError as PeakbaggerError } from '../src/peakbagger/peakbagger-error.js';
+import { fetchPeakbaggerDocument } from '../src/peakbagger/peakbagger-request.js';
+import { numericParam, ownerClimberId } from '../src/profile/profile-backup-core.js';
 import { hasGithubPermission } from './github.js';
 
 const UNDO_MS = 6000;

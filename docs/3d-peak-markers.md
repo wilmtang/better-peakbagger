@@ -53,17 +53,17 @@ identical semantics) and an archived real `PLLBB.aspx` response.
 Data flows through the existing analyzer → bridge → frame message channel;
 the extension-origin frame never contacts peakbagger.com itself:
 
-1. **Frame** (`src/terrain-frame.js`): on every camera settle (debounced
+1. **Frame** (`src/terrain/terrain-frame.js`): on every camera settle (debounced
    `moveend`) it posts a `peaksRequest` with the visible bounds. No request
    below MapLibre zoom 11 — the same ground area as Leaflet 12 (512px vs
    256px tiles) — and the dots are cleared instead. A pitched camera's raw
    bounds stretch to the horizon, so the request is clamped to a multiple of
    the straight-down viewport around the camera center.
-2. **Bridge** (`src/terrain-map.js`): forwards `peaksRequest` to the page and
+2. **Bridge** (`src/terrain/terrain-map.js`): forwards `peaksRequest` to the page and
    the `peaks` reply back — nothing else.
-3. **Coordinators** (`src/gpx-analyzer.js`, `src/big-map.js`,
-   `src/peak-map.js`): answer via the
-   shared `src/peak-markers.js` client, which reads `t`/`d`/`c`/`hj` from the
+3. **Coordinators** (`src/gpx/gpx-analyzer.js`, `src/maps/big-map.js`,
+   `src/maps/peak-map.js`): answer via the
+   shared `src/maps/peak-markers.js` client, which reads `t`/`d`/`c`/`hj` from the
    same-origin MasterMap iframe URL and issues the *identical* request the
    native 2D map would make (single-flight: a newer camera position aborts
    the in-flight fetch). Surfaces without a native peak feed — group maps, a
@@ -124,7 +124,7 @@ made for the same view. Nothing is persisted.
 ### Changing how the markers look
 
 All knobs live in the `PEAK_MARKERS` spec at the top of
-`src/terrain-frame.js` — zoom cutoff, debounce, count cap, bounds clamp,
+`src/terrain/terrain-frame.js` — zoom cutoff, debounce, count cap, bounds clamp,
 per-state colors, ring geometry, hit slop — and the layer definition itself
 is produced by the single `buildPeakLayers()` builder (data-driven color via
 a `match` expression generated from the spec). The screen-space hit test
@@ -200,7 +200,7 @@ behavior and the rise leash below.
    DEM tiles are currently loaded, and the terrain source keeps MapLibre's
    stock pitch-sensitive LOD — the tightened drape LOD is deliberately not
    applied to 2048px DEM render targets (see the `stockLod` notes in
-   `src/terrain-frame.js`). A small tilt or a zoom can therefore swap the
+   `src/terrain/terrain-frame.js`). A small tilt or a zoom can therefore swap the
    DEM under a peak a whole level; the mountain reshapes, the ring is
    re-elevated with it, and on a pitched camera that height change projects
    as a slide across the screen — most visible on knife-edge ridges, where

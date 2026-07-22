@@ -62,7 +62,7 @@ raw #2471a3
   → color node disappears; "blue" remains as uncolored text
 ```
 
-The first gate lives in `safeOpening` in `src/report-markup.js`. The second
+The first gate lives in `safeOpening` in `src/reports/report-markup.js`. The second
 gate lives in `colorFromElement`, which reads `element.style.color`. The bug
 affects more than TipTap: Markdown text tokens containing bracket extensions
 go through `parseBracketInline`, which builds the same detached DOM and folds
@@ -273,7 +273,7 @@ removal, not a simplification of the current converter.
 Keep the color repair as one focused unit:
 
 1. Add a small `readStyleProperty(element, 'color')` helper in
-   `src/report-markup.js`. Keep it local so the converter remains independent
+   `src/reports/report-markup.js`. Keep it local so the converter remains independent
    of TipTap.
 2. For `span`, read raw inline `color`; for `font`, continue reading the raw
    `color` attribute.
@@ -294,7 +294,7 @@ editor state validity rather than markup conversion.
 
 ### Pure converter tests
 
-Add focused cases in `test/report-markup.test.mjs` for:
+Add focused cases in `test/reports/report-markup.test.mjs` for:
 
 - named color and three-/six-digit hex through bracket → AST → bracket;
 - hex through bracket → Markdown and Markdown extension → bracket;
@@ -310,7 +310,7 @@ Add focused cases in `test/report-markup.test.mjs` for:
 
 ### Editor integration tests
 
-Add cases in `test/report-editor.test.mjs` proving:
+Add cases in `test/reports/report-editor.test.mjs` proving:
 
 - an existing hex-colored report appears colored in Rich mode;
 - an unrelated Rich edit retains the color in `JournalText`;

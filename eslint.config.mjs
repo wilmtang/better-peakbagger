@@ -30,7 +30,7 @@ export default [
         rules,
     },
     {
-        files: ['src/gpx-analyzer.js'],
+        files: ['src/gpx/gpx-analyzer.js'],
         languageOptions: {
             globals: { Chart: 'readonly' },
         },

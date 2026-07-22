@@ -11,8 +11,8 @@
 // github.com / api.github.com host permissions that the worker needs; the
 // ascent-backup setting controls only ascent-specific affordances and writes.
 
-import { githubError as GithubError } from '../src/github-error.js';
-import { githubErrors as GithubErrors } from '../src/github-errors.js';
+import { githubError as GithubError } from '../src/github/github-error.js';
+import { githubErrors as GithubErrors } from '../src/github/github-errors.js';
 
 const { ERROR_CODES } = GithubErrors;
 

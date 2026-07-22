@@ -79,7 +79,7 @@ UX polish; nothing here is an exploitable security hole.
 ## 1. Bugs
 
 ### B1 — Backup snapshot is captured on *any* form submit, not only Save
-**Severity: high (data correctness / user trust) · [report-editor.js:447](../src/report-editor.js)**
+**Severity: high (data correctness / user trust) · [report-editor.js:447](../../src/reports/report-editor.js)**
 
 `form.addEventListener('submit', captureBackupSnapshot, true)` fires for every
 submit-triggering control on `ascentedit.aspx` — including **GPS Preview**
@@ -99,7 +99,7 @@ is `SaveButton`/`SaveButton2` or `null` (implicit Enter submission), skip
 otherwise. Keep the existing explicit Save-click listeners.
 
 ### B2 — Snapshot matching falls back to "same peak, most recent", which can attach the wrong ascent's data
-**Severity: medium · [background.js:889-902](../src/background.js)**
+**Severity: medium · [background.js:889-902](../../src/background/background.js)**
 
 `findSnapshotForPage` matches by ascent id, then peak+date, then **peak id
 alone** when the page date could not be parsed. The peak-only fallback means a
@@ -113,7 +113,7 @@ the peak-only fallback for the manual button (where the user sees what
 happens), or drop it entirely and accept "no snapshot → page-derived backup".
 
 ### B3 — Device-flow auth dies silently on worker restart; options UI polls forever
-**Severity: medium · [background.js:713-787](../src/background.js), [options/github.js:156-165](../options/github.js)**
+**Severity: medium · [background.js:713-787](../../src/background/background.js), [options/github.js:156-165](../../options/github.js)**
 
 `githubAuthState` and the fire-and-forget `pollForToken()` loop live only in
 the MV3 service worker's memory. If Chrome tears the worker down mid-flow
@@ -132,7 +132,7 @@ Fix (two layers):
    which removes the long-lived in-worker loop entirely.
 
 ### B4 — Popup header claims "Strava activity" on non-provider pages
-**Severity: low · [popup.js:159](../popup/popup.js)**
+**Severity: low · [popup.js:159](../../popup/popup.js)**
 
 `job.provider === 'garmin' ? 'Garmin Connect activity' : 'Strava activity'`
 renders "Strava activity" for error jobs with no provider (the common "clicked
@@ -140,7 +140,7 @@ the icon on a random page" case). Fall back to the neutral "Capture this
 activity" when `job.provider` is absent.
 
 ### B5 — Backup bar light-theme overrides are incomplete
-**Severity: low · [ascent-backup.css:79-82](../src/ascent-backup.css)**
+**Severity: low · [ascent-backup.css:79-82](../../src/ascent/ascent-backup.css)**
 
 The `:root[data-bpb-theme="light"]` block overrides only `.bpb-gh-bar`,
 `.bpb-gh-btn`, and `.bpb-gh-primary`. With OS-dark + extension-theme-light,
@@ -150,7 +150,7 @@ low-contrast success/error text. Mirror every dark override in the light block
 (the pattern the file itself documents).
 
 ### B6 — Repository discovery ignores pagination
-**Severity: low · [github-auth.js:197-215](../src/github-auth.js)**
+**Severity: low · [github-auth.js:197-215](../../src/github/github-auth.js)**
 
 `/user/installations` is fetched without `per_page` (default 30) and
 per-installation repositories stop at the first 100 with no `Link`-header
@@ -159,7 +159,7 @@ sees "installed but no repos". Add `per_page=100` to the installations call and
 follow pagination on both endpoints (or document the cap).
 
 ### B7 — Fragile Peakbagger login sniff
-**Severity: low (brittleness, fails closed) · [background.js:119](../src/background.js)**
+**Severity: low (brittleness, fails closed) · [background.js:119](../../src/background/background.js)**
 
 `peakbaggerLogin()` regex-matches `cid=(\d+)…My Home Page` out of the homepage
 HTML. If Peakbagger reworks that link, every capture reports
@@ -173,7 +173,7 @@ itself may be stale.
 ## 2. Engineering — not following best practice
 
 ### E1 — `cleanup()` runs at the top of every message
-[background.js:949](../src/background.js). Three serialized `storage.session`
+[background.js:949](../../src/background/background.js). Three serialized `storage.session`
 round-trips (drafts, jobs, snapshots) per message — including every 450 ms
 popup poll during a capture and every draft handshake. The 5-minute alarm
 already exists; message-path cleanup adds latency for no correctness benefit
@@ -214,10 +214,10 @@ by hand. The code is consistent today, but a minimal flat-config ESLint
 the dead branch in E6) at near-zero noise cost.
 
 ### E6 — Small smells
-- [options/github.js:194-200](../options/github.js): `disconnect()` ends with
+- [options/github.js:194-200](../../options/github.js): `disconnect()` ends with
   `if (status) return renderDisconnected(); renderDisconnected();` — both
   branches identical; collapse.
-- [github-auth.js:229-243](../src/github-auth.js): `authStore.write()` is a
+- [github-auth.js:229-243](../../src/github/github-auth.js): `authStore.write()` is a
   read-merge-write without serialization; concurrent writes (poll completion
   vs. repo selection) can clobber each other. Low risk today; a one-line
   promise queue (the pattern `background.js` already uses for `mutateMap`)
@@ -228,7 +228,7 @@ the dead branch in E6) at near-zero noise cost.
   case-insensitive (`AscentEdit.ASPX` would silently get no features).
   Consider https-only matches plus a broader path match with an in-script
   URL check, which is also fewer manifest entries to maintain.
-- [github-auth.js:82-101](../src/github-auth.js): `post()` maps every non-2xx
+- [github-auth.js:82-101](../../src/github/github-auth.js): `post()` maps every non-2xx
   to `NETWORK` ("Could not reach GitHub"), including a 400 with a JSON error
   body — a misclassified message if GitHub ever returns errors with HTTP
   status codes on these endpoints.
@@ -241,7 +241,7 @@ the dead branch in E6) at near-zero noise cost.
 **The most common first interaction with the extension is an error card.**
 Clicking the toolbar icon on any non-Garmin/Strava page shows "Capture
 stopped / Open a Garmin Connect or Strava activity first" styled as an
-*error*, with no actions ([popup.js:56-86](../popup/popup.js)). For a new user
+*error*, with no actions ([popup.js:56-86](../../popup/popup.js)). For a new user
 this reads as "the extension is broken".
 
 Fix: a neutral empty state — icon, one sentence ("Open a Garmin or Strava
@@ -260,7 +260,7 @@ the user can only close the popup and wait. A cancel that abandons the job
 (the storage/TTL machinery already supports discard) would round this out.
 
 ### U4 — Draft banner ignores the extension's own dark mode
-[ascent-draft.js:23-139](../src/ascent-draft.js) inline-styles a light-palette
+[ascent-draft.js:23-139](../../src/ascent/ascent-draft.js) inline-styles a light-palette
 banner (`#ecfdf3` etc.) while the site may be running the extension's dark
 theme — the one surface that doesn't follow `data-bpb-theme`. The backup bar
 (`ascent-backup.css`) already demonstrates the right pattern (media query +
@@ -275,17 +275,17 @@ win at the single most fiddly moment of setup.
 
 ### U6 — Constraint surprises in options
 Setting a casing width below `route width + 2` silently snaps up on save with
-no explanation ([settings-schema.js:83-86](../src/settings-schema.js) +
+no explanation ([settings-schema.js:83-86](../../src/settings/settings-schema.js) +
 populate round-trip). Either set the number input's `min` dynamically from the
 current route width or add one line of helper text ("casing is always at least
 2 px wider than the route").
 
 ### U7 — Implementation-speak in user copy
-"Discard cached capture" / "Cached capture removed" ([popup.js](../popup/popup.js))
+"Discard cached capture" / "Cached capture removed" ([popup.js](../../popup/popup.js))
 name the mechanism, not the user's mental model. "Delete captured track data"
 says what the user actually deletes. Similarly, the transient 1.2 s flash
 "GitHub access is needed to back up" after a declined permission prompt
-([options/github.js:227](../options/github.js)) is easy to miss — persist it
+([options/github.js:227](../../options/github.js)) is easy to miss — persist it
 inline in the panel instead.
 
 ### What's already good (keep it)
@@ -306,16 +306,16 @@ run `npm run verify:extension` for any step touching the manifest or worker.
 
 ### P0 — correctness of the backup path (do first, ship together)
 1. **B1**: gate `captureBackupSnapshot` on `event.submitter` (Save controls or
-   `null`). Regression test in `test/report-editor.test.mjs`: a synthetic
+   `null`). Regression test in `test/reports/report-editor.test.mjs`: a synthetic
    GPS-Preview submit stores no snapshot; a Save click and an implicit submit
    do.
 2. **B2**: restrict auto-mode snapshot matching to ascent-id or peak+date.
-   Regression test in `test/github-backup-integration.test.mjs`: peak-only
+   Regression test in `test/github/github-backup-integration.test.mjs`: peak-only
    match is offered manually but declined for `auto`.
 3. **B3 (UI half)**: options `pollAuth` treats `idle`-while-connecting as
-   flow-lost → error with retry. Test in `test/github-auth.test.mjs`.
+   flow-lost → error with retry. Test in `test/github/github-auth.test.mjs`.
 4. **B5**: complete the light-theme overrides in `ascent-backup.css`; extend
-   `test/dark-contrast.test.mjs` if it covers this surface.
+   `test/theme/dark-contrast.test.mjs` if it covers this surface.
 
 ### P1 — robustness
 5. **B3 (worker half)**: persist the pending device-flow state in
