@@ -26,9 +26,20 @@ export function initSettingsBackup({ extensionApi, flash, save }) {
     const githubBackupEl = document.getElementById('settings-backup-github-backup');
     const githubRestoreEl = document.getElementById('settings-backup-github-restore');
     const autoBackupEl = document.getElementById('settings-backup-auto');
-    if (!exportEl || !importEl || !fileEl || !confirmationEl || !confirmationNameEl
-        || !confirmEl || !cancelEl || !githubStatusEl || !githubActionsEl
-        || !githubBackupEl || !githubRestoreEl || !autoBackupEl) {
+    if (OptionsUtils.logMissingElements('settings backup', {
+        'settings-backup-export': exportEl,
+        'settings-backup-import': importEl,
+        'settings-backup-file': fileEl,
+        'settings-backup-confirmation': confirmationEl,
+        'settings-backup-confirmation-name': confirmationNameEl,
+        'settings-backup-confirm': confirmEl,
+        'settings-backup-cancel': cancelEl,
+        'settings-backup-github-status': githubStatusEl,
+        'settings-backup-github-actions': githubActionsEl,
+        'settings-backup-github-backup': githubBackupEl,
+        'settings-backup-github-restore': githubRestoreEl,
+        'settings-backup-auto': autoBackupEl,
+    })) {
         return { populate() {} };
     }
 

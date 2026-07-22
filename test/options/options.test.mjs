@@ -181,6 +181,24 @@ test('settings are grouped by the surface they affect', async () => {
     assert.ok(github.querySelector('#github-settings-backup #settings-backup-import'));
 });
 
+test('options sections log the missing ids before degrading to no-op controllers', async () => {
+    const errors = [];
+    await loadOptions({}, {
+        prepareWindow(window) {
+            for (const id of [
+                'github-panel', 'settings-backup-export', 'favorites-list', 'drafts-list'
+            ]) window.document.getElementById(id).remove();
+            window.console.error = message => errors.push(String(message));
+        }
+    });
+
+    assert.equal(errors.length, 4);
+    assert.ok(errors.some(message => /GitHub settings.*github-panel/.test(message)));
+    assert.ok(errors.some(message => /settings backup.*settings-backup-export/.test(message)));
+    assert.ok(errors.some(message => /favorite climbers.*favorites-list/.test(message)));
+    assert.ok(errors.some(message => /draft manager.*drafts-list/.test(message)));
+});
+
 test('settings export downloads a parseable known-key-only payload', async () => {
     const download = {};
     const dom = await loadOptions({ theme: 'dark', unknownSetting: 'private' }, {

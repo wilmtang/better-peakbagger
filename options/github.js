@@ -34,7 +34,13 @@ export function initGithubBackup({ extensionApi, flash, save }) {
     const panelEl = document.getElementById('github-panel');
     const ascentDetailEl = document.getElementById('github-ascent-detail');
     const ascentPanelEl = document.getElementById('github-ascent-panel');
-    if (!enableEl || !detailEl || !panelEl || !ascentDetailEl || !ascentPanelEl) {
+    if (OptionsUtils.logMissingElements('GitHub settings', {
+        'enable-github-backup': enableEl,
+        'github-detail': detailEl,
+        'github-panel': panelEl,
+        'github-ascent-detail': ascentDetailEl,
+        'github-ascent-panel': ascentPanelEl,
+    })) {
         return { populate() {} };
     }
 

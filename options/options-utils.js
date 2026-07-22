@@ -27,4 +27,15 @@ const withBusy = async ({ isBusy, setBusy }, operation) => {
     }
 };
 
-export const optionsUtils = { send, githubRepoName, withBusy };
+const logMissingElements = (surface, elements) => {
+    const missing = Object.entries(elements)
+        .filter(([, value]) => Array.isArray(value)
+            ? value.length === 0 || value.some(element => !element)
+            : !value)
+        .map(([name]) => name);
+    if (!missing.length) return false;
+    console.error(`Better Peakbagger ${surface} unavailable; missing: ${missing.join(', ')}`);
+    return true;
+};
+
+export const optionsUtils = { send, githubRepoName, withBusy, logMissingElements };

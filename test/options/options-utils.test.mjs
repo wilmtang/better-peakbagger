@@ -44,3 +44,20 @@ test('options repository names prefer the canonical full name', () => {
     assert.equal(Utils.githubRepoName({ repo: { owner: 'ada', name: 'peaks' } }), 'ada/peaks');
     assert.equal(Utils.githubRepoName(null), 'the connected repository');
 });
+
+test('options missing-element diagnostics name every absent control', () => {
+    const messages = [];
+    const original = console.error;
+    console.error = message => messages.push(message);
+    try {
+        assert.equal(Utils.logMissingElements('test panel', {
+            present: {}, missing: null, 'empty selector': [], 'partial selector': [{}, null]
+        }), true);
+        assert.deepEqual(messages, [
+            'Better Peakbagger test panel unavailable; missing: missing, empty selector, partial selector'
+        ]);
+        assert.equal(Utils.logMissingElements('test panel', { present: {} }), false);
+    } finally {
+        console.error = original;
+    }
+});

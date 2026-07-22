@@ -5,6 +5,7 @@
 
 import { reportDrafts as Drafts } from '../src/reports/report-drafts.js';
 import { reportMarkup as Markup } from '../src/reports/report-markup.js';
+import { optionsUtils as OptionsUtils } from './options-utils.js';
 
 (() => {
     'use strict';
@@ -17,7 +18,14 @@ import { reportMarkup as Markup } from '../src/reports/report-markup.js';
     const undoAllEl = document.getElementById('drafts-undo-all');
     const undoAllButtonEl = document.getElementById('drafts-undo-all-button');
     const statusEl = document.getElementById('status');
-    if (!store || !listEl || !emptyEl || !deleteAllEl || !undoAllEl || !undoAllButtonEl || !statusEl) return;
+    if (!store || OptionsUtils.logMissingElements('draft manager', {
+        'drafts-list': listEl,
+        'drafts-empty': emptyEl,
+        'drafts-delete-all': deleteAllEl,
+        'drafts-undo-all': undoAllEl,
+        'drafts-undo-all-button': undoAllButtonEl,
+        status: statusEl,
+    })) return;
 
     const DAY_MS = 24 * 60 * 60 * 1000;
     const UNDO_MS = 6000;

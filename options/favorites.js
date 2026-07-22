@@ -54,16 +54,40 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
     const restoreEl = document.getElementById('favorites-restore');
     const autoBackupEl = document.getElementById('favorites-auto-backup');
 
-    if (!store || !sourceEls.length || !buddyPanelEl || !customPanelEl || !buddyStatusEl
-        || !refreshBuddiesEl || !addFormEl || !addInputEl || !addButtonEl || !limitEl || !sortEl
-        || !searchEl || sourceFilterEls.some(element => !element)
-        || !countEl || !mergeEl || !mirrorEl || !removeWithBuddyEl
-        || !importStatusEl || !mirrorConfirmationEl
-        || !mirrorConfirmationImpactEl || !mirrorConfirmationSummaryEl
-        || !mirrorCancelEl || !mirrorConfirmEl
-        || !emptyEl || !listEl || !undoAllEl || !undoMessageEl
-        || !undoAllButtonEl || !githubStatusEl || !githubActionsEl || !backupEl
-        || !restoreEl || !autoBackupEl) return { populate() {} };
+    if (!store || OptionsUtils.logMissingElements('favorite climbers', {
+        'input[name="favorites-source"]': sourceEls,
+        'favorites-buddy-panel': buddyPanelEl,
+        'favorites-custom-panel': customPanelEl,
+        'favorites-buddy-status': buddyStatusEl,
+        'favorites-refresh-buddies': refreshBuddiesEl,
+        'favorites-add-form': addFormEl,
+        'favorites-add-input': addInputEl,
+        'favorites-add-button': addButtonEl,
+        'favorites-limit': limitEl,
+        'favorites-sort': sortEl,
+        'favorites-search': searchEl,
+        '[data-favorites-source-filter]': sourceFilterEls,
+        'favorites-count': countEl,
+        'favorites-merge-buddies': mergeEl,
+        'favorites-mirror-buddies': mirrorEl,
+        'favorites-remove-with-buddy': removeWithBuddyEl,
+        'favorites-import-status': importStatusEl,
+        'favorites-mirror-confirmation': mirrorConfirmationEl,
+        'favorites-mirror-confirmation-impact': mirrorConfirmationImpactEl,
+        'favorites-mirror-confirmation-summary': mirrorConfirmationSummaryEl,
+        'favorites-mirror-cancel': mirrorCancelEl,
+        'favorites-mirror-confirm': mirrorConfirmEl,
+        'favorites-empty': emptyEl,
+        'favorites-list': listEl,
+        'favorites-undo-all': undoAllEl,
+        'favorites-undo-message': undoMessageEl,
+        'favorites-undo-all-button': undoAllButtonEl,
+        'favorites-github-status': githubStatusEl,
+        'favorites-github-actions': githubActionsEl,
+        'favorites-backup': backupEl,
+        'favorites-restore': restoreEl,
+        'favorites-auto-backup': autoBackupEl,
+    })) return { populate() {} };
 
     limitEl.textContent = F.LIMIT.toLocaleString('en-US');
 
