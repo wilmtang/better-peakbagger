@@ -5,17 +5,6 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { optionsUtils as Utils } from '../../options/options-utils.js';
 
-test('options messaging normalizes callback responses and failures', async () => {
-    const replies = {
-        runtime: {
-            lastError: null,
-            sendMessage(message, callback) { callback({ echoed: message.type }); }
-        }
-    };
-    assert.deepEqual(await Utils.send(replies, { type: 'PING' }), { echoed: 'PING' });
-    assert.equal(await Utils.send({ runtime: { sendMessage() { throw new Error('gone'); } } }, {}), null);
-});
-
 test('options busy runner rejects overlap and always clears its state', async () => {
     let busy = false;
     let release;

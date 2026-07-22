@@ -7,6 +7,7 @@ import { settings as S } from '../src/settings/settings.js';
 import { settingsTransfer as Transfer } from '../src/settings/settings-transfer.js';
 import { STORAGE_KEY as GITHUB_AUTH_STORAGE_KEY } from '../src/github/github-auth.js';
 import { githubError as GithubError } from '../src/github/github-error-copy.js';
+import { runtimeMessage as RuntimeMessage } from '../src/ui/runtime-message.js';
 import { hasGithubPermission } from './github.js';
 import { optionsUtils as OptionsUtils } from './options-utils.js';
 
@@ -50,7 +51,7 @@ export function initSettingsBackup({ extensionApi, flash, save }) {
     let githubStatus = null;
     let githubBusy = false;
 
-    const send = message => OptionsUtils.send(extensionApi, message);
+    const send = RuntimeMessage.bind(extensionApi);
 
     const repoName = () => OptionsUtils.githubRepoName(githubStatus);
 

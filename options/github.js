@@ -14,6 +14,7 @@
 import { githubError as GithubError } from '../src/github/github-error-copy.js';
 import { githubErrors as GithubErrors } from '../src/github/github-errors.js';
 import { dom as Dom } from '../src/ui/dom.js';
+import { runtimeMessage as RuntimeMessage } from '../src/ui/runtime-message.js';
 import { optionsUtils as OptionsUtils } from './options-utils.js';
 
 const { ERROR_CODES } = GithubErrors;
@@ -56,7 +57,7 @@ export function initGithubBackup({ extensionApi, flash, save }) {
         if (countdownTimer) { clearTimeout(countdownTimer); countdownTimer = null; }
     };
 
-    const send = message => OptionsUtils.send(extensionApi, message);
+    const send = RuntimeMessage.bind(extensionApi);
 
     // ---- small DOM builders ------------------------------------------------
 

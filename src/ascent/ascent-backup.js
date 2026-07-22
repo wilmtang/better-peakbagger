@@ -15,6 +15,7 @@ import { ascentBackupSource as Source } from './ascent-backup-source.js';
 import { githubError as GithubError } from '../github/github-error-copy.js';
 import { peakbaggerError as PeakbaggerError } from '../peakbagger/peakbagger-error.js';
 import { dom as Dom } from '../ui/dom.js';
+import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.js';
 
 (() => {
     'use strict';
@@ -27,12 +28,7 @@ import { dom as Dom } from '../ui/dom.js';
         : GithubError.message(error, {
             fallback: 'The extension did not return an error description. Reload this ascent and try again.',
         });
-    // Promise form is shared by modern MV3 Chrome and Firefox's browser API;
-    // callback form is not portable to Firefox's browser namespace.
-    const sendBg = async message => {
-        try { return (await ext.runtime.sendMessage(message)) || null; }
-        catch { return null; }
-    };
+    const sendBg = RuntimeMessage.bind(ext);
 
     const el = Dom.element;
 

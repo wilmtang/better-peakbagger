@@ -11,6 +11,7 @@ import { githubError as GithubError } from '../github/github-error-copy.js';
 import { peakbaggerCloudflare as Cloudflare } from '../peakbagger/peakbagger-cloudflare.js';
 import { peakbaggerError as PeakbaggerError } from '../peakbagger/peakbagger-error.js';
 import { dom as Dom } from '../ui/dom.js';
+import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.js';
 
 (() => {
     'use strict';
@@ -18,11 +19,7 @@ import { dom as Dom } from '../ui/dom.js';
     const ext = globalThis.browser || globalThis.chrome;
     if (!ext || !ext.runtime || !/\/climber\/climblistc\.aspx$/i.test(location.pathname)) return;
 
-    const sendBg = message => new Promise(resolve => {
-        try {
-            ext.runtime.sendMessage(message, response => { void ext.runtime.lastError; resolve(response || null); });
-        } catch { resolve(null); }
-    });
+    const sendBg = RuntimeMessage.bind(ext);
     const node = Dom.element;
 
     let panel;

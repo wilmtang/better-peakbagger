@@ -10,6 +10,7 @@ import { peakbaggerError as PeakbaggerError } from '../src/peakbagger/peakbagger
 import { fetchPeakbaggerDocument } from '../src/peakbagger/peakbagger-request.js';
 import { numericParam, ownerClimberId } from '../src/profile/profile-backup-core.js';
 import { STORAGE_KEY as SETTINGS_STORAGE_KEY } from '../src/settings/settings.js';
+import { runtimeMessage as RuntimeMessage } from '../src/ui/runtime-message.js';
 import { hasGithubPermission } from './github.js';
 import { optionsUtils as OptionsUtils } from './options-utils.js';
 
@@ -108,7 +109,7 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
     let githubBackupResult = null;
     const pendingDeletes = new Map();
 
-    const send = message => OptionsUtils.send(extensionApi, message);
+    const send = RuntimeMessage.bind(extensionApi);
 
     const relativeAge = fetchedAt => {
         const elapsed = Math.max(0, Date.now() - fetchedAt);
