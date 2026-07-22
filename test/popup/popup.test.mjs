@@ -217,6 +217,8 @@ test('popup lets a no-match capture bypass the cached terminal job and check aga
     await waitFor(() => /No confident summit matches/.test(dom.window.document.getElementById('state').textContent));
 
     const card = dom.window.document.querySelector('.state-card');
+    assert.match(card.textContent, /Only Strong and Probable matches are shown/);
+    assert.doesNotMatch(card.textContent, /Possible|weak/);
     const checkAgain = [...card.querySelectorAll('button')].find(element => element.textContent === 'Check again');
     assert.ok(checkAgain);
     assert.equal(checkAgain.classList.contains('primary'), true);
@@ -227,7 +229,7 @@ test('popup lets a no-match capture bypass the cached terminal job and check aga
     dom.window.close();
 });
 
-test('popup keeps opened drafts discoverable and refocuses their existing tabs', async () => {
+test('popup locks an opened selection and keeps its existing drafts discoverable', async () => {
     const dom = new JSDOM(html, {
         url: 'chrome-extension://better-peakbagger/popup/popup.html',
         runScripts: 'outside-only'
@@ -235,10 +237,16 @@ test('popup keeps opened drafts discoverable and refocuses their existing tabs',
     const job = {
         phase: 'opened', provider: 'strava', hasCachedGpx: true, selectedIds: [1],
         trackSummary: { originalPointCount: 2, retainedPointCount: 2, maxDeviationM: 0 },
-        matches: [{
-            id: 1, name: 'Opened Peak', classification: 'strong', confidence: 95,
-            evidence: { distanceM: 5, elevationDeltaM: 2, trackQuality: 1 }
-        }]
+        matches: [
+            {
+                id: 1, name: 'Opened Peak', classification: 'strong', confidence: 95,
+                evidence: { distanceM: 5, elevationDeltaM: 2, trackQuality: 1 }
+            },
+            {
+                id: 2, name: 'Other Peak', classification: 'probable', confidence: 75,
+                evidence: { distanceM: 30, elevationDeltaM: 10, trackQuality: 0.9 }
+            }
+        ]
     };
     const messages = [];
     dom.window.chrome = {
@@ -257,6 +265,13 @@ test('popup keeps opened drafts discoverable and refocuses their existing tabs',
     const openButton = dom.window.document.getElementById('open-drafts');
     await waitFor(() => openButton.textContent === 'Show opened drafts');
     assert.equal(openButton.disabled, false);
+    const checkboxes = [...dom.window.document.querySelectorAll('#peak-list input')];
+    assert.ok(checkboxes.every(checkbox => checkbox.disabled));
+    assert.equal(dom.window.document.getElementById('selection-lock-hint').hidden, false);
+    checkboxes[1].checked = true;
+    checkboxes[1].dispatchEvent(new dom.window.Event('change'));
+    assert.equal(openButton.textContent, 'Show opened drafts');
+    assert.equal(messages.some(message => message.type === 'CAPTURE_SELECTION'), false);
     openButton.click();
     await waitFor(() => messages.some(message => message.type === 'CAPTURE_OPEN_DRAFTS'));
     await waitFor(() => openButton.textContent === 'Show opened drafts');

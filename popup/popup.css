@@ -142,17 +142,20 @@ button:focus-visible, .button-link:focus-visible { outline: 2px solid #1570ef; o
 .peak-row.strong { border-left-color: #17b26a; }
 .peak-row.probable { border-left-color: #f79009; }
 .peak-row input { margin: 2px 0 0; accent-color: #175cd3; }
+.peak-row.selection-locked { cursor: default; }
 .peak-name { display: block; font-size: 13px; font-weight: 700; }
 .peak-evidence { display: block; margin-top: 3px; color: #667085; font-size: 11px; line-height: 1.35; }
 .confidence { border-radius: 999px; padding: 4px 8px; font-size: 10px; font-weight: 800; white-space: nowrap; }
 .strong .confidence { color: #067647; background: #ecfdf3; }
 .probable .confidence { color: #93370d; background: #fffaeb; }
 
+.selection-lock-hint,
 .privacy-note { margin: 12px 1px 0; color: #667085; font-size: 11px; line-height: 1.45; }
+.selection-lock-hint + .privacy-note { margin-top: 5px; }
 
 @media (prefers-color-scheme: dark) {
   :root, body { color: #f2f4f7; background: #101828; }
-  .brand p, .state-detail, .summary, #selection-count, .peak-evidence, .privacy-note { color: #98a2b3; }
+  .brand p, .state-detail, .summary, #selection-count, .peak-evidence, .selection-lock-hint, .privacy-note { color: #98a2b3; }
   .state-card, .summary, .peak-row { border-color: #475467; background: #1d2939; }
   .summary strong { color: #e4e7ec; }
   button, .button-link { border-color: #667085; color: #e4e7ec; background: #344054; }
@@ -171,6 +174,7 @@ button:focus-visible, .button-link:focus-visible { outline: 2px solid #1570ef; o
 :root[data-bpb-theme="dark"] .summary,
 :root[data-bpb-theme="dark"] #selection-count,
 :root[data-bpb-theme="dark"] .peak-evidence,
+:root[data-bpb-theme="dark"] .selection-lock-hint,
 :root[data-bpb-theme="dark"] .privacy-note { color: #98a2b3; }
 :root[data-bpb-theme="dark"] .state-card,
 :root[data-bpb-theme="dark"] .summary,
@@ -190,6 +194,7 @@ button:focus-visible, .button-link:focus-visible { outline: 2px solid #1570ef; o
 :root[data-bpb-theme="light"] .brand p,
 :root[data-bpb-theme="light"] #selection-count,
 :root[data-bpb-theme="light"] .peak-evidence,
+:root[data-bpb-theme="light"] .selection-lock-hint,
 :root[data-bpb-theme="light"] .privacy-note { color: #667085; }
 :root[data-bpb-theme="light"] .state-detail,
 :root[data-bpb-theme="light"] .summary { color: #475467; }

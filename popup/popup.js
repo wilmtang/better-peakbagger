@@ -14,6 +14,7 @@ import { capturePhases as CapturePhases } from '../src/capture/capture-phases.js
     const openButton = document.getElementById('open-drafts');
     const clearCaptureButton = document.getElementById('clear-capture');
     const selectionCount = document.getElementById('selection-count');
+    const selectionLockHint = document.getElementById('selection-lock-hint');
     const providerLabel = document.getElementById('provider-label');
     const settingsButton = document.getElementById('open-settings');
     let activeTab = null;
@@ -93,7 +94,7 @@ import { capturePhases as CapturePhases } from '../src/capture/capture-phases.js
                             },
                             { label: 'I’m signed in — try again', onClick: retry }
                         ]
-                    : (code === 'unsupported' || notOwner ? [] : [{ label: 'Try again', onClick: retry }])
+                    : (notOwner ? [] : [{ label: 'Try again', onClick: retry }])
             }
         );
     };
@@ -142,6 +143,13 @@ import { capturePhases as CapturePhases } from '../src/capture/capture-phases.js
     const refreshSelection = () => {
         const count = selectedIds().length;
         selectionCount.textContent = `${count} selected`;
+        if (currentJob?.phase === 'opened' || currentJob?.phase === 'previewed') {
+            selectionLockHint.hidden = false;
+            openButton.textContent = currentJob.phase === 'opened' ? 'Show opened drafts' : 'Preview submitted';
+            openButton.disabled = currentJob.phase === 'previewed';
+            return;
+        }
+        selectionLockHint.hidden = true;
         openButton.textContent = count === 1 ? 'Open 1 draft' : `Open ${count} drafts`;
         openButton.disabled = count === 0;
         void ext.runtime.sendMessage({ type: 'CAPTURE_SELECTION', tabId: activeTab.id, selectedIds: selectedIds() });
@@ -168,6 +176,8 @@ import { capturePhases as CapturePhases } from '../src/capture/capture-phases.js
             checkbox.type = 'checkbox';
             checkbox.value = String(match.id);
             checkbox.checked = (job.selectedIds || []).includes(match.id);
+            checkbox.disabled = job.phase === 'opened' || job.phase === 'previewed';
+            if (checkbox.disabled) row.classList.add('selection-locked');
             checkbox.addEventListener('change', refreshSelection);
             const text = document.createElement('span');
             const name = document.createElement('span');
@@ -184,13 +194,6 @@ import { capturePhases as CapturePhases } from '../src/capture/capture-phases.js
             list.append(row);
         });
         refreshSelection();
-        if (job.phase === 'opened') {
-            openButton.textContent = 'Show opened drafts';
-            openButton.disabled = false;
-        } else if (job.phase === 'previewed') {
-            openButton.textContent = 'Preview submitted';
-            openButton.disabled = true;
-        }
     };
 
     const render = job => {
@@ -211,7 +214,7 @@ import { capturePhases as CapturePhases } from '../src/capture/capture-phases.js
         if (job.phase === 'no-matches') {
             stateCard(
                 'No confident summit matches',
-                'Possible and weak results are intentionally hidden. Nothing was opened or uploaded.',
+                'Only Strong and Probable matches are shown, and nothing met that bar for this track. Nothing was opened or uploaded.',
                 { action: { label: 'Check again', primary: true, onClick: retry } }
             );
             return;
