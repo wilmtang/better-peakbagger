@@ -863,9 +863,11 @@ The options manager supports these distinct operations:
   500-entry bound. Existing names are not refreshed from the Buddy page. Its
   progress, success count, or actionable failure remains visible beside the
   controls instead of relying on the transient global save toast.
-- **Mirror buddy list** replaces the custom list completely. Every resulting
-  entry receives the current timestamp and Buddy provenance. It offers a
-  six-second in-memory Undo snapshot.
+- **Mirror buddy list** first fetches the current report, then shows an explicit
+  confirmation naming how many custom favorites are not buddies and will be
+  removed. Cancel or Escape leaves storage untouched; only the destructive
+  confirmation replaces the list. Every resulting entry receives the current
+  timestamp and Buddy provenance, followed by a six-second in-memory Undo.
 - **Delete** persists removal immediately but leaves a six-second inline Undo
   row. Undo reinserts the exact prior entry. Sorting by name or added date only
   changes rendered order; it does not rewrite storage order.

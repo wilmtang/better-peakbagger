@@ -256,6 +256,66 @@ try {
             buddyRequests, fallbackReportRequests, fallbackImport, fallbackTabClosed, fallbackPageUrls,
             fallbackDebug
         })}`);
+
+        await optionsPage.evaluate(async ({ signedInBuddyUrl, buddyListFixture }) => {
+            const current = (await chrome.storage.local.get('bpbFavoriteClimbers')).bpbFavoriteClimbers;
+            await chrome.storage.local.set({
+                bpbFavoriteClimbers: {
+                    schemaVersion: 1,
+                    entries: [
+                        { cid: 900099, name: 'Manual Favorite', addedAt: 1, source: 'manual' },
+                        ...current.entries,
+                    ],
+                },
+            });
+            window.fetch = async (input, init) => String(input) === signedInBuddyUrl
+                ? { status: 200, headers: {}, text: async () => buddyListFixture }
+                : window.__bpbNativeFetch(input, init);
+        }, { signedInBuddyUrl, buddyListFixture });
+        await optionsPage.locator('.favorite-item[data-cid="900099"]').waitFor({ state: 'visible', timeout: 5000 });
+        await optionsPage.locator('#favorites-mirror-buddies').click();
+        const mirrorConfirmation = await optionsPage.waitForFunction(async () => {
+            const dialog = document.getElementById('favorites-mirror-confirmation');
+            const favorites = (await chrome.storage.local.get('bpbFavoriteClimbers')).bpbFavoriteClimbers;
+            return dialog && !dialog.hidden && favorites?.entries?.length === 7
+                ? {
+                    role: dialog.getAttribute('role'),
+                    text: dialog.textContent || '',
+                    confirm: document.getElementById('favorites-mirror-confirm')?.textContent || '',
+                    focused: document.activeElement?.id || '',
+                }
+                : false;
+        }, null, { timeout: 5000 }).then(handle => handle.jsonValue()).catch(() => null);
+        check(mirrorConfirmation?.role === 'alertdialog'
+            && /1 favorite climber who isn't on your Buddy List will be removed/.test(mirrorConfirmation.text)
+            && /undo for 6 seconds/.test(mirrorConfirmation.text)
+            && mirrorConfirmation.confirm === 'Remove 1 & mirror'
+            && mirrorConfirmation.focused === 'favorites-mirror-cancel',
+        `the Buddy mirror did not stop at an explicit destructive confirmation: ${JSON.stringify(mirrorConfirmation)}`);
+        if (process.env.BPB_VERIFY_FAVORITES_MIRROR_SCREENSHOT) {
+            await optionsPage.locator('#favorites').screenshot({ path: process.env.BPB_VERIFY_FAVORITES_MIRROR_SCREENSHOT });
+        }
+        await optionsPage.locator('#favorites-mirror-cancel').click();
+        const mirrorCancelled = await optionsPage.evaluate(async () => {
+            const favorites = (await chrome.storage.local.get('bpbFavoriteClimbers')).bpbFavoriteClimbers;
+            return document.getElementById('favorites-mirror-confirmation')?.hidden === true
+                && favorites?.entries?.some(entry => entry.cid === 900099);
+        });
+        check(mirrorCancelled, 'cancelling the Buddy mirror changed custom favorites');
+
+        await optionsPage.locator('#favorites-mirror-buddies').click();
+        await optionsPage.locator('#favorites-mirror-confirmation').waitFor({ state: 'visible', timeout: 5000 });
+        await optionsPage.locator('#favorites-mirror-confirm').click();
+        const mirrorApplied = await optionsPage.waitForFunction(async () => {
+            const favorites = (await chrome.storage.local.get('bpbFavoriteClimbers')).bpbFavoriteClimbers;
+            const status = document.getElementById('favorites-import-status')?.textContent || '';
+            return favorites?.entries?.length === 6
+                && !favorites.entries.some(entry => entry.cid === 900099)
+                && /Mirrored 6 buddies/.test(status);
+        }, null, { timeout: 5000 }).then(() => true).catch(() => false);
+        check(mirrorApplied, 'confirming the Buddy mirror did not replace the custom list');
+        await optionsPage.evaluate(() => { window.fetch = window.__bpbNativeFetch; });
+
         if (process.env.BPB_VERIFY_FAVORITES_SCREENSHOT) {
             await optionsPage.locator('#favorites').screenshot({ path: process.env.BPB_VERIFY_FAVORITES_SCREENSHOT });
         }
@@ -1536,6 +1596,7 @@ console.log('Real-extension verification passed (hidden Chrome for Testing, new 
 console.log('  - the MV3 service worker boots and answers messages (capture is alive)');
 console.log('  - sync/local/session storage, storage.onChanged, options persistence, and popup status passed');
 console.log('  - options loads the signed-in Buddy report directly, falls back through a first-party tab, and keeps failures actionable');
+console.log('  - Buddy mirroring names removals, requires confirmation, and preserves favorites on cancel');
 console.log('  - settings.js initialises in the isolated world and the bridge answers');
 console.log('  - the GPX analyzer renders stats from the real manifest load order');
 console.log('  - the 3D toggle stays visible when disabled and opens the provider/privacy confirmation');

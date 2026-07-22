@@ -28,6 +28,11 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
     const mergeEl = document.getElementById('favorites-merge-buddies');
     const mirrorEl = document.getElementById('favorites-mirror-buddies');
     const importStatusEl = document.getElementById('favorites-import-status');
+    const mirrorConfirmationEl = document.getElementById('favorites-mirror-confirmation');
+    const mirrorConfirmationImpactEl = document.getElementById('favorites-mirror-confirmation-impact');
+    const mirrorConfirmationSummaryEl = document.getElementById('favorites-mirror-confirmation-summary');
+    const mirrorCancelEl = document.getElementById('favorites-mirror-cancel');
+    const mirrorConfirmEl = document.getElementById('favorites-mirror-confirm');
     const emptyEl = document.getElementById('favorites-empty');
     const listEl = document.getElementById('favorites-list');
     const undoAllEl = document.getElementById('favorites-undo-all');
@@ -40,7 +45,10 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
 
     if (!store || !sourceEls.length || !buddyPanelEl || !customPanelEl || !buddyStatusEl
         || !refreshBuddiesEl || !addFormEl || !addInputEl || !addButtonEl || !sortEl
-        || !mergeEl || !mirrorEl || !importStatusEl || !emptyEl || !listEl || !undoAllEl || !undoMessageEl
+        || !mergeEl || !mirrorEl || !importStatusEl || !mirrorConfirmationEl
+        || !mirrorConfirmationImpactEl || !mirrorConfirmationSummaryEl
+        || !mirrorCancelEl || !mirrorConfirmEl
+        || !emptyEl || !listEl || !undoAllEl || !undoMessageEl
         || !undoAllButtonEl || !githubStatusEl || !githubActionsEl || !backupEl
         || !restoreEl) return { populate() {} };
 
@@ -53,6 +61,7 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
     let refreshRevision = 0;
     let refreshTimer = null;
     let pendingBulk = null;
+    let pendingMirror = null;
     let githubStatus = null;
     let githubBusy = false;
     let githubRevision = 0;
@@ -108,6 +117,34 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
         importStatusEl.textContent = message;
         importStatusEl.hidden = !message;
         if (message && error) appendBuddyRecovery(error, importStatusEl);
+    };
+
+    const favoritesSignature = () => JSON.stringify(favorites.entries);
+
+    const dismissMirrorConfirmation = ({ restoreFocus = false } = {}) => {
+        pendingMirror = null;
+        mirrorConfirmationEl.hidden = true;
+        if (restoreFocus && !mirrorEl.disabled) mirrorEl.focus();
+    };
+
+    const showMirrorConfirmation = (buddyEntries, { focus = true } = {}) => {
+        const buddyIds = new Set(buddyEntries.map(entry => entry.cid));
+        const removed = favorites.entries.filter(entry => !buddyIds.has(entry.cid)).length;
+        const buddyCount = buddyEntries.length;
+        const removalCopy = removed === 0
+            ? 'No favorite climbers will be removed, but mirroring still replaces the custom list.'
+            : `${removed} favorite ${removed === 1 ? "climber who isn't" : "climbers who aren't"} on your Buddy List will be removed from the custom list.`;
+        mirrorConfirmationImpactEl.textContent = removalCopy;
+        mirrorConfirmationSummaryEl.textContent = ` It will contain ${buddyCount} current ${buddyCount === 1 ? 'buddy' : 'buddies'}. You can undo for 6 seconds after replacement.`;
+        mirrorConfirmEl.textContent = removed > 0
+            ? `Remove ${removed} & mirror`
+            : 'Replace custom list';
+        pendingMirror = {
+            buddyEntries: buddyEntries.map(entry => ({ ...entry })),
+            favoritesSignature: favoritesSignature(),
+        };
+        mirrorConfirmationEl.hidden = false;
+        if (focus) mirrorCancelEl.focus();
     };
 
     const renderBuddyStatus = () => {
@@ -265,6 +302,7 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
             favorites = F.cleanFavorites(values[F.FAVORITES_KEY]);
             buddyCache = F.cleanBuddyCache(values[F.BUDDY_CACHE_KEY]);
             renderPanels();
+            if (pendingMirror) showMirrorConfirmation(pendingMirror.buddyEntries, { focus: false });
         } catch (error) {
             if (revision !== refreshRevision) return;
             flash('Favorite climbers are unavailable');
@@ -565,6 +603,7 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
     addFormEl.addEventListener('submit', event => { event.preventDefault(); void addClimber(); });
     sortEl.addEventListener('change', renderList);
     mergeEl.addEventListener('click', () => {
+        dismissMirrorConfirmation();
         renderImportStatus('Loading your Buddy List…');
         void refreshBuddies().then(async cache => {
             if (!cache) {
@@ -592,6 +631,7 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
         });
     });
     mirrorEl.addEventListener('click', () => {
+        dismissMirrorConfirmation();
         renderImportStatus('Loading your Buddy List…');
         void refreshBuddies().then(async cache => {
             if (!cache) {
@@ -600,15 +640,42 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
                 flash(message);
                 return;
             }
-            const changed = await beginReplacement(F.mirrorBuddies(cache.entries), 'Custom list replaced with your Buddy List');
-            if (changed) {
-                const count = cache.entries.length;
-                renderImportStatus(`Mirrored ${count} ${count === 1 ? 'buddy' : 'buddies'} to custom favorites.`);
-                flash('Buddy List mirrored');
-            } else {
-                renderImportStatus("The Buddy List loaded, but the custom favorites couldn't be saved.");
-            }
+            renderImportStatus();
+            showMirrorConfirmation(cache.entries);
         });
+    });
+    mirrorCancelEl.addEventListener('click', () => { dismissMirrorConfirmation({ restoreFocus: true }); });
+    mirrorConfirmEl.addEventListener('click', () => {
+        if (!pendingMirror) return;
+        if (pendingMirror.favoritesSignature !== favoritesSignature()) {
+            showMirrorConfirmation(pendingMirror.buddyEntries);
+            return;
+        }
+        const { buddyEntries } = pendingMirror;
+        setBusy(true);
+        mirrorCancelEl.disabled = true;
+        mirrorConfirmEl.disabled = true;
+        renderImportStatus('Replacing custom favorites…');
+        void beginReplacement(F.mirrorBuddies(buddyEntries), 'Custom list replaced with your Buddy List')
+            .then(changed => {
+                dismissMirrorConfirmation();
+                if (changed) {
+                    const count = buddyEntries.length;
+                    renderImportStatus(`Mirrored ${count} ${count === 1 ? 'buddy' : 'buddies'} to custom favorites.`);
+                    flash('Buddy List mirrored');
+                } else {
+                    renderImportStatus("The Buddy List loaded, but the custom favorites couldn't be saved.");
+                }
+            }).finally(() => {
+                setBusy(false);
+                mirrorCancelEl.disabled = false;
+                mirrorConfirmEl.disabled = false;
+            });
+    });
+    mirrorConfirmationEl.addEventListener('keydown', event => {
+        if (event.key !== 'Escape') return;
+        event.preventDefault();
+        dismissMirrorConfirmation({ restoreFocus: true });
     });
     undoAllButtonEl.addEventListener('click', () => { void undoReplacement(); });
     backupEl.addEventListener('click', () => { void backupFavorites(); });
@@ -618,6 +685,7 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
         radio.addEventListener('change', () => {
             if (!radio.checked) return;
             source = radio.value === 'custom' ? 'custom' : 'buddies';
+            if (source !== 'custom') dismissMirrorConfirmation();
             renderPanels();
             void save({ favoritesSource: source });
         });
@@ -640,6 +708,7 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
     return {
         populate(settings) {
             source = settings && settings.favoritesSource === 'custom' ? 'custom' : 'buddies';
+            if (source !== 'custom') dismissMirrorConfirmation();
             renderPanels();
             void refreshGithubStatus();
         },

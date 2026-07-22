@@ -569,7 +569,7 @@ test('Buddy refresh fails closed when the report has no signed-in owner identity
     assert.equal(recovery.href, 'https://www.peakbagger.com/Default.aspx');
 });
 
-test('merge is additive while mirror replaces the custom list with Undo', async () => {
+test('merge is additive while mirror requires destructive confirmation and supports Undo', async () => {
     const manual = { cid: 900099, name: 'Manual Favorite', addedAt: 1, source: 'manual' };
     const dom = await loadOptions({ favoritesSource: 'custom' }, {
         local: { [favoriteKey]: favoriteStore([manual]) },
@@ -584,8 +584,28 @@ test('merge is additive while mirror replaces the custom list with Undo', async 
         'merge preserves the existing manual entry and its metadata');
 
     el(dom, 'favorites-mirror-buddies').click();
+    await waitFor(dom, () => el(dom, 'favorites-mirror-confirmation').hidden === false);
+    assert.equal(dom.chrome._localStore[favoriteKey].entries.length, 7,
+        'loading the mirror preview must not mutate favorites');
+    assert.equal(dom.chrome._localStore[favoriteKey].entries.some(entry => entry.cid === manual.cid), true);
+    assert.match(el(dom, 'favorites-mirror-confirmation-detail').textContent,
+        /1 favorite climber who isn't on your Buddy List will be removed/);
+    assert.match(el(dom, 'favorites-mirror-confirmation-detail').textContent, /contain 6 current buddies/);
+    assert.match(el(dom, 'favorites-mirror-confirmation-detail').textContent, /undo for 6 seconds/);
+    assert.equal(el(dom, 'favorites-mirror-confirm').textContent, 'Remove 1 & mirror');
+    assert.equal(dom.window.document.activeElement, el(dom, 'favorites-mirror-cancel'));
+
+    el(dom, 'favorites-mirror-cancel').click();
+    assert.equal(el(dom, 'favorites-mirror-confirmation').hidden, true);
+    assert.equal(dom.chrome._localStore[favoriteKey].entries.some(entry => entry.cid === manual.cid), true,
+        'cancelling the confirmation must leave favorites untouched');
+
+    el(dom, 'favorites-mirror-buddies').click();
+    await waitFor(dom, () => el(dom, 'favorites-mirror-confirmation').hidden === false);
+    el(dom, 'favorites-mirror-confirm').click();
     await waitFor(dom, () => dom.chrome._localStore[favoriteKey].entries.length === 6
-        && !dom.chrome._localStore[favoriteKey].entries.some(entry => entry.cid === manual.cid));
+        && !dom.chrome._localStore[favoriteKey].entries.some(entry => entry.cid === manual.cid)
+        && /Mirrored 6 buddies to custom favorites/.test(el(dom, 'favorites-import-status').textContent));
     assert.match(el(dom, 'favorites-import-status').textContent, /Mirrored 6 buddies to custom favorites/);
     assert.equal(el(dom, 'favorites-undo-all').hidden, false);
     assert.match(el(dom, 'favorites-undo-message').textContent, /replaced with your Buddy List/);

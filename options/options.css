@@ -17,6 +17,10 @@
     --experimental-bg: #f7ead0;
     --experimental-border: #e2c98f;
     --experimental-text: #68420b;
+    --danger: #912f2f;
+    --danger-bg: #fff4f4;
+    --danger-border: #dfb1b1;
+    --danger-fill: #912f2f;
     --shadow: 0 1px 3px rgba(0, 0, 0, .08);
 }
 
@@ -34,6 +38,10 @@
     --experimental-bg: #3a2f20;
     --experimental-border: #665235;
     --experimental-text: #f0cd8d;
+    --danger: #ffaaaa;
+    --danger-bg: #382326;
+    --danger-border: #704046;
+    --danger-fill: #9b353b;
     --shadow: 0 1px 3px rgba(0, 0, 0, .35);
 }
 
@@ -277,12 +285,47 @@ input[type="number"].mini { min-width: 0; width: 72px; padding: 4px 8px; }
 .favorites-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 16px; color: var(--sub); font-size: 12.5px; }
 .favorites-tools select { min-width: 130px; padding: 5px 9px; }
 .favorites-tools button.secondary { align-self: auto; }
+button.secondary.favorites-mirror-trigger { color: var(--danger); border-color: var(--danger-border); }
+button.secondary.favorites-mirror-trigger:hover { color: var(--danger); background: var(--danger-bg); border-color: var(--danger); }
+button.secondary.favorites-mirror-trigger:focus-visible { outline-color: var(--danger); }
 .favorites-tools button:disabled, .favorites-summary button:disabled, .favorites-add button:disabled {
     cursor: wait;
     opacity: .55;
 }
 .favorites-hint { margin-top: 8px; }
 .favorites-import-status { margin-top: 10px; }
+.favorites-mirror-confirmation {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 18px;
+    margin-top: 12px;
+    padding: 12px 13px;
+    color: var(--text);
+    background: var(--danger-bg);
+    border: 1px solid var(--danger-border);
+    border-radius: 9px;
+}
+.favorites-mirror-confirmation[hidden] { display: none; }
+.favorites-mirror-confirmation-title { margin: 0; color: var(--danger); font-size: 13px; font-weight: 700; }
+.favorites-mirror-confirmation-detail { margin: 3px 0 0; font-size: 12.5px; line-height: 1.45; }
+.favorites-mirror-confirmation-detail strong { color: var(--danger); }
+.favorites-mirror-confirmation-actions { display: flex; flex: 0 0 auto; align-items: center; gap: 7px; }
+.favorites-mirror-confirmation-actions button.secondary { align-self: auto; }
+.favorites-mirror-confirm {
+    appearance: none;
+    padding: 6px 10px;
+    color: #fff;
+    background: var(--danger-fill);
+    border: 1px solid var(--danger-fill);
+    border-radius: 8px;
+    font: inherit;
+    font-weight: 650;
+    cursor: pointer;
+}
+.favorites-mirror-confirm:hover { filter: brightness(.92); }
+.favorites-mirror-confirm:focus-visible { outline: 2px solid var(--danger); outline-offset: 2px; }
+.favorites-mirror-confirm:disabled { cursor: wait; opacity: .58; }
 .favorites-empty { margin-top: 18px; }
 .favorites-list { list-style: none; margin: 14px -18px 0; padding: 0; border-top: 1px solid var(--border); }
 .favorite-item {
@@ -540,4 +583,6 @@ button.github-repo:focus-visible { outline: 2px solid var(--accent); outline-off
     .favorites-github { align-items: stretch; flex-direction: column; gap: 10px; }
     .favorites-github-actions { justify-content: flex-start; }
     .favorite-item { align-items: flex-start; }
+    .favorites-mirror-confirmation { align-items: stretch; flex-direction: column; gap: 10px; }
+    .favorites-mirror-confirmation-actions { justify-content: flex-end; }
 }

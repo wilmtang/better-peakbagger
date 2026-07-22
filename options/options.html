@@ -385,10 +385,25 @@
                             <option value="name">Name</option>
                         </select>
                         <button id="favorites-merge-buddies" class="secondary" type="button">Merge buddies into favorites</button>
-                        <button id="favorites-mirror-buddies" class="secondary" type="button">Mirror buddy list</button>
+                        <button id="favorites-mirror-buddies" class="secondary favorites-mirror-trigger" type="button">Mirror Buddy List…</button>
                     </div>
-                    <p class="favorites-hint">Merge adds missing buddies. Mirror replaces the custom list.</p>
+                    <p class="favorites-hint">Merge only adds missing buddies. Mirror replaces the entire custom list and asks before removing anyone.</p>
                     <p class="favorites-status favorites-import-status" id="favorites-import-status" role="status" hidden></p>
+                    <div class="favorites-mirror-confirmation" id="favorites-mirror-confirmation"
+                        role="alertdialog" aria-labelledby="favorites-mirror-confirmation-title"
+                        aria-describedby="favorites-mirror-confirmation-detail" hidden>
+                        <div>
+                            <p class="favorites-mirror-confirmation-title" id="favorites-mirror-confirmation-title">Replace custom favorites?</p>
+                            <p class="favorites-mirror-confirmation-detail" id="favorites-mirror-confirmation-detail">
+                                <strong id="favorites-mirror-confirmation-impact"></strong>
+                                <span id="favorites-mirror-confirmation-summary"></span>
+                            </p>
+                        </div>
+                        <div class="favorites-mirror-confirmation-actions">
+                            <button id="favorites-mirror-cancel" class="secondary" type="button">Cancel</button>
+                            <button id="favorites-mirror-confirm" class="favorites-mirror-confirm" type="button">Replace custom list</button>
+                        </div>
+                    </div>
                     <p class="favorites-empty" id="favorites-empty">No favorite climbers yet.</p>
                     <ul class="favorites-list" id="favorites-list" hidden></ul>
                     <div class="favorites-undo-all" id="favorites-undo-all" role="status" hidden>
