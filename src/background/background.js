@@ -9,8 +9,7 @@
 import { captureCore as Core } from '../capture/capture-core.js';
 import { capturePhases as CapturePhases } from '../capture/capture-phases.js';
 import { providerFromUrl, providerActivityUrl } from '../capture/provider-url.js';
-import { terrainTiles as TerrainTiles } from '../terrain/terrain-tiles.js';
-import { terrainCache as TerrainCache } from '../terrain/terrain-cache.js';
+import { createTerrainPrefetch } from './terrain-prefetch.js';
 import { settings as Settings } from '../settings/settings.js';
 import { settingsTransfer as Transfer } from '../settings/settings-transfer.js';
 import { favoriteClimbers as Favorites } from '../favorites/favorite-climbers.js';
@@ -1277,6 +1276,12 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
         catch { return false; }
     };
 
+    const terrainPrefetch = createTerrainPrefetch({
+        isPeakbaggerSender,
+        mapWithConcurrency,
+        now
+    });
+
     const openDraftsManager = async sender => {
         if (!isPeakbaggerSender(sender) || !Number.isInteger(sender.tab?.id)) {
             return { ok: false, reason: 'forbidden' };
@@ -1285,99 +1290,6 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
             url: `${ext.runtime.getURL('options/options.html')}#drafts`
         });
         return { ok: true, tabId: Number.isInteger(tab?.id) ? tab.id : null };
-    };
-
-    // DEM prefetch: warm the extension-origin tile cache from the background
-    // worker so opening 3D paints from cache instead of the network. CacheStorage
-    // is origin-keyed, so only extension contexts share bpb-mapterhorn-dem-v1 —
-    // the peakbagger content script cannot populate it, only ask the worker to.
-    const PREFETCH_RATE_MS = 15 * 1000;
-    const PREFETCH_TILE_CAP = 32;
-    const PREFETCH_CONCURRENCY = 4;
-    const PREFETCH_DEDUPE_TTL_MS = 10 * 60 * 1000;
-    const prefetchLastByTab = new Map();
-    const prefetchRecentTiles = new Map();
-    let prefetchCache = null;
-
-    const validPrefetchViewport = viewport => !!viewport
-        && Number.isFinite(viewport.width) && viewport.width >= 100 && viewport.width <= 8192
-        && Number.isFinite(viewport.height) && viewport.height >= 100 && viewport.height <= 8192;
-
-    const prefetchTilesFor = (message, viewport) => {
-        const bounds = message && message.bounds;
-        if (bounds && typeof bounds === 'object'
-            && [bounds.minLat, bounds.minLon, bounds.maxLat, bounds.maxLon].every(Number.isFinite)) {
-            return TerrainTiles.tilesForView({
-                bounds: {
-                    minLat: bounds.minLat, minLon: bounds.minLon,
-                    maxLat: bounds.maxLat, maxLon: bounds.maxLon
-                },
-                viewport, cap: PREFETCH_TILE_CAP
-            });
-        }
-        if (Array.isArray(message.center) && message.center.length === 2
-            && message.center.every(Number.isFinite) && Number.isFinite(message.zoom)) {
-            return TerrainTiles.tilesForView({
-                center: [message.center[0], message.center[1]], zoom: message.zoom,
-                viewport, cap: PREFETCH_TILE_CAP
-            });
-        }
-        return null;
-    };
-
-    const terrainPrefetch = async (message, sender) => {
-        // A Peakbagger content script asking to warm the cache for a view it is
-        // about to render; nothing else may drive worker→Mapterhorn traffic.
-        if (!isPeakbaggerSender(sender) || !Number.isInteger(sender.tab?.id)) return { ok: false, reason: 'forbidden' };
-        const settings = await Settings.get();
-        // 3D enablement is the consent gate for contacting Mapterhorn; a zero
-        // cache budget means there is nothing to warm.
-        if (settings.enable3dMap !== true || !(settings.terrainCacheLimitMb > 0)) return { ok: false, reason: 'disabled' };
-        if (!validPrefetchViewport(message && message.viewport)) return { ok: false, reason: 'invalid' };
-
-        const tiles = prefetchTilesFor(message, message.viewport);
-        if (tiles === null) return { ok: false, reason: 'invalid' };
-        if (!tiles.length) return { ok: true, tiles: 0 };
-
-        // One accepted prefetch per tab per 15 s. Charged only once a request is
-        // well-formed enough to do work, so a malformed burst cannot lock a tab.
-        const tabId = sender.tab.id;
-        const nowMs = now();
-        const last = prefetchLastByTab.get(tabId);
-        if (Number.isFinite(last) && nowMs - last < PREFETCH_RATE_MS) return { ok: false, reason: 'throttled' };
-        prefetchLastByTab.set(tabId, nowMs);
-
-        const limitMb = settings.terrainCacheLimitMb;
-        if (!prefetchCache || prefetchCache.limitMb !== limitMb) {
-            prefetchCache = { limitMb, cache: TerrainCache.create({ limitMb }) };
-        }
-        const cache = prefetchCache.cache;
-
-        // Skip tiles a recent burst already fetched or is fetching; expire the
-        // record so a later view of the same area re-warms if it was evicted.
-        for (const [key, expiry] of prefetchRecentTiles) {
-            if (expiry <= nowMs) prefetchRecentTiles.delete(key);
-        }
-        const fresh = [];
-        for (const tile of tiles) {
-            const key = `${tile.z}/${tile.x}/${tile.y}`;
-            if (prefetchRecentTiles.has(key)) continue;
-            prefetchRecentTiles.set(key, nowMs + PREFETCH_DEDUPE_TTL_MS);
-            fresh.push({ tile, key });
-        }
-
-        const warmed = await mapWithConcurrency(fresh, PREFETCH_CONCURRENCY, async ({ tile, key }) => {
-            try {
-                await cache.load({ url: `bpb-dem://${tile.z}/${tile.x}/${tile.y}.webp` });
-                return true;
-            } catch (error) {
-                // A failed tile is not warmed; drop its record so a later
-                // prefetch retries instead of skipping it as "recently done".
-                prefetchRecentTiles.delete(key);
-                return false;
-            }
-        });
-        return { ok: true, tiles: warmed.filter(Boolean).length };
     };
 
     // The save-time snapshot from the ascentedit content script: keep it in
@@ -1797,7 +1709,7 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
             case 'DRAFT_READY': return draftReady(message, sender);
             case 'DRAFT_PREVIEW_STARTED': return previewStarted(message, sender);
             case 'DRAFT_DAY_STATS_APPLIED': return dayStatsApplied(message, sender);
-            case 'TERRAIN_PREFETCH': return terrainPrefetch(message, sender);
+            case 'TERRAIN_PREFETCH': return terrainPrefetch.handle(message, sender);
             default: return null;
             }
         };
@@ -1809,7 +1721,7 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
     });
 
     ext.tabs.onRemoved.addListener(tabId => {
-        prefetchLastByTab.delete(tabId);
+        terrainPrefetch.forgetTab(tabId);
         void (async () => {
             const removedDraft = await mutateMap(DRAFTS_KEY, drafts => {
                 const value = drafts[tabId] || null;
