@@ -113,7 +113,8 @@ link, which automatically tracks endpoint query changes.
 | `src/settings/settings-transfer.js` | Pure known-key settings payload, parsing, serialization, and stable signatures through the shared schema | DOM, storage, GitHub access |
 | `options/favorites.js` | Favorites transfer controls, auto toggle, and schema-checked reversible restore | Backup serialization, GitHub credentials, or repository mutation |
 | `options/settings-backup.js` | File transfer, GitHub transfer controls, auto toggle, and confirmed settings replacement | GitHub credentials or repository mutation |
-| `src/background/background.js` | Sender gates, session snapshots, auth lookup, root-file serialization, automatic-backup alarms/state, write serialization, message routing | Peakbagger DOM parsing |
+| `src/background/background.js` | Sender gates, session-state keys, shared write serialization, cleanup coordination, message routing | Peakbagger DOM parsing or GitHub route implementation |
+| `src/background/github-routes.js` | Session snapshots, auth lookup, root-file serialization, GitHub message handlers, automatic-backup alarms/state | Peakbagger DOM parsing or exposing credentials outside the worker |
 | `src/github/github-backup.js` | Pure folder naming and JSON/Markdown/file payload serialization | DOM, tokens, network |
 | `src/github/github-errors.js` | One stable GitHub integration error code set, error type, and worker-safe serialization | HTTP requests or user-interface copy |
 | `src/github/github-api.js` | Every authenticated `api.github.com` request: origin validation, headers, no-cache policy, JSON parsing, and HTTP classification | OAuth device-flow form posts or repository algorithms |

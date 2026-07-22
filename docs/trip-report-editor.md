@@ -402,9 +402,9 @@ someone reads the report. Direct videos retain no-referrer in saved markup;
 remote images use Peakbagger's page policy. These policies do not hide the
 requesting browser's IP address or ordinary request metadata.
 
-## Device-local TR draft lifecycle
+## Device-local trip report draft lifecycle
 
-TR drafts are recovery snapshots for the trip-report field. They are separate
+Trip report drafts are recovery snapshots for the trip-report field. They are separate
 from the 30-minute prepared ascent drafts created by activity capture and from
 the optional GitHub save-time snapshot. A TR draft uses extension
 `storage.local`, not Peakbagger storage, `storage.sync`, or `storage.session`,
@@ -624,7 +624,7 @@ first. These are lazy cleanup rules, not timers or a hard write-time quota:
   newest 30, oldest first. It preserves the current form's key even when that
   key falls in the excess set, so storage can temporarily contain 31 valid
   records rather than delete the report currently being edited.
-- Opening Settings → **TR drafts** removes expired records, but does not enforce
+- Opening Settings → **Trip report drafts** removes expired records, but does not enforce
   the 30-record target. A newly written 31st draft can therefore remain until a
   later editor initialization performs pruning.
 

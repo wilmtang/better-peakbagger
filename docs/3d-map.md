@@ -105,7 +105,8 @@ without giving the host page extension APIs.
 | `src/terrain/terrain-cache.js` | extension contexts | Custom DEM protocol, best-effort CacheStorage LRU | Raster/vector basemap caching policy |
 | `src/terrain/terrain-tiles.js` | pure helper | Bounded first-paint DEM tile enumeration for prefetch | Network or browser APIs |
 | `src/maps/peak-markers.js` | MAIN | Same-origin Peakbagger feed context, request validation, single-flight fetch | Frame rendering or persistence |
-| `src/background/background.js` | extension worker | Sender/settings revalidation, prefetch throttling/deduplication/concurrency | Map UI or long-lived terrain state |
+| `src/background/background.js` | extension worker coordinator | Shared sender predicate, concurrency helper, and `TERRAIN_PREFETCH` dispatch | Map UI, tile selection, or long-lived terrain state |
+| `src/background/terrain-prefetch.js` | extension worker domain | Settings revalidation, tile selection, cache warming, per-tab throttling, and recent-tile deduplication | Map UI or provider consent ownership |
 
 The separation is deliberate. For example, putting subject discovery into the
 shared coordinator would make it easier for a generic lifecycle change to

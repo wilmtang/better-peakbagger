@@ -123,7 +123,7 @@ There is no parallel raw-source worker list and no `importScripts` fallback.
 
 | Shipped surface | Primary owner | Boundary |
 | --- | --- | --- |
-| Background coordination | `src/background/background.js` | Browser APIs, capture jobs, Peakbagger lookup, draft handshakes, GitHub auth/writes |
+| Background coordination | `src/background/background.js`, `src/background/github-routes.js`, `src/background/terrain-prefetch.js` | Shared state/queues and dispatch, GitHub auth/backup routes, and bounded terrain cache warming inside one worker bundle |
 | Provider extraction | `src/capture/provider-page.js` | On-demand MAIN-world injection into the active owned activity |
 | Ascent editor | `src/ascent/ascent-draft.js`, `src/ascent/ascent-upload.js`, `src/reports/report-editor.js` | Isolated-world form fill, local-file processing, report editing |
 | Ascent analysis | `src/gpx/gpx-analyzer.js` | MAIN-world GPX/chart/native-map integration |
@@ -131,11 +131,11 @@ There is no parallel raw-source worker list and no `importScripts` fallback.
 | Full Screen and Peak maps | `src/maps/big-map.js`, `src/maps/peak-map.js` | MAIN-world native-map coordinators |
 | Ascent lists | `src/ascent/ascent-filter.js`, `src/profile/profile-backup.js` | Isolated-world filter/sort and owner-only backup pipeline |
 | Favorite climbers | `src/favorites/favorite-climbers.js`, `src/favorites/climber-favorite.js`, `options/favorites.js` | Pure local-data contract, climber-page toggle, and settings manager |
-| Settings and theme | `src/settings/settings-schema.js`, `src/settings/settings.js`, `src/theme/theme.js`, `options/options.js` | Pure schema, sync-storage access, synchronous page startup, and options-page section navigation |
+| Settings and theme | `src/settings/settings-schema.js`, `src/settings/settings.js`, `src/theme/theme-resolve.js`, `src/theme/theme.js`, `options/options.js`, `options/section-nav.js` | Pure schema and theme resolution, sync-storage access, synchronous page startup, settings wiring, and section navigation |
 | Report-draft manager | `src/reports/report-drafts.js`, `options/drafts.js` | Shared pure draft contract plus device-local list/copy/delete UI |
 | Saved-ascent backup | `src/ascent/ascent-page.js`, `src/ascent/ascent-backup.js` | Owner-only page read and user-facing backup state |
 | Peakbagger request boundary | `src/peakbagger/peakbagger-request.js`, `src/peakbagger/peakbagger-response.js`, `src/peakbagger/peakbagger-error.js`, `src/peakbagger/peakbagger-cloudflare.js` | Authenticated fetch policy, response validation, typed failures, and managed-challenge detection/recovery copy |
-| GitHub integration | `src/github/github-errors.js`, `src/github/github-api.js`, `src/github/github-auth.js`, `src/github/github-client.js`, `src/github/github-backup.js` | Shared typed errors and authenticated REST transport, worker-only credential/device flow, Git Data client, pure payload builder |
+| GitHub integration | `src/background/github-routes.js`, `src/github/github-error-copy.js`, `src/github/github-errors.js`, `src/github/github-api.js`, `src/github/github-auth.js`, `src/github/github-client.js`, `src/github/github-backup.js` | Worker-only routes and credentials, user-facing error copy, typed errors, authenticated REST transport, Git Data client, and pure payload builder |
 
 Extend the owning surface rather than publishing cross-feature globals. The one
 deliberate Better Peakbagger global is `globalThis.BPBProviderPage`: the worker
@@ -678,7 +678,7 @@ sync must never acquire the third-party names stored in either local dataset.
 | `options/favorites.js` | Extension options page | Source selection, Buddy refresh status, custom-list provenance counts/filtering, reversible bulk actions, and GitHub transfer UI | GitHub token access or repository writes |
 | `src/profile/profile-backup-core.js` | Pure shared module | Signed-in owner discovery and numeric URL identity | Favorites persistence or request orchestration |
 | `src/peakbagger/peakbagger-request.js`, `src/peakbagger/peakbagger-response.js`, and `src/peakbagger/peakbagger-error.js` | Shared request boundary | Authenticated fetch policy, response classification, parsing failures, and actionable error copy | Favorites schema or persistence |
-| `src/background/background.js` plus `src/github/github-client.js` | Extension worker | Shared GitHub connection, token, fixed `favorite-climbers.json` path, repository validation, serialized writes, and restore reads | Interpreting or mutating the favorites schema |
+| `src/background/background.js`, `src/background/github-routes.js`, and `src/github/github-client.js` | Extension worker | Shared write queue and sender gates, GitHub connection/token/routes, fixed `favorite-climbers.json` path, repository validation, serialized writes, and restore reads | Interpreting or mutating the favorites schema |
 
 `options/favorites.js` owns management. It fetches authenticated Peakbagger
 pages through the shared Peakbagger request boundary, then parses validated
