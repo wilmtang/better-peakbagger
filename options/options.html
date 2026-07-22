@@ -36,11 +36,11 @@
             </li>
             <li><a class="nav-item" href="#beta">Ascent beta filter</a></li>
             <li><a class="nav-item" href="#favorites">Favorite climbers</a></li>
-            <li><a class="nav-item" href="#drafts">TR drafts</a></li>
+            <li><a class="nav-item" href="#drafts">Trip report drafts</a></li>
             <li>
                 <a class="nav-item" href="#github">Sync for nerds</a>
                 <ul class="nav-sublist">
-                    <li><a class="nav-subitem" href="#github-connection">Github connection</a></li>
+                    <li><a class="nav-subitem" href="#github-connection">GitHub connection</a></li>
                     <li><a class="nav-subitem" href="#github-settings-backup">Settings backup</a></li>
                     <li><a class="nav-subitem" href="#github-backup">Ascent backup</a></li>
                 </ul>
@@ -200,7 +200,7 @@
                     <div class="row">
                         <label class="label" for="units">
                             <span class="title">Units</span>
-                            <span class="desc">Distance and elevation in the GPX chart. “Auto” matches whatever the ascent page shows.</span>
+                            <span class="desc">Distance and elevation in the GPX chart and processing summaries. “Auto” matches whatever the ascent page shows.</span>
                         </label>
                         <div class="control">
                             <select id="units">
@@ -352,11 +352,11 @@
                 <div class="row">
                     <div class="label">
                         <span class="title">Favorites source</span>
-                        <span class="desc">Favorite climbers can be used to filter trip reports. With a custom list you can add up to 1,500 climbers, while buddy list has a limit of 100. You can merge buddy list into custom list.</span>
+                        <span class="desc">Favorite climbers can filter trip reports. Your custom list can hold up to 1,500 climbers; Peakbagger’s Buddy List supports up to 100. You can add your buddies to the custom list at any time.</span>
                     </div>
                     <fieldset class="control favorites-source" aria-label="Favorite climbers source">
                         <label><input type="radio" name="favorites-source" value="buddies"> <span>Use my Peakbagger Buddy List</span></label>
-                        <label><input type="radio" name="favorites-source" value="custom"> <span>Use plugin managed custom list</span></label>
+                        <label><input type="radio" name="favorites-source" value="custom"> <span>Use a custom list managed here</span></label>
                     </fieldset>
                 </div>
 
@@ -465,10 +465,10 @@
         </section>
 
         <section id="drafts" class="settings-section" aria-labelledby="drafts-heading">
-            <h2 class="section-title" id="drafts-heading">TR drafts</h2>
+            <h2 class="section-title" id="drafts-heading">Trip report drafts</h2>
             <div class="card drafts-card">
-                <p class="drafts-intro">Rich and Markdown TR drafts autosave on this device and become eligible for cleanup after two weeks.</p>
-                <p class="drafts-empty" id="drafts-empty">No TR drafts on this device.</p>
+                <p class="drafts-intro">Rich and Markdown trip report drafts autosave on this device and become eligible for cleanup after two weeks.</p>
+                <p class="drafts-empty" id="drafts-empty">No trip report drafts on this device.</p>
                 <ul class="drafts-list" id="drafts-list" hidden></ul>
                 <div class="drafts-undo-all" id="drafts-undo-all" role="status" hidden>
                     <span>All drafts deleted</span>
@@ -484,7 +484,7 @@
             <h2 class="section-title" id="github-settings-heading">Sync for nerds</h2>
 
             <div class="subsection" id="github-connection" role="group" aria-labelledby="github-connection-heading">
-                <h3 class="subsection-title" id="github-connection-heading">Github connection</h3>
+                <h3 class="subsection-title" id="github-connection-heading">GitHub connection</h3>
                 <div class="card">
                     <div class="row github-detail" id="github-detail">
                         <div class="github-panel" id="github-panel" role="group" aria-label="GitHub connection"></div>

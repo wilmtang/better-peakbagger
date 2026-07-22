@@ -237,7 +237,7 @@ import { optionsUtils as OptionsUtils } from './options-utils.js';
             if (revision !== refreshRevision) return;
             currentDrafts = [];
             render();
-            showStatus('TR drafts are unavailable');
+            showStatus('Trip report drafts are unavailable');
         }
     };
 

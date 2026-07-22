@@ -125,7 +125,7 @@ test('settings are grouped by the surface they affect', async () => {
         'Map & GPX chart',
         'Ascent beta filter',
         'Favorite climbers',
-        'TR drafts',
+        'Trip report drafts',
         'Sync for nerds',
         'About'
     ]);
@@ -145,6 +145,10 @@ test('settings are grouped by the surface they affect', async () => {
     assert.ok(about.querySelector('.about-version'));
     assert.ok(drafts.querySelector('#drafts-list'));
     assert.ok(drafts.querySelector('#drafts-delete-all'));
+    assert.match(mapChart.querySelector('label[for="units"] .desc').textContent, /processing summaries/);
+    assert.equal(favorites.querySelector('input[value="custom"] + span').textContent,
+        'Use a custom list managed here');
+    assert.equal(github.querySelector('#github-connection-heading').textContent, 'GitHub connection');
 
     assert.ok(general.querySelector('#theme'));
     assert.ok(general.querySelector('#enable-3d-map'));
@@ -649,7 +653,9 @@ test('removing a custom favorite is reversible and list sorting is explicit', as
     assert.deepEqual(Array.from(dom.window.document.querySelectorAll('.favorite-name'), node => node.textContent),
         ['Alpha Climber', 'Zulu Climber']);
 
-    favoriteRow(dom, 900002).querySelector('[data-action="delete"]').click();
+    const remove = favoriteRow(dom, 900002).querySelector('[data-action="delete"]');
+    assert.equal(remove.textContent, 'Remove');
+    remove.click();
     await waitFor(dom, () => dom.chrome._localStore[favoriteKey].entries.length === 1);
     assert.match(favoriteRow(dom, 900002).textContent, /Favorite removed\s*Undo/);
     favoriteRow(dom, 900002).querySelector('[data-action="undo"]').click();
@@ -1370,7 +1376,7 @@ test('a drafts deep link activates the TR-drafts manager', async () => {
     const active = activeLinks(dom);
     assert.equal(active.length, 1);
     assert.equal(active[0].getAttribute('href'), '#drafts');
-    assert.equal(active[0].textContent, 'TR drafts');
+    assert.equal(active[0].textContent, 'Trip report drafts');
     assert.equal(content.style.scrollBehavior, 'auto',
         'the initial native fragment landing must not inherit smooth scrolling');
     content.dispatchEvent(new dom.window.Event('scrollend'));
@@ -1767,7 +1773,7 @@ test('the connected state opens the signed-in climber\'s all-years My Ascents pa
     });
     await waitFor(dom, () => Array.from(el(dom, 'github-ascent-panel').querySelectorAll('button'))
         .some(button => button.textContent === 'Open My Ascents'));
-    assert.match(el(dom, 'github-ascent-panel').textContent, /always includes every year/);
+    assert.match(el(dom, 'github-ascent-panel').textContent, /covers every year/);
 
     Array.from(el(dom, 'github-ascent-panel').querySelectorAll('button'))
         .find(button => button.textContent === 'Open My Ascents').click();

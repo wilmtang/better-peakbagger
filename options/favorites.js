@@ -250,7 +250,7 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
         tag.textContent = sourceLabel(entry.source);
         meta.append(`#${entry.cid}`, ' · ', `Added ${addedLabel(entry.addedAt)}`, tag);
         body.append(name, meta);
-        const remove = actionButton('favorite-remove', 'Delete', `Remove ${entry.name} from favorites`);
+        const remove = actionButton('favorite-remove', 'Remove', `Remove ${entry.name} from favorites`);
         remove.dataset.action = 'delete';
         remove.addEventListener('click', () => { void beginDelete(entry); });
         item.append(body, remove);
