@@ -183,6 +183,12 @@ async function main() {
 
     await driver.executeAsyncScript(done => {
       const api = globalThis.browser || globalThis.chrome;
+      const entries = Array.from({ length: 1500 }, (_, index) => ({
+        cid: 100000 + index,
+        name: `Navigation Scale Climber ${String(index + 1).padStart(4, "0")}`,
+        addedAt: index,
+        source: index % 2 ? "buddy" : "manual",
+      }));
       api.storage.sync.get("bpbSettings").then(({ bpbSettings = {} }) => Promise.all([
         api.storage.sync.set({
           bpbSettings: {
@@ -191,6 +197,7 @@ async function main() {
             enable3dMap: true,
             addReportCredit: true,
             enableGithubBackup: true,
+            favoritesSource: "custom",
           },
         }),
         api.storage.local.set({
@@ -198,6 +205,7 @@ async function main() {
             token: "browser-verification-only",
             repo: { owner: "fixture", name: "backup", branch: "main", fullName: "fixture/backup" },
           },
+          bpbFavoriteClimbers: { schemaVersion: 1, entries },
         }),
       ])).then(() => done(true), error => done(String(error)));
     });
@@ -207,6 +215,67 @@ async function main() {
       "return document.getElementById('theme')?.value === 'dark' && document.documentElement.dataset.bpbTheme === 'dark';",
       "the persisted Firefox option",
     );
+    await waitForScript(
+      driver,
+      "return document.querySelectorAll('.favorite-item').length === 1500;",
+      "the full Firefox favorite-climber scale list",
+    );
+    const longDistanceBefore = await driver.executeScript(`
+      const content = document.querySelector(".content");
+      const target = document.getElementById("drafts");
+      const previousBehavior = content.style.scrollBehavior;
+      content.style.scrollBehavior = "auto";
+      content.scrollTop = 0;
+      void content.scrollTop;
+      if (previousBehavior) content.style.scrollBehavior = previousBehavior;
+      else content.style.removeProperty("scroll-behavior");
+
+      const margin = parseFloat(getComputedStyle(target).scrollMarginTop) || 0;
+      const distance = () => target.getBoundingClientRect().top
+        - content.getBoundingClientRect().top - margin;
+      return {
+        distance: distance(),
+        viewportHeight: content.clientHeight,
+      };
+    `);
+    await driver.findElement(By.css('.side-nav a[href="#drafts"]')).click();
+    const longDistanceAfter = await driver.executeAsyncScript(done => {
+      const content = globalThis.document.querySelector(".content");
+      const target = globalThis.document.getElementById("drafts");
+      const margin = parseFloat(globalThis.getComputedStyle(target).scrollMarginTop) || 0;
+      globalThis.requestAnimationFrame(() => done({
+        distance: target.getBoundingClientRect().top
+          - content.getBoundingClientRect().top - margin,
+        scrollTop: content.scrollTop,
+        hash: globalThis.location.hash,
+      }));
+    });
+    const longDistanceNavigation = {
+      before: longDistanceBefore.distance,
+      after: longDistanceAfter.distance,
+      viewportHeight: longDistanceBefore.viewportHeight,
+      scrollTop: longDistanceAfter.scrollTop,
+      hash: longDistanceAfter.hash,
+    };
+    assertState(
+      longDistanceNavigation.before > Math.min(longDistanceNavigation.viewportHeight * 2, 1200)
+        && Math.abs(longDistanceNavigation.after) <= 2
+        && longDistanceNavigation.scrollTop > 0
+        && longDistanceNavigation.hash === "#drafts",
+      "the 1,500-row Firefox options list did not make long-distance sidebar navigation instant",
+      longDistanceNavigation,
+    );
+    await driver.executeAsyncScript(done => {
+      const api = globalThis.browser || globalThis.chrome;
+      api.storage.sync.get("bpbSettings").then(({ bpbSettings = {} }) => Promise.all([
+        api.storage.sync.set({
+          bpbSettings: { ...bpbSettings, favoritesSource: "buddies" },
+        }),
+        api.storage.local.set({
+          bpbFavoriteClimbers: { schemaVersion: 1, entries: [] },
+        }),
+      ])).then(() => done(true), error => done(String(error)));
+    });
 
     await driver.get(
       `https://${fixtureHost}:${fixture.port}/climber/ascent.aspx?aid=1`,
@@ -564,6 +633,7 @@ async function main() {
     console.log(`  - ${capabilities.getBrowserName()} ${capabilities.getBrowserVersion()}`);
     console.log(`  - hidden/headless at ${verificationViewport.width}x${verificationViewport.height}`);
     console.log("  - real sync/local/session storage and storage.onChanged round-tripped");
+    console.log("  - sidebar navigation jumped instantly across the real 1,500-row favorite-climber list");
     console.log("  - options, popup, ascent, editor, Peak, BigMap, PeakAscents, Buddy List, and profile-backup surfaces initialized");
     console.log("  - a fresh ascent form autofilled its local date and trusted GPX selection swapped Preview for Process");
     console.log("  - AMO report credit, real editor input/draft recovery, filter/sort, and 3D frame passed");

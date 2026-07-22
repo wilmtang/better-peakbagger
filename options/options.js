@@ -260,6 +260,7 @@ import { initFavorites } from './favorites.js';
         // otherwise a newly opened deep link visibly travels down the page.
         let initialScrollOverride = false;
         let initialScrollTarget = null;
+        let distanceScrollRevision = 0;
         const finishInitialScroll = alignTarget => {
             if (!initialScrollOverride) return;
             initialScrollOverride = false;
@@ -274,6 +275,43 @@ import { initFavorites } from './favorites.js';
             }
             initialScrollTarget = null;
             content.style.removeProperty('scroll-behavior');
+        };
+
+        // Smooth motion helps readers keep their place over a nearby jump, but
+        // becomes a delay when a dynamic section is thousands of pixels tall.
+        // Keep native anchor/history behavior and override only the animation
+        // for long jumps. The pixel cap also keeps a tall viewport from turning
+        // a nominally "nearby" jump into a lengthy animation.
+        const MAX_SMOOTH_SCROLL_VIEWPORTS = 2;
+        const MAX_SMOOTH_SCROLL_PX = 1200;
+        const scrollDistanceTo = section => {
+            const margin = parseFloat(getComputedStyle(section).scrollMarginTop) || 0;
+            return Math.abs(section.getBoundingClientRect().top
+                - content.getBoundingClientRect().top - margin);
+        };
+        const prepareAnchorScroll = section => {
+            const revision = ++distanceScrollRevision;
+            content.style.removeProperty('scroll-behavior');
+
+            const viewportHeight = content.clientHeight;
+            if (!(viewportHeight > 0)) return;
+            const smoothLimit = Math.min(
+                viewportHeight * MAX_SMOOTH_SCROLL_VIEWPORTS,
+                MAX_SMOOTH_SCROLL_PX
+            );
+            if (scrollDistanceTo(section) <= smoothLimit) return;
+
+            // Chromium performs fragment scrolling during the click's default
+            // action; Firefox defers nested-scroller movement until rendering.
+            // Span two frames so both see the override, using a timer only in
+            // non-visual test environments without requestAnimationFrame.
+            content.style.scrollBehavior = 'auto';
+            const restore = () => {
+                if (revision === distanceScrollRevision) content.style.removeProperty('scroll-behavior');
+            };
+            if (typeof requestAnimationFrame === 'function') {
+                requestAnimationFrame(() => requestAnimationFrame(restore));
+            } else setTimeout(restore, 0);
         };
 
         const setActive = active => {
@@ -334,9 +372,14 @@ import { initFavorites } from './favorites.js';
             navLocked = false;
             finishInitialScroll(true);
         });
-        for (const { link } of entries) {
-            link.addEventListener('click', () => {
+        for (const { link, section } of entries) {
+            link.addEventListener('click', event => {
+                // Modified clicks belong to the browser (for example, opening a
+                // deep link in a new tab) and must not move this settings page.
+                if (event.defaultPrevented || event.button !== 0
+                    || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
                 finishInitialScroll(false);
+                prepareAnchorScroll(section);
                 lockTo(link);
             });
         }

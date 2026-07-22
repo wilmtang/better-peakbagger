@@ -1,6 +1,10 @@
 # Changelog
 ## Unreleased
 
+- **Keep settings navigation responsive with large favorite lists.** Sidebar
+  links still animate nearby moves, but long jumps now land immediately instead
+  of scrolling through hundreds or thousands of climber rows.
+
 - **See when an individual ascent is already backed up.** On an owned saved
   ascent, the GitHub control now checks the connected repository in the
   background and shows **Backed up ✓** when the structured ascent, report, and

@@ -336,6 +336,59 @@ try {
         }
 
         await optionsPage.evaluate(async () => {
+            const entries = Array.from({ length: 1500 }, (_, index) => ({
+                cid: 100000 + index,
+                name: `Navigation Scale Climber ${String(index + 1).padStart(4, '0')}`,
+                addedAt: index,
+                source: index % 2 ? 'buddy' : 'manual',
+            }));
+            const { bpbSettings = {} } = await chrome.storage.sync.get('bpbSettings');
+            await Promise.all([
+                chrome.storage.sync.set({
+                    bpbSettings: { ...bpbSettings, favoritesSource: 'custom' },
+                }),
+                chrome.storage.local.set({
+                    bpbFavoriteClimbers: { schemaVersion: 1, entries },
+                }),
+            ]);
+        });
+        const scaleFavoritesRendered = await optionsPage.waitForFunction(() =>
+            document.querySelectorAll('.favorite-item').length === 1500,
+        null, { timeout: 10000 }).then(() => true).catch(() => false);
+        const longDistanceNavigation = await optionsPage.evaluate(() => {
+            const content = document.querySelector('.content');
+            const target = document.getElementById('drafts');
+            const link = document.querySelector('.side-nav a[href="#drafts"]');
+            const previousBehavior = content.style.scrollBehavior;
+            content.style.scrollBehavior = 'auto';
+            content.scrollTop = 0;
+            void content.scrollTop;
+            if (previousBehavior) content.style.scrollBehavior = previousBehavior;
+            else content.style.removeProperty('scroll-behavior');
+
+            const margin = parseFloat(getComputedStyle(target).scrollMarginTop) || 0;
+            const distance = () => target.getBoundingClientRect().top
+                - content.getBoundingClientRect().top - margin;
+            const before = distance();
+            link.click();
+            return {
+                before,
+                after: distance(),
+                viewportHeight: content.clientHeight,
+                scrollTop: content.scrollTop,
+                hash: location.hash,
+            };
+        });
+        check(scaleFavoritesRendered
+            && longDistanceNavigation.before > Math.min(longDistanceNavigation.viewportHeight * 2, 1200)
+            && Math.abs(longDistanceNavigation.after) <= 2
+            && longDistanceNavigation.scrollTop > 0
+            && longDistanceNavigation.hash === '#drafts',
+        `the 1,500-row options list did not make long-distance sidebar navigation instant: ${JSON.stringify({
+            scaleFavoritesRendered, longDistanceNavigation
+        })}`);
+
+        await optionsPage.evaluate(async () => {
             const { bpbSettings = {} } = await chrome.storage.sync.get('bpbSettings');
             await Promise.all([
                 chrome.storage.sync.set({
@@ -1672,6 +1725,7 @@ console.log('  - the MV3 service worker boots and answers messages (capture is a
 console.log('  - sync/local/session storage, storage.onChanged, options persistence, and popup status passed');
 console.log('  - options loads the signed-in Buddy report directly, falls back through a first-party tab, and keeps failures actionable');
 console.log('  - Buddy merge/mirror reports additions and removals, requires confirmation, and preserves favorites on cancel');
+console.log('  - sidebar navigation jumps instantly across the real 1,500-row favorite-climber list');
 console.log('  - the public climber favorite is a compact title-line star and persists its filled state');
 console.log('  - settings.js initialises in the isolated world and the bridge answers');
 console.log('  - the GPX analyzer renders stats from the real manifest load order');

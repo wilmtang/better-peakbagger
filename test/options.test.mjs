@@ -1119,6 +1119,49 @@ test('hash navigation moves the active sidebar link', async () => {
     assert.equal(active[0].getAttribute('href'), '#beta');
 });
 
+test('sidebar navigation animates nearby jumps and makes long jumps instant', async () => {
+    let draftsTop = 0;
+    const dom = await loadOptions({}, {
+        prepareWindow: window => {
+            const content = window.document.querySelector('.content');
+            const drafts = window.document.getElementById('drafts');
+            Object.defineProperty(content, 'clientHeight', { configurable: true, value: 800 });
+            content.getBoundingClientRect = () => ({ top: 100 });
+            drafts.getBoundingClientRect = () => ({ top: draftsTop });
+            const nativeStyle = window.getComputedStyle.bind(window);
+            window.getComputedStyle = element => element === drafts
+                ? { scrollMarginTop: '24px' }
+                : nativeStyle(element);
+        }
+    });
+    const doc = dom.window.document;
+    const content = doc.querySelector('.content');
+    const draftsLink = doc.querySelector('.side-nav a[href="#drafts"]');
+
+    // 1,000 px is below both two viewports (1,600 px here) and the 1,200 px
+    // absolute cap, so the stylesheet keeps control.
+    draftsTop = 1124;
+    draftsLink.click();
+    assert.equal(content.style.scrollBehavior, '');
+
+    // The same target 1,400 px away is under two viewports but over the pixel
+    // cap, so it must bypass smooth scrolling. The inline override survives the
+    // native click action, then clears on the next task.
+    draftsTop = 1524;
+    draftsLink.click();
+    assert.equal(content.style.scrollBehavior, 'auto');
+    await new Promise(resolve => dom.window.setTimeout(resolve, 5));
+    assert.equal(content.style.scrollBehavior, '');
+
+    draftsLink.addEventListener('click', event => event.preventDefault(), { once: true });
+    draftsLink.dispatchEvent(new dom.window.MouseEvent('click', {
+        bubbles: true,
+        cancelable: true,
+        ctrlKey: true,
+    }));
+    assert.equal(content.style.scrollBehavior, '', 'a modified click must not move the current page');
+});
+
 test('a deep link to a subsection activates its sub-item and marks the parent', async () => {
     const dom = await loadOptions({}, { hash: '#capture-gpx' });
     const doc = dom.window.document;
