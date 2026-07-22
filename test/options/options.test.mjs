@@ -13,6 +13,7 @@ import { fileURLToPath } from 'node:url';
 import { JSDOM } from 'jsdom';
 import { accelerateTimeout, makeChromeStub, waitFor, evalBundle } from '../helpers/load-page.mjs';
 import { settingsSchema } from '../../src/settings/settings-schema.js';
+import { settingsTransfer } from '../../src/settings/settings-transfer.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const climberPageFixture = await readFile(path.join(root, 'test', 'fixtures', 'pages', 'climber-home.html'), 'utf8');
@@ -89,6 +90,12 @@ const draftRow = (dom, key) => Array.from(dom.window.document.querySelectorAll('
     .find(row => row.dataset.draftKey === key);
 const favoriteRow = (dom, cid) => Array.from(dom.window.document.querySelectorAll('.favorite-item'))
     .find(row => row.dataset.cid === String(cid));
+const readBlob = (dom, blob) => new Promise((resolve, reject) => {
+    const reader = new dom.window.FileReader();
+    reader.addEventListener('load', () => resolve(reader.result));
+    reader.addEventListener('error', () => reject(reader.error));
+    reader.readAsText(blob);
+});
 
 test('theme bootstrap loads before the options stylesheet', async () => {
     const dom = await loadOptions({});
@@ -126,7 +133,7 @@ test('settings are grouped by the surface they affect', async () => {
     const [general, capture, mapChart, beta, favorites, drafts, github, about] = sections;
     assert.ok(github.querySelector('#enable-github-backup'));
     assert.ok(github.querySelector('#github-panel'));
-    assert.match(github.querySelector('.desc').textContent, /manual backup controls/i);
+    assert.match(github.querySelector('#github-backup .desc').textContent, /manual backup controls/i);
     // Every settings section is labelled by its heading and carries at least
     // one card; About is informational, not a card.
     for (const section of [general, capture, mapChart, beta, favorites, github, drafts]) {
@@ -170,6 +177,88 @@ test('settings are grouped by the surface they affect', async () => {
     assert.match(favorites.querySelector('#favorites-add-form .desc').textContent,
         /Stored only on this device unless you choose Back up favorites below\. Up to 1,500 climbers\./);
     assert.ok(github.querySelector('#github-backup #enable-github-backup'), 'GitHub backup lives in its subsection');
+    assert.ok(github.querySelector('#github-settings-backup #settings-backup-export'));
+    assert.ok(github.querySelector('#github-settings-backup #settings-backup-import'));
+});
+
+test('settings export downloads a parseable known-key-only payload', async () => {
+    const download = {};
+    const dom = await loadOptions({ theme: 'dark', unknownSetting: 'private' }, {
+        prepareWindow(window) {
+            window.URL.createObjectURL = blob => {
+                download.blob = blob;
+                return 'blob:settings-export';
+            };
+            window.URL.revokeObjectURL = url => { download.revoked = url; };
+            window.HTMLAnchorElement.prototype.click = function click() {
+                download.href = this.href;
+                download.name = this.download;
+            };
+        }
+    });
+
+    el(dom, 'settings-backup-export').click();
+    await waitFor(dom, () => download.blob);
+    const parsed = settingsTransfer.parse(await readBlob(dom, download.blob));
+    assert.equal(parsed.ok, true);
+    assert.equal(parsed.settings.theme, 'dark');
+    assert.equal('unknownSetting' in parsed.settings, false);
+    assert.equal(download.href, 'blob:settings-export');
+    assert.match(download.name, /^better-peakbagger-settings-\d{4}-\d{2}-\d{2}\.json$/);
+    assert.equal(download.revoked, 'blob:settings-export');
+});
+
+test('settings import replaces known settings only after inline confirmation', async () => {
+    const dom = await loadOptions({ theme: 'dark', units: 'imperial' });
+    const input = el(dom, 'settings-backup-file');
+    const payload = settingsTransfer.buildPayload({ theme: 'light', units: 'metric' }, {
+        extensionVersion: '3.0.0',
+        exportedAt: '2026-07-22T12:00:00.000Z'
+    });
+    Object.defineProperty(input, 'files', {
+        configurable: true,
+        value: [{ name: 'trail-settings.json', text: async () => settingsTransfer.serialize(payload) }]
+    });
+
+    input.dispatchEvent(new dom.window.Event('change'));
+    await waitFor(dom, () => el(dom, 'settings-backup-confirmation').hidden === false);
+    assert.match(el(dom, 'settings-backup-confirmation').textContent,
+        /trail-settings\.json.*Replaces your current settings/s);
+    assert.equal(dom.chrome._store.bpbSettings.theme, 'dark', 'reading a file must not apply it');
+
+    el(dom, 'settings-backup-confirm').click();
+    await waitFor(dom, () => dom.chrome._store.bpbSettings.theme === 'light');
+    assert.equal(dom.chrome._store.bpbSettings.units, 'metric');
+    assert.equal(el(dom, 'settings-backup-confirmation').hidden, true);
+    assert.equal(el(dom, 'status').textContent, 'Settings imported');
+});
+
+test('settings import rejects invalid and newer files without changing settings', async () => {
+    const dom = await loadOptions({ theme: 'dark' });
+    const input = el(dom, 'settings-backup-file');
+    const choose = async (name, text) => {
+        Object.defineProperty(input, 'files', {
+            configurable: true,
+            value: [{ name, text: async () => text }]
+        });
+        input.dispatchEvent(new dom.window.Event('change'));
+        await waitFor(dom, () => el(dom, 'status').textContent.length > 0);
+    };
+
+    await choose('notes.json', '{');
+    assert.equal(el(dom, 'status').textContent, 'That is not a Better Peakbagger settings file.');
+    assert.equal(dom.chrome._store.bpbSettings.theme, 'dark');
+
+    el(dom, 'status').textContent = '';
+    await choose('future.json', JSON.stringify({
+        kind: settingsTransfer.KIND,
+        schemaVersion: settingsTransfer.SCHEMA_VERSION + 1,
+        settings: {}
+    }));
+    assert.equal(el(dom, 'status').textContent,
+        'This settings file was made by a newer version of the extension.');
+    assert.equal(dom.chrome._store.bpbSettings.theme, 'dark');
+    assert.equal(el(dom, 'settings-backup-confirmation').hidden, true);
 });
 
 test('trip report credit is off by default and persists as an explicit opt-in', async () => {
@@ -1131,7 +1220,8 @@ test('the sidebar exposes always-visible sub-links for the grouped sections', as
     const doc = dom.window.document;
     const subLinks = Array.from(doc.querySelectorAll('.side-nav a.nav-subitem'));
     assert.deepEqual(subLinks.map(link => link.getAttribute('href')),
-        ['#capture-gpx', '#capture-report', '#map-chart-chart', '#map-chart-map', '#github-connection', '#github-backup']);
+        ['#capture-gpx', '#capture-report', '#map-chart-chart', '#map-chart-map', '#github-connection',
+            '#github-settings-backup', '#github-backup']);
     for (const link of subLinks) {
         const target = doc.getElementById(link.getAttribute('href').slice(1));
         assert.ok(target && target.classList.contains('subsection'),

@@ -41,6 +41,7 @@
                 <a class="nav-item" href="#github">Sync for nerds</a>
                 <ul class="nav-sublist">
                     <li><a class="nav-subitem" href="#github-connection">Github connection</a></li>
+                    <li><a class="nav-subitem" href="#github-settings-backup">Settings backup</a></li>
                     <li><a class="nav-subitem" href="#github-backup">Ascent backup</a></li>
                 </ul>
             </li>
@@ -483,6 +484,33 @@
                 <div class="card">
                     <div class="row github-detail" id="github-detail">
                         <div class="github-panel" id="github-panel" role="group" aria-label="GitHub connection"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="subsection" id="github-settings-backup" role="group" aria-labelledby="github-settings-backup-heading">
+                <h3 class="subsection-title" id="github-settings-backup-heading">Settings backup</h3>
+                <div class="card">
+                    <div class="row">
+                        <div class="label">
+                            <span class="title">Transfer settings with a file</span>
+                            <span class="desc">Move your Better Peakbagger settings to another browser or keep a personal copy.</span>
+                        </div>
+                        <div class="control settings-backup-actions">
+                            <button id="settings-backup-export" class="secondary" type="button">Export settings</button>
+                            <button id="settings-backup-import" class="secondary" type="button">Import from file…</button>
+                            <input id="settings-backup-file" type="file" accept=".json,application/json" hidden>
+                        </div>
+                    </div>
+                    <div class="settings-backup-confirmation" id="settings-backup-confirmation" role="alert" hidden>
+                        <div>
+                            <p class="settings-backup-confirmation-title">Import <strong id="settings-backup-confirmation-name"></strong>?</p>
+                            <p class="settings-backup-confirmation-detail">Replaces your current settings.</p>
+                        </div>
+                        <div class="settings-backup-confirmation-actions">
+                            <button id="settings-backup-cancel" class="secondary" type="button">Cancel</button>
+                            <button id="settings-backup-confirm" class="settings-backup-confirm" type="button">Import settings</button>
+                        </div>
                     </div>
                 </div>
             </div>
