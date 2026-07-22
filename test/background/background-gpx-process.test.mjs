@@ -27,6 +27,7 @@ const SEGMENTS = [[
 const createHarness = ({ peakXml = null, settings = {}, failPeakFetch = false,
     loginHtml = '<a href="climber/climber.aspx?cid=77">My Home Page</a>' } = {}) => {
     const values = {};
+    const localValues = {};
     const syncValues = { bpbSettings: structuredClone(settings) };
     const tabs = new Map([[5, { id: 5, windowId: 9, url: PAGE_URL, active: true }]]);
     let nextTabId = 100;
@@ -45,7 +46,12 @@ const createHarness = ({ peakXml = null, settings = {}, failPeakFetch = false,
             sync: {
                 get: async key => ({ [key]: structuredClone(syncValues[key]) }),
                 set: async patch => Object.assign(syncValues, structuredClone(patch))
-            }
+            },
+            local: {
+                get: async key => ({ [key]: structuredClone(localValues[key]) }),
+                set: async patch => Object.assign(localValues, structuredClone(patch))
+            },
+            onChanged: { addListener: () => {} }
         },
         runtime: { onMessage: { listeners: [], addListener(listener) { this.listeners.push(listener); } } },
         scripting: { executeScript: async () => [] },

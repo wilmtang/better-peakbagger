@@ -12,6 +12,7 @@ import { terrainTiles as TerrainTiles } from '../terrain/terrain-tiles.js';
 import { terrainCache as TerrainCache } from '../terrain/terrain-cache.js';
 import { settings as Settings } from '../settings/settings.js';
 import { settingsTransfer as Transfer } from '../settings/settings-transfer.js';
+import { favoriteClimbers as Favorites } from '../favorites/favorite-climbers.js';
 import { githubAuth as GithubAuth } from '../github/github-auth.js';
 import { githubClient as GithubClient } from '../github/github-client.js';
 import { githubErrors as GithubErrors } from '../github/github-errors.js';
@@ -34,6 +35,8 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
     const FAVORITE_CLIMBERS_BACKUP_PATH = 'favorite-climbers.json';
     const SETTINGS_BACKUP_ALARM = 'bpb-settings-backup';
     const SETTINGS_BACKUP_STATE_KEY = 'bpbSettingsBackupState';
+    const FAVORITES_BACKUP_ALARM = 'bpb-favorites-backup';
+    const FAVORITES_BACKUP_STATE_KEY = 'bpbFavoritesBackupState';
     const AUTO_BACKUP_DELAY_MINUTES = 1;
     const AUTO_BACKUP_RETRY_MINUTES = 10;
     const AUTO_BACKUP_MAX_RETRIES = 2;
@@ -1723,6 +1726,25 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
         build: buildSettingsBackup
     });
 
+    const buildFavoritesBackup = async () => {
+        const stored = await ext.storage.local.get(Favorites.FAVORITES_KEY);
+        const favorites = Favorites.cleanFavorites(stored[Favorites.FAVORITES_KEY]);
+        const payload = Favorites.buildBackupPayload(favorites, { exportedAt: new Date().toISOString() });
+        return {
+            text: Favorites.serializeBackup(payload),
+            signature: Favorites.backupSignature(favorites)
+        };
+    };
+
+    const favoritesAutoBackup = createAutoBackup({
+        alarmName: FAVORITES_BACKUP_ALARM,
+        stateKey: FAVORITES_BACKUP_STATE_KEY,
+        path: FAVORITE_CLIMBERS_BACKUP_PATH,
+        commitMessage: 'Back up favorite climbers',
+        enabled: async () => (await Settings.get()).autoFavoritesBackup,
+        build: buildFavoritesBackup
+    });
+
     const backupSettings = async () => {
         const access = await optionsGithubClient();
         if (access.error) return { ok: false, error: access.error };
@@ -1748,19 +1770,17 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
         }
     };
 
-    // Favorites are intentionally manual-only. The options page owns schema
-    // validation and serialization; the worker owns the shared connection,
-    // mutable branch queue, and fixed repository path.
-    const backupFavorites = async message => {
-        if (!message || typeof message.content !== 'string' || !message.content) {
-            return { ok: false, error: { code: 'no-data' } };
-        }
+    // The worker owns serialization for both manual and automatic backups; the
+    // options page still owns restore validation and reversible replacement.
+    const backupFavorites = async () => {
         const access = await optionsGithubClient();
         if (access.error) return { ok: false, error: access.error };
+        const { text, signature } = await buildFavoritesBackup();
         try {
             const result = await enqueueGithubWrite(() => access.client.putRootFile(
-                FAVORITE_CLIMBERS_BACKUP_PATH, message.content, 'Back up favorite climbers'
+                FAVORITE_CLIMBERS_BACKUP_PATH, text, 'Back up favorite climbers'
             ));
+            await favoritesAutoBackup.markSynced(signature);
             return { ok: true, result };
         } catch (error) {
             return { ok: false, error: GithubErrors.publicError(error, 'The favorites backup failed.') };
@@ -1806,7 +1826,7 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
             case 'GITHUB_BACKUP_ASCENT': return backupAscent(message, sender);
             case 'GITHUB_BACKUP_PROFILE_STATUS': return githubProfileBackupStatus(sender);
             case 'GITHUB_BACKUP_PROFILE_BATCH': return backupProfileBatch(message, sender);
-            case 'GITHUB_FAVORITES_BACKUP': return backupFavorites(message);
+            case 'GITHUB_FAVORITES_BACKUP': return backupFavorites();
             case 'GITHUB_FAVORITES_RESTORE': return restoreFavorites();
             case 'GITHUB_SETTINGS_BACKUP': return backupSettings();
             case 'GITHUB_SETTINGS_RESTORE': return restoreSettings();
@@ -1877,10 +1897,21 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
     });
 
     // Register synchronously: a storage event can be the event that wakes the
-    // MV3 worker. The alarm is replaced on each change, producing a durable
-    // trailing-edge debounce.
+    // MV3 worker. Only the favorites value is watched, so backup-state writes
+    // cannot trigger themselves.
+    ext.storage.onChanged.addListener((changes, area) => {
+        if (area !== 'local' || !changes[Favorites.FAVORITES_KEY]) return;
+        void Settings.get().then(settings => {
+            if (settings.autoFavoritesBackup) favoritesAutoBackup.schedule();
+        });
+    });
+
+    // The alarm is replaced on each change, producing a durable trailing-edge
+    // debounce. Nudging favorites here makes enabling its toggle create the
+    // first backup; equal signatures make other settings changes free.
     Settings.subscribe(settings => {
         if (settings.autoSettingsBackup) settingsAutoBackup.schedule();
+        if (settings.autoFavoritesBackup) favoritesAutoBackup.schedule();
     });
 
     if (ext.alarms) {
@@ -1888,6 +1919,7 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
         ext.alarms.onAlarm.addListener(alarm => {
             if (alarm.name === CLEANUP_ALARM) void cleanup();
             if (alarm.name === SETTINGS_BACKUP_ALARM) void settingsAutoBackup.fire();
+            if (alarm.name === FAVORITES_BACKUP_ALARM) void favoritesAutoBackup.fire();
         });
     }
 })();

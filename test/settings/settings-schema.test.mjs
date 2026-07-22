@@ -68,6 +68,16 @@ test('automatic settings backup is opt-in and independent of ascent backup', () 
     assert.equal(Schema.clean({ autoSettingsBackup: 'yes' }).autoSettingsBackup, false);
 });
 
+test('automatic favorites backup is opt-in and independent of ascent backup', () => {
+    assert.equal(Schema.DEFAULTS.autoFavoritesBackup, false);
+    assert.equal(Schema.clean({}).autoFavoritesBackup, false);
+    assert.equal(Schema.clean({
+        enableGithubBackup: false,
+        autoFavoritesBackup: true
+    }).autoFavoritesBackup, true);
+    assert.equal(Schema.clean({ autoFavoritesBackup: 'yes' }).autoFavoritesBackup, false);
+});
+
 test('routeStyle() rejects untrusted values back to the shared defaults', () => {
     const style = Schema.routeStyle({
         color: 'javascript:alert(1)',

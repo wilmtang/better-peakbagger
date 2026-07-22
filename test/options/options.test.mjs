@@ -175,7 +175,7 @@ test('settings are grouped by the surface they affect', async () => {
     assert.equal(favorites.querySelectorAll('#favorites-source-filter button').length, 3);
     assert.ok(favorites.querySelector('#favorites-list'));
     assert.match(favorites.querySelector('#favorites-add-form .desc').textContent,
-        /Stored only on this device unless you choose Back up favorites below\. Up to 1,500 climbers\./);
+        /Stored only on this device unless you back it up to GitHub below\. Up to 1,500 climbers\./);
     assert.ok(github.querySelector('#github-backup #enable-github-backup'), 'GitHub backup lives in its subsection');
     assert.ok(github.querySelector('#github-settings-backup #settings-backup-export'));
     assert.ok(github.querySelector('#github-settings-backup #settings-backup-import'));
@@ -1028,18 +1028,19 @@ test('connected GitHub actions work with ascent backup off and restore with Undo
     el(dom, 'favorites-backup').click();
     await waitFor(dom, () => messages.some(message => message.type === 'GITHUB_FAVORITES_BACKUP'));
     const backup = messages.find(message => message.type === 'GITHUB_FAVORITES_BACKUP');
-    const exported = JSON.parse(backup.content);
-    assert.equal(exported.schemaVersion, 1);
-    assert.match(exported.exportedAt, /^\d{4}-\d{2}-\d{2}T/);
-    assert.deepEqual(exported.entries, [original]);
-    assert.equal(messages.some(message => message.type === 'GITHUB_FAVORITES_BACKUP' && message.auto), false,
-        'favorites backup is only the explicit button message');
+    assert.deepEqual(backup, { type: 'GITHUB_FAVORITES_BACKUP' });
     await waitFor(dom, () => /Favorites backed up ✓/.test(el(dom, 'favorites-github-status').textContent));
     const commitLink = el(dom, 'favorites-github-status').querySelector('a');
     assert.equal(commitLink.textContent, 'View commit');
     assert.equal(commitLink.getAttribute('href'), 'https://github.com/ada/peaks/commit/favorite123');
     assert.equal(commitLink.getAttribute('target'), '_blank');
     assert.equal(commitLink.getAttribute('rel'), 'noopener noreferrer');
+
+    const auto = el(dom, 'favorites-auto-backup');
+    assert.equal(auto.checked, false);
+    auto.checked = true;
+    auto.dispatchEvent(new dom.window.Event('change'));
+    await waitFor(dom, () => dom.chrome._store.bpbSettings.autoFavoritesBackup === true);
 
     await waitFor(dom, () => !el(dom, 'favorites-restore').disabled);
     el(dom, 'favorites-restore').click();
@@ -1052,6 +1053,11 @@ test('connected GitHub actions work with ascent backup off and restore with Undo
 
     el(dom, 'favorites-undo-all-button').click();
     await waitFor(dom, () => dom.chrome._localStore[favoriteKey]?.entries?.[0]?.cid === original.cid);
+});
+
+test('the favorites auto-backup checkbox populates from synced settings', async () => {
+    const dom = await loadOptions({ autoFavoritesBackup: true });
+    assert.equal(el(dom, 'favorites-auto-backup').checked, true);
 });
 
 test('favorites restore fails closed on an unknown backup schema', async () => {

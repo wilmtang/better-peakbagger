@@ -54,7 +54,12 @@ const createHarness = ({ settings = { enable3dMap: true, terrainCacheLimitMb: 51
     });
 
     const browser = {
-        storage: { session: area(sessionValues), sync: area(syncValues), local: area(localValues) },
+        storage: {
+            session: area(sessionValues),
+            sync: area(syncValues),
+            local: area(localValues),
+            onChanged: event(),
+        },
         runtime: { onMessage: runtimeMessage },
         tabs: { onRemoved: tabRemoved },
         alarms: { create: () => {}, onAlarm: alarmEvent }

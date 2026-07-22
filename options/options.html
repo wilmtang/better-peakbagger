@@ -372,7 +372,7 @@
                     <form id="favorites-add-form" class="favorites-add">
                         <label for="favorites-add-input">
                             <span class="title">Add a climber</span>
-                            <span class="desc">Paste a Peakbagger climber-page link or id. Stored only on this device unless you choose Back up favorites below. Up to <span id="favorites-limit"></span> climbers.</span>
+                            <span class="desc">Paste a Peakbagger climber-page link or id. Stored only on this device unless you back it up to GitHub below. Up to <span id="favorites-limit"></span> climbers.</span>
                         </label>
                         <span class="favorites-add-controls">
                             <input id="favorites-add-input" type="text" inputmode="numeric" autocomplete="off" placeholder="Climber link or id">
@@ -454,6 +454,10 @@
                         <div class="favorites-github-actions" id="favorites-github-actions" hidden>
                             <button id="favorites-backup" class="secondary" type="button">Back up favorites</button>
                             <button id="favorites-restore" class="secondary" type="button">Restore from backup</button>
+                            <label class="check" for="favorites-auto-backup">
+                                <input type="checkbox" id="favorites-auto-backup">
+                                <span>Keep favorites backed up automatically</span>
+                            </label>
                         </div>
                     </div>
                 </div>

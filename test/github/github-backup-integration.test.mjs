@@ -14,6 +14,7 @@ import fs from 'node:fs/promises';
 import vm from 'node:vm';
 import { settingsSchema as Schema } from '../../src/settings/settings-schema.js';
 import { settingsTransfer as Transfer } from '../../src/settings/settings-transfer.js';
+import { favoriteClimbers as Favorites } from '../../src/favorites/favorite-climbers.js';
 
 const workerBundle = await fs.readFile(new URL('../../dist/background.js', import.meta.url), 'utf8');
 
@@ -421,15 +422,33 @@ test('favorites backup and restore stay extension-only, ignore the ascent gate, 
         }
         return backend.handler(method, path, body);
     };
-    const worker = createWorker({ settings: { enableGithubBackup: false }, auth: AUTH, github });
-    const exported = '{"schemaVersion":1,"exportedAt":"2026-07-21T13:00:00.000Z","entries":[{"cid":900002}]}\n';
+    const entries = [{
+        cid: 900002, name: 'Favorite Climber', addedAt: 10, source: 'manual',
+    }];
+    const local = {
+        bpbGithubAuth: structuredClone(AUTH),
+        [Favorites.FAVORITES_KEY]: { schemaVersion: Favorites.SCHEMA_VERSION, entries },
+    };
+    const worker = createWorker({
+        settings: { enableGithubBackup: false, autoFavoritesBackup: true },
+        auth: AUTH,
+        local,
+        github,
+    });
 
-    const backup = await worker.send({ type: 'GITHUB_FAVORITES_BACKUP', content: exported }, EXTENSION_SENDER);
+    const backup = await worker.send({ type: 'GITHUB_FAVORITES_BACKUP' }, EXTENSION_SENDER);
     assert.equal(backup.ok, true);
     assert.equal(backup.result.path, 'favorite-climbers.json');
-    assert.equal(backend.state.contents['favorite-climbers.json'], exported);
+    const exported = Favorites.parseBackup(backend.state.contents['favorite-climbers.json']);
+    assert.equal(exported.ok, true);
+    assert.deepEqual(structuredClone(exported.favorites.entries), entries);
+    assert.equal(worker.local.bpbFavoritesBackupState.signature, JSON.stringify(entries));
     assert.equal(backend.state.tree.tree.find(entry => entry.path === 'favorite-climbers.json').type, 'blob');
     assert.equal('token' in backup, false);
+
+    worker.fireAlarm('bpb-favorites-backup');
+    await new Promise(resolve => setTimeout(resolve, 20));
+    assert.equal(backend.state.commits, 1, 'manual backup state must suppress an equal automatic backup');
 
     const restore = await worker.send({ type: 'GITHUB_FAVORITES_RESTORE' }, EXTENSION_SENDER);
     assert.equal(restore.ok, true);
@@ -438,6 +457,95 @@ test('favorites backup and restore stay extension-only, ignore the ascent gate, 
 
     const forbidden = await worker.send({ type: 'GITHUB_FAVORITES_RESTORE' }, PEAK_SENDER);
     assert.equal(forbidden.error, 'forbidden');
+});
+
+test('an empty favorite list is a valid worker-built backup', async () => {
+    const backend = gitDataBackend();
+    const worker = createWorker({ auth: AUTH, github: backend.handler });
+    const result = await worker.send({ type: 'GITHUB_FAVORITES_BACKUP' }, EXTENSION_SENDER);
+
+    assert.equal(result.ok, true);
+    const parsed = Favorites.parseBackup(backend.state.contents['favorite-climbers.json']);
+    assert.equal(parsed.ok, true);
+    assert.deepEqual(structuredClone(parsed.favorites.entries), []);
+});
+
+test('enabling or changing favorites schedules one automatic backup and restore does not push', async () => {
+    const backend = gitDataBackend();
+    const entries = [{ cid: 7, name: 'Seven', addedAt: 10, source: 'manual' }];
+    const local = {
+        bpbGithubAuth: structuredClone(AUTH),
+        [Favorites.FAVORITES_KEY]: { schemaVersion: 1, entries },
+    };
+    const worker = createWorker({
+        settings: { autoFavoritesBackup: true }, auth: AUTH, local, github: backend.handler,
+    });
+
+    worker.fireStorageChange({
+        bpbSettings: { newValue: structuredClone(worker.sync.bpbSettings) },
+    }, 'sync');
+    await waitFor(() => worker.alarms.created.filter(
+        alarm => alarm.name === 'bpb-favorites-backup').length === 1);
+
+    worker.fireStorageChange({
+        [Favorites.FAVORITES_KEY]: { newValue: structuredClone(local[Favorites.FAVORITES_KEY]) },
+    }, 'local');
+    await waitFor(() => worker.alarms.created.filter(
+        alarm => alarm.name === 'bpb-favorites-backup').length === 2);
+    assert.deepEqual(structuredClone(worker.alarms.created.findLast(
+        alarm => alarm.name === 'bpb-favorites-backup')), {
+        name: 'bpb-favorites-backup', info: { delayInMinutes: 1 },
+    });
+
+    worker.fireAlarm('bpb-favorites-backup');
+    await waitFor(() => worker.local.bpbFavoritesBackupState?.syncedAt);
+    assert.equal(backend.state.commits, 1);
+    const committed = Favorites.parseBackup(backend.state.contents['favorite-climbers.json']);
+    assert.equal(committed.ok, true);
+    assert.deepEqual(structuredClone(committed.favorites.entries), entries);
+
+    // Applying the parsed backup is exactly what the options restore path does.
+    worker.local[Favorites.FAVORITES_KEY] = structuredClone(committed.favorites);
+    worker.fireStorageChange({
+        [Favorites.FAVORITES_KEY]: { newValue: structuredClone(committed.favorites) },
+    }, 'local');
+    worker.fireAlarm('bpb-favorites-backup');
+    await new Promise(resolve => setTimeout(resolve, 20));
+    assert.equal(backend.state.commits, 1);
+});
+
+test('favorites auto backup stays inert while off and retries failures only twice', async () => {
+    const favorite = { schemaVersion: 1, entries: [{
+        cid: 7, name: 'Seven', addedAt: 10, source: 'manual',
+    }] };
+    const off = createWorker({
+        settings: { autoFavoritesBackup: false },
+        local: { bpbGithubAuth: structuredClone(AUTH), [Favorites.FAVORITES_KEY]: favorite },
+        github: gitDataBackend().handler,
+    });
+    off.fireStorageChange({ [Favorites.FAVORITES_KEY]: { newValue: favorite } }, 'local');
+    await new Promise(resolve => setTimeout(resolve, 20));
+    assert.equal(off.alarms.created.some(alarm => alarm.name === 'bpb-favorites-backup'), false);
+
+    const failing = (method, path) => {
+        if (method === 'GET' && path === '/repos/me/backup') return respond(500, { message: 'Nope' });
+        return null;
+    };
+    const worker = createWorker({
+        settings: { autoFavoritesBackup: true },
+        local: { bpbGithubAuth: structuredClone(AUTH), [Favorites.FAVORITES_KEY]: favorite },
+        github: failing,
+    });
+    for (let attempts = 1; attempts <= 3; attempts++) {
+        worker.fireAlarm('bpb-favorites-backup');
+        await waitFor(() => worker.local.bpbFavoritesBackupState?.attempts === attempts);
+    }
+    assert.deepEqual(structuredClone(worker.alarms.created.filter(
+        alarm => alarm.name === 'bpb-favorites-backup'
+    )), [
+        { name: 'bpb-favorites-backup', info: { delayInMinutes: 10 } },
+        { name: 'bpb-favorites-backup', info: { delayInMinutes: 10 } },
+    ]);
 });
 
 test('favorites restore reports an absent file and ignores the ascent-backup feature gate', async () => {

@@ -49,6 +49,7 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
     const githubActionsEl = document.getElementById('favorites-github-actions');
     const backupEl = document.getElementById('favorites-backup');
     const restoreEl = document.getElementById('favorites-restore');
+    const autoBackupEl = document.getElementById('favorites-auto-backup');
 
     if (!store || !sourceEls.length || !buddyPanelEl || !customPanelEl || !buddyStatusEl
         || !refreshBuddiesEl || !addFormEl || !addInputEl || !addButtonEl || !limitEl || !sortEl
@@ -59,7 +60,7 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
         || !mirrorCancelEl || !mirrorConfirmEl
         || !emptyEl || !listEl || !undoAllEl || !undoMessageEl
         || !undoAllButtonEl || !githubStatusEl || !githubActionsEl || !backupEl
-        || !restoreEl) return { populate() {} };
+        || !restoreEl || !autoBackupEl) return { populate() {} };
 
     limitEl.textContent = F.LIMIT.toLocaleString('en-US');
 
@@ -604,11 +605,7 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
     };
 
     const backupFavorites = () => withGithubBusy(async () => {
-        const exported = F.buildBackupPayload(favorites, { exportedAt: new Date().toISOString() });
-        const response = await send({
-            type: 'GITHUB_FAVORITES_BACKUP',
-            content: F.serializeBackup(exported),
-        });
+        const response = await send({ type: 'GITHUB_FAVORITES_BACKUP' });
         if (!response?.ok) {
             flash(GithubError.message(response?.error));
             return;
@@ -701,6 +698,9 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
     }
     removeWithBuddyEl.addEventListener('change', () => {
         void save({ removeFavoriteWhenBuddyRemoved: removeWithBuddyEl.checked });
+    });
+    autoBackupEl.addEventListener('change', () => {
+        void save({ autoFavoritesBackup: autoBackupEl.checked });
     });
     mergeEl.addEventListener('click', () => {
         dismissMirrorConfirmation();
@@ -815,6 +815,7 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
         populate(settings) {
             source = settings && settings.favoritesSource === 'custom' ? 'custom' : 'buddies';
             removeWithBuddyEl.checked = settings?.removeFavoriteWhenBuddyRemoved === true;
+            autoBackupEl.checked = settings?.autoFavoritesBackup === true;
             if (source !== 'custom') dismissMirrorConfirmation();
             renderPanels();
             void refreshGithubStatus();

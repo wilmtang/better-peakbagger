@@ -19,6 +19,7 @@ const event = () => {
 const createHarness = ({ peakXml = null, captureResult = null, ownershipResult = null, settings = {}, beforePeakFetch = null,
     loginHtml = '<a href="climber/climber.aspx?cid=77">My Home Page</a>' } = {}) => {
     const values = {};
+    const localValues = {};
     let sessionGetCalls = 0;
     const syncValues = { bpbSettings: structuredClone(settings) };
     const tabs = new Map([[1, {
@@ -57,7 +58,12 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
             sync: {
                 get: async key => ({ [key]: structuredClone(syncValues[key]) }),
                 set: async patch => Object.assign(syncValues, structuredClone(patch))
-            }
+            },
+            local: {
+                get: async key => ({ [key]: structuredClone(localValues[key]) }),
+                set: async patch => Object.assign(localValues, structuredClone(patch))
+            },
+            onChanged: event()
         },
         runtime: {
             onMessage: runtimeMessage,

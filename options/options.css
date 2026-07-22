@@ -492,6 +492,7 @@ button.secondary.favorites-mirror-trigger:focus-visible { outline-color: var(--d
 .favorites-github-actions[hidden] { display: none; }
 .favorites-github-actions button.secondary { align-self: auto; }
 .favorites-github-actions button:disabled { cursor: wait; opacity: .55; }
+.favorites-github-actions .check { flex-basis: 100%; justify-content: flex-end; }
 
 /* GitHub connection and ascent-backup panels. Each detail row spans the card width and is a
    plain block rather than the label/control split the other rows use. */
@@ -706,6 +707,7 @@ button.github-repo:focus-visible { outline: 2px solid var(--accent); outline-off
     .favorites-sort select { width: auto; }
     .favorites-github { align-items: stretch; flex-direction: column; gap: 10px; }
     .favorites-github-actions { justify-content: flex-start; }
+    .favorites-github-actions .check { justify-content: flex-start; }
     .settings-backup-actions { justify-content: flex-start; }
     .settings-backup-github-actions { align-items: flex-start; }
     .favorite-item { align-items: flex-start; }
