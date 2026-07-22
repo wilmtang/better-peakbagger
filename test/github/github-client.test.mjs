@@ -469,14 +469,14 @@ test('a root file is decoded from the selected branch and a missing file returns
     const encoded = Buffer.from('{"name":"Café"}\n', 'utf8').toString('base64');
     const { fetch, calls } = makeFetch({
         'GET /repos/me/backup': REPO_OK(),
-        'GET /repos/me/backup/contents/favorites.json': () => respond(200, {
+        'GET /repos/me/backup/contents/favorite-climbers.json': () => respond(200, {
             type: 'file', encoding: 'base64', content: encoded,
         }),
         'GET /repos/me/backup/contents/missing.json': () => respond(404, { message: 'Not Found' }),
     });
     const client = Client.createGithubClient({ fetch, token: 't', owner: 'me', repo: 'backup' });
 
-    assert.equal(await client.readRootFile('favorites.json'), '{"name":"Café"}\n');
+    assert.equal(await client.readRootFile('favorite-climbers.json'), '{"name":"Café"}\n');
     assert.equal(await client.readRootFile('missing.json'), null);
     const contentReads = calls.filter(call => call.path.includes('/contents/'));
     assert.ok(contentReads.every(call => new URL(call.url).searchParams.get('ref') === 'main'));
@@ -497,16 +497,16 @@ test('a root file commit preserves the base tree, adopts the repo, and fast-forw
         'PATCH /repos/me/backup/git/refs/heads/main': () => respond(200, { object: { sha: 'C1' } }),
     });
     const client = Client.createGithubClient({ fetch, token: 't', owner: 'me', repo: 'backup' });
-    const result = await client.putRootFile('favorites.json', '{"schemaVersion":1}\n', 'Back up favorite climbers');
+    const result = await client.putRootFile('favorite-climbers.json', '{"schemaVersion":1}\n', 'Back up favorite climbers');
 
-    assert.equal(result.path, 'favorites.json');
+    assert.equal(result.path, 'favorite-climbers.json');
     assert.equal(result.commitUrl, 'https://github.com/me/backup/commit/C1');
     const treeCall = calls.find(call => call.key === 'POST /repos/me/backup/git/trees');
     assert.equal(treeCall.body.base_tree, 'T0');
     assert.deepEqual(treeCall.body.tree.map(entry => entry.path).sort(), [
-        '.better-peakbagger.json', 'favorites.json',
+        '.better-peakbagger.json', 'favorite-climbers.json',
     ]);
-    assert.equal(treeCall.body.tree.find(entry => entry.path === 'favorites.json').content,
+    assert.equal(treeCall.body.tree.find(entry => entry.path === 'favorite-climbers.json').content,
         '{"schemaVersion":1}\n');
     const commitCall = calls.find(call => call.key === 'POST /repos/me/backup/git/commits');
     assert.deepEqual(commitCall.body.parents, ['C0']);
@@ -543,7 +543,7 @@ test('a root file conflict retries from the newly read head', async () => {
     const client = Client.createGithubClient({
         fetch, token: 't', owner: 'me', repo: 'backup', sleep: async delay => delays.push(delay),
     });
-    await client.putRootFile('favorites.json', '{}\n', 'Back up favorite climbers');
+    await client.putRootFile('favorite-climbers.json', '{}\n', 'Back up favorite climbers');
 
     assert.equal(refReads, 2);
     assert.deepEqual(delays, [500]);
@@ -565,7 +565,7 @@ test('root file writes fail closed on a foreign marker or path collision', async
     });
     await assert.rejects(
         Client.createGithubClient({ fetch: foreign.fetch, token: 't', owner: 'me', repo: 'backup' })
-            .putRootFile('favorites.json', '{}', 'Back up favorite climbers'),
+            .putRootFile('favorite-climbers.json', '{}', 'Back up favorite climbers'),
         error => error.code === ERROR_CODES.REPO_CONFLICT,
     );
     assert.ok(foreign.calls.every(call => call.method === 'GET'));
@@ -575,13 +575,13 @@ test('root file writes fail closed on a foreign marker or path collision', async
         'GET /repos/me/backup/git/ref/heads/main': REF('C0'),
         'GET /repos/me/backup/git/commits/C0': COMMIT('C0', 'T0'),
         'GET /repos/me/backup/git/trees/T0': () => respond(200, { tree: [
-            MARKER, { path: 'favorites.json', type: 'tree', sha: 'folder' },
+            MARKER, { path: 'favorite-climbers.json', type: 'tree', sha: 'folder' },
         ] }),
         'GET /repos/me/backup/git/blobs/marker': MARKER_BLOB,
     });
     await assert.rejects(
         Client.createGithubClient({ fetch: collision.fetch, token: 't', owner: 'me', repo: 'backup' })
-            .putRootFile('favorites.json', '{}', 'Back up favorite climbers'),
+            .putRootFile('favorite-climbers.json', '{}', 'Back up favorite climbers'),
         error => error.code === ERROR_CODES.REPO_CONFLICT,
     );
     assert.ok(collision.calls.every(call => call.method === 'GET'));
@@ -603,12 +603,12 @@ test('an empty repository is initialized before its first root file commit', asy
         'PATCH /repos/me/backup/git/refs/heads/main': () => respond(200, { object: { sha: 'C1' } }),
     });
     const client = Client.createGithubClient({ fetch, token: 't', owner: 'me', repo: 'backup' });
-    await client.putRootFile('favorites.json', '{}\n', 'Back up favorite climbers');
+    await client.putRootFile('favorite-climbers.json', '{}\n', 'Back up favorite climbers');
 
     assert.ok(calls.some(call => call.key === 'PUT /repos/me/backup/contents/.better-peakbagger.json'));
     const tree = calls.find(call => call.key === 'POST /repos/me/backup/git/trees').body;
     assert.equal(tree.base_tree, 'T0');
-    assert.deepEqual(tree.tree.map(entry => entry.path), ['favorites.json']);
+    assert.deepEqual(tree.tree.map(entry => entry.path), ['favorite-climbers.json']);
 });
 
 // ---- error taxonomy -------------------------------------------------------

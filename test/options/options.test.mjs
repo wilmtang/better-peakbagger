@@ -809,7 +809,7 @@ test('connected GitHub actions work with ascent backup off and restore with Undo
                 if (message.type === 'GITHUB_FAVORITES_BACKUP') reply = {
                     ok: true,
                     result: {
-                        path: 'favorites.json',
+                        path: 'favorite-climbers.json',
                         commitUrl: 'https://github.com/ada/peaks/commit/favorite123',
                     },
                 };

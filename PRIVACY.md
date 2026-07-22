@@ -192,7 +192,7 @@ control.
   reduced, user-approved track Peakbagger already publishes on the ascent page,
   not the raw provider GPX, which still never leaves the activity page. It goes
   only to the single GitHub repository the user granted, over the GitHub API.
-  An explicit **Back up favorites** action separately sends `favorites.json`
+  An explicit **Back up favorites** action separately sends `favorite-climbers.json`
   containing the custom list's climber ids, displayed names, added-at timestamps,
   provenance, and export time to that same repository. It contains no ascent,
   activity, GPS, or Buddy-cache owner data.
@@ -208,7 +208,7 @@ control.
   selection, and unrelated files are preserved. No ascent is transmitted
   without one of those opt-ins. Favorite backup and restore occur only when the
   corresponding Settings button is clicked; automatic ascent backup never
-  includes or updates `favorites.json`.
+  includes or updates `favorite-climbers.json`.
 - **Ownership:** the backup affordance appears only on ascents the signed-in
   climber owns. Full-profile controls additionally require the signed-in
   climber's own **My Ascents** identity and an edit affordance for every parsed

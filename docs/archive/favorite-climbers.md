@@ -62,7 +62,7 @@ switches your mode.
 
 **Keeping the list safe (and moving it to a new machine).**
 If you've connected GitHub trip backup, the Favorite climbers settings section
-also offers **Back up favorites** — writes a `favorites.json` into the same
+also offers **Back up favorites** — writes a `favorite-climbers.json` into the same
 backup repository — and **Restore from backup**, which replaces your local list
 (again with Undo). Backup is always an explicit click; automatic ascent backup
 never touches it. On a fresh browser: connect GitHub, hit Restore, done.
@@ -107,7 +107,7 @@ Synced setting (inside the existing `bpbSettings` item, `src/settings/settings-s
   `BUDDY_TTL_MS = 7 days`. A cache whose `ownerCid` differs from the currently
   detected login is treated as absent (account switch invalidates it).
 
-GitHub backup file: `favorites.json` at the backup-repo root:
+GitHub backup file: `favorite-climbers.json` at the backup-repo root:
 `{ schemaVersion: 1, exportedAt, entries }`. Safe by construction:
 `inspectRootTree` (`src/github/github-client.js:157-194`) considers only the marker
 blob and `type === 'tree'` folders, so ascent commits neither prune nor trip
@@ -231,8 +231,8 @@ Both added to the `extensionOnly` guard (`background.js:1623`) and both reuse
 the `backupAscent` guard sequence (settings gate → `authStore` → token/repo):
 
 - `GITHUB_FAVORITES_BACKUP { content }` — the options page validates via
-  `cleanFavorites` and serializes `favorites.json`; the worker wraps
-  `client.putRootFile('favorites.json', …)` in the existing GitHub write queue
+  `cleanFavorites` and serializes `favorite-climbers.json`; the worker wraps
+  `client.putRootFile('favorite-climbers.json', …)` in the existing GitHub write queue
   so it can never race an ascent commit. Returns `{ok, result}` /
   `{ok:false, error}` mapped through `src/github/github-error.js` on the page.
 - `GITHUB_FAVORITES_RESTORE {}` — worker returns `{ok, content|null}`; the
@@ -288,10 +288,10 @@ the `backupAscent` guard sequence (settings gate → `authStore` → token/repo)
   surface-ownership table gains `climber-favorite.js`.
 - `PRIVACY.md`: the buddy cache holds third-party climber names/ids locally
   for ≤ 7 days, refreshed only through your own signed-in session; the
-  favorites list is device-local; `favorites.json` leaves the browser only on
+  favorites list is device-local; `favorite-climbers.json` leaves the browser only on
   the explicit Back up / Restore clicks; automatic ascent backup never
   includes it.
-- `docs/github-ascent-backup.md`: root `favorites.json` in the repository
+- `docs/github-ascent-backup.md`: root `favorite-climbers.json` in the repository
   layout section.
 - `README.md` feature blurb; `CHANGELOG.md` entry.
 

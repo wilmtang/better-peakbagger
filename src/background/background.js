@@ -30,6 +30,7 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
     // expiring on the same 30-minute horizon as a prepared draft.
     const SNAPSHOTS_KEY = 'bpbGithubSnapshots';
     const GITHUB_AUTH_PENDING_KEY = 'bpbGithubAuthPending';
+    const FAVORITE_CLIMBERS_BACKUP_PATH = 'favorite-climbers.json';
     const SNAPSHOT_TTL_MS = 30 * 60 * 1000;
     const SNAPSHOT_LIMIT = 10;
     const PROFILE_BACKUP_BATCH_LIMIT = 10;
@@ -1664,7 +1665,7 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
         if (access.error) return { ok: false, error: access.error };
         try {
             const result = await enqueueGithubWrite(() => access.client.putRootFile(
-                'favorites.json', message.content, 'Back up favorite climbers'
+                FAVORITE_CLIMBERS_BACKUP_PATH, message.content, 'Back up favorite climbers'
             ));
             return { ok: true, result };
         } catch (error) {
@@ -1676,7 +1677,7 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
         const access = await favoritesGithubClient();
         if (access.error) return { ok: false, error: access.error };
         try {
-            return { ok: true, content: await access.client.readRootFile('favorites.json') };
+            return { ok: true, content: await access.client.readRootFile(FAVORITE_CLIMBERS_BACKUP_PATH) };
         } catch (error) {
             return { ok: false, error: GithubErrors.publicError(error, 'The favorites backup could not be read.') };
         }

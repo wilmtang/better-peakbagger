@@ -392,7 +392,7 @@ test('favorites backup and restore stay extension-only, ignore the ascent gate, 
     const backend = gitDataBackend();
     const restoreContent = '{"schemaVersion":1,"exportedAt":"2026-07-21T12:00:00.000Z","entries":[]}\n';
     const github = (method, path, body) => {
-        if (method === 'GET' && path === '/repos/me/backup/contents/favorites.json') {
+        if (method === 'GET' && path === '/repos/me/backup/contents/favorite-climbers.json') {
             return respond(200, {
                 type: 'file', encoding: 'base64', content: Buffer.from(restoreContent).toString('base64'),
             });
@@ -404,9 +404,9 @@ test('favorites backup and restore stay extension-only, ignore the ascent gate, 
 
     const backup = await worker.send({ type: 'GITHUB_FAVORITES_BACKUP', content: exported }, EXTENSION_SENDER);
     assert.equal(backup.ok, true);
-    assert.equal(backup.result.path, 'favorites.json');
-    assert.equal(backend.state.contents['favorites.json'], exported);
-    assert.equal(backend.state.tree.tree.find(entry => entry.path === 'favorites.json').type, 'blob');
+    assert.equal(backup.result.path, 'favorite-climbers.json');
+    assert.equal(backend.state.contents['favorite-climbers.json'], exported);
+    assert.equal(backend.state.tree.tree.find(entry => entry.path === 'favorite-climbers.json').type, 'blob');
     assert.equal('token' in backup, false);
 
     const restore = await worker.send({ type: 'GITHUB_FAVORITES_RESTORE' }, EXTENSION_SENDER);
@@ -423,7 +423,7 @@ test('favorites restore reports an absent file and ignores the ascent-backup fea
         if (method === 'GET' && path === '/repos/me/backup') {
             return respond(200, { default_branch: 'main', archived: false, permissions: { push: true } });
         }
-        if (method === 'GET' && path === '/repos/me/backup/contents/favorites.json') {
+        if (method === 'GET' && path === '/repos/me/backup/contents/favorite-climbers.json') {
             return respond(404, { message: 'Not Found' });
         }
         return null;

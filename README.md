@@ -140,7 +140,7 @@ writes to your chosen repository, never touches your Peakbagger save, and can
 be turned off or disconnected at any time.
 
 Custom favorite climbers stay on this device by default. From the Favorite
-climbers section in Settings, **Back up favorites** writes one `favorites.json`
+climbers section in Settings, **Back up favorites** writes one `favorite-climbers.json`
 to the same repository, and **Restore from backup** moves that list to another
 browser with a brief Undo window. These actions need the shared GitHub
 connection, but not Ascent backup. Both require an explicit click;

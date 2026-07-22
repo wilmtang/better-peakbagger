@@ -476,8 +476,8 @@ disclosure.
 | `GITHUB_BACKUP_ASCENT` | Owner saved-ascent surface | Peakbagger hostname; feature/auth/repo; fresh snapshot for auto; complete data requirement; final aid present before the client enforces a positive identity | Commit metadata or typed error |
 | `GITHUB_BACKUP_PROFILE_STATUS` | `ClimbListC.aspx` | Peakbagger hostname and exact list pathname | Folder leaves, never token |
 | `GITHUB_BACKUP_PROFILE_BATCH` | `ClimbListC.aspx` | Exact list pathname; 1–10 entries; each positive `aid` equals snapshot id; no duplicate ids; feature/auth/repo | Batch commit metadata or typed error |
-| `GITHUB_FAVORITES_BACKUP` | Extension options page | Extension origin; auth/repo; nonempty serialized content; fixed `favorites.json` path | Commit metadata, never token |
-| `GITHUB_FAVORITES_RESTORE` | Extension options page | Extension origin; auth/repo; fixed `favorites.json` path | File text or `null`, never token |
+| `GITHUB_FAVORITES_BACKUP` | Extension options page | Extension origin; auth/repo; nonempty serialized content; fixed `favorite-climbers.json` path | Commit metadata, never token |
+| `GITHUB_FAVORITES_RESTORE` | Extension options page | Extension origin; auth/repo; fixed `favorite-climbers.json` path | File text or `null`, never token |
 
 The individual worker gate is hostname-level; the content surface supplies the
 stricter owner proof by requiring an edit link for the same aid before it even
@@ -490,7 +490,7 @@ again before replacing local state on restore.
 
 ```text
 .better-peakbagger.json
-favorites.json     # optional; written only by the explicit favorites action
+favorite-climbers.json     # optional; written only by the explicit favorites action
 2026-07-12-mount-rainier-a1234567/
   report.md
   ascent.json
@@ -511,7 +511,7 @@ folder and deletes only Better Peakbagger-owned `report.md`, `ascent.json`, and
 `track.gpx` paths from old matching folders in the same tree. User-added files
 under an ascent folder survive.
 
-### `favorites.json` schema version 1
+### `favorite-climbers.json` schema version 1
 
 ```jsonc
 {
@@ -657,10 +657,10 @@ For each attempt the client:
 8. updates the branch with `force: false`.
 
 Explicit favorite backup uses the same sequence with one root blob entry for
-`favorites.json` (and the marker when adopting a confirmed unmarked repository).
+`favorite-climbers.json` (and the marker when adopting a confirmed unmarked repository).
 It does not use a Contents API update, so it has the same compare-and-swap
 behavior as ascent commits. Settings keeps the returned commit URL visible as
-**View commit** after a successful transfer. Restore reads `favorites.json`
+**View commit** after a successful transfer. Restore reads `favorite-climbers.json`
 from the selected branch through GitHub's Contents endpoint, validates
 file/base64/UTF-8 shape in
 the worker client, and leaves schema validation to the options-page owner.

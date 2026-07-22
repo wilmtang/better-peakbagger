@@ -646,7 +646,7 @@ sync must never acquire the third-party names stored in either local dataset.
 | `options/favorites.js` | Extension options page | Source selection, Buddy refresh status, custom-list management, reversible bulk actions, and GitHub transfer UI | GitHub token access or repository writes |
 | `src/profile/profile-backup-core.js` | Pure shared module | Signed-in owner discovery and numeric URL identity | Favorites persistence or request orchestration |
 | `src/peakbagger/peakbagger-request.js`, `src/peakbagger/peakbagger-response.js`, and `src/peakbagger/peakbagger-error.js` | Shared request boundary | Authenticated fetch policy, response classification, parsing failures, and actionable error copy | Favorites schema or persistence |
-| `src/background/background.js` plus `src/github/github-client.js` | Extension worker | Shared GitHub connection, token, fixed `favorites.json` path, repository validation, serialized writes, and restore reads | Interpreting or mutating the favorites schema |
+| `src/background/background.js` plus `src/github/github-client.js` | Extension worker | Shared GitHub connection, token, fixed `favorite-climbers.json` path, repository validation, serialized writes, and restore reads | Interpreting or mutating the favorites schema |
 
 `options/favorites.js` owns management. It fetches authenticated Peakbagger
 pages through the shared Peakbagger request boundary, then parses validated
@@ -756,7 +756,7 @@ There is no automatic union. Switching from Buddy to custom mode leaves both
 datasets untouched and merely changes which one supplies the set. This also
 means the synced mode can arrive on a second browser while its device-local
 custom list is empty; the user must populate it locally or explicitly restore
-`favorites.json`.
+`favorite-climbers.json`.
 
 On a full `PeakAscents.aspx` page, `src/ascent/ascent-filter.js` extracts the first
 `climber.aspx?cid=...` profile identity from each ascent row. Rows without a
@@ -956,7 +956,7 @@ options page can explicitly serialize:
 It sends that string in `GITHUB_FAVORITES_BACKUP`; it never receives the GitHub
 token. The worker accepts those messages only from an extension page, reuses the
 shared GitHub connection and selected repository, and writes the fixed root
-path `favorites.json` through the same repository-marker check, exact base tree,
+path `favorite-climbers.json` through the same repository-marker check, exact base tree,
 non-forced ref update, serialized write queue, and bounded conflict retry as
 ascent backup. Restore is an extension-only read; a missing file is reported as
 “no backup” and does not become an empty replacement.
@@ -965,7 +965,7 @@ The options page, not the worker, owns serialization and restore validation.
 `exportedAt` is informational; restore authority comes from `schemaVersion` and
 the exact validity of every entry. Buddy cache entries, `ownerCid`, `fetchedAt`,
 filter-chip state, and the selected source are never exported. Automatic ascent
-backup does not read or write `favorites.json`; favorite transfer happens only
+backup does not read or write `favorite-climbers.json`; favorite transfer happens only
 after the explicit options-page action. A successful write leaves an affirmative
 status and the worker-returned commit link visible without exposing the token.
 
@@ -988,7 +988,7 @@ leaves the browser for the user-selected GitHub repository.
 | Buddy refresh appears successful only until reload | The parsed in-memory result may have been usable while `storage.local.set()` failed | Extension storage errors and persisted `fetchedAt` |
 | Custom add reports no climber | No write occurs when the requested id, returned identity link, and heading cannot be proven consistent | Canonical profile response and `ClimbListC.aspx?cid=` identity link |
 | Switching source appears to lose people | No data was deleted; the other dataset became effective | `favoritesSource`, then both local storage keys |
-| Restore reports a newer/invalid format | Existing custom list is untouched and no Undo state is created | Raw `favorites.json`, version, duplicates, entry count, and required fields |
+| Restore reports a newer/invalid format | Existing custom list is untouched and no Undo state is created | Raw `favorite-climbers.json`, version, duplicates, entry count, and required fields |
 | Two simultaneous edits lose one change | Storage writes are whole-object and last-writer-wins | Timing of each tab's `storage.local.get/set` pair |
 
 From an extension-page DevTools console, the authoritative diagnostic reads are:
@@ -1075,7 +1075,7 @@ and stored GPX must match, while sync timestamp and extension-version
 provenance are ignored. A match renders **Backed up ✓**; a difference or passive
 check failure leaves the ordinary backup action available. The worker
 serializes repository writes so per-save batches, profile batches, and the explicit root
-`favorites.json` backup cannot race each other. Root-file writes use the same
+`favorite-climbers.json` backup cannot race each other. Root-file writes use the same
 marker validation, exact base tree, commit, non-forced ref update, and bounded
 conflict retry as ascent writes; restore is a read-only Contents API request.
 

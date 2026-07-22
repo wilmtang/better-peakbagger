@@ -33,7 +33,7 @@
   storage boundary explicit and can add, sort, merge, mirror, remove, and Undo
   custom favorites; public climber pages get a compact add/remove control only
   in custom mode. A shared GitHub connection can explicitly write
-  or restore the custom list as `favorites.json` even when ascent backup is off,
+  or restore the custom list as `favorite-climbers.json` even when ascent backup is off,
   with a link to the successful backup commit; automatic ascent backup never
   touches it.
   

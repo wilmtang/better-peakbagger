@@ -85,7 +85,7 @@ test('all GitHub REST status classification comes from the shared taxonomy', asy
 
 test('the shared transport handles expected absence, malformed responses, and network failures', async () => {
     const missing = GithubApi.createGithubApi({ token: 't', fetch: async () => respond(404, { message: 'Not Found' }) });
-    assert.equal(await missing.request('GET', '/repos/me/backup/contents/favorites.json', { allowNotFound: true }), null);
+    assert.equal(await missing.request('GET', '/repos/me/backup/contents/favorite-climbers.json', { allowNotFound: true }), null);
 
     const malformed = GithubApi.createGithubApi({ token: 't', fetch: async () => respond(200, '<html>oops</html>') });
     await assert.rejects(malformed.request('GET', '/user'), error => error.code === ERROR_CODES.UNKNOWN);
