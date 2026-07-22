@@ -276,14 +276,31 @@ export async function createBrowserFixtureServer({ temporaryRoot }) {
     .replace(
       'action="https://www.peakbagger.com/climber/climber.aspx?cid=900001"',
       'action=""',
-    );
-  let otherClimberIsBuddy = false;
-  const renderOtherClimber = () => otherClimberBaseHtml.replace(
-    '<span id="TitleLabel"><h1>Peakbagging Page for Morgan Longlastname</h1></span>',
-    `<span id="TitleLabel"><h1>Peakbagging Page for Morgan Longlastname</h1></span>
-     <input id="BuddyButton" name="BuddyButton" type="submit"
-       value="${otherClimberIsBuddy ? 'Remove from My Buddy List' : 'Add to My Buddy List'}">`,
   );
+  let otherClimberIsBuddy = false;
+  const buddyUpdatePanelScript = `<script>
+    sessionStorage.setItem('bpbFixtureClimberLoads', String(
+      Number(sessionStorage.getItem('bpbFixtureClimberLoads') || 0) + 1
+    ));
+    document.addEventListener('submit', async event => {
+      if (event.submitter?.id !== 'BuddyButton') return;
+      event.preventDefault();
+      const body = new URLSearchParams(new FormData(event.target));
+      body.set(event.submitter.name, event.submitter.value);
+      const response = await fetch(location.href, { method: 'POST', body });
+      const next = new DOMParser().parseFromString(await response.text(), 'text/html');
+      document.getElementById('UpdatePanel2').replaceWith(next.getElementById('UpdatePanel2'));
+    });
+  </script>`;
+  const renderOtherClimber = () => otherClimberBaseHtml
+    .replace(
+      /<div id="UpdatePanel2">[\s\S]*?<\/div>/,
+      `<div id="UpdatePanel2">
+         <input id="BuddyButton" name="BuddyButton" type="submit"
+           value="${otherClimberIsBuddy ? 'Remove from My Buddy List' : 'Add to My Buddy List'}">
+       </div>`,
+    )
+    .replace('</body>', `${buddyUpdatePanelScript}</body>`);
   const renderBuddyList = () => otherClimberIsBuddy
     ? buddyListHtml.replaceAll('710483', '900002').replaceAll('Alpine, Casey', 'Morgan Longlastname')
     : buddyListHtml;

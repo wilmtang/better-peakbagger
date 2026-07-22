@@ -93,6 +93,11 @@ test('the control follows live list and source changes', async () => {
 test('native Buddy actions leave a short-lived refresh marker for the completed navigation', async () => {
     const dom = await loadOther({ settings: { favoritesSource: 'buddies' } });
     const nativeButton = dom.window.document.getElementById('BuddyButton');
+    assert.equal(nativeButton.classList.contains('bpb-native-buddy-action'), true);
+    assert.match(
+        dom.window.document.getElementById('bpb-native-buddy-action-style').textContent,
+        /\.bpb-native-buddy-action:hover:not\(:disabled\)/,
+    );
     nativeButton.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, button: 0 }));
     assert.deepEqual(JSON.parse(dom.window.sessionStorage.getItem(pendingKey)), {
         version: 1,
@@ -100,6 +105,72 @@ test('native Buddy actions leave a short-lived refresh marker for the completed 
         cid: 900002,
         at: JSON.parse(dom.window.sessionStorage.getItem(pendingKey)).at,
     });
+});
+
+test('an in-place Buddy addition refreshes Buddy-source membership after the native control is replaced', async () => {
+    const buddyWithCasey = buddyFixture
+        .replaceAll('710483', '900002')
+        .replaceAll('Alpine, Casey', 'Casey Alpine');
+    let requests = 0;
+    const dom = await loadOther({
+        settings: { favoritesSource: 'buddies' },
+        prepare(page) {
+            page.window.fetch = async () => {
+                requests += 1;
+                return pageResponse(buddyWithCasey);
+            };
+        },
+    });
+    const nativeButton = dom.window.document.getElementById('BuddyButton');
+    nativeButton.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, button: 0 }));
+    const replacement = nativeButton.cloneNode();
+    replacement.value = 'Remove from My Buddy List';
+    nativeButton.replaceWith(replacement);
+
+    await waitFor(dom, () => dom.chrome._localStore[cacheKey]?.entries?.some(entry => entry.cid === 900002));
+    assert.equal(requests, 1);
+    assert.equal(dom.window.sessionStorage.getItem(pendingKey), null);
+    assert.equal(replacement.classList.contains('bpb-native-buddy-action'), true);
+    assert.equal(dom.chrome._localStore[key], undefined);
+});
+
+test('in-place Buddy changes synchronize the custom list and honor opted-in removal', async () => {
+    const buddyWithCasey = buddyFixture
+        .replaceAll('710483', '900002')
+        .replaceAll('Alpine, Casey', 'Casey Alpine');
+    let included = false;
+    let requests = 0;
+    const dom = await loadOther({
+        settings: { favoritesSource: 'custom', removeFavoriteWhenBuddyRemoved: true },
+        prepare(page) {
+            page.window.fetch = async () => {
+                requests += 1;
+                return pageResponse(included ? buddyWithCasey : buddyFixture);
+            };
+        },
+    });
+    await waitFor(dom, () => dom.window.document.getElementById('bpb-climber-favorite'));
+
+    const replaceNativeControl = value => {
+        const current = dom.window.document.getElementById('BuddyButton');
+        current.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, button: 0 }));
+        const replacement = current.cloneNode();
+        replacement.value = value;
+        current.replaceWith(replacement);
+    };
+
+    included = true;
+    replaceNativeControl('Remove from My Buddy List');
+    await waitFor(dom, () => dom.chrome._localStore[key]?.entries?.some(entry => entry.cid === 900002));
+    assert.equal(dom.window.document.getElementById('bpb-climber-favorite').textContent, '★');
+
+    included = false;
+    replaceNativeControl('Add to My Buddy List');
+    await waitFor(dom, () => dom.chrome._localStore[key]?.entries?.every(entry => entry.cid !== 900002));
+    assert.equal(dom.window.document.getElementById('bpb-climber-favorite').textContent, '☆');
+    assert.equal(dom.chrome._localStore[cacheKey].entries.some(entry => entry.cid === 900002), false);
+    assert.equal(dom.window.sessionStorage.getItem(pendingKey), null);
+    assert.equal(requests, 2);
 });
 
 test('a confirmed Buddy addition refreshes the cache and joins a custom favorites list', async () => {

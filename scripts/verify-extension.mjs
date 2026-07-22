@@ -455,7 +455,8 @@ try {
         });
         const climberPage = await context.newPage();
         await climberPage.setViewportSize({ width: 536, height: 500 });
-        await climberPage.goto(`https://www.peakbagger.com:${port}/climber/climber.aspx?cid=900002`, { waitUntil: 'load' });
+        const climberPageUrl = `https://www.peakbagger.com:${port}/climber/climber.aspx?cid=900002`;
+        await climberPage.goto(climberPageUrl, { waitUntil: 'load' });
         await climberPage.locator('#bpb-climber-favorite').waitFor({ state: 'visible', timeout: 5000 });
         const favoriteToggle = await climberPage.evaluate(() => {
             const heading = document.querySelector('#TitleLabel h1');
@@ -477,7 +478,7 @@ try {
             };
         });
         check(favoriteToggle?.text === '☆'
-            && favoriteToggle?.label === 'Add Morgan Longlastname to your favorites'
+            && favoriteToggle?.label === 'Add Morgan Longlastname to your Better Peakbagger favorites'
             && favoriteToggle?.title === favoriteToggle?.label
             && favoriteToggle?.pressed === 'false'
             && favoriteToggle?.hostDisplay === 'inline-flex'
@@ -487,6 +488,16 @@ try {
             && favoriteToggle?.verticallyAligned
             && favoriteToggle?.theme === 'dark',
         `the climber favorite toggle was not compact and inline with the title: ${JSON.stringify(favoriteToggle)}`);
+        await climberPage.locator('#BuddyButton').hover();
+        const nativeBuddyHover = await climberPage.waitForFunction(() => {
+            const element = document.getElementById('BuddyButton');
+            const filter = element ? getComputedStyle(element).filter : '';
+            return element?.classList.contains('bpb-native-buddy-action') && filter === 'brightness(1.18)'
+                ? { marked: true, filter }
+                : false;
+        }, null, { timeout: 1000 }).then(handle => handle.jsonValue()).catch(() => null);
+        check(nativeBuddyHover?.marked && nativeBuddyHover.filter === 'brightness(1.18)',
+            `the native Buddy control lost its dark-theme hover feedback: ${JSON.stringify(nativeBuddyHover)}`);
         if (process.env.BPB_VERIFY_CLIMBER_FAVORITE_SCREENSHOT) {
             await climberPage.screenshot({ path: process.env.BPB_VERIFY_CLIMBER_FAVORITE_SCREENSHOT });
         }
@@ -505,9 +516,10 @@ try {
         check(!!favoriteAppliedUi && !!favoriteAppliedStorage,
             `the compact climber favorite toggle did not persist or fill after clicking: ${JSON.stringify({ favoriteAppliedUi, favoriteAppliedStorage })}`);
 
-        // Reset the manual toggle, then exercise the real native form
-        // navigation. The content script must wait for the refreshed report to
-        // confirm Peakbagger accepted each action before touching favorites.
+        // Reset the manual toggle, then exercise an ASP.NET UpdatePanel-style
+        // form postback that replaces the native control without navigating.
+        // The content script must wait for the server-updated control and the
+        // refreshed report before touching favorites.
         await climberPage.locator('#bpb-climber-favorite').click();
         await optionsPage.waitForFunction(async () => {
             const favorites = (await chrome.storage.local.get('bpbFavoriteClimbers')).bpbFavoriteClimbers;
@@ -519,10 +531,7 @@ try {
             storage: await optionsPage.evaluate(async () =>
                 chrome.storage.local.get(['bpbFavoriteClimbers', 'bpbBuddyCache'])),
         };
-        await Promise.all([
-            climberPage.waitForNavigation({ waitUntil: 'load' }),
-            climberPage.locator('#BuddyButton').click(),
-        ]);
+        await climberPage.locator('#BuddyButton').click();
         const buddyAddedUi = await climberPage.waitForFunction(() => {
             const nativeButton = document.getElementById('BuddyButton');
             const favorite = document.getElementById('bpb-climber-favorite');
@@ -549,10 +558,7 @@ try {
         })}`);
 
         await climberPage.bringToFront();
-        await Promise.all([
-            climberPage.waitForNavigation({ waitUntil: 'load' }),
-            climberPage.locator('#BuddyButton').click(),
-        ]);
+        await climberPage.locator('#BuddyButton').click();
         await waitForCondition(
             () => fixture.requests.buddyReports - buddyMutationBaseline.buddyReports >= 2,
             { description: 'the default-removal Buddy report', timeoutMs: 10000 }
@@ -573,19 +579,13 @@ try {
             (await chrome.storage.sync.get('bpbSettings')).bpbSettings?.removeFavoriteWhenBuddyRemoved === true,
         null, { timeout: 10000 });
         await climberPage.bringToFront();
-        await Promise.all([
-            climberPage.waitForNavigation({ waitUntil: 'load' }),
-            climberPage.locator('#BuddyButton').click(),
-        ]);
+        await climberPage.locator('#BuddyButton').click();
         await optionsPage.bringToFront();
         await optionsPage.waitForFunction(async () =>
             (await chrome.storage.local.get('bpbBuddyCache')).bpbBuddyCache?.entries?.some(entry => entry.cid === 900002),
         null, { timeout: 10000 });
         await climberPage.bringToFront();
-        await Promise.all([
-            climberPage.waitForNavigation({ waitUntil: 'load' }),
-            climberPage.locator('#BuddyButton').click(),
-        ]);
+        await climberPage.locator('#BuddyButton').click();
         const removalSyncedUi = await climberPage.waitForFunction(() =>
             document.getElementById('BuddyButton')?.value === 'Add to My Buddy List'
                 && document.getElementById('bpb-climber-favorite')?.textContent === '☆',
@@ -598,12 +598,19 @@ try {
             return favorites?.entries && !favorites.entries.some(entry => entry.cid === 900002)
                 && cache?.entries && !cache.entries.some(entry => entry.cid === 900002);
         }, null, { timeout: 10000 }).then(() => true).catch(() => false);
+        const buddyMutationsStayedInPlace = await climberPage.evaluate(() => ({
+            loads: sessionStorage.getItem('bpbFixtureClimberLoads'),
+            url: location.href,
+        }));
         check(removalSyncedUi && removalSyncedStorage
             && fixture.requests.buddyMutations - buddyMutationBaseline.buddyMutations === 4
-            && fixture.requests.buddyReports - buddyMutationBaseline.buddyReports === 4,
+            && fixture.requests.buddyReports - buddyMutationBaseline.buddyReports === 4
+            && buddyMutationsStayedInPlace.loads === '1'
+            && buddyMutationsStayedInPlace.url === climberPageUrl,
         `opt-in Buddy removal sync or its one-refresh-per-action contract failed: ${JSON.stringify({
             removalSyncedUi,
             removalSyncedStorage,
+            buddyMutationsStayedInPlace,
             before: buddyMutationBaseline,
             after: fixture.requests,
         })}`);
@@ -1884,7 +1891,7 @@ console.log('  - sync/local/session storage, storage.onChanged, options persiste
 console.log('  - options loads the signed-in Buddy report directly, falls back through a first-party tab, and keeps failures actionable');
 console.log('  - Buddy merge/mirror reports additions and removals, requires confirmation, and preserves favorites on cancel');
 console.log('  - the real 1,500-row favorite list reports its total, fuzzy-searches, and keeps long navigation instant');
-console.log('  - the compact profile star persists, and four native Buddy actions refreshed/synced under both removal policies');
+console.log('  - the compact profile star persists, and four in-place native Buddy actions refreshed/synced under both removal policies');
 console.log('  - settings.js initialises in the isolated world and the bridge answers');
 console.log('  - the GPX analyzer renders stats from the real manifest load order');
 console.log('  - the 3D toggle stays visible when disabled and opens the provider/privacy confirmation');

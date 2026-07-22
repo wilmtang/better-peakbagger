@@ -642,7 +642,7 @@ sync must never acquire the third-party names stored in either local dataset.
 | --- | --- | --- | --- |
 | `src/favorites/favorite-climbers.js` | Pure ES module bundled into each caller | Validation, normalization, bounds, parsers, merge/mirror and confirmed-Buddy-mutation semantics, effective membership, comparators, and fuzzy scoring | DOM globals, storage, fetch, extension messaging, or UI |
 | `src/ascent/ascent-filter.js` | Isolated content script at `document_start` | Peak-ascent row identities, Favorites chip state/count, automatic Buddy revalidation, and opportunistic Buddy-page caching | Custom-list management or GitHub transfer |
-| `src/favorites/climber-favorite.js` | Separate isolated content script at `document_end` | The custom-favorite control plus native Buddy-action detection, post-navigation refresh, and confirmed custom-list synchronization | Arbitrary profile lookup or trusting an unconfirmed click as a successful Buddy mutation |
+| `src/favorites/climber-favorite.js` | Separate isolated content script at `document_end` | The custom-favorite control plus native Buddy-action detection, full-navigation and in-place postback refresh, and confirmed custom-list synchronization | Arbitrary profile lookup or trusting an unconfirmed click as a successful Buddy mutation |
 | `options/favorites.js` | Extension options page | Source selection, Buddy refresh status, custom-list provenance counts/filtering, reversible bulk actions, and GitHub transfer UI | GitHub token access or repository writes |
 | `src/profile/profile-backup-core.js` | Pure shared module | Signed-in owner discovery and numeric URL identity | Favorites persistence or request orchestration |
 | `src/peakbagger/peakbagger-request.js`, `src/peakbagger/peakbagger-response.js`, and `src/peakbagger/peakbagger-error.js` | Shared request boundary | Authenticated fetch policy, response classification, parsing failures, and actionable error copy | Favorites schema or persistence |
@@ -823,13 +823,16 @@ The cache can be populated through four paths:
    regardless of the selected source and issues no extra request.
 4. **Confirmed native Buddy mutation.** On another climber's public profile,
    the content script recognizes only an unambiguous native Add/Remove Buddy
-   control and leaves a five-minute, tab-origin navigation marker. After
-   Peakbagger completes the navigation, the new document consumes the marker
-   and fetches the signed-in Buddy report. The owner must match the current
-   signed-in identity and the target's membership must match the intended
-   action before the custom list changes. The validated report refreshes the
-   Buddy cache even when an action is unconfirmed; request, identity, or parse
-   failure preserves both previously stored datasets.
+   control and leaves a five-minute, tab-origin navigation marker. A full-page
+   postback is handled when the new document consumes that marker. An ASP.NET
+   partial postback is handled when the existing document observes the native
+   control change to the opposite action; it consumes the same marker without
+   waiting for navigation. Either path then fetches the signed-in Buddy report.
+   The owner must match the current signed-in identity and the target's
+   membership must match the intended action before the custom list changes.
+   The validated report refreshes the Buddy cache even when an action is
+   unconfirmed; request, identity, or parse failure preserves both previously
+   stored datasets.
 
 Cache states have precise behavior:
 

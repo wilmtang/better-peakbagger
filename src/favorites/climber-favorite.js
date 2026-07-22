@@ -10,6 +10,7 @@ import { numericParam, ownerClimberId } from '../profile/profile-backup-core.js'
 
 const BUDDY_MUTATION_SESSION_KEY = 'bpbPendingBuddyMutation';
 const BUDDY_MUTATION_MAX_AGE_MS = 5 * 60 * 1000;
+const BUDDY_CONTROL_SELECTOR = 'button, input[type="submit"], input[type="button"], input[type="image"], a[href]';
 
 (() => {
     'use strict';
@@ -27,6 +28,7 @@ const BUDDY_MUTATION_MAX_AGE_MS = 5 * 60 * 1000;
     let button = null;
     let busy = false;
     let errorMessage = '';
+    let activeBuddyMutation = null;
 
     const takePendingBuddyMutation = () => {
         let raw = null;
@@ -48,7 +50,7 @@ const BUDDY_MUTATION_MAX_AGE_MS = 5 * 60 * 1000;
     };
 
     const buddyActionForControl = control => {
-        if (!control || control.disabled) return null;
+        if (!control) return null;
         const form = control.form;
         return F.buddyMutationAction([
             control.value,
@@ -62,9 +64,51 @@ const BUDDY_MUTATION_MAX_AGE_MS = 5 * 60 * 1000;
         ].filter(Boolean).join(' '));
     };
 
+    const buddyControls = root => {
+        const controls = [];
+        if (root?.matches?.(BUDDY_CONTROL_SELECTOR)) controls.push(root);
+        if (root?.querySelectorAll) controls.push(...root.querySelectorAll(BUDDY_CONTROL_SELECTOR));
+        return controls;
+    };
+
+    const decorateBuddyControls = root => {
+        for (const control of buddyControls(root)) {
+            if (buddyActionForControl(control)) control.classList.add('bpb-native-buddy-action');
+        }
+    };
+
+    const injectBuddyStyle = () => {
+        if (document.getElementById('bpb-native-buddy-action-style')) return;
+        const style = document.createElement('style');
+        style.id = 'bpb-native-buddy-action-style';
+        style.textContent = `
+.bpb-native-buddy-action { transition: filter 120ms ease; }
+.bpb-native-buddy-action:hover:not(:disabled) { filter: brightness(.92); }
+.bpb-native-buddy-action:focus-visible { outline: 2px solid #2f6b3f; outline-offset: 2px; }
+html[data-bpb-theme="dark"] .bpb-native-buddy-action:hover:not(:disabled) { filter: brightness(1.18); }
+html[data-bpb-theme="dark"] .bpb-native-buddy-action:focus-visible { outline-color: #8fc99c; }
+@media (prefers-reduced-motion: reduce) { .bpb-native-buddy-action { transition: none; } }
+`;
+        document.head.appendChild(style);
+    };
+
+    const clearRememberedBuddyMutation = mutation => {
+        try {
+            const raw = sessionStorage.getItem(BUDDY_MUTATION_SESSION_KEY);
+            const remembered = raw ? JSON.parse(raw) : null;
+            if (remembered?.version === 1
+                && remembered.cid === mutation.cid
+                && remembered.action === mutation.action) {
+                sessionStorage.removeItem(BUDDY_MUTATION_SESSION_KEY);
+            }
+        } catch { /* a blocked or malformed page store needs no cleanup */ }
+    };
+
     const rememberBuddyMutation = control => {
+        if (!control || control.disabled) return;
         const action = buddyActionForControl(control);
         if (!action) return;
+        activeBuddyMutation = { action, cid: pageCid };
         try {
             sessionStorage.setItem(BUDDY_MUTATION_SESSION_KEY, JSON.stringify({
                 version: 1,
@@ -77,17 +121,34 @@ const BUDDY_MUTATION_MAX_AGE_MS = 5 * 60 * 1000;
 
     const installBuddyMutationListener = () => {
         if (ownCid == null) return;
+        injectBuddyStyle();
+        decorateBuddyControls(document);
+        const observer = new MutationObserver(records => {
+            for (const record of records) {
+                if (record.type === 'attributes') decorateBuddyControls(record.target);
+                for (const node of record.addedNodes || []) decorateBuddyControls(node);
+            }
+            if (!activeBuddyMutation) return;
+            const expectedAction = activeBuddyMutation.action === 'add' ? 'remove' : 'add';
+            if (!buddyControls(document).some(control => buddyActionForControl(control) === expectedAction)) return;
+            const mutation = activeBuddyMutation;
+            activeBuddyMutation = null;
+            clearRememberedBuddyMutation(mutation);
+            void refreshAfterBuddyMutation(mutation);
+        });
+        observer.observe(document.documentElement, {
+            attributes: true,
+            attributeFilter: ['aria-label', 'disabled', 'title', 'value'],
+            childList: true,
+            subtree: true,
+        });
         document.addEventListener('click', event => {
             if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-            const control = event.target?.closest?.(
-                'button, input[type="submit"], input[type="button"], input[type="image"], a[href]'
-            );
+            const control = event.target?.closest?.(BUDDY_CONTROL_SELECTOR);
             rememberBuddyMutation(control);
         }, true);
         document.addEventListener('submit', event => {
-            const fallback = event.target?.querySelector?.(
-                'button[type="submit"], input[type="submit"], input[type="image"]'
-            );
+            const fallback = event.target?.querySelector?.('button[type="submit"], input[type="submit"], input[type="image"]');
             rememberBuddyMutation(event.submitter || fallback);
         }, true);
     };

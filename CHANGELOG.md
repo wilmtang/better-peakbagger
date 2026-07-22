@@ -4,8 +4,9 @@
 - **Find and keep up with favorite climbers.** Custom favorites now show a live
   Buddy/manual breakdown, filter by source, and support typo-tolerant name
   search plus strict ID search. Native
-  Peakbagger Buddy additions and removals refresh the saved Buddy List
-  immediately;
+  Peakbagger Buddy controls retain clear hover feedback, and additions or
+  removals refresh the saved Buddy List immediately even when Peakbagger
+  updates the page in place;
   additions also join a selected custom list, while removals preserve the
   favorite unless the new opt-in removal setting is enabled.
 
