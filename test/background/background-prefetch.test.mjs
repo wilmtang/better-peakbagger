@@ -88,7 +88,7 @@ const createHarness = ({ settings = { enable3dMap: true, terrainCacheLimitMb: 51
     const context = vm.createContext({
         browser, fetch, URL, URLSearchParams, Math, Date, console, structuredClone,
         caches: new MemoryCacheStorage(), Response, AbortController,
-        setTimeout: wrapTimeout, clearTimeout
+        setTimeout: wrapTimeout, clearTimeout, btoa
     });
     context.globalThis = context;
     context.self = context;

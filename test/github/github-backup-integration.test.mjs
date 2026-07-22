@@ -78,7 +78,7 @@ const createWorker = ({ settings = { enableGithubBackup: true }, auth = null, gi
     };
     const context = vm.createContext({
         browser, fetch, URL, URLSearchParams, Math, Date, console, structuredClone, AbortController,
-        TextEncoder, TextDecoder, atob,
+        TextEncoder, TextDecoder, atob, btoa,
     });
     context.globalThis = context;
     context.self = context;

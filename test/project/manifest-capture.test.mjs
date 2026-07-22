@@ -257,7 +257,7 @@ test('the bundled service worker boots and registers its listener', async () => 
         assert.fail('dist/background.js is missing — run `npm run build` before the tests');
     }
     const context = vm.createContext({
-        console, Math, Date, URL, URLSearchParams, structuredClone,
+        console, Math, Date, URL, URLSearchParams, structuredClone, btoa,
         fetch: async () => ({ ok: true, text: async () => '' })
     });
     context.globalThis = context;

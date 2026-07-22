@@ -36,7 +36,7 @@ import { githubErrors as GithubErrors } from './github-errors.js';
         type: 'better-peakbagger-backup',
         layout: 'repository-root',
     }, null, 2)}\n`;
-    const REPOSITORY_MARKER_BASE64 = 'ewogICJzY2hlbWFWZXJzaW9uIjogMSwKICAidHlwZSI6ICJiZXR0ZXItcGVha2JhZ2dlci1iYWNrdXAiLAogICJsYXlvdXQiOiAicmVwb3NpdG9yeS1yb290Igp9Cg==';
+    const REPOSITORY_MARKER_BASE64 = btoa(REPOSITORY_MARKER_CONTENT);
     const OWNED_FOLDER_FILES = new Set(['report.md', 'ascent.json', 'track.gpx']);
 
     const createGithubClient = ({

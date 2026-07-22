@@ -134,7 +134,8 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
         Math,
         Date,
         console,
-        structuredClone
+        structuredClone,
+        btoa
     });
     context.globalThis = context;
     context.self = context;

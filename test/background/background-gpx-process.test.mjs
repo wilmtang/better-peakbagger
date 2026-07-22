@@ -102,7 +102,7 @@ const createHarness = ({ peakXml = null, settings = {}, failPeakFetch = false,
 
     browser.tabs.group = async details => { grouped.push(structuredClone(details)); return 3; };
 
-    const context = vm.createContext({ browser, fetch, URL, URLSearchParams, Math, Date, console, structuredClone });
+    const context = vm.createContext({ browser, fetch, URL, URLSearchParams, Math, Date, console, structuredClone, btoa });
     context.globalThis = context;
     context.self = context;
     vm.runInContext(workerBundle, context, { filename: 'dist/background.js' });
