@@ -1377,23 +1377,18 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
             fresh.push({ tile, key });
         }
 
-        let loaded = 0;
-        const queue = fresh.slice();
-        const worker = async () => {
-            while (queue.length) {
-                const { tile, key } = queue.shift();
-                try {
-                    await cache.load({ url: `bpb-dem://${tile.z}/${tile.x}/${tile.y}.webp` });
-                    loaded++;
-                } catch (error) {
-                    // A failed tile is not warmed; drop its record so a later
-                    // prefetch retries instead of skipping it as "recently done".
-                    prefetchRecentTiles.delete(key);
-                }
+        const warmed = await mapWithConcurrency(fresh, PREFETCH_CONCURRENCY, async ({ tile, key }) => {
+            try {
+                await cache.load({ url: `bpb-dem://${tile.z}/${tile.x}/${tile.y}.webp` });
+                return true;
+            } catch (error) {
+                // A failed tile is not warmed; drop its record so a later
+                // prefetch retries instead of skipping it as "recently done".
+                prefetchRecentTiles.delete(key);
+                return false;
             }
-        };
-        await Promise.all(Array.from({ length: Math.min(PREFETCH_CONCURRENCY, queue.length) }, worker));
-        return { ok: true, tiles: loaded };
+        });
+        return { ok: true, tiles: warmed.filter(Boolean).length };
     };
 
     // The save-time snapshot from the ascentedit content script: keep it in
@@ -1439,6 +1434,24 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
         };
     };
 
+    const connectedGithubClient = async ({ requireEnabled = false } = {}) => {
+        if (requireEnabled && !(await Settings.get()).enableGithubBackup) {
+            return { error: { code: 'disabled' } };
+        }
+        const auth = await GithubAuth.authStore.read();
+        if (!auth || !auth.token) return { error: { code: 'not-connected' } };
+        if (!auth.repo || !auth.repo.owner || !auth.repo.name) return { error: { code: 'no-repo' } };
+        return {
+            client: GithubClient.createGithubClient({
+                fetch: netFetch,
+                token: auth.token,
+                owner: auth.repo.owner,
+                repo: auth.repo.name,
+                branch: auth.repo.branch || undefined,
+            }),
+        };
+    };
+
     // Profile backup preflight adds the repository's ascent-folder leaves to
     // the ordinary status. This stays a dedicated message so viewing a saved
     // ascent never pays for GitHub tree reads.
@@ -1446,16 +1459,10 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
         if (!isClimbListSender(sender)) return { ok: false, error: { code: 'forbidden' } };
         const status = await githubBackupStatus(sender);
         if (!status.enabled || !status.connected) return { ok: true, ...status, folders: [] };
-        const auth = await GithubAuth.authStore.read();
-        const client = GithubClient.createGithubClient({
-            fetch: netFetch,
-            token: auth.token,
-            owner: auth.repo.owner,
-            repo: auth.repo.name,
-            branch: auth.repo.branch || undefined,
-        });
+        const access = await connectedGithubClient();
+        if (access.error) return { ok: false, ...status, error: access.error };
         try {
-            return { ok: true, ...status, folders: await client.getAscentFolders() };
+            return { ok: true, ...status, folders: await access.client.getAscentFolders() };
         } catch (error) {
             return { ok: false, ...status, error: GithubErrors.publicError(error, 'Could not read the backup repository.') };
         }
@@ -1521,11 +1528,8 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
     // feature is off, disconnected, or the sender is not a Peakbagger tab.
     const backupAscent = async (message, sender) => {
         if (!isPeakbaggerSender(sender)) return { ok: false, error: { code: 'forbidden' } };
-        const settings = await Settings.get();
-        if (!settings.enableGithubBackup) return { ok: false, error: { code: 'disabled' } };
-        const auth = await GithubAuth.authStore.read();
-        if (!auth || !auth.token) return { ok: false, error: { code: 'not-connected' } };
-        if (!auth.repo || !auth.repo.owner || !auth.repo.name) return { ok: false, error: { code: 'no-repo' } };
+        const access = await connectedGithubClient({ requireEnabled: true });
+        if (access.error) return { ok: false, error: access.error };
 
         const found = await findSnapshotForPage(message.page, sender);
         // Automatic backup fires on every saved-ascent page load, so it must push
@@ -1547,15 +1551,8 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
             extensionVersion: ext.runtime.getManifest ? ext.runtime.getManifest().version : (snapshot.backup && snapshot.backup.extensionVersion) || '',
         };
 
-        const client = GithubClient.createGithubClient({
-            fetch: netFetch,
-            token: auth.token,
-            owner: auth.repo.owner,
-            repo: auth.repo.name,
-            branch: auth.repo.branch || undefined,
-        });
         try {
-            const result = await enqueueGithubWrite(() => client.pushAscentBackup(snapshot, { gpx: message.gpx }));
+            const result = await enqueueGithubWrite(() => access.client.pushAscentBackup(snapshot, { gpx: message.gpx }));
             // The snapshot has served its purpose; drop it so a later view of the
             // same page does not re-push from stale data.
             if (found) await mutateMap(SNAPSHOTS_KEY, m => { delete m[found.key]; });
@@ -1570,25 +1567,15 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
     // so an incomplete page can never be labelled current from a sparse view.
     const checkAscentBackup = async (message, sender) => {
         if (!isPeakbaggerSender(sender)) return { ok: false, error: { code: 'forbidden' } };
-        const settings = await Settings.get();
-        if (!settings.enableGithubBackup) return { ok: false, error: { code: 'disabled' } };
-        const auth = await GithubAuth.authStore.read();
-        if (!auth || !auth.token) return { ok: false, error: { code: 'not-connected' } };
-        if (!auth.repo || !auth.repo.owner || !auth.repo.name) return { ok: false, error: { code: 'no-repo' } };
+        const access = await connectedGithubClient({ requireEnabled: true });
+        if (access.error) return { ok: false, error: access.error };
         if (!message || !message.pageComplete) return { ok: false, error: { code: 'no-data' } };
         const snapshot = mergeBackupSnapshot(null, message.page, { pageComplete: true });
         if (!snapshot || snapshot.ascent.id == null) return { ok: false, error: { code: 'no-data' } };
-        const client = GithubClient.createGithubClient({
-            fetch: netFetch,
-            token: auth.token,
-            owner: auth.repo.owner,
-            repo: auth.repo.name,
-            branch: auth.repo.branch || undefined,
-        });
         try {
             return {
                 ok: true,
-                current: await client.isAscentBackupCurrent(snapshot, { gpx: message.gpx }),
+                current: await access.client.isAscentBackupCurrent(snapshot, { gpx: message.gpx }),
             };
         } catch (error) {
             return { ok: false, error: GithubErrors.publicError(error, 'Could not check the existing backup.') };
@@ -1615,11 +1602,8 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
             }
             seen.add(ascentId);
         }
-        const settings = await Settings.get();
-        if (!settings.enableGithubBackup) return { ok: false, error: { code: 'disabled' } };
-        const auth = await GithubAuth.authStore.read();
-        if (!auth || !auth.token) return { ok: false, error: { code: 'not-connected' } };
-        if (!auth.repo || !auth.repo.owner || !auth.repo.name) return { ok: false, error: { code: 'no-repo' } };
+        const access = await connectedGithubClient({ requireEnabled: true });
+        if (access.error) return { ok: false, error: access.error };
 
         const version = ext.runtime.getManifest ? ext.runtime.getManifest().version : '';
         for (const entry of entries) {
@@ -1629,15 +1613,8 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
                 extensionVersion: version,
             };
         }
-        const client = GithubClient.createGithubClient({
-            fetch: netFetch,
-            token: auth.token,
-            owner: auth.repo.owner,
-            repo: auth.repo.name,
-            branch: auth.repo.branch || undefined,
-        });
         try {
-            const result = await enqueueGithubWrite(() => client.pushAscentBackups(entries.map(entry => ({
+            const result = await enqueueGithubWrite(() => access.client.pushAscentBackups(entries.map(entry => ({
                 snapshot: entry.snapshot,
                 gpx: entry.gpx,
             }))));
@@ -1645,21 +1622,6 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
         } catch (error) {
             return { ok: false, error: GithubErrors.publicError(error, 'The backup failed.') };
         }
-    };
-
-    const optionsGithubClient = async () => {
-        const auth = await GithubAuth.authStore.read();
-        if (!auth || !auth.token) return { error: { code: 'not-connected' } };
-        if (!auth.repo || !auth.repo.owner || !auth.repo.name) return { error: { code: 'no-repo' } };
-        return {
-            client: GithubClient.createGithubClient({
-                fetch: netFetch,
-                token: auth.token,
-                owner: auth.repo.owner,
-                repo: auth.repo.name,
-                branch: auth.repo.branch || undefined,
-            }),
-        };
     };
 
     // Debounced, signature-gated automatic backup shared by the settings and
@@ -1686,7 +1648,7 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
 
         const fire = async () => {
             if (!(await enabled())) return;
-            const access = await optionsGithubClient();
+            const access = await connectedGithubClient();
             if (access.error) return;
             const { text, signature } = await build();
             const state = await readState();
@@ -1745,7 +1707,7 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
     });
 
     const backupSettings = async () => {
-        const access = await optionsGithubClient();
+        const access = await connectedGithubClient();
         if (access.error) return { ok: false, error: access.error };
         const { text, signature } = await buildSettingsBackup();
         try {
@@ -1760,7 +1722,7 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
     };
 
     const restoreSettings = async () => {
-        const access = await optionsGithubClient();
+        const access = await connectedGithubClient();
         if (access.error) return { ok: false, error: access.error };
         try {
             return { ok: true, content: await access.client.readRootFile(Transfer.BACKUP_PATH) };
@@ -1772,7 +1734,7 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
     // The worker owns serialization for both manual and automatic backups; the
     // options page still owns restore validation and reversible replacement.
     const backupFavorites = async () => {
-        const access = await optionsGithubClient();
+        const access = await connectedGithubClient();
         if (access.error) return { ok: false, error: access.error };
         const { text, signature } = await buildFavoritesBackup();
         try {
@@ -1787,7 +1749,7 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
     };
 
     const restoreFavorites = async () => {
-        const access = await optionsGithubClient();
+        const access = await connectedGithubClient();
         if (access.error) return { ok: false, error: access.error };
         try {
             return { ok: true, content: await access.client.readRootFile(FAVORITE_CLIMBERS_BACKUP_PATH) };
