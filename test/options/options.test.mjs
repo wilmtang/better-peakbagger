@@ -1114,7 +1114,29 @@ test('connected GitHub actions work with ascent backup off and restore with Undo
 
     await waitFor(dom, () => !el(dom, 'favorites-restore').disabled);
     el(dom, 'favorites-restore').click();
-    await waitFor(dom, () => dom.chrome._localStore[favoriteKey]?.entries?.[0]?.cid === restored.cid);
+    await waitFor(dom, () => el(dom, 'favorites-mirror-confirmation').hidden === false);
+    assert.equal(dom.chrome._localStore[favoriteKey].entries[0].cid, original.cid,
+        'reading a backup must not replace favorites before confirmation');
+    assert.equal(el(dom, 'favorites-mirror-confirmation-title').textContent,
+        'Restore favorites from backup?');
+    assert.match(el(dom, 'favorites-mirror-confirmation-detail').textContent,
+        /1 favorite will be added\. 1 custom favorite will be removed\./);
+    assert.match(el(dom, 'favorites-mirror-confirmation-detail').textContent,
+        /list will match the backup from ada\/peaks/);
+    assert.equal(el(dom, 'favorites-mirror-confirm').textContent, 'Restore backup');
+    assert.equal(dom.window.document.activeElement, el(dom, 'favorites-mirror-cancel'));
+
+    el(dom, 'favorites-mirror-cancel').click();
+    assert.equal(el(dom, 'favorites-mirror-confirmation').hidden, true);
+    assert.equal(dom.chrome._localStore[favoriteKey].entries[0].cid, original.cid,
+        'cancelling a restore must leave the custom list untouched');
+    assert.equal(dom.window.document.activeElement, el(dom, 'favorites-restore'));
+
+    el(dom, 'favorites-restore').click();
+    await waitFor(dom, () => el(dom, 'favorites-mirror-confirmation').hidden === false);
+    el(dom, 'favorites-mirror-confirm').click();
+    await waitFor(dom, () => dom.chrome._localStore[favoriteKey]?.entries?.[0]?.cid === restored.cid
+        && el(dom, 'favorites-undo-all').hidden === false);
     assert.equal(el(dom, 'favorites-undo-all').hidden, false);
     assert.match(el(dom, 'favorites-undo-message').textContent, /restored from GitHub/);
     assert.match(el(dom, 'favorites-github-status').textContent, /Save or restore/,

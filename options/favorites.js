@@ -40,6 +40,7 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
     const removeWithBuddyEl = document.getElementById('favorites-remove-with-buddy');
     const importStatusEl = document.getElementById('favorites-import-status');
     const mirrorConfirmationEl = document.getElementById('favorites-mirror-confirmation');
+    const mirrorConfirmationTitleEl = document.getElementById('favorites-mirror-confirmation-title');
     const mirrorConfirmationImpactEl = document.getElementById('favorites-mirror-confirmation-impact');
     const mirrorConfirmationSummaryEl = document.getElementById('favorites-mirror-confirmation-summary');
     const mirrorCancelEl = document.getElementById('favorites-mirror-cancel');
@@ -74,6 +75,7 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
         'favorites-remove-with-buddy': removeWithBuddyEl,
         'favorites-import-status': importStatusEl,
         'favorites-mirror-confirmation': mirrorConfirmationEl,
+        'favorites-mirror-confirmation-title': mirrorConfirmationTitleEl,
         'favorites-mirror-confirmation-impact': mirrorConfirmationImpactEl,
         'favorites-mirror-confirmation-summary': mirrorConfirmationSummaryEl,
         'favorites-mirror-cancel': mirrorCancelEl,
@@ -102,7 +104,7 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
     let refreshRevision = 0;
     let refreshTimer = null;
     let pendingBulk = null;
-    let pendingMirror = null;
+    let pendingReplacement = null;
     let githubStatus = null;
     let githubBusy = false;
     let githubRevision = 0;
@@ -173,20 +175,28 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
         return `${operation} complete: ${added} added, ${removed} removed. Custom list now has ${total} ${climbers}.${skippedCopy}`;
     };
 
-    const dismissMirrorConfirmation = ({ restoreFocus = false } = {}) => {
-        pendingMirror = null;
+    const dismissReplacementConfirmation = ({ restoreFocus = false } = {}) => {
+        const trigger = pendingReplacement?.kind === 'restore' ? restoreEl : mirrorEl;
+        pendingReplacement = null;
         mirrorConfirmationEl.hidden = true;
-        if (restoreFocus && !mirrorEl.disabled) mirrorEl.focus();
+        if (restoreFocus && !trigger.disabled) trigger.focus();
     };
 
-    const showMirrorConfirmation = (buddyEntries, { focus = true } = {}) => {
-        const { added, removed } = membershipChanges(favorites.entries, buddyEntries);
-        const buddyCount = buddyEntries.length;
-        mirrorConfirmationImpactEl.textContent = `${added} ${added === 1 ? 'buddy' : 'buddies'} will be added. ${removed} custom ${removed === 1 ? 'favorite' : 'favorites'} will be removed.`;
-        mirrorConfirmationSummaryEl.textContent = ` The custom list will then exactly match your ${buddyCount} current ${buddyCount === 1 ? 'buddy' : 'buddies'}. You can undo for 6 seconds after replacement.`;
-        mirrorConfirmEl.textContent = 'Replace custom list';
-        pendingMirror = {
-            buddyEntries: buddyEntries.map(entry => ({ ...entry })),
+    const showReplacementConfirmation = ({ kind, replacement, repo = '' }, { focus = true } = {}) => {
+        const { added, removed } = membershipChanges(favorites.entries, replacement.entries);
+        const total = replacement.entries.length;
+        const isRestore = kind === 'restore';
+        const addedNoun = isRestore ? (added === 1 ? 'favorite' : 'favorites') : (added === 1 ? 'buddy' : 'buddies');
+        mirrorConfirmationTitleEl.textContent = isRestore ? 'Restore favorites from backup?' : 'Replace custom favorites?';
+        mirrorConfirmationImpactEl.textContent = `${added} ${addedNoun} will be added. ${removed} custom ${removed === 1 ? 'favorite' : 'favorites'} will be removed.`;
+        mirrorConfirmationSummaryEl.textContent = isRestore
+            ? ` The list will match the backup from ${repo}. You can undo for 6 seconds after replacement.`
+            : ` The custom list will then exactly match your ${total} current ${total === 1 ? 'buddy' : 'buddies'}. You can undo for 6 seconds after replacement.`;
+        mirrorConfirmEl.textContent = isRestore ? 'Restore backup' : 'Replace custom list';
+        pendingReplacement = {
+            kind,
+            replacement: F.cleanFavorites(replacement),
+            repo,
             favoritesSignature: favoritesSignature(),
             added,
             removed,
@@ -414,7 +424,7 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
             buddyCache = F.cleanBuddyCache(values[F.BUDDY_CACHE_KEY]);
             renderPanels();
             renderGithub();
-            if (pendingMirror) showMirrorConfirmation(pendingMirror.buddyEntries, { focus: false });
+            if (pendingReplacement) showReplacementConfirmation(pendingReplacement, { focus: false });
         } catch (error) {
             if (revision !== refreshRevision) return;
             flash('Favorite climbers are unavailable');
@@ -648,8 +658,11 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
             flash('This favorites backup is not valid or uses a newer format.');
             return;
         }
-        const changed = await beginReplacement(parsed.favorites, 'Favorites restored from GitHub');
-        if (changed) flash(`Favorites restored from ${githubRepoName()}`);
+        showReplacementConfirmation({
+            kind: 'restore',
+            replacement: parsed.favorites,
+            repo: githubRepoName(),
+        });
     });
 
     const addClimber = async () => {
@@ -718,7 +731,7 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
         void save({ autoFavoritesBackup: autoBackupEl.checked });
     });
     mergeEl.addEventListener('click', () => {
-        dismissMirrorConfirmation();
+        dismissReplacementConfirmation();
         renderImportStatus('Loading your Buddy List…');
         void refreshBuddies().then(async cache => {
             if (!cache) {
@@ -751,7 +764,7 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
         });
     });
     mirrorEl.addEventListener('click', () => {
-        dismissMirrorConfirmation();
+        dismissReplacementConfirmation();
         renderImportStatus('Loading your Buddy List…');
         void refreshBuddies().then(async cache => {
             if (!cache) {
@@ -761,34 +774,54 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
                 return;
             }
             renderImportStatus();
-            showMirrorConfirmation(cache.entries);
+            showReplacementConfirmation({
+                kind: 'mirror',
+                replacement: F.mirrorBuddies(cache.entries),
+            });
         });
     });
-    mirrorCancelEl.addEventListener('click', () => { dismissMirrorConfirmation({ restoreFocus: true }); });
+    mirrorCancelEl.addEventListener('click', () => { dismissReplacementConfirmation({ restoreFocus: true }); });
     mirrorConfirmEl.addEventListener('click', () => {
-        if (!pendingMirror) return;
-        if (pendingMirror.favoritesSignature !== favoritesSignature()) {
-            showMirrorConfirmation(pendingMirror.buddyEntries);
+        if (!pendingReplacement) return;
+        if (pendingReplacement.favoritesSignature !== favoritesSignature()) {
+            showReplacementConfirmation(pendingReplacement);
             return;
         }
-        const { buddyEntries, added, removed } = pendingMirror;
-        setBusy(true);
+        const pending = pendingReplacement;
+        const { kind, replacement, repo, added, removed } = pending;
+        const isRestore = kind === 'restore';
+        if (isRestore) {
+            githubBusy = true;
+            renderGithub();
+        } else {
+            setBusy(true);
+        }
         mirrorCancelEl.disabled = true;
         mirrorConfirmEl.disabled = true;
-        renderImportStatus('Replacing custom favorites…');
-        void beginReplacement(F.mirrorBuddies(buddyEntries), 'Custom list replaced with your Buddy List')
+        if (!isRestore) renderImportStatus('Replacing custom favorites…');
+        void beginReplacement(replacement,
+            isRestore ? 'Favorites restored from GitHub' : 'Custom list replaced with your Buddy List')
             .then(changed => {
-                dismissMirrorConfirmation();
+                dismissReplacementConfirmation();
                 if (changed) {
-                    renderImportStatus(completionCopy('Mirror', {
-                        added, removed, total: buddyEntries.length,
-                    }));
-                    flash(`Mirror complete: ${added} added, ${removed} removed`);
-                } else {
+                    if (isRestore) {
+                        flash(`Favorites restored from ${repo}`);
+                    } else {
+                        renderImportStatus(completionCopy('Mirror', {
+                            added, removed, total: replacement.entries.length,
+                        }));
+                        flash(`Mirror complete: ${added} added, ${removed} removed`);
+                    }
+                } else if (!isRestore) {
                     renderImportStatus("The Buddy List loaded, but the custom favorites couldn't be saved.");
                 }
             }).finally(() => {
-                setBusy(false);
+                if (isRestore) {
+                    githubBusy = false;
+                    renderGithub();
+                } else {
+                    setBusy(false);
+                }
                 mirrorCancelEl.disabled = false;
                 mirrorConfirmEl.disabled = false;
             });
@@ -796,7 +829,7 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
     mirrorConfirmationEl.addEventListener('keydown', event => {
         if (event.key !== 'Escape') return;
         event.preventDefault();
-        dismissMirrorConfirmation({ restoreFocus: true });
+        dismissReplacementConfirmation({ restoreFocus: true });
     });
     undoAllButtonEl.addEventListener('click', () => { void undoReplacement(); });
     backupEl.addEventListener('click', () => { void backupFavorites(); });
@@ -806,7 +839,7 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
         radio.addEventListener('change', () => {
             if (!radio.checked) return;
             source = radio.value === 'custom' ? 'custom' : 'buddies';
-            if (source !== 'custom') dismissMirrorConfirmation();
+            if (source !== 'custom') dismissReplacementConfirmation();
             renderPanels();
             void save({ favoritesSource: source });
         });
@@ -831,7 +864,7 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
             source = settings && settings.favoritesSource === 'custom' ? 'custom' : 'buddies';
             removeWithBuddyEl.checked = settings?.removeFavoriteWhenBuddyRemoved === true;
             autoBackupEl.checked = settings?.autoFavoritesBackup === true;
-            if (source !== 'custom') dismissMirrorConfirmation();
+            if (source !== 'custom') dismissReplacementConfirmation();
             renderPanels();
             void refreshGithubStatus();
         },
