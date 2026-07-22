@@ -32,8 +32,8 @@ test('custom mode toggles the viewed climber without replacing other favorites',
     const button = dom.window.document.getElementById('bpb-climber-favorite');
     const heading = dom.window.document.querySelector('#TitleLabel h1');
     assert.equal(button.textContent, '☆');
-    assert.equal(button.getAttribute('aria-label'), 'Add Casey Alpine to your favorites');
-    assert.equal(button.title, 'Add Casey Alpine to your favorites');
+    assert.equal(button.getAttribute('aria-label'), 'Add Casey Alpine to your Better Peakbagger favorites');
+    assert.equal(button.title, 'Add Casey Alpine to your Better Peakbagger favorites');
     assert.equal(button.getAttribute('aria-pressed'), 'false');
     assert.equal(button.parentElement, heading.parentElement,
         'the compact action belongs beside the title instead of on a separate row');
@@ -48,7 +48,7 @@ test('custom mode toggles the viewed climber without replacing other favorites',
         existing
     );
     assert.equal(button.textContent, '★');
-    assert.equal(button.getAttribute('aria-label'), 'Remove Casey Alpine from your favorites');
+    assert.equal(button.getAttribute('aria-label'), 'Remove Casey Alpine from your Better Peakbagger favorite');
 
     button.click();
     await waitFor(dom, () => !dom.chrome._localStore[key].entries.some(entry => entry.cid === 900002));
