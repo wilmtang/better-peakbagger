@@ -51,9 +51,12 @@
         // like the others; the token and chosen repo deliberately do NOT live
         // in this schema (they must never sync) — src/github/github-auth.js owns those
         // in storage.local. `autoGithubBackup` performs the push without the
-        // per-save click once the manual path is enabled.
+        // per-save click once the manual path is enabled. Deletion mirroring is
+        // a separate opt-in because it removes the extension-owned files from
+        // the repository's current branch.
         enableGithubBackup: false,
         autoGithubBackup: false,
+        removeGithubBackupOnDelete: false,
         // Automatic GitHub push of the settings backup file on change.
         // Deliberately independent of enableGithubBackup (that gate belongs to
         // ascent backup); inert without a device-local token/repository.
@@ -146,12 +149,15 @@
         const s = { ...DEFAULTS, ...(raw && typeof raw === 'object' ? raw : {}) };
         if (!['auto', 'imperial', 'metric'].includes(s.units)) s.units = DEFAULTS.units;
         if (!['system', 'light', 'dark'].includes(s.theme)) s.theme = DEFAULTS.theme;
-        for (const key of ['enable3dMap', 'retainWaypoints', 'fillAscentDetails', 'fillTripInfo', 'fillWildernessNights', 'fillExternalUrl', 'enableReportEditor', 'addReportCredit', 'enableGithubBackup', 'autoGithubBackup', 'autoSettingsBackup', 'autoFavoritesBackup', 'removeFavoriteWhenBuddyRemoved', 'betaSortDateDesc']) {
+        for (const key of ['enable3dMap', 'retainWaypoints', 'fillAscentDetails', 'fillTripInfo', 'fillWildernessNights', 'fillExternalUrl', 'enableReportEditor', 'addReportCredit', 'enableGithubBackup', 'autoGithubBackup', 'removeGithubBackupOnDelete', 'autoSettingsBackup', 'autoFavoritesBackup', 'removeFavoriteWhenBuddyRemoved', 'betaSortDateDesc']) {
             if (typeof s[key] !== 'boolean') s[key] = DEFAULTS[key];
         }
-        // Auto-backup is meaningless without the feature enabled; never let it
-        // stand on its own.
-        if (!s.enableGithubBackup) s.autoGithubBackup = false;
+        // Ascent writes are meaningless without the feature enabled; never let
+        // either destructive or automatic behavior stand on its own.
+        if (!s.enableGithubBackup) {
+            s.autoGithubBackup = false;
+            s.removeGithubBackupOnDelete = false;
+        }
         if (!['both', 'distance', 'time'].includes(s.chartDefaultSeries)) s.chartDefaultSeries = DEFAULTS.chartDefaultSeries;
         if (!['buddies', 'custom'].includes(s.favoritesSource)) s.favoritesSource = DEFAULTS.favoritesSource;
         if (!['rich', 'markdown', 'plain'].includes(s.reportEditorMode)) s.reportEditorMode = DEFAULTS.reportEditorMode;

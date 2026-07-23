@@ -24,6 +24,7 @@ import { settings as Settings } from '../settings/settings.js';
 import { reportMarkup as Markup } from './report-markup.js';
 import { reportDrafts as ReportDrafts } from './report-drafts.js';
 import { ascentSnapshot as AscentSnapshot } from '../ascent/ascent-snapshot.js';
+import { ascentDeletion as AscentDeletion } from '../ascent/ascent-delete.js';
 import { createRichEditor, richCommands, richState } from './report-rich-editor.js';
 import { createMarkdownEditor } from './report-md-editor.js';
 import { dom as Dom } from '../ui/dom.js';
@@ -100,7 +101,8 @@ import { dom as Dom } from '../ui/dom.js';
         richDirty: false,    // preserve untouched unsupported server markup verbatim
         creditScaffold: false, // temporary blank writing space before a newly seeded credit
         syncTimer: null,
-        autosaveTimer: null
+        autosaveTimer: null,
+        terminalSubmission: false
     };
 
     let richEditor = null;   // created in initialize(), only when enabled
@@ -399,7 +401,10 @@ import { dom as Dom } from '../ui/dom.js';
             state.creditScaffold = false;
         }
     });
-    globalThis.addEventListener('pagehide', () => { flushSync(); void saveDraftNow(); });
+    globalThis.addEventListener('pagehide', () => {
+        flushSync();
+        if (!state.terminalSubmission) void saveDraftNow();
+    });
 
     // The source pane drives the preview's scroll position, proportionally.
     const syncPreviewScroll = () => {
@@ -457,6 +462,14 @@ import { dom as Dom } from '../ui/dom.js';
         }
         void localStore.remove(draftKey).catch(() => {});
     };
+
+    // A confirmed Delete submit has already established the worker-owned
+    // transaction. Treat it as terminal before navigation so pagehide cannot
+    // recreate the local report draft that this deletion just removed.
+    document.addEventListener(AscentDeletion.SUBMITTING_EVENT, () => {
+        state.terminalSubmission = true;
+        clearDraft();
+    });
 
     // ---- GitHub backup snapshot ------------------------------------------------
     //

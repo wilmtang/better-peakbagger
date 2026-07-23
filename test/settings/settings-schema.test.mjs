@@ -78,6 +78,22 @@ test('automatic favorites backup is opt-in and independent of ascent backup', ()
     assert.equal(Schema.clean({ autoFavoritesBackup: 'yes' }).autoFavoritesBackup, false);
 });
 
+test('removing GitHub ascent files on Peakbagger deletion is a subordinate opt-in', () => {
+    assert.equal(Schema.DEFAULTS.removeGithubBackupOnDelete, false);
+    assert.equal(Schema.clean({
+        enableGithubBackup: true,
+        removeGithubBackupOnDelete: true
+    }).removeGithubBackupOnDelete, true);
+    assert.equal(Schema.clean({
+        enableGithubBackup: false,
+        removeGithubBackupOnDelete: true
+    }).removeGithubBackupOnDelete, false);
+    assert.equal(Schema.clean({
+        enableGithubBackup: true,
+        removeGithubBackupOnDelete: 'yes'
+    }).removeGithubBackupOnDelete, false);
+});
+
 test('routeStyle() rejects untrusted values back to the shared defaults', () => {
     const style = Schema.routeStyle({
         color: 'javascript:alert(1)',

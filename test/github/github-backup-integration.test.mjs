@@ -86,7 +86,7 @@ const createWorker = ({ settings = { enableGithubBackup: true }, auth = null, gi
     const listener = runtimeMessage.listeners[0];
     const send = (message, sender = {}) => new Promise(resolve => { listener(message, sender, resolve); });
     return {
-        send, session, local, sync, alarms,
+        send, session, local, sync, alarms, githubCalls,
         fireStorageChange: (changes, areaName) => storageChanged.listeners.forEach(l => l(changes, areaName)),
         fireAlarm: name => alarms.onAlarm.listeners.forEach(l => l({ name })),
     };
@@ -781,6 +781,194 @@ test('backup fails closed when the feature is off, disconnected, or the sender i
         type: 'GITHUB_BACKUP_ASCENT', page: { ascent: { id: 1 }, peak: { id: 2, name: 'X' } },
     }, PEAK_SENDER);
     assert.equal(off.error.code, 'disabled');
+});
+
+test('ascent deletion requires intent plus authenticated complete-list absence before removing owned GitHub files', async () => {
+    const aid = 7654321;
+    const tabId = 61;
+    const folder = `2026-07-12-mount-rainier-a${aid}`;
+    const marker = `${JSON.stringify({
+        schemaVersion: 1,
+        type: 'better-peakbagger-backup',
+        layout: 'repository-root',
+    }, null, 2)}\n`;
+    let writtenTree = null;
+    let refPatch = null;
+    const github = (method, path, body) => {
+        if (method === 'GET' && path === '/repos/me/backup') {
+            return respond(200, { default_branch: 'main', archived: false, permissions: { push: true } });
+        }
+        if (method === 'GET' && path === '/repos/me/backup/git/ref/heads/main') {
+            return respond(200, { object: { sha: 'C0' } });
+        }
+        if (method === 'GET' && path === '/repos/me/backup/git/commits/C0') {
+            return respond(200, { tree: { sha: 'T0' } });
+        }
+        if (method === 'GET' && path === '/repos/me/backup/git/trees/T0') {
+            return respond(200, { tree: [
+                { path: '.better-peakbagger.json', type: 'blob', sha: 'marker' },
+                { path: folder, type: 'tree', sha: 'F0' },
+                { path: 'README.md', type: 'blob', sha: 'readme' },
+            ] });
+        }
+        if (method === 'GET' && path === '/repos/me/backup/git/blobs/marker') {
+            return respond(200, { encoding: 'base64', content: Buffer.from(marker).toString('base64') });
+        }
+        if (method === 'GET' && path === '/repos/me/backup/git/trees/F0') {
+            return respond(200, { tree: [
+                { path: 'report.md', type: 'blob', sha: 'r' },
+                { path: 'ascent.json', type: 'blob', sha: 'a' },
+                { path: 'track.gpx', type: 'blob', sha: 'g' },
+                { path: 'notes.md', type: 'blob', sha: 'user' },
+            ] });
+        }
+        if (method === 'POST' && path === '/repos/me/backup/git/trees') {
+            writtenTree = body;
+            return respond(201, { sha: 'T1' });
+        }
+        if (method === 'POST' && path === '/repos/me/backup/git/commits') {
+            return respond(201, { sha: 'D1', html_url: 'https://github.com/me/backup/commit/D1' });
+        }
+        if (method === 'PATCH' && path === '/repos/me/backup/git/refs/heads/main') {
+            refPatch = body;
+            return respond(200, { object: { sha: 'D1' } });
+        }
+        return null;
+    };
+    const worker = createWorker({
+        settings: { enableGithubBackup: true, removeGithubBackupOnDelete: true },
+        auth: AUTH,
+        github,
+    });
+    const editSender = {
+        tab: { id: tabId },
+        url: `https://www.peakbagger.com/climber/ascentedit.aspx?aid=${aid}&cid=900001`,
+    };
+    const listSender = {
+        tab: { id: tabId },
+        url: 'https://www.peakbagger.com/climber/ClimbListC.aspx?cid=900001&j=-1&y=9999',
+    };
+
+    assert.deepEqual(structuredClone(await worker.send({
+        type: 'GITHUB_ASCENT_DELETE_INTENT', aid,
+    }, editSender)), { ok: true });
+    assert.deepEqual(structuredClone(await worker.send({
+        type: 'GITHUB_ASCENT_DELETE_PENDING',
+    }, listSender)), { ok: true, aids: [aid] });
+    assert.equal(worker.githubCalls.length, 0, 'intent and pending status must not touch GitHub');
+
+    const deleted = structuredClone(await worker.send({
+        type: 'GITHUB_ASCENT_DELETE_CONFIRM',
+        aid,
+        climberId: 900001,
+        allAscentIds: [111, 222],
+        pageComplete: true,
+    }, listSender));
+
+    assert.equal(deleted.ok, true);
+    assert.equal(deleted.confirmed, true);
+    assert.equal(deleted.result.removedFileCount, 3);
+    assert.equal(deleted.result.commitUrl, 'https://github.com/me/backup/commit/D1');
+    assert.deepEqual(writtenTree.tree, [
+        { path: `${folder}/report.md`, mode: '100644', type: 'blob', sha: null },
+        { path: `${folder}/ascent.json`, mode: '100644', type: 'blob', sha: null },
+        { path: `${folder}/track.gpx`, mode: '100644', type: 'blob', sha: null },
+    ]);
+    assert.ok(!writtenTree.tree.some(entry => /notes\.md|README\.md/.test(entry.path)),
+        'user-added folder and root files must survive');
+    assert.deepEqual(refPatch, { sha: 'D1', force: false });
+    assert.equal(worker.session.bpbGithubAscentDeleteIntents[String(aid)].state, 'completed');
+    assert.deepEqual(structuredClone(await worker.send({
+        type: 'GITHUB_ASCENT_DELETE_PENDING',
+    }, listSender)), { ok: true, aids: [] });
+});
+
+test('deletion intent is strict, same-tab scoped, and cancelled when the ascent still exists', async () => {
+    const aid = 7654321;
+    const worker = createWorker({
+        settings: { enableGithubBackup: true, removeGithubBackupOnDelete: true },
+        auth: AUTH,
+        github: () => { throw new Error('GitHub must not be contacted'); },
+    });
+    const editSender = {
+        tab: { id: 71 },
+        url: `https://www.peakbagger.com/climber/ascentedit.aspx?aid=${aid}`,
+    };
+    const listSender = {
+        tab: { id: 71 },
+        url: 'https://www.peakbagger.com/climber/ClimbListC.aspx?cid=900001&j=-1&y=9999',
+    };
+
+    const wrongPath = await worker.send({ type: 'GITHUB_ASCENT_DELETE_INTENT', aid }, {
+        tab: { id: 71 },
+        url: `https://www.peakbagger.com/climber/ascent.aspx?aid=${aid}`,
+    });
+    assert.equal(wrongPath.error.code, 'forbidden');
+    const mismatched = await worker.send({ type: 'GITHUB_ASCENT_DELETE_INTENT', aid }, {
+        tab: { id: 71 },
+        url: 'https://www.peakbagger.com/climber/ascentedit.aspx?aid=7654322',
+    });
+    assert.equal(mismatched.error.code, 'forbidden');
+
+    await worker.send({ type: 'GITHUB_ASCENT_DELETE_INTENT', aid }, editSender);
+    assert.deepEqual(structuredClone(await worker.send({
+        type: 'GITHUB_ASCENT_DELETE_PENDING',
+    }, { ...listSender, tab: { id: 72 } })), { ok: true, aids: [] });
+
+    const retained = structuredClone(await worker.send({
+        type: 'GITHUB_ASCENT_DELETE_CONFIRM',
+        aid,
+        climberId: 900001,
+        allAscentIds: [aid, 123],
+        pageComplete: true,
+    }, listSender));
+    assert.deepEqual(retained, { ok: true, confirmed: false, reason: 'still-present' });
+    assert.equal(worker.session.bpbGithubAscentDeleteIntents[String(aid)], undefined);
+    assert.equal(worker.githubCalls.length, 0);
+});
+
+test('a deletion tombstone clears pending save data and prevents backup resurrection', async () => {
+    const aid = 7654321;
+    const tabId = 81;
+    const worker = createWorker({
+        settings: {
+            enableGithubBackup: true,
+            autoGithubBackup: true,
+            removeGithubBackupOnDelete: true,
+        },
+        auth: AUTH,
+        github: () => { throw new Error('GitHub must not be contacted'); },
+    });
+    const pending = editSnapshot();
+    pending.identity.ascentId = aid;
+    pending.snapshot.ascent.id = aid;
+    const editSender = {
+        tab: { id: tabId },
+        url: `https://www.peakbagger.com/climber/ascentedit.aspx?aid=${aid}&cid=900001`,
+    };
+    await worker.send({ type: 'GITHUB_BACKUP_SNAPSHOT', ...pending }, editSender);
+    assert.ok(worker.session.bpbGithubSnapshots[storedSnapshotKey(pending, editSender)]);
+
+    await worker.send({ type: 'GITHUB_ASCENT_DELETE_INTENT', aid }, editSender);
+    assert.equal(worker.session.bpbGithubSnapshots[storedSnapshotKey(pending, editSender)], undefined);
+
+    const blocked = await worker.send({
+        type: 'GITHUB_BACKUP_ASCENT',
+        pageComplete: true,
+        page: pending.snapshot,
+        gpx: null,
+    }, {
+        tab: { id: tabId },
+        url: `https://www.peakbagger.com/climber/ascent.aspx?aid=${aid}`,
+    });
+    assert.equal(blocked.error.code, 'ascent-delete-pending');
+
+    const batch = await worker.send({
+        type: 'GITHUB_BACKUP_PROFILE_BATCH',
+        entries: [{ aid, snapshot: pending.snapshot, gpx: null }],
+    }, LIST_SENDER);
+    assert.equal(batch.error.code, 'ascent-delete-pending');
+    assert.equal(worker.githubCalls.length, 0);
 });
 
 test('automatic backup declines on a revisit with no fresh snapshot, but pushes when one exists', async () => {

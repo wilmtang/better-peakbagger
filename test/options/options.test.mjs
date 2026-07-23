@@ -1977,7 +1977,7 @@ test('the My Ascents action explains when Peakbagger is signed out', async () =>
     assert.equal(opened[0], 'https://www.peakbagger.com/Climber/Login.aspx');
 });
 
-test('the connected state exposes the auto-backup toggle and persists it', async () => {
+test('the connected state exposes independent save and delete backup choices', async () => {
     const dom = await loadOptions({ enableGithubBackup: true }, {
         prepareChrome: withGithubBackground({
             enabled: true, connected: true, hasToken: true, auto: false,
@@ -1993,4 +1993,14 @@ test('the connected state exposes the auto-backup toggle and persists it', async
     autoEl.dispatchEvent(new dom.window.Event('change'));
     await new Promise(r => dom.window.setTimeout(r, 30));
     assert.equal(dom.chrome._store.bpbSettings.autoGithubBackup, true);
+
+    const deleteEl = el(dom, 'github-delete-backup');
+    assert.ok(deleteEl, 'the deletion-mirroring checkbox is present when connected');
+    assert.equal(deleteEl.checked, false);
+    assert.match(el(dom, 'github-ascent-panel').textContent, /Git history and your own files remain/);
+
+    deleteEl.checked = true;
+    deleteEl.dispatchEvent(new dom.window.Event('change'));
+    await new Promise(r => dom.window.setTimeout(r, 30));
+    assert.equal(dom.chrome._store.bpbSettings.removeGithubBackupOnDelete, true);
 });

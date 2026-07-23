@@ -465,6 +465,221 @@ test('a persistent ref conflict stops after the bounded retry schedule', async (
     assert.deepEqual(delays, [500, 2000, 5000]);
 });
 
+test('deleting an ascent removes only owned files from exact terminal-id folders', async () => {
+    const first = '2026-06-01-old-name-a1234567';
+    const second = '2026-07-12-mount-rainier-a1234567';
+    const { fetch, calls } = makeFetch({
+        'GET /repos/me/backup': REPO_OK(),
+        'GET /repos/me/backup/git/ref/heads/main': REF('C0'),
+        'GET /repos/me/backup/git/commits/C0': COMMIT('C0', 'T0'),
+        'GET /repos/me/backup/git/trees/T0': () => respond(200, { tree: [
+            MARKER,
+            { path: first, type: 'tree', sha: 'F1' },
+            { path: second, type: 'tree', sha: 'F2' },
+            { path: '2026-07-12-other-a12345670', type: 'tree', sha: 'OTHER' },
+            { path: 'README.md', type: 'blob', sha: 'readme' },
+        ] }),
+        'GET /repos/me/backup/git/blobs/marker': MARKER_BLOB,
+        'GET /repos/me/backup/git/trees/F1': () => respond(200, { tree: [
+            { path: 'report.md', type: 'blob', sha: 'r1' },
+            { path: 'ascent.json', type: 'blob', sha: 'a1' },
+            { path: 'track.gpx', type: 'blob', sha: 'g1' },
+            { path: 'notes.md', type: 'blob', sha: 'user1' },
+        ] }),
+        'GET /repos/me/backup/git/trees/F2': () => respond(200, { tree: [
+            { path: 'report.md', type: 'blob', sha: 'r2' },
+            { path: 'ascent.json', type: 'blob', sha: 'a2' },
+            { path: 'photos/caption.txt', type: 'blob', sha: 'user2' },
+        ] }),
+        'POST /repos/me/backup/git/trees': () => respond(201, { sha: 'T1' }),
+        'POST /repos/me/backup/git/commits': () => respond(201, {
+            sha: 'C1', html_url: 'https://github.com/me/backup/commit/C1',
+        }),
+        'PATCH /repos/me/backup/git/refs/heads/main': () => respond(200, { object: { sha: 'C1' } }),
+    });
+    const client = Client.createGithubClient({ fetch, token: 't', owner: 'me', repo: 'backup' });
+
+    const result = await client.deleteAscentBackup(1234567);
+
+    assert.deepEqual(result, {
+        sha: 'C1',
+        commitUrl: 'https://github.com/me/backup/commit/C1',
+        message: 'Delete ascent backup: 1234567',
+        removedFileCount: 5,
+        folders: [first, second],
+        noOp: false,
+    });
+    assert.ok(!calls.some(call => call.path.endsWith('/git/trees/OTHER')),
+        'a longer terminal id must not be read');
+    const treeCall = calls.find(call => call.key === 'POST /repos/me/backup/git/trees');
+    assert.equal(treeCall.body.base_tree, 'T0');
+    assert.deepEqual(treeCall.body.tree, [
+        { path: `${first}/report.md`, mode: '100644', type: 'blob', sha: null },
+        { path: `${first}/ascent.json`, mode: '100644', type: 'blob', sha: null },
+        { path: `${first}/track.gpx`, mode: '100644', type: 'blob', sha: null },
+        { path: `${second}/report.md`, mode: '100644', type: 'blob', sha: null },
+        { path: `${second}/ascent.json`, mode: '100644', type: 'blob', sha: null },
+    ]);
+    assert.ok(!treeCall.body.tree.some(entry =>
+        entry.path.endsWith('/notes.md') || entry.path.endsWith('/photos/caption.txt')),
+    'user-added files must remain in the base tree');
+    assert.deepEqual(calls.find(call => call.key === 'POST /repos/me/backup/git/commits').body, {
+        message: 'Delete ascent backup: 1234567',
+        tree: 'T1',
+        parents: ['C0'],
+    });
+    assert.deepEqual(calls.find(call =>
+        call.key === 'PATCH /repos/me/backup/git/refs/heads/main').body,
+    { sha: 'C1', force: false });
+});
+
+test('deleting an absent ascent is a read-only no-op', async () => {
+    const { fetch, calls } = makeFetch({
+        'GET /repos/me/backup': REPO_OK(),
+        'GET /repos/me/backup/git/ref/heads/main': REF('C0'),
+        'GET /repos/me/backup/git/commits/C0': COMMIT('C0', 'T0'),
+        'GET /repos/me/backup/git/trees/T0': () => respond(200, { tree: [
+            MARKER,
+            { path: '2026-07-12-other-a12345670', type: 'tree', sha: 'OTHER' },
+        ] }),
+        'GET /repos/me/backup/git/blobs/marker': MARKER_BLOB,
+    });
+    const client = Client.createGithubClient({ fetch, token: 't', owner: 'me', repo: 'backup' });
+
+    assert.deepEqual(await client.deleteAscentBackup(1234567), {
+        sha: null,
+        commitUrl: null,
+        message: null,
+        removedFileCount: 0,
+        folders: [],
+        noOp: true,
+    });
+    assert.ok(calls.every(call => call.method === 'GET'));
+});
+
+test('deleting an ascent preserves a matching folder that has only user files', async () => {
+    const leaf = '2026-07-12-mount-rainier-a1234567';
+    const { fetch, calls } = makeFetch({
+        'GET /repos/me/backup': REPO_OK(),
+        'GET /repos/me/backup/git/ref/heads/main': REF('C0'),
+        'GET /repos/me/backup/git/commits/C0': COMMIT('C0', 'T0'),
+        'GET /repos/me/backup/git/trees/T0': () => respond(200, { tree: [
+            MARKER,
+            { path: leaf, type: 'tree', sha: 'F1' },
+        ] }),
+        'GET /repos/me/backup/git/blobs/marker': MARKER_BLOB,
+        'GET /repos/me/backup/git/trees/F1': () => respond(200, { tree: [
+            { path: 'notes.md', type: 'blob', sha: 'user' },
+        ] }),
+    });
+    const client = Client.createGithubClient({ fetch, token: 't', owner: 'me', repo: 'backup' });
+
+    assert.deepEqual(await client.deleteAscentBackup(1234567), {
+        sha: null,
+        commitUrl: null,
+        message: null,
+        removedFileCount: 0,
+        folders: [leaf],
+        noOp: true,
+    });
+    assert.ok(calls.every(call => call.method === 'GET'));
+});
+
+test('ascent deletion rejects a foreign ownership marker before reading or writing a folder', async () => {
+    const { fetch, calls } = makeFetch({
+        'GET /repos/me/backup': REPO_OK(),
+        'GET /repos/me/backup/git/ref/heads/main': REF('C0'),
+        'GET /repos/me/backup/git/commits/C0': COMMIT('C0', 'T0'),
+        'GET /repos/me/backup/git/trees/T0': () => respond(200, { tree: [
+            MARKER,
+            { path: '2026-07-12-mount-rainier-a1234567', type: 'tree', sha: 'F1' },
+        ] }),
+        'GET /repos/me/backup/git/blobs/marker': () => respond(200, {
+            encoding: 'base64',
+            content: Buffer.from('{"type":"someone-else"}\n').toString('base64'),
+        }),
+    });
+    const client = Client.createGithubClient({ fetch, token: 't', owner: 'me', repo: 'backup' });
+
+    await assert.rejects(
+        client.deleteAscentBackup(1234567),
+        error => error.code === ERROR_CODES.REPO_CONFLICT,
+    );
+    assert.ok(calls.every(call => call.method === 'GET'));
+    assert.ok(!calls.some(call => call.path.endsWith('/git/trees/F1')));
+});
+
+test('ascent deletion validates a positive safe integer before network access', () => {
+    const client = Client.createGithubClient({
+        fetch: () => { throw new Error('fetch must not run'); },
+        token: 't',
+        owner: 'me',
+        repo: 'backup',
+    });
+    for (const value of [0, -1, 1.5, NaN, Infinity, '123', Number.MAX_SAFE_INTEGER + 1]) {
+        assert.throws(
+            () => client.deleteAscentBackup(value),
+            /positive integer ascent id/,
+            `expected ${String(value)} to be rejected`,
+        );
+    }
+});
+
+test('ascent deletion re-reads and rebuilds after a transient ref conflict', async () => {
+    let refReads = 0;
+    let patchCount = 0;
+    const delays = [];
+    const leaf = '2026-07-12-mount-rainier-a1234567';
+    const { fetch, calls } = makeFetch({
+        'GET /repos/me/backup': REPO_OK(),
+        'GET /repos/me/backup/git/ref/heads/main': () => {
+            refReads += 1;
+            return respond(200, { object: { sha: `C${refReads - 1}` } });
+        },
+        'GET /repos/me/backup/git/commits/C0': COMMIT('C0', 'T0'),
+        'GET /repos/me/backup/git/commits/C1': COMMIT('C1', 'T1'),
+        'GET /repos/me/backup/git/trees/T0': () => respond(200, { tree: [
+            MARKER, { path: leaf, type: 'tree', sha: 'F0' },
+        ] }),
+        'GET /repos/me/backup/git/trees/T1': () => respond(200, { tree: [
+            MARKER, { path: leaf, type: 'tree', sha: 'F1' },
+        ] }),
+        'GET /repos/me/backup/git/blobs/marker': MARKER_BLOB,
+        'GET /repos/me/backup/git/trees/F0': () => respond(200, { tree: [
+            { path: 'report.md', type: 'blob', sha: 'old' },
+        ] }),
+        'GET /repos/me/backup/git/trees/F1': () => respond(200, { tree: [
+            { path: 'report.md', type: 'blob', sha: 'new' },
+        ] }),
+        'POST /repos/me/backup/git/trees': n => respond(201, { sha: `TX${n}` }),
+        'POST /repos/me/backup/git/commits': n => respond(201, { sha: `CN${n}` }),
+        'PATCH /repos/me/backup/git/refs/heads/main': () => {
+            patchCount += 1;
+            return patchCount === 1
+                ? respond(422, { message: 'Update is not a fast forward' })
+                : respond(200, { object: { sha: 'CN2' } });
+        },
+    });
+    const client = Client.createGithubClient({
+        fetch,
+        token: 't',
+        owner: 'me',
+        repo: 'backup',
+        sleep: async ms => delays.push(ms),
+    });
+
+    const result = await client.deleteAscentBackup(1234567);
+
+    assert.equal(result.sha, 'CN2');
+    assert.equal(refReads, 2);
+    assert.equal(patchCount, 2);
+    assert.deepEqual(delays, [500]);
+    assert.deepEqual(
+        calls.filter(call => call.key === 'POST /repos/me/backup/git/trees').map(call => call.body.base_tree),
+        ['T0', 'T1'],
+    );
+});
+
 test('a root file is decoded from the selected branch and a missing file returns null', async () => {
     const encoded = Buffer.from('{"name":"Café"}\n', 'utf8').toString('base64');
     const { fetch, calls } = makeFetch({

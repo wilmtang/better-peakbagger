@@ -20,6 +20,8 @@ const AUTO_BACKUP_MAX_RETRIES = 2;
 const SNAPSHOT_TTL_MS = 30 * 60 * 1000;
 const SNAPSHOT_LIMIT = 10;
 const PROFILE_BACKUP_BATCH_LIMIT = 10;
+const ASCENT_DELETE_INTENTS_KEY = 'bpbGithubAscentDeleteIntents';
+const ASCENT_DELETE_TTL_MS = 30 * 60 * 1000;
 
 export function createGithubRoutes({
     ext,
@@ -290,6 +292,162 @@ export function createGithubRoutes({
         };
     };
 
+    const positiveAscentId = value => {
+        if (typeof value !== 'number' && (typeof value !== 'string' || !/^\d+$/.test(value))) return null;
+        const number = Number(value);
+        return Number.isSafeInteger(number) && number > 0 ? number : null;
+    };
+
+    const isAscentEditSender = (sender, ascentId) => {
+        if (!isPeakbaggerSender(sender)) return false;
+        try {
+            const url = new URL(sender.url);
+            return /\/climber\/ascentedit\.aspx$/i.test(url.pathname)
+                && positiveAscentId(url.searchParams.get('aid')) === ascentId;
+        } catch { return false; }
+    };
+
+    const senderTabId = sender => Number.isInteger(sender?.tab?.id) ? sender.tab.id : null;
+    const deletionRecord = async ascentId => {
+        const intents = await readMap(ASCENT_DELETE_INTENTS_KEY);
+        const record = intents[String(ascentId)];
+        return isFresh(record) ? record : null;
+    };
+    const deletionBlocksBackup = async ascentIds => {
+        for (const ascentId of ascentIds) {
+            if (await deletionRecord(ascentId)) return ascentId;
+        }
+        return null;
+    };
+    const clearAscentSnapshots = ascentId => mutateMap(SNAPSHOTS_KEY, snapshots => {
+        for (const [key, record] of Object.entries(snapshots)) {
+            if (positiveAscentId(record?.identity?.ascentId) === ascentId) delete snapshots[key];
+        }
+    });
+
+    // Phase one: intercept only Peakbagger's two native Delete submitters and
+    // durably record intent before the destructive POST is allowed to proceed.
+    // No GitHub mutation happens here.
+    const storeAscentDeleteIntent = async (message, sender) => {
+        const ascentId = positiveAscentId(message?.aid);
+        if (!ascentId || !isAscentEditSender(sender, ascentId)) {
+            return { ok: false, error: { code: 'forbidden' } };
+        }
+        const settings = await Settings.get();
+        if (!settings.enableGithubBackup || !settings.removeGithubBackupOnDelete) {
+            return { ok: false, error: { code: 'disabled' } };
+        }
+        const access = await connectedGithubClient({ requireEnabled: true });
+        if (access.error) return { ok: false, error: access.error };
+        const tabId = senderTabId(sender);
+        if (tabId == null) return { ok: false, error: { code: 'forbidden' } };
+
+        await mutateMap(ASCENT_DELETE_INTENTS_KEY, intents => {
+            intents[String(ascentId)] = {
+                aid: ascentId,
+                sourceTabId: tabId,
+                state: 'pending',
+                createdAt: now(),
+                expiresAt: now() + ASCENT_DELETE_TTL_MS,
+            };
+        });
+        await clearAscentSnapshots(ascentId);
+        return { ok: true };
+    };
+
+    // A same-tab My Ascents redirect can ask whether it has deletion work. The
+    // aid is not proof; it is only the input to the complete-list confirmation
+    // below, and completed tombstones remain private so stale backup work stays
+    // blocked without repeating the deletion.
+    const pendingAscentDeletions = async sender => {
+        if (!isClimbListSender(sender)) return { ok: false, error: { code: 'forbidden' } };
+        const settings = await Settings.get();
+        if (!settings.enableGithubBackup || !settings.removeGithubBackupOnDelete) {
+            return { ok: true, aids: [] };
+        }
+        const tabId = senderTabId(sender);
+        const intents = await readMap(ASCENT_DELETE_INTENTS_KEY);
+        const aids = Object.values(intents)
+            .filter(record => isFresh(record) && record.state === 'pending' && record.sourceTabId === tabId)
+            .map(record => positiveAscentId(record.aid))
+            .filter(Boolean);
+        return { ok: true, aids: [...new Set(aids)] };
+    };
+
+    // Phase two: the isolated ClimbListC content script supplies the parsed,
+    // complete all-years owner list. Recheck the signed-in owner in the worker,
+    // then delete only when the intended aid is authoritatively absent.
+    const confirmAscentDeletion = async (message, sender) => {
+        if (!isClimbListSender(sender)) return { ok: false, error: { code: 'forbidden' } };
+        const ascentId = positiveAscentId(message?.aid);
+        const climberId = positiveAscentId(message?.climberId);
+        const listed = message?.allAscentIds;
+        if (!ascentId || !climberId || message?.pageComplete !== true
+            || !Array.isArray(listed) || listed.length > 100000
+            || listed.some(value => !positiveAscentId(value))) {
+            return { ok: false, error: { code: 'no-data' } };
+        }
+
+        const record = await deletionRecord(ascentId);
+        if (!record || record.state !== 'pending' || record.sourceTabId !== senderTabId(sender)) {
+            return { ok: false, error: { code: 'no-delete-intent' } };
+        }
+        const settings = await Settings.get();
+        if (!settings.enableGithubBackup || !settings.removeGithubBackupOnDelete) {
+            return { ok: false, error: { code: 'disabled' } };
+        }
+        let signedInId = null;
+        try { signedInId = positiveAscentId(await peakbaggerLogin()); }
+        catch (error) {
+            return {
+                ok: false,
+                error: {
+                    source: 'peakbagger',
+                    code: error?.code || 'peakbagger-unavailable',
+                    message: error?.message || 'Could not confirm the signed-in Peakbagger account.',
+                },
+            };
+        }
+        if (signedInId !== climberId) {
+            return {
+                ok: false,
+                error: {
+                    source: 'peakbagger',
+                    code: 'identity-mismatch',
+                    message: 'The complete ascent list does not belong to the signed-in Peakbagger account.',
+                },
+            };
+        }
+
+        if (listed.some(value => Number(value) === ascentId)) {
+            await mutateMap(ASCENT_DELETE_INTENTS_KEY, intents => { delete intents[String(ascentId)]; });
+            return { ok: true, confirmed: false, reason: 'still-present' };
+        }
+
+        const access = await connectedGithubClient({ requireEnabled: true });
+        if (access.error) return { ok: false, error: access.error };
+        try {
+            const result = await enqueueGithubWrite(() => access.client.deleteAscentBackup(ascentId));
+            await clearAscentSnapshots(ascentId);
+            await mutateMap(ASCENT_DELETE_INTENTS_KEY, intents => {
+                const current = intents[String(ascentId)];
+                if (!current) return;
+                intents[String(ascentId)] = {
+                    ...current,
+                    state: 'completed',
+                    completedAt: now(),
+                    expiresAt: now() + ASCENT_DELETE_TTL_MS,
+                };
+            });
+            return { ok: true, confirmed: true, result };
+        } catch (error) {
+            return {
+                ok: false,
+                error: GithubErrors.publicError(error, 'The deleted ascent could not be removed from GitHub.'),
+            };
+        }
+    };
+
     const connectedGithubClient = async ({ requireEnabled = false } = {}) => {
         if (requireEnabled && !(await Settings.get()).enableGithubBackup) {
             return { error: { code: 'disabled' } };
@@ -433,6 +591,11 @@ export function createGithubRoutes({
             pageComplete: !!message.pageComplete,
         });
         if (!snapshot || snapshot.ascent.id == null) return { ok: false, error: { code: 'no-data' } };
+        const ascentId = positiveAscentId(snapshot.ascent.id);
+        if (!ascentId) return { ok: false, error: { code: 'no-data' } };
+        if (await deletionBlocksBackup([ascentId])) {
+            return { ok: false, error: { code: 'ascent-delete-pending', message: 'This ascent was deleted from Peakbagger, so its GitHub backup was not recreated.' } };
+        }
         snapshot.backup = {
             ...(snapshot.backup || {}),
             syncedAt: new Date().toISOString(),
@@ -440,7 +603,14 @@ export function createGithubRoutes({
         };
 
         try {
-            const result = await enqueueGithubWrite(() => access.client.pushAscentBackup(snapshot, { gpx: message.gpx }));
+            const result = await enqueueGithubWrite(async () => {
+                if (await deletionBlocksBackup([ascentId])) {
+                    const error = new Error('This ascent has a pending or completed deletion.');
+                    error.code = 'ascent-delete-pending';
+                    throw error;
+                }
+                return access.client.pushAscentBackup(snapshot, { gpx: message.gpx });
+            });
             // The snapshot has served its purpose; drop it so a later view of the
             // same page does not re-push from stale data.
             if (found) await mutateMap(SNAPSHOTS_KEY, m => { delete m[found.key]; });
@@ -492,6 +662,16 @@ export function createGithubRoutes({
         }
         const access = await connectedGithubClient({ requireEnabled: true });
         if (access.error) return { ok: false, error: access.error };
+        const deletedAscentId = await deletionBlocksBackup([...seen]);
+        if (deletedAscentId) {
+            return {
+                ok: false,
+                error: {
+                    code: 'ascent-delete-pending',
+                    message: `Ascent ${deletedAscentId} was deleted from Peakbagger and cannot be backed up again.`,
+                },
+            };
+        }
 
         const version = ext.runtime.getManifest ? ext.runtime.getManifest().version : '';
         for (const entry of entries) {
@@ -502,10 +682,18 @@ export function createGithubRoutes({
             };
         }
         try {
-            const result = await enqueueGithubWrite(() => access.client.pushAscentBackups(entries.map(entry => ({
-                snapshot: entry.snapshot,
-                gpx: entry.gpx,
-            }))));
+            const result = await enqueueGithubWrite(async () => {
+                const blocked = await deletionBlocksBackup([...seen]);
+                if (blocked) {
+                    const error = new Error(`Ascent ${blocked} has a pending or completed deletion.`);
+                    error.code = 'ascent-delete-pending';
+                    throw error;
+                }
+                return access.client.pushAscentBackups(entries.map(entry => ({
+                    snapshot: entry.snapshot,
+                    gpx: entry.gpx,
+                })));
+            });
             return { ok: true, result };
         } catch (error) {
             return { ok: false, error: GithubErrors.publicError(error, 'The backup failed.') };
@@ -660,6 +848,9 @@ export function createGithubRoutes({
         GITHUB_ASCENT_BACKUP_PREFLIGHT: (message, sender) => preflightAscentBackup(message, sender),
         GITHUB_CHECK_ASCENT_BACKUP: (message, sender) => checkAscentBackup(message, sender),
         GITHUB_BACKUP_ASCENT: (message, sender) => backupAscent(message, sender),
+        GITHUB_ASCENT_DELETE_INTENT: (message, sender) => storeAscentDeleteIntent(message, sender),
+        GITHUB_ASCENT_DELETE_PENDING: (_message, sender) => pendingAscentDeletions(sender),
+        GITHUB_ASCENT_DELETE_CONFIRM: (message, sender) => confirmAscentDeletion(message, sender),
         GITHUB_ASCENT_BACKUP_SUMMARY: () => githubAscentBackupSummary(),
         GITHUB_BACKUP_PROFILE_STATUS: (_message, sender) => githubProfileBackupStatus(sender),
         GITHUB_BACKUP_PROFILE_BATCH: (message, sender) => backupProfileBatch(message, sender),
@@ -678,11 +869,18 @@ export function createGithubRoutes({
         'GITHUB_SETTINGS_RESTORE',
     ]);
 
-    const cleanup = cutoff => mutateMap(SNAPSHOTS_KEY, snapshots => {
-        Object.entries(snapshots).forEach(([key, record]) => {
-            if (!record || record.expiresAt <= cutoff) delete snapshots[key];
+    const cleanup = async cutoff => {
+        await mutateMap(SNAPSHOTS_KEY, snapshots => {
+            Object.entries(snapshots).forEach(([key, record]) => {
+                if (!record || record.expiresAt <= cutoff) delete snapshots[key];
+            });
         });
-    });
+        await mutateMap(ASCENT_DELETE_INTENTS_KEY, intents => {
+            Object.entries(intents).forEach(([key, record]) => {
+                if (!record || record.expiresAt <= cutoff) delete intents[key];
+            });
+        });
+    };
 
     const onStorageChanged = (changes, area) => {
         if (area !== 'local' || !changes[Favorites.FAVORITES_KEY]) return;

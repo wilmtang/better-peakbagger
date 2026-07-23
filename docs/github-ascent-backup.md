@@ -1,10 +1,11 @@
 # GitHub ascent backup: complete design and failure model
 
 This is the single maintained design for GitHub backup. It covers the
-manual saved-ascent action, automatic backup after Add/Edit, full-profile
-backup, source-data acquisition, snapshot correlation, batching, repository
-writes, the settings and custom-favorites companion files, authentication,
-failure handling, and the regressions that established the current invariants.
+manual saved-ascent action, automatic backup after Add/Edit, opt-in deletion
+mirroring, full-profile backup, source-data acquisition, snapshot correlation,
+batching, repository writes, the settings and custom-favorites companion files,
+authentication, failure handling, and the regressions that established the
+current invariants.
 
 The completed implementation records remain in
 [archive/github-ascent-backup-plan.md](archive/github-ascent-backup-plan.md) and
@@ -96,6 +97,11 @@ link, which automatically tracks endpoint query changes.
     structured ascent and peak fields, `report.md`, and optional `track.gpx`.
     It ignores only `ascent.json.backup`, whose sync time and extension version
     can change without the Peakbagger record changing.
+14. **Deletion is proven, scoped, and non-forced.** The editor records intent
+    before Peakbagger receives a native Delete submit, but GitHub changes only
+    after the authenticated complete My Ascents list proves the aid absent.
+    Only `report.md`, `ascent.json`, and `track.gpx` are removed; user files and
+    Git history remain.
 
 ## Runtime ownership
 
@@ -104,11 +110,12 @@ link, which automatically tracks endpoint query changes.
 | `src/reports/report-editor.js` | Pre-Save flush, exact Markdown sidecar, save-time snapshot emission | GitHub token, repository writes, post-save identity guessing |
 | `src/ascent/ascent-snapshot.js` | The only mapping from Peakbagger form control names to raw snapshot fields | Network, extension storage, GitHub serialization |
 | `src/ascent/ascent-saved.js` | Add/Edit success recognition and routing to the saved ascent | Clicking Save, constructing backup payloads |
+| `src/ascent/ascent-delete.js` | The two observed native Delete submitters, combined confirmation, and pre-submit intent handoff | Treating a click as server success or accessing GitHub |
 | `src/ascent/ascent-page.js` | Saved `aid`, owner edit link, peak fallback, date fallback, actual GPX link | Raw form-field or rendered-report backup scraping |
 | `src/ascent/ascent-backup-source.js` | Authenticated Peakbagger reads, response classification, edit-form completeness, identity checks, persisted snapshot construction, profile GPX URL | UI, queue policy, GitHub access |
 | `src/ascent/ascent-backup.js` | Compact saved-ascent control and the shared manual/automatic individual orchestration | Form mapping, GitHub credentials |
 | `src/profile/profile-backup-core.js` | Pure owner-list parsing, response classifier, work diff, producer/consumer state machine and limits | Browser APIs, tokens, DOM globals |
-| `src/profile/profile-backup.js` | Owner-list UI, full-list fetch, per-ascent production, progress/pause/resume | Raw field mapping, GitHub credentials |
+| `src/profile/profile-backup.js` | Owner-list UI, full-list fetch, deletion confirmation, per-ascent production, progress/pause/resume | Raw field mapping, GitHub credentials |
 | `src/favorites/favorite-climbers.js` | Pure favorites cleaning, backup serialization, parsing, and stable signatures | DOM, storage, GitHub access |
 | `src/settings/settings-transfer.js` | Pure known-key settings payload, parsing, serialization, and stable signatures through the shared schema | DOM, storage, GitHub access |
 | `options/favorites.js` | Favorites transfer controls, auto toggle, and schema-checked reversible restore | Backup serialization, GitHub credentials, or repository mutation |
@@ -341,6 +348,33 @@ Without a pending snapshot, a manual backup remains safe because the content
 script supplied a complete persisted form. Without both a pending snapshot and
 `pageComplete: true`, the worker returns `no-data`.
 
+## Opt-in deletion mirroring
+
+**Remove backup files after I delete an ascent** is a separate, default-off
+setting under ascent backup. It is independent of automatic save backup but is
+forced off when the parent ascent-backup gate is disabled.
+
+The transaction deliberately has two phases:
+
+1. `src/ascent/ascent-delete.js` recognizes only `DeleteButton` and
+   `DeleteButton2` on an existing positive-`aid` owner form. It pauses the
+   native POST, asks for one combined confirmation, and records a 30-minute,
+   source-tab-scoped session intent before resubmitting the original native
+   button.
+2. The same tab's `ClimbListC.aspx` surface reads the complete all-years owner
+   list. The worker rechecks the signed-in climber and mutates GitHub only when
+   that list proves the intended aid absent. If Peakbagger still lists the aid,
+   the intent is cancelled and GitHub remains unchanged.
+
+The Git client matches only folders whose terminal suffix is exactly
+`-a<aid>`. One non-forced atomic commit removes only the three owned blob paths;
+manually added files, root files, other ascents, and repository history remain.
+A matching folder that contains only user files is an idempotent no-op. Pending
+and briefly completed intents also act as tombstones inside the shared worker
+write queue, so a stale individual or profile backup cannot resurrect the
+deleted ascent. A confirmed Delete also clears its device-local trip-report
+draft and suppresses the page-exit autosave race.
+
 ## GPX semantics
 
 The writer accepts `string | null`, but acquisition must preserve three states:
@@ -485,6 +519,9 @@ disclosure.
 | `GITHUB_BACKUP_STATUS` | Peakbagger tab | Peakbagger hostname | Only enabled/auto/connected and repository display name |
 | `GITHUB_CHECK_ASCENT_BACKUP` | Owner saved-ascent surface | Peakbagger hostname; feature/auth/repo; complete persisted payload and final aid; marker/folder/blob validation | Boolean current state or typed error, never token |
 | `GITHUB_BACKUP_ASCENT` | Owner saved-ascent surface | Peakbagger hostname; feature/auth/repo; fresh snapshot for auto; complete data requirement; final aid present before the client enforces a positive identity | Commit metadata or typed error |
+| `GITHUB_ASCENT_DELETE_INTENT` | Existing `AscentEdit.aspx?aid=…` | Exact edit pathname; positive message aid equals URL aid; setting/auth/repo; worker adds source tab and expiry | Success or typed error, never token |
+| `GITHUB_ASCENT_DELETE_PENDING` | `ClimbListC.aspx` | Exact list pathname and same source tab; returns only fresh pending aids | Pending aid list, never token |
+| `GITHUB_ASCENT_DELETE_CONFIRM` | `ClimbListC.aspx` | Pending same-tab intent; complete all-years ids; signed-in climber recheck; setting/auth/repo | Commit/no-op metadata or typed error |
 | `GITHUB_ASCENT_BACKUP_SUMMARY` | Extension options page | Extension origin; auth/repo; marker-validated repository tree | Ascent count only, never folder names or token |
 | `GITHUB_BACKUP_PROFILE_STATUS` | `ClimbListC.aspx` | Peakbagger hostname and exact list pathname | Folder leaves, never token |
 | `GITHUB_BACKUP_PROFILE_BATCH` | `ClimbListC.aspx` | Exact list pathname; 1–10 entries; each positive `aid` equals snapshot id; no duplicate ids; feature/auth/repo | Batch commit metadata or typed error |
@@ -525,7 +562,8 @@ The folder name is `<known-date>-<peak-slug>-a<aid>`:
 Re-sync finds the exact aid suffix regardless of slug. A rename writes the new
 folder and deletes only Better Peakbagger-owned `report.md`, `ascent.json`, and
 `track.gpx` paths from old matching folders in the same tree. User-added files
-under an ascent folder survive.
+under an ascent folder survive. Deletion mirroring uses the same owned-path
+rule, so a folder remains when user-added files remain in it.
 
 ### `favorite-climbers.json` schema version 1
 
@@ -959,9 +997,10 @@ expected GPX failure as `null`, or bypassing the worker write queue.
 
 - GitHub host access is optional: `https://github.com/*` for device flow and
   `https://api.github.com/*` for repository APIs.
-- `enableGithubBackup` and `autoGithubBackup` are synced ascent-backup booleans;
-  disabling the parent gate forces auto off. Neither gates settings or favorite
-  transfer.
+- `enableGithubBackup`, `autoGithubBackup`, and
+  `removeGithubBackupOnDelete` are synced ascent-backup booleans. Disabling the
+  parent gate forces both subordinate choices off. Neither gates settings or
+  favorite transfer.
 - `autoSettingsBackup` and `autoFavoritesBackup` are independent, synced,
   default-off booleans. Without the device-local connection they are inert.
 - Token and chosen repository are local auth state, not sync-schema settings.

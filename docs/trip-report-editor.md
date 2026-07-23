@@ -651,6 +651,13 @@ refreshes preserve an active Undo row. If the window closes without Undo, or
 the manager itself closes, those in-memory copies are no longer recoverable
 through the extension.
 
+A confirmed, GitHub-mirrored Peakbagger Delete is terminal for the matching
+draft. The deletion module records the worker transaction first, then signals
+the editor to remove the draft and suppress page-exit autosave before the
+original native Delete submitter is resubmitted. Cancelling the combined
+confirmation or failing to prepare GitHub cleanup leaves both Peakbagger and
+the local draft unchanged.
+
 ### Clearing at Peakbagger Save
 
 The intended boundary is that clicking either Peakbagger **Save Ascent** button

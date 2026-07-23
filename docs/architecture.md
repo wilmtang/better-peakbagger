@@ -1110,6 +1110,14 @@ reader supplies profile backup. `src/ascent/ascent-backup.js` offers manual back
 only with a fresh precise snapshot plus the separate opt-in, automatic backup.
 The backup uses Peakbagger's published track, never the raw provider GPX.
 
+Deletion mirroring is a separate default-off transaction.
+`src/ascent/ascent-delete.js` records a source-tab-scoped intent before allowing
+either native Delete submitter to post. The same tab's complete authenticated
+My Ascents list must then prove the aid absent before the worker queues an
+atomic GitHub commit. The Git client removes only its owned report, JSON, and
+GPX blobs, preserving user-added files and history; the short-lived intent also
+blocks stale save/profile work from recreating the backup.
+
 `src/github/github-backup.js` builds a versioned `ascent.json`, `report.md`, and
 optional `track.gpx` under a stable `*-a<aid>` folder. `src/github/github-client.js`
 writes one atomic Git Data commit, preserves unrelated repository paths and
@@ -1167,7 +1175,7 @@ The focused rationale, first-visit compromises, and lockstep invariant are in
 | --- | --- | --- |
 | `storage.sync` | User preferences and feature gates | Validated by the single settings schema; no secrets |
 | `storage.local` | GitHub token/repository, custom favorites, Buddy List cache, report drafts, terrain-cache index | Device-local; favorites are bounded, Buddy cache is owner-scoped, report drafts expire |
-| `storage.session` | Capture jobs, prepared drafts, save-time backup snapshots, pending device auth | Short-lived and identity-bound; capture/backup records expire after 30 minutes |
+| `storage.session` | Capture jobs, prepared drafts, save-time backup snapshots, ascent-deletion intents/tombstones, pending device auth | Short-lived and identity-bound; capture/backup/delete records expire after 30 minutes |
 | CacheStorage | Successful Mapterhorn DEM responses | Best effort, bounded by the local LRU index |
 | Peakbagger `localStorage` | Filter UI state and early theme mirror | Page-local convenience state, never authoritative extension credentials |
 | Peakbagger `sessionStorage` | Pending native Buddy action marker | Tab-scoped navigation handoff; consumed on the next supported climber page, ignored after five minutes, and never treated as proof of success |

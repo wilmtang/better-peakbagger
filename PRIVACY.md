@@ -19,9 +19,10 @@ enables automatic backup for that data.
   the bounded DEM cache index, custom favorite-climber list, owner-scoped Buddy
   List cache, GitHub backup token/repository, and automatic-backup signatures
   and retry state in `storage.local`; short-lived capture jobs,
-  prepared drafts, save-time backup snapshots, and an in-progress GitHub device
-  authorization live in `storage.session`. Capture, draft, and snapshot records
-  expire after 30 minutes; pending authorization is removed when its GitHub
+  prepared drafts, save-time backup snapshots, short-lived ascent-deletion
+  intents/tombstones, and an in-progress GitHub device authorization live in
+  `storage.session`. Capture, draft, snapshot, and deletion records expire after
+  30 minutes; pending authorization is removed when its GitHub
   device code completes, fails, or expires. DEM response
   bytes live in browser-managed CacheStorage and may be evicted under storage
   pressure.
@@ -231,6 +232,13 @@ Peakbagger Save control.
   explicit Settings action with a confirmation and never runs automatically.
   Automatic ascent backup never includes or updates `settings.json` or
   `favorite-climbers.json`.
+- **Optional deletion mirroring:** if the user separately enables **Remove
+  backup files after I delete an ascent**, the extension records intent before
+  the native Peakbagger Delete POST, then checks the authenticated complete My
+  Ascents list. Only after that list proves the ascent absent does it remove
+  Better Peakbagger's `report.md`, `ascent.json`, and `track.gpx` from the
+  repository's current branch. User-added files and Git history remain; a
+  failed or unconfirmed Peakbagger deletion does not change GitHub.
 - **Ownership:** the backup affordance appears only on ascents the signed-in
   climber owns. Full-profile controls additionally require the signed-in
   climber's own **My Ascents** identity and an edit affordance for every parsed

@@ -60,6 +60,121 @@ test('profile backup stays above an already-rendered beta filter', async () => {
     assert.equal(panel.nextElementSibling, filter);
 });
 
+test('a same-tab deletion intent is confirmed against the complete owner list before GitHub cleanup', async () => {
+    const confirmations = [];
+    let requestedUrl = '';
+    const dom = await loadPage('climber-ascents.html', {
+        fixtures: PAGE_FIXTURES,
+        url: YEAR_PAGE_URL,
+        bundles: ['content/profile-backup.js'],
+        prepare: dom => {
+            prepareRuntime(dom, message => {
+                if (message.type === 'GITHUB_BACKUP_STATUS') {
+                    return { enabled: true, connected: true, repo: { fullName: 'me/backup' } };
+                }
+                if (message.type === 'GITHUB_ASCENT_DELETE_PENDING') {
+                    return { ok: true, aids: [3273892] };
+                }
+                if (message.type === 'GITHUB_ASCENT_DELETE_CONFIRM') {
+                    confirmations.push(message);
+                    return {
+                        ok: true,
+                        confirmed: true,
+                        result: {
+                            noOp: false,
+                            removedFileCount: 3,
+                            commitUrl: 'https://github.com/me/backup/commit/D1',
+                        },
+                    };
+                }
+                return null;
+            });
+            dom.window.fetch = async url => {
+                requestedUrl = String(url);
+                return {
+                    ok: true,
+                    status: 200,
+                    url: requestedUrl,
+                    headers: { get: () => null },
+                    text: async () => listHtml,
+                };
+            };
+        },
+    });
+
+    await waitFor(dom, () => /GitHub backup files removed/.test(
+        dom.window.document.getElementById('bpb-profile-backup')?.textContent || ''));
+    assert.equal(confirmations.length, 1);
+    assert.equal(confirmations[0].aid, 3273892);
+    assert.equal(confirmations[0].climberId, 900001);
+    assert.equal(confirmations[0].pageComplete, true);
+    assert.ok(confirmations[0].allAscentIds.includes(9100001));
+    assert.ok(!confirmations[0].allAscentIds.includes(3273892));
+    assert.equal(new URL(requestedUrl).searchParams.get('y'), '9999');
+    assert.equal(new URL(requestedUrl).searchParams.get('j'), '-1');
+    assert.match(dom.window.document.getElementById('bpb-profile-backup').textContent,
+        /Git history and your own files remain/);
+    assert.equal(
+        dom.window.document.querySelector('#bpb-profile-backup a[href="https://github.com/me/backup/commit/D1"]')?.textContent,
+        'View commit',
+    );
+});
+
+test('a deletion intent keeps GitHub unchanged when Peakbagger still lists the ascent', async () => {
+    let confirmation = null;
+    const dom = await loadPage('climber-ascents.html', {
+        fixtures: PAGE_FIXTURES,
+        url: PAGE_URL,
+        bundles: ['content/profile-backup.js'],
+        prepare: dom => prepareRuntime(dom, message => {
+            if (message.type === 'GITHUB_BACKUP_STATUS') {
+                return { enabled: true, connected: true, repo: { fullName: 'me/backup' } };
+            }
+            if (message.type === 'GITHUB_ASCENT_DELETE_PENDING') return { ok: true, aids: [9100001] };
+            if (message.type === 'GITHUB_ASCENT_DELETE_CONFIRM') {
+                confirmation = message;
+                return { ok: true, confirmed: false, reason: 'still-present' };
+            }
+            return null;
+        }),
+    });
+
+    await waitFor(dom, () => /GitHub was not changed/.test(
+        dom.window.document.getElementById('bpb-profile-backup')?.textContent || ''));
+    assert.ok(confirmation.allAscentIds.includes(9100001));
+    assert.match(dom.window.document.getElementById('bpb-profile-backup').textContent,
+        /Peakbagger still lists this ascent/);
+});
+
+test('deleting the final ascent can still mount cleanup on an empty owner list', async () => {
+    let confirmedIds = null;
+    const dom = await loadPage('climber-ascents.html', {
+        fixtures: PAGE_FIXTURES,
+        url: PAGE_URL,
+        bundles: ['content/profile-backup.js'],
+        prepare: dom => {
+            for (const row of dom.window.document.querySelectorAll('table.gray tr')) {
+                if (row.querySelector('a[href*="/ascent.aspx?aid="]')) row.remove();
+            }
+            prepareRuntime(dom, message => {
+                if (message.type === 'GITHUB_BACKUP_STATUS') {
+                    return { enabled: true, connected: true, repo: { fullName: 'me/backup' } };
+                }
+                if (message.type === 'GITHUB_ASCENT_DELETE_PENDING') return { ok: true, aids: [3273892] };
+                if (message.type === 'GITHUB_ASCENT_DELETE_CONFIRM') {
+                    confirmedIds = message.allAscentIds;
+                    return { ok: true, confirmed: true, result: { noOp: true, removedFileCount: 0 } };
+                }
+                return null;
+            });
+        },
+    });
+
+    await waitFor(dom, () => /GitHub backup was already clear/.test(
+        dom.window.document.getElementById('bpb-profile-backup')?.textContent || ''));
+    assert.deepEqual(Array.from(confirmedIds), []);
+});
+
 test('public or mismatched climber lists never show profile backup', async () => {
     const dom = await loadPage('climber-ascents.html', {
         fixtures: PAGE_FIXTURES,

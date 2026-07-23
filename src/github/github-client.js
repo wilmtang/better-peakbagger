@@ -368,6 +368,72 @@ import { githubErrors as GithubErrors } from './github-errors.js';
             };
         };
 
+        const emptyAscentDeletion = folders => ({
+            sha: null,
+            commitUrl: null,
+            message: null,
+            removedFileCount: 0,
+            folders,
+            noOp: true,
+        });
+
+        const deleteAscentBackupOnce = async ascentId => {
+            const resolved = await resolveRepo();
+            const head = await readHead(resolved);
+            if (!head) return emptyAscentDeletion([]);
+
+            // Deletion inherits the same ownership gate as every other ascent
+            // operation. In particular, never adopt a markerless lookalike
+            // folder merely because its terminal ascent id happens to match.
+            const state = await inspectRootTree(head.root);
+            const records = matchingRecords(state.records, ascentId);
+            const folders = records.map(record => record.leaf);
+            if (!records.length) return emptyAscentDeletion(folders);
+
+            const removals = [];
+            for (const record of records) removals.push(...await oldFolderOwnedPaths(record));
+            const paths = [...new Set(removals)];
+            if (!paths.length) return emptyAscentDeletion(folders);
+
+            const message = `Delete ascent backup: ${ascentId}`;
+            const tree = await request('POST', '/git/trees', {
+                body: {
+                    base_tree: head.baseTreeSha,
+                    tree: paths.map(path => ({
+                        path,
+                        mode: BLOB_MODE,
+                        type: 'blob',
+                        sha: null,
+                    })),
+                },
+                phase: 'write',
+            });
+            const commit = await request('POST', '/git/commits', {
+                body: { message, tree: tree.sha, parents: [head.baseCommitSha] },
+                phase: 'write',
+            });
+            await request('PATCH', `/git/refs/heads/${encodeURIComponent(resolved.targetBranch)}`, {
+                body: { sha: commit.sha, force: false },
+                phase: 'ref',
+            });
+
+            return {
+                sha: commit.sha,
+                commitUrl: commit.html_url || `https://github.com/${owner}/${repo}/commit/${commit.sha}`,
+                message,
+                removedFileCount: paths.length,
+                folders,
+                noOp: false,
+            };
+        };
+
+        const deleteAscentBackup = ascentId => {
+            if (!Number.isSafeInteger(ascentId) || ascentId <= 0) {
+                throw new TypeError('github client requires a positive integer ascent id');
+            }
+            return withConflictRetry(() => deleteAscentBackupOnce(ascentId));
+        };
+
         // Read-only profile preflight: the repository tree is the resumability
         // checkpoint, so the list-page runner needs only the ascent folder leaves.
         const getAscentFolders = async () => {
@@ -470,6 +536,7 @@ import { githubErrors as GithubErrors } from './github-errors.js';
         return {
             pushAscentBackup,
             pushAscentBackups,
+            deleteAscentBackup,
             getAscentFolders,
             isAscentBackupCurrent,
             inspectRepository,

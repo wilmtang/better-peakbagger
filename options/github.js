@@ -49,7 +49,11 @@ export function initGithubBackup({ extensionApi, flash, save }) {
     let countdownTimer = null;
     let permissionError = false;
     let choosingRepo = false;
-    let currentSettings = { enableGithubBackup: false, autoGithubBackup: false };
+    let currentSettings = {
+        enableGithubBackup: false,
+        autoGithubBackup: false,
+        removeGithubBackupOnDelete: false,
+    };
     let currentStatus = null;
     let currentAscentSummary = null;
     let ascentSummaryRevision = 0;
@@ -314,6 +318,18 @@ export function initGithubBackup({ extensionApi, flash, save }) {
             }),
             el('span', { text: 'Back up automatically after each save' }),
         ]);
+        const deleteToggle = el('label', { class: 'github-auto', for: 'github-delete-backup' }, [
+            el('input', {
+                type: 'checkbox', id: 'github-delete-backup',
+                checked: !!currentSettings.removeGithubBackupOnDelete,
+                onchange: event => { void save({ removeGithubBackupOnDelete: event.target.checked }); },
+            }),
+            el('span', { text: 'Remove backup files after I delete an ascent' }),
+        ]);
+        const deleteHint = el('p', {
+            class: 'github-hint',
+            text: 'Peakbagger is checked first. Better Peakbagger removes only its report, ascent data, and GPX from the current branch; Git history and your own files remain.',
+        });
         const historyHint = el('p', { class: 'github-hint github-history' }, [
             document.createTextNode('New saves and edits are backed up automatically. To back up ascents saved before you connected, '),
             el('button', { type: 'button', class: 'github-link', text: 'Open My Ascents', onclick: openMyAscents }),
@@ -322,6 +338,8 @@ export function initGithubBackup({ extensionApi, flash, save }) {
         renderAscent(
             summaryEl,
             autoToggle,
+            deleteToggle,
+            deleteHint,
             historyHint,
             historyStatus,
         );

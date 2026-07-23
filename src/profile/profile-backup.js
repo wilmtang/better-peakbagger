@@ -33,6 +33,9 @@ import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.js';
     const messageFor = error => GithubError.message(error, {
         fallback: 'The extension did not return an error description. Reload this page and try again.',
     });
+    const deletionMessageFor = error => error?.source === 'peakbagger' && error.message
+        ? String(error.message).replace(/\s+/g, ' ').trim().slice(0, 220)
+        : messageFor(error);
 
     const renderIdle = status => body(
         node('div', { class: 'bpb-profile-copy' }, [
@@ -62,6 +65,55 @@ import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.js';
             node('span', { text: 'Reading the complete ascent list and your repository.' }),
         ]),
     );
+
+    const renderDeletionResult = (status, response) => {
+        if (!response?.ok) {
+            return body(
+                node('div', { class: 'bpb-profile-copy' }, [
+                    node('strong', { text: 'GitHub cleanup needs attention' }),
+                    node('span', { text: deletionMessageFor(response?.error) }),
+                ]),
+                node('div', { class: 'bpb-profile-actions' }, [
+                    button('Try again', () => confirmPendingDeletion(status), true),
+                    button('Not now', () => renderIdle(status)),
+                ]),
+            );
+        }
+        if (!response.confirmed) {
+            return body(
+                node('div', { class: 'bpb-profile-copy' }, [
+                    node('strong', { text: 'GitHub was not changed' }),
+                    node('span', { text: 'Peakbagger still lists this ascent, so its backup files were kept.' }),
+                ]),
+                node('div', { class: 'bpb-profile-actions' }, [
+                    button('Done', () => renderIdle(status), true),
+                ]),
+            );
+        }
+
+        const result = response.result || {};
+        const detail = result.noOp
+            ? 'No Better Peakbagger files remained for this ascent.'
+            : `${result.removedFileCount || 0} backup file${result.removedFileCount === 1 ? '' : 's'} removed from the current branch. Git history and your own files remain.`;
+        return body(
+            node('div', { class: 'bpb-profile-copy' }, [
+                node('strong', { text: result.noOp ? 'GitHub backup was already clear' : 'GitHub backup files removed' }),
+                node('span', { text: detail }),
+            ]),
+            node('div', { class: 'bpb-profile-actions' }, [
+                result.commitUrl
+                    ? node('a', {
+                        class: 'bpb-profile-btn bpb-profile-primary',
+                        href: result.commitUrl,
+                        target: '_blank',
+                        rel: 'noopener noreferrer',
+                        text: 'View commit',
+                    })
+                    : null,
+                button('Done', () => renderIdle(status), !result.commitUrl),
+            ]),
+        );
+    };
 
     const renderChallenge = state => body(
         node('div', { class: 'bpb-profile-copy' }, [
@@ -174,6 +226,48 @@ import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.js';
             : rejectedPage(target, 'list', 'identity-mismatch');
     };
 
+    const confirmPendingDeletion = async status => {
+        const pending = await sendBg({ type: 'GITHUB_ASCENT_DELETE_PENDING' });
+        if (!pending?.ok || !pending.aids?.length) {
+            renderIdle(status);
+            return;
+        }
+        body(node('div', { class: 'bpb-profile-copy' }, [
+            node('strong', { text: 'Confirming the Peakbagger deletion…' }),
+            node('span', { text: 'Checking your complete My Ascents list before GitHub is changed.' }),
+        ]));
+
+        const list = await completeList();
+        if (!list || list.kind || !list.isOwner || list.climberId !== ownerId) {
+            renderDeletionResult(status, {
+                ok: false,
+                error: {
+                    source: 'peakbagger',
+                    message: (list && list.reason)
+                        || 'The complete My Ascents list could not be verified. GitHub was not changed.',
+                },
+            });
+            return;
+        }
+        const allAscentIds = list.ascents.map(ascent => ascent.aid);
+        // Intents are source-tab scoped and normally singular. Process in order
+        // so each deletion remains its own retryable GitHub transaction.
+        for (const aid of pending.aids) {
+            const response = await sendBg({
+                type: 'GITHUB_ASCENT_DELETE_CONFIRM',
+                aid,
+                climberId: ownerId,
+                allAscentIds,
+                pageComplete: true,
+            });
+            if (!response?.ok || !response.confirmed) {
+                renderDeletionResult(status, response);
+                return;
+            }
+            renderDeletionResult(status, response);
+        }
+    };
+
     const loadAscent = async (item, { probeUrl = null } = {}) => {
         if (probeUrl) {
             const kind = /GPXFile\.aspx|GetAscentGPX\.aspx/i.test(new URL(probeUrl, location.href).pathname) ? 'gpx' : 'edit';
@@ -267,7 +361,9 @@ import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.js';
             panel = node('section', { id: 'bpb-profile-backup', class: 'bpb-profile-panel', 'aria-label': 'GitHub profile backup' }, [
                 node('div', { class: 'bpb-profile-body', 'aria-live': 'polite' }),
             ]);
-            const table = Array.from(document.querySelectorAll('table.gray')).find(candidate => candidate.querySelector('a[href*="ascent.aspx?aid="]'));
+            const table = Array.from(document.querySelectorAll('table.gray')).find(candidate =>
+                candidate.querySelector('a[href*="ascent.aspx?aid="]')
+                || /Ascent\s*Date\b/i.test(candidate.textContent || ''));
             if (!table || !table.parentNode) return;
             // The filter and backup bundles initialize independently. Anchor to
             // the existing filter when it won the race so the profile action
@@ -276,7 +372,7 @@ import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.js';
             const anchor = filterBar && filterBar.parentNode === table.parentNode ? filterBar : table;
             table.parentNode.insertBefore(panel, anchor);
         }
-        renderIdle(status);
+        await confirmPendingDeletion(status);
     };
 
     const start = () => { void initialize(); };
