@@ -953,7 +953,7 @@ try {
     // cover with fidelity.
     {
         const modifier = process.platform === 'darwin' ? 'Meta' : 'Control';
-        const editorTheme = process.env.BPB_VERIFY_EDITOR_THEME;
+        const editorTheme = process.env.BPB_VERIFY_EDITOR_THEME || 'dark';
         if (extensionId) {
             const optionsPage = await context.newPage();
             await optionsPage.goto(`chrome-extension://${extensionId}/options/options.html`);
@@ -1128,6 +1128,41 @@ try {
             }).click();
             const linkDismissed = await editorPage.locator('.bpb-re-linkbox').evaluate(box => box.hidden);
             check(linkDismissed, 'clicking Link again did not dismiss its panel');
+            await editorPage.locator('#bpb-report-editor').getByRole('button', {
+                name: 'More formats', exact: true
+            }).click();
+            const paletteState = await editorPage.evaluate(() => {
+                const swatches = [...document.querySelectorAll(
+                    '#bpb-report-editor .bpb-re-swatch[data-color]')];
+                const backgrounds = swatches.map(swatch => getComputedStyle(swatch).backgroundColor);
+                return {
+                    theme: document.documentElement.getAttribute('data-bpb-theme'),
+                    count: swatches.length,
+                    backgrounds,
+                    distinct: new Set(backgrounds).size
+                };
+            });
+            check(paletteState.theme !== 'dark'
+                || (paletteState.count === 7 && paletteState.distinct === 7),
+            `the dark report color palette did not retain seven distinct swatches: ${
+                JSON.stringify(paletteState)}`);
+            if (process.env.BPB_VERIFY_EDITOR_PALETTE_SCREENSHOT) {
+                const editorBox = await editorPage.locator('#bpb-report-editor').boundingBox();
+                const paletteBox = await editorPage.locator('.bpb-re-morebox').boundingBox();
+                if (editorBox && paletteBox) {
+                    const left = Math.min(editorBox.x, paletteBox.x);
+                    const top = Math.max(0, Math.min(editorBox.y, paletteBox.y) - 8);
+                    const right = Math.max(editorBox.x + editorBox.width, paletteBox.x + paletteBox.width);
+                    const bottom = Math.min(editorBox.y + 150, paletteBox.y + paletteBox.height + 8);
+                    await editorPage.screenshot({
+                        path: process.env.BPB_VERIFY_EDITOR_PALETTE_SCREENSHOT,
+                        clip: { x: left, y: top, width: right - left, height: bottom - top }
+                    });
+                }
+            }
+            await editorPage.locator('#bpb-report-editor').getByRole('button', {
+                name: 'More formats', exact: true
+            }).click();
             if (process.env.BPB_VERIFY_EDITOR_IMAGE_SCREENSHOT) {
                 await editorPage.locator('#bpb-report-editor').screenshot({
                     path: process.env.BPB_VERIFY_EDITOR_IMAGE_SCREENSHOT
@@ -1904,6 +1939,7 @@ console.log('  - the Buddy List exposes six in-place sort controls and no beta f
 console.log('  - the owner-only full-profile backup surface mounts with a connected fixture repository');
 console.log('  - a fresh ascent form autofills its local date and trusted GPX selection swaps Preview for Process');
 console.log('  - the opt-in report credit renders and serializes the Chrome Web Store URL');
+console.log('  - the dark trip-report palette retains seven distinct text-color swatches');
 console.log('  - a real grouped draft tab rejects a wrong identity, attaches GPX, fills fields,');
 console.log('    submits Preview exactly once, and never submits Save');
 console.log('  - the trip-report editor mounts on the captured ascent form; real typing,');

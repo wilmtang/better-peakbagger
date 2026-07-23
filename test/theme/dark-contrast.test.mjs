@@ -241,6 +241,21 @@ test('legacy inline navy text is fixed without flattening other inline colors', 
     );
 });
 
+test('generic dark form styling preserves report-editor color samples', () => {
+    const dom = new JSDOM(`<!doctype html>
+        <html data-bpb-theme="dark">
+        <head><style>${darkCss}</style></head>
+        <body>
+            <button id="generic">Save</button>
+            <button id="swatch" class="bpb-re-swatch" style="background:firebrick"></button>
+        </body>
+        </html>`);
+    const style = id => dom.window.getComputedStyle(dom.window.document.getElementById(id));
+
+    assert.equal(style('generic').backgroundColor, 'rgb(43, 47, 52)');
+    assert.equal(style('swatch').backgroundColor, 'rgb(178, 34, 34)');
+});
+
 test('legacy inline maroon labels use the dark-theme semantic red', () => {
     const dom = new JSDOM(`<!doctype html>
         <html data-bpb-theme="dark">

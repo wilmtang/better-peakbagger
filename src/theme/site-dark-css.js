@@ -117,11 +117,12 @@ html[data-bpb-theme="dark"] [bgcolor="#f0f0f0"] {
     color: #c7c1b8 !important;
 }
 
-/* Form controls */
+/* Form controls. Report-editor color swatches are semantic samples, so their
+   explicit backgrounds and component-owned borders must remain intact. */
 html[data-bpb-theme="dark"] input,
 html[data-bpb-theme="dark"] select,
 html[data-bpb-theme="dark"] textarea,
-html[data-bpb-theme="dark"] button {
+html[data-bpb-theme="dark"] button:not(.bpb-re-swatch) {
     background: #2b2f34 !important;
     color: #e6e1d8 !important;
     border: 1px solid #4a5058 !important;
