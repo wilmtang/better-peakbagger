@@ -32,20 +32,34 @@
     const validAid = value => value && /^\d+$/.test(value) ? value : null;
 
     // Edits retain aid in the page URL. Adds have no URL aid, so the freshly
-    // created id must be read from Peakbagger's success-view photo link.
-    const savedAscentId = () => {
-        try {
-            const aid = validAid(new URL(location.href).searchParams.get('aid'));
-            if (aid) return aid;
-        } catch (_error) { /* fall through to the add-ascent photo link */ }
-        const link = document.querySelector('a[href*="photo.aspx?aid=" i]');
-        if (!link) return null;
-        try {
-            const aid = new URL(link.getAttribute('href'), location.href).searchParams.get('aid');
-            return validAid(aid);
-        } catch (_error) {
-            return null;
+    // created id must be read from Peakbagger's success-panel Add Photos link.
+    // Do not scan the whole document: reports and surrounding site content can
+    // contain unrelated Photo.aspx links (including aid=1, which is a real
+    // historical ascent). Conflicting identity signals fail closed.
+    const successPhotoAid = () => {
+        const panel = document.getElementById('UpdatePanelAE');
+        if (!panel) return null;
+        const aids = new Set();
+        for (const link of panel.querySelectorAll('a[href]')) {
+            if (!/\badd\b[\s\S]*\bphotos?\b/i.test(link.textContent || '')) continue;
+            try {
+                const url = new URL(link.getAttribute('href'), location.href);
+                if (!/\/climber\/photo\.aspx$/i.test(url.pathname)) continue;
+                const aid = validAid(url.searchParams.get('aid'));
+                if (aid) aids.add(aid);
+            } catch (_error) { /* ignore malformed unrelated links */ }
         }
+        return aids.size === 1 ? [...aids][0] : null;
+    };
+
+    const savedAscentId = () => {
+        let urlAid = null;
+        try {
+            urlAid = validAid(new URL(location.href).searchParams.get('aid'));
+        } catch (_error) { /* fall through to the success-panel identity */ }
+        const photoAid = successPhotoAid();
+        if (urlAid && photoAid && urlAid !== photoAid) return null;
+        return urlAid || photoAid;
     };
 
     const sendBg = async message => {

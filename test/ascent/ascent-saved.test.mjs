@@ -70,12 +70,46 @@ test('an Add success links the photo aid to the saved ascent runner', () => {
     dom.window.close();
 });
 
+test('an Add success ignores unrelated photo links outside the success panel', () => {
+    const html = successHtml().replace(
+        '<div id="UpdatePanelAE">',
+        '<a href="Photo.aspx?aid=1">Old report photo</a><div id="UpdatePanelAE">',
+    );
+    const dom = load(html);
+    assert.equal(links(dom).length, 1);
+    assert.equal(links(dom)[0].getAttribute('href'), 'ascent.aspx?aid=778899');
+    dom.window.close();
+});
+
+test('an Add success ignores non-action photo links inside the success panel', () => {
+    const html = successHtml().replace(
+        '<h1><span id="PageTitle">',
+        '<a href="Photo.aspx?aid=1">Old report photo</a><h1><span id="PageTitle">',
+    );
+    const dom = load(html);
+    assert.equal(links(dom)[0].getAttribute('href'), 'ascent.aspx?aid=778899');
+    dom.window.close();
+});
+
 test('an Edit success uses the stable URL aid even without a photo link', () => {
     const dom = load(successHtml({ subtitle: 'Ascent Saved Successfully!', photo: false }), {
         url: 'https://peakbagger.com/climber/ascentedit.aspx?aid=445566&cid=900001',
     });
     assert.equal(links(dom).length, 1);
     assert.equal(links(dom)[0].getAttribute('href'), 'ascent.aspx?aid=445566');
+    dom.window.close();
+});
+
+test('conflicting URL and success-panel identities fail closed', async () => {
+    const navigations = [];
+    const dom = load(successHtml(), {
+        url: 'https://peakbagger.com/climber/ascentedit.aspx?aid=445566&cid=900001',
+        status: { enabled: true, connected: true, auto: true },
+        navigations,
+    });
+    await tick();
+    assert.equal(links(dom).length, 0);
+    assert.deepEqual(navigations, []);
     dom.window.close();
 });
 
