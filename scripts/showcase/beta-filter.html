@@ -1,0 +1,261 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ascent beta filter showcase</title>
+  <link rel="stylesheet" href="/scripts/showcase/showcase.css">
+  <style>
+    .beta-stage {
+      height: calc(100% - 46px);
+      overflow-y: auto;
+      padding: 24px 32px;
+      background: #f7f5ef;
+      color: #291d19;
+      font-family: Arial, Helvetica, sans-serif;
+    }
+    .beta-title {
+      text-align: center;
+      margin-bottom: 16px;
+    }
+    .beta-title h2 {
+      margin: 0;
+      color: #752522;
+      font-family: Georgia, serif;
+      font-size: 24px;
+    }
+    .beta-title p {
+      margin: 4px 0 0;
+      color: #655d58;
+      font-size: 12px;
+    }
+    .beta-table-wrap {
+      width: 100%;
+      max-width: 1080px;
+      margin: 0 auto;
+    }
+
+    /* PBAF Filter Bar */
+    #pbaf-bar {
+      box-sizing: border-box;
+      margin: 10px 0 12px;
+      padding: 8px 12px;
+      background: #fff;
+      border: 1px solid #d5d5d0;
+      border-radius: 8px;
+      box-shadow: 0 1px 3px rgba(0,0,0,.06);
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 6px 8px;
+      font: 13px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      color: #333;
+    }
+    .pbaf-label {
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: .08em;
+      color: #98988f;
+      text-transform: uppercase;
+      margin-right: 2px;
+    }
+    .pbaf-chip {
+      appearance: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 3px 11px;
+      border: 1px solid #c8c8c2;
+      border-radius: 999px;
+      background: #fff;
+      color: #3d3d38;
+      font: inherit;
+    }
+    .pbaf-chip[aria-pressed="true"] {
+      background: #2f6b3f;
+      border-color: #2f6b3f;
+      color: #fff;
+    }
+    .pbaf-chip .pbaf-count {
+      font-size: 11px;
+      color: #8b8b84;
+      font-variant-numeric: tabular-nums;
+    }
+    .pbaf-chip[aria-pressed="true"] .pbaf-count {
+      color: #cfe3d4;
+    }
+    .pbaf-spacer {
+      flex: 1 1 auto;
+    }
+    .pbaf-status {
+      color: #55554f;
+      white-space: nowrap;
+    }
+    .pbaf-status b {
+      color: #141414;
+      font-weight: 600;
+    }
+    .pbaf-reset {
+      color: #666;
+      text-decoration: underline;
+      text-underline-offset: 2px;
+      white-space: nowrap;
+    }
+
+    /* Peakbagger Table */
+    table.gray {
+      width: 100%;
+      border-collapse: collapse;
+      background: #fff;
+      border: 1px solid #d5d5d0;
+      font-size: 13px;
+    }
+    table.gray th {
+      background: #eee;
+      border: 1px solid #ccc;
+      padding: 6px 8px;
+      text-align: left;
+      font-weight: bold;
+      color: #222;
+    }
+    table.gray th.sorted {
+      color: #194a7a;
+      text-decoration: underline;
+    }
+    table.gray td {
+      border: 1px solid #e0e0dc;
+      padding: 6px 8px;
+      color: #222;
+    }
+    table.gray tr:nth-child(even) {
+      background: #fafafa;
+    }
+    table.gray td a {
+      color: #194a7a;
+      text-decoration: underline;
+    }
+    .gps-dot {
+      display: inline-block;
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: #2f6b3f;
+    }
+  </style>
+</head>
+<body>
+  <main class="showcase">
+    <header class="showcase-head">
+      <span class="showcase-logo" aria-hidden="true"></span>
+      <div>
+        <h1>Find the beta. Skip the noise.</h1>
+        <p class="showcase-subtitle">Stack filters for trip reports, GPS tracks, and useful links.</p>
+      </div>
+    </header>
+
+    <section class="browser">
+      <div class="browser-bar">
+        <span class="traffic-lights"><i></i><i></i><i></i></span>
+        <div class="address">peakbagger.com</div>
+      </div>
+      <div class="beta-stage">
+        <div class="beta-table-wrap">
+          <div class="beta-title">
+            <h2>Ascents of Mount Rainier</h2>
+            <p>Find the reports and GPS tracks that help plan your route.</p>
+          </div>
+
+          <div id="pbaf-bar">
+            <span class="pbaf-label">Beta filter</span>
+            <button type="button" class="pbaf-chip" aria-pressed="true"><span class="pbaf-tick">✓</span> <span class="pbaf-chip-label">Has beta</span> <span class="pbaf-count">6</span></button>
+            <button type="button" class="pbaf-chip" aria-pressed="false"><span class="pbaf-chip-label">Trip report</span> <span class="pbaf-count">6</span></button>
+            <button type="button" class="pbaf-chip" aria-pressed="false"><span class="pbaf-chip-label">GPS track</span> <span class="pbaf-count">0</span></button>
+            <button type="button" class="pbaf-chip" aria-pressed="false"><span class="pbaf-chip-label">Link</span> <span class="pbaf-count">0</span></button>
+            <button type="button" class="pbaf-chip" aria-pressed="false"><span class="pbaf-chip-label">Climbing buddies</span> <span class="pbaf-count">1</span></button>
+            <span class="pbaf-spacer"></span>
+            <span class="pbaf-status">Showing <b>6</b> of <b>10</b> ascents</span>
+            <span class="pbaf-reset">Show all</span>
+          </div>
+
+          <table class="gray">
+            <thead>
+              <tr>
+                <th>Climber</th>
+                <th class="sorted">Ascent Date</th>
+                <th>GPS</th>
+                <th>TR-Words</th>
+                <th>Route</th>
+                <th>Gain-Ft</th>
+                <th>Mi</th>
+                <th>Link</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>A. Walker</td>
+                <td><a href="#">2026-07-04</a></td>
+                <td align="center"><span class="gps-dot"></span></td>
+                <td>TR-642</td>
+                <td>Emmons Glacier</td>
+                <td>10,100</td>
+                <td>14.6</td>
+                <td></td>
+              </tr>
+              <tr>
+                <td>J. Rivera</td>
+                <td><a href="#">2026-06-28</a></td>
+                <td></td>
+                <td>TR-218</td>
+                <td>Disappointment Cleaver</td>
+                <td>9,200</td>
+                <td>14.1</td>
+                <td><a href="#">↗</a></td>
+              </tr>
+              <tr>
+                <td>S. Patel</td>
+                <td><a href="#">2026-06-18</a></td>
+                <td></td>
+                <td>TR-91</td>
+                <td>Fuhrer Finger</td>
+                <td>10,800</td>
+                <td>15.8</td>
+                <td><a href="#">↗</a></td>
+              </tr>
+              <tr>
+                <td>T. Morgan</td>
+                <td><a href="#">2026-06-11</a></td>
+                <td align="center"><span class="gps-dot"></span></td>
+                <td>TR-384</td>
+                <td>Emmons Glacier</td>
+                <td>10,100</td>
+                <td>14.6</td>
+                <td></td>
+              </tr>
+              <tr>
+                <td>D. Brooks</td>
+                <td><a href="#">2026-05-27</a></td>
+                <td></td>
+                <td>TR-156</td>
+                <td>Liberty Ridge</td>
+                <td>10,900</td>
+                <td>16.4</td>
+                <td></td>
+              </tr>
+              <tr>
+                <td>L. James</td>
+                <td><a href="#">2026-05-10</a></td>
+                <td></td>
+                <td>TR-73</td>
+                <td>Emmons Glacier</td>
+                <td>10,100</td>
+                <td>14.6</td>
+                <td></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  </main>
+</body>
+</html>
