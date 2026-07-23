@@ -1,5 +1,5 @@
 # Changelog
-## Unreleased
+## 3.1.0 — 2026-07-23
 
 - **Move settings safely and keep small personal data backed up.** Settings can
   now be exported to or restored from a validated JSON file, with confirmation
