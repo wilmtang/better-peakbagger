@@ -97,8 +97,16 @@ test('the editor mounts on the ascent form and hides the native textarea', async
         'Heading 5', 'Heading 6', 'Quote', 'Preformatted'
     ]);
     for (const label of ['Strikethrough', 'Horizontal rule', 'Insert table', 'Insert image', 'Insert video',
-        'More formats', 'Undo (Ctrl+Z)', 'Redo (Ctrl+Shift+Z)']) {
+        'More formats', 'Undo (Ctrl/Cmd+Z)', 'Redo (Ctrl/Cmd+Shift+Z)']) {
         assert.ok(ui.querySelector(`[aria-label="${label}"]`), `missing toolbar control: ${label}`);
+    }
+    for (const label of [
+        'Bold (Ctrl/Cmd+B)', 'Italic (Ctrl/Cmd+I)', 'Underline (Ctrl/Cmd+U)',
+        'Link (Ctrl/Cmd+K)', 'Undo (Ctrl/Cmd+Z)', 'Redo (Ctrl/Cmd+Shift+Z)',
+        'Inline code (Ctrl/Cmd+E)', 'Highlight (Ctrl/Cmd+Shift+H)'
+    ]) {
+        assert.equal(ui.querySelector(`[aria-label="${label}"]`)?.title, label,
+            `${label} should be both the accessible name and tooltip`);
     }
     assert.equal(ui.querySelector('.bpb-re-contextual')?.parentElement,
         ui.querySelector('.bpb-re-toolbar'),
@@ -112,7 +120,7 @@ test('the editor mounts on the ascent form and hides the native textarea', async
     const emptyParagraph = ui.querySelector('.bpb-re-surface p.is-editor-empty');
     assert.equal(emptyParagraph?.dataset.placeholder, 'Write your trip report…',
         'TipTap should recognize the empty document and expose its placeholder');
-    assert.equal(ui.querySelector('[aria-label="Undo (Ctrl+Z)"]').disabled, true,
+    assert.equal(ui.querySelector('[aria-label="Undo (Ctrl/Cmd+Z)"]').disabled, true,
         'undo starts disabled with an empty history');
 });
 
@@ -250,30 +258,36 @@ test('a pending rich edit is flushed synchronously when any submit control is cl
 });
 
 test('backup snapshots are captured only for Save or implicit form submissions', async () => {
-    const messages = [];
-    const dom = await loadEditor({
-        settings: { enableGithubBackup: true },
-        prepare: d => {
-            d.chrome.runtime.getManifest = () => ({ version: '1.2.3' });
-            d.chrome.runtime.sendMessage = async message => { messages.push(message); };
-        }
-    });
-    await editorReady(dom);
-    const doc = dom.window.document;
-    const form = doc.getElementById('JournalText').form;
+    const loadWithMessages = async () => {
+        const messages = [];
+        const dom = await loadEditor({
+            settings: { enableGithubBackup: true },
+            prepare: d => {
+                d.chrome.runtime.getManifest = () => ({ version: '1.2.3' });
+                d.chrome.runtime.sendMessage = async message => { messages.push(message); };
+            }
+        });
+        await editorReady(dom);
+        return { dom, messages };
+    };
 
-    doc.getElementById('GPXPreview').click();
-    assert.equal(messages.filter(message => message.type === 'GITHUB_BACKUP_SNAPSHOT').length, 0,
+    const explicit = await loadWithMessages();
+    explicit.dom.window.document.getElementById('GPXPreview').click();
+    assert.equal(explicit.messages.filter(message => message.type === 'GITHUB_BACKUP_SNAPSHOT').length, 0,
         'GPS Preview must not snapshot a form state that was never saved');
 
-    doc.getElementById('SaveButton').click();
-    assert.ok(messages.some(message => message.type === 'GITHUB_BACKUP_SNAPSHOT'),
+    explicit.dom.window.document.getElementById('SaveButton').click();
+    assert.equal(explicit.messages.filter(message => message.type === 'GITHUB_BACKUP_SNAPSHOT').length, 1,
         'clicking Save must capture a backup snapshot');
+    explicit.dom.window.close();
 
-    messages.length = 0;
-    form.dispatchEvent(new dom.window.SubmitEvent('submit', { bubbles: true, cancelable: true }));
-    assert.equal(messages.filter(message => message.type === 'GITHUB_BACKUP_SNAPSHOT').length, 1,
+    const implicit = await loadWithMessages();
+    implicit.dom.window.document.getElementById('JournalText').form.dispatchEvent(
+        new implicit.dom.window.SubmitEvent('submit', { bubbles: true, cancelable: true })
+    );
+    assert.equal(implicit.messages.filter(message => message.type === 'GITHUB_BACKUP_SNAPSHOT').length, 1,
         'an implicit submission must capture a backup snapshot');
+    implicit.dom.window.close();
 });
 
 test('Add and Edit saves capture the identities used by the backup handoff even when the editor is disabled', async () => {
@@ -355,6 +369,22 @@ test('markdown mode converts to bracket markup and the live preview shows the fi
 
     // The chosen mode is remembered for next time.
     assert.equal(dom.chrome._store.bpbSettings.reportEditorMode, 'markdown');
+});
+
+test('the editor reports a mode-preference persistence failure', async () => {
+    const dom = await loadEditor({
+        prepare: d => {
+            d.chrome.storage.sync.set = async () => { throw new Error('sync write failed'); };
+        },
+    });
+    const ui = await editorReady(dom);
+
+    modeButton(dom.window.document, 'Markdown').click();
+    await waitFor(dom, () => /preference couldn’t be saved/i.test(
+        ui.querySelector('.bpb-re-status').textContent));
+
+    assert.equal(ui.dataset.mode, 'markdown', 'the current editing session remains usable');
+    assert.notEqual(dom.chrome._store.bpbSettings.reportEditorMode, 'markdown');
 });
 
 test('Markdown direct video links save as video markup and render native controls', async () => {
@@ -464,11 +494,11 @@ test('the toolbar reflects the caret: active marks, block style, and table contr
 
     rich.chain().focus().setTextSelection(posOf('Route')).run();
     assert.equal(ui.querySelector('.bpb-re-format').value, 'h2');
-    assert.equal(ui.querySelector('[aria-label="Bold (Ctrl+B)"]').getAttribute('aria-pressed'), 'false');
+    assert.equal(ui.querySelector('[aria-label="Bold (Ctrl/Cmd+B)"]').getAttribute('aria-pressed'), 'false');
 
     rich.chain().focus().setTextSelection(posOf('bold text')).run();
     assert.equal(ui.querySelector('.bpb-re-format').value, 'p');
-    assert.equal(ui.querySelector('[aria-label="Bold (Ctrl+B)"]').getAttribute('aria-pressed'), 'true');
+    assert.equal(ui.querySelector('[aria-label="Bold (Ctrl/Cmd+B)"]').getAttribute('aria-pressed'), 'true');
 
     assert.equal(ui.querySelector('.bpb-re-tablebar').hidden, true);
     ui.querySelector('[aria-label="Insert table"]').click();
@@ -500,7 +530,7 @@ test('more formats and named text colors serialize through the allowlist', async
 
     ui.querySelector('[aria-label="More formats"]').click();
     assert.equal(ui.querySelector('.bpb-re-morebox').hidden, false);
-    ui.querySelector('[aria-label="Highlight (Ctrl+Shift+H)"]').click();
+    ui.querySelector('[aria-label="Highlight (Ctrl/Cmd+Shift+H)"]').click();
     await waitFor(dom, () => doc.getElementById('JournalText').value.includes('[mark]'));
 
     editors(dom).rich.chain().focus().selectAll().run();
@@ -596,7 +626,7 @@ test('link and media popovers toggle closed, share the toolbar layer, and insert
     const ui = await editorReady(dom);
     const doc = dom.window.document;
     const layer = ui.querySelector('.bpb-re-contextual');
-    const linkTool = ui.querySelector('[aria-label="Link (Ctrl+K)"]');
+    const linkTool = ui.querySelector('[aria-label="Link (Ctrl/Cmd+K)"]');
     const imageTool = ui.querySelector('[aria-label="Insert image"]');
     const videoTool = ui.querySelector('[aria-label="Insert video"]');
     const imageBox = ui.querySelector('.bpb-re-imagebox');
@@ -1064,13 +1094,136 @@ test('a whitespace-only stored draft is deleted instead of silently retained', a
     assert.equal(dom.window.document.querySelector('.bpb-re-draft').hidden, true);
 });
 
-test('clicking Save Ascent clears the draft', async () => {
+for (const saveId of ['SaveButton', 'SaveButton2']) {
+    test(`${saveId} clears the draft and page exit cannot recreate it`, async () => {
+        const report = 'about to be saved';
+        const dom = await loadEditor({
+            report,
+            drafts: { [DRAFT_KEY]: { text: report, mode: 'rich', savedAt: Date.now() } }
+        });
+        await editorReady(dom);
+
+        dom.window.document.getElementById(saveId).click();
+        dom.window.dispatchEvent(new dom.window.Event('pagehide'));
+        await waitFor(dom, () => !dom.chrome._localStore[DRAFT_KEY]);
+        await new Promise(resolve => dom.window.setTimeout(resolve, 20));
+
+        assert.equal(dom.chrome._localStore[DRAFT_KEY], undefined);
+        dom.window.close();
+    });
+}
+
+test('an implicit Save submission clears the draft and page exit cannot recreate it', async () => {
+    const report = 'save by pressing Enter';
     const dom = await loadEditor({
-        drafts: { [DRAFT_KEY]: { text: 'about to be saved', mode: 'rich', savedAt: Date.now() } }
+        report,
+        drafts: { [DRAFT_KEY]: { text: report, mode: 'rich', savedAt: Date.now() } }
     });
     await editorReady(dom);
-    dom.window.document.getElementById('SaveButton').click();
+    const form = dom.window.document.getElementById('JournalText').form;
+
+    form.dispatchEvent(new dom.window.SubmitEvent('submit', { bubbles: true, cancelable: true }));
+    dom.window.dispatchEvent(new dom.window.Event('pagehide'));
     await waitFor(dom, () => !dom.chrome._localStore[DRAFT_KEY]);
+    await new Promise(resolve => dom.window.setTimeout(resolve, 20));
+
+    assert.equal(dom.chrome._localStore[DRAFT_KEY], undefined);
+    dom.window.close();
+});
+
+test('a Save cancels a pending autosave timer and rejects even a late callback', async () => {
+    const AUTOSAVE_TIMER_ID = 8675309;
+    let autosaveCallback;
+    let autosaveCancelled = false;
+    const dom = await loadEditor({
+        prepare: d => {
+            const originalSetTimeout = d.window.setTimeout.bind(d.window);
+            const originalClearTimeout = d.window.clearTimeout.bind(d.window);
+            d.window.setTimeout = (callback, delay = 0, ...args) => {
+                if (delay === 800) {
+                    autosaveCallback = () => callback(...args);
+                    return AUTOSAVE_TIMER_ID;
+                }
+                return originalSetTimeout(callback, delay, ...args);
+            };
+            d.window.clearTimeout = timer => {
+                if (timer === AUTOSAVE_TIMER_ID) {
+                    autosaveCancelled = true;
+                    return;
+                }
+                originalClearTimeout(timer);
+            };
+        }
+    });
+    await editorReady(dom);
+
+    typeRich(dom, '<p>timer still pending</p>');
+    await waitFor(dom, () => autosaveCallback);
+    dom.window.document.getElementById('SaveButton').click();
+    dom.window.dispatchEvent(new dom.window.Event('pagehide'));
+    autosaveCallback(); // Simulate a queued callback delivered despite cancellation.
+    await new Promise(resolve => dom.window.setTimeout(resolve, 20));
+
+    assert.equal(autosaveCancelled, true);
+    assert.equal(dom.chrome._localStore[DRAFT_KEY], undefined);
+    dom.window.close();
+});
+
+test('a Save removes multiple in-flight autosaves even when they finish out of order', async () => {
+    const releases = [];
+    const completions = [];
+    let cleanupCount = 0;
+    const dom = await loadEditor({
+        accelerateAutosave: true,
+        prepare: d => {
+            const originalSet = d.chrome.storage.local.set;
+            const originalRemove = d.chrome.storage.local.remove;
+            d.chrome.storage.local.set = async patch => {
+                const index = releases.length;
+                await new Promise(resolve => { releases[index] = resolve; });
+                await originalSet(patch);
+                completions.push(index);
+            };
+            d.chrome.storage.local.remove = async key => {
+                await originalRemove(key);
+                if (completions.length) cleanupCount++;
+            };
+        }
+    });
+    await editorReady(dom);
+
+    typeRich(dom, '<p>first in-flight write</p>');
+    await waitFor(dom, () => releases.length === 1);
+    typeRich(dom, '<p>second in-flight write</p>');
+    await waitFor(dom, () => releases.length === 2);
+    dom.window.document.getElementById('SaveButton').click();
+    dom.window.dispatchEvent(new dom.window.Event('pagehide'));
+
+    releases[1]();
+    await waitFor(dom, () => cleanupCount === 1);
+    releases[0]();
+    await waitFor(dom, () => cleanupCount === 2);
+    assert.deepEqual(completions, [1, 0]);
+    assert.equal(dom.chrome._localStore[DRAFT_KEY], undefined);
+    dom.window.close();
+});
+
+test('a named non-Save submission keeps page-exit draft recovery active', async () => {
+    const dom = await loadEditor({ report: 'keep this after cancelling' });
+    await editorReady(dom);
+    const doc = dom.window.document;
+    const form = doc.getElementById('JournalText').form;
+
+    form.dispatchEvent(new dom.window.SubmitEvent('submit', {
+        bubbles: true,
+        cancelable: true,
+        submitter: doc.getElementById('CancelButton')
+    }));
+    dom.window.dispatchEvent(new dom.window.Event('pagehide'));
+    await waitFor(dom, () => dom.chrome._localStore[DRAFT_KEY]);
+
+    assert.equal(dom.chrome._localStore[DRAFT_KEY].text, 'keep this after cancelling');
+    dom.window.close();
 });
 
 test('expired and excess drafts are pruned, current key kept', async () => {

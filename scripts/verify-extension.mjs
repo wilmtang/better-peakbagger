@@ -1121,10 +1121,10 @@ try {
             const imageDismissed = await editorPage.locator('.bpb-re-imagebox').evaluate(box => box.hidden);
             check(imageDismissed, 'clicking Insert image again did not dismiss its panel');
             await editorPage.locator('#bpb-report-editor').getByRole('button', {
-                name: 'Link (Ctrl+K)', exact: true
+                name: 'Link (Ctrl/Cmd+K)', exact: true
             }).click();
             await editorPage.locator('#bpb-report-editor').getByRole('button', {
-                name: 'Link (Ctrl+K)', exact: true
+                name: 'Link (Ctrl/Cmd+K)', exact: true
             }).click();
             const linkDismissed = await editorPage.locator('.bpb-re-linkbox').evaluate(box => box.hidden);
             check(linkDismissed, 'clicking Link again did not dismiss its panel');

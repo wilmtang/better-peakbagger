@@ -646,10 +646,14 @@ minimally valid records, newest first:
   compare-and-offer gate still owns Restore.
 
 Deleting one or all drafts removes storage immediately and holds copies only in
-the open manager page for a six-second Undo window. Live `storage.onChanged`
-refreshes preserve an active Undo row. If the window closes without Undo, or
-the manager itself closes, those in-memory copies are no longer recoverable
-through the extension.
+the open manager page for a six-second Undo window. Before bulk deletion, the
+button and the native confirmation both state the exact draft count; Cancel or
+Escape leaves storage unchanged. Live `storage.onChanged` refreshes preserve an
+active Undo row. An Undo snapshot is not discarded until `storage.local.set()`
+actually succeeds. A transient restoration failure therefore leaves an
+actionable Undo control for retry instead of losing the manager's only copy.
+If the window closes without Undo, or the manager itself closes, those
+in-memory copies are no longer recoverable through the extension.
 
 A confirmed, GitHub-mirrored Peakbagger Delete is terminal for the matching
 draft. The deletion module records the worker transaction first, then signals
@@ -660,25 +664,20 @@ the local draft unchanged.
 
 ### Clearing at Peakbagger Save
 
-The intended boundary is that clicking either Peakbagger **Save Ascent** button
-flushes `JournalText` and clears the matching TR draft; the extension never
-clicks Save itself. Removal happens before Peakbagger confirms success. If the
-server rejects the save, the posted report may round-trip in Peakbagger's form,
-but the local draft has already been scheduled for removal.
+Clicking either Peakbagger **Save Ascent** button, or completing a valid
+implicit form submission with no named submitter, flushes `JournalText`, enters
+a terminal Save state, captures the optional GitHub handoff once, and clears
+the matching TR draft. Named non-Save submitters such as Cancel, Delete, and
+GPS Preview do not enter that state. The extension never clicks Save itself.
 
-The current implementation does not fully guarantee that intended boundary:
-
-- Draft clearing is attached to clicks on `SaveButton` and `SaveButton2`, not
-  to every form-submit path. A submit without either click does not clear it.
-- A successful Save navigation also reaches the general `pagehide` handler.
-  There is no terminal "saving" state, so its asynchronous `saveDraftNow()` can
-  race with, or follow, the earlier asynchronous removal and recreate the
-  non-empty draft.
-
-Treat those as current implementation risks, not desired product behavior. A
-future fix needs a terminal Save state and a regression test covering the real
-click → submit → pagehide sequence before this section can claim that every
-successful Save reliably clears its draft.
+The terminal state cancels pending autosave and prevents both a late timer and
+the navigation-time `pagehide` handler from writing the draft again. The
+completion path of an autosave write that was already in flight performs a
+second terminal cleanup, so it cannot win a write-after-remove race. The
+ordinary click → submit sequence is idempotent, so the same save neither clears
+nor captures twice. Removal still happens before Peakbagger confirms success.
+If the server rejects the save, the posted report may round-trip in
+Peakbagger's form, but the local draft has already been scheduled for removal.
 
 ### Reviewer questions this design must keep answering
 

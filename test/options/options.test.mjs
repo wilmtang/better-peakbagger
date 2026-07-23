@@ -1384,20 +1384,87 @@ test('deleting one draft is reversible and its Undo survives a live refresh', as
     assert.equal(el(dom, 'status').classList.contains('show'), true);
 });
 
-test('delete all drafts has one undo that restores every record', async () => {
+test('a failed single-draft Undo keeps its recovery snapshot available for retry', async () => {
+    const key = 'bpbReportDraft:900001:a123';
+    const record = { text: 'Retry this restoration', mode: 'rich', savedAt: Date.now() };
+    const dom = await loadOptions({}, { local: { [key]: record } });
+    await waitFor(dom, () => draftRow(dom, key));
+
+    draftRow(dom, key).querySelector('[data-action="delete"]').click();
+    await waitFor(dom, () => !(key in dom.chrome._localStore));
+
+    const originalSet = dom.chrome.storage.local.set;
+    let failOnce = true;
+    dom.chrome.storage.local.set = async patch => {
+        if (failOnce) {
+            failOnce = false;
+            throw new Error('transient storage failure');
+        }
+        return originalSet(patch);
+    };
+
+    draftRow(dom, key).querySelector('[data-action="undo"]').click();
+    await waitFor(dom, () => el(dom, 'status').textContent === 'Couldn’t restore the draft. Try again.');
+    assert.equal(dom.chrome._localStore[key], undefined);
+    assert.match(draftRow(dom, key).textContent, /Draft deleted\s*Undo/);
+    assert.equal(dom.window.document.activeElement, draftRow(dom, key).querySelector('[data-action="undo"]'));
+
+    draftRow(dom, key).querySelector('[data-action="undo"]').click();
+    await waitFor(dom, () => key in dom.chrome._localStore && draftRow(dom, key)?.querySelector('.draft-title'));
+    assert.deepEqual(JSON.parse(JSON.stringify(dom.chrome._localStore[key])), record);
+});
+
+test('delete all states the count, requires confirmation, and retains a failed Undo for retry', async () => {
     const firstKey = 'bpbReportDraft:900001:a123';
     const secondKey = 'bpbReportDraft:900001:p456';
+    const confirmations = [];
+    const confirmationResults = [false, true];
     const records = {
         [firstKey]: { text: 'First', mode: 'rich', savedAt: Date.now() },
         [secondKey]: { text: 'Second', mode: 'markdown', source: 'Second', savedAt: Date.now() - 1 }
     };
-    const dom = await loadOptions({}, { local: records });
+    const dom = await loadOptions({}, {
+        local: records,
+        prepareWindow: window => {
+            window.confirm = message => {
+                confirmations.push(message);
+                return confirmationResults.shift();
+            };
+        }
+    });
     await waitFor(dom, () => dom.window.document.querySelectorAll('.draft-item').length === 2);
+    assert.equal(el(dom, 'drafts-delete-all').textContent, 'Delete all 2 drafts');
+
+    el(dom, 'drafts-delete-all').click();
+    assert.deepEqual(dom.chrome._localStore, records, 'Cancel must leave every draft untouched');
+    assert.equal(dom.window.document.activeElement, el(dom, 'drafts-delete-all'));
 
     el(dom, 'drafts-delete-all').click();
     await waitFor(dom, () => !(firstKey in dom.chrome._localStore) && !(secondKey in dom.chrome._localStore));
+    assert.equal(confirmations.length, 2);
+    assert.match(confirmations[0], /Delete all 2 trip report drafts from this device/);
+    assert.match(confirmations[0], /6 seconds to undo/);
     assert.equal(el(dom, 'drafts-undo-all').hidden, false);
     assert.match(el(dom, 'drafts-undo-all').textContent, /All drafts deleted\s*Undo/);
+    assert.equal(dom.window.document.activeElement, el(dom, 'drafts-undo-all-button'));
+
+    const originalSet = dom.chrome.storage.local.set;
+    let failOnce = true;
+    dom.chrome.storage.local.set = async patch => {
+        if (failOnce) {
+            failOnce = false;
+            throw new Error('transient storage failure');
+        }
+        return originalSet(patch);
+    };
+
+    el(dom, 'drafts-undo-all-button').click();
+    await waitFor(dom, () => el(dom, 'status').textContent === 'Couldn’t restore the drafts. Try again.');
+    assert.equal(firstKey in dom.chrome._localStore, false);
+    assert.equal(secondKey in dom.chrome._localStore, false);
+    assert.equal(el(dom, 'drafts-undo-all').hidden, false);
+    assert.equal(el(dom, 'drafts-undo-all-button').disabled, false);
+    assert.equal(dom.window.document.activeElement, el(dom, 'drafts-undo-all-button'));
 
     el(dom, 'drafts-undo-all-button').click();
     await waitFor(dom, () => firstKey in dom.chrome._localStore && secondKey in dom.chrome._localStore);

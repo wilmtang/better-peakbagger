@@ -17,8 +17,9 @@
 // Drafts autosave to extension-local storage keyed by climber/ascent identity.
 // They never leave the device, expire after two weeks, and are offered back —
 // never silently applied — when they differ from what the server rendered.
-// Clicking either Save Ascent control clears the draft; the posted value
-// itself still round-trips through the form if the save fails server-side.
+// A Save Ascent submission clears the draft and becomes terminal before
+// navigation; the posted value itself still round-trips through the form if
+// the save fails server-side.
 
 import { settings as Settings } from '../settings/settings.js';
 import { reportMarkup as Markup } from './report-markup.js';
@@ -44,6 +45,7 @@ import { dom as Dom } from '../ui/dom.js';
     const SYNC_DEBOUNCE_MS = 150;
     const AUTOSAVE_DEBOUNCE_MS = 800;
     const MODES = ['rich', 'markdown', 'plain'];
+    const SAVE_BUTTON_IDS = new Set(['SaveButton', 'SaveButton2']);
     const STORE_URL = ext.runtime?.getURL?.('').startsWith('moz-extension://')
         ? 'https://addons.mozilla.org/en-US/firefox/addon/better-peakbagger/'
         : 'https://chromewebstore.google.com/detail/better-peakbagger/kndjohodnpdoejmjkiiakejfehoodedn';
@@ -150,12 +152,12 @@ import { dom as Dom } from '../ui/dom.js';
 
     const svg = paths => `<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">${paths}</svg>`;
     const toolButtons = {
-        bold: button('bpb-re-tool', 'B', 'Bold (Ctrl+B)', '<b>B</b>'),
-        italic: button('bpb-re-tool', 'I', 'Italic (Ctrl+I)', '<i>I</i>'),
-        underline: button('bpb-re-tool', 'U', 'Underline (Ctrl+U)', '<u>U</u>'),
+        bold: button('bpb-re-tool', 'B', 'Bold (Ctrl/Cmd+B)', '<b>B</b>'),
+        italic: button('bpb-re-tool', 'I', 'Italic (Ctrl/Cmd+I)', '<i>I</i>'),
+        underline: button('bpb-re-tool', 'U', 'Underline (Ctrl/Cmd+U)', '<u>U</u>'),
         strike: button('bpb-re-tool', 'S', 'Strikethrough', '<s>S</s>'),
         more: button('bpb-re-tool', 'Aa', 'More formats'),
-        link: button('bpb-re-tool', 'Link', 'Link (Ctrl+K)',
+        link: button('bpb-re-tool', 'Link', 'Link (Ctrl/Cmd+K)',
             svg('<path fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" d="M6.5 9.5l3-3M5.7 7.2L4 8.9a2.5 2.5 0 003.5 3.5l1.7-1.7M10.3 8.8L12 7.1a2.5 2.5 0 00-3.5-3.5L6.8 5.3"/>')),
         image: button('bpb-re-tool', 'Image', 'Insert image',
             svg('<rect x="1.5" y="2.5" width="13" height="11" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.4"/><circle cx="5.2" cy="6" r="1.2" fill="currentColor"/><path d="M3 12.5l3.2-3.4 2.2 2.2 2.6-3 2.5 4.2" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>')),
@@ -169,9 +171,9 @@ import { dom as Dom } from '../ui/dom.js';
             svg('<g fill="currentColor" font-size="5.5" font-family="Tahoma, sans-serif"><text x="1" y="6">1</text><text x="1" y="14">2</text></g><g stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M6.5 4h6.5M6.5 12h6.5"/></g>')),
         horizontalRule: button('bpb-re-tool', 'Rule', 'Horizontal rule',
             svg('<path d="M2 8h12" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>')),
-        undo: button('bpb-re-tool', 'Undo', 'Undo (Ctrl+Z)',
+        undo: button('bpb-re-tool', 'Undo', 'Undo (Ctrl/Cmd+Z)',
             svg('<path d="M6.5 3.5L3 7l3.5 3.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M3.5 7H9a3.5 3.5 0 010 7H7.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>')),
-        redo: button('bpb-re-tool', 'Redo', 'Redo (Ctrl+Shift+Z)',
+        redo: button('bpb-re-tool', 'Redo', 'Redo (Ctrl/Cmd+Shift+Z)',
             svg('<path d="M9.5 3.5L13 7l-3.5 3.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M12.5 7H7a3.5 3.5 0 000 7h1.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>'))
     };
     tools.append(blockFormat, ...Object.values(toolButtons));
@@ -279,8 +281,8 @@ import { dom as Dom } from '../ui/dom.js';
     const moreBox = el('div', 'bpb-re-box bpb-re-morebox');
     moreBox.hidden = true;
     const moreButtons = {
-        code: button('bpb-re-tool', 'Code', 'Inline code (Ctrl+E)', '<code>&lt;/&gt;</code>'),
-        highlight: button('bpb-re-tool', 'Highlight', 'Highlight (Ctrl+Shift+H)', '<mark>ab</mark>'),
+        code: button('bpb-re-tool', 'Code', 'Inline code (Ctrl/Cmd+E)', '<code>&lt;/&gt;</code>'),
+        highlight: button('bpb-re-tool', 'Highlight', 'Highlight (Ctrl/Cmd+Shift+H)', '<mark>ab</mark>'),
         subscript: button('bpb-re-tool', 'Subscript', 'Subscript', 'x<sub>2</sub>'),
         superscript: button('bpb-re-tool', 'Superscript', 'Superscript', 'x<sup>2</sup>'),
         small: button('bpb-re-tool', 'Small text', 'Small text', '<small>Aa</small>'),
@@ -431,6 +433,7 @@ import { dom as Dom } from '../ui/dom.js';
             globalThis.clearTimeout(state.autosaveTimer);
             state.autosaveTimer = null;
         }
+        if (state.terminalSubmission) return;
         if (!['rich', 'markdown'].includes(state.mode)) return; // uninitialized/Plain: native behavior, native risks
         flushSync();
         try {
@@ -446,11 +449,19 @@ import { dom as Dom } from '../ui/dom.js';
                 if (Object.keys(label).length) record.label = label;
             } catch (error) { /* optional display metadata must never block autosave */ }
             await localStore.set({ [draftKey]: record });
+            // A Save can begin while an earlier storage write is already in
+            // flight. Its first removal may then lose the race to that write,
+            // so the completing writer must honor the terminal state too.
+            if (state.terminalSubmission) {
+                await localStore.remove(draftKey);
+                return;
+            }
             status.textContent = `Draft saved on this device · ${timeLabel(record.savedAt)}`;
         } catch (error) { /* storage unavailable — the form value is still live */ }
     };
 
     const scheduleAutosave = () => {
+        if (state.terminalSubmission) return;
         if (state.autosaveTimer !== null) globalThis.clearTimeout(state.autosaveTimer);
         state.autosaveTimer = globalThis.setTimeout(() => { void saveDraftNow(); }, AUTOSAVE_DEBOUNCE_MS);
     };
@@ -504,20 +515,31 @@ import { dom as Dom } from '../ui/dom.js';
             ext.runtime.sendMessage({ type: 'GITHUB_BACKUP_SNAPSHOT', key, identity, snapshot });
         } catch (error) { /* backup is best-effort; never disrupt the save */ }
     };
-    // Enter-to-submit does not click a Save button; capture on submit too. The
-    // capture-phase flush listener above is registered first, so the textarea is
-    // already current when this reads it.
+
+    const beginTerminalSave = () => {
+        if (state.terminalSubmission) return;
+        state.terminalSubmission = true;
+        flushSync();
+        captureBackupSnapshot();
+        clearDraft();
+    };
+
+    // Enter-to-submit does not click a Save button. A submit with no submitter
+    // is the browser's valid implicit-save path; named non-Save submitters
+    // (Cancel, Delete, GPS Preview) retain their existing behavior.
     form.addEventListener('submit', event => {
         const submitter = event.submitter;
-        if (submitter && submitter.id !== 'SaveButton' && submitter.id !== 'SaveButton2') return;
-        captureBackupSnapshot();
+        if (submitter && !SAVE_BUTTON_IDS.has(submitter.id)) return;
+        beginTerminalSave();
     }, true);
 
-    // Saving the ascent is the moment the draft has served its purpose. If the
-    // save fails server-side, the value still round-trips in the form post.
-    for (const id of ['SaveButton', 'SaveButton2']) {
+    // Mark both native Save controls terminal at click time as well. This
+    // covers Peakbagger postback handlers that navigate without a submit event,
+    // while beginTerminalSave() keeps the ordinary click + submit path
+    // idempotent.
+    for (const id of SAVE_BUTTON_IDS) {
         const save = document.getElementById(id);
-        if (save) save.addEventListener('click', () => { flushSync(); captureBackupSnapshot(); clearDraft(); }, true);
+        if (save) save.addEventListener('click', beginTerminalSave, true);
     }
 
     const offerDraft = stored => {
@@ -836,7 +858,9 @@ import { dom as Dom } from '../ui/dom.js';
         }
 
         if (persist) {
-            void Settings.set({ reportEditorMode: mode });
+            void Settings.set({ reportEditorMode: mode }).catch(() => {
+                status.textContent = 'Editor preference couldn’t be saved';
+            });
             if (rich) richEditor.commands.focus();
             else if (markdown) mdEditor.focus();
             else textarea.focus();

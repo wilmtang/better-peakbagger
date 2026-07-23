@@ -73,18 +73,28 @@ export const initDrafts = ({ extensionApi = globalThis.browser || globalThis.chr
         return button;
     };
 
+    const undoControlFor = key => [...listEl.children]
+        .find(item => item.dataset.draftKey === key)
+        ?.querySelector('[data-action="undo"]');
+
     const undoDelete = async key => {
         const pending = pendingDeletes.get(key);
-        if (!pending) return;
+        if (!pending || pending.restoring) return;
         globalThis.clearTimeout(pending.timer);
-        pendingDeletes.delete(key);
+        pending.timer = null;
+        pending.restoring = true;
         render();
         try {
             await store.set({ [key]: pending.record });
+            if (pendingDeletes.get(key) === pending) pendingDeletes.delete(key);
+            render();
             flash('Draft restored');
             await refresh();
         } catch (error) {
-            flash('Couldn’t restore the draft');
+            pending.restoring = false;
+            render();
+            flash('Couldn’t restore the draft. Try again.');
+            undoControlFor(key)?.focus();
         }
     };
 
@@ -94,7 +104,8 @@ export const initDrafts = ({ extensionApi = globalThis.browser || globalThis.chr
             record: draft.record,
             savedAt: draft.record.savedAt,
             title: draftTitle(draft),
-            timer: null
+            timer: null,
+            restoring: false
         };
         pending.timer = globalThis.setTimeout(() => {
             pendingDeletes.delete(draft.key);
@@ -179,15 +190,23 @@ export const initDrafts = ({ extensionApi = globalThis.browser || globalThis.chr
         item.className = 'draft-item draft-item-deleted';
         item.dataset.draftKey = key;
         const message = document.createElement('span');
-        message.textContent = 'Draft deleted';
-        const undo = actionButton('draft-undo', 'Undo', `Undo deletion of ${pending.title}`);
+        message.textContent = pending.restoring ? 'Restoring draft…' : 'Draft deleted';
+        const undo = actionButton(
+            'draft-undo',
+            pending.restoring ? 'Restoring…' : 'Undo',
+            `Undo deletion of ${pending.title}`
+        );
         undo.dataset.action = 'undo';
+        undo.disabled = pending.restoring;
         undo.addEventListener('click', () => { void undoDelete(key); });
         item.append(message, undo);
         return { item, savedAt: pending.savedAt };
     };
 
     const render = () => {
+        const focusedUndoKey = document.activeElement?.dataset.action === 'undo'
+            ? document.activeElement.closest('.draft-item')?.dataset.draftKey
+            : null;
         const bulkKeys = new Set(pendingBulk ? pendingBulk.records.keys() : []);
         const rows = currentDrafts
             .filter(draft => !pendingDeletes.has(draft.key) && !bulkKeys.has(draft.key))
@@ -199,8 +218,15 @@ export const initDrafts = ({ extensionApi = globalThis.browser || globalThis.chr
         listEl.append(...rows.map(row => row.item));
         listEl.hidden = rows.length === 0;
         undoAllEl.hidden = !pendingBulk;
+        undoAllButtonEl.disabled = !!pendingBulk?.restoring;
+        undoAllButtonEl.textContent = pendingBulk?.restoring ? 'Restoring…' : 'Undo';
         emptyEl.hidden = rows.length > 0 || !!pendingBulk;
-        deleteAllEl.hidden = !rows.some(row => row.fresh);
+        const freshCount = rows.filter(row => row.fresh).length;
+        deleteAllEl.hidden = freshCount === 0;
+        deleteAllEl.textContent = freshCount === 1
+            ? 'Delete this draft'
+            : `Delete all ${freshCount} drafts`;
+        if (focusedUndoKey) undoControlFor(focusedUndoKey)?.focus();
     };
 
     const refresh = async () => {
@@ -234,13 +260,23 @@ export const initDrafts = ({ extensionApi = globalThis.browser || globalThis.chr
             .filter(draft => !pendingDeletes.has(draft.key))
             .map(draft => [draft.key, draft.record]));
         if (!records.size) return;
-        const pending = { records, timer: null };
+        const count = records.size;
+        const confirmed = globalThis.confirm(
+            `Delete ${count === 1 ? 'this trip report draft' : `all ${count} trip report drafts`} from this device?\n\n`
+            + 'You’ll have 6 seconds to undo while this Settings page stays open.'
+        );
+        if (!confirmed) {
+            deleteAllEl.focus();
+            return;
+        }
+        const pending = { records, timer: null, restoring: false };
         pending.timer = globalThis.setTimeout(() => {
             if (pendingBulk === pending) pendingBulk = null;
             render();
         }, UNDO_MS);
         pendingBulk = pending;
         render();
+        undoAllButtonEl.focus();
         try {
             await store.remove([...records.keys()]);
             await refresh();
@@ -249,21 +285,28 @@ export const initDrafts = ({ extensionApi = globalThis.browser || globalThis.chr
             if (pendingBulk === pending) pendingBulk = null;
             render();
             flash('Couldn’t delete the drafts');
+            deleteAllEl.focus();
         }
     };
 
     const undoDeleteAll = async () => {
-        if (!pendingBulk) return;
+        if (!pendingBulk || pendingBulk.restoring) return;
         const pending = pendingBulk;
         globalThis.clearTimeout(pending.timer);
-        pendingBulk = null;
+        pending.timer = null;
+        pending.restoring = true;
         render();
         try {
             await store.set(Object.fromEntries(pending.records));
+            if (pendingBulk === pending) pendingBulk = null;
+            render();
             flash('Drafts restored');
             await refresh();
         } catch (error) {
-            flash('Couldn’t restore the drafts');
+            pending.restoring = false;
+            render();
+            flash('Couldn’t restore the drafts. Try again.');
+            undoAllButtonEl.focus();
         }
     };
 
