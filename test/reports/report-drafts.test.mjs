@@ -9,6 +9,7 @@ test('draft keys round-trip for existing, peak-targeted, and new ascents', () =>
     const cases = [
         [{ cid: '77', aid: '123' }, { cid: '77', kind: 'ascent', id: '123' }],
         [{ cid: '77', pid: '456' }, { cid: '77', kind: 'peak', id: '456' }],
+        [{ cid: '77', pid: '-105366' }, { cid: '77', kind: 'peak', id: '-105366' }],
         [{ cid: '77' }, { cid: '77', kind: 'new', id: null }],
         [{ pid: '456' }, { cid: '0', kind: 'peak', id: '456' }]
     ];
@@ -26,7 +27,10 @@ test('draft key parsing rejects unrelated and malformed storage entries', () => 
         'bpbReportDraft::a123',
         'bpbReportDraft:77:x123',
         'bpbReportDraft:77:a',
+        'bpbReportDraft:77:a-123',
         'bpbReportDraft:77:a12x',
+        'bpbReportDraft:77:p--123',
+        'bpbReportDraft:77:p+123',
         'bpbReportDraft:owner:a123',
         'bpbReportDraft:77:new:extra'
     ]) {
@@ -39,6 +43,8 @@ test('edit URLs preserve the draft target and omit the unknown climber id', () =
         'https://peakbagger.com/climber/ascentedit.aspx?aid=123&cid=77');
     assert.equal(Drafts.editUrl(Drafts.parseKey('bpbReportDraft:77:p456')),
         'https://peakbagger.com/climber/ascentedit.aspx?pid=456&cid=77');
+    assert.equal(Drafts.editUrl(Drafts.parseKey('bpbReportDraft:77:p-105366')),
+        'https://peakbagger.com/climber/ascentedit.aspx?pid=-105366&cid=77');
     assert.equal(Drafts.editUrl(Drafts.parseKey('bpbReportDraft:77:new')),
         'https://peakbagger.com/climber/ascentedit.aspx?cid=77');
     assert.equal(Drafts.editUrl(Drafts.parseKey('bpbReportDraft:0:p456')),

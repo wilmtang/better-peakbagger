@@ -21,15 +21,15 @@ const keyFor = ({ cid, aid, pid } = {}) => {
 
 const parseKey = key => {
     if (typeof key !== 'string' || !key.startsWith(PREFIX)) return null;
-    const match = key.slice(PREFIX.length).match(/^(\d+):(new|([ap])(\d+))$/);
+    const match = key.slice(PREFIX.length).match(/^(\d+):(new|a(\d+)|p(-?\d+))$/);
     if (!match) return null;
 
     const cid = match[1];
     if (match[2] === 'new') return { cid, kind: 'new', id: null };
     return {
         cid,
-        kind: match[3] === 'a' ? 'ascent' : 'peak',
-        id: match[4]
+        kind: match[3] ? 'ascent' : 'peak',
+        id: match[3] || match[4]
     };
 };
 
@@ -37,7 +37,7 @@ const editUrl = parsed => {
     if (!parsed || !/^\d+$/.test(parsed.cid || '')) return null;
     const query = [];
     if (parsed.kind === 'ascent' && /^\d+$/.test(parsed.id || '')) query.push(`aid=${parsed.id}`);
-    else if (parsed.kind === 'peak' && /^\d+$/.test(parsed.id || '')) query.push(`pid=${parsed.id}`);
+    else if (parsed.kind === 'peak' && /^-?\d+$/.test(parsed.id || '')) query.push(`pid=${parsed.id}`);
     else if (parsed.kind !== 'new' || parsed.id != null) return null;
     if (parsed.cid !== '0') query.push(`cid=${parsed.cid}`);
     return query.length ? `${EDIT_BASE}?${query.join('&')}` : EDIT_BASE;

@@ -1309,6 +1309,24 @@ test('report drafts render newest-first with labels, fallbacks, and edit links',
     assert.equal(el(dom, 'drafts-delete-all').hidden, false);
 });
 
+test('report drafts retain provisional peak identities and their mountain labels', async () => {
+    const key = 'bpbReportDraft:900001:p-105366';
+    const dom = await loadOptions({}, { local: {
+        [key]: {
+            text: 'Provisional peak report',
+            mode: 'rich',
+            savedAt: Date.now(),
+            label: { peak: 'Hibox Mountain', date: '7/18/2026' }
+        }
+    } });
+    await waitFor(dom, () => draftRow(dom, key));
+
+    const row = draftRow(dom, key);
+    assert.equal(row.querySelector('.draft-title').textContent, 'Hibox Mountain · 7/18/2026');
+    assert.equal(row.querySelector('a.secondary').href,
+        'https://peakbagger.com/climber/ascentedit.aspx?pid=-105366&cid=900001');
+});
+
 test('copy Markdown preserves exact source or converts the stored bracket report', async () => {
     const now = Date.now();
     const richKey = 'bpbReportDraft:900001:a123';

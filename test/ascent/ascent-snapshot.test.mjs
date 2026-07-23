@@ -165,6 +165,52 @@ test('label uses a matching prepared-draft peak name when the native picker is e
     }), {}, 'display metadata from another peak must not label this draft');
 });
 
+test('label derives the peak from exact existing-ascent page titles when the picker is empty', async () => {
+    const { doc, form } = await loadForm();
+    const title = doc.getElementById('PageTitle');
+
+    title.textContent = '  Ascent   of   Mount Daniel   by   Alex Doe  ';
+    assert.deepEqual(Snapshot.label({ form, params: new URLSearchParams('aid=123') }), {
+        peak: 'Mount Daniel'
+    });
+
+    title.textContent = `Ascent of ${'Hibox Mountain '.repeat(20)} by Alex Doe on 2026-07-18`;
+    const dated = Snapshot.label({ form, params: new URLSearchParams('aid=124') });
+    assert.equal(dated.peak.length, 200);
+    assert.match(dated.peak, /^Hibox Mountain/);
+});
+
+test('label preserves stronger peak sources and ignores unrelated native titles', async () => {
+    const { doc, form } = await loadForm();
+    const title = doc.getElementById('PageTitle');
+    title.textContent = 'Ascent of Native Title Peak by Alex Doe';
+    form.dataset.bpbDraftPeakId = '2296';
+    form.dataset.bpbDraftPeakName = 'Prepared Peak';
+
+    const select = form.elements['PeakListBox'];
+    const option = doc.createElement('option');
+    option.value = '1234';
+    option.textContent = 'Selected Peak';
+    select.appendChild(option);
+    select.value = '1234';
+    assert.deepEqual(Snapshot.label({
+        form,
+        params: new URLSearchParams('pid=2296')
+    }), { peak: 'Selected Peak' });
+
+    select.selectedIndex = -1;
+    assert.deepEqual(Snapshot.label({
+        form,
+        params: new URLSearchParams('pid=2296')
+    }), { peak: 'Native Title Peak' });
+
+    title.textContent = 'New Ascent by Alex Doe';
+    assert.deepEqual(Snapshot.label({
+        form,
+        params: new URLSearchParams('pid=2296')
+    }), { peak: 'Prepared Peak' });
+});
+
 test('an edited ascent carries its aid and an empty report yields an empty body', async () => {
     const { form } = await loadForm();
     setValue(form, 'DateText', '2026-07-12');

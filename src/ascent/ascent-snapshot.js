@@ -20,6 +20,7 @@
 
     const trim = value => (typeof value === 'string' ? value : value == null ? '' : String(value)).trim();
     const pad2 = value => String(value).padStart(2, '0');
+    const displayText = (value, limit) => trim(value).replace(/\s+/g, ' ').slice(0, limit);
 
     // Peakbagger dates are typed M/D/YYYY; partial dates leave the day (or month)
     // out. Normalize to the ISO-ish shape github-backup understands, using 00 for
@@ -142,17 +143,30 @@
         return { id: Number.isFinite(id) ? id : null, name };
     };
 
+    // Existing-ascent forms can leave PeakListBox empty even though Peakbagger
+    // renders the peak in its native title:
+    //   "Ascent of Mount Daniel by Alex Doe [on YYYY-MM-DD]"
+    // Only accept that exact existing-ascent shape. New-ascent and unrelated
+    // headings must not become draft labels.
+    const pageTitlePeakName = form => {
+        const title = form?.ownerDocument?.getElementById('PageTitle');
+        const text = displayText(title?.textContent, 1000);
+        const match = text.match(/^Ascent of (.+?) by .+(?: on \d{4}-\d{2}-\d{2})?$/);
+        return match ? displayText(match[1], 200) : '';
+    };
+
     // Compact, device-local display metadata for a report draft. The draft key
     // already carries identity; this is deliberately just the human label the
     // form currently shows, with conservative caps for options-page rendering.
     const label = ({ form, params } = {}) => {
-        const selectedPeak = trim(readPeak(form, params).name);
+        const selectedPeak = displayText(readPeak(form, params).name, 200);
+        const pageTitlePeak = pageTitlePeakName(form);
         const preparedPeak = form && params?.get('pid')
             && form.dataset?.bpbDraftPeakId === params.get('pid')
-            ? trim(form.dataset.bpbDraftPeakName)
+            ? displayText(form.dataset.bpbDraftPeakName, 200)
             : '';
-        const peak = (selectedPeak || preparedPeak).slice(0, 200);
-        const date = fieldValue(form, 'DateText').slice(0, 20);
+        const peak = selectedPeak || pageTitlePeak || preparedPeak;
+        const date = displayText(fieldValue(form, 'DateText'), 20);
         return {
             ...(peak ? { peak } : {}),
             ...(date ? { date } : {})
