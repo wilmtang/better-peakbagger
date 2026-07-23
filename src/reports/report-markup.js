@@ -588,11 +588,10 @@
 
     // ---- Marked tokens -> AST ---------------------------------------------
 
-    // Marked splits an inline HTML wrapper and the Markdown inside it into
-    // separate tokens. Protect validated HTML/bracket extensions before lexing
-    // so a source such as `<small>*aside*</small>` can be folded into the same
-    // nested AST as ordinary Markdown. Unsupported HTML is left for Marked's
-    // inert-html path below.
+    // Marked understands angle-bracket HTML boundaries and must see them while
+    // lexing so adjacent Markdown delimiters keep their CommonMark context.
+    // Peakbagger's bracket extensions are not Markdown, so protect only those
+    // before lexing and fold both token forms into the same allowlisted AST.
     const protectMarkdownExtensions = source => {
         const input = String(source ?? '');
         let markerPrefix = '\uE000BPB';
@@ -602,6 +601,7 @@
         const tokens = [];
         for (let hit = TAG_TOKEN.exec(input); hit; hit = TAG_TOKEN.exec(input)) {
             const bracket = hit[1] !== undefined;
+            if (!bracket) continue;
             const closing = (bracket ? hit[1] : hit[4]) === '/';
             const name = (bracket ? hit[2] : hit[5]).toLowerCase();
             const attrs = bracket ? hit[3] : hit[6];
@@ -677,6 +677,30 @@
         return kids.length ? { ...safe.ast, kids } : null;
     };
 
+    // Marked emits an inline HTML wrapper and its Markdown children as
+    // separate tokens. Convert only a single validated tag token here; block
+    // HTML and unsupported/unsafe tags continue through the inert text path.
+    const markdownHtmlExtension = raw => {
+        const match = /^<(\/?)\s*([a-z][a-z0-9]*)([^>\r\n]*)>$/i.exec(String(raw || ''));
+        if (!match) return null;
+        const closing = match[1] === '/';
+        const name = match[2].toLowerCase();
+        const attrs = match[3];
+        if (closing) {
+            if (attrs.trim()) return null;
+            const tag = normalizedTag(name);
+            return tag ? {
+                t: 'markdown-extension', raw, closing: true, self: false,
+                pair: null, tag, safe: null
+            } : null;
+        }
+        const safe = safeOpening(name, attrs);
+        return safe?.ast ? {
+            t: 'markdown-extension', raw, closing: false, self: safe.self,
+            pair: null, tag: safe.tag, safe
+        } : null;
+    };
+
     const foldMarkdownExtensions = nodes => {
         const root = [];
         const stack = [];
@@ -699,7 +723,11 @@
                 continue;
             }
             const open = stack[stack.length - 1];
-            if (!open || open.pair !== node.pair) {
+            const pairedMarkers = open?.pair !== null || node.pair !== null;
+            const matches = pairedMarkers
+                ? open?.pair === node.pair
+                : open?.tag === node.tag;
+            if (!open || !matches) {
                 append(text(node.raw));
                 continue;
             }
@@ -807,10 +835,13 @@
             return src ? [{ t: 'img', src, ...markdownImageAttributes(token) }]
                 : textWithBreaks(token.raw, extensions);
         }
-        // Marked deliberately does not sanitize raw HTML. The allowlisted
-        // subset was protected before lexing; keep everything else visible and
-        // inert instead of passing it to either innerHTML or Peakbagger.
-        if (token.type === 'html') return [text(token.raw || token.text || '')];
+        // Marked deliberately does not sanitize raw HTML. Convert only the
+        // allowlisted single-tag tokens above; keep everything else visible
+        // and inert instead of passing it to either innerHTML or Peakbagger.
+        if (token.type === 'html') {
+            const raw = token.raw || token.text || '';
+            return [markdownHtmlExtension(raw) || text(raw)];
+        }
         return token.tokens ? markedInlines(token.tokens, extensions)
             : textWithBreaks(token.raw || token.text || '', extensions);
     }));

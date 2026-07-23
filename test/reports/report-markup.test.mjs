@@ -132,6 +132,18 @@ test('safe HTML extensions cover Markdown features without standard syntax', () 
     assert.equal(Markup.bracketToMarkdown(bracket), markdown);
 });
 
+test('safe HTML wrappers preserve Markdown delimiter context next to punctuation', () => {
+    const markdown = '<span style="color:firebrick">**The Brothers traverse?**</span> and '
+        + '**<span style="color:steelblue">Another question?</span>**';
+    const bracket = '[span style="color:firebrick"][b]The Brothers traverse?[/b][/span] and '
+        + '[b][span style="color:steelblue"]Another question?[/span][/b]';
+
+    assert.equal(Markup.markdownToBracket(markdown), bracket);
+    assert.equal(Markup.markdownToPreviewHtml(markdown),
+        '<p><span style="color:firebrick"><b>The Brothers traverse?</b></span> and '
+        + '<b><span style="color:steelblue">Another question?</span></b></p>');
+});
+
 test('images require HTTPS and raw Markdown HTML stays inert', () => {
     assert.equal(Markup.markdownToBracket('![safe](https://example.com/a.jpg)'),
         '[img src="https://example.com/a.jpg" alt="safe"]');
