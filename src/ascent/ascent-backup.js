@@ -44,7 +44,7 @@ import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.js';
         }),
     );
 
-    const renderChecking = () => setBody(el('span', { class: 'bpb-gh-label', text: 'Checking backup…' }));
+    const renderChecking = () => setBody(el('span', { class: 'bpb-gh-label', text: 'Checking GitHub…' }));
 
     const renderWorking = () => setBody(el('span', { class: 'bpb-gh-label', text: 'Backing up to GitHub…' }));
 
@@ -119,11 +119,10 @@ import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.js';
         else renderIdle(info);
     };
 
-    const runBackup = async (info, { auto = false } = {}) => {
+    const runBackup = async (info, { auto = false, current = null } = {}) => {
         renderWorking();
-        let current;
         try {
-            current = await readCurrentBackup(info);
+            current = current || await readCurrentBackup(info);
         } catch (error) {
             renderError(info, error);
             return;
@@ -145,6 +144,23 @@ import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.js';
         renderError(info, response && response.error);
     };
 
+    const checkAutomaticBackup = async info => {
+        renderChecking();
+        let current;
+        try { current = await readCurrentBackup(info); }
+        catch { renderIdle(info); return; }
+        const preflight = await sendBg({
+            type: 'GITHUB_ASCENT_BACKUP_PREFLIGHT',
+            page: current.page,
+            pageComplete: true,
+        });
+        if (preflight && preflight.ok && preflight.fresh) {
+            await runBackup(info, { auto: true, current });
+            return;
+        }
+        await checkBackup(info, current);
+    };
+
     const mountControl = (info, { auto = false } = {}) => {
         const editLink = AscentPage.ascentEditLink(document, info.ascentId);
         const actions = editLink && editLink.parentElement;
@@ -153,9 +169,10 @@ import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.js';
             el('span', { class: 'bpb-gh-body', 'aria-live': 'polite' }),
         ]);
         actions.append(document.createTextNode(' '), control);
-        // Automatic mode pushes right away (declining quietly on a revisit);
-        // manual mode passively compares before offering the click.
-        if (auto) runBackup(info, { auto: true });
+        // Automatic mode first reads the authoritative persisted form and asks
+        // the worker whether a matching save snapshot is still pending. Only a
+        // proven fresh save may claim that backup work is underway.
+        if (auto) void checkAutomaticBackup(info);
         else void checkBackup(info);
     };
 

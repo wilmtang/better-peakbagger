@@ -16,7 +16,7 @@ import { evalBundle, waitFor } from '../helpers/load-page.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 
-const loadSurface = async ({ status, onBackup, onCheck, editOk = true, gpxOk = true, gpxResponse = null, url = 'https://www.peakbagger.com/climber/ascent.aspx?aid=7654321' } = {}) => {
+const loadSurface = async ({ status, onBackup, onCheck, onPreflight, editOk = true, gpxOk = true, gpxResponse = null, url = 'https://www.peakbagger.com/climber/ascent.aspx?aid=7654321' } = {}) => {
     const html = await readFile(path.join(root, 'test', 'fixtures', 'pages', 'climber-ascent.html'), 'utf8');
     const rawEditHtml = await readFile(path.join(root, 'test', 'fixtures', 'pages', 'climber-ascentedit.html'), 'utf8');
     const editDom = new JSDOM(rawEditHtml);
@@ -37,6 +37,9 @@ const loadSurface = async ({ status, onBackup, onCheck, editOk = true, gpxOk = t
                 sent.push(message);
                 let reply = null;
                 if (message.type === 'GITHUB_BACKUP_STATUS') reply = status;
+                else if (message.type === 'GITHUB_ASCENT_BACKUP_PREFLIGHT') reply = onPreflight
+                    ? onPreflight(message)
+                    : { ok: true, fresh: false };
                 else if (message.type === 'GITHUB_CHECK_ASCENT_BACKUP') reply = onCheck
                     ? onCheck(message)
                     : { ok: true, current: false };
@@ -182,6 +185,7 @@ test('automatic mode pushes on load without a click', async () => {
     let received = null;
     const { dom } = await loadSurface({
         status: { enabled: true, connected: true, auto: true },
+        onPreflight: () => ({ ok: true, fresh: true }),
         onBackup: message => { received = message; return { ok: true, result: { commitUrl: 'https://github.com/me/backup/commit/z', isUpdate: false } }; },
     });
     await waitFor(dom, () => control(dom) && /Backed up/.test(control(dom).textContent));
@@ -189,19 +193,53 @@ test('automatic mode pushes on load without a click', async () => {
 });
 
 test('automatic mode on a revisit falls back to the manual button, not an error', async () => {
-    const { dom } = await loadSurface({
+    let finishCheck;
+    const checking = new Promise(resolve => { finishCheck = resolve; });
+    const { dom, sent } = await loadSurface({
         status: { enabled: true, connected: true, auto: true },
-        onBackup: () => ({ ok: false, error: { code: 'no-fresh-save' } }),
-        onCheck: () => ({ ok: true, current: false }),
+        onPreflight: () => ({ ok: true, fresh: false }),
+        onCheck: () => checking,
     });
+    await waitFor(dom, () => control(dom) && /Checking GitHub/.test(control(dom).textContent));
+    assert.equal(sent.some(message => message.type === 'GITHUB_BACKUP_ASCENT'), false,
+        'a revisit must not claim or attempt that a backup is running');
+    finishCheck({ ok: true, current: false });
     await waitFor(dom, () => control(dom) && /Back up to GitHub/.test(control(dom).textContent));
     assert.ok(control(dom).querySelector('.bpb-gh-btn'), 'the manual Back up button is offered');
+});
+
+test('a fresh automatic save reports backup work immediately', async () => {
+    let finishBackup;
+    const backingUp = new Promise(resolve => { finishBackup = resolve; });
+    const { dom } = await loadSurface({
+        status: { enabled: true, connected: true, auto: true },
+        onPreflight: () => ({ ok: true, fresh: true }),
+        onBackup: () => backingUp,
+    });
+    await waitFor(dom, () => control(dom) && /Backing up to GitHub/.test(control(dom).textContent));
+    finishBackup({ ok: true, result: {} });
+    await waitFor(dom, () => /Backed up/.test(control(dom).textContent));
+});
+
+test('automatic preflight carries the complete persisted identity without source data', async () => {
+    const { dom, sent } = await loadSurface({
+        status: { enabled: true, connected: true, auto: true },
+        onPreflight: () => ({ ok: true, fresh: false }),
+        onCheck: () => ({ ok: true, current: false }),
+    });
+    await waitFor(dom, () => control(dom));
+    const preflight = sent.find(message => message.type === 'GITHUB_ASCENT_BACKUP_PREFLIGHT');
+    assert.equal(preflight.pageComplete, true);
+    assert.equal(preflight.page.ascent.id, 7654321);
+    assert.equal(preflight.page.ascent.date, '2026-07-12');
+    assert.equal(preflight.page.peak.id, 2296);
+    assert.equal('gpx' in preflight, false);
 });
 
 test('automatic mode on an unchanged revisit reports the existing backup', async () => {
     const { dom } = await loadSurface({
         status: { enabled: true, connected: true, auto: true },
-        onBackup: () => ({ ok: false, error: { code: 'no-fresh-save' } }),
+        onPreflight: () => ({ ok: true, fresh: false }),
         onCheck: () => ({ ok: true, current: true }),
     });
     await waitFor(dom, () => control(dom) && /Backed up ✓/.test(control(dom).textContent));

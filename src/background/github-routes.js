@@ -396,6 +396,21 @@ export function createGithubRoutes({
         return match || null;
     };
 
+    // Token-free, read-only freshness preflight for the individual ascent
+    // surface. The content script supplies the complete persisted edit-form
+    // identity, avoiding the display page's best-effort date. No snapshot data
+    // crosses the boundary.
+    const preflightAscentBackup = async (message, sender) => {
+        if (!isPeakbaggerSender(sender)) return { ok: false, fresh: false, error: { code: 'forbidden' } };
+        const status = await githubBackupStatus(sender);
+        if (!status.enabled) return { ok: false, fresh: false, error: { code: 'disabled' } };
+        if (!status.connected) return { ok: false, fresh: false, error: { code: 'not-connected' } };
+        if (!message || !message.pageComplete || !message.page) {
+            return { ok: false, fresh: false, error: { code: 'no-data' } };
+        }
+        return { ok: true, fresh: !!(await findSnapshotForPage(message.page, sender)) };
+    };
+
     // Push one saved ascent to the connected repository as a single commit. The
     // token is read here and never leaves the worker. Fails closed when the
     // feature is off, disconnected, or the sender is not a Peakbagger tab.
@@ -642,6 +657,7 @@ export function createGithubRoutes({
         GITHUB_AUTH_DISCONNECT: () => githubDisconnect(),
         GITHUB_BACKUP_SNAPSHOT: (message, sender) => storeBackupSnapshot(message, sender),
         GITHUB_BACKUP_STATUS: (_message, sender) => githubBackupStatus(sender),
+        GITHUB_ASCENT_BACKUP_PREFLIGHT: (message, sender) => preflightAscentBackup(message, sender),
         GITHUB_CHECK_ASCENT_BACKUP: (message, sender) => checkAscentBackup(message, sender),
         GITHUB_BACKUP_ASCENT: (message, sender) => backupAscent(message, sender),
         GITHUB_ASCENT_BACKUP_SUMMARY: () => githubAscentBackupSummary(),

@@ -792,13 +792,22 @@ test('automatic backup declines on a revisit with no fresh snapshot, but pushes 
         report: { markdown: '' },
     };
 
-    // No snapshot stored yet: an auto push on a mere revisit declines quietly.
+    // No snapshot stored yet: preflight identifies a revisit, and a defensive
+    // auto push still declines quietly if a stale surface attempts one.
+    const revisitStatus = await worker.send({
+        type: 'GITHUB_ASCENT_BACKUP_PREFLIGHT', page, pageComplete: true,
+    }, PEAK_SENDER);
+    assert.deepEqual(structuredClone(revisitStatus), { ok: true, fresh: false });
     const revisit = await worker.send({ type: 'GITHUB_BACKUP_ASCENT', page, auto: true }, PEAK_SENDER);
     assert.equal(revisit.ok, false);
     assert.equal(revisit.error.code, 'no-fresh-save');
 
     // After a save-time snapshot, the same auto push commits.
     await worker.send({ type: 'GITHUB_BACKUP_SNAPSHOT', ...editSnapshot() }, EDIT_SENDER);
+    const freshStatus = await worker.send({
+        type: 'GITHUB_ASCENT_BACKUP_PREFLIGHT', page, pageComplete: true,
+    }, PEAK_SENDER);
+    assert.deepEqual(structuredClone(freshStatus), { ok: true, fresh: true });
     const pushed = await worker.send({ type: 'GITHUB_BACKUP_ASCENT', page, auto: true }, PEAK_SENDER);
     assert.equal(pushed.ok, true);
     assert.equal(pushed.result.commitUrl, 'https://github.com/me/backup/commit/C1');
