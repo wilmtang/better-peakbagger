@@ -17,24 +17,34 @@ import { favoriteClimbers as F } from '../../../src/favorites/favorite-climbers.
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const FAVORITES_KEY = 'bpbFavoriteClimbers';
 const LIMIT = F.LIMIT;
+const entries = Array.from({ length: LIMIT }, (_, index) => ({
+    cid: 100000 + index,
+    name: index === 1498
+        ? 'Scale Alpine Climber 1499'
+        : `Scale Climber ${String(index + 1).padStart(4, '0')}`,
+    addedAt: index,
+    source: index % 2 ? 'buddy' : 'manual',
+}));
+const favorites = { schemaVersion: F.SCHEMA_VERSION, entries };
 
-test('settings renders and backs up the full 1,500-entry custom list', async () => {
+test('the full 1,500-entry custom list serializes completely for worker backup', () => {
+    const payload = F.buildBackupPayload(favorites, { exportedAt: '2026-07-22T00:00:00.000Z' });
+    const exported = JSON.parse(F.serializeBackup(payload));
+
+    assert.equal(exported.entries.length, LIMIT);
+    assert.deepEqual(exported.entries[0], entries[0]);
+    assert.deepEqual(exported.entries.at(-1), entries.at(-1));
+});
+
+test('settings renders the full 1,500-entry custom list and requests worker backup', async () => {
     assert.equal(LIMIT, 1500);
     const html = await readFile(path.join(root, 'options', 'options.html'), 'utf8');
-    const entries = Array.from({ length: LIMIT }, (_, index) => ({
-        cid: 100000 + index,
-        name: index === 1498
-            ? 'Scale Alpine Climber 1499'
-            : `Scale Climber ${String(index + 1).padStart(4, '0')}`,
-        addedAt: index,
-        source: index % 2 ? 'buddy' : 'manual',
-    }));
     const dom = new JSDOM(html, {
         url: 'https://options.better-peakbagger.test/options/options.html#favorites',
         runScripts: 'outside-only',
     });
     const chrome = makeChromeStub({ bpbSettings: { favoritesSource: 'custom' } }, {
-        [FAVORITES_KEY]: { schemaVersion: 1, entries },
+        [FAVORITES_KEY]: favorites,
     });
     let backupMessage = null;
     chrome.permissions = {
@@ -97,10 +107,9 @@ test('settings renders and backs up the full 1,500-entry custom list', async () 
     await waitFor(dom, () => !dom.window.document.getElementById('favorites-github-actions').hidden);
     dom.window.document.getElementById('favorites-backup').click();
     await waitFor(dom, () => backupMessage != null);
-    const exported = JSON.parse(backupMessage.content);
-    assert.equal(exported.entries.length, LIMIT);
-    assert.deepEqual(exported.entries[0], entries[0]);
-    assert.deepEqual(exported.entries.at(-1), entries.at(-1));
+    assert.equal(backupMessage.type, 'GITHUB_FAVORITES_BACKUP');
+    assert.deepEqual(Object.keys(backupMessage), ['type'],
+        'the options page must leave serialization in the extension worker');
     await waitFor(dom, () => /Favorites backed up ✓/.test(
         dom.window.document.getElementById('favorites-github-status').textContent
     ));

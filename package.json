@@ -24,6 +24,7 @@
     "release:sign:firefox": "web-ext sign --source-dir=web-ext-artifacts/firefox-source --channel=listed --amo-metadata=web-ext-artifacts/amo-metadata.json --approval-timeout=0 --timeout=600000 --no-input",
     "release:verify-archive": "node scripts/verify-release-archive.mjs",
     "pretest": "npm run build",
+    "pretest:scale": "npm run build",
     "showcase:render": "npm run build && node scripts/render-showcase.mjs",
     "terrain:verify": "npm run build && node scripts/verify-terrain-visual.mjs",
     "terrain:verify:firefox": "npm run build && node scripts/verify-firefox-terrain.mjs",

@@ -116,6 +116,7 @@ test("release and browser development commands use the dist build", async () => 
     packageJson.scripts["start:chromium"],
     "node scripts/run-development.mjs chromium",
   );
+  assert.equal(packageJson.scripts["pretest:scale"], "npm run build");
   assert.match(
     workflow,
     /- name: Build store packages[\s\S]*?npm run package[\s\S]*?chrome_archive=/,
