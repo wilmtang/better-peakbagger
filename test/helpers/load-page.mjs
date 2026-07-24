@@ -13,6 +13,7 @@ import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { JSDOM } from 'jsdom';
+import { createFavoritesStore, favoritesStore } from '../../src/background/favorites-store.js';
 
 const require = createRequire(import.meta.url);
 
@@ -62,9 +63,10 @@ export const makeChromeStub = (initial = {}, localInitial = {}) => {
             if (Object.keys(changes).length) for (const fn of listeners) fn(changes, area);
         }
     });
-    return {
+    const chrome = {
         _store: store,
         _localStore: localStore,
+        _favoriteMutations: [],
         storage: {
             sync: makeStorageArea(store, 'sync'),
             local: makeStorageArea(localStore, 'local'),
@@ -79,10 +81,29 @@ export const makeChromeStub = (initial = {}, localInitial = {}) => {
         runtime: {
             id: 'test-extension',
             getManifest: () => ({ version: '0.0.0-test' }),
-            sendMessage: async () => undefined,
             onMessage: { addListener: () => {}, removeListener: () => {} }
         }
     };
+    let delegatedSendMessage = async () => undefined;
+    const favoriteMutations = createFavoritesStore({ storage: chrome.storage.local });
+    const routedSendMessage = (message, callback) => {
+        if (message?.type !== favoritesStore.MESSAGE_TYPE) {
+            return delegatedSendMessage(message, callback);
+        }
+        chrome._favoriteMutations.push(structuredClone(message.mutation));
+        const operation = favoriteMutations.mutate(message.mutation);
+        if (typeof callback === 'function') operation.then(callback);
+        return operation;
+    };
+    // Tests may replace sendMessage to script feature-specific worker replies.
+    // Keep favorites writes owned by a worker-like queue regardless, then
+    // delegate every other message to the test's handler.
+    Object.defineProperty(chrome.runtime, 'sendMessage', {
+        configurable: true,
+        get: () => routedSendMessage,
+        set: value => { delegatedSendMessage = value; },
+    });
+    return chrome;
 };
 
 // jsdom's public dispatchEvent can only mint untrusted events, but the upload

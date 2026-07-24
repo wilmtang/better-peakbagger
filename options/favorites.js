@@ -399,20 +399,19 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
         renderGithub();
     };
 
-    const writeFavorites = async value => {
-        const previous = favorites;
-        favorites = F.cleanFavorites(value);
-        renderList();
-        renderGithub();
-        try {
-            await store.set({ [F.FAVORITES_KEY]: favorites });
-            return favorites;
-        } catch (error) {
-            favorites = previous;
+    const mutateFavorites = async mutation => {
+        const response = await send({ type: F.MUTATION_MESSAGE_TYPE, mutation });
+        if (response?.favorites) {
+            favorites = F.cleanFavorites(response.favorites);
             renderList();
             renderGithub();
+        }
+        if (!response?.ok) {
+            const error = new Error(response?.error?.message || 'Favorite climbers are unavailable. Try again.');
+            error.code = response?.error?.code || 'unavailable';
             throw error;
         }
+        return response;
     };
 
     const refresh = async () => {
@@ -562,10 +561,7 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
         }, UNDO_MS);
         pendingDeletes.set(entry.cid, pending);
         try {
-            await writeFavorites({
-                schemaVersion: F.SCHEMA_VERSION,
-                entries: favorites.entries.filter(candidate => candidate.cid !== entry.cid),
-            });
+            await mutateFavorites({ kind: 'remove', cid: entry.cid });
         } catch (error) {
             globalThis.clearTimeout(pending.timer);
             pendingDeletes.delete(entry.cid);
@@ -578,10 +574,7 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
         const pending = pendingDeletes.get(cid);
         if (!pending) return;
         try {
-            await writeFavorites({
-                schemaVersion: F.SCHEMA_VERSION,
-                entries: [pending.entry, ...favorites.entries.filter(entry => entry.cid !== cid)],
-            });
+            await mutateFavorites({ kind: 'add', entry: pending.entry });
             globalThis.clearTimeout(pending.timer);
             pendingDeletes.delete(cid);
             renderList();
@@ -591,15 +584,21 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
         }
     };
 
-    const beginReplacement = async (next, message) => {
-        if (pendingBulk) globalThis.clearTimeout(pendingBulk.timer);
-        const pending = { snapshot: favorites, message, timer: null };
+    const beginReplacement = async (next, message, expectedSignature = favoritesSignature()) => {
+        const supersededPending = pendingBulk;
+        const pending = { snapshot: favorites, message, timer: null, appliedSignature: null };
         try {
-            await writeFavorites(next);
+            const response = await mutateFavorites({
+                kind: 'replace',
+                favorites: next,
+                expectedSignature,
+            });
+            pending.appliedSignature = response.signature;
         } catch (error) {
-            flash("Couldn't update favorites");
+            flash(error.code === 'stale' ? error.message : "Couldn't update favorites");
             return false;
         }
+        if (supersededPending) globalThis.clearTimeout(supersededPending.timer);
         pending.timer = globalThis.setTimeout(() => {
             if (pendingBulk === pending) pendingBulk = null;
             renderList();
@@ -614,13 +613,17 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
         if (!pendingBulk) return;
         const pending = pendingBulk;
         try {
-            await writeFavorites(pending.snapshot);
+            await mutateFavorites({
+                kind: 'replace',
+                favorites: pending.snapshot,
+                expectedSignature: pending.appliedSignature,
+            });
             globalThis.clearTimeout(pending.timer);
             pendingBulk = null;
             renderList();
             flash('Custom favorites restored');
         } catch (error) {
-            flash("Couldn't restore favorites");
+            flash(error.code === 'stale' ? error.message : "Couldn't restore favorites");
         }
     };
 
@@ -671,10 +674,6 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
             flash('Enter a climber id or Peakbagger climber-page link');
             return;
         }
-        if (favorites.entries.some(entry => entry.cid === cid)) {
-            flash('That climber is already in your favorites');
-            return;
-        }
         addButtonEl.disabled = true;
         let name = '';
         try {
@@ -690,20 +689,15 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
             addButtonEl.disabled = false;
             return;
         }
-        if (favorites.entries.length >= F.LIMIT) {
-            flash(`Favorites can hold up to ${F.LIMIT.toLocaleString('en-US')} climbers`);
-            addButtonEl.disabled = false;
-            return;
-        }
         try {
-            await writeFavorites({
-                schemaVersion: F.SCHEMA_VERSION,
-                entries: [{ cid, name, addedAt: Date.now(), source: 'manual' }, ...favorites.entries],
+            const response = await mutateFavorites({
+                kind: 'add',
+                entry: { cid, name, addedAt: Date.now(), source: 'manual' },
             });
             addInputEl.value = '';
-            flash(`${name} added to favorites`);
-        } catch {
-            flash("The climber page loaded, but the favorite couldn't be saved on this device.");
+            flash(response.details?.added ? `${name} added to favorites` : `${name} is already in your favorites`);
+        } catch (error) {
+            flash(error.message || "The climber page loaded, but the favorite couldn't be saved on this device.");
         } finally {
             addButtonEl.disabled = false;
         }
@@ -740,23 +734,23 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
                 flash(message);
                 return;
             }
-            const before = favorites.entries.length;
-            const next = F.mergeBuddies(favorites, cache.entries);
-            const added = next.entries.length - before;
-            const missing = membershipChanges(favorites.entries, cache.entries).added;
-            const skipped = missing - added;
-            const summary = completionCopy('Merge', {
-                added, removed: 0, total: next.entries.length, skipped,
-            });
-            if (!added) {
-                renderImportStatus(summary);
-                flash(skipped > 0 ? 'Custom favorites are full' : 'No changes to custom favorites');
-                return;
-            }
             try {
-                await writeFavorites(next);
+                const response = await mutateFavorites({
+                    kind: 'merge-buddies',
+                    entries: cache.entries,
+                });
+                const added = response.details?.added || 0;
+                const skipped = response.details?.skipped || 0;
+                const summary = completionCopy('Merge', {
+                    added,
+                    removed: 0,
+                    total: response.favorites.entries.length,
+                    skipped,
+                });
                 renderImportStatus(summary);
-                flash(`Merge complete: ${added} added, 0 removed`);
+                flash(added
+                    ? `Merge complete: ${added} added, 0 removed`
+                    : skipped > 0 ? 'Custom favorites are full' : 'No changes to custom favorites');
             } catch (error) {
                 renderImportStatus("The Buddy List loaded, but the custom favorites couldn't be saved.");
                 flash("Couldn't merge buddies");
@@ -800,7 +794,8 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
         mirrorConfirmEl.disabled = true;
         if (!isRestore) renderImportStatus('Replacing custom favorites…');
         void beginReplacement(replacement,
-            isRestore ? 'Favorites restored from GitHub' : 'Custom list replaced with your Buddy List')
+            isRestore ? 'Favorites restored from GitHub' : 'Custom list replaced with your Buddy List',
+            pending.favoritesSignature)
             .then(changed => {
                 dismissReplacementConfirmation();
                 if (changed) {

@@ -9,6 +9,7 @@
 import { captureCore as Core } from '../capture/capture-core.js';
 import { capturePhases as CapturePhases } from '../capture/capture-phases.js';
 import { providerFromUrl, providerActivityUrl } from '../capture/provider-url.js';
+import { createFavoritesStore, favoritesStore as FavoritesStore } from './favorites-store.js';
 import { createGithubRoutes } from './github-routes.js';
 import { createTerrainPrefetch } from './terrain-prefetch.js';
 import { settings as Settings } from '../settings/settings.js';
@@ -1066,6 +1067,7 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
         mutateMap,
         enqueueGithubWrite,
     });
+    const favoriteMutations = createFavoritesStore({ storage: ext.storage.local, now });
 
     const openDraftsManager = async sender => {
         if (!isPeakbaggerSender(sender) || !Number.isInteger(sender.tab?.id)) {
@@ -1089,6 +1091,20 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
             const githubHandler = githubRoutes.handlers[type];
             if (githubHandler) return githubHandler(message, sender);
             switch (type) {
+            case FavoritesStore.MESSAGE_TYPE:
+                // Only extension pages and the Peakbagger content scripts run
+                // extension code, so the mutation route fails closed rather
+                // than trusting whatever reaches runtime messaging.
+                if (!isExtensionPage(sender) && !isPeakbaggerSender(sender)) {
+                    return {
+                        ok: false,
+                        error: {
+                            code: 'forbidden',
+                            message: 'This page cannot change favorite climbers.',
+                        },
+                    };
+                }
+                return favoriteMutations.mutate(message.mutation);
             case 'OPEN_DRAFTS_MANAGER': return openDraftsManager(sender);
             case 'CAPTURE_START': return startCapture(message);
             case 'CAPTURE_STATUS': {

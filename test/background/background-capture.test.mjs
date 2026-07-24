@@ -145,7 +145,7 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
         assert.equal(listener(message, sender, resolve), true);
     });
     return {
-        send, values, syncValues, tabs, grouped, groupUpdates, badgeCalls, fetchCalls, scriptCalls, tabMessages,
+        send, values, localValues, syncValues, tabs, grouped, groupUpdates, badgeCalls, fetchCalls, scriptCalls, tabMessages,
         sessionGetCalls: () => sessionGetCalls,
     };
 };
@@ -279,6 +279,37 @@ test('only a Peakbagger tab can open the report drafts manager', async () => {
         { url: 'https://www.peakbagger.com/climber/ascentedit.aspx' }
     ))), { ok: false, reason: 'forbidden' });
     assert.equal(harness.tabs.size, before, 'forbidden senders must not create a tab');
+});
+
+test('favorites mutations serialize in the worker and reject unrelated senders', async () => {
+    const harness = createHarness();
+    const mutation = cid => ({
+        type: 'FAVORITES_MUTATE',
+        mutation: {
+            kind: 'add',
+            entry: { cid, name: `Climber ${cid}`, addedAt: cid, source: 'manual' },
+        },
+    });
+
+    const [fromOptions, fromPeakbagger] = await Promise.all([
+        harness.send(mutation(81), {
+            url: 'chrome-extension://test-extension/options/options.html',
+        }),
+        harness.send(mutation(82), {
+            tab: { id: 5 },
+            url: 'https://www.peakbagger.com/climber/climber.aspx?cid=82',
+        }),
+    ]);
+    const forbidden = await harness.send(mutation(83), {
+        tab: { id: 8 },
+        url: 'https://peakbagger.com.evil.example/climber/climber.aspx?cid=83',
+    });
+
+    assert.equal(fromOptions.ok, true);
+    assert.equal(fromPeakbagger.ok, true);
+    assert.equal(forbidden.ok, false);
+    assert.equal(forbidden.error.code, 'forbidden');
+    assert.deepEqual(harness.localValues.bpbFavoriteClimbers.entries.map(entry => entry.cid), [82, 81]);
 });
 
 test('Peakbagger login accepts signed-in account controls and reports ambiguous pages honestly', async () => {

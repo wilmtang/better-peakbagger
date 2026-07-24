@@ -8,6 +8,7 @@
 const SCHEMA_VERSION = 1;
 const FAVORITES_KEY = 'bpbFavoriteClimbers';
 const BUDDY_CACHE_KEY = 'bpbBuddyCache';
+const MUTATION_MESSAGE_TYPE = 'FAVORITES_MUTATE';
 const BUDDY_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const LIMIT = 1500;
 const NAME_LIMIT = 200;
@@ -218,30 +219,6 @@ const buddyMutationAction = value => {
     return add ? 'add' : 'remove';
 };
 
-const applyBuddyMutationToFavorites = (
-    favorites,
-    buddy,
-    action,
-    { removeFavorite = false, now = Date.now() } = {},
-) => {
-    const current = cleanFavorites(favorites);
-    const entry = cleanBuddyEntry(buddy);
-    if (!entry || (action !== 'add' && action !== 'remove')) return current;
-    const exists = current.entries.some(candidate => candidate.cid === entry.cid);
-    if (action === 'add') {
-        if (exists || current.entries.length >= LIMIT) return current;
-        return {
-            schemaVersion: SCHEMA_VERSION,
-            entries: [{ ...entry, addedAt: now, source: 'buddy' }, ...current.entries],
-        };
-    }
-    if (!removeFavorite || !exists) return current;
-    return {
-        schemaVersion: SCHEMA_VERSION,
-        entries: current.entries.filter(candidate => candidate.cid !== entry.cid),
-    };
-};
-
 const compareNames = (left, right) => {
     if (!collator) collator = new Intl.Collator(undefined, { sensitivity: 'base', numeric: true });
     return collator.compare(left, right);
@@ -350,6 +327,7 @@ export const favoriteClimbers = {
     SCHEMA_VERSION,
     FAVORITES_KEY,
     BUDDY_CACHE_KEY,
+    MUTATION_MESSAGE_TYPE,
     BUDDY_TTL_MS,
     LIMIT,
     NAME_LIMIT,
@@ -371,7 +349,6 @@ export const favoriteClimbers = {
     mirrorBuddies,
     favoriteSet,
     buddyMutationAction,
-    applyBuddyMutationToFavorites,
     byName,
     byAddedAtDesc,
     fuzzyScore,

@@ -47,11 +47,21 @@ test('custom mode toggles the viewed climber without replacing other favorites',
         JSON.parse(JSON.stringify(dom.chrome._localStore[key].entries.find(entry => entry.cid === 900003))),
         existing
     );
+    assert.deepEqual(dom.chrome._favoriteMutations[0], {
+        kind: 'add',
+        entry: {
+            cid: 900002,
+            name: 'Casey Alpine',
+            addedAt: dom.chrome._favoriteMutations[0].entry.addedAt,
+            source: 'manual',
+        },
+    });
     assert.equal(button.textContent, '★');
     assert.equal(button.getAttribute('aria-label'), 'Remove Casey Alpine from your Better Peakbagger favorite');
 
     button.click();
     await waitFor(dom, () => !dom.chrome._localStore[key].entries.some(entry => entry.cid === 900002));
+    assert.deepEqual(dom.chrome._favoriteMutations[1], { kind: 'remove', cid: 900002 });
     assert.equal(button.textContent, '☆');
 });
 

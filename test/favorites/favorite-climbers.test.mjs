@@ -168,25 +168,6 @@ test('Buddy controls are identified semantically without accepting ambiguous lab
     assert.equal(F.buddyMutationAction('Add favorite'), null);
 });
 
-test('confirmed Buddy additions sync custom favorites while removals remain opt-in', () => {
-    const existing = { cid: 900003, name: 'Existing', addedAt: 1, source: 'manual' };
-    const favorites = { schemaVersion: 1, entries: [existing] };
-    const buddy = { cid: 900002, name: 'New Buddy' };
-    const added = F.applyBuddyMutationToFavorites(favorites, buddy, 'add', { now: 10 });
-    assert.deepEqual(added.entries, [
-        { cid: 900002, name: 'New Buddy', addedAt: 10, source: 'buddy' },
-        existing,
-    ]);
-    assert.deepEqual(F.applyBuddyMutationToFavorites(added, buddy, 'add', { now: 20 }), added,
-        'reconfirming an existing Buddy preserves its favorite metadata');
-    assert.deepEqual(F.applyBuddyMutationToFavorites(added, buddy, 'remove'), added,
-        'removal is non-destructive by default');
-    assert.deepEqual(
-        F.applyBuddyMutationToFavorites(added, buddy, 'remove', { removeFavorite: true }).entries,
-        [existing],
-    );
-});
-
 test('effective sets follow the selected source and comparators are stable', () => {
     const favorites = {
         schemaVersion: 1,

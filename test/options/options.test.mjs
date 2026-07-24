@@ -731,6 +731,8 @@ test('adding a climber by id resolves and validates the public profile', async (
     assert.equal(entry.cid, 900002);
     assert.equal(entry.name, 'Alex Doe');
     assert.equal(entry.source, 'manual');
+    assert.equal(dom.chrome._favoriteMutations.at(-1).kind, 'add');
+    assert.equal(dom.chrome._favoriteMutations.at(-1).entry.cid, 900002);
     assert.equal(favoriteRow(dom, 900002).querySelector('.favorite-name').textContent, 'Alex Doe');
     assert.match(favoriteRow(dom, 900002).textContent, /#900002.*Manual/);
 });
@@ -952,6 +954,8 @@ test('merge is additive while mirror requires destructive confirmation and suppo
 
     el(dom, 'favorites-merge-buddies').click();
     await waitFor(dom, () => dom.chrome._localStore[favoriteKey]?.entries?.length === 7);
+    assert.equal(dom.chrome._favoriteMutations.at(-1).kind, 'merge-buddies');
+    assert.equal(dom.chrome._favoriteMutations.at(-1).entries.length, 6);
     assert.equal(el(dom, 'favorites-import-status').textContent,
         'Merge complete: 6 added, 0 removed. Custom list now has 7 climbers.');
     assert.equal(dom.chrome._localStore[favoriteKey].entries[0].cid, manual.cid,
@@ -1015,6 +1019,54 @@ test('mirror reports additions and zero removals before and after replacement', 
     await waitFor(dom, () => /Merge complete/.test(el(dom, 'favorites-import-status').textContent));
     assert.equal(el(dom, 'favorites-import-status').textContent,
         'Merge complete: 0 added, 0 removed. Custom list now has 6 climbers.');
+});
+
+test('a stale replacement preserves the prior Undo expiry and the concurrent edit', async () => {
+    const manual = { cid: 900099, name: 'Manual Favorite', addedAt: 1, source: 'manual' };
+    const concurrent = { cid: 900100, name: 'Other Tab Favorite', addedAt: 2, source: 'manual' };
+    const dom = await loadOptions({ favoritesSource: 'custom' }, {
+        local: { [favoriteKey]: favoriteStore([manual]) },
+        prepareWindow: window => {
+            window.fetch = peakbaggerFetch();
+            const nativeSetTimeout = window.setTimeout.bind(window);
+            const nativeClearTimeout = window.clearTimeout.bind(window);
+            let nextUndoTimer = -1;
+            window.undoTimers = [];
+            window.setTimeout = (callback, delay = 0, ...args) => {
+                if (delay !== 6000) return nativeSetTimeout(callback, delay, ...args);
+                const timer = { id: nextUndoTimer--, callback, cleared: false };
+                window.undoTimers.push(timer);
+                return timer.id;
+            };
+            window.clearTimeout = id => {
+                const timer = window.undoTimers.find(candidate => candidate.id === id);
+                if (timer) timer.cleared = true;
+                else nativeClearTimeout(id);
+            };
+        },
+    });
+
+    el(dom, 'favorites-mirror-buddies').click();
+    await waitFor(dom, () => el(dom, 'favorites-mirror-confirmation').hidden === false);
+    el(dom, 'favorites-mirror-confirm').click();
+    await waitFor(dom, () => el(dom, 'favorites-undo-all').hidden === false);
+    assert.equal(dom.window.undoTimers.length, 1);
+
+    el(dom, 'favorites-mirror-buddies').click();
+    await waitFor(dom, () => el(dom, 'favorites-mirror-confirmation').hidden === false);
+    const current = dom.chrome._localStore[favoriteKey];
+    await dom.chrome.storage.local.set({
+        [favoriteKey]: favoriteStore([...current.entries, concurrent]),
+    });
+    el(dom, 'favorites-mirror-confirm').click();
+
+    await waitFor(dom, () => /changed in another tab/i.test(el(dom, 'status').textContent));
+    assert.equal(dom.window.undoTimers[0].cleared, false,
+        'a rejected replacement must not cancel the prior successful replacement expiry');
+    assert.equal(dom.chrome._localStore[favoriteKey].entries.some(entry => entry.cid === concurrent.cid), true);
+
+    dom.window.undoTimers[0].callback();
+    assert.equal(el(dom, 'favorites-undo-all').hidden, true);
 });
 
 test('merge reports buddies skipped when custom favorites are full', async () => {

@@ -30,6 +30,16 @@ const BUDDY_CONTROL_SELECTOR = 'button, input[type="submit"], input[type="button
     let errorMessage = '';
     let activeBuddyMutation = null;
 
+    const mutateFavorites = async mutation => {
+        const response = await chrome.runtime.sendMessage({
+            type: F.MUTATION_MESSAGE_TYPE,
+            mutation,
+        });
+        if (!response?.ok) throw new Error(response?.error?.message || 'Favorite climbers are unavailable.');
+        favorites = F.cleanFavorites(response.favorites);
+        return favorites;
+    };
+
     const takePendingBuddyMutation = () => {
         let raw = null;
         try {
@@ -166,26 +176,23 @@ html[data-bpb-theme="dark"] .bpb-native-buddy-action:focus-visible { outline-col
             const entries = F.parseBuddyDocument(result.document);
             const target = entries.find(entry => entry.cid === pageCid);
             const confirmed = mutation.action === 'add' ? !!target : !target;
-            const patch = {
+            await store.set({
                 [F.BUDDY_CACHE_KEY]: { ownerCid: ownCid, entries, fetchedAt: Date.now() },
-            };
+            });
             if (confirmed && settings.favoritesSource === 'custom') {
-                const stored = await store.get(F.FAVORITES_KEY);
-                const current = F.cleanFavorites(stored[F.FAVORITES_KEY]);
-                const next = F.applyBuddyMutationToFavorites(
-                    current,
-                    target || { cid: pageCid, name },
-                    mutation.action,
-                    {
-                        removeFavorite: settings.removeFavoriteWhenBuddyRemoved,
-                        now: Date.now(),
-                    },
-                );
-                if (JSON.stringify(next.entries) !== JSON.stringify(current.entries)) {
-                    patch[F.FAVORITES_KEY] = next;
+                if (mutation.action === 'add') {
+                    await mutateFavorites({
+                        kind: 'add',
+                        entry: {
+                            ...(target || { cid: pageCid, name }),
+                            addedAt: Date.now(),
+                            source: 'buddy',
+                        },
+                    });
+                } else if (settings.removeFavoriteWhenBuddyRemoved) {
+                    await mutateFavorites({ kind: 'remove', cid: pageCid });
                 }
             }
-            await store.set(patch);
         } catch { /* preserve the last valid cache and custom list on any failure */ }
     };
 
@@ -244,14 +251,14 @@ html[data-bpb-theme="dark"] #bpb-climber-favorite[aria-pressed="true"] { border-
         errorMessage = '';
         paint();
         try {
-            const stored = await store.get(F.FAVORITES_KEY);
-            const current = F.cleanFavorites(stored[F.FAVORITES_KEY]);
-            const exists = current.entries.some(entry => entry.cid === pageCid);
-            const entries = exists
-                ? current.entries.filter(entry => entry.cid !== pageCid)
-                : [{ cid: pageCid, name, addedAt: Date.now(), source: 'manual' }, ...current.entries];
-            favorites = F.cleanFavorites({ schemaVersion: F.SCHEMA_VERSION, entries });
-            await store.set({ [F.FAVORITES_KEY]: favorites });
+            if (included()) {
+                await mutateFavorites({ kind: 'remove', cid: pageCid });
+            } else {
+                await mutateFavorites({
+                    kind: 'add',
+                    entry: { cid: pageCid, name, addedAt: Date.now(), source: 'manual' },
+                });
+            }
         } catch (error) {
             errorMessage = 'Favorite climbers are unavailable. Try again.';
         } finally {

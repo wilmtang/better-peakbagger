@@ -672,13 +672,14 @@ sync must never acquire the third-party names stored in either local dataset.
 
 | Module or surface | Runtime boundary | Owns | Does not own |
 | --- | --- | --- | --- |
-| `src/favorites/favorite-climbers.js` | Pure ES module bundled into each caller | Validation, normalization, bounds, parsers, merge/mirror and confirmed-Buddy-mutation semantics, effective membership, comparators, and fuzzy scoring | DOM globals, storage, fetch, extension messaging, or UI |
+| `src/favorites/favorite-climbers.js` | Pure ES module bundled into each caller | Validation, normalization, bounds, parsers, merge/mirror semantics, native Buddy-action labels, stable signatures, effective membership, comparators, and fuzzy scoring | Applying a mutation to the stored list, DOM globals, storage, fetch, extension messaging, or UI |
 | `src/ascent/ascent-filter.js` | Isolated content script at `document_start` | Peak-ascent row identities, Favorites chip state/count, automatic Buddy revalidation, and opportunistic Buddy-page caching | Custom-list management or GitHub transfer |
 | `src/favorites/climber-favorite.js` | Separate isolated content script at `document_end` | The custom-favorite control plus native Buddy-action detection, full-navigation and in-place postback refresh, and confirmed custom-list synchronization | Arbitrary profile lookup or trusting an unconfirmed click as a successful Buddy mutation |
-| `options/favorites.js` | Extension options page | Source selection, Buddy refresh status, custom-list provenance counts/filtering, reversible bulk actions, and GitHub transfer UI | GitHub token access or repository writes |
+| `options/favorites.js` | Extension options page | Source selection, Buddy refresh status, custom-list provenance counts/filtering, reversible bulk actions, and GitHub transfer UI | Direct custom-list persistence, GitHub token access, or repository writes |
 | `src/profile/profile-backup-core.js` | Pure shared module | Signed-in owner discovery and numeric URL identity | Favorites persistence or request orchestration |
 | `src/peakbagger/peakbagger-request.js`, `src/peakbagger/peakbagger-response.js`, and `src/peakbagger/peakbagger-error.js` | Shared request boundary | Authenticated fetch policy, response classification, parsing failures, and actionable error copy | Favorites schema or persistence |
-| `src/background/background.js`, `src/background/github-routes.js`, and `src/github/github-client.js` | Extension worker | Shared write queue and sender gates, GitHub connection/token/routes, fixed `favorite-climbers.json` path, repository validation, serialized writes, and restore reads | Interpreting or mutating the favorites schema |
+| `src/background/favorites-store.js` and `src/background/background.js` | Extension worker | Sender-gated, serialized device-local custom-list mutations; latest-value add/remove/merge operations; signature-gated replacements | Buddy-cache fetching, source selection, rendering, or GitHub transfer |
+| `src/background/github-routes.js` and `src/github/github-client.js` | Extension worker | Shared GitHub write queue, connection/token/routes, fixed `favorite-climbers.json` path, repository validation, serialized writes, and restore reads | Interpreting or mutating the favorites schema |
 
 `options/favorites.js` owns management. It fetches authenticated Peakbagger
 pages through the shared Peakbagger request boundary, then parses validated
@@ -691,8 +692,9 @@ helper that navigates to the same first-party report. The existing report
 content script validates the rendered owner and refreshes
 the local cache; the options page accepts only that newly validated cache and
 closes its tab before completing the import. Custom additions verify that the
-fetched public profile id matches the requested id. Delete, mirror, and GitHub restore are replace
-operations with a brief local Undo snapshot; merge is additive. The manager's
+fetched public profile id matches the requested id. Delete is an id-based
+operation, merge is additive, and mirror and GitHub restore are complete
+replacements with a brief local Undo snapshot. The manager's
 Buddy/manual counts describe entry provenance in the authoritative custom list,
 and its source filter composes with the name/id search without changing storage.
 
@@ -901,7 +903,25 @@ normally makes further automatic triggers no-ops.
 
 ### Custom-list mutation paths
 
-The options manager supports these distinct operations:
+Every custom-list write is a `FAVORITES_MUTATE` request to the extension worker.
+`src/background/favorites-store.js` serializes those requests, rereads the
+latest `bpbFavoriteClimbers` value for each one, and writes only the computed
+result. Add, remove, and Buddy merge messages carry intent, not a UI-computed
+whole-list snapshot, so independent operations from different tabs compose.
+Mirror, GitHub restore, and bulk Undo are intentionally destructive replacements:
+they carry `backupSignature()` for the exact list the user reviewed. A different
+current signature produces a visible stale-list error and returns the latest
+list without writing.
+
+This boundary prevents extension UI contexts from racing one another; it is not
+a durability layer above browser storage. A browser/extension-process crash or
+a rejected `storage.local.set()` can still lose the in-flight operation, and
+the caller treats that as a failure instead of announcing success. A raw
+DevTools write or obsolete extension build can bypass the worker queue, though
+the next queued operation still rereads it and a reviewed replacement still
+fails its signature check.
+
+Within that boundary, the options manager supports these distinct operations:
 
 - **Search and total** always report the complete custom-list size, or the
   matching and total sizes while filtering. Search is accent-insensitive and
@@ -949,14 +969,10 @@ filled star beside the page title only when custom mode is active, the page
 exposes a valid id/name, and the page id is not the detected owner id. Its full
 add/remove action remains in the accessible label and tooltip. Add creates a
 manual entry from the already rendered, identity-bound page; remove deletes the
-matching id. The control is disabled while its write is pending and when a new
-entry would exceed the bound. A click rereads local storage before its
-read-modify-write, which narrows the stale-tab window, but
-`storage.local` provides no compare-and-swap transaction: truly overlapping
-writes from two tabs remain last-writer-wins. In the narrow race where another
-tab reaches the limit after this control was painted, cleaning keeps the newly
-prepended entry and truncates the tail to 1,500; the visual limit check is not an
-atomic reservation.
+matching id. The control is disabled while its worker mutation is pending and
+when the last observed list is already at the bound. The worker applies that
+add/remove intent to the latest stored list; its limit check is authoritative,
+so a concurrent addition cannot truncate an existing tail entry.
 
 Custom profile names are snapshots, not a synchronized directory. They change
 only when an operation writes a new entry; merge deliberately preserves the
@@ -1029,7 +1045,8 @@ leaves the browser for the user-selected GitHub repository.
 | Custom add reports no climber | No write occurs when the requested id, returned identity link, and heading cannot be proven consistent | Canonical profile response and `ClimbListC.aspx?cid=` identity link |
 | Switching source appears to lose people | No data was deleted; the other dataset became effective | `favoritesSource`, then both local storage keys |
 | Restore reports a newer/invalid format | Existing custom list is untouched and no Undo state is created | Raw `favorite-climbers.json`, version, duplicates, entry count, and required fields |
-| Two simultaneous edits lose one change | Storage writes are whole-object and last-writer-wins | Timing of each tab's `storage.local.get/set` pair |
+| A mirror, restore, or bulk Undo says favorites changed in another tab | The replacement is rejected; the current list is returned and remains untouched so the user can review it again | Reviewed `backupSignature`, current `bpbFavoriteClimbers`, and the `FAVORITES_MUTATE` response |
+| An add/remove/merge reports storage unavailable | The mutation is not claimed as saved; the worker queue remains usable for a later retry | Extension storage errors and whether `bpbFavoriteClimbers` changed |
 
 From an extension-page DevTools console, the authoritative diagnostic reads are:
 
@@ -1057,6 +1074,9 @@ The focused automated evidence is deliberately split by boundary:
   normalization, TTL edge behavior, URL/input parsing, synthetic Buddy parsing,
   merge/mirror and Buddy-mutation semantics, effective source selection,
   comparators, and fuzzy scoring.
+- `test/favorites/favorites-store.test.mjs` covers serialized concurrent
+  operations, stale-signature replacement rejection, bounds, and queue recovery
+  after a failed storage write.
 - `test/profile/profile-backup-core.test.mjs` covers Buddy/climber response acceptance
   and rejection of wrong or challenged content.
 - `test/peakbagger/peakbagger-request.test.mjs` covers origin and fetch policy, timeouts,
