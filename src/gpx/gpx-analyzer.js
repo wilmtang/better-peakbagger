@@ -138,7 +138,13 @@ const run = async () => {
         const elevTd = Array.from(document.querySelectorAll('td')).find(td => td.textContent.trim() === 'Elevation:');
         return !!(elevTd && elevTd.nextElementSibling && /^[\d,.]+\s*m/.test(elevTd.nextElementSibling.textContent.trim()));
     };
-    const resolveUnits = s => s.units === 'metric' ? 'metric' : s.units === 'imperial' ? 'imperial' : (detectPageMetric() ? 'metric' : 'imperial');
+    const unitPreference = settings => Schema.clean(settings).units;
+    const resolveUnits = settings => {
+        const preference = unitPreference(settings);
+        return preference === 'metric' || preference === 'imperial'
+            ? preference
+            : (detectPageMetric() ? 'metric' : 'imperial');
+    };
     // Which series to show on load. Only the initial visibility is bound to the
     // setting; the legend's own click handler toggles visibility for the current
     // view without writing it back, so a temporary peek never changes the pref.
@@ -363,6 +369,8 @@ const run = async () => {
         Object.assign(controlsContainer.style, { display: 'flex', flexDirection: 'column', alignItems: 'flex-end' });
 
         const unitSelect = document.createElement('select');
+        unitSelect.id = 'bpb-gpx-units';
+        unitSelect.setAttribute('aria-label', 'Units');
         Object.assign(unitSelect.style, { padding: '2px 6px', borderRadius: '4px', border: '1px solid #ccc', cursor: 'pointer', outline: 'none' });
         const unitOption = (value, label) => {
             const option = document.createElement('option');
@@ -370,7 +378,11 @@ const run = async () => {
             option.textContent = label;
             return option;
         };
-        unitSelect.append(unitOption('imperial', 'Imperial'), unitOption('metric', 'Metric'));
+        unitSelect.append(
+            unitOption('auto', 'Auto (match page)'),
+            unitOption('imperial', 'Imperial'),
+            unitOption('metric', 'Metric')
+        );
 
         // A floating control on the map itself (bottom-right, stacked just above
         // the zoom controls), styled by src/terrain/terrain-map.css. Clicking flips the
@@ -532,7 +544,7 @@ const run = async () => {
         };
 
         // 3. Centralized unit setting ('auto' detects from the page).
-        unitSelect.value = resolveUnits(BPB.get());
+        unitSelect.value = unitPreference(BPB.get());
         const syncRouteStyleControls = () => {
             const style = resolveMapRouteStyle(BPB.get());
             routeColorControl.input.value = style.color;
@@ -940,7 +952,7 @@ const run = async () => {
             const p = panelPalette();
             applyPanelTheme();
 
-            const isMet = unitSelect.value === 'metric';
+            const isMet = resolveUnits(BPB.get()) === 'metric';
             const dMult = isMet ? 0.001 : 1 / METERS_PER_MILE, eMult = isMet ? 1 : FEET_PER_METER;
             const dUnit = isMet ? 'km' : 'miles', eUnit = isMet ? 'm' : 'ft';
             const formatDistanceM = meters => `${(meters * dMult).toFixed(2)} ${dUnit}`;
@@ -1241,7 +1253,7 @@ const run = async () => {
             }
             if (changed(['rememberMapLayer', 'mapLastLayer'])) scheduleMapLayerSync();
             if (changed(['units', 'theme', 'chartDefaultSeries'])) {
-                unitSelect.value = resolveUnits(settings);
+                unitSelect.value = unitPreference(settings);
                 if (chartInstance) renderData(); else applyPanelTheme();
             }
         });

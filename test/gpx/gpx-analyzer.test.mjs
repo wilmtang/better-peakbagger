@@ -38,6 +38,7 @@ test('GPX analyzer adds a thick, segment-preserving route casing behind native L
         <a href="https://www.peakbagger.com/map/BigMap.aspx">Click Here for a Full Screen Map</a><br>
         <span>Note: GPS Tracks may not be accurate.</span>
       </p>
+      <table><tr><td>Elevation:</td><td>2,000 m</td></tr></table>
       <p><a href="https://www.peakbagger.com/demo.gpx">Download this GPS track</a></p>
     </body>`, {
         url: 'https://www.peakbagger.com/climber/ascent.aspx?aid=1',
@@ -164,6 +165,18 @@ test('GPX analyzer adds a thick, segment-preserving route casing behind native L
         origin: window.location.origin,
         data: { __bpb: true, dir: 'toPage', settings }
     })));
+    const confirmSetting = (message, settings) => window.dispatchEvent(new window.MessageEvent('message', {
+        source: window,
+        origin: window.location.origin,
+        data: {
+            __bpb: true,
+            dir: 'toPage',
+            kind: 'setResult',
+            requestId: message.requestId,
+            ok: true,
+            settings
+        }
+    }));
     window.postMessage = message => {
         if (message && message.__bpbTerrain === true) {
             terrainMessages.push(message);
@@ -190,6 +203,47 @@ test('GPX analyzer adds a thick, segment-preserving route casing behind native L
         'the analysis should render below the map');
     assert.ok(analysis.compareDocumentPosition(fullScreenMapLink) & window.Node.DOCUMENT_POSITION_FOLLOWING,
         'the analysis should render above the Full Screen Map section');
+
+    const unitSelect = window.document.getElementById('bpb-gpx-units');
+    assert.equal(unitSelect.getAttribute('aria-label'), 'Units');
+    assert.deepEqual(Array.from(unitSelect.options, option => [option.value, option.textContent]), [
+        ['auto', 'Auto (match page)'],
+        ['imperial', 'Imperial'],
+        ['metric', 'Metric']
+    ]);
+    assert.equal(unitSelect.value, 'imperial', 'an explicit preference overrides the metric page');
+    assert.match(analysis.textContent, /miles\b/);
+
+    sendSettings({ units: 'auto', theme: 'light', chartDefaultSeries: 'time', enable3dMap: true });
+    await waitFor(dom, () => unitSelect.value === 'auto' && /\bkm\b/.test(analysis.textContent));
+    assert.equal(chartConfig.options.scales.x.title.text, 'Distance (km)',
+        'Auto remains selected while calculations resolve against the metric page');
+
+    unitSelect.value = 'imperial';
+    unitSelect.dispatchEvent(new window.Event('change'));
+    assert.deepEqual(JSON.parse(JSON.stringify(sentPatches.at(-1))), { units: 'imperial' });
+    assert.match(analysis.textContent, /miles\b/);
+    confirmSetting(sentSettingMessages.at(-1), {
+        units: 'imperial', theme: 'light', chartDefaultSeries: 'time', enable3dMap: true
+    });
+
+    unitSelect.value = 'metric';
+    unitSelect.dispatchEvent(new window.Event('change'));
+    assert.deepEqual(JSON.parse(JSON.stringify(sentPatches.at(-1))), { units: 'metric' });
+    assert.match(analysis.textContent, /\bkm\b/);
+    confirmSetting(sentSettingMessages.at(-1), {
+        units: 'metric', theme: 'light', chartDefaultSeries: 'time', enable3dMap: true
+    });
+
+    unitSelect.value = 'auto';
+    unitSelect.dispatchEvent(new window.Event('change'));
+    assert.deepEqual(JSON.parse(JSON.stringify(sentPatches.at(-1))), { units: 'auto' },
+        'returning to Auto must persist the raw preference instead of the resolved unit');
+    assert.equal(unitSelect.value, 'auto');
+    assert.match(analysis.textContent, /\bkm\b/);
+    confirmSetting(sentSettingMessages.at(-1), {
+        units: 'auto', theme: 'light', chartDefaultSeries: 'time', enable3dMap: true
+    });
 
     const mapViewport = window.document.getElementById('bpb-map-viewport');
     const mapResizeHandle = window.document.getElementById('bpb-map-resize-handle');
