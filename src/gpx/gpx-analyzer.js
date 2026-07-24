@@ -379,7 +379,7 @@ const run = async () => {
         };
 
         const routeColorControl = createColorControl('bpb-map-route-color', 'Route');
-        const routeCasingColorControl = createColorControl('bpb-map-route-casing-color', 'Casing');
+        const routeCasingColorControl = createColorControl('bpb-map-route-casing-color', 'Outline');
 
         const hintText = document.createElement('div');
         Object.assign(hintText.style, { fontSize: '0.8em', color: '#888', marginTop: '4px', fontStyle: 'italic' });

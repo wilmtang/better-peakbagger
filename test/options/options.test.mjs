@@ -175,6 +175,11 @@ test('settings are grouped by the surface they affect', async () => {
     for (const id of ['map-route-color', 'remember-map-layer', 'terrain-cache-limit', 'map-viewport-width']) {
         assert.ok(mapChart.querySelector(`#map-chart-map #${id}`), `${id} should belong to Map`);
     }
+    const outlineColor = mapChart.querySelector('#map-route-casing-color');
+    const outlineWidth = mapChart.querySelector('#map-route-casing-width');
+    assert.equal(outlineColor.previousElementSibling.textContent, 'Outline');
+    assert.equal(outlineColor.getAttribute('aria-label'), 'Route outline color');
+    assert.equal(outlineWidth.getAttribute('aria-label'), 'Route outline width in pixels');
     for (const id of ['beta-tr', 'beta-tr-words', 'beta-gps', 'beta-link', 'beta-sort-date-desc']) {
         assert.ok(beta.querySelector(`#${id}`), `${id} should belong to Ascent beta filter`);
     }

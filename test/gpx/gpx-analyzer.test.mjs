@@ -450,6 +450,8 @@ test('GPX analyzer adds a thick, segment-preserving route casing behind native L
     const casingColor = window.document.getElementById('bpb-map-route-casing-color');
     assert.equal(routeColor.value, '#2457a7');
     assert.equal(casingColor.value, '#f1eadc');
+    assert.equal(casingColor.previousElementSibling.textContent, 'Outline');
+    assert.equal(casingColor.getAttribute('aria-label'), 'Outline color');
 
     routeColor.value = '#347a3f';
     routeColor.dispatchEvent(new window.Event('change'));
