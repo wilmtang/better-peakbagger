@@ -238,7 +238,10 @@ input[type="number"].route-width { min-width: 0; width: 58px; padding: 5px 7px; 
 .cache-size { display: flex; align-items: center; gap: 7px; }
 .cache-size input[type="number"] { min-width: 0; width: 86px; padding: 5px 7px; }
 #terrain-cache-row[hidden] { display: none; }
-button.secondary {
+/* Secondary control. Anchors take the same shape so an action that is really a
+   destination (View repository) keeps link affordances without looking odd
+   beside the buttons it sits with. */
+button.secondary, a.secondary {
     align-self: flex-end;
     font: inherit;
     color: var(--text);
@@ -248,8 +251,9 @@ button.secondary {
     padding: 5px 10px;
     cursor: pointer;
 }
-button.secondary:hover { border-color: var(--accent); color: var(--accent); }
-button.secondary:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+a.secondary { display: inline-flex; align-items: center; text-decoration: none; }
+button.secondary:hover, a.secondary:hover { border-color: var(--accent); color: var(--accent); }
+button.secondary:focus-visible, a.secondary:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 /* Settings export/import and the GitHub settings and favorites backup rows,
    which share one control shape inside Backup & sync. */
@@ -512,7 +516,7 @@ button.secondary.favorites-mirror-trigger:focus-visible { outline-color: var(--d
 .github-backup-summary { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 6px; }
 .github-backup-confirmed { color: var(--link); font-weight: 600; }
 .github-actions { display: flex; flex-wrap: wrap; gap: 8px; }
-.github-actions button.secondary { align-self: auto; }
+.github-actions button.secondary, .github-actions a.secondary { align-self: auto; }
 button.github-primary {
     font: inherit;
     font-weight: 600;

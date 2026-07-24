@@ -194,27 +194,34 @@ export function initGithubBackup({ extensionApi, flash, save }) {
         );
     };
 
+    const repositoryUrl = status => {
+        const owner = status?.repo?.owner;
+        const name = status?.repo?.name;
+        if (!owner || !name) return null;
+        return `https://github.com/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`;
+    };
+
+    // The repository belongs to the connection, not to any one backup, so its
+    // link sits here beside the account rather than inside ascent backup.
     const renderConnected = status => {
         choosingRepo = false;
         const who = status.account && status.account.login ? `@${status.account.login}` : 'GitHub';
         const repo = status.repo ? status.repo.fullName || `${status.repo.owner}/${status.repo.name}` : '';
+        const url = repositoryUrl(status);
         render(
             el('p', { class: 'github-line github-connected' }, [
                 el('span', { class: 'github-dot' }),
                 el('span', { text: `Connected as ${who} · Repository ${repo}` }),
             ]),
             el('div', { class: 'github-actions' }, [
+                url ? el('a', {
+                    class: 'secondary', href: url,
+                    target: '_blank', rel: 'noopener noreferrer', text: 'View repository',
+                }) : null,
                 button('Change repository', { onClick: () => refreshRepos({ choose: true }) }),
                 button('Disconnect', { onClick: disconnect }),
-            ]),
+            ].filter(Boolean)),
         );
-    };
-
-    const repositoryUrl = status => {
-        const owner = status?.repo?.owner;
-        const name = status?.repo?.name;
-        if (!owner || !name) return null;
-        return `https://github.com/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`;
     };
 
     const paintAscentSummary = (summaryEl, status, summary) => {
@@ -237,20 +244,9 @@ export function initGithubBackup({ extensionApi, flash, save }) {
         }
         const count = Number.isInteger(summary.count) && summary.count >= 0 ? summary.count : 0;
         const repo = status?.repo?.fullName || `${status?.repo?.owner}/${status?.repo?.name}`;
-        const copy = count === 0
+        summaryEl.textContent = count === 0
             ? 'No ascents backed up yet.'
             : `${count} ascent${count === 1 ? '' : 's'} backed up to ${repo}.`;
-        const children = [document.createTextNode(copy)];
-        const url = repositoryUrl(status);
-        if (url) {
-            children.push(
-                document.createTextNode(' '),
-                el('a', {
-                    class: 'github-link', href: url, target: '_blank', rel: 'noopener noreferrer', text: 'View repository',
-                }),
-            );
-        }
-        summaryEl.replaceChildren(...children);
     };
 
     const refreshAscentSummary = async (summaryEl, status) => {

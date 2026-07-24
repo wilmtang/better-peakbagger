@@ -2202,6 +2202,12 @@ test('a connected status renders the account and repository', async () => {
     // The connected state offers a disconnect control.
     const buttons = Array.from(el(dom, 'github-panel').querySelectorAll('button'), b => b.textContent);
     assert.ok(buttons.includes('Disconnect'));
+    // The repository link belongs to the connection, not to ascent backup.
+    const repositoryLink = el(dom, 'github-panel').querySelector('a[href="https://github.com/ada/peaks"]');
+    assert.ok(repositoryLink, 'the connected panel links to the selected repository');
+    assert.equal(repositoryLink.textContent, 'View repository');
+    assert.equal(repositoryLink.getAttribute('target'), '_blank');
+    assert.equal(repositoryLink.getAttribute('rel'), 'noopener noreferrer');
 });
 
 test('an auth-storage read failure is not presented as a disconnected account', async () => {
@@ -2274,9 +2280,8 @@ test('the connected ascent panel reports repository-backed progress and refreshe
     });
 
     await waitFor(dom, () => /No ascents backed up yet/.test(el(dom, 'github-ascent-panel').textContent));
-    const repositoryLink = el(dom, 'github-ascent-panel').querySelector('a[href="https://github.com/ada/peaks"]');
-    assert.ok(repositoryLink);
-    assert.equal(repositoryLink.textContent, 'View repository');
+    assert.equal(el(dom, 'github-ascent-panel').querySelector('a[href="https://github.com/ada/peaks"]'), null,
+        'the repository link belongs to the GitHub connection, not the ascent summary');
 
     ascentCount = 3;
     dom.window.dispatchEvent(new dom.window.Event('focus'));
