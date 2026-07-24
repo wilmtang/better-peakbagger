@@ -45,6 +45,13 @@ living docs in [`docs/`](../).
   for the device-wide manager in Settings and its editor discovery link.
 - [Codebase audit — 2026-07-19](codebase-audit-2026-07-19.md) — point-in-time
   audit and remediation plan.
+- [Codebase audit — 2026-07-22](codebase-audit-2026-07-22.md) and its
+  [follow-up](codebase-audit-2026-07-22-followup.md) — executed audit rounds
+  over the refactored worker, options modules, and GitHub domain.
+- [Codebase audit — 2026-07-23](codebase-audit-2026-07-23.md) — ascent sync UX
+  round: saved-ascent navigation identity, opt-in GitHub deletion mirroring,
+  truthful backup status, draft peak names, and the worker-owned settings and
+  favorites mutation boundaries, with its closure ledger.
 - [3D map audit — 2026-07-21](3d-map-audit-2026-07-21.md) — completed audit and
   implementation record for compass continuity, progressive drape boot,
   cancelable loading, visible/fatal renderer recovery, shared lifecycle,
