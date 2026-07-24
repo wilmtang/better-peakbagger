@@ -34,15 +34,22 @@ const waitFor = async (predicate, ms = 1000) => {
 };
 
 const createWorker = ({ settings = { enableGithubBackup: true }, auth = null, github, session: sharedSession = null,
-    local: sharedLocal = null, peakbaggerLoginHtml = '<a href="climber/climber.aspx?cid=900001">My Home Page</a>' } = {}) => {
+    local: sharedLocal = null, failLocalGetAfterRemove = false,
+    peakbaggerLoginHtml = '<a href="climber/climber.aspx?cid=900001">My Home Page</a>' } = {}) => {
     const session = sharedSession || {};
     const sync = { bpbSettings: structuredClone(settings) };
     const local = sharedLocal || (auth ? { bpbGithubAuth: structuredClone(auth) } : {});
-    const area = values => ({
-        get: async key => ({ [key]: structuredClone(values[key]) }),
-        set: async patch => Object.assign(values, structuredClone(patch)),
-        remove: async key => { delete values[key]; },
-    });
+    const area = (values, { failGetAfterRemove = false } = {}) => {
+        let removed = false;
+        return {
+            get: async key => {
+                if (failGetAfterRemove && removed) throw new Error('local read failed after remove');
+                return { [key]: structuredClone(values[key]) };
+            },
+            set: async patch => Object.assign(values, structuredClone(patch)),
+            remove: async key => { delete values[key]; removed = true; },
+        };
+    };
     const runtimeMessage = event();
     const storageChanged = event();
     const alarms = {
@@ -51,7 +58,12 @@ const createWorker = ({ settings = { enableGithubBackup: true }, auth = null, gi
         onAlarm: event(),
     };
     const browser = {
-        storage: { session: area(session), sync: area(sync), local: area(local), onChanged: storageChanged },
+        storage: {
+            session: area(session),
+            sync: area(sync),
+            local: area(local, { failGetAfterRemove: failLocalGetAfterRemove }),
+            onChanged: storageChanged,
+        },
         runtime: {
             id: 'test',
             onMessage: runtimeMessage,
@@ -1179,6 +1191,22 @@ test('the snapshot store rejects a non-Peakbagger sender', async () => {
     assert.equal(res.ok, false);
     // Nothing was stored (the cleanup pass may have initialised an empty map).
     assert.equal(Object.keys(worker.session.bpbGithubSnapshots || {}).length, 0);
+});
+
+test('disconnect returns a known cleared state without a fallible credential re-read', async () => {
+    const worker = createWorker({
+        auth: AUTH,
+        github: () => null,
+        failLocalGetAfterRemove: true,
+    });
+
+    const result = await worker.send({ type: 'GITHUB_AUTH_DISCONNECT' }, EXTENSION_SENDER);
+
+    assert.equal(result.connected, false);
+    assert.equal(result.hasToken, false);
+    assert.equal(result.account, null);
+    assert.equal(result.repo, null);
+    assert.equal(worker.local.bpbGithubAuth, undefined);
 });
 
 test('repository selection inspects populated content before storing the choice', async () => {

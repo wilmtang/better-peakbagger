@@ -399,10 +399,18 @@ export function initGithubBackup({ extensionApi, flash, save }) {
         pollAuth();
     };
 
+    const requestDisconnect = async retry => {
+        const response = await send({ type: 'GITHUB_AUTH_DISCONNECT' });
+        if (response && response.phase !== 'error' && response.connected === false) return true;
+        const detail = response?.error?.message
+            || 'The local GitHub connection could not be confirmed as removed. Reload Settings and try again.';
+        renderError({ code: ERROR_CODES.UNKNOWN, message: detail }, retry);
+        return false;
+    };
+
     const cancelConnect = async () => {
         stopTimers();
-        await send({ type: 'GITHUB_AUTH_DISCONNECT' });
-        await renderFromStatus();
+        if (await requestDisconnect(cancelConnect)) await renderFromStatus();
     };
 
     const pollAuth = () => {
@@ -421,6 +429,9 @@ export function initGithubBackup({ extensionApi, flash, save }) {
     const afterAuthorized = async () => {
         stopTimers();
         const status = await send({ type: 'GITHUB_AUTH_STATUS' });
+        if (!status || status.phase === 'error') {
+            return renderError(status?.error || status, afterAuthorized);
+        }
         if (status && status.connected) {
             const connected = rememberStatus({ ...status, permissionGranted: true });
             flash('GitHub connected');
@@ -429,6 +440,9 @@ export function initGithubBackup({ extensionApi, flash, save }) {
         const discovery = await send({ type: 'GITHUB_AUTH_DISCOVER' });
         if (discovery && discovery.phase === 'error') return renderError(discovery, afterAuthorized);
         const refreshed = await send({ type: 'GITHUB_AUTH_STATUS' });
+        if (!refreshed || refreshed.phase === 'error') {
+            return renderError(refreshed?.error || refreshed, afterAuthorized);
+        }
         if (refreshed && refreshed.connected) {
             const connected = rememberStatus({ ...refreshed, permissionGranted: true });
             flash('GitHub connected');
@@ -442,6 +456,9 @@ export function initGithubBackup({ extensionApi, flash, save }) {
         const discovery = await send({ type: 'GITHUB_AUTH_DISCOVER' });
         if (discovery && discovery.phase === 'error') return renderError(discovery, refreshRepos);
         const status = await send({ type: 'GITHUB_AUTH_STATUS' });
+        if (!status || status.phase === 'error') {
+            return renderError(status?.error || status, refreshRepos);
+        }
         const next = rememberStatus({ ...(status || {}), permissionGranted: true });
         if (!choose && next.connected) { flash('Repository selected'); return renderConnected(next); }
         return renderChooseRepo(next, discovery);
@@ -456,6 +473,9 @@ export function initGithubBackup({ extensionApi, flash, save }) {
             return renderConnected(connected);
         }
         if (status && status.needsConfirmation) return renderExistingRepoConfirmation(repo);
+        if (status?.phase === 'error') {
+            return renderError(status.error || status, () => selectRepo(repo, { confirmExisting }));
+        }
         if (status && status.error) {
             if ([
                 ERROR_CODES.NETWORK,
@@ -473,15 +493,15 @@ export function initGithubBackup({ extensionApi, flash, save }) {
 
     const reconnect = async () => {
         stopTimers();
-        await send({ type: 'GITHUB_AUTH_DISCONNECT' });
-        await ensureConnection();
+        if (await requestDisconnect(reconnect)) await ensureConnection();
     };
 
     const disconnect = async () => {
         stopTimers();
-        await send({ type: 'GITHUB_AUTH_DISCONNECT' });
-        flash('GitHub disconnected');
-        await renderFromStatus();
+        if (await requestDisconnect(disconnect)) {
+            flash('GitHub disconnected');
+            await renderFromStatus();
+        }
     };
 
     // Show the connection state for the current stored status.
@@ -490,6 +510,9 @@ export function initGithubBackup({ extensionApi, flash, save }) {
         detailEl.hidden = false;
         const permissionGranted = await hasGithubPermission(extensionApi);
         const status = await send({ type: 'GITHUB_AUTH_STATUS' });
+        if (!status || status.phase === 'error') {
+            return renderError(status?.error || status, renderFromStatus);
+        }
         const next = rememberStatus({ ...(status || {}), permissionGranted });
         if (!permissionGranted) {
             stopTimers();
@@ -500,6 +523,9 @@ export function initGithubBackup({ extensionApi, flash, save }) {
             const discovery = await send({ type: 'GITHUB_AUTH_DISCOVER' });
             if (discovery && discovery.phase === 'error') return renderError(discovery, renderFromStatus);
             const after = await send({ type: 'GITHUB_AUTH_STATUS' });
+            if (!after || after.phase === 'error') {
+                return renderError(after?.error || after, renderFromStatus);
+            }
             const refreshed = rememberStatus({ ...(after || next), permissionGranted: true });
             if (refreshed.connected) return renderConnected(refreshed);
             return renderChooseRepo(refreshed, discovery);
@@ -523,6 +549,10 @@ export function initGithubBackup({ extensionApi, flash, save }) {
             }
         }
         const status = await send({ type: 'GITHUB_AUTH_STATUS' });
+        if (!status || status.phase === 'error') {
+            renderError(status?.error || status, ensureConnection);
+            return;
+        }
         if (status?.connected) {
             await renderFromStatus();
             return;

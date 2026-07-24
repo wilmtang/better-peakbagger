@@ -333,3 +333,46 @@ test('concurrent auth-store writes preserve both patches', async () => {
         repo: { owner: 'ada', name: 'peaks' },
     });
 });
+
+test('auth-store mutations fail closed when their authoritative read fails', async () => {
+    let writes = 0;
+    const store = Auth.createAuthStore({
+        get: async () => { throw new Error('local read failed'); },
+        set: async () => { writes++; },
+        remove: async () => {},
+    });
+
+    await assert.rejects(store.read(), /local read failed/);
+    await assert.rejects(store.setRepo({ owner: 'ada', name: 'peaks' }), /local read failed/);
+    assert.equal(writes, 0, 'a failed read must not be replaced with an empty auth record');
+});
+
+test('auth-store write failures propagate and do not poison later mutations', async () => {
+    const area = makeArea();
+    const nativeSet = area.set;
+    let fail = true;
+    area.set = async value => {
+        if (fail) {
+            fail = false;
+            throw new Error('local write failed');
+        }
+        await nativeSet(value);
+    };
+    const store = Auth.createAuthStore(area);
+
+    await assert.rejects(store.setAccount({ login: 'ada' }), /local write failed/);
+    await store.setRepo({ owner: 'ada', name: 'peaks' });
+    assert.deepEqual(await store.read(), {
+        repo: { owner: 'ada', name: 'peaks' },
+    });
+});
+
+test('auth-store clear propagates remove failures and keeps the credential', async () => {
+    const area = makeArea();
+    const store = Auth.createAuthStore(area);
+    await store.setCredential({ token: 'gho_secret' });
+    area.remove = async () => { throw new Error('local remove failed'); };
+
+    await assert.rejects(store.clear(), /local remove failed/);
+    assert.equal(await store.getToken(), 'gho_secret');
+});

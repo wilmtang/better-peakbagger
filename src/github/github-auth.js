@@ -234,12 +234,10 @@ import { githubErrors as GithubErrors } from './github-errors.js';
     const createAuthStore = (area = resolveLocalArea()) => {
         let mutationQueue = Promise.resolve();
         const read = async () => {
-            if (!area) return null;
-            try {
-                const res = await area.get(STORAGE_KEY);
-                const value = res && res[STORAGE_KEY];
-                return value && typeof value === 'object' ? value : null;
-            } catch { return null; }
+            if (!area) throw new Error('GitHub authorization storage is unavailable.');
+            const res = await area.get(STORAGE_KEY);
+            const value = res && res[STORAGE_KEY];
+            return value && typeof value === 'object' ? value : null;
         };
         const mutate = operation => {
             const pending = mutationQueue.then(operation);
@@ -247,9 +245,8 @@ import { githubErrors as GithubErrors } from './github-errors.js';
             return pending;
         };
         const write = patch => mutate(async () => {
-            if (!area) return null;
             const next = { ...(await read()), ...patch };
-            try { await area.set({ [STORAGE_KEY]: next }); } catch { /* storage unavailable */ }
+            await area.set({ [STORAGE_KEY]: next });
             return next;
         });
         return {
@@ -271,8 +268,8 @@ import { githubErrors as GithubErrors } from './github-errors.js';
             // Disconnect: drop the local token and every derived choice. This
             // does not revoke on GitHub — that is uninstalling the app.
             clear: () => mutate(async () => {
-                if (!area) return;
-                try { await area.remove(STORAGE_KEY); } catch { /* storage unavailable */ }
+                if (!area) throw new Error('GitHub authorization storage is unavailable.');
+                await area.remove(STORAGE_KEY);
             }),
         };
     };

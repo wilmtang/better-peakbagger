@@ -1961,6 +1961,52 @@ test('a connected status renders the account and repository', async () => {
     assert.ok(buttons.includes('Disconnect'));
 });
 
+test('an auth-storage read failure is not presented as a disconnected account', async () => {
+    const dom = await loadOptions({ enableGithubBackup: true }, {
+        prepareChrome: chrome => {
+            chrome.permissions = { request: async () => true, contains: async () => true, remove: async () => true };
+            chrome.runtime.sendMessage = () => Promise.resolve({
+                phase: 'error',
+                error: { code: 'unknown', message: 'Local authorization storage could not be read.' },
+            });
+        },
+    });
+
+    await waitFor(dom, () => /Local authorization storage could not be read/.test(
+        el(dom, 'github-panel').textContent));
+    assert.ok(Array.from(el(dom, 'github-panel').querySelectorAll('button'))
+        .some(button => button.textContent === 'Try again'));
+    assert.doesNotMatch(el(dom, 'github-panel').textContent, /Connect a GitHub account/);
+});
+
+test('a failed GitHub disconnect stays connected and does not announce success', async () => {
+    const connected = {
+        enabled: true, connected: true, hasToken: true,
+        account: { login: 'ada' }, repo: { owner: 'ada', name: 'peaks', fullName: 'ada/peaks' },
+    };
+    const dom = await loadOptions({ enableGithubBackup: true }, {
+        prepareChrome: chrome => {
+            chrome.permissions = { request: async () => true, contains: async () => true, remove: async () => true };
+            chrome.runtime.sendMessage = (message, callback) => {
+                const reply = message.type === 'GITHUB_AUTH_DISCONNECT'
+                    ? { phase: 'error', error: { code: 'unexpected', message: 'Local credential removal failed.' } }
+                    : connected;
+                if (typeof callback === 'function') Promise.resolve().then(() => callback(reply));
+                return Promise.resolve(reply);
+            };
+        },
+    });
+    await waitFor(dom, () => /Repository ada\/peaks/.test(el(dom, 'github-panel').textContent));
+
+    Array.from(el(dom, 'github-panel').querySelectorAll('button'))
+        .find(button => button.textContent === 'Disconnect').click();
+    await waitFor(dom, () => /Local credential removal failed/.test(el(dom, 'github-panel').textContent));
+
+    assert.doesNotMatch(el(dom, 'status').textContent, /disconnected/i);
+    assert.ok(Array.from(el(dom, 'github-panel').querySelectorAll('button'))
+        .some(button => button.textContent === 'Try again'));
+});
+
 test('the connected ascent panel reports repository-backed progress and refreshes on focus', async () => {
     let ascentCount = 0;
     let summaryReads = 0;

@@ -245,7 +245,20 @@ export function createGithubRoutes({
     const githubDisconnect = async () => {
         await clearPendingGithubAuth();
         await GithubAuth.authStore.clear();
-        return githubStatus();
+        // Clearing the one local record removes the token, repository, and
+        // derived account together. Do not immediately re-read that storage
+        // just to prove what the successful remove already established: a
+        // follow-up read failure would make the UI report an ambiguous
+        // disconnect even though the credential is gone.
+        return {
+            connected: false,
+            hasToken: false,
+            account: null,
+            repo: null,
+            installUrl: GithubAuth.INSTALL_URL,
+            appUrl: GithubAuth.APP_URL,
+            verificationUri: GithubAuth.VERIFICATION_URI,
+        };
     };
 
 
