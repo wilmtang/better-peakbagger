@@ -120,8 +120,9 @@ link, which automatically tracks endpoint query changes.
 | `src/settings/settings-transfer.js` | Pure known-key settings payload, parsing, serialization, and stable signatures through the shared schema | DOM, storage, GitHub access |
 | `options/favorites.js` | Favorites transfer controls, auto toggle, and schema-checked reversible restore | Backup serialization, GitHub credentials, or repository mutation |
 | `options/settings-backup.js` | File transfer, GitHub transfer controls, auto toggle, and confirmed settings replacement | GitHub credentials or repository mutation |
-| `src/background/background.js` | Sender gates, session-state keys, shared write serialization, cleanup coordination, message routing | Peakbagger DOM parsing or GitHub route implementation |
-| `src/background/github-routes.js` | Session snapshots, auth lookup, root-file serialization, GitHub message handlers, automatic-backup alarms/state | Peakbagger DOM parsing or exposing credentials outside the worker |
+| `src/background/background.js` | Sender gates, session-state keys, session-state serialization, cleanup coordination, message routing | Peakbagger DOM parsing or GitHub route implementation |
+| `src/background/github-routes.js` | Session snapshots, auth lookup, the shared write queue and its commit, root-file serialization, GitHub message handlers, automatic-backup alarms/state | Peakbagger DOM parsing or exposing credentials outside the worker |
+| `src/github/github-write-queue.js` | Pure write ordering: exclusive operations, root-file batching, last-write-wins squashing, superseded reporting | Network, storage, tokens, or what a commit contains |
 | `src/github/github-backup.js` | Pure folder naming and JSON/Markdown/file payload serialization | DOM, tokens, network |
 | `src/github/github-errors.js` | One stable GitHub integration error code set, error type, and worker-safe serialization | HTTP requests or user-interface copy |
 | `src/github/github-api.js` | Every authenticated `api.github.com` request: origin validation, headers, no-cache policy, JSON parsing, and HTTP classification | OAuth device-flow form posts or repository algorithms |
@@ -634,9 +635,12 @@ an immediately redundant automatic commit.
 A failed automatic write records its attempt count and re-arms the same alarm
 after ten minutes, with at most two retry alarms for that change. A new change
 resets the retry budget. Automatic failures stay quiet; the manual action is the
-user-visible retry path. Both automatic writers still enter the single
-`githubWriteQueue`, so they cannot race ascent, profile, or each other on the
-mutable branch. Restore is never automatic.
+user-visible retry path. Both automatic writers still enter the single write
+queue, so they cannot race ascent, profile, or each other on the mutable branch.
+Because both alarms are armed with the same delay they fire together, and the
+queue merges them into one commit; each writer records only its own signature,
+and a writer whose content was superseded records nothing. Restore is never
+automatic.
 
 ### `ascent.json` schema version 1
 
@@ -779,10 +783,23 @@ read `Refresh N ascents`.
 
 ### Internal and external concurrency
 
-The worker's `githubWriteQueue` serializes all extension-owned writers—including
-manual and automatic settings and favorite backups—before they read the branch.
-A separate browser, GitHub web edit, or another
-integration can still race externally.
+`src/github/github-write-queue.js` serializes all extension-owned writers—
+including manual and automatic settings and favorite backups—before they read
+the branch. A separate browser, GitHub web edit, or another integration can
+still race externally.
+
+Root-file writes additionally coalesce. A batch stays open for a short window
+(250 ms) and for however long an earlier operation is still running, then
+commits every collected file as one tree, one commit, and one ref update.
+Repeated writes to one path keep only the newest content; the writers it
+replaced still resolve with that commit and are told `superseded: true`, which
+is what stops an automatic backup from recording a signature the commit did not
+contain. Ascent pushes and deletions stay exclusive—they carry their own
+pre-commit deletion gates and per-ascent results—and an exclusive operation
+closes any collecting batch, so submission order is never rearranged.
+
+The window is a real-browser tuning value, not a correctness boundary: merging
+is what the tests pin, and a window too short only costs an extra commit.
 
 On retryable 409 or non-fast-forward ref conflict, the client waits 0.5, 2, then
 5 seconds. Each retry rereads the head and rebuilds the entire tree/commit.

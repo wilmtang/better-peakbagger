@@ -31,7 +31,6 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
     const CLEANUP_ALARM = 'bpb-capture-cleanup';
     const processes = new Map();
     let mutationQueue = Promise.resolve();
-    let githubWriteQueue = Promise.resolve();
 
     const now = () => Date.now();
     const isFresh = record => !!record && Number(record.expiresAt) > now();
@@ -68,17 +67,6 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
             return result;
         });
         mutationQueue = operation.catch(() => {});
-        return operation;
-    };
-
-    // Every backup surface targets the same mutable branch. Serialize writes
-    // within this worker so an automatic save, a manual save, and a profile
-    // batch cannot race one another between reading and updating the branch
-    // head. External writers are still handled by the GitHub client's bounded
-    // optimistic-concurrency retry.
-    const enqueueGithubWrite = write => {
-        const operation = githubWriteQueue.then(write, write);
-        githubWriteQueue = operation.catch(() => {});
         return operation;
     };
 
@@ -1065,7 +1053,6 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
         isFresh,
         readMap,
         mutateMap,
-        enqueueGithubWrite,
     });
     const favoriteMutations = createFavoritesStore({ storage: ext.storage.local, now });
 

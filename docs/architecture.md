@@ -136,7 +136,7 @@ There is no parallel raw-source worker list and no `importScripts` fallback.
 | Report-draft manager | `src/reports/report-drafts.js`, `options/drafts.js` | Shared pure draft contract plus device-local list/copy/delete UI |
 | Saved-ascent backup | `src/ascent/ascent-page.js`, `src/ascent/ascent-backup.js` | Owner-only page read and user-facing backup state |
 | Peakbagger request boundary | `src/peakbagger/peakbagger-request.js`, `src/peakbagger/peakbagger-response.js`, `src/peakbagger/peakbagger-error.js`, `src/peakbagger/peakbagger-cloudflare.js` | Authenticated fetch policy, response validation, typed failures, and managed-challenge detection/recovery copy |
-| GitHub integration | `src/background/github-routes.js`, `src/github/github-error-copy.js`, `src/github/github-errors.js`, `src/github/github-api.js`, `src/github/github-auth.js`, `src/github/github-client.js`, `src/github/github-backup.js` | Worker-only routes and credentials, user-facing error copy, typed errors, authenticated REST transport, Git Data client, and pure payload builder |
+| GitHub integration | `src/background/github-routes.js`, `src/github/github-error-copy.js`, `src/github/github-errors.js`, `src/github/github-api.js`, `src/github/github-auth.js`, `src/github/github-client.js`, `src/github/github-write-queue.js`, `src/github/github-backup.js` | Worker-only routes and credentials, user-facing error copy, typed errors, authenticated REST transport, Git Data client, write ordering and coalescing, and pure payload builder |
 
 Extend the owning surface rather than publishing cross-feature globals. The one
 deliberate Better Peakbagger global is `globalThis.BPBProviderPage`: the worker
@@ -696,7 +696,7 @@ sync must never acquire the third-party names stored in either local dataset.
 | `src/profile/profile-backup-core.js` | Pure shared module | Signed-in owner discovery and numeric URL identity | Favorites persistence or request orchestration |
 | `src/peakbagger/peakbagger-request.js`, `src/peakbagger/peakbagger-response.js`, and `src/peakbagger/peakbagger-error.js` | Shared request boundary | Authenticated fetch policy, response classification, parsing failures, and actionable error copy | Favorites schema or persistence |
 | `src/background/favorites-store.js` and `src/background/background.js` | Extension worker | Sender-gated, serialized device-local custom-list mutations; latest-value add/remove/merge operations; signature-gated replacements | Buddy-cache fetching, source selection, rendering, or GitHub transfer |
-| `src/background/github-routes.js` and `src/github/github-client.js` | Extension worker | Shared GitHub write queue, connection/token/routes, fixed `favorite-climbers.json` path, repository validation, serialized writes, and restore reads | Interpreting or mutating the favorites schema |
+| `src/background/github-routes.js`, `src/github/github-write-queue.js`, and `src/github/github-client.js` | Extension worker | Shared GitHub write queue, connection/token/routes, fixed `favorite-climbers.json` path, repository validation, serialized and coalesced writes, and restore reads | Interpreting or mutating the favorites schema |
 
 `options/favorites.js` owns management. It fetches authenticated Peakbagger
 pages through the shared Peakbagger request boundary, then parses validated
@@ -1030,8 +1030,9 @@ It sends that string in `GITHUB_FAVORITES_BACKUP`; it never receives the GitHub
 token. The worker accepts those messages only from an extension page, reuses the
 shared GitHub connection and selected repository, and writes the fixed root
 path `favorite-climbers.json` through the same repository-marker check, exact base tree,
-non-forced ref update, serialized write queue, and bounded conflict retry as
-ascent backup. Restore is an extension-only read; a missing file is reported as
+non-forced ref update, shared write queue, and bounded conflict retry as
+ascent backup. Because it is a root file rather than an ascent folder, that
+write can share one commit with a settings backup submitted at the same moment. Restore is an extension-only read; a missing file is reported as
 “no backup” and does not become an empty replacement.
 
 The options page, not the worker, owns serialization and restore validation.

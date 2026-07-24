@@ -3,7 +3,8 @@
 //
 // Better Peakbagger — GitHub Git Data client for the ascent backup (pure).
 //
-// Pushes one or more ascents as one atomic commit through GitHub's Git Data API:
+// Pushes one or more ascents, or one or more root files, as one atomic commit
+// through GitHub's Git Data API:
 // resolve the branch, read its tip, POST a tree based on the latest commit
 // (adding new file contents and removing stale or renamed-away owned files),
 // POST the commit, and fast-forward the ref. Small file contents ride directly
@@ -483,25 +484,43 @@ import { githubErrors as GithubErrors } from './github-errors.js';
             return decodeBase64Utf8(file.content);
         };
 
-        const putRootFileOnce = async (path, content, commitMessage) => {
-            const filePath = rootFilePath(path);
-            if (typeof content !== 'string' || typeof commitMessage !== 'string' || !commitMessage.trim()) {
+        // Root files are independent last-write-wins paths, so several of them
+        // belong in one tree for the same reason a profile batch of ascents
+        // does. A repeated path is rejected rather than silently resolved: the
+        // tree would be ambiguous and only the caller knows which write it meant.
+        const normalizeRootFiles = files => {
+            if (!Array.isArray(files) || files.length === 0) {
+                throw new TypeError('github client requires at least one root file');
+            }
+            const seen = new Set();
+            return files.map(file => {
+                const path = rootFilePath(file && file.path);
+                if (seen.has(path)) throw new TypeError('github client requires unique root file paths');
+                seen.add(path);
+                if (typeof file.content !== 'string') {
+                    throw new TypeError('github client requires string content and a commit message');
+                }
+                return { path, content: file.content };
+            });
+        };
+
+        const putRootFilesOnce = async (files, commitMessage) => {
+            const entries = normalizeRootFiles(files);
+            const message = typeof commitMessage === 'string' ? commitMessage.trim() : '';
+            if (!message) {
                 throw new TypeError('github client requires string content and a commit message');
             }
             const resolved = await resolveRepo();
             const head = await readHead(resolved) || await initializeEmptyRepository(resolved);
             const state = await inspectRootTree(head.root);
-            const existing = (head.root.tree || []).find(entry => entry.path === filePath);
-            if (existing && existing.type !== 'blob') {
-                throw new GithubError(ERROR_CODES.REPO_CONFLICT,
-                    `The repository already uses ${filePath} for something other than a file.`);
-            }
-            const treeEntries = [{
-                path: filePath,
-                mode: BLOB_MODE,
-                type: 'blob',
-                content,
-            }];
+            const treeEntries = entries.map(entry => {
+                const existing = (head.root.tree || []).find(node => node.path === entry.path);
+                if (existing && existing.type !== 'blob') {
+                    throw new GithubError(ERROR_CODES.REPO_CONFLICT,
+                        `The repository already uses ${entry.path} for something other than a file.`);
+                }
+                return { path: entry.path, mode: BLOB_MODE, type: 'blob', content: entry.content };
+            });
             if (!state.marker) {
                 treeEntries.push({
                     path: REPOSITORY_MARKER_PATH,
@@ -515,7 +534,7 @@ import { githubErrors as GithubErrors } from './github-errors.js';
                 phase: 'write',
             });
             const commit = await request('POST', '/git/commits', {
-                body: { message: commitMessage.trim(), tree: tree.sha, parents: [head.baseCommitSha] },
+                body: { message, tree: tree.sha, parents: [head.baseCommitSha] },
                 phase: 'write',
             });
             await request('PATCH', `/git/refs/heads/${encodeURIComponent(resolved.targetBranch)}`, {
@@ -525,13 +544,23 @@ import { githubErrors as GithubErrors } from './github-errors.js';
             return {
                 sha: commit.sha,
                 commitUrl: commit.html_url || `https://github.com/${owner}/${repo}/commit/${commit.sha}`,
-                message: commitMessage.trim(),
-                path: filePath,
+                message,
+                paths: entries.map(entry => entry.path),
             };
         };
 
-        const putRootFile = (path, content, commitMessage) =>
-            withConflictRetry(() => putRootFileOnce(path, content, commitMessage));
+        const putRootFiles = (files, commitMessage) =>
+            withConflictRetry(() => putRootFilesOnce(files, commitMessage));
+
+        const putRootFile = async (path, content, commitMessage) => {
+            const result = await putRootFiles([{ path, content }], commitMessage);
+            return {
+                sha: result.sha,
+                commitUrl: result.commitUrl,
+                message: result.message,
+                path: result.paths[0],
+            };
+        };
 
         return {
             pushAscentBackup,
@@ -542,6 +571,7 @@ import { githubErrors as GithubErrors } from './github-errors.js';
             inspectRepository,
             readRootFile,
             putRootFile,
+            putRootFiles,
         };
     };
 

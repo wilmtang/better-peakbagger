@@ -730,6 +730,54 @@ test('a root file commit preserves the base tree, adopts the repo, and fast-forw
         { sha: 'C1', force: false });
 });
 
+test('several root files commit as one tree, one commit, and one ref update', async () => {
+    const { fetch, calls } = makeFetch({
+        'GET /repos/me/backup': REPO_OK(),
+        'GET /repos/me/backup/git/ref/heads/main': REF('C0'),
+        'GET /repos/me/backup/git/commits/C0': COMMIT('C0', 'T0'),
+        'GET /repos/me/backup/git/trees/T0': () => respond(200, { tree: [MARKER] }),
+        'GET /repos/me/backup/git/blobs/marker': MARKER_BLOB,
+        'POST /repos/me/backup/git/trees': () => respond(201, { sha: 'T1' }),
+        'POST /repos/me/backup/git/commits': () => respond(201, {
+            sha: 'C1', html_url: 'https://github.com/me/backup/commit/C1',
+        }),
+        'PATCH /repos/me/backup/git/refs/heads/main': () => respond(200, { object: { sha: 'C1' } }),
+    });
+    const client = Client.createGithubClient({ fetch, token: 't', owner: 'me', repo: 'backup' });
+    const result = await client.putRootFiles([
+        { path: 'settings.json', content: '{"settings":1}\n' },
+        { path: 'favorite-climbers.json', content: '{"schemaVersion":1}\n' },
+    ], 'Back up settings; Back up favorite climbers');
+
+    assert.deepEqual(result.paths, ['settings.json', 'favorite-climbers.json']);
+    assert.equal(result.commitUrl, 'https://github.com/me/backup/commit/C1');
+    assert.equal(calls.filter(call => call.key === 'POST /repos/me/backup/git/commits').length, 1);
+    assert.equal(calls.filter(call => call.key === 'PATCH /repos/me/backup/git/refs/heads/main').length, 1);
+    const tree = calls.find(call => call.key === 'POST /repos/me/backup/git/trees').body;
+    assert.equal(tree.base_tree, 'T0');
+    assert.deepEqual(tree.tree, [
+        { path: 'settings.json', mode: '100644', type: 'blob', content: '{"settings":1}\n' },
+        { path: 'favorite-climbers.json', mode: '100644', type: 'blob', content: '{"schemaVersion":1}\n' },
+    ]);
+    assert.equal(calls.find(call => call.key === 'POST /repos/me/backup/git/commits').body.message,
+        'Back up settings; Back up favorite climbers');
+});
+
+test('a root file batch refuses a repeated path instead of guessing which write wins', async () => {
+    const { fetch, calls } = makeFetch({ 'GET /repos/me/backup': REPO_OK() });
+    const client = Client.createGithubClient({ fetch, token: 't', owner: 'me', repo: 'backup' });
+    await assert.rejects(client.putRootFiles([
+        { path: 'settings.json', content: 'a' },
+        { path: 'settings.json', content: 'b' },
+    ], 'Back up settings'), /unique root file paths/);
+    await assert.rejects(client.putRootFiles([], 'Back up settings'), /at least one root file/);
+    await assert.rejects(client.putRootFiles([{ path: 'settings.json', content: 'a' }], '  '),
+        /string content and a commit message/);
+    await assert.rejects(client.putRootFiles([{ path: 'nested/settings.json', content: 'a' }], 'Back up settings'),
+        /non-reserved root file path/);
+    assert.deepEqual(calls, [], 'a malformed batch must not reach GitHub');
+});
+
 test('a root file conflict retries from the newly read head', async () => {
     let refReads = 0;
     let patches = 0;

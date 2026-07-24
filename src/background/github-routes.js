@@ -7,6 +7,7 @@ import { favoriteClimbers as Favorites } from '../favorites/favorite-climbers.js
 import { githubAuth as GithubAuth } from '../github/github-auth.js';
 import { githubClient as GithubClient } from '../github/github-client.js';
 import { githubErrors as GithubErrors } from '../github/github-errors.js';
+import { githubWriteQueue as GithubWriteQueue } from '../github/github-write-queue.js';
 
 const GITHUB_AUTH_PENDING_KEY = 'bpbGithubAuthPending';
 const FAVORITE_CLIMBERS_BACKUP_PATH = 'favorite-climbers.json';
@@ -34,7 +35,6 @@ export function createGithubRoutes({
     isFresh,
     readMap,
     mutateMap,
-    enqueueGithubWrite,
 }) {
     // ---- GitHub ascent backup: auth + repository setup ---------------------
     //
@@ -440,7 +440,7 @@ export function createGithubRoutes({
         const access = await connectedGithubClient({ requireEnabled: true });
         if (access.error) return { ok: false, error: access.error };
         try {
-            const result = await enqueueGithubWrite(() => access.client.deleteAscentBackup(ascentId));
+            const result = await writeQueue.run(() => access.client.deleteAscentBackup(ascentId));
             await clearAscentSnapshots(ascentId);
             await mutateMap(ASCENT_DELETE_INTENTS_KEY, intents => {
                 const current = intents[String(ascentId)];
@@ -478,6 +478,39 @@ export function createGithubRoutes({
             }),
         };
     };
+
+    // Every backup surface targets the same mutable branch, so writes are
+    // serialized within this worker: an automatic save, a manual save, and a
+    // profile batch cannot race one another between reading and updating the
+    // branch head. External writers are still handled by the GitHub client's
+    // bounded optimistic-concurrency retry.
+    //
+    // Root-file writes additionally merge. The settings and favorites automatic
+    // backups share one alarm delay, so they arrive together; committing them
+    // as one tree spends one round trip instead of two and leaves one commit
+    // in the user's repository instead of two seconds apart.
+    //
+    // The batch resolves the connection once, at commit time rather than at
+    // submission, so a disconnect during the short collecting window fails as
+    // the same route error a fail-fast check would have produced.
+    class GithubAccessError extends Error {
+        constructor(error) {
+            super((error && error.message) || 'No GitHub repository is connected.');
+            this.name = 'GithubAccessError';
+            this.access = error;
+        }
+    }
+    const writeError = (error, fallback) => error instanceof GithubAccessError
+        ? error.access
+        : GithubErrors.publicError(error, fallback);
+
+    const writeQueue = GithubWriteQueue.createGithubWriteQueue({
+        commitFiles: async (files, message) => {
+            const access = await connectedGithubClient();
+            if (access.error) throw new GithubAccessError(access.error);
+            return access.client.putRootFiles(files, message);
+        },
+    });
 
     // Profile backup preflight adds the repository's ascent-folder leaves to
     // the ordinary status. This stays a dedicated message so viewing a saved
@@ -616,7 +649,7 @@ export function createGithubRoutes({
         };
 
         try {
-            const result = await enqueueGithubWrite(async () => {
+            const result = await writeQueue.run(async () => {
                 if (await deletionBlocksBackup([ascentId])) {
                     const error = new Error('This ascent has a pending or completed deletion.');
                     error.code = 'ascent-delete-pending';
@@ -695,7 +728,7 @@ export function createGithubRoutes({
             };
         }
         try {
-            const result = await enqueueGithubWrite(async () => {
+            const result = await writeQueue.run(async () => {
                 const blocked = await deletionBlocksBackup([...seen]);
                 if (blocked) {
                     const error = new Error(`Ascent ${blocked} has a pending or completed deletion.`);
@@ -743,8 +776,10 @@ export function createGithubRoutes({
             const state = await readState();
             if (state && state.signature === signature) return;
             try {
-                await enqueueGithubWrite(() => access.client.putRootFile(path, text, commitMessage));
-                await markSynced(signature);
+                const result = await writeQueue.putFile({ path, content: text, message: commitMessage });
+                // A newer write to this path won the batch, so this signature
+                // does not describe what the repository now holds.
+                if (!result.superseded) await markSynced(signature);
             } catch {
                 // Silent bounded retry; the manual buttons remain the loud path.
                 const attempts = ((state && state.attempts) || 0) + 1;
@@ -800,13 +835,13 @@ export function createGithubRoutes({
         if (access.error) return { ok: false, error: access.error };
         const { text, signature } = await buildSettingsBackup();
         try {
-            const result = await enqueueGithubWrite(() => access.client.putRootFile(
-                Transfer.BACKUP_PATH, text, 'Back up settings'
-            ));
-            await settingsAutoBackup.markSynced(signature);
+            const result = await writeQueue.putFile({
+                path: Transfer.BACKUP_PATH, content: text, message: 'Back up settings',
+            });
+            if (!result.superseded) await settingsAutoBackup.markSynced(signature);
             return { ok: true, result };
         } catch (error) {
-            return { ok: false, error: GithubErrors.publicError(error, 'The settings backup failed.') };
+            return { ok: false, error: writeError(error, 'The settings backup failed.') };
         }
     };
 
@@ -827,13 +862,13 @@ export function createGithubRoutes({
         if (access.error) return { ok: false, error: access.error };
         const { text, signature } = await buildFavoritesBackup();
         try {
-            const result = await enqueueGithubWrite(() => access.client.putRootFile(
-                FAVORITE_CLIMBERS_BACKUP_PATH, text, 'Back up favorite climbers'
-            ));
-            await favoritesAutoBackup.markSynced(signature);
+            const result = await writeQueue.putFile({
+                path: FAVORITE_CLIMBERS_BACKUP_PATH, content: text, message: 'Back up favorite climbers',
+            });
+            if (!result.superseded) await favoritesAutoBackup.markSynced(signature);
             return { ok: true, result };
         } catch (error) {
-            return { ok: false, error: GithubErrors.publicError(error, 'The favorites backup failed.') };
+            return { ok: false, error: writeError(error, 'The favorites backup failed.') };
         }
     };
 

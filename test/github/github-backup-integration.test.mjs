@@ -15,6 +15,7 @@ import vm from 'node:vm';
 import { settingsSchema as Schema } from '../../src/settings/settings-schema.js';
 import { settingsTransfer as Transfer } from '../../src/settings/settings-transfer.js';
 import { favoriteClimbers as Favorites } from '../../src/favorites/favorite-climbers.js';
+import { githubWriteQueue as Queue } from '../../src/github/github-write-queue.js';
 
 const workerBundle = await fs.readFile(new URL('../../dist/background.js', import.meta.url), 'utf8');
 
@@ -25,13 +26,18 @@ const respond = (status, body) => ({
     headers: { get: () => null },
     text: async () => (typeof body === 'string' ? body : JSON.stringify(body ?? {})),
 });
-const waitFor = async (predicate, ms = 1000) => {
+const waitFor = async (predicate, ms = 2000) => {
     const started = Date.now();
     while (!predicate()) {
         if (Date.now() - started > ms) throw new Error('waitFor timed out');
         await new Promise(resolve => setTimeout(resolve, 0));
     }
 };
+// Asserting that nothing happened has no postcondition to wait for, so the wait
+// has to outlast every stage the work would pass through — including the window
+// a root-file batch stays open for before it commits.
+const settleQuietly = () =>
+    new Promise(resolve => setTimeout(resolve, Queue.DEFAULT_COALESCE_WINDOW_MS + 100));
 
 const createWorker = ({ settings = { enableGithubBackup: true }, auth = null, github, session: sharedSession = null,
     local: sharedLocal = null, failLocalGetAfterRemove = false,
@@ -88,9 +94,11 @@ const createWorker = ({ settings = { enableGithubBackup: true }, auth = null, gi
         if (!reply) throw new Error(`unrouted ${method} ${url}`);
         return reply;
     };
+    // A real service worker has timers; the worker uses them to hold a root-file
+    // batch open briefly and to back off from a ref conflict.
     const context = vm.createContext({
         browser, fetch, URL, URLSearchParams, Math, Date, console, structuredClone, AbortController,
-        TextEncoder, TextDecoder, atob, btoa,
+        TextEncoder, TextDecoder, atob, btoa, setTimeout, clearTimeout,
     });
     context.globalThis = context;
     context.self = context;
@@ -499,7 +507,7 @@ test('favorites backup and restore stay extension-only, ignore the ascent gate, 
     assert.equal('token' in backup, false);
 
     worker.fireAlarm('bpb-favorites-backup');
-    await new Promise(resolve => setTimeout(resolve, 20));
+    await settleQuietly();
     assert.equal(backend.state.commits, 1, 'manual backup state must suppress an equal automatic backup');
 
     const restore = await worker.send({ type: 'GITHUB_FAVORITES_RESTORE' }, EXTENSION_SENDER);
@@ -562,7 +570,7 @@ test('enabling or changing favorites schedules one automatic backup and restore 
         [Favorites.FAVORITES_KEY]: { newValue: structuredClone(committed.favorites) },
     }, 'local');
     worker.fireAlarm('bpb-favorites-backup');
-    await new Promise(resolve => setTimeout(resolve, 20));
+    await settleQuietly();
     assert.equal(backend.state.commits, 1);
 });
 
@@ -576,7 +584,7 @@ test('favorites auto backup stays inert while off and retries failures only twic
         github: gitDataBackend().handler,
     });
     off.fireStorageChange({ [Favorites.FAVORITES_KEY]: { newValue: favorite } }, 'local');
-    await new Promise(resolve => setTimeout(resolve, 20));
+    await settleQuietly();
     assert.equal(off.alarms.created.some(alarm => alarm.name === 'bpb-favorites-backup'), false);
 
     const failing = (method, path) => {
@@ -692,8 +700,70 @@ test('settings auto backup debounces changes, commits once, and skips an equal s
     assert.equal(payload.settings.autoSettingsBackup, true);
 
     worker.fireAlarm('bpb-settings-backup');
-    await new Promise(resolve => setTimeout(resolve, 20));
+    await settleQuietly();
     assert.equal(backend.state.commits, 1, 'an unchanged signature must not create another commit');
+});
+
+// The settings and favorites automatic backups share one alarm delay, so in
+// practice they always fire together. Two serialized writes produced two full
+// read/commit/update-ref round trips and two commits seconds apart.
+test('settings and favorites automatic backups fired together commit once', async () => {
+    const backend = gitDataBackend();
+    const entries = [{ cid: 7, name: 'Seven', addedAt: 10, source: 'manual' }];
+    const worker = createWorker({
+        settings: { autoSettingsBackup: true, autoFavoritesBackup: true, theme: 'dark' },
+        auth: AUTH,
+        local: {
+            bpbGithubAuth: structuredClone(AUTH),
+            [Favorites.FAVORITES_KEY]: { schemaVersion: 1, entries },
+        },
+        github: backend.handler,
+    });
+
+    worker.fireAlarm('bpb-settings-backup');
+    worker.fireAlarm('bpb-favorites-backup');
+    await waitFor(() => worker.local.bpbSettingsBackupState?.syncedAt
+        && worker.local.bpbFavoritesBackupState?.syncedAt);
+
+    assert.equal(backend.state.commits, 1, 'both automatic backups belong in one commit');
+    assert.equal(JSON.parse(backend.state.contents['settings.json']).settings.theme, 'dark');
+    const favorites = Favorites.parseBackup(backend.state.contents['favorite-climbers.json']);
+    assert.equal(favorites.ok, true);
+    assert.deepEqual(structuredClone(favorites.favorites.entries), entries);
+    assert.deepEqual(backend.state.tree.tree.map(entry => entry.path).sort(),
+        ['.better-peakbagger.json', 'favorite-climbers.json', 'settings.json']);
+
+    // Each writer still records only its own signature as synced.
+    assert.equal(worker.local.bpbSettingsBackupState.signature,
+        Transfer.signature(Schema.clean(structuredClone(worker.sync.bpbSettings))));
+    assert.equal(worker.local.bpbFavoritesBackupState.signature, JSON.stringify(entries));
+
+    worker.fireAlarm('bpb-settings-backup');
+    worker.fireAlarm('bpb-favorites-backup');
+    await settleQuietly();
+    assert.equal(backend.state.commits, 1, 'unchanged signatures must not create another commit');
+});
+
+test('a manual backup that overtakes a queued one still reports the repository state', async () => {
+    const backend = gitDataBackend();
+    const worker = createWorker({
+        settings: { enableGithubBackup: false, theme: 'dark' }, auth: AUTH, github: backend.handler,
+    });
+
+    // Two clicks inside the collecting window write the same path twice.
+    const [first, second] = await Promise.all([
+        worker.send({ type: 'GITHUB_SETTINGS_BACKUP' }, EXTENSION_SENDER),
+        worker.send({ type: 'GITHUB_SETTINGS_BACKUP' }, EXTENSION_SENDER),
+    ]);
+
+    assert.equal(first.ok, true);
+    assert.equal(second.ok, true);
+    assert.equal(backend.state.commits, 1, 'a repeated write to one path squashes into one commit');
+    assert.equal(first.result.sha, second.result.sha);
+    assert.equal(first.result.path, 'settings.json');
+    assert.equal(JSON.parse(backend.state.contents['settings.json']).settings.theme, 'dark');
+    assert.equal(worker.local.bpbSettingsBackupState.signature,
+        Transfer.signature(Schema.clean(structuredClone(worker.sync.bpbSettings))));
 });
 
 test('settings auto backup stays inert while off and retries failures only twice', async () => {
@@ -701,7 +771,7 @@ test('settings auto backup stays inert while off and retries failures only twice
         settings: { autoSettingsBackup: false }, auth: AUTH, github: gitDataBackend().handler,
     });
     off.fireStorageChange({ bpbSettings: { newValue: {} } }, 'sync');
-    await new Promise(resolve => setTimeout(resolve, 20));
+    await settleQuietly();
     assert.equal(off.alarms.created.some(alarm => alarm.name === 'bpb-settings-backup'), false);
 
     const failing = (method, path) => {
