@@ -40,6 +40,9 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
     const removeWithBuddyEl = document.getElementById('favorites-remove-with-buddy');
     const importStatusEl = document.getElementById('favorites-import-status');
     const mirrorConfirmationEl = document.getElementById('favorites-mirror-confirmation');
+    const replacementFeedbackEl = document.getElementById('favorites-replacement-feedback');
+    const replacementHostEl = document.getElementById('favorites-replacement-host');
+    const restoreReplacementHostEl = document.getElementById('favorites-restore-replacement-host');
     const mirrorConfirmationTitleEl = document.getElementById('favorites-mirror-confirmation-title');
     const mirrorConfirmationImpactEl = document.getElementById('favorites-mirror-confirmation-impact');
     const mirrorConfirmationSummaryEl = document.getElementById('favorites-mirror-confirmation-summary');
@@ -75,6 +78,9 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
         'favorites-remove-with-buddy': removeWithBuddyEl,
         'favorites-import-status': importStatusEl,
         'favorites-mirror-confirmation': mirrorConfirmationEl,
+        'favorites-replacement-feedback': replacementFeedbackEl,
+        'favorites-replacement-host': replacementHostEl,
+        'favorites-restore-replacement-host': restoreReplacementHostEl,
         'favorites-mirror-confirmation-title': mirrorConfirmationTitleEl,
         'favorites-mirror-confirmation-impact': mirrorConfirmationImpactEl,
         'favorites-mirror-confirmation-summary': mirrorConfirmationSummaryEl,
@@ -193,6 +199,13 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
             ? ` The list will match the backup from ${repo}. You can undo for 6 seconds after replacement.`
             : ` The custom list will then exactly match your ${total} current ${total === 1 ? 'buddy' : 'buddies'}. You can undo for 6 seconds after replacement.`;
         mirrorConfirmEl.textContent = isRestore ? 'Restore backup' : 'Replace custom list';
+        // Mirror is triggered from Favorite climbers and restore from Backup &
+        // sync, so the confirmation and the undo that follows it move together
+        // to the host beside whichever control opened this. The restore host is
+        // also the only one that stays visible while the Buddy List source
+        // hides the custom panel, so undo never lands out of sight.
+        const host = isRestore ? restoreReplacementHostEl : replacementHostEl;
+        if (replacementFeedbackEl.parentElement !== host) host.append(replacementFeedbackEl);
         pendingReplacement = {
             kind,
             replacement: F.cleanFavorites(replacement),
@@ -364,6 +377,7 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
         githubActionsEl.hidden = !connected;
         backupEl.disabled = githubBusy;
         restoreEl.disabled = githubBusy;
+        autoBackupEl.disabled = githubBusy;
         githubStatusEl.classList.remove('favorites-github-success');
         githubStatusEl.textContent = '';
         if (githubBusy) {
@@ -380,11 +394,9 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
                 }));
             }
         } else if (connected) {
-            githubStatusEl.textContent = `Save or restore this custom list in ${githubRepoName()}.`;
+            githubStatusEl.textContent = `Your custom list is stored as favorite-climbers.json in ${githubRepoName()}.`;
         } else {
-            githubStatusEl.append(Object.assign(document.createElement('a'), {
-                href: '#github-connection', textContent: 'Connect GitHub',
-            }), ' to move this custom list between browsers.');
+            githubStatusEl.textContent = 'Connect GitHub above to back up your custom favorites.';
         }
     };
 

@@ -202,10 +202,18 @@ test('settings are grouped by the surface they affect', async () => {
     assert.equal(favorites.querySelectorAll('#favorites-source-filter button').length, 3);
     assert.ok(favorites.querySelector('#favorites-list'));
     assert.match(favorites.querySelector('#favorites-add-form .desc').textContent,
-        /Stored only on this device unless you back it up to GitHub below\. Up to 1,500 climbers\./);
+        /Stored only on this device unless you back it up from Backup & sync\. Up to 1,500 climbers\./);
+    assert.equal(favorites.querySelector('#favorites-add-form .desc a').getAttribute('href'),
+        '#github-favorites-backup');
     assert.ok(github.querySelector('#github-backup #enable-github-backup'), 'GitHub backup lives in its subsection');
     assert.ok(github.querySelector('#github-settings-backup #settings-backup-export'));
     assert.ok(github.querySelector('#github-settings-backup #settings-backup-import'));
+    // Favorites backup is a Backup & sync concern, not part of the list editor.
+    assert.equal(favorites.querySelector('#favorites-backup'), null);
+    for (const id of ['favorites-github-status', 'favorites-backup', 'favorites-restore', 'favorites-auto-backup']) {
+        assert.ok(github.querySelector(`#github-favorites-backup #${id}`),
+            `${id} should belong to Favorite climbers backup`);
+    }
 });
 
 test('only interactive setting labels advertise a pointer cursor', async () => {
@@ -1091,6 +1099,8 @@ test('merge is additive while mirror requires destructive confirmation and suppo
 
     el(dom, 'favorites-mirror-buddies').click();
     await waitFor(dom, () => el(dom, 'favorites-mirror-confirmation').hidden === false);
+    assert.equal(el(dom, 'favorites-replacement-feedback').parentElement.id, 'favorites-replacement-host',
+        'the mirror confirmation stays beside the Mirror control');
     assert.equal(dom.chrome._localStore[favoriteKey].entries.length, 7,
         'loading the mirror preview must not mutate favorites');
     assert.equal(dom.chrome._localStore[favoriteKey].entries.some(entry => entry.cid === manual.cid), true);
@@ -1383,9 +1393,59 @@ test('connected GitHub actions work with ascent backup off and restore with Undo
         && el(dom, 'favorites-undo-all').hidden === false);
     assert.equal(el(dom, 'favorites-undo-all').hidden, false);
     assert.match(el(dom, 'favorites-undo-message').textContent, /restored from GitHub/);
-    assert.match(el(dom, 'favorites-github-status').textContent, /Save or restore/,
+    assert.match(el(dom, 'favorites-github-status').textContent, /stored as favorite-climbers\.json/,
         'the prior commit result must not imply that a changed local list is current');
     assert.equal(el(dom, 'favorites-github-status').querySelector('a'), null);
+
+    el(dom, 'favorites-undo-all-button').click();
+    await waitFor(dom, () => dom.chrome._localStore[favoriteKey]?.entries?.[0]?.cid === original.cid);
+});
+
+test('a restore from Backup & sync stays visible when the Buddy List source hides the list', async () => {
+    const original = { cid: 900002, name: 'Original Favorite', addedAt: 10, source: 'manual' };
+    const restored = { cid: 900003, name: 'Restored Favorite', addedAt: 20, source: 'buddy' };
+    const dom = await loadOptions({ favoritesSource: 'buddies' }, {
+        local: { [favoriteKey]: favoriteStore([original]) },
+        prepareChrome: chrome => {
+            chrome.permissions = { request: async () => true, contains: async () => true, remove: async () => true };
+            chrome.runtime.sendMessage = (message, callback) => {
+                let reply = {};
+                if (message.type === 'GITHUB_AUTH_STATUS') {
+                    reply = {
+                        enabled: true, connected: true, hasToken: true,
+                        repo: { owner: 'ada', name: 'peaks', fullName: 'ada/peaks' },
+                    };
+                }
+                if (message.type === 'GITHUB_FAVORITES_RESTORE') {
+                    reply = {
+                        ok: true,
+                        content: JSON.stringify({
+                            schemaVersion: 1,
+                            exportedAt: '2026-07-21T12:00:00.000Z',
+                            entries: [restored],
+                        }),
+                    };
+                }
+                if (typeof callback === 'function') Promise.resolve().then(() => callback(reply));
+                return Promise.resolve(reply);
+            };
+        },
+    });
+    await waitFor(dom, () => !el(dom, 'favorites-github-actions').hidden);
+    assert.equal(el(dom, 'favorites-custom-panel').hidden, true);
+
+    el(dom, 'favorites-restore').click();
+    await waitFor(dom, () => el(dom, 'favorites-mirror-confirmation').hidden === false);
+    assert.equal(el(dom, 'favorites-replacement-feedback').parentElement.id,
+        'favorites-restore-replacement-host');
+    assert.equal(el(dom, 'favorites-replacement-feedback').closest('#favorites-custom-panel'), null,
+        'the restore confirmation must not be trapped inside the hidden custom panel');
+
+    el(dom, 'favorites-mirror-confirm').click();
+    await waitFor(dom, () => dom.chrome._localStore[favoriteKey]?.entries?.[0]?.cid === restored.cid
+        && el(dom, 'favorites-undo-all').hidden === false);
+    assert.equal(el(dom, 'favorites-undo-all').closest('#favorites-custom-panel'), null,
+        'the undo that the confirmation promised must stay reachable');
 
     el(dom, 'favorites-undo-all-button').click();
     await waitFor(dom, () => dom.chrome._localStore[favoriteKey]?.entries?.[0]?.cid === original.cid);
@@ -1451,7 +1511,7 @@ test('favorites restore rejects a backup above the 1,500-entry bound', async () 
     assert.deepEqual(dom.chrome._localStore[favoriteKey].entries, [original]);
 });
 
-test('favorites points disconnected users to the shared GitHub connection instead of ascent backup', async () => {
+test('favorites points disconnected users to the GitHub connection above it', async () => {
     const dom = await loadOptions({ favoritesSource: 'custom' }, {
         prepareChrome: chrome => {
             chrome.permissions = { request: async () => true, contains: async () => true, remove: async () => true };
@@ -1464,10 +1524,13 @@ test('favorites points disconnected users to the shared GitHub connection instea
             };
         },
     });
-    await waitFor(dom, () => /move this custom list between browsers/.test(el(dom, 'favorites-github-status').textContent));
+    await waitFor(dom, () => /Connect GitHub above to back up your custom favorites/
+        .test(el(dom, 'favorites-github-status').textContent));
     assert.equal(el(dom, 'favorites-github-actions').hidden, true);
-    assert.equal(el(dom, 'favorites-github-status').querySelector('a').textContent, 'Connect GitHub');
-    assert.equal(el(dom, 'favorites-github-status').querySelector('a').getAttribute('href'), '#github-connection');
+    // The connection subsection is the first thing above this one in Backup & sync.
+    const section = dom.window.document.getElementById('github-favorites-backup');
+    assert.equal(section.previousElementSibling.id, 'github-settings-backup');
+    assert.equal(section.parentElement.querySelector('.subsection').id, 'github-connection');
 });
 
 test('report drafts render newest-first with labels, fallbacks, and edit links', async () => {
@@ -1716,7 +1779,7 @@ test('the sidebar exposes always-visible sub-links for the grouped sections', as
     const subLinks = Array.from(doc.querySelectorAll('.side-nav a.nav-subitem'));
     assert.deepEqual(subLinks.map(link => link.getAttribute('href')),
         ['#capture-gpx', '#capture-report', '#map-chart-chart', '#map-chart-map', '#github-connection',
-            '#github-settings-backup', '#github-backup']);
+            '#github-settings-backup', '#github-favorites-backup', '#github-backup']);
     for (const link of subLinks) {
         const target = doc.getElementById(link.getAttribute('href').slice(1));
         assert.ok(target && target.classList.contains('subsection'),

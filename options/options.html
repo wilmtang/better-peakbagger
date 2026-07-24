@@ -42,6 +42,7 @@
                 <ul class="nav-sublist">
                     <li><a class="nav-subitem" href="#github-connection">GitHub connection</a></li>
                     <li><a class="nav-subitem" href="#github-settings-backup">Settings backup</a></li>
+                    <li><a class="nav-subitem" href="#github-favorites-backup">Favorite climbers backup</a></li>
                     <li><a class="nav-subitem" href="#github-backup">Ascent backup</a></li>
                 </ul>
             </li>
@@ -372,7 +373,7 @@
                     <form id="favorites-add-form" class="favorites-add">
                         <label for="favorites-add-input">
                             <span class="title">Add a climber</span>
-                            <span class="desc">Paste a Peakbagger climber-page link or id. Stored only on this device unless you back it up to GitHub below. Up to <span id="favorites-limit"></span> climbers.</span>
+                            <span class="desc">Paste a Peakbagger climber-page link or id. Stored only on this device unless you back it up from <a href="#github-favorites-backup">Backup &amp; sync</a>. Up to <span id="favorites-limit"></span> climbers.</span>
                         </label>
                         <span class="favorites-add-controls">
                             <input id="favorites-add-input" type="text" inputmode="numeric" autocomplete="off" placeholder="Climber link or id">
@@ -393,19 +394,30 @@
                         </span>
                     </label>
                     <p class="favorites-status favorites-import-status" id="favorites-import-status" role="status" hidden></p>
-                    <div class="favorites-mirror-confirmation" id="favorites-mirror-confirmation"
-                        role="alertdialog" aria-labelledby="favorites-mirror-confirmation-title"
-                        aria-describedby="favorites-mirror-confirmation-detail" hidden>
-                        <div>
-                            <p class="favorites-mirror-confirmation-title" id="favorites-mirror-confirmation-title">Replace custom favorites?</p>
-                            <p class="favorites-mirror-confirmation-detail" id="favorites-mirror-confirmation-detail">
-                                <strong id="favorites-mirror-confirmation-impact"></strong>
-                                <span id="favorites-mirror-confirmation-summary"></span>
-                            </p>
-                        </div>
-                        <div class="favorites-mirror-confirmation-actions">
-                            <button id="favorites-mirror-cancel" class="secondary" type="button">Cancel</button>
-                            <button id="favorites-mirror-confirm" class="favorites-mirror-confirm" type="button">Replace custom list</button>
+                    <!-- Mirror is triggered here and GitHub restore from Backup &
+                         sync, so this one confirm-then-undo block moves between
+                         the two hosts to stay beside whichever control opened it. -->
+                    <div id="favorites-replacement-host">
+                        <div id="favorites-replacement-feedback">
+                            <div class="favorites-mirror-confirmation" id="favorites-mirror-confirmation"
+                                role="alertdialog" aria-labelledby="favorites-mirror-confirmation-title"
+                                aria-describedby="favorites-mirror-confirmation-detail" hidden>
+                                <div>
+                                    <p class="favorites-mirror-confirmation-title" id="favorites-mirror-confirmation-title">Replace custom favorites?</p>
+                                    <p class="favorites-mirror-confirmation-detail" id="favorites-mirror-confirmation-detail">
+                                        <strong id="favorites-mirror-confirmation-impact"></strong>
+                                        <span id="favorites-mirror-confirmation-summary"></span>
+                                    </p>
+                                </div>
+                                <div class="favorites-mirror-confirmation-actions">
+                                    <button id="favorites-mirror-cancel" class="secondary" type="button">Cancel</button>
+                                    <button id="favorites-mirror-confirm" class="favorites-mirror-confirm" type="button">Replace custom list</button>
+                                </div>
+                            </div>
+                            <div class="favorites-undo-all" id="favorites-undo-all" role="status" hidden>
+                                <span id="favorites-undo-message">Custom list replaced</span>
+                                <button class="favorite-undo" id="favorites-undo-all-button" type="button">Undo</button>
+                            </div>
                         </div>
                     </div>
                     <div class="favorites-list-toolbar">
@@ -442,24 +454,6 @@
                     </div>
                     <p class="favorites-empty" id="favorites-empty">No favorite climbers yet.</p>
                     <ul class="favorites-list" id="favorites-list" hidden></ul>
-                    <div class="favorites-undo-all" id="favorites-undo-all" role="status" hidden>
-                        <span id="favorites-undo-message">Custom list replaced</span>
-                        <button class="favorite-undo" id="favorites-undo-all-button" type="button">Undo</button>
-                    </div>
-                    <div class="favorites-github" id="favorites-github">
-                        <div>
-                            <span class="title">GitHub transfer</span>
-                            <p class="favorites-hint" id="favorites-github-status" role="status">Checking connection…</p>
-                        </div>
-                        <div class="favorites-github-actions" id="favorites-github-actions" hidden>
-                            <button id="favorites-backup" class="secondary" type="button">Back up favorites</button>
-                            <button id="favorites-restore" class="secondary" type="button">Restore from backup</button>
-                            <label class="check" for="favorites-auto-backup">
-                                <input type="checkbox" id="favorites-auto-backup">
-                                <span>Keep favorites backed up automatically</span>
-                            </label>
-                        </div>
-                    </div>
                 </div>
             </div>
         </section>
@@ -532,6 +526,29 @@
                             </label>
                         </div>
                     </div>
+                </div>
+            </div>
+
+            <div class="subsection" id="github-favorites-backup" role="group" aria-labelledby="github-favorites-backup-heading">
+                <h3 class="subsection-title" id="github-favorites-backup-heading">Favorite climbers backup</h3>
+                <div class="card">
+                    <div class="row">
+                        <div class="label">
+                            <span class="title">GitHub favorites backup</span>
+                            <span class="desc" id="favorites-github-status" role="status">Checking connection…</span>
+                        </div>
+                        <div class="control favorites-github-actions" id="favorites-github-actions" hidden>
+                            <div class="favorites-github-buttons">
+                                <button id="favorites-backup" class="secondary" type="button">Back up favorites</button>
+                                <button id="favorites-restore" class="secondary" type="button">Restore from backup</button>
+                            </div>
+                            <label class="check" for="favorites-auto-backup">
+                                <input type="checkbox" id="favorites-auto-backup">
+                                <span>Keep favorites backed up automatically</span>
+                            </label>
+                        </div>
+                    </div>
+                    <div id="favorites-restore-replacement-host"></div>
                 </div>
             </div>
 
