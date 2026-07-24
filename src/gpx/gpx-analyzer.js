@@ -78,17 +78,42 @@ const run = async () => {
     const BPB = (() => {
         const FALLBACK = { units: 'auto', theme: 'system', enable3dMap: false };
         let settings = null;
+        let confirmed = null;
+        let nextRequestId = 1;
+        const pending = new Map();
         const subs = new Set();
         let resolveReady;
         const ready = new Promise(r => { resolveReady = r; });
 
+        const sameSettings = (left, right) => {
+            if (!left || !right) return left === right;
+            const keys = new Set([...Object.keys(left), ...Object.keys(right)]);
+            return Array.from(keys).every(key => left[key] === right[key]);
+        };
+        const recompute = () => {
+            const previous = settings;
+            settings = { ...(confirmed || FALLBACK) };
+            for (const patch of pending.values()) Object.assign(settings, patch);
+            if (!sameSettings(previous, settings)) {
+                subs.forEach(fn => { try { fn(settings); } catch (e) { /* ignore */ } });
+            }
+        };
+
         window.addEventListener('message', event => {
             if (event.source !== window || event.origin !== location.origin) return;
             const data = event.data;
-            if (!data || data.__bpb !== true || data.dir !== 'toPage' || !data.settings) return;
-            settings = data.settings;
+            if (!data || data.__bpb !== true || data.dir !== 'toPage') return;
+            if (data.kind === 'setResult') {
+                if (!pending.has(data.requestId)) return;
+                pending.delete(data.requestId);
+                if (data.ok === true && data.settings) confirmed = data.settings;
+                recompute();
+                return;
+            }
+            if (!data.settings) return;
+            confirmed = data.settings;
+            recompute();
             resolveReady(settings);
-            subs.forEach(fn => { try { fn(settings); } catch (e) { /* ignore */ } });
         });
 
         return {
@@ -100,8 +125,10 @@ const run = async () => {
             },
             get: () => settings || FALLBACK,
             set: patch => {
+                const requestId = nextRequestId++;
+                pending.set(requestId, patch);
                 settings = { ...(settings || FALLBACK), ...patch };
-                window.postMessage({ __bpb: true, dir: 'toCS', kind: 'set', patch }, location.origin);
+                window.postMessage({ __bpb: true, dir: 'toCS', kind: 'set', requestId, patch }, location.origin);
             },
             subscribe: fn => { subs.add(fn); return () => subs.delete(fn); }
         };

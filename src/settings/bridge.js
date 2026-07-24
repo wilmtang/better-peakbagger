@@ -7,6 +7,8 @@
 // this bridge over window.postMessage:
 //   page -> bridge : { __bpb:true, dir:'toCS',   kind:'get' | 'set', patch }
 //   bridge -> page : { __bpb:true, dir:'toPage', settings }
+//                 or { __bpb:true, dir:'toPage', kind:'setResult',
+//                      requestId, ok, settings? }
 // The bridge also pushes updated settings to the page whenever storage changes
 // (options page, another tab), so the chart re-themes / re-units live.
 
@@ -22,7 +24,8 @@ import { settings as S } from './settings.js';
         'mapLastLayer'
     ]);
 
-    const send = settings => window.postMessage({ __bpb: true, dir: 'toPage', settings }, location.origin);
+    const send = (settings, detail = {}) =>
+        window.postMessage({ __bpb: true, dir: 'toPage', ...detail, ...(settings && { settings }) }, location.origin);
 
     window.addEventListener('message', async event => {
         if (event.source !== window || event.origin !== location.origin) return;
@@ -34,7 +37,15 @@ import { settings as S } from './settings.js';
         } else if (data.kind === 'set' && data.patch && typeof data.patch === 'object') {
             const patch = Object.fromEntries(Object.entries(data.patch)
                 .filter(([key]) => WRITABLE_KEYS.has(key)));
-            if (Object.keys(patch).length) await S.set(patch); // storage.onChanged -> subscribe -> pushes back to the page
+            if (!Object.keys(patch).length) return;
+            try {
+                const next = await S.set(patch);
+                send(next, { kind: 'setResult', requestId: data.requestId, ok: true });
+            } catch {
+                // The MAIN-world client keeps the last confirmed settings and
+                // uses this response to roll back its optimistic controls.
+                send(null, { kind: 'setResult', requestId: data.requestId, ok: false });
+            }
         }
     });
 

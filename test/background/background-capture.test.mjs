@@ -312,6 +312,36 @@ test('favorites mutations serialize in the worker and reject unrelated senders',
     assert.deepEqual(harness.localValues.bpbFavoriteClimbers.entries.map(entry => entry.cid), [82, 81]);
 });
 
+test('worker settings patches serialize and reject unrelated senders', async () => {
+    const harness = createHarness({ settings: { enable3dMap: false, units: 'imperial' } });
+    const patch = value => ({ type: 'SETTINGS_PATCH', patch: value });
+
+    const [fromOptions, fromPeakbagger] = await Promise.all([
+        harness.send(patch({ units: 'metric' }), {
+            url: 'chrome-extension://test-extension/options/options.html',
+        }),
+        harness.send(patch({ theme: 'dark' }), {
+            tab: { id: 5 },
+            url: 'https://www.peakbagger.com/climber/ascent.aspx?aid=99',
+        }),
+    ]);
+    const forbidden = await harness.send(patch({ enable3dMap: true }), {
+        tab: { id: 8 },
+        url: 'https://peakbagger.com.evil.example/climber/ascent.aspx?aid=99',
+    });
+
+    assert.equal(fromOptions.ok, true);
+    assert.equal(fromPeakbagger.ok, true);
+    assert.equal(forbidden.ok, false);
+    assert.equal(forbidden.error.code, 'forbidden');
+    // Both accepted patches survive: the queue composes them instead of letting
+    // the second write rebuild the record from a pre-first-write read.
+    assert.equal(harness.syncValues.bpbSettings.units, 'metric');
+    assert.equal(harness.syncValues.bpbSettings.theme, 'dark');
+    assert.equal(harness.syncValues.bpbSettings.enable3dMap, false,
+        'a rejected sender must not reach the feature gate');
+});
+
 test('Peakbagger login accepts signed-in account controls and reports ambiguous pages honestly', async () => {
     const accountControl = createHarness({
         loginHtml: '<a class="account" href="/climber/ClimberEdit.aspx?mode=profile&amp;cid=77">Edit Account</a>'

@@ -47,6 +47,7 @@ test('GPX analyzer adds a thick, segment-preserving route casing behind native L
     const { window } = dom;
     const polylineCalls = [];
     const sentPatches = [];
+    const sentSettingMessages = [];
     const terrainMessages = [];
     let chartConfig = null;
     const baseTileLayer = {
@@ -171,6 +172,7 @@ test('GPX analyzer adds a thick, segment-preserving route casing behind native L
         if (!message || message.dir !== 'toCS') return;
         if (message.kind === 'set') {
             sentPatches.push(message.patch);
+            sentSettingMessages.push(message);
             return;
         }
         if (message.kind !== 'get') return;
@@ -462,13 +464,31 @@ test('GPX analyzer adds a thick, segment-preserving route casing behind native L
         ['#347a3f', 7]
     ]);
 
+    const failedColorWrite = sentSettingMessages.at(-1);
+    window.dispatchEvent(new window.MessageEvent('message', {
+        source: window,
+        origin: window.location.origin,
+        data: {
+            __bpb: true,
+            dir: 'toPage',
+            kind: 'setResult',
+            requestId: failedColorWrite.requestId,
+            ok: false,
+        }
+    }));
+    await waitFor(dom, () => routeColor.value === '#2457a7');
+    assert.deepEqual(polylineCalls.slice(-2).map(call => [call.options.color, call.options.weight]), [
+        ['#f1eadc', 13],
+        ['#2457a7', 7]
+    ], 'a failed bridge write must roll the optimistic route color back');
+
     const reloadedMap = makeMap();
     Object.defineProperty(iframe, 'contentWindow', {
         configurable: true,
         value: { mapsPlaceholder: reloadedMap, L, L_MT: baseTileLayer, document: iframeDocument, location: { href: 'https://www.peakbagger.com/map/MasterMap.aspx' } }
     });
     iframe.dispatchEvent(new window.Event('load'));
-    await waitFor(dom, () => polylineCalls.length === 8);
+    await waitFor(dom, () => polylineCalls.length === 10);
 
     assert.equal(map.layers.length, 0, 'layers from the discarded map should be removed');
     assert.equal(reloadedMap.layers.length, 2, 'route casing should be recreated on the new map');

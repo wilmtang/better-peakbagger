@@ -58,14 +58,19 @@ export function initSettingsBackup({ extensionApi, flash, save }) {
 
     const repoName = () => OptionsUtils.githubRepoName(githubStatus);
 
-    const hideConfirmation = () => {
+    const hideConfirmation = ({ restoreFocus = true } = {}) => {
+        const returnFocus = pendingImport?.returnFocus;
         pendingImport = null;
         confirmationEl.hidden = true;
         confirmationNameEl.textContent = '';
+        confirmEl.disabled = false;
+        cancelEl.disabled = false;
+        confirmationEl.removeAttribute('aria-busy');
+        if (restoreFocus && returnFocus?.isConnected) returnFocus.focus();
     };
 
-    const showConfirmation = (name, settings, successMessage = 'Settings imported') => {
-        pendingImport = { settings, successMessage };
+    const showConfirmation = (name, settings, successMessage = 'Settings imported', returnFocus = importEl) => {
+        pendingImport = { settings, successMessage, returnFocus };
         confirmationNameEl.textContent = name;
         confirmationEl.hidden = false;
         confirmEl.focus();
@@ -105,16 +110,34 @@ export function initSettingsBackup({ extensionApi, flash, save }) {
             flash(invalidFileMessage(parsed.reason));
             return;
         }
-        showConfirmation(file.name || 'Selected settings file', parsed.settings);
+        showConfirmation(file.name || 'Selected settings file', parsed.settings, 'Settings imported', importEl);
     });
 
     cancelEl.addEventListener('click', hideConfirmation);
+    document.addEventListener('keydown', event => {
+        if (event.key !== 'Escape' || confirmationEl.hidden
+            || confirmationEl.getAttribute('aria-busy') === 'true') return;
+        event.preventDefault();
+        hideConfirmation();
+    });
     confirmEl.addEventListener('click', async () => {
         if (!pendingImport) return;
         const pending = pendingImport;
-        hideConfirmation();
-        await save(pending.settings);
-        flash(pending.successMessage);
+        confirmEl.disabled = true;
+        cancelEl.disabled = true;
+        confirmationEl.setAttribute('aria-busy', 'true');
+        try {
+            await save(pending.settings);
+            hideConfirmation();
+            flash(pending.successMessage);
+        } catch {
+            // Keep the parsed import in memory so a transient storage failure
+            // can be retried without making the user select/download it again.
+            confirmEl.disabled = false;
+            cancelEl.disabled = false;
+            confirmationEl.removeAttribute('aria-busy');
+            confirmEl.focus();
+        }
     });
 
     const renderGithub = () => {
@@ -203,7 +226,7 @@ export function initSettingsBackup({ extensionApi, flash, save }) {
             return;
         }
         showConfirmation(`settings.json from ${repoName()}`, parsed.settings,
-            `Settings restored from ${repoName()}`);
+            `Settings restored from ${repoName()}`, githubRestoreEl);
     }));
 
     autoBackupEl.addEventListener('change', () => {

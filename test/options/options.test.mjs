@@ -117,6 +117,20 @@ test('the authoritative theme refreshes the pre-paint cache', async () => {
     assert.equal(dom.window.localStorage.getItem('bpbThemePref'), 'dark');
 });
 
+test('a failed setting write restores the authoritative control value', async () => {
+    const dom = await loadOptions({ theme: 'dark' });
+    dom.chrome.storage.sync.get = async () => { throw new Error('sync read failed'); };
+    dom.chrome.storage.sync.set = async () => { throw new Error('sync write failed'); };
+    const theme = el(dom, 'theme');
+    theme.value = 'light';
+    theme.dispatchEvent(new dom.window.Event('change'));
+    await waitFor(dom, () => /couldn’t be saved/i.test(el(dom, 'status').textContent));
+
+    assert.equal(theme.value, 'dark');
+    assert.equal(dom.chrome._store.bpbSettings.theme, 'dark');
+    assert.equal(dom.window.document.documentElement.getAttribute('data-bpb-theme'), 'dark');
+});
+
 test('settings are grouped by the surface they affect', async () => {
     const dom = await loadOptions({});
     const sections = Array.from(dom.window.document.querySelectorAll('.settings-section'));
@@ -284,6 +298,118 @@ test('settings import replaces known settings only after inline confirmation', a
     assert.equal(el(dom, 'status').textContent, 'Settings imported');
 });
 
+test('settings import keeps its confirmation retryable when persistence fails', async () => {
+    let failWrite = true;
+    const dom = await loadOptions({ theme: 'dark', units: 'imperial' }, {
+        prepareChrome: chrome => {
+            const nativeSet = chrome.storage.sync.set;
+            chrome.storage.sync.set = async values => {
+                if (failWrite && values.bpbSettings?.theme === 'light') {
+                    throw new Error('sync write failed');
+                }
+                return nativeSet(values);
+            };
+        },
+    });
+    const input = el(dom, 'settings-backup-file');
+    const payload = settingsTransfer.buildPayload({ theme: 'light', units: 'metric' }, {
+        extensionVersion: '3.0.0',
+        exportedAt: '2026-07-22T12:00:00.000Z'
+    });
+    Object.defineProperty(input, 'files', {
+        configurable: true,
+        value: [{ name: 'trail-settings.json', text: async () => settingsTransfer.serialize(payload) }]
+    });
+
+    input.dispatchEvent(new dom.window.Event('change'));
+    await waitFor(dom, () => el(dom, 'settings-backup-confirmation').hidden === false);
+    el(dom, 'settings-backup-confirm').click();
+    await waitFor(dom, () => /couldn’t be saved/i.test(el(dom, 'status').textContent));
+
+    assert.equal(dom.chrome._store.bpbSettings.theme, 'dark');
+    assert.equal(el(dom, 'settings-backup-confirmation').hidden, false);
+    assert.equal(dom.window.document.activeElement, el(dom, 'settings-backup-confirm'));
+
+    failWrite = false;
+    el(dom, 'settings-backup-confirm').click();
+    await waitFor(dom, () => dom.chrome._store.bpbSettings.theme === 'light');
+    await waitFor(dom, () => el(dom, 'settings-backup-confirmation').hidden);
+    assert.equal(el(dom, 'settings-backup-confirmation').hidden, true);
+    assert.equal(dom.window.document.activeElement, el(dom, 'settings-backup-import'));
+    assert.equal(el(dom, 'status').textContent, 'Settings imported');
+});
+
+test('Escape cancels a settings import and restores focus to Import', async () => {
+    const dom = await loadOptions({ theme: 'dark' });
+    const input = el(dom, 'settings-backup-file');
+    const payload = settingsTransfer.buildPayload({ theme: 'light' }, {
+        extensionVersion: '3.0.0',
+        exportedAt: '2026-07-22T12:00:00.000Z'
+    });
+    Object.defineProperty(input, 'files', {
+        configurable: true,
+        value: [{ name: 'trail-settings.json', text: async () => settingsTransfer.serialize(payload) }]
+    });
+    input.dispatchEvent(new dom.window.Event('change'));
+    await waitFor(dom, () => el(dom, 'settings-backup-confirmation').hidden === false);
+
+    dom.window.document.dispatchEvent(new dom.window.KeyboardEvent('keydown', {
+        key: 'Escape',
+        bubbles: true,
+        cancelable: true,
+    }));
+
+    assert.equal(el(dom, 'settings-backup-confirmation').hidden, true);
+    assert.equal(dom.window.document.activeElement, el(dom, 'settings-backup-import'));
+    assert.equal(dom.chrome._store.bpbSettings.theme, 'dark');
+});
+
+test('Escape cannot visually cancel an import after its write has started', async () => {
+    let releaseWrite;
+    let writeStarted = false;
+    const writeGate = new Promise(resolve => { releaseWrite = resolve; });
+    const dom = await loadOptions({ theme: 'dark' }, {
+        prepareChrome: chrome => {
+            const nativeSet = chrome.storage.sync.set;
+            chrome.storage.sync.set = async values => {
+                if (values.bpbSettings?.theme === 'light') {
+                    writeStarted = true;
+                    await writeGate;
+                }
+                return nativeSet(values);
+            };
+        },
+    });
+    const input = el(dom, 'settings-backup-file');
+    const payload = settingsTransfer.buildPayload({ theme: 'light' }, {
+        extensionVersion: '3.0.0',
+        exportedAt: '2026-07-22T12:00:00.000Z'
+    });
+    Object.defineProperty(input, 'files', {
+        configurable: true,
+        value: [{ name: 'trail-settings.json', text: async () => settingsTransfer.serialize(payload) }]
+    });
+    input.dispatchEvent(new dom.window.Event('change'));
+    await waitFor(dom, () => el(dom, 'settings-backup-confirmation').hidden === false);
+
+    el(dom, 'settings-backup-confirm').click();
+    await waitFor(dom, () => writeStarted);
+    dom.window.document.dispatchEvent(new dom.window.KeyboardEvent('keydown', {
+        key: 'Escape',
+        bubbles: true,
+        cancelable: true,
+    }));
+
+    assert.equal(el(dom, 'settings-backup-confirmation').hidden, false);
+    assert.equal(el(dom, 'settings-backup-confirmation').getAttribute('aria-busy'), 'true');
+    assert.equal(dom.chrome._store.bpbSettings.theme, 'dark');
+
+    releaseWrite();
+    await waitFor(dom, () => dom.chrome._store.bpbSettings.theme === 'light');
+    await waitFor(dom, () => el(dom, 'settings-backup-confirmation').hidden);
+    assert.equal(el(dom, 'status').textContent, 'Settings imported');
+});
+
 test('settings import rejects invalid and newer files without changing settings', async () => {
     const dom = await loadOptions({ theme: 'dark' });
     const input = el(dom, 'settings-backup-file');
@@ -368,7 +494,9 @@ test('settings GitHub controls back up, confirm restore, and persist automatic b
 
     el(dom, 'settings-backup-confirm').click();
     await waitFor(dom, () => dom.chrome._store.bpbSettings.theme === 'light');
+    await waitFor(dom, () => el(dom, 'settings-backup-confirmation').hidden);
     assert.equal(dom.chrome._store.bpbSettings.units, 'metric');
+    assert.equal(dom.window.document.activeElement, el(dom, 'settings-backup-github-restore'));
     await waitFor(dom, () => /Stored as settings\.json/.test(el(dom, 'settings-backup-github-status').textContent));
     assert.equal(el(dom, 'settings-backup-github-status').querySelector('a'), null,
         'changing settings must clear the success state for the older payload');

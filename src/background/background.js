@@ -1091,10 +1091,22 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
             const githubHandler = githubRoutes.handlers[type];
             if (githubHandler) return githubHandler(message, sender);
             switch (type) {
+            case 'SETTINGS_PATCH':
+                // Settings and favorites share one sender gate: extension pages
+                // and the Peakbagger content scripts. Nothing else runs
+                // extension code, so the worker's mutation routes fail closed
+                // rather than trusting whatever reaches runtime messaging.
+                if (!isExtensionPage(sender) && !isPeakbaggerSender(sender)) {
+                    return {
+                        ok: false,
+                        error: {
+                            code: 'forbidden',
+                            message: 'This page cannot change settings.',
+                        },
+                    };
+                }
+                return { ok: true, settings: await Settings.applyPatch(message.patch) };
             case FavoritesStore.MESSAGE_TYPE:
-                // Only extension pages and the Peakbagger content scripts run
-                // extension code, so the mutation route fails closed rather
-                // than trusting whatever reaches runtime messaging.
                 if (!isExtensionPage(sender) && !isPeakbaggerSender(sender)) {
                     return {
                         ok: false,

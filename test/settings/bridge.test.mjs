@@ -11,21 +11,24 @@ import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
 import { makeChromeStub, waitFor, evalBundle } from '../helpers/load-page.mjs';
 
-const loadBridge = async () => {
+const loadBridge = async ({ failSet = false } = {}) => {
     const dom = new JSDOM('<!doctype html><body></body>', {
         url: 'https://www.peakbagger.com/climber/ascent.aspx?aid=1',
         runScripts: 'outside-only'
     });
     dom.chrome = makeChromeStub();
+    if (failSet) dom.chrome.storage.sync.set = async () => { throw new Error('sync storage unavailable'); };
     dom.window.chrome = dom.chrome;
+    dom.postedMessages = [];
+    dom.window.postMessage = message => { dom.postedMessages.push(message); };
     await evalBundle(dom.window, 'content/ascent-bridge.js');
     return dom;
 };
 
-const sendToBridge = (dom, patch) => dom.window.dispatchEvent(new dom.window.MessageEvent('message', {
+const sendToBridge = (dom, patch, requestId = 1) => dom.window.dispatchEvent(new dom.window.MessageEvent('message', {
     source: dom.window,
     origin: dom.window.location.origin,
-    data: { __bpb: true, dir: 'toCS', kind: 'set', patch }
+    data: { __bpb: true, dir: 'toCS', kind: 'set', requestId, patch }
 }));
 
 test('the bridge writes only analyzer-owned settings keys', async () => {
@@ -54,6 +57,22 @@ test('a patch containing no writable keys never reaches storage', async () => {
     const dom = await loadBridge();
     sendToBridge(dom, { enable3dMap: true, fillAscentDetails: false, fillTripInfo: false });
     await new Promise(resolve => setTimeout(resolve, 20));
+    assert.equal(dom.chrome._store.bpbSettings, undefined);
+    dom.window.close();
+});
+
+test('a failed settings write tells the page to roll back its optimistic patch', async () => {
+    const dom = await loadBridge({ failSet: true });
+    sendToBridge(dom, { units: 'metric' }, 17);
+    await waitFor(dom, () => dom.postedMessages.some(message =>
+        message.kind === 'setResult' && message.requestId === 17));
+
+    assert.deepEqual(
+        JSON.parse(JSON.stringify(
+            dom.postedMessages.find(message => message.kind === 'setResult' && message.requestId === 17),
+        )),
+        { __bpb: true, dir: 'toPage', kind: 'setResult', requestId: 17, ok: false },
+    );
     assert.equal(dom.chrome._store.bpbSettings, undefined);
     dom.window.close();
 });

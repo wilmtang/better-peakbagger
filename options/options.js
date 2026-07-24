@@ -94,7 +94,9 @@ import { initSectionNav } from './section-nav.js';
         else if (!show) cacheUsageRevision++;
     };
 
+    let confirmedSettings = null;
     const populate = settings => {
+        confirmedSettings = { ...settings };
         unitsEl.value = settings.units;
         themeEl.value = settings.theme;
         enable3dMapEl.checked = settings.enable3dMap;
@@ -130,13 +132,21 @@ import { initSectionNav } from './section-nav.js';
 
     let saveQueue = Promise.resolve();
     const save = patch => {
-        saveQueue = saveQueue.then(async () => {
+        const operation = saveQueue.then(async () => {
             const next = await S.set(patch);
+            confirmedSettings = { ...next };
             applyTheme(next.theme);
             flash();
             return next;
         });
-        return saveQueue;
+        saveQueue = operation.catch(() => {});
+        // Every control is optimistic. Restore the authoritative values and
+        // report the failure instead of leaving a toggle that never persisted.
+        operation.catch(() => {
+            if (confirmedSettings) populate(confirmedSettings);
+            flash('Settings couldn’t be saved. Try again.');
+        });
+        return operation;
     };
 
     // GitHub connection and ascent-backup setup own their panels together; the
@@ -161,9 +171,13 @@ import { initSectionNav } from './section-nav.js';
     fillExternalUrlEl.addEventListener('change', () => save({ fillExternalUrl: fillExternalUrlEl.checked }));
     chartSeriesEl.addEventListener('change', () => save({ chartDefaultSeries: chartSeriesEl.value }));
     mapRouteColorEl.addEventListener('change', () => save({ mapRouteColor: mapRouteColorEl.value }));
-    mapRouteWidthEl.addEventListener('change', () => save({ mapRouteWidth: mapRouteWidthEl.value }).then(populate));
+    mapRouteWidthEl.addEventListener('change', () => {
+        save({ mapRouteWidth: mapRouteWidthEl.value }).then(populate).catch(() => {});
+    });
     mapRouteCasingColorEl.addEventListener('change', () => save({ mapRouteCasingColor: mapRouteCasingColorEl.value }));
-    mapRouteCasingWidthEl.addEventListener('change', () => save({ mapRouteCasingWidth: mapRouteCasingWidthEl.value }).then(populate));
+    mapRouteCasingWidthEl.addEventListener('change', () => {
+        save({ mapRouteCasingWidth: mapRouteCasingWidthEl.value }).then(populate).catch(() => {});
+    });
     mapRouteResetEl.addEventListener('click', () => {
         save({
             mapRouteColor: S.DEFAULTS.mapRouteColor,
@@ -173,11 +187,17 @@ import { initSectionNav } from './section-nav.js';
         }).then(settings => {
             populate(settings);
             flash('Route appearance reset');
-        });
+        }).catch(() => {});
     });
-    mapViewportWidthEl.addEventListener('change', () => save({ mapViewportWidth: mapViewportWidthEl.value }).then(populate));
-    mapViewportHeightEl.addEventListener('change', () => save({ mapViewportHeight: mapViewportHeightEl.value }).then(populate));
-    terrainCacheLimitEl.addEventListener('change', () => save({ terrainCacheLimitMb: terrainCacheLimitEl.value }).then(populate));
+    mapViewportWidthEl.addEventListener('change', () => {
+        save({ mapViewportWidth: mapViewportWidthEl.value }).then(populate).catch(() => {});
+    });
+    mapViewportHeightEl.addEventListener('change', () => {
+        save({ mapViewportHeight: mapViewportHeightEl.value }).then(populate).catch(() => {});
+    });
+    terrainCacheLimitEl.addEventListener('change', () => {
+        save({ terrainCacheLimitMb: terrainCacheLimitEl.value }).then(populate).catch(() => {});
+    });
     mapViewportResetEl.addEventListener('click', () => {
         save({
             mapViewportWidth: S.DEFAULTS.mapViewportWidth,
@@ -185,7 +205,7 @@ import { initSectionNav } from './section-nav.js';
         }).then(settings => {
             populate(settings);
             flash('Map size reset');
-        });
+        }).catch(() => {});
     });
     rememberMapLayerEl.addEventListener('change', () => save({
         rememberMapLayer: rememberMapLayerEl.checked,

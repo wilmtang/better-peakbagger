@@ -46,8 +46,9 @@ flowchart TB
     providerPage -- "allowlisted analysis fields only" --> worker
     isolated <--> worker
     popup <--> worker
-    popup <--> sync
-    isolated <--> sync
+    sync -- "read + change notifications" --> popup
+    sync -- "read + change notifications" --> isolated
+    worker <--> sync
     worker <--> session
     worker <--> local
     worker <--> peakApi
@@ -238,6 +239,18 @@ frame can all import the same checks. `src/settings/settings.js` adds
 `chrome.storage.sync` access and subscription behavior; it does not redefine
 the schema.
 
+Reads are deliberately fail-soft: a surface can render schema defaults when
+sync storage is temporarily unavailable. Writes are deliberately not
+fail-soft. Every extension context sends a `SETTINGS_PATCH` operation to the
+background worker, whose single queue performs the authoritative
+read-clean-write sequence. A failed authoritative read or write rejects the
+operation; it must never turn fallback defaults into a replacement settings
+record. Callers retain their last confirmed settings for rollback and report
+the persistence failure rather than presenting an optimistic control as saved.
+`SETTINGS_PATCH` and `FAVORITES_MUTATE` share one sender gate — extension pages
+and the Peakbagger content scripts — so the worker's two mutation routes fail
+closed instead of trusting whatever reaches runtime messaging.
+
 Every value received through `window.postMessage` is untrusted and is cleaned
 again through the shared schema. Validation is intentionally idempotent: a
 value written by `settings.clean()` is accepted unchanged when a page-world or
@@ -250,6 +263,10 @@ and pushes live storage changes back to it. Page-world writes are restricted to
 the analyzer-owned controls: units, route/casing colors, map viewport size, and
 the remembered map layer. Theme, feature gates, capture privacy preferences,
 and every other setting remain writable only from extension-owned surfaces.
+Bridge writes carry request identities. The analyzer layers pending optimistic
+patches over its last confirmed settings; a failed worker operation removes
+only that patch and rolls the affected controls back without discarding a
+newer pending change.
 
 The BigMap and Peak-page bridges are read-only and send only the fields their
 coordinators need. `src/terrain/terrain-map.js` separately validates messages between a

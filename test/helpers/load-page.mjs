@@ -14,6 +14,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { JSDOM } from 'jsdom';
 import { createFavoritesStore, favoritesStore } from '../../src/background/favorites-store.js';
+import { settingsSchema } from '../../src/settings/settings-schema.js';
 
 const require = createRequire(import.meta.url);
 
@@ -85,19 +86,30 @@ export const makeChromeStub = (initial = {}, localInitial = {}) => {
         }
     };
     let delegatedSendMessage = async () => undefined;
+    let settingsPatchQueue = Promise.resolve();
     const favoriteMutations = createFavoritesStore({ storage: chrome.storage.local });
     const routedSendMessage = (message, callback) => {
-        if (message?.type !== favoritesStore.MESSAGE_TYPE) {
+        let operation;
+        if (message?.type === favoritesStore.MESSAGE_TYPE) {
+            chrome._favoriteMutations.push(structuredClone(message.mutation));
+            operation = favoriteMutations.mutate(message.mutation);
+        } else if (message?.type === 'SETTINGS_PATCH') {
+            operation = settingsPatchQueue.then(async () => {
+                const current = settingsSchema.clean(store.bpbSettings);
+                const next = settingsSchema.clean({ ...current, ...(message.patch || {}) });
+                await chrome.storage.sync.set({ bpbSettings: next });
+                return { ok: true, settings: next };
+            });
+            settingsPatchQueue = operation.catch(() => {});
+        } else {
             return delegatedSendMessage(message, callback);
         }
-        chrome._favoriteMutations.push(structuredClone(message.mutation));
-        const operation = favoriteMutations.mutate(message.mutation);
         if (typeof callback === 'function') operation.then(callback);
         return operation;
     };
     // Tests may replace sendMessage to script feature-specific worker replies.
-    // Keep favorites writes owned by a worker-like queue regardless, then
-    // delegate every other message to the test's handler.
+    // Keep settings and favorites writes owned by worker-like queues regardless,
+    // then delegate every other message to the test's handler.
     Object.defineProperty(chrome.runtime, 'sendMessage', {
         configurable: true,
         get: () => routedSendMessage,

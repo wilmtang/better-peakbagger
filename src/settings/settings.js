@@ -15,38 +15,96 @@
 import { settingsSchema as Schema } from './settings-schema.js';
 import { themeResolve as ThemeResolve } from '../theme/theme-resolve.js';
 
-    const api = (typeof browser !== 'undefined' && browser.storage) ? browser : chrome;
-    export const STORAGE_KEY = 'bpbSettings';
-    const { DEFAULTS, clean } = Schema;
+export const STORAGE_KEY = 'bpbSettings';
+const { DEFAULTS, clean } = Schema;
 
-    const resolveTheme = preference => ThemeResolve.resolve(preference);
+const resolveApi = () => {
+    if (typeof browser !== 'undefined' && browser.storage) return browser;
+    if (typeof chrome !== 'undefined' && chrome.storage) return chrome;
+    return null;
+};
+
+const unavailable = () => new Error('Settings storage is unavailable.');
+
+// The accessor is injectable so storage-failure and concurrency behavior can
+// be exercised without a browser. Runtime reads remain fail-soft: a page must
+// still render when sync storage is temporarily unavailable. Mutations are
+// deliberately strict, because building a write from those fallback defaults
+// would silently erase every setting that was not part of the patch.
+export const createSettingsStore = ({
+    area = resolveApi()?.storage?.sync || null,
+    onChanged = resolveApi()?.storage?.onChanged || null,
+    sendMessage = resolveApi()?.runtime?.sendMessage
+        ? message => resolveApi().runtime.sendMessage(message)
+        : null,
+} = {}) => {
+    let mutationQueue = Promise.resolve();
+
+    const read = async () => {
+        if (!area) throw unavailable();
+        const res = await area.get(STORAGE_KEY);
+        return clean(res && res[STORAGE_KEY]);
+    };
 
     const get = async () => {
         try {
-            const res = await api.storage.sync.get(STORAGE_KEY);
-            return clean(res && res[STORAGE_KEY]);
-        } catch (e) {
+            return await read();
+        } catch {
             return { ...DEFAULTS };
         }
     };
 
+    // Background-owned read-modify-write operation. The worker calls this for
+    // SETTINGS_PATCH messages, serializing patches from every extension
+    // context in one queue. Keeping this public also gives non-browser tests a
+    // strict mutation path without pretending a worker exists.
+    const applyPatch = patch => {
+        const operation = mutationQueue.then(async () => {
+            const current = await read();
+            const next = clean({
+                ...current,
+                ...(patch && typeof patch === 'object' && !Array.isArray(patch) ? patch : {}),
+            });
+            await area.set({ [STORAGE_KEY]: next });
+            return next;
+        });
+        mutationQueue = operation.catch(() => {});
+        return operation;
+    };
+
     const set = async patch => {
-        const next = clean({ ...(await get()), ...patch });
-        try { await api.storage.sync.set({ [STORAGE_KEY]: next }); } catch (e) { /* storage unavailable */ }
-        return next;
+        if (typeof sendMessage !== 'function') {
+            throw new Error('The settings worker route is unavailable.');
+        }
+        const response = await sendMessage({ type: 'SETTINGS_PATCH', patch });
+        if (response?.ok && response.settings) return clean(response.settings);
+        const message = response?.error?.message || 'The setting could not be saved.';
+        throw new Error(message);
     };
 
     // Fires cb(settings) whenever the stored settings change (e.g. from the
     // options page or another tab). Returns an unsubscribe function.
     const subscribe = cb => {
-        if (!api || !api.storage || !api.storage.onChanged) return () => {};
-        const handler = (changes, area) => {
-            if ((area === 'sync' || area === undefined) && changes[STORAGE_KEY]) {
+        if (!onChanged) return () => {};
+        const handler = (changes, areaName) => {
+            if ((areaName === 'sync' || areaName === undefined) && changes[STORAGE_KEY]) {
                 cb(clean(changes[STORAGE_KEY].newValue));
             }
         };
-        api.storage.onChanged.addListener(handler);
-        return () => api.storage.onChanged.removeListener(handler);
+        onChanged.addListener(handler);
+        return () => onChanged.removeListener(handler);
     };
 
-    export const settings = { STORAGE_KEY, DEFAULTS, clean, get, set, subscribe, resolveTheme };
+    return {
+        STORAGE_KEY,
+        DEFAULTS,
+        clean,
+        get,
+        set,
+        applyPatch,
+        subscribe,
+        resolveTheme: preference => ThemeResolve.resolve(preference),
+    };
+};
+
+export const settings = createSettingsStore();
