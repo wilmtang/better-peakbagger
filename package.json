@@ -3,6 +3,7 @@
   "version": "3.1.0",
   "description": "Captures Garmin and Strava into Peakbagger drafts, plus 3D maps, GPX analysis, beta filters, dark mode, and more.",
   "private": true,
+  "type": "module",
   "license": "AGPL-3.0-or-later",
   "author": "wilmtang",
   "homepage": "https://github.com/wilmtang/better-peakbagger",
