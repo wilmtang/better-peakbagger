@@ -2065,7 +2065,10 @@ test('the My Ascents action explains when Peakbagger is signed out', async () =>
 });
 
 test('the connected state exposes independent save and delete backup choices', async () => {
-    const dom = await loadOptions({ enableGithubBackup: true }, {
+    const dom = await loadOptions({
+        enableGithubBackup: true,
+        removeGithubBackupOnDelete: true,
+    }, {
         prepareChrome: withGithubBackground({
             enabled: true, connected: true, hasToken: true, auto: false,
             account: { login: 'ada' }, repo: { owner: 'ada', name: 'peaks', fullName: 'ada/peaks' },
@@ -2083,11 +2086,12 @@ test('the connected state exposes independent save and delete backup choices', a
 
     const deleteEl = el(dom, 'github-delete-backup');
     assert.ok(deleteEl, 'the deletion-mirroring checkbox is present when connected');
-    assert.equal(deleteEl.checked, false);
+    assert.equal(deleteEl.checked, true,
+        'a saved deletion-mirroring preference must survive Settings reload');
     assert.match(el(dom, 'github-ascent-panel').textContent, /Git history and your own files remain/);
 
-    deleteEl.checked = true;
+    deleteEl.checked = false;
     deleteEl.dispatchEvent(new dom.window.Event('change'));
     await new Promise(r => dom.window.setTimeout(r, 30));
-    assert.equal(dom.chrome._store.bpbSettings.removeGithubBackupOnDelete, true);
+    assert.equal(dom.chrome._store.bpbSettings.removeGithubBackupOnDelete, false);
 });

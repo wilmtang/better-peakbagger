@@ -560,6 +560,7 @@ export function initGithubBackup({ extensionApi, flash, save }) {
             currentSettings = {
                 enableGithubBackup: !!settings.enableGithubBackup,
                 autoGithubBackup: !!settings.autoGithubBackup,
+                removeGithubBackupOnDelete: !!settings.removeGithubBackupOnDelete,
             };
             enableEl.checked = currentSettings.enableGithubBackup;
             renderAscentStatus();
