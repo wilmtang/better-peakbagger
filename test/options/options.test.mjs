@@ -16,6 +16,7 @@ import { settingsSchema } from '../../src/settings/settings-schema.js';
 import { settingsTransfer } from '../../src/settings/settings-transfer.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+const optionsCss = await readFile(path.join(root, 'options', 'options.css'), 'utf8');
 const climberPageFixture = await readFile(path.join(root, 'test', 'fixtures', 'pages', 'climber-home.html'), 'utf8');
 const buddyPageFixture = await readFile(path.join(root, 'test', 'fixtures', 'pages', 'report-buddy-list.html'), 'utf8');
 const favoriteKey = 'bpbFavoriteClimbers';
@@ -186,6 +187,20 @@ test('settings are grouped by the surface they affect', async () => {
     assert.ok(github.querySelector('#github-backup #enable-github-backup'), 'GitHub backup lives in its subsection');
     assert.ok(github.querySelector('#github-settings-backup #settings-backup-export'));
     assert.ok(github.querySelector('#github-settings-backup #settings-backup-import'));
+});
+
+test('only interactive setting labels advertise a pointer cursor', async () => {
+    const dom = await loadOptions({});
+    const style = dom.window.document.createElement('style');
+    style.textContent = optionsCss;
+    dom.window.document.head.append(style);
+
+    assert.equal(dom.window.getComputedStyle(
+        dom.window.document.querySelector('label.label[for="theme"]')
+    ).cursor, 'pointer');
+    assert.notEqual(dom.window.getComputedStyle(
+        dom.window.document.querySelector('div.label')
+    ).cursor, 'pointer');
 });
 
 test('options sections log the missing ids before degrading to no-op controllers', async () => {
