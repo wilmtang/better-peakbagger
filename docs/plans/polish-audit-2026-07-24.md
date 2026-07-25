@@ -766,7 +766,7 @@ never on a fixed sleep"); it applies at least as strongly to shipped code.
 container plus the existing iframe `load` handler covers late frames without a
 wall-clock budget. Keep a generous ceiling as a backstop only.
 
-### F18 — Two tab-opening helpers with different failure behavior in one file
+### F18 — Two tab-opening helpers with different failure behavior in one file — **fixed**
 
 [options/github.js:73](../../options/github.js:73) defines `openTab` (uses
 `window.open`, and swallows a popup block in `catch { /* popup blocked */ }`)
@@ -778,6 +778,27 @@ github.com/login/device"** — the single action the whole device-flow depends o
 
 **Fix.** Route everything through `createTab` and report the failure the way the
 Peakbagger path already does.
+
+**Resolution.** All four GitHub URLs — the device page, the new-repository
+page, and both access pages — now go through a single `openExternal(url,
+description)` wrapper over `createTab`, which prefers `tabs.create` and so
+cannot be popup-blocked at all on an extension page. `openTab`'s
+`catch { /* popup blocked */ }` is gone, so the last-resort `window.open` path
+no longer swallows a throw either. Failures report through the settings page's
+error channel, which F2 made severity-aware and persistent — so this copy
+actually reaches the user rather than fading below the fold.
+
+One deliberate limit: with `noopener`, browsers return `null` from
+`window.open` on *success* as well as when blocked, so a blocked popup cannot
+be detected from the return value. That does not matter here, because the
+options page always has the `tabs` API and never reaches the fallback; dropping
+`noopener` to make the return value meaningful would hand `window.opener` to
+github.com, which is not a trade worth making.
+
+Regression test: `opening the GitHub device page uses tabs.create and reports a
+failure` installs a `window.open` that *throws* if taken, asserts the URL went
+through `tabs.create`, then makes `tabs.create` reject and asserts the alert
+region states it.
 
 ---
 

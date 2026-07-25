@@ -2112,6 +2112,53 @@ test('a lost device flow stops polling and offers to reconnect', async () => {
         .some(button => button.textContent === 'Reconnect GitHub'));
 });
 
+test('opening the GitHub device page uses tabs.create and reports a failure', async () => {
+    const created = [];
+    const dom = await loadOptions({ enableGithubBackup: true }, {
+        prepareChrome: chrome => {
+            chrome.permissions = { request: async () => true, contains: async () => true, remove: async () => true };
+            chrome.tabs = { create: async details => { created.push(details.url); } };
+            chrome.runtime.sendMessage = (message, callback) => {
+                let reply;
+                if (message.type === 'GITHUB_AUTH_STATUS') reply = { enabled: true, connected: false, hasToken: false };
+                else if (message.type === 'GITHUB_AUTH_BEGIN') reply = {
+                    phase: 'polling', userCode: 'ABCD-EFGH',
+                    verificationUri: 'https://github.com/login/device',
+                    expiresIn: 125, startedAt: Date.now(),
+                };
+                else reply = { phase: 'polling' };
+                if (typeof callback === 'function') Promise.resolve().then(() => callback(reply));
+                return Promise.resolve(reply);
+            };
+        },
+        prepareWindow: window => {
+            window.open = () => {
+                throw new Error('a popup-blocked window.open must never be the path taken');
+            };
+        },
+    });
+
+    Array.from(el(dom, 'github-panel').querySelectorAll('button'))
+        .find(button => button.textContent === 'Connect GitHub').click();
+    await waitFor(dom, () => el(dom, 'github-panel').querySelector('.github-code'));
+
+    const openButton = Array.from(el(dom, 'github-panel').querySelectorAll('button'))
+        .find(button => button.textContent === 'Open github.com/login/device');
+    assert.ok(openButton, 'the device flow depends on this single action');
+    openButton.click();
+    await waitFor(dom, () => created.length === 1);
+    assert.deepEqual(created, ['https://github.com/login/device'],
+        'GitHub URLs must go through tabs.create, which cannot be popup-blocked');
+
+    // And when even that fails, the user is told instead of nothing happening.
+    dom.chrome.tabs.create = async () => { throw new Error('tab creation refused'); };
+    openButton.click();
+    await waitFor(dom, () => /couldn’t be opened/.test(el(dom, 'status-error-text').textContent));
+    assert.match(el(dom, 'status-error-text').textContent,
+        /The GitHub device page couldn’t be opened/);
+    assert.equal(el(dom, 'status-error').hidden, false);
+});
+
 test('the device code is copyable and shows its remaining lifetime', async () => {
     const startedAt = Date.now();
     const dom = await loadOptions({ enableGithubBackup: true }, {

@@ -70,13 +70,26 @@ export function initGithubBackup({ extensionApi, flash, save }) {
     const el = Dom.element;
     const button = (label, { primary = false, onClick } = {}) =>
         el('button', { type: 'button', class: primary ? 'github-primary' : 'secondary', text: label, onclick: onClick });
-    const openTab = url => { try { window.open(url, '_blank', 'noopener'); } catch { /* popup blocked */ } };
+    // One way out to an external page. tabs.create is preferred and cannot be
+    // popup-blocked; window.open is the last resort for a context without the
+    // tabs API, and no longer swallows its failure — "Open
+    // github.com/login/device" is the single action the whole device flow
+    // depends on, so it must never do nothing without saying so.
+    const openTab = url => { window.open(url, '_blank', 'noopener'); };
     const createTab = async url => {
         if (extensionApi.tabs && typeof extensionApi.tabs.create === 'function') {
             await extensionApi.tabs.create({ url });
             return;
         }
         openTab(url);
+    };
+    const openExternal = async (url, description) => {
+        try {
+            await createTab(url);
+        } catch {
+            flash(`${description} couldn’t be opened. Check your browser settings, then try again.`,
+                { error: true });
+        }
     };
     const renderInto = (target, ...nodes) => { target.replaceChildren(...nodes.filter(Boolean)); };
     const render = (...nodes) => { renderInto(panelEl, ...nodes); };
@@ -127,7 +140,13 @@ export function initGithubBackup({ extensionApi, flash, save }) {
             el('p', { class: 'github-line', text: 'Enter this code on GitHub to authorize Better Peakbagger:' }),
             codeBox,
             el('div', { class: 'github-actions' }, [
-                button('Open github.com/login/device', { primary: true, onClick: () => openTab(code.verificationUriComplete || code.verificationUri || 'https://github.com/login/device') }),
+                button('Open github.com/login/device', {
+                    primary: true,
+                    onClick: () => openExternal(
+                        code.verificationUriComplete || code.verificationUri || 'https://github.com/login/device',
+                        'The GitHub device page'
+                    )
+                }),
                 button('Cancel', { onClick: cancelConnect }),
             ]),
             hint,
@@ -150,7 +169,7 @@ export function initGithubBackup({ extensionApi, flash, save }) {
         const installUrl = status.installUrl;
         const createButton = button('Create repository on GitHub', {
             primary: repos.length === 0,
-            onClick: () => openTab(newRepositoryUrl(status)),
+            onClick: () => openExternal(newRepositoryUrl(status), 'The new-repository page'),
         });
         if (repos.length) {
             const list = el('div', { class: 'github-repo-list', role: 'list' },
@@ -163,7 +182,7 @@ export function initGithubBackup({ extensionApi, flash, save }) {
                 list,
                 el('div', { class: 'github-actions' }, [
                     createButton,
-                    button('Change GitHub access', { onClick: () => openTab(installUrl) }),
+                    button('Change GitHub access', { onClick: () => openExternal(installUrl, 'The GitHub access page') }),
                 ]),
                 el('p', { class: 'github-hint', text: 'Created a new repository? Grant Better Peakbagger access to it on GitHub, then return here.' }),
             );
@@ -174,7 +193,7 @@ export function initGithubBackup({ extensionApi, flash, save }) {
             el('p', { class: 'github-line', text: 'Create a private backup repository, or grant access to one you already have.' }),
             el('div', { class: 'github-actions' }, [
                 createButton,
-                button('Grant repository access', { onClick: () => openTab(installUrl) }),
+                button('Grant repository access', { onClick: () => openExternal(installUrl, 'The GitHub access page') }),
                 button('Refresh list', { onClick: () => refreshRepos({ choose: true }) }),
             ]),
             el('p', { class: 'github-hint', text: 'After creating a repository, grant Better Peakbagger access to it. Return here and the list will refresh.' }),
