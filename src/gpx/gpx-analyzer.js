@@ -580,8 +580,7 @@ const run = async () => {
         let boundMapIframe = null;
         let boundMapLayerSelect = null;
         let mapLayerChangeHandler = null;
-        let mapRetryTimer = null;
-        let mapLayerRetryTimer = null;
+
         let terrainConsentPending = false;
         let terrainCompass = null;
 
@@ -937,34 +936,84 @@ const run = async () => {
             }
         };
 
-        function scheduleMapLayerSync() {
-            bindMapIframeLoad();
-            if (syncMapLayerPreference() || mapLayerRetryTimer) return;
+        // Both of these used to retry exactly 20 times at 250 ms and then stop.
+        // On a slow load that budget expired before Peakbagger's map frame was
+        // usable, so the route overlay never appeared and the remembered map
+        // layer was never applied — with no error, no retry, and no signal that
+        // a feature silently did not run. AGENTS.md makes this argument about
+        // test fixtures ("gate on the condition, never on a fixed sleep"); it
+        // applies at least as strongly here.
+        //
+        // So: gate on the condition. A MutationObserver reacts to Peakbagger
+        // swapping the frame in whenever that happens, the frame's own load
+        // handler covers reloads, and the interval is a backstop rather than
+        // the mechanism. The ceiling exists only so a page that will never
+        // satisfy the condition cannot leave an observer attached forever, and
+        // it says so in the log rather than expiring in silence.
+        const CONDITION_RETRY_MS = 250;
+        const CONDITION_CEILING_MS = 30000;
 
-            let attempts = 0;
-            mapLayerRetryTimer = setInterval(() => {
-                attempts++;
-                if (syncMapLayerPreference() || attempts >= 20) {
-                    clearInterval(mapLayerRetryTimer);
-                    mapLayerRetryTimer = null;
+        const createConditionRetry = (label, attempt) => {
+            let timer = null;
+            let observer = null;
+            let deadline = 0;
+
+            const stop = () => {
+                if (timer) { clearInterval(timer); timer = null; }
+                if (observer) { observer.disconnect(); observer = null; }
+            };
+
+            const satisfied = () => {
+                let done;
+                try {
+                    // Rebind first: a frame swapped in late is a new element.
+                    bindMapIframeLoad();
+                    done = attempt();
+                } catch (e) {
+                    // A torn-down document throws from these DOM reads. There
+                    // is nothing left to satisfy, so stop rather than raise
+                    // once per mutation on a page that is going away.
+                    done = true;
                 }
-            }, 250);
+                if (done) stop();
+                return done;
+            };
+
+            const start = () => {
+                if (satisfied()) return;
+                deadline = Date.now() + CONDITION_CEILING_MS;
+                if (!timer) {
+                    timer = setInterval(() => {
+                        if (satisfied()) return;
+                        if (Date.now() < deadline) return;
+                        stop();
+                        console.warn(`Better Peakbagger: gave up waiting for ${label}`);
+                    }, CONDITION_RETRY_MS);
+                }
+                if (!observer && typeof MutationObserver === 'function' && document.body) {
+                    observer = new MutationObserver(() => { satisfied(); });
+                    observer.observe(document.body, { childList: true, subtree: true });
+                }
+            };
+
+            return { start, stop };
+        };
+
+        const mapLayerRetry = createConditionRetry(
+            'the Peakbagger map frame’s layer picker', syncMapLayerPreference);
+        const routeOverlayRetry = createConditionRetry(
+            'the Peakbagger map frame to accept the route overlay', ensureRouteOverlay);
+
+        function scheduleMapLayerSync() {
+            mapLayerRetry.start();
         }
 
         function scheduleRouteOverlay() {
-            bindMapIframeLoad();
-            if (!mapRouteSegments.length) return;
-
-            if (ensureRouteOverlay() || mapRetryTimer) return;
-
-            let attempts = 0;
-            mapRetryTimer = setInterval(() => {
-                attempts++;
-                if (ensureRouteOverlay() || attempts >= 20) {
-                    clearInterval(mapRetryTimer);
-                    mapRetryTimer = null;
-                }
-            }, 250);
+            if (!mapRouteSegments.length) {
+                bindMapIframeLoad();
+                return;
+            }
+            routeOverlayRetry.start();
         }
 
         // 4. Chart & UI Renderer Engine

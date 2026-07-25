@@ -784,7 +784,7 @@ all edit these files) or decide it is options-page-only and say so in a comment.
 Do not leave the split undocumented. This is cleanup that should ride along with
 other work, never its own commit.
 
-### F17 — Fixed-attempt polling gives up silently
+### F17 — Fixed-attempt polling gives up silently — **fixed**
 
 [`scheduleRouteOverlay`](../../src/gpx/gpx-analyzer.js:934) and
 [`scheduleMapLayerSync`](../../src/gpx/gpx-analyzer.js:920) both retry
@@ -797,6 +797,22 @@ never on a fixed sleep"); it applies at least as strongly to shipped code.
 **Fix.** Gate on the condition instead: a `MutationObserver` on the map
 container plus the existing iframe `load` handler covers late frames without a
 wall-clock budget. Keep a generous ceiling as a backstop only.
+
+**Resolution.** Both schedulers now share one `createConditionRetry(label,
+attempt)` helper. A `MutationObserver` on `document.body` reacts to Peakbagger
+inserting or swapping the frame whenever that happens, the frame's own `load`
+handler still covers reloads, and the 250 ms interval is demoted to a backstop.
+The ceiling became 30 s of wall clock — its only job is to stop a page that can
+never satisfy the condition from holding an observer forever — and it
+`console.warn`s the named condition instead of expiring in silence. Each
+attempt re-runs `bindMapIframeLoad()` first, since a frame that arrives late is
+a new element, and a throw from a torn-down document stops the retry rather
+than raising once per mutation on a page that is going away.
+
+Regression test: `a map frame that arrives after the old retry budget still
+gets the overlay` inserts the map frame after **5.2 s** — past the old
+20 × 250 ms budget — and asserts the casing and route are still drawn.
+Confirmed to fail against the unfixed `gpx-analyzer.js` and pass with it.
 
 ### F18 — Two tab-opening helpers with different failure behavior in one file — **fixed**
 

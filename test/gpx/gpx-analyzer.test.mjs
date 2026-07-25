@@ -624,6 +624,89 @@ const loadOvernightAnalyzer = async ({ withTzLookup, elevations = [1000, 1200, 1
     return { dom, analysisText };
 };
 
+test('a map frame that arrives after the old retry budget still gets the overlay', async () => {
+    // The route overlay used to retry setInterval(250ms) exactly 20 times and
+    // then stop, so a frame Peakbagger inserted after ~5s never got an overlay
+    // — no error, no retry, no signal. The condition is now the gate.
+    const dom = new JSDOM(`<!doctype html><body>
+      <p>
+        GPS Waypoints - Hover or click to see name and lat/long<br>
+        <a href="https://www.peakbagger.com/map/BigMap.aspx">Click Here for a Full Screen Map</a><br>
+      </p>
+      <table><tr><td>Elevation:</td><td>2,000 m</td></tr></table>
+      <p><a href="https://www.peakbagger.com/demo.gpx">Download this GPS track</a></p>
+    </body>`, {
+        url: 'https://www.peakbagger.com/climber/ascent.aspx?aid=1',
+        runScripts: 'outside-only',
+        pretendToBeVisual: true
+    });
+    const { window } = dom;
+    const polylineCalls = [];
+    window.matchMedia = () => ({ matches: false });
+    window.HTMLCanvasElement.prototype.getContext = () => ({});
+    window.fetch = async url => ({
+        ok: true,
+        text: async () => (String(url).includes('/Async/PLLBB.aspx') ? '<ts></ts>' : gpx)
+    });
+    window.Chart = class ChartStub { destroy() {} update() {} setDatasetVisibility() {} isDatasetVisible() { return true; } };
+    window.postMessage = message => {
+        if (!message || message.dir !== 'toCS' || message.kind !== 'get') return;
+        window.queueMicrotask(() => window.dispatchEvent(new window.MessageEvent('message', {
+            source: window,
+            origin: window.location.origin,
+            data: { __bpb: true, dir: 'toPage', settings: { units: 'metric', theme: 'light' } }
+        })));
+    };
+
+    Object.defineProperty(window.document, 'readyState', { configurable: true, value: 'complete' });
+    window.eval(analyzerBundle);
+    await waitFor(dom, () => window.document.getElementById('bpb-gpx-analysis'));
+    assert.equal(polylineCalls.length, 0, 'there is no map frame to draw into yet');
+
+    // Well past 20 x 250ms of wall clock, Peakbagger finally inserts the frame.
+    await new Promise(resolve => setTimeout(resolve, 5200));
+    const map = {
+        layers: [],
+        _layers: {},
+        hasLayer: () => false,
+        getCenter: () => ({ lat: 48.72, lng: -121.79 }),
+        getZoom: () => 15,
+        setView() {},
+        invalidateSize() {},
+        removeLayer(layer) { this.layers = this.layers.filter(l => l !== layer); }
+    };
+    const L = {
+        Browser: { retina: false },
+        polyline(latLngs, options) {
+            const layer = {
+                _map: null,
+                addTo(target) { this._map = target; target.layers.push(this); return this; },
+                bringToBack() { return this; }
+            };
+            polylineCalls.push({ latLngs, options, layer });
+            return layer;
+        },
+        circleMarker() { throw new Error('not needed'); }
+    };
+    const iframe = window.document.createElement('iframe');
+    iframe.src = 'https://www.peakbagger.com/map/MasterMap.aspx?cy=48.7&cx=-121.8&z=14';
+    Object.defineProperty(iframe, 'contentWindow', {
+        configurable: true,
+        value: {
+            mapsPlaceholder: map, L,
+            document: { getElementById: () => null },
+            location: { href: 'https://www.peakbagger.com/map/MasterMap.aspx' }
+        }
+    });
+    window.document.body.appendChild(iframe);
+
+    // The MutationObserver notices the insertion; no fixed budget has to survive.
+    await waitFor(dom, () => polylineCalls.length >= 2);
+    assert.ok(polylineCalls.length >= 2, 'the late frame still received the casing and route');
+    assert.equal(map.layers.length, 2);
+    dom.window.close();
+});
+
 test('chart times use the mountain’s IANA timezone, not the viewer’s', async () => {
     const { dom, analysisText } = await loadOvernightAnalyzer({ withTzLookup: true });
 
