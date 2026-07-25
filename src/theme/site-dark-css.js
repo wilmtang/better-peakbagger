@@ -117,12 +117,15 @@ html[data-bpb-theme="dark"] [bgcolor="#f0f0f0"] {
     color: #c7c1b8 !important;
 }
 
-/* Form controls. Report-editor color swatches are semantic samples, so their
-   explicit backgrounds and component-owned borders must remain intact. */
-html[data-bpb-theme="dark"] input,
+/* Form controls. This is a blanket repaint of Peakbagger's own markup, so
+   extension-owned controls that carry their own theme opt out: report-editor
+   color swatches are semantic samples whose backgrounds and borders must stay
+   intact, and .pbaf-control marks the Ascent Beta Filter's controls, whose
+   complete light+dark theme lives in src/ascent/ascent-filter.js. */
+html[data-bpb-theme="dark"] input:not(.pbaf-control),
 html[data-bpb-theme="dark"] select,
 html[data-bpb-theme="dark"] textarea,
-html[data-bpb-theme="dark"] button:not(.bpb-re-swatch) {
+html[data-bpb-theme="dark"] button:not(.bpb-re-swatch):not(.pbaf-control) {
     background: #2b2f34 !important;
     color: #e6e1d8 !important;
     border: 1px solid #4a5058 !important;
@@ -130,44 +133,8 @@ html[data-bpb-theme="dark"] button:not(.bpb-re-swatch) {
 html[data-bpb-theme="dark"] input::placeholder,
 html[data-bpb-theme="dark"] textarea::placeholder { color: #9c968c !important; }
 
-/* --- Ascent Beta Filter bar (higher specificity than its own #pbaf-bar rules) --- */
-html[data-bpb-theme="dark"] #pbaf-bar {
-    background: #23262a !important;
-    border-color: #3a3f45 !important;
-    color: #c7c1b8 !important;
-    box-shadow: none !important;
-}
-html[data-bpb-theme="dark"] .pbaf-label { color: #9c968c !important; }
-html[data-bpb-theme="dark"] .pbaf-divider { background: #3a3f45 !important; }
-html[data-bpb-theme="dark"] .pbaf-chip {
-    background: #2b2f34 !important;
-    border-color: #4a5058 !important;
-    color: #d7d2c9 !important;
-}
-html[data-bpb-theme="dark"] .pbaf-chip:hover { border-color: #69b58a !important; color: #8fdcae !important; }
-html[data-bpb-theme="dark"] .pbaf-chip[aria-pressed="true"] {
-    background: #2f6b3f !important;
-    border-color: #3f8a54 !important;
-    color: #ffffff !important;
-}
-html[data-bpb-theme="dark"] .pbaf-chip .pbaf-count { color: #a29c92 !important; }
-html[data-bpb-theme="dark"] .pbaf-chip[aria-pressed="true"] .pbaf-count { color: #c9e8d4 !important; }
-html[data-bpb-theme="dark"] .pbaf-words { color: #b6b0a6 !important; }
-html[data-bpb-theme="dark"] .pbaf-words input {
-    background: #2b2f34 !important;
-    color: #e6e1d8 !important;
-    border-color: #4a5058 !important;
-}
-html[data-bpb-theme="dark"] .pbaf-status { color: #b6b0a6 !important; }
-html[data-bpb-theme="dark"] .pbaf-status b { color: #f0ece4 !important; }
-html[data-bpb-theme="dark"] .pbaf-reset { color: #a29c92 !important; }
-html[data-bpb-theme="dark"] .pbaf-reset:hover { color: #8fdcae !important; }
-html[data-bpb-theme="dark"] .pbaf-note { color: #b6b0a6 !important; }
-html[data-bpb-theme="dark"] .pbaf-note a { color: #8fdcae !important; }
-html[data-bpb-theme="dark"] button.pbaf-date-sort {
-    background: transparent !important;
-    border: 0 !important;
-    color: #7ab6ff !important;
-}
-html[data-bpb-theme="dark"] button.pbaf-date-sort:hover { color: #9ecbff !important; }
+/* The Ascent Beta Filter bar is deliberately absent here. Its theme — light
+   values and their dark counterparts — is owned entirely by the STYLE block in
+   src/ascent/ascent-filter.js, so a new control cannot ship with a light value
+   and no dark one. Do not reintroduce .pbaf-* rules in this file. */
 `;

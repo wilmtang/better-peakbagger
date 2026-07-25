@@ -350,7 +350,11 @@ import { numericParam, ownerClimberId } from '../profile/profile-backup-core.js'
         for (const column of sortable) {
             const control = document.createElement('button');
             control.type = 'button';
-            control.className = 'pbaf-table-sort' + (column.key === 'ascentdate' ? ' pbaf-date-sort' : '');
+            // pbaf-control marks every extension-owned control that the
+            // site-wide dark sheet's blanket button/input rules would otherwise
+            // repaint; those rules exempt it, so this file owns the bar's theme.
+            control.className = 'pbaf-table-sort pbaf-control'
+                + (column.key === 'ascentdate' ? ' pbaf-date-sort' : '');
             control.append(column.label);
             const arrow = document.createElement('span');
             arrow.className = 'pbaf-sort-arrow';
@@ -390,42 +394,106 @@ import { numericParam, ownerClimberId } from '../profile/profile-backup-core.js'
         return true;
     };
 
+    // The bar's complete theme — light values and their dark counterparts —
+    // lives here and nowhere else. It used to be split between this string and
+    // a block of per-property !important overrides in src/theme/site-dark-css.js,
+    // so every new control needed a developer to remember a second file and
+    // nothing failed when they didn't. Now dark mode is variable reassignment:
+    // a control with no dark value is impossible, because there is only one
+    // value to declare. test/theme/dark-contrast.test.mjs fails if any
+    // --pbaf-* token lacks a dark counterpart.
     const STYLE = `
+:root {
+    --pbaf-bar-bg: #fff;
+    --pbaf-bar-border: #d5d5d0;
+    --pbaf-bar-text: #333;
+    --pbaf-bar-shadow: 0 1px 3px rgba(0,0,0,.06);
+    --pbaf-label: #98988f;
+    --pbaf-chip-bg: #fff;
+    --pbaf-chip-border: #c8c8c2;
+    --pbaf-chip-text: #3d3d38;
+    --pbaf-chip-off-text: #666;
+    --pbaf-chip-on-bg: #2f6b3f;
+    --pbaf-chip-on-border: #2f6b3f;
+    --pbaf-chip-on-text: #fff;
+    --pbaf-count: #8b8b84;
+    --pbaf-count-on: #cfe3d4;
+    --pbaf-hover-border: #2f6b3f;
+    --pbaf-hover-text: #2f6b3f;
+    --pbaf-muted: #55554f;
+    --pbaf-input-text: #333;
+    --pbaf-strong: #141414;
+    --pbaf-reset-text: #666;
+    --pbaf-link: #2f6b3f;
+    --pbaf-sort-text: navy;
+    --pbaf-sort-hover: navy;
+    --pbaf-focus: #2f6b3f;
+}
+html[data-bpb-theme="dark"] {
+    --pbaf-bar-bg: #23262a;
+    --pbaf-bar-border: #3a3f45;
+    --pbaf-bar-text: #c7c1b8;
+    --pbaf-bar-shadow: none;
+    --pbaf-label: #9c968c;
+    --pbaf-chip-bg: #2b2f34;
+    --pbaf-chip-border: #4a5058;
+    --pbaf-chip-text: #d7d2c9;
+    --pbaf-chip-off-text: #a29c92;
+    --pbaf-chip-on-bg: #2f6b3f;
+    --pbaf-chip-on-border: #3f8a54;
+    --pbaf-chip-on-text: #ffffff;
+    --pbaf-count: #a29c92;
+    --pbaf-count-on: #c9e8d4;
+    --pbaf-hover-border: #69b58a;
+    --pbaf-hover-text: #8fdcae;
+    --pbaf-muted: #b6b0a6;
+    --pbaf-input-text: #e6e1d8;
+    --pbaf-strong: #f0ece4;
+    --pbaf-reset-text: #a29c92;
+    --pbaf-link: #8fdcae;
+    --pbaf-sort-text: #7ab6ff;
+    --pbaf-sort-hover: #9ecbff;
+    --pbaf-focus: #2f6b3f;
+}
 #pbaf-bar { position: sticky; top: 0; z-index: 400; box-sizing: border-box; margin: 10px 0; padding: 8px 12px;
-    background: #fff; border: 1px solid #d5d5d0; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,.06);
+    background: var(--pbaf-bar-bg); border: 1px solid var(--pbaf-bar-border); border-radius: 8px; box-shadow: var(--pbaf-bar-shadow);
     display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px;
-    font: 13px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; color: #333; }
+    font: 13px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; color: var(--pbaf-bar-text); }
 #pbaf-bar * { box-sizing: border-box; }
-.pbaf-label { font-size: 10px; font-weight: 700; letter-spacing: .08em; color: #98988f; text-transform: uppercase; margin-right: 2px; }
+.pbaf-label { font-size: 10px; font-weight: 700; letter-spacing: .08em; color: var(--pbaf-label); text-transform: uppercase; margin-right: 2px; }
 .pbaf-chip { appearance: none; display: inline-flex; align-items: center; gap: 5px; padding: 3px 11px;
-    border: 1px solid #c8c8c2; border-radius: 999px; background: #fff; color: #3d3d38; font: inherit; cursor: pointer;
+    border: 1px solid var(--pbaf-chip-border); border-radius: 999px; background: var(--pbaf-chip-bg); color: var(--pbaf-chip-text); font: inherit; cursor: pointer;
     transition: border-color .12s, background .12s, color .12s; user-select: none; }
-.pbaf-chip:hover { border-color: #2f6b3f; color: #2f6b3f; }
-.pbaf-chip:focus-visible { outline: 2px solid #2f6b3f; outline-offset: 2px; }
-.pbaf-chip[aria-pressed="true"] { background: #2f6b3f; border-color: #2f6b3f; color: #fff; }
-.pbaf-chip:disabled { cursor: default; opacity: .55; border-color: #c8c8c2; color: #666; }
-.pbaf-chip:disabled:hover { border-color: #c8c8c2; color: #666; }
-.pbaf-chip .pbaf-count { font-size: 11px; color: #8b8b84; font-variant-numeric: tabular-nums; }
-.pbaf-chip[aria-pressed="true"] .pbaf-count { color: #cfe3d4; }
+.pbaf-chip:hover { border-color: var(--pbaf-hover-border); color: var(--pbaf-hover-text); }
+.pbaf-chip:focus-visible { outline: 2px solid var(--pbaf-focus); outline-offset: 2px; }
+.pbaf-chip[aria-pressed="true"] { background: var(--pbaf-chip-on-bg); border-color: var(--pbaf-chip-on-border); color: var(--pbaf-chip-on-text); }
+.pbaf-chip:disabled { cursor: default; opacity: .55; border-color: var(--pbaf-chip-border); color: var(--pbaf-chip-off-text); }
+.pbaf-chip:disabled:hover { border-color: var(--pbaf-chip-border); color: var(--pbaf-chip-off-text); }
+.pbaf-chip .pbaf-count { font-size: 11px; color: var(--pbaf-count); font-variant-numeric: tabular-nums; }
+.pbaf-chip[aria-pressed="true"] .pbaf-count { color: var(--pbaf-count-on); }
 .pbaf-tick { display: none; font-weight: 700; }
 .pbaf-chip[aria-pressed="true"] .pbaf-tick { display: inline; }
-.pbaf-words { display: inline-flex; align-items: center; gap: 4px; color: #55554f; }
+.pbaf-words { display: inline-flex; align-items: center; gap: 4px; color: var(--pbaf-muted); }
 .pbaf-words[hidden] { display: none; }
-.pbaf-words input { width: 4.6em; padding: 2px 5px; border: 1px solid #c8c8c2; border-radius: 6px; font: inherit; color: #333; background: #fff; }
-.pbaf-words input:focus-visible { outline: 2px solid #2f6b3f; outline-offset: 1px; }
+.pbaf-words input { width: 4.6em; padding: 2px 5px; border: 1px solid var(--pbaf-chip-border); border-radius: 6px; font: inherit; color: var(--pbaf-input-text); background: var(--pbaf-chip-bg); }
+.pbaf-words input:focus-visible { outline: 2px solid var(--pbaf-focus); outline-offset: 1px; }
 .pbaf-spacer { flex: 1 1 auto; }
-.pbaf-status { color: #55554f; white-space: nowrap; }
-.pbaf-status b { color: #141414; font-weight: 600; font-variant-numeric: tabular-nums; }
-.pbaf-reset { appearance: none; border: none; background: none; padding: 0; font: inherit; color: #666;
+.pbaf-status { color: var(--pbaf-muted); white-space: nowrap; }
+.pbaf-status b { color: var(--pbaf-strong); font-weight: 600; font-variant-numeric: tabular-nums; }
+.pbaf-reset { appearance: none; border: none; background: none; padding: 0; font: inherit; color: var(--pbaf-reset-text);
     text-decoration: underline; text-underline-offset: 2px; cursor: pointer; white-space: nowrap; }
-.pbaf-reset:hover { color: #2f6b3f; }
-.pbaf-reset:focus-visible { outline: 2px solid #2f6b3f; outline-offset: 2px; }
+.pbaf-reset:hover { color: var(--pbaf-hover-text); }
+.pbaf-reset:focus-visible { outline: 2px solid var(--pbaf-focus); outline-offset: 2px; }
 .pbaf-reset[hidden] { display: none; }
-.pbaf-note { color: #55554f; }
-.pbaf-note a { color: #2f6b3f; font-weight: 600; }
-.pbaf-table-sort { appearance: none; border: 0; padding: 0; background: transparent; color: navy;
+.pbaf-note { color: var(--pbaf-muted); }
+/* The site sheet repaints every <a> with !important, and a link cannot carry
+   the pbaf-control exemption without also opting out of the site's link
+   semantics elsewhere; this one declaration outranks it from inside the bar. */
+#pbaf-bar .pbaf-note a { color: var(--pbaf-link) !important; font-weight: 600; }
+.pbaf-table-sort { appearance: none; border: 0; padding: 0; background: transparent; color: var(--pbaf-sort-text);
     font: inherit; font-weight: inherit; cursor: pointer; text-decoration: underline; text-underline-offset: 1px; }
-.pbaf-table-sort:focus-visible { outline: 2px solid #2f6b3f; outline-offset: 2px; }
+.pbaf-table-sort:hover { color: var(--pbaf-sort-hover); }
+.pbaf-table-sort:focus-visible { outline: 2px solid var(--pbaf-focus); outline-offset: 2px; }
 .pbaf-sort-arrow { font-size: 10px; opacity: .85; }
 `;
 
@@ -660,7 +728,7 @@ import { numericParam, ownerClimberId } from '../profile/profile-backup-core.js'
         const makeChip = (key, label, tooltip) => {
             const button = document.createElement('button');
             button.type = 'button';
-            button.className = 'pbaf-chip';
+            button.className = 'pbaf-chip pbaf-control';
             button.title = tooltip;
 
             const tick = document.createElement('span');
@@ -773,6 +841,7 @@ import { numericParam, ownerClimberId } from '../profile/profile-backup-core.js'
         wordsInput.min = '1';
         wordsInput.step = '1';
         wordsInput.inputMode = 'numeric';
+        wordsInput.className = 'pbaf-control';
         wordsInput.setAttribute('aria-label', 'Minimum trip report word count');
         wordsInput.value = String(Math.max(1, parseInt(state.minWords, 10) || 1));
         wordsWrap.append('≥ ', wordsInput, ' words');
@@ -792,7 +861,7 @@ import { numericParam, ownerClimberId } from '../profile/profile-backup-core.js'
 
         const resetButton = document.createElement('button');
         resetButton.type = 'button';
-        resetButton.className = 'pbaf-reset';
+        resetButton.className = 'pbaf-reset pbaf-control';
         resetButton.textContent = 'Show all';
         resetButton.title = 'Turn off all filters (remembered for future visits)';
         resetButton.addEventListener('click', () => {

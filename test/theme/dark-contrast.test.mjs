@@ -70,6 +70,59 @@ const bg = sel => {
     return v.split(/\s+/)[0];      // first token of a `background` shorthand
 };
 
+// --- The Ascent Beta Filter bar owns its own complete theme ------------------
+//
+// Its light values and their dark counterparts both live in the STYLE block of
+// src/ascent/ascent-filter.js, as --pbaf-* tokens reassigned under the dark
+// scope. Resolving them here means the numbers checked below are the ones the
+// browser computes, from the one file that declares them.
+const filterSource = await readFile(path.join(root, 'src/ascent/ascent-filter.js'), 'utf8');
+const BAR_CSS = filterSource
+    .match(/const STYLE = `([\s\S]*?)\n`;/)[1]
+    .replace(/\/\*[\s\S]*?\*\//g, '');
+
+const parseRules = css => {
+    const map = new Map();
+    for (const [, selText, declText] of css.matchAll(/([^{}]+)\{([^}]*)\}/g)) {
+        const decls = {};
+        for (const d of declText.split(';')) {
+            const i = d.indexOf(':');
+            if (i < 0) continue;
+            decls[d.slice(0, i).trim()] = d.slice(i + 1).replace(/!important/g, '').trim();
+        }
+        for (const sel of selText.split(',').map(s => s.trim()).filter(Boolean)) {
+            map.set(sel, { ...(map.get(sel) || {}), ...decls });
+        }
+    }
+    return map;
+};
+
+const BAR_RULES = parseRules(BAR_CSS);
+const barTokens = scope => Object.fromEntries(Object.entries(BAR_RULES.get(scope) || {})
+    .filter(([key]) => key.startsWith('--pbaf-')));
+const LIGHT_TOKENS = barTokens(':root');
+const DARK_TOKENS = barTokens(P);
+
+const resolveToken = (value, tokens) => {
+    const match = /^var\((--pbaf-[a-z-]+)\)$/.exec((value || '').trim());
+    if (!match) return value;
+    const resolved = tokens[match[1]];
+    assert.ok(resolved, `no dark value for token ${match[1]}`);
+    return resolved;
+};
+const barFg = (sel, tokens = DARK_TOKENS) => {
+    const d = BAR_RULES.get(sel);
+    assert.ok(d && d.color, `the filter bar declares no color for: ${sel}`);
+    return resolveToken(d.color, tokens);
+};
+const barBg = (sel, tokens = DARK_TOKENS) => {
+    const d = BAR_RULES.get(sel);
+    assert.ok(d, `the filter bar has no rule for background selector: ${sel}`);
+    const v = d['background-color'] || d.background;
+    assert.ok(v, `the filter bar declares no background for: ${sel}`);
+    return resolveToken(v.split(/\s+/)[0], tokens);
+};
+
 const NORMAL = 4.5;
 const LARGE = 3.0;   // >= 18pt, or >= 14pt bold — headings
 
@@ -86,32 +139,75 @@ const PAIRS = [
     ['h3',                   fg('h3'),                                      bg('body'),                                    LARGE],
     ['table th',             fg('th'),                                      bg('table.gray'),                              NORMAL],
     ['legacy bgcolor cell',  fg('[bgcolor="#FFFFFF"]'),                     bg('[bgcolor="#FFFFFF"]'),                     NORMAL],
-    ['input text',           fg('input'),                                   bg('input'),                                   NORMAL],
-    ['input placeholder',    fg('input::placeholder'),                      bg('input'),                                   NORMAL],
-    ['filter bar text',      fg('#pbaf-bar'),                               bg('#pbaf-bar'),                               NORMAL],
-    ['filter label',         fg('.pbaf-label'),                             bg('#pbaf-bar'),                               NORMAL],
-    ['chip text',            fg('.pbaf-chip'),                              bg('.pbaf-chip'),                              NORMAL],
-    ['chip hover text',      fg('.pbaf-chip:hover'),                        bg('.pbaf-chip'),                              NORMAL],
-    ['chip pressed text',    fg('.pbaf-chip[aria-pressed="true"]'),         bg('.pbaf-chip[aria-pressed="true"]'),         NORMAL],
-    ['chip count',           fg('.pbaf-chip .pbaf-count'),                  bg('.pbaf-chip'),                              NORMAL],
-    ['chip count pressed',   fg('.pbaf-chip[aria-pressed="true"] .pbaf-count'), bg('.pbaf-chip[aria-pressed="true"]'),     NORMAL],
-    ['filter words',         fg('.pbaf-words'),                             bg('#pbaf-bar'),                               NORMAL],
-    ['filter status',        fg('.pbaf-status'),                            bg('#pbaf-bar'),                               NORMAL],
-    ['filter status bold',   fg('.pbaf-status b'),                          bg('#pbaf-bar'),                               NORMAL],
-    ['filter reset',         fg('.pbaf-reset'),                             bg('#pbaf-bar'),                               NORMAL],
-    ['filter note',          fg('.pbaf-note'),                              bg('#pbaf-bar'),                               NORMAL],
-    ['filter note link',     fg('.pbaf-note a'),                            bg('#pbaf-bar'),                               NORMAL],
-    ['date sort control',    fg('button.pbaf-date-sort'),                   bg('table.gray'),                              NORMAL],
+    ['input text',           fg('input:not(.pbaf-control)'),                bg('input:not(.pbaf-control)'),                NORMAL],
+    ['input placeholder',    fg('input::placeholder'),                      bg('input:not(.pbaf-control)'),                NORMAL],
+    ['filter bar text',      barFg('#pbaf-bar'),                            barBg('#pbaf-bar'),                            NORMAL],
+    ['filter label',         barFg('.pbaf-label'),                          barBg('#pbaf-bar'),                            NORMAL],
+    ['chip text',            barFg('.pbaf-chip'),                           barBg('.pbaf-chip'),                           NORMAL],
+    ['chip hover text',      barFg('.pbaf-chip:hover'),                     barBg('.pbaf-chip'),                           NORMAL],
+    ['chip disabled text',   barFg('.pbaf-chip:disabled'),                  barBg('.pbaf-chip'),                           NORMAL],
+    ['chip pressed text',    barFg('.pbaf-chip[aria-pressed="true"]'),      barBg('.pbaf-chip[aria-pressed="true"]'),      NORMAL],
+    ['chip count',           barFg('.pbaf-chip .pbaf-count'),               barBg('.pbaf-chip'),                           NORMAL],
+    ['chip count pressed',   barFg('.pbaf-chip[aria-pressed="true"] .pbaf-count'), barBg('.pbaf-chip[aria-pressed="true"]'), NORMAL],
+    ['filter words',         barFg('.pbaf-words'),                          barBg('#pbaf-bar'),                            NORMAL],
+    ['filter words input',   barFg('.pbaf-words input'),                    barBg('.pbaf-words input'),                    NORMAL],
+    ['filter status',        barFg('.pbaf-status'),                         barBg('#pbaf-bar'),                            NORMAL],
+    ['filter status bold',   barFg('.pbaf-status b'),                       barBg('#pbaf-bar'),                            NORMAL],
+    ['filter reset',         barFg('.pbaf-reset'),                          barBg('#pbaf-bar'),                            NORMAL],
+    ['filter reset hover',   barFg('.pbaf-reset:hover'),                    barBg('#pbaf-bar'),                            NORMAL],
+    ['filter note',          barFg('.pbaf-note'),                           barBg('#pbaf-bar'),                            NORMAL],
+    ['filter note link',     barFg('#pbaf-bar .pbaf-note a'),               barBg('#pbaf-bar'),                            NORMAL],
+    // Every column control, not just the date one: the others used to fall
+    // through to the site sheet's blanket button rule and render as grey boxes.
+    ['sort control',         barFg('.pbaf-table-sort'),                     bg('table.gray'),                              NORMAL],
+    ['sort control hover',   barFg('.pbaf-table-sort:hover'),               bg('table.gray'),                              NORMAL],
+];
+
+// The same pairs must also hold in light mode, since one file now declares both.
+const LIGHT_PAIRS = [
+    ['light filter bar text', barFg('#pbaf-bar', LIGHT_TOKENS),             barBg('#pbaf-bar', LIGHT_TOKENS),              NORMAL],
+    ['light chip text',       barFg('.pbaf-chip', LIGHT_TOKENS),            barBg('.pbaf-chip', LIGHT_TOKENS),             NORMAL],
+    ['light chip pressed',    barFg('.pbaf-chip[aria-pressed="true"]', LIGHT_TOKENS), barBg('.pbaf-chip[aria-pressed="true"]', LIGHT_TOKENS), NORMAL],
+    ['light filter status',   barFg('.pbaf-status', LIGHT_TOKENS),          barBg('#pbaf-bar', LIGHT_TOKENS),              NORMAL],
+    ['light filter reset',    barFg('.pbaf-reset', LIGHT_TOKENS),           barBg('#pbaf-bar', LIGHT_TOKENS),              NORMAL],
 ];
 
 test('every dark-theme text/background pair meets WCAG AA', () => {
-    for (const [name, f, b, min] of PAIRS) {
+    for (const [name, f, b, min] of [...PAIRS, ...LIGHT_PAIRS]) {
         const ratio = contrast(f, b);
         assert.ok(
             ratio >= min,
             `${name}: ${f} on ${b} = ${ratio.toFixed(2)}:1 (need ${min}:1)`
         );
     }
+});
+
+test('every filter-bar theme token has a dark counterpart', () => {
+    // The invariant that retires F13's failure class: the bar's theme has one
+    // owner, so a control cannot ship with a light value and no dark one.
+    assert.ok(Object.keys(LIGHT_TOKENS).length >= 20, 'the bar palette should be tokenised');
+    for (const name of Object.keys(LIGHT_TOKENS)) {
+        assert.ok(DARK_TOKENS[name], `${name} has no dark value`);
+    }
+    for (const name of Object.keys(DARK_TOKENS)) {
+        assert.ok(LIGHT_TOKENS[name], `${name} has a dark value but no light one`);
+    }
+
+    // ...and every colour the bar paints goes through a token, so none can be
+    // hardcoded past the dark reassignment.
+    for (const [selector, declarations] of BAR_RULES) {
+        if (selector === ':root' || selector === P) continue;
+        for (const property of ['color', 'background', 'background-color', 'border-color']) {
+            const value = declarations[property];
+            if (!value || value === 'transparent' || value === 'none') continue;
+            assert.match(value, /var\(--pbaf-/,
+                `${selector} { ${property} } must use a --pbaf-* token, not ${value}`);
+        }
+    }
+
+    // The site-wide sheet must not take the bar's theme back over.
+    assert.doesNotMatch(CSS, /\.pbaf-(?!control)/,
+        'src/theme/site-dark-css.js must not declare filter-bar rules again');
 });
 
 test('the backup control light preference overrides every dark semantic color', async () => {
@@ -308,8 +404,23 @@ test('contrast pairs are grounded in real fixtures', async () => {
     // current capture exercises — its colors are still contrast-checked above.
     for (const sel of [
         '#pbaf-bar', '.pbaf-chip', '.pbaf-label', '.pbaf-count', '.pbaf-status', '.pbaf-reset',
-        '.pbaf-date-sort'
+        '.pbaf-date-sort', '.pbaf-table-sort', '.pbaf-control'
     ]) {
         assert.ok(matches(peak, sel), `filter bar element missing from fixture: "${sel}"`);
+    }
+
+    // Nothing in the bar's stylesheet may target an element the code no longer
+    // creates: a `.pbaf-divider` rule outlived its element and shipped for
+    // months without anything catching it.
+    const RENDERED_ONLY_ON_COMPACT_VIEW = new Set(['.pbaf-note']);
+    const styled = new Set();
+    for (const selector of BAR_RULES.keys()) {
+        for (const [, className] of selector.matchAll(/\.(pbaf-[a-z-]+)/g)) styled.add(`.${className}`);
+    }
+    assert.ok(styled.size >= 10, 'expected the bar stylesheet to name several classes');
+    for (const selector of styled) {
+        if (RENDERED_ONLY_ON_COMPACT_VIEW.has(selector)) continue;
+        assert.ok(matches(peak, selector),
+            `the filter-bar stylesheet styles "${selector}", which no fixture element matches`);
     }
 });

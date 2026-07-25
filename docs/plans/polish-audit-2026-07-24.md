@@ -440,7 +440,7 @@ and `popup gives up on a sustained poll outage with recoverable, plain copy`
 
 ## B. Dark mode and accessibility
 
-### F10 — Non-date sort headers become boxed buttons in dark mode — **verified**
+### F10 — Non-date sort headers become boxed buttons in dark mode — **verified** · **fixed**
 
 Every ascent-list column control is a `<button class="pbaf-table-sort">`; the
 date column additionally gets `pbaf-date-sort`
@@ -466,6 +466,13 @@ nothing catches it.
 **Fix.** Give `.pbaf-table-sort` a dark rule alongside `.pbaf-date-sort`, and
 extend the grounded-selector list in the contrast test to cover it.
 
+**Resolution.** Landed with the F13 consolidation, which is where the fix
+belongs — see [F13](#f13--the-beta-filter-bars-theme-has-two-owners-in-two-files--fixed)
+for the token change, the `pbaf-control` exemption that made the dark rule
+unnecessary rather than merely present, the extended contrast pairs, and the
+rendered dark PeakAscents check showing both header kinds now computing to the
+same colour, background, and border.
+
 ### F11 — Focus rings in the beta-filter bar fail WCAG AA in dark mode — **verified**
 
 `.pbaf-chip:focus-visible`, `.pbaf-reset:focus-visible`,
@@ -486,7 +493,7 @@ pairing table.
 and already in the palette) and add a non-text-contrast section to
 `dark-contrast.test.mjs` so focus rings are guarded the way text is.
 
-### F12 — A dark rule ships for an element the code no longer creates — **verified**
+### F12 — A dark rule ships for an element the code no longer creates — **verified** · **fixed**
 
 [site-dark-css.js:141](../../src/theme/site-dark-css.js:141) styles
 `.pbaf-divider`. That class appears nowhere in `ascent-filter.js`, and
@@ -497,11 +504,19 @@ bar. Dead CSS shipping in the injected stylesheet.
 class of problem — extend it to assert every `.pbaf-*` selector in the dark
 sheet matches a real element in a fixture.
 
+**Resolution.** The rule died with the F13 consolidation — the whole `.pbaf-*`
+block left `site-dark-css.js` and `.pbaf-divider` was not carried over. The
+guard the fix asks for is stronger than proposed: rather than extending a
+hand-maintained list, the grounding test now derives the styled class list from
+the bar stylesheet itself, so any future dead selector fails without anyone
+remembering to add it. Verified by temporarily re-adding a `.pbaf-divider`
+rule and watching the assertion fire.
+
 ---
 
 ## C. Structural stinks
 
-### F13 — The beta-filter bar's theme has two owners in two files
+### F13 — The beta-filter bar's theme has two owners in two files — **fixed**
 
 The light palette is a JS template string inside
 [`ascent-filter.js`](../../src/ascent/ascent-filter.js:393); the dark palette is
@@ -521,6 +536,66 @@ values supplied under the existing `html[data-bpb-theme="dark"]` scope. The
 `!important` overrides then collapse into variable reassignment, and a missing
 dark value becomes impossible rather than merely unlikely. This is the highest
 structural leverage in the plan — it retires a whole failure class.
+
+**Resolution — F13, F10, and F12 landed as one change**, because they are one
+change: the plan's own text says F10, F11, and F12 are instances of the split,
+and once the split is closed the missing dark values *are* the consolidation.
+Splitting them would have meant an intermediate commit where the non-date
+headers rendered navy-on-dark, which is worse than today.
+
+`src/ascent/ascent-filter.js`'s `STYLE` now declares **24 `--pbaf-*` tokens** on
+`:root` and reassigns every one of them under `html[data-bpb-theme="dark"]`, in
+the same string, adjacent to each other. Every rule reads a token. The bar's
+`.pbaf-*` block is deleted from `src/theme/site-dark-css.js`, which carries a
+comment saying not to reintroduce it.
+
+The blanket `input`/`button` repaint in the site sheet was the reason the old
+overrides needed `!important` at all, so extension-owned bar controls now opt
+out of it via a `pbaf-control` marker class — the same exemption idiom the sheet
+already used for `.bpb-re-swatch`, with the same rationale. That is what lets
+dark mode be pure variable reassignment. One `!important` survives, on
+`#pbaf-bar .pbaf-note a`, because a link cannot carry the exemption without also
+opting out of the site's link semantics elsewhere; it is commented in place.
+
+Two intentional behaviour changes fell out of the consolidation, both
+improvements: a disabled chip in dark mode now uses an explicitly muted
+`#a29c92` rather than the enabled colour at 55 % opacity, and non-date sort
+headers gained the hover colour the date header already had.
+
+Three new guards, all in `test/theme/dark-contrast.test.mjs`:
+
+1. The bar's contrast pairs are now resolved *through the tokens* out of
+   `ascent-filter.js` — the file that declares them — and the pair table grew
+   to cover `.pbaf-table-sort` (F10), its hover, the disabled chip, the words
+   input, and the reset hover. A parallel `LIGHT_PAIRS` table checks the same
+   pairs in light mode, since one file now owns both.
+2. `every filter-bar theme token has a dark counterpart` asserts the two token
+   sets match in both directions, that every colour the bar paints goes through
+   a token rather than a literal, and that `site-dark-css.js` declares no
+   `.pbaf-*` rules again.
+3. The grounding test now derives the class list from the stylesheet itself
+   instead of a hand-maintained array, so **any** styled `.pbaf-*` selector with
+   no matching fixture element fails. Re-adding a `.pbaf-divider` rule was
+   confirmed to fail it: *the filter-bar stylesheet styles ".pbaf-divider",
+   which no fixture element matches*.
+
+**Rendered verification** — the plan states a real dark PeakAscents render is
+the only thing that can prove F10, and the hidden verifiers cannot establish
+it. Done: headless Chrome for Testing, real unpacked `dist/`, the HTTPS fixture
+server from `scripts/browser-verification-fixtures.mjs` mapped to
+`www.peakbagger.com`, theme switched to Dark through the extension's own
+settings page, at `PeakAscents.aspx?pid=1039` (12 sort headers). Computed
+styles on the rendered page:
+
+```
+NON-DATE header : color rgb(122,182,255)  background rgba(0,0,0,0)  border none
+DATE header     : color rgb(122,182,255)  background rgba(0,0,0,0)  border none
+```
+
+Identical, against this finding's recorded before-state of `#e6e1d8` on
+`#2b2f34` with a `1px solid #4a5058` border. The screenshot confirms every
+column header is a bare underlined blue link, and the bar itself renders on
+`#23262a` with the pressed chip on `#2f6b3f`.
 
 ### F14 — `gpx-analyzer.js` is one 1,190-line closure with two theming systems
 
