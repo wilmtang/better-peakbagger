@@ -56,6 +56,16 @@ export function initGithubBackup({ extensionApi, flash, save }) {
     };
     let currentStatus = null;
     let currentAscentSummary = null;
+    // The summary costs a real GitHub API call (client.getAscentFolders), so it
+    // is cached with a short TTL rather than being invalidated whenever the
+    // window regains focus. A repository change and the explicit Try again
+    // control still force a refetch.
+    const ASCENT_SUMMARY_TTL_MS = 60_000;
+    let ascentSummaryAt = 0;
+    // Armed only when we send the user to GitHub, and disarmed once consumed.
+    let awaitingGithubReturn = false;
+    // A confirmation the user is reading must never be replaced underneath them.
+    let confirmingExistingRepo = false;
     let ascentSummaryRevision = 0;
     const stopPollTimer = () => { if (pollTimer) { clearTimeout(pollTimer); pollTimer = null; } };
     const stopTimers = () => {
@@ -83,9 +93,11 @@ export function initGithubBackup({ extensionApi, flash, save }) {
         }
         openTab(url);
     };
-    const openExternal = async (url, description) => {
+    const openExternal = async (url, description, { expectReturn = false } = {}) => {
         try {
             await createTab(url);
+            // Only a trip to GitHub arms the return check.
+            if (expectReturn) awaitingGithubReturn = true;
         } catch {
             flash(`${description} couldn’t be opened. Check your browser settings, then try again.`,
                 { error: true });
@@ -165,11 +177,12 @@ export function initGithubBackup({ extensionApi, flash, save }) {
 
     const renderChooseRepo = (status, discovery) => {
         choosingRepo = true;
+        confirmingExistingRepo = false;
         const repos = (discovery && discovery.repos) || [];
         const installUrl = status.installUrl;
         const createButton = button('Create repository on GitHub', {
             primary: repos.length === 0,
-            onClick: () => openExternal(newRepositoryUrl(status), 'The new-repository page'),
+            onClick: () => openExternal(newRepositoryUrl(status), 'The new-repository page', { expectReturn: true }),
         });
         if (repos.length) {
             const list = el('div', { class: 'github-repo-list', role: 'list' },
@@ -182,7 +195,9 @@ export function initGithubBackup({ extensionApi, flash, save }) {
                 list,
                 el('div', { class: 'github-actions' }, [
                     createButton,
-                    button('Change GitHub access', { onClick: () => openExternal(installUrl, 'The GitHub access page') }),
+                    button('Change GitHub access', {
+                        onClick: () => openExternal(installUrl, 'The GitHub access page', { expectReturn: true }),
+                    }),
                 ]),
                 el('p', { class: 'github-hint', text: 'Created a new repository? Grant Better Peakbagger access to it on GitHub, then return here.' }),
             );
@@ -193,7 +208,9 @@ export function initGithubBackup({ extensionApi, flash, save }) {
             el('p', { class: 'github-line', text: 'Create a private backup repository, or grant access to one you already have.' }),
             el('div', { class: 'github-actions' }, [
                 createButton,
-                button('Grant repository access', { onClick: () => openExternal(installUrl, 'The GitHub access page') }),
+                button('Grant repository access', {
+                    onClick: () => openExternal(installUrl, 'The GitHub access page', { expectReturn: true }),
+                }),
                 button('Refresh list', { onClick: () => refreshRepos({ choose: true }) }),
             ]),
             el('p', { class: 'github-hint', text: 'After creating a repository, grant Better Peakbagger access to it. Return here and the list will refresh.' }),
@@ -202,6 +219,7 @@ export function initGithubBackup({ extensionApi, flash, save }) {
 
     const renderExistingRepoConfirmation = repo => {
         choosingRepo = true;
+        confirmingExistingRepo = true;
         const fullName = repo.fullName || `${repo.owner}/${repo.name}`;
         render(
             el('p', { class: 'github-line', text: `${fullName} already contains files.` }),
@@ -224,6 +242,7 @@ export function initGithubBackup({ extensionApi, flash, save }) {
     // link sits here beside the account rather than inside ascent backup.
     const renderConnected = status => {
         choosingRepo = false;
+        confirmingExistingRepo = false;
         const who = status.account && status.account.login ? `@${status.account.login}` : 'GitHub';
         const repo = status.repo ? status.repo.fullName || `${status.repo.owner}/${status.repo.name}` : '';
         const url = repositoryUrl(status);
@@ -256,7 +275,7 @@ export function initGithubBackup({ extensionApi, flash, save }) {
                 document.createTextNode(' '),
                 el('button', {
                     type: 'button', class: 'github-link', text: 'Try again',
-                    onclick: () => { currentAscentSummary = null; void refreshAscentSummary(summaryEl, status); },
+                    onclick: () => { forgetAscentSummary(); void refreshAscentSummary(summaryEl, status); },
                 }),
             );
             return;
@@ -268,6 +287,10 @@ export function initGithubBackup({ extensionApi, flash, save }) {
             : `${count} ascent${count === 1 ? '' : 's'} backed up to ${repo}.`;
     };
 
+    const ascentSummaryFresh = () =>
+        !!currentAscentSummary && (Date.now() - ascentSummaryAt) < ASCENT_SUMMARY_TTL_MS;
+    const forgetAscentSummary = () => { currentAscentSummary = null; ascentSummaryAt = 0; };
+
     const refreshAscentSummary = async (summaryEl, status) => {
         const revision = ++ascentSummaryRevision;
         paintAscentSummary(summaryEl, status, null);
@@ -276,6 +299,7 @@ export function initGithubBackup({ extensionApi, flash, save }) {
         currentAscentSummary = response && typeof response === 'object'
             ? response
             : { ok: false, error: null };
+        ascentSummaryAt = Date.now();
         paintAscentSummary(summaryEl, status, currentAscentSummary);
     };
 
@@ -358,7 +382,7 @@ export function initGithubBackup({ extensionApi, flash, save }) {
             historyHint,
             historyStatus,
         );
-        if (currentAscentSummary) paintAscentSummary(summaryEl, status, currentAscentSummary);
+        if (ascentSummaryFresh()) paintAscentSummary(summaryEl, status, currentAscentSummary);
         else void refreshAscentSummary(summaryEl, status);
     };
 
@@ -384,7 +408,7 @@ export function initGithubBackup({ extensionApi, flash, save }) {
         const connectedRepo = value => value?.permissionGranted && value.connected
             ? `${value.repo?.owner || ''}/${value.repo?.name || ''}`
             : '';
-        if (connectedRepo(currentStatus) !== connectedRepo(status)) currentAscentSummary = null;
+        if (connectedRepo(currentStatus) !== connectedRepo(status)) forgetAscentSummary();
         currentStatus = status || null;
         renderAscentStatus();
         return currentStatus;
@@ -588,13 +612,17 @@ export function initGithubBackup({ extensionApi, flash, save }) {
         });
     });
 
-    // Returning from the GitHub install page: re-check repo access.
+    // This listener exists for exactly one reason: the user left for GitHub's
+    // install or new-repository page and came back. It used to run on every
+    // window focus, so with Settings open and ascent backup connected, each
+    // alt-tab back to the browser cost one GitHub API request and a visible
+    // "Checking…" flash — and could replace a confirmation mid-read.
     window.addEventListener('focus', () => {
-        if (!pollTimer) {
-            currentAscentSummary = null;
-            if (choosingRepo) void refreshRepos({ choose: true });
-            else void renderFromStatus();
-        }
+        if (pollTimer || !awaitingGithubReturn) return;
+        if (confirmingExistingRepo) return;
+        awaitingGithubReturn = false;
+        if (choosingRepo) void refreshRepos({ choose: true });
+        else void renderFromStatus();
     });
 
     // Connection state comes from the background and browser permission API;

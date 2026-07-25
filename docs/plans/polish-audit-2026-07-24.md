@@ -397,7 +397,7 @@ confirmed to fail against the unfixed `drafts.js` (`AssertionError: deleting a
 draft must not drop focus to the document body`) before being confirmed green
 with the fix.
 
-### F8 — The GitHub panel re-queries GitHub on every window focus, and can destroy a confirmation the user is reading
+### F8 — The GitHub panel re-queries GitHub on every window focus, and can destroy a confirmation the user is reading — **fixed**
 
 [github.js:573](../../options/github.js:573) listens on `window.focus`, clears
 `currentAscentSummary`, and re-runs the whole flow. `renderAscentConnected` then
@@ -420,6 +420,38 @@ GitHub's install page. Scope it to that — arm it when a GitHub tab is opened,
 disarm it once consumed — and never let it run while a confirmation is
 displayed. Cache the ascent summary with a short TTL rather than invalidating
 it on focus.
+
+**Resolution.** All three parts landed.
+
+- `awaitingGithubReturn` is armed only by `openExternal(..., { expectReturn:
+  true })`, which is passed at exactly the three destinations the user comes
+  back from — the new-repository page and both access pages. The device page is
+  not one, because the polling timer already guards that window. The flag is
+  consumed on the first qualifying focus.
+- `confirmingExistingRepo` is set by `renderExistingRepoConfirmation` and
+  cleared by `renderChooseRepo`/`renderConnected`. The listener returns early
+  while it is set, without consuming the armed flag.
+- The ascent summary gained a 60 s TTL (`ascentSummaryFresh`) instead of being
+  nulled on focus. A repository change and the explicit **Try again** control
+  still force a refetch through `forgetAscentSummary`.
+
+Three regression tests. `the connected ascent panel reports repository-backed
+progress and refreshes on focus` was rewritten — it asserted the old behaviour
+outright ("returning to Settings must re-read the repository summary"), which
+is the behaviour this finding says is wrong — and now asserts that three focus
+events cost no `GITHUB_ASCENT_BACKUP_SUMMARY` call and leave the cached text
+painted with no "Checking…" flash. `the GitHub panel re-checks access only
+after an actual round trip to GitHub` counts `GITHUB_AUTH_DISCOVER` — the
+repository-listing API call — across unarmed focus, an armed return, and
+disarming. The populated-repository test now dispatches a focus event mid-read
+and asserts the confirmation is still there.
+
+**Observation, not changed:** `options/settings-backup.js:236` also refreshes on
+every window focus. It sends `GITHUB_AUTH_STATUS`, which
+[`githubStatus`](../../src/background/github-routes.js:94) answers from
+`authStore.read()` and `Settings.get()` with no network call at all — so it
+does not carry the per-alt-tab API cost this finding is about, and was left
+alone rather than swept in.
 
 ### F9 — A transient poll failure declares the capture dead and shows browser-internal text — **fixed**
 

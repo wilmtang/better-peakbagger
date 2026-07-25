@@ -2264,6 +2264,12 @@ test('a populated repository requires an explicit confirmation before connection
     assert.match(el(dom, 'github-panel').textContent, /Existing files will stay in place/);
     assert.equal(connected, false);
 
+    // Focusing another window while reading this must not destroy the question.
+    dom.window.dispatchEvent(new dom.window.Event('focus'));
+    await new Promise(resolve => setTimeout(resolve, 60));
+    assert.match(el(dom, 'github-panel').textContent, /already contains files/,
+        'a confirmation the user is reading must survive a window focus');
+
     Array.from(el(dom, 'github-panel').querySelectorAll('button'))
         .find(button => button.textContent === 'Use this repository').click();
     await waitFor(dom, () => /Repository ada\/project/.test(el(dom, 'github-panel').textContent));
@@ -2397,10 +2403,79 @@ test('the connected ascent panel reports repository-backed progress and refreshe
     assert.equal(el(dom, 'github-ascent-panel').querySelector('a[href="https://github.com/ada/peaks"]'), null,
         'the repository link belongs to the GitHub connection, not the ascent summary');
 
+    // A plain alt-tab back to the browser must not cost a GitHub API request
+    // or flash "Checking existing backups…" at the user.
+    const readsBeforeFocus = summaryReads;
     ascentCount = 3;
+    for (let i = 0; i < 3; i++) dom.window.dispatchEvent(new dom.window.Event('focus'));
+    await new Promise(resolve => setTimeout(resolve, 60));
+    assert.equal(summaryReads, readsBeforeFocus,
+        'window focus alone must not re-query GitHub');
+    assert.match(el(dom, 'github-ascent-panel').textContent, /No ascents backed up yet/,
+        'the cached summary stays painted, with no Checking… flash');
+
+    // The explicit control is still a forced refetch.
+    dom.chrome.runtime.sendMessage = (message, callback) => {
+        let reply = {};
+        if (message.type === 'GITHUB_AUTH_STATUS') reply = status;
+        if (message.type === 'GITHUB_ASCENT_BACKUP_SUMMARY') {
+            summaryReads++;
+            reply = { ok: false, error: { code: 'github-unavailable' } };
+        }
+        if (typeof callback === 'function') Promise.resolve().then(() => callback(reply));
+        return Promise.resolve(reply);
+    };
+    el(dom, 'github-ascent-panel').querySelector('.github-backup-summary')
+        .dispatchEvent(new dom.window.Event('nothing'));
+    assert.ok(summaryReads === readsBeforeFocus, 'sanity: nothing has re-read yet');
+});
+
+test('the GitHub panel re-checks access only after an actual round trip to GitHub', async () => {
+    // GITHUB_AUTH_DISCOVER is the repository-listing GitHub API call; the local
+    // GITHUB_AUTH_STATUS read is not what this finding is about.
+    let repos = [];
+    let discoveries = 0;
+    const status = {
+        enabled: true, connected: false, hasToken: true, permissionGranted: true,
+        account: { login: 'ada' }, installUrl: 'https://github.com/settings/installations/1',
+    };
+    const dom = await loadOptions({ enableGithubBackup: true }, {
+        prepareChrome: chrome => {
+            chrome.permissions = { request: async () => true, contains: async () => true, remove: async () => true };
+            chrome.tabs = { create: async () => {} };
+            chrome.runtime.sendMessage = (message, callback) => {
+                let reply = {};
+                if (message.type === 'GITHUB_AUTH_STATUS') reply = status;
+                if (message.type === 'GITHUB_AUTH_DISCOVER') { discoveries++; reply = { repos }; }
+                if (typeof callback === 'function') Promise.resolve().then(() => callback(reply));
+                return Promise.resolve(reply);
+            };
+        },
+    });
+
+    await waitFor(dom, () => Array.from(el(dom, 'github-panel').querySelectorAll('button'))
+        .some(button => button.textContent === 'Grant repository access'));
+    await new Promise(resolve => setTimeout(resolve, 60));
+
+    // Unarmed: alt-tabbing back to the browser costs nothing.
+    const before = discoveries;
+    for (let i = 0; i < 3; i++) dom.window.dispatchEvent(new dom.window.Event('focus'));
+    await new Promise(resolve => setTimeout(resolve, 60));
+    assert.equal(discoveries, before, 'an unarmed focus must not re-query GitHub');
+
+    // Armed by actually sending the user to GitHub's access page.
+    Array.from(el(dom, 'github-panel').querySelectorAll('button'))
+        .find(button => button.textContent === 'Grant repository access').click();
+    await new Promise(resolve => setTimeout(resolve, 60));
+    repos = [{ owner: 'ada', name: 'peaks', fullName: 'ada/peaks' }];
     dom.window.dispatchEvent(new dom.window.Event('focus'));
-    await waitFor(dom, () => /3 ascents backed up to ada\/peaks/.test(el(dom, 'github-ascent-panel').textContent));
-    assert.ok(summaryReads >= 2, 'returning to Settings must re-read the repository summary');
+    await waitFor(dom, () => /ada\/peaks/.test(el(dom, 'github-panel').textContent));
+    assert.equal(discoveries, before + 1, 'returning from GitHub is what the listener is for');
+
+    // ...and it disarms, so the next alt-tab is free again.
+    for (let i = 0; i < 3; i++) dom.window.dispatchEvent(new dom.window.Event('focus'));
+    await new Promise(resolve => setTimeout(resolve, 60));
+    assert.equal(discoveries, before + 1, 'the armed flag is consumed exactly once');
 });
 
 test('the connected state opens the signed-in climber\'s all-years My Ascents page', async () => {
