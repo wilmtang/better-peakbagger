@@ -15,6 +15,7 @@
 
 import { gpxParse } from '../gpx/gpx-parse.js';
 import { settings as Settings } from '../settings/settings.js';
+import { units as Units } from '../ui/units.js';
 
 (() => {
     'use strict';
@@ -23,8 +24,6 @@ import { settings as Settings } from '../settings/settings.js';
     if (!ext) return;
 
     const pad = value => String(value).padStart(2, '0');
-    const METERS_PER_MILE = 1609.344;
-    const FEET_PER_METER = 3.28084;
 
     const localToday = (nowDate = new Date()) =>
         `${nowDate.getFullYear()}-${pad(nowDate.getMonth() + 1)}-${pad(nowDate.getDate())}`;
@@ -96,17 +95,12 @@ import { settings as Settings } from '../settings/settings.js';
         return 'imperial';
     };
 
-    const resolveDisplayUnits = settings => settings.units === 'metric' || settings.units === 'imperial'
-        ? settings.units
-        : detectPageUnits();
-
-    const formatTrackDistance = (meters, units) => units === 'metric'
-        ? `${(meters / 1000).toFixed(1)} km`
-        : `${(meters / METERS_PER_MILE).toFixed(1)} mi`;
-
-    const formatApproachDistance = (meters, units) => units === 'metric'
-        ? `${Math.round(meters)} m`
-        : `${Math.round(meters * FEET_PER_METER)} ft`;
+    // detectPageUnits stays here — it reads this page's own field order — and
+    // is handed to the shared resolver rather than reimplementing the
+    // preference logic beside it.
+    const resolveDisplayUnits = settings => Units.resolveUnits(settings, detectPageUnits);
+    const formatTrackDistance = Units.formatDistance;
+    const formatApproachDistance = Units.formatApproach;
 
     // ---- The ✦ Process button ---------------------------------------------
 

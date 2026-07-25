@@ -22,11 +22,11 @@ import { terrainBasemap } from '../terrain/terrain-basemap.js';
 import { terrainCompass as TerrainCompass } from '../terrain/terrain-compass.js';
 import { terrainCoordinator as TerrainCoordinator } from '../terrain/terrain-coordinator.js';
 import { terrainFailure as TerrainFailure } from '../terrain/terrain-failure.js';
+import { units as Units } from '../ui/units.js';
 
 // Chart and tzlookup remain separately-loaded vendor globals (see manifest).
 const run = async () => {
-    const METERS_PER_MILE = 1609.344;
-    const FEET_PER_METER = 3.28084;
+    const { METERS_PER_MILE, FEET_PER_METER } = Units;
     const MAP_VIEWPORT_MIN_WIDTH = Schema.BOUNDS.viewportWidth.min;
     const MAP_VIEWPORT_MAX_WIDTH = Schema.BOUNDS.viewportWidth.max;
     const MAP_VIEWPORT_MIN_HEIGHT = Schema.BOUNDS.viewportHeight.min;
@@ -154,12 +154,12 @@ const run = async () => {
         return !!(elevTd && elevTd.nextElementSibling && /^[\d,.]+\s*m/.test(elevTd.nextElementSibling.textContent.trim()));
     };
     const unitPreference = settings => Schema.clean(settings).units;
-    const resolveUnits = settings => {
-        const preference = unitPreference(settings);
-        return preference === 'metric' || preference === 'imperial'
-            ? preference
-            : (detectPageMetric() ? 'metric' : 'imperial');
-    };
+    // detectPageMetric reads this page's own Elevation cell; the preference
+    // logic around it belongs to the shared resolver, not to a second copy.
+    const resolveUnits = settings => Units.resolveUnits(
+        Schema.clean(settings),
+        () => (detectPageMetric() ? Units.METRIC : Units.IMPERIAL)
+    );
     // Which series to show on load. Only the initial visibility is bound to the
     // setting; the legend's own click handler toggles visibility for the current
     // view without writing it back, so a temporary peek never changes the pref.

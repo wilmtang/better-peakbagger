@@ -4,14 +4,15 @@
 // Fills a prepared Peakbagger ascent editor and submits each acknowledged
 // Preview once. A failed Preview can be retried explicitly; Save stays manual.
 
+import { units as Units } from '../ui/units.js';
+
 (() => {
     'use strict';
 
     const ext = globalThis.browser || globalThis.chrome;
     if (!ext) return;
 
-    const FEET_PER_METER = 3.28084;
-    const METERS_PER_MILE = 1609.344;
+    const { FEET_PER_METER, METERS_PER_MILE } = Units;
     const BANNER_ID = 'bpb-draft-banner';
     const BANNER_DISMISS_MS = 4000;
 

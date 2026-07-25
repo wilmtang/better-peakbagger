@@ -42,7 +42,7 @@ test('the worker ships as one bundle for both Chrome and Firefox', () => {
     assert.deepEqual(manifest.background.scripts, ['background.js']);
     // The fail-closed coordinator is composed from these modules, in order.
     assert.deepEqual(bundleSources('background.js'),
-        ['gpx/gpx-metrics.js', 'capture/capture-core.js', 'capture/capture-phases.js', 'capture/provider-url.js', 'terrain/terrain-tiles.js', 'terrain/terrain-cache.js', 'settings/settings-schema.js', 'settings/settings.js', 'settings/settings-transfer.js', 'favorites/favorite-climbers.js', 'github/github-errors.js', 'github/github-api.js', 'github/github-auth.js', 'github/github-client.js', 'github/github-write-queue.js', 'peakbagger/peakbagger-cloudflare.js', 'peakbagger/peakbagger-response.js', 'peakbagger/peakbagger-error.js', 'peakbagger/peakbagger-request.js', 'background/favorites-store.js', 'background/github-routes.js', 'background/terrain-prefetch.js', 'background/background.js']);
+        ['ui/units.js', 'gpx/gpx-metrics.js', 'capture/capture-core.js', 'capture/capture-phases.js', 'capture/provider-url.js', 'terrain/terrain-tiles.js', 'terrain/terrain-cache.js', 'settings/settings-schema.js', 'settings/settings.js', 'settings/settings-transfer.js', 'favorites/favorite-climbers.js', 'github/github-errors.js', 'github/github-api.js', 'github/github-auth.js', 'github/github-client.js', 'github/github-write-queue.js', 'peakbagger/peakbagger-cloudflare.js', 'peakbagger/peakbagger-response.js', 'peakbagger/peakbagger-error.js', 'peakbagger/peakbagger-request.js', 'background/favorites-store.js', 'background/github-routes.js', 'background/terrain-prefetch.js', 'background/background.js']);
     assert.deepEqual(bundleSources('provider-page.js'), ['capture/provider-url.js', 'gpx/gpx-parse.js', 'capture/provider-page.js']);
     assert.deepEqual(manifest.browser_specific_settings.gecko.data_collection_permissions.required, ['locationInfo']);
 });
@@ -76,7 +76,7 @@ test('3D terrain is isolated from Peakbagger globals in an extension-owned frame
     assert.ok(analyzerEntry);
     assert.equal(analyzerEntry.world, 'MAIN');
     assert.deepEqual(bundleSources('content/gpx-analyzer.js'),
-        ['gpx/gpx-metrics.js', 'terrain/terrain-basemap.js', 'terrain/terrain-camera.js', 'terrain/terrain-compass.js', 'terrain/terrain-coordinator.js', 'terrain/terrain-failure.js', 'maps/peak-markers.js', 'peakbagger/peakbagger-cloudflare.js', 'peakbagger/peakbagger-response.js', 'peakbagger/peakbagger-error.js', 'peakbagger/peakbagger-request.js', 'settings/settings-schema.js', 'theme/theme-resolve.js', 'gpx/gpx-analyzer.js']);
+        ['ui/units.js', 'gpx/gpx-metrics.js', 'terrain/terrain-basemap.js', 'terrain/terrain-camera.js', 'terrain/terrain-compass.js', 'terrain/terrain-coordinator.js', 'terrain/terrain-failure.js', 'maps/peak-markers.js', 'peakbagger/peakbagger-cloudflare.js', 'peakbagger/peakbagger-response.js', 'peakbagger/peakbagger-error.js', 'peakbagger/peakbagger-request.js', 'settings/settings-schema.js', 'theme/theme-resolve.js', 'gpx/gpx-analyzer.js']);
 
     const terrainEntry = manifest.content_scripts.find(entry =>
         entry.js.includes('content/terrain-map.js') && entry.matches.some(pattern => /ascent\.aspx/i.test(pattern)));
@@ -142,7 +142,7 @@ test('ascent editor integration is isolated to Peakbagger and runtime code never
     assert.deepEqual(draftEntry.js, ['vendor/marked.umd.js', 'vendor/tz-lookup.js', 'content/ascent-editor.js']);
     assert.deepEqual(draftEntry.css, ['css/report-editor.css', 'css/ascent-upload.css']);
     assert.deepEqual(bundleSources('content/ascent-editor.js'),
-        ['ascent/ascent-draft.js', 'gpx/gpx-parse.js', 'settings/settings-schema.js', 'settings/settings.js', 'ascent/ascent-upload.js', 'ascent/ascent-saved.js', 'ascent/ascent-delete.js', 'reports/report-markup.js', 'reports/report-drafts.js', 'ui/dom.js', 'reports/report-editor.js']);
+        ['ui/units.js', 'ascent/ascent-draft.js', 'gpx/gpx-parse.js', 'settings/settings-schema.js', 'settings/settings.js', 'ascent/ascent-upload.js', 'ascent/ascent-saved.js', 'ascent/ascent-delete.js', 'reports/report-markup.js', 'reports/report-drafts.js', 'ui/dom.js', 'reports/report-editor.js']);
     const runtimeSource = await Promise.all([
         'src/ascent/ascent-draft.js',
         'src/background/background.js',

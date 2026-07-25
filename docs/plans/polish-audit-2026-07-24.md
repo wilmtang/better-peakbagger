@@ -655,7 +655,7 @@ file the way `terrain-map.css` already works, so the JS palette can be deleted
 rather than duplicated. Hoist the iframe accessor to one memoized function.
 Fold `appliedSettings` into the `BPB` client so callers cannot forget it.
 
-### F15 — Unit conversion is duplicated four times, and "auto" is detected two different ways
+### F15 — Unit conversion is duplicated four times, and "auto" is detected two different ways — **fixed**
 
 `FEET_PER_METER = 3.28084` and `METERS_PER_MILE = 1609.344` are redeclared in
 `capture/capture-core.js`, `ascent/ascent-draft.js`, `ascent/ascent-upload.js`,
@@ -679,6 +679,32 @@ diverge"), and the 2026-07-23 round removed
 `formatElevation` / `formatApproach`, and a `resolveUnits(settings, probe)`
 that takes the page probe as an argument so each surface supplies its own
 detector against one contract. F3 consumes it from the popup.
+
+**Resolution.** `src/ui/units.js` exists as specified: no imports, no DOM, no
+extension APIs, which is what lets the background worker, both content-script
+worlds, and the popup all bundle it. `resolveUnits(settings, probe)` owns the
+preference logic; page *detection* stays with the surface that owns the page —
+`detectPageUnits` remains in `ascent-upload.js` and `detectPageMetric` in
+`gpx-analyzer.js`, each now passed in as the probe. All four duplications are
+gone: `capture-core.js`, `ascent-draft.js`, `ascent-upload.js`, and
+`gpx-analyzer.js` destructure the constants from the module.
+
+`scripts/build-config.mjs` — the source of truth for bundle composition — adds
+`ui/units.js` ahead of its consumers in the worker, ascent-editor, and
+MAIN-world analyzer bundles. The three pinned composition assertions in
+`test/project/manifest-capture.test.mjs` failed until updated, which is that
+guard working as intended.
+
+`test/ui/units.test.mjs` covers exact constants, explicit preference beating
+the probe, `auto` deferring to the probe, and the imperial fallback for a
+surface with no page (the popup) or an inconclusive probe. Two structural
+guards make the duplication unable to return: one walks every `src/` and page
+module asserting no file except `units.js` contains `3.28084` or `1609.344`,
+and one asserts both page surfaces resolve through `Units.resolveUnits` and do
+not re-derive the explicit-preference branch. Structural rather than
+differential, because the two heuristics run on different pages and so cannot
+be compared against each other — which is the whole reason a divergence would
+have shipped unnoticed.
 
 ### F16 — The shared DOM builder is adopted by a quarter of the UI
 
