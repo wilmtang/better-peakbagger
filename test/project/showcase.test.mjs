@@ -135,3 +135,56 @@ test('every harness page loads the providers its scripts hard-require, in order'
     }
     assert.deepEqual(problems, [], `harness pages drifted from the module graph:\n${problems.join('\n')}`);
 });
+
+// Every script that serves the showcase to a real browser must do so over HTTPS
+// on a Peakbagger hostname. src/peakbagger/peakbagger-request.js refuses any URL
+// whose protocol is not https: or whose host is not Peakbagger's — a deliberate
+// security property — and the GPX Analyzer fetches its track through that guard.
+// Served over http://, the analyzer panel renders "Better Peakbagger refused an
+// invalid Peakbagger request.", the route never loads, and the 3D toggle stays
+// disabled: terrain:verify and terrain:verify:firefox time out, and
+// showcase:render writes that refusal into the store listing screenshots.
+const FIXTURE_SERVERS = [
+    'scripts/verify-terrain-visual.mjs',
+    'scripts/verify-firefox-terrain.mjs',
+    'scripts/render-showcase.mjs',
+];
+
+test('every showcase server speaks HTTPS on a Peakbagger host, or the analyzer refuses its own GPX', async () => {
+    const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+    for (const relative of FIXTURE_SERVERS) {
+        const source = await readFile(path.join(root, relative), 'utf8');
+        assert.match(source, /from ['"]node:https['"]/,
+            `${relative} must serve the showcase over HTTPS`);
+        assert.doesNotMatch(source, /from ['"]node:http['"]/,
+            `${relative} must not fall back to a plain HTTP fixture server`);
+        assert.match(source, /peakbagger\.com/,
+            `${relative} must serve from a Peakbagger hostname`);
+        // Every showcase URL the browser is pointed at. Chrome's own CDP
+        // endpoint on 127.0.0.1 is a control channel, not a page under test,
+        // and stays plain HTTP.
+        const plainShowcaseUrls = (source.match(/http:\/\/[^\s'"`)]+/g) || [])
+            .filter(value => !value.startsWith('http://127.0.0.1'))
+            .filter(value => !value.startsWith('http://www.w3.org'));
+        assert.deepEqual(plainShowcaseUrls, [],
+            `${relative} points a browser at a plain-HTTP showcase URL: ${plainShowcaseUrls.join(', ')}`);
+        // A self-signed fixture certificate is disposable and must be removed.
+        assert.match(source, /openssl/, `${relative} must mint its own fixture certificate`);
+        assert.match(source, /rm\(\s*certificate/i,
+            `${relative} must delete its fixture key and certificate after the run`);
+    }
+});
+
+test('the request guard that makes the HTTPS fixture necessary is still in force', async () => {
+    const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+    const { fetchPeakbaggerResource } = await import(
+        new URL('../../src/peakbagger/peakbagger-request.js', import.meta.url).href);
+    let called = false;
+    const overHttp = await fetchPeakbaggerResource('http://www.peakbagger.com/scripts/showcase/terrain.gpx', {
+        kind: 'gpx', fetchFn: async () => { called = true; },
+    });
+    assert.equal(overHttp.error.code, 'invalid-request',
+        'plain HTTP must stay refused — the fixtures serve HTTPS because of this, not the reverse');
+    assert.equal(called, false, 'and it must fail before any fetch');
+    assert.ok(root);
+});

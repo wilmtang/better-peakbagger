@@ -530,8 +530,15 @@ receiver check.
 | `npm run terrain:verify` | Real packaged MapLibre frame in hidden Chrome on asserted hardware GPU; route, drape, pending-drape boot, compass placement, context-loss fallback | Real storage/settings bridge, live Mapterhorn or Peakbagger services, native focus |
 | `npm run terrain:verify:firefox` | Focused Firefox hardware-WebGL terrain and interaction | Full extension workflow or live services |
 
-The terrain showcase intentionally stubs storage and bridge protocol. A green
-GPU run cannot establish that the manifest loaded the real isolated bridge.
+The terrain showcase intentionally stubs storage and bridge protocol, but it is
+served over HTTPS on `www.peakbagger.com` rather than `http://localhost`,
+because `src/peakbagger/peakbagger-request.js` refuses any other origin and the
+analyzer fetches its GPX through that guard. Over plain HTTP the route never
+loads and every terrain check times out; see *A plain-HTTP fixture breaks these
+checks* in [`development.md`](development.md).
+
+A green GPU run cannot establish that the manifest loaded the real isolated
+bridge.
 Conversely, a green real-extension run can establish injection and handshakes
 without exercising the true MapLibre GPU path. Both are required after changes
 to shared terrain bundle composition or load order.

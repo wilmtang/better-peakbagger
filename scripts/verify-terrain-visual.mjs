@@ -2,9 +2,11 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+import { execFile } from 'node:child_process';
 import { spawn } from 'node:child_process';
-import { createServer } from 'node:http';
+import { createServer } from 'node:https';
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { promisify } from 'node:util';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -16,6 +18,8 @@ const chromePath = process.env.CHROME_BIN || ({
     win32: path.join(process.env.PROGRAMFILES || 'C:\\Program Files', 'Google/Chrome/Application/chrome.exe')
 }[process.platform] || 'google-chrome');
 const outputDir = path.resolve(process.argv[2] || path.join(os.tmpdir(), 'better-peakbagger-terrain-visual'));
+const execFileAsync = promisify(execFile);
+const FIXTURE_HOST = 'www.peakbagger.com';
 const MAPTERHORN_TILE_ORIGIN = 'https://tiles.mapterhorn.com';
 const TERRAIN_FIXTURE_HEADER = 'synthetic-terrarium-v1';
 // A 512px lossless WebP containing a synthetic Terrarium-encoded stepped
@@ -44,9 +48,31 @@ const safeFile = async pathname => {
     }
 };
 
-const server = createServer(async (request, response) => {
+// The showcase must be served over HTTPS, not HTTP. src/peakbagger/peakbagger-request.js
+// refuses any URL whose protocol is not https: — a deliberate security property
+// — and the analyzer fetches its GPX through that guard. Over http:// the panel
+// renders "Better Peakbagger refused an invalid Peakbagger request.", the route
+// never loads, and the 3D toggle stays disabled, so every check downstream of
+// it times out. Self-signed for this host, exactly as
+// scripts/browser-verification-fixtures.mjs does; Chrome is launched with
+// --ignore-certificate-errors below.
+const certificateRoot = await mkdtemp(path.join(os.tmpdir(), 'better-peakbagger-terrain-cert-'));
+const keyPath = path.join(certificateRoot, 'fixture-key.pem');
+const certificatePath = path.join(certificateRoot, 'fixture-cert.pem');
+try {
+    await execFileAsync('openssl', [
+        'req', '-x509', '-newkey', 'rsa:2048', '-nodes',
+        '-subj', `/CN=${FIXTURE_HOST}`, '-days', '1',
+        '-keyout', keyPath, '-out', certificatePath,
+    ]);
+} catch (error) {
+    throw new Error(`Could not create the isolated HTTPS fixture certificate: ${error.message}`);
+}
+const [fixtureKey, fixtureCert] = await Promise.all([readFile(keyPath), readFile(certificatePath)]);
+
+const server = createServer({ key: fixtureKey, cert: fixtureCert }, async (request, response) => {
     try {
-        const url = new URL(request.url, 'http://127.0.0.1');
+        const url = new URL(request.url, `https://${FIXTURE_HOST}`);
         // Peakbagger's own peak-marker feed: answer like /Async/PLLBB.aspx,
         // with synthetic peaks placed inside whatever box was requested so a
         // dot always lands near the camera center.
@@ -515,6 +541,9 @@ const chrome = spawn(chromePath, [
     // CPU, an 8192 texture cap, and a renderer the users never run. The
     // hardware renderer is asserted below rather than assumed.
     '--host-resolver-rules=MAP www.peakbagger.com 127.0.0.1',
+    // The fixture certificate is generated per run for this host only; the
+    // profile is disposable and no live origin is reachable from this launch.
+    '--ignore-certificate-errors',
     '--remote-debugging-port=0',
     `--user-data-dir=${profile}`,
     'about:blank'
@@ -625,7 +654,7 @@ try {
         ]
     });
 
-    const baseUrl = `http://www.peakbagger.com:${serverPort}/climber/ascent.aspx`;
+    const baseUrl = `https://www.peakbagger.com:${serverPort}/climber/ascent.aspx`;
     await navigate(cdp, `${baseUrl}?mode=idle`, 1000, 900);
     await waitForPageState(cdp, `(() => {
         const toggle = document.getElementById('bpb-terrain-toggle');
@@ -949,7 +978,7 @@ try {
 
     // Full Screen BigMap: the floating toggle sits over the native map in 2D…
     const peakFeedBeforeBigMap = peakFeedRequests.length;
-    const bigMapUrl = `http://www.peakbagger.com:${serverPort}/map/bigmap.aspx`;
+    const bigMapUrl = `https://www.peakbagger.com:${serverPort}/map/bigmap.aspx`;
     await navigate(cdp, `${bigMapUrl}?t=G`, 1000, 760);
     const bigMap2d = await waitForPageState(cdp, `(() => {
         const toggle = document.getElementById('bpb-terrain-toggle');
@@ -1105,7 +1134,7 @@ try {
     // Embedded Peak pages use a 425px map mount rather than a full viewport.
     // Exercise the same status note in both themes and assert it stays inside
     // the smaller mount-side layout without covering the toggle.
-    const peakPageUrl = `http://www.peakbagger.com:${serverPort}/peak.aspx`;
+    const peakPageUrl = `https://www.peakbagger.com:${serverPort}/peak.aspx`;
     for (const theme of ['light', 'dark']) {
         await navigate(cdp, `${peakPageUrl}?pid=2829&theme=${theme}`, 820, 620);
         await waitForPageState(cdp, `(() => {
@@ -1116,7 +1145,7 @@ try {
         await capture(cdp, path.join(outputDir, `peak-page-failure-${theme}.png`));
     }
 
-    const optionsUrl = `http://127.0.0.1:${serverPort}/options/options.html?visual=1`;
+    const optionsUrl = `https://${FIXTURE_HOST}:${serverPort}/options/options.html?visual=1`;
     await navigate(cdp, optionsUrl, 1000, 700);
     const disclosure = await waitForPageState(cdp, `(() => {
         const description = document.getElementById('enable-3d-map-desc');
@@ -1150,4 +1179,6 @@ try {
         delay(2000).then(() => { if (chrome.exitCode === null) chrome.kill('SIGKILL'); })
     ]);
     await rm(profile, { recursive: true, force: true });
+    // The fixture key and certificate are disposable and must not outlive the run.
+    await rm(certificateRoot, { recursive: true, force: true });
 }

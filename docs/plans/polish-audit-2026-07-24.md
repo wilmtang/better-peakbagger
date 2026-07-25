@@ -43,8 +43,9 @@ The Firefox `tabs.group` question was answered by a live probe plus
 compatibility data (F5); F2's below-the-fold claim, F10's dark headers, F11's
 focus rings, F6's confirmation, and F14's panel theme were each confirmed by
 rendering the real unpacked extension in headless Chrome for Testing. One new
-gap opened that this plan did not anticipate: `npm run terrain:verify` does not
-run on this machine, and it fails identically at the pre-remediation baseline.
+gap opened that this plan did not anticipate — `npm run terrain:verify` did not
+run at all — and it has since been **diagnosed and fixed**; see the closure
+ledger.
 
 ---
 
@@ -1022,18 +1023,21 @@ recorded in the finding.
 
 ### Changed but not fully proven
 
-- **`npm run terrain:verify` never ran.** It fails on this machine with
-  `Timed out waiting for page state: {"ready":false,"disclosureExists":false}`
-  after reaching the real GPU renderer (`ANGLE (Apple, ANGLE Metal Renderer:
-  Apple M3 Pro)`). It was then run at the pre-remediation baseline `d3d33af` in
-  a clean worktree and **failed identically**, so it is a pre-existing
-  environment or fixture problem, not a regression from this work — but it
-  means the check this plan names for F14 and F17 did not contribute evidence.
-  `npm run verify:extension` covered the analyzer instead (real-manifest load
-  order, the 3D toggle across all three map surfaces), plus the rendered ascent
-  page for the panel theme. **The terrain frame's own MapLibre rendering was
-  not exercised by anything in this round.** This should be diagnosed before
-  the next release.
+- ~~**`npm run terrain:verify` never ran.**~~ **Resolved after this round —
+  diagnosed, fixed, and now passing.** The cause was not the renderer: the
+  showcase fixture was served over `http://`, and
+  `src/peakbagger/peakbagger-request.js` refuses any URL that is not `https:`
+  on a Peakbagger host. The analyzer fetches its GPX through that guard, so the
+  extension refused its own fixture, the panel rendered "Better Peakbagger
+  refused an invalid Peakbagger request.", the route never loaded, and the 3D
+  toggle stayed disabled — which is what every downstream wait timed out on.
+  All three fixture servers now serve HTTPS on `www.peakbagger.com` with a
+  disposable per-run certificate. `npm run terrain:verify` and
+  `npm run terrain:verify:firefox` both pass on hardware renderers (ANGLE Metal
+  / Apple M1), and `test/project/showcase.test.mjs` fails if any of them
+  regresses to HTTP. **F14 and F17 are therefore now covered by the check this
+  plan named for them**, in addition to the `verify:extension` and rendered-page
+  evidence recorded above.
 - **`npm run verify:firefox` was not run.** The plan asks for it on Stages 1
   and 2. Firefox was exercised only by the F5 `tabs.group` probe, which loaded
   the real derived Firefox source as a temporary add-on and confirmed the
@@ -1079,16 +1083,24 @@ actually did about it.
   So characterization tests came first, as directed: one pinning the
   change-detection contract before `appliedSettings` moved, and seven for
   `map-viewport.js`, which had none while it lived inside the closure. No
-  existing test moved across any of the four F14 commits.
+  existing test moved across any of the four F14 commits. `terrain:verify` has
+  since been fixed and passes, so this finding now has the protection the plan
+  assumed it would.
 - **Effort was not estimated.** The sequencing reflects risk and dependency
   order only.
   → Unchanged; the sequencing held, with one deviation recorded under F13
   (F10 and F12 landed with the consolidation rather than after it, because
   splitting them would have shipped an intermediate worse than the defect).
 
-### Gap this plan did not anticipate
+### Gap this plan did not anticipate — since closed
 
-- **`npm run terrain:verify` does not run on this machine.** It is one of the
-  two checks the plan rests F14 on. See the closure ledger for the evidence
-  that it is pre-existing rather than a regression, and for what was used in
-  its place.
+- **`npm run terrain:verify` did not run at all**, and it is one of the two
+  checks the plan rests F14 on. It failed identically at the pre-remediation
+  baseline, so it was pre-existing rather than a regression. It has since been
+  diagnosed — a plain-HTTP fixture served to an extension that refuses
+  non-HTTPS Peakbagger URLs — and fixed, along with
+  `terrain:verify:firefox` and `showcase:render`, which were broken the same
+  way. `showcase:render` was the most consequential of the three: it did not
+  fail, it silently rendered the refusal message into the store-listing
+  screenshots. See *A plain-HTTP fixture breaks these checks* in
+  [`docs/development.md`](../development.md).

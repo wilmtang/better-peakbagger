@@ -22,9 +22,12 @@ Better Peakbagger module uses a global as an internal dependency.
 - For Firefox verification: Firefox Stable and `geckodriver` on `PATH`.
   `npx playwright install firefox` additionally installs the isolated Firefox
   build used by the GPU terrain check.
-- OpenSSL. Each extension verifier creates a one-day self-signed certificate
-  inside its disposable profile so the local fixture exercises the production
-  HTTPS-only manifest.
+- OpenSSL. Every browser fixture server — both extension verifiers, both
+  terrain verifiers, and `showcase:render` — creates a one-day self-signed
+  certificate in a disposable directory and deletes it in teardown, so the local
+  fixture is served over HTTPS on a real Peakbagger hostname. That is required
+  by the product, not a formality: `src/peakbagger/peakbagger-request.js`
+  refuses any other origin.
 
 ## Source and test layout
 
@@ -152,9 +155,9 @@ only exist under `dist/` after a build.
 | `npm run verify:browsers` | Builds once, then runs the Chrome and Firefox extension gates. |
 | `npm run verify:extension` | Compatibility alias for `verify:chrome`; existing callers can migrate without losing coverage. |
 | `npm run verify:packages -- CHROME.zip FIREFOX.zip` | Executes the extracted minified Chrome package and the exact generated Firefox archive through the browser gates. |
-| `npm run terrain:verify` | Renders the real MapLibre terrain frame on Chrome's GPU with synthetic route, basemap, peak, and CORS-enabled DEM fixtures. |
-| `npm run terrain:verify:firefox` | Runs the focused Firefox GPU terrain/interaction check and refuses software WebGL. |
-| `npm run showcase:render` | Builds and renders the local UI showcase fixtures. |
+| `npm run terrain:verify` | Renders the real MapLibre terrain frame on Chrome's GPU with synthetic route, basemap, peak, and CORS-enabled DEM fixtures. Serves the showcase over HTTPS on `www.peakbagger.com`; needs `openssl`. |
+| `npm run terrain:verify:firefox` | Runs the focused Firefox GPU terrain/interaction check and refuses software WebGL. Same HTTPS showcase host. |
+| `npm run showcase:render` | Builds and renders the local UI showcase fixtures into `store-assets/`. Same HTTPS showcase host. |
 | `npm run lint:js` | Runs errors-only ESLint over source, extension surfaces, scripts, and tests. |
 | `npm run lint` | Builds, then runs `web-ext lint --source-dir dist`. |
 | `npm run package` | Release build + `web-ext build` from `dist/`; writes the canonical Chrome ZIP under `web-ext-artifacts/`. |
@@ -316,6 +319,12 @@ generalize this exception.
   showcase pages provide their own settings/chrome stubs and their Mapterhorn
   requests are intercepted with a synthetic CORS-enabled DEM, so it does not run
   the real settings or bridge code or exercise the live terrain service.
+- Every fixture server — both terrain verifiers and `showcase:render` — serves
+  over **HTTPS on `www.peakbagger.com`**, with a self-signed certificate minted
+  per run and deleted in teardown. This is a product constraint, not a
+  preference: `src/peakbagger/peakbagger-request.js` refuses any URL that is not
+  `https:` on a Peakbagger host, and the GPX Analyzer fetches its track through
+  that guard. See *A plain-HTTP fixture breaks these checks* below.
 - `npm run verify:browsers` loads the real Chrome and derived Firefox manifests.
   The isolated HTTPS fixtures exercise extension origins, execution worlds,
   worker/background startup, real storage, every manifest surface, store credit,
@@ -345,6 +354,37 @@ prove current live control labels, authenticated cookies, or report markup.
 The runners open ordinary extension pages in hidden tabs; they do not establish
 native popup size, browser-chrome focus, permission-prompt presentation, or the
 toolbar click that grants `activeTab`. Those remain explicit release checks.
+
+### A plain-HTTP fixture breaks these checks
+
+`src/peakbagger/peakbagger-request.js` refuses any URL whose protocol is not
+`https:` or whose host is not `peakbagger.com`/`www.peakbagger.com`, before it
+fetches anything. That guard is a security property and must not be relaxed to
+suit a test. The GPX Analyzer fetches its track through it, so a fixture served
+over `http://localhost` makes the extension refuse *its own fixture*:
+
+- the analyzer panel renders **"Better Peakbagger refused an invalid Peakbagger
+  request."** instead of the chart,
+- the route never loads, so the 3D toggle stays disabled with its
+  "Available after the GPX route loads" title,
+- `terrain:verify` then times out on
+  `Timed out waiting for page state: {"ready":false,"disclosureExists":false}`,
+  `terrain:verify:firefox` on `Timed out waiting for Firefox terrain readiness`,
+- and `showcase:render` succeeds while writing that refusal into the
+  store-listing screenshots.
+
+The failure looks like a broken renderer or a hung frame, and is neither. All
+three scripts therefore mint a disposable self-signed certificate for
+`www.peakbagger.com` with `openssl`, serve over `node:https`, map the hostname
+to the local server (`--host-resolver-rules` in Chrome,
+`network.dns.localDomains` in Firefox), accept the certificate for that launch
+only, and delete the key and certificate in teardown.
+`test/project/showcase.test.mjs` fails if any of them regresses to HTTP, and
+also asserts the product-side refusal is still in force — the fixtures follow
+the product, not the reverse.
+
+`openssl` must be on `PATH`; the scripts fail with
+`Could not create the isolated HTTPS fixture certificate` if it is not.
 
 ## Packaging and release rehearsal
 

@@ -1256,7 +1256,9 @@ No single green command proves the extension works:
 - `npm run terrain:verify` and `npm run terrain:verify:firefox` render packaged
   MapLibre on a reported hardware GPU with synthetic route, peak, basemap, and
   DEM fixtures. Their storage and bridge protocols are stubs, and they do not
-  contact the live terrain service.
+  contact the live terrain service. Both serve the showcase over HTTPS on a
+  Peakbagger hostname, because `src/peakbagger/peakbagger-request.js` refuses
+  any other origin and the analyzer fetches its GPX through that guard.
 
 Hidden browser checks establish DOM and runtime behavior, not native focus,
 window placement, permission-prompt presentation, toolbar popup sizing, or tab

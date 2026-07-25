@@ -3,12 +3,17 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 /* global document */
 
-import { createServer } from "node:http";
-import { readFile, stat } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import { createServer } from "node:https";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
 
 import { firefox } from "playwright";
+
+const execFileAsync = promisify(execFile);
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const viewport = { width: 1000, height: 760 };
@@ -36,10 +41,31 @@ async function safeFile(pathname) {
   }
 }
 
-function createFixtureServer() {
-  const server = createServer(async (request, response) => {
+// The showcase must be served over HTTPS. src/peakbagger/peakbagger-request.js
+// refuses any URL whose protocol is not https: — a deliberate security property
+// — and the analyzer fetches its GPX through that guard, so over http:// the
+// route never loads and the 3D toggle never enables.
+async function createFixtureCertificate() {
+  const root = await mkdtemp(path.join(os.tmpdir(), "better-peakbagger-firefox-terrain-cert-"));
+  const keyPath = path.join(root, "fixture-key.pem");
+  const certificatePath = path.join(root, "fixture-cert.pem");
+  try {
+    await execFileAsync("openssl", [
+      "req", "-x509", "-newkey", "rsa:2048", "-nodes",
+      "-subj", `/CN=${fixtureHost}`, "-days", "1",
+      "-keyout", keyPath, "-out", certificatePath,
+    ]);
+  } catch (error) {
+    throw new Error(`Could not create the isolated HTTPS fixture certificate: ${error.message}`);
+  }
+  const [key, cert] = await Promise.all([readFile(keyPath), readFile(certificatePath)]);
+  return { key, cert, root };
+}
+
+function createFixtureServer({ key, cert }) {
+  const server = createServer({ key, cert }, async (request, response) => {
     try {
-      const url = new URL(request.url, `http://${fixtureHost}`);
+      const url = new URL(request.url, `https://${fixtureHost}`);
       if (url.pathname.toLowerCase() === "/async/pllbb.aspx") {
         const bounds = ["miny", "maxy", "minx", "maxx"].map(name =>
           Number(url.searchParams.get(name)));
@@ -105,7 +131,8 @@ function createFixtureServer() {
 }
 
 async function main() {
-  const server = createFixtureServer();
+  const certificate = await createFixtureCertificate();
+  const server = createFixtureServer(certificate);
   await new Promise((resolve, reject) => {
     server.once("error", reject);
     server.listen(0, "127.0.0.1", resolve);
@@ -121,7 +148,9 @@ async function main() {
         "webgl.disabled": false,
       },
     });
-    const context = await browser.newContext({ viewport });
+    // The fixture certificate is generated per run for this host only, and the
+    // route handler below is the thing that keeps live origins unreachable.
+    const context = await browser.newContext({ viewport, ignoreHTTPSErrors: true });
     const page = await context.newPage();
     const errors = [];
     const requests = { terrain: 0, basemap: 0, peaks: 0 };
@@ -135,20 +164,30 @@ async function main() {
       if (url.includes("/terrain-tiles/")) requests.basemap += 1;
       if (/\/Async\/PLLBB\.aspx/i.test(url)) requests.peaks += 1;
     });
-    await page.route("https://tiles.mapterhorn.com/**", route => route.fulfill({
-      status: 200,
-      contentType: "image/webp",
-      headers: {
-        "Access-Control-Allow-Origin": "*",
-        "Cache-Control": "no-store",
-        "X-BPB-Terrain-Fixture": "synthetic-terrarium-v1",
-      },
-      body: syntheticTerrariumWebp,
-    }));
-    await page.route("https://**", route => route.abort());
+    // One handler rather than a mock plus a blanket abort: the fixture origin is
+    // itself https now, so an unconditional `https://**` abort would tear down
+    // the page under test. Everything not explicitly allowed still fails closed.
+    const fixtureOrigin = `https://${fixtureHost}:${port}/`;
+    await page.route("https://**", route => {
+      const url = route.request().url();
+      if (url.startsWith("https://tiles.mapterhorn.com/")) {
+        return route.fulfill({
+          status: 200,
+          contentType: "image/webp",
+          headers: {
+            "Access-Control-Allow-Origin": "*",
+            "Cache-Control": "no-store",
+            "X-BPB-Terrain-Fixture": "synthetic-terrarium-v1",
+          },
+          body: syntheticTerrariumWebp,
+        });
+      }
+      if (url.startsWith(fixtureOrigin)) return route.continue();
+      return route.abort();
+    });
 
     await page.goto(
-      `http://${fixtureHost}:${port}/climber/ascent.aspx?mode=terrain&map=wide`,
+      `${fixtureOrigin}climber/ascent.aspx?mode=terrain&map=wide`,
       { waitUntil: "load" },
     );
     try {
@@ -275,6 +314,8 @@ async function main() {
   } finally {
     if (browser) await browser.close().catch(() => {});
     await new Promise(resolve => server.close(resolve));
+    // The fixture key and certificate are disposable and must not outlive the run.
+    await rm(certificate.root, { recursive: true, force: true });
   }
 }
 

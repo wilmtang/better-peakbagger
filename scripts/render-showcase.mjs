@@ -2,15 +2,24 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { createServer } from 'node:http';
-import { spawn } from 'node:child_process';
+import { createServer } from 'node:https';
+import { execFile, spawn } from 'node:child_process';
 import { mkdir, mkdtemp, readFile, rm, stat } from 'node:fs/promises';
+import { promisify } from 'node:util';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+const execFileAsync = promisify(execFile);
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const outputDir = path.join(root, 'store-assets');
+// These screenshots ship to the Chrome Web Store listing, and the GPX Analyzer
+// fetches its track through src/peakbagger/peakbagger-request.js, which refuses
+// any URL whose protocol is not https:. Served over http:// the analyzer panel
+// renders "Better Peakbagger refused an invalid Peakbagger request." and that
+// is what lands in store-assets/ — so the showcase host is HTTPS on a
+// Peakbagger hostname, exactly like the real page.
+const SHOWCASE_HOST = 'www.peakbagger.com';
 const chrome = process.env.CHROME_BIN || ({
     darwin: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
     win32: path.join(process.env.PROGRAMFILES || 'C:\\Program Files', 'Google/Chrome/Application/chrome.exe')
@@ -119,9 +128,26 @@ const safeFile = async pathname => {
     }
 };
 
-const server = createServer(async (request, response) => {
+const certificateRoot = await mkdtemp(path.join(os.tmpdir(), 'better-peakbagger-showcase-cert-'));
+const showcaseCertificate = await (async () => {
+    const keyPath = path.join(certificateRoot, 'fixture-key.pem');
+    const certificatePath = path.join(certificateRoot, 'fixture-cert.pem');
     try {
-        const url = new URL(request.url, 'http://127.0.0.1');
+        await execFileAsync('openssl', [
+            'req', '-x509', '-newkey', 'rsa:2048', '-nodes',
+            '-subj', `/CN=${SHOWCASE_HOST}`, '-days', '1',
+            '-keyout', keyPath, '-out', certificatePath,
+        ]);
+    } catch (error) {
+        throw new Error(`Could not create the isolated HTTPS showcase certificate: ${error.message}`);
+    }
+    const [key, cert] = await Promise.all([readFile(keyPath), readFile(certificatePath)]);
+    return { key, cert };
+})();
+
+const server = createServer(showcaseCertificate, async (request, response) => {
+    try {
+        const url = new URL(request.url, `https://${SHOWCASE_HOST}`);
 
         if (url.pathname === '/scripts/showcase/multiday.gpx') {
             response.writeHead(200, { 'content-type': 'application/gpx+xml; charset=utf-8' });
@@ -185,8 +211,12 @@ const screenshot = async (port, route, output) => {
         '--force-device-scale-factor=1',
         '--window-size=1280,800',
         '--virtual-time-budget=2600',
+        // The showcase certificate is generated per run for this host only, and
+        // the resolver rule below keeps the name pointed at the local server.
+        '--ignore-certificate-errors',
+        `--host-resolver-rules=MAP ${SHOWCASE_HOST} 127.0.0.1`,
         `--screenshot=${output}`,
-        `http://127.0.0.1:${port}${route}`
+        `https://${SHOWCASE_HOST}:${port}${route}`
     ]);
 };
 
@@ -232,4 +262,6 @@ try {
     }
 } finally {
     server.close();
+    // The showcase key and certificate are disposable and must not outlive the run.
+    await rm(certificateRoot, { recursive: true, force: true });
 }
