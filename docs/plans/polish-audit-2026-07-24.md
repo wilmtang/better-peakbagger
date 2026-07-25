@@ -1,8 +1,11 @@
 # Polish audit — 2026-07-24 (feedback, dark mode, and shared-idiom round)
 
-Status: **in remediation**. Per-finding status is recorded in each heading and
-summarised in the [closure ledger](#closure-ledger) at the end of this file.
-Baseline before remediation: `d3d33af`, `npm test` 772 passing.
+Status: **remediated, with two recorded verification gaps.** All 18 findings
+are fixed; per-finding status is in each heading and the evidence and residuals
+are in the [closure ledger](#closure-ledger) at the end of this file. Baseline
+before remediation `d3d33af` at `npm test` 772 passing; after, `npm test` 805
+passing across 19 commits, one per finding except where the plan's own analysis
+made two findings the same edit.
 
 Scope: a fresh read of the surfaces the user actually touches — the capture
 popup, the settings page and its four sub-controllers, the background
@@ -31,9 +34,17 @@ Every finding marked **verified** below was reproduced, not reasoned about:
 - **F2, F3, F12, F15, F16** — direct source and computed-CSS inspection with
   the counts quoted in each finding.
 
-Not verified: nothing here was checked in a real browser. Spacing, wrapping,
-clipping, and focus-ring rendering remain uninspected, and the Firefox side of
-F5 is explicitly flagged as unestablished.
+Not verified *at the time this plan was written*: nothing here was checked in a
+real browser. Spacing, wrapping, clipping, and focus-ring rendering remained
+uninspected, and the Firefox side of F5 was unestablished.
+
+**All of those gaps were closed during remediation** — see the closure ledger.
+The Firefox `tabs.group` question was answered by a live probe plus
+compatibility data (F5); F2's below-the-fold claim, F10's dark headers, F11's
+focus rings, F6's confirmation, and F14's panel theme were each confirmed by
+rendering the real unpacked extension in headless Chrome for Testing. One new
+gap opened that this plan did not anticipate: `npm run terrain:verify` does not
+run on this machine, and it fails identically at the pre-remediation baseline.
 
 ---
 
@@ -680,7 +691,7 @@ Identical, against this finding's recorded before-state of `#e6e1d8` on
 column header is a bare underlined blue link, and the bar itself renders on
 `#23262a` with the pressed chip on `#2f6b3f`.
 
-### F14 — `gpx-analyzer.js` is one 1,190-line closure with two theming systems
+### F14 — `gpx-analyzer.js` is one 1,190-line closure with two theming systems — **fixed**
 
 [`initChart`](../../src/gpx/gpx-analyzer.js:159) runs from line 159 to 1349 and
 owns: map viewport resize (pointer drag, keyboard steps, debounced persist),
@@ -714,6 +725,44 @@ sync, then the panel + palette. Move the panel's inline styles into a real CSS
 file the way `terrain-map.css` already works, so the JS palette can be deleted
 rather than duplicated. Hoist the iframe accessor to one memoized function.
 Fold `appliedSettings` into the `BPB` client so callers cannot forget it.
+
+**Resolution.** Done in the prescribed order, four commits, suite green at each
+with **no movement in any existing test** — the plan's own stop signal never
+fired. `gpx-analyzer.js` goes from **1,445 lines to 1,084**.
+
+| consequence this finding lists | resolution |
+| --- | --- |
+| three copies of the MasterMap selector, one re-querying per hover | one memoized `findMapIframe`, re-resolved when the frame is swapped |
+| `appliedSettings` repeated after six `BPB.set()` calls | the `BPB` client owns the snapshot and hands subscribers `changed(keys)` |
+| one string, two literals | one `COPY_HINT` constant |
+| typography drift | `Analyzing GPX data…` takes the polished ellipsis |
+| two theming systems | `src/gpx/gpx-panel-css.js` — see below |
+| the 1,190-line closure | `src/gpx/map-viewport.js` (214) and `src/gpx/map-overlay.js` (287) extracted |
+
+On the panel's theme: it is a stylesheet-as-a-JS-string
+(`src/gpx/gpx-panel-css.js`), not a manifest `css` entry. The analyzer's
+manifest entry runs in the **MAIN world**, so this follows the in-repo
+precedent set by `site-dark-css.js` and `ascent-filter.js` rather than risking
+a `css` array on a `world: "MAIN"` entry, and it keeps the theme arriving with
+the code that builds the panel. `applyPanelTheme()` collapses from eight inline
+writes to setting one `data-theme` on the container and the 3D toggle — the
+same attribute the toggle already used, which is what makes it one system.
+`CHART_PALETTES` survives deliberately: Chart.js takes colours as JS options,
+not CSS, so that is a genuine need for JS values rather than a second copy.
+
+**On the missing behavioural test this plan flags:** characterization tests
+came *before* each risky move, as the plan directs. The change-detection
+contract got one before `appliedSettings` moved into the client; the extracted
+`map-viewport.js` got seven of its own (it had none while it was 190 lines
+inside the closure); and the panel theme was verified by rendering.
+
+**Rendered verification of the theme move** (headless Chrome for Testing, real
+unpacked `dist/`, the HTTPS fixture server, a real ascent page, both themes):
+every computed colour is **identical to the palette it replaced** — light
+`#000000`/`#444444`/`#777777`/`#888888` on `#fafafa` with `#cccccc` borders;
+dark `#e6e1d8`/`#b6b0a6`/`#9a948a`/`#8b857c` on `#23262a` with `#3a3f45`
+borders and `#2b2f34`/`#4a5058` inputs — and the panel and the floating toggle
+now report the same `data-theme`.
 
 ### F15 — Unit conversion is duplicated four times, and "auto" is detected two different ways — **fixed**
 
@@ -920,7 +969,89 @@ Per stage:
   `npm run verify:extension` is mandatory (it is the only check that loads the
   real manifest), plus `npm run terrain:verify` for F14.
 
-## Known gaps in this plan
+## Closure ledger
+
+Three categories, per AGENTS.md. Read the "changed but not fully proven" and
+"intentionally not changed" sections before treating this round as closed.
+
+### Fixed and verified
+
+Each of these has a regression test that fails against the unfixed code, and —
+where the defect was visual or environmental — a real-browser observation
+recorded in the finding.
+
+| # | what changed | evidence beyond `npm test` |
+| --- | --- | --- |
+| F1 | popup re-renders from the worker's job on open; the worker refuses locked-phase selection writes | popup test written first, observed failing on `checkboxes lock on open` |
+| F2 | two sibling live regions in a sticky dock; `flash(msg, { error })`; 30 call sites marked | rendered: status line measured at `top: 3620` in an 800 px viewport before, on screen after, both themes and 560 px |
+| F3 | popup bundles settings + units and resolves before first render | — |
+| F4 | the bridge carries a failure sentence; the analyzer states it in its status region | malformed-message fallback covered |
+| F5 | `groupWarning` is a flag; each surface owns plain copy | live Firefox 153 probe called `tabs.group`/`tabGroups.update` successfully; MDN compat puts both below the 140.0 floor |
+| F6 | third host for the shared in-page confirmation | rendered in both themes; the test's `window.confirm` throws if taken |
+| F7 | focus moves to that row's Undo | confirmed failing against the unfixed `drafts.js` |
+| F8 | focus listener armed only by a real GitHub round trip; summary TTL; confirmations survive | — |
+| F9 | five-tick tolerance, plain copy, non-forced recovery | — |
+| F10 | dark values for every sort header | rendered dark PeakAscents: both header kinds now compute to `rgb(122,182,255)`, transparent, no border |
+| F11 | `--pbaf-focus` `#69b58a` in dark | reverting reproduces the finding's exact 2.38:1; rendered with real keyboard focus so `:focus-visible` matched |
+| F12 | the dead rule left with the consolidation | re-adding a `.pbaf-divider` rule was confirmed to fail the new guard |
+| F13 | 24 tokens in one file; `pbaf-control` exemption; site sheet gives up ownership | rendered dark PeakAscents |
+| F14 | four commits: accessor, snapshot, two extractions, panel theme | rendered ascent page, both themes: every computed colour identical to the palette replaced |
+| F15 | one pure `src/ui/units.js`; both page probes injected | structural guards: no other module may contain either constant |
+| F16 | `style` prop plus a recorded adoption policy | — |
+| F17 | `MutationObserver` gates the condition; the ceiling is a backstop that warns | test inserts the frame at 5.2 s, past the old budget; confirmed failing against the unfixed file |
+| F18 | all GitHub URLs through `createTab`, failures reported | the test's `window.open` throws if taken |
+
+### Intentionally not changed
+
+- **`src/ascent/ascent-delete.js:67` still calls `globalThis.confirm`.** F6 names
+  the settings page. That call interrupts Peakbagger's own destructive form
+  submit on Peakbagger's page, where the extension's design system is not
+  available. Sweeping it in would have been scope this finding did not ask for.
+- **`options/settings-backup.js:236` still refreshes on every window focus.**
+  F8's cost is a GitHub API request per alt-tab; this listener sends
+  `GITHUB_AUTH_STATUS`, which `githubStatus` answers from local storage with no
+  network call, so it does not carry that cost.
+- **`CHART_PALETTES` survives in `gpx-analyzer.js`.** Chart.js takes colours as
+  JS options rather than CSS. F14 asks for the JS palette to be deleted "rather
+  than duplicated" — it is no longer a duplicate of anything, which is the
+  condition that mattered.
+- **F3 resolves `auto` to imperial rather than to "the last value a Peakbagger
+  surface used."** The finding offers both. The remembered variant needs a new
+  settings key written by page surfaces on every render, to break a tie the user
+  cannot see.
+
+### Changed but not fully proven
+
+- **`npm run terrain:verify` never ran.** It fails on this machine with
+  `Timed out waiting for page state: {"ready":false,"disclosureExists":false}`
+  after reaching the real GPU renderer (`ANGLE (Apple, ANGLE Metal Renderer:
+  Apple M3 Pro)`). It was then run at the pre-remediation baseline `d3d33af` in
+  a clean worktree and **failed identically**, so it is a pre-existing
+  environment or fixture problem, not a regression from this work — but it
+  means the check this plan names for F14 and F17 did not contribute evidence.
+  `npm run verify:extension` covered the analyzer instead (real-manifest load
+  order, the 3D toggle across all three map surfaces), plus the rendered ascent
+  page for the panel theme. **The terrain frame's own MapLibre rendering was
+  not exercised by anything in this round.** This should be diagnosed before
+  the next release.
+- **`npm run verify:firefox` was not run.** The plan asks for it on Stages 1
+  and 2. Firefox was exercised only by the F5 `tabs.group` probe, which loaded
+  the real derived Firefox source as a temporary add-on and confirmed the
+  worker and options page work, but did not walk the popup or settings flows.
+- **F14's extractions are proven by the suite plus `verify:extension`, not by a
+  behavioural test per moved function.** Characterization tests were added
+  before the risky moves — seven for `map-viewport.js`, one for the
+  change-detection contract — and no existing test moved, which is the plan's
+  own stop signal. `map-overlay.js` reaches into a frame the extension does not
+  own; its fail-closed paths are covered by the existing analyzer tests and the
+  real-extension run, not by fault injection per branch.
+- **No live Peakbagger page was touched.** Every rendered check used the masked
+  fixtures and the local HTTPS fixture server, per AGENTS.md.
+
+## Known gaps in this plan — and how each was resolved
+
+These were the gaps as written. Each is annotated with what remediation
+actually did about it.
 
 - **No rendered visual review informed any finding here.** F10 and F11 were
   established from the cascade and the color math, which is sound for *what
@@ -928,10 +1059,36 @@ Per stage:
   widths. F2's central claim — that the status line sits below the fold — is
   derived from `overflow-y: auto` on `.content` and the absence of any sticky
   rule; it should be confirmed on screen before the fix is designed.
+  → **Closed.** F2's claim was confirmed on screen before its fix was designed
+  (`top: 3620` in an 800 px viewport, computed `position: static`, no sticky or
+  fixed rule anywhere in the page), and F2, F6, F10, F11, F13, and F14's panel
+  were each reviewed rendered, in both themes, against the real unpacked
+  extension. F11's ring was checked under *real keyboard focus* so
+  `:focus-visible` genuinely matched.
 - **The Firefox `tabs.group` question is open** and gates part of F5.
+  → **Closed, and the answer inverted the risk:** grouping works across the
+  entire supported Firefox range, so this path is a rare edge case rather than
+  the normal Firefox experience. A live headless Firefox 153 probe loading the
+  real derived source called both APIs successfully; MDN compat data puts
+  `tabs.group` at 138 and `tabGroups` at 139, below the 140.0 floor.
 - **F14 has no behavioral test to protect it.** The GPX Analyzer's coverage is
   thin relative to its size, and the extraction is proposed on the strength of
   the suite plus `terrain:verify`. If that feels too thin when the work starts,
   characterization tests come before the refactor, not after.
+  → **It did feel too thin, and `terrain:verify` turned out not to run at all.**
+  So characterization tests came first, as directed: one pinning the
+  change-detection contract before `appliedSettings` moved, and seven for
+  `map-viewport.js`, which had none while it lived inside the closure. No
+  existing test moved across any of the four F14 commits.
 - **Effort was not estimated.** The sequencing reflects risk and dependency
   order only.
+  → Unchanged; the sequencing held, with one deviation recorded under F13
+  (F10 and F12 landed with the consolidation rather than after it, because
+  splitting them would have shipped an intermediate worse than the defect).
+
+### Gap this plan did not anticipate
+
+- **`npm run terrain:verify` does not run on this machine.** It is one of the
+  two checks the plan rests F14 on. See the closure ledger for the evidence
+  that it is pre-existing rather than a regression, and for what was used in
+  its place.
