@@ -44,6 +44,9 @@ import { initSectionNav } from './section-nav.js';
     const betaLinkEl = document.getElementById('beta-link');
     const betaSortDateDescEl = document.getElementById('beta-sort-date-desc');
     const statusEl = document.getElementById('status');
+    const statusErrorEl = document.getElementById('status-error');
+    const statusErrorTextEl = document.getElementById('status-error-text');
+    const statusErrorDismissEl = document.getElementById('status-error-dismiss');
     const aboutVersionEl = document.getElementById('about-version');
 
     // About section — version from the extension manifest.
@@ -53,12 +56,32 @@ import { initSectionNav } from './section-nav.js';
     const applyTheme = theme => Theme.apply(theme);
 
     let statusTimer = null;
-    const flash = (msg = 'Saved') => {
+    const dismissStatus = () => {
+        clearTimeout(statusTimer);
+        statusTimer = null;
+        statusEl.classList.remove('show');
+        statusErrorEl.classList.remove('show');
+        statusErrorEl.hidden = true;
+    };
+
+    // The page's only transient channel, and most of its traffic reports a
+    // failure or blocks the action. Successes confirm and fade; failures go to
+    // the alert region, keep the danger colour, and stay until the user
+    // dismisses them or the next report replaces them.
+    const flash = (msg = 'Saved', { error = false } = {}) => {
+        dismissStatus();
+        if (error) {
+            statusErrorTextEl.textContent = msg;
+            statusErrorEl.hidden = false;
+            statusErrorEl.classList.add('show');
+            return;
+        }
         statusEl.textContent = msg;
         statusEl.classList.add('show');
-        clearTimeout(statusTimer);
         statusTimer = setTimeout(() => statusEl.classList.remove('show'), 1200);
     };
+
+    statusErrorDismissEl.addEventListener('click', dismissStatus);
 
     const formatCacheBytes = bytes => {
         if (bytes < 1024) return `${Math.max(0, Math.floor(bytes))} B`;
@@ -144,7 +167,7 @@ import { initSectionNav } from './section-nav.js';
         // report the failure instead of leaving a toggle that never persisted.
         operation.catch(() => {
             if (confirmedSettings) populate(confirmedSettings);
-            flash('Settings couldn’t be saved. Try again.');
+            flash('Settings couldn’t be saved. Try again.', { error: true });
         });
         return operation;
     };
@@ -219,7 +242,7 @@ import { initSectionNav } from './section-nav.js';
         el.addEventListener('change', () => {
             if (!betaTrEl.checked && !betaGpsEl.checked && !betaLinkEl.checked) {
                 el.checked = true;
-                flash('Keep at least one signal checked');
+                flash('Keep at least one signal checked', { error: true });
                 return;
             }
             betaTrWordsEl.disabled = !betaTrEl.checked;

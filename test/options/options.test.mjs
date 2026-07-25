@@ -124,7 +124,7 @@ test('a failed setting write restores the authoritative control value', async ()
     const theme = el(dom, 'theme');
     theme.value = 'light';
     theme.dispatchEvent(new dom.window.Event('change'));
-    await waitFor(dom, () => /couldn’t be saved/i.test(el(dom, 'status').textContent));
+    await waitFor(dom, () => /couldn’t be saved/i.test(el(dom, 'status-error-text').textContent));
 
     assert.equal(theme.value, 'dark');
     assert.equal(dom.chrome._store.bpbSettings.theme, 'dark');
@@ -248,6 +248,51 @@ test('options sections log the missing ids before degrading to no-op controllers
     assert.ok(errors.some(message => /draft manager.*drafts-list/.test(message)));
 });
 
+test('settings feedback separates severity: successes fade, failures persist and alert', async () => {
+    const dom = await loadOptions({ theme: 'dark' });
+    const ok = el(dom, 'status');
+    const bad = el(dom, 'status-error');
+    const badText = el(dom, 'status-error-text');
+
+    // Success: the polite region, and it is scheduled to fade.
+    el(dom, 'map-viewport-reset').click();
+    await waitFor(dom, () => ok.textContent === 'Map size reset');
+    assert.equal(ok.classList.contains('show'), true);
+    assert.equal(ok.getAttribute('role'), 'status');
+    assert.equal(bad.hidden, true, 'a success never lights the alert region');
+
+    // Failure: the alert region, and it does not auto-dismiss.
+    dom.chrome.storage.sync.get = async () => { throw new Error('sync read failed'); };
+    dom.chrome.storage.sync.set = async () => { throw new Error('sync write failed'); };
+    const theme = el(dom, 'theme');
+    theme.value = 'light';
+    theme.dispatchEvent(new dom.window.Event('change'));
+    await waitFor(dom, () => /couldn’t be saved/i.test(badText.textContent));
+
+    assert.equal(bad.hidden, false);
+    assert.equal(bad.classList.contains('show'), true);
+    assert.equal(bad.getAttribute('role'), 'alert', 'failures are announced assertively');
+    assert.equal(ok.classList.contains('show'), false, 'the success line is cleared');
+    await new Promise(resolve => setTimeout(resolve, 1400));
+    assert.equal(bad.classList.contains('show'), true,
+        'recovery copy must not fade out from under the user');
+
+    // ...but it is dismissible, per the reversible-and-safe bar.
+    el(dom, 'status-error-dismiss').click();
+    assert.equal(bad.hidden, true);
+    assert.equal(bad.classList.contains('show'), false);
+});
+
+test('the settings feedback dock stays on screen from any scroll position', async () => {
+    const css = await readFile(path.join(root, 'options', 'options.css'), 'utf8');
+    // The controls live thousands of pixels above the end of .content, which is
+    // the scroll container; an in-flow line at the end of .wrap is never seen.
+    assert.match(css, /\.status-dock\s*{[^}]*position:\s*sticky/s);
+    assert.match(css, /\.status-dock\s*{[^}]*bottom:\s*0/s);
+    assert.match(css, /\.status-error\s*{[^}]*color:\s*var\(--danger\)/s,
+        'failures need a colour that is not the success accent');
+});
+
 test('the options controller exclusively owns shared status timing', async () => {
     const draftsSource = await readFile(path.join(root, 'options', 'drafts.js'), 'utf8');
     assert.match(draftsSource, /export const initDrafts/);
@@ -332,7 +377,7 @@ test('settings import keeps its confirmation retryable when persistence fails', 
     input.dispatchEvent(new dom.window.Event('change'));
     await waitFor(dom, () => el(dom, 'settings-backup-confirmation').hidden === false);
     el(dom, 'settings-backup-confirm').click();
-    await waitFor(dom, () => /couldn’t be saved/i.test(el(dom, 'status').textContent));
+    await waitFor(dom, () => /couldn’t be saved/i.test(el(dom, 'status-error-text').textContent));
 
     assert.equal(dom.chrome._store.bpbSettings.theme, 'dark');
     assert.equal(el(dom, 'settings-backup-confirmation').hidden, false);
@@ -427,20 +472,20 @@ test('settings import rejects invalid and newer files without changing settings'
             value: [{ name, text: async () => text }]
         });
         input.dispatchEvent(new dom.window.Event('change'));
-        await waitFor(dom, () => el(dom, 'status').textContent.length > 0);
+        await waitFor(dom, () => el(dom, 'status-error-text').textContent.length > 0);
     };
 
     await choose('notes.json', '{');
-    assert.equal(el(dom, 'status').textContent, 'That is not a Better Peakbagger settings file.');
+    assert.equal(el(dom, 'status-error-text').textContent, 'That is not a Better Peakbagger settings file.');
     assert.equal(dom.chrome._store.bpbSettings.theme, 'dark');
 
-    el(dom, 'status').textContent = '';
+    el(dom, 'status-error-text').textContent = '';
     await choose('future.json', JSON.stringify({
         kind: settingsTransfer.KIND,
         schemaVersion: settingsTransfer.SCHEMA_VERSION + 1,
         settings: {}
     }));
-    assert.equal(el(dom, 'status').textContent,
+    assert.equal(el(dom, 'status-error-text').textContent,
         'This settings file was made by a newer version of the extension.');
     assert.equal(dom.chrome._store.bpbSettings.theme, 'dark');
     assert.equal(el(dom, 'settings-backup-confirmation').hidden, true);
@@ -1198,7 +1243,7 @@ test('a stale replacement preserves the prior Undo expiry and the concurrent edi
     });
     el(dom, 'favorites-mirror-confirm').click();
 
-    await waitFor(dom, () => /changed in another tab/i.test(el(dom, 'status').textContent));
+    await waitFor(dom, () => /changed in another tab/i.test(el(dom, 'status-error-text').textContent));
     assert.equal(dom.window.undoTimers[0].cleared, false,
         'a rejected replacement must not cancel the prior successful replacement expiry');
     assert.equal(dom.chrome._localStore[favoriteKey].entries.some(entry => entry.cid === concurrent.cid), true);
@@ -1476,7 +1521,7 @@ test('favorites restore fails closed on an unknown backup schema', async () => {
     });
     await waitFor(dom, () => !el(dom, 'favorites-github-actions').hidden);
     el(dom, 'favorites-restore').click();
-    await waitFor(dom, () => /newer format/.test(el(dom, 'status').textContent));
+    await waitFor(dom, () => /newer format/.test(el(dom, 'status-error-text').textContent));
     assert.deepEqual(dom.chrome._localStore[favoriteKey].entries, [original]);
     assert.equal(el(dom, 'favorites-undo-all').hidden, true);
 });
@@ -1507,7 +1552,7 @@ test('favorites restore rejects a backup above the 1,500-entry bound', async () 
     });
     await waitFor(dom, () => !el(dom, 'favorites-github-actions').hidden);
     el(dom, 'favorites-restore').click();
-    await waitFor(dom, () => /not valid/.test(el(dom, 'status').textContent));
+    await waitFor(dom, () => /not valid/.test(el(dom, 'status-error-text').textContent));
     assert.deepEqual(dom.chrome._localStore[favoriteKey].entries, [original]);
 });
 
@@ -1619,7 +1664,7 @@ test('copy Markdown preserves exact source or converts the stored bracket report
         value: { writeText: async () => { throw new Error('denied'); } }
     });
     draftRow(dom, richKey).querySelector('[data-action="copy"]').click();
-    await waitFor(dom, () => el(dom, 'status').textContent === 'Couldn’t copy Markdown');
+    await waitFor(dom, () => el(dom, 'status-error-text').textContent === 'Couldn’t copy Markdown');
 });
 
 test('deleting one draft is reversible and its Undo survives a live refresh', async () => {
@@ -1667,7 +1712,7 @@ test('a failed single-draft Undo keeps its recovery snapshot available for retry
     };
 
     draftRow(dom, key).querySelector('[data-action="undo"]').click();
-    await waitFor(dom, () => el(dom, 'status').textContent === 'Couldn’t restore the draft. Try again.');
+    await waitFor(dom, () => el(dom, 'status-error-text').textContent === 'Couldn’t restore the draft. Try again.');
     assert.equal(dom.chrome._localStore[key], undefined);
     assert.match(draftRow(dom, key).textContent, /Draft deleted\s*Undo/);
     assert.equal(dom.window.document.activeElement, draftRow(dom, key).querySelector('[data-action="undo"]'));
@@ -1722,7 +1767,7 @@ test('delete all states the count, requires confirmation, and retains a failed U
     };
 
     el(dom, 'drafts-undo-all-button').click();
-    await waitFor(dom, () => el(dom, 'status').textContent === 'Couldn’t restore the drafts. Try again.');
+    await waitFor(dom, () => el(dom, 'status-error-text').textContent === 'Couldn’t restore the drafts. Try again.');
     assert.equal(firstKey in dom.chrome._localStore, false);
     assert.equal(secondKey in dom.chrome._localStore, false);
     assert.equal(el(dom, 'drafts-undo-all').hidden, false);

@@ -101,13 +101,13 @@ export function initSettingsBackup({ extensionApi, flash, save }) {
         try {
             text = await file.text();
         } catch {
-            flash('That settings file could not be read.');
+            flash('That settings file could not be read.', { error: true });
             return;
         }
         const parsed = Transfer.parse(text);
         if (!parsed.ok) {
             hideConfirmation();
-            flash(invalidFileMessage(parsed.reason));
+            flash(invalidFileMessage(parsed.reason), { error: true });
             return;
         }
         showConfirmation(file.name || 'Selected settings file', parsed.settings, 'Settings imported', importEl);
@@ -195,7 +195,7 @@ export function initSettingsBackup({ extensionApi, flash, save }) {
             const response = await send({ type: 'GITHUB_SETTINGS_BACKUP' });
             if (!response?.ok) {
                 githubBackupResult = null;
-                flash(GithubError.message(response?.error));
+                flash(GithubError.message(response?.error), { error: true });
                 return;
             }
             githubBackupResult = {
@@ -213,16 +213,16 @@ export function initSettingsBackup({ extensionApi, flash, save }) {
     githubRestoreEl.addEventListener('click', () => withGithubBusy(async () => {
         const response = await send({ type: 'GITHUB_SETTINGS_RESTORE' });
         if (!response?.ok) {
-            flash(GithubError.message(response?.error));
+            flash(GithubError.message(response?.error), { error: true });
             return;
         }
         if (response.content == null) {
-            flash(`No settings backup found in ${repoName()}.`);
+            flash(`No settings backup found in ${repoName()}.`, { error: true });
             return;
         }
         const parsed = Transfer.parse(response.content);
         if (!parsed.ok) {
-            flash(invalidFileMessage(parsed.reason));
+            flash(invalidFileMessage(parsed.reason), { error: true });
             return;
         }
         showConfirmation(`settings.json from ${repoName()}`, parsed.settings,

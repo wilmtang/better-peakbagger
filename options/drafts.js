@@ -93,7 +93,7 @@ export const initDrafts = ({ extensionApi = globalThis.browser || globalThis.chr
         } catch (error) {
             pending.restoring = false;
             render();
-            flash('Couldn’t restore the draft. Try again.');
+            flash('Couldn’t restore the draft. Try again.', { error: true });
             undoControlFor(key)?.focus();
         }
     };
@@ -120,7 +120,7 @@ export const initDrafts = ({ extensionApi = globalThis.browser || globalThis.chr
             globalThis.clearTimeout(pending.timer);
             pendingDeletes.delete(draft.key);
             render();
-            flash('Couldn’t delete the draft');
+            flash('Couldn’t delete the draft', { error: true });
         }
     };
 
@@ -135,7 +135,7 @@ export const initDrafts = ({ extensionApi = globalThis.browser || globalThis.chr
                 if (control.isConnected) control.textContent = 'Copy Markdown';
             }, 1400);
         } catch (error) {
-            flash('Couldn’t copy Markdown');
+            flash('Couldn’t copy Markdown', { error: true });
         }
     };
 
@@ -250,7 +250,7 @@ export const initDrafts = ({ extensionApi = globalThis.browser || globalThis.chr
             if (revision !== refreshRevision) return;
             currentDrafts = [];
             render();
-            flash('Trip report drafts are unavailable');
+            flash('Trip report drafts are unavailable', { error: true });
         }
     };
 
@@ -284,7 +284,7 @@ export const initDrafts = ({ extensionApi = globalThis.browser || globalThis.chr
             globalThis.clearTimeout(pending.timer);
             if (pendingBulk === pending) pendingBulk = null;
             render();
-            flash('Couldn’t delete the drafts');
+            flash('Couldn’t delete the drafts', { error: true });
             deleteAllEl.focus();
         }
     };
@@ -305,7 +305,7 @@ export const initDrafts = ({ extensionApi = globalThis.browser || globalThis.chr
         } catch (error) {
             pending.restoring = false;
             render();
-            flash('Couldn’t restore the drafts. Try again.');
+            flash('Couldn’t restore the drafts. Try again.', { error: true });
             undoAllButtonEl.focus();
         }
     };

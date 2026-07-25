@@ -93,7 +93,7 @@ for the recovery path where every draft tab was closed. Two regression tests:
 observed failing on `checkboxes lock on open`) and `an opened job refuses
 selection writes and hands the popup its locked state`.
 
-### F2 — Settings feedback is severity-blind, 1.2 seconds long, and rendered where the user is not looking — **verified**
+### F2 — Settings feedback is severity-blind, 1.2 seconds long, and rendered where the user is not looking — **verified** · **fixed**
 
 [`flash()`](../../options/options.js:56) is the settings page's only transient
 channel. It has **51 call sites** across the four controllers, and **28 of them
@@ -127,6 +127,56 @@ bottom of `.content`, give errors a distinct role (`alert`) and color, and
 **do not auto-dismiss failures** — successes may keep the 1.2 s fade,
 failures should persist until the next interaction or an explicit dismiss.
 This is one component change that repairs 28 paths at once.
+
+**The below-the-fold claim is now confirmed on screen**, closing the gap this
+plan flagged for it. Headless Chrome for Testing (`channel: 'chromium'`,
+`headless: true`) loading the real unpacked `dist/` at a 1100×800 viewport, on
+the options page at `scrollTop: 0`: `#status` sits at `top: 3620` in an 800 px
+viewport (`.content` `scrollHeight` 3672, `clientHeight` 800) — 2820 px past
+the fold — with computed `position: static`. Enumerating every reachable CSS
+rule in the page returned **no** rule with `position: sticky` or `fixed`.
+Selecting a value in General then produced `textContent: "Saved"` with
+`opacity: 1` and the element still at `top: 3620`: confirmed, the user cannot
+see it.
+
+**Resolution.** One component change plus per-call-site severity, because the
+component cannot infer severity without being told and string-sniffing the
+message would be the wrong contract.
+
+- `options.html`: the single `<p class="status">` became a `.status-dock`
+  holding **two sibling live regions** — `#status` (`role="status"`, polite)
+  and `#status-error` (`role="alert"`) with its own dismiss button. Two regions
+  rather than one whose `role`/`aria-live` is rewritten per message, because
+  assistive technology does not reliably pick up a role change on a live
+  element.
+- `options.css`: `.status-dock` is `position: sticky; bottom: 0`, collapsing to
+  zero padding when idle (`:not(:has(.show))`) so it never eats viewport
+  height. `.status-error` uses `--danger`/`--danger-bg`/`--danger-border`
+  instead of the success `--accent`. The fade honours
+  `prefers-reduced-motion`.
+- `options.js`: `flash(msg, { error })`. Successes keep the 1.2 s fade;
+  failures go to the alert region, keep the danger colour, and clear only on
+  dismiss or the next report.
+- **30** of the 51 call sites are marked `{ error: true }` across `options.js`
+  (2), `drafts.js` (6), `favorites.js` (16), and `settings-backup.js` (6);
+  `github.js`'s 5 are all successes. That is two more than this finding's
+  count of 28 — the extra two are `No settings/favorites backup found in …`,
+  which report that the requested action did not happen and read as failures at
+  the call site.
+
+**Rendered visual review** (headless Chrome for Testing, real unpacked
+extension, 1100×800 and 560×700): the dock sits at `top: 709` of an 800 px
+viewport — on screen — in light success, dark failure, and narrow failure. The
+failure pill computes to `#ffaaaa` on `#382326` in dark and `#912f2f` on
+`#fff4f4` in light, no horizontal overflow at 560 px, no clipping of the
+dismiss control. Screenshots were inspected and then deleted.
+
+Regression tests: `settings feedback separates severity: successes fade,
+failures persist and alert` (asserts the alert region is used, survives 1.4 s,
+and dismisses) and `the settings feedback dock stays on screen from any scroll
+position`. Nine existing tests that read failure copy out of `#status` were
+retargeted to `#status-error-text` — that is the assertion those tests should
+always have been making, since severity is now part of the contract.
 
 ### F3 — The popup is the only surface that ignores the Units setting — **verified**
 

@@ -648,15 +648,71 @@ button.github-repo:focus-visible { outline: 2px solid var(--accent); outline-off
 .about-links a:hover { text-decoration: underline; }
 .about-links a:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; border-radius: 2px; }
 
+/* Feedback dock. .content is the scroll container and this is the last thing
+ * in .wrap, so sticky bottom keeps the message on screen from any scroll
+ * position — the settings the user is actually toggling are thousands of
+ * pixels above the end of the page. It collapses to nothing when idle so it
+ * never eats viewport height. */
+.status-dock {
+    position: sticky;
+    bottom: 0;
+    z-index: 5;
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 16px;
+    padding: 10px 2px;
+    pointer-events: none;
+}
+.status-dock:not(:has(.show)) { padding: 0; }
+
 .status {
-    margin: 16px 2px 0;
-    min-height: 20px;
+    display: none;
+    align-items: center;
+    gap: 10px;
+    max-width: 100%;
+    border: 1px solid var(--accent);
+    border-radius: 8px;
+    padding: 8px 12px;
     font-size: 13px;
-    color: var(--accent);
+    line-height: 1.4;
+    color: var(--accent-fg);
+    background: var(--accent);
+    box-shadow: var(--shadow);
     opacity: 0;
     transition: opacity .15s;
+    pointer-events: auto;
 }
-.status.show { opacity: 1; }
+.status.show { display: flex; opacity: 1; }
+
+/* Failures are not confirmations: distinct colour, and they do not fade —
+ * several carry GithubError/PeakbaggerError recovery copy the user has to be
+ * able to read and act on. */
+.status-error {
+    color: var(--danger);
+    border-color: var(--danger-border);
+    background: var(--danger-bg);
+}
+
+.status-dismiss {
+    flex: 0 0 auto;
+    display: inline-grid;
+    place-items: center;
+    width: 22px;
+    height: 22px;
+    margin: -3px -5px -3px 0;
+    border: none;
+    border-radius: 6px;
+    padding: 0;
+    color: inherit;
+    background: transparent;
+    cursor: pointer;
+}
+.status-dismiss:hover { background: rgba(127, 127, 127, .22); }
+.status-dismiss:focus-visible { outline: 2px solid currentColor; outline-offset: 1px; }
+
+@media (prefers-reduced-motion: reduce) {
+    .status { transition: none; }
+}
 
 /* Narrow windows: the sidebar becomes a horizontal, scrollable chip row above
  * the content. .content stays the scroll container, so the scroll-spy keeps

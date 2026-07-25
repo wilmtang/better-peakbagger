@@ -588,7 +588,20 @@
             </div>
         </section>
 
-        <p class="status" id="status" role="status" aria-live="polite"></p>
+        <!-- Two sibling live regions rather than one whose role/aria-live is
+             rewritten per message: assistive technology does not reliably pick
+             up a role change on a live element. Only one is ever populated. -->
+        <div class="status-dock">
+            <p class="status" id="status" role="status" aria-live="polite"></p>
+            <div class="status status-error" id="status-error" role="alert" hidden>
+                <span id="status-error-text"></span>
+                <button type="button" id="status-error-dismiss" class="status-dismiss" aria-label="Dismiss message">
+                    <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
+                        <path d="M4 4l8 8M12 4l-8 8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+                    </svg>
+                </button>
+            </div>
+        </div>
       </div>
     </main>
 

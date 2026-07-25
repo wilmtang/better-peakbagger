@@ -438,7 +438,7 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
             if (pendingReplacement) showReplacementConfirmation(pendingReplacement, { focus: false });
         } catch (error) {
             if (revision !== refreshRevision) return;
-            flash('Favorite climbers are unavailable');
+            flash('Favorite climbers are unavailable', { error: true });
         }
     };
 
@@ -578,7 +578,7 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
             globalThis.clearTimeout(pending.timer);
             pendingDeletes.delete(entry.cid);
             renderList();
-            flash("Couldn't remove the favorite");
+            flash("Couldn't remove the favorite", { error: true });
         }
     };
 
@@ -592,7 +592,7 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
             renderList();
             flash('Favorite restored');
         } catch (error) {
-            flash("Couldn't restore the favorite");
+            flash("Couldn't restore the favorite", { error: true });
         }
     };
 
@@ -607,7 +607,7 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
             });
             pending.appliedSignature = response.signature;
         } catch (error) {
-            flash(error.code === 'stale' ? error.message : "Couldn't update favorites");
+            flash(error.code === 'stale' ? error.message : "Couldn't update favorites", { error: true });
             return false;
         }
         if (supersededPending) globalThis.clearTimeout(supersededPending.timer);
@@ -635,7 +635,7 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
             renderList();
             flash('Custom favorites restored');
         } catch (error) {
-            flash(error.code === 'stale' ? error.message : "Couldn't restore favorites");
+            flash(error.code === 'stale' ? error.message : "Couldn't restore favorites", { error: true });
         }
     };
 
@@ -647,7 +647,7 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
     const backupFavorites = () => withGithubBusy(async () => {
         const response = await send({ type: 'GITHUB_FAVORITES_BACKUP' });
         if (!response?.ok) {
-            flash(GithubError.message(response?.error));
+            flash(GithubError.message(response?.error), { error: true });
             return;
         }
         githubBackupResult = {
@@ -661,16 +661,16 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
     const restoreFavorites = () => withGithubBusy(async () => {
         const response = await send({ type: 'GITHUB_FAVORITES_RESTORE' });
         if (!response?.ok) {
-            flash(GithubError.message(response?.error));
+            flash(GithubError.message(response?.error), { error: true });
             return;
         }
         if (response.content == null) {
-            flash(`No favorites backup found in ${githubRepoName()}.`);
+            flash(`No favorites backup found in ${githubRepoName()}.`, { error: true });
             return;
         }
         const parsed = F.parseBackup(response.content);
         if (!parsed.ok) {
-            flash('This favorites backup is not valid or uses a newer format.');
+            flash('This favorites backup is not valid or uses a newer format.', { error: true });
             return;
         }
         showReplacementConfirmation({
@@ -683,7 +683,7 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
     const addClimber = async () => {
         const cid = F.parseClimberInput(addInputEl.value);
         if (cid == null) {
-            flash('Enter a climber id or Peakbagger climber-page link');
+            flash('Enter a climber id or Peakbagger climber-page link', { error: true });
             return;
         }
         addButtonEl.disabled = true;
@@ -697,7 +697,7 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
             name = F.climberNameFromDocument(doc);
             if (pageCid !== cid || !name) throw PeakbaggerError.failure('not-found', { resource: 'climber' });
         } catch (error) {
-            flash(PeakbaggerError.message(error, { resource: `climber page for ID ${cid}` }));
+            flash(PeakbaggerError.message(error, { resource: `climber page for ID ${cid}` }), { error: true });
             addButtonEl.disabled = false;
             return;
         }
@@ -709,7 +709,7 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
             addInputEl.value = '';
             flash(response.details?.added ? `${name} added to favorites` : `${name} is already in your favorites`);
         } catch (error) {
-            flash(error.message || "The climber page loaded, but the favorite couldn't be saved on this device.");
+            flash(error.message || "The climber page loaded, but the favorite couldn't be saved on this device.", { error: true });
         } finally {
             addButtonEl.disabled = false;
         }
@@ -718,7 +718,7 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
     refreshBuddiesEl.addEventListener('click', () => {
         void refreshBuddies().then(cache => {
             if (cache && !buddyError) flash('Buddy List refreshed');
-            else if (buddyError) flash(PeakbaggerError.message(buddyError));
+            else if (buddyError) flash(PeakbaggerError.message(buddyError), { error: true });
         });
     });
     addFormEl.addEventListener('submit', event => { event.preventDefault(); void addClimber(); });
@@ -743,7 +743,7 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
             if (!cache) {
                 const message = PeakbaggerError.message(buddyError);
                 renderImportStatus(message, buddyError);
-                flash(message);
+                flash(message, { error: true });
                 return;
             }
             try {
@@ -765,7 +765,7 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
                     : skipped > 0 ? 'Custom favorites are full' : 'No changes to custom favorites');
             } catch (error) {
                 renderImportStatus("The Buddy List loaded, but the custom favorites couldn't be saved.");
-                flash("Couldn't merge buddies");
+                flash("Couldn't merge buddies", { error: true });
             }
         });
     });
@@ -776,7 +776,7 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
             if (!cache) {
                 const message = PeakbaggerError.message(buddyError);
                 renderImportStatus(message, buddyError);
-                flash(message);
+                flash(message, { error: true });
                 return;
             }
             renderImportStatus();
