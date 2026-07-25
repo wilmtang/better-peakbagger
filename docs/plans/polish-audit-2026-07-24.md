@@ -473,7 +473,7 @@ unnecessary rather than merely present, the extended contrast pairs, and the
 rendered dark PeakAscents check showing both header kinds now computing to the
 same colour, background, and border.
 
-### F11 — Focus rings in the beta-filter bar fail WCAG AA in dark mode — **verified**
+### F11 — Focus rings in the beta-filter bar fail WCAG AA in dark mode — **verified** · **fixed**
 
 `.pbaf-chip:focus-visible`, `.pbaf-reset:focus-visible`,
 `.pbaf-table-sort:focus-visible`, and `.pbaf-words input:focus-visible` all use
@@ -492,6 +492,29 @@ pairing table.
 **Fix.** Add a dark focus color (the bar's own dark accent `#69b58a` is 5.4:1
 and already in the palette) and add a non-text-contrast section to
 `dark-contrast.test.mjs` so focus rings are guarded the way text is.
+
+**Resolution.** With F13's consolidation in place this is a single token:
+`--pbaf-focus` is `#2f6b3f` in `:root` and `#69b58a` under the dark scope, and
+all four `:focus-visible` rules already read it. Measured against every surface
+a ring can land on: **6.21:1** on the bar `#23262a`, **5.50:1** on a chip
+`#2b2f34`, and **6.52:1** on the dark table header `#202224` behind the sort
+controls — all clearing the 3:1 of SC 1.4.11.
+
+The guard is a new `every focus indicator meets WCAG 2.1 non-text contrast`
+test with eight pairs (four dark, four light), checking each ring against the
+surface *behind* it rather than the control it outlines. It also asserts that
+every `:focus-visible` rule the bar declares is covered by a pair, so a new
+control cannot add an unchecked ring. Reverting `--pbaf-focus` to the old value
+reproduces this finding's exact number: *chip focus ring: #2f6b3f on #23262a =
+2.38:1 (need 3:1)*.
+
+**Rendered verification**, which this plan lists as explicitly uninspected:
+headless Chrome for Testing, real unpacked extension, dark theme, real keyboard
+focus on the dark PeakAscents fixture page so `:focus-visible` genuinely
+matches (`el.matches(':focus-visible')` returned `true`). Both a filter chip and
+a column sort control compute to `outlineColor: rgb(105, 181, 138)`, `2px
+solid`, offset `2px`, and the cropped screenshots show a clearly legible ring on
+both the bar and the table header.
 
 ### F12 — A dark rule ships for an element the code no longer creates — **verified** · **fixed**
 

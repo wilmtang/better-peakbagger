@@ -182,6 +182,49 @@ test('every dark-theme text/background pair meets WCAG AA', () => {
     }
 });
 
+// WCAG 2.1 SC 1.4.11 Non-text Contrast: focus indicators and other UI component
+// boundaries need 3:1. The text table above cannot see these — an `outline` is
+// not a `color` — which is how a 2.38:1 focus ring shipped.
+const NON_TEXT = 3.0;
+const outline = (sel, tokens = DARK_TOKENS) => {
+    const d = BAR_RULES.get(sel);
+    assert.ok(d && d.outline, `the filter bar declares no outline for: ${sel}`);
+    return resolveToken(d.outline.trim().split(/\s+/).pop(), tokens);
+};
+
+// A ring is drawn outside its control, so it is checked against the surface
+// behind it: the bar for the bar's own controls, the dark table for the column
+// controls that live in the ascent table's header.
+const FOCUS_PAIRS = [
+    ['chip focus ring',        outline('.pbaf-chip:focus-visible'),        barBg('#pbaf-bar')],
+    ['reset focus ring',       outline('.pbaf-reset:focus-visible'),       barBg('#pbaf-bar')],
+    ['words input focus ring', outline('.pbaf-words input:focus-visible'), barBg('#pbaf-bar')],
+    ['sort control focus ring', outline('.pbaf-table-sort:focus-visible'), bg('table.gray')],
+    ['light chip focus ring',  outline('.pbaf-chip:focus-visible', LIGHT_TOKENS),  barBg('#pbaf-bar', LIGHT_TOKENS)],
+    ['light reset focus ring', outline('.pbaf-reset:focus-visible', LIGHT_TOKENS), barBg('#pbaf-bar', LIGHT_TOKENS)],
+    ['light words focus ring', outline('.pbaf-words input:focus-visible', LIGHT_TOKENS), barBg('#pbaf-bar', LIGHT_TOKENS)],
+    ['light sort focus ring',  outline('.pbaf-table-sort:focus-visible', LIGHT_TOKENS), '#ffffff'],
+];
+
+test('every focus indicator meets WCAG 2.1 non-text contrast', () => {
+    for (const [name, ring, surface] of FOCUS_PAIRS) {
+        const ratio = contrast(ring, surface);
+        assert.ok(
+            ratio >= NON_TEXT,
+            `${name}: ${ring} on ${surface} = ${ratio.toFixed(2)}:1 (need ${NON_TEXT}:1)`
+        );
+    }
+
+    // Every focus-visible rule the bar declares must be covered above, so a new
+    // control cannot add an unchecked ring.
+    const declared = [...BAR_RULES.keys()].filter(sel => sel.includes(':focus-visible'));
+    assert.ok(declared.length >= 4, 'expected the bar to declare focus rings');
+    for (const selector of declared) {
+        assert.ok(FOCUS_PAIRS.some(([, ring]) => ring === outline(selector)),
+            `${selector} declares a focus ring that no pair above checks`);
+    }
+});
+
 test('every filter-bar theme token has a dark counterpart', () => {
     // The invariant that retires F13's failure class: the bar's theme has one
     // owner, so a control cannot ship with a light value and no dark one.

@@ -453,7 +453,11 @@ html[data-bpb-theme="dark"] {
     --pbaf-link: #8fdcae;
     --pbaf-sort-text: #7ab6ff;
     --pbaf-sort-hover: #9ecbff;
-    --pbaf-focus: #2f6b3f;
+    /* The light ring (#2f6b3f) is 2.38:1 on the dark bar — below the 3:1 that
+       WCAG 2.1 SC 1.4.11 requires of a focus indicator. This clears it on every
+       surface a ring can land on: 6.21 on the bar, 5.50 on a chip, 6.52 on the
+       dark table header behind the sort controls. */
+    --pbaf-focus: #69b58a;
 }
 #pbaf-bar { position: sticky; top: 0; z-index: 400; box-sizing: border-box; margin: 10px 0; padding: 8px 12px;
     background: var(--pbaf-bar-bg); border: 1px solid var(--pbaf-bar-border); border-radius: 8px; box-shadow: var(--pbaf-bar-shadow);
