@@ -25,6 +25,7 @@ import { terrainFailure as TerrainFailure } from '../terrain/terrain-failure.js'
 import { units as Units } from '../ui/units.js';
 import { mapViewport as MapViewport } from './map-viewport.js';
 import { mapOverlay as MapOverlay } from './map-overlay.js';
+import { gpxPanelCss } from './gpx-panel-css.js';
 
 // Chart and tzlookup remain separately-loaded vendor globals (see manifest).
 const run = async () => {
@@ -65,17 +66,13 @@ const run = async () => {
     };
 
     // === Better Peakbagger: theming + centralized settings (via bridge) ===
-    const PALETTES = {
-        light: {
-            panelBg: '#fafafa', panelBorder: '#cccccc', inputBg: '#ffffff', selBorder: '#cccccc',
-            text: '#000000', sub: '#444444', muted: '#777777', faint: '#888888',
-            chartText: '#666666', chartGrid: 'rgba(0,0,0,0.1)', axisTitle: '#000000', timeAxis: '#007fb6'
-        },
-        dark: {
-            panelBg: '#23262a', panelBorder: '#3a3f45', inputBg: '#2b2f34', selBorder: '#4a5058',
-            text: '#e6e1d8', sub: '#b6b0a6', muted: '#9a948a', faint: '#8b857c',
-            chartText: '#b6b0a6', chartGrid: 'rgba(255,255,255,0.12)', axisTitle: '#e6e1d8', timeAxis: '#6ab0de'
-        }
+    // Chart.js takes colors as JS options, not CSS, so these have to stay in
+    // JS. Everything the panel's *DOM* is painted with moved to
+    // src/gpx/gpx-panel-css.js, so this is no longer a second theming system
+    // beside a stylesheet — it is the one place JS values are genuinely needed.
+    const CHART_PALETTES = {
+        light: { chartText: '#666666', chartGrid: 'rgba(0,0,0,0.1)', axisTitle: '#000000', timeAxis: '#007fb6' },
+        dark: { chartText: '#b6b0a6', chartGrid: 'rgba(255,255,255,0.12)', axisTitle: '#e6e1d8', timeAxis: '#6ab0de' }
     };
     const effectiveTheme = preference => ThemeResolve.resolve(preference);
 
@@ -241,20 +238,30 @@ const run = async () => {
         const scheduleMapInvalidate = viewport.scheduleInvalidate;
         const applyMapViewportSize = viewport.applySize;
 
+        if (!document.getElementById('bpb-gpx-panel-style')) {
+            const panelStyle = document.createElement('style');
+            panelStyle.id = 'bpb-gpx-panel-style';
+            panelStyle.textContent = gpxPanelCss;
+            document.head.appendChild(panelStyle);
+        }
+
         const container = document.createElement('div');
         container.id = 'bpb-gpx-analysis';
-        Object.assign(container.style, { marginTop: '15px', padding: '10px', border: '1px solid #ccc', background: '#fafafa', borderRadius: '5px', maxWidth: '800px' });
+        // Colors come from gpx-panel-css.js; only layout stays inline.
+        Object.assign(container.style, { marginTop: '15px', padding: '10px', borderWidth: '1px', borderStyle: 'solid', borderRadius: '5px', maxWidth: '800px' });
 
         const headerBox = document.createElement('div');
         Object.assign(headerBox.style, { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '10px' });
 
         const statsContainer = document.createElement('div');
         const stats = document.createElement('div');
+        stats.className = 'bpb-gpx-stats';
         Object.assign(stats.style, { fontFamily: 'sans-serif', fontWeight: 'bold' });
         stats.textContent = 'Analyzing GPX data…';
 
         const subStats = document.createElement('div');
-        Object.assign(subStats.style, { fontFamily: 'sans-serif', fontSize: '0.9em', color: '#444', marginTop: '4px', fontStyle: 'italic' });
+        subStats.className = 'bpb-gpx-substats';
+        Object.assign(subStats.style, { fontFamily: 'sans-serif', fontSize: '0.9em', marginTop: '4px', fontStyle: 'italic' });
 
         statsContainer.append(stats, subStats);
 
@@ -264,7 +271,7 @@ const run = async () => {
         const unitSelect = document.createElement('select');
         unitSelect.id = 'bpb-gpx-units';
         unitSelect.setAttribute('aria-label', 'Units');
-        Object.assign(unitSelect.style, { padding: '2px 6px', borderRadius: '4px', border: '1px solid #ccc', cursor: 'pointer', outline: 'none' });
+        Object.assign(unitSelect.style, { padding: '2px 6px', borderRadius: '4px', borderWidth: '1px', borderStyle: 'solid', cursor: 'pointer', outline: 'none' });
         const unitOption = (value, label) => {
             const option = document.createElement('option');
             option.value = value;
@@ -296,6 +303,7 @@ const run = async () => {
 
         const createColorControl = (id, text) => {
             const label = document.createElement('label');
+            label.className = 'bpb-gpx-control-label';
             Object.assign(label.style, { display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer' });
             label.htmlFor = id;
             const caption = document.createElement('span');
@@ -304,7 +312,7 @@ const run = async () => {
             input.id = id;
             input.type = 'color';
             input.setAttribute('aria-label', `${text} color`);
-            Object.assign(input.style, { width: '26px', height: '22px', padding: '2px', border: '1px solid #ccc', borderRadius: '5px', cursor: 'pointer' });
+            Object.assign(input.style, { width: '26px', height: '22px', padding: '2px', borderWidth: '1px', borderStyle: 'solid', borderRadius: '5px', cursor: 'pointer' });
             label.append(caption, input);
             routeStyleControls.append(label);
             return { label, input };
@@ -314,7 +322,8 @@ const run = async () => {
         const routeCasingColorControl = createColorControl('bpb-map-route-casing-color', 'Outline');
 
         const hintText = document.createElement('div');
-        Object.assign(hintText.style, { fontSize: '0.8em', color: '#888', marginTop: '4px', fontStyle: 'italic' });
+        hintText.className = 'bpb-gpx-hint';
+        Object.assign(hintText.style, { fontSize: '0.8em', marginTop: '4px', fontStyle: 'italic' });
         hintText.textContent = COPY_HINT;
 
         controlsContainer.append(unitSelect, routeStyleControls, hintText);
@@ -343,22 +352,16 @@ const run = async () => {
         if (fullScreenMapLink) fullScreenMapLink.before(container);
         else gpxLink.after(container);
 
-        // Panel palette follows the current theme setting; re-applied on render.
-        const panelPalette = () => PALETTES[effectiveTheme(BPB.get().theme)];
+        // One theming system for the whole surface: the panel and the floating
+        // 3D toggle now take the same data-theme attribute, and the panel's
+        // stylesheet reassigns its tokens under it. This used to paint eight
+        // elements with inline styles from a JS palette while the toggle beside
+        // it was themed by CSS.
+        const panelPalette = () => CHART_PALETTES[effectiveTheme(BPB.get().theme)];
         const applyPanelTheme = () => {
-            const p = panelPalette();
-            // The floating toggle is styled by CSS; steer its light/dark variant
-            // with the extension theme, mirroring the terrain frame.
-            terrainButton.dataset.theme = effectiveTheme(BPB.get().theme);
-            Object.assign(container.style, { background: p.panelBg, borderColor: p.panelBorder, color: p.text });
-            Object.assign(unitSelect.style, { background: p.inputBg, color: p.text, borderColor: p.selBorder });
-            [routeColorControl, routeCasingColorControl].forEach(control => {
-                control.label.style.color = p.sub;
-                Object.assign(control.input.style, { background: p.inputBg, borderColor: p.selBorder });
-            });
-            stats.style.color = p.text;
-            subStats.style.color = p.sub;
-            hintText.style.color = p.faint;
+            const theme = effectiveTheme(BPB.get().theme);
+            container.dataset.theme = theme;
+            terrainButton.dataset.theme = theme;
         };
         applyPanelTheme();
 
@@ -695,6 +698,14 @@ const run = async () => {
             const isMultiDay = hasTime && (getRelativeDay(endMs, startMs) > 1);
 
             // Format Stats Bar
+            // Built fresh each render, so these keep inline styles — but the
+            // colors read the panel stylesheet's tokens rather than a JS
+            // palette, so there is still only one place a theme value lives.
+            const TONE = {
+                sub: 'var(--bpb-gpx-sub)',
+                muted: 'var(--bpb-gpx-muted)',
+                faint: 'var(--bpb-gpx-faint)',
+            };
             const subLine = (text, styles) => {
                 const line = document.createElement('div');
                 Object.assign(line.style, styles);
@@ -702,7 +713,7 @@ const run = async () => {
                 return line;
             };
             let txt = `Interactive Stats: ${formatDistanceM(metrics.distanceM)} | ${formatElevationM(metrics.gainM)} gain`;
-            const subLines = [subLine(buildMetricNote(), { color: p.muted, fontSize: '0.95em', marginBottom: '2px' })];
+            const subLines = [subLine(buildMetricNote(), { color: TONE.muted, fontSize: '0.95em', marginBottom: '2px' })];
             if (hasTime) {
                 txt += ` | Time: ${fmtTime(totalMs)}`;
                 if (summitMs > startMs) {
@@ -710,18 +721,18 @@ const run = async () => {
                     const timeBack = endMs - summitMs;
                     subLines.push(subLine(
                         `Start time: ${formatTimeStr(startMs, startMs, isMultiDay)} | Summit time: ${formatTimeStr(summitMs, startMs, isMultiDay)} | Back to car: ${formatTimeStr(endMs, startMs, isMultiDay)}`,
-                        { color: p.sub, marginBottom: '2px' }));
+                        { color: TONE.sub, marginBottom: '2px' }));
                     subLines.push(subLine(
                         `Time to summit: ${fmtTime(timeToSummit)} | Time back: ${fmtTime(timeBack)}`,
-                        { color: p.faint, fontSize: '0.95em' }));
+                        { color: TONE.faint, fontSize: '0.95em' }));
                 }
                 if (campingSpots.length > 0) {
                     const spotStrs = campingSpots.map(s => `Day ${s.day} (${s.lat.toFixed(5)}, ${s.lon.toFixed(5)})`).join(' | ');
-                    subLines.push(subLine(`Possible Camping: ${spotStrs}`, { color: p.faint, fontSize: '0.95em', marginTop: '2px' }));
+                    subLines.push(subLine(`Possible Camping: ${spotStrs}`, { color: TONE.faint, fontSize: '0.95em', marginTop: '2px' }));
                 }
                 subLines.push(subLine(
                     `Times in the mountain’s local time (${mountainZoneLabel(startMs)})`,
-                    { color: p.faint, fontSize: '0.95em', marginTop: '2px' }));
+                    { color: TONE.faint, fontSize: '0.95em', marginTop: '2px' }));
             }
             stats.textContent = txt;
             subStats.replaceChildren(...subLines);

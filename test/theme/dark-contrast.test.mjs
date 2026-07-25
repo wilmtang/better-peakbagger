@@ -225,6 +225,42 @@ test('every focus indicator meets WCAG 2.1 non-text contrast', () => {
     }
 });
 
+test('the GPX analyzer panel has one theming system, not two', async () => {
+    const { gpxPanelCss } = await import('../../src/gpx/gpx-panel-css.js');
+    const panelRules = parseRules(gpxPanelCss.replace(/\/\*[\s\S]*?\*\//g, ''));
+    const light = Object.fromEntries(Object.entries(panelRules.get('#bpb-gpx-analysis') || {})
+        .filter(([key]) => key.startsWith('--bpb-gpx-')));
+    const dark = Object.fromEntries(Object.entries(panelRules.get('#bpb-gpx-analysis[data-theme="dark"]') || {})
+        .filter(([key]) => key.startsWith('--bpb-gpx-')));
+
+    assert.ok(Object.keys(light).length >= 7, 'the panel palette should be tokenised');
+    for (const name of Object.keys(light)) assert.ok(dark[name], `${name} has no dark value`);
+    for (const name of Object.keys(dark)) assert.ok(light[name], `${name} has no light value`);
+
+    // The panel and the floating 3D toggle beside it are steered by the same
+    // attribute; the panel used to be painted from a JS palette instead.
+    const analyzer = await readFile(path.join(root, 'src/gpx/gpx-analyzer.js'), 'utf8');
+    assert.match(analyzer, /container\.dataset\.theme = theme;[\s\S]{0,80}terrainButton\.dataset\.theme = theme;/,
+        'one data-theme drives the whole surface');
+    assert.doesNotMatch(analyzer, /panelBg|panelBorder|selBorder/,
+        'the DOM palette must not survive alongside the stylesheet');
+    // Chart.js takes colours as JS options, so that palette legitimately stays.
+    assert.match(analyzer, /CHART_PALETTES/);
+
+    // Text pairs the panel paints, in dark.
+    const pairs = [
+        ['panel text', dark['--bpb-gpx-text'], dark['--bpb-gpx-panel-bg'], NORMAL],
+        ['panel sub text', dark['--bpb-gpx-sub'], dark['--bpb-gpx-panel-bg'], NORMAL],
+        ['panel muted text', dark['--bpb-gpx-muted'], dark['--bpb-gpx-panel-bg'], NORMAL],
+        ['panel input text', dark['--bpb-gpx-text'], dark['--bpb-gpx-input-bg'], NORMAL],
+    ];
+    for (const [name, foreground, background, minimum] of pairs) {
+        const ratio = contrast(foreground, background);
+        assert.ok(ratio >= minimum,
+            `${name}: ${foreground} on ${background} = ${ratio.toFixed(2)}:1 (need ${minimum}:1)`);
+    }
+});
+
 test('every filter-bar theme token has a dark counterpart', () => {
     // The invariant that retires F13's failure class: the bar's theme has one
     // owner, so a control cannot ship with a light value and no dark one.
