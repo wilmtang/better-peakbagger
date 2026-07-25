@@ -297,6 +297,11 @@ import { capturePhases as CapturePhases } from '../src/capture/capture-phases.js
                 selectedIds: selectedIds()
             });
             if (response?.phase === 'error') throw new Error(response.error?.message || 'Drafts could not be opened.');
+            // Re-render from the worker's own state so the selection lock engages
+            // in this turn. Patching only the label leaves a "ready" card offering
+            // an open the worker would refuse — polling has already stopped.
+            if (response?.job) renderResults(response.job);
+            else refreshSelection();
             openButton.textContent = response?.groupWarning ? 'Drafts opened without group' : 'Show opened drafts';
             openButton.disabled = false;
         } catch (error) {

@@ -229,6 +229,71 @@ test('popup lets a no-match capture bypass the cached terminal job and check aga
     dom.window.close();
 });
 
+test('popup locks the selection in the same turn the drafts open', async () => {
+    const dom = new JSDOM(html, {
+        url: 'chrome-extension://better-peakbagger/popup/popup.html',
+        runScripts: 'outside-only'
+    });
+    const matches = [
+        {
+            id: 1, name: 'First Peak', classification: 'strong', confidence: 95,
+            evidence: { distanceM: 5, elevationDeltaM: 2, trackQuality: 1 }
+        },
+        {
+            id: 2, name: 'Second Peak', classification: 'probable', confidence: 75,
+            evidence: { distanceM: 30, elevationDeltaM: 10, trackQuality: 0.9 }
+        }
+    ];
+    // The worker hands back a fresh object per message, the way publicJob() does.
+    const job = phase => ({
+        phase, provider: 'garmin', hasCachedGpx: true, selectedIds: [1, 2],
+        trackSummary: { originalPointCount: 2, retainedPointCount: 2, maxDeviationM: 0 },
+        matches: matches.map(match => ({ ...match }))
+    });
+    let phase = 'ready';
+    const messages = [];
+    dom.window.chrome = {
+        tabs: { query: async () => [{ id: 9 }] },
+        runtime: {
+            sendMessage: async message => {
+                messages.push(message);
+                if (message.type === 'CAPTURE_START' || message.type === 'CAPTURE_STATUS') return job(phase);
+                if (message.type === 'CAPTURE_OPEN_DRAFTS') {
+                    phase = 'opened';
+                    return { tabIds: [20, 21], reused: false, job: job(phase) };
+                }
+                return { ok: true };
+            }
+        }
+    };
+
+    dom.window.eval(source);
+    const openButton = dom.window.document.getElementById('open-drafts');
+    const lockHint = dom.window.document.getElementById('selection-lock-hint');
+    await waitFor(() => openButton.textContent === 'Open 2 drafts');
+    assert.equal(lockHint.hidden, true);
+
+    openButton.click();
+    await waitFor(() => openButton.textContent === 'Show opened drafts');
+
+    // Without a reopen: the lock affordances engage and the deselect is refused.
+    const checkboxes = [...dom.window.document.querySelectorAll('#peak-list input')];
+    assert.ok(checkboxes.every(checkbox => checkbox.disabled), 'checkboxes lock on open');
+    assert.equal(lockHint.hidden, false, 'the lock hint explains why');
+    assert.equal(openButton.disabled, false);
+
+    const selectionsBefore = messages.filter(message => message.type === 'CAPTURE_SELECTION').length;
+    checkboxes[1].checked = false;
+    checkboxes[1].dispatchEvent(new dom.window.Event('change'));
+    assert.equal(openButton.textContent, 'Show opened drafts', 'no "Open 1 draft" promise after opening');
+    assert.equal(
+        messages.filter(message => message.type === 'CAPTURE_SELECTION').length,
+        selectionsBefore,
+        'no selection write is sent once the drafts exist'
+    );
+    dom.window.close();
+});
+
 test('popup locks an opened selection and keeps its existing drafts discoverable', async () => {
     const dom = new JSDOM(html, {
         url: 'chrome-extension://better-peakbagger/popup/popup.html',

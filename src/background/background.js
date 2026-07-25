@@ -488,7 +488,22 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
         return { ok: cancelled, cancelled, job: cancelled ? null : publicJob(current) };
     };
 
+    // The selection that produced the open draft tabs is the one that matters.
+    // Once drafts exist for the job, a selection write can never take effect —
+    // openDrafts() reuses those tabs — so refuse it at the route rather than
+    // storing a change the popup would then misreport as actionable.
+    const SELECTION_LOCKED_PHASES = new Set(['opened', 'previewed']);
+
     const updateSelection = async message => {
+        const tabId = Number(message.tabId);
+        const current = (await readMap(JOBS_KEY))[tabId];
+        if (isFresh(current) && SELECTION_LOCKED_PHASES.has(current.phase)) return current;
+        return applySelection(message);
+    };
+
+    // openDrafts() re-opens a job whose draft tabs were all closed, so the
+    // mutation itself stays reachable in phase 'opened'; only the route locks.
+    const applySelection = async message => {
         const tabId = Number(message.tabId);
         return mutateMap(JOBS_KEY, jobs => {
             const job = jobs[tabId];
@@ -595,10 +610,14 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
         if (existingForJob.length) {
             for (const draft of existingForJob) await ext.tabs.update(draft.tabId, { active: false });
             await ext.tabs.update(existingForJob[0].tabId, { active: true });
-            return { tabIds: existingForJob.map(draft => draft.tabId), reused: true };
+            return {
+                tabIds: existingForJob.map(draft => draft.tabId),
+                reused: true,
+                job: publicJob(existingJob)
+            };
         }
 
-        const job = await updateSelection(message);
+        const job = await applySelection(message);
         if (!isFresh(job) || !job.uploadGpx || (job.phase !== 'ready' && job.phase !== 'opened')) {
             throw new Error('Capture results are no longer available. Capture the activity again.');
         }
@@ -616,8 +635,8 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
             focusFirst: true,
         });
         const tabIds = created.map(draft => draft.tabId);
-        await updateJob(tabId, { phase: 'opened', openedDraftTabIds: tabIds, groupWarning });
-        return { tabIds, groupWarning, reused: false };
+        const opened = await updateJob(tabId, { phase: 'opened', openedDraftTabIds: tabIds, groupWarning });
+        return { tabIds, groupWarning, reused: false, job: publicJob(opened) };
     };
 
     // ---- Local-file GPX processing (ascentedit.aspx upload field) ----------

@@ -522,6 +522,26 @@ test('cancelling an in-progress capture discards its job and ignores later resul
         'the abandoned process must not recreate or retain its late result');
 });
 
+test('an opened job refuses selection writes and hands the popup its locked state', async () => {
+    const harness = createHarness({
+        peakXml: '<p><t i="7" n="First Peak" a="0" o="0" e="426.51" r="100" l="Test Range"/><t i="8" n="Second Peak" a="0" o="0.0005" e="426.51" r="100" l="Test Range"/></p>'
+    });
+    await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+
+    const opened = await harness.send({ type: 'CAPTURE_OPEN_DRAFTS', tabId: 1, selectedIds: [7, 8] });
+    assert.equal(opened.reused, false);
+    assert.equal(opened.job.phase, 'opened',
+        'the popup needs the post-open job to lock its selection without a reopen');
+    assert.deepEqual([...opened.job.selectedIds], [7, 8]);
+    assert.equal(opened.job.uploadGpx, undefined, 'the returned job stays a public job');
+
+    // The drafts already exist, so this write could never take effect.
+    const refused = await harness.send({ type: 'CAPTURE_SELECTION', tabId: 1, selectedIds: [7] });
+    assert.deepEqual([...refused.selectedIds], [7, 8], 'the response reports the selection that opened');
+    assert.deepEqual([...harness.values.bpbCaptureJobs['1'].selectedIds], [7, 8],
+        'and nothing was stored');
+});
+
 test('same-day suffixes include only selected ascents and follow track order', async () => {
     const harness = createHarness();
     await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
