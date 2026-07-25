@@ -303,7 +303,7 @@ handed to a surface` (asserts the exception string appears nowhere in the
 response) and `popup reports a grouping failure in the status line, not on the
 primary button`.
 
-### F6 — Bulk draft deletion uses a native `confirm()`; every other destructive action uses an in-page card
+### F6 — Bulk draft deletion uses a native `confirm()`; every other destructive action uses an in-page card — **fixed**
 
 [drafts.js:264](../../options/drafts.js:264) calls `globalThis.confirm(...)`.
 The favorites mirror confirmation
@@ -315,6 +315,35 @@ dark theme, cannot be styled, and blocks the page.
 
 **Fix.** Reuse the existing confirmation component for "Delete all N drafts".
 The markup pattern already exists twice; this is a third host, not a new design.
+
+**Resolution.** `options.html` gained a third host reusing the *same classes*
+as the settings-import block (`.settings-backup-confirmation`,
+`-title`, `-detail`, `-actions`, `.settings-backup-confirm`) rather than a
+parallel set, so the three stay visually identical by construction; the only new
+rule is `.drafts-confirmation`, which adds the full border and rounding the
+block needs when it sits inside a panel instead of on a card edge.
+`drafts.js` replaces `globalThis.confirm` with `askDeleteAll` /
+`hideDeleteAllConfirmation`, matching the existing pattern's Escape handling
+and focus return, and `render()` closes a confirmation whose drafts another tab
+has already removed.
+
+Regression: the existing `delete all states the count, requires confirmation,
+and retains a failed Undo for retry` was rewritten against the in-page dialog —
+it now installs a `window.confirm` that *throws*, so a regression to the native
+dialog fails the test, and it covers Cancel, Escape, focus return to the
+opener, and initial focus on the confirm button.
+
+Rendered visual review (headless Chrome for Testing, real unpacked extension,
+1100×800, both themes): the block renders inside the drafts panel on
+`#382326`/`#704046` in dark and `#fff4f4`/`#dfb1b1` in light, with the confirm
+button focused and its focus ring visible, and no horizontal overflow — the
+dark-theme rendering being precisely what the native dialog could not do.
+
+**Observation, not changed:** `src/ascent/ascent-delete.js:67` also calls
+`globalThis.confirm`. That is a content script interrupting Peakbagger's own
+destructive form submit on Peakbagger's page, not an extension-owned surface
+with this design system available, so it is outside this finding — which names
+the settings page — and was deliberately left alone.
 
 ### F7 — Deleting a single draft drops keyboard focus
 

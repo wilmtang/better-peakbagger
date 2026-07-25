@@ -14,12 +14,20 @@ export const initDrafts = ({ extensionApi = globalThis.browser || globalThis.chr
     const deleteAllEl = document.getElementById('drafts-delete-all');
     const undoAllEl = document.getElementById('drafts-undo-all');
     const undoAllButtonEl = document.getElementById('drafts-undo-all-button');
+    const confirmationEl = document.getElementById('drafts-delete-all-confirmation');
+    const confirmationTitleEl = document.getElementById('drafts-delete-all-confirmation-title');
+    const confirmationCancelEl = document.getElementById('drafts-delete-all-cancel');
+    const confirmationConfirmEl = document.getElementById('drafts-delete-all-confirm');
     if (!store || OptionsUtils.logMissingElements('draft manager', {
         'drafts-list': listEl,
         'drafts-empty': emptyEl,
         'drafts-delete-all': deleteAllEl,
         'drafts-undo-all': undoAllEl,
         'drafts-undo-all-button': undoAllButtonEl,
+        'drafts-delete-all-confirmation': confirmationEl,
+        'drafts-delete-all-confirmation-title': confirmationTitleEl,
+        'drafts-delete-all-cancel': confirmationCancelEl,
+        'drafts-delete-all-confirm': confirmationConfirmEl,
     })) return { refresh() {} };
 
     const DAY_MS = 24 * 60 * 60 * 1000;
@@ -226,6 +234,9 @@ export const initDrafts = ({ extensionApi = globalThis.browser || globalThis.chr
         deleteAllEl.textContent = freshCount === 1
             ? 'Delete this draft'
             : `Delete all ${freshCount} drafts`;
+        // Another tab may have emptied the list while the question was open;
+        // never leave a confirmation for drafts that are no longer there.
+        if (!confirmationEl.hidden && freshCount === 0) hideDeleteAllConfirmation({ restoreFocus: false });
         if (focusedUndoKey) undoControlFor(focusedUndoKey)?.focus();
     };
 
@@ -254,21 +265,31 @@ export const initDrafts = ({ extensionApi = globalThis.browser || globalThis.chr
         }
     };
 
+    const hideDeleteAllConfirmation = ({ restoreFocus = true } = {}) => {
+        confirmationEl.hidden = true;
+        if (restoreFocus && deleteAllEl.isConnected && !deleteAllEl.hidden) deleteAllEl.focus();
+    };
+
+    // The native confirm() cannot follow the extension's dark theme, cannot be
+    // styled, and blocks the page. This is the third host for the in-page block
+    // the favorites mirror and the settings import already use.
+    const askDeleteAll = () => {
+        const count = currentDrafts.filter(draft => !pendingDeletes.has(draft.key)).length;
+        if (!count || pendingBulk) return;
+        confirmationTitleEl.textContent = count === 1
+            ? 'Delete this trip report draft from this device?'
+            : `Delete all ${count} trip report drafts from this device?`;
+        confirmationEl.hidden = false;
+        confirmationConfirmEl.focus();
+    };
+
     const beginDeleteAll = async () => {
         if (pendingBulk) return;
         const records = new Map(currentDrafts
             .filter(draft => !pendingDeletes.has(draft.key))
             .map(draft => [draft.key, draft.record]));
         if (!records.size) return;
-        const count = records.size;
-        const confirmed = globalThis.confirm(
-            `Delete ${count === 1 ? 'this trip report draft' : `all ${count} trip report drafts`} from this device?\n\n`
-            + 'You’ll have 6 seconds to undo while this Settings page stays open.'
-        );
-        if (!confirmed) {
-            deleteAllEl.focus();
-            return;
-        }
+        hideDeleteAllConfirmation({ restoreFocus: false });
         const pending = { records, timer: null, restoring: false };
         pending.timer = globalThis.setTimeout(() => {
             if (pendingBulk === pending) pendingBulk = null;
@@ -310,7 +331,14 @@ export const initDrafts = ({ extensionApi = globalThis.browser || globalThis.chr
         }
     };
 
-    deleteAllEl.addEventListener('click', () => { void beginDeleteAll(); });
+    deleteAllEl.addEventListener('click', askDeleteAll);
+    confirmationCancelEl.addEventListener('click', () => hideDeleteAllConfirmation());
+    confirmationConfirmEl.addEventListener('click', () => { void beginDeleteAll(); });
+    document.addEventListener('keydown', event => {
+        if (event.key !== 'Escape' || confirmationEl.hidden) return;
+        event.preventDefault();
+        hideDeleteAllConfirmation();
+    });
     undoAllButtonEl.addEventListener('click', () => { void undoDeleteAll(); });
 
     if (extensionApi.storage.onChanged) {

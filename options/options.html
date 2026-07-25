@@ -468,6 +468,22 @@
                     <span>All drafts deleted</span>
                     <button class="draft-undo" id="drafts-undo-all-button" type="button">Undo</button>
                 </div>
+                <!-- Third host for the same confirm-then-undo block used by the
+                     favorites mirror and the settings import. -->
+                <div class="settings-backup-confirmation drafts-confirmation" id="drafts-delete-all-confirmation"
+                    role="alertdialog" aria-labelledby="drafts-delete-all-confirmation-title"
+                    aria-describedby="drafts-delete-all-confirmation-detail" hidden>
+                    <div>
+                        <p class="settings-backup-confirmation-title" id="drafts-delete-all-confirmation-title">Delete all drafts?</p>
+                        <p class="settings-backup-confirmation-detail" id="drafts-delete-all-confirmation-detail">
+                            You’ll have 6 seconds to undo while this Settings page stays open.
+                        </p>
+                    </div>
+                    <div class="settings-backup-confirmation-actions">
+                        <button id="drafts-delete-all-cancel" class="secondary" type="button">Cancel</button>
+                        <button id="drafts-delete-all-confirm" class="settings-backup-confirm" type="button">Delete drafts</button>
+                    </div>
+                </div>
                 <div class="drafts-footer">
                     <button id="drafts-delete-all" class="secondary" type="button" hidden>Delete all drafts</button>
                 </div>

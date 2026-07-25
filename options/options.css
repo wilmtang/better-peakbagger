@@ -637,6 +637,14 @@ button.github-repo:focus-visible { outline: 2px solid var(--accent); outline-off
 .draft-undo:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .drafts-undo-all { display: flex; align-items: center; gap: 8px; margin: 14px 0 0; color: var(--sub); font-size: 13px; }
 .drafts-undo-all[hidden] { display: none; }
+/* Reuses the shared confirmation block; it sits inside the drafts panel rather
+ * than on a card edge, so it gets a full border and its own rounding. */
+.drafts-confirmation {
+    margin-top: 14px;
+    border: 1px solid var(--danger-border);
+    border-radius: 10px;
+}
+
 .drafts-footer { display: flex; justify-content: flex-end; margin-top: 14px; }
 .drafts-footer:has(#drafts-delete-all[hidden]) { display: none; }
 .drafts-footer button.secondary { align-self: auto; }

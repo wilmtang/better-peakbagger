@@ -1725,8 +1725,6 @@ test('a failed single-draft Undo keeps its recovery snapshot available for retry
 test('delete all states the count, requires confirmation, and retains a failed Undo for retry', async () => {
     const firstKey = 'bpbReportDraft:900001:a123';
     const secondKey = 'bpbReportDraft:900001:p456';
-    const confirmations = [];
-    const confirmationResults = [false, true];
     const records = {
         [firstKey]: { text: 'First', mode: 'rich', savedAt: Date.now() },
         [secondKey]: { text: 'Second', mode: 'markdown', source: 'Second', savedAt: Date.now() - 1 }
@@ -1734,24 +1732,43 @@ test('delete all states the count, requires confirmation, and retains a failed U
     const dom = await loadOptions({}, {
         local: records,
         prepareWindow: window => {
-            window.confirm = message => {
-                confirmations.push(message);
-                return confirmationResults.shift();
+            window.confirm = () => {
+                throw new Error('the draft manager must not use the native confirm dialog');
             };
         }
     });
     await waitFor(dom, () => dom.window.document.querySelectorAll('.draft-item').length === 2);
     assert.equal(el(dom, 'drafts-delete-all').textContent, 'Delete all 2 drafts');
 
+    // The in-page block the favorites mirror and settings import already use.
+    const confirmation = el(dom, 'drafts-delete-all-confirmation');
+    assert.equal(confirmation.hidden, true);
     el(dom, 'drafts-delete-all').click();
+    assert.equal(confirmation.hidden, false);
+    assert.equal(confirmation.getAttribute('role'), 'alertdialog');
+    assert.match(el(dom, 'drafts-delete-all-confirmation-title').textContent,
+        /Delete all 2 trip report drafts from this device/);
+    assert.match(confirmation.textContent, /6 seconds to undo/);
+    assert.equal(dom.window.document.activeElement, el(dom, 'drafts-delete-all-confirm'));
+
+    // Cancel leaves everything alone and hands focus back to its opener.
+    el(dom, 'drafts-delete-all-cancel').click();
+    assert.equal(confirmation.hidden, true);
     assert.deepEqual(dom.chrome._localStore, records, 'Cancel must leave every draft untouched');
     assert.equal(dom.window.document.activeElement, el(dom, 'drafts-delete-all'));
 
+    // Escape does the same.
     el(dom, 'drafts-delete-all').click();
+    assert.equal(confirmation.hidden, false);
+    dom.window.document.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    assert.equal(confirmation.hidden, true);
+    assert.deepEqual(dom.chrome._localStore, records, 'Escape must leave every draft untouched');
+    assert.equal(dom.window.document.activeElement, el(dom, 'drafts-delete-all'));
+
+    el(dom, 'drafts-delete-all').click();
+    el(dom, 'drafts-delete-all-confirm').click();
     await waitFor(dom, () => !(firstKey in dom.chrome._localStore) && !(secondKey in dom.chrome._localStore));
-    assert.equal(confirmations.length, 2);
-    assert.match(confirmations[0], /Delete all 2 trip report drafts from this device/);
-    assert.match(confirmations[0], /6 seconds to undo/);
+    assert.equal(confirmation.hidden, true, 'the question closes once it is answered');
     assert.equal(el(dom, 'drafts-undo-all').hidden, false);
     assert.match(el(dom, 'drafts-undo-all').textContent, /All drafts deleted\s*Undo/);
     assert.equal(dom.window.document.activeElement, el(dom, 'drafts-undo-all-button'));
