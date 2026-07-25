@@ -280,7 +280,7 @@ disarm it once consumed — and never let it run while a confirmation is
 displayed. Cache the ascent summary with a short TTL rather than invalidating
 it on focus.
 
-### F9 — A transient poll failure declares the capture dead and shows browser-internal text
+### F9 — A transient poll failure declares the capture dead and shows browser-internal text — **fixed**
 
 [popup.js:237](../../popup/popup.js:237): `poll()`'s catch calls
 `errorState({ message: error.message })`. Three things follow from one failed
@@ -300,6 +300,28 @@ tick:
 **Fix.** Tolerate a small number of consecutive poll failures before declaring
 anything, keep the current card underneath while retrying, and never put a raw
 `error.message` from runtime messaging into the card's detail line.
+
+**Resolution.** `poll()` now counts consecutive failures against
+`POLL_FAILURE_TOLERANCE = 5` (≈2.2 s at the 450 ms tick), reschedules itself
+under the untouched current card while under the threshold, and resets the
+counter on any successful tick — so the popup recovers on its own when the
+worker wakes back up. Past the threshold it renders "Couldn't reach the
+extension / The capture may still be running. Check again in a moment." with a
+**Check again** action that calls `beginCapture(false)`; the non-forced start
+reuses a fresh job (`background.js:409`) instead of destroying a capture that
+was seconds from finishing. The cause goes to `console.warn`, never the card.
+
+Beyond the finding as written: `beginCapture`'s own `.catch` two lines below
+leaked `error.message` the same way, on the same surface, for the same reason
+(the worker reports its real failures as a `phase: 'error'` job, so a rejection
+there is the messaging layer). It got the same treatment rather than being left
+as a known copy of the defect.
+
+Regression tests: `popup rides out a transient poll failure instead of
+declaring the capture dead` (two failed ticks mid-capture, then recovery
+without user action, asserting the raw string reached the log and not the card)
+and `popup gives up on a sustained poll outage with recoverable, plain copy`
+(asserting **Check again** sends `force: false`).
 
 ---
 

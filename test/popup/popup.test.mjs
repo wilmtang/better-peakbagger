@@ -502,6 +502,107 @@ test('popup restores the singular draft label after opening fails', async () => 
     dom.window.close();
 });
 
+test('popup rides out a transient poll failure instead of declaring the capture dead', async () => {
+    const dom = new JSDOM(html, {
+        url: 'chrome-extension://better-peakbagger/popup/popup.html',
+        runScripts: 'outside-only'
+    });
+    const nativeSetTimeout = dom.window.setTimeout.bind(dom.window);
+    dom.window.setTimeout = (callback, delay, ...args) =>
+        nativeSetTimeout(callback, delay === 450 ? 3 : delay, ...args);
+    const warnings = [];
+    dom.window.console = { ...dom.window.console, warn: (...args) => warnings.push(args.join(' ')) };
+    // Two torn-down-worker ticks in the middle of an in-progress capture.
+    let statusCalls = 0;
+    dom.window.chrome = {
+        tabs: { query: async () => [{ id: 9 }] },
+        runtime: {
+            sendMessage: async message => {
+                if (message.type === 'CAPTURE_STATUS') {
+                    statusCalls++;
+                    if (statusCalls === 2 || statusCalls === 3) {
+                        throw new Error('Could not establish connection. Receiving end does not exist.');
+                    }
+                    return statusCalls > 4
+                        ? {
+                            phase: 'ready', provider: 'garmin', hasCachedGpx: true, selectedIds: [1],
+                            trackSummary: { originalPointCount: 2, retainedPointCount: 2, maxDeviationM: 0 },
+                            matches: [{
+                                id: 1, name: 'Late Peak', classification: 'strong', confidence: 95,
+                                evidence: { distanceM: 5, elevationDeltaM: 2, trackQuality: 1 }
+                            }]
+                        }
+                        : { phase: 'finding-peaks', provider: 'garmin' };
+                }
+                if (message.type === 'CAPTURE_START') {
+                    await new Promise(resolve => nativeSetTimeout(resolve, 200));
+                    return { phase: 'finding-peaks', provider: 'garmin' };
+                }
+                return { ok: true };
+            }
+        }
+    };
+
+    dom.window.eval(source);
+    const state = dom.window.document.getElementById('state');
+    await waitFor(() => statusCalls >= 3);
+    assert.doesNotMatch(state.textContent, /Capture stopped/,
+        'a failed tick is not evidence the capture died');
+    assert.doesNotMatch(state.textContent, /Receiving end does not exist/,
+        'runtime-messaging internals are never shown as an explanation');
+    assert.ok(warnings.some(line => /Receiving end does not exist/.test(line)),
+        'the cause is logged for diagnosis instead');
+
+    // The popup recovers on its own once the worker answers again.
+    const openButton = dom.window.document.getElementById('open-drafts');
+    await waitFor(() => openButton.textContent === 'Open 1 draft');
+    assert.equal(openButton.textContent, 'Open 1 draft');
+    dom.window.close();
+});
+
+test('popup gives up on a sustained poll outage with recoverable, plain copy', async () => {
+    const dom = new JSDOM(html, {
+        url: 'chrome-extension://better-peakbagger/popup/popup.html',
+        runScripts: 'outside-only'
+    });
+    const nativeSetTimeout = dom.window.setTimeout.bind(dom.window);
+    dom.window.setTimeout = (callback, delay, ...args) =>
+        nativeSetTimeout(callback, delay === 450 ? 3 : delay, ...args);
+    dom.window.console = { ...dom.window.console, warn: () => {} };
+    const starts = [];
+    dom.window.chrome = {
+        tabs: { query: async () => [{ id: 9 }] },
+        runtime: {
+            sendMessage: async message => {
+                if (message.type === 'CAPTURE_STATUS') {
+                    throw new Error('Could not establish connection. Receiving end does not exist.');
+                }
+                if (message.type === 'CAPTURE_START') {
+                    starts.push(message.force);
+                    await new Promise(resolve => nativeSetTimeout(resolve, 500));
+                    return { phase: 'finding-peaks', provider: 'garmin' };
+                }
+                return { ok: true };
+            }
+        }
+    };
+
+    dom.window.eval(source);
+    const state = dom.window.document.getElementById('state');
+    await waitFor(() => /Couldn’t reach the extension/.test(state.textContent));
+    assert.match(state.textContent, /The capture may still be running/);
+    assert.doesNotMatch(state.textContent, /Receiving end does not exist/);
+
+    const checkAgain = [...state.querySelectorAll('button')]
+        .find(element => element.textContent === 'Check again');
+    assert.ok(checkAgain, 'the outage state offers a way back');
+    checkAgain.click();
+    await waitFor(() => starts.length === 2);
+    assert.equal(starts[1], false,
+        'checking again must not force-restart a capture that may be nearly done');
+    dom.window.close();
+});
+
 test('popup stops status polling when capture finishes without storing a job', async () => {
     const dom = new JSDOM(html, {
         url: 'chrome-extension://better-peakbagger/popup/popup.html',

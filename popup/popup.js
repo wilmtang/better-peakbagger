@@ -228,10 +228,19 @@ import { capturePhases as CapturePhases } from '../src/capture/capture-phases.js
         stateCard(title, detail, { loading: true, action: { label: 'Cancel', onClick: cancelCapture } });
     };
 
+    // One failed status tick usually means a torn-down MV3 worker, not a dead
+    // capture — and this is exactly the in-progress window, because poll() only
+    // reschedules for non-terminal phases. Retry quietly under the current card
+    // before saying anything, and never render runtime-messaging internals
+    // ("Could not establish connection…") as an explanation to the user.
+    const POLL_FAILURE_TOLERANCE = 5;
+    let pollFailures = 0;
+
     const poll = async () => {
         if (!activeTab) return;
         try {
             const job = await ext.runtime.sendMessage({ type: 'CAPTURE_STATUS', tabId: activeTab.id });
+            pollFailures = 0;
             if (job) render(job);
             if ((!job && capturePending) || (job && !CapturePhases.isTerminal(job.phase))) {
                 pollTimer = setTimeout(poll, 450);
@@ -239,13 +248,29 @@ import { capturePhases as CapturePhases } from '../src/capture/capture-phases.js
                 pollTimer = null;
             }
         } catch (error) {
-            errorState({ message: error.message });
+            console.warn('Better Peakbagger: capture status poll failed', error);
+            if (++pollFailures < POLL_FAILURE_TOLERANCE) {
+                pollTimer = setTimeout(poll, 450);
+                return;
+            }
+            pollTimer = null;
+            // Check again re-asks without force, so a capture that was seconds
+            // from finishing is reused rather than restarted.
+            stateCard(
+                'Couldn’t reach the extension',
+                'The capture may still be running. Check again in a moment.',
+                {
+                    kind: 'error',
+                    action: { label: 'Check again', primary: true, onClick: () => beginCapture(false) }
+                }
+            );
         }
     };
 
     const beginCapture = force => {
         clearTimeout(pollTimer);
         capturePending = true;
+        pollFailures = 0;
         stateCard('Starting capture…', 'No GPS data is accessed until account ownership is verified.', {
             loading: true, action: { label: 'Cancel', onClick: cancelCapture }
         });
@@ -259,10 +284,20 @@ import { capturePhases as CapturePhases } from '../src/capture/capture-phases.js
                 }
             })
             .catch(error => {
+                // A rejection here is the messaging layer, not the capture:
+                // the worker reports its own failures as a phase: 'error' job.
+                console.warn('Better Peakbagger: capture start failed', error);
                 capturePending = false;
                 clearTimeout(pollTimer);
                 pollTimer = null;
-                errorState({ message: error.message });
+                stateCard(
+                    'Couldn’t reach the extension',
+                    'The capture didn’t start. Try again in a moment.',
+                    {
+                        kind: 'error',
+                        action: { label: 'Try again', primary: true, onClick: () => beginCapture(false) }
+                    }
+                );
             });
         void poll();
     };
