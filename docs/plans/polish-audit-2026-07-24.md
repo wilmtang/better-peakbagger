@@ -178,7 +178,7 @@ position`. Nine existing tests that read failure copy out of `#status` were
 retargeted to `#status-error-text` — that is the assertion those tests should
 always have been making, since severity is now part of the contract.
 
-### F3 — The popup is the only surface that ignores the Units setting — **verified**
+### F3 — The popup is the only surface that ignores the Units setting — **verified** · **fixed**
 
 [`evidenceText`](../../popup/popup.js:134) hardcodes metres: `"${…} m from
 summit"`, `"${…} m elevation difference"`, and the track summary line reports
@@ -197,6 +197,34 @@ the one panel that opens from the toolbar.
 bundle and format through the shared helper introduced in F15. `units: 'auto'`
 has no page to sniff in the popup — resolve it to the same value the last
 Peakbagger surface used, or fall back to imperial, and say which in a comment.
+
+**Resolution.** The popup bundle is now
+`['capture/capture-phases.js', 'settings/settings-schema.js',
+'settings/settings.js', 'ui/units.js', 'popup-main.js']`, and `evidenceText`
+plus the track-summary line format through F15's module.
+
+Of the two options this finding offers for `auto`, the **imperial fallback**
+was taken, not the "last value a Peakbagger surface used" one. Persisting that
+would mean a new settings key written by page surfaces on every render — new
+schema surface and new storage traffic to break a tie the user cannot see. The
+UX bar's "prefer a sensible default over another setting" points the same way.
+The reason is stated in a comment at the `displayUnits` declaration, as this
+finding asks.
+
+Units are resolved from `Settings.get()` *before* the first render (it is
+awaited alongside the existing `tabs.query`), so no card is ever painted in one
+system and corrected to the other.
+
+**Behaviour change worth naming:** a user on `units: 'auto'` previously saw
+metres in the popup because it was hardcoded. They now see feet — which is the
+point of the finding, since every other surface already resolved `auto` to
+imperial for them. Users on an explicit `metric` see metres in the popup for
+the first time.
+
+Regression tests: `popup follows the Units setting like every other surface`
+(metric and imperial, asserting both the evidence line and the max-deviation
+figure) and `popup resolves auto units without a page to sniff, and never mixes
+systems`. `npm run verify:extension` re-run because the popup bundle changed.
 
 ### F4 — The analyzer's inline controls roll back silently on a failed write — **fixed**
 

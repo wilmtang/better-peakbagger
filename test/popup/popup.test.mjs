@@ -103,6 +103,66 @@ test('popup explains both match class and confidence percentage', async () => {
     dom.window.close();
 });
 
+const unitsJob = {
+    phase: 'ready', provider: 'garmin', hasCachedGpx: true, selectedIds: [1],
+    trackSummary: { originalPointCount: 6200, retainedPointCount: 3000, maxDeviationM: 2.4 },
+    matches: [{
+        id: 1, name: 'Unit Peak', classification: 'strong', confidence: 96,
+        evidence: { distanceM: 8, elevationDeltaM: 4, trackQuality: 0.98 }
+    }]
+};
+
+const loadPopupWithUnits = async units => {
+    const dom = new JSDOM(html, {
+        url: 'chrome-extension://better-peakbagger/popup/popup.html',
+        runScripts: 'outside-only'
+    });
+    dom.window.chrome = {
+        tabs: { query: async () => [{ id: 9 }] },
+        storage: {
+            sync: { get: async () => ({ bpbSettings: { units } }), set: async () => {} },
+            onChanged: { addListener() {}, removeListener() {} }
+        },
+        runtime: {
+            sendMessage: async message => {
+                if (message.type === 'CAPTURE_START' || message.type === 'CAPTURE_STATUS') return unitsJob;
+                return { ok: true };
+            }
+        }
+    };
+    dom.window.eval(source);
+    await waitFor(() => dom.window.document.querySelector('.peak-evidence'));
+    return dom;
+};
+
+test('popup follows the Units setting like every other surface', async () => {
+    const metric = await loadPopupWithUnits('metric');
+    assert.match(metric.window.document.querySelector('.peak-evidence').textContent,
+        /^8 m from summit · 4 m elevation difference/);
+    assert.match(metric.window.document.getElementById('track-summary').textContent,
+        /max deviation 2\.4 m/);
+    metric.window.close();
+
+    const imperial = await loadPopupWithUnits('imperial');
+    assert.match(imperial.window.document.querySelector('.peak-evidence').textContent,
+        /^26 ft from summit · 13 ft elevation difference/);
+    assert.match(imperial.window.document.getElementById('track-summary').textContent,
+        /max deviation 7\.9 ft/);
+    imperial.window.close();
+});
+
+test('popup resolves auto units without a page to sniff, and never mixes systems', async () => {
+    const dom = await loadPopupWithUnits('auto');
+    const evidence = dom.window.document.querySelector('.peak-evidence').textContent;
+    const summaryText = dom.window.document.getElementById('track-summary').textContent;
+    // The popup opens over a Garmin/Strava activity, so there is no Peakbagger
+    // page to follow; the shared module's documented fallback applies.
+    assert.match(evidence, /ft from summit/);
+    assert.doesNotMatch(evidence, /\bm from summit/);
+    assert.match(summaryText, /max deviation 7\.9 ft/);
+    dom.window.close();
+});
+
 test('popup discards the cached GPX before offering a fresh capture', async () => {
     const dom = new JSDOM(html, {
         url: 'chrome-extension://better-peakbagger/popup/popup.html',

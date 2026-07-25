@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { capturePhases as CapturePhases } from '../src/capture/capture-phases.js';
+import { settings as Settings } from '../src/settings/settings.js';
+import { units as Units } from '../src/ui/units.js';
 
 (() => {
     'use strict';
@@ -20,6 +22,12 @@ import { capturePhases as CapturePhases } from '../src/capture/capture-phases.js
     const settingsButton = document.getElementById('open-settings');
     let activeTab = null;
     let currentJob = null;
+    // Resolved once when the popup opens. `units: 'auto'` means "follow the
+    // page", and the popup has no Peakbagger page to follow — it opens over a
+    // Garmin or Strava activity — so it takes the shared module's documented
+    // imperial fallback rather than inventing a second source of truth or
+    // persisting a "last units seen" value for a cosmetic tie-break.
+    let displayUnits = Units.IMPERIAL;
     let pollTimer = null;
     let capturePending = false;
 
@@ -133,8 +141,10 @@ import { capturePhases as CapturePhases } from '../src/capture/capture-phases.js
     };
 
     const evidenceText = match => {
-        const parts = [`${Math.round(match.evidence.distanceM)} m from summit`];
-        if (Number.isFinite(match.evidence.elevationDeltaM)) parts.push(`${Math.round(match.evidence.elevationDeltaM)} m elevation difference`);
+        const parts = [`${Units.formatApproach(match.evidence.distanceM, displayUnits)} from summit`];
+        if (Number.isFinite(match.evidence.elevationDeltaM)) {
+            parts.push(`${Units.formatElevation(match.evidence.elevationDeltaM, displayUnits)} elevation difference`);
+        }
         if (Number.isFinite(match.evidence.trackQuality)) parts.push(`${Math.round(match.evidence.trackQuality * 100)}% track quality`);
         if (match.evidence.ambiguous) parts.push('nearby summit ambiguity');
         return parts.join(' · ');
@@ -171,7 +181,8 @@ import { capturePhases as CapturePhases } from '../src/capture/capture-phases.js
         clearCaptureButton.textContent = 'Delete captured track data';
         const counts = document.createElement('strong');
         counts.textContent = `${track.originalPointCount.toLocaleString()} → ${track.retainedPointCount.toLocaleString()} points`;
-        summary.append(counts, document.createTextNode(` · max deviation ${track.maxDeviationM.toFixed(1)} m · health/device metadata removed`));
+        const deviation = Units.formatElevation(track.maxDeviationM, displayUnits, 1);
+        summary.append(counts, document.createTextNode(` · max deviation ${deviation} · health/device metadata removed`));
 
         job.matches.forEach(match => {
             const row = document.createElement('label');
@@ -354,7 +365,13 @@ import { capturePhases as CapturePhases } from '../src/capture/capture-phases.js
         }
     });
 
-    void ext.tabs.query({ active: true, currentWindow: true }).then(tabs => {
+    // Units are resolved before the first render, so no card is ever painted in
+    // the wrong system and then corrected.
+    void Promise.all([
+        ext.tabs.query({ active: true, currentWindow: true }),
+        Settings.get().catch(() => null)
+    ]).then(([tabs, settings]) => {
+        displayUnits = Units.resolveUnits(settings);
         activeTab = tabs[0];
         if (!activeTab) {
             errorState({ code: 'unsupported', message: 'No active browser tab is available.' });

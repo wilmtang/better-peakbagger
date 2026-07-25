@@ -59,7 +59,7 @@ test('extension panels share one pre-paint theme bootstrap', () => {
         ['settings/settings-schema.js', 'settings/settings.js', 'theme/panel-theme.js']);
     assert.deepEqual(bundleSources('popup/popup-head.js'),
         ['settings/settings-schema.js', 'settings/settings.js', 'theme/panel-theme.js']);
-    assert.deepEqual(bundleSources('popup/popup.js'), ['capture/capture-phases.js', 'popup-main.js']);
+    assert.deepEqual(bundleSources('popup/popup.js'), ['capture/capture-phases.js', 'settings/settings-schema.js', 'settings/settings.js', 'ui/units.js', 'popup-main.js']);
 });
 
 test('the Buddy refresh helper is a fixed first-party navigation', async () => {

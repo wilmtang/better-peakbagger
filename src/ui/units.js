@@ -40,10 +40,14 @@ const formatDistance = (meters, units) => units === METRIC
     ? `${(meters / 1000).toFixed(1)} km`
     : `${milesFromMeters(meters).toFixed(1)} mi`;
 
-// Vertical distances: elevations and elevation differences.
-const formatElevation = (meters, units) => units === METRIC
-    ? `${Math.round(meters)} m`
-    : `${Math.round(feetFromMeters(meters))} ft`;
+// Vertical distances: elevations and elevation differences. `digits` exists for
+// the few values where sub-unit precision is the point — the capture's max
+// track deviation is a fidelity figure, and rounding 2.4 m to 2 m discards
+// what it is there to say.
+const formatElevation = (meters, units, digits = 0) => {
+    const value = units === METRIC ? meters : feetFromMeters(meters);
+    return `${digits > 0 ? value.toFixed(digits) : Math.round(value)} ${units === METRIC ? 'm' : 'ft'}`;
+};
 
 // Short ground distances — how far a point sits from a summit. Same units as an
 // elevation, but a distinct name so call sites stay readable.
