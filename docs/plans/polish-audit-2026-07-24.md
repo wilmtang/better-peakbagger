@@ -766,7 +766,7 @@ differential, because the two heuristics run on different pages and so cannot
 be compared against each other — which is the whole reason a divergence would
 have shipped unnoticed.
 
-### F16 — The shared DOM builder is adopted by a quarter of the UI
+### F16 — The shared DOM builder is adopted by a quarter of the UI — **fixed**
 
 `src/ui/dom.js` exports `element()` and is imported by exactly four modules:
 `profile-backup.js`, `ascent-backup.js`, `report-editor.js`, and
@@ -783,6 +783,31 @@ uses `element()` without checking, and the builder's conveniences (event props,
 all edit these files) or decide it is options-page-only and say so in a comment.
 Do not leave the split undocumented. This is cleanup that should ride along with
 other work, never its own commit.
+
+**Resolution — the "options-page-only" branch was not available**, because it
+is factually wrong: three of the four adopters (`profile-backup.js`,
+`ascent-backup.js`, `report-editor.js`) are content scripts. Investigating the
+actual boundary turned up a better answer than a comment.
+
+The holdouts are all *injected* surfaces — the analyzer panel, the ascent
+upload card, the beta-filter bar — and they hand-roll `createElement` because
+they style **inline**: they cannot assume a stylesheet reached the page.
+`element()` had no way to express that, so it was not a builder they could
+adopt. Adding a `style` prop closes the gap, and there is no longer a category
+of surface the shared builder cannot serve.
+
+`src/ui/dom.js` now carries the adoption policy in a header comment: use it in
+any surface building more than a couple of nodes; the remaining hand-rolled
+surfaces are inherited rather than a decision, to be converted when touched for
+other reasons rather than wholesale; and a *new* surface growing its own
+builder beside this one is the thing that must not happen.
+
+Rode along with F14's map-viewport extraction, as this finding requires — that
+new module builds its two elements through `element()`, which is what
+demonstrates the `style` prop covers a real injected-surface need rather than
+being speculative. Two tests: the `style` prop (including a non-object being
+ignored rather than stringified onto the node) and an assertion that the policy
+comment is present, so the split cannot silently become undocumented again.
 
 ### F17 — Fixed-attempt polling gives up silently — **fixed**
 

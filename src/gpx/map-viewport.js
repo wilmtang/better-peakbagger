@@ -11,6 +11,8 @@
 // APIs; the caller supplies the bounds (which belong to the settings schema,
 // never a local copy) and the persist callback.
 
+import { dom as Dom } from '../ui/dom.js';
+
 const clamp = (value, min, max) => Math.min(max, Math.max(min, Math.round(value)));
 
 export const createMapViewport = ({
@@ -92,15 +94,16 @@ export const createMapViewport = ({
     };
 
     if (iframe && iframe.parentElement) {
-        element = document.createElement('div');
-        element.id = 'bpb-map-viewport';
-        Object.assign(element.style, {
-            position: 'relative',
-            maxWidth: '100%',
-            minWidth: 'min(320px, 100%)',
-            minHeight: `${bounds.minHeight + railHeight}px`,
-            maxHeight: `${bounds.maxHeight + railHeight}px`,
-            boxSizing: 'border-box'
+        element = Dom.element('div', {
+            id: 'bpb-map-viewport',
+            style: {
+                position: 'relative',
+                maxWidth: '100%',
+                minWidth: 'min(320px, 100%)',
+                minHeight: `${bounds.minHeight + railHeight}px`,
+                maxHeight: `${bounds.maxHeight + railHeight}px`,
+                boxSizing: 'border-box'
+            }
         });
 
         iframe.before(element);
@@ -113,24 +116,25 @@ export const createMapViewport = ({
             boxSizing: 'border-box'
         });
 
-        handle = document.createElement('button');
-        handle.id = 'bpb-map-resize-handle';
-        handle.type = 'button';
-        handle.title = 'Drag to resize map';
-        handle.textContent = '◢';
-        Object.assign(handle.style, {
-            position: 'absolute',
-            right: '0',
-            bottom: '0',
-            width: '24px',
-            height: `${railHeight}px`,
-            padding: '0',
-            border: '0',
-            background: 'transparent',
-            color: 'currentColor',
-            lineHeight: `${railHeight}px`,
-            cursor: 'nwse-resize',
-            opacity: '0.72'
+        handle = Dom.element('button', {
+            id: 'bpb-map-resize-handle',
+            type: 'button',
+            title: 'Drag to resize map',
+            text: '◢',
+            style: {
+                position: 'absolute',
+                right: '0',
+                bottom: '0',
+                width: '24px',
+                height: `${railHeight}px`,
+                padding: '0',
+                border: '0',
+                background: 'transparent',
+                color: 'currentColor',
+                lineHeight: `${railHeight}px`,
+                cursor: 'nwse-resize',
+                opacity: '0.72'
+            }
         });
         element.append(handle);
 

@@ -34,3 +34,38 @@ test('shared DOM builder applies properties, events, attributes, and children', 
         window.close();
     }
 });
+
+test('the shared builder can express the inline styles injected surfaces need', () => {
+    // The injected surfaces hand-rolled createElement because they style inline
+    // — they cannot assume a stylesheet reached the page — and the builder had
+    // no way to say so. That was the only category it could not serve.
+    const window = new JSDOM('<!doctype html>').window;
+    const previousDocument = globalThis.document;
+    globalThis.document = window.document;
+    try {
+        const node = Dom.element('div', {
+            id: 'styled',
+            style: { position: 'relative', boxSizing: 'border-box', opacity: '0.72' }
+        });
+        assert.equal(node.style.position, 'relative');
+        assert.equal(node.style.boxSizing, 'border-box');
+        assert.equal(node.style.opacity, '0.72');
+        assert.equal(node.getAttribute('style') !== null, true);
+        assert.equal(node.getAttribute('id'), 'styled');
+
+        // A non-object style is ignored rather than stringified onto the node.
+        const plain = Dom.element('div', { style: null });
+        assert.equal(plain.getAttribute('style'), null);
+    } finally {
+        globalThis.document = previousDocument;
+        window.close();
+    }
+});
+
+test('the shared builder records its adoption policy rather than leaving it implicit', async () => {
+    const { readFile } = await import('node:fs/promises');
+    const source = await readFile(new URL('../../src/ui/dom.js', import.meta.url), 'utf8');
+    assert.match(source, /not options-page-only/i,
+        'the split must be documented, not left for a reader to infer per file');
+    assert.match(source, /style inline/i, 'and it must say why the holdouts held out');
+});
