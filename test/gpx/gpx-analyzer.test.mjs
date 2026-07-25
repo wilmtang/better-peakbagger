@@ -624,6 +624,110 @@ const loadOvernightAnalyzer = async ({ withTzLookup, elevations = [1000, 1200, 1
     return { dom, analysisText };
 };
 
+test('a local write is not handed back to the subscriber as an external change', async () => {
+    // Change detection used to depend on six hand-written
+    // `appliedSettings = { ...BPB.get() }` lines after six BPB.set() calls.
+    // The client owns that snapshot now; this pins the behaviour it protects —
+    // writing the unit preference must not make an unrelated later change look
+    // like it also touched units and rebuild the route overlay for nothing.
+    const dom = new JSDOM(`<!doctype html><body>
+      <p>
+        <iframe src="https://www.peakbagger.com/map/MasterMap.aspx?cy=48.7&cx=-121.8&z=14"></iframe><br>
+        GPS Waypoints - Hover or click to see name and lat/long<br>
+        <a href="https://www.peakbagger.com/map/BigMap.aspx">Click Here for a Full Screen Map</a><br>
+      </p>
+      <table><tr><td>Elevation:</td><td>2,000 m</td></tr></table>
+      <p><a href="https://www.peakbagger.com/demo.gpx">Download this GPS track</a></p>
+    </body>`, {
+        url: 'https://www.peakbagger.com/climber/ascent.aspx?aid=1',
+        runScripts: 'outside-only',
+        pretendToBeVisual: true
+    });
+    const { window } = dom;
+    const polylineCalls = [];
+    const sentMessages = [];
+    const map = {
+        layers: [], _layers: {}, hasLayer: () => false,
+        getCenter: () => ({ lat: 48.72, lng: -121.79 }), getZoom: () => 15,
+        setView() {}, invalidateSize() {},
+        removeLayer(layer) { this.layers = this.layers.filter(l => l !== layer); }
+    };
+    const L = {
+        Browser: { retina: false },
+        polyline(latLngs, options) {
+            const layer = {
+                _map: null,
+                addTo(target) { this._map = target; target.layers.push(this); return this; },
+                bringToBack() { return this; }
+            };
+            polylineCalls.push({ latLngs, options, layer });
+            return layer;
+        },
+        circleMarker() { throw new Error('not needed'); }
+    };
+    Object.defineProperty(window.document.querySelector('iframe'), 'contentWindow', {
+        configurable: true,
+        value: {
+            mapsPlaceholder: map, L,
+            document: { getElementById: () => null },
+            location: { href: 'https://www.peakbagger.com/map/MasterMap.aspx' }
+        }
+    });
+    window.matchMedia = () => ({ matches: false });
+    window.HTMLCanvasElement.prototype.getContext = () => ({});
+    window.fetch = async url => ({
+        ok: true,
+        text: async () => (String(url).includes('/Async/PLLBB.aspx') ? '<ts></ts>' : gpx)
+    });
+    window.Chart = class ChartStub { destroy() {} update() {} setDatasetVisibility() {} isDatasetVisible() { return true; } };
+
+    let current = { units: 'metric', theme: 'light', mapRouteColor: '#2457a7', enable3dMap: false };
+    const push = settings => window.dispatchEvent(new window.MessageEvent('message', {
+        source: window, origin: window.location.origin,
+        data: { __bpb: true, dir: 'toPage', settings }
+    }));
+    window.postMessage = message => {
+        if (!message || message.dir !== 'toCS') return;
+        if (message.kind === 'get') { window.queueMicrotask(() => push(current)); return; }
+        if (message.kind !== 'set') return;
+        sentMessages.push(message);
+        current = { ...current, ...message.patch };
+        // Confirm the write the way the bridge does.
+        window.queueMicrotask(() => window.dispatchEvent(new window.MessageEvent('message', {
+            source: window, origin: window.location.origin,
+            data: {
+                __bpb: true, dir: 'toPage', kind: 'setResult',
+                requestId: message.requestId, ok: true, settings: current
+            }
+        })));
+    };
+
+    Object.defineProperty(window.document, 'readyState', { configurable: true, value: 'complete' });
+    window.eval(analyzerBundle);
+    await waitFor(dom, () => polylineCalls.length >= 2);
+
+    // A local write of an analyzer-owned setting.
+    const unitSelect = window.document.getElementById('bpb-gpx-units');
+    unitSelect.value = 'imperial';
+    unitSelect.dispatchEvent(new window.Event('change'));
+    await new Promise(resolve => setTimeout(resolve, 40));
+    const afterLocalWrite = polylineCalls.length;
+
+    // Now an unrelated change arrives from another surface. Only the theme
+    // moved, so the route overlay must not be rebuilt.
+    push({ ...current, theme: 'dark' });
+    await new Promise(resolve => setTimeout(resolve, 60));
+    assert.equal(polylineCalls.length, afterLocalWrite,
+        'a theme-only change must not rebuild the route overlay');
+
+    // ...and a genuine route-colour change still does.
+    push({ ...current, theme: 'dark', mapRouteColor: '#347a3f' });
+    await waitFor(dom, () => polylineCalls.length > afterLocalWrite);
+    assert.ok(polylineCalls.length > afterLocalWrite,
+        'a real route-style change must still rebuild the overlay');
+    dom.window.close();
+});
+
 test('a map frame that arrives after the old retry budget still gets the overlay', async () => {
     // The route overlay used to retry setInterval(250ms) exactly 20 times and
     // then stop, so a frame Peakbagger inserted after ~5s never got an overlay

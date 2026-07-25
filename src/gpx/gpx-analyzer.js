@@ -32,6 +32,9 @@ const run = async () => {
     const MAP_VIEWPORT_MIN_HEIGHT = Schema.BOUNDS.viewportHeight.min;
     const MAP_VIEWPORT_MAX_HEIGHT = Schema.BOUNDS.viewportHeight.max;
     const MAP_RESIZE_RAIL_HEIGHT = 18;
+    // One copy: this used to be written as a literal at both the place that
+    // sets it and the place that restores it after the copy confirmation.
+    const COPY_HINT = 'Double-click point to copy coordinates';
     const MAP_RESIZE_PERSIST_DELAY_MS = 400;
     const parseMapRouteSegments = xml => {
         const segments = [];
@@ -98,13 +101,24 @@ const run = async () => {
             const keys = new Set([...Object.keys(left), ...Object.keys(right)]);
             return Array.from(keys).every(key => left[key] === right[key]);
         };
+        // A caller that writes a setting has already applied it locally, so the
+        // subscriber must not redo that work when the write lands. This used to
+        // be six hand-written `appliedSettings = { ...BPB.get() }` lines after
+        // six `BPB.set()` calls, and forgetting one silently broke the
+        // subscriber's change detection. The client owns the snapshot now, and
+        // hands subscribers a `changed(keys)` closed over it.
+        let applied = null;
+        const markApplied = () => { applied = { ...(settings || FALLBACK) }; };
+
         const recompute = () => {
             const previous = settings;
             settings = { ...(confirmed || FALLBACK) };
             for (const patch of pending.values()) Object.assign(settings, patch);
-            if (!sameSettings(previous, settings)) {
-                subs.forEach(fn => { try { fn(settings); } catch (e) { /* ignore */ } });
-            }
+            if (sameSettings(previous, settings)) return;
+            const before = applied || previous || FALLBACK;
+            const changed = keys => keys.some(key => before[key] !== settings[key]);
+            markApplied();
+            subs.forEach(fn => { try { fn(settings, changed); } catch (e) { /* ignore */ } });
         };
 
         window.addEventListener('message', event => {
@@ -135,6 +149,7 @@ const run = async () => {
                 window.postMessage({ __bpb: true, dir: 'toCS', kind: 'get' }, location.origin);
                 await Promise.race([ready, new Promise(r => setTimeout(r, 800))]);
                 if (!settings) settings = { ...FALLBACK };
+                markApplied();
                 return settings;
             },
             get: () => settings || FALLBACK,
@@ -142,6 +157,8 @@ const run = async () => {
                 const requestId = nextRequestId++;
                 pending.set(requestId, patch);
                 settings = { ...(settings || FALLBACK), ...patch };
+                // The caller is applying this themselves; do not hand it back.
+                markApplied();
                 window.postMessage({ __bpb: true, dir: 'toCS', kind: 'set', requestId, patch }, location.origin);
             },
             subscribe: fn => { subs.add(fn); return () => subs.delete(fn); },
@@ -181,9 +198,20 @@ const run = async () => {
         if (!gpxLink) return;
 
         await BPB.init();
-        let appliedSettings = { ...BPB.get() };
 
-        const mapIframe = document.querySelector('iframe[src*="MasterMap.aspx"], iframe[src*="mastermap.aspx"]');
+        // One accessor for Peakbagger's MasterMap frame. The same selector used
+        // to appear three times, and the copy inside the chart's onHover
+        // re-queried the DOM on *every hover event*. Memoized on the element,
+        // and re-resolved whenever Peakbagger swaps the frame out.
+        const MAP_IFRAME_SELECTOR = 'iframe[src*="MasterMap.aspx"], iframe[src*="mastermap.aspx"]';
+        let cachedMapIframe = null;
+        const findMapIframe = () => {
+            if (cachedMapIframe && cachedMapIframe.isConnected) return cachedMapIframe;
+            cachedMapIframe = document.querySelector(MAP_IFRAME_SELECTOR);
+            return cachedMapIframe;
+        };
+
+        const mapIframe = findMapIframe();
         let mapViewport = null;
         let mapResizeHandle = null;
         let mapViewportSize = resolveMapViewportSize(BPB.get());
@@ -240,7 +268,6 @@ const run = async () => {
                 mapViewportWidth: mapViewportSize.width,
                 mapViewportHeight: mapViewportSize.height
             });
-            appliedSettings = { ...BPB.get() };
         };
 
         // Keyboard resize fires per key repeat; persisting each step would
@@ -373,7 +400,7 @@ const run = async () => {
         const statsContainer = document.createElement('div');
         const stats = document.createElement('div');
         Object.assign(stats.style, { fontFamily: 'sans-serif', fontWeight: 'bold' });
-        stats.textContent = "Analyzing GPX data...";
+        stats.textContent = 'Analyzing GPX data…';
 
         const subStats = document.createElement('div');
         Object.assign(subStats.style, { fontFamily: 'sans-serif', fontSize: '0.9em', color: '#444', marginTop: '4px', fontStyle: 'italic' });
@@ -437,7 +464,7 @@ const run = async () => {
 
         const hintText = document.createElement('div');
         Object.assign(hintText.style, { fontSize: '0.8em', color: '#888', marginTop: '4px', fontStyle: 'italic' });
-        hintText.textContent = "Double-click point to copy coordinates";
+        hintText.textContent = COPY_HINT;
 
         controlsContainer.append(unitSelect, routeStyleControls, hintText);
         headerBox.append(statsContainer, controlsContainer);
@@ -498,7 +525,7 @@ const run = async () => {
                         Object.assign(copied.style, { color: '#2e8b57', fontWeight: 'bold' });
                         copied.textContent = `✓ Copied: ${text}`;
                         hintText.replaceChildren(copied);
-                        setTimeout(() => { hintText.textContent = "Double-click point to copy coordinates"; applyPanelTheme(); }, 2500);
+                        setTimeout(() => { hintText.textContent = COPY_HINT; applyPanelTheme(); }, 2500);
                     }).catch(err => console.error('Failed to copy', err));
                 }
             }
@@ -771,8 +798,6 @@ const run = async () => {
 
         syncTerrainAvailability(BPB.get());
 
-        const findMapIframe = () => document.querySelector('iframe[src*="MasterMap.aspx"], iframe[src*="mastermap.aspx"]');
-
         const removeOverlayLayers = (map, layers) => {
             layers.forEach(layer => {
                 try {
@@ -837,7 +862,6 @@ const run = async () => {
                     const settings = BPB.get();
                     if (!settings.rememberMapLayer || !mapLayerExists(select, select.value) || settings.mapLastLayer === select.value) return;
                     BPB.set({ mapLastLayer: select.value });
-                    appliedSettings = { ...BPB.get() };
                 };
                 select.addEventListener('change', mapLayerChangeHandler);
             }
@@ -855,7 +879,6 @@ const run = async () => {
                 }
             } else if (mapLayerExists(select, select.value)) {
                 BPB.set({ mapLastLayer: select.value });
-                appliedSettings = { ...BPB.get() };
             }
             return true;
         };
@@ -1137,8 +1160,8 @@ const run = async () => {
                         // renames or restructures them this feature stops
                         // working. It fails closed (the guard below simply skips
                         // the marker), so the chart itself is unaffected.
-                        const mapIframe = document.querySelector('iframe[src*="MasterMap.aspx"], iframe[src*="mastermap.aspx"]');
-                        const iframeWin = mapIframe ? mapIframe.contentWindow : null;
+                        const hoverFrame = findMapIframe();
+                        const iframeWin = hoverFrame ? hoverFrame.contentWindow : null;
                         let hoveredPoint = null;
                         let fillColor = '#FF0000';
                         let hoverSeries = 'distance';
@@ -1282,13 +1305,11 @@ const run = async () => {
 
         unitSelect.addEventListener('change', () => {
             BPB.set({ units: unitSelect.value });
-            appliedSettings = { ...BPB.get() };
             renderData();
         });
 
         const bindRouteColor = (control, key) => control.input.addEventListener('change', () => {
             BPB.set({ [key]: control.input.value });
-            appliedSettings = { ...BPB.get() };
             syncRouteStyleControls();
             removeRouteOverlay();
             scheduleRouteOverlay();
@@ -1298,10 +1319,7 @@ const run = async () => {
 
         // Live updates are scoped by setting owner. In particular, changing a
         // map layer must not needlessly rebuild the chart or route overlay.
-        BPB.subscribe(settings => {
-            const previous = appliedSettings;
-            appliedSettings = { ...settings };
-            const changed = keys => keys.some(key => previous[key] !== settings[key]);
+        BPB.subscribe((settings, changed) => {
 
             if (changed(['mapViewportWidth', 'mapViewportHeight'])) {
                 applyMapViewportSize(resolveMapViewportSize(settings));
