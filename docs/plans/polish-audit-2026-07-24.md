@@ -345,7 +345,7 @@ destructive form submit on Peakbagger's page, not an extension-owned surface
 with this design system available, so it is outside this finding — which names
 the settings page — and was deliberately left alone.
 
-### F7 — Deleting a single draft drops keyboard focus
+### F7 — Deleting a single draft drops keyboard focus — **fixed**
 
 [`beginDeleteAll`](../../options/drafts.js:257) explicitly calls
 `undoAllButtonEl.focus()` after the bulk delete.
@@ -359,6 +359,15 @@ A keyboard user deleting a draft loses their place and has to tab back in — an
 the Undo they now need is 6 seconds from expiring.
 
 **Fix.** Move focus to that row's Undo control, matching the bulk path.
+
+**Resolution.** `beginDelete` calls `undoControlFor(draft.key)?.focus()` right
+after the `render()` that replaces the row — the same accessor `render()`
+already uses to restore focus, and the same intent as `beginDeleteAll`'s
+`undoAllButtonEl.focus()`. The assertion was added to the existing `deleting
+one draft is reversible and its Undo survives a live refresh` test and
+confirmed to fail against the unfixed `drafts.js` (`AssertionError: deleting a
+draft must not drop focus to the document body`) before being confirmed green
+with the fix.
 
 ### F8 — The GitHub panel re-queries GitHub on every window focus, and can destroy a confirmation the user is reading
 

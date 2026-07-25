@@ -121,6 +121,11 @@ export const initDrafts = ({ extensionApi = globalThis.browser || globalThis.chr
         }, UNDO_MS);
         pendingDeletes.set(draft.key, pending);
         render();
+        // render() replaced the row, so the Delete button the user activated is
+        // gone and focus would fall to <body>. Move it to this row's Undo — the
+        // control they now need, and the one the bulk path already focuses —
+        // because it expires in 6 seconds.
+        undoControlFor(draft.key)?.focus();
         try {
             await store.remove(draft.key);
             await refresh();

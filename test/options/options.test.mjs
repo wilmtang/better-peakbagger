@@ -1677,6 +1677,11 @@ test('deleting one draft is reversible and its Undo survives a live refresh', as
     draftRow(dom, key).querySelector('[data-action="delete"]').click();
     await waitFor(dom, () => !(key in dom.chrome._localStore));
     assert.match(draftRow(dom, key).textContent, /Draft deleted\s*Undo/);
+    // The activated Delete button is gone from the DOM; a keyboard user must
+    // land on the Undo they now need, not on <body>, because it expires in 6s.
+    assert.equal(dom.window.document.activeElement,
+        draftRow(dom, key).querySelector('[data-action="undo"]'),
+        'deleting a draft must not drop focus to the document body');
 
     await dom.chrome.storage.local.set({
         [otherKey]: { text: 'Arrived from another tab', mode: 'rich', savedAt: Date.now() + 1 }
