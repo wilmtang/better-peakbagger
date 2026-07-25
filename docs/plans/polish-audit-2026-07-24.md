@@ -164,7 +164,7 @@ saved. Try again."; the analyzer panel says nothing.
 analyzer's existing `terrainMessage` region (already a `role="status"` element
 with an error tone). No new UI component.
 
-### F5 — Raw JavaScript error text reaches users; the Firefox path is unestablished
+### F5 — Raw JavaScript error text reaches users; the Firefox path is unestablished — **fixed**
 
 [background.js:572](../../src/background/background.js:572) builds
 `` `Drafts opened, but tab grouping failed: ${error.message}` `` and ships it to
@@ -189,6 +189,44 @@ this is a rare edge case or the normal Firefox experience.
 cosmetic: on failure say so once, in the status region, in plain language
 ("Drafts opened. Your browser didn't group the tabs."), and keep the primary
 button's label a label. Log the underlying error for diagnosis instead.
+
+**The Firefox question is now answered: grouping works, and this is a rare edge
+case rather than the normal Firefox experience.** Two independent checks agree:
+
+- **Live probe**, headless Firefox 153.0 on macOS via Selenium, loading the real
+  derived Firefox source (`prepareFirefoxSource`) as a temporary add-on and
+  evaluating from the extension's own options page: `typeof browser.tabs.group`
+  is `"function"`, `browser.tabGroups.update` is `"function"`, and an actual
+  `tabs.group({tabIds:[a,b]})` on two blank tabs returned a group id, followed
+  by a successful `tabGroups.update(id, {title:'Peak Drafts', color:'green'})`.
+  The manifest read back inside that run listed `tabGroups` among its
+  permissions, so this exercised the shipped permission set.
+- **Compatibility floor**, from the vendored `@mdn/browser-compat-data`:
+  `tabs.group` `version_added: "138"`, `tabGroups` and `tabGroups.update`
+  `"139"`, and the `tabGroups` manifest permission `"139"`. All three sit below
+  the manifest's `strict_min_version: 140.0`, so no supported Firefox lacks the
+  API.
+
+The probe was a throwaway script, not committed; it is reproducible from the
+description above. `npm run lint` (`web-ext lint`) reports 0 errors and raises
+no compatibility warning against the 140.0 floor.
+
+**Resolution.** `groupWarning` became a boolean flag. `openNewDraftTabs` sets
+`groupWarning = true` and `console.warn`s the underlying error instead of
+interpolating `error.message`; each surface owns its own copy:
+
+- `popup/popup.js` + `popup.html` + `popup.css`: a new `#open-note`
+  `role="status"` line carries "Drafts opened. Your browser didn't group the
+  tabs.", and the primary button's label goes back to being a label.
+  `renderResults` clears the note so it never outlives the job it describes.
+- `src/ascent/ascent-upload.js`: the sibling-drafts status line no longer
+  claims "in the Peak Drafts group" when grouping failed, and the bound-primary
+  path states the same plain sentence.
+
+Regression tests: `a tab-grouping failure is a flag, never raw exception text
+handed to a surface` (asserts the exception string appears nowhere in the
+response) and `popup reports a grouping failure in the status line, not on the
+primary button`.
 
 ### F6 — Bulk draft deletion uses a native `confirm()`; every other destructive action uses an in-page card
 

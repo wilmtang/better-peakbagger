@@ -15,6 +15,7 @@ import { capturePhases as CapturePhases } from '../src/capture/capture-phases.js
     const clearCaptureButton = document.getElementById('clear-capture');
     const selectionCount = document.getElementById('selection-count');
     const selectionLockHint = document.getElementById('selection-lock-hint');
+    const openNote = document.getElementById('open-note');
     const providerLabel = document.getElementById('provider-label');
     const settingsButton = document.getElementById('open-settings');
     let activeTab = null;
@@ -160,6 +161,9 @@ import { capturePhases as CapturePhases } from '../src/capture/capture-phases.js
         clear(state);
         clear(list);
         results.hidden = false;
+        // Reset the note; the open handler re-states it for the job it just opened.
+        openNote.hidden = true;
+        openNote.textContent = '';
         const track = job.trackSummary;
         clear(summary);
         clearCaptureButton.hidden = !job.hasCachedGpx;
@@ -302,7 +306,12 @@ import { capturePhases as CapturePhases } from '../src/capture/capture-phases.js
             // an open the worker would refuse — polling has already stopped.
             if (response?.job) renderResults(response.job);
             else refreshSelection();
-            openButton.textContent = response?.groupWarning ? 'Drafts opened without group' : 'Show opened drafts';
+            // Grouping is cosmetic. Say so once in the status line and keep the
+            // primary button's label a label.
+            if (response?.groupWarning) {
+                openNote.textContent = 'Drafts opened. Your browser didn’t group the tabs.';
+                openNote.hidden = false;
+            }
             openButton.disabled = false;
         } catch (error) {
             refreshSelection();

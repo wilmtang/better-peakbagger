@@ -226,14 +226,18 @@ import { settings as Settings } from '../settings/settings.js';
                 return;
             }
             removeCard();
-            if (applied.groupWarning) showStatus('info', applied.groupWarning);
             if (primaryId === null) {
                 // Only sibling drafts were opened; this page keeps its native
                 // upload path.
                 const count = (applied.tabIds || []).length;
-                showStatus('info', `Opened ${count} draft tab${count === 1 ? '' : 's'} in the Peak Drafts group.`);
-                restoreNative();
+                const tabs = `${count} draft tab${count === 1 ? '' : 's'}`;
+                showStatus('info', applied.groupWarning
+                    ? `Opened ${tabs}. Your browser didn’t group them.`
+                    : `Opened ${tabs} in the Peak Drafts group.`);
+            } else if (applied.groupWarning) {
+                showStatus('info', 'Drafts opened. Your browser didn’t group the tabs.');
             }
+            if (primaryId === null) restoreNative();
             // With a primary, src/ascent/ascent-draft.js now fills this page (bound)
             // or the standard draft delivery fills it after navigation
             // (unbound); Peakbagger's postback then restores the native

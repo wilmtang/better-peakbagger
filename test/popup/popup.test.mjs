@@ -294,6 +294,49 @@ test('popup locks the selection in the same turn the drafts open', async () => {
     dom.window.close();
 });
 
+test('popup reports a grouping failure in the status line, not on the primary button', async () => {
+    const dom = new JSDOM(html, {
+        url: 'chrome-extension://better-peakbagger/popup/popup.html',
+        runScripts: 'outside-only'
+    });
+    const job = phase => ({
+        phase, provider: 'garmin', hasCachedGpx: true, selectedIds: [1],
+        trackSummary: { originalPointCount: 2, retainedPointCount: 2, maxDeviationM: 0 },
+        matches: [{
+            id: 1, name: 'One Peak', classification: 'strong', confidence: 95,
+            evidence: { distanceM: 5, elevationDeltaM: 2, trackQuality: 1 }
+        }]
+    });
+    let phase = 'ready';
+    dom.window.chrome = {
+        tabs: { query: async () => [{ id: 9 }] },
+        runtime: {
+            sendMessage: async message => {
+                if (message.type === 'CAPTURE_START' || message.type === 'CAPTURE_STATUS') return job(phase);
+                if (message.type === 'CAPTURE_OPEN_DRAFTS') {
+                    phase = 'opened';
+                    return { tabIds: [20], reused: false, groupWarning: true, job: job(phase) };
+                }
+                return { ok: true };
+            }
+        }
+    };
+
+    dom.window.eval(source);
+    const openButton = dom.window.document.getElementById('open-drafts');
+    const openNote = dom.window.document.getElementById('open-note');
+    await waitFor(() => openButton.textContent === 'Open 1 draft');
+    openButton.click();
+    await waitFor(() => openNote.hidden === false);
+
+    assert.match(openNote.textContent, /didn’t group the tabs/);
+    assert.equal(openNote.getAttribute('role'), 'status');
+    assert.equal(openButton.textContent, 'Show opened drafts',
+        'the primary action keeps a label, not a status message');
+    assert.equal(openButton.disabled, false);
+    dom.window.close();
+});
+
 test('popup locks an opened selection and keeps its existing drafts discoverable', async () => {
     const dom = new JSDOM(html, {
         url: 'chrome-extension://better-peakbagger/popup/popup.html',

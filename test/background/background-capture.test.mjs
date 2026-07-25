@@ -17,6 +17,7 @@ const event = () => {
 };
 
 const createHarness = ({ peakXml = null, captureResult = null, ownershipResult = null, settings = {}, beforePeakFetch = null,
+    groupError = null,
     loginHtml = '<a href="climber/climber.aspx?cid=77">My Home Page</a>' } = {}) => {
     const values = {};
     const localValues = {};
@@ -102,7 +103,11 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
                 tabMessages.push({ tabId, message: structuredClone(message) });
                 return true;
             },
-            group: async details => { grouped.push(structuredClone(details)); return 3; },
+            group: async details => {
+                grouped.push(structuredClone(details));
+                if (groupError) throw new Error(groupError);
+                return 3;
+            },
             onRemoved: tabRemoved
         },
         tabGroups: { update: async (groupId, patch) => groupUpdates.push([groupId, structuredClone(patch)]) },
@@ -520,6 +525,18 @@ test('cancelling an in-progress capture discards its job and ignores later resul
     assert.equal(await capture, null);
     assert.equal(harness.values.bpbCaptureJobs['1'], undefined,
         'the abandoned process must not recreate or retain its late result');
+});
+
+test('a tab-grouping failure is a flag, never raw exception text handed to a surface', async () => {
+    const harness = createHarness({ groupError: 'tabs.group is not a function' });
+    await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    const opened = await harness.send({ type: 'CAPTURE_OPEN_DRAFTS', tabId: 1, selectedIds: [7] });
+
+    assert.equal(opened.groupWarning, true, 'grouping is cosmetic: report it, do not fail the open');
+    assert.deepEqual([...opened.tabIds], [100], 'the drafts still opened');
+    assert.equal(harness.values.bpbCaptureJobs['1'].groupWarning, true);
+    assert.doesNotMatch(JSON.stringify(opened), /tabs\.group is not a function/,
+        'the exception message must not reach a user-facing surface');
 });
 
 test('an opened job refuses selection writes and hands the popup its locked state', async () => {

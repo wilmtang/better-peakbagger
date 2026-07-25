@@ -584,7 +584,11 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
                 });
                 await ext.tabGroups.update(groupId, { title: 'Peak Drafts', color: 'green', collapsed: false });
             } catch (error) {
-                groupWarning = `Drafts opened, but tab grouping failed: ${error.message}`;
+                // Grouping is cosmetic, and the exception text is browser
+                // internals. Flag it so each surface can say so in its own
+                // plain copy, and keep the cause in the log for diagnosis.
+                groupWarning = true;
+                console.warn('Better Peakbagger: tab grouping failed', error);
             }
         }
         if (onBeforeNavigate) await onBeforeNavigate({ created, groupWarning });
