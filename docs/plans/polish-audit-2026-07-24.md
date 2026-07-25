@@ -198,7 +198,7 @@ bundle and format through the shared helper introduced in F15. `units: 'auto'`
 has no page to sniff in the popup — resolve it to the same value the last
 Peakbagger surface used, or fall back to imperial, and say which in a comment.
 
-### F4 — The analyzer's inline controls roll back silently on a failed write
+### F4 — The analyzer's inline controls roll back silently on a failed write — **fixed**
 
 [bridge.js:47](../../src/settings/bridge.js:47) answers a rejected write with
 `{ kind: 'setResult', ok: false }` and no message. The MAIN-world client
@@ -213,6 +213,31 @@ saved. Try again."; the analyzer panel says nothing.
 **Fix.** Carry the failure message across the bridge and surface it in the
 analyzer's existing `terrainMessage` region (already a `role="status"` element
 with an error tone). No new UI component.
+
+**Resolution.** `bridge.js` adds `message` to the `setResult` protocol (the
+header comment is updated) carrying the same sentence the options page uses,
+"Settings couldn't be saved. Try again."; the underlying exception is
+`console.warn`ed and never sent, per F5's rule. The MAIN-world `BPB` client
+gained `onWriteFailed(fn)`, fired after `recompute()` has already snapped the
+control back, and `initChart` wires it to `showTerrainMessage(message,
+'error')` — the existing region, no new component.
+
+The message crosses the trust boundary AGENTS.md names, so the analyzer
+re-validates it: `failureMessage()` accepts only a non-empty string of at most
+200 characters and otherwise substitutes its own `That setting couldn't be
+saved.` This is UI copy, not a schema default or bound, so it is not the kind
+of local copy the settings-schema rule forbids.
+
+Regression tests: the bridge test now pins the full `setResult` payload
+including `message`, and the analyzer test asserts the panel states the reason
+after a rejected route-colour write, then that a malformed (non-string)
+`message` falls back instead of reaching the DOM.
+
+**Residual, not fixed (out of this finding's scope):** if the isolated world
+never answers at all, the client's `pending` entry is never deleted and the
+optimistic patch is never rolled back — there is no timeout on the round trip.
+That is a distinct defect from the silent-rollback one this finding names, and
+it is not addressed here.
 
 ### F5 — Raw JavaScript error text reaches users; the Firefox path is unestablished — **fixed**
 

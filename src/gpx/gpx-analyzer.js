@@ -82,6 +82,14 @@ const run = async () => {
         let nextRequestId = 1;
         const pending = new Map();
         const subs = new Set();
+        const writeFailureSubs = new Set();
+        // Used when the bridge's sentence is missing or malformed. Everything
+        // off postMessage crosses a trust boundary, so the text is length-capped
+        // and type-checked before it can reach the DOM.
+        const WRITE_FAILED_FALLBACK = 'That setting couldn’t be saved.';
+        const failureMessage = value => (typeof value === 'string' && value.trim() && value.length <= 200
+            ? value.trim()
+            : WRITE_FAILED_FALLBACK);
         let resolveReady;
         const ready = new Promise(r => { resolveReady = r; });
 
@@ -108,6 +116,12 @@ const run = async () => {
                 pending.delete(data.requestId);
                 if (data.ok === true && data.settings) confirmed = data.settings;
                 recompute();
+                // recompute() has already snapped the control back to its old
+                // value; say why instead of leaving the user to notice.
+                if (data.ok !== true) {
+                    const message = failureMessage(data.message);
+                    writeFailureSubs.forEach(fn => { try { fn(message); } catch (e) { /* ignore */ } });
+                }
                 return;
             }
             if (!data.settings) return;
@@ -130,7 +144,8 @@ const run = async () => {
                 settings = { ...(settings || FALLBACK), ...patch };
                 window.postMessage({ __bpb: true, dir: 'toCS', kind: 'set', requestId, patch }, location.origin);
             },
-            subscribe: fn => { subs.add(fn); return () => subs.delete(fn); }
+            subscribe: fn => { subs.add(fn); return () => subs.delete(fn); },
+            onWriteFailed: fn => { writeFailureSubs.add(fn); return () => writeFailureSubs.delete(fn); }
         };
     })();
 
@@ -643,6 +658,11 @@ const run = async () => {
             });
             terrainMessage.textContent = text;
         };
+
+        // A rejected write from an inline control (unit dropdown, route colour)
+        // rolls the control back; this is the panel's only status region, so it
+        // is where the reason belongs.
+        BPB.onWriteFailed(message => showTerrainMessage(message, 'error'));
 
         const restoreNativeMap = () => {
             if (!mapIframe) return;

@@ -528,6 +528,7 @@ test('GPX analyzer adds a thick, segment-preserving route casing behind native L
             kind: 'setResult',
             requestId: failedColorWrite.requestId,
             ok: false,
+            message: 'Settings couldn’t be saved. Try again.',
         }
     }));
     await waitFor(dom, () => routeColor.value === '#2457a7');
@@ -535,6 +536,32 @@ test('GPX analyzer adds a thick, segment-preserving route casing behind native L
         ['#f1eadc', 13],
         ['#2457a7', 7]
     ], 'a failed bridge write must roll the optimistic route color back');
+
+    // ...and it says so, rather than rolling back in silence.
+    const panelMessage = window.document.getElementById('bpb-terrain-message');
+    assert.equal(panelMessage.textContent, 'Settings couldn’t be saved. Try again.');
+    assert.equal(panelMessage.style.display, 'block');
+    assert.equal(panelMessage.getAttribute('role'), 'status');
+
+    // A malformed message from the bridge never reaches the DOM verbatim. Uses
+    // the units dropdown, which does not rebuild the route overlay.
+    const unitsForFailure = window.document.getElementById('bpb-gpx-units');
+    unitsForFailure.value = unitsForFailure.value === 'metric' ? 'imperial' : 'metric';
+    unitsForFailure.dispatchEvent(new window.Event('change'));
+    window.dispatchEvent(new window.MessageEvent('message', {
+        source: window,
+        origin: window.location.origin,
+        data: {
+            __bpb: true,
+            dir: 'toPage',
+            kind: 'setResult',
+            requestId: sentSettingMessages.at(-1).requestId,
+            ok: false,
+            message: { toString: () => 'not a string' },
+        }
+    }));
+    await waitFor(dom, () => panelMessage.textContent === 'That setting couldn’t be saved.');
+    assert.equal(panelMessage.textContent, 'That setting couldn’t be saved.');
 
     const reloadedMap = makeMap();
     Object.defineProperty(iframe, 'contentWindow', {

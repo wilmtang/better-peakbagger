@@ -71,7 +71,16 @@ test('a failed settings write tells the page to roll back its optimistic patch',
         JSON.parse(JSON.stringify(
             dom.postedMessages.find(message => message.kind === 'setResult' && message.requestId === 17),
         )),
-        { __bpb: true, dir: 'toPage', kind: 'setResult', requestId: 17, ok: false },
+        {
+            __bpb: true,
+            dir: 'toPage',
+            kind: 'setResult',
+            requestId: 17,
+            ok: false,
+            // Carried so the analyzer can say why it snapped the control back,
+            // instead of rolling it back in silence.
+            message: 'Settings couldn’t be saved. Try again.',
+        },
     );
     assert.equal(dom.chrome._store.bpbSettings, undefined);
     dom.window.close();

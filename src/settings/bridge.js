@@ -8,7 +8,7 @@
 //   page -> bridge : { __bpb:true, dir:'toCS',   kind:'get' | 'set', patch }
 //   bridge -> page : { __bpb:true, dir:'toPage', settings }
 //                 or { __bpb:true, dir:'toPage', kind:'setResult',
-//                      requestId, ok, settings? }
+//                      requestId, ok, settings?, message? }
 // The bridge also pushes updated settings to the page whenever storage changes
 // (options page, another tab), so the chart re-themes / re-units live.
 
@@ -23,6 +23,12 @@ import { settings as S } from './settings.js';
         'mapViewportWidth', 'mapViewportHeight',
         'mapLastLayer'
     ]);
+
+    // The page-world panel rolls its inline controls back on a rejected write.
+    // Carry a sentence it can show, so the analyzer matches what the options
+    // page says rather than snapping a control back in silence. The underlying
+    // exception is logged here, never sent: it is browser internals.
+    const WRITE_FAILED_MESSAGE = 'Settings couldn’t be saved. Try again.';
 
     const send = (settings, detail = {}) =>
         window.postMessage({ __bpb: true, dir: 'toPage', ...detail, ...(settings && { settings }) }, location.origin);
@@ -41,10 +47,16 @@ import { settings as S } from './settings.js';
             try {
                 const next = await S.set(patch);
                 send(next, { kind: 'setResult', requestId: data.requestId, ok: true });
-            } catch {
+            } catch (error) {
                 // The MAIN-world client keeps the last confirmed settings and
                 // uses this response to roll back its optimistic controls.
-                send(null, { kind: 'setResult', requestId: data.requestId, ok: false });
+                console.warn('Better Peakbagger: page-world settings write failed', error);
+                send(null, {
+                    kind: 'setResult',
+                    requestId: data.requestId,
+                    ok: false,
+                    message: WRITE_FAILED_MESSAGE
+                });
             }
         }
     });
