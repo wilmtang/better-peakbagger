@@ -23,6 +23,7 @@ import { terrainCompass as TerrainCompass } from '../terrain/terrain-compass.js'
 import { terrainCoordinator as TerrainCoordinator } from '../terrain/terrain-coordinator.js';
 import { terrainFailure as TerrainFailure } from '../terrain/terrain-failure.js';
 import { units as Units } from '../ui/units.js';
+import { mapViewport as MapViewport } from './map-viewport.js';
 
 // Chart and tzlookup remain separately-loaded vendor globals (see manifest).
 const run = async () => {
@@ -212,183 +213,32 @@ const run = async () => {
         };
 
         const mapIframe = findMapIframe();
-        let mapViewport = null;
-        let mapResizeHandle = null;
-        let mapViewportSize = resolveMapViewportSize(BPB.get());
-        let mapInvalidateFrame = null;
         let terrainCoordinator = null;
 
-        const renderedMapWidth = () => {
-            if (!mapViewport) return mapViewportSize.width;
-            const width = mapViewport.getBoundingClientRect().width;
-            return width > 0 ? Math.round(width) : mapViewportSize.width;
-        };
-
-        const syncMapResizeHandleLabel = () => {
-            if (!mapResizeHandle) return;
-            mapResizeHandle.setAttribute('aria-label', `Resize map. Current size ${renderedMapWidth()} pixels wide by ${mapViewportSize.height} pixels high. Use arrow keys for small steps.`);
-        };
-
-        const scheduleMapInvalidate = () => {
-            if (!mapIframe || mapInvalidateFrame !== null) return;
-            const invalidate = () => {
-                mapInvalidateFrame = null;
-                try {
-                    const map = mapIframe.contentWindow && mapIframe.contentWindow.mapsPlaceholder;
-                    if (map && typeof map.invalidateSize === 'function') map.invalidateSize(false);
-                } catch (e) { /* Peakbagger may replace or discard its map while resizing. */ }
-                // Re-anchor the floating toggle: the native zoom's position (2D)
-                // and the viewport size can change as the map settles or resizes.
-                terrainCoordinator?.position();
-            };
-            mapInvalidateFrame = typeof requestAnimationFrame === 'function'
-                ? requestAnimationFrame(invalidate)
-                : setTimeout(invalidate, 0);
-        };
-
-        const applyMapViewportSize = size => {
-            mapViewportSize = {
-                width: Math.min(MAP_VIEWPORT_MAX_WIDTH, Math.max(MAP_VIEWPORT_MIN_WIDTH, Math.round(size.width))),
-                height: Math.min(MAP_VIEWPORT_MAX_HEIGHT, Math.max(MAP_VIEWPORT_MIN_HEIGHT, Math.round(size.height)))
-            };
-            if (!mapViewport) return;
-            mapViewport.style.width = `${mapViewportSize.width}px`;
-            mapViewport.style.height = `${mapViewportSize.height + MAP_RESIZE_RAIL_HEIGHT}px`;
-            syncMapResizeHandleLabel();
-            scheduleMapInvalidate();
-        };
-
-        let mapViewportPersistTimer = null;
-        const persistMapViewportSize = () => {
-            if (mapViewportPersistTimer !== null) {
-                clearTimeout(mapViewportPersistTimer);
-                mapViewportPersistTimer = null;
-            }
-            BPB.set({
-                mapViewportWidth: mapViewportSize.width,
-                mapViewportHeight: mapViewportSize.height
-            });
-        };
-
-        // Keyboard resize fires per key repeat; persisting each step would
-        // burn through chrome.storage.sync's write-per-minute quota and the
-        // final size could silently fail to stick. Persist once, shortly
-        // after the last keystroke.
-        const schedulePersistMapViewportSize = () => {
-            if (mapViewportPersistTimer !== null) clearTimeout(mapViewportPersistTimer);
-            mapViewportPersistTimer = setTimeout(() => {
-                mapViewportPersistTimer = null;
-                persistMapViewportSize();
-            }, MAP_RESIZE_PERSIST_DELAY_MS);
-        };
-
-        if (mapIframe && mapIframe.parentElement) {
-            mapViewport = document.createElement('div');
-            mapViewport.id = 'bpb-map-viewport';
-            Object.assign(mapViewport.style, {
-                position: 'relative',
-                maxWidth: '100%',
-                minWidth: 'min(320px, 100%)',
-                minHeight: `${MAP_VIEWPORT_MIN_HEIGHT + MAP_RESIZE_RAIL_HEIGHT}px`,
-                maxHeight: `${MAP_VIEWPORT_MAX_HEIGHT + MAP_RESIZE_RAIL_HEIGHT}px`,
-                boxSizing: 'border-box'
-            });
-
-            mapIframe.before(mapViewport);
-            mapViewport.append(mapIframe);
-            Object.assign(mapIframe.style, {
-                display: 'block',
-                width: '100%',
-                maxWidth: '100%',
-                height: `calc(100% - ${MAP_RESIZE_RAIL_HEIGHT}px)`,
-                boxSizing: 'border-box'
-            });
-
-            mapResizeHandle = document.createElement('button');
-            mapResizeHandle.id = 'bpb-map-resize-handle';
-            mapResizeHandle.type = 'button';
-            mapResizeHandle.title = 'Drag to resize map';
-            mapResizeHandle.textContent = '◢';
-            Object.assign(mapResizeHandle.style, {
-                position: 'absolute',
-                right: '0',
-                bottom: '0',
-                width: '24px',
-                height: `${MAP_RESIZE_RAIL_HEIGHT}px`,
-                padding: '0',
-                border: '0',
-                background: 'transparent',
-                color: 'currentColor',
-                lineHeight: `${MAP_RESIZE_RAIL_HEIGHT}px`,
-                cursor: 'nwse-resize',
-                opacity: '0.72'
-            });
-            mapViewport.append(mapResizeHandle);
-
-            let drag = null;
-            mapResizeHandle.addEventListener('pointerdown', event => {
-                if (event.button !== 0) return;
-                const parentRect = mapViewport.parentElement.getBoundingClientRect();
-                const viewportRect = mapViewport.getBoundingClientRect();
-                const parentWidth = parentRect.width;
-                const viewportWidth = viewportRect.width;
-                if (!(parentWidth > 0) || !(viewportWidth > 0)) return;
-                const leftGap = viewportRect.left - parentRect.left;
-                const rightGap = parentRect.right - viewportRect.right;
-                drag = {
-                    pointerId: event.pointerId,
-                    startX: event.clientX,
-                    startY: event.clientY,
-                    startWidth: viewportWidth,
-                    startHeight: mapViewportSize.height,
-                    parentWidth,
-                    // Peakbagger centers its fixed-width map. In that layout a
-                    // 1 px pointer movement moves the right edge only 0.5 px
-                    // unless the requested width changes by 2 px.
-                    widthScale: Number.isFinite(leftGap) && Number.isFinite(rightGap) && Math.abs(leftGap - rightGap) <= 2 ? 2 : 1
-                };
-                if (mapResizeHandle.setPointerCapture) mapResizeHandle.setPointerCapture(event.pointerId);
-                event.preventDefault();
-            });
-            mapResizeHandle.addEventListener('pointermove', event => {
-                if (!drag || event.pointerId !== drag.pointerId) return;
-                const minWidth = Math.min(drag.parentWidth, MAP_VIEWPORT_MIN_WIDTH);
-                const widthPx = Math.min(MAP_VIEWPORT_MAX_WIDTH, drag.parentWidth, Math.max(minWidth, drag.startWidth + (event.clientX - drag.startX) * drag.widthScale));
-                applyMapViewportSize({
-                    width: widthPx,
-                    height: drag.startHeight + event.clientY - drag.startY
-                });
-            });
-            const finishDrag = event => {
-                if (!drag || event.pointerId !== drag.pointerId) return;
-                if (mapResizeHandle.releasePointerCapture && mapResizeHandle.hasPointerCapture && mapResizeHandle.hasPointerCapture(event.pointerId)) {
-                    mapResizeHandle.releasePointerCapture(event.pointerId);
-                }
-                drag = null;
-                persistMapViewportSize();
-            };
-            mapResizeHandle.addEventListener('pointerup', finishDrag);
-            mapResizeHandle.addEventListener('pointercancel', finishDrag);
-            mapResizeHandle.addEventListener('keydown', event => {
-                const largeStep = event.shiftKey;
-                let next = { ...mapViewportSize };
-                if (event.key === 'ArrowLeft') next.width = renderedMapWidth() - (largeStep ? 50 : 10);
-                else if (event.key === 'ArrowRight') next.width = renderedMapWidth() + (largeStep ? 50 : 10);
-                else if (event.key === 'ArrowUp') next.height -= largeStep ? 50 : 10;
-                else if (event.key === 'ArrowDown') next.height += largeStep ? 50 : 10;
-                else return;
-                event.preventDefault();
-                applyMapViewportSize(next);
-                schedulePersistMapViewportSize();
-            });
-
-            applyMapViewportSize(mapViewportSize);
-            window.addEventListener('resize', scheduleMapInvalidate);
-            if (typeof ResizeObserver === 'function') new ResizeObserver(() => {
-                syncMapResizeHandleLabel();
-                scheduleMapInvalidate();
-            }).observe(mapViewport);
-        }
+        // Resize, persist, and Leaflet invalidation now live in
+        // src/gpx/map-viewport.js. Bounds come from the settings schema rather
+        // than a local copy, and the debounced persist is the module's, so this
+        // file only says what to do with the result.
+        const viewport = MapViewport.create({
+            iframe: mapIframe,
+            size: resolveMapViewportSize(BPB.get()),
+            bounds: {
+                minWidth: MAP_VIEWPORT_MIN_WIDTH,
+                maxWidth: MAP_VIEWPORT_MAX_WIDTH,
+                minHeight: MAP_VIEWPORT_MIN_HEIGHT,
+                maxHeight: MAP_VIEWPORT_MAX_HEIGHT,
+            },
+            railHeight: MAP_RESIZE_RAIL_HEIGHT,
+            persistDelayMs: MAP_RESIZE_PERSIST_DELAY_MS,
+            onPersist: size => BPB.set({
+                mapViewportWidth: size.width,
+                mapViewportHeight: size.height
+            }),
+            onInvalidated: () => terrainCoordinator?.position(),
+        });
+        const mapViewport = viewport.element;
+        const scheduleMapInvalidate = viewport.scheduleInvalidate;
+        const applyMapViewportSize = viewport.applySize;
 
         const container = document.createElement('div');
         container.id = 'bpb-gpx-analysis';
