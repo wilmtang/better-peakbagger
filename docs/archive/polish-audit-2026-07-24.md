@@ -1,5 +1,7 @@
 # Polish audit — 2026-07-24 (feedback, dark mode, and shared-idiom round)
 
+Archived on 2026-07-26 after remediation and closure evidence were complete.
+
 Status: **remediated, with two recorded verification gaps.** All 18 findings
 are fixed; per-finding status is in each heading and the evidence and residuals
 are in the [closure ledger](#closure-ledger) at the end of this file. Baseline
@@ -15,7 +17,7 @@ and the ascent-form upload flow. Baseline: clean tree at `d3d33af`; `npm test`
 772 passing.
 
 This round deliberately does **not** re-audit what
-[`codebase-audit-2026-07-23.md`](../archive/codebase-audit-2026-07-23.md)
+[`codebase-audit-2026-07-23.md`](codebase-audit-2026-07-23.md)
 closed. Two findings below (F4, F13) are that round's fixes landing on only one
 of the surfaces that needed them.
 

@@ -52,6 +52,10 @@ living docs in [`docs/`](../).
   round: saved-ascent navigation identity, opt-in GitHub deletion mirroring,
   truthful backup status, draft peak names, and the worker-owned settings and
   favorites mutation boundaries, with its closure ledger.
+- [Polish audit — 2026-07-24](polish-audit-2026-07-24.md) — completed
+  feedback, dark-mode, and shared-idiom round covering truthful capture state,
+  destructive confirmations, shared units/theme/DOM ownership, analyzer
+  extraction, and condition-based map retries, with its closure ledger.
 - [3D map audit — 2026-07-21](3d-map-audit-2026-07-21.md) — completed audit and
   implementation record for compass continuity, progressive drape boot,
   cancelable loading, visible/fatal renderer recovery, shared lifecycle,
