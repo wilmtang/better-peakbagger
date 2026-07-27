@@ -31,6 +31,7 @@ const ERROR_TEXT = Object.freeze({
     'no-data': 'Better Peakbagger could not read enough ascent information to create this backup.',
     'peakbagger-read': 'Better Peakbagger could not read the saved ascent form. Reload the page and try again.',
     'peakbagger-track': 'Better Peakbagger could not read the stored GPS track. Reload the page and try again.',
+    'settings-unavailable': 'Settings could not be read, so no backup was changed.',
     disabled: 'GitHub backup is turned off in extension settings.',
 });
 

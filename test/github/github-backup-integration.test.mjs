@@ -40,7 +40,7 @@ const settleQuietly = () =>
     new Promise(resolve => setTimeout(resolve, Queue.DEFAULT_COALESCE_WINDOW_MS + 100));
 
 const createWorker = ({ settings = { enableGithubBackup: true }, auth = null, github, session: sharedSession = null,
-    local: sharedLocal = null, failLocalGetAfterRemove = false,
+    local: sharedLocal = null, failLocalGetAfterRemove = false, syncReadFailures = [],
     peakbaggerLoginHtml = '<a href="climber/climber.aspx?cid=900001">My Home Page</a>' } = {}) => {
     const session = sharedSession || {};
     const sync = { bpbSettings: structuredClone(settings) };
@@ -58,6 +58,14 @@ const createWorker = ({ settings = { enableGithubBackup: true }, auth = null, gi
     };
     const runtimeMessage = event();
     const storageChanged = event();
+    const syncArea = area(sync);
+    const readSync = syncArea.get;
+    let syncReadCount = 0;
+    syncArea.get = async key => {
+        const failure = syncReadFailures[syncReadCount++];
+        if (failure) throw failure;
+        return readSync(key);
+    };
     const alarms = {
         created: [],
         create(name, info) { this.created.push({ name, info: info || null }); },
@@ -66,7 +74,7 @@ const createWorker = ({ settings = { enableGithubBackup: true }, auth = null, gi
     const browser = {
         storage: {
             session: area(session),
-            sync: area(sync),
+            sync: syncArea,
             local: area(local, { failGetAfterRemove: failLocalGetAfterRemove }),
             onChanged: storageChanged,
         },
@@ -107,6 +115,7 @@ const createWorker = ({ settings = { enableGithubBackup: true }, auth = null, gi
     const send = (message, sender = {}) => new Promise(resolve => { listener(message, sender, resolve); });
     return {
         send, session, local, sync, alarms, githubCalls,
+        syncReadCount: () => syncReadCount,
         fireStorageChange: (changes, areaName) => storageChanged.listeners.forEach(l => l(changes, areaName)),
         fireAlarm: name => alarms.onAlarm.listeners.forEach(l => l({ name })),
     };
@@ -674,6 +683,65 @@ test('settings backup and restore stay extension-only and ignore the ascent-back
 
     const forbidden = await worker.send({ type: 'GITHUB_SETTINGS_BACKUP' }, PEAK_SENDER);
     assert.equal(forbidden.error, 'forbidden');
+});
+
+test('manual settings backup preserves the remote file on read failure and retries authoritative settings', async () => {
+    const backend = gitDataBackend();
+    const previousRemote = '{"kind":"previous-settings-backup","theme":"light"}\n';
+    backend.state.contents[Transfer.BACKUP_PATH] = previousRemote;
+    const worker = createWorker({
+        settings: { theme: 'dark' },
+        auth: AUTH,
+        github: backend.handler,
+        syncReadFailures: [new Error('SYNC_MANUAL_SETTINGS_SENTINEL')],
+    });
+
+    const failed = await worker.send({ type: 'GITHUB_SETTINGS_BACKUP' }, EXTENSION_SENDER);
+    assert.deepEqual(structuredClone(failed), {
+        ok: false,
+        error: {
+            code: 'settings-unavailable',
+            message: 'Settings could not be read, so no backup was changed.',
+        },
+    });
+    assert.equal(backend.state.commits, 0);
+    assert.equal(backend.state.contents[Transfer.BACKUP_PATH], previousRemote,
+        'the last known-good remote backup must remain byte-for-byte unchanged');
+    assert.equal(worker.local.bpbSettingsBackupState, undefined);
+
+    const retried = await worker.send({ type: 'GITHUB_SETTINGS_BACKUP' }, EXTENSION_SENDER);
+    assert.equal(retried.ok, true);
+    assert.equal(backend.state.commits, 1);
+    const payload = JSON.parse(backend.state.contents[Transfer.BACKUP_PATH]);
+    assert.equal(payload.settings.theme, 'dark',
+        'the retry must serialize the authoritative settings rather than fail-soft defaults');
+    assert.equal(worker.syncReadCount(), 2);
+});
+
+test('settings auto backup preserves the remote file when its gate-read succeeds but build-read fails', async () => {
+    const backend = gitDataBackend();
+    const previousRemote = '{"kind":"previous-settings-backup","theme":"light"}\n';
+    backend.state.contents[Transfer.BACKUP_PATH] = previousRemote;
+    const worker = createWorker({
+        settings: { autoSettingsBackup: true, theme: 'dark' },
+        auth: AUTH,
+        github: backend.handler,
+        syncReadFailures: [null, new Error('SYNC_AUTO_SETTINGS_SENTINEL')],
+    });
+
+    worker.fireAlarm('bpb-settings-backup');
+    await waitFor(() => worker.local.bpbSettingsBackupState?.attempts === 1);
+
+    assert.equal(worker.syncReadCount(), 2,
+        'the enabled gate must succeed before the authoritative backup read fails');
+    assert.equal(backend.state.commits, 0);
+    assert.equal(backend.state.contents[Transfer.BACKUP_PATH], previousRemote,
+        'the automatic path must preserve the last known-good remote backup');
+    assert.deepEqual(structuredClone(
+        worker.alarms.created.filter(alarm => alarm.name === 'bpb-settings-backup')
+    ), [
+        { name: 'bpb-settings-backup', info: { delayInMinutes: 10 } },
+    ]);
 });
 
 test('settings auto backup debounces changes, commits once, and skips an equal signature', async () => {

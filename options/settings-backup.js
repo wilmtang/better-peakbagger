@@ -77,7 +77,14 @@ export function initSettingsBackup({ extensionApi, flash, save }) {
     };
 
     exportEl.addEventListener('click', async () => {
-        const settings = await S.get();
+        let settings;
+        try {
+            settings = await S.requireCurrent();
+        } catch (error) {
+            console.error('Better Peakbagger: settings export read failed', error);
+            flash('Settings could not be read, so no backup was created.', { error: true });
+            return;
+        }
         const payload = Transfer.buildPayload(settings, {
             extensionVersion: extensionApi.runtime.getManifest().version,
             exportedAt: new Date().toISOString()

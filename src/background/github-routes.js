@@ -8,6 +8,7 @@ import { githubAuth as GithubAuth } from '../github/github-auth.js';
 import { githubClient as GithubClient } from '../github/github-client.js';
 import { githubErrors as GithubErrors } from '../github/github-errors.js';
 import { githubWriteQueue as GithubWriteQueue } from '../github/github-write-queue.js';
+import { publicErrors as PublicErrors } from './public-errors.js';
 
 const GITHUB_AUTH_PENDING_KEY = 'bpbGithubAuthPending';
 const FAVORITE_CLIMBERS_BACKUP_PATH = 'favorite-climbers.json';
@@ -773,10 +774,11 @@ export function createGithubRoutes({
             if (!(await enabled())) return;
             const access = await connectedGithubClient();
             if (access.error) return;
-            const { text, signature } = await build();
-            const state = await readState();
-            if (state && state.signature === signature) return;
+            let state = null;
             try {
+                const { text, signature } = await build();
+                state = await readState();
+                if (state && state.signature === signature) return;
                 const result = await writeQueue.putFile({ path, content: text, message: commitMessage });
                 // A newer write to this path won the batch, so this signature
                 // does not describe what the repository now holds.
@@ -795,7 +797,17 @@ export function createGithubRoutes({
     };
 
     const buildSettingsBackup = async () => {
-        const settings = await Settings.get();
+        let settings;
+        try {
+            settings = await Settings.requireCurrent();
+        } catch (cause) {
+            console.error('Better Peakbagger: settings backup read failed', cause);
+            throw PublicErrors.exception(
+                'settings-unavailable',
+                'Settings could not be read, so no backup was changed.',
+                { cause }
+            );
+        }
         const payload = Transfer.buildPayload(settings, {
             extensionVersion: ext.runtime.getManifest ? ext.runtime.getManifest().version : '',
             exportedAt: new Date().toISOString()
@@ -834,14 +846,17 @@ export function createGithubRoutes({
     const backupSettings = async () => {
         const access = await connectedGithubClient();
         if (access.error) return { ok: false, error: access.error };
-        const { text, signature } = await buildSettingsBackup();
         try {
+            const { text, signature } = await buildSettingsBackup();
             const result = await writeQueue.putFile({
                 path: Transfer.BACKUP_PATH, content: text, message: 'Back up settings',
             });
             if (!result.superseded) await settingsAutoBackup.markSynced(signature);
             return { ok: true, result };
         } catch (error) {
+            if (PublicErrors.isPublic(error)) {
+                return { ok: false, error: PublicErrors.expose(error) };
+            }
             return { ok: false, error: writeError(error, 'The settings backup failed.') };
         }
     };

@@ -336,6 +336,53 @@ test('settings export downloads a parseable known-key-only payload', async () =>
     assert.equal(download.revoked, 'blob:settings-export');
 });
 
+test('settings export preserves the previous backup when settings cannot be read and retries cleanly', async () => {
+    const download = { created: 0, clicked: 0 };
+    const errors = [];
+    let restoreSettingsRead;
+    const dom = await loadOptions({ theme: 'dark' }, {
+        prepareChrome(chrome) {
+            restoreSettingsRead = chrome.storage.sync.get;
+            chrome.storage.sync.get = async () => {
+                throw new Error('SYNC_EXPORT_SETTINGS_SENTINEL');
+            };
+        },
+        prepareWindow(window) {
+            window.console.error = (...args) => errors.push(args.map(String).join(' '));
+            window.URL.createObjectURL = blob => {
+                download.created++;
+                download.blob = blob;
+                return 'blob:settings-export';
+            };
+            window.URL.revokeObjectURL = url => { download.revoked = url; };
+            window.HTMLAnchorElement.prototype.click = function click() {
+                download.clicked++;
+            };
+        }
+    });
+
+    el(dom, 'settings-backup-export').click();
+    await waitFor(dom, () => el(dom, 'status-error-text').textContent
+        === 'Settings could not be read, so no backup was created.');
+
+    assert.equal(download.created, 0, 'a failed read must not serialize a default-valued backup');
+    assert.equal(download.clicked, 0, 'a failed read must not start a download');
+    assert.equal(download.revoked, undefined);
+    assert.ok(errors.some(message => message.includes('SYNC_EXPORT_SETTINGS_SENTINEL')));
+
+    dom.chrome.storage.sync.get = restoreSettingsRead;
+    el(dom, 'settings-backup-export').click();
+    await waitFor(dom, () => download.blob);
+
+    const parsed = settingsTransfer.parse(await readBlob(dom, download.blob));
+    assert.equal(parsed.ok, true);
+    assert.equal(parsed.settings.theme, 'dark',
+        'the retry must serialize the authoritative settings rather than defaults from the failed read');
+    assert.equal(download.created, 1);
+    assert.equal(download.clicked, 1);
+    assert.equal(download.revoked, 'blob:settings-export');
+});
+
 test('settings import replaces known settings only after inline confirmation', async () => {
     const dom = await loadOptions({ theme: 'dark', units: 'imperial' });
     const input = el(dom, 'settings-backup-file');

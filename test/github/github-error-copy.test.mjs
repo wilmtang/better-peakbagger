@@ -9,13 +9,23 @@ import { githubErrors as GithubErrors } from '../../src/github/github-errors.js'
 test('every typed GitHub auth and backup failure has specific user-facing copy', () => {
     const codes = new Set([
         ...Object.values(GithubErrors.ERROR_CODES),
-        'no-token', 'not-connected', 'no-repo', 'no-data', 'disabled',
+        'no-token', 'not-connected', 'no-repo', 'no-data', 'settings-unavailable', 'disabled',
     ]);
     for (const code of codes) {
         const text = GithubError.message({ code, message: 'GitHub supplied this exact detail.' });
         assert.ok(text.length > 20, `${code} must explain the failure`);
         assert.doesNotMatch(text, /something went wrong/i, `${code} must not use vague catch-all copy`);
     }
+});
+
+test('settings-read failures never expose storage exception details', () => {
+    assert.equal(
+        GithubError.message({
+            code: 'settings-unavailable',
+            message: 'SYNC_SETTINGS_EXCEPTION_SENTINEL',
+        }),
+        'Settings could not be read, so no backup was changed.',
+    );
 });
 
 test('unexpected GitHub details are normalized, bounded, and shown as plain text', () => {

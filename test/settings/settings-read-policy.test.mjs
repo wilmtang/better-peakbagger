@@ -15,14 +15,10 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 
 const FAIL_SOFT = Object.freeze({
     'options/options.js': [{ count: 1, kind: 'display', reason: 'populate passive options controls' }],
-    'options/settings-backup.js': [{ count: 1, kind: 'open-f2', reason: 'known preservation bug fixed by F2' }],
     'popup/popup.js': [{ count: 1, kind: 'display', reason: 'resolve passive popup units' }],
     'src/ascent/ascent-delete.js': [{ count: 1, kind: 'safe-gate', reason: 'default-off GitHub deletion mirror' }],
     'src/ascent/ascent-filter.js': [{ count: 1, kind: 'display', reason: 'render filter preferences' }],
-    'src/background/github-routes.js': [
-        { count: 10, kind: 'safe-gate', reason: 'status and default-off GitHub gates' },
-        { count: 1, kind: 'open-f2', reason: 'known settings-backup preservation bug fixed by F2' },
-    ],
+    'src/background/github-routes.js': [{ count: 10, kind: 'safe-gate', reason: 'status and default-off GitHub gates' }],
     'src/background/terrain-prefetch.js': [{ count: 1, kind: 'safe-gate', reason: 'default-off terrain gate' }],
     'src/favorites/climber-favorite.js': [{ count: 2, kind: 'display', reason: 'render favorite-source state' }],
     'src/maps/big-map-bridge.js': [{ count: 1, kind: 'display', reason: 'publish validated map settings' }],
@@ -35,8 +31,10 @@ const FAIL_SOFT = Object.freeze({
 });
 
 const AUTHORITATIVE = Object.freeze({
+    'options/settings-backup.js': [{ count: 1, kind: 'preservation', reason: 'do not replace a local backup with defaults' }],
     'src/ascent/ascent-upload.js': [{ count: 1, kind: 'privacy', reason: 'gate local-file parsing and allowlisted fields' }],
     'src/background/background.js': [{ count: 1, kind: 'privacy', reason: 'gate provider and local-upload capture in the worker' }],
+    'src/background/github-routes.js': [{ count: 1, kind: 'preservation', reason: 'do not replace a remote backup with defaults' }],
 });
 
 const sourceFiles = async directory => {
@@ -63,10 +61,10 @@ const occurrences = async method => {
 const expectedCounts = policy => Object.fromEntries(Object.entries(policy)
     .map(([file, owners]) => [file, owners.reduce((sum, owner) => sum + owner.count, 0)]));
 
-test('every fail-soft settings read has an explicit display, safe-gate, or open-F2 owner', async () => {
+test('every fail-soft settings read has an explicit display or safe-gate owner', async () => {
     assert.deepEqual(await occurrences('get'), expectedCounts(FAIL_SOFT));
 });
 
-test('capture privacy gates use authoritative settings reads', async () => {
+test('privacy and preservation gates use authoritative settings reads', async () => {
     assert.deepEqual(await occurrences('requireCurrent'), expectedCounts(AUTHORITATIVE));
 });
