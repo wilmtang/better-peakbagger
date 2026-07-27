@@ -513,6 +513,16 @@ import { mapFrameLifecycle as MapFrameLifecycle } from '../gpx/map-frame-lifecyc
         return { basemap: B.active(activeMapWin, activeMap, select), basemaps: B.enumerate(select) };
     };
 
+    const unavailableTerrainCopy = mapType === 'P'
+        ? {
+            title: 'Available once the peak location loads',
+            ariaLabel: '3D terrain is available once the peak location loads',
+        }
+        : {
+            title: 'Available once the map has a GPS track',
+            ariaLabel: '3D terrain is available once the map has a GPS track',
+        };
+
     const ensureTerrainToggle = () => {
         if (terrainToggle) return;
         // The mount is a fixed overlay that hosts the toggle (always clickable)
@@ -547,10 +557,10 @@ import { mapFrameLifecycle as MapFrameLifecycle } from '../gpx/map-frame-lifecyc
                     disabled: !hasSubject,
                     title: hasSubject
                         ? `View this ${mapType === 'P' ? 'peak' : 'route'} on 3D terrain`
-                        : `Available once the ${mapType === 'P' ? 'peak' : 'map has a GPS track'}`,
+                        : unavailableTerrainCopy.title,
                     ariaLabel: hasSubject
                         ? 'Show 3D terrain'
-                        : `3D terrain available once the ${mapType === 'P' ? 'peak' : 'map has a GPS track'}`
+                        : unavailableTerrainCopy.ariaLabel,
                 };
             },
             buildInit: buildTerrainInit,

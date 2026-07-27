@@ -133,6 +133,10 @@ test('Full Screen recent-track maps preserve native colors, hover, and click beh
     fixture.evaluate();
 
     await waitFor(dom, () => routeA.options.weight === 7 && routeB.options.weight === 7);
+    await waitFor(dom, () => window.document.getElementById('bpb-terrain-toggle')?.disabled === false);
+    const terrainToggle = window.document.getElementById('bpb-terrain-toggle');
+    assert.equal(terrainToggle.title, 'View this route on 3D terrain');
+    assert.equal(terrainToggle.getAttribute('aria-label'), 'Show 3D terrain');
     assert.equal(routeA.options.color, '#e34a33');
     assert.equal(routeB.options.color, '#3182bd');
     assert.ok(routeA.styleCalls.every(call => Object.keys(call).length === 1 && 'weight' in call));
@@ -447,6 +451,7 @@ test('Full Screen peak maps offer route-free 3D terrain without styling native l
     assert.equal(line.styleCalls.length, 0);
     const toggle = window.document.getElementById('bpb-terrain-toggle');
     assert.equal(toggle.title, 'View this peak on 3D terrain');
+    assert.equal(toggle.getAttribute('aria-label'), 'Show 3D terrain');
     toggle.click();
     await waitFor(dom, () => messages.some(message => message.__bpbTerrain === true && message.type === 'init'));
     const init = messages.find(message => message.__bpbTerrain === true && message.type === 'init');
@@ -462,6 +467,47 @@ test('Full Screen peak maps offer route-free 3D terrain without styling native l
     assert.equal(Object.hasOwn(init, 'routeSegments'), false,
         'a summit-only map must not reinterpret unrelated native lines as a route');
     dom.window.close();
+});
+
+test('Full Screen maps use complete terrain availability copy before their subject loads', async t => {
+    for (const type of ['A', 'G']) {
+        await t.test(`${type} route map`, async () => {
+            const fixture = await loadBigMap({ type, settings: { enable3dMap: true } });
+            const { dom, window, leaflet } = fixture;
+            window.map = new leaflet.MapStub();
+            fixture.evaluate();
+
+            await waitFor(dom, () => window.document.getElementById('bpb-terrain-toggle'));
+            const toggle = window.document.getElementById('bpb-terrain-toggle');
+            assert.equal(toggle.disabled, true);
+            assert.equal(toggle.title, 'Available once the map has a GPS track');
+            assert.equal(toggle.getAttribute('aria-label'),
+                '3D terrain is available once the map has a GPS track');
+            await new Promise(resolve => window.setTimeout(resolve, 0));
+            dom.window.close();
+        });
+    }
+
+    await t.test('P peak map', async () => {
+        const fixture = await loadBigMap({
+            type: 'P',
+            settings: { enable3dMap: true },
+            html: '<!doctype html><body><a href="../peak.aspx?pid=2414">Mount Hood</a><div id="map"></div></body>',
+            query: 't=P&d=2414&cy=45.373496&cx=-121.695937&z=14',
+        });
+        const { dom, window, leaflet } = fixture;
+        window.map = new leaflet.MapStub();
+        fixture.evaluate();
+
+        await waitFor(dom, () => window.document.getElementById('bpb-terrain-toggle'));
+        const toggle = window.document.getElementById('bpb-terrain-toggle');
+        assert.equal(toggle.disabled, true);
+        assert.equal(toggle.title, 'Available once the peak location loads');
+        assert.equal(toggle.getAttribute('aria-label'),
+            '3D terrain is available once the peak location loads');
+        await new Promise(resolve => window.setTimeout(resolve, 0));
+        dom.window.close();
+    });
 });
 
 test('Full Screen peak maps fail closed when the heading and subject marker do not agree', async () => {
@@ -495,6 +541,8 @@ test('Full Screen maps offer a 3D toggle that carries the native tracks into the
     assert.equal(toggle.parentElement.id, 'bpb-map-viewport');
     assert.ok(toggle.parentElement.classList.contains('bpb-terrain-mount-fullscreen'));
     await waitFor(dom, () => toggle.disabled === false);
+    assert.equal(toggle.title, 'View this route on 3D terrain');
+    assert.equal(toggle.getAttribute('aria-label'), 'Show 3D terrain');
     assert.equal(toggle.textContent, '3D');
 
     toggle.click();
