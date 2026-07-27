@@ -987,7 +987,10 @@ test('a missing GPS track is reported as missing instead of a parse failure', as
     dom.window.close();
 });
 
-const loadElevationAnalyzer = async gpxSource => {
+const loadElevationAnalyzer = async (gpxSource, {
+    clipboard,
+    theme = 'light'
+} = {}) => {
     const dom = new JSDOM(`<!doctype html><body>
       <p><a href="https://www.peakbagger.com/demo.gpx">Download this GPS track</a></p>
     </body>`, {
@@ -997,30 +1000,54 @@ const loadElevationAnalyzer = async gpxSource => {
     });
     const { window } = dom;
     let chartConfig = null;
+    let chartInstance = null;
+    let activeElements = [];
+    const updateModes = [];
+    const eventQueries = [];
     window.matchMedia = () => ({ matches: false });
     window.HTMLCanvasElement.prototype.getContext = () => ({});
     window.fetch = async () => ({ ok: true, text: async () => gpxSource });
+    if (clipboard) {
+        Object.defineProperty(window.navigator, 'clipboard', {
+            configurable: true,
+            value: clipboard
+        });
+    }
     window.Chart = class ChartStub {
         constructor(context, config) {
             chartConfig = config;
+            chartInstance = this;
             this.data = config.data;
             this.options = config.options;
         }
         destroy() {}
+        update(mode) { updateModes.push(mode); }
+        getElementsAtEventForMode(event, mode, options) {
+            eventQueries.push({ mode, intersect: options.intersect, axis: options.axis });
+            return activeElements;
+        }
     };
     window.postMessage = message => {
         if (!message || message.dir !== 'toCS' || message.kind !== 'get') return;
         window.queueMicrotask(() => window.dispatchEvent(new window.MessageEvent('message', {
             source: window,
             origin: window.location.origin,
-            data: { __bpb: true, dir: 'toPage', settings: { units: 'metric', theme: 'light' } }
+            data: { __bpb: true, dir: 'toPage', settings: { units: 'metric', theme } }
         })));
     };
 
     Object.defineProperty(window.document, 'readyState', { configurable: true, value: 'complete' });
     window.eval(analyzerBundle);
     const analysisText = () => window.document.getElementById('bpb-gpx-analysis')?.textContent || '';
-    return { dom, analysisText, chartConfig: () => chartConfig };
+    return {
+        dom,
+        analysisText,
+        chartConfig: () => chartConfig,
+        chartInstance: () => chartInstance,
+        setActiveElements: elements => { activeElements = elements; },
+        updateModes,
+        eventQueries
+    };
 };
 
 test('GPX analyzer drops points whose elevation is missing or invalid', async () => {
@@ -1053,6 +1080,122 @@ test('GPX analyzer labels a track with no usable elevation instead of reporting 
     assert.match(analysisText(), /This GPS track has no usable elevation data\./);
     assert.doesNotMatch(analysisText(), /0 (?:m|ft) gain/);
     assert.equal(chartConfig(), null);
+    const copyButton = dom.window.document.getElementById('bpb-gpx-copy-coordinates');
+    const status = dom.window.document.getElementById('bpb-gpx-coordinate-status');
+    assert.equal(copyButton.disabled, true);
+    assert.equal(status.textContent, 'No chart point with coordinates is available.');
+
+    dom.window.close();
+});
+
+test('GPX analyzer selects coordinates by click and keyboard before copying them', async () => {
+    const source = `<?xml version="1.0"?><gpx><trk><trkseg>
+      <trkpt lat="47.10000" lon="-121.10000"><ele>100</ele></trkpt>
+      <trkpt lat="47.20000" lon="-121.20000"><ele>110</ele></trkpt>
+      <trkpt lat="47.30000" lon="-121.30000"><ele>120</ele></trkpt>
+    </trkseg></trk></gpx>`;
+    const writes = [];
+    const clipboard = { writeText: async text => { writes.push(text); } };
+    const {
+        dom, chartConfig, setActiveElements, updateModes, eventQueries
+    } = await loadElevationAnalyzer(source, { clipboard });
+    const { window } = dom;
+
+    await waitFor(dom, () => chartConfig() !== null);
+    const canvas = window.document.querySelector('#bpb-gpx-analysis canvas');
+    const copyButton = window.document.getElementById('bpb-gpx-copy-coordinates');
+    const status = window.document.getElementById('bpb-gpx-coordinate-status');
+    const points = chartConfig().data.datasets[0].data;
+    assert.equal(points.length, 2, 'the simplified chart keeps the endpoints of this straight climb');
+
+    assert.equal(canvas.tabIndex, 0);
+    assert.equal(canvas.getAttribute('aria-describedby'), status.id);
+    assert.equal(canvas.getAttribute('aria-keyshortcuts'), 'ArrowLeft ArrowRight');
+    assert.equal(copyButton.disabled, true);
+
+    setActiveElements([{ datasetIndex: 0, index: 0 }]);
+    canvas.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    assert.equal(copyButton.disabled, false);
+    assert.equal(status.textContent, 'Selected point 1 of 2: 47.10000, -121.10000');
+    assert.deepEqual(eventQueries[0], { mode: 'nearest', intersect: false, axis: 'xy' });
+    assert.equal(chartConfig().data.datasets[0].pointRadius({ raw: points[0] }), 5);
+    assert.equal(chartConfig().data.datasets[0].pointRadius({ raw: points[1] }), 0);
+    assert.deepEqual(updateModes, ['none']);
+
+    canvas.focus();
+    canvas.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+    assert.equal(status.textContent, 'Selected point 2 of 2: 47.30000, -121.30000');
+    canvas.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }));
+    assert.equal(status.textContent, 'Selected point 1 of 2: 47.10000, -121.10000');
+
+    copyButton.click();
+    await waitFor(dom, () => status.dataset.state === 'success');
+    assert.deepEqual(writes, ['47.10000, -121.10000']);
+    assert.equal(status.dataset.state, 'success');
+    assert.equal(status.textContent, 'Copied: 47.10000, -121.10000');
+
+    // Mobile browsers synthesize the same click activation after a tap. The
+    // double-click shortcut also delegates to the shared selection/copy path.
+    setActiveElements([{ datasetIndex: 0, index: 1 }]);
+    canvas.dispatchEvent(new window.Event('click', { bubbles: true }));
+    assert.equal(status.textContent, 'Selected point 2 of 2: 47.30000, -121.30000');
+    canvas.dispatchEvent(new window.MouseEvent('dblclick', { bubbles: true }));
+    await waitFor(dom, () => writes.length === 2 && status.dataset.state === 'success');
+    assert.deepEqual(writes, [
+        '47.10000, -121.10000',
+        '47.30000, -121.30000'
+    ]);
+
+    dom.window.close();
+});
+
+test('GPX analyzer exposes a selected-text fallback when clipboard copy fails', async () => {
+    const source = `<?xml version="1.0"?><gpx><trk><trkseg>
+      <trkpt lat="47.12345" lon="-121.54321"><ele>100</ele></trkpt>
+      <trkpt lat="47.22345" lon="-121.64321"><ele>110</ele></trkpt>
+    </trkseg></trk></gpx>`;
+    const clipboard = {
+        writeText: async () => { throw new Error('permission denied'); }
+    };
+    const { dom, chartConfig, setActiveElements } = await loadElevationAnalyzer(source, { clipboard });
+    const { window } = dom;
+
+    await waitFor(dom, () => chartConfig() !== null);
+    const canvas = window.document.querySelector('#bpb-gpx-analysis canvas');
+    const copyButton = window.document.getElementById('bpb-gpx-copy-coordinates');
+    const fallback = window.document.querySelector('.bpb-gpx-coordinate-fallback');
+    const status = window.document.getElementById('bpb-gpx-coordinate-status');
+
+    setActiveElements([{ datasetIndex: 0, index: 0 }]);
+    canvas.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    copyButton.click();
+
+    await waitFor(dom, () => fallback.hidden === false);
+    assert.equal(fallback.value, '47.12345, -121.54321');
+    assert.equal(window.document.activeElement, fallback);
+    assert.equal(fallback.selectionStart, 0);
+    assert.equal(fallback.selectionEnd, fallback.value.length);
+    assert.equal(status.dataset.state, 'error');
+    assert.equal(status.textContent,
+        'Copy unavailable. The coordinates are selected; press Ctrl/Cmd+C.');
+
+    dom.window.close();
+});
+
+test('GPX analyzer coordinate focus styles use readable light and dark theme tokens', async () => {
+    const source = `<?xml version="1.0"?><gpx><trk><trkseg>
+      <trkpt lat="47.1" lon="-121.1"><ele>100</ele></trkpt>
+      <trkpt lat="47.2" lon="-121.2"><ele>110</ele></trkpt>
+    </trkseg></trk></gpx>`;
+    const { dom, chartConfig } = await loadElevationAnalyzer(source, { theme: 'dark' });
+
+    await waitFor(dom, () => chartConfig() !== null);
+    const analysis = dom.window.document.getElementById('bpb-gpx-analysis');
+    const css = dom.window.document.getElementById('bpb-gpx-panel-style').textContent;
+    assert.equal(analysis.dataset.theme, 'dark');
+    assert.match(css, /--bpb-gpx-accent: #1769aa;/);
+    assert.match(css, /#bpb-gpx-analysis\[data-theme="dark"\][\s\S]*--bpb-gpx-accent: #79b8ff;/);
+    assert.match(css, /\.bpb-gpx-copy-coordinates:focus-visible,[\s\S]*canvas:focus-visible,[\s\S]*outline: 3px solid var\(--bpb-gpx-accent\)/);
 
     dom.window.close();
 });

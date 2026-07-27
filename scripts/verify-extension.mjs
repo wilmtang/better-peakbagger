@@ -770,6 +770,109 @@ try {
         'settings.js did not initialise in the isolated world (the bridge would be silent)');
     check(off.analyzerPanel, 'the GPX analyzer panel never rendered');
     check(/Interactive Stats/.test(off.stats), `the analyzer never produced stats: ${off.stats.slice(0, 80)}`);
+    const coordinateCanvas = offPage.locator('#bpb-gpx-analysis canvas');
+    await coordinateCanvas.focus();
+    await coordinateCanvas.press('ArrowRight');
+    const coordinateSelection = await offPage.waitForFunction(() => {
+        const status = document.getElementById('bpb-gpx-coordinate-status');
+        const button = document.getElementById('bpb-gpx-copy-coordinates');
+        if (!/^Selected point \d+ of \d+:/.test(status?.textContent || '')) return false;
+        const canvas = document.querySelector('#bpb-gpx-analysis canvas');
+        const focus = canvas ? getComputedStyle(canvas) : null;
+        return {
+            status: status.textContent,
+            buttonEnabled: button?.disabled === false,
+            focusVisible: canvas?.matches(':focus-visible') === true,
+            outlineWidth: focus?.outlineWidth,
+            outlineStyle: focus?.outlineStyle
+        };
+    }, null, { timeout: 5000 }).then(handle => handle.jsonValue()).catch(() => null);
+    check(coordinateSelection?.buttonEnabled
+        && coordinateSelection?.focusVisible
+        && coordinateSelection?.outlineWidth === '3px'
+        && coordinateSelection?.outlineStyle === 'solid',
+    `the analyzer keyboard selection or visible focus ring failed: ${JSON.stringify(coordinateSelection)}`);
+    await offPage.locator('#bpb-gpx-copy-coordinates').click();
+    const coordinateCopy = await offPage.waitForFunction(() => {
+        const status = document.getElementById('bpb-gpx-coordinate-status');
+        const text = status?.textContent || '';
+        if (!/^Copied:|^Copy unavailable\./.test(text)) return false;
+        const fallback = document.querySelector('.bpb-gpx-coordinate-fallback');
+        return {
+            text,
+            state: status?.dataset.state,
+            fallbackVisible: fallback?.hidden === false,
+            fallbackSelected: fallback?.hidden === false
+                && document.activeElement === fallback
+                && fallback.selectionStart === 0
+                && fallback.selectionEnd === fallback.value.length
+        };
+    }, null, { timeout: 5000 }).then(handle => handle.jsonValue()).catch(() => null);
+    check(coordinateCopy?.state === 'success'
+        || (coordinateCopy?.state === 'error' && coordinateCopy?.fallbackVisible && coordinateCopy?.fallbackSelected),
+    `the analyzer coordinate copy gave neither confirmation nor a selected fallback: ${JSON.stringify(coordinateCopy)}`);
+    const settleAnalyzerChart = () => coordinateCanvas.evaluate(canvas => {
+        const chart = globalThis.Chart?.getChart?.(canvas);
+        if (!chart) return false;
+        chart.stop();
+        chart.update('none');
+        return true;
+    });
+    if (process.env.BPB_VERIFY_ANALYZER_SCREENSHOT) {
+        await coordinateCanvas.focus();
+        await coordinateCanvas.press('ArrowRight');
+        await settleAnalyzerChart();
+        await offPage.locator('#bpb-gpx-analysis').screenshot({
+            path: process.env.BPB_VERIFY_ANALYZER_SCREENSHOT
+        });
+    }
+    if (process.env.BPB_VERIFY_ANALYZER_NARROW_SCREENSHOT) {
+        const previousViewport = offPage.viewportSize();
+        await offPage.setViewportSize({ width: 440, height: previousViewport?.height || verificationViewport.height });
+        await coordinateCanvas.focus();
+        await coordinateCanvas.press('ArrowRight');
+        await settleAnalyzerChart();
+        await offPage.locator('#bpb-gpx-analysis').screenshot({
+            path: process.env.BPB_VERIFY_ANALYZER_NARROW_SCREENSHOT
+        });
+        if (previousViewport) await offPage.setViewportSize(previousViewport);
+    }
+    if (extensionId) {
+        const analyzerThemePage = await context.newPage();
+        await analyzerThemePage.goto(`chrome-extension://${extensionId}/options/options.html`);
+        await analyzerThemePage.evaluate(async () => {
+            const current = (await chrome.storage.sync.get('bpbSettings')).bpbSettings || {};
+            await chrome.storage.sync.set({ bpbSettings: { ...current, theme: 'dark' } });
+        });
+        await offPage.waitForFunction(() =>
+            document.getElementById('bpb-gpx-analysis')?.dataset.theme === 'dark',
+        null, { timeout: 5000 });
+        await coordinateCanvas.focus();
+        await coordinateCanvas.press('ArrowRight');
+        const darkCoordinateFocus = await coordinateCanvas.evaluate(canvas => {
+            const focus = getComputedStyle(canvas);
+            return {
+                focusVisible: canvas.matches(':focus-visible'),
+                outlineColor: focus.outlineColor,
+                outlineWidth: focus.outlineWidth
+            };
+        });
+        check(darkCoordinateFocus.focusVisible
+            && darkCoordinateFocus.outlineWidth === '3px'
+            && darkCoordinateFocus.outlineColor === 'rgb(121, 184, 255)',
+        `the analyzer dark-theme focus ring was not visible: ${JSON.stringify(darkCoordinateFocus)}`);
+        if (process.env.BPB_VERIFY_ANALYZER_DARK_SCREENSHOT) {
+            await settleAnalyzerChart();
+            await offPage.locator('#bpb-gpx-analysis').screenshot({
+                path: process.env.BPB_VERIFY_ANALYZER_DARK_SCREENSHOT
+            });
+        }
+        await analyzerThemePage.evaluate(async () => {
+            const current = (await chrome.storage.sync.get('bpbSettings')).bpbSettings || {};
+            await chrome.storage.sync.set({ bpbSettings: { ...current, theme: 'system' } });
+        });
+        await analyzerThemePage.close();
+    }
     check(off.visible === true,
         `with 3D disabled the toggle must remain visible, but display=${off.display} visible=${off.visible}`);
     check(off.disabled === false,
@@ -2070,7 +2173,7 @@ console.log('  - Buddy mirror stays busy and focused during replacement, then re
 console.log('  - the real 1,500-row favorite list reports its total, fuzzy-searches, and keeps long navigation instant');
 console.log('  - the compact profile star persists, and four in-place native Buddy actions refreshed/synced under both removal policies');
 console.log('  - settings.js initialises in the isolated world and the bridge answers');
-console.log('  - the GPX analyzer renders stats from the real manifest load order');
+console.log('  - the GPX analyzer renders stats, selects by keyboard with visible focus, and confirms or recovers coordinate copy');
 console.log('  - the 3D toggle stays visible when disabled and opens the provider/privacy confirmation');
 console.log('  - trusted confirmation persists the feature gate without contacting tile providers');
 console.log('  - the Full Screen BigMap receives settings and shows an enabled 3D toggle');

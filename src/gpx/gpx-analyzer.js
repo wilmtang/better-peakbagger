@@ -37,9 +37,7 @@ const run = async () => {
     const MAP_VIEWPORT_MIN_HEIGHT = Schema.BOUNDS.viewportHeight.min;
     const MAP_VIEWPORT_MAX_HEIGHT = Schema.BOUNDS.viewportHeight.max;
     const MAP_RESIZE_RAIL_HEIGHT = 18;
-    // One copy: this used to be written as a literal at both the place that
-    // sets it and the place that restores it after the copy confirmation.
-    const COPY_HINT = 'Double-click point to copy coordinates';
+    const COORDINATE_HINT = 'Click the chart or use \u2190/\u2192 to select a point';
     const MAP_RESIZE_PERSIST_DELAY_MS = 400;
     const parseMapRouteSegments = xml => {
         const segments = [];
@@ -158,7 +156,11 @@ const run = async () => {
         Object.assign(container.style, { marginTop: '15px', padding: '10px', borderWidth: '1px', borderStyle: 'solid', borderRadius: '5px', maxWidth: '800px' });
 
         const headerBox = document.createElement('div');
-        Object.assign(headerBox.style, { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '10px' });
+        headerBox.className = 'bpb-gpx-header';
+        Object.assign(headerBox.style, {
+            display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start',
+            flexWrap: 'wrap', gap: '10px', marginBottom: '10px'
+        });
 
         const statsContainer = document.createElement('div');
         const stats = document.createElement('div');
@@ -173,6 +175,7 @@ const run = async () => {
         statsContainer.append(stats, subStats);
 
         const controlsContainer = document.createElement('div');
+        controlsContainer.className = 'bpb-gpx-controls';
         Object.assign(controlsContainer.style, { display: 'flex', flexDirection: 'column', alignItems: 'flex-end' });
 
         const unitSelect = document.createElement('select');
@@ -228,12 +231,33 @@ const run = async () => {
         const routeColorControl = createColorControl('bpb-map-route-color', 'Route');
         const routeCasingColorControl = createColorControl('bpb-map-route-casing-color', 'Outline');
 
-        const hintText = document.createElement('div');
-        hintText.className = 'bpb-gpx-hint';
-        Object.assign(hintText.style, { fontSize: '0.8em', marginTop: '4px', fontStyle: 'italic' });
-        hintText.textContent = COPY_HINT;
+        const coordinateControls = document.createElement('div');
+        coordinateControls.className = 'bpb-gpx-coordinate-controls';
 
-        controlsContainer.append(unitSelect, routeStyleControls, hintText);
+        const copyCoordinatesButton = document.createElement('button');
+        copyCoordinatesButton.id = 'bpb-gpx-copy-coordinates';
+        copyCoordinatesButton.className = 'bpb-gpx-copy-coordinates';
+        copyCoordinatesButton.type = 'button';
+        copyCoordinatesButton.disabled = true;
+        copyCoordinatesButton.textContent = 'Copy coordinates';
+
+        const hintText = document.createElement('div');
+        hintText.id = 'bpb-gpx-coordinate-status';
+        hintText.className = 'bpb-gpx-hint';
+        hintText.setAttribute('role', 'status');
+        hintText.setAttribute('aria-live', 'polite');
+        Object.assign(hintText.style, { fontSize: '0.8em', fontStyle: 'italic' });
+        hintText.textContent = COORDINATE_HINT;
+
+        const coordinateFallback = document.createElement('input');
+        coordinateFallback.className = 'bpb-gpx-coordinate-fallback';
+        coordinateFallback.type = 'text';
+        coordinateFallback.readOnly = true;
+        coordinateFallback.hidden = true;
+        coordinateFallback.setAttribute('aria-label', 'Selected coordinates');
+
+        coordinateControls.append(copyCoordinatesButton, hintText, coordinateFallback);
+        controlsContainer.append(unitSelect, routeStyleControls, coordinateControls);
         headerBox.append(statsContainer, controlsContainer);
         const terrainMessage = document.createElement('div');
         terrainMessage.id = 'bpb-terrain-message';
@@ -248,6 +272,11 @@ const run = async () => {
         Object.assign(canvasContainer.style, { position: 'relative', height: '300px', width: '100%' });
 
         const canvas = document.createElement('canvas');
+        canvas.tabIndex = 0;
+        canvas.setAttribute('role', 'application');
+        canvas.setAttribute('aria-label', 'Interactive elevation chart. Use Left and Right Arrow keys to select a point.');
+        canvas.setAttribute('aria-describedby', hintText.id);
+        canvas.setAttribute('aria-keyshortcuts', 'ArrowLeft ArrowRight');
         canvasContainer.append(canvas);
         container.append(headerBox, terrainMessage, canvasContainer);
         const fullScreenMapLink = Array.from(document.querySelectorAll('a')).find(a => a.textContent.includes('Full Screen Map'));
@@ -266,26 +295,6 @@ const run = async () => {
             terrainButton.dataset.theme = theme;
         };
         applyPanelTheme();
-
-        canvas.addEventListener('dblclick', (e) => {
-            if (!chartInstance) return;
-            const activeElements = chartInstance.getElementsAtEventForMode(e, chartInstance.options.interaction.mode, chartInstance.options.interaction, true);
-            if (activeElements.length > 0) {
-                const datasetIndex = activeElements[0].datasetIndex;
-                const idx = activeElements[0].index;
-                const d = chartInstance.data.datasets[datasetIndex].data[idx]._raw;
-                if (d && d.lat !== undefined && d.lon !== undefined) {
-                    const text = `${d.lat.toFixed(5)}, ${d.lon.toFixed(5)}`;
-                    navigator.clipboard.writeText(text).then(() => {
-                        const copied = document.createElement('span');
-                        Object.assign(copied.style, { color: '#2e8b57', fontWeight: 'bold' });
-                        copied.textContent = `✓ Copied: ${text}`;
-                        hintText.replaceChildren(copied);
-                        setTimeout(() => { hintText.textContent = COPY_HINT; applyPanelTheme(); }, 2500);
-                    }).catch(err => console.error('Failed to copy', err));
-                }
-            }
-        });
 
         // 2. Formatting Helpers
         // Clock times and day boundaries use the climb's local time, not the
@@ -353,12 +362,142 @@ const run = async () => {
         // Processing Arrays & Core Metrics
         let chartInstance = null;
         let chartData = [];
+        let selectedCoordinateIndex = -1;
+        let coordinateFeedbackTimer = null;
         let metrics = { distanceM: 0, gainM: 0, rawDistanceM: 0, rawGainM: 0 };
         let totalMs = 0, hasTime = false;
         let startMs = 0, endMs = 0, summitMs = 0;
         let campingSpots = [];
         let mapRouteSegments = [];
         let hoverMarker = null;
+
+        const isCoordinatePoint = point =>
+            point && Number.isFinite(point.lat) && Number.isFinite(point.lon);
+        const coordinateText = point => `${point.lat.toFixed(5)}, ${point.lon.toFixed(5)}`;
+        const coordinateIndexes = () => chartData
+            .map((point, index) => isCoordinatePoint(point) ? index : -1)
+            .filter(index => index >= 0);
+        const clearCoordinateFeedbackTimer = () => {
+            if (coordinateFeedbackTimer !== null) {
+                clearTimeout(coordinateFeedbackTimer);
+                coordinateFeedbackTimer = null;
+            }
+        };
+        const setCoordinateStatus = (text, state = '') => {
+            hintText.textContent = text;
+            if (state) hintText.dataset.state = state;
+            else delete hintText.dataset.state;
+        };
+        const selectedCoordinateAnnouncement = () => {
+            const point = chartData[selectedCoordinateIndex];
+            if (!isCoordinatePoint(point)) return COORDINATE_HINT;
+            const selectable = coordinateIndexes();
+            const position = selectable.indexOf(selectedCoordinateIndex);
+            return `Selected point ${position + 1} of ${selectable.length}: ${coordinateText(point)}`;
+        };
+        const syncCoordinateSelection = ({ unavailable = false } = {}) => {
+            const selectedPoint = chartData[selectedCoordinateIndex];
+            const hasSelection = isCoordinatePoint(selectedPoint);
+            copyCoordinatesButton.disabled = !hasSelection;
+            if (!hasSelection) {
+                selectedCoordinateIndex = -1;
+                coordinateFallback.hidden = true;
+                coordinateFallback.value = '';
+                setCoordinateStatus(unavailable
+                    ? 'No chart point with coordinates is available.'
+                    : COORDINATE_HINT);
+            }
+            canvas.setAttribute('aria-label', hasSelection
+                ? `Interactive elevation chart. ${selectedCoordinateAnnouncement()}. Use Left and Right Arrow keys to move.`
+                : 'Interactive elevation chart. Use Left and Right Arrow keys to select a point.');
+        };
+        const selectCoordinateIndex = index => {
+            if (!isCoordinatePoint(chartData[index])) return false;
+            clearCoordinateFeedbackTimer();
+            selectedCoordinateIndex = index;
+            coordinateFallback.hidden = true;
+            coordinateFallback.value = '';
+            copyCoordinatesButton.disabled = false;
+            setCoordinateStatus(selectedCoordinateAnnouncement());
+            canvas.setAttribute(
+                'aria-label',
+                `Interactive elevation chart. ${selectedCoordinateAnnouncement()}. Use Left and Right Arrow keys to move.`
+            );
+            if (chartInstance) chartInstance.update('none');
+            return true;
+        };
+        const selectCoordinateFromEvent = event => {
+            if (!chartInstance || typeof chartInstance.getElementsAtEventForMode !== 'function') return false;
+            const activeElements = chartInstance.getElementsAtEventForMode(
+                event,
+                'nearest',
+                { intersect: false, axis: 'xy' },
+                true
+            );
+            for (const active of activeElements) {
+                const point = chartInstance.data.datasets[active.datasetIndex]?.data[active.index]?._raw;
+                const index = chartData.indexOf(point);
+                if (selectCoordinateIndex(index)) return true;
+            }
+            return false;
+        };
+        const showCopyFallback = text => {
+            coordinateFallback.value = text;
+            coordinateFallback.hidden = false;
+            coordinateFallback.focus();
+            coordinateFallback.select();
+            setCoordinateStatus('Copy unavailable. The coordinates are selected; press Ctrl/Cmd+C.', 'error');
+        };
+        const copySelectedCoordinate = async () => {
+            const point = chartData[selectedCoordinateIndex];
+            if (!isCoordinatePoint(point)) {
+                syncCoordinateSelection({ unavailable: coordinateIndexes().length === 0 });
+                return;
+            }
+            clearCoordinateFeedbackTimer();
+            const text = coordinateText(point);
+            try {
+                if (!navigator.clipboard || typeof navigator.clipboard.writeText !== 'function') {
+                    throw new Error('Clipboard API unavailable');
+                }
+                await navigator.clipboard.writeText(text);
+                coordinateFallback.hidden = true;
+                setCoordinateStatus(`Copied: ${text}`, 'success');
+                coordinateFeedbackTimer = setTimeout(() => {
+                    coordinateFeedbackTimer = null;
+                    setCoordinateStatus(selectedCoordinateAnnouncement());
+                }, 2500);
+            } catch (error) {
+                showCopyFallback(text);
+            }
+        };
+
+        canvas.addEventListener('click', selectCoordinateFromEvent);
+        canvas.addEventListener('dblclick', event => {
+            if (selectCoordinateFromEvent(event) || selectedCoordinateIndex >= 0) {
+                void copySelectedCoordinate();
+            }
+        });
+        canvas.addEventListener('keydown', event => {
+            if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+            event.preventDefault();
+            const selectable = coordinateIndexes();
+            if (!selectable.length) {
+                syncCoordinateSelection({ unavailable: true });
+                return;
+            }
+            const currentPosition = selectable.indexOf(selectedCoordinateIndex);
+            const nextPosition = currentPosition < 0
+                ? (event.key === 'ArrowRight' ? 0 : selectable.length - 1)
+                : Math.max(0, Math.min(
+                    selectable.length - 1,
+                    currentPosition + (event.key === 'ArrowRight' ? 1 : -1)
+                ));
+            selectCoordinateIndex(selectable[nextPosition]);
+        });
+        copyCoordinatesButton.addEventListener('click', () => {
+            void copySelectedCoordinate();
+        });
 
         let terrainConsentPending = false;
         let terrainCompass = null;
@@ -620,6 +759,7 @@ const run = async () => {
         frameLifecycle.subscribe(resetFrameConsumers);
         frameLifecycle.start();
         window.addEventListener('pagehide', () => {
+            clearCoordinateFeedbackTimer();
             BPB.dispose();
             overlay.dispose();
             frameLifecycle.dispose();
@@ -713,13 +853,16 @@ const run = async () => {
             const hideDistance = splittable && seriesPref === 'time';
             const hideTime = splittable && seriesPref === 'distance';
 
+            const selectedPointRadius = context =>
+                context.raw?._raw === chartData[selectedCoordinateIndex] ? 5 : 0;
             const datasets = [{
                 label: `Elevation by Distance`,
                 data: eleDistData,
                 hidden: hideDistance,
                 borderColor: '#fc4c02',
                 backgroundColor: 'rgba(252, 76, 2, 0.15)',
-                borderWidth: 2, fill: true, tension: 0.2, yAxisID: 'y', xAxisID: 'x', pointRadius: 0, pointHoverRadius: 5, hitRadius: 40
+                borderWidth: 2, fill: true, tension: 0.2, yAxisID: 'y', xAxisID: 'x',
+                pointRadius: selectedPointRadius, pointHoverRadius: 5, hitRadius: 40
             }];
 
             if (hasTime) {
@@ -729,7 +872,8 @@ const run = async () => {
                     hidden: hideTime,
                     borderColor: '#6ab0de',
                     backgroundColor: 'rgba(0, 127, 182, 0.15)',
-                    borderWidth: 2, fill: true, tension: 0.2, yAxisID: 'y', xAxisID: 'xTime', pointRadius: 0, pointHoverRadius: 5, hitRadius: 40
+                    borderWidth: 2, fill: true, tension: 0.2, yAxisID: 'y', xAxisID: 'xTime',
+                    pointRadius: selectedPointRadius, pointHoverRadius: 5, hitRadius: 40
                 });
             }
 
@@ -895,6 +1039,7 @@ const run = async () => {
                     }
                 }
             });
+            syncCoordinateSelection();
         };
 
         unitSelect.addEventListener('change', () => {
@@ -973,6 +1118,7 @@ const run = async () => {
 
             metrics = GpxMetrics.computeMetrics(parsedPoints);
             if (!metrics.points.length) {
+                syncCoordinateSelection({ unavailable: true });
                 const hasValidCoordinates = parsedPoints.some(point =>
                     Number.isFinite(point.lat) && Number.isFinite(point.lon));
                 return stats.textContent = hasValidCoordinates
