@@ -43,6 +43,10 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
     const badgeCalls = [];
     const scriptCalls = [];
     const tabMessages = [];
+    const removedTabs = [];
+    let tabCreateCalls = 0;
+    let tabNavigationCalls = 0;
+    let draftSetCalls = 0;
     const loggedErrors = [];
     const capture = captureResult || {
         ok: true,
@@ -64,7 +68,27 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
                     sessionGetCalls++;
                     return { [key]: structuredClone(values[key]) };
                 },
-                set: async patch => Object.assign(values, structuredClone(patch))
+                set: async patch => {
+                    if (patch.bpbDraftTabs) {
+                        draftSetCalls++;
+                        if (faults.draftSet || faults.draftSetAt === draftSetCalls) {
+                            const message = faults.draftSet
+                                || faults.draftSetAtMessage
+                                || `draft write ${draftSetCalls} failed`;
+                            delete faults.draftSet;
+                            faults.draftSetAt = null;
+                            throw new Error(message);
+                        }
+                    }
+                    if (patch.bpbCaptureJobs
+                        && Object.values(patch.bpbCaptureJobs).some(job => job?.phase === 'opened')
+                        && faults.openedJobSet) {
+                        const message = faults.openedJobSet;
+                        delete faults.openedJobSet;
+                        throw new Error(message);
+                    }
+                    Object.assign(values, structuredClone(patch));
+                }
             },
             sync: {
                 get: async key => {
@@ -101,12 +125,30 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
             get: async tabId => structuredClone(tabs.get(tabId)),
             create: async details => {
                 if (faults.tabCreate) throw new Error(faults.tabCreate);
+                tabCreateCalls++;
+                if (faults.tabCreateAt === tabCreateCalls) {
+                    const message = faults.tabCreateAtMessage || `tab create ${tabCreateCalls} failed`;
+                    faults.tabCreateAt = null;
+                    throw new Error(message);
+                }
                 const tab = { id: nextTabId++, windowId: details.windowId, url: details.url, active: details.active };
                 tabs.set(tab.id, tab);
                 return structuredClone(tab);
             },
+            remove: async tabId => {
+                removedTabs.push(tabId);
+                tabs.delete(tabId);
+            },
             update: async (tabId, patch) => {
                 if (faults.tabUpdate) throw new Error(faults.tabUpdate);
+                if (patch.url) {
+                    tabNavigationCalls++;
+                    if (faults.tabNavigateAt === tabNavigationCalls) {
+                        const message = faults.tabNavigateAtMessage || `tab navigation ${tabNavigationCalls} failed`;
+                        faults.tabNavigateAt = null;
+                        throw new Error(message);
+                    }
+                }
                 Object.assign(tabs.get(tabId), patch);
                 return structuredClone(tabs.get(tabId));
             },
@@ -164,6 +206,7 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
     });
     return {
         send, values, localValues, syncValues, tabs, grouped, groupUpdates, badgeCalls, fetchCalls, scriptCalls, tabMessages,
+        removedTabs,
         sessionGetCalls: () => sessionGetCalls, loggedErrors, faults,
     };
 };
@@ -356,8 +399,114 @@ test('browser, storage, and page-world exceptions stay behind the public worker 
         tabId: 1,
         selectedIds: [7],
     });
-    assert.deepEqual(JSON.parse(JSON.stringify(updateResponse)), expectedOuter);
+    assert.deepEqual(JSON.parse(JSON.stringify(updateResponse)), {
+        phase: 'error',
+        error: {
+            code: 'draft-open-failed',
+            message: 'Drafts could not be opened. Try again.',
+        },
+    });
     assertPrivate(tabUpdate, updateResponse);
+});
+
+test('draft opening rolls back every partial toolbar attempt and remains retryable', async t => {
+    const cases = [
+        ['first tab creation', { tabCreateAt: 1 }],
+        ['second tab creation', { tabCreateAt: 2 }],
+        ['first draft write', { draftSetAt: 1 }],
+        ['second draft write', { draftSetAt: 2 }],
+        ['first tab navigation', { tabNavigateAt: 1 }],
+        ['second tab navigation', { tabNavigateAt: 2 }],
+        ['opened-job write', { openedJobSet: 'opened job write failed' }],
+    ];
+    const peakXml = '<p><t i="7" n="First Peak" a="0" o="0" e="426.51" r="100" l="Test Range"/>'
+        + '<t i="8" n="Second Peak" a="0" o="0.0005" e="426.51" r="100" l="Test Range"/></p>';
+
+    for (const [name, fault] of cases) {
+        await t.test(name, async () => {
+            const harness = createHarness({ peakXml, faults: structuredClone(fault) });
+            await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+            const priorJob = structuredClone(harness.values.bpbCaptureJobs['1']);
+            const response = await harness.send({
+                type: 'CAPTURE_OPEN_DRAFTS',
+                tabId: 1,
+                selectedIds: [7, 8],
+            });
+
+            assert.deepEqual(JSON.parse(JSON.stringify(response)), {
+                phase: 'error',
+                error: {
+                    code: 'draft-open-failed',
+                    message: 'Drafts could not be opened. Try again.',
+                },
+            });
+            assert.deepEqual(harness.values.bpbCaptureJobs['1'], priorJob,
+                'the exact pre-attempt job must be restored');
+            assert.deepEqual(harness.values.bpbDraftTabs, {},
+                'no draft identity from the failed attempt may remain');
+            assert.deepEqual([...harness.tabs.keys()].sort((a, b) => a - b), [1, 5],
+                'no blank or navigated draft tab from the failed attempt may remain');
+
+            const retried = await harness.send({
+                type: 'CAPTURE_OPEN_DRAFTS',
+                tabId: 1,
+                selectedIds: [7, 8],
+            });
+            assert.equal(retried.reused, false);
+            assert.equal(retried.tabIds.length, 2);
+            assert.equal(harness.values.bpbCaptureJobs['1'].phase, 'opened');
+            assert.equal(Object.keys(harness.values.bpbDraftTabs).length, 2);
+        });
+    }
+});
+
+test('a stale recorded draft is pruned and replaced instead of falsely reused', async () => {
+    const harness = createHarness();
+    await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    const first = await harness.send({
+        type: 'CAPTURE_OPEN_DRAFTS',
+        tabId: 1,
+        selectedIds: [7],
+    });
+    assert.deepEqual([...first.tabIds], [100]);
+
+    harness.tabs.delete(100);
+    const reopened = await harness.send({
+        type: 'CAPTURE_OPEN_DRAFTS',
+        tabId: 1,
+        selectedIds: [7],
+    });
+
+    assert.equal(reopened.reused, false);
+    assert.deepEqual([...reopened.tabIds], [101]);
+    assert.equal(harness.values.bpbDraftTabs['100'], undefined);
+    assert.equal(harness.values.bpbDraftTabs['101'].pid, 7);
+    assert.equal(harness.tabs.get(101).url,
+        'https://peakbagger.com/climber/ascentedit.aspx?pid=7&cid=77');
+});
+
+test('replacing a draft whose tab navigated away never closes the user-controlled tab', async () => {
+    const harness = createHarness();
+    await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    await harness.send({
+        type: 'CAPTURE_OPEN_DRAFTS',
+        tabId: 1,
+        selectedIds: [7],
+    });
+    harness.tabs.get(100).url = 'https://www.peakbagger.com/peak.aspx?pid=7';
+
+    const reopened = await harness.send({
+        type: 'CAPTURE_OPEN_DRAFTS',
+        tabId: 1,
+        selectedIds: [7],
+    });
+
+    assert.equal(reopened.reused, false);
+    assert.deepEqual([...reopened.tabIds], [101]);
+    assert.equal(harness.tabs.get(100).url, 'https://www.peakbagger.com/peak.aspx?pid=7',
+        'a tab no longer owned by the draft transaction belongs to the user');
+    assert.equal(harness.removedTabs.includes(100), false);
+    assert.equal(harness.values.bpbDraftTabs['100'], undefined);
 });
 
 test('favorites mutations serialize in the worker and reject unrelated senders', async () => {

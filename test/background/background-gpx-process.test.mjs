@@ -24,7 +24,7 @@ const SEGMENTS = [[
     { lat: 0, lon: 0.001, ele: 100, time: Date.UTC(2026, 6, 1, 17, 0), invalidTime: false }
 ]];
 
-const createHarness = ({ peakXml = null, settings = {}, failPeakFetch = false, syncGetError = null,
+const createHarness = ({ peakXml = null, settings = {}, failPeakFetch = false, syncGetError = null, faults = {},
     loginHtml = '<a href="climber/climber.aspx?cid=77">My Home Page</a>' } = {}) => {
     const values = {};
     const localValues = {};
@@ -36,13 +36,37 @@ const createHarness = ({ peakXml = null, settings = {}, failPeakFetch = false, s
     const grouped = [];
     const groupUpdates = [];
     const navigations = [];
+    const removedTabs = [];
     let syncGetCalls = 0;
+    let tabCreateCalls = 0;
+    let tabNavigationCalls = 0;
+    let draftSetCalls = 0;
 
     const browser = {
         storage: {
             session: {
                 get: async key => ({ [key]: structuredClone(values[key]) }),
-                set: async patch => Object.assign(values, structuredClone(patch))
+                set: async patch => {
+                    if (patch.bpbDraftTabs) {
+                        draftSetCalls++;
+                        if (faults.draftSet || faults.draftSetAt === draftSetCalls) {
+                            const message = faults.draftSet
+                                || faults.draftSetAtMessage
+                                || `draft write ${draftSetCalls} failed`;
+                            delete faults.draftSet;
+                            faults.draftSetAt = null;
+                            throw new Error(message);
+                        }
+                    }
+                    if (patch.bpbCaptureJobs
+                        && Object.values(patch.bpbCaptureJobs).some(job => job?.phase === 'opened')
+                        && faults.openedJobSet) {
+                        const message = faults.openedJobSet;
+                        delete faults.openedJobSet;
+                        throw new Error(message);
+                    }
+                    Object.assign(values, structuredClone(patch));
+                }
             },
             sync: {
                 get: async key => {
@@ -67,12 +91,28 @@ const createHarness = ({ peakXml = null, settings = {}, failPeakFetch = false, s
         tabs: {
             get: async tabId => structuredClone(tabs.get(tabId)),
             create: async details => {
+                tabCreateCalls++;
+                if (faults.tabCreateAt === tabCreateCalls) {
+                    const message = faults.tabCreateAtMessage || `tab create ${tabCreateCalls} failed`;
+                    faults.tabCreateAt = null;
+                    throw new Error(message);
+                }
                 const tab = { id: nextTabId++, windowId: details.windowId, url: details.url, active: details.active };
                 tabs.set(tab.id, tab);
                 return structuredClone(tab);
             },
+            remove: async tabId => {
+                removedTabs.push(tabId);
+                tabs.delete(tabId);
+            },
             update: async (tabId, patch) => {
                 if (patch.url) {
+                    tabNavigationCalls++;
+                    if (faults.tabNavigateAt === tabNavigationCalls) {
+                        const message = faults.tabNavigateAtMessage || `tab navigation ${tabNavigationCalls} failed`;
+                        faults.tabNavigateAt = null;
+                        throw new Error(message);
+                    }
                     // Pin the invariant that a draft is registered before its
                     // tab's URL ever changes.
                     navigations.push({
@@ -116,8 +156,8 @@ const createHarness = ({ peakXml = null, settings = {}, failPeakFetch = false, s
         assert.equal(listener(message, sender, resolve), true);
     });
     return {
-        send, values, tabs, tabMessages, fetchCalls, grouped, groupUpdates, navigations,
-        syncGetCalls: () => syncGetCalls,
+        send, values, tabs, tabMessages, fetchCalls, grouped, groupUpdates, navigations, removedTabs,
+        syncGetCalls: () => syncGetCalls, faults,
     };
 };
 
@@ -361,6 +401,97 @@ test('a multi-summit selection fills the current tab and opens grouped sibling d
     assert.equal(apply.fields.suffix, 'a');
     const waiting = await harness.send({ type: 'DRAFT_READY', pid: '8', cid: '77' }, { tab: { id: 100 }, url: 'https://peakbagger.com/climber/ascentedit.aspx?pid=8&cid=77' });
     assert.equal(waiting.action, 'wait', 'the sibling waits for the current tab’s Preview');
+});
+
+test('a failed sibling open restores the exact current-tab draft and upload job before retry', async () => {
+    const harness = createHarness({
+        peakXml: '<p><t i="7" n="First Peak" a="0" o="0" e="426.51" r="100" l="Test Range"/>'
+            + '<t i="8" n="Second Peak" a="0" o="0.0005" e="426.51" r="100" l="Test Range"/></p>',
+        faults: { openedJobSet: 'LOCAL_OPENED_JOB_SENTINEL' },
+    });
+    const ready = await harness.send({
+        type: 'GPX_PROCESS_START', segments: SEGMENTS, waypoints: [], trackName: '', utcOffsetMinutes: 0
+    });
+    const previousDraft = {
+        tabId: 5,
+        jobId: 'previous-job',
+        sourceTabId: 5,
+        pid: 7,
+        cid: 77,
+        complete: false,
+        expiresAt: Date.now() + 60_000,
+    };
+    harness.values.bpbDraftTabs = { 5: structuredClone(previousDraft) };
+    const priorJob = structuredClone(harness.values.bpbCaptureJobs['5']);
+
+    const failed = await harness.send({
+        type: 'GPX_PROCESS_APPLY', jobId: ready.jobId, selectedIds: [7, 8], primaryId: 7
+    });
+
+    assert.deepEqual(JSON.parse(JSON.stringify(failed)), {
+        ok: false,
+        error: {
+            code: 'draft-open-failed',
+            message: 'The prepared drafts could not be opened. Try again.',
+        },
+    });
+    assert.deepEqual(harness.values.bpbDraftTabs, { 5: previousDraft },
+        'the current-tab record overwritten by this attempt must be restored exactly');
+    assert.deepEqual(harness.values.bpbCaptureJobs['5'], priorJob);
+    assert.deepEqual([...harness.tabs.keys()], [5], 'the sibling about:blank tab must be closed');
+    assert.deepEqual(harness.tabMessages, [], 'the current form must not proceed after rollback');
+
+    const retried = await harness.send({
+        type: 'GPX_PROCESS_APPLY', jobId: ready.jobId, selectedIds: [7, 8], primaryId: 7
+    });
+    assert.equal(retried.ok, true);
+    assert.equal(harness.values.bpbCaptureJobs['5'].phase, 'opened');
+    assert.equal(harness.values.bpbDraftTabs['5'].jobId, ready.jobId);
+    assert.equal(harness.values.bpbDraftTabs['101'].pid, 8);
+});
+
+test('a failed unbound current-tab navigation rolls back the sibling and restores prior state', async () => {
+    const harness = createHarness({
+        peakXml: '<p><t i="7" n="First Peak" a="0" o="0" e="426.51" r="100" l="Test Range"/>'
+            + '<t i="8" n="Second Peak" a="0" o="0.0005" e="426.51" r="100" l="Test Range"/></p>',
+        faults: { tabNavigateAt: 2 },
+    });
+    const unboundUrl = 'https://www.peakbagger.com/climber/ascentedit.aspx';
+    const unboundSender = { tab: { id: 5, windowId: 9 }, url: unboundUrl };
+    harness.tabs.get(5).url = unboundUrl;
+    const ready = await harness.send({
+        type: 'GPX_PROCESS_START', segments: SEGMENTS, waypoints: [], trackName: '', utcOffsetMinutes: 0
+    }, unboundSender);
+    const previousDraft = {
+        tabId: 5,
+        jobId: 'previous-job',
+        sourceTabId: 5,
+        pid: 99,
+        cid: 77,
+        complete: false,
+        expiresAt: Date.now() + 60_000,
+    };
+    harness.values.bpbDraftTabs = { 5: structuredClone(previousDraft) };
+    const priorJob = structuredClone(harness.values.bpbCaptureJobs['5']);
+
+    const failed = await harness.send({
+        type: 'GPX_PROCESS_APPLY', jobId: ready.jobId, selectedIds: [7, 8], primaryId: 7
+    }, unboundSender);
+
+    assert.equal(failed.ok, false);
+    assert.equal(failed.error.code, 'draft-open-failed');
+    assert.deepEqual(harness.values.bpbDraftTabs, { 5: previousDraft });
+    assert.deepEqual(harness.values.bpbCaptureJobs['5'], priorJob);
+    assert.deepEqual([...harness.tabs.keys()], [5]);
+    assert.equal(harness.tabs.get(5).url, unboundUrl);
+
+    const retried = await harness.send({
+        type: 'GPX_PROCESS_APPLY', jobId: ready.jobId, selectedIds: [7, 8], primaryId: 7
+    }, unboundSender);
+    assert.equal(retried.ok, true);
+    assert.equal(harness.tabs.get(5).url,
+        'https://peakbagger.com/climber/ascentedit.aspx?pid=7&cid=77');
+    assert.equal(harness.values.bpbDraftTabs['101'].pid, 8);
 });
 
 test('an unbound page registers its draft first and then navigates to the chosen peak', async () => {

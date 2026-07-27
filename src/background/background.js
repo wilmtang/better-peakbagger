@@ -39,6 +39,7 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
         message: 'The GPX could not be processed. Reload the ascent form and try again.',
     });
     const processes = new Map();
+    const draftOpeningQueues = new Map();
     let mutationQueue = Promise.resolve();
 
     const now = () => Date.now();
@@ -612,10 +613,113 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
         return { ...selection, makeDraft };
     };
 
+    const serializeDraftOpening = (tabId, operation) => {
+        const previous = draftOpeningQueues.get(tabId) || Promise.resolve();
+        const current = previous.catch(() => {}).then(operation);
+        draftOpeningQueues.set(tabId, current);
+        return current.finally(() => {
+            if (draftOpeningQueues.get(tabId) === current) draftOpeningQueues.delete(tabId);
+        });
+    };
+
+    const sameDraftIdentity = (left, right) => !!left && !!right
+        && Number(left.tabId) === Number(right.tabId)
+        && left.jobId === right.jobId
+        && String(left.pid) === String(right.pid)
+        && String(left.cid) === String(right.cid);
+
+    const createDraftOpeningTransaction = ({ jobTabId, priorJob }) => {
+        const createdTabIds = [];
+        const draftWrites = new Map();
+
+        const trackTab = tabId => {
+            createdTabIds.push(tabId);
+        };
+        const writeDraft = draft => mutateMap(DRAFTS_KEY, drafts => {
+            const key = String(draft.tabId);
+            if (!draftWrites.has(key)) {
+                draftWrites.set(key, {
+                    previous: drafts[key] ? structuredClone(drafts[key]) : null,
+                    installed: draft,
+                });
+            } else {
+                draftWrites.get(key).installed = draft;
+            }
+            drafts[key] = draft;
+        });
+        const rollback = async cause => {
+            const closeResults = await Promise.allSettled(createdTabIds.map(tabId =>
+                Promise.resolve().then(() => ext.tabs.remove(tabId))));
+            closeResults.forEach((result, index) => {
+                if (result.status === 'rejected') {
+                    console.error(`Better Peakbagger: failed to close rolled-back draft tab ${createdTabIds[index]}`, result.reason);
+                }
+            });
+            try {
+                await mutateMap(DRAFTS_KEY, drafts => {
+                    draftWrites.forEach(({ previous, installed }, key) => {
+                        if (!sameDraftIdentity(drafts[key], installed)) return;
+                        if (previous) drafts[key] = previous;
+                        else delete drafts[key];
+                    });
+                });
+                await mutateMap(JOBS_KEY, jobs => {
+                    const current = jobs[jobTabId];
+                    if (current?.id === priorJob?.id) jobs[jobTabId] = structuredClone(priorJob);
+                });
+            } catch (rollbackError) {
+                console.error('Better Peakbagger: draft-opening state rollback failed', rollbackError);
+            }
+            console.error('Better Peakbagger: draft opening failed', cause);
+        };
+
+        return { trackTab, writeDraft, rollback };
+    };
+
+    const draftTabMatches = (tab, draft) => {
+        if (!tab || typeof tab.url !== 'string') return false;
+        try {
+            const url = new URL(tab.url);
+            return url.protocol === 'https:'
+                && /(^|\.)peakbagger\.com$/i.test(url.hostname)
+                && /\/climber\/ascentedit\.aspx$/i.test(url.pathname)
+                && url.searchParams.get('pid') === String(draft.pid)
+                && url.searchParams.get('cid') === String(draft.cid);
+        } catch {
+            return false;
+        }
+    };
+
+    const inspectRecordedDrafts = async (jobId, drafts) => {
+        const live = [];
+        const stale = [];
+        for (const draft of Object.values(drafts).filter(candidate => candidate.jobId === jobId)) {
+            if (!isFresh(draft)) {
+                stale.push(draft);
+                continue;
+            }
+            try {
+                const tab = await ext.tabs.get(draft.tabId);
+                (draftTabMatches(tab, draft) ? live : stale).push(draft);
+            } catch {
+                stale.push(draft);
+            }
+        }
+        if (stale.length) {
+            await mutateMap(DRAFTS_KEY, current => {
+                stale.forEach(draft => {
+                    if (sameDraftIdentity(current[draft.tabId], draft)) delete current[draft.tabId];
+                });
+            });
+        }
+        return { live, stale };
+    };
+
     const openNewDraftTabs = async ({
         sourceTabId,
         matches,
         makeDraft,
+        transaction,
         startOrder = 0,
         focusFirst = false,
         onBeforeNavigate = null,
@@ -625,12 +729,13 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
         for (let index = 0; index < matches.length; index++) {
             const match = matches[index];
             const tab = await ext.tabs.create({ url: 'about:blank', active: false, windowId: sourceTab.windowId });
+            transaction.trackTab(tab.id);
             const draft = makeDraft(match, {
                 tabId: tab.id,
                 previewOrder: startOrder + index,
                 focusOnReady: focusFirst && index === 0,
             });
-            await mutateMap(DRAFTS_KEY, drafts => { drafts[tab.id] = draft; });
+            await transaction.writeDraft(draft);
             created.push(draft);
         }
 
@@ -658,8 +763,7 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
         return { created, groupWarning };
     };
 
-    const openDrafts = async message => {
-        const tabId = Number(message.tabId);
+    const openDraftsTransaction = async (message, tabId) => {
         const jobs = await readMap(JOBS_KEY);
         const existingJob = jobs[tabId];
         if (!isFresh(existingJob)) {
@@ -670,10 +774,10 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
         }
 
         const existingDrafts = await readMap(DRAFTS_KEY);
-        const existingForJob = Object.values(existingDrafts)
-            .filter(draft => isFresh(draft) && draft.jobId === existingJob.id)
+        const inspected = await inspectRecordedDrafts(existingJob.id, existingDrafts);
+        const existingForJob = inspected.live
             .sort((a, b) => b.confidence - a.confidence);
-        if (existingForJob.length) {
+        if (existingForJob.length && !inspected.stale.length) {
             for (const draft of existingForJob) await ext.tabs.update(draft.tabId, { active: false });
             await ext.tabs.update(existingForJob[0].tabId, { active: true });
             return {
@@ -683,31 +787,60 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
             };
         }
 
-        const job = await applySelection(message);
-        if (!isFresh(job) || !job.uploadGpx || (job.phase !== 'ready' && job.phase !== 'opened')) {
+        const transaction = createDraftOpeningTransaction({ jobTabId: tabId, priorJob: existingJob });
+        try {
+            const job = await applySelection(message);
+            if (!isFresh(job) || !job.uploadGpx || (job.phase !== 'ready' && job.phase !== 'opened')) {
+                throw PublicErrors.exception(
+                    'job-expired',
+                    'Capture results are no longer available. Capture the activity again.'
+                );
+            }
+            const opening = prepareDraftOpening(
+                job,
+                job.matches.filter(match => job.selectedIds.includes(match.id)),
+                tabId
+            );
+            if (!opening.matches.length) {
+                throw PublicErrors.exception('no-selection', 'Select at least one detected peak.');
+            }
+
+            const liveByPeak = new Map(existingForJob.map(draft => [String(draft.pid), draft]));
+            const missing = opening.confidenceOrdered.filter(match => !liveByPeak.has(String(match.id)));
+            const previewOrder = new Map(opening.confidenceOrdered
+                .map((match, index) => [String(match.id), index]));
+            const { created, groupWarning } = await openNewDraftTabs({
+                sourceTabId: tabId,
+                matches: missing,
+                makeDraft: (match, options) => opening.makeDraft(match, {
+                    ...options,
+                    previewOrder: previewOrder.get(String(match.id)),
+                }),
+                transaction,
+                focusFirst: existingForJob.length === 0,
+            });
+            const allDrafts = [...existingForJob, ...created].sort((a, b) => a.previewOrder - b.previewOrder);
+            const tabIds = allDrafts.map(draft => draft.tabId);
+            const opened = await updateJob(tabId, { phase: 'opened', openedDraftTabIds: tabIds, groupWarning });
+            if (existingForJob.length) {
+                for (const draft of allDrafts) await ext.tabs.update(draft.tabId, { active: false });
+                await ext.tabs.update(allDrafts[0].tabId, { active: true });
+            }
+            return { tabIds, groupWarning, reused: false, job: publicJob(opened) };
+        } catch (cause) {
+            await transaction.rollback(cause);
+            if (PublicErrors.isPublic(cause)) throw cause;
             throw PublicErrors.exception(
-                'job-expired',
-                'Capture results are no longer available. Capture the activity again.'
+                'draft-open-failed',
+                'Drafts could not be opened. Try again.',
+                { cause }
             );
         }
-        const opening = prepareDraftOpening(
-            job,
-            job.matches.filter(match => job.selectedIds.includes(match.id)),
-            tabId
-        );
-        if (!opening.matches.length) {
-            throw PublicErrors.exception('no-selection', 'Select at least one detected peak.');
-        }
+    };
 
-        const { created, groupWarning } = await openNewDraftTabs({
-            sourceTabId: tabId,
-            matches: opening.confidenceOrdered,
-            makeDraft: opening.makeDraft,
-            focusFirst: true,
-        });
-        const tabIds = created.map(draft => draft.tabId);
-        const opened = await updateJob(tabId, { phase: 'opened', openedDraftTabIds: tabIds, groupWarning });
-        return { tabIds, groupWarning, reused: false, job: publicJob(opened) };
+    const openDrafts = message => {
+        const tabId = Number(message.tabId);
+        return serializeDraftOpening(tabId, () => openDraftsTransaction(message, tabId));
     };
 
     // ---- Local-file GPX processing (ascentedit.aspx upload field) ----------
@@ -841,8 +974,7 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
         }
     };
 
-    const applyGpxProcess = async (message, sender) => {
-        const page = uploadPageIdentity(sender);
+    const applyGpxProcessTransaction = async (message, page) => {
         if (!page) {
             return { ok: false, error: { code: 'forbidden', message: 'GPX processing is only available on a Peakbagger ascent form.' } };
         }
@@ -878,44 +1010,72 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
             ? opening.matches.find(match => String(match.id) === primaryId)
             : null;
         const siblings = opening.confidenceOrdered.filter(match => match !== primaryMatch);
+        const transaction = createDraftOpeningTransaction({ jobTabId: tabId, priorJob: job });
 
         // Every draft is registered before any tab changes URL, so a fast
         // page load can never race its own identity checks.
-        let order = 0;
-        if (primaryMatch) {
-            const currentDraft = opening.makeDraft(primaryMatch, {
-                tabId,
-                previewOrder: order++,
-                focusOnReady: false,
-                preserveExistingFields: true,
-            });
-            await mutateMap(DRAFTS_KEY, drafts => { drafts[tabId] = currentDraft; });
-        }
-        let tabIds = [];
-        const { groupWarning } = await openNewDraftTabs({
-            sourceTabId: tabId,
-            matches: siblings,
-            makeDraft: opening.makeDraft,
-            startOrder: order,
-            focusFirst: !primaryMatch,
-            onBeforeNavigate: async ({ created: pending, groupWarning: warning }) => {
-                tabIds = [...(primaryMatch ? [tabId] : []), ...pending.map(draft => draft.tabId)];
-                await updateJob(tabId, { phase: 'opened', openedDraftTabIds: tabIds, groupWarning: warning });
-            },
-        });
-        if (primaryMatch) {
-            if (page.pid !== null) {
-                await notifyDraftToProceed({ tabId });
-            } else {
-                // Unbound page: peak selection on the native form is a
-                // postback, so the standard draft delivery fills the page
-                // this navigation reloads.
-                await ext.tabs.update(tabId, {
-                    url: `https://peakbagger.com/climber/ascentedit.aspx?pid=${primaryMatch.id}&cid=${job.cid}`
+        try {
+            let order = 0;
+            if (primaryMatch) {
+                const currentDraft = opening.makeDraft(primaryMatch, {
+                    tabId,
+                    previewOrder: order++,
+                    focusOnReady: false,
+                    preserveExistingFields: true,
                 });
+                await transaction.writeDraft(currentDraft);
             }
+            let tabIds = [];
+            const { groupWarning } = await openNewDraftTabs({
+                sourceTabId: tabId,
+                matches: siblings,
+                makeDraft: opening.makeDraft,
+                transaction,
+                startOrder: order,
+                focusFirst: !primaryMatch,
+                onBeforeNavigate: async ({ created: pending, groupWarning: warning }) => {
+                    tabIds = [...(primaryMatch ? [tabId] : []), ...pending.map(draft => draft.tabId)];
+                    await updateJob(tabId, { phase: 'opened', openedDraftTabIds: tabIds, groupWarning: warning });
+                },
+            });
+            if (primaryMatch) {
+                if (page.pid !== null) {
+                    await notifyDraftToProceed({ tabId });
+                } else {
+                    // Unbound page: peak selection on the native form is a
+                    // postback, so the standard draft delivery fills the page
+                    // this navigation reloads.
+                    await ext.tabs.update(tabId, {
+                        url: `https://peakbagger.com/climber/ascentedit.aspx?pid=${primaryMatch.id}&cid=${job.cid}`
+                    });
+                }
+            }
+            return { ok: true, tabIds, groupWarning };
+        } catch (cause) {
+            await transaction.rollback(cause);
+            return {
+                ok: false,
+                error: PublicErrors.expose(PublicErrors.exception(
+                    'draft-open-failed',
+                    'The prepared drafts could not be opened. Try again.',
+                    { cause }
+                )),
+            };
         }
-        return { ok: true, tabIds, groupWarning };
+    };
+
+    const applyGpxProcess = (message, sender) => {
+        const page = uploadPageIdentity(sender);
+        if (!page) {
+            return Promise.resolve({
+                ok: false,
+                error: {
+                    code: 'forbidden',
+                    message: 'GPX processing is only available on a Peakbagger ascent form.',
+                },
+            });
+        }
+        return serializeDraftOpening(page.tabId, () => applyGpxProcessTransaction(message, page));
     };
 
     const validateDraftPage = (draft, message) => String(draft.pid) === String(message.pid)
