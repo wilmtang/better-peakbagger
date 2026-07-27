@@ -749,6 +749,30 @@ async function main() {
     const editorUrl = `https://${fixtureHost}:${fixture.port}/climber/ascentedit.aspx?cid=900001`;
     await driver.get(editorUrl);
     await driver.wait(until.elementLocated(By.css(surfaceSelectors.editor)), 10_000);
+    const editorHandle = await driver.getWindowHandle();
+    const handlesBeforeDraftManager = new Set(await driver.getAllWindowHandles());
+    const draftsManagerButton = await driver.findElement(By.css(".bpb-re-manage"));
+    await driver.executeScript(
+      "arguments[0].scrollIntoView({ block: 'center', inline: 'nearest' });",
+      draftsManagerButton,
+    );
+    await draftsManagerButton.click();
+    const draftsManagerHandle = await driver.wait(async () => {
+      const handles = await driver.getAllWindowHandles();
+      return handles.find(handle => !handlesBeforeDraftManager.has(handle)) || false;
+    }, 5_000);
+    await driver.switchTo().window(draftsManagerHandle);
+    const draftsManagerUrl = await driver.getCurrentUrl();
+    assertState(
+      draftsManagerUrl === `${baseUrl}options/options.html#drafts`,
+      "Firefox report editor did not open its drafts manager",
+      draftsManagerUrl,
+    );
+    await driver.close();
+    await driver.switchTo().window(editorHandle);
+    await driver.navigate().refresh();
+    await driver.wait(until.elementLocated(By.css(surfaceSelectors.editor)), 10_000);
+
     await driver.findElement(By.id("GPXUpload")).sendKeys(fixture.gpxPath);
     const uploadState = await waitForScript(driver, `
       const process = document.querySelector(".bpb-process-button");
@@ -959,6 +983,7 @@ async function main() {
     console.log("  - four native Buddy actions refreshed/synced custom favorites under both removal policies");
     console.log("  - options, popup, ascent, editor, Peak, BigMap, PeakAscents, Buddy List, and profile-backup surfaces initialized");
     console.log("  - a fresh ascent form autofilled its local date and trusted GPX selection swapped Preview for Process");
+    console.log("  - the report editor opened the real report-drafts manager tab");
     console.log("  - AMO report credit, real editor input/draft recovery, filter/sort, and 3D frame passed");
     console.log("  - a real draft tab rejected wrong identity, attached GPX, filled fields, Previewed once, and never Saved");
     console.log("  - native toolbar activeTab grant, popup chrome, prompts, and window placement were not tested");

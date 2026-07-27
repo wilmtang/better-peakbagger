@@ -126,8 +126,14 @@ test('the editor mounts on the ascent form and hides the native textarea', async
 
 test('the editor always offers the device-wide report drafts manager', async () => {
     const messages = [];
+    let release;
     const dom = await loadEditor({
-        prepare: d => { d.chrome.runtime.sendMessage = async message => { messages.push(message); }; }
+        prepare: d => {
+            d.chrome.runtime.sendMessage = message => {
+                messages.push(message);
+                return new Promise(resolve => { release = resolve; });
+            };
+        }
     });
     const ui = await editorReady(dom);
     const manage = ui.querySelector('.bpb-re-manage');
@@ -136,7 +142,100 @@ test('the editor always offers the device-wide report drafts manager', async () 
     assert.equal(manage?.type, 'button');
     assert.equal(manage?.getAttribute('aria-label'), 'Manage TR drafts');
     manage.click();
+    await waitFor(dom, () => manage.disabled && manage.getAttribute('aria-busy') === 'true');
     assert.deepEqual(JSON.parse(JSON.stringify(messages)), [{ type: 'OPEN_DRAFTS_MANAGER' }]);
+    assert.equal(ui.querySelector('.bpb-re-surface').getAttribute('contenteditable'), 'true',
+        'opening the manager must not disable report editing');
+    release({ ok: true, tabId: 100 });
+    await waitFor(dom, () => !manage.disabled && !manage.hasAttribute('aria-busy'));
+    assert.equal(ui.querySelector('.bpb-re-status').textContent, '');
+});
+
+test('both report-drafts entry points recover visibly from every messaging failure', async t => {
+    const entryPoints = [
+        {
+            name: 'footer',
+            options: {},
+            selector: '.bpb-re-manage',
+        },
+        {
+            name: 'draft recovery',
+            options: {
+                report: 'server copy',
+                drafts: {
+                    [DRAFT_KEY]: {
+                        text: 'different local draft',
+                        mode: 'rich',
+                        savedAt: Date.now() - 1000,
+                    },
+                },
+            },
+            selector: '.bpb-re-draft-manage',
+        },
+    ];
+    for (const entryPoint of entryPoints) {
+        await t.test(entryPoint.name, async () => {
+            let behavior = () => Promise.resolve(null);
+            let calls = 0;
+            let feedbackExpiry = null;
+            const dom = await loadEditor({
+                ...entryPoint.options,
+                prepare: d => {
+                    const nativeSetTimeout = d.window.setTimeout.bind(d.window);
+                    d.window.setTimeout = (callback, delay = 0, ...args) => {
+                        if (delay === 6000) {
+                            feedbackExpiry = callback;
+                            return -6000;
+                        }
+                        return nativeSetTimeout(callback, delay, ...args);
+                    };
+                    d.chrome.runtime.sendMessage = message => {
+                        calls++;
+                        assert.deepEqual(JSON.parse(JSON.stringify(message)),
+                            { type: 'OPEN_DRAFTS_MANAGER' });
+                        return behavior();
+                    };
+                },
+            });
+            const ui = await editorReady(dom);
+            if (entryPoint.name === 'draft recovery') {
+                await waitFor(dom, () => !ui.querySelector('.bpb-re-draft').hidden);
+            }
+            const manage = ui.querySelector(entryPoint.selector);
+            const failures = [
+                () => Promise.resolve({
+                    ok: false,
+                    error: { code: 'forbidden', message: 'worker detail stays private here' },
+                }),
+                () => Promise.resolve(null),
+                () => Promise.reject(new Error('runtime rejected')),
+                () => { throw new Error('runtime threw'); },
+            ];
+            for (const failure of failures) {
+                behavior = failure;
+                const expectedCalls = calls + 1;
+                manage.click();
+                await waitFor(dom, () => calls === expectedCalls
+                    && !manage.disabled
+                    && /Couldn’t open report drafts/.test(ui.querySelector('.bpb-re-status').textContent));
+                assert.equal(manage.hasAttribute('aria-busy'), false);
+                assert.equal(ui.querySelector('.bpb-re-surface').getAttribute('contenteditable'), 'true');
+                assert.doesNotMatch(ui.querySelector('.bpb-re-status').textContent,
+                    /forbidden|worker detail|runtime/);
+            }
+
+            assert.equal(typeof feedbackExpiry, 'function');
+            feedbackExpiry();
+            assert.equal(ui.querySelector('.bpb-re-status').textContent, '',
+                'manager failure feedback must expire instead of becoming permanent editor status');
+
+            behavior = () => Promise.resolve({ ok: true, tabId: 100 });
+            const expectedCalls = calls + 1;
+            manage.click();
+            await waitFor(dom, () => calls === expectedCalls && !manage.disabled);
+            assert.equal(ui.querySelector('.bpb-re-status').textContent, '');
+        });
+    }
 });
 
 test('opt-in credit leaves blank writing space and links Chrome reports to the Chrome store', async () => {

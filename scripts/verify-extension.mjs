@@ -1087,6 +1087,41 @@ try {
         check(mounted, `the trip-report editor never mounted on the real form (errors=${JSON.stringify(editorErrors)})`);
 
         if (mounted) {
+            const draftsManagerPagePromise = context.waitForEvent('page', { timeout: 5000 }).catch(() => null);
+            await editorPage.getByRole('button', { name: 'Manage TR drafts', exact: true }).click();
+            const draftsManagerPage = await draftsManagerPagePromise;
+            const draftsManagerUrl = draftsManagerPage
+                ? await draftsManagerPage.waitForLoadState('domcontentloaded')
+                    .then(() => draftsManagerPage.url())
+                    .catch(() => draftsManagerPage.url())
+                : '';
+            check(draftsManagerUrl === `chrome-extension://${extensionId}/options/options.html#drafts`,
+                `the report editor did not open its drafts manager: ${JSON.stringify(draftsManagerUrl)}`);
+            if (draftsManagerPage) await draftsManagerPage.close();
+            if (process.env.BPB_VERIFY_DRAFT_MANAGER_SCREENSHOT) {
+                await editorPage.locator('#bpb-report-editor').screenshot({
+                    path: process.env.BPB_VERIFY_DRAFT_MANAGER_SCREENSHOT,
+                });
+            }
+            if (process.env.BPB_VERIFY_DRAFT_MANAGER_NARROW_SCREENSHOT) {
+                const previousViewport = editorPage.viewportSize();
+                const previousEditorStyle = await editorPage.locator('#bpb-report-editor')
+                    .getAttribute('style');
+                await editorPage.setViewportSize({ width: 480, height: 760 });
+                await editorPage.locator('#bpb-report-editor').evaluate(editor => {
+                    editor.style.width = '440px';
+                    editor.style.maxWidth = '440px';
+                });
+                await editorPage.locator('#bpb-report-editor').screenshot({
+                    path: process.env.BPB_VERIFY_DRAFT_MANAGER_NARROW_SCREENSHOT,
+                });
+                await editorPage.locator('#bpb-report-editor').evaluate((editor, style) => {
+                    if (style == null) editor.removeAttribute('style');
+                    else editor.setAttribute('style', style);
+                }, previousEditorStyle);
+                if (previousViewport) await editorPage.setViewportSize(previousViewport);
+            }
+
             await editorPage.locator('#GPXUpload').setInputFiles(fixture.gpxPath);
             const uploadState = await editorPage.waitForFunction(() => {
                 const process = document.querySelector('.bpb-process-button');
@@ -2046,6 +2081,7 @@ console.log('  - the Buddy List exposes six in-place sort controls and no beta f
 console.log('  - the owner-only full-profile backup surface mounts with a connected fixture repository');
 console.log('  - a fresh ascent form autofills its local date and trusted GPX selection swaps Preview for Process');
 console.log('  - the opt-in report credit renders and serializes the Chrome Web Store URL');
+console.log('  - the report editor opens the real report-drafts manager tab');
 console.log('  - the dark trip-report palette retains seven distinct text-color swatches');
 console.log('  - a real grouped draft tab rejects a wrong identity, attaches GPX, fills fields,');
 console.log('    submits Preview exactly once, and never submits Save');

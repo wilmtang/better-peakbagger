@@ -334,11 +334,23 @@ test('only a Peakbagger tab can open the report drafts manager', async () => {
     assert.deepEqual(JSON.parse(JSON.stringify(await harness.send(
         { type: 'OPEN_DRAFTS_MANAGER' },
         { tab: { id: 6 }, url: 'https://peakbagger.com.evil.example/climber/ascentedit.aspx' }
-    ))), { ok: false, reason: 'forbidden' });
+    ))), {
+        ok: false,
+        error: {
+            code: 'forbidden',
+            message: 'Report drafts can only be opened from a Peakbagger page.',
+        },
+    });
     assert.deepEqual(JSON.parse(JSON.stringify(await harness.send(
         { type: 'OPEN_DRAFTS_MANAGER' },
         { url: 'https://www.peakbagger.com/climber/ascentedit.aspx' }
-    ))), { ok: false, reason: 'forbidden' });
+    ))), {
+        ok: false,
+        error: {
+            code: 'forbidden',
+            message: 'Report drafts can only be opened from a Peakbagger page.',
+        },
+    });
     assert.equal(harness.tabs.size, before, 'forbidden senders must not create a tab');
 });
 
@@ -366,7 +378,13 @@ test('browser, storage, and page-world exceptions stay behind the public worker 
         { type: 'OPEN_DRAFTS_MANAGER' },
         { tab: { id: 5 }, url: 'https://www.peakbagger.com/climber/ascentedit.aspx?aid=1' }
     );
-    assert.deepEqual(JSON.parse(JSON.stringify(createResponse)), expectedOuter);
+    assert.deepEqual(JSON.parse(JSON.stringify(createResponse)), {
+        ok: false,
+        error: {
+            code: 'draft-manager-open-failed',
+            message: 'Report drafts could not be opened. Try again.',
+        },
+    });
     assertPrivate(tabCreate, createResponse);
 
     const sessionStorage = createHarness({ faults: { sessionGet: sentinel } });

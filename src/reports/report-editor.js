@@ -29,6 +29,7 @@ import { ascentDeletion as AscentDeletion } from '../ascent/ascent-delete.js';
 import { createRichEditor, richCommands, richState } from './report-rich-editor.js';
 import { createMarkdownEditor } from './report-md-editor.js';
 import { dom as Dom } from '../ui/dom.js';
+import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.js';
 
 // Kept as an IIFE for early-exit control flow (no editor form → nothing to do);
 // dependencies are ES imports and no globals are published.
@@ -44,6 +45,7 @@ import { dom as Dom } from '../ui/dom.js';
 
     const SYNC_DEBOUNCE_MS = 150;
     const AUTOSAVE_DEBOUNCE_MS = 800;
+    const DRAFT_MANAGER_FEEDBACK_MS = 6000;
     const MODES = ['rich', 'markdown', 'plain'];
     const SAVE_BUTTON_IDS = new Set(['SaveButton', 'SaveButton2']);
     const STORE_URL = ext.runtime?.getURL?.('').startsWith('moz-extension://')
@@ -320,11 +322,41 @@ import { dom as Dom } from '../ui/dom.js';
     const status = el('span', 'bpb-re-status');
     status.setAttribute('role', 'status');
     status.setAttribute('aria-live', 'polite');
-    const openDraftsManager = () => {
+    let draftManagerBusy = false;
+    let draftManagerStatus = '';
+    let draftManagerStatusTimer = null;
+    const setDraftManagerStatus = message => {
+        if (draftManagerStatusTimer != null) globalThis.clearTimeout(draftManagerStatusTimer);
+        if (draftManagerStatus && status.textContent === draftManagerStatus) status.textContent = '';
+        draftManagerStatus = message;
+        draftManagerStatusTimer = null;
+        if (!message) return;
+        status.textContent = message;
+        draftManagerStatusTimer = globalThis.setTimeout(() => {
+            if (status.textContent === draftManagerStatus) status.textContent = '';
+            draftManagerStatus = '';
+            draftManagerStatusTimer = null;
+        }, DRAFT_MANAGER_FEEDBACK_MS);
+    };
+    const openDraftsManager = async () => {
+        if (draftManagerBusy) return;
+        draftManagerBusy = true;
+        setDraftManagerStatus('');
+        const controls = ui.querySelectorAll('.bpb-re-manage, .bpb-re-draft-manage');
+        for (const control of controls) {
+            control.disabled = true;
+            control.setAttribute('aria-busy', 'true');
+        }
         try {
-            const request = ext.runtime.sendMessage({ type: 'OPEN_DRAFTS_MANAGER' });
-            if (request && typeof request.catch === 'function') request.catch(() => {});
-        } catch (error) { /* discovery link is best-effort; editing remains available */ }
+            const response = await RuntimeMessage.send(ext, { type: 'OPEN_DRAFTS_MANAGER' });
+            if (!response?.ok) setDraftManagerStatus('Couldn’t open report drafts. Try again.');
+        } finally {
+            draftManagerBusy = false;
+            for (const control of controls) {
+                control.disabled = false;
+                control.removeAttribute('aria-busy');
+            }
+        }
     };
     const manageDrafts = button('bpb-re-manage', 'Manage TR drafts');
     manageDrafts.addEventListener('click', openDraftsManager);

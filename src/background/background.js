@@ -38,6 +38,10 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
         code: 'process-failed',
         message: 'The GPX could not be processed. Reload the ascent form and try again.',
     });
+    const DRAFT_MANAGER_OPEN_ERROR = Object.freeze({
+        code: 'draft-manager-open-failed',
+        message: 'Report drafts could not be opened. Try again.',
+    });
     const processes = new Map();
     const draftOpeningQueues = new Map();
     let mutationQueue = Promise.resolve();
@@ -1308,12 +1312,25 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
 
     const openDraftsManager = async sender => {
         if (!isPeakbaggerSender(sender) || !Number.isInteger(sender.tab?.id)) {
-            return { ok: false, reason: 'forbidden' };
+            return {
+                ok: false,
+                error: {
+                    code: 'forbidden',
+                    message: 'Report drafts can only be opened from a Peakbagger page.',
+                },
+            };
         }
-        const tab = await ext.tabs.create({
-            url: `${ext.runtime.getURL('options/options.html')}#drafts`
-        });
-        return { ok: true, tabId: Number.isInteger(tab?.id) ? tab.id : null };
+        try {
+            const tab = await ext.tabs.create({
+                url: `${ext.runtime.getURL('options/options.html')}#drafts`
+            });
+            return { ok: true, tabId: Number.isInteger(tab?.id) ? tab.id : null };
+        } catch (error) {
+            return {
+                ok: false,
+                error: publicFailure('report drafts manager tab opening', error, DRAFT_MANAGER_OPEN_ERROR),
+            };
+        }
     };
 
     ext.runtime.onMessage.addListener((message, sender, sendResponse) => {

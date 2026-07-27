@@ -701,6 +701,11 @@
 
 .bpb-re-manage:hover { color: #315f87; }
 .bpb-re-manage:focus-visible { outline: 2px solid #3b76c4; outline-offset: 2px; }
+.bpb-re-manage:disabled,
+.bpb-re-draft button:disabled {
+    cursor: progress;
+    opacity: 0.55;
+}
 
 @container (max-width: 660px) {
     .bpb-re-foot {
