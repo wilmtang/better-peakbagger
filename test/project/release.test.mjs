@@ -144,7 +144,7 @@ test("CI tests, lints, and exercises both real browser extensions", async () => 
   );
 });
 
-test("Firefox verification waits for rendered analyzer stats, not only its mount", async () => {
+test("Firefox verification waits for rendered postconditions instead of fixed frames", async () => {
   const verifier = await readFile(
     new URL("../../scripts/verify-firefox-extension.mjs", import.meta.url),
     "utf8",
@@ -158,9 +158,21 @@ test("Firefox verification waits for rendered analyzer stats, not only its mount
   assert.match(analyzerProbe, /await waitForScript\(driver,/);
   assert.match(
     analyzerProbe,
-    /return state\.analyzer && \/Interactive Stats\/\.test\(state\.stats\) \? state : false;/,
+    /ready: state\.analyzer && \/Interactive Stats\/\.test\(state\.stats\),/,
   );
+  assert.match(analyzerProbe, /state => state\?\.ready/);
   assert.doesNotMatch(analyzerProbe, /until\.elementLocated/);
+
+  const navigationStart = verifier.indexOf("const longDistanceAfter =");
+  const navigationEnd = verifier.indexOf("const longDistanceNavigation =", navigationStart);
+  assert.notEqual(navigationStart, -1);
+  assert.notEqual(navigationEnd, -1);
+  const navigationProbe = verifier.slice(navigationStart, navigationEnd);
+
+  assert.match(navigationProbe, /await waitForScript\(driver,/);
+  assert.match(navigationProbe, /ready: Math\.abs\(state\.distance\) <= 2/);
+  assert.match(navigationProbe, /state => state\?\.ready/);
+  assert.doesNotMatch(navigationProbe, /requestAnimationFrame/);
 });
 
 test("release archive rejects development and internal files", async () => {

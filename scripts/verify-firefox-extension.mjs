@@ -45,11 +45,17 @@ function assertState(condition, message, state) {
   }
 }
 
-async function waitForScript(driver, script, description, timeout = 15_000) {
+async function waitForScript(
+  driver,
+  script,
+  description,
+  timeout = 15_000,
+  isReady = Boolean,
+) {
   try {
     return await driver.wait(async () => {
       const value = await driver.executeScript(script);
-      return value || false;
+      return isReady(value) ? value : false;
     }, timeout);
   } catch (error) {
     let current;
@@ -482,17 +488,24 @@ async function main() {
       };
     `);
     await driver.findElement(By.css('.side-nav a[href="#drafts"]')).click();
-    const longDistanceAfter = await driver.executeAsyncScript(done => {
-      const content = globalThis.document.querySelector(".content");
-      const target = globalThis.document.getElementById("drafts");
-      const margin = parseFloat(globalThis.getComputedStyle(target).scrollMarginTop) || 0;
-      globalThis.requestAnimationFrame(() => done({
+    const longDistanceAfter = await waitForScript(driver, `
+      const content = document.querySelector(".content");
+      const target = document.getElementById("drafts");
+      const margin = parseFloat(getComputedStyle(target).scrollMarginTop) || 0;
+      const state = {
         distance: target.getBoundingClientRect().top
           - content.getBoundingClientRect().top - margin,
         scrollTop: content.scrollTop,
-        hash: globalThis.location.hash,
-      }));
-    });
+        hash: location.hash,
+      };
+      return {
+        ...state,
+        ready: Math.abs(state.distance) <= 2
+          && state.scrollTop > 0
+          && state.hash === "#drafts",
+      };
+    `, "the instant Firefox long-distance settings navigation", 15_000,
+    state => state?.ready);
     const longDistanceNavigation = {
       before: longDistanceBefore.distance,
       after: longDistanceAfter.distance,
@@ -608,8 +621,11 @@ async function main() {
         analyzer: Boolean(document.getElementById("bpb-gpx-analysis")),
         stats: document.querySelector("#bpb-gpx-analysis div")?.textContent || "",
       };
-      return state.analyzer && /Interactive Stats/.test(state.stats) ? state : false;
-    `, "the Firefox MAIN-world analyzer stats");
+      return {
+        ...state,
+        ready: state.analyzer && /Interactive Stats/.test(state.stats),
+      };
+    `, "the Firefox MAIN-world analyzer stats", 15_000, state => state?.ready);
     if (surfaceState.theme === null) {
       throw new Error("Firefox isolated-world theme bundle did not initialize");
     }
