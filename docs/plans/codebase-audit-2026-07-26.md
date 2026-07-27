@@ -10,7 +10,7 @@ Baseline: clean `main` at `b9c7a4a` (`3.1.0`), 43 commits ahead of
 [polish audit](../archive/polish-audit-2026-07-24.md) is complete and archived;
 this pass does not reopen its 18 closed findings. It does call out two places
 where the same invariant was fixed on one surface but remains broken on
-another: condition-based map binding and bounded settings-write recovery.
+another: condition-based map binding` and bounded settings-write recovery.
 
 ## Scope and evidence
 
@@ -679,3 +679,255 @@ rather than being credited as partially fixed.
 - This plan does not claim that no other defect exists. It records every
   concrete bug, UX failure, and material improvement found in this pass, with a
   fix and proof plan for each.
+
+---
+
+# Review pass — 2026-07-26 (independent verification of this plan)
+
+Reviewer: a second agent, reading only the shipped source and re-running the
+checks. Same baseline: clean `main`, `dist/` rebuilt from source. Every claim
+below was checked against code or a command, not inferred from this document.
+
+**Verdict: the findings are real and the diagnoses are mostly precise.** Thirteen
+of fifteen hold as written. Two do not, and one piece of the shared evidence
+section is wrong in a way that changes the plan's priority order — fix those
+three before starting remediation, because two of them currently point work at
+the wrong thing.
+
+## Per-finding verification
+
+| ID | Verdict | Note |
+| --- | --- | --- |
+| F1 | confirmed | Fix step 3 needs rework — see R4. |
+| F2 | confirmed | Ordering dependency on F8 — see R7. |
+| F3 | confirmed | |
+| F4 | confirmed | One more live-accessor caller than stated — see R5. |
+| F5 | confirmed | |
+| F6 | confirmed | |
+| F7 | **not reproducible as described** — see R2. | Severity should drop to P2. |
+| F8 | confirmed | |
+| F9 | confirmed | Two buttons, not one — see R7. |
+| F10 | confirmed | |
+| F11 | confirmed | |
+| F12 | confirmed | |
+| F13 | symptom confirmed, **conclusion wrong** — see R1. | Severity should drop to P2. |
+| F14 | reproduced, **root misattributed** — see R3. | Fix plan needs rewriting. |
+| F15 | confirmed, including every code/file/count | Ownership is smaller than it reads — see R6. |
+
+## Corrections required
+
+### R1 — `npm test` passes; the suite does not hang
+
+This is the correction that matters most, because the execution order makes it
+unit 1 and calls it "restore a trustworthy baseline."
+
+The leaked timers are real and F13's reproduction is exact — the isolated test
+prints a pass in ~133 ms and the file then stalls. But it stalls; it does not
+hang. Run to completion:
+
+- isolated test: exits on its own after **125.9 s**, exit 0, 1 pass, 0 cancelled.
+  125 s is the device code's own lifetime (`expiresIn: 125` in
+  [`options.test.mjs:2127`](../../test/options/options.test.mjs)), so the leaked
+  poll dies when the code expires.
+- `npm test`: **807 passed, 0 failed, 0 cancelled, exit 0, 135 s wall clock**
+  (Node 26.5.0).
+
+The "**807 passed of 808 discovered**, then did not terminate" reading is an
+artifact of interrupting the runner. When `node --test` is interrupted it emits a
+file-level pseudo-test: my own interrupted single-test run reported
+`tests 2 / pass 1 / cancelled 1` for a file containing one test, with
+`'Promise resolution is still pending but the event loop has already resolved'`.
+There is no 808th test. The audit counted the interrupt artifact as a real one
+and concluded the baseline was untrustworthy.
+
+Consequences for the plan:
+
+- Delete "This is not a passing full-suite result" from **Scope and evidence**
+  and record 807/807 in 135 s instead.
+- F13 is **P2 test hygiene**, not P1 release confidence. Nothing was masked and
+  CI is green: `.github/workflows/test.yml` allows `timeout-minutes: 15`.
+- Keep F13 as execution unit 1 anyway, but for the honest reason: ~125 s of the
+  135 s wall clock is one leaked poll. Fixing it makes the suite ~10× faster.
+  Drop the "restore a trustworthy baseline" framing and the "once F13 makes it
+  trustworthy" clause at the end of **Execution order**.
+- Fix step 2's unnamed "test-runner timeout/backstop" is `--test-force-exit`
+  (Node 22+). Name it, and keep the audit's own judgment that it is not the fix.
+
+### R2 — F7's Escape path cannot be reached in either target browser
+
+The code smell is real: [`favorites.js:836`](../../options/favorites.js) has no
+`aria-busy` guard where
+[`settings-backup.js:117`](../../options/settings-backup.js) has one. But the
+described consequence — "Pressing Escape during the storage transaction hides the
+dialog and restores focus" — does not happen, for a reason the audit missed:
+
+- the favorites listener is bound to `mirrorConfirmationEl`; the settings-import
+  listener it is compared against is bound to `document`. Only the second one can
+  see a keydown from outside the dialog, which is exactly why it needs the guard.
+- the dialog subtree ([`options.html:402`](../../options/options.html)) holds two
+  buttons and static text — no third focusable node. `showReplacementConfirmation`
+  focuses **Cancel** (`favorites.js:218`), and the confirm handler disables
+  **both** buttons (`favorites.js:805`).
+- so the moment the write starts, the dialog owns no focusable element, focus
+  falls to `<body>`, and an Escape keydown never enters the dialog's subtree.
+
+Verified headless with the real engines, using the actual DOM shape and handler
+order (Chromium 149.0.7827.55 and Firefox 151, Playwright, isolated profiles):
+focus after confirm is `BODY`/`confirm`, the Escape keydown targets `BODY`, the
+dialog-scoped handler never runs, and `dlg.hidden` stays `false` in both.
+
+Also note the trap this sets for the proposed regression test: jsdom does not
+blur a disabled active element, so "hold the worker response, click confirm,
+press Escape" **will** appear to reproduce the defect in jsdom and will assert a
+behavior no user can trigger. Do not let that test become the evidence.
+
+Keep the fix — the two confirmations should share one busy contract, and the
+guard stops the next person from adding a focusable element and reintroducing a
+real bug — but re-file it as **P2 consistency/robustness**, drop the destructive-UX
+framing, and lead its proof with a real-browser check rather than jsdom.
+
+### R3 — F14 is rooted in `brace-expansion`, and partly outside `web-ext`
+
+`npm audit` reproduces exactly: 8 high, 0 critical, `fixAvailable` a major
+downgrade to `web-ext@2.7.0`. Three things in the finding are wrong:
+
+1. **All eight collapse to one advisory**: `brace-expansion`
+   (GHSA-mh99-v99m-4gvg, unbounded expansion → OOM, range `<=5.0.7`). The other
+   seven rows are `via` chains onto it.
+2. **Not all of it is under `web-ext`.** `npm audit --json` names the vulnerable
+   instances, and two of them are reached through this repository's *own direct*
+   `eslint@10.7.0`: `node_modules/eslint/node_modules/brace-expansion@5.0.7` and
+   `node_modules/@eslint/config-array/node_modules/brace-expansion@5.0.7`, plus
+   hoisted `node_modules/minimatch@3.1.5` and
+   `node_modules/brace-expansion@1.1.16`. `web-ext` is what pins
+   `fixAvailable` to a downgrade; it is not the sole path. A web-ext-only
+   remediation can never reach zero. ("No runtime dependency is implicated"
+   remains correct — nothing here ships in `dist/`.)
+3. **The recommended remediation order is backwards.** `web-ext`'s registry
+   `latest` is **10.5.0** — the installed version — so "prefer an upstream
+   patched release" has nothing to move to today. Meanwhile
+   `brace-expansion@5.0.8` **is** published and `eslint@10.8.0` is out, so the
+   narrow fixes that actually exist are `eslint` update plus
+   `overrides: { "brace-expansion": "^5.0.8" }`. The fix text warns against
+   forcing "a semantically incompatible minimatch major" — wrong package;
+   `minimatch` is only flagged *via* `brace-expansion`, and the override target
+   is a patch release, not a major.
+
+Rewrite F14 around the real root, drop the web-ext-upgrade-first ordering, and
+re-check the registry at implementation time as the finding already says.
+
+### R4 — F1's snapshot-passing step weakens an existing fail-closed check
+
+Everything in F1's evidence checks out: the private strict `read()`
+([`settings.js:43`](../../src/settings/settings.js)), the fail-soft `get()` at
+`:49`, all five capture defaults `true`
+([`settings-schema.js:34`](../../src/settings/settings-schema.js)),
+`readCapturePreferences` on `get()`
+([`background.js:43`](../../src/background/background.js)), the toolbar path
+handing those preferences into MAIN-world capture (`background.js:320`), and the
+upload path's second read
+([`ascent-upload.js:417`](../../src/ascent/ascent-upload.js)).
+
+But fix step 3 — "pass one confirmed snapshot through the transaction; avoid
+independently re-reading on the page and worker" — argues against the design it
+is describing. `startGpxProcess` already re-filters the waypoints and the track
+name against the worker's own read (`background.js:729`–`733`); the two reads are
+deliberate defense in depth, and step 3's own last sentence re-mandates the
+worker read it just removed. Make **both** reads strict and delete the
+snapshot-passing idea: it adds a protocol, and the invariant is satisfied without
+it.
+
+Two wording fixes in the same finding: `ascent-upload.js` is *isolated-world*
+extension code, not page code, so "across the extension boundary" and "accepting
+fields from page code" describe a content-script→worker hop rather than the
+page→extension exfiltration they imply. And on the toolbar path there is only one
+read (the worker's), not a page/worker pair — worth stating, since it changes
+what each regression test can assert.
+
+### R5 — F4 undercounts the competing frame lifecycles
+
+"Only `map-overlay.js` continues to call the live accessor" is not quite right.
+[`gpx-analyzer.js:802`](../../src/gpx/gpx-analyzer.js) also calls
+`findMapIframe()`, inside the chart's hover handler. That makes the split worse
+than described, not better: after a frame replacement the hover marker follows
+the **new** frame while `nativeLeafletMap()` (`:466`), the peak client (`:621`),
+and 3D hide/restore (`:544`, `:577`) stay bound to the **old** one. Name the
+hover-marker path in fix step 3 and in the replacement assertion.
+
+The rest of F4 is exact, including the inert-viewport chain: `element` stays
+`null` without an iframe ([`map-viewport.js:31`, `:96`](../../src/gpx/map-viewport.js)),
+so `mapViewport` is `null`, so the terrain toggle is never appended
+(`gpx-analyzer.js:334`) and the terrain container never resolves (`:513`). And
+the cited test really does assert only polylines and layer count
+([`gpx-analyzer.test.mjs:808`](../../test/gpx/gpx-analyzer.test.mjs)).
+
+While you are in that test: it reaches the late-frame case with a real
+`setTimeout(resolve, 5200)` (`:771`), which is the fixed sleep `AGENTS.md`
+forbids and 5.2 s of the suite's wall clock. F4 rewrites this area, so fold
+replacing it into F4's unit instead of leaving it unowned.
+
+### R6 — F15's warning inventory is right; its ownership is 3 source lines
+
+Reproduced exactly: 12 warnings, 0 errors, 0 notices, exit 0, and the split is
+1 `BACKGROUND_SERVICE_WORKER_IGNORED` + 1
+`KEY_FIREFOX_ANDROID_UNSUPPORTED_BY_MIN_VERSION` + 10 `UNSAFE_VAR_ASSIGNMENT`
+(`vendor/maplibre-gl-csp.js:5` ×3, `content/big-map.js:431`,
+`content/peak-map.js:184`, `content/gpx-analyzer.js:942`,
+`content/ascent-editor.js` ×4). The Android detail is confirmed from the linter
+itself: `strict_min_version` 140 versus 142 for
+`gecko.data_collection_permissions`, and the manifest has no `gecko_android`
+key at all — so the Android-specific floor is the right remedy.
+
+One refinement worth writing down, because the finding reads like ten separate
+cleanups: the three "compass insertions" are **one** source line —
+[`terrain-compass.js:36`](../../src/terrain/terrain-compass.js) — bundled into
+three outputs. The owned ascent-editor pair is
+[`report-editor.js:122`](../../src/reports/report-editor.js) (static toolbar
+markup) and `:366` (sanitized preview). So two source edits clear 4 of the 10
+warnings, and only the preview needs the named-sanitizer treatment.
+
+### R7 — smaller precision notes
+
+- **F2 depends on F8.** `buildSettingsBackup()` is called *outside*
+  `backupSettings`'s `try` ([`github-routes.js:836`](../../src/background/github-routes.js)),
+  so a strict read that throws lands in the raw-message boundary F8 exists to
+  fix. As ordered (F2 = unit 4, F8 = unit 10) the F2 commit ships a browser
+  exception string in user copy. Either land F8 first or give F2 its own typed
+  failure.
+- **F2's automatic-backup hedge has a narrower race worth naming.** `enabled()`
+  and `build()` read separately (`github-routes.js:810`–`811`), so a read that
+  succeeds for the gate and fails for the build still writes defaults. "Normally
+  prevents the scheduled write" is true but understates it.
+- **F9 is two buttons.** `openDraftsManager` is wired at
+  `report-editor.js:330` (footer) and `:568` (draft-recovery bar). Both need the
+  busy/failure treatment; "the editor's only discovery action" describes one.
+- **F3, worth pinning as its own assertion.** `drafts[tabId] = currentDraft`
+  (`background.js:825`) overwrites any existing current-tab record with no saved
+  copy, which is what makes "restore the prior current-tab draft" necessary
+  rather than defensive.
+- **Priority summary ordering.** F13/F14 are P1 rows sitting below P2 rows. After
+  R1 and R2, F7 and F13 both become P2 — re-sort then.
+
+## Evidence this pass
+
+All hidden/headless; no visible window, no live Peakbagger page, no network
+mutation. Host Node 26.5.0 (the repo documents 22+, CI uses 24), macOS 24.6.0.
+
+- `npm run lint:js`: exit 0.
+- `npm test`: **807 passed, 0 failed, 135 s, exit 0.**
+- isolated `--test-name-pattern` run of the F13 test: pass in 133 ms, process
+  exits at **125.9 s**; interrupting it at 30 s reproduces the audit's
+  `cancelled 1` artifact verbatim.
+- `npm audit --json`: 8 high / 0 critical; `nodes` and `via` read per advisory;
+  registry checked for `web-ext`, `eslint`, `brace-expansion`.
+- `npm run lint` and `web-ext lint --output json`: 12 warnings, exit 0, full
+  code/file inventory captured.
+- F7 focus/Escape probe: Playwright Chromium 149.0.7827.55 and Firefox 151,
+  headless, disposable profiles, on a reduced page reproducing the dialog's DOM
+  and handler order. Disposable script and logs were kept outside the repo.
+
+Not established here: nothing onscreen. Spacing, focus-ring appearance, touch
+behavior, and the F7 dialog's real rendered behavior inside the options page
+(the probe used a reduced page, not `options.html`) all remain for remediation,
+as does `verify:extension` / `terrain:verify`, which this pass did not re-run.
+F4's and F5's late/replacement cases were read in source only.
