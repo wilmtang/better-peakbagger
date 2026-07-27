@@ -421,6 +421,25 @@ test('worker settings patches serialize and reject unrelated senders', async () 
         'a rejected sender must not reach the feature gate');
 });
 
+test('toolbar capture fails closed when privacy settings cannot be read', async () => {
+    const sentinel = 'SYNC_CAPTURE_SETTINGS_SENTINEL';
+    const harness = createHarness({ faults: { syncGet: sentinel } });
+    const response = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+
+    assert.equal(response.phase, 'error');
+    assert.deepEqual(JSON.parse(JSON.stringify(response.error)), {
+        code: 'settings-unavailable',
+        message: 'Capture settings could not be read. Reload and try again. Nothing was captured.',
+    });
+    assert.equal(harness.scriptCalls.length, 0, 'the provider page must not be injected');
+    assert.equal(harness.fetchCalls.length, 0, 'no Peakbagger or coordinate request may start');
+    assert.equal(harness.values.bpbCaptureJobs, undefined, 'no capture job may retain a payload');
+    assert.match(
+        harness.loggedErrors.flat().map(value => value instanceof Error ? value.message : String(value)).join('\n'),
+        /SYNC_CAPTURE_SETTINGS_SENTINEL/
+    );
+});
+
 test('Peakbagger login accepts signed-in account controls and reports ambiguous pages honestly', async () => {
     const accountControl = createHarness({
         loginHtml: '<a class="account" href="/climber/ClimberEdit.aspx?mode=profile&amp;cid=77">Edit Account</a>'

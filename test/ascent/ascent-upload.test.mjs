@@ -212,6 +212,33 @@ test('the trip name is sent only when Trip Info filling is enabled', async () =>
     assert.equal(dom.messages.find(message => message.type === 'GPX_PROCESS_START').trackName, 'Corridor walk');
 });
 
+test('local upload fails before reading the file when capture settings are unavailable', async () => {
+    const errors = [];
+    const dom = await loadEditor({
+        prepare: d => {
+            d.chrome.storage.sync.get = async () => {
+                throw new Error('SYNC_UPLOAD_SETTINGS_SENTINEL');
+            };
+            d.window.console.error = (...args) => { errors.push(args); };
+        },
+        respond: message => message.type === 'DRAFT_READY' ? { action: 'ignore' } : null,
+    });
+    const input = chooseGpx(dom);
+    let fileReads = 0;
+    input.files[0].text = async () => {
+        fileReads++;
+        return GPX;
+    };
+    processButton(dom).click();
+    await waitFor(dom, () => uploadStatus(dom));
+
+    assert.equal(uploadStatus(dom).textContent,
+        'Capture settings could not be read. Reload and try again. Nothing was captured.');
+    assert.equal(fileReads, 0, 'the GPX must remain unread while privacy choices are unknown');
+    assert.equal(dom.messages.some(message => message.type === 'GPX_PROCESS_START'), false);
+    assert.match(errors.flat().map(String).join('\n'), /SYNC_UPLOAD_SETTINGS_SENTINEL/);
+});
+
 test('processing failures name the problem and restore the native Preview', async () => {
     const dom = await loadEditor({
         respond: message => message.type === 'GPX_PROCESS_START'

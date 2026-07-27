@@ -25,6 +25,8 @@ test('a settings mutation fails closed when the authoritative read fails', async
     });
 
     await assert.rejects(store.applyPatch({ theme: 'dark' }), /sync read failed/);
+    await assert.rejects(store.requireCurrent(), /sync read failed/,
+        'privacy and preservation callers need the authoritative read failure');
     assert.equal(writes, 0, 'fallback defaults must never become the base of a mutation');
     assert.equal((await store.get()).theme, 'system', 'ordinary reads remain fail-soft');
 });

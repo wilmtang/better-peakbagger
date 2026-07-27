@@ -56,7 +56,17 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
     };
 
     const readCapturePreferences = async () => {
-        const settings = await Settings.get();
+        let settings;
+        try {
+            settings = await Settings.requireCurrent();
+        } catch (cause) {
+            console.error('Better Peakbagger: capture settings read failed', cause);
+            throw PublicErrors.exception(
+                'settings-unavailable',
+                'Capture settings could not be read. Reload and try again. Nothing was captured.',
+                { cause }
+            );
+        }
         return {
             retainWaypoints: settings.retainWaypoints,
             fillAscentDetails: settings.fillAscentDetails,

@@ -24,7 +24,7 @@ const SEGMENTS = [[
     { lat: 0, lon: 0.001, ele: 100, time: Date.UTC(2026, 6, 1, 17, 0), invalidTime: false }
 ]];
 
-const createHarness = ({ peakXml = null, settings = {}, failPeakFetch = false,
+const createHarness = ({ peakXml = null, settings = {}, failPeakFetch = false, syncGetError = null,
     loginHtml = '<a href="climber/climber.aspx?cid=77">My Home Page</a>' } = {}) => {
     const values = {};
     const localValues = {};
@@ -36,6 +36,7 @@ const createHarness = ({ peakXml = null, settings = {}, failPeakFetch = false,
     const grouped = [];
     const groupUpdates = [];
     const navigations = [];
+    let syncGetCalls = 0;
 
     const browser = {
         storage: {
@@ -44,7 +45,11 @@ const createHarness = ({ peakXml = null, settings = {}, failPeakFetch = false,
                 set: async patch => Object.assign(values, structuredClone(patch))
             },
             sync: {
-                get: async key => ({ [key]: structuredClone(syncValues[key]) }),
+                get: async key => {
+                    syncGetCalls++;
+                    if (syncGetError) throw new Error(syncGetError);
+                    return { [key]: structuredClone(syncValues[key]) };
+                },
                 set: async patch => Object.assign(syncValues, structuredClone(patch))
             },
             local: {
@@ -110,7 +115,10 @@ const createHarness = ({ peakXml = null, settings = {}, failPeakFetch = false,
     const send = (message, sender = SENDER) => new Promise(resolve => {
         assert.equal(listener(message, sender, resolve), true);
     });
-    return { send, values, tabs, tabMessages, fetchCalls, grouped, groupUpdates, navigations };
+    return {
+        send, values, tabs, tabMessages, fetchCalls, grouped, groupUpdates, navigations,
+        syncGetCalls: () => syncGetCalls,
+    };
 };
 
 test('a processed upload produces a capture-shaped job and delivers the current-tab draft', async () => {
@@ -192,6 +200,27 @@ test('processing fails closed when Peakbagger is signed out or the account diffe
     }, { tab: { id: 5, windowId: 9 }, url: 'https://www.peakbagger.com/climber/ascentedit.aspx?pid=7&cid=999' });
     assert.equal(mismatch.phase, 'error');
     assert.equal(mismatch.error.code, 'identity-mismatch');
+});
+
+test('the worker independently rejects a local upload when capture settings are unavailable', async () => {
+    const harness = createHarness({ syncGetError: 'SYNC_WORKER_SETTINGS_SENTINEL' });
+    const response = await harness.send({
+        type: 'GPX_PROCESS_START',
+        segments: SEGMENTS,
+        waypoints: [{ lat: 0, lon: 0, name: 'Private camp' }],
+        trackName: 'Private traverse',
+        utcOffsetMinutes: 0,
+    });
+
+    assert.equal(harness.syncGetCalls(), 1);
+    assert.equal(response.phase, 'error');
+    assert.deepEqual(JSON.parse(JSON.stringify(response.error)), {
+        code: 'settings-unavailable',
+        message: 'Capture settings could not be read. Reload and try again. Nothing was captured.',
+    });
+    assert.equal(harness.values.bpbCaptureJobs, undefined);
+    assert.equal(harness.fetchCalls.length, 0, 'the login and summit queries stay behind the settings gate');
+    assert.doesNotMatch(JSON.stringify(harness.values), /Private camp|Private traverse/);
 });
 
 test('non-ascent-form senders are refused outright', async () => {

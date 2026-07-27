@@ -414,8 +414,16 @@ import { units as Units } from '../ui/units.js';
             const token = ++requestToken;
             clearStatus();
             setBusy('Reading track…');
+            let settings;
             try {
-                const settings = await Settings.get();
+                settings = await Settings.requireCurrent();
+            } catch (error) {
+                if (token !== requestToken) return;
+                console.error('Better Peakbagger: capture settings read failed', error);
+                fail('Capture settings could not be read. Reload and try again. Nothing was captured.');
+                return;
+            }
+            try {
                 const displayUnits = resolveDisplayUnits(settings);
                 const text = await file.text();
                 const parsed = gpxParse.parseGpxData(text, {

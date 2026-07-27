@@ -27,10 +27,11 @@ const resolveApi = () => {
 const unavailable = () => new Error('Settings storage is unavailable.');
 
 // The accessor is injectable so storage-failure and concurrency behavior can
-// be exercised without a browser. Runtime reads remain fail-soft: a page must
-// still render when sync storage is temporarily unavailable. Mutations are
-// deliberately strict, because building a write from those fallback defaults
-// would silently erase every setting that was not part of the patch.
+// be exercised without a browser. get() remains fail-soft: passive rendering
+// and feature gates whose defaults disable the action must survive a temporary
+// sync-storage failure. Privacy gates and preservation actions use
+// requireCurrent(), because defaults must never authorize capture or become a
+// valid-looking backup. Mutations stay strict for the same preservation reason.
 export const createSettingsStore = ({
     area = resolveApi()?.storage?.sync || null,
     onChanged = resolveApi()?.storage?.onChanged || null,
@@ -100,6 +101,7 @@ export const createSettingsStore = ({
         DEFAULTS,
         clean,
         get,
+        requireCurrent: read,
         set,
         applyPatch,
         subscribe,
