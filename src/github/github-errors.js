@@ -25,6 +25,7 @@ const ERROR_CODES = Object.freeze({
 });
 
 const KNOWN_CODES = new Set(Object.values(ERROR_CODES));
+const UNKNOWN_MESSAGE = 'GitHub could not complete the request. Reload and try again.';
 
 class GithubError extends Error {
     constructor(code, message, { status = null, cause = null } = {}) {
@@ -36,9 +37,12 @@ class GithubError extends Error {
     }
 }
 
-const publicError = (error, fallbackMessage = '') => ({
-    code: error && KNOWN_CODES.has(error.code) ? error.code : ERROR_CODES.UNKNOWN,
-    message: (error && error.message) || fallbackMessage,
-});
+const publicError = (error, fallbackMessage = UNKNOWN_MESSAGE) => {
+    const typed = error instanceof GithubError;
+    return {
+        code: typed && KNOWN_CODES.has(error.code) ? error.code : ERROR_CODES.UNKNOWN,
+        message: typed ? error.message : (fallbackMessage || UNKNOWN_MESSAGE),
+    };
+};
 
 export const githubErrors = { ERROR_CODES, GithubError, publicError };

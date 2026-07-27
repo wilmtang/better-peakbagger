@@ -230,6 +230,27 @@ test('processing failures name the problem and restore the native Preview', asyn
         .classList.contains('bpb-native-preview-hidden'), false);
 });
 
+test('runtime exceptions are logged without entering the local-upload status', async () => {
+    const sentinel = 'RAW_UPLOAD_SENTINEL: chrome.runtime.lastError';
+    const errors = [];
+    const dom = await loadEditor({
+        prepare: d => {
+            d.window.console.error = (...args) => { errors.push(args); };
+        },
+        respond: message => {
+            if (message.type === 'DRAFT_READY') return { action: 'ignore' };
+            throw new Error(sentinel);
+        }
+    });
+    chooseGpx(dom);
+    processButton(dom).click();
+    await waitFor(dom, () => uploadStatus(dom));
+
+    assert.match(uploadStatus(dom).textContent, /GPX file could not be read/);
+    assert.doesNotMatch(uploadStatus(dom).textContent, /RAW_UPLOAD_SENTINEL|chrome\.runtime/);
+    assert.match(errors.flat().map(String).join('\n'), /RAW_UPLOAD_SENTINEL/);
+});
+
 test('an unparseable file fails inline without leaving the page broken', async () => {
     const dom = await loadEditor({
         respond: () => ({ action: 'ignore' })
@@ -237,7 +258,7 @@ test('an unparseable file fails inline without leaving the page broken', async (
     chooseGpx(dom, { content: '<gpx><trk><trkseg></gpx' });
     processButton(dom).click();
     await waitFor(dom, () => uploadStatus(dom));
-    assert.match(uploadStatus(dom).textContent, /invalid GPX XML/);
+    assert.match(uploadStatus(dom).textContent, /GPX file contains invalid XML/);
     assert.equal(processButton(dom), null);
     assert.equal(dom.messages.some(message => message.type === 'GPX_PROCESS_START'), false,
         'nothing crosses to the worker when the file cannot be parsed');
@@ -318,14 +339,15 @@ test('several summits earn the picker card with strong and bound peaks preselect
     assert.equal(button.querySelector('.bpb-process-label').textContent, 'Filling form…');
 });
 
-test('a rejected Apply restores the native path with an actionable error', async () => {
+test('a rejected Apply restores the native path without exposing the browser exception', async () => {
     const dom = await loadCard({
         applyResult: () => { throw new Error('Extension context invalidated.'); }
     });
     cardParts(dom).apply.click();
 
     await waitFor(dom, () => uploadStatus(dom));
-    assert.match(uploadStatus(dom).textContent, /Extension context invalidated/);
+    assert.match(uploadStatus(dom).textContent, /prepared draft could not be delivered/);
+    assert.doesNotMatch(uploadStatus(dom).textContent, /Extension context invalidated/);
     assert.equal(uploadStatus(dom).getAttribute('role'), 'alert');
     assert.equal(dom.window.document.querySelector('.bpb-summit-card'), null);
     assert.equal(processButton(dom), null, 'the dead-worker path must not remain stuck at Filling form');

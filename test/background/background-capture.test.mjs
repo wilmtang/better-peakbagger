@@ -17,7 +17,7 @@ const event = () => {
 };
 
 const createHarness = ({ peakXml = null, captureResult = null, ownershipResult = null, settings = {}, beforePeakFetch = null,
-    groupError = null,
+    groupError = null, faults = {},
     loginHtml = '<a href="climber/climber.aspx?cid=77">My Home Page</a>' } = {}) => {
     const values = {};
     const localValues = {};
@@ -43,6 +43,7 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
     const badgeCalls = [];
     const scriptCalls = [];
     const tabMessages = [];
+    const loggedErrors = [];
     const capture = captureResult || {
         ok: true,
         provider: 'strava',
@@ -58,11 +59,18 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
     const browser = {
         storage: {
             session: {
-                get: async key => { sessionGetCalls++; return { [key]: structuredClone(values[key]) }; },
+                get: async key => {
+                    if (faults.sessionGet) throw new Error(faults.sessionGet);
+                    sessionGetCalls++;
+                    return { [key]: structuredClone(values[key]) };
+                },
                 set: async patch => Object.assign(values, structuredClone(patch))
             },
             sync: {
-                get: async key => ({ [key]: structuredClone(syncValues[key]) }),
+                get: async key => {
+                    if (faults.syncGet) throw new Error(faults.syncGet);
+                    return { [key]: structuredClone(syncValues[key]) };
+                },
                 set: async patch => Object.assign(syncValues, structuredClone(patch))
             },
             local: {
@@ -77,6 +85,7 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
         },
         scripting: {
             executeScript: async details => {
+                if (faults.scripting) throw new Error(faults.scripting);
                 scriptCalls.push(structuredClone({ files: details.files, args: details.args, world: details.world }));
                 if (details.files) return [];
                 const isOwnershipCheck = String(details.func).includes('inspectOwnership');
@@ -91,11 +100,13 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
         tabs: {
             get: async tabId => structuredClone(tabs.get(tabId)),
             create: async details => {
+                if (faults.tabCreate) throw new Error(faults.tabCreate);
                 const tab = { id: nextTabId++, windowId: details.windowId, url: details.url, active: details.active };
                 tabs.set(tab.id, tab);
                 return structuredClone(tab);
             },
             update: async (tabId, patch) => {
+                if (faults.tabUpdate) throw new Error(faults.tabUpdate);
                 Object.assign(tabs.get(tabId), patch);
                 return structuredClone(tabs.get(tabId));
             },
@@ -131,6 +142,8 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
         throw new Error(`Unexpected fetch: ${value}`);
     };
 
+    const workerConsole = Object.create(console);
+    workerConsole.error = (...args) => { loggedErrors.push(args); };
     const context = vm.createContext({
         browser,
         fetch,
@@ -138,7 +151,7 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
         URLSearchParams,
         Math,
         Date,
-        console,
+        console: workerConsole,
         structuredClone,
         btoa
     });
@@ -151,7 +164,7 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
     });
     return {
         send, values, localValues, syncValues, tabs, grouped, groupUpdates, badgeCalls, fetchCalls, scriptCalls, tabMessages,
-        sessionGetCalls: () => sessionGetCalls,
+        sessionGetCalls: () => sessionGetCalls, loggedErrors, faults,
     };
 };
 
@@ -284,6 +297,67 @@ test('only a Peakbagger tab can open the report drafts manager', async () => {
         { url: 'https://www.peakbagger.com/climber/ascentedit.aspx' }
     ))), { ok: false, reason: 'forbidden' });
     assert.equal(harness.tabs.size, before, 'forbidden senders must not create a tab');
+});
+
+test('browser, storage, and page-world exceptions stay behind the public worker boundary', async () => {
+    const sentinel = 'RAW_BROWSER_SENTINEL: chrome.runtime.lastError';
+    const expectedOuter = {
+        phase: 'error',
+        error: {
+            code: 'unexpected',
+            message: 'Better Peakbagger could not complete this action. Reload and try again.',
+        },
+    };
+    const logText = harness => harness.loggedErrors
+        .flatMap(args => args)
+        .map(value => value instanceof Error ? value.message : String(value))
+        .join('\n');
+    const assertPrivate = (harness, response) => {
+        assert.doesNotMatch(JSON.stringify(response), /RAW_BROWSER_SENTINEL|chrome\.runtime/);
+        assert.doesNotMatch(JSON.stringify(harness.values), /RAW_BROWSER_SENTINEL|chrome\.runtime/);
+        assert.match(logText(harness), /RAW_BROWSER_SENTINEL: chrome\.runtime\.lastError/);
+    };
+
+    const tabCreate = createHarness({ faults: { tabCreate: sentinel } });
+    const createResponse = await tabCreate.send(
+        { type: 'OPEN_DRAFTS_MANAGER' },
+        { tab: { id: 5 }, url: 'https://www.peakbagger.com/climber/ascentedit.aspx?aid=1' }
+    );
+    assert.deepEqual(JSON.parse(JSON.stringify(createResponse)), expectedOuter);
+    assertPrivate(tabCreate, createResponse);
+
+    const sessionStorage = createHarness({ faults: { sessionGet: sentinel } });
+    const sessionResponse = await sessionStorage.send({ type: 'CAPTURE_STATUS', tabId: 1 });
+    assert.deepEqual(JSON.parse(JSON.stringify(sessionResponse)), expectedOuter);
+    assertPrivate(sessionStorage, sessionResponse);
+
+    const syncStorage = createHarness({ faults: { syncGet: sentinel } });
+    const syncResponse = await syncStorage.send(
+        { type: 'SETTINGS_PATCH', patch: { units: 'metric' } },
+        { url: 'chrome-extension://test-extension/options/options.html' }
+    );
+    assert.deepEqual(JSON.parse(JSON.stringify(syncResponse)), expectedOuter);
+    assertPrivate(syncStorage, syncResponse);
+
+    const scripting = createHarness({ faults: { scripting: sentinel } });
+    const scriptingResponse = await scripting.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    assert.equal(scriptingResponse.phase, 'error');
+    assert.deepEqual(JSON.parse(JSON.stringify(scriptingResponse.error)), {
+        code: 'capture-failed',
+        message: 'Capture stopped unexpectedly. Reload the activity and try again.',
+    });
+    assertPrivate(scripting, scriptingResponse);
+
+    const tabUpdate = createHarness();
+    await tabUpdate.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    tabUpdate.faults.tabUpdate = sentinel;
+    const updateResponse = await tabUpdate.send({
+        type: 'CAPTURE_OPEN_DRAFTS',
+        tabId: 1,
+        selectedIds: [7],
+    });
+    assert.deepEqual(JSON.parse(JSON.stringify(updateResponse)), expectedOuter);
+    assertPrivate(tabUpdate, updateResponse);
 });
 
 test('favorites mutations serialize in the worker and reject unrelated senders', async () => {
@@ -758,7 +832,7 @@ test('non-owned activities show the failure badge and never query coordinates', 
     assert.equal(harness.values.bpbCaptureJobs['1'].uploadGpx, undefined);
 });
 
-test('provider export failures preserve the real error instead of reporting an ownership change', async () => {
+test('provider export failures discard page-world exception text without misreporting ownership', async () => {
     const harness = createHarness({
         ownershipResult: { ok: true, provider: 'garmin', activityId: '777', viewerId: 'abc', authorId: 'abc' },
         captureResult: {
@@ -766,13 +840,16 @@ test('provider export failures preserve the real error instead of reporting an o
             code: 'provider-export-failed',
             provider: 'garmin',
             activityId: '777',
-            message: 'Garmin GPX export failed with HTTP 404. Reload the activity and try again.'
+            message: 'RAW_PAGE_SENTINEL: chrome.runtime.lastError'
         }
     });
     const result = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
     assert.equal(result.phase, 'error');
     assert.equal(result.error.code, 'provider-export-failed');
-    assert.equal(result.error.message, 'Garmin GPX export failed with HTTP 404. Reload the activity and try again.');
+    assert.equal(result.error.message,
+        'The activity provider could not export this GPX. Reload the activity and try again.');
+    assert.doesNotMatch(JSON.stringify(result), /RAW_PAGE_SENTINEL|chrome\.runtime/);
+    assert.doesNotMatch(JSON.stringify(harness.values), /RAW_PAGE_SENTINEL|chrome\.runtime/);
     assert.doesNotMatch(result.error.message, /ownership changed/i);
 });
 

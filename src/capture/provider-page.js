@@ -13,6 +13,8 @@ import { gpxParse } from '../gpx/gpx-parse.js';
         garmin: /\/(?:modern\/)?profile\/([^/?#]+)/i,
         strava: /\/athletes\/(\d+)(?:[/?#]|$)/i
     };
+    const NO_GPS_MESSAGE = 'This activity has no recorded route to capture.';
+    const EXPORT_FAILURE_MESSAGE = 'The activity provider could not export this GPX. Reload the activity and try again.';
 
     const profileId = (href, provider) => {
         if (!href) return null;
@@ -177,14 +179,13 @@ import { gpxParse } from '../gpx/gpx-parse.js';
                 metadata
             };
         } catch (error) {
+            const noGps = error?.code === 'no-gps-data';
             return {
                 ok: false,
-                code: error?.code === 'no-gps-data' ? 'no-gps-data' : 'provider-export-failed',
+                code: noGps ? 'no-gps-data' : 'provider-export-failed',
                 provider: ownership.provider,
                 activityId: ownership.activityId,
-                message: typeof error?.message === 'string' && error.message
-                    ? error.message
-                    : 'The provider GPX export failed.'
+                message: noGps ? NO_GPS_MESSAGE : EXPORT_FAILURE_MESSAGE
             };
         }
     };

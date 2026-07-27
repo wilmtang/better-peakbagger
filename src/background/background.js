@@ -12,6 +12,7 @@ import { providerFromUrl, providerActivityUrl } from '../capture/provider-url.js
 import { createFavoritesStore, favoritesStore as FavoritesStore } from './favorites-store.js';
 import { createGithubRoutes } from './github-routes.js';
 import { createTerrainPrefetch } from './terrain-prefetch.js';
+import { publicErrors as PublicErrors } from './public-errors.js';
 import { settings as Settings } from '../settings/settings.js';
 import { peakbaggerError as PeakbaggerError } from '../peakbagger/peakbagger-error.js';
 import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
@@ -29,12 +30,26 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
     // expiring on the same 30-minute horizon as a prepared draft.
     const SNAPSHOTS_KEY = 'bpbGithubSnapshots';
     const CLEANUP_ALARM = 'bpb-capture-cleanup';
+    const UNEXPECTED_CAPTURE_ERROR = Object.freeze({
+        code: 'capture-failed',
+        message: 'Capture stopped unexpectedly. Reload the activity and try again.',
+    });
+    const UNEXPECTED_PROCESS_ERROR = Object.freeze({
+        code: 'process-failed',
+        message: 'The GPX could not be processed. Reload the ascent form and try again.',
+    });
     const processes = new Map();
     let mutationQueue = Promise.resolve();
 
     const now = () => Date.now();
     const isFresh = record => !!record && Number(record.expiresAt) > now();
     const makeId = () => `${now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+    const publicFailure = (context, error, fallback) => {
+        if (!PublicErrors.isPublic(error)) {
+            console.error(`Better Peakbagger: ${context} failed`, error);
+        }
+        return PublicErrors.expose(error, fallback);
+    };
     const storage = () => {
         if (!ext.storage.session) throw new Error('This browser does not provide private session storage.');
         return ext.storage.session;
@@ -138,7 +153,11 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
             lastError = PeakbaggerError.exception(response.error);
             if (response.kind !== 'transient') break;
         }
-        throw lastError;
+        throw PublicErrors.exception(
+            lastError?.code || 'peakbagger-unavailable',
+            lastError?.message || 'Peakbagger could not return nearby summit data. Try again.',
+            { cause: lastError }
+        );
     };
 
     const mapWithConcurrency = async (items, concurrency, worker) => {
@@ -187,9 +206,7 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
                     return {
                         ok: false,
                         code: 'provider-export-failed',
-                        message: typeof error?.message === 'string' && error.message
-                            ? error.message
-                            : 'The activity page could not export its GPX.'
+                        message: 'The activity provider could not export this GPX. Reload the activity and try again.'
                     };
                 }
             },
@@ -220,13 +237,26 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
         if (pointCount === 0) {
             return { status: 'no-gps', message: 'The exported activity contains no usable route coordinates.' };
         }
-        if (pointCount < 2) throw new Error('The exported GPX contains fewer than two usable track points.');
+        if (pointCount < 2) {
+            throw PublicErrors.exception(
+                'invalid-track',
+                'The exported GPX contains fewer than two usable track points.'
+            );
+        }
         if (sanitized.segments.length > Core.MAX_TRACK_SEGMENTS) {
-            throw new Error(`The sanitized track has ${sanitized.segments.length} segments; Peakbagger allows 50.`);
+            throw PublicErrors.exception(
+                'invalid-track',
+                `The sanitized track has ${sanitized.segments.length} segments; Peakbagger allows 50.`
+            );
         }
 
         const boxes = Core.buildQueryBoxes(sanitized.segments);
-        if (!boxes.length) throw new Error('No valid path remained for summit lookup.');
+        if (!boxes.length) {
+            throw PublicErrors.exception(
+                'invalid-track',
+                'No valid path remained for summit lookup.'
+            );
+        }
         await onPhase('finding-peaks', { queryCount: boxes.length });
         const peaks = await fetchPeaks(boxes);
         const allMatches = Core.detectPeaks(sanitized.segments, peaks, sanitized.quality.score);
@@ -242,9 +272,10 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
         }
         const trackPointLimit = Core.MAX_UPLOAD_POINTS - cleanWaypoints.length;
         if (trackPointLimit < 2) {
-            const error = new Error(`The GPX has ${cleanWaypoints.length} waypoints, leaving no room for a usable track within Peakbagger’s 3,000-point limit.`);
-            error.code = 'too-many-waypoints';
-            throw error;
+            throw PublicErrors.exception(
+                'too-many-waypoints',
+                `The GPX has ${cleanWaypoints.length} waypoints, leaving no room for a usable track within Peakbagger’s 3,000-point limit.`
+            );
         }
         const anchorMatches = boundBelowBar ? [...visibleMatches, boundBelowBar] : visibleMatches;
         const reduced = Core.reduceTrack(sanitized.segments, anchorMatches, trackPointLimit);
@@ -320,7 +351,7 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
             const capture = await captureProvider(tabId, capturePreferences);
             if (!capture || !capture.ok) {
                 if (capture?.code === 'no-gps-data') {
-                    await finishWithoutGps(tabId, capture.message);
+                    await finishWithoutGps(tabId, 'This activity has no recorded route to capture.');
                     return;
                 }
                 const messages = {
@@ -332,7 +363,7 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
                 await failJob(
                     tabId,
                     capture?.code || 'capture-failed',
-                    capture?.message || messages[capture?.code] || 'The activity could not be captured.'
+                    messages[capture?.code] || 'The activity could not be captured.'
                 );
                 return;
             }
@@ -379,7 +410,8 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
                 expiresAt: now() + JOB_TTL_MS
             });
         } catch (error) {
-            await failJob(tabId, error.code || 'capture-failed', error.message || 'Capture failed.');
+            const failure = publicFailure('activity capture', error, UNEXPECTED_CAPTURE_ERROR);
+            await failJob(tabId, failure.code, failure.message);
         } finally {
             processes.delete(tabId);
         }
@@ -435,17 +467,32 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
 
     const clearCapture = async message => {
         const tabId = Number(message.tabId);
-        if (!Number.isInteger(tabId)) throw new Error('Activity tab identity is unavailable.');
-        if (processes.has(tabId)) throw new Error('Wait for the current capture to finish before discarding it.');
+        if (!Number.isInteger(tabId)) {
+            throw PublicErrors.exception('invalid-tab', 'Activity tab identity is unavailable.');
+        }
+        if (processes.has(tabId)) {
+            throw PublicErrors.exception(
+                'capture-busy',
+                'Wait for the current capture to finish before discarding it.'
+            );
+        }
         const tab = await ext.tabs.get(tabId);
         const activity = providerFromUrl(tab.url);
-        if (!activity) throw new Error('Open the captured Garmin or Strava activity before discarding it.');
+        if (!activity) {
+            throw PublicErrors.exception(
+                'activity-changed',
+                'Open the captured Garmin or Strava activity before discarding it.'
+            );
+        }
 
         const jobs = await readMap(JOBS_KEY);
         const job = jobs[tabId];
         if (!job) return { ok: true, removedGpx: false, removedDraftCount: 0 };
         if (job.provider !== activity.provider || job.activityId !== activity.activityId) {
-            throw new Error('The cached capture belongs to a different activity. Reopen the popup and try again.');
+            throw PublicErrors.exception(
+                'activity-changed',
+                'The cached capture belongs to a different activity. Reopen the popup and try again.'
+            );
         }
 
         let removedGpx = false;
@@ -475,7 +522,9 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
 
     const cancelCapture = async message => {
         const tabId = Number(message.tabId);
-        if (!Number.isInteger(tabId)) throw new Error('Activity tab identity is unavailable.');
+        if (!Number.isInteger(tabId)) {
+            throw PublicErrors.exception('invalid-tab', 'Activity tab identity is unavailable.');
+        }
         let cancelled = false;
         let current = null;
         await mutateMap(JOBS_KEY, jobs => {
@@ -604,7 +653,10 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
         const jobs = await readMap(JOBS_KEY);
         const existingJob = jobs[tabId];
         if (!isFresh(existingJob)) {
-            throw new Error('Capture results are no longer available. Capture the activity again.');
+            throw PublicErrors.exception(
+                'job-expired',
+                'Capture results are no longer available. Capture the activity again.'
+            );
         }
 
         const existingDrafts = await readMap(DRAFTS_KEY);
@@ -623,14 +675,19 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
 
         const job = await applySelection(message);
         if (!isFresh(job) || !job.uploadGpx || (job.phase !== 'ready' && job.phase !== 'opened')) {
-            throw new Error('Capture results are no longer available. Capture the activity again.');
+            throw PublicErrors.exception(
+                'job-expired',
+                'Capture results are no longer available. Capture the activity again.'
+            );
         }
         const opening = prepareDraftOpening(
             job,
             job.matches.filter(match => job.selectedIds.includes(match.id)),
             tabId
         );
-        if (!opening.matches.length) throw new Error('Select at least one detected peak.');
+        if (!opening.matches.length) {
+            throw PublicErrors.exception('no-selection', 'Select at least one detected peak.');
+        }
 
         const { created, groupWarning } = await openNewDraftTabs({
             sourceTabId: tabId,
@@ -768,7 +825,7 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
                 } : null
             };
         } catch (error) {
-            const failure = { code: error.code || 'process-failed', message: error.message || 'The GPX could not be processed.' };
+            const failure = publicFailure('local GPX processing', error, UNEXPECTED_PROCESS_ERROR);
             await finish({ phase: 'error', error: failure });
             return { phase: 'error', error: failure };
         }
@@ -1148,10 +1205,12 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
             default: return null;
             }
         };
-        run().then(sendResponse).catch(error => sendResponse({
-            phase: 'error',
-            error: { code: error.code || 'unexpected', message: error.message || 'Unexpected extension error.' }
-        }));
+        run().then(sendResponse).catch(error => {
+            sendResponse({
+                phase: 'error',
+                error: publicFailure(`runtime route ${message?.type || 'unknown'}`, error, PublicErrors.DEFAULT_ERROR)
+            });
+        });
         return true;
     });
 

@@ -61,7 +61,10 @@ test('waypoints and the track name are extracted only when the options request t
 });
 
 test('malformed XML throws a parse error, not a no-GPS state', () => {
-    assert.throws(() => parseGpxData('<gpx><trk><trkseg></gpx'), /invalid GPX XML/);
+    assert.throws(
+        () => parseGpxData('<gpx><trk><trkseg></gpx'),
+        error => error.code === 'invalid-gpx' && /invalid XML/.test(error.message)
+    );
 });
 
 test('trackless and waypoint-only files throw the coded no-GPS error', () => {

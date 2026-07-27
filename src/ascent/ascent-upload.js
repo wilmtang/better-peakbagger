@@ -210,7 +210,8 @@ import { units as Units } from '../ui/units.js';
                 });
             } catch (error) {
                 if (token !== requestToken) return;
-                fail(error?.message || 'The prepared draft could not be delivered.');
+                console.error('Better Peakbagger: prepared draft delivery failed', error);
+                fail('The prepared draft could not be delivered. Reload the ascent form and try again.');
                 return;
             }
             if (token !== requestToken) return;
@@ -435,9 +436,16 @@ import { units as Units } from '../ui/units.js';
                 await handleProcessResult(response, token, displayUnits);
             } catch (error) {
                 if (token !== requestToken) return;
-                fail(error?.code === 'no-gps-data'
-                    ? 'This file has no track points. Peakbagger’s own Preview may still accept it.'
-                    : (error?.message || 'The GPX file could not be read.'));
+                if (error?.code === 'no-gps-data') {
+                    fail('This file has no track points. Peakbagger’s own Preview may still accept it.');
+                    return;
+                }
+                if (error?.code === 'invalid-gpx') {
+                    fail('The GPX file contains invalid XML.');
+                    return;
+                }
+                console.error('Better Peakbagger: local GPX read failed', error);
+                fail('The GPX file could not be read. Reload the ascent form and try again.');
             }
         };
 

@@ -114,7 +114,7 @@ test('the shared error boundary normalizes untyped failures before worker messag
         code: ERROR_CODES.UNKNOWN,
         message: 'Unexpected failure',
     });
-    assert.deepEqual(GithubErrors.publicError(new TypeError(), 'Fallback detail'), {
+    assert.deepEqual(GithubErrors.publicError(new TypeError('RAW_BROWSER_SENTINEL'), 'Fallback detail'), {
         code: ERROR_CODES.UNKNOWN,
         message: 'Fallback detail',
     });

@@ -37,6 +37,8 @@ const loadDraft = (responseFactory, { statusText = 'No GPS Data for this Ascent'
     });
     const messages = [];
     const runtimeListeners = [];
+    const errors = [];
+    dom.window.console.error = (...args) => { errors.push(args); };
     dom.window.document.getElementById('GPXStatusLabel').textContent = statusText;
     dom.window.chrome = {
         runtime: {
@@ -59,7 +61,7 @@ const loadDraft = (responseFactory, { statusText = 'No GPS Data for this Ascent'
     });
     dom.window.eval(source);
     const dispatchRuntimeMessage = message => runtimeListeners.forEach(listener => listener(message));
-    return { dom, messages, dispatchRuntimeMessage };
+    return { dom, messages, dispatchRuntimeMessage, errors };
 };
 
 test('fills the expected fields, attaches reduced GPX with elevation and time, previews once, and never saves', async () => {
@@ -95,6 +97,20 @@ test('fills the expected fields, attaches reduced GPX with elevation and time, p
     assert.equal(saveClicks, 0);
     assert.deepEqual(messages.map(message => message.type), ['DRAFT_READY', 'DRAFT_PREVIEW_STARTED']);
     assert.match(dom.window.document.getElementById('bpb-draft-banner').textContent, /91% confidence/);
+    dom.window.close();
+});
+
+test('unexpected draft exceptions are logged without entering the page banner', async () => {
+    const sentinel = 'RAW_DRAFT_SENTINEL: chrome.runtime.lastError';
+    const { dom, errors } = loadDraft(() => {
+        throw new Error(sentinel);
+    });
+    await waitForCondition(() => dom.window.document.getElementById('bpb-draft-banner'));
+
+    const banner = dom.window.document.getElementById('bpb-draft-banner');
+    assert.match(banner.textContent, /Draft preparation stopped unexpectedly/);
+    assert.doesNotMatch(banner.textContent, /RAW_DRAFT_SENTINEL|chrome\.runtime/);
+    assert.match(errors.flat().map(String).join('\n'), /RAW_DRAFT_SENTINEL/);
     dom.window.close();
 });
 

@@ -15,6 +15,12 @@ import { units as Units } from '../ui/units.js';
     const { FEET_PER_METER, METERS_PER_MILE } = Units;
     const BANNER_ID = 'bpb-draft-banner';
     const BANNER_DISMISS_MS = 4000;
+    const DRAFT_FAILURES = Object.freeze({
+        'form-unavailable': 'Peakbagger’s ascent form has changed or did not load completely.',
+        'privacy-check': 'The prepared upload failed its privacy check.',
+        'preview-conflict': 'Preview was already started or the draft identity changed.',
+    });
+    const draftError = code => Object.assign(new Error(DRAFT_FAILURES[code]), { code });
 
     const pageIds = () => {
         const params = new URLSearchParams(location.search);
@@ -199,7 +205,7 @@ import { units as Units } from '../ui/units.js';
     // GPX processing can reuse a form the user has already started, so that
     // path writes only blank controls (apart from our own generated date).
     const fillForm = async (fields, preserveExistingFields = false) => {
-        if (!formIsReady()) throw new Error('Peakbagger’s ascent form has changed or did not load completely.');
+        if (!formIsReady()) throw draftError('form-unavailable');
         // A timeless GPX derives no date; keep whatever the field already
         // holds (typically the fresh-form today autofill) instead of clearing.
         if (fields.date) {
@@ -315,7 +321,7 @@ import { units as Units } from '../ui/units.js';
     };
 
     const attachGpx = (gpx, allowWaypoints) => {
-        if (!validatePrivateGpx(gpx, allowWaypoints)) throw new Error('The prepared upload failed its privacy check.');
+        if (!validatePrivateGpx(gpx, allowWaypoints)) throw draftError('privacy-check');
         const input = document.getElementById('GPXUpload');
         const transfer = new DataTransfer();
         transfer.items.add(new File([gpx], 'track.gpx', { type: 'application/gpx+xml' }));
@@ -332,7 +338,7 @@ import { units as Units } from '../ui/units.js';
             pid: payload.pid,
             cid: payload.cid
         });
-        if (!acknowledgment?.ok) throw new Error('Preview was already started or the draft identity changed.');
+        if (!acknowledgment?.ok) throw draftError('preview-conflict');
         const preview = document.getElementById('GPXPreview');
         showBanner(payload.classification,
             `${payload.classification === 'strong' ? 'Strong' : 'Probable'} match · ${payload.confidence}% confidence. Preparing GPS Preview…`);
@@ -389,7 +395,9 @@ import { units as Units } from '../ui/units.js';
             }
             if (response.action === 'apply') await applyAndPreview(response);
         } catch (error) {
-            showBanner('error', `Draft preparation stopped: ${error.message}`);
+            console.error('Better Peakbagger: draft preparation failed', error);
+            showBanner('error', DRAFT_FAILURES[error?.code]
+                || 'Draft preparation stopped unexpectedly. Reload the ascent form and try again.');
         }
     };
 

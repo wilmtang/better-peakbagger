@@ -63,12 +63,13 @@ export function createGithubRoutes({
         try {
             cid = await peakbaggerLogin();
         } catch (error) {
+            const peakbaggerFailure = error?.source === 'peakbagger';
             return {
                 ok: false,
                 error: {
-                    source: error && error.source,
-                    code: error && error.code ? error.code : 'peakbagger-unavailable',
-                    message: error && error.message
+                    ...(peakbaggerFailure ? { source: 'peakbagger' } : {}),
+                    code: peakbaggerFailure && error.code ? error.code : 'peakbagger-unavailable',
+                    message: peakbaggerFailure && error.message
                         ? error.message
                         : 'Could not reach Peakbagger. Check your connection, then try again.',
                 },

@@ -155,7 +155,7 @@ test('Garmin current-session capture uses the gc-api route and same-page CSRF he
     assert.equal(requested[0].options.credentials, 'include');
 });
 
-test('Garmin export failures are returned explicitly instead of masquerading as ownership changes', async () => {
+test('Garmin export failures return bounded copy instead of page exception text', async () => {
     const dom = load(garminPage(), 'https://connect.garmin.com/app/activity/777');
     dom.window.USE_DI_SESSION = true;
     dom.window.fetch = async () => ({ ok: false, status: 503 });
@@ -163,7 +163,9 @@ test('Garmin export failures are returned explicitly instead of masquerading as 
     const capture = await dom.window.BPBProviderPage.capture();
     assert.equal(capture.ok, false);
     assert.equal(capture.code, 'provider-export-failed');
-    assert.match(capture.message, /Garmin GPX export failed with HTTP 503/);
+    assert.equal(capture.message,
+        'The activity provider could not export this GPX. Reload the activity and try again.');
+    assert.doesNotMatch(capture.message, /503|Garmin/);
     assert.doesNotMatch(capture.message, /ownership/i);
 });
 

@@ -27,7 +27,11 @@
 
     const parseGpxData = (text, options = {}) => {
         const xml = new DOMParser().parseFromString(text, 'application/xml');
-        if (elementsByLocalName(xml, 'parsererror').length) throw new Error('The provider returned invalid GPX XML.');
+        if (elementsByLocalName(xml, 'parsererror').length) {
+            const error = new Error('The GPX file contains invalid XML.');
+            error.code = 'invalid-gpx';
+            throw error;
+        }
         const trackSegments = elementsByLocalName(xml, 'trkseg');
         const segments = trackSegments.map(segment => elementsByLocalName(segment, 'trkpt').map(trackPoint => {
             const latText = trackPoint.getAttribute('lat');
