@@ -2,32 +2,87 @@
 
 ## Unreleased
 
+- **Preserve report formatting and draft recovery.** Safe HTML spans no longer
+  break adjacent Markdown emphasis, and report color swatches keep their
+  semantic colors in dark mode. Existing-ascent drafts retain their mountain
+  identity, successful Save submissions cannot be undone by a late autosave,
+  and failed draft-manager Undo attempts remain retryable.
+
+- **Make saved-ascent GitHub sync truthful and complete.** Post-save navigation
+  now requires the success panel and URL to agree on the new ascent identity.
+  Automatic backup says **Checking GitHub** until a fresh save is proven, and a
+  separate default-off setting can remove Better Peakbagger-owned ascent files
+  from GitHub only after Peakbagger confirms the matching deletion.
+
+- **Clarify which settings controls are interactive.** Read-only rows no longer
+  show a pointer cursor, and both route-color surfaces call the secondary route
+  stroke **Outline** instead of the cartographic term “Casing.”
+
+- **Keep concurrent settings and favorites edits from overwriting each other.**
+  A single worker-owned queue now applies settings and custom-favorite changes
+  against current storage, rejects stale destructive replacements, and reports
+  read or write failures instead of silently substituting defaults. GitHub
+  credential failures remain retryable, and the ascent-deletion mirroring
+  choice survives Settings reloads.
+
+- **Offer Auto units where the analyzer is open.** The GPX Analyzer’s inline
+  selector now includes **Auto (match page)** and shows the saved preference,
+  while one shared formatter owns automatic, metric, and imperial conversion
+  across capture, drafts, and analysis.
+
+- **Harden development, packaging, and release gates.** The packaging toolchain
+  is current, compatible vulnerable transitive dependencies are overridden,
+  and the one remaining development-only advisory has an exact expiring CI
+  acceptance. Browser fixtures now use guarded HTTPS Peakbagger origins;
+  options tests close every page; extension lint warnings have an exact
+  owner-aware baseline; and Firefox Android declares its separate supported
+  version floor.
+
+- **Put every GitHub backup in one place.** Favorite-climber backup now lives
+  with Settings and Ascent backup under **Backup & sync**, while the repository
+  link stays visible in the connected GitHub panel. Settings and favorite
+  root-file writes that arrive together share one atomic GitHub commit without
+  reordering ascent backups or deletions.
+
+- **Keep the capture popup accurate through retries and draft opening.** Draft
+  selection locks as soon as tabs open, grouping failures use plain status
+  copy, and transient worker wake-up failures retry before offering a
+  non-destructive **Check again** action. Distance, elevation, and deviation
+  now follow the Units setting instead of always displaying metres.
+
+- **Make Settings feedback visible, persistent, and reversible.** Success and
+  error messages stay on screen in separate accessible regions; analyzer
+  controls explain failed-write rollbacks; and bulk draft deletion uses an
+  in-page confirmation with Escape, focus return, and Undo. GitHub links report
+  opening failures, and focus changes trigger a network recheck only after a
+  real GitHub round trip.
+
+- **Polish ascent filters in dark mode.** The beta-filter bar now owns one
+  complete light/dark palette, so every sort control uses the intended styling
+  and keyboard focus rings meet non-text contrast requirements.
+
+- **Keep the GPX Analyzer attached to slow and changing maps.** Condition-based
+  discovery replaces fixed-attempt polling, and the analyzer’s viewport, route
+  overlay, map-layer sync, and theme now have focused owners. The analyzer and
+  Full Screen Map follow late, reloaded, or replaced MasterMap frames, while
+  settings controls roll back after a missing acknowledgement instead of
+  remaining optimistically saved forever.
+
+- **Keep internal failures out of product copy.** Runtime boundaries expose
+  only typed, curated recovery messages while retaining unexpected browser,
+  storage, parser, and tab exceptions in diagnostic logs.
+
 - **Fail closed around capture and backups.** Activity capture and local GPX
   processing now stop when current privacy settings cannot be read, while local
   export and GitHub settings backup leave existing artifacts untouched instead
   of substituting defaults. Multi-draft opening is transactional and restores
   prior tab/draft state after partial failure.
 
-- **Stay attached to Peakbagger’s live maps.** The GPX Analyzer and Full Screen
-  Map now follow late, reloaded, or replaced MasterMap frames without a fixed
-  polling cutoff. Analyzer settings controls also roll back after a missing
-  acknowledgement instead of remaining optimistically saved forever.
-
 - **Make recovery and coordinate copy actionable.** Favorite-list replacements
   remain visibly busy and retryable; report-draft and profile-backup failures
   retain clear retry paths; chart points can be selected by pointer or keyboard
   and copied through an explicit action with a manual fallback when clipboard
   access is blocked. Disabled 3D controls now use complete map-specific copy.
-
-- **Keep internal failures out of product copy.** Runtime boundaries expose
-  only typed, curated recovery messages while retaining unexpected browser,
-  storage, parser, and tab exceptions in diagnostic logs.
-
-- **Tighten development and release gates.** Options tests dispose every page
-  and no longer wait for an expired device code. Dependency audit and
-  `web-ext` warnings now have exact owner-aware CI policies, extension-owned
-  HTML construction no longer triggers linter warnings, and Firefox Android
-  declares its separate minimum supported version.
 
 ## 3.1.0 — 2026-07-23
 
