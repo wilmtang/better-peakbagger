@@ -24,6 +24,7 @@ import { terrainCoordinator as TerrainCoordinator } from '../terrain/terrain-coo
 import { terrainFailure as TerrainFailure } from '../terrain/terrain-failure.js';
 import { units as Units } from '../ui/units.js';
 import { mapViewport as MapViewport } from './map-viewport.js';
+import { mapFrameLifecycle as MapFrameLifecycle } from './map-frame-lifecycle.js';
 import { mapOverlay as MapOverlay } from './map-overlay.js';
 import { gpxPanelCss } from './gpx-panel-css.js';
 
@@ -198,19 +199,9 @@ const run = async () => {
 
         await BPB.init();
 
-        // One accessor for Peakbagger's MasterMap frame. The same selector used
-        // to appear three times, and the copy inside the chart's onHover
-        // re-queried the DOM on *every hover event*. Memoized on the element,
-        // and re-resolved whenever Peakbagger swaps the frame out.
         const MAP_IFRAME_SELECTOR = 'iframe[src*="MasterMap.aspx"], iframe[src*="mastermap.aspx"]';
-        let cachedMapIframe = null;
-        const findMapIframe = () => {
-            if (cachedMapIframe && cachedMapIframe.isConnected) return cachedMapIframe;
-            cachedMapIframe = document.querySelector(MAP_IFRAME_SELECTOR);
-            return cachedMapIframe;
-        };
-
-        const mapIframe = findMapIframe();
+        const frameLifecycle = MapFrameLifecycle.create({ selector: MAP_IFRAME_SELECTOR });
+        const currentMapIframe = () => frameLifecycle.current();
         let terrainCoordinator = null;
 
         // Resize, persist, and Leaflet invalidation now live in
@@ -218,7 +209,7 @@ const run = async () => {
         // than a local copy, and the debounced persist is the module's, so this
         // file only says what to do with the result.
         const viewport = MapViewport.create({
-            iframe: mapIframe,
+            iframe: currentMapIframe(),
             size: resolveMapViewportSize(BPB.get()),
             bounds: {
                 minWidth: MAP_VIEWPORT_MIN_WIDTH,
@@ -234,7 +225,7 @@ const run = async () => {
             }),
             onInvalidated: () => terrainCoordinator?.position(),
         });
-        const mapViewport = viewport.element;
+        let mapViewport = viewport.element;
         const scheduleMapInvalidate = viewport.scheduleInvalidate;
         const applyMapViewportSize = viewport.applySize;
 
@@ -328,11 +319,6 @@ const run = async () => {
 
         controlsContainer.append(unitSelect, routeStyleControls, hintText);
         headerBox.append(statsContainer, controlsContainer);
-        // The 3D/2D toggle floats over the map, not in the panel below it. If
-        // there is no map viewport there is no native map to overlay, so the
-        // control simply stays out of the DOM (terrain is unavailable anyway).
-        if (mapViewport) mapViewport.append(terrainButton);
-
         const terrainMessage = document.createElement('div');
         terrainMessage.id = 'bpb-terrain-message';
         terrainMessage.setAttribute('role', 'status');
@@ -463,6 +449,7 @@ const run = async () => {
 
         const nativeLeafletMap = () => {
             try {
+                const mapIframe = currentMapIframe();
                 return mapIframe && mapIframe.contentWindow && mapIframe.contentWindow.mapsPlaceholder;
             } catch (error) {
                 return null;
@@ -476,6 +463,7 @@ const run = async () => {
         const TERRAIN_TOGGLE_GAP = 8;
         const measureNative2dZoomTop = () => {
             try {
+                const mapIframe = currentMapIframe();
                 if (!mapViewport || !mapIframe) return null;
                 const doc = mapIframe.contentWindow && mapIframe.contentWindow.document;
                 const zoom = doc && doc.querySelector('.leaflet-control-zoom');
@@ -510,13 +498,17 @@ const run = async () => {
             ...detail
         }, location.origin);
 
-        if (mapViewport) {
-            terrainCompass = TerrainCompass.create({
+        const attachMapControls = () => {
+            mapViewport = viewport.element;
+            if (!mapViewport) return;
+            if (terrainButton.parentElement !== mapViewport) mapViewport.append(terrainButton);
+            if (!terrainCompass) terrainCompass = TerrainCompass.create({
                 container: mapViewport,
                 toggle: terrainButton,
                 onReset: () => postTerrain('resetNorth')
             });
-        }
+        };
+        attachMapControls();
 
         const showTerrainMessage = (text, tone = 'info') => {
             if (!text) {
@@ -541,6 +533,7 @@ const run = async () => {
         BPB.onWriteFailed(message => showTerrainMessage(message, 'error'));
 
         const restoreNativeMap = () => {
+            const mapIframe = currentMapIframe();
             if (!mapIframe) return;
             mapIframe.style.visibility = 'visible';
             mapIframe.removeAttribute('aria-hidden');
@@ -548,6 +541,7 @@ const run = async () => {
         };
 
         const buildTerrainInit = () => {
+            const mapIframe = currentMapIframe();
             if (!mapViewport || !mapIframe || !mapRouteSegments.length) return null;
             return {
                 routeSegments: mapRouteSegments,
@@ -574,6 +568,7 @@ const run = async () => {
             buildInit: buildTerrainInit,
             nativeMap: nativeLeafletMap,
             hideNativeMap: () => {
+                const mapIframe = currentMapIframe();
                 if (!mapIframe) return;
                 mapIframe.style.visibility = 'hidden';
                 mapIframe.setAttribute('aria-hidden', 'true');
@@ -613,11 +608,13 @@ const run = async () => {
         // frame stops asking.
         let peaksClient = null;
         let peaksClientResolved = false;
+        let peaksClientGeneration = 0;
         const answerPeaksRequest = data => {
             const requestId = data.requestId;
             if (!Number.isFinite(requestId)) return;
             if (!peaksClientResolved) {
                 peaksClientResolved = true;
+                const mapIframe = currentMapIframe();
                 peaksClient = peakMarkers && mapIframe
                     ? peakMarkers.createClient(mapIframe.src)
                     : null;
@@ -626,10 +623,11 @@ const run = async () => {
                 postTerrain('peaks', { requestId, peaks: [], unavailable: true });
                 return;
             }
+            const generation = peaksClientGeneration;
             peaksClient.request(data.bounds).then(peaks => {
                 // A superseded request resolves null and stays silent; the
                 // newer request answers instead.
-                if (peaks) postTerrain('peaks', { requestId, peaks });
+                if (peaks && generation === peaksClientGeneration) postTerrain('peaks', { requestId, peaks });
             });
         };
 
@@ -653,7 +651,7 @@ const run = async () => {
         // not own, so keeping them together — and behind one narrow interface —
         // makes their shared fail-closed contract reviewable in one place.
         const overlay = MapOverlay.create({
-            findMapIframe,
+            frameLifecycle,
             getSettings: () => BPB.get(),
             setSettings: patch => BPB.set(patch),
             getRouteSegments: () => mapRouteSegments,
@@ -669,6 +667,46 @@ const run = async () => {
         const ensureRouteOverlay = overlay.ensureRouteOverlay;
         const getTerrainBasemap = overlay.getTerrainBasemap;
         const enumerateTerrainBasemaps = overlay.enumerateTerrainBasemaps;
+
+        const resetFrameConsumers = ({ frame, previous, reason }) => {
+            if (hoverMarker) {
+                try {
+                    if (typeof hoverMarker.remove === 'function') hoverMarker.remove();
+                    else if (hoverMarker._map?.removeLayer) hoverMarker._map.removeLayer(hoverMarker);
+                } catch (error) { /* The old frame may already be gone. */ }
+                hoverMarker = null;
+            }
+            peaksClient = null;
+            peaksClientResolved = false;
+            peaksClientGeneration++;
+            if (reason === 'identity') {
+                viewport.attach(frame);
+                mapViewport = viewport.element;
+                attachMapControls();
+                if (previous && previous !== frame) {
+                    previous.style.visibility = '';
+                    previous.removeAttribute('aria-hidden');
+                }
+            }
+            overlay.handleFrameChange();
+            if (frame) {
+                if (terrainCoordinator.isActive()) {
+                    frame.style.visibility = 'hidden';
+                    frame.setAttribute('aria-hidden', 'true');
+                } else {
+                    frame.style.visibility = 'visible';
+                    frame.removeAttribute('aria-hidden');
+                }
+            }
+            scheduleMapInvalidate();
+            terrainCoordinator.position();
+        };
+        frameLifecycle.subscribe(resetFrameConsumers);
+        frameLifecycle.start();
+        window.addEventListener('pagehide', () => {
+            overlay.dispose();
+            frameLifecycle.dispose();
+        }, { once: true });
 
         // 4. Chart & UI Renderer Engine
         const renderData = () => {
@@ -799,7 +837,7 @@ const run = async () => {
                         // renames or restructures them this feature stops
                         // working. It fails closed (the guard below simply skips
                         // the marker), so the chart itself is unaffected.
-                        const hoverFrame = findMapIframe();
+                        const hoverFrame = currentMapIframe();
                         const iframeWin = hoverFrame ? hoverFrame.contentWindow : null;
                         let hoveredPoint = null;
                         let fillColor = '#FF0000';

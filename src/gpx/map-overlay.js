@@ -16,7 +16,7 @@
 // than importing anything with extension-API reach.
 
 export const createMapOverlay = ({
-    findMapIframe,
+    frameLifecycle,
     getSettings,
     setSettings,
     getRouteSegments,
@@ -26,9 +26,9 @@ export const createMapOverlay = ({
     onFrameReload = () => {},
 } = {}) => {
     let routeOverlay = null;
-    let boundMapIframe = null;
     let boundMapLayerSelect = null;
     let mapLayerChangeHandler = null;
+    const findMapIframe = () => frameLifecycle?.current() || null;
 
     const removeOverlayLayers = (map, layers) => {
         layers.forEach(layer => {
@@ -176,21 +176,21 @@ export const createMapOverlay = ({
         }
     };
 
-    function handleMapIframeLoad() {
+    const resetFrameBindings = () => {
+        if (boundMapLayerSelect && mapLayerChangeHandler) {
+            try { boundMapLayerSelect.removeEventListener('change', mapLayerChangeHandler); } catch (e) { /* old frame discarded */ }
+        }
+        boundMapLayerSelect = null;
+        mapLayerChangeHandler = null;
+    };
+
+    function handleFrameChange() {
         onFrameReload();
         removeRouteOverlay();
+        resetFrameBindings();
         scheduleRouteOverlay();
         scheduleMapLayerSync();
     }
-
-    const bindMapIframeLoad = () => {
-        const iframe = findMapIframe();
-        if (iframe && iframe !== boundMapIframe) {
-            if (boundMapIframe) boundMapIframe.removeEventListener('load', handleMapIframeLoad);
-            boundMapIframe = iframe;
-            boundMapIframe.addEventListener('load', handleMapIframeLoad);
-        }
-    };
 
     // Both of these used to retry exactly 20 times at 250 ms and then stop.
     // On a slow load that budget expired before Peakbagger's map frame was
@@ -200,30 +200,26 @@ export const createMapOverlay = ({
     // test fixtures ("gate on the condition, never on a fixed sleep"); it
     // applies at least as strongly here.
     //
-    // So: gate on the condition. A MutationObserver reacts to Peakbagger
-    // swapping the frame in whenever that happens, the frame's own load
-    // handler covers reloads, and the interval is a backstop rather than
-    // the mechanism. The ceiling exists only so a page that will never
-    // satisfy the condition cannot leave an observer attached forever, and
-    // it says so in the log rather than expiring in silence.
+    // So: gate on the condition. The shared frame lifecycle calls
+    // handleFrameChange() for insertion, replacement, and load; this interval
+    // is only a backstop for a frame element whose Peakbagger-owned globals
+    // become usable without another lifecycle event. A later lifecycle event
+    // starts a fresh bounded attempt, so the ceiling does not define
+    // correctness.
     const CONDITION_RETRY_MS = 250;
     const CONDITION_CEILING_MS = 30000;
 
     const createConditionRetry = (label, attempt) => {
         let timer = null;
-        let observer = null;
         let deadline = 0;
 
         const stop = () => {
             if (timer) { clearInterval(timer); timer = null; }
-            if (observer) { observer.disconnect(); observer = null; }
         };
 
         const satisfied = () => {
             let done;
             try {
-                // Rebind first: a frame swapped in late is a new element.
-                bindMapIframeLoad();
                 done = attempt();
             } catch (e) {
                 // A torn-down document throws from these DOM reads. There
@@ -246,10 +242,6 @@ export const createMapOverlay = ({
                     console.warn(`Better Peakbagger: gave up waiting for ${label}`);
                 }, CONDITION_RETRY_MS);
             }
-            if (!observer && typeof MutationObserver === 'function' && document.body) {
-                observer = new MutationObserver(() => { satisfied(); });
-                observer.observe(document.body, { childList: true, subtree: true });
-            }
         };
 
         return { start, stop };
@@ -265,17 +257,23 @@ export const createMapOverlay = ({
     }
 
     function scheduleRouteOverlay() {
-        if (!getRouteSegments().length) {
-            bindMapIframeLoad();
-            return;
-        }
+        if (!getRouteSegments().length) return;
         routeOverlayRetry.start();
     }
 
+    const dispose = () => {
+        routeOverlayRetry.stop();
+        mapLayerRetry.stop();
+        removeRouteOverlay();
+        resetFrameBindings();
+    };
+
     return {
+        dispose,
         removeRouteOverlay,
         scheduleRouteOverlay,
         scheduleMapLayerSync,
+        handleFrameChange,
         // The chart's hover handler re-asserts the overlay before drawing its
         // marker, so a frame that reloaded mid-hover still shows the route.
         ensureRouteOverlay,

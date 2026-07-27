@@ -16,7 +16,7 @@ import { dom as Dom } from '../ui/dom.js';
 const clamp = (value, min, max) => Math.min(max, Math.max(min, Math.round(value)));
 
 export const createMapViewport = ({
-    iframe,
+    iframe: initialIframe,
     size,
     bounds,
     railHeight,
@@ -30,6 +30,8 @@ export const createMapViewport = ({
     };
     let element = null;
     let handle = null;
+    let iframe = null;
+    const originalFrameStyles = new WeakMap();
     let invalidateFrame = null;
     let persistTimer = null;
 
@@ -93,7 +95,28 @@ export const createMapViewport = ({
         }, persistDelayMs);
     };
 
-    if (iframe && iframe.parentElement) {
+    const attach = nextIframe => {
+        if (!nextIframe || !nextIframe.parentElement) return element;
+        const previousIframe = iframe;
+        if (previousIframe && previousIframe !== nextIframe && previousIframe.parentElement === element) {
+            previousIframe.style.cssText = originalFrameStyles.get(previousIframe) || '';
+            element.before(previousIframe);
+        }
+        iframe = nextIframe;
+        if (!originalFrameStyles.has(iframe)) originalFrameStyles.set(iframe, iframe.style.cssText);
+        if (element) {
+            if (iframe.parentElement !== element) element.append(iframe);
+            Object.assign(iframe.style, {
+                display: 'block',
+                width: '100%',
+                maxWidth: '100%',
+                height: `calc(100% - ${railHeight}px)`,
+                boxSizing: 'border-box'
+            });
+            applySize(current);
+            return element;
+        }
+
         element = Dom.element('div', {
             id: 'bpb-map-viewport',
             style: {
@@ -201,11 +224,15 @@ export const createMapViewport = ({
             syncHandleLabel();
             scheduleInvalidate();
         }).observe(element);
-    }
+        return element;
+    };
+
+    attach(initialIframe);
 
     return {
         get element() { return element; },
         get size() { return { ...current }; },
+        attach,
         applySize,
         scheduleInvalidate,
     };

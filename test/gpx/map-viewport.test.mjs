@@ -127,6 +127,31 @@ test('a map frame Peakbagger has discarded does not break resizing', async () =>
     }
 });
 
+test('a replacement reuses one viewport and restores a still-connected old frame', async () => {
+    const { dom, viewport, iframe, restore } = setup();
+    try {
+        const replacementMap = { invalidateCalls: 0, invalidateSize() { this.invalidateCalls++; } };
+        const replacement = dom.window.document.createElement('iframe');
+        replacement.src = 'MasterMap.aspx?replacement=1';
+        Object.defineProperty(replacement, 'contentWindow', {
+            configurable: true, value: { mapsPlaceholder: replacementMap }
+        });
+        viewport.element.parentElement.append(replacement);
+
+        const originalViewport = viewport.element;
+        viewport.attach(replacement);
+        await new Promise(resolve => setTimeout(resolve, 30));
+
+        assert.equal(viewport.element, originalViewport);
+        assert.equal(replacement.parentElement, originalViewport);
+        assert.equal(iframe.parentElement, originalViewport.parentElement,
+            'a native frame that remains connected is released from extension ownership');
+        assert.equal(iframe.style.cssText, '', 'the extension restores the old frame’s inline style');
+        assert.equal(originalViewport.querySelectorAll('#bpb-map-resize-handle').length, 1);
+        assert.ok(replacementMap.invalidateCalls > 0);
+    } finally { restore(); }
+});
+
 test('with no map frame on the page the viewport is inert but still callable', () => {
     const previousDocument = globalThis.document;
     const previousWindow = globalThis.window;

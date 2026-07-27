@@ -728,10 +728,7 @@ test('a local write is not handed back to the subscriber as an external change',
     dom.window.close();
 });
 
-test('a map frame that arrives after the old retry budget still gets the overlay', async () => {
-    // The route overlay used to retry setInterval(250ms) exactly 20 times and
-    // then stop, so a frame Peakbagger inserted after ~5s never got an overlay
-    // — no error, no retry, no signal. The condition is now the gate.
+test('a late or replaced map frame atomically receives every analyzer map feature', async () => {
     const dom = new JSDOM(`<!doctype html><body>
       <p>
         GPS Waypoints - Hover or click to see name and lat/long<br>
@@ -746,68 +743,178 @@ test('a map frame that arrives after the old retry budget still gets the overlay
     });
     const { window } = dom;
     const polylineCalls = [];
+    const markerCalls = [];
+    const terrainMessages = [];
+    const peakFeedRequests = [];
+    let chartConfig = null;
     window.matchMedia = () => ({ matches: false });
     window.HTMLCanvasElement.prototype.getContext = () => ({});
-    window.fetch = async url => ({
-        ok: true,
-        text: async () => (String(url).includes('/Async/PLLBB.aspx') ? '<ts></ts>' : gpx)
-    });
-    window.Chart = class ChartStub { destroy() {} update() {} setDatasetVisibility() {} isDatasetVisible() { return true; } };
+    window.fetch = async url => {
+        if (String(url).includes('/Async/PLLBB.aspx')) {
+            peakFeedRequests.push(String(url));
+            return {
+                ok: true,
+                text: async () => '<ts><t i="7" n="Late Peak" a="48.72" o="-121.79" c="1" r="100"/></ts>'
+            };
+        }
+        return { ok: true, text: async () => gpx };
+    };
+    window.Chart = class ChartStub {
+        constructor(context, config) {
+            chartConfig = config;
+            this.data = config.data;
+            this.options = config.options;
+        }
+        destroy() {}
+        update() {}
+        setDatasetVisibility() {}
+        isDatasetVisible() { return true; }
+    };
     window.postMessage = message => {
-        if (!message || message.dir !== 'toCS' || message.kind !== 'get') return;
-        window.queueMicrotask(() => window.dispatchEvent(new window.MessageEvent('message', {
-            source: window,
-            origin: window.location.origin,
-            data: { __bpb: true, dir: 'toPage', settings: { units: 'metric', theme: 'light' } }
-        })));
+        if (message?.__bpbTerrain === true) {
+            terrainMessages.push(message);
+            return;
+        }
+        if (message?.dir === 'toCS' && message.kind === 'get') {
+            window.queueMicrotask(() => window.dispatchEvent(new window.MessageEvent('message', {
+                source: window,
+                origin: window.location.origin,
+                data: {
+                    __bpb: true,
+                    dir: 'toPage',
+                    settings: { units: 'metric', theme: 'light', enable3dMap: true }
+                }
+            })));
+        }
     };
 
     Object.defineProperty(window.document, 'readyState', { configurable: true, value: 'complete' });
     window.eval(analyzerBundle);
-    await waitFor(dom, () => window.document.getElementById('bpb-gpx-analysis'));
+    await waitFor(dom, () => chartConfig);
     assert.equal(polylineCalls.length, 0, 'there is no map frame to draw into yet');
+    assert.equal(window.document.getElementById('bpb-map-viewport'), null);
 
-    // Well past 20 x 250ms of wall clock, Peakbagger finally inserts the frame.
-    await new Promise(resolve => setTimeout(resolve, 5200));
-    const map = {
-        layers: [],
-        _layers: {},
-        hasLayer: () => false,
-        getCenter: () => ({ lat: 48.72, lng: -121.79 }),
-        getZoom: () => 15,
-        setView() {},
-        invalidateSize() {},
-        removeLayer(layer) { this.layers = this.layers.filter(l => l !== layer); }
+    const createFrame = climberId => {
+        const map = {
+            layers: [],
+            _layers: {},
+            invalidateCalls: 0,
+            hasLayer: () => false,
+            getCenter: () => ({ lat: 48.72, lng: -121.79 }),
+            getZoom: () => 15,
+            setView() {},
+            invalidateSize() { this.invalidateCalls++; },
+            removeLayer(layer) {
+                this.layers = this.layers.filter(candidate => candidate !== layer);
+                layer._map = null;
+            }
+        };
+        const L = {
+            Browser: { retina: false },
+            polyline(latLngs, options) {
+                const layer = {
+                    _map: null,
+                    addTo(target) { this._map = target; target.layers.push(this); return this; },
+                    bringToBack() { return this; }
+                };
+                polylineCalls.push({ latLngs, options, layer, map });
+                return layer;
+            },
+            circleMarker(latLng) {
+                const marker = {
+                    _map: null,
+                    addTo(target) {
+                        this._map = target;
+                        markerCalls.push({ marker: this, map: target, latLng });
+                        return this;
+                    },
+                    setLatLng(next) { this.latLng = next; },
+                    setStyle(style) { this.style = style; },
+                    remove() { this._map?.removeLayer(this); }
+                };
+                return marker;
+            }
+        };
+        const iframe = window.document.createElement('iframe');
+        iframe.src = `https://www.peakbagger.com/map/MasterMap.aspx?cy=48.7&cx=-121.8&z=14&t=A&c=${climberId}`;
+        Object.defineProperty(iframe, 'contentWindow', {
+            configurable: true,
+            value: {
+                mapsPlaceholder: map,
+                L,
+                document: { getElementById: () => null, querySelector: () => null },
+                location: { href: iframe.src }
+            }
+        });
+        return { iframe, map };
     };
-    const L = {
-        Browser: { retina: false },
-        polyline(latLngs, options) {
-            const layer = {
-                _map: null,
-                addTo(target) { this._map = target; target.layers.push(this); return this; },
-                bringToBack() { return this; }
-            };
-            polylineCalls.push({ latLngs, options, layer });
-            return layer;
-        },
-        circleMarker() { throw new Error('not needed'); }
-    };
-    const iframe = window.document.createElement('iframe');
-    iframe.src = 'https://www.peakbagger.com/map/MasterMap.aspx?cy=48.7&cx=-121.8&z=14';
-    Object.defineProperty(iframe, 'contentWindow', {
-        configurable: true,
-        value: {
-            mapsPlaceholder: map, L,
-            document: { getElementById: () => null },
-            location: { href: 'https://www.peakbagger.com/map/MasterMap.aspx' }
-        }
-    });
-    window.document.body.appendChild(iframe);
 
-    // The MutationObserver notices the insertion; no fixed budget has to survive.
+    // No wall-clock sleep represents the old five-second budget: insertion is
+    // driven by the condition itself, so test speed and machine load cannot
+    // define correctness.
+    const first = createFrame(900001);
+    window.document.body.appendChild(first.iframe);
     await waitFor(dom, () => polylineCalls.length >= 2);
-    assert.ok(polylineCalls.length >= 2, 'the late frame still received the casing and route');
-    assert.equal(map.layers.length, 2);
+    await waitFor(dom, () => first.map.invalidateCalls > 0);
+    const viewport = window.document.getElementById('bpb-map-viewport');
+    assert.ok(viewport);
+    assert.equal(first.iframe.parentElement, viewport);
+    assert.equal(viewport.querySelectorAll('#bpb-map-resize-handle').length, 1);
+    assert.equal(viewport.querySelectorAll('#bpb-terrain-toggle').length, 1);
+    assert.equal(viewport.querySelectorAll('#bpb-terrain-compass').length, 1);
+    assert.equal(first.map.layers.length, 2);
+
+    const replacement = createFrame(900002);
+    first.iframe.replaceWith(replacement.iframe);
+    await waitFor(dom, () => replacement.iframe.parentElement === viewport
+        && replacement.map.layers.length === 2);
+    assert.equal(first.map.layers.length, 0, 'the discarded map loses only extension-owned layers');
+    assert.equal(viewport.querySelectorAll('#bpb-map-resize-handle').length, 1);
+    assert.equal(viewport.querySelectorAll('#bpb-terrain-toggle').length, 1);
+    assert.equal(viewport.querySelectorAll('#bpb-terrain-compass').length, 1);
+    await waitFor(dom, () => replacement.map.invalidateCalls > 0);
+
+    const callsBeforeDiscardedLoad = polylineCalls.length;
+    first.iframe.dispatchEvent(new window.Event('load'));
+    await new Promise(resolve => window.setTimeout(resolve, 0));
+    assert.equal(polylineCalls.length, callsBeforeDiscardedLoad,
+        'the old frame no longer owns a load listener');
+
+    chartConfig.options.onHover(null, [{ datasetIndex: 0, index: 0 }]);
+    assert.equal(markerCalls.at(-1).map, replacement.map,
+        'the hover marker follows the replacement map identity');
+
+    const terrainToggle = window.document.getElementById('bpb-terrain-toggle');
+    await waitFor(dom, () => terrainToggle.disabled === false);
+    terrainToggle.click();
+    await waitFor(dom, () => terrainMessages.some(message => message.type === 'init'));
+    assert.deepEqual(JSON.parse(JSON.stringify(
+        terrainMessages.find(message => message.type === 'init').camera
+    )), { center: [48.72, -121.79], zoom: 14 });
+    window.dispatchEvent(new window.MessageEvent('message', {
+        source: window,
+        origin: window.location.origin,
+        data: { __bpbTerrain: true, dir: 'toPage', type: 'loaded' }
+    }));
+    assert.equal(replacement.iframe.style.visibility, 'hidden');
+
+    window.dispatchEvent(new window.MessageEvent('message', {
+        source: window,
+        origin: window.location.origin,
+        data: {
+            __bpbTerrain: true,
+            dir: 'toPage',
+            type: 'peaksRequest',
+            requestId: 2,
+            bounds: { miny: 48.6, maxy: 48.8, minx: -121.9, maxx: -121.7 }
+        }
+    }));
+    await waitFor(dom, () => terrainMessages.some(message => message.type === 'peaks'));
+    assert.equal(peakFeedRequests.length, 1);
+    assert.match(peakFeedRequests[0], /cid=900002/,
+        'the peak client is rebuilt from the replacement frame URL');
+
+    window.dispatchEvent(new window.PageTransitionEvent('pagehide'));
     dom.window.close();
 });
 
