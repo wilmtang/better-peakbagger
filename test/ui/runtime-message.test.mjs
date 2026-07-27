@@ -21,3 +21,20 @@ test('runtime messaging shares one promise contract across extension surfaces', 
         runtime: { sendMessage: async () => undefined }
     }, { type: 'PING' }), null);
 });
+
+test('runtime messaging can distinguish a real response from an unavailable worker', async () => {
+    const response = await RuntimeMessage.sendResult({
+        runtime: { sendMessage: async () => ({ enabled: false, connected: false }) }
+    }, { type: 'STATUS' });
+    assert.deepEqual(response, {
+        kind: 'response',
+        value: { enabled: false, connected: false },
+    });
+
+    assert.deepEqual(await RuntimeMessage.sendResult({
+        runtime: { sendMessage: async () => null }
+    }, { type: 'STATUS' }), { kind: 'unavailable' });
+    assert.deepEqual(await RuntimeMessage.bindResult({
+        runtime: { sendMessage: async () => { throw new Error('worker unavailable'); } }
+    })({ type: 'STATUS' }), { kind: 'unavailable' });
+});

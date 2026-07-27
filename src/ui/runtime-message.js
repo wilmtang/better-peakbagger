@@ -12,6 +12,18 @@ const send = async (extensionApi, message) => {
     }
 };
 
-const bind = extensionApi => message => send(extensionApi, message);
+const sendResult = async (extensionApi, message) => {
+    try {
+        const response = await extensionApi.runtime.sendMessage(message);
+        return response == null
+            ? { kind: 'unavailable' }
+            : { kind: 'response', value: response };
+    } catch {
+        return { kind: 'unavailable' };
+    }
+};
 
-export const runtimeMessage = { send, bind };
+const bind = extensionApi => message => send(extensionApi, message);
+const bindResult = extensionApi => message => sendResult(extensionApi, message);
+
+export const runtimeMessage = { send, sendResult, bind, bindResult };

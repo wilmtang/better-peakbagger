@@ -5,6 +5,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { evalBundle, loadPage, PAGE_FIXTURES, waitFor } from '../helpers/load-page.mjs';
+import { profileBackupCore as Core } from '../../src/profile/profile-backup-core.js';
 
 const PAGE_URL = 'https://www.peakbagger.com/climber/ClimbListC.aspx?cid=900001&j=-1&y=9999';
 const YEAR_PAGE_URL = 'https://www.peakbagger.com/climber/ClimbListC.aspx?cid=900001&y=2024';
@@ -40,6 +41,47 @@ test('owned lists show a restrained full-profile backup entry point', async () =
     assert.match(panel.textContent, /Refresh every ascent\?/);
     assert.match(panel.textContent, /every ascent from every year/);
     assert.match(panel.textContent, /groups of up to 10/);
+});
+
+test('profile backup keeps a retry surface when worker availability is unknown', async () => {
+    let workerAvailable = false;
+    const dom = await loadPage('climber-ascents.html', {
+        fixtures: PAGE_FIXTURES,
+        url: YEAR_PAGE_URL,
+        bundles: ['content/profile-backup.js'],
+        prepare: dom => {
+            dom.window.chrome.runtime.sendMessage = message => {
+                if (message.type !== 'GITHUB_BACKUP_STATUS') return Promise.resolve(null);
+                return workerAvailable
+                    ? Promise.resolve({
+                        enabled: true,
+                        connected: true,
+                        repo: { fullName: 'me/backup' },
+                    })
+                    : Promise.reject(new Error('worker unavailable'));
+            };
+        },
+    });
+    await waitFor(dom, () => /temporarily unavailable/.test(
+        dom.window.document.getElementById('bpb-profile-backup')?.textContent || ''));
+    const panel = dom.window.document.getElementById('bpb-profile-backup');
+    assert.match(panel.textContent, /ascent list is unchanged/);
+
+    workerAvailable = true;
+    [...panel.querySelectorAll('button')].find(control => control.textContent === 'Try again').click();
+    await waitFor(dom, () => /Back up your Peakbagger profile/.test(panel.textContent));
+    assert.match(panel.textContent, /me\/backup/);
+});
+
+test('profile backup stays absent when the worker confirms the feature is disabled', async () => {
+    const dom = await loadPage('climber-ascents.html', {
+        fixtures: PAGE_FIXTURES,
+        url: YEAR_PAGE_URL,
+        bundles: ['content/profile-backup.js'],
+        prepare: dom => prepareRuntime(dom, () => ({ enabled: false, connected: false })),
+    });
+    await new Promise(resolve => dom.window.setTimeout(resolve, 20));
+    assert.equal(dom.window.document.getElementById('bpb-profile-backup'), null);
 });
 
 test('profile backup stays above an already-rendered beta filter', async () => {
@@ -244,6 +286,91 @@ test('profile preflight shows GitHub\'s specific failure detail', async () => {
     await waitFor(dom, () => /Repository service is temporarily unavailable/.test(
         dom.window.document.getElementById('bpb-profile-backup').textContent));
     assert.doesNotMatch(dom.window.document.getElementById('bpb-profile-backup').textContent, /something went wrong/i);
+});
+
+test('a blocked list-check tab keeps its Peakbagger URL visible and can be retried', async () => {
+    let allowOpen = false;
+    let openArgs = null;
+    let navigatedTo = null;
+    const dom = await loadPage('climber-ascents.html', {
+        fixtures: PAGE_FIXTURES,
+        url: YEAR_PAGE_URL,
+        bundles: ['content/profile-backup.js'],
+        prepare: dom => {
+            prepareRuntime(dom, message => message.type === 'GITHUB_BACKUP_STATUS'
+                ? { enabled: true, connected: true, repo: { fullName: 'me/backup' } }
+                : null);
+            dom.window.fetch = async url => ({
+                ok: false,
+                status: 403,
+                url: String(url),
+                headers: { get: name => /cf-mitigated/i.test(name) ? 'challenge' : null },
+                text: async () => '<html><title>Just a moment...</title></html>',
+            });
+            dom.window.open = (...args) => {
+                openArgs = args;
+                if (!allowOpen) return null;
+                return {
+                    opener: dom.window,
+                    location: { replace: url => { navigatedTo = url; } },
+                    close() {},
+                };
+            };
+        },
+    });
+    await waitFor(dom, () => dom.window.document.getElementById('bpb-profile-backup'));
+    const panel = dom.window.document.getElementById('bpb-profile-backup');
+    panel.querySelector('.bpb-profile-primary').click();
+    await waitFor(dom, () => /asking for a human check/.test(panel.textContent));
+    [...panel.querySelectorAll('button')].find(control => control.textContent === 'Open check').click();
+    await waitFor(dom, () => /check tab could not be opened/.test(panel.textContent));
+
+    const fallback = panel.querySelector('.bpb-profile-challenge-link');
+    assert.equal(fallback.href, Core.fullListUrl(YEAR_PAGE_URL));
+    assert.equal(fallback.textContent, Core.fullListUrl(YEAR_PAGE_URL));
+    assert.deepEqual(openArgs, ['about:blank', '_blank']);
+
+    allowOpen = true;
+    [...panel.querySelectorAll('button')].find(control => control.textContent === 'Open check').click();
+    assert.equal(navigatedTo, Core.fullListUrl(YEAR_PAGE_URL));
+});
+
+test('a thrown ascent-check opening keeps the paused runner recoverable', async () => {
+    const dom = await loadPage('climber-ascents.html', {
+        fixtures: PAGE_FIXTURES,
+        url: PAGE_URL,
+        bundles: ['content/profile-backup.js'],
+        prepare: dom => {
+            prepareRuntime(dom, message => {
+                if (message.type === 'GITHUB_BACKUP_STATUS') {
+                    return { enabled: true, connected: true, repo: { fullName: 'me/backup' } };
+                }
+                if (message.type === 'GITHUB_BACKUP_PROFILE_STATUS') {
+                    return { ok: true, enabled: true, connected: true, folders: [] };
+                }
+                return null;
+            });
+            dom.window.fetch = async url => ({
+                ok: false,
+                status: 403,
+                url: String(url),
+                headers: { get: name => /cf-mitigated/i.test(name) ? 'challenge' : null },
+                text: async () => '<html><title>Just a moment...</title></html>',
+            });
+            dom.window.open = () => { throw new Error('popup unavailable'); };
+        },
+    });
+    await waitFor(dom, () => dom.window.document.getElementById('bpb-profile-backup'));
+    const panel = dom.window.document.getElementById('bpb-profile-backup');
+    panel.querySelector('.bpb-profile-primary').click();
+    await waitFor(dom, () => /interrupted ascent will be retried/.test(panel.textContent));
+    [...panel.querySelectorAll('button')].find(control => control.textContent === 'Open check').click();
+    await waitFor(dom, () => /check tab could not be opened/.test(panel.textContent));
+
+    const fallback = panel.querySelector('.bpb-profile-challenge-link');
+    assert.match(fallback.href, /\/climber\/AscentEdit\.aspx\?aid=9100001$/i);
+    assert.ok([...panel.querySelectorAll('button')].some(control => control.textContent === 'Resume'));
+    assert.ok([...panel.querySelectorAll('button')].some(control => control.textContent === 'Cancel'));
 });
 
 test('one missing ascent is fetched from its edit form and sent as a direct profile snapshot', async () => {

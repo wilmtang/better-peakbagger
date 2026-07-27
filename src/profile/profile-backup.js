@@ -20,6 +20,7 @@ import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.js';
     if (!ext || !ext.runtime || !/\/climber\/climblistc\.aspx$/i.test(location.pathname)) return;
 
     const sendBg = RuntimeMessage.bind(ext);
+    const sendBgResult = RuntimeMessage.bindResult(ext);
     const node = Dom.element;
 
     let panel;
@@ -30,6 +31,31 @@ import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.js';
     const button = (text, onclick, primary = false) => node('button', {
         type: 'button', class: `bpb-profile-btn${primary ? ' bpb-profile-primary' : ''}`, text, onclick,
     });
+    const removePanel = () => {
+        if (panel) panel.remove();
+        panel = null;
+    };
+    const ensurePanel = () => {
+        if (panel?.isConnected) return true;
+        panel = node('section', {
+            id: 'bpb-profile-backup',
+            class: 'bpb-profile-panel',
+            'aria-label': 'GitHub profile backup',
+        }, [
+            node('div', { class: 'bpb-profile-body', 'aria-live': 'polite' }),
+        ]);
+        const table = Array.from(document.querySelectorAll('table.gray')).find(candidate =>
+            candidate.querySelector('a[href*="ascent.aspx?aid="]')
+            || /Ascent\s*Date\b/i.test(candidate.textContent || ''));
+        if (!table || !table.parentNode) {
+            panel = null;
+            return false;
+        }
+        const filterBar = document.getElementById('pbaf-bar');
+        const anchor = filterBar && filterBar.parentNode === table.parentNode ? filterBar : table;
+        table.parentNode.insertBefore(panel, anchor);
+        return true;
+    };
     const messageFor = error => GithubError.message(error, {
         fallback: 'The extension did not return an error description. Reload this page and try again.',
     });
@@ -115,15 +141,64 @@ import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.js';
         );
     };
 
-    const renderChallenge = state => body(
+    const openChallenge = (url, onFailure) => {
+        let opened = null;
+        try {
+            opened = window.open('about:blank', '_blank');
+            if (!opened) throw new Error('tab blocked');
+            opened.opener = null;
+            opened.location.replace(url);
+            return true;
+        } catch {
+            try { opened?.close(); } catch { /* the failed tab is already unusable */ }
+            onFailure();
+            return false;
+        }
+    };
+
+    const challengeFailure = url => node('div', { class: 'bpb-profile-challenge-failure' }, [
+        node('span', {
+            class: 'bpb-profile-error',
+            text: 'The check tab could not be opened. Use this Peakbagger link, then resume.',
+        }),
+        node('a', {
+            class: 'bpb-profile-challenge-link',
+            href: url,
+            target: '_blank',
+            rel: 'noopener noreferrer',
+            text: url,
+        }),
+    ]);
+
+    const renderChallenge = (state, { openFailed = false } = {}) => body(
         node('div', { class: 'bpb-profile-copy' }, [
             node('strong', { text: Cloudflare.copy.title }),
             node('span', { text: 'Complete the check in the new tab, then resume here. The interrupted ascent will be retried.' }),
         ]),
+        openFailed ? challengeFailure(state.challengeUrl) : null,
         node('div', { class: 'bpb-profile-actions' }, [
-            button('Open check', () => window.open(state.challengeUrl, '_blank', 'noopener'), true),
+            button('Open check', () => openChallenge(
+                state.challengeUrl,
+                () => renderChallenge(state, { openFailed: true }),
+            ), true),
             button('Resume', () => { void runner.resume(); }),
             button('Cancel', () => runner.cancel()),
+        ]),
+    );
+
+    const renderListChallenge = (result, refreshAll, { openFailed = false } = {}) => body(
+        node('div', { class: 'bpb-profile-copy' }, [
+            node('strong', { text: Cloudflare.copy.title }),
+            node('span', { text: 'Complete the check, then retry the backup.' }),
+        ]),
+        openFailed ? challengeFailure(result.url) : null,
+        node('div', { class: 'bpb-profile-actions' }, [
+            button('Open check', () => openChallenge(
+                result.url,
+                () => renderListChallenge(result, refreshAll, { openFailed: true }),
+            ), true),
+            button('Retry', () => startBackup(refreshAll)),
+            button('Cancel', () => initialize()),
         ]),
     );
 
@@ -324,15 +399,7 @@ import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.js';
         renderPreparing();
         const list = await completeList();
         if (!list || list.kind) {
-            if (list && list.kind === 'challenged') {
-                return body(
-                    node('div', { class: 'bpb-profile-copy' }, [node('strong', { text: Cloudflare.copy.title }), node('span', { text: 'Complete the check, then retry the backup.' })]),
-                    node('div', { class: 'bpb-profile-actions' }, [
-                        button('Open check', () => window.open(list.url, '_blank', 'noopener'), true),
-                        button('Retry', () => startBackup(refreshAll)), button('Cancel', () => initialize()),
-                    ]),
-                );
-            }
+            if (list && list.kind === 'challenged') return renderListChallenge(list, refreshAll);
             return body(node('span', { class: 'bpb-profile-error', text: (list && list.reason) || 'Could not read the complete ascent list.' }), button('Try again', () => startBackup(refreshAll)));
         }
         const status = await sendBg({ type: 'GITHUB_BACKUP_PROFILE_STATUS' });
@@ -353,25 +420,28 @@ import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.js';
     const initialize = async () => {
         runner = null;
         const current = Core.parseAscentList(document, { url: location.href });
-        if (!current.isOwner) { panel && panel.remove(); return; }
+        if (!current.isOwner) { removePanel(); return; }
         ownerId = current.climberId;
-        const status = await sendBg({ type: 'GITHUB_BACKUP_STATUS' });
-        if (!status || !status.enabled || !status.connected) { panel && panel.remove(); return; }
-        if (!panel) {
-            panel = node('section', { id: 'bpb-profile-backup', class: 'bpb-profile-panel', 'aria-label': 'GitHub profile backup' }, [
-                node('div', { class: 'bpb-profile-body', 'aria-live': 'polite' }),
-            ]);
-            const table = Array.from(document.querySelectorAll('table.gray')).find(candidate =>
-                candidate.querySelector('a[href*="ascent.aspx?aid="]')
-                || /Ascent\s*Date\b/i.test(candidate.textContent || ''));
-            if (!table || !table.parentNode) return;
-            // The filter and backup bundles initialize independently. Anchor to
-            // the existing filter when it won the race so the profile action
-            // remains above filtering controls in either load order.
-            const filterBar = document.getElementById('pbaf-bar');
-            const anchor = filterBar && filterBar.parentNode === table.parentNode ? filterBar : table;
-            table.parentNode.insertBefore(panel, anchor);
+        const statusResult = await sendBgResult({ type: 'GITHUB_BACKUP_STATUS' });
+        const status = statusResult.kind === 'response' ? statusResult.value : null;
+        const statusKnown = typeof status?.enabled === 'boolean'
+            && typeof status?.connected === 'boolean'
+            && (!status.connected || typeof status.repo?.fullName === 'string');
+        if (!statusKnown) {
+            if (!ensurePanel()) return;
+            body(
+                node('div', { class: 'bpb-profile-copy' }, [
+                    node('strong', { text: 'Profile backup is temporarily unavailable' }),
+                    node('span', { text: 'Better Peakbagger could not check GitHub. Your ascent list is unchanged.' }),
+                ]),
+                node('div', { class: 'bpb-profile-actions' }, [
+                    button('Try again', () => { void initialize(); }, true),
+                ]),
+            );
+            return;
         }
+        if (!status.enabled || !status.connected) { removePanel(); return; }
+        if (!ensurePanel()) return;
         await confirmPendingDeletion(status);
     };
 
