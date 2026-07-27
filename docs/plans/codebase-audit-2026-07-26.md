@@ -1,8 +1,9 @@
 # Codebase audit — 2026-07-26 (privacy, transactions, lifecycle, and recovery)
 
-Status: **audit complete; remediation not started.** This is the active
-execution plan. None of the product findings below should be described as fixed
-until its regression test and required browser evidence are recorded in the
+Status: **audit complete and independently reassessed; remediation not
+started.** This is the active execution plan. None of the product, test, or
+tooling findings below should be described as fixed until its regression test
+and required browser evidence are recorded in the
 [closure ledger](#closure-ledger).
 
 Baseline: clean `main` at `b9c7a4a` (`3.1.0`), 43 commits ahead of
@@ -10,7 +11,7 @@ Baseline: clean `main` at `b9c7a4a` (`3.1.0`), 43 commits ahead of
 [polish audit](../archive/polish-audit-2026-07-24.md) is complete and archived;
 this pass does not reopen its 18 closed findings. It does call out two places
 where the same invariant was fixed on one surface but remains broken on
-another: condition-based map binding` and bounded settings-write recovery.
+another: condition-based map binding and bounded settings-write recovery.
 
 ## Scope and evidence
 
@@ -34,15 +35,18 @@ Evidence collected on the baseline:
 - `npm run lint:js`: passed.
 - Five focused suites covering settings, capture/drafts, the analyzer, BigMap,
   and the report editor: **107 passed, 0 failed**.
-- `npm test`: reached **807 passed of 808 discovered tests**, then did not
-  terminate. The remaining file-level test was cancelled only when the process
-  was interrupted. F13 reproduces the leaked timer with a one-test command.
-  This is not a passing full-suite result.
+- The independent review let `npm test` finish naturally: **807 passed, 0
+  failed, 0 cancelled**, exit 0 in 135 seconds on Node 26.5.0. The initial
+  “808 discovered / 1 cancelled” reading was an interrupt-generated file-level
+  pseudo-test, not a missing test. F13 remains a real timer/resource leak: the
+  isolated assertion passes in about 136 ms but the process stays alive until
+  the 125-second device code expires.
 - `npm run lint`: 0 errors, 0 notices, 12 warnings. F15 separates the expected
   cross-browser warning from warnings that need ownership.
-- `npm audit --json`: 8 high, 0 critical. All eight are in the development
-  toolchain rooted at `web-ext`; no runtime dependency is implicated. F14
-  records the bounded risk and remediation.
+- `npm audit --json`: 8 high, 0 critical. The eight aggregate rows collapse to
+  one `brace-expansion` advisory in the development toolchain, reached through
+  both direct ESLint dependencies and `web-ext`; no runtime dependency is
+  implicated. F14 records the bounded risk and remediation.
 - `npm run verify:extension`: passed in hidden Chrome for Testing, new headless,
   with the real unpacked MV3 `dist/`. It covered worker boot, storage and bridge
   round trips, capture/draft identity, settings/favorites, analyzer, maps,
@@ -56,6 +60,37 @@ Evidence collected on the baseline:
   they do **not** prove native focus, window placement, browser chrome, touch
   behavior, or the visual polish of the UX findings below.
 
+## Reassessment after the independent review
+
+The appended review was committed unchanged before this assessment was edited.
+Its source citations and reruns caused the following corrections:
+
+- **Accepted:** F1 keeps strict reads in both the isolated upload controller and
+  worker instead of passing one privileged snapshot; F2 names the automatic
+  backup race and lands after the typed error boundary; F3 pins restoration of
+  an overwritten current-tab draft; F4 includes the live hover-frame accessor
+  and removes the real 5.2-second test sleep; F9 covers both buttons; and F15
+  describes three source-line owners instead of ten independent cleanups.
+- **Accepted:** F7 is not a currently reachable destructive-cancellation bug in
+  Chrome or Firefox. It is retained at P2 because focus/keyboard ownership
+  becomes unusable or leaves the dialog during a consequential write and its
+  busy-state contract is implicit and fragile. Browser evidence, not jsdom
+  focus behavior, must lead its proof.
+- **Accepted:** F13 is P2 test hygiene and performance. The suite passes; leaked
+  timers consume roughly 125 of its 135 seconds. `--test-force-exit` exists on
+  the current Node runner, but enabling it by default would conceal future
+  leaks, so it is only a possible diagnostic backstop.
+- **Partially accepted:** F14 was misattributed to `web-ext` alone and is one
+  advisory, not eight distinct vulnerabilities. However, a blanket
+  `brace-expansion@^5.0.8` override is not pre-approved: the live tree also has
+  `minimatch@3.1.5` requesting `brace-expansion@^1.1.7`, so that override
+  crosses a dependency major. The plan requires a compatible, path-scoped
+  resolution proven by the affected tools.
+
+The reassessed findings and execution order below are authoritative. The
+independent review remains appended verbatim as provenance for its evidence and
+recommendations, including the one override recommendation not adopted here.
+
 ## Priority summary
 
 | ID | Severity | Category | Finding |
@@ -63,17 +98,17 @@ Evidence collected on the baseline:
 | F1 | P0 | privacy/correctness | A transient settings read can re-enable capture fields the user disabled |
 | F2 | P0 | data integrity | Settings export and manual GitHub backup can serialize defaults as real settings |
 | F3 | P0 | transaction | Partial draft-tab creation leaves blank tabs and live orphan identities |
-| F4 | P1 | map lifecycle | The analyzer freezes the first map frame while only the route overlay follows replacements |
+| F4 | P1 | map lifecycle | The analyzer freezes the first map frame while the overlay and hover marker follow replacements |
 | F5 | P1 | map lifecycle | Full Screen Map gives up after 10 seconds and binds only the frame present at startup |
 | F6 | P1 | state recovery | Analyzer settings writes can remain optimistic forever when the bridge never replies |
-| F7 | P1 | destructive UX | Escape visually cancels a favorites replacement after the write has started |
 | F8 | P1 | error boundary | Browser/internal exception text still reaches product surfaces |
+| F14 | P1 | supply chain | One high-severity development-tool advisory expands to eight audit rows |
+| F7 | P2 | state/UX robustness | Favorites replacement has no explicit busy/focus contract |
 | F9 | P2 | recovery UX | “Manage TR drafts” can do nothing with no feedback |
 | F10 | P2 | recovery UX | Profile-backup availability and challenge-tab failures can disappear silently |
 | F11 | P2 | accessibility | Coordinate copy is mouse-only and clipboard failure is console-only |
 | F12 | P2 | copy | A disabled peak-map toggle says “Available once the peak” |
-| F13 | P1 | test reliability | One passing options test leaks the GitHub device-flow timers and hangs the suite |
-| F14 | P1 | supply chain | The development dependency tree currently has eight high advisories |
+| F13 | P2 | test hygiene | One options test leaks timers and adds about 125 seconds to the suite |
 | F15 | P2 | release hygiene | Lint warnings are accepted as an unowned aggregate, including an Android floor mismatch |
 
 Severity is impact and urgency, not an effort estimate. P0 means the invariant
@@ -94,15 +129,16 @@ defaults in
 retention, Trip Info, ascent details, wilderness nights, and external activity
 links.
 
-The toolbar path reads this fallback before provider capture. The local-file
-path repeats the issue in
+The toolbar path has one authoritative worker read before provider capture. The
+local-file path repeats the issue in the isolated-world
 [`ascent-upload.js`](../../src/ascent/ascent-upload.js): it parses and sends
-waypoints and the track name using `Settings.get()`, then the worker reads the
-same fallback again. Therefore a user who explicitly disabled waypoints or
-track-name-derived Trip Info can have those fields retained and sent across the
-extension boundary during a transient sync-storage failure. The raw provider
-GPX still stays on its source page, but that narrower guarantee does not make
-ignoring an explicit field-level opt-out acceptable.
+waypoints and the track name using `Settings.get()`, then the worker re-reads
+the same fail-soft fallback before filtering the content-script-to-worker
+message. Therefore a user who explicitly disabled waypoints or
+track-name-derived Trip Info can have those fields retained during a transient
+sync-storage failure. The raw provider GPX still stays on its source page, but
+that narrower guarantee does not make ignoring an explicit field-level opt-out
+acceptable.
 
 **Broken invariant.** A failure to read privacy preferences must stop the
 privacy-sensitive action. Defaults may keep a page renderable; they may not
@@ -112,14 +148,14 @@ authorize data capture.
 
 1. Expose the store's existing strict `read()` behavior as a deliberately named
    API such as `requireCurrent()`. Keep `get()` fail-soft for passive display.
-2. Use the strict API before provider injection/capture and before local GPX
-   parsing. If it fails, retain no new job payload and show plain recovery copy:
-   “Capture settings could not be read. Reload and try again. Nothing was
-   captured.”
-3. Pass one confirmed capture-preference snapshot through the transaction;
-   avoid independently re-reading on the page and worker. The worker must still
-   validate the snapshot or obtain its own strict authoritative copy before
-   accepting fields from page code.
+2. Use the strict API in the worker before provider injection/capture. For local
+   upload, use it in the isolated-world controller before parsing and again in
+   the worker before accepting/filtering the message. If either read fails,
+   retain no new job payload and show plain recovery copy: “Capture settings
+   could not be read. Reload and try again. Nothing was captured.”
+3. Preserve the worker re-read as defense in depth. Do not add a settings
+   snapshot to the content-script protocol or let a page-supplied value become
+   authoritative.
 4. Audit every remaining `Settings.get()` call and classify it explicitly as
    display fallback, safe-default feature gate, privacy gate, destructive gate,
    or preservation action. Only the first two may remain fail-soft.
@@ -145,19 +181,21 @@ export downloads a valid-looking default payload. Worse, manual GitHub backup
 writes that payload to the fixed settings-backup path and reports success,
 replacing a possibly correct remote backup.
 
-Automatic settings backup is less exposed because its fail-soft feature-gate
-default is `false`, so a failed read normally prevents the scheduled write.
-That does not protect either manual path.
+Automatic settings backup is also exposed to a narrower race: its `enabled()`
+gate and `build()` step read separately. The first read can succeed and the
+second fail-soft to defaults, allowing the scheduled write. The false default
+only prevents the write when the gate read itself fails.
 
 **Broken invariant.** A preservation operation must preserve an authoritative
 snapshot or fail without producing/replacing an artifact.
 
 **Fix.**
 
-1. Reuse F1's strict settings read for local export and every manual/automatic
+1. Land F8's typed public error boundary before changing this route, then reuse
+   F1's strict settings read for local export and every manual/automatic
    settings-backup build.
-2. Move the strict read inside the manual GitHub backup's error boundary. No
-   `putFile` call may occur when the snapshot cannot be read.
+2. Move the strict read inside the manual GitHub backup's typed error boundary.
+   No `putFile` call may occur when the snapshot cannot be read.
 3. Keep the last remote file untouched and retain the local UI's retry state.
    Say “Settings could not be read, so no backup was changed.”
 4. Treat a failed local export as an inline error; do not create a `Blob`, object
@@ -187,7 +225,9 @@ sees any matching record, assumes the tab is live, calls `tabs.update`, and
 returns `reused: true`; it can focus a blank tab or fail again on a stale tab
 whose `onRemoved` cleanup has not run. The local-upload path is worse: it may
 register the current form as the primary draft and update the job to `opened`
-before a sibling navigation fails.
+before a sibling navigation fails. That registration directly assigns
+`drafts[tabId] = currentDraft`, overwriting any pre-existing current-tab record
+without retaining it for rollback.
 
 **Broken invariant.** A user gets the complete selected draft set, or every
 artifact created by that attempt is rolled back. A failed open must remain
@@ -215,7 +255,8 @@ retryable.
 - Inject failure at each `tabs.create` index, the draft-record mutation, the
   pre-navigation callback, and each `tabs.update` index.
 - After each failure assert: no new blank/ascent tabs, no new draft identities,
-  the original current-tab draft/job restored, and the next attempt succeeds.
+  the exact original current-tab draft/job restored after the explicit
+  overwrite path, and the next attempt succeeds.
 - Simulate a recorded tab closing immediately before reuse and assert stale
   records are pruned without a false “reused” result.
 - Retain the registration-before-navigation assertion for successful drafts.
@@ -228,14 +269,15 @@ to [`map-viewport.js`](../../src/gpx/map-viewport.js). The viewport, native
 Leaflet lookup, 3D hide/restore, toggle/compass placement, terrain initialization,
 and peak-marker client all close over the frozen element.
 
-Only [`map-overlay.js`](../../src/gpx/map-overlay.js) continues to call the live
-accessor. Its regression test inserts the frame after 5.2 seconds and correctly
-proves the route casing appears—but it does not assert that the viewport,
-resize handle, 3D toggle, Leaflet invalidation, or peak feed recovered. They do
-not. If the frame is absent during analyzer startup, `MapViewport.create`
-returns an inert object and the toggle is never appended. If Peakbagger replaces
-the frame later, the overlay follows the new frame while the other map features
-remain tied to the old one.
+[`map-overlay.js`](../../src/gpx/map-overlay.js) and the chart-hover handler keep
+calling the live accessor. The current late-frame regression test inserts the
+frame after 5.2 seconds and correctly proves the route casing appears—but it
+does not assert that the viewport, resize handle, 3D toggle, Leaflet
+invalidation, or peak feed recovered. They do not. If the frame is absent
+during analyzer startup, `MapViewport.create` returns an inert object and the
+toggle is never appended. If Peakbagger replaces the frame later, the overlay
+and hover marker follow the new frame while native Leaflet access, the peak
+client, 3D hide/restore, and the viewport remain tied to the old one.
 
 **Broken invariant.** Every analyzer map feature must observe one current frame
 identity and rebind atomically when that identity changes.
@@ -247,8 +289,9 @@ identity and rebind atomically when that identity changes.
 2. Make the viewport attach/rebind idempotently. A late frame is moved into the
    existing viewport; a replacement inherits the size and gets the resize
    affordance exactly once.
-3. Make native map access, 3D hide/restore, toggle/compass placement, Leaflet
-   invalidation, and terrain init ask the lifecycle owner for the current frame.
+3. Make native map access, the chart-hover marker, 3D hide/restore,
+   toggle/compass placement, Leaflet invalidation, and terrain init ask the
+   lifecycle owner for the current frame.
 4. Reset the peak client and hover marker whenever frame identity changes.
    Dispose listeners/observers from the previous frame.
 5. Fold the overlay's private frame observer into this owner or subscribe it to
@@ -256,9 +299,10 @@ identity and rebind atomically when that identity changes.
 
 **Regression proof.**
 
-- Insert the frame after the old 5.2-second boundary and assert viewport,
-  resize handle, overlay, terrain toggle, Leaflet invalidation, and peak client
-  all use it.
+- Replace the real 5.2-second sleep in the current test with a deterministic
+  clock/condition driver. Insert the frame after the old boundary and assert
+  viewport, resize handle, overlay, hover marker, terrain toggle, Leaflet
+  invalidation, and peak client all use it.
 - Replace a fully initialized frame and assert the old frame has no extension
   controls/listeners while every feature targets the new frame.
 - Run analyzer unit tests, `npm run verify:extension`, and
@@ -318,29 +362,37 @@ recorded a missing-reply timeout as a residual gap; that gap remains.
 failure, overlapping writes to the same key, and overlapping writes to
 different keys. Use deterministic fake timers.
 
-## F7 — Escape visually cancels a destructive replacement that is still running
+## F7 — Favorites replacement has an implicit and fragile busy/focus contract
 
 **Evidence.** In
 [`options/favorites.js`](../../options/favorites.js), confirming Buddy mirroring
-or GitHub restore disables both buttons and starts the async replacement.
-However, the confirmation's key handler always dismisses on Escape. Pressing
-Escape during the storage transaction hides the dialog and restores focus,
-strongly implying cancellation while the worker can still replace up to 1,500
-favorites.
+or GitHub restore disables the confirmation's only two focusable controls and
+starts the async replacement. The Escape listener is dialog-scoped. In the
+independent Chromium and Firefox probe, focus was reported on `body` or the
+disabled confirm control, but keyboard Escape targeted `body`; it did not reach
+the listener or dismiss the in-progress write. The original
+destructive-cancellation claim is therefore not reproducible in either target
+engine.
 
-The settings-import confirmation already implements the correct local
-invariant: `aria-busy="true"` blocks Escape until the write settles.
+The remaining defect is smaller but real: a consequential operation silently
+leaves focus in an unusable or out-of-dialog state, exposes no `aria-busy`
+state, and depends on the current DOM having no other focusable descendant.
+Adding a link or retry affordance could make the unguarded Escape path
+reachable. The settings-import confirmation already has an explicit busy
+contract.
 
-**Fix.** Apply the same busy contract to the shared favorites confirmation:
-set `aria-busy`, ignore Escape and cancel while busy, keep the reviewed impact
-visible, then dismiss only on success. On failure, restore buttons/focus and
-retain the same reviewed replacement for retry. Do not claim true cancellation
-unless the worker protocol gains an abort that can prevent commit.
+**Fix.** Apply the same explicit busy contract to the shared favorites
+confirmation: set `aria-busy`, deliberately manage focus while the buttons are
+unavailable, and ignore Escape/cancel while busy. Keep the reviewed impact
+visible, dismiss only on success, and on failure restore controls/focus while
+retaining the same reviewed replacement for retry. Do not claim cancellation
+unless the worker protocol can prevent commit.
 
-**Regression proof.** Hold the worker response, click confirm, press Escape,
-and assert the dialog remains visible/busy and focus does not jump. Then prove
-success dismisses once and failure remains retryable without reloading the
-Buddy list/backup.
+**Regression proof.** Lead with a hidden real-browser test against the actual
+options page, not jsdom's different disabled-focus behavior. Hold the worker
+response and assert the dialog remains visible, exposes busy state, and keeps a
+deliberate focus target in Chrome and Firefox. Then prove success dismisses
+once and failure remains retryable without reloading the Buddy list/backup.
 
 ## F8 — The background's public error boundary forwards internal messages
 
@@ -373,10 +425,11 @@ public jobs, popup cards, or ascent banners.
 
 ## F9 — “Manage TR drafts” can silently do nothing
 
-**Evidence.** The report editor's `openDraftsManager()` sends
-`OPEN_DRAFTS_MANAGER`, discards the response, and swallows synchronous and
-Promise failures. The worker can reject the sender or fail `tabs.create`, yet
-the editor's only discovery action gives no busy or failure feedback.
+**Evidence.** The report editor's `openDraftsManager()` is wired to both the
+footer action and the draft-recovery bar. It sends `OPEN_DRAFTS_MANAGER`,
+discards the response, and swallows synchronous and Promise failures. The
+worker can reject the sender or fail `tabs.create`, yet both discovery actions
+give no busy or failure feedback.
 
 **Fix.** Use the shared runtime-message helper, await `{ok: true}`, briefly mark
 the button busy/disabled, and write failure copy into the editor's existing
@@ -384,9 +437,9 @@ polite status region. Keep editing fully available and the button retryable.
 The worker route should return a typed public failure instead of relying on the
 outer raw-error catch.
 
-**Regression proof.** Cover success, forbidden response, null response,
-rejected message, and tab-creation failure. Assert one tab on success and
-visible, non-sticky recovery copy on failure.
+**Regression proof.** Drive both entry points through success, forbidden
+response, null response, rejected message, and tab-creation failure. Assert one
+tab on success and visible, non-sticky recovery copy on failure.
 
 ## F10 — Profile-backup recovery actions can disappear or fail silently
 
@@ -453,52 +506,68 @@ nested fragments for user copy.
 **Regression proof.** Assert exact title and accessible name for peak, ascent,
 and group maps with and without a terrain subject.
 
-## F13 — A passing options test leaves its jsdom window and timers alive
+## F13 — Leaked device-flow timers add about 125 seconds to the test suite
 
 **Evidence.** The test “opening the GitHub device page uses tabs.create and
 reports a failure” reaches all assertions, but never closes its jsdom window.
 The rendered device flow owns a one-second countdown and two-second auth poll.
-Running only that test prints a pass in about 130 ms and remains alive until
-interrupted; after interruption Node reports the file-level test cancelled
-because a Promise is still pending. The full suite exhibits the same hang after
-807 passing tests.
+The isolated assertion passes in about 136 ms, then the process exits normally
+after 125.9 seconds when the device code expires.
 
-This is test hygiene, not a Node 26 product defect. The repository documents
-Node 22 or newer and CI uses Node 24, so relying on one runner version to mask
-an unclosed resource is not acceptable.
+The full suite likewise passes **807/807** in about 135 seconds. Interrupting
+the runner creates the apparent extra cancelled file-level test that the
+initial audit misread as an unaccounted test. Nothing is masked and CI's
+15-minute timeout is not currently threatened; this is a test resource leak
+and roughly 10× performance penalty, not a release-trust failure or Node 26
+product defect.
 
 **Fix.**
 
 1. Register every jsdom returned by the options harness with deterministic
    `afterEach` teardown; keep explicit closes only where a test needs to assert
    teardown behavior.
-2. Add a test-runner timeout/backstop for CI diagnostics, but do not use it as
-   the primary fix.
+2. Keep teardown as the proof. `--test-force-exit` may be useful as a separate
+   diagnostic backstop on supported Node versions, but do not enable it by
+   default because it would hide the next leaked handle.
 3. Run the suite on CI's Node 24 and the documented newest supported major.
 
-**Regression proof.** The isolated reproduction must exit normally, then
-`npm test` must finish with all tests accounted for and no active options
-timers. Record the exact Node versions.
+**Regression proof.** The isolated reproduction must exit promptly after its
+assertions, then `npm test` must pass all discovered tests without waiting for
+the device-code expiry or retaining active options timers. Record exact Node
+versions and wall times.
 
-## F14 — The development dependency chain has eight high advisories
+## F14 — One development-tool advisory expands to eight audit rows
 
-**Evidence.** `npm audit --json` reports eight high-severity advisories, all
-through the direct development dependency `web-ext@10.5.0` and its
-`addons-linter`/ESLint/`multimatch`/`minimatch`/`brace-expansion` chain. The
-extension ships bundled runtime assets, not these tools, so this is not a
-store-package runtime vulnerability. It is still relevant to CI and developer
-machines, especially where lint consumes repository-controlled patterns.
+**Evidence.** `npm audit --json` reports eight high-severity rows that collapse
+to one `brace-expansion` advisory, GHSA-mh99-v99m-4gvg, through dependency
+chains rooted in both the direct `eslint@10.7.0` and `web-ext@10.5.0`.
+Vulnerable instances include `brace-expansion@5.0.7` under direct ESLint paths
+and a hoisted `brace-expansion@1.1.16` requested by
+`minimatch@3.1.5`. The extension ships bundled runtime assets, not these tools,
+so this is not a store-package runtime vulnerability. It is still relevant to
+CI and developer machines, especially where lint consumes
+repository-controlled patterns.
 
 `npm audit fix --force` proposes a major downgrade to `web-ext@2.7.0`; that is
-not a safe remediation plan.
+not a safe remediation plan. At reassessment time, `eslint@10.8.0` and
+`brace-expansion@5.0.8` are published while `web-ext@10.5.0` remains current.
+The existing 5.x ranges can accept 5.0.8 through a lockfile refresh, but a
+blanket `brace-expansion@^5.0.8` override would also replace a dependency
+declared as `^1.1.7`; calling 5.0.8 a patch in that path would be incorrect.
 
 **Fix.**
 
-- Check the current upstream `web-ext`/`addons-linter` release and lockfile
-  resolution. Prefer an upstream patched release.
-- If no release exists, evaluate the narrowest compatible `overrides` only
-  against `web-ext lint`, package construction, Firefox source derivation, and
-  release checks. Do not force a semantically incompatible minimatch major.
+- Refresh the lockfile so consumers already declaring a compatible 5.x range
+  resolve `brace-expansion@5.0.8`; confirm those audit paths disappear. Treat
+  the available direct ESLint update as ordinary tool churn, not as the root
+  fix, and test it separately if adopted.
+- Check current `web-ext`, `addons-linter`, `minimatch`, and
+  `brace-expansion` releases and their declared ranges. Prefer upstream
+  compatible releases for the remaining 1.x path.
+- If an override is still necessary, scope it to a proven parent/path and test
+  that parent's behavior. Do not globally force `brace-expansion@5` into a
+  consumer declaring `^1.1.7`, or force any other incompatible transitive
+  major merely to make the audit count zero.
 - If upstream remains blocked, record a time-bounded risk acceptance with the
   exact dev-only reachability and an owner/date to recheck. Do not report “0
   vulnerabilities” until the live audit says so.
@@ -517,8 +586,12 @@ the produced archives to prove no tooling package entered `dist/`.
   Firefox 140 while `gecko.data_collection_permissions` was not supported by
   Firefox for Android until 142;
 - ten `UNSAFE_VAR_ASSIGNMENT` warnings: three in vendored MapLibre, three owned
-  map/analyzer compass insertions, and four in the ascent-editor bundle
-  (static toolbar markup, sanitized report preview, and editor dependencies).
+  compass insertions compiled from one
+  [`terrain-compass.js`](../../src/terrain/terrain-compass.js) source line, and
+  four in the ascent-editor bundle. The owned ascent-editor warnings come from
+  two [`report-editor.js`](../../src/reports/report-editor.js) lines: static
+  toolbar markup and sanitized report preview; the other two come from editor
+  dependencies.
 
 The command returns zero, so a thirteenth warning would be accepted without any
 review. The aggregate “12 existing warnings” is not an ownership model.
@@ -530,9 +603,11 @@ review. The aggregate “12 existing warnings” is not an ownership model.
    disclosure and test the derived Firefox manifest. If Android is not a
    supported product, encode/document that truth instead of leaving a misleading
    floor.
-2. Remove owned static `innerHTML` assignments: construct the compass SVG with
-   SVG DOM APIs and toolbar labels with DOM nodes. Keep report preview behind
-   one named sanitizer/render boundary with adversarial tests.
+2. Remove the two owned static `innerHTML` sources: construct the compass SVG
+   with SVG DOM APIs and toolbar labels with DOM nodes. Keep the report preview
+   behind one named sanitizer/render boundary with adversarial tests. Those two
+   source edits should clear four compiled warnings; do not count bundle copies
+   as independent owners.
 3. Parse JSON lint output in a project check. Allowlist only exact
    code/file/ownership tuples with a reason; fail on any new tuple. Keep the
    expected Firefox service-worker warning documented rather than trying to
@@ -551,27 +626,30 @@ manifest/package verification.
 Each numbered unit is an independent focused commit. Do not carry knowingly
 broken work into the next unit.
 
-1. **Restore a trustworthy baseline (F13).** Deterministic options/jsdom
-   teardown and controller disposal. Run the isolated reproduction and full
-   suite on Node 24 and the current supported major.
+1. **Remove the options timer leak (F13).** Deterministic options/jsdom
+   teardown and controller disposal. Prove the isolated test and full suite no
+   longer wait for device-code expiry on Node 24 and the current supported
+   major.
 2. **Split passive and authoritative settings reads (F1 API).** Add the strict
    API and classification tests without changing consumers.
-3. **Fail closed for capture (F1 consumers).** Toolbar and local-upload privacy
-   gates, focused tests, then hidden real-extension verification.
-4. **Make settings preservation authoritative (F2).** Local export, manual and
-   automatic GitHub backup, failure/retry tests.
-5. **Make draft opening transactional (F3).** Rollback and stale-reuse pruning;
+3. **Establish typed public errors (F8).** Land error types and the outer
+   boundary before strict reads can throw from preservation/capture routes.
+4. **Fail closed for capture (F1 consumers).** Keep authoritative worker
+   re-reads, add the isolated-upload gate, run focused tests, then hidden
+   real-extension verification.
+5. **Make settings preservation authoritative (F2).** Local export, manual and
+   automatic GitHub backup, typed failure/retry tests.
+6. **Make draft opening transactional (F3).** Rollback and stale-reuse pruning;
    verify toolbar and local-upload parity.
-6. **Create one analyzer frame lifecycle (F4).** Characterization tests first,
-   then lifecycle owner, viewport/overlay/terrain subscribers, hidden extension
-   and hardware-GPU terrain verification.
-7. **Adopt condition-based binding in BigMap (F5).** Keep this separate from F4
+7. **Create one analyzer frame lifecycle (F4).** Characterization tests first,
+   replace the fixed sleep, then lifecycle owner, viewport/overlay/terrain
+   subscribers, hidden extension and hardware-GPU terrain verification.
+8. **Adopt condition-based binding in BigMap (F5).** Keep this separate from F4
    so Full Screen Map regressions bisect cleanly.
-8. **Bound analyzer writes (F6).** Timer/order tests and bridge verification.
-9. **Make destructive confirmation truthful (F7).** Busy/Escape/focus behavior,
-   then a rendered Settings check in both themes.
-10. **Establish typed public errors (F8).** Land error types/boundary first,
-    then migrate capture/draft routes without mixing feature behavior.
+9. **Bound analyzer writes (F6).** Timer/order tests and bridge verification.
+10. **Make favorites replacement explicitly busy (F7).** Real-browser
+    busy/Escape/focus behavior on the actual options page, then a rendered
+    Settings check in both themes.
 11. **Repair recovery affordances (F9, then F10).** Separate commits because
     report-draft navigation and profile backup have different senders and trust
     boundaries.
@@ -585,7 +663,8 @@ broken work into the next unit.
 After every unit: inspect `git diff`, run its focused tests and `npm run
 lint:js`, commit using the repository's explanatory Conventional Commit style,
 and inspect `git log -1 --format=raw`. Run the full suite at the end of every
-P0/P1 unit once F13 makes it trustworthy.
+P0/P1 unit; F13 makes that gate materially faster but does not change whether
+the suite's result is trustworthy.
 
 ## Final verification gate
 
@@ -639,7 +718,10 @@ open category while remediation is active. Do not collapse “open” into
 ### Open
 
 F1–F15 are open. The audit established evidence and plans; it did not modify
-runtime, tests, dependencies, manifest, or user-facing behavior.
+runtime, tests, dependencies, manifest, or user-facing behavior. F7 is an open
+robustness/accessibility improvement rather than a reproduced destructive
+failure, and F13 is an open test-performance defect rather than a product or
+coverage failure.
 
 ### Fixed and verified
 
@@ -661,8 +743,8 @@ None.
 
 ### Changed but not fully proven
 
-None. This audit changed documentation only; all product findings remain open
-rather than being credited as partially fixed.
+None. This audit changed documentation only; all findings remain open rather
+than being credited as partially fixed.
 
 ## Known blind spots
 
@@ -672,8 +754,9 @@ rather than being credited as partially fixed.
 - The hidden browser baseline exercised normal fixture timing. F4 and F5 are
   source/test-gap findings; their late/replacement cases were not injected into
   the real browser during this audit.
-- No visible or touch-device review was performed. F7 and F9–F12 must be
-  visually/interaction-checked during remediation.
+- No visible or touch-device review was performed. F7's independent
+  Chromium/Firefox evidence used a reduced headless page, not the actual options
+  page. F7 and F9–F12 must be visually/interaction-checked during remediation.
 - Dependency advisories and available versions are time-sensitive. F14 must
   refresh the live registry/audit result when implementation begins.
 - This plan does not claim that no other defect exists. It records every
@@ -681,6 +764,10 @@ rather than being credited as partially fixed.
   fix and proof plan for each.
 
 ---
+
+The independent review below is preserved as submitted in commit `3190e48`.
+The revised assessment above records which corrections were accepted and where
+the remediation judgment differs.
 
 # Review pass — 2026-07-26 (independent verification of this plan)
 
