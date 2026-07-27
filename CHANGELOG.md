@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 3.2.0 — 2026-07-27
 
 - **Preserve report formatting and draft recovery.** Safe HTML spans no longer
   break adjacent Markdown emphasis, and report color swatches keep their
