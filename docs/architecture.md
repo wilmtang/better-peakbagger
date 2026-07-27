@@ -239,10 +239,12 @@ frame can all import the same checks. `src/settings/settings.js` adds
 `chrome.storage.sync` access and subscription behavior; it does not redefine
 the schema.
 
-Reads are deliberately fail-soft: a surface can render schema defaults when
-sync storage is temporarily unavailable. Writes are deliberately not
-fail-soft. Every extension context sends a `SETTINGS_PATCH` operation to the
-background worker, whose single queue performs the authoritative
+Passive reads through `get()` are deliberately fail-soft: a surface can render
+schema defaults when sync storage is temporarily unavailable. Privacy gates,
+preservation/export actions, and other operations that need an authoritative
+snapshot use `requireCurrent()` and stop when storage cannot be read. Writes are
+also not fail-soft. Every extension context sends a `SETTINGS_PATCH` operation
+to the background worker, whose single queue performs the authoritative
 read-clean-write sequence. A failed authoritative read or write rejects the
 operation; it must never turn fallback defaults into a replacement settings
 record. Callers retain their last confirmed settings for rollback and report
@@ -266,13 +268,24 @@ and every other setting remain writable only from extension-owned surfaces.
 Bridge writes carry request identities. The analyzer layers pending optimistic
 patches over its last confirmed settings; a failed worker operation removes
 only that patch and rolls the affected controls back without discarding a
-newer pending change.
+newer pending change. Each request has a five-second acknowledgement deadline.
+A missing reply is a failure, late confirmed snapshots can still advance the
+base beneath newer pending writes, and page disposal clears every timer.
 
 The BigMap and Peak-page bridges are read-only and send only the fields their
 coordinators need. `src/terrain/terrain-map.js` separately validates messages between a
 page coordinator and the extension-owned frame. Tags, direction fields, source
 and origin checks, bounded payload validators, and all-or-nothing parsing keep
 unrelated or malformed page messages from becoming renderer input.
+
+### Public error boundary
+
+`src/background/public-errors.js` is the worker-owned boundary for failures
+that cross runtime messaging. Known typed product errors may carry curated
+actionable copy; unexpected browser, storage, scripting, tab, and parser
+exceptions stay in contextual logs and become a fixed public recovery error.
+Provider, upload, and draft surfaces likewise render only normalized codes and
+messages. Raw exception text is diagnostic evidence, never product copy.
 
 ## Deep dive: Garmin/Strava capture and local GPX processing
 
@@ -304,7 +317,11 @@ Before export, the adapter requires a signed-in viewer identity, a matching
 activity-author identity, and the provider's owner-only edit control. Missing,
 ambiguous, or changed DOM is not proof of ownership. Signed-out, not-owner, and
 ownership-unavailable states fail closed. The worker verifies Peakbagger login
-before it asks the provider page for coordinates.
+before it asks the provider page for coordinates. It also requires an
+authoritative settings read before provider injection; the local-file
+controller requires the same read before parsing, and the worker independently
+re-reads those privacy choices before retaining allowlisted fields. A storage
+failure captures nothing.
 
 Garmin and Strava keep separate DOM and export adapters because those are
 undocumented provider dependencies. Their shared output is intentionally
@@ -385,6 +402,12 @@ minutes. Draft delivery requires a matching sender tab, job, peak, and climber.
 Every selected draft is registered before its tab navigates, closing the race
 between content-script startup and worker state.
 
+Opening selected drafts is a per-source transaction. The worker records every
+tab and draft mutation, restores overwritten current-tab state and exact prior
+records after failure, and closes only tabs that transaction created and that
+the user has not since navigated elsewhere. Stored reusable tab URLs are
+revalidated before reuse so stale identities cannot receive a new draft.
+
 Alphabetical suffixes are assigned only among selected drafts sharing one
 ascent date and follow track encounter order. Singleton dates keep a blank
 suffix. Encounter time is analysis metadata and is never written to
@@ -456,8 +479,11 @@ DST, fallback, and performance design.
 Chart.js renders distance and time series. The initial visibility follows the
 user setting, while legend clicks affect only the current view. Hovered points
 retain their original coordinates, allowing one chart point to drive either the
-native Leaflet hover marker or the 3D highlight. Double-click coordinate copy is
-an explicit user action.
+native Leaflet hover marker or the 3D highlight. Click/tap and arrow keys select
+a point, an explicit **Copy coordinates** action copies it, and double-click
+remains a shortcut. Selection and copy results use a live status region. If the
+Clipboard API fails, the analyzer exposes a selected read-only coordinate field
+for the platform's ordinary copy command.
 
 ### The fragile Leaflet seam
 
@@ -963,7 +989,11 @@ Within that boundary, the options manager supports these distinct operations:
 - **Mirror buddy list** first fetches the current report, then shows an explicit
   confirmation naming both how many buddies will be added and how many custom
   favorites will be removed. Cancel or Escape leaves storage untouched; only
-  the destructive confirmation replaces the list. Every resulting entry
+  the destructive confirmation replaces the list. While that write is pending,
+  the dialog remains visible and busy, source changes and cancellation are
+  blocked, and deliberate focus stays inside the confirmation. Success alone
+  dismisses it; failure restores the reviewed payload and confirmation focus so
+  the same operation can be retried without refetching. Every resulting entry
   receives the current timestamp and Buddy provenance, followed by a six-second
   in-memory Undo. Both merge and mirror leave a persistent summary with the
   added count, removed count, and resulting custom-list size; merge also reports
@@ -1178,7 +1208,11 @@ consumer. Batches contain at most 10 ascents or 4 MiB; producer backpressure
 starts at 30 ascents or 32 MiB. A challenge or repeated transient failure pauses
 without consuming the affected ascent. A rejected GitHub batch remains ready
 for Resume. The repository tree is the checkpoint, so closing the tab requires
-no separate progress record.
+no separate progress record. A worker transport failure while discovering
+availability keeps a compact **Try again** panel rather than removing the
+feature; a confirmed disabled/disconnected state remains distinct. If a
+Cloudflare check tab is blocked or throws, the exact validated Peakbagger URL
+and Resume/Retry/Cancel actions remain visible.
 
 The complete living contract is
 [github-ascent-backup.md](github-ascent-backup.md): the three ascent entry points,
@@ -1243,8 +1277,13 @@ No single green command proves the extension works:
   manager/search/backup path so the default local loop can stay fast without
   losing large-input coverage.
 - `npm run lint:js` catches JavaScript errors without rewriting source.
-  `npm run lint` checks the built extension package. Neither establishes
-  runtime behavior.
+  `npm run lint` checks the built extension package and accepts only six exact
+  owner-annotated manifest/dependency warnings; any new, moved, duplicate
+  warning, error, or notice fails. Neither command establishes runtime
+  behavior.
+- `npm run audit:ci` rejects every unowned production or development advisory.
+  Its sole current exception is the exact dev-only `web-ext` compatibility
+  path for GHSA-mh99-v99m-4gvg, with locked parents and a 2026-08-09 expiry.
 - `npm run verify:browsers` loads the real unpacked Chrome and derived Firefox
   manifests in hidden isolated profiles. It exercises runtime origins,
   execution worlds, storage, worker/background startup, manifest surfaces,

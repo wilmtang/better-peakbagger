@@ -1,10 +1,11 @@
 # Codebase audit — 2026-07-26 (privacy, transactions, lifecycle, and recovery)
 
-Status: **audit complete and independently reassessed; remediation not
-started.** This is the active execution plan. None of the product, test, or
-tooling findings below should be described as fixed until its regression test
-and required browser evidence are recorded in the
-[closure ledger](#closure-ledger).
+Status: **remediation implemented and archived with two explicit verification
+gaps.** F1–F13 are fixed and verified. F14 has a time-bounded, machine-enforced
+acceptance for one upstream development-only advisory path, and F15's Android
+manifest correction has not been exercised on a physical Firefox Android
+device. The [closure ledger](#closure-ledger) distinguishes those gaps from
+closed product risk.
 
 Baseline: clean `main` at `b9c7a4a` (`3.1.0`), 43 commits ahead of
 `origin/main` before this documentation-only audit. The prior
@@ -93,23 +94,23 @@ recommendations, including the one override recommendation not adopted here.
 
 ## Priority summary
 
-| ID | Severity | Category | Finding |
-| --- | --- | --- | --- |
-| F1 | P0 | privacy/correctness | A transient settings read can re-enable capture fields the user disabled |
-| F2 | P0 | data integrity | Settings export and manual GitHub backup can serialize defaults as real settings |
-| F3 | P0 | transaction | Partial draft-tab creation leaves blank tabs and live orphan identities |
-| F4 | P1 | map lifecycle | The analyzer freezes the first map frame while the overlay and hover marker follow replacements |
-| F5 | P1 | map lifecycle | Full Screen Map gives up after 10 seconds and binds only the frame present at startup |
-| F6 | P1 | state recovery | Analyzer settings writes can remain optimistic forever when the bridge never replies |
-| F8 | P1 | error boundary | Browser/internal exception text still reaches product surfaces |
-| F14 | P1 | supply chain | One high-severity development-tool advisory expands to eight audit rows |
-| F7 | P2 | state/UX robustness | Favorites replacement has no explicit busy/focus contract |
-| F9 | P2 | recovery UX | “Manage TR drafts” can do nothing with no feedback |
-| F10 | P2 | recovery UX | Profile-backup availability and challenge-tab failures can disappear silently |
-| F11 | P2 | accessibility | Coordinate copy is mouse-only and clipboard failure is console-only |
-| F12 | P2 | copy | A disabled peak-map toggle says “Available once the peak” |
-| F13 | P2 | test hygiene | One options test leaks timers and adds about 125 seconds to the suite |
-| F15 | P2 | release hygiene | Lint warnings are accepted as an unowned aggregate, including an Android floor mismatch |
+| ID | Severity | Category | Finding | Outcome |
+| --- | --- | --- | --- | --- |
+| F1 | P0 | privacy/correctness | A transient settings read can re-enable capture fields the user disabled | Fixed |
+| F2 | P0 | data integrity | Settings export and manual GitHub backup can serialize defaults as real settings | Fixed |
+| F3 | P0 | transaction | Partial draft-tab creation leaves blank tabs and live orphan identities | Fixed |
+| F4 | P1 | map lifecycle | The analyzer freezes the first map frame while the overlay and hover marker follow replacements | Fixed |
+| F5 | P1 | map lifecycle | Full Screen Map gives up after 10 seconds and binds only the frame present at startup | Fixed |
+| F6 | P1 | state recovery | Analyzer settings writes can remain optimistic forever when the bridge never replies | Fixed |
+| F8 | P1 | error boundary | Browser/internal exception text still reaches product surfaces | Fixed |
+| F14 | P1 | supply chain | One high-severity development-tool advisory expands to eight audit rows | Bounded upstream acceptance |
+| F7 | P2 | state/UX robustness | Favorites replacement has no explicit busy/focus contract | Fixed |
+| F9 | P2 | recovery UX | “Manage TR drafts” can do nothing with no feedback | Fixed |
+| F10 | P2 | recovery UX | Profile-backup availability and challenge-tab failures can disappear silently | Fixed |
+| F11 | P2 | accessibility | Coordinate copy is mouse-only and clipboard failure is console-only | Fixed |
+| F12 | P2 | copy | A disabled peak-map toggle says “Available once the peak” | Fixed |
+| F13 | P2 | test hygiene | One options test leaks timers and adds about 125 seconds to the suite | Fixed |
+| F15 | P2 | release hygiene | Lint warnings are accepted as an unowned aggregate, including an Android floor mismatch | Implemented; Android device proof outstanding |
 
 Severity is impact and urgency, not an effort estimate. P0 means the invariant
 can violate user consent, destroy/replace data, or strand a transaction. P1 is
@@ -623,8 +624,27 @@ manifest/package verification.
 
 ## Execution order and commit boundaries
 
-Each numbered unit is an independent focused commit. Do not carry knowingly
-broken work into the next unit.
+Every problem landed as an independent focused commit:
+
+| Finding | Commit |
+| --- | --- |
+| F13 | `720a38c` — close options pages after every test |
+| F8 | `72f8f73` — bound public error messages |
+| F1 | `6fa0eb0` — fail closed when capture settings are unreadable |
+| F2 | `334a891` — preserve settings backups on read failure |
+| F3 | `d690ede` — make draft opening transactional |
+| F4 | `8c2efc0` — unify analyzer map-frame lifecycle |
+| F5 | `d7faf6f` — rebind replaced full-screen maps |
+| F6 | `0a0da84` — bound analyzer settings acknowledgements |
+| F7 | `3657f2d` — keep favorites replacement retryable |
+| F9 | `ea7fcfd` — surface report drafts manager failures |
+| F10 | `4d9e33f` — keep profile backup recovery visible |
+| F12 | `1e34994` — complete unavailable terrain copy |
+| F11 | `99d2ba8` — make coordinate copy keyboard accessible |
+| F14 | `9f78503` — own the remaining development advisory |
+| F15 | `e66d0c0` — own extension lint compatibility |
+
+The original execution sequence is retained below as the implementation record.
 
 1. **Remove the options timer leak (F13).** Deterministic options/jsdom
    teardown and controller disposal. Prove the isolated test and full suite no
@@ -666,33 +686,38 @@ and inspect `git log -1 --format=raw`. Run the full suite at the end of every
 P0/P1 unit; F13 makes that gate materially faster but does not change whether
 the suite's result is trustworthy.
 
-## Final verification gate
+## Final verification evidence
 
-Before moving this plan to `docs/archive/`:
+- `npm ci` completed from the lockfile.
+- `npm run audit:ci` passed the exact development-only exception. Raw
+  `npm audit` still reports eight aggregate high rows from the single accepted
+  `brace-expansion` 1.x path; the exception expires on 2026-08-09.
+- `npm run lint:js` passed. `npm run lint` passed with six exact owned warnings
+  and no errors or notices.
+- `npm test` passed **864/864** on Node 26.5.0 and Node 24.18.0.
+- `npm run test:scale` passed **4/4**, including the 1,500-entry favorites and
+  20,000-point GPX cases.
+- `npm run verify:browsers` passed in hidden Chrome for Testing new headless and
+  Firefox 153.0 at 1000×760.
+- `npm run terrain:verify` passed in hidden Chrome at 798×448 and 448×448 on
+  `ANGLE Metal Renderer: Apple M3 Pro`; 12 resizes produced zero blank frames
+  and the mocked DEM produced a non-flat 0–1750 m mesh.
+- `npm run terrain:verify:firefox` passed in hidden Firefox 151.0 at 1000×760
+  on the reported hardware renderer; route, basemap, peaks, terrain, input, and
+  resize checks passed.
+- The Chrome and derived Firefox archives were built, structurally verified,
+  and executed through `npm run verify:packages` in both hidden browsers.
+- F7's busy/focus state was rendered in hidden Chrome at 1000×760. F9 was
+  inspected in light and dark at default and 440 px widths. F11 was inspected
+  in light/dark at 1000×760 and 440 px. F15's rebuilt editor preview was
+  inspected at 1000×760.
+- No verifier-owned browser process or disposable profile remained. The
+  terrain screenshots and temporary Node 24 runtimes were removed. The
+  pre-existing Firefox DevTools MCP profile/process was not touched.
 
-1. `npm ci`
-2. `npm audit` with no unowned high/critical advisory
-3. `npm run lint:js`
-4. the structured web-ext warning-baseline check
-5. `npm run lint`
-6. `npm test` on Node 24 and the newest documented supported major
-7. `npm run test:scale`
-8. `npm run verify:extension`
-9. `npm run verify:firefox`
-10. `npm run terrain:verify`
-11. `npm run terrain:verify:firefox`
-12. `npm run package`
-13. `npm run build:firefox`
-14. `npm run verify:packages`
-
-Browser checks must remain hidden/offscreen and use isolated profiles. Record
-browser versions, renderer, viewport, whether each check was hidden or visible,
-and the onscreen behaviors it could not establish. Inspect remaining process
-command lines and disposable profile/artifact paths before handoff.
-
-For F7, F9–F12, additionally render the exact affected surface at its relevant
-light/dark and narrow/default sizes. Protocol DOM assertions are not proof of
-spacing, wrapping, clipping, focus-ring appearance, or touch behavior.
+These checks were hidden and protocol-driven. They do not prove native browser
+focus, window placement, permission-prompt presentation, toolbar popup chrome,
+touch-device behavior, or Firefox Android compatibility.
 
 ## Stop conditions
 
@@ -711,40 +736,78 @@ spacing, wrapping, clipping, focus-ring appearance, or touch behavior.
 
 ## Closure ledger
 
-This ledger has the three categories required by `AGENTS.md`, plus an explicit
-open category while remediation is active. Do not collapse “open” into
-“intentionally not changed.”
+This ledger preserves the three categories required by `AGENTS.md`.
 
 ### Open
 
-F1–F15 are open. The audit established evidence and plans; it did not modify
-runtime, tests, dependencies, manifest, or user-facing behavior. F7 is an open
-robustness/accessibility improvement rather than a reproduced destructive
-failure, and F13 is an open test-performance defect rather than a product or
-coverage failure.
+None. The implementation work is complete; the remaining external/upstream
+evidence belongs under “changed but not fully proven.”
 
 ### Fixed and verified
 
-None.
+- **F1, capture privacy:** authoritative reads now gate toolbar capture and
+  local upload before parsing or retention; the worker keeps its independent
+  re-read. Storage-failure regressions and hidden real-extension checks passed.
+- **F2, preservation authority:** local export plus manual and automatic GitHub
+  settings backups now fail without producing or replacing an artifact when
+  settings are unreadable. Retry and no-write tests passed.
+- **F3, draft transaction:** per-source opening is serialized and rolls back
+  created tabs and exact prior draft state without closing user-navigated tabs.
+  Partial-create, update, callback, stale-reuse, and parity tests passed.
+- **F4–F5, map lifecycles:** the analyzer and Full Screen Map now rebind late,
+  reloaded, replaced, and removed MasterMap frames by identity. Old overlays,
+  handlers, terrain state, peak clients, and camera state are released.
+  Condition-driven unit, hidden browser, and hardware-GPU terrain checks passed.
+- **F6, settings recovery:** optimistic MAIN-world settings writes have a
+  five-second acknowledgement deadline, ordered rollback, late-snapshot rules,
+  and timer disposal. Deterministic ordering/timeout tests and the real bridge
+  check passed.
+- **F7, replacement UX:** Buddy mirror and GitHub restore remain visibly busy
+  and focused during the write, block cancellation/source changes, dismiss
+  only on success, and restore the reviewed payload for retry on failure.
+  Held-response Chrome/Firefox checks passed.
+- **F8, public errors:** only typed, curated messages cross the worker and
+  content/page boundaries. Unexpected internal exceptions are logged with
+  context and surfaces receive stable recovery copy.
+- **F9–F10, recovery UX:** both report-draft manager entry points and the
+  profile-backup availability/challenge flows now retain actionable,
+  retryable states for transport, popup, and worker failures.
+- **F11–F12, accessibility/copy:** chart coordinates support click/tap,
+  keyboard selection, an explicit Copy action, live status, and a selected-text
+  clipboard fallback. Disabled terrain labels are complete per map type.
+- **F13, test lifecycle:** centralized options teardown closes every jsdom
+  window; the former 125-second tail is gone on Node 24 and Node 26.
 
 ### Intentionally not changed
 
 - **The shared Chrome/Firefox background entries remain.** The
   `BACKGROUND_SERVICE_WORKER_IGNORED` Firefox warning is expected because Chrome
-  needs `service_worker` and Firefox has the paired `scripts` entry. F15 plans
-  to own the warning, not remove a required manifest half.
+  needs `service_worker` and Firefox has the paired `scripts` entry. The exact
+  warning is owned by the lint baseline rather than removing a required
+  manifest half.
+- **Six dependency/manifest linter warnings remain by ownership.** Three are
+  pinned MapLibre renderer locations, two are generated ProseMirror/TipTap
+  locations, and one is the shared background entry above. A changed location,
+  duplicate, new warning, error, or notice fails `npm run lint`.
 - **No size-only refactor is proposed.** `terrain-frame.js`, `background.js`,
   `report-markup.js`, and the largest test files are large, but line count alone
-  is not a defect. The only planned extractions are those required to give map
-  frame lifecycle and error/public-copy boundaries one owner.
-- **No runtime fix was bundled into the audit.** That is intentional so each
-  remediation unit can begin with a failing regression test and land as its own
-  reviewed commit.
+  is not a defect. The implementation extracted only the lifecycle,
+  settings-client, and public-error boundaries needed for correctness.
 
 ### Changed but not fully proven
 
-None. This audit changed documentation only; all findings remain open rather
-than being credited as partially fixed.
+- **F14, upstream development advisory:** every compatible
+  `brace-expansion` 5.x installation is patched to 5.0.8. The remaining 1.x
+  route is development-only under the current `web-ext` toolchain and is
+  accepted only by an exact path/version/advisory gate through 2026-08-09.
+  Raw `npm audit` is therefore not clean, and this cannot be called fully fixed
+  until upstream removes the incompatible path or the accepted toolchain
+  changes safely.
+- **F15, Firefox Android:** `gecko_android.strict_min_version` now declares
+  142.0 independently of desktop Firefox 140.0, extension-owned HTML parsing
+  warnings were removed, and the remaining six warnings are machine-owned.
+  Desktop Firefox, packages, and manifest tests passed, but no physical Android
+  device or mobile browser chrome was exercised.
 
 ## Known blind spots
 
@@ -754,11 +817,13 @@ than being credited as partially fixed.
 - The hidden browser baseline exercised normal fixture timing. F4 and F5 are
   source/test-gap findings; their late/replacement cases were not injected into
   the real browser during this audit.
-- No visible or touch-device review was performed. F7's independent
-  Chromium/Firefox evidence used a reduced headless page, not the actual options
-  page. F7 and F9–F12 must be visually/interaction-checked during remediation.
-- Dependency advisories and available versions are time-sensitive. F14 must
-  refresh the live registry/audit result when implementation begins.
+- No visible, touch-device, or Firefox Android review was performed. Hidden
+  Chrome and Firefox exercised the actual options and content-script surfaces,
+  but cannot prove native focus, browser chrome, touch ergonomics, or Android
+  manifest/store behavior.
+- Dependency advisories and available versions are time-sensitive. The F14
+  CI acceptance deliberately expires on 2026-08-09 so this snapshot cannot
+  silently become permanent.
 - This plan does not claim that no other defect exists. It records every
   concrete bug, UX failure, and material improvement found in this pass, with a
   fix and proof plan for each.

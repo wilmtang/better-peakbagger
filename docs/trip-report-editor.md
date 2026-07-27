@@ -151,7 +151,8 @@ render the report. The extension sends its string through two sibling outputs:
 CodeMirror Markdown string
   → Marked 18.0.6 lexer tokens
   → allowlisted report AST ──→ canonical bracket string ──→ JournalText
-                           └─→ generated safe HTML ───────→ preview.innerHTML
+                           └─→ generated safe HTML ───────→ DOMParser
+                                                          └─→ adopted preview nodes
 ```
 
 [Marked 18.0.6](https://github.com/markedjs/marked/tree/v18.0.6) is used only as
@@ -162,7 +163,11 @@ tag-to-detached-DOM parser used when loading
 
 The preview and `JournalText` are printed from the same parsed semantics, so
 they agree about supported structure and rejected input. The preview does not
-prove pixel-for-pixel fidelity with Peakbagger's own stylesheet.
+prove pixel-for-pixel fidelity with Peakbagger's own stylesheet. The only HTML
+parse happens after the allowlisted AST printer has escaped and serialized the
+complete preview document; the editor adopts those parsed nodes without
+assigning `innerHTML`. Toolbar and SVG icon markup is built directly as DOM
+nodes.
 
 ### Plain mode
 
@@ -609,6 +614,12 @@ trimming both values.
 - Restoring replaces `JournalText`, restores the recorded mode when valid, and
   reuses the exact Markdown sidecar when present. Opening a row from the manager
   returns to this same recovery gate; the manager cannot bypass it.
+
+Both the persistent footer action and the recovery-panel action disable only
+their own manager controls while the worker opens Settings. Report editing
+remains available. A missing response, rejected runtime message, forbidden
+sender, or tab-creation failure produces bounded live-region copy—“Couldn’t
+open report drafts. Try again.”—then re-enables the actions for retry.
 
 Restore is intentionally not an immediate storage write. The record remains
 the recovery source until a later edit/autosave, explicit deletion, or

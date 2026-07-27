@@ -92,6 +92,12 @@ visible in the AMO Developer Hub.
    - Check the native popup presentation, permission prompts, Firefox inline
      Preferences, and tab-group presentation while the dedicated profile is
      visible.
+   - Load the candidate through Mozilla's
+     [Firefox for Android extension-testing workflow](https://extensionworkshop.com/documentation/develop/developing-extensions-for-firefox-for-android/)
+     on a Firefox for Android 142+ device. Confirm the add-on enables, an ascent
+     analyzer initializes, and Settings opens without an unsupported-manifest
+     error. Record the device, Firefox version, and any mobile layout
+     limitation; desktop Firefox does not establish this.
    - Discard the extension's capture state, close the draft and provider tabs,
      and close the test profile. Keep the live check minimal and rate-limited.
 
@@ -113,6 +119,7 @@ visible in the AMO Developer Hub.
 
    ```sh
    npm ci
+   npm run audit:ci
    npm test
    npm run test:scale
    npm run lint
@@ -135,6 +142,12 @@ visible in the AMO Developer Hub.
    store credit, before publication. If a new root-level development file is copied
    into `dist/` intentionally, update the build config and archive policy
    together rather than relying on web-ext's old repository-root ignore list.
+   `audit:ci` must pass without editing its baseline during release rehearsal.
+   Its current development-only advisory acceptance is exact and expires on
+   2026-08-09; expiry or dependency-path drift requires a fresh source review,
+   not a date extension made only to unblock publication. `npm run lint`
+   likewise permits only the exact owner-annotated warning locations checked
+   into `scripts/check-web-ext-lint.mjs`.
 
 4. Push the release:
 

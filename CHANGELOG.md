@@ -1,4 +1,34 @@
 # Changelog
+
+## Unreleased
+
+- **Fail closed around capture and backups.** Activity capture and local GPX
+  processing now stop when current privacy settings cannot be read, while local
+  export and GitHub settings backup leave existing artifacts untouched instead
+  of substituting defaults. Multi-draft opening is transactional and restores
+  prior tab/draft state after partial failure.
+
+- **Stay attached to Peakbagger’s live maps.** The GPX Analyzer and Full Screen
+  Map now follow late, reloaded, or replaced MasterMap frames without a fixed
+  polling cutoff. Analyzer settings controls also roll back after a missing
+  acknowledgement instead of remaining optimistically saved forever.
+
+- **Make recovery and coordinate copy actionable.** Favorite-list replacements
+  remain visibly busy and retryable; report-draft and profile-backup failures
+  retain clear retry paths; chart points can be selected by pointer or keyboard
+  and copied through an explicit action with a manual fallback when clipboard
+  access is blocked. Disabled 3D controls now use complete map-specific copy.
+
+- **Keep internal failures out of product copy.** Runtime boundaries expose
+  only typed, curated recovery messages while retaining unexpected browser,
+  storage, parser, and tab exceptions in diagnostic logs.
+
+- **Tighten development and release gates.** Options tests dispose every page
+  and no longer wait for an expired device code. Dependency audit and
+  `web-ext` warnings now have exact owner-aware CI policies, extension-owned
+  HTML construction no longer triggers linter warnings, and Firefox Android
+  declares its separate minimum supported version.
+
 ## 3.1.0 — 2026-07-23
 
 - **Move settings safely and keep small personal data backed up.** Settings can

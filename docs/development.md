@@ -159,15 +159,25 @@ only exist under `dist/` after a build.
 | `npm run terrain:verify:firefox` | Runs the focused Firefox GPU terrain/interaction check and refuses software WebGL. Same HTTPS showcase host. |
 | `npm run showcase:render` | Builds and renders the local UI showcase fixtures into `store-assets/`. Same HTTPS showcase host. |
 | `npm run lint:js` | Runs errors-only ESLint over source, extension surfaces, scripts, and tests. |
-| `npm run lint` | Builds, then runs `web-ext lint --source-dir dist`. |
+| `npm run lint` | Builds, runs `web-ext lint` as JSON, and accepts only the six exact owner-annotated manifest/dependency warnings in `scripts/check-web-ext-lint.mjs`. New, moved, duplicate warnings, errors, or notices fail. |
+| `npm run audit:ci` | Runs npm audit through the repository policy: no unowned advisory may pass. The current exact dev-only `web-ext`/`brace-expansion` compatibility exception expires 2026-08-09. |
 | `npm run package` | Release build + `web-ext build` from `dist/`; writes the canonical Chrome ZIP under `web-ext-artifacts/`. |
 | `npm run start:chromium` / `start:firefox` | Build, watch, launch a web-ext development browser, and auto-reload the extension after successful rebuilds. Firefox mirrors each complete build into its inline-Preferences source first. |
 
 Pushes and pull requests use one least-privilege workflow with four independent
 jobs: Node tests/lint, the scale suite, the real Chrome extension smoke, and
 the real Firefox extension smoke. Each job installs its own runtime and reports
-failures separately. Release CI additionally runs the scale test and executes
-both generated store archives before either publication job can start.
+failures separately. The Node job also runs `audit:ci`, so a new advisory,
+dependency-path drift, or expiry of the current bounded exception fails CI.
+Release CI additionally runs the scale test and executes both generated store
+archives before either publication job can start.
+
+The source manifest declares Firefox desktop 140.0 and Firefox Android 142.0
+independently because
+[`gecko.data_collection_permissions`](https://extensionworkshop.com/documentation/develop/firefox-builtin-data-consent/)
+reached those platforms in different releases. Desktop browser automation
+cannot prove the Android declaration or mobile layout; use the physical-device
+release check in [Browser store releases](releasing.md).
 
 The browser smokes select a fixture GPX through the native file input and
 confirm that a fresh ascent form receives its local date and replaces Preview

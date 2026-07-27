@@ -496,7 +496,10 @@ disclosure.
 - **User Pause:** both loops stop at their next safe asynchronous boundary;
   prepared ascents remain in memory.
 - **Peakbagger challenge:** the producer stops on the interrupted URL. Resume
-  probes that URL before retrying the item; it is not skipped.
+  probes that URL before retrying the item; it is not skipped. **Open check**
+  first acquires a blank tab and navigates it only after success. If popup
+  creation returns null or throws, the validated Peakbagger URL remains an
+  ordinary `noopener` link beside Resume/Retry and Cancel.
 - **Wrong content:** that ascent records a failure and the run continues. A
   later run sees no committed folder and retries it.
 - **Transient read:** retry after 4 and 15 seconds. Two consecutive exhausted
@@ -538,6 +541,12 @@ are valid only from the owner-list surface. Settings and favorite messages are
 extension-page only. The worker builds both backup files from cleaned storage;
 the options page parses through the same pure module and requires confirmation
 before replacing local state on restore.
+
+The profile content surface treats transport availability as a discriminated
+result. A confirmed disabled or disconnected setting removes the owner-only
+panel; an unknown result keeps a compact error and **Try again** action. A
+successful retry remounts the normal connected state without requiring a page
+reload.
 
 ## Repository layout and schema
 
@@ -772,6 +781,12 @@ returned commit URL visible as **View commit** after a successful manual
 transfer. Restore reads the fixed file from the selected branch through
 GitHub's Contents endpoint, validates file/base64/UTF-8 shape in the worker
 client, and leaves payload-schema validation to the options-page owner.
+
+Settings export and backup require an authoritative sync-storage snapshot.
+Local export creates no Blob or download, and manual or automatic GitHub backup
+performs no repository write, when that read fails. The existing local/remote
+artifact remains untouched and the manual surfaces retain a retry state;
+schema defaults are for passive rendering and never become preservation data.
 
 No ascent in a batch is visible on the branch before step 8. A failed earlier
 operation leaves the branch unchanged. A failed final ref update leaves an

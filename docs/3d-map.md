@@ -32,10 +32,14 @@ details:
    coordinate-only segments and validated display metadata. They do not
    receive GPX XML, timestamps, GPX elevations, activity metadata, or device
    fields.
-5. **The three page surfaces share one lifecycle.** `src/terrain/terrain-coordinator.js`
-   owns state transitions, timeouts, camera handoff, compass updates, and
-   failure recovery. Surface modules still own subject identity, geometry
-   collection, consent-pending state, and native-map DOM.
+5. **The three page surfaces share one terrain lifecycle.**
+   `src/terrain/terrain-coordinator.js` owns state transitions, timeouts,
+   camera handoff, compass updates, and failure recovery. The analyzer and Full
+   Screen Map also share `src/gpx/map-frame-lifecycle.js` for native MasterMap
+   identity: late insertion, reload, replacement, and removal must rebind every
+   Leaflet consumer rather than expire on a polling budget. Surface modules
+   still own subject identity, geometry collection, consent-pending state, and
+   native-map DOM.
 6. **Every `postMessage` boundary is untrusted.** Tags and direction fields are
    necessary routing hints, not authorization. Receivers also check the event
    source and origin and validate the bounded payload.
@@ -94,6 +98,7 @@ without giving the host page extension APIs.
 | Module | World | Owns | Must not own |
 | --- | --- | --- | --- |
 | `src/gpx/gpx-analyzer.js` | MAIN | Ascent GPX coordinate extraction, chart highlight, native MasterMap integration, Analyzer-specific messages | Storage, frame creation, generic terrain lifecycle |
+| `src/gpx/map-frame-lifecycle.js` | MAIN helper | Condition-based MasterMap insertion/reload/replacement/removal identity events shared by Analyzer and BigMap | Leaflet overlays, terrain state, or subject validation |
 | `src/maps/big-map.js` | MAIN | Full Screen route/peak identity, native layer detection, group colors and ascent links, native map DOM | Storage, renderer internals, duplicate lifecycle logic |
 | `src/maps/peak-map.js` | MAIN | Peak-page identity agreement, summit focus, embedded map context | Storage, renderer internals, duplicate lifecycle logic |
 | `src/terrain/terrain-coordinator.js` | MAIN | `idle`/`loading`/`active` lifecycle, toggle UI, timeouts, camera round trip, compass, recovery | Subject discovery, privileged APIs, provider requests |
@@ -134,6 +139,13 @@ lifecycle concerns:
 native Leaflet route layers and flattens their coordinates only when the user
 asks to open or prefetch 3D. This preserves native hover, click, popup, and
 group-map semantics in 2D.
+
+The Full Screen surface waits on frame identity, not a fixed ten-second polling
+budget. When Peakbagger inserts, reloads, or replaces MasterMap, BigMap restores
+old route styles, removes stale extension casings and handlers, invalidates the
+old peak client, discards stale terrain camera state, and rebuilds against the
+new Leaflet realm. The analyzer applies the same identity event to its viewport,
+overlay, hover marker, remembered layer, peak client, and terrain visibility.
 
 Single-ascent maps may use the configured route color. Group maps preserve
 each native route color. A group route may carry one validated ascent id and a

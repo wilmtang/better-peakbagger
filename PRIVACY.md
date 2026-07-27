@@ -63,6 +63,10 @@ enables automatic backup for that data.
 - **Ownership gate:** capture stops before reading GPS coordinates unless the
   provider page gives unambiguous evidence that the signed-in user owns the
   activity.
+- **Settings gate:** capture and local-file processing stop before parsing or
+  retaining data if the extension cannot read the current capture settings.
+  Schema defaults keep passive UI renderable; they never authorize capture or
+  become an exported/remote settings backup.
 - **On-page analysis:** raw Garmin or Strava GPX is parsed in the activity page.
   It is never persisted, sent to the extension developer, or forwarded as
   source XML.

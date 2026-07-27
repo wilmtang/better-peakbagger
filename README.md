@@ -86,9 +86,11 @@ click Save yourself.
 
 Ascent pages gain an interactive elevation chart with distance and time views,
 route metrics, grades, timing, and multi-day camping details. Hover over the
-chart to follow the same point on the map. The map route uses a configurable
-line and casing while Peakbagger's native route and markers remain on top, and
-Full Screen GPS maps honor the same width and casing.
+chart to follow the same point on the map; click/tap or use the arrow keys to
+select a point, then use **Copy coordinates**. If clipboard access is blocked,
+the selected coordinates stay available for ordinary copy. The map route uses
+a configurable line and casing while Peakbagger's native route and markers
+remain on top, and Full Screen GPS maps honor the same width and casing.
 
 ### Find useful ascent beta faster
 
