@@ -34,6 +34,10 @@ const makeLeaflet = window => {
             (this._events[type] ||= []).push(handler);
             return this;
         }
+        off(type, handler) {
+            this._events[type] = (this._events[type] || []).filter(candidate => candidate !== handler);
+            return this;
+        }
         fire(type) {
             for (const handler of this._events[type] || []) handler({ type, target: this });
         }
@@ -58,6 +62,10 @@ const makeLeaflet = window => {
         }
         eachLayer(callback) { this.layers.slice().forEach(callback); }
         on(type, handler) { (this.events[type] ||= []).push(handler); return this; }
+        off(type, handler) {
+            this.events[type] = (this.events[type] || []).filter(candidate => candidate !== handler);
+            return this;
+        }
         getCenter() { return this.center; }
         getZoom() { return this.zoom; }
         setView(center, zoom, options) {
@@ -70,6 +78,12 @@ const makeLeaflet = window => {
             layer._map = this;
             this.layers.push(layer);
             for (const handler of this.events.layeradd || []) handler({ layer });
+            return this;
+        }
+        removeLayer(layer) {
+            this.layers = this.layers.filter(candidate => candidate !== layer);
+            layer._map = null;
+            for (const handler of this.events.layerremove || []) handler({ layer });
             return this;
         }
     }
@@ -261,6 +275,153 @@ test('Full Screen maps case native tracks that live in the MasterMap child ifram
     mapWin.mapsPlaceholder.addLayer(late);
     await waitFor(dom, () => late.options.weight === 8);
     assert.equal(casingsOf().length, 2, 'a track added to the child map later also gains a casing');
+    dom.window.close();
+});
+
+test('a late, reloaded, or replaced MasterMap frame rebinds every Full Screen feature', async () => {
+    const dom = new JSDOM('<!doctype html><body></body>', {
+        url: 'https://www.peakbagger.com/Map/BigMap.aspx?t=A&d=2414&gt=rc',
+        runScripts: 'outside-only'
+    });
+    const { window } = dom;
+    const messages = [];
+    const feedRequests = [];
+    const intervals = new Map();
+    let intervalId = 0;
+    window.chrome = makeChromeStub({ bpbSettings: { mapRouteWidth: 8, enable3dMap: true } });
+    window.setInterval = callback => {
+        const id = ++intervalId;
+        intervals.set(id, callback);
+        return id;
+    };
+    window.clearInterval = id => intervals.delete(id);
+    window.postMessage = message => {
+        messages.push(structuredClone(message));
+        window.queueMicrotask(() => window.dispatchEvent(new window.MessageEvent('message', {
+            source: window, origin: window.location.origin, data: message
+        })));
+    };
+    window.fetch = async url => {
+        feedRequests.push(String(url));
+        return {
+            ok: true,
+            text: async () => '<ts><t i="58603" n="Iron Mountain" a="44.155" o="-121.77" c="1" r="246"/></ts>'
+        };
+    };
+
+    const installFrameMap = (frame, { cid, points, color }) => {
+        frame.src = `https://www.peakbagger.com/map/MasterMap.aspx?cy=44.16&cx=-121.76&z=14&t=A&d=2414&c=${cid}&hj=0`;
+        const mapWindow = frame.contentWindow;
+        const leaflet = makeLeaflet(mapWindow);
+        const route = new leaflet.Polyline(points, { color, weight: 2 });
+        const map = new leaflet.MapStub([route]);
+        mapWindow.mapsPlaceholder = map;
+        return { leaflet, map, mapWindow, route };
+    };
+    const casingsOf = state => state.map.layers.filter(layer =>
+        layer instanceof state.leaflet.Polyline && layer.options.interactive === false);
+    const dispatchTerrain = detail => window.dispatchEvent(new window.MessageEvent('message', {
+        source: window,
+        origin: window.location.origin,
+        data: { __bpbTerrain: true, dir: 'toPage', ...detail }
+    }));
+
+    window.eval(bridgeBundle);
+    window.eval(mainBundle);
+    assert.equal(intervals.size, 1, 'the condition backstop starts while no map exists');
+    for (let tick = 0; tick < 45; tick++) {
+        for (const callback of [...intervals.values()]) callback();
+    }
+    assert.equal(intervals.size, 1,
+        'forty attempts are diagnostic history, not a point where recovery stops');
+
+    const firstFrame = window.document.createElement('iframe');
+    firstFrame.id = 'if';
+    window.document.body.append(firstFrame);
+    const first = installFrameMap(firstFrame, {
+        cid: 900001,
+        points: [{ lat: 44.15, lng: -121.78 }, { lat: 44.16, lng: -121.76 }],
+        color: '#d9483b'
+    });
+    await waitFor(dom, () => first.route.options.weight === 8);
+    assert.equal(casingsOf(first).length, 1);
+    assert.equal(intervals.size, 0);
+
+    const reloadedRoute = new first.leaflet.Polyline(
+        [{ lat: 44.11, lng: -121.71 }, { lat: 44.12, lng: -121.70 }],
+        { color: '#225588', weight: 3 });
+    const reloadedMap = new first.leaflet.MapStub([reloadedRoute]);
+    first.mapWindow.mapsPlaceholder = reloadedMap;
+    firstFrame.dispatchEvent(new window.Event('load'));
+    await waitFor(dom, () => reloadedRoute.options.weight === 8);
+    assert.equal(first.route.options.weight, 2, 'reload restores the discarded native track style');
+    assert.equal(casingsOf(first).length, 0, 'reload removes casings from the discarded map');
+    const reloaded = { ...first, map: reloadedMap, route: reloadedRoute };
+    assert.equal(casingsOf(reloaded).length, 1, 'the rebuilt map receives one casing');
+
+    const toggle = window.document.getElementById('bpb-terrain-toggle');
+    await waitFor(dom, () => toggle?.disabled === false);
+    toggle.click();
+    await waitFor(dom, () => messages.filter(message =>
+        message.__bpbTerrain === true && message.type === 'init').length === 1);
+    const firstInit = messages.find(message => message.__bpbTerrain === true && message.type === 'init');
+    assert.deepEqual(firstInit.routeSegments,
+        [[[44.11, -121.71], [44.12, -121.70]]]);
+    dispatchTerrain({ type: 'loaded' });
+    assert.equal(firstFrame.style.visibility, 'hidden');
+    dispatchTerrain({
+        type: 'peaksRequest',
+        requestId: 1,
+        bounds: { miny: 44.1, maxy: 44.2, minx: -121.85, maxx: -121.7 }
+    });
+    await waitFor(dom, () => messages.some(message =>
+        message.__bpbTerrain === true && message.type === 'peaks' && message.requestId === 1));
+    assert.match(feedRequests[0], /cid=900001/);
+
+    const destroyCount = () => messages.filter(message =>
+        message.__bpbTerrain === true && message.type === 'destroy').length;
+    const destroysBeforeReplacement = destroyCount();
+    const replacementFrame = window.document.createElement('iframe');
+    replacementFrame.id = 'if';
+    firstFrame.replaceWith(replacementFrame);
+    const replacement = installFrameMap(replacementFrame, {
+        cid: 900002,
+        points: [{ lat: 44.21, lng: -121.68 }, { lat: 44.22, lng: -121.67 }],
+        color: '#117733'
+    });
+    await waitFor(dom, () => replacement.route.options.weight === 8);
+    assert.equal(destroyCount(), destroysBeforeReplacement + 1,
+        'replacement tears down the stale terrain view exactly once');
+    assert.equal(firstFrame.style.visibility, 'visible',
+        'the discarded native frame is released from terrain ownership');
+    assert.equal(reloadedRoute.options.weight, 3,
+        'replacement restores the prior frame’s native track style');
+    assert.equal(casingsOf(reloaded).length, 0);
+    assert.equal(casingsOf(replacement).length, 1);
+    assert.equal(toggle.textContent, '3D');
+    assert.equal(toggle.disabled, false);
+
+    toggle.click();
+    await waitFor(dom, () => messages.filter(message =>
+        message.__bpbTerrain === true && message.type === 'init').length === 2);
+    const replacementInit = messages.filter(message =>
+        message.__bpbTerrain === true && message.type === 'init').at(-1);
+    assert.deepEqual(replacementInit.routeSegments,
+        [[[44.21, -121.68], [44.22, -121.67]]]);
+    dispatchTerrain({ type: 'loaded' });
+    dispatchTerrain({
+        type: 'peaksRequest',
+        requestId: 2,
+        bounds: { miny: 44.1, maxy: 44.3, minx: -121.8, maxx: -121.6 }
+    });
+    await waitFor(dom, () => messages.some(message =>
+        message.__bpbTerrain === true && message.type === 'peaks' && message.requestId === 2));
+    assert.equal(feedRequests.length, 2);
+    assert.match(feedRequests[1], /cid=900002/,
+        'the replacement rebuilds the peak client from its own frame URL');
+
+    window.dispatchEvent(new window.Event('pagehide'));
+    await new Promise(resolve => window.setTimeout(resolve, 0));
     dom.window.close();
 });
 

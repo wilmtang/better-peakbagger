@@ -14,6 +14,7 @@ import { peakMarkers } from './peak-markers.js';
 import { terrainCompass as TerrainCompass } from '../terrain/terrain-compass.js';
 import { terrainCoordinator as TerrainCoordinator } from '../terrain/terrain-coordinator.js';
 import { terrainFailure as TerrainFailure } from '../terrain/terrain-failure.js';
+import { mapFrameLifecycle as MapFrameLifecycle } from '../gpx/map-frame-lifecycle.js';
 
 // Kept as an IIFE for early-exit control flow (non-Full-Screen-Map pages);
 // dependencies are ES imports and the module publishes no globals.
@@ -62,16 +63,23 @@ import { terrainFailure as TerrainFailure } from '../terrain/terrain-failure.js'
     const recolorTrack = mapType === 'A';
 
     const DEFAULT_STYLE = Schema.ROUTE_STYLE;
-    const enhancedLayers = new WeakSet();
+    let enhancedLayers = new WeakSet();
     // Our own casing underlays, keyed by the native track they sit behind, so
     // they are never mistaken for native tracks and are removed with them.
-    const casings = new WeakMap();
-    const casingLayers = new WeakSet();
+    let casings = new WeakMap();
+    let casingLayers = new WeakSet();
+    let originalTrackStyles = new WeakMap();
+    let mouseoutHandlers = new WeakMap();
+    const activeEnhancedLayers = new Set();
+    const activeCasings = new Set();
     let routeStyle = { ...DEFAULT_STYLE };
     let activeMap = null;
     // The Leaflet map (and its L) can live in a same-origin child iframe, so
     // remember the window that owns them to build casings in the same realm.
     let activeMapWin = null;
+    let activeMapFrame = null;
+    let activeMapHandlers = null;
+    let mapGeneration = 0;
     let retryTimer = null;
 
     // Peakbagger colors each group-map track to tell climbers apart. Read that
@@ -185,6 +193,7 @@ import { terrainFailure as TerrainFailure } from '../terrain/terrain-failure.js'
             casings.delete(layer);
             return;
         }
+        activeCasings.add(casing);
         // Keep every casing beneath the native tracks and markers.
         if (typeof casing.bringToBack === 'function') {
             try { casing.bringToBack(); } catch (error) { /* Pane not ready; render order still favors native tracks. */ }
@@ -195,6 +204,7 @@ import { terrainFailure as TerrainFailure } from '../terrain/terrain-failure.js'
         const casing = casings.get(layer);
         if (!casing) return;
         casings.delete(layer);
+        activeCasings.delete(casing);
         if (activeMap && typeof activeMap.removeLayer === 'function') {
             try { activeMap.removeLayer(casing); } catch (error) { /* Already discarded with its map. */ }
         }
@@ -204,18 +214,27 @@ import { terrainFailure as TerrainFailure } from '../terrain/terrain-failure.js'
         const L = activeMapWin && activeMapWin.L;
         // Never treat our own casing as a native track to widen or re-case.
         if (!activeMap || !L || casingLayers.has(layer) || !isNativeTrack(layer, L)) return;
+        if (!originalTrackStyles.has(layer)) {
+            originalTrackStyles.set(layer, {
+                ...(typeof layer.options?.color === 'string' ? { color: layer.options.color } : {}),
+                ...(Number.isFinite(layer.options?.weight) ? { weight: layer.options.weight } : {})
+            });
+        }
         try { layer.setStyle(trackStyle()); } catch (error) { return; }
         ensureCasing(layer);
         if (enhancedLayers.has(layer) || typeof layer.on !== 'function') return;
         enhancedLayers.add(layer);
+        activeEnhancedLayers.add(layer);
 
         // Peakbagger temporarily changes route styling during hover. Restore
         // our base style after every native mouseout handler has run.
-        layer.on('mouseout', () => queueMicrotask(() => {
+        const handler = () => queueMicrotask(() => {
             if (layer._map === activeMap) {
                 try { layer.setStyle(trackStyle()); } catch (error) { /* The native layer may have been removed. */ }
             }
-        }));
+        });
+        mouseoutHandlers.set(layer, handler);
+        layer.on('mouseout', handler);
     };
 
     const applyAllStyles = () => {
@@ -228,8 +247,9 @@ import { terrainFailure as TerrainFailure } from '../terrain/terrain-failure.js'
     // them in this window. Return whichever context actually exposes the map so
     // the casing is built in the frame that owns the tracks — the previous
     // code only checked this window and so never found the Full Screen tracks.
-    const findMapIframe = () =>
-        document.querySelector('iframe#if, iframe[src*="MasterMap.aspx" i], iframe[src*="mastermap.aspx" i]');
+    const MAP_IFRAME_SELECTOR = 'iframe#if, iframe[src*="MasterMap.aspx" i], iframe[src*="mastermap.aspx" i]';
+    const frameLifecycle = MapFrameLifecycle.create({ selector: MAP_IFRAME_SELECTOR });
+    const findMapIframe = () => frameLifecycle.current();
 
     const resolveMapContext = () => {
         const candidates = [];
@@ -256,8 +276,23 @@ import { terrainFailure as TerrainFailure } from '../terrain/terrain-failure.js'
         if (context.map !== activeMap) {
             activeMap = context.map;
             activeMapWin = context.win;
-            activeMap.on('layeradd', event => queueMicrotask(() => { applyStyle(event && event.layer); updateTerrainToggle(); }));
-            activeMap.on('layerremove', event => { removeCasing(event && event.layer); updateTerrainToggle(); });
+            activeMapFrame = context.win === window ? null : findMapIframe();
+            const generation = mapGeneration;
+            const map = activeMap;
+            activeMapHandlers = {
+                layeradd: event => queueMicrotask(() => {
+                    if (activeMap !== map || mapGeneration !== generation) return;
+                    applyStyle(event && event.layer);
+                    updateTerrainToggle();
+                }),
+                layerremove: event => {
+                    if (activeMap !== map || mapGeneration !== generation) return;
+                    removeCasing(event && event.layer);
+                    updateTerrainToggle();
+                }
+            };
+            activeMap.on('layeradd', activeMapHandlers.layeradd);
+            activeMap.on('layerremove', activeMapHandlers.layerremove);
         }
         applyAllStyles();
         updateTerrainToggle();
@@ -335,7 +370,7 @@ import { terrainFailure as TerrainFailure } from '../terrain/terrain-failure.js'
     // The element that shows the native 2D map: the same-origin MasterMap child
     // iframe when the map lives there, else the top-window map container.
     const nativeMapElement = () =>
-        (activeMapWin && activeMapWin !== window && findMapIframe())
+        (activeMapWin && activeMapWin !== window && activeMapFrame)
         || document.getElementById('map')
         || findMapIframe();
 
@@ -583,6 +618,7 @@ import { terrainFailure as TerrainFailure } from '../terrain/terrain-failure.js'
     // stops asking.
     let peaksClient = null;
     let peaksClientResolved = false;
+    let peaksClientGeneration = 0;
     const answerPeaksRequest = data => {
         const requestId = data.requestId;
         if (!Number.isFinite(requestId)) return;
@@ -597,10 +633,11 @@ import { terrainFailure as TerrainFailure } from '../terrain/terrain-failure.js'
             postTerrain('peaks', { requestId, peaks: [], unavailable: true });
             return;
         }
+        const generation = peaksClientGeneration;
         peaksClient.request(data.bounds).then(peaks => {
             // A superseded request resolves null and stays silent; the newer
             // request answers instead.
-            if (peaks) postTerrain('peaks', { requestId, peaks });
+            if (peaks && generation === peaksClientGeneration) postTerrain('peaks', { requestId, peaks });
         });
     };
 
@@ -650,34 +687,88 @@ import { terrainFailure as TerrainFailure } from '../terrain/terrain-failure.js'
         }
     });
 
-    // The map iframe loads and initialises Leaflet after this script runs, so
-    // poll until it is ready.
+    const releaseActiveMap = () => {
+        const map = activeMap;
+        const handlers = activeMapHandlers;
+        mapGeneration++;
+        if (map && handlers && typeof map.off === 'function') {
+            try {
+                map.off('layeradd', handlers.layeradd);
+                map.off('layerremove', handlers.layerremove);
+            } catch (error) { /* The old map may already have been discarded. */ }
+        }
+        for (const casing of activeCasings) {
+            try { map?.removeLayer?.(casing); } catch (error) { /* The old map may already have been discarded. */ }
+        }
+        for (const layer of activeEnhancedLayers) {
+            const handler = mouseoutHandlers.get(layer);
+            if (handler && typeof layer.off === 'function') {
+                try { layer.off('mouseout', handler); } catch (error) { /* The old layer may already be gone. */ }
+            }
+            const original = originalTrackStyles.get(layer);
+            if (original && Object.keys(original).length) {
+                try { layer.setStyle(original); } catch (error) { /* The old layer may already be gone. */ }
+            }
+        }
+        activeCasings.clear();
+        activeEnhancedLayers.clear();
+        enhancedLayers = new WeakSet();
+        casings = new WeakMap();
+        casingLayers = new WeakSet();
+        originalTrackStyles = new WeakMap();
+        mouseoutHandlers = new WeakMap();
+        activeMap = null;
+        activeMapWin = null;
+        activeMapFrame = null;
+        activeMapHandlers = null;
+    };
+
+    const stopBinding = () => {
+        if (!retryTimer) return;
+        clearInterval(retryTimer);
+        retryTimer = null;
+    };
+
+    // The map iframe loads and initialises Leaflet after this script runs. Keep
+    // checking the condition until it is true; elapsed wall time is diagnostic,
+    // not a correctness boundary. Frame insertion, replacement, and reload each
+    // start a fresh attempt through the shared lifecycle.
     const startBinding = () => {
         if (retryTimer || bindMap()) return;
-        let attempts = 0;
+        const startedAt = Date.now();
+        let warned = false;
         retryTimer = setInterval(() => {
-            attempts++;
-            if (bindMap() || attempts >= 40) {
-                clearInterval(retryTimer);
-                retryTimer = null;
+            if (bindMap()) {
+                stopBinding();
+                return;
+            }
+            if (!warned && Date.now() - startedAt >= 10000) {
+                warned = true;
+                console.warn('Better Peakbagger: still waiting for the Full Screen Map');
             }
         }, 250);
     };
 
+    const resetFrameState = () => {
+        stopBinding();
+        terrainConsentPending = false;
+        terrainPrefetchAt = 0;
+        if (terrainCoordinator?.isOpen()) terrainCoordinator.reset();
+        releaseActiveMap();
+        peaksClient = null;
+        peaksClientResolved = false;
+        peaksClientGeneration++;
+        startBinding();
+    };
+
     window.postMessage({ __bpbBigMap: true, dir: 'toCS', type: 'get' }, location.origin);
-    // Re-bind when the map iframe (re)loads so a freshly built Leaflet map is
-    // re-cased; the old map and its casings are discarded with the frame.
-    const mapFrame = findMapIframe();
-    if (mapFrame) {
-        mapFrame.addEventListener('load', () => {
-            if (retryTimer) {
-                clearInterval(retryTimer);
-                retryTimer = null;
-            }
-            activeMap = null;
-            activeMapWin = null;
-            startBinding();
-        });
-    }
+    frameLifecycle.subscribe(resetFrameState);
+    frameLifecycle.start();
     startBinding();
+    window.addEventListener('pagehide', () => {
+        stopBinding();
+        if (terrainCoordinator?.isOpen()) terrainCoordinator.reset();
+        releaseActiveMap();
+        frameLifecycle.dispose();
+    }, { once: true });
 })();

@@ -147,6 +147,22 @@ const create = ({
         loadTimer = setTimeout(finishStop, cameraTimeoutMs);
     };
 
+    // The native map identity can disappear underneath an open terrain view
+    // (for example, when Peakbagger reloads or replaces its MasterMap frame).
+    // That is not a user-requested return to 2D: discard the stale camera
+    // immediately instead of applying it to whichever map binds next.
+    const reset = () => {
+        clearLoadTimer();
+        state = 'idle';
+        navTop = null;
+        viewCamera = null;
+        stopPending = false;
+        restoreNativeMap();
+        post('destroy');
+        clearFailure();
+        update();
+    };
+
     const handleMessage = data => {
         if (data.type === 'loaded' && state === 'loading') {
             clearLoadTimer();
@@ -204,6 +220,7 @@ const create = ({
         isIdle: () => state === 'idle',
         isOpen: () => state === 'loading' || state === 'active',
         position: () => position(snapshot()),
+        reset,
         start,
         stop,
         update

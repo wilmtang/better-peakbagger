@@ -111,6 +111,25 @@ test('loading is cancelable and active renderer errors restore the native map', 
     fixture.dom.window.close();
 });
 
+test('a native-map identity reset discards the stale terrain camera immediately', () => {
+    const fixture = setup();
+    fixture.toggle.click();
+    fixture.coordinator.handleMessage({
+        type: 'loaded',
+        camera: { center: [48.9, -121.5], zoom: 13 }
+    });
+
+    fixture.coordinator.reset();
+
+    assert.equal(fixture.coordinator.isIdle(), true);
+    assert.equal(fixture.hidden, false);
+    assert.deepEqual(fixture.applied, [],
+        'a camera captured from the discarded map must not be applied to its replacement');
+    assert.equal(fixture.posted.at(-1).type, 'destroy');
+    assert.equal(fixture.toggle.textContent, '3D');
+    fixture.dom.window.close();
+});
+
 test('the disabled feature delegates only idle activation to the consent owner', () => {
     const fixture = setup({ enabled: false });
     fixture.toggle.click();
