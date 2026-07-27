@@ -5,7 +5,7 @@
 // jsdom against a chrome.storage stub, so the settings UI is exercised end to
 // end without a browser.
 
-import test from 'node:test';
+import test, { afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -21,6 +21,7 @@ const climberPageFixture = await readFile(path.join(root, 'test', 'fixtures', 'p
 const buddyPageFixture = await readFile(path.join(root, 'test', 'fixtures', 'pages', 'report-buddy-list.html'), 'utf8');
 const favoriteKey = 'bpbFavoriteClimbers';
 const buddyCacheKey = 'bpbBuddyCache';
+const openOptionsPages = new Set();
 const favoriteStore = (entries = []) => ({ schemaVersion: 1, entries });
 const pageResponse = (text, status = 200) => ({ status, headers: {}, text: async () => text });
 const peakbaggerFetch = ({ climberCid = 900002 } = {}) => async rawUrl => {
@@ -70,6 +71,7 @@ const loadOptions = async (settings = {}, {
         url: `https://options.better-peakbagger.test/options/options.html${hash}`,
         runScripts: 'outside-only'
     });
+    openOptionsPages.add(dom);
     dom.chrome = makeChromeStub({ bpbSettings: settings }, local);
     if (prepareChrome) prepareChrome(dom.chrome);
     dom.window.chrome = dom.chrome;
@@ -85,6 +87,14 @@ const loadOptions = async (settings = {}, {
     await new Promise(r => dom.window.setTimeout(r, 20)); // S.get().then(populate)
     return dom;
 };
+
+afterEach(async () => {
+    const livePages = Array.from(openOptionsPages).filter(dom => dom.window.document);
+    await Promise.all(livePages.map(dom =>
+        new Promise(resolve => dom.window.setTimeout(resolve, 0))));
+    for (const dom of livePages) dom.window.close();
+    openOptionsPages.clear();
+});
 
 const el = (dom, id) => dom.window.document.getElementById(id);
 const draftRow = (dom, key) => Array.from(dom.window.document.querySelectorAll('.draft-item'))
