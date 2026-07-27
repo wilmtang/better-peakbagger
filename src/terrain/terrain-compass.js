@@ -13,13 +13,29 @@
 // This module owns only the button and its rotation; the coordinators
 // (big-map.js, peak-map.js) own visibility, positioning cadence, and theme.
 
-// north half red, south half neutral — rotated as a whole by update(). The red
-// is a compass red, deliberately not the shared route color.
-const NEEDLE_SVG =
-    '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false">'
-    + '<polygon points="12,3 8.5,12 15.5,12" fill="#ea4335"></polygon>'
-    + '<polygon points="12,21 8.5,12 15.5,12" fill="#8a8a82"></polygon>'
-    + '</svg>';
+const SVG_NS = 'http://www.w3.org/2000/svg';
+
+// North half red, south half neutral — rotated as a whole by update(). Build
+// the fixed icon as SVG nodes so static extension markup never crosses an
+// HTML-parsing boundary just to create two polygons.
+const createNeedle = () => {
+    const svg = document.createElementNS(SVG_NS, 'svg');
+    svg.setAttribute('viewBox', '0 0 24 24');
+    svg.setAttribute('width', '18');
+    svg.setAttribute('height', '18');
+    svg.setAttribute('aria-hidden', 'true');
+    svg.setAttribute('focusable', 'false');
+    for (const [points, fill] of [
+        ['12,3 8.5,12 15.5,12', '#ea4335'],
+        ['12,21 8.5,12 15.5,12', '#8a8a82']
+    ]) {
+        const polygon = document.createElementNS(SVG_NS, 'polygon');
+        polygon.setAttribute('points', points);
+        polygon.setAttribute('fill', fill);
+        svg.append(polygon);
+    }
+    return svg;
+};
 
 const create = ({ container, toggle, onReset }) => {
     const button = document.createElement('button');
@@ -33,7 +49,7 @@ const create = ({ container, toggle, onReset }) => {
     const disc = document.createElement('span');
     disc.className = 'bpb-map-compass-disc';
     disc.setAttribute('aria-hidden', 'true');
-    disc.innerHTML = NEEDLE_SVG;
+    disc.append(createNeedle());
     button.append(disc);
 
     // A reset only eases the extension's own 3D camera back to north-up — no

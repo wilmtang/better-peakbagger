@@ -45,6 +45,8 @@ test('the worker ships as one bundle for both Chrome and Firefox', () => {
         ['ui/units.js', 'gpx/gpx-metrics.js', 'capture/capture-core.js', 'capture/capture-phases.js', 'capture/provider-url.js', 'terrain/terrain-tiles.js', 'terrain/terrain-cache.js', 'settings/settings-schema.js', 'settings/settings.js', 'settings/settings-transfer.js', 'favorites/favorite-climbers.js', 'github/github-errors.js', 'github/github-api.js', 'github/github-auth.js', 'github/github-client.js', 'github/github-write-queue.js', 'peakbagger/peakbagger-cloudflare.js', 'peakbagger/peakbagger-response.js', 'peakbagger/peakbagger-error.js', 'peakbagger/peakbagger-request.js', 'background/public-errors.js', 'background/favorites-store.js', 'background/github-routes.js', 'background/terrain-prefetch.js', 'background/background.js']);
     assert.deepEqual(bundleSources('provider-page.js'), ['capture/provider-url.js', 'gpx/gpx-parse.js', 'capture/provider-page.js']);
     assert.deepEqual(manifest.browser_specific_settings.gecko.data_collection_permissions.required, ['locationInfo']);
+    assert.equal(manifest.browser_specific_settings.gecko.strict_min_version, '140.0');
+    assert.equal(manifest.browser_specific_settings.gecko_android.strict_min_version, '142.0');
 });
 
 test('the canonical unpacked extension opens Chrome settings in a full tab', () => {

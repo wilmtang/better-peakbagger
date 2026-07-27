@@ -116,12 +116,12 @@ import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.js';
 
     const el = (tag, className, text) => Dom.element(tag, { class: className, text });
 
-    const button = (className, label, title, html) => {
+    const button = (className, label, title, content) => {
         const node = el('button', className);
         node.type = 'button';
         node.title = title || label;
         node.setAttribute('aria-label', title || label);
-        if (html !== undefined) node.innerHTML = html;
+        if (content !== undefined) node.append(...(Array.isArray(content) ? content : [content]));
         else node.textContent = label;
         return node;
     };
@@ -152,31 +152,108 @@ import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.js';
         blockFormat.append(option);
     }
 
-    const svg = paths => `<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">${paths}</svg>`;
+    const SVG_NS = 'http://www.w3.org/2000/svg';
+    const svgElement = (tag, attributes = {}, children = []) => {
+        const node = document.createElementNS(SVG_NS, tag);
+        for (const [name, value] of Object.entries(attributes)) node.setAttribute(name, value);
+        node.append(...(Array.isArray(children) ? children : [children]));
+        return node;
+    };
+    const svg = (...children) => svgElement('svg', {
+        viewBox: '0 0 16 16', width: '14', height: '14', 'aria-hidden': 'true'
+    }, children);
+    const formattedLabel = (tag, text) => el(tag, null, text);
     const toolButtons = {
-        bold: button('bpb-re-tool', 'B', 'Bold (Ctrl/Cmd+B)', '<b>B</b>'),
-        italic: button('bpb-re-tool', 'I', 'Italic (Ctrl/Cmd+I)', '<i>I</i>'),
-        underline: button('bpb-re-tool', 'U', 'Underline (Ctrl/Cmd+U)', '<u>U</u>'),
-        strike: button('bpb-re-tool', 'S', 'Strikethrough', '<s>S</s>'),
+        bold: button('bpb-re-tool', 'B', 'Bold (Ctrl/Cmd+B)', formattedLabel('b', 'B')),
+        italic: button('bpb-re-tool', 'I', 'Italic (Ctrl/Cmd+I)', formattedLabel('i', 'I')),
+        underline: button('bpb-re-tool', 'U', 'Underline (Ctrl/Cmd+U)', formattedLabel('u', 'U')),
+        strike: button('bpb-re-tool', 'S', 'Strikethrough', formattedLabel('s', 'S')),
         more: button('bpb-re-tool', 'Aa', 'More formats'),
         link: button('bpb-re-tool', 'Link', 'Link (Ctrl/Cmd+K)',
-            svg('<path fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" d="M6.5 9.5l3-3M5.7 7.2L4 8.9a2.5 2.5 0 003.5 3.5l1.7-1.7M10.3 8.8L12 7.1a2.5 2.5 0 00-3.5-3.5L6.8 5.3"/>')),
+            svg(svgElement('path', {
+                fill: 'none', stroke: 'currentColor', 'stroke-width': '1.6', 'stroke-linecap': 'round',
+                d: 'M6.5 9.5l3-3M5.7 7.2L4 8.9a2.5 2.5 0 003.5 3.5l1.7-1.7M10.3 8.8L12 7.1a2.5 2.5 0 00-3.5-3.5L6.8 5.3'
+            }))),
         image: button('bpb-re-tool', 'Image', 'Insert image',
-            svg('<rect x="1.5" y="2.5" width="13" height="11" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.4"/><circle cx="5.2" cy="6" r="1.2" fill="currentColor"/><path d="M3 12.5l3.2-3.4 2.2 2.2 2.6-3 2.5 4.2" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>')),
+            svg(
+                svgElement('rect', {
+                    x: '1.5', y: '2.5', width: '13', height: '11', rx: '1.5',
+                    fill: 'none', stroke: 'currentColor', 'stroke-width': '1.4'
+                }),
+                svgElement('circle', { cx: '5.2', cy: '6', r: '1.2', fill: 'currentColor' }),
+                svgElement('path', {
+                    d: 'M3 12.5l3.2-3.4 2.2 2.2 2.6-3 2.5 4.2', fill: 'none',
+                    stroke: 'currentColor', 'stroke-width': '1.4', 'stroke-linejoin': 'round'
+                })
+            )),
         video: button('bpb-re-tool', 'Video', 'Insert video',
-            svg('<rect x="1.5" y="2.5" width="13" height="11" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M6.5 5.2v5.6L11 8 6.5 5.2z" fill="currentColor"/>')),
+            svg(
+                svgElement('rect', {
+                    x: '1.5', y: '2.5', width: '13', height: '11', rx: '1.5',
+                    fill: 'none', stroke: 'currentColor', 'stroke-width': '1.4'
+                }),
+                svgElement('path', { d: 'M6.5 5.2v5.6L11 8 6.5 5.2z', fill: 'currentColor' })
+            )),
         insertTable: button('bpb-re-tool', 'Table', 'Insert table',
-            svg('<rect x="1.5" y="2.5" width="13" height="11" rx="1" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M1.5 6.5h13M6 2.5v11M10.5 2.5v11" fill="none" stroke="currentColor" stroke-width="1.2"/>')),
+            svg(
+                svgElement('rect', {
+                    x: '1.5', y: '2.5', width: '13', height: '11', rx: '1',
+                    fill: 'none', stroke: 'currentColor', 'stroke-width': '1.4'
+                }),
+                svgElement('path', {
+                    d: 'M1.5 6.5h13M6 2.5v11M10.5 2.5v11', fill: 'none',
+                    stroke: 'currentColor', 'stroke-width': '1.2'
+                })
+            )),
         bulletList: button('bpb-re-tool', 'Bulleted list', 'Bulleted list',
-            svg('<g fill="currentColor"><circle cx="3" cy="4" r="1.3"/><circle cx="3" cy="8" r="1.3"/><circle cx="3" cy="12" r="1.3"/></g><g stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M6.5 4h6.5M6.5 8h6.5M6.5 12h6.5"/></g>')),
+            svg(
+                svgElement('g', { fill: 'currentColor' }, [
+                    svgElement('circle', { cx: '3', cy: '4', r: '1.3' }),
+                    svgElement('circle', { cx: '3', cy: '8', r: '1.3' }),
+                    svgElement('circle', { cx: '3', cy: '12', r: '1.3' })
+                ]),
+                svgElement('g', {
+                    stroke: 'currentColor', 'stroke-width': '1.6', 'stroke-linecap': 'round'
+                }, svgElement('path', { d: 'M6.5 4h6.5M6.5 8h6.5M6.5 12h6.5' }))
+            )),
         orderedList: button('bpb-re-tool', 'Numbered list', 'Numbered list',
-            svg('<g fill="currentColor" font-size="5.5" font-family="Tahoma, sans-serif"><text x="1" y="6">1</text><text x="1" y="14">2</text></g><g stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M6.5 4h6.5M6.5 12h6.5"/></g>')),
+            svg(
+                svgElement('g', {
+                    fill: 'currentColor', 'font-size': '5.5', 'font-family': 'Tahoma, sans-serif'
+                }, [
+                    svgElement('text', { x: '1', y: '6' }, '1'),
+                    svgElement('text', { x: '1', y: '14' }, '2')
+                ]),
+                svgElement('g', {
+                    stroke: 'currentColor', 'stroke-width': '1.6', 'stroke-linecap': 'round'
+                }, svgElement('path', { d: 'M6.5 4h6.5M6.5 12h6.5' }))
+            )),
         horizontalRule: button('bpb-re-tool', 'Rule', 'Horizontal rule',
-            svg('<path d="M2 8h12" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>')),
+            svg(svgElement('path', {
+                d: 'M2 8h12', stroke: 'currentColor', 'stroke-width': '1.6', 'stroke-linecap': 'round'
+            }))),
         undo: button('bpb-re-tool', 'Undo', 'Undo (Ctrl/Cmd+Z)',
-            svg('<path d="M6.5 3.5L3 7l3.5 3.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M3.5 7H9a3.5 3.5 0 010 7H7.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>')),
+            svg(
+                svgElement('path', {
+                    d: 'M6.5 3.5L3 7l3.5 3.5', fill: 'none', stroke: 'currentColor',
+                    'stroke-width': '1.5', 'stroke-linecap': 'round', 'stroke-linejoin': 'round'
+                }),
+                svgElement('path', {
+                    d: 'M3.5 7H9a3.5 3.5 0 010 7H7.5', fill: 'none', stroke: 'currentColor',
+                    'stroke-width': '1.5', 'stroke-linecap': 'round'
+                })
+            )),
         redo: button('bpb-re-tool', 'Redo', 'Redo (Ctrl/Cmd+Shift+Z)',
-            svg('<path d="M9.5 3.5L13 7l-3.5 3.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M12.5 7H7a3.5 3.5 0 000 7h1.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>'))
+            svg(
+                svgElement('path', {
+                    d: 'M9.5 3.5L13 7l-3.5 3.5', fill: 'none', stroke: 'currentColor',
+                    'stroke-width': '1.5', 'stroke-linecap': 'round', 'stroke-linejoin': 'round'
+                }),
+                svgElement('path', {
+                    d: 'M12.5 7H7a3.5 3.5 0 000 7h1.5', fill: 'none', stroke: 'currentColor',
+                    'stroke-width': '1.5', 'stroke-linecap': 'round'
+                })
+            ))
     };
     tools.append(blockFormat, ...Object.values(toolButtons));
 
@@ -283,12 +360,12 @@ import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.js';
     const moreBox = el('div', 'bpb-re-box bpb-re-morebox');
     moreBox.hidden = true;
     const moreButtons = {
-        code: button('bpb-re-tool', 'Code', 'Inline code (Ctrl/Cmd+E)', '<code>&lt;/&gt;</code>'),
-        highlight: button('bpb-re-tool', 'Highlight', 'Highlight (Ctrl/Cmd+Shift+H)', '<mark>ab</mark>'),
-        subscript: button('bpb-re-tool', 'Subscript', 'Subscript', 'x<sub>2</sub>'),
-        superscript: button('bpb-re-tool', 'Superscript', 'Superscript', 'x<sup>2</sup>'),
-        small: button('bpb-re-tool', 'Small text', 'Small text', '<small>Aa</small>'),
-        inlineQuote: button('bpb-re-tool', 'Inline quote', 'Inline quote', '<q>ab</q>')
+        code: button('bpb-re-tool', 'Code', 'Inline code (Ctrl/Cmd+E)', formattedLabel('code', '</>')),
+        highlight: button('bpb-re-tool', 'Highlight', 'Highlight (Ctrl/Cmd+Shift+H)', formattedLabel('mark', 'ab')),
+        subscript: button('bpb-re-tool', 'Subscript', 'Subscript', ['x', formattedLabel('sub', '2')]),
+        superscript: button('bpb-re-tool', 'Superscript', 'Superscript', ['x', formattedLabel('sup', '2')]),
+        small: button('bpb-re-tool', 'Small text', 'Small text', formattedLabel('small', 'Aa')),
+        inlineQuote: button('bpb-re-tool', 'Inline quote', 'Inline quote', formattedLabel('q', 'ab'))
     };
     // A curated named palette keeps this secondary control compact. Existing
     // three- and six-digit hex colors still survive every editor round trip.
@@ -394,9 +471,17 @@ import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.js';
         return Markup.domToBracket(parsed.body);
     };
 
+    // Markup owns the allowlist and escaping. This named boundary performs the
+    // one HTML parse only after that sanitizer has produced the complete
+    // preview document, then adopts its nodes without assigning innerHTML.
+    const renderSanitizedPreviewHtml = html => {
+        const parsed = new DOMParser().parseFromString(html, 'text/html');
+        preview.replaceChildren(...parsed.body.childNodes);
+    };
     const renderPreview = () => {
-        preview.innerHTML = Markup.markdownToPreviewHtml(mdEditor.getValue())
-            || '<p class="bpb-re-preview-empty">Nothing to preview yet.</p>';
+        const html = Markup.markdownToPreviewHtml(mdEditor.getValue());
+        if (html) renderSanitizedPreviewHtml(html);
+        else preview.replaceChildren(el('p', 'bpb-re-preview-empty', 'Nothing to preview yet.'));
     };
 
     const flushSync = () => {

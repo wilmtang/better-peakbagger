@@ -698,6 +698,8 @@ test('Full Screen 3D shows a compass that tracks the view and resets north', asy
     assert.equal(compass.parentElement.id, 'bpb-map-viewport');
     assert.equal(compass.getAttribute('type'), 'button');
     assert.equal(compass.getAttribute('aria-label'), 'Reset the view to north, looking straight down');
+    assert.equal(disc.querySelectorAll('svg polygon').length, 2,
+        'the fixed compass needle is built as SVG nodes');
     assert.equal(compass.hidden, true, 'hidden until 3D is active');
 
     await waitFor(dom, () => toggle.disabled === false);

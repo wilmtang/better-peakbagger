@@ -470,6 +470,23 @@ test('markdown mode converts to bracket markup and the live preview shows the fi
     assert.equal(dom.chrome._store.bpbSettings.reportEditorMode, 'markdown');
 });
 
+test('the live Markdown preview keeps adversarial raw HTML inert at the render boundary', async () => {
+    const dom = await loadEditor();
+    await editorReady(dom);
+    const doc = dom.window.document;
+
+    modeButton(doc, 'Markdown').click();
+    typeMarkdown(dom, '<img src=x onerror="window.__bpbInjected=true"><script>window.__bpbInjected=true</script>');
+
+    const preview = doc.querySelector('.bpb-re-preview');
+    await waitFor(dom, () => /&lt;img|<img/.test(preview.innerHTML));
+    assert.equal(preview.querySelector('script'), null);
+    assert.equal(preview.querySelector('img'), null);
+    assert.equal(dom.window.__bpbInjected, undefined);
+    assert.match(preview.textContent, /<img src=x onerror=/);
+    assert.match(preview.textContent, /<script>/);
+});
+
 test('the editor reports a mode-preference persistence failure', async () => {
     const dom = await loadEditor({
         prepare: d => {

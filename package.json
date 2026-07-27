@@ -15,7 +15,7 @@
     "build": "node scripts/build.mjs",
     "build:release": "node scripts/build.mjs --minify",
     "watch": "node scripts/build.mjs --watch",
-    "lint": "npm run build && web-ext lint --source-dir dist",
+    "lint": "npm run build && node scripts/check-web-ext-lint.mjs",
     "package": "npm run build:release && web-ext build --source-dir dist --overwrite-dest",
     "build:firefox": "node scripts/build-firefox-package.mjs",
     "audit:ci": "node scripts/check-npm-audit.mjs",
