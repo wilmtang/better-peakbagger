@@ -17,6 +17,7 @@ import { peakbaggerError as PeakbaggerError } from '../peakbagger/peakbagger-err
 import { fetchPeakbaggerDocument } from '../peakbagger/peakbagger-request.js';
 import { settingsSchema as Schema } from '../settings/settings-schema.js';
 import { themeResolve as ThemeResolve } from '../theme/theme-resolve.js';
+import { pageSettingsClient as PageSettingsClient } from '../settings/page-settings-client.js';
 import { peakMarkers } from '../maps/peak-markers.js';
 import { terrainBasemap } from '../terrain/terrain-basemap.js';
 import { terrainCompass as TerrainCompass } from '../terrain/terrain-compass.js';
@@ -77,94 +78,9 @@ const run = async () => {
     };
     const effectiveTheme = preference => ThemeResolve.resolve(preference);
 
-    // Bridge client: swaps settings with the isolated-world bridge over postMessage.
-    const BPB = (() => {
-        const FALLBACK = { units: 'auto', theme: 'system', enable3dMap: false };
-        let settings = null;
-        let confirmed = null;
-        let nextRequestId = 1;
-        const pending = new Map();
-        const subs = new Set();
-        const writeFailureSubs = new Set();
-        // Used when the bridge's sentence is missing or malformed. Everything
-        // off postMessage crosses a trust boundary, so the text is length-capped
-        // and type-checked before it can reach the DOM.
-        const WRITE_FAILED_FALLBACK = 'That setting couldn’t be saved.';
-        const failureMessage = value => (typeof value === 'string' && value.trim() && value.length <= 200
-            ? value.trim()
-            : WRITE_FAILED_FALLBACK);
-        let resolveReady;
-        const ready = new Promise(r => { resolveReady = r; });
-
-        const sameSettings = (left, right) => {
-            if (!left || !right) return left === right;
-            const keys = new Set([...Object.keys(left), ...Object.keys(right)]);
-            return Array.from(keys).every(key => left[key] === right[key]);
-        };
-        // A caller that writes a setting has already applied it locally, so the
-        // subscriber must not redo that work when the write lands. This used to
-        // be six hand-written `appliedSettings = { ...BPB.get() }` lines after
-        // six `BPB.set()` calls, and forgetting one silently broke the
-        // subscriber's change detection. The client owns the snapshot now, and
-        // hands subscribers a `changed(keys)` closed over it.
-        let applied = null;
-        const markApplied = () => { applied = { ...(settings || FALLBACK) }; };
-
-        const recompute = () => {
-            const previous = settings;
-            settings = { ...(confirmed || FALLBACK) };
-            for (const patch of pending.values()) Object.assign(settings, patch);
-            if (sameSettings(previous, settings)) return;
-            const before = applied || previous || FALLBACK;
-            const changed = keys => keys.some(key => before[key] !== settings[key]);
-            markApplied();
-            subs.forEach(fn => { try { fn(settings, changed); } catch (e) { /* ignore */ } });
-        };
-
-        window.addEventListener('message', event => {
-            if (event.source !== window || event.origin !== location.origin) return;
-            const data = event.data;
-            if (!data || data.__bpb !== true || data.dir !== 'toPage') return;
-            if (data.kind === 'setResult') {
-                if (!pending.has(data.requestId)) return;
-                pending.delete(data.requestId);
-                if (data.ok === true && data.settings) confirmed = data.settings;
-                recompute();
-                // recompute() has already snapped the control back to its old
-                // value; say why instead of leaving the user to notice.
-                if (data.ok !== true) {
-                    const message = failureMessage(data.message);
-                    writeFailureSubs.forEach(fn => { try { fn(message); } catch (e) { /* ignore */ } });
-                }
-                return;
-            }
-            if (!data.settings) return;
-            confirmed = data.settings;
-            recompute();
-            resolveReady(settings);
-        });
-
-        return {
-            init: async () => {
-                window.postMessage({ __bpb: true, dir: 'toCS', kind: 'get' }, location.origin);
-                await Promise.race([ready, new Promise(r => setTimeout(r, 800))]);
-                if (!settings) settings = { ...FALLBACK };
-                markApplied();
-                return settings;
-            },
-            get: () => settings || FALLBACK,
-            set: patch => {
-                const requestId = nextRequestId++;
-                pending.set(requestId, patch);
-                settings = { ...(settings || FALLBACK), ...patch };
-                // The caller is applying this themselves; do not hand it back.
-                markApplied();
-                window.postMessage({ __bpb: true, dir: 'toCS', kind: 'set', requestId, patch }, location.origin);
-            },
-            subscribe: fn => { subs.add(fn); return () => subs.delete(fn); },
-            onWriteFailed: fn => { writeFailureSubs.add(fn); return () => writeFailureSubs.delete(fn); }
-        };
-    })();
+    // The isolated bridge owns storage; this MAIN-world client owns optimistic
+    // ordering, acknowledgement deadlines, and rollback notifications.
+    const BPB = PageSettingsClient.create({ fallback: Schema.clean({}) });
 
     const detectPageMetric = () => {
         const elevTd = Array.from(document.querySelectorAll('td')).find(td => td.textContent.trim() === 'Elevation:');
@@ -704,6 +620,7 @@ const run = async () => {
         frameLifecycle.subscribe(resetFrameConsumers);
         frameLifecycle.start();
         window.addEventListener('pagehide', () => {
+            BPB.dispose();
             overlay.dispose();
             frameLifecycle.dispose();
         }, { once: true });
