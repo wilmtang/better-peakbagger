@@ -6,9 +6,10 @@
 // manifest, starts background.js, and runs both execution worlds before the
 // broader browser fixtures are shared with the Chrome verifier.
 
-import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { Builder, By, Key, until } from "selenium-webdriver";
 import firefox from "selenium-webdriver/firefox.js";
@@ -23,6 +24,8 @@ import {
   waitForCondition,
 } from "./browser-verification-fixtures.mjs";
 import { prepareFirefoxSource } from "./run-firefox.mjs";
+
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 async function extensionBaseUrl(driver, addonId) {
   await driver.setContext(firefox.Context.CHROME);
@@ -61,6 +64,27 @@ async function waitForScript(driver, script, description, timeout = 15_000) {
   }
 }
 
+async function evaluatePageRealm(driver, expression) {
+  const bidi = await driver.getBidi();
+  const context = await driver.getWindowHandle();
+  const response = await bidi.send({
+    method: "script.evaluate",
+    params: {
+      expression,
+      target: { context },
+      awaitPromise: true,
+      resultOwnership: "none",
+    },
+  });
+  if (response.type === "error") {
+    throw new Error(`${response.error}: ${response.message}`);
+  }
+  if (response.result?.type === "exception") {
+    throw new Error(response.result.exceptionDetails?.text || "page-realm script failed");
+  }
+  return response.result;
+}
+
 async function main() {
   const temporaryRoot = await mkdtemp(path.join(tmpdir(), "better-peakbagger-firefox-verify-"));
   const profileTemplate = path.join(temporaryRoot, "profile");
@@ -77,9 +101,14 @@ async function main() {
     if (!suppliedSource) prepared = await prepareFirefoxSource({ temporaryRoot });
     const extensionSource = suppliedSource || prepared.sourceDir;
     fixture = await createBrowserFixtureServer({ temporaryRoot });
+    const buddyListFixture = await readFile(
+      path.join(root, "test", "fixtures", "pages", "report-buddy-list.html"),
+      "utf8",
+    );
 
     const options = new firefox.Options()
       .addArguments("-headless")
+      .enableBidi()
       .setProfile(profileTemplate)
       .setPreference("network.dns.localDomains", [
         fixtureHost,
@@ -248,6 +277,192 @@ async function main() {
       "return document.querySelectorAll('.favorite-item').length === 1500;",
       "the restored Firefox favorite-climber scale list",
     );
+
+    const signedInBuddyUrl = "https://www.peakbagger.com/report/report.aspx?r=b";
+    await evaluatePageRealm(driver, `(() => {
+      const url = ${JSON.stringify(signedInBuddyUrl)};
+      const html = ${JSON.stringify(buddyListFixture)};
+      const api = globalThis.browser || globalThis.chrome;
+      const dialog = document.getElementById("favorites-mirror-confirmation");
+      globalThis.__bpbNativeFetch = globalThis.fetch;
+      dialog.dataset.verifyBuddyRequests = "0";
+      globalThis.fetch = async (input, init) => {
+        if (String(input) !== url) return globalThis.__bpbNativeFetch(input, init);
+        dialog.dataset.verifyBuddyRequests = String(
+          Number(dialog.dataset.verifyBuddyRequests) + 1,
+        );
+        return { status: 200, headers: {}, text: async () => html };
+      };
+      globalThis.__bpbNativeRuntimeSendMessage = api.runtime.sendMessage.bind(api.runtime);
+      globalThis.__bpbHeldReplacement = null;
+      dialog.dataset.verifyHeld = "false";
+      dialog.dataset.verifyDismissals = "0";
+      let wasHidden = dialog.hidden;
+      globalThis.__bpbReplacementObserver = new MutationObserver(() => {
+        if (dialog.hidden && !wasHidden) {
+          dialog.dataset.verifyDismissals = String(
+            Number(dialog.dataset.verifyDismissals) + 1,
+          );
+        }
+        wasHidden = dialog.hidden;
+      });
+      globalThis.__bpbReplacementObserver.observe(dialog, {
+        attributes: true,
+        attributeFilter: ["hidden"],
+      });
+      api.runtime.sendMessage = message => {
+        if (message?.type !== "FAVORITES_MUTATE" || message.mutation?.kind !== "replace") {
+          return globalThis.__bpbNativeRuntimeSendMessage(message);
+        }
+        return new Promise(resolve => {
+          dialog.dataset.verifyHeld = "true";
+          globalThis.__bpbHeldReplacement = resolve;
+        });
+      };
+    })()`);
+    await driver.findElement(By.id("favorites-mirror-buddies")).click();
+    const mirrorPreview = await waitForScript(driver, `
+      const dialog = document.getElementById("favorites-mirror-confirmation");
+      const status = document.getElementById("favorites-import-status")?.textContent || "";
+      return !dialog.hidden
+        ? { visible: true, requests: Number(dialog.dataset.verifyBuddyRequests) }
+        : status && !/Loading your Buddy List/.test(status)
+          ? { visible: false, status, requests: Number(dialog.dataset.verifyBuddyRequests) }
+          : false;
+    `, "the Firefox Buddy replacement preview");
+    assertState(
+      mirrorPreview.visible && mirrorPreview.requests === 1,
+      "Firefox did not load one Buddy report into the replacement confirmation",
+      mirrorPreview,
+    );
+    const reviewedReplacement = await driver.executeScript(
+      "return document.getElementById('favorites-mirror-confirmation-detail').textContent;",
+    );
+    await driver.findElement(By.id("favorites-mirror-confirm")).click();
+    const replacementBusy = await waitForScript(driver, `
+      const dialog = document.getElementById("favorites-mirror-confirmation");
+      const confirm = document.getElementById("favorites-mirror-confirm");
+      const cancel = document.getElementById("favorites-mirror-cancel");
+      return dialog?.getAttribute("aria-busy") === "true"
+        && document.activeElement === dialog
+        && confirm?.disabled
+        && cancel?.disabled
+        && dialog.dataset.verifyHeld === "true"
+        ? {
+            focused: document.activeElement.id,
+            busy: dialog.getAttribute("aria-busy"),
+            confirmDisabled: confirm.disabled,
+            cancelDisabled: cancel.disabled,
+          }
+        : false;
+    `, "the Firefox Buddy replacement busy state");
+    assertState(
+      replacementBusy.focused === "favorites-mirror-confirmation"
+        && replacementBusy.busy === "true"
+        && replacementBusy.confirmDisabled
+        && replacementBusy.cancelDisabled,
+      "Firefox did not keep deliberate focus inside the busy replacement dialog",
+      replacementBusy,
+    );
+    const busyStayedOpen = await driver.executeScript(`
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+      document.getElementById("favorites-mirror-cancel")
+        .dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      const dialog = document.getElementById("favorites-mirror-confirmation");
+      return !dialog.hidden && dialog.getAttribute("aria-busy") === "true";
+    `);
+    assertState(busyStayedOpen, "Firefox dismissed an in-progress Buddy replacement");
+    await evaluatePageRealm(driver, `
+      globalThis.__bpbHeldReplacement({
+        ok: false,
+        error: { code: "unavailable", message: "browser verification failure" },
+      });
+      globalThis.__bpbHeldReplacement = null;
+      document.getElementById("favorites-mirror-confirmation").dataset.verifyHeld = "false";
+    `);
+    const retryableReplacement = await waitForScript(driver, `
+      const dialog = document.getElementById("favorites-mirror-confirmation");
+      const confirm = document.getElementById("favorites-mirror-confirm");
+      const cancel = document.getElementById("favorites-mirror-cancel");
+      return dialog.dataset.verifyHeld === "false" && !dialog.hasAttribute("aria-busy")
+        ? {
+            hidden: dialog.hidden,
+            focused: document.activeElement?.id || "",
+            confirmDisabled: confirm.disabled,
+            cancelDisabled: cancel.disabled,
+            impactMatches:
+              document.getElementById("favorites-mirror-confirmation-detail")?.textContent
+                === ${JSON.stringify(reviewedReplacement)},
+            dismissals: Number(dialog.dataset.verifyDismissals),
+          }
+        : false;
+    `, "the retryable Firefox Buddy replacement");
+    assertState(
+      !retryableReplacement.hidden
+        && retryableReplacement.focused === "favorites-mirror-confirm"
+        && !retryableReplacement.confirmDisabled
+        && !retryableReplacement.cancelDisabled
+        && retryableReplacement.impactMatches
+        && retryableReplacement.dismissals === 0,
+      "Firefox did not retain the reviewed Buddy replacement after failure",
+      retryableReplacement,
+    );
+    await evaluatePageRealm(driver, `
+      const api = globalThis.browser || globalThis.chrome;
+      api.runtime.sendMessage = globalThis.__bpbNativeRuntimeSendMessage;
+    `);
+    const buddyRequestsBeforeRetry = await driver.executeScript(
+      "return Number(document.getElementById('favorites-mirror-confirmation').dataset.verifyBuddyRequests);",
+    );
+    await driver.findElement(By.id("favorites-mirror-confirm")).click();
+    const mirrorApplied = await waitForScript(driver, `
+      const api = globalThis.browser || globalThis.chrome;
+      return api.storage.local.get("bpbFavoriteClimbers").then(({ bpbFavoriteClimbers }) => {
+        const status = document.getElementById("favorites-import-status")?.textContent || "";
+        return bpbFavoriteClimbers?.entries?.length === 6
+          && document.getElementById("favorites-mirror-confirmation")?.hidden
+          && /Mirror complete: 6 added, 1500 removed/.test(status)
+          ? {
+              dismissals: Number(
+                document.getElementById("favorites-mirror-confirmation").dataset.verifyDismissals
+              ),
+              buddyRequests: Number(
+                document.getElementById("favorites-mirror-confirmation").dataset.verifyBuddyRequests
+              ),
+            }
+          : false;
+      });
+    `, "the retried Firefox Buddy replacement");
+    assertState(
+      mirrorApplied.dismissals === 1
+        && mirrorApplied.buddyRequests === buddyRequestsBeforeRetry,
+      "Firefox reloaded or repeatedly dismissed the retried Buddy replacement",
+      { buddyRequestsBeforeRetry, mirrorApplied },
+    );
+    await evaluatePageRealm(driver, `
+      globalThis.__bpbReplacementObserver.disconnect();
+      globalThis.fetch = globalThis.__bpbNativeFetch;
+    `);
+    await driver.executeAsyncScript(done => {
+      const api = globalThis.browser || globalThis.chrome;
+      const entries = Array.from({ length: 1500 }, (_, index) => ({
+        cid: 100000 + index,
+        name: index === 1498
+          ? "Navigation Alpine Climber 1499"
+          : `Navigation Scale Climber ${String(index + 1).padStart(4, "0")}`,
+        addedAt: index,
+        source: index % 2 ? "buddy" : "manual",
+      }));
+      api.storage.local.set({
+        bpbFavoriteClimbers: { schemaVersion: 1, entries },
+      }).then(() => done(true), error => done(String(error)));
+    });
+    await waitForScript(
+      driver,
+      "return document.querySelectorAll('.favorite-item').length === 1500;",
+      "the restored post-replacement Firefox favorite list",
+    );
+
     const longDistanceBefore = await driver.executeScript(`
       const content = document.querySelector(".content");
       const target = document.getElementById("drafts");
@@ -740,6 +955,7 @@ async function main() {
     console.log(`  - hidden/headless at ${verificationViewport.width}x${verificationViewport.height}`);
     console.log("  - real sync/local/session storage and storage.onChanged round-tripped");
     console.log("  - the real 1,500-row favorite list reported its total, fuzzy-searched, and kept long navigation instant");
+    console.log("  - a held Buddy replacement stayed busy and focused, then failed retryably without another fetch");
     console.log("  - four native Buddy actions refreshed/synced custom favorites under both removal policies");
     console.log("  - options, popup, ascent, editor, Peak, BigMap, PeakAscents, Buddy List, and profile-backup surfaces initialized");
     console.log("  - a fresh ascent form autofilled its local date and trusted GPX selection swapped Preview for Process");

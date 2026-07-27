@@ -276,9 +276,12 @@ try {
                     ],
                 },
             });
-            window.fetch = async (input, init) => String(input) === signedInBuddyUrl
-                ? { status: 200, headers: {}, text: async () => buddyListFixture }
-                : window.__bpbNativeFetch(input, init);
+            window.__bpbMirrorBuddyRequests = 0;
+            window.fetch = async (input, init) => {
+                if (String(input) !== signedInBuddyUrl) return window.__bpbNativeFetch(input, init);
+                window.__bpbMirrorBuddyRequests++;
+                return { status: 200, headers: {}, text: async () => buddyListFixture };
+            };
         }, { signedInBuddyUrl, buddyListFixture });
         await optionsPage.locator('.favorite-item[data-cid="900099"]').waitFor({ state: 'visible', timeout: 5000 });
         const favoriteSourceCounts = await optionsPage.evaluate(() => Object.fromEntries(
@@ -340,18 +343,122 @@ try {
         });
         check(mirrorCancelled, 'cancelling the Buddy mirror changed custom favorites');
 
+        await optionsPage.evaluate(() => {
+            const dialog = document.getElementById('favorites-mirror-confirmation');
+            window.__bpbNativeRuntimeSendMessage = chrome.runtime.sendMessage.bind(chrome.runtime);
+            window.__bpbHeldReplacement = null;
+            window.__bpbReplacementDismissals = 0;
+            window.__bpbReplacementWasHidden = dialog.hidden;
+            window.__bpbReplacementObserver = new MutationObserver(() => {
+                if (dialog.hidden && !window.__bpbReplacementWasHidden) {
+                    window.__bpbReplacementDismissals++;
+                }
+                window.__bpbReplacementWasHidden = dialog.hidden;
+            });
+            window.__bpbReplacementObserver.observe(dialog, {
+                attributes: true,
+                attributeFilter: ['hidden'],
+            });
+            chrome.runtime.sendMessage = message => {
+                if (message?.type !== 'FAVORITES_MUTATE' || message.mutation?.kind !== 'replace') {
+                    return window.__bpbNativeRuntimeSendMessage(message);
+                }
+                return new Promise(resolve => { window.__bpbHeldReplacement = resolve; });
+            };
+        });
         await optionsPage.locator('#favorites-mirror-buddies').click();
         await optionsPage.locator('#favorites-mirror-confirmation').waitFor({ state: 'visible', timeout: 5000 });
+        const reviewedReplacement = await optionsPage.locator('#favorites-mirror-confirmation-detail').textContent();
+        await optionsPage.locator('#favorites-mirror-confirm').click();
+        const mirrorBusy = await optionsPage.waitForFunction(() => {
+            const dialog = document.getElementById('favorites-mirror-confirmation');
+            const confirm = document.getElementById('favorites-mirror-confirm');
+            const cancel = document.getElementById('favorites-mirror-cancel');
+            return dialog?.getAttribute('aria-busy') === 'true'
+                && document.activeElement === dialog
+                && confirm?.disabled
+                && cancel?.disabled
+                && typeof window.__bpbHeldReplacement === 'function'
+                ? {
+                    focused: document.activeElement.id,
+                    busy: dialog.getAttribute('aria-busy'),
+                    confirmDisabled: confirm.disabled,
+                    cancelDisabled: cancel.disabled,
+                }
+                : false;
+        }, null, { timeout: 5000 }).then(handle => handle.jsonValue()).catch(() => null);
+        check(mirrorBusy?.focused === 'favorites-mirror-confirmation'
+            && mirrorBusy.busy === 'true'
+            && mirrorBusy.confirmDisabled
+            && mirrorBusy.cancelDisabled,
+        `the active Buddy replacement had no deliberate busy focus state: ${JSON.stringify(mirrorBusy)}`);
+        if (process.env.BPB_VERIFY_FAVORITES_BUSY_SCREENSHOT) {
+            await optionsPage.locator('#favorites').screenshot({
+                path: process.env.BPB_VERIFY_FAVORITES_BUSY_SCREENSHOT,
+            });
+        }
+        const busyStayedOpen = await optionsPage.evaluate(() => {
+            document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+            document.getElementById('favorites-mirror-cancel')
+                .dispatchEvent(new MouseEvent('click', { bubbles: true }));
+            const dialog = document.getElementById('favorites-mirror-confirmation');
+            return !dialog.hidden && dialog.getAttribute('aria-busy') === 'true';
+        });
+        check(busyStayedOpen, 'Escape or Cancel dismissed an in-progress Buddy replacement');
+        await optionsPage.evaluate(() => {
+            window.__bpbHeldReplacement({
+                ok: false,
+                error: { code: 'unavailable', message: 'browser verification failure' },
+            });
+            window.__bpbHeldReplacement = null;
+        });
+        const retryableReplacement = await optionsPage.waitForFunction(expectedImpact => {
+            const dialog = document.getElementById('favorites-mirror-confirmation');
+            const confirm = document.getElementById('favorites-mirror-confirm');
+            const cancel = document.getElementById('favorites-mirror-cancel');
+            return !dialog.hidden
+                && !dialog.hasAttribute('aria-busy')
+                && document.activeElement === confirm
+                && !confirm.disabled
+                && !cancel.disabled
+                && document.getElementById('favorites-mirror-confirmation-detail')?.textContent === expectedImpact
+                ? {
+                    focused: document.activeElement.id,
+                    dismissals: window.__bpbReplacementDismissals,
+                }
+                : false;
+        }, reviewedReplacement, { timeout: 5000 }).then(handle => handle.jsonValue()).catch(() => null);
+        check(retryableReplacement?.focused === 'favorites-mirror-confirm'
+            && retryableReplacement.dismissals === 0,
+        `the failed Buddy replacement was not retryable in place: ${JSON.stringify(retryableReplacement)}`);
+        await optionsPage.evaluate(() => {
+            chrome.runtime.sendMessage = window.__bpbNativeRuntimeSendMessage;
+        });
+        const buddyRequestsBeforeRetry = await optionsPage.evaluate(() => window.__bpbMirrorBuddyRequests);
         await optionsPage.locator('#favorites-mirror-confirm').click();
         const mirrorApplied = await optionsPage.waitForFunction(async () => {
             const favorites = (await chrome.storage.local.get('bpbFavoriteClimbers')).bpbFavoriteClimbers;
             const status = document.getElementById('favorites-import-status')?.textContent || '';
             return favorites?.entries?.length === 6
                 && !favorites.entries.some(entry => entry.cid === 900099)
-                && /Mirror complete: 0 added, 1 removed/.test(status);
-        }, null, { timeout: 5000 }).then(() => true).catch(() => false);
-        check(mirrorApplied, 'confirming the Buddy mirror did not replace the custom list');
-        await optionsPage.evaluate(() => { window.fetch = window.__bpbNativeFetch; });
+                && /Mirror complete: 0 added, 1 removed/.test(status)
+                ? {
+                    dismissals: window.__bpbReplacementDismissals,
+                    hidden: document.getElementById('favorites-mirror-confirmation')?.hidden,
+                    buddyRequests: window.__bpbMirrorBuddyRequests,
+                }
+                : false;
+        }, null, { timeout: 5000 }).then(handle => handle.jsonValue()).catch(() => null);
+        check(mirrorApplied?.hidden
+            && mirrorApplied.dismissals === 1
+            && mirrorApplied.buddyRequests === buddyRequestsBeforeRetry,
+        `retrying the Buddy mirror reloaded or failed to dismiss exactly once: ${JSON.stringify({
+            buddyRequestsBeforeRetry, mirrorApplied
+        })}`);
+        await optionsPage.evaluate(() => {
+            window.__bpbReplacementObserver.disconnect();
+            window.fetch = window.__bpbNativeFetch;
+        });
 
         if (process.env.BPB_VERIFY_FAVORITES_SCREENSHOT) {
             await optionsPage.locator('#favorites').screenshot({ path: process.env.BPB_VERIFY_FAVORITES_SCREENSHOT });
@@ -1924,7 +2031,7 @@ console.log('Real-extension verification passed (hidden Chrome for Testing, new 
 console.log('  - the MV3 service worker boots and answers messages (capture is alive)');
 console.log('  - sync/local/session storage, storage.onChanged, options persistence, and popup status passed');
 console.log('  - options loads the signed-in Buddy report directly, falls back through a first-party tab, and keeps failures actionable');
-console.log('  - Buddy merge/mirror reports additions and removals, requires confirmation, and preserves favorites on cancel');
+console.log('  - Buddy mirror stays busy and focused during replacement, then retries a failure without another fetch');
 console.log('  - the real 1,500-row favorite list reports its total, fuzzy-searches, and keeps long navigation instant');
 console.log('  - the compact profile star persists, and four in-place native Buddy actions refreshed/synced under both removal policies');
 console.log('  - settings.js initialises in the isolated world and the bridge answers');

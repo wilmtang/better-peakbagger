@@ -111,6 +111,7 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
     let refreshTimer = null;
     let pendingBulk = null;
     let pendingReplacement = null;
+    let replacementBusy = false;
     let githubStatus = null;
     let githubBusy = false;
     let githubRevision = 0;
@@ -181,11 +182,26 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
         return `${operation} complete: ${added} added, ${removed} removed. Custom list now has ${total} ${climbers}.${skippedCopy}`;
     };
 
+    const setReplacementBusy = busy => {
+        replacementBusy = busy;
+        for (const radio of sourceEls) radio.disabled = busy;
+        mirrorCancelEl.disabled = busy;
+        mirrorConfirmEl.disabled = busy;
+        if (busy) {
+            mirrorConfirmationEl.setAttribute('aria-busy', 'true');
+            mirrorConfirmationEl.focus({ preventScroll: true });
+        } else {
+            mirrorConfirmationEl.removeAttribute('aria-busy');
+        }
+    };
+
     const dismissReplacementConfirmation = ({ restoreFocus = false } = {}) => {
+        if (replacementBusy) return false;
         const trigger = pendingReplacement?.kind === 'restore' ? restoreEl : mirrorEl;
         pendingReplacement = null;
         mirrorConfirmationEl.hidden = true;
         if (restoreFocus && !trigger.disabled) trigger.focus();
+        return true;
     };
 
     const showReplacementConfirmation = ({ kind, replacement, repo = '' }, { focus = true } = {}) => {
@@ -435,7 +451,9 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
             buddyCache = F.cleanBuddyCache(values[F.BUDDY_CACHE_KEY]);
             renderPanels();
             renderGithub();
-            if (pendingReplacement) showReplacementConfirmation(pendingReplacement, { focus: false });
+            if (pendingReplacement && !replacementBusy) {
+                showReplacementConfirmation(pendingReplacement, { focus: false });
+            }
         } catch (error) {
             if (revision !== refreshRevision) return;
             flash('Favorite climbers are unavailable', { error: true });
@@ -786,9 +804,12 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
             });
         });
     });
-    mirrorCancelEl.addEventListener('click', () => { dismissReplacementConfirmation({ restoreFocus: true }); });
+    mirrorCancelEl.addEventListener('click', () => {
+        if (replacementBusy) return;
+        dismissReplacementConfirmation({ restoreFocus: true });
+    });
     mirrorConfirmEl.addEventListener('click', () => {
-        if (!pendingReplacement) return;
+        if (!pendingReplacement || replacementBusy) return;
         if (pendingReplacement.favoritesSignature !== favoritesSignature()) {
             showReplacementConfirmation(pendingReplacement);
             return;
@@ -802,15 +823,15 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
         } else {
             setBusy(true);
         }
-        mirrorCancelEl.disabled = true;
-        mirrorConfirmEl.disabled = true;
+        setReplacementBusy(true);
         if (!isRestore) renderImportStatus('Replacing custom favorites…');
         void beginReplacement(replacement,
             isRestore ? 'Favorites restored from GitHub' : 'Custom list replaced with your Buddy List',
             pending.favoritesSignature)
             .then(changed => {
-                dismissReplacementConfirmation();
+                setReplacementBusy(false);
                 if (changed) {
+                    dismissReplacementConfirmation();
                     if (isRestore) {
                         flash(`Favorites restored from ${repo}`);
                     } else {
@@ -819,22 +840,24 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
                         }));
                         flash(`Mirror complete: ${added} added, ${removed} removed`);
                     }
-                } else if (!isRestore) {
-                    renderImportStatus("The Buddy List loaded, but the custom favorites couldn't be saved.");
+                } else {
+                    if (!isRestore) {
+                        renderImportStatus("The Buddy List loaded, but the custom favorites couldn't be saved.");
+                    }
+                    mirrorConfirmEl.focus();
                 }
             }).finally(() => {
+                setReplacementBusy(false);
                 if (isRestore) {
                     githubBusy = false;
                     renderGithub();
                 } else {
                     setBusy(false);
                 }
-                mirrorCancelEl.disabled = false;
-                mirrorConfirmEl.disabled = false;
             });
     });
-    mirrorConfirmationEl.addEventListener('keydown', event => {
-        if (event.key !== 'Escape') return;
+    document.addEventListener('keydown', event => {
+        if (event.key !== 'Escape' || mirrorConfirmationEl.hidden || replacementBusy) return;
         event.preventDefault();
         dismissReplacementConfirmation({ restoreFocus: true });
     });

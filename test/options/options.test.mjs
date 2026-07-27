@@ -1235,6 +1235,68 @@ test('merge is additive while mirror requires destructive confirmation and suppo
         && dom.chrome._localStore[favoriteKey].entries.some(entry => entry.cid === manual.cid));
 });
 
+test('a failed Buddy mirror keeps its reviewed replacement visible and retryable', async () => {
+    const manual = { cid: 900099, name: 'Manual Favorite', addedAt: 1, source: 'manual' };
+    let buddyLoads = 0;
+    let rejectFirstWrite;
+    let favoriteWriteAttempts = 0;
+    const dom = await loadOptions({ favoritesSource: 'custom' }, {
+        local: { [favoriteKey]: favoriteStore([manual]) },
+        prepareChrome: chrome => {
+            const nativeSet = chrome.storage.local.set;
+            chrome.storage.local.set = patch => {
+                if (!(favoriteKey in patch) || favoriteWriteAttempts++ > 0) return nativeSet(patch);
+                return new Promise((resolve, reject) => { rejectFirstWrite = reject; });
+            };
+        },
+        prepareWindow: window => {
+            const fetchBuddyList = peakbaggerFetch();
+            window.fetch = (...args) => {
+                buddyLoads++;
+                return fetchBuddyList(...args);
+            };
+        },
+    });
+    await waitFor(dom, () => favoriteRow(dom, manual.cid));
+
+    el(dom, 'favorites-mirror-buddies').click();
+    await waitFor(dom, () => el(dom, 'favorites-mirror-confirmation').hidden === false);
+    const reviewedImpact = el(dom, 'favorites-mirror-confirmation-detail').textContent;
+    el(dom, 'favorites-mirror-confirm').click();
+    await waitFor(dom, () => el(dom, 'favorites-mirror-confirmation').getAttribute('aria-busy') === 'true');
+    await waitFor(dom, () => typeof rejectFirstWrite === 'function');
+
+    assert.equal(dom.window.document.activeElement, el(dom, 'favorites-mirror-confirmation'));
+    assert.equal(el(dom, 'favorites-mirror-confirm').disabled, true);
+    assert.equal(el(dom, 'favorites-mirror-cancel').disabled, true);
+    assert.equal(dom.window.document.querySelector('input[name="favorites-source"]:not(:disabled)'), null);
+    dom.window.document.dispatchEvent(new dom.window.KeyboardEvent('keydown', {
+        key: 'Escape',
+        bubbles: true,
+    }));
+    el(dom, 'favorites-mirror-cancel').dispatchEvent(new dom.window.MouseEvent('click', {
+        bubbles: true,
+    }));
+    assert.equal(el(dom, 'favorites-mirror-confirmation').hidden, false);
+    assert.equal(el(dom, 'favorites-mirror-confirmation-detail').textContent, reviewedImpact);
+
+    rejectFirstWrite(new Error('storage unavailable'));
+    await waitFor(dom, () => el(dom, 'favorites-mirror-confirmation').getAttribute('aria-busy') === null
+        && dom.window.document.activeElement === el(dom, 'favorites-mirror-confirm'));
+    assert.equal(el(dom, 'favorites-mirror-confirmation').hidden, false);
+    assert.equal(el(dom, 'favorites-mirror-confirm').disabled, false);
+    assert.equal(el(dom, 'favorites-mirror-cancel').disabled, false);
+    assert.equal(dom.window.document.querySelectorAll('input[name="favorites-source"]:not(:disabled)').length, 2);
+    assert.equal(el(dom, 'favorites-mirror-confirmation-detail').textContent, reviewedImpact);
+    assert.equal(buddyLoads, 1);
+
+    el(dom, 'favorites-mirror-confirm').click();
+    await waitFor(dom, () => el(dom, 'favorites-mirror-confirmation').hidden === true
+        && dom.chrome._localStore[favoriteKey].entries.length === 6);
+    assert.equal(buddyLoads, 1, 'retrying must reuse the reviewed Buddy replacement');
+    assert.equal(favoriteWriteAttempts, 2);
+});
+
 test('mirror reports additions and zero removals before and after replacement', async () => {
     const existingBuddy = { cid: 710195, name: 'Existing Buddy', addedAt: 1, source: 'manual' };
     const dom = await loadOptions({ favoritesSource: 'custom' }, {
@@ -1501,6 +1563,66 @@ test('connected GitHub actions work with ascent backup off and restore with Undo
 
     el(dom, 'favorites-undo-all-button').click();
     await waitFor(dom, () => dom.chrome._localStore[favoriteKey]?.entries?.[0]?.cid === original.cid);
+});
+
+test('a failed favorites restore retries the reviewed backup without downloading it again', async () => {
+    const original = { cid: 900002, name: 'Original Favorite', addedAt: 10, source: 'manual' };
+    const restored = { cid: 900003, name: 'Restored Favorite', addedAt: 20, source: 'buddy' };
+    let restoreReads = 0;
+    let rejectFirstWrite;
+    let favoriteWriteAttempts = 0;
+    const dom = await loadOptions({ favoritesSource: 'custom', enableGithubBackup: true }, {
+        local: { [favoriteKey]: favoriteStore([original]) },
+        prepareChrome: chrome => {
+            chrome.permissions = { request: async () => true, contains: async () => true, remove: async () => true };
+            const nativeSet = chrome.storage.local.set;
+            chrome.storage.local.set = patch => {
+                if (!(favoriteKey in patch) || favoriteWriteAttempts++ > 0) return nativeSet(patch);
+                return new Promise((resolve, reject) => { rejectFirstWrite = reject; });
+            };
+            chrome.runtime.sendMessage = message => {
+                if (message.type === 'GITHUB_FAVORITES_RESTORE') {
+                    restoreReads++;
+                    return Promise.resolve({
+                        ok: true,
+                        content: JSON.stringify({
+                            schemaVersion: 1,
+                            exportedAt: '2026-07-21T12:00:00.000Z',
+                            entries: [restored],
+                        }),
+                    });
+                }
+                return Promise.resolve({
+                    enabled: true,
+                    connected: true,
+                    hasToken: true,
+                    repo: { owner: 'ada', name: 'peaks', fullName: 'ada/peaks' },
+                });
+            };
+        },
+    });
+    await waitFor(dom, () => !el(dom, 'favorites-restore').disabled);
+
+    el(dom, 'favorites-restore').click();
+    await waitFor(dom, () => el(dom, 'favorites-mirror-confirmation').hidden === false);
+    const reviewedImpact = el(dom, 'favorites-mirror-confirmation-detail').textContent;
+    el(dom, 'favorites-mirror-confirm').click();
+    await waitFor(dom, () => typeof rejectFirstWrite === 'function');
+    assert.equal(el(dom, 'favorites-mirror-confirmation').getAttribute('aria-busy'), 'true');
+    assert.equal(dom.window.document.activeElement, el(dom, 'favorites-mirror-confirmation'));
+
+    rejectFirstWrite(new Error('storage unavailable'));
+    await waitFor(dom, () => el(dom, 'favorites-mirror-confirmation').getAttribute('aria-busy') === null
+        && dom.window.document.activeElement === el(dom, 'favorites-mirror-confirm'));
+    assert.equal(el(dom, 'favorites-mirror-confirmation').hidden, false);
+    assert.equal(el(dom, 'favorites-mirror-confirmation-detail').textContent, reviewedImpact);
+    assert.equal(restoreReads, 1);
+
+    el(dom, 'favorites-mirror-confirm').click();
+    await waitFor(dom, () => el(dom, 'favorites-mirror-confirmation').hidden === true
+        && dom.chrome._localStore[favoriteKey].entries[0].cid === restored.cid);
+    assert.equal(restoreReads, 1, 'retrying must reuse the reviewed backup payload');
+    assert.equal(favoriteWriteAttempts, 2);
 });
 
 test('a restore from Backup & sync stays visible when the Buddy List source hides the list', async () => {
