@@ -18,6 +18,7 @@
     "lint": "npm run build && web-ext lint --source-dir dist",
     "package": "npm run build:release && web-ext build --source-dir dist --overwrite-dest",
     "build:firefox": "node scripts/build-firefox-package.mjs",
+    "audit:ci": "node scripts/check-npm-audit.mjs",
     "lint:js": "eslint src options popup scripts test",
     "release:bump": "node scripts/release-bump.mjs",
     "release:check": "node scripts/release-check.mjs",

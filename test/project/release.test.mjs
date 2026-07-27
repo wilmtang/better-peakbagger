@@ -132,7 +132,7 @@ test("bare web-ext commands use only the dist build", async () => {
 
 test("CI tests, lints, and exercises both real browser extensions", async () => {
   const workflow = await readFile(new URL("../../.github/workflows/test.yml", import.meta.url), "utf8");
-  assert.match(workflow, /node:\s*\n[\s\S]*?run: npm test[\s\S]*?run: npm run lint/);
+  assert.match(workflow, /node:\s*\n[\s\S]*?run: npm run audit:ci[\s\S]*?run: npm test[\s\S]*?run: npm run lint/);
   assert.match(workflow, /scale:\s*\n[\s\S]*?run: npm run test:scale/);
   assert.match(workflow, /chrome:\s*\n[\s\S]*?run: npm run verify:chrome/);
   assert.match(workflow, /firefox:\s*\n[\s\S]*?run: npm run verify:firefox/);
