@@ -601,18 +601,17 @@ async function main() {
     await driver.get(
       `https://${fixtureHost}:${fixture.port}/climber/ascent.aspx?aid=1`,
     );
-    await driver.wait(until.elementLocated(By.css(surfaceSelectors.analyzer)), 15_000);
-    const surfaceState = await driver.executeScript(`return {
-      origin: location.origin,
-      theme: document.documentElement.getAttribute("data-bpb-theme"),
-      analyzer: Boolean(document.getElementById("bpb-gpx-analysis")),
-      stats: document.querySelector("#bpb-gpx-analysis div")?.textContent || "",
-    };`);
+    const surfaceState = await waitForScript(driver, `
+      const state = {
+        origin: location.origin,
+        theme: document.documentElement.getAttribute("data-bpb-theme"),
+        analyzer: Boolean(document.getElementById("bpb-gpx-analysis")),
+        stats: document.querySelector("#bpb-gpx-analysis div")?.textContent || "",
+      };
+      return state.analyzer && /Interactive Stats/.test(state.stats) ? state : false;
+    `, "the Firefox MAIN-world analyzer stats");
     if (surfaceState.theme === null) {
       throw new Error("Firefox isolated-world theme bundle did not initialize");
-    }
-    if (!surfaceState.analyzer || !/Interactive Stats/.test(surfaceState.stats)) {
-      throw new Error(`Firefox MAIN-world analyzer did not initialize: ${JSON.stringify(surfaceState)}`);
     }
 
     const terrainToggle = await driver.findElement(By.css(surfaceSelectors.terrainToggle));

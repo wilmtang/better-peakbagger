@@ -144,6 +144,25 @@ test("CI tests, lints, and exercises both real browser extensions", async () => 
   );
 });
 
+test("Firefox verification waits for rendered analyzer stats, not only its mount", async () => {
+  const verifier = await readFile(
+    new URL("../../scripts/verify-firefox-extension.mjs", import.meta.url),
+    "utf8",
+  );
+  const start = verifier.indexOf("const surfaceState =");
+  const end = verifier.indexOf("const terrainToggle =", start);
+  assert.notEqual(start, -1);
+  assert.notEqual(end, -1);
+  const analyzerProbe = verifier.slice(start, end);
+
+  assert.match(analyzerProbe, /await waitForScript\(driver,/);
+  assert.match(
+    analyzerProbe,
+    /return state\.analyzer && \/Interactive Stats\/\.test\(state\.stats\) \? state : false;/,
+  );
+  assert.doesNotMatch(analyzerProbe, /until\.elementLocated/);
+});
+
 test("release archive rejects development and internal files", async () => {
   await assert.doesNotReject(
     verifyReleaseArchive(await makeReleaseZip(), "1.4.0"),
