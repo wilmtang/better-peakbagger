@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Photo Topos · Better Peakbagger</title>
+  <link rel="stylesheet" href="photos.css">
+  <script src="photos.js" defer></script>
+</head>
+<body>
+  <header class="app-header">
+    <div>
+      <p class="eyebrow">Better Peakbagger</p>
+      <h1>Photo Topos</h1>
+    </div>
+    <nav class="view-tabs" aria-label="Photo views">
+      <button id="show-editor" type="button" class="tab-button" aria-current="page">Editor</button>
+      <button id="show-library" type="button" class="tab-button">Library</button>
+    </nav>
+  </header>
+
+  <main>
+    <section id="credential-card" class="credential-card" aria-labelledby="credential-heading">
+      <div>
+        <h2 id="credential-heading">Connect ImgBB</h2>
+        <p id="credential-summary">
+          Uploads go directly from this browser using your API key.
+        </p>
+      </div>
+      <div id="credential-form" class="credential-form">
+        <label>
+          ImgBB API key
+          <input id="imgbb-key" type="password" autocomplete="off" spellcheck="false"
+                 aria-describedby="credential-note">
+        </label>
+        <label class="check-row">
+          <input id="remember-key" type="checkbox" checked>
+          Remember on this device
+        </label>
+        <p id="credential-note" class="fine-print">
+          The key is never synced, backed up, or sent to Peakbagger.
+        </p>
+        <button id="save-key" type="button" class="secondary-button">Continue</button>
+      </div>
+      <button id="remove-key" type="button" class="quiet-button" hidden>Remove key</button>
+    </section>
+
+    <section id="editor-view" aria-labelledby="editor-heading">
+      <div id="editor-empty" class="empty-state">
+        <div class="empty-icon" aria-hidden="true">⌁</div>
+        <h2 id="editor-heading">Create a photo topo</h2>
+        <p>Add routes and climbing symbols locally. Nothing uploads until you choose
+          <strong>Upload and insert</strong>.</p>
+        <label class="file-button">
+          Choose photo
+          <input id="photo-file" type="file" accept="image/*">
+        </label>
+        <p class="fine-print">Maximum file size: 32 MB, matching ImgBB.</p>
+      </div>
+
+      <div id="editor-workspace" class="editor-workspace" hidden>
+        <div class="editor-topbar">
+          <label class="field grow">
+            Title
+            <input id="photo-title" type="text" maxlength="200">
+          </label>
+          <label class="field grow">
+            Image description
+            <input id="photo-alt" type="text" maxlength="500"
+                   placeholder="Describe the terrain and marked route">
+          </label>
+          <label class="check-row decorative-check">
+            <input id="photo-decorative" type="checkbox">
+            Decorative
+          </label>
+          <button id="undo" type="button" class="icon-button" title="Undo" aria-label="Undo" disabled>↶</button>
+          <button id="redo" type="button" class="icon-button" title="Redo" aria-label="Redo" disabled>↷</button>
+        </div>
+
+        <div class="editor-body">
+          <div class="tool-rail" role="toolbar" aria-label="Topo tools">
+            <button type="button" data-tool="select" aria-pressed="true">Select <kbd>V</kbd></button>
+            <button type="button" data-tool="route">Route <kbd>L</kbd></button>
+            <button type="button" data-tool="anchor">Anchor</button>
+            <button type="button" data-tool="piton">Piton</button>
+            <button type="button" data-tool="rappel">Rappel</button>
+            <button type="button" data-tool="belay">Belay</button>
+            <button type="button" data-tool="pitch">Pitch</button>
+            <button type="button" data-tool="text">Text <kbd>T</kbd></button>
+          </div>
+
+          <div class="viewport-column">
+            <div id="photo-viewport" class="photo-viewport" tabindex="0"
+                 aria-label="Topo editing canvas">
+              <div id="photo-stage" class="photo-stage">
+                <img id="source-image" alt="">
+                <svg id="photo-overlay" xmlns="http://www.w3.org/2000/svg"
+                     aria-label="Editable topo annotations"></svg>
+              </div>
+            </div>
+            <div class="viewport-actions">
+              <button id="finish-route" type="button" class="secondary-button" hidden>Done drawing</button>
+              <span id="editor-status" class="status-line" role="status" aria-live="polite"></span>
+            </div>
+          </div>
+
+          <aside id="inspector" class="inspector" aria-labelledby="inspector-heading" hidden>
+            <h2 id="inspector-heading">Selection</h2>
+            <label class="field">
+              Color
+              <select id="object-color">
+                <option value="#e53935">Red</option>
+                <option value="#fb8c00">Orange</option>
+                <option value="#fdd835">Yellow</option>
+                <option value="#43a047">Green</option>
+                <option value="#00acc1">Cyan</option>
+                <option value="#1e88e5">Blue</option>
+                <option value="#8e24aa">Purple</option>
+                <option value="#ffffff">White</option>
+                <option value="#000000">Black</option>
+              </select>
+            </label>
+            <label class="field route-only">
+              Width
+              <input id="route-width" type="range" min="1" max="100" step="1">
+            </label>
+            <label class="field route-only">
+              Line
+              <select id="route-stroke">
+                <option value="solid">Solid</option>
+                <option value="dashed">Dashed</option>
+                <option value="dotted">Dotted</option>
+              </select>
+            </label>
+            <label class="check-row route-only">
+              <input id="route-arrow" type="checkbox">
+              Arrowhead
+            </label>
+            <label class="check-row route-only">
+              <input id="route-smooth" type="checkbox">
+              Smooth curve
+            </label>
+            <label class="field scale-only">
+              Scale
+              <input id="object-scale" type="range" min="0.25" max="4" step="0.05">
+            </label>
+            <label class="field pitch-only">
+              Pitch
+              <select id="pitch-number"></select>
+            </label>
+            <label class="field text-only">
+              Text
+              <textarea id="object-text" maxlength="500" rows="3"></textarea>
+            </label>
+            <label class="field text-only">
+              Alignment
+              <select id="text-align">
+                <option value="left">Left</option>
+                <option value="center">Center</option>
+                <option value="right">Right</option>
+              </select>
+            </label>
+            <label class="check-row label-only">
+              <input id="label-background" type="checkbox">
+              Contrast background
+            </label>
+            <div class="button-grid">
+              <button id="send-back" type="button" class="quiet-button">Send back</button>
+              <button id="bring-front" type="button" class="quiet-button">Bring front</button>
+              <button id="duplicate-object" type="button" class="quiet-button">Duplicate</button>
+              <button id="delete-object" type="button" class="danger-button">Delete</button>
+            </div>
+          </aside>
+        </div>
+
+        <footer class="editor-footer">
+          <div>
+            <strong id="export-summary">Local draft</strong>
+            <span id="save-status" class="fine-print">Not yet saved</span>
+          </div>
+          <div class="footer-actions">
+            <button id="clear-annotations" type="button" class="quiet-button">Clear annotations</button>
+            <button id="upload-insert" type="button" class="primary-button">Upload and insert</button>
+          </div>
+        </footer>
+      </div>
+    </section>
+
+    <section id="library-view" aria-labelledby="library-heading" hidden>
+      <div class="library-heading">
+        <div>
+          <h2 id="library-heading">Uploaded photos</h2>
+          <p id="storage-summary" class="fine-print"></p>
+        </div>
+        <div class="library-controls">
+          <label>
+            <span class="sr-only">Search photos</span>
+            <input id="library-search" type="search" placeholder="Search photos">
+          </label>
+          <label>
+            <span class="sr-only">Filter photos</span>
+            <select id="library-filter">
+              <option value="all">All</option>
+              <option value="drafts">Drafts</option>
+              <option value="uploaded">Uploaded</option>
+              <option value="not-inserted">Not inserted</option>
+              <option value="backup-pending">Backup pending</option>
+              <option value="needs-attention">Needs attention</option>
+              <option value="recently-deleted">Recently Deleted</option>
+            </select>
+          </label>
+        </div>
+      </div>
+      <div id="library-list" class="library-grid"></div>
+      <div id="library-empty" class="empty-state" hidden>
+        <h3>No matching photos</h3>
+        <p>New uploads and local topo drafts will appear here.</p>
+      </div>
+    </section>
+  </main>
+
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden>
+    <span id="toast-message"></span>
+    <button id="toast-action" type="button" class="quiet-button" hidden>Undo</button>
+  </div>
+</body>
+</html>

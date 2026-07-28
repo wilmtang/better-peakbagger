@@ -31,6 +31,7 @@ const PAGE_LOCAL = {
     'options-section-nav.js': path.join(root, 'options', 'section-nav.js'),
     'options-utils.js': path.join(root, 'options', 'options-utils.js'),
     'popup-main.js': path.join(root, 'popup', 'popup.js'),
+    'photos-main.js': path.join(root, 'photos', 'photos.js'),
 };
 export function resolvePageSource(name) {
     return PAGE_LOCAL[name] || srcFile(name);
@@ -64,6 +65,7 @@ export const ENTRIES = [
     { out: 'options/options.js', sources: ['terrain/terrain-cache.js', 'reports/report-markup.js', 'reports/report-drafts.js', 'favorites/favorite-climbers.js', 'peakbagger/peakbagger-cloudflare.js', 'peakbagger/peakbagger-response.js', 'peakbagger/peakbagger-error.js', 'peakbagger/peakbagger-request.js', 'profile/profile-backup-core.js', 'ui/dom.js', 'ui/runtime-message.js', 'options-utils.js', 'options-section-nav.js', 'options-main.js', 'options-drafts.js', 'options-favorites.js'], page: true },
     { out: 'popup/popup-head.js', sources: ['settings/settings-schema.js', 'settings/settings.js', 'theme/panel-theme.js'], page: true },
     { out: 'popup/popup.js', sources: ['capture/capture-phases.js', 'settings/settings-schema.js', 'settings/settings.js', 'ui/units.js', 'popup-main.js'], page: true },
+    { out: 'photos/photos.js', sources: ['photos/photo-project.js', 'photos/photo-renderer.js', 'photos/photo-library.js', 'photos/photo-store.js', 'photos/imgbb-client.js', 'photos-main.js'], page: true },
 ];
 
 // Absolute source paths for one entry's bundle, in order.
@@ -91,6 +93,8 @@ export const COPY_FILES = [
     ['options/options.css', 'options/options.css'],
     ['popup/popup.html', 'popup/popup.html'],
     ['popup/popup.css', 'popup/popup.css'],
+    ['photos/photos.html', 'photos/photos.html'],
+    ['photos/photos.css', 'photos/photos.css'],
 ];
 
 export const COPY_DIRS = [

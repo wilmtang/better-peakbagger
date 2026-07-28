@@ -236,6 +236,16 @@ const markOutcomeUnknown = (value, now = new Date().toISOString()) => {
     });
 };
 
+const resetUpload = (value, now = new Date().toISOString()) => {
+    const photo = cleanPhoto(value);
+    if (!photo || !['uploading', 'outcome-unknown'].includes(photo.remote.state)) return null;
+    return cleanPhoto({
+        ...photo,
+        updatedAt: now,
+        remote: { provider: 'imgbb', state: 'draft' },
+    });
+};
+
 const completeUpload = (value, exported, remote, now = new Date().toISOString()) => {
     const photo = cleanPhoto(value);
     const exportMetadata = cleanImageMetadata(exported);
@@ -327,6 +337,7 @@ export const photoLibrary = {
     cleanPendingExport,
     beginUpload,
     markOutcomeUnknown,
+    resetUpload,
     completeUpload,
     markUnreachable,
     addReference,

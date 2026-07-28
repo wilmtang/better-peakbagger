@@ -70,6 +70,7 @@ test('moves through upload, ambiguous, completed, and observed-health states', (
 
     const unknown = Library.markOutcomeUnknown(uploading, LATER);
     assert.equal(unknown.remote.state, 'outcome-unknown');
+    assert.equal(Library.resetUpload(unknown, LATER).remote.state, 'draft');
 
     const complete = Library.completeUpload(unknown, exported, remote, LATER);
     assert.equal(complete.remote.state, 'uploaded');
