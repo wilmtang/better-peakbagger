@@ -146,6 +146,7 @@ test('every harness page loads the providers its scripts hard-require, in order'
 // showcase:render writes that refusal into the store listing screenshots.
 const FIXTURE_SERVERS = [
     'scripts/verify-terrain-visual.mjs',
+    'scripts/verify-terrain-lod.mjs',
     'scripts/verify-firefox-terrain.mjs',
     'scripts/render-showcase.mjs',
 ];
