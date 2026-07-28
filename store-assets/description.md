@@ -6,18 +6,17 @@ Better Peakbagger turns Garmin and Strava activities—or a GPX file you already
 
 - **Create ascent drafts from Garmin and Strava:** Turn an activity you own into prefilled ascent drafts with explained summit matches.
 - **Process a GPX on Peakbagger:** Analyze a GPX for route stats, nearby summits, and coordinated multi-peak drafts.
-- **Review before saving:** Prepare GPS Preview while keeping every final Save click under your control.
 - **Explore free 3D terrain:** Explore routes and maps in opt-in interactive 3D with compatible layers, synced views, and a compass.
 - **Understand GPX tracks:** See interactive charts, local times, route metrics, and map tracking with customizable route styling.
 - **Find useful ascent beta:** Filter and sort ascent lists without reloading, using Buddy List or custom favorites.
 - **Write better trip reports:** Draft rich-text or GitHub-flavored Markdown reports with media, previews, and device-local recovery.
-- **Back up your ascents to GitHub:** Explicitly back up ascents, history, and favorite climbers to a GitHub repository you control.
-- **Plan with better links:** Open weather, imagery, snow-depth, and fire or smoke information for supported summits.
+- **Back up your ascents to GitHub:** Explicitly back up new ascents, ascent edits, ascent history, and favorite climbers to a GitHub repository you control.
+- **Plan with better links:** Open weather, live satellite imagery, snow-depth, and fire or smoke information for supported summits.
 - **Use Peakbagger your way:** Set your theme and preferences for units, maps, GPX charts, activity capture, reports, and beta filters.
 
 **Privacy by design**
 
-**No Better Peakbagger account. No analytics, telemetry, ads, or developer data server.**
+**No analytics, telemetry, ads, or developer data server.**
 
 [Read the complete privacy policy](https://github.com/wilmtang/better-peakbagger/blob/main/PRIVACY.md).
 

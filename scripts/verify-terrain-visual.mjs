@@ -411,6 +411,23 @@ const pressEscape = async cdp => {
     }
 };
 
+// Click the floating 2D/3D toggle the way a user does, and report where focus
+// landed. A scripted element.click() would not move focus at all, which
+// silently leaves it inside a parked terrain frame — and a key pressed there
+// is answered by the frame's relay, never by the page's own handler. Only a
+// real gesture can tell those two paths apart.
+const clickTerrainToggle = async cdp => {
+    const spot = await evaluate(cdp, `(() => {
+        const rect = document.getElementById('bpb-terrain-toggle')?.getBoundingClientRect();
+        return rect && rect.width > 0 && rect.height > 0
+            ? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }
+            : null;
+    })()`);
+    if (!spot) throw new Error('The 3D toggle is missing or unclickable');
+    await clickAt(cdp, spot.x, spot.y);
+    return evaluate(cdp, `document.activeElement && document.activeElement.id`);
+};
+
 // The paint the group route is currently drawn with, as the frame's live
 // MapLibre reports it. A hovered track turns the flat/data-driven paint into a
 // 'case' expression that singles that track out.
@@ -1022,6 +1039,60 @@ try {
     await capture(cdp, path.join(outputDir, 'terrain-resized.png'));
     if (runtimeErrors.length) throw new Error(`Runtime exception: ${runtimeErrors.join('\n')}`);
 
+    // Escape leaves 3D on the ascent page too, where the view is an inline
+    // panel beside the chart rather than a full-bleed overlay. Clicking the
+    // canvas moves focus into the extension frame, where the page cannot see
+    // the key at all, so this exercises the frame's handler and its relay.
+    const analyzerCanvasPoint = await evaluate(cdp, `(() => {
+        const rect = document.getElementById('bpb-terrain-frame')?.getBoundingClientRect();
+        return rect && rect.width > 40 && rect.height > 40
+            ? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }
+            : null;
+    })()`);
+    if (!analyzerCanvasPoint) throw new Error('Could not locate the ascent 3D canvas for its Escape check');
+    await clickAt(cdp, analyzerCanvasPoint.x, analyzerCanvasPoint.y);
+    const analyzerFocus = await evaluate(cdp, `(() => {
+        const frame = document.getElementById('bpb-terrain-frame');
+        return {
+            inFrame: document.activeElement && document.activeElement.id === 'bpb-terrain-frame',
+            popup: Boolean(frame && frame.contentDocument
+                && frame.contentDocument.querySelector('.maplibregl-popup'))
+        };
+    })()`);
+    if (!analyzerFocus.inFrame) throw new Error('Clicking the ascent 3D map did not move focus into the terrain frame');
+    if (analyzerFocus.popup) throw new Error('The ascent 3D Escape check expected empty terrain, not an open popup');
+    const analyzerBackTo2d = `(() => {
+        const toggle = document.getElementById('bpb-terrain-toggle');
+        const mapIframe = document.querySelector('iframe[src*="MasterMap.aspx" i]');
+        const frame = document.getElementById('bpb-terrain-frame');
+        return {
+            ready: toggle && toggle.textContent === '3D' && mapIframe
+                && mapIframe.style.visibility !== 'hidden' && (!frame || frame.style.opacity === '0')
+        };
+    })()`;
+    await pressEscape(cdp);
+    await waitForPageState(cdp, analyzerBackTo2d, 8000).catch(() => {
+        throw new Error('Escape inside the ascent 3D frame did not return the analyzer to 2D');
+    });
+
+    // …and from the page, where focus stays on the toggle the user just clicked
+    // and the frame never sees the key.
+    const analyzerFocusAfterToggle = await clickTerrainToggle(cdp);
+    if (analyzerFocusAfterToggle !== 'bpb-terrain-toggle') {
+        throw new Error(`Clicking the ascent 3D toggle left focus on ${analyzerFocusAfterToggle}, `
+            + 'so this cannot prove the page-side Escape');
+    }
+    await waitForPageState(cdp, `(() => {
+        const toggle = document.getElementById('bpb-terrain-toggle');
+        const frame = document.getElementById('bpb-terrain-frame');
+        return { ready: toggle && toggle.textContent === '2D' && frame && frame.style.opacity === '1' };
+    })()`);
+    await pressEscape(cdp);
+    await waitForPageState(cdp, analyzerBackTo2d, 8000).catch(() => {
+        throw new Error('Escape from the ascent page did not return the analyzer to 2D');
+    });
+    if (runtimeErrors.length) throw new Error(`Runtime exception: ${runtimeErrors.join('\n')}`);
+
     await navigate(cdp, `${baseUrl}?mode=terrain&theme=dark`, 1000, 900);
     const darkReady = await waitForPageState(cdp, `(() => {
         const toggle = document.getElementById('bpb-terrain-toggle');
@@ -1208,7 +1279,11 @@ try {
 
     // The same key from the page side, where focus stays on the toggle the user
     // just clicked and the frame never sees it.
-    await evaluate(cdp, `document.getElementById('bpb-terrain-toggle').click()`);
+    const bigMapFocusAfterToggle = await clickTerrainToggle(cdp);
+    if (bigMapFocusAfterToggle !== 'bpb-terrain-toggle') {
+        throw new Error(`Clicking the BigMap 3D toggle left focus on ${bigMapFocusAfterToggle}, `
+            + 'so this cannot prove the page-side Escape');
+    }
     await waitForPageState(cdp, `(() => {
         const toggle = document.getElementById('bpb-terrain-toggle');
         const frame = document.getElementById('bpb-terrain-frame');
@@ -1224,7 +1299,7 @@ try {
     });
 
     // Re-enter for the remaining live-renderer checks.
-    await evaluate(cdp, `document.getElementById('bpb-terrain-toggle').click()`);
+    await clickTerrainToggle(cdp);
     await waitForPageState(cdp, `(() => {
         const toggle = document.getElementById('bpb-terrain-toggle');
         const frame = document.getElementById('bpb-terrain-frame');
