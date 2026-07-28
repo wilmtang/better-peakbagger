@@ -4,6 +4,9 @@
 import { settings as Settings } from '../settings/settings.js';
 import { settingsTransfer as Transfer } from '../settings/settings-transfer.js';
 import { favoriteClimbers as Favorites } from '../favorites/favorite-climbers.js';
+import { photoBackup as PhotoBackup } from '../photos/photo-backup.js';
+import { photoLibrary as Library } from '../photos/photo-library.js';
+import { photoStore as PhotoStore } from '../photos/photo-store.js';
 import { githubAuth as GithubAuth } from '../github/github-auth.js';
 import { githubClient as GithubClient } from '../github/github-client.js';
 import { githubErrors as GithubErrors } from '../github/github-errors.js';
@@ -16,6 +19,8 @@ const SETTINGS_BACKUP_ALARM = 'bpb-settings-backup';
 const SETTINGS_BACKUP_STATE_KEY = 'bpbSettingsBackupState';
 const FAVORITES_BACKUP_ALARM = 'bpb-favorites-backup';
 const FAVORITES_BACKUP_STATE_KEY = 'bpbFavoritesBackupState';
+const PHOTO_BACKUP_ALARM = 'bpb-photo-library-backup';
+const PHOTO_BACKUP_STATE_KEY = 'bpbPhotoLibraryBackupState';
 const AUTO_BACKUP_DELAY_MINUTES = 1;
 const AUTO_BACKUP_RETRY_MINUTES = 10;
 const AUTO_BACKUP_MAX_RETRIES = 2;
@@ -36,6 +41,8 @@ export function createGithubRoutes({
     isFresh,
     readMap,
     mutateMap,
+    createPhotoStore = PhotoStore.createPhotoStore,
+    resolveGithubAccess = null,
 }) {
     // ---- GitHub ascent backup: auth + repository setup ---------------------
     //
@@ -464,6 +471,9 @@ export function createGithubRoutes({
     };
 
     const connectedGithubClient = async ({ requireEnabled = false } = {}) => {
+        if (typeof resolveGithubAccess === 'function') {
+            return resolveGithubAccess({ requireEnabled });
+        }
         if (requireEnabled && !(await Settings.get()).enableGithubBackup) {
             return { error: { code: 'disabled' } };
         }
@@ -471,6 +481,11 @@ export function createGithubRoutes({
         if (!auth || !auth.token) return { error: { code: 'not-connected' } };
         if (!auth.repo || !auth.repo.owner || !auth.repo.name) return { error: { code: 'no-repo' } };
         return {
+            repo: {
+                owner: auth.repo.owner,
+                name: auth.repo.name,
+                branch: auth.repo.branch || null,
+            },
             client: GithubClient.createGithubClient({
                 fetch: netFetch,
                 token: auth.token,
@@ -898,6 +913,308 @@ export function createGithubRoutes({
         }
     };
 
+    // ---- Photo-library metadata recovery ----------------------------------
+
+    const photoPageBase = ext.runtime.getURL('photos/photos.html');
+    const isPhotoPage = sender => {
+        try {
+            const actual = new URL(sender?.url || '');
+            const expected = new URL(photoPageBase);
+            return actual.origin === expected.origin && actual.pathname === expected.pathname;
+        } catch { return false; }
+    };
+    const readPhotoBackupState = async () =>
+        (await ext.storage.local.get(PHOTO_BACKUP_STATE_KEY))[PHOTO_BACKUP_STATE_KEY] || null;
+    const sameRepo = (left, right) => !!left && !!right
+        && left.owner === right.owner
+        && left.name === right.name
+        && (left.branch || null) === (right.branch || null);
+    const photoTimestamp = () => new Date(now()).toISOString();
+
+    const withPhotoStore = async operation => {
+        const store = await createPhotoStore();
+        try { return await operation(store); }
+        finally { store.close(); }
+    };
+
+    const buildPhotoLibraryBackup = async () => withPhotoStore(async store => {
+        const snapshot = await store.listBackupBundles();
+        const payload = PhotoBackup.buildPayload({
+            ...snapshot,
+            exportedAt: photoTimestamp(),
+            extensionVersion: ext.runtime.getManifest?.().version || '',
+        });
+        return {
+            payload,
+            signature: await PhotoBackup.signature(payload),
+        };
+    });
+
+    const markPhotoCatalogBackup = async ({ state, signature = null, commitUrl = null }) => {
+        await withPhotoStore(async store => {
+            const photos = await store.listPhotos({ includeDeleted: true });
+            await Promise.all(photos.map(photo => store.putPhoto(Library.cleanPhoto({
+                ...photo,
+                backup: {
+                    state,
+                    signature,
+                    backedUpAt: ['current', 'restored'].includes(state) ? photoTimestamp() : null,
+                    commitUrl,
+                },
+            }))));
+        });
+    };
+
+    class PhotoBackupError extends Error {
+        constructor(code, message, details = {}) {
+            super(message);
+            this.name = 'PhotoBackupError';
+            this.code = code;
+            Object.assign(this, details);
+        }
+    }
+
+    const parseRemotePhotoBackup = text => {
+        if (text == null) {
+            return PhotoBackup.buildPayload({
+                exportedAt: photoTimestamp(),
+                extensionVersion: ext.runtime.getManifest?.().version || '',
+            });
+        }
+        const parsed = PhotoBackup.parse(text);
+        if (!parsed.ok) {
+            throw new PhotoBackupError(
+                'invalid-photo-backup',
+                parsed.reason === 'newer-version'
+                    ? 'This photo-library backup was created by a newer Better Peakbagger version.'
+                    : 'The repository’s photo-library.json is not a valid photo backup.',
+            );
+        }
+        return parsed.payload;
+    };
+
+    const publicPhotoBackupError = (error, fallback) => error instanceof PhotoBackupError
+        ? {
+            code: error.code,
+            message: error.message,
+            ...(Number.isInteger(error.conflictCount) ? { conflictCount: error.conflictCount } : {}),
+        }
+        : writeError(error, fallback);
+
+    const photoBackupStatus = async (_message, sender) => {
+        if (!isPhotoPage(sender)) return { ok: false, error: { code: 'forbidden' } };
+        const [status, state] = await Promise.all([githubStatus(), readPhotoBackupState()]);
+        const repo = status.repo ? {
+            owner: status.repo.owner,
+            name: status.repo.name,
+            branch: status.repo.branch || null,
+        } : null;
+        return {
+            ok: true,
+            connected: status.connected,
+            repo: status.repo,
+            auto: (await Settings.get()).autoPhotoLibraryBackup,
+            state: state && sameRepo(state.repo, repo) ? state : null,
+        };
+    };
+
+    const backupPhotoLibrary = async ({ automatic = false, sender = null } = {}) => {
+        if (!automatic && !isPhotoPage(sender)) {
+            return { ok: false, error: { code: 'forbidden' } };
+        }
+        const access = await connectedGithubClient();
+        if (access.error) return { ok: false, error: access.error };
+        let local;
+        let state;
+        try {
+            [local, state] = await Promise.all([buildPhotoLibraryBackup(), readPhotoBackupState()]);
+            if (automatic && state?.signature === local.signature && sameRepo(state.repo, access.repo)) {
+                return { ok: true, current: true, signature: local.signature };
+            }
+            let committed = null;
+            const result = await writeQueue.run(() => access.client.updateRootFile(
+                PhotoBackup.BACKUP_PATH,
+                async remoteText => {
+                    const remote = parseRemotePhotoBackup(remoteText);
+                    const merged = await PhotoBackup.mergePayloads(local.payload, remote, {
+                        exportedAt: photoTimestamp(),
+                        extensionVersion: ext.runtime.getManifest?.().version || '',
+                        baseSignature: sameRepo(state?.repo, access.repo) ? state.signature : null,
+                    });
+                    if (!merged.ok) {
+                        throw new PhotoBackupError(
+                            'photo-backup-conflict',
+                            'Backup conflict. Review the photo library before replacing either version.',
+                            { conflictCount: merged.conflicts.length },
+                        );
+                    }
+                    committed = merged;
+                    const remoteSignature = await PhotoBackup.signature(remote);
+                    return merged.signature === remoteSignature && remoteText != null
+                        ? remoteText
+                        : PhotoBackup.serialize(merged.payload);
+                },
+                'Back up photo library',
+            ));
+            const signature = committed?.signature || local.signature;
+            const syncedAt = photoTimestamp();
+            await ext.storage.local.set({
+                [PHOTO_BACKUP_STATE_KEY]: {
+                    signature,
+                    syncedAt,
+                    commitUrl: result.commitUrl || state?.commitUrl || null,
+                    repo: access.repo,
+                    attempts: 0,
+                },
+            });
+            await markPhotoCatalogBackup({
+                state: 'current',
+                signature,
+                commitUrl: result.commitUrl || state?.commitUrl || null,
+            });
+            return {
+                ok: true,
+                current: true,
+                signature,
+                result,
+                counts: committed?.counts || null,
+            };
+        } catch (error) {
+            await markPhotoCatalogBackup({ state: 'failed' }).catch(() => {});
+            return {
+                ok: false,
+                error: publicPhotoBackupError(error, 'The photo-library backup failed.'),
+            };
+        }
+    };
+
+    const previewPhotoLibraryRestore = async (_message, sender) => {
+        if (!isPhotoPage(sender)) return { ok: false, error: { code: 'forbidden' } };
+        const access = await connectedGithubClient();
+        if (access.error) return { ok: false, error: access.error };
+        try {
+            const remoteText = await access.client.readRootFile(PhotoBackup.BACKUP_PATH);
+            if (remoteText == null) {
+                return { ok: false, error: { code: 'not-found', message: 'No photo-library backup was found.' } };
+            }
+            const remote = parseRemotePhotoBackup(remoteText);
+            const [local, state, remoteSignature] = await Promise.all([
+                buildPhotoLibraryBackup(),
+                readPhotoBackupState(),
+                PhotoBackup.signature(remote),
+            ]);
+            const merged = await PhotoBackup.mergePayloads(local.payload, remote, {
+                exportedAt: photoTimestamp(),
+                extensionVersion: ext.runtime.getManifest?.().version || '',
+                baseSignature: sameRepo(state?.repo, access.repo) ? state.signature : null,
+            });
+            return {
+                ok: true,
+                signature: remoteSignature,
+                counts: merged.counts,
+                conflicts: merged.ok ? [] : merged.conflicts.map(value => value.localId),
+                remotePhotos: remote.photos.length,
+                remoteTombstones: remote.tombstones.length,
+            };
+        } catch (error) {
+            return {
+                ok: false,
+                error: publicPhotoBackupError(error, 'The photo-library backup could not be read.'),
+            };
+        }
+    };
+
+    const restorePhotoLibrary = async (message, sender) => {
+        if (!isPhotoPage(sender)) return { ok: false, error: { code: 'forbidden' } };
+        const expectedSignature = typeof message?.signature === 'string'
+            && /^[0-9a-f]{64}$/.test(message.signature)
+            ? message.signature
+            : null;
+        if (!expectedSignature) return { ok: false, error: { code: 'invalid-restore' } };
+        const access = await connectedGithubClient();
+        if (access.error) return { ok: false, error: access.error };
+        try {
+            const remoteText = await access.client.readRootFile(PhotoBackup.BACKUP_PATH);
+            if (remoteText == null) throw new PhotoBackupError('not-found', 'No photo-library backup was found.');
+            const remote = parseRemotePhotoBackup(remoteText);
+            const remoteSignature = await PhotoBackup.signature(remote);
+            if (remoteSignature !== expectedSignature) {
+                throw new PhotoBackupError(
+                    'restore-changed',
+                    'The GitHub backup changed after the preview. Review it again before restoring.',
+                );
+            }
+            const [local, state] = await Promise.all([
+                buildPhotoLibraryBackup(),
+                readPhotoBackupState(),
+            ]);
+            const merged = await PhotoBackup.mergePayloads(local.payload, remote, {
+                exportedAt: photoTimestamp(),
+                extensionVersion: ext.runtime.getManifest?.().version || '',
+                baseSignature: sameRepo(state?.repo, access.repo) ? state.signature : null,
+                conflictPolicy: message.keepLocalConflicts ? 'keep-local' : 'stop',
+            });
+            if (!merged.ok) {
+                return {
+                    ok: false,
+                    error: {
+                        code: 'photo-backup-conflict',
+                        message: 'Choose whether to keep the local versions of conflicting photos.',
+                        conflictCount: merged.conflicts.length,
+                    },
+                };
+            }
+            const records = merged.payload.photos.map(record =>
+                PhotoBackup.restoreRecord(record, {
+                    signature: remoteSignature,
+                    restoredAt: photoTimestamp(),
+                }));
+            await withPhotoStore(store => store.applyRestore({
+                records,
+                tombstones: merged.payload.tombstones,
+            }));
+            await ext.storage.local.set({
+                [PHOTO_BACKUP_STATE_KEY]: {
+                    signature: remoteSignature,
+                    restoredAt: photoTimestamp(),
+                    commitUrl: null,
+                    repo: access.repo,
+                    attempts: 0,
+                },
+            });
+            return {
+                ok: true,
+                counts: merged.counts,
+                keptLocalConflicts: merged.conflicts.length,
+            };
+        } catch (error) {
+            return {
+                ok: false,
+                error: publicPhotoBackupError(error, 'The photo-library backup could not be restored.'),
+            };
+        }
+    };
+
+    const photoLibraryChanged = async (_message, sender) => {
+        if (!isPhotoPage(sender)) return { ok: false, error: { code: 'forbidden' } };
+        if ((await Settings.get()).autoPhotoLibraryBackup && ext.alarms) {
+            ext.alarms.create(PHOTO_BACKUP_ALARM, { delayInMinutes: AUTO_BACKUP_DELAY_MINUTES });
+        }
+        return { ok: true };
+    };
+
+    const firePhotoAutoBackup = async () => {
+        if (!(await Settings.get()).autoPhotoLibraryBackup) return;
+        const result = await backupPhotoLibrary({ automatic: true });
+        if (result.ok || result.error?.code === 'photo-backup-conflict' || !ext.alarms) return;
+        const state = await readPhotoBackupState();
+        const attempts = ((state && state.attempts) || 0) + 1;
+        await ext.storage.local.set({ [PHOTO_BACKUP_STATE_KEY]: { ...(state || {}), attempts } });
+        if (attempts <= AUTO_BACKUP_MAX_RETRIES) {
+            ext.alarms.create(PHOTO_BACKUP_ALARM, { delayInMinutes: AUTO_BACKUP_RETRY_MINUTES });
+        }
+    };
+
 
     const handlers = {
         PEAKBAGGER_MY_ASCENTS: () => peakbaggerMyAscents(),
@@ -922,6 +1239,11 @@ export function createGithubRoutes({
         GITHUB_FAVORITES_RESTORE: () => restoreFavorites(),
         GITHUB_SETTINGS_BACKUP: () => backupSettings(),
         GITHUB_SETTINGS_RESTORE: () => restoreSettings(),
+        GITHUB_PHOTOS_STATUS: (message, sender) => photoBackupStatus(message, sender),
+        GITHUB_PHOTOS_BACKUP: (_message, sender) => backupPhotoLibrary({ sender }),
+        GITHUB_PHOTOS_RESTORE_PREVIEW: (message, sender) => previewPhotoLibraryRestore(message, sender),
+        GITHUB_PHOTOS_RESTORE: (message, sender) => restorePhotoLibrary(message, sender),
+        GITHUB_PHOTOS_CHANGED: (message, sender) => photoLibraryChanged(message, sender),
     };
 
     const extensionOnly = new Set([
@@ -931,6 +1253,11 @@ export function createGithubRoutes({
         'GITHUB_FAVORITES_RESTORE',
         'GITHUB_SETTINGS_BACKUP',
         'GITHUB_SETTINGS_RESTORE',
+        'GITHUB_PHOTOS_STATUS',
+        'GITHUB_PHOTOS_BACKUP',
+        'GITHUB_PHOTOS_RESTORE_PREVIEW',
+        'GITHUB_PHOTOS_RESTORE',
+        'GITHUB_PHOTOS_CHANGED',
     ]);
 
     const cleanup = async cutoff => {
@@ -956,11 +1283,15 @@ export function createGithubRoutes({
     const onSettingsChanged = settings => {
         if (settings.autoSettingsBackup) settingsAutoBackup.schedule();
         if (settings.autoFavoritesBackup) favoritesAutoBackup.schedule();
+        if (settings.autoPhotoLibraryBackup && ext.alarms) {
+            ext.alarms.create(PHOTO_BACKUP_ALARM, { delayInMinutes: AUTO_BACKUP_DELAY_MINUTES });
+        }
     };
 
     const onAlarm = name => {
         if (name === SETTINGS_BACKUP_ALARM) void settingsAutoBackup.fire();
         if (name === FAVORITES_BACKUP_ALARM) void favoritesAutoBackup.fire();
+        if (name === PHOTO_BACKUP_ALARM) void firePhotoAutoBackup();
     };
 
     return {
@@ -973,5 +1304,6 @@ export function createGithubRoutes({
             return extensionOnly.has(type)
                 || (typeof type === 'string' && type.startsWith('GITHUB_AUTH_'));
         },
+        isPhotoPage,
     };
 }

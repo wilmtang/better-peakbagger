@@ -78,6 +78,16 @@ test('automatic favorites backup is opt-in and independent of ascent backup', ()
     assert.equal(Schema.clean({ autoFavoritesBackup: 'yes' }).autoFavoritesBackup, false);
 });
 
+test('automatic photo-library metadata backup is opt-in and independent of ascent backup', () => {
+    assert.equal(Schema.DEFAULTS.autoPhotoLibraryBackup, false);
+    assert.equal(Schema.clean({}).autoPhotoLibraryBackup, false);
+    assert.equal(Schema.clean({
+        enableGithubBackup: false,
+        autoPhotoLibraryBackup: true
+    }).autoPhotoLibraryBackup, true);
+    assert.equal(Schema.clean({ autoPhotoLibraryBackup: 'yes' }).autoPhotoLibraryBackup, false);
+});
+
 test('removing GitHub ascent files on Peakbagger deletion is a subordinate opt-in', () => {
     assert.equal(Schema.DEFAULTS.removeGithubBackupOnDelete, false);
     assert.equal(Schema.clean({

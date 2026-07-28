@@ -211,6 +211,27 @@
           </label>
         </div>
       </div>
+      <section class="backup-card" aria-labelledby="photo-backup-heading">
+        <div>
+          <h3 id="photo-backup-heading">GitHub recovery</h3>
+          <p id="photo-backup-status" class="fine-print" role="status" aria-live="polite">
+            Checking the connected backup repository…
+          </p>
+        </div>
+        <div class="backup-actions">
+          <button id="backup-library" type="button" class="quiet-button">Back up now</button>
+          <button id="restore-library" type="button" class="quiet-button">Restore…</button>
+          <a id="photo-backup-settings" href="../options/options.html#backup">GitHub settings</a>
+        </div>
+        <label class="auto-backup-control">
+          <input id="auto-backup-library" type="checkbox">
+          <span>Back up photo metadata automatically</span>
+        </label>
+        <p class="backup-boundary">
+          Stores annotations, public ImgBB links, hashes, and report associations in
+          <code>photo-library.json</code>. Original images, API keys, and remote deletion links stay on this device.
+        </p>
+      </section>
       <div id="library-list" class="library-grid"></div>
       <div id="library-empty" class="empty-state" hidden>
         <h3>No matching photos</h3>

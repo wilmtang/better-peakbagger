@@ -10,7 +10,7 @@ const SCHEMA_VERSION = 1;
 const BACKUP_PATH = 'photo-library.json';
 const MAX_BYTES = 8 * 1024 * 1024;
 const KIND = 'better-peakbagger-photo-library';
-const encoder = new TextEncoder();
+const encode = value => new TextEncoder().encode(value);
 
 const cleanTime = value => {
     if (typeof value !== 'string' || !value) return null;
@@ -136,7 +136,7 @@ const serialize = payload => {
         extensionVersion: payload?.extensionVersion,
     });
     const text = `${JSON.stringify(normalized, null, 2)}\n`;
-    if (encoder.encode(text).byteLength > MAX_BYTES) {
+    if (encode(text).byteLength > MAX_BYTES) {
         throw new RangeError('photo-library.json exceeds the 8 MB recovery limit');
     }
     return text;
@@ -144,7 +144,7 @@ const serialize = payload => {
 
 const parse = text => {
     if (typeof text !== 'string') return { ok: false, reason: 'not-text' };
-    if (encoder.encode(text).byteLength > MAX_BYTES) return { ok: false, reason: 'too-large' };
+    if (encode(text).byteLength > MAX_BYTES) return { ok: false, reason: 'too-large' };
     let parsed;
     try { parsed = JSON.parse(text); }
     catch { return { ok: false, reason: 'not-json' }; }
@@ -186,7 +186,7 @@ const signature = async payload => {
     });
     const digest = await globalThis.crypto.subtle.digest(
         'SHA-256',
-        encoder.encode(contentIdentity(normalized)),
+        encode(contentIdentity(normalized)),
     );
     return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');
 };
@@ -212,7 +212,11 @@ const mergePayloads = async (local, remote, {
     exportedAt = new Date().toISOString(),
     extensionVersion = local?.extensionVersion || '',
     baseSignature = null,
+    conflictPolicy = 'stop',
 } = {}) => {
+    if (!['stop', 'keep-local'].includes(conflictPolicy)) {
+        throw new TypeError('photo backup requires an explicit conflict policy');
+    }
     const left = buildPayload({
         bundles: local?.photos,
         tombstones: local?.tombstones,
@@ -256,10 +260,18 @@ const mergePayloads = async (local, remote, {
             if (entryTime(tombstone) >= entryTime(record)) {
                 entry = tombstone;
                 counts.tombstoned++;
+            } else if (conflictPolicy === 'keep-local') {
+                entry = localEntry;
+                conflicts.push({ localId: id, local: localEntry, remote: remoteEntry });
+                counts.conflict++;
             } else {
                 conflicts.push({ localId: id, local: localEntry, remote: remoteEntry });
                 counts.conflict++;
             }
+        } else if (conflictPolicy === 'keep-local') {
+            entry = localEntry;
+            conflicts.push({ localId: id, local: localEntry, remote: remoteEntry });
+            counts.conflict++;
         } else {
             conflicts.push({ localId: id, local: localEntry, remote: remoteEntry });
             counts.conflict++;
@@ -267,7 +279,7 @@ const mergePayloads = async (local, remote, {
         if (entry) chosen.push(entry);
     }
 
-    if (conflicts.length) {
+    if (conflicts.length && conflictPolicy === 'stop') {
         return { ok: false, reason: 'conflict', conflicts, counts, remoteSignature };
     }
     const payload = buildPayload({
@@ -280,6 +292,7 @@ const mergePayloads = async (local, remote, {
         ok: true,
         payload,
         counts,
+        conflicts,
         remoteSignature,
         signature: await signature(payload),
     };

@@ -130,6 +130,18 @@ test('merge stops on divergent same-id edits and lets a newer tombstone prevent 
     assert.equal(deletion.payload.tombstones[0].localId, 'photo-1');
 });
 
+test('restore can explicitly keep local versions while reporting every skipped conflict', async () => {
+    const local = payload([bundle({ title: 'Keep this local edit', now: LATER })]);
+    const remote = payload([bundle({ title: 'Conflicting remote edit', now: TIME })]);
+    const merged = await Backup.mergePayloads(local, remote, {
+        conflictPolicy: 'keep-local',
+    });
+    assert.equal(merged.ok, true);
+    assert.equal(merged.conflicts.length, 1);
+    assert.equal(merged.counts.conflict, 1);
+    assert.equal(merged.payload.photos[0].title, 'Keep this local edit');
+});
+
 test('restore reconstructs a catalog record without claiming pixels or deletion capability', async () => {
     const document = payload([bundle()]);
     const signature = await Backup.signature(document);
