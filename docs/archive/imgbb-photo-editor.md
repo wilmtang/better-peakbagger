@@ -1,6 +1,6 @@
 # Plan: ImgBB-backed topo photo editor and photo library
 
-Status: approved product direction; not implemented.
+Status: implemented and archived on 2026-07-27.
 
 This plan adds a local, non-destructive topo-photo editor to the trip-report
 workflow, uploads the finished raster through the user's own ImgBB API key, and
@@ -1098,17 +1098,59 @@ plan.
 
 ### Fixed and verified
 
-- None yet.
+- Implemented a versioned, bounded photo-project schema with routes, Bezier
+  controls, text, anchors, pitons, rappels, belays, pitch markers, z-order, and
+  style cleaning. Pure schema and mutation tests pass.
+- Implemented deterministic SVG/Canvas flattening to JPEG or PNG with source
+  and export SHA-256 metadata. Export tests verify that project metadata,
+  source file names, EXIF-shaped source bytes, API keys, and delete URLs do not
+  enter the encoded output.
+- Implemented the authoritative IndexedDB catalog, projects, originals,
+  thumbnails, upload journal, per-photo secret, and tombstone stores. Atomic
+  draft/upload/restore and crash-recovery behavior are covered by tests.
+- Implemented exact optional ImgBB permission and device-local BYOK storage,
+  one direct multipart upload with a 32 MiB ceiling, strict response validation,
+  and fail-closed ambiguous-outcome handling without automatic retry.
+- Implemented the extension-owned editor and local library with autosave,
+  undo/redo, route and climbing-symbol tools, new-version lineage, search and
+  status filters, report reuse, project download disclosure, reachability
+  state, and local Recently Deleted handling. Project downloads use a
+  CSP-safe stored-ZIP writer because packaging proved the planned JSZip runtime
+  import included a forbidden dynamic-code compatibility shim.
+- Implemented one-time, source-tab/frame- and editor-tab-bound report handoff.
+  Upload success is committed before insertion, and insertion failure cannot
+  erase a public URL.
+- Implemented deterministic `photo-library.json` recovery with an 8 MiB bound,
+  metadata/project/tombstone merge, explicit conflict policy, preview signature,
+  default-off automatic backup, and semantic GitHub ref-conflict retry.
+- Unit, integration, DOM, manifest, and bundle tests pass for the implemented
+  boundaries. The packaged page was visually inspected and behavior-tested in
+  hidden Chrome for Testing at 1000×760 and 520×800 and in hidden Firefox at
+  1000×760. Both full built-extension verifiers pass.
+- Updated the public README, privacy disclosure, maintained architecture,
+  report-editor design, GitHub design, and focused photo-topo design.
 
 ### Intentionally not changed
 
 - ImgBB account-gallery import is unsupported because there is no documented
   list API.
-- Files above ImgBB's provider maximum are unsupported; no chunked path is
-  planned.
+- Files and exports above ImgBB's documented 32 MB provider maximum are
+  unsupported; no chunked path is planned.
 - Original pixels are not included in ordinary GitHub backup.
-- Remote deletion automation is withheld pending provider-behavior proof.
+- Remote ImgBB deletion is not implemented. Delete URLs stay device-local, and
+  local removal or report removal never implies remote removal.
+- GitHub restore does not guess through catalog conflicts or claim to recreate
+  original pixels, thumbnails, API credentials, or deletion capability.
 
 ### Changed but not fully proven
 
-- None yet.
+- ImgBB request and response behavior is covered with scripted fetches, but no
+  real upload was made with a live API key. Provider retention and whether a
+  particular API upload appears in an account profile remain unproven.
+- GitHub payloads, worker routes, merge policy, retry behavior, and restore are
+  covered with scripted clients and IndexedDB, but no live scratch-repository
+  photo backup/merge/restore was performed.
+- Hidden browser runs prove the packaged editor's DOM behavior, image decode,
+  IndexedDB autosave, Chrome route/export flow, and desktop/narrow layout
+  boundaries. They do not prove native permission-prompt presentation, browser
+  focus/window placement, toolbar chrome, or other onscreen browser UI.

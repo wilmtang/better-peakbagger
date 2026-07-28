@@ -371,6 +371,26 @@ inline quote, and a named-color text palette — sit one click away behind the
 "Aa" control. While the caret is inside a table, a contextual row offers
 add/delete row and column, header-row toggle, and table removal.
 
+### Photo topo editor and library handoff
+
+The Rich toolbar's image popover preserves direct URL insertion and adds two
+extension-owned paths: **Upload and edit…** and **Choose from library…**. These
+actions do not put local files or an ImgBB API key into the Peakbagger content
+script. The report surface sends only its cleaned climber/ascent/peak identity
+to the worker, which opens `photos/photos.html` with a random return context
+bound to the source tab/frame and editor tab.
+
+An uploaded or reused library item returns only a clean local photo id, HTTPS
+image URL, alt text, and decorative flag. The worker accepts that result once,
+while the context is fresh, and the report editor revalidates it before
+inserting a normal image node. Expired, replayed, mismatched-tab, malformed, and
+non-Rich results fail closed. If the report tab disappears after ImgBB accepts
+the upload, the upload remains in the local photo library; insertion is a later
+operation and cannot roll it back.
+
+The complete upload, local-catalog, credential, recovery, and deletion
+contracts live in [photo-topo-editor.md](photo-topo-editor.md).
+
 ## Deliberate restrictions
 
 Peakbagger was observed rendering `iframe` markup, and the site accepts a much

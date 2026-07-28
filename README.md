@@ -5,8 +5,9 @@
 Better Peakbagger turns your Garmin and Strava activities into review-ready
 ascent drafts, makes GPS tracks easier to understand, surfaces the trip reports
 that matter, lets you write trip reports in rich text or Markdown with local
-draft autosave, adds location-aware forecast and satellite-imagery links, and
-provides a polished dark mode for
+draft autosave, turns route photos into reusable annotated topos, adds
+location-aware forecast and satellite-imagery links, and provides a polished
+dark mode for
 [Peakbagger](https://www.peakbagger.com/).
 
 [![Chrome Web Store](https://img.shields.io/chrome-web-store/v/kndjohodnpdoejmjkiiakejfehoodedn?style=for-the-badge&logo=googlechrome&logoColor=white&label=Chrome%20Web%20Store&color=4285F4)](https://chromewebstore.google.com/detail/better-peakbagger/kndjohodnpdoejmjkiiakejfehoodedn)
@@ -122,6 +123,28 @@ markup outside the editor's supported syntax. See the
 [supported syntax and safety contract](https://github.com/wilmtang/better-peakbagger/blob/main/docs/trip-report-editor.md).
 
 ![Rich-text trip report editor with formatting controls and local draft recovery](store-assets/showcase-5-trip-report-editor-light.png)
+
+### Draw and reuse photo topos
+
+From the Rich editor's image menu, choose **Upload and edit…** to draw routes,
+curves, labels, anchors, pitons, rappels, belays, and pitch markers over a
+photo. Better Peakbagger keeps the original and editable project on this
+device, then flattens a metadata-free JPEG or PNG only when you choose
+**Upload and insert**.
+
+Uploads go directly from the extension to ImgBB with an API key you provide;
+Better Peakbagger has no upload relay or developer account. The optional ImgBB
+permission is requested only when needed, and images follow ImgBB's 32 MiB
+limit. A searchable local library records drafts and uploaded public URLs, can
+reuse them in later reports, and creates a new version instead of overwriting a
+published image when you edit again.
+
+If GitHub is connected, an independent, default-off recovery option can back up
+`photo-library.json` to the same repository. It restores catalog metadata and
+annotation projects, not original pixels, thumbnails, the ImgBB API key, or
+remote deletion capability. Removing a local library item never silently
+deletes the image from ImgBB or from a published Peakbagger report. See the
+[photo workflow and privacy boundaries](https://github.com/wilmtang/better-peakbagger/blob/main/docs/photo-topo-editor.md).
 
 ### Back up ascents to GitHub
 
