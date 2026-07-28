@@ -103,12 +103,12 @@ without giving the host page extension APIs.
 | `src/maps/peak-map.js` | MAIN | Peak-page identity agreement, summit focus, embedded map context | Storage, renderer internals, duplicate lifecycle logic |
 | `src/terrain/terrain-coordinator.js` | MAIN | `idle`/`loading`/`active` lifecycle, toggle UI, timeouts, camera round trip, compass, recovery | Subject discovery, privileged APIs, provider requests |
 | `src/terrain/terrain-map.js` | isolated | Feature gate, trusted consent UI, settings read, frame creation/parking, page↔frame relay, prefetch relay | Page-owned Leaflet globals, rendering |
-| `src/terrain/terrain-frame.js` | extension iframe | Payload validation, MapLibre, DEM protocol, route/peak/highlight layers, drape picker, WebGL failure detection | Authenticated Peakbagger fetches, settings writes |
+| `src/terrain/terrain-frame.js` | extension iframe | Payload validation, MapLibre, DEM protocol, tile level-of-detail tuning, in-view tilt tile warming, route/peak/highlight layers, drape picker, WebGL failure detection | Authenticated Peakbagger fetches, settings writes |
 | `src/terrain/terrain-basemap.js` | MAIN/pure helper | Convert compatible Leaflet raster layers and known menu choices to bounded drape specs | Fetching or assuming a layer is CORS-compatible |
 | `src/terrain/terrain-camera.js` | pure helper | Validate and convert Leaflet↔MapLibre center/zoom | Bearing or pitch persistence |
 | `src/terrain/terrain-compass.js` | page UI helper | Continuous shortest-arc bearing display and reset affordance | Camera state |
 | `src/terrain/terrain-cache.js` | extension contexts | Custom DEM protocol, best-effort CacheStorage LRU | Raster/vector basemap caching policy |
-| `src/terrain/terrain-tiles.js` | pure helper | Bounded first-paint DEM tile enumeration for prefetch | Network or browser APIs |
+| `src/terrain/terrain-tiles.js` | pure helper | Bounded DEM tile enumeration: the first-paint set for prefetch, and the coarse-rung set the frame warms while a live camera rests | Network or browser APIs |
 | `src/maps/peak-markers.js` | MAIN | Same-origin Peakbagger feed context, request validation, single-flight fetch | Frame rendering or persistence |
 | `src/background/background.js` | extension worker coordinator | Shared sender predicate, concurrency helper, and `TERRAIN_PREFETCH` dispatch | Map UI, tile selection, or long-lived terrain state |
 | `src/background/terrain-prefetch.js` | extension worker domain | Settings revalidation, tile selection, cache warming, per-tab throttling, and recent-tile deduplication | Map UI or provider consent ownership |
@@ -407,6 +407,7 @@ shown beside the checkbox.
 | --- | --- | --- | --- |
 | Mapterhorn DEM render | Enabled 3D is opened | `credentials: omit`, `no-referrer` through custom protocol | Optional bounded DEM cache |
 | Mapterhorn DEM prefetch | 3D enabled plus idle-toggle hover/focus | Same cache loader | Optional bounded DEM cache |
+| Mapterhorn DEM tilt warming | 3D open, non-zero cache budget, camera at rest | Same cache loader, from the frame | Optional bounded DEM cache |
 | Selected raster drape | That drape is active in an open 3D frame | Browser/MapLibre public tile behavior | Provider/browser policy only |
 | OpenFreeMap vector | User selects vector in an open frame | Public style/tile requests | Provider/browser policy only |
 | Peakbagger PLLBB feed | 3D open and camera settles above marker zoom cutoff | Page's same-origin session | Never persisted |
@@ -463,6 +464,56 @@ padding, and maximum fit zoom 15.5. If a view would exceed the cap, it lowers
 the target level until target plus parent fit. Prefetch is an optimization:
 failure is ignored by the surface and a normal renderer cache miss goes to the
 network.
+
+### Warming the tiles a tilt will ask for
+
+The hover prefetch above stops when 3D opens. Tilting the camera then asks for
+elevation levels that were never downloaded, and the wait for that download is
+what reads as a blink rather than as loading. So while 3D is open the frame
+warms those levels itself, through the same cache loader MapLibre reads through,
+which makes anything warmed a cache hit for the renderer later. This runs in the
+frame rather than the worker because the frame is already on the extension
+origin, so no hint has to cross a trust boundary.
+
+What it warms, and why those levels: MapLibre paints the drape into
+render-to-texture tiles twice the elevation tile size, and backs each with an
+elevation tile one level coarser again, so the finest elevation level a terrain
+frame ever draws is two below the camera's zoom. The frame warms the five rungs
+below that, each over a rectangle twice the size of the rung above it — a
+coarser level is used further from the camera, and MapLibre inflates the terrain
+frustum by the elevation range, so a high skyline pulls tiles from well past the
+flat-plane horizon `getBounds()` reports.
+
+The bounds it respects:
+
+- 3D must be open and the elevation cache budget non-zero, since warming that
+  is not stored is pure waste;
+- the camera must have been at rest for 350 ms, and warming stops immediately if
+  a gesture starts, so it never competes with the tiles the user is waiting for;
+- at most 32 tiles per pass, at most one pass per 800 ms, at most 2 concurrent
+  fetches;
+- an already-warmed tile is never re-fetched, and the memory of what was warmed
+  is bounded to 1,000 keys;
+- a failed warm is forgotten, so a later rest can retry it.
+
+What warming can and cannot do is worth stating, because it bounds the whole
+approach. When MapLibre lacks the elevation tile a band wants, it draws that
+band from an ancestor it has already loaded. Warming the HTTP cache shortens the
+wait for the tile that *was* requested; nothing outside MapLibre can hand it an
+ancestor it never requested. So how *deep* a momentary fallback goes belongs to
+the detail ladder below, and how *long* it lasts belongs to warming.
+`npm run terrain:lod` measures both.
+
+### The detail ladder
+
+Both the elevation source and a tuned drape get MapLibre's
+`setSourceTileLodParams`. The elevation setting matters twice over: it closes
+gaps in the ladder — measured, MapLibre's stock setting put level 13 under the
+camera and level 8 at the horizon with 9 through 12 never used, leaving a
+fallback nowhere gradual to land — and it sizes the render-to-texture grid the
+drape is painted into, which the drape's own setting cannot reach. The frame
+also keeps 8 screenfuls of off-screen tiles per source instead of MapLibre's 5,
+so reversing a tilt stays a cache hit.
 
 ## Peak dots and route interaction
 
