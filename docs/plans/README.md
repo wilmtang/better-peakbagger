@@ -7,10 +7,12 @@ Current active plans:
 - [ImgBB-backed topo photo editor and photo library](imgbb-photo-editor.md) —
   local non-destructive topo editing, bring-your-own-key upload, an
   extension-owned photo catalog, and optional GitHub metadata recovery.
-- [Stop the 3D map blinking when you tilt it](3d-tilt-detail-blink.md) —
-  measured diagnosis of the tilt detail collapse, plus warming the elevation
-  tiles a tilt will need, closing the gaps in the detail ladder, and the
-  separate zoom jolt at the end of a pan.
+- [Stop the 3D map blinking when you tilt it](3d-tilt-detail-blink.md) — steps
+  1-3 shipped and measured; still open are the pan-jolt change (a feel judgement
+  to make in front of the real map) and whether the drape keeps its `(4, 3)`
+  level-of-detail setting now that the elevation ladder is tuned. The closure
+  ledger in section 12 records what shipped, the decode-bound residual that did
+  not, and two predictions the plan got wrong.
 
 Once a plan is implemented or abandoned, move it to [archive/](../archive/) and
 update the maintained architecture or focused design note with the resulting

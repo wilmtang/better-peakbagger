@@ -1,7 +1,11 @@
 # Plan: stop the 3D map blinking when you tilt it
 
-Status: investigated and measured against the real renderer; fix approved in
-principle, not implemented.
+Status: steps 1–3 implemented and measured; step 4 and one follow-on measurement
+remain owner choices. See section 12 for the closure ledger, which is the
+authoritative record of what shipped, what did not, and what is not fully proven.
+Sections 1–11 are the original investigation, left as written so the plan's
+predictions can be compared with what the implementation actually measured — and
+in two places they were wrong. Section 12 says where.
 
 ## 1. The complaint
 
@@ -443,3 +447,97 @@ peak RTT tile count: stock (9.314, 3) — 21%, 14 tiles; (8, 3) — 21%, 18;
 (7, 3) — 32%, 18; (6, 3) — 12%, 20; **(6, 1.5) — 11%, 15**; (5, 3) — 38%, 20.
 The per-degree figure is terrain- and zoom-dependent and should not be treated
 as precise; the level-gap and peak-tile-count figures were stable across runs.
+
+## 12. Closure ledger
+
+Everything below was measured with `npm run terrain:lod`, which is section 9's
+harness in checked-in form. It ran hidden, in headless Chrome on the real
+hardware renderer (reported as ANGLE Metal on an Apple M3 Pro), against the
+built `dist/` frame at 1098×698 CSS pixels, with locally generated Terrarium DEM
+tiles served at 140 ms each. It does not exercise the real Mapterhorn service,
+the real drape providers, or anything about window placement; `npm run
+terrain:verify` remains the live spot-check and was run and passed.
+
+### Fixed and verified
+
+**Step 2 — the detail ladder** (`fix: close the missing rungs…`). The elevation
+source now gets `setSourceTileLodParams(6, 1.5)`, not just the drape. The settled
+census went from level 13/12/11/8 to 12/11/9, and the widest gap between levels
+present in one frame went from 3 to 2 at both 66° and 70°, so section 9's
+no-missing-rungs criterion passes. Peak render targets went from 12 to 15 against
+MapLibre's pool of 30 — in line with the plan's predicted 14→15.
+
+**Step 3 — tile retention** (`fix: keep the 3D tiles a reversed tilt…`). Retention
+raised from MapLibre's 5 screenfuls per source to 8. Verified to reach MapLibre:
+`terrain:lod` reports the resulting ceiling as 60 retained elevation tiles before
+the change and 96 after.
+
+**Step 1 — warming** (`fix: warm the elevation tiles a 3D tilt…`), for what it
+does reach. Every tilt in the 55–76° sweep now fetches **0** elevation tiles where
+1–8 were fetched before, and the 61°→64° transient went from 4 levels short for
+234 ms to 4 levels short for **22 ms**. Reversing a tilt produces no shortfall at
+all, so section 9's criterion 3 passes.
+
+**Traffic, stated as section 9 requires.** Across one full run: 64 elevation tiles
+total (17 on boot, 47 across the sweep, 0 across the census) against 47 before
+step 1, and 112 drape tiles. Warming is capped at 32 tiles per pass, one pass per
+800 ms, 2 concurrent fetches, and never re-fetches a tile it already warmed.
+
+### Changed but not fully proven
+
+**The 67°→70° step still collapses.** Distant tiles stay 3 levels short for about
+214 ms. It fetches **nothing** while doing so, which locates the wait precisely:
+it is CacheStorage read plus image decode plus DEM parse for eight tiles, not
+download. A warm cache cannot reach it. It is likely smaller against Mapterhorn's
+WebP than against this harness's larger PNG tiles, but that is an expectation, not
+a measurement. `terrain:lod` reports this as a criterion failure and exits
+non-zero rather than passing quietly.
+
+**Two places where this plan was wrong**, both found by implementing it:
+
+1. Section 7 called step 1 "the real fix" on the reasoning that having the tiles
+   present makes the level change invisible. Half of that holds. Warming removes
+   the download wait, but it cannot change how *deep* a fallback goes: MapLibre
+   draws a band it lacks a tile for from an ancestor it has **already loaded**, and
+   nothing outside MapLibre can hand it an ancestor it never requested. So depth
+   belongs to step 2's ladder and duration belongs to step 1's warming. Section 9's
+   criterion 1 is written as a depth rule and cannot be satisfied by warming alone;
+   `terrain:lod` therefore holds a deeper-than-one-level fallback to a duration
+   budget, and says so in the script where the criterion is applied.
+2. Section 5's Result 3 — a cold 3° tilt leaving 9% of the *visible surface* three
+   levels short — did not reproduce. At this camera and viewport the coarse horizon
+   band is largely hidden behind nearer ridges, so tiles that want a level they
+   have not got contribute few or no pixels. The harness reports shortfall per
+   visible pixel **and** per render-to-texture tile for exactly this reason; a
+   pixel-only check would have read "nothing was short" while three-level
+   shortfalls were live. This is reported as measured rather than tuned away.
+
+Note also that step 2 slightly *introduced* a visible transient: before it, no
+tilt in the sweep left any visible pixel short; after it, 61°→64° leaves 1% of the
+surface short (for 22 ms once step 1 landed). A finer ladder asks for more
+distinct levels, including one far away. This is the right trade — the settled
+picture is a level sharper across the horizon band — but it is a trade.
+
+### Intentionally not changed — owner choices still open
+
+**Step 4, the pan jolt.** Not implemented. Section 7 asks for it to be decided by
+looking at the real map, and section 10 lists it as a feel judgement; that is not
+a call this implementation can make. `centerClampedToGround` is still MapLibre's
+default `true`. It remains a one-line Map option with the trade-off already
+written down in section 7, and section 6 confirms it is not the tilt bug.
+
+**Whether the drape keeps its `(4, 3)` setting** (section 7's follow-on, section 10
+decision 3). Not re-measured. The measurement is now possible — the elevation
+ladder exists — but it needs a *sharpness* comparison, which `terrain:lod` does
+not make: the harness measures elevation levels, not drape levels. Deciding it
+needs either an extension to the harness that censuses the basemap source's chosen
+levels, or a visual A/B. Current drape traffic is 112 tiles per harness run at
+`(4, 3)`.
+
+**How wide a tilt band to pre-load** (section 10 decision 1). Section 10 asks for
+this to be chosen from a measurement of how far a typical drag tilts. There is no
+such measurement and no way to take one: the extension has no analytics, by
+design. It was instead resolved geometrically — the warm set follows the camera's
+own visible rectangle, and each coarser rung takes a rectangle twice the size of
+the rung above it, because a coarser level is used further away. What that costs
+is measured and capped rather than estimated.
