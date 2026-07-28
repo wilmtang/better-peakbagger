@@ -696,6 +696,12 @@ test('the image popover validates the source and inserts alt text', async () => 
     const src = ui.querySelector('[aria-label="Image URL (HTTPS)"]');
     const alt = ui.querySelector('[aria-label="Image description"]');
     const hostingHint = ui.querySelector('.bpb-re-image-hosting');
+    assert.deepEqual(
+        [...ui.querySelectorAll('.bpb-re-photo-launch')].map(button => button.textContent),
+        ['Upload and edit…', 'Choose from library…']
+    );
+    assert.match(ui.querySelector('.bpb-re-image-divider').textContent,
+        /paste a direct HTTPS image URL/i);
     assert.match(hostingHint.textContent,
         /Plans vary\. To resize, select the image and drag its lower-right handle\./);
     assert.deepEqual([...hostingHint.querySelectorAll('a')].map(link => ({
@@ -715,12 +721,6 @@ test('the image popover validates the source and inserts alt text', async () => 
             href: 'https://imgur.com/upload',
             target: '_blank',
             rel: 'noopener noreferrer'
-        },
-        {
-            label: 'ImgBB',
-            href: 'https://imgbb.com/',
-            target: '_blank',
-            rel: 'noopener noreferrer'
         }
     ]);
 
@@ -735,6 +735,85 @@ test('the image popover validates the source and inserts alt text', async () => 
     await waitFor(dom, () => doc.getElementById('JournalText').value.includes('[img'));
     assert.equal(doc.getElementById('JournalText').value,
         '[img src="https://example.com/topo.jpg" alt="Topo"]');
+});
+
+test('the image popover launches editor and library modes with the report identity', async () => {
+    const messages = [];
+    let release;
+    const dom = await loadEditor({
+        url: `${URL}&aid=1234&pid=2296`,
+        prepare: d => {
+            d.chrome.runtime.sendMessage = message => {
+                if (message?.type !== 'PHOTO_EDITOR_OPEN') return Promise.resolve(undefined);
+                messages.push(message);
+                return new Promise(resolve => { release = resolve; });
+            };
+        }
+    });
+    const ui = await editorReady(dom);
+    ui.querySelector('[aria-label="Insert image"]').click();
+    const launchers = [...ui.querySelectorAll('.bpb-re-photo-launch')];
+
+    launchers[0].click();
+    await waitFor(dom, () => launchers.every(button => button.disabled));
+    assert.deepEqual(JSON.parse(JSON.stringify(messages[0])), {
+        type: 'PHOTO_EDITOR_OPEN',
+        mode: 'edit',
+        identity: { cid: '900001', aid: '1234', pid: '2296' }
+    });
+    release({ ok: true, tabId: 44 });
+    await waitFor(dom, () => launchers.every(button => !button.disabled));
+
+    launchers[1].click();
+    await waitFor(dom, () => messages.length === 2);
+    assert.equal(messages[1].mode, 'library');
+    release(null);
+    await waitFor(dom, () => !launchers[1].disabled);
+    assert.match(ui.querySelector('.bpb-re-image-status').textContent,
+        /Couldn’t open the photo editor/);
+});
+
+test('a validated photo result is inserted only while the rich editor is available', async () => {
+    const listeners = [];
+    const dom = await loadEditor({
+        prepare: d => {
+            d.chrome.runtime.onMessage = {
+                addListener: listener => listeners.push(listener),
+                removeListener: listener => {
+                    const index = listeners.indexOf(listener);
+                    if (index >= 0) listeners.splice(index, 1);
+                }
+            };
+        }
+    });
+    const ui = await editorReady(dom);
+    const doc = dom.window.document;
+    let response;
+    const message = {
+        type: 'PHOTO_INSERT_RESULT',
+        localPhotoId: 'photo:123',
+        url: 'https://i.ibb.co/example/topo.jpg',
+        alt: 'North ridge route',
+        decorative: false
+    };
+    for (const listener of listeners) {
+        listener(message, { id: 'test-extension' }, value => { response = value; });
+    }
+    assert.deepEqual(JSON.parse(JSON.stringify(response)), { ok: true });
+    assert.equal(doc.getElementById('JournalText').value,
+        '[img src="https://i.ibb.co/example/topo.jpg" alt="North ridge route"]');
+    assert.equal(ui.querySelector('.bpb-re-status').textContent, 'Photo inserted');
+
+    modeButton(doc, 'Markdown').click();
+    response = null;
+    for (const listener of listeners) {
+        listener({ ...message, localPhotoId: 'photo:456' },
+            { id: 'test-extension' }, value => { response = value; });
+    }
+    assert.deepEqual(JSON.parse(JSON.stringify(response)),
+        { ok: false, error: { code: 'editor-unavailable' } });
+    assert.equal(doc.getElementById('JournalText').value,
+        '[img src="https://i.ibb.co/example/topo.jpg" alt="North ridge route"]');
 });
 
 test('link and media popovers toggle closed, share the toolbar layer, and insert safe video', async () => {

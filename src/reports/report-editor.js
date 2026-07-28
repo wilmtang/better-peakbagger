@@ -326,11 +326,18 @@ import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.js';
     imageAltInput.placeholder = 'Description (alt text)';
     imageAltInput.setAttribute('aria-label', 'Image description');
     const imageApply = button('bpb-re-linkapply', 'Add image');
-    const imageHostingHint = el('div', 'bpb-re-image-hosting', 'Need an image URL? Try ');
+    const imageActions = el('div', 'bpb-re-image-actions');
+    const imageEdit = button('bpb-re-photo-launch', 'Upload and edit…');
+    const imageLibrary = button('bpb-re-photo-launch', 'Choose from library…');
+    imageActions.append(imageEdit, imageLibrary);
+    const imageLaunchStatus = el('div', 'bpb-re-image-status');
+    imageLaunchStatus.setAttribute('role', 'status');
+    imageLaunchStatus.setAttribute('aria-live', 'polite');
+    const imageDivider = el('div', 'bpb-re-image-divider', 'Or paste a direct HTTPS image URL');
+    const imageHostingHint = el('div', 'bpb-re-image-hosting', 'Need another image host? Try ');
     const hostingLinks = [
         ['Peakbagger Photos', 'https://www.peakbagger.com/climber/photo.aspx'],
-        ['Imgur', 'https://imgur.com/upload'],
-        ['ImgBB', 'https://imgbb.com/']
+        ['Imgur', 'https://imgur.com/upload']
     ].map(([label, href]) => {
         const link = el('a', null, label);
         link.href = href;
@@ -339,10 +346,18 @@ import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.js';
         return link;
     });
     imageHostingHint.append(
-        hostingLinks[0], ', ', hostingLinks[1], ', or ', hostingLinks[2],
+        hostingLinks[0], ' or ', hostingLinks[1],
         '. Plans vary. To resize, select the image and drag its lower-right handle.'
     );
-    imageBox.append(imageSrcInput, imageAltInput, imageApply, imageHostingHint);
+    imageBox.append(
+        imageActions,
+        imageLaunchStatus,
+        imageDivider,
+        imageSrcInput,
+        imageAltInput,
+        imageApply,
+        imageHostingHint
+    );
 
     const videoBox = el('div', 'bpb-re-box bpb-re-videobox');
     videoBox.hidden = true;
@@ -803,8 +818,40 @@ import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.js';
         imageSrcInput.value = '';
         imageAltInput.value = '';
         imageSrcInput.classList.remove('bpb-re-invalid');
+        imageLaunchStatus.textContent = '';
         imageBox.hidden = false;
-        imageSrcInput.focus();
+        imageEdit.focus();
+    };
+
+    let photoLaunchBusy = false;
+    const launchPhotoEditor = async mode => {
+        if (photoLaunchBusy) return;
+        photoLaunchBusy = true;
+        imageLaunchStatus.textContent = '';
+        for (const control of [imageEdit, imageLibrary]) {
+            control.disabled = true;
+            control.setAttribute('aria-busy', 'true');
+        }
+        try {
+            const response = await RuntimeMessage.send(ext, {
+                type: 'PHOTO_EDITOR_OPEN',
+                mode,
+                identity: {
+                    cid: params.get('cid'),
+                    aid: params.get('aid'),
+                    pid: params.get('pid')
+                }
+            });
+            if (!response?.ok) {
+                imageLaunchStatus.textContent = 'Couldn’t open the photo editor. Try again.';
+            }
+        } finally {
+            photoLaunchBusy = false;
+            for (const control of [imageEdit, imageLibrary]) {
+                control.disabled = false;
+                control.removeAttribute('aria-busy');
+            }
+        }
     };
 
     const applyImage = () => {
@@ -880,6 +927,8 @@ import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.js';
         if (event.key === 'Enter') { event.preventDefault(); applyLink(); }
         if (event.key === 'Escape') { event.preventDefault(); closeBoxAndRestoreEditor(); }
     });
+    imageEdit.addEventListener('click', () => { void launchPhotoEditor('edit'); });
+    imageLibrary.addEventListener('click', () => { void launchPhotoEditor('library'); });
     imageApply.addEventListener('click', applyImage);
     for (const input of [imageSrcInput, imageAltInput]) {
         input.addEventListener('keydown', event => {
@@ -988,6 +1037,48 @@ import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.js';
         control.addEventListener('click', () => { if (state.mode !== name) setMode(name); });
     }
 
+    const cleanPhotoInsertion = message => {
+        if (!message || message.type !== 'PHOTO_INSERT_RESULT') return null;
+        const localPhotoId = typeof message.localPhotoId === 'string'
+            && /^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$/.test(message.localPhotoId)
+            ? message.localPhotoId
+            : null;
+        const decorative = typeof message.decorative === 'boolean' ? message.decorative : null;
+        const alt = String(message.alt ?? '').replace(/\s+/g, ' ').trim().slice(0, 300);
+        let src = null;
+        try {
+            const candidate = new URL(message.url);
+            if (candidate.protocol === 'https:' && !candidate.username && !candidate.password) {
+                src = Markup.sanitizeImageSrc(candidate.toString());
+            }
+        } catch { /* malformed result */ }
+        return localPhotoId && decorative != null && src && (decorative || alt)
+            ? { src, alt: decorative ? '' : alt }
+            : null;
+    };
+
+    const handlePhotoInsertion = (message, sender, sendResponse) => {
+        if (message?.type !== 'PHOTO_INSERT_RESULT') return undefined;
+        const insertion = cleanPhotoInsertion(message);
+        const trustedSender = sender?.id === ext.runtime.id;
+        if (!trustedSender || !insertion) {
+            sendResponse?.({ ok: false, error: { code: 'invalid-result' } });
+            return false;
+        }
+        if (state.mode !== 'rich' || !richEditor || !ui.isConnected) {
+            sendResponse?.({ ok: false, error: { code: 'editor-unavailable' } });
+            return false;
+        }
+        richCommands.insertImage(richEditor, insertion);
+        flushSync();
+        closeBoxes();
+        refreshToolbar();
+        setDraftManagerStatus('Photo inserted');
+        void saveDraftNow();
+        sendResponse?.({ ok: true });
+        return false;
+    };
+
     // ---- Boot ----------------------------------------------------------------------
 
     const initialize = async () => {
@@ -1022,6 +1113,7 @@ import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.js';
         textarea.before(ui);
         await checkDraft();               // may adopt a markdown source pre-render
         setMode(settings.reportEditorMode, { persist: false });
+        ext.runtime.onMessage.addListener(handlePhotoInsertion);
         void pruneDrafts();
 
         // If the feature is turned off in the options while this page is open,
@@ -1032,6 +1124,7 @@ import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.js';
                 showNative(true);
                 if (richEditor) richEditor.destroy();
                 mdEditor.destroy();
+                ext.runtime.onMessage.removeListener(handlePhotoInsertion);
                 ui.remove();
             }
         });
