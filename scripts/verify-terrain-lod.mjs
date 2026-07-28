@@ -418,6 +418,12 @@ const PROBE = `(() => {
         pitch: Math.round(map.getPitch() * 100) / 100,
         zoom: Math.round(map.getZoom() * 1000) / 1000,
         rttTiles: tileManager.getRenderableTiles().length,
+        // How many off-screen elevation tiles MapLibre will keep before
+        // evicting. Reported so the retention setting is a measured number
+        // rather than an assumption about where a Map option landed.
+        retainedTileCeiling: tileManager.tileManager._outOfViewCache
+            ? tileManager.tileManager._outOfViewCache.max
+            : null,
         // A camera change is not visible to this probe until MapLibre has
         // painted it: before that first frame the render-to-texture key set and
         // the coords framebuffer still describe the previous camera, and a
@@ -709,6 +715,7 @@ try {
     console.log(`  Drape tiles: ${drapeRequests} total.`);
     console.log(`  Peak render-to-texture tiles: ${Math.max(...census.map(entry => entry.sample.rttTiles), 0)}`
         + ' (MapLibre pools 30).');
+    console.log(`  Off-screen elevation tiles retained before eviction: ${opening.sample.retainedTileCeiling}.`);
 
     if (unexpected.length) {
         failures.push(`Blocked unexpected provider requests: ${[...new Set(unexpected)].join(', ')}`);

@@ -519,6 +519,9 @@ import { terrainCamera } from './terrain-camera.js';
     // per-degree behaviour worse, not better.
     const TERRAIN_LOD_ZOOM_LEVELS_ON_SCREEN = 6;
     const TERRAIN_LOD_TILE_COUNT_RATIO = 1.5;
+    // How many screenfuls of off-screen tiles MapLibre keeps per source before
+    // evicting; its own default is 5 (util/config.ts MAX_TILE_CACHE_ZOOM_LEVELS).
+    const TILE_CACHE_ZOOM_LEVELS = 8;
 
     const setSourceLod = (sourceId, levelsOnScreen, tileCountRatio) => {
         if (!map || typeof map.setSourceTileLodParams !== 'function') return;
@@ -1429,7 +1432,15 @@ import { terrainCamera } from './terrain-camera.js';
                 maxPitch: 80,
                 maxZoom: 18,
                 attributionControl: false,
-                fadeDuration: 0
+                fadeDuration: 0,
+                // Tilting a few degrees and tilting back is the most common
+                // gesture in this view, and MapLibre's stock retention (5x the
+                // on-screen tile count per source) can evict the tiles of the
+                // pitch just left. Keeping 8x makes the reversal a cache hit.
+                // The cost is memory and it is bounded: retention is a multiple
+                // of the *visible* tile count, measured by terrain:lod at 96
+                // rather than 60 retained elevation tiles for an 1100x700 frame.
+                maxTileCacheZoomLevels: TILE_CACHE_ZOOM_LEVELS
             });
             const terrainMap = map;
             rendererCanvas = typeof terrainMap.getCanvas === 'function' ? terrainMap.getCanvas() : null;
