@@ -1,9 +1,10 @@
 # Comparing the pan-end zoom jolt
 
 Step 4 of [3d-tilt-detail-blink.md](3d-tilt-detail-blink.md) is a feel judgement,
-not a correctness one. This branch (`pan-jolt-comparison`) exists so it can be
-made in front of the real map instead of by argument. **It is not a merge
-candidate**: it carries a debug keybinding that must not ship.
+not a correctness one. The `pan-jolt-comparison` branch exists so it can be made
+in front of the real map instead of by argument. **That branch is not a merge
+candidate**: it carries a debug keybinding that must not ship. These instructions
+live on `main` so they survive the branch being deleted.
 
 ## What the jolt is
 
