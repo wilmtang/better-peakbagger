@@ -69,8 +69,14 @@ export function createPhotoRoutes({
         throw new TypeError('photo routes require extension, storage, and sender dependencies');
     }
 
-    const photoPageBase = ext.runtime.getURL('photos/photos.html');
+    // The shared worker must still boot when an embedded/test environment does
+    // not expose extension-page URLs. Photo routes remain unavailable and fail
+    // closed in that environment.
+    const photoPageBase = typeof ext.runtime?.getURL === 'function'
+        ? ext.runtime.getURL('photos/photos.html')
+        : null;
     const isPhotoPage = sender => {
+        if (!photoPageBase) return false;
         try {
             const actual = new URL(sender?.url || '');
             const expected = new URL(photoPageBase);

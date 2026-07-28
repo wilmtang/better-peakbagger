@@ -915,8 +915,14 @@ export function createGithubRoutes({
 
     // ---- Photo-library metadata recovery ----------------------------------
 
-    const photoPageBase = ext.runtime.getURL('photos/photos.html');
+    // Keep unrelated worker routes bootable in constrained environments that
+    // do not expose extension-page URL resolution. Photo messages still fail
+    // closed there; production browsers provide runtime.getURL().
+    const photoPageBase = typeof ext.runtime?.getURL === 'function'
+        ? ext.runtime.getURL('photos/photos.html')
+        : null;
     const isPhotoPage = sender => {
+        if (!photoPageBase) return false;
         try {
             const actual = new URL(sender?.url || '');
             const expected = new URL(photoPageBase);
