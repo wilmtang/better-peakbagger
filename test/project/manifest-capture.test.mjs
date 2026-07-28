@@ -42,11 +42,16 @@ test('the worker ships as one bundle for both Chrome and Firefox', () => {
     assert.deepEqual(manifest.background.scripts, ['background.js']);
     // The fail-closed coordinator is composed from these modules, in order.
     assert.deepEqual(bundleSources('background.js'),
-        ['ui/units.js', 'gpx/gpx-metrics.js', 'capture/capture-core.js', 'capture/capture-phases.js', 'capture/provider-url.js', 'terrain/terrain-tiles.js', 'terrain/terrain-cache.js', 'settings/settings-schema.js', 'settings/settings.js', 'settings/settings-transfer.js', 'favorites/favorite-climbers.js', 'github/github-errors.js', 'github/github-api.js', 'github/github-auth.js', 'github/github-client.js', 'github/github-write-queue.js', 'peakbagger/peakbagger-cloudflare.js', 'peakbagger/peakbagger-response.js', 'peakbagger/peakbagger-error.js', 'peakbagger/peakbagger-request.js', 'background/public-errors.js', 'background/favorites-store.js', 'background/github-routes.js', 'background/terrain-prefetch.js', 'background/background.js']);
+        ['ui/units.js', 'gpx/gpx-metrics.js', 'capture/capture-core.js', 'capture/capture-phases.js', 'capture/provider-url.js', 'terrain/terrain-tiles.js', 'terrain/terrain-cache.js', 'settings/settings-schema.js', 'settings/settings.js', 'settings/settings-transfer.js', 'favorites/favorite-climbers.js', 'github/github-errors.js', 'github/github-api.js', 'github/github-auth.js', 'github/github-client.js', 'github/github-write-queue.js', 'photos/imgbb-client.js', 'photos/imgbb-auth.js', 'photos/photo-library.js', 'peakbagger/peakbagger-cloudflare.js', 'peakbagger/peakbagger-response.js', 'peakbagger/peakbagger-error.js', 'peakbagger/peakbagger-request.js', 'background/public-errors.js', 'background/favorites-store.js', 'background/github-routes.js', 'background/photo-routes.js', 'background/terrain-prefetch.js', 'background/background.js']);
     assert.deepEqual(bundleSources('provider-page.js'), ['capture/provider-url.js', 'gpx/gpx-parse.js', 'capture/provider-page.js']);
     assert.deepEqual(manifest.browser_specific_settings.gecko.data_collection_permissions.required, ['locationInfo']);
     assert.equal(manifest.browser_specific_settings.gecko.strict_min_version, '140.0');
     assert.equal(manifest.browser_specific_settings.gecko_android.strict_min_version, '142.0');
+});
+
+test('ImgBB upload access is optional and scoped to its API origin', () => {
+    assert.ok(manifest.optional_host_permissions.includes('https://api.imgbb.com/*'));
+    assert.ok(!manifest.host_permissions.some(pattern => pattern.includes('imgbb.com')));
 });
 
 test('the canonical unpacked extension opens Chrome settings in a full tab', () => {
@@ -272,7 +277,10 @@ test('the bundled service worker boots and registers its listener', async () => 
             local: { get: async () => ({}), set: async () => {} },
             onChanged: { addListener: () => {} },
         },
-        runtime: { onMessage: { addListener: () => { registeredListener = true; } } },
+        runtime: {
+            getURL: path => `chrome-extension://test-extension/${path}`,
+            onMessage: { addListener: () => { registeredListener = true; } },
+        },
         tabs: { onRemoved: { addListener: () => {} } },
         action: {},
         alarms: { create: () => {}, onAlarm: { addListener: () => {} } }
