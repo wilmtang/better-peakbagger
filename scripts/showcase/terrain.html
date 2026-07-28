@@ -25,17 +25,34 @@
         onChanged: { addListener: () => {}, removeListener: () => {} }
       }
     };
+    // The tile level-of-detail measurement asks for a frame wider than the
+    // store-listing shell allows; widen the shell only when it does, so every
+    // other run of this page renders byte-identically.
+    (() => {
+      const size = /^(\d{3,4})x(\d{3,4})$/.exec(new URLSearchParams(location.search).get('viewport') || '');
+      if (!size) return;
+      document.addEventListener('DOMContentLoaded', () => {
+        const style = document.createElement('style');
+        style.textContent = `.terrain-check { width: ${Number(size[1]) + 60}px }`
+          + ` .terrain-check .map-shell { width: ${size[1]}px }`;
+        document.head.append(style);
+      });
+    })();
     window.addEventListener('message', event => {
       if (event.source !== window || !event.data || event.data.__bpb !== true || event.data.dir !== 'toCS') return;
       const params = new URLSearchParams(location.search);
       const wide = params.get('map') === 'wide';
       const theme = params.get('theme') === 'dark' ? 'dark' : 'light';
+      // The tile level-of-detail measurement needs the same frame size the
+      // investigation used, which neither default matches.
+      const size = /^(\d{3,4})x(\d{3,4})$/.exec(params.get('viewport') || '');
       window.postMessage({
         __bpb: true,
         dir: 'toPage',
         settings: {
           units: 'imperial', theme, chartDefaultSeries: 'both', enable3dMap: true,
-          mapViewportWidth: wide ? 800 : 450, mapViewportHeight: 450,
+          mapViewportWidth: size ? Number(size[1]) : (wide ? 800 : 450),
+          mapViewportHeight: size ? Number(size[2]) : 450,
           terrainCacheLimitMb: 256
         }
       }, location.origin);

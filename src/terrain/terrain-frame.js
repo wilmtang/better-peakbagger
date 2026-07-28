@@ -6,6 +6,7 @@
 import { settingsSchema } from '../settings/settings-schema.js';
 import { terrainCache as TerrainCache } from './terrain-cache.js';
 import { terrainCamera } from './terrain-camera.js';
+import { terrainTiles as TerrainTiles } from './terrain-tiles.js';
 
 // Kept as an IIFE for scoping; maplibregl remains a separately-loaded vendor
 // global (see terrain/terrain.html); no globals are published here.
@@ -20,7 +21,54 @@ import { terrainCamera } from './terrain-camera.js';
     const MAX_BASEMAP_URL_LENGTH = 2048;
     const MAX_BASEMAP_ATTRIBUTION_LENGTH = 600;
     const TERRAIN_EXAGGERATION = 1;
+    const TERRAIN_SOURCE_MAX_ZOOM = 18;
     const MAP_LOAD_TIMEOUT_MS = 15000;
+    // Warming the elevation tiles a tilt is about to ask for. A tilt from a warm
+    // cache re-levels the picture invisibly; the visible collapse is the wait for
+    // a download, so the fix is to have already done it.
+    //
+    // The levels are not relative to the camera's zoom. MapLibre paints the drape
+    // into render-to-texture tiles twice the elevation tile size and backs each
+    // with an elevation tile one level coarser again (TerrainTileManager sets
+    // tileSize = source.tileSize * 2 ** deltaZoom, then resolves overscaledZ -
+    // deltaZoom). So the finest elevation level a terrain frame ever draws is two
+    // below the camera's zoom, and the rungs a tilt falls back to are below that.
+    // Aiming at the zoom itself warms levels the renderer never asks for.
+    //
+    // Only those coarser rungs are warmed. The near level is what the renderer is
+    // already fetching for the ground in front of the camera; the rungs below it
+    // are where a fallback lands and where the horizon band is drawn, and they
+    // are cheap, because each step down quarters the tiles per unit of ground.
+    const TERRAIN_NEAR_LEVEL_OFFSET = -2;
+    const TILT_WARM_LEVEL_OFFSETS = [-1, -2, -3, -4, -5, -6]
+        .map(offset => offset + TERRAIN_NEAR_LEVEL_OFFSET);
+    // Each rung's rectangle doubles, because each coarser level is used further
+    // from the camera. The camera's own bounds are the wrong size for the far
+    // rungs on their own: MapLibre inflates the terrain frustum by the elevation
+    // range, so a 2,900 m skyline pulls tiles from tens of kilometres past the
+    // flat-plane horizon getBounds() reports. Doubling matches the tile size,
+    // so the cost per rung stays flat while the reach grows with the ladder.
+    //
+    // Warming the far rungs is not an attempt to have the exact level a distant
+    // band will ask for. It is enough that its *ancestor* is present: a fallback
+    // then lands one level short instead of four, which is the difference between
+    // a soft edge and a blink.
+    const TILT_WARM_VIEW_EXPAND = 2;
+    const TILT_WARM_VIEW_EXPAND_STEP = 2;
+    // A pitched camera's own bounds can reach the horizon; past this span the
+    // rectangle says more about the projection than about where the user is
+    // looking, and warming it would be guesswork.
+    const TILT_WARM_MAX_LON_SPAN = 90;
+    // Explicit and bounded, like the background prefetch's own cap: this must
+    // never turn into a second, unbounded tile source.
+    const TILT_WARM_TILE_CAP = 32;
+    // Only warm once the camera has been still for a moment, never during a
+    // gesture, and never more often than this.
+    const TILT_WARM_IDLE_MS = 350;
+    const TILT_WARM_MIN_INTERVAL_MS = 800;
+    const TILT_WARM_CONCURRENCY = 2;
+    // Roughly forty warm passes' worth of tile keys; a long session stays bounded.
+    const TILT_WARM_MEMORY_LIMIT = 1000;
     const HIGHLIGHT_COLORS = Object.freeze({ distance: '#ff3b30', time: '#0055ff' });
     // Peakbagger's native group map paints the hovered track black and thickens
     // it so the one under the cursor is unmistakable among ten colors. 3D
@@ -138,6 +186,12 @@ import { terrainCamera } from './terrain-camera.js';
     let noticeElement = null;
     let terrainCache = null;
     let terrainProtocolRegistered = false;
+    // Warming writes into the DEM cache, so a zero cache budget makes it pure
+    // waste: every tile would be fetched and then thrown away.
+    let terrainCacheWarmable = false;
+    let tiltWarmTimer = null;
+    let tiltWarmAt = 0;
+    const tiltWarmedTiles = new Set();
     let activeRouteStyle = { ...settingsSchema.ROUTE_STYLE };
     let vectorActive = false;
     let vectorStylePromise = null;
@@ -229,6 +283,10 @@ import { terrainCamera } from './terrain-camera.js';
             clearTimeout(peaksDebounceTimer);
             peaksDebounceTimer = null;
         }
+        if (tiltWarmTimer !== null) {
+            clearTimeout(tiltWarmTimer);
+            tiltWarmTimer = null;
+        }
         if (peakPopup) {
             try { peakPopup.remove(); } catch (error) { /* Already detached with its map. */ }
             peakPopup = null;
@@ -269,6 +327,9 @@ import { terrainCamera } from './terrain-camera.js';
         }
         if (terrainCache) void terrainCache.flush();
         terrainCache = null;
+        terrainCacheWarmable = false;
+        tiltWarmAt = 0;
+        tiltWarmedTiles.clear();
         terrainProtocolRegistered = false;
         if (mapElement) {
             mapElement.remove();
@@ -303,6 +364,10 @@ import { terrainCamera } from './terrain-camera.js';
         if (peaksDebounceTimer !== null) {
             clearTimeout(peaksDebounceTimer);
             peaksDebounceTimer = null;
+        }
+        if (tiltWarmTimer !== null) {
+            clearTimeout(tiltWarmTimer);
+            tiltWarmTimer = null;
         }
         if (peakPopup) {
             try { peakPopup.remove(); } catch (error) { /* Already detached. */ }
@@ -493,17 +558,50 @@ import { terrainCamera } from './terrain-camera.js';
     // tilt is undone. Tightening the spread to 4 zoom levels holds the drape
     // beneath the camera at full resolution through the pitches the 3D view
     // actually uses, at the cost of roughly 2-3x more tile requests — so it is
-    // opt-out per layer (see stockLod) and never applied to the terrain source,
-    // whose tiles are 2048px render targets rather than cheap images.
+    // opt-out per layer (see stockLod).
     const DRAPE_LOD_ZOOM_LEVELS_ON_SCREEN = 4;
     const DRAPE_LOD_TILE_COUNT_RATIO = 3;
 
-    const applyBasemapLod = basemap => {
-        if (!basemap || basemap.stockLod || typeof map.setSourceTileLodParams !== 'function') return;
+    // The same tuning for the elevation source, which needs it for two reasons
+    // the drape setting cannot cover.
+    //
+    // First, MapLibre's stock ladder skips rungs: measured with terrain:lod, one
+    // frame holds level 13 near the camera and level 8 at the horizon while 9
+    // through 12 go unused. A fallback then has nowhere gradual to land — it
+    // drops several levels at once, which is what reads as a blink rather than
+    // as loading. At (6, 1.5) the horizon band moves up a level or more and no
+    // frame spans more than two levels.
+    //
+    // Second, MapLibre does not paint the drape straight onto the screen: it
+    // paints into render-to-texture tiles whose grid is sized from the *DEM*
+    // source's LOD function (TerrainTileManager.update passes
+    // tileManager._source.calculateTileZoom). So tuning only 'basemap' raises
+    // how many topo tiles are fetched without raising the ceiling they are
+    // painted into. Tuning the elevation source is what lifts that ceiling.
+    //
+    // (6, 1.5) was the best of the settings measured; tighter values pushed the
+    // render-target count from ~15 toward 20 (MapLibre pools 30) and made the
+    // per-degree behaviour worse, not better.
+    const TERRAIN_LOD_ZOOM_LEVELS_ON_SCREEN = 6;
+    const TERRAIN_LOD_TILE_COUNT_RATIO = 1.5;
+    // How many screenfuls of off-screen tiles MapLibre keeps per source before
+    // evicting; its own default is 5 (util/config.ts MAX_TILE_CACHE_ZOOM_LEVELS).
+    const TILE_CACHE_ZOOM_LEVELS = 8;
+
+    const setSourceLod = (sourceId, levelsOnScreen, tileCountRatio) => {
+        if (!map || typeof map.setSourceTileLodParams !== 'function') return;
         try {
-            map.setSourceTileLodParams(DRAPE_LOD_ZOOM_LEVELS_ON_SCREEN, DRAPE_LOD_TILE_COUNT_RATIO, 'basemap');
+            map.setSourceTileLodParams(levelsOnScreen, tileCountRatio, sourceId);
         } catch (error) { /* An older MapLibre or a source that already went away. */ }
     };
+
+    const applyBasemapLod = basemap => {
+        if (!basemap || basemap.stockLod) return;
+        setSourceLod('basemap', DRAPE_LOD_ZOOM_LEVELS_ON_SCREEN, DRAPE_LOD_TILE_COUNT_RATIO);
+    };
+
+    const applyTerrainLod = () =>
+        setSourceLod('terrain', TERRAIN_LOD_ZOOM_LEVELS_ON_SCREEN, TERRAIN_LOD_TILE_COUNT_RATIO);
 
     const reliefExpression = palette => [
         'interpolate', ['linear'], ['elevation'],
@@ -525,7 +623,7 @@ import { terrainCamera } from './terrain-camera.js';
                 encoding: 'terrarium',
                 tileSize: 512,
                 minzoom: 0,
-                maxzoom: 18,
+                maxzoom: TERRAIN_SOURCE_MAX_ZOOM,
                 attribution: '<a href="https://mapterhorn.com/attribution" target="_blank" rel="noopener noreferrer">© Mapterhorn</a>'
             }
         };
@@ -1206,6 +1304,86 @@ import { terrainCamera } from './terrain-camera.js';
         }, PEAK_MARKERS.debounceMs);
     };
 
+    const cameraIsMoving = () => ['isMoving', 'isZooming', 'isRotating']
+        .some(name => typeof map[name] === 'function' && map[name]());
+
+    // Fetch the coarse elevation levels a tilt from here would ask for, so the
+    // tilt itself finds them cached instead of stalling on a download. Runs only
+    // while the camera is still, through the same cache loader MapLibre reads
+    // through, so anything warmed here is a cache hit for the renderer later.
+    const warmTiltTiles = async () => {
+        if (!map || !loaded || !terrainCache || !terrainCacheWarmable) return;
+        if (cameraIsMoving()) return;
+        const now = Date.now();
+        if (now - tiltWarmAt < TILT_WARM_MIN_INTERVAL_MS) return;
+
+        const canvas = typeof map.getCanvas === 'function' ? map.getCanvas() : null;
+        const width = canvas ? (canvas.clientWidth || canvas.width) : 0;
+        const height = canvas ? (canvas.clientHeight || canvas.height) : 0;
+        const zoom = map.getZoom();
+        if (!(width > 0) || !(height > 0) || !Number.isFinite(zoom)) return;
+        // The camera's own visible rectangle, so the warm set follows the pitched
+        // view rather than a guess reconstructed from pitch and field of view.
+        const visible = typeof map.getBounds === 'function' ? map.getBounds() : null;
+        if (!visible) return;
+        const bounds = {
+            minLat: visible.getSouth(), maxLat: visible.getNorth(),
+            minLon: visible.getWest(), maxLon: visible.getEast()
+        };
+        if (!Object.values(bounds).every(Number.isFinite)
+            || !(bounds.maxLat > bounds.minLat)
+            || !(bounds.maxLon > bounds.minLon)
+            || bounds.maxLon - bounds.minLon > TILT_WARM_MAX_LON_SPAN) return;
+
+        const fresh = TerrainTiles.tilesForView({
+            bounds,
+            zoom,
+            viewport: { width, height },
+            // Not the fitBounds cap: the level here is the one the live camera is
+            // rendering, which may be deeper than an opening view ever is.
+            maxZoom: TERRAIN_SOURCE_MAX_ZOOM,
+            cap: TILT_WARM_TILE_CAP,
+            levelOffsets: TILT_WARM_LEVEL_OFFSETS,
+            expand: TILT_WARM_VIEW_EXPAND,
+            expandStep: TILT_WARM_VIEW_EXPAND_STEP,
+            capPolicy: TerrainTiles.CAP_POLICY.SHED_FINEST
+        }).map(tile => ({ tile, key: `${tile.z}/${tile.x}/${tile.y}` }))
+            .filter(entry => !tiltWarmedTiles.has(entry.key));
+        if (!fresh.length) return;
+        tiltWarmAt = now;
+
+        const token = map;
+        let next = 0;
+        const worker = async () => {
+            while (next < fresh.length) {
+                const { tile, key } = fresh[next++];
+                // A gesture that starts mid-warm must not compete for bandwidth
+                // with the tiles the user is actually waiting for.
+                if (map !== token || cameraIsMoving()) return;
+                tiltWarmedTiles.add(key);
+                try {
+                    await terrainCache.load({ url: `${TerrainCache.PROTOCOL}://${tile.z}/${tile.x}/${tile.y}.webp` });
+                } catch (error) {
+                    // A failed warm stays retryable on a later settle.
+                    tiltWarmedTiles.delete(key);
+                }
+            }
+        };
+        await Promise.all(Array.from({ length: TILT_WARM_CONCURRENCY }, worker));
+        while (tiltWarmedTiles.size > TILT_WARM_MEMORY_LIMIT) {
+            tiltWarmedTiles.delete(tiltWarmedTiles.values().next().value);
+        }
+    };
+
+    const scheduleTiltWarm = () => {
+        if (!terrainCacheWarmable) return;
+        if (tiltWarmTimer !== null) clearTimeout(tiltWarmTimer);
+        tiltWarmTimer = setTimeout(() => {
+            tiltWarmTimer = null;
+            void warmTiltTiles();
+        }, TILT_WARM_IDLE_MS);
+    };
+
     const applyPeaks = data => {
         if (!map || !loaded) return;
         if (data.unavailable === true) {
@@ -1373,6 +1551,7 @@ import { terrainCamera } from './terrain-camera.js';
         try {
             maplibre.setWorkerUrl(chrome.runtime.getURL('vendor/maplibre-gl-csp-worker.js'));
             terrainCache = TerrainCache.create({ limitMb: cacheLimitMb });
+            terrainCacheWarmable = cacheLimitMb > 0;
             maplibre.addProtocol(TerrainCache.PROTOCOL, terrainCache.load);
             terrainProtocolRegistered = true;
             // Start at the live 2D camera when one was available; otherwise
@@ -1399,7 +1578,15 @@ import { terrainCamera } from './terrain-camera.js';
                 maxPitch: 80,
                 maxZoom: 18,
                 attributionControl: false,
-                fadeDuration: 0
+                fadeDuration: 0,
+                // Tilting a few degrees and tilting back is the most common
+                // gesture in this view, and MapLibre's stock retention (5x the
+                // on-screen tile count per source) can evict the tiles of the
+                // pitch just left. Keeping 8x makes the reversal a cache hit.
+                // The cost is memory and it is bounded: retention is a multiple
+                // of the *visible* tile count, measured by terrain:lod at 96
+                // rather than 60 retained elevation tiles for an 1100x700 frame.
+                maxTileCacheZoomLevels: TILE_CACHE_ZOOM_LEVELS
             });
             const terrainMap = map;
             rendererCanvas = typeof terrainMap.getCanvas === 'function' ? terrainMap.getCanvas() : null;
@@ -1454,6 +1641,10 @@ import { terrainCamera } from './terrain-camera.js';
             terrainMap.once('load', () => {
                 if (map !== terrainMap || !mapElement) return;
                 removeLoadTimer();
+                // The inline style is never replaced (see addVectorBasemap), so
+                // the elevation source outlives every drape swap and this is the
+                // only place it needs tuning.
+                applyTerrainLod();
                 terrainMap.addSource('bpb-route', {
                     type: 'geojson',
                     data: route ? route.geojson : { type: 'FeatureCollection', features: [] }
@@ -1503,6 +1694,7 @@ import { terrainCamera } from './terrain-camera.js';
                     const camera = terrainCamera.fromMapLibre(terrainMap);
                     if (camera) post('camera', { camera });
                     schedulePeaksRequest();
+                    scheduleTiltWarm();
                     // A scroll-zoom moves the map under a resting pointer, so
                     // the track it is over can change without a mouse event.
                     if (peakPointerPoint) schedulePointerUpdate(peakPointerPoint);
@@ -1532,6 +1724,7 @@ import { terrainCamera } from './terrain-camera.js';
                 });
                 postView();
                 schedulePeaksRequest();
+                scheduleTiltWarm();
             });
 
             loadTimer = setTimeout(() => fail('timeout'), MAP_LOAD_TIMEOUT_MS);
@@ -1616,6 +1809,9 @@ import { terrainCamera } from './terrain-camera.js';
         lastPeaksBoundsKey = null;
         setPeakData([]);
         schedulePeaksRequest();
+        // A jumpTo/fitBounds with duration 0 does not always emit 'moveend', so
+        // the resumed camera arms warming explicitly rather than relying on it.
+        scheduleTiltWarm();
 
         if (typeof map.resize === 'function') map.resize();
         post('loaded', {

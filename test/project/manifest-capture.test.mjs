@@ -103,7 +103,7 @@ test('3D terrain is isolated from Peakbagger globals in an extension-owned frame
     const terrainFrame = await fs.readFile(new URL('../../terrain/terrain.html', import.meta.url), 'utf8');
     assert.match(terrainFrame, /vendor\/maplibre-gl-csp\.js/);
     assert.match(terrainFrame, /terrain-frame\.js/);
-    assert.deepEqual(bundleSources('terrain/terrain-frame.js'), ['terrain/terrain-camera.js', 'settings/settings-schema.js', 'terrain/terrain-cache.js', 'terrain/terrain-frame.js']);
+    assert.deepEqual(bundleSources('terrain/terrain-frame.js'), ['terrain/terrain-camera.js', 'settings/settings-schema.js', 'terrain/terrain-cache.js', 'terrain/terrain-tiles.js', 'terrain/terrain-frame.js']);
     assert.ok(manifest.host_permissions.every(pattern => !pattern.includes('mapterhorn.com')),
         'public CORS tiles must not broaden persistent extension host access');
 });
