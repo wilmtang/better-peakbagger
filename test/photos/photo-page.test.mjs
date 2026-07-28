@@ -9,6 +9,7 @@ import { COPY_FILES, ENTRIES } from '../../scripts/build-config.mjs';
 
 const html = await fs.readFile(new URL('../../photos/photos.html', import.meta.url), 'utf8');
 const source = await fs.readFile(new URL('../../photos/photos.js', import.meta.url), 'utf8');
+const styles = await fs.readFile(new URL('../../photos/photos.css', import.meta.url), 'utf8');
 const dom = new JSDOM(html);
 const doc = dom.window.document;
 
@@ -28,6 +29,9 @@ test('the packaged photo page exposes the editor, library, and credential bounda
         from === 'photos/photos.css' && to === 'photos/photos.css'));
     assert.equal(doc.querySelector('script[src="photos.js"]')?.hasAttribute('defer'), true);
     assert.equal(doc.querySelectorAll('script').length, 1, 'the extension page must not use inline scripts');
+    assert.match(styles,
+        /\[hidden\]\s*\{\s*display:\s*none\s*!important/,
+        'author layout rules must not override the native hidden state');
 });
 
 test('the API key is a password field and upload remains one explicit primary action', () => {

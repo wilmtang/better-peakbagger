@@ -216,6 +216,85 @@ async function main() {
       extensionState,
     );
 
+    const photoUrl = new URL("photos/photos.html?mode=library", baseUrl).href;
+    await driver.get(photoUrl);
+    const firefoxPhotoLibrary = await waitForScript(
+      driver,
+      `const status = document.getElementById("photo-backup-status")?.textContent || "";
+       if (/Checking/.test(status)) return null;
+       return {
+         heading: document.getElementById("library-heading")?.textContent,
+         boundary: document.querySelector(".backup-card")?.textContent,
+         status,
+         horizontalOverflow: document.documentElement.scrollWidth > document.documentElement.clientWidth
+       };`,
+      "the Firefox photo-library recovery surface",
+      5_000,
+      value => !!value,
+    );
+    assertState(
+      firefoxPhotoLibrary.heading === "Uploaded photos"
+        && /photo-library\.json/.test(firefoxPhotoLibrary.boundary || "")
+        && /Original images, API keys, and remote deletion links stay on this device/.test(
+          firefoxPhotoLibrary.boundary || "",
+        )
+        && !firefoxPhotoLibrary.horizontalOverflow,
+      "Firefox did not render the photo library or metadata-only recovery boundary",
+      firefoxPhotoLibrary,
+    );
+    await driver.findElement(By.id("show-editor")).click();
+    await driver.executeAsyncScript(done => {
+      const canvas = globalThis.document.createElement("canvas");
+      canvas.width = 900;
+      canvas.height = 600;
+      const drawing = canvas.getContext("2d");
+      drawing.fillStyle = "#8fc7e8";
+      drawing.fillRect(0, 0, 900, 600);
+      drawing.fillStyle = "#566b60";
+      drawing.beginPath();
+      drawing.moveTo(0, 600);
+      drawing.lineTo(300, 220);
+      drawing.lineTo(500, 430);
+      drawing.lineTo(700, 150);
+      drawing.lineTo(900, 600);
+      drawing.closePath();
+      drawing.fill();
+      canvas.toBlob(blob => {
+        const transfer = new globalThis.DataTransfer();
+        transfer.items.add(new File([blob], "firefox-verification-topo.png", { type: "image/png" }));
+        const input = globalThis.document.getElementById("photo-file");
+        Object.defineProperty(input, "files", { configurable: true, value: transfer.files });
+        input.dispatchEvent(new Event("change", { bubbles: true }));
+        done(true);
+      }, "image/png");
+    });
+    await driver.wait(until.elementIsVisible(driver.findElement(By.id("editor-workspace"))), 5_000);
+    await driver.findElement(By.id("photo-alt")).sendKeys("Firefox verification mountain route");
+    const firefoxPhotoEditor = await waitForScript(
+      driver,
+      `const saved = document.getElementById("save-status")?.textContent || "";
+       if (!/Saved on this device/.test(saved)) return null;
+       const viewport = document.getElementById("photo-viewport")?.getBoundingClientRect();
+       return {
+         saved,
+         upload: document.getElementById("upload-insert")?.textContent,
+         viewport: viewport ? { width: viewport.width, height: viewport.height } : null,
+         horizontalOverflow: document.documentElement.scrollWidth > document.documentElement.clientWidth
+       };`,
+      "the Firefox photo editor autosave",
+      5_000,
+      value => !!value,
+    );
+    assertState(
+      firefoxPhotoEditor.upload === "Upload to ImgBB"
+        && firefoxPhotoEditor.viewport?.width > 300
+        && firefoxPhotoEditor.viewport?.height > 300
+        && !firefoxPhotoEditor.horizontalOverflow,
+      "Firefox did not decode and autosave the packaged photo editor",
+      firefoxPhotoEditor,
+    );
+    await driver.get(optionsUrl);
+
     await driver.executeAsyncScript(done => {
       const api = globalThis.browser || globalThis.chrome;
       const entries = Array.from({ length: 1500 }, (_, index) => ({
@@ -993,6 +1072,7 @@ async function main() {
     console.log(`  - ${capabilities.getBrowserName()} ${capabilities.getBrowserVersion()}`);
     console.log(`  - hidden/headless at ${verificationViewport.width}x${verificationViewport.height}`);
     console.log("  - real sync/local/session storage and storage.onChanged round-tripped");
+    console.log("  - the photo library rendered its metadata-only recovery boundary and decoded/autosaved a PNG");
     console.log("  - the real 1,500-row favorite list reported its total, fuzzy-searched, and kept long navigation instant");
     console.log("  - a held Buddy replacement stayed busy and focused, then failed retryably without another fetch");
     console.log("  - four native Buddy actions refreshed/synced custom favorites under both removal policies");
