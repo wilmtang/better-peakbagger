@@ -35,6 +35,17 @@ const execFileAsync = promisify(execFile);
 
 const FIXTURE_HOST = 'www.peakbagger.com';
 const MAPTERHORN_TILE_ORIGIN = 'https://tiles.mapterhorn.com';
+// The showcase's own drape comes from a live Leaflet layer, and
+// src/terrain/terrain-basemap.js gives every live layer `stockLod: true` on
+// purpose — an unknown host on unknown terms does not get tripled tile requests.
+// That means the shared fixture cannot exercise the tuned drape LOD at all: with
+// it, three wildly different settings produce byte-identical drape levels because
+// none of them is ever applied. So this check swaps the fixture's layer for a
+// drape code that does take the tuning, and answers that host locally. The swap
+// is done in this server, not in the shared fixture file, so terrain:verify and
+// showcase:render keep rendering exactly what they rendered before.
+const DRAPE_CODE = 'L_OS';
+const DRAPE_HOST = 'tile.openstreetmap.org';
 // The plan measured at 1100x700 with 140 ms per tile; keep both so the numbers
 // here and the numbers in the plan are comparable.
 const FRAME_WIDTH = 1100;
@@ -170,6 +181,9 @@ const demTilePng = (z, x, y) => {
     ]);
 };
 
+// The showcase's own topographic tile, reused for the swapped drape host.
+const drapeTilePng = (await readFile(path.join(root, 'scripts/showcase/terrain-basemap-tile.png'))).toString('base64');
+
 const demTileCache = new Map();
 const demTile = (z, x, y) => {
     const key = `${z}/${x}/${y}`;
@@ -223,7 +237,11 @@ const server = createServer({ key: fixtureKey, cert: fixtureCert }, async (reque
             '/map/mastermap.aspx': '/scripts/showcase/terrain-native-map.html'
         };
         let pathname = showcaseRoutes[url.pathname.toLowerCase()] || decodeURIComponent(url.pathname);
-        if (pathname.startsWith('/scripts/showcase/terrain-tiles/')) {
+        // The swapped drape's own host, resolved here rather than on the network.
+        const host = String(request.headers.host || '').split(':')[0];
+        const crossOriginDrape = host === DRAPE_HOST;
+        if (process.env.BPB_LOD_DIAG) console.error(`[server] ${host} ${url.pathname}`);
+        if (crossOriginDrape || pathname.startsWith('/scripts/showcase/terrain-tiles/')) {
             pathname = '/scripts/showcase/terrain-basemap-tile.png';
         }
         const file = await safeFile(pathname);
@@ -255,6 +273,13 @@ const server = createServer({ key: fixtureKey, cert: fixtureCert }, async (reque
     });
   </script>
   <script src="terrain-frame.js"></script>`));
+        } else if (file.endsWith('terrain-native-map.html')) {
+            // Offer a drape code the extension carries a spec for, so the frame
+            // takes the tuned drape LOD path instead of the live-layer path that
+            // is deliberately pinned to MapLibre's stock setting.
+            contents = Buffer.from(contents.toString('utf8')
+                .replace('<option value="L_FIX" selected>Synthetic topographic map</option>',
+                    `<option value="${DRAPE_CODE}" selected>Synthetic topographic map</option>`));
         }
         response.end(contents);
     } catch (error) {
@@ -422,10 +447,48 @@ const PROBE = `(() => {
             shortfalls[shortfall] = (shortfalls[shortfall] || 0) + 1;
         }
     }
+    // The drape, and the ceiling it is painted into. MapLibre never paints the
+    // drape onto the screen: it paints it into render-to-texture tiles sized from
+    // the *elevation* source's level-of-detail function, each rendered into a
+    // target of tileSize * qualityFactor pixels. A drape tile finer than that
+    // target can hold is traffic bought for detail the pipeline discards, which
+    // is the question section 6 of the plan leaves open.
+    const drapeManager = map.style && map.style.tileManagers && map.style.tileManagers.basemap;
+    let drape = null;
+    if (drapeManager && typeof drapeManager.getRenderableIds === 'function') {
+        const drapeLevels = {};
+        for (const id of drapeManager.getRenderableIds()) {
+            const tile = drapeManager.getTileByID(id);
+            if (!tile) continue;
+            const z = String(tile.tileID.overscaledZ);
+            drapeLevels[z] = (drapeLevels[z] || 0) + 1;
+        }
+        const drapeTileSize = (drapeManager._source && drapeManager._source.tileSize) || 512;
+        const targetPixels = tileManager.tileSize * terrain.qualityFactor;
+        // A render-to-texture tile at level Z covers 1/2^Z of the world, and a
+        // drape at level B lays drapeTileSize * 2^(B - Z) texels across it. The
+        // finest B that still fits the target is Z + log2(target / tileSize).
+        //
+        // The ceiling is a range, not a number, and that is the whole point: a
+        // pitched frame holds several render-to-texture levels at once, so the
+        // near band and the horizon band have different ceilings. One ceiling
+        // taken from the near band makes every measurement read "nothing
+        // wasted", which is true and useless.
+        const headroom = Math.round(Math.log2(targetPixels / drapeTileSize));
+        const rttLevels = [...byAlpha.values()].map(entry => entry.desired + tileManager.deltaZoom);
+        drape = {
+            levels: drapeLevels,
+            tileSize: drapeTileSize,
+            targetPixels: targetPixels,
+            ceilingFinest: rttLevels.length ? Math.max(...rttLevels) + headroom : null,
+            ceilingCoarsest: rttLevels.length ? Math.min(...rttLevels) + headroom : null
+        };
+    }
+
     return {
         ready: surface > 0,
         reason: surface > 0 ? '' : 'no terrain surface on screen',
-        surface: surface, sky: sky, levels: levels, shortfalls: shortfalls,
+        surface: surface, sky: sky, levels: levels, shortfalls: shortfalls, drape: drape,
         pitch: Math.round(map.getPitch() * 100) / 100,
         zoom: Math.round(map.getZoom() * 1000) / 1000,
         rttTiles: tileManager.getRenderableTiles().length,
@@ -506,7 +569,7 @@ const chrome = spawn(chromePath, [
     '--disable-sync',
     // Headless Chrome reaches the real hardware renderer, so no ANGLE override
     // belongs here; the renderer is asserted below rather than assumed.
-    `--host-resolver-rules=MAP ${FIXTURE_HOST} 127.0.0.1`,
+    `--host-resolver-rules=MAP ${FIXTURE_HOST} 127.0.0.1,MAP ${DRAPE_HOST} 127.0.0.1`,
     '--ignore-certificate-errors',
     '--remote-debugging-port=0',
     `--user-data-dir=${profile}`,
@@ -544,6 +607,26 @@ try {
     const unexpected = [];
     cdp.on('Fetch.requestPaused', ({ requestId, request }) => {
         const serve = async () => {
+            if (request.url.includes(DRAPE_HOST)) {
+                drapeRequests++;
+                // Fulfilled here rather than proxied, so the swapped drape needs
+                // no DNS, no certificate, and no second origin on the server. The
+                // CORS headers are the ones a real provider would send: without
+                // them the frame correctly drops the layer as undrapeable and
+                // there is no drape left to measure.
+                await cdp.call('Fetch.fulfillRequest', {
+                    requestId,
+                    responseCode: 200,
+                    responseHeaders: [
+                        { name: 'Access-Control-Allow-Origin', value: '*' },
+                        { name: 'Cache-Control', value: 'no-store' },
+                        { name: 'Content-Type', value: 'image/png' },
+                        { name: 'Cross-Origin-Resource-Policy', value: 'cross-origin' }
+                    ],
+                    body: drapeTilePng
+                });
+                return;
+            }
             if (/\/scripts\/showcase\/terrain-tiles\//.test(request.url)) {
                 drapeRequests++;
                 await cdp.call('Fetch.continueRequest', { requestId });
@@ -578,7 +661,8 @@ try {
         patterns: [
             { urlPattern: '*://mapterhorn.com/*', requestStage: 'Request' },
             { urlPattern: '*://*.mapterhorn.com/*', requestStage: 'Request' },
-            { urlPattern: '*scripts/showcase/terrain-tiles/*', requestStage: 'Request' }
+            { urlPattern: '*scripts/showcase/terrain-tiles/*', requestStage: 'Request' },
+            { urlPattern: `*://${DRAPE_HOST}/*`, requestStage: 'Request' }
         ]
     });
 
@@ -738,6 +822,37 @@ try {
         console.log(`  ${String(pitch).padStart(2)} degrees: ${describeLevels(result.sample)}`
             + ` — widest gap ${gap}, ${result.sample.rttTiles} RTT tiles`);
         if (gap > 2) failures.push(`At ${pitch} degrees the detail ladder skips ${gap} levels in one frame`);
+    }
+
+    // ---- The drape's level against the ceiling it is painted into ------------
+    console.log('\nDrape levels versus the render-to-texture ceiling');
+    const anyDrape = census.find(entry => entry.sample.drape);
+    if (!anyDrape) {
+        console.log('  No drape layer in this run.');
+    } else {
+        console.log(`  ${anyDrape.sample.drape.tileSize}px drape tiles painted into`
+            + ` ${anyDrape.sample.drape.targetPixels}px render targets.`);
+        for (const entry of census) {
+            const drape = entry.sample.drape;
+            if (!drape) continue;
+            const loaded = Object.entries(drape.levels)
+                .map(([level, count]) => ({ level: Number(level), count }))
+                .sort((a, b) => b.level - a.level);
+            if (!loaded.length) continue;
+            const finest = loaded[0].level;
+            const coarsest = loaded[loaded.length - 1].level;
+            const total = loaded.reduce((sum, item) => sum + item.count, 0);
+            // Above the ceiling is traffic the render target throws away. Below
+            // it is detail the pipeline would have carried and the drape did not
+            // supply. Both are worth naming; only the first is waste.
+            const note = [
+                finest > drape.ceilingFinest ? `${finest - drape.ceilingFinest} finer than the near ceiling (wasted)` : null,
+                coarsest < drape.ceilingCoarsest ? `${drape.ceilingCoarsest - coarsest} coarser than the far ceiling allows` : null
+            ].filter(Boolean);
+            console.log(`  ${String(entry.pitch).padStart(2)} degrees: levels ${finest}-${coarsest}`
+                + ` (${total} tiles) against ceilings ${drape.ceilingFinest}-${drape.ceilingCoarsest}`
+                + (note.length ? ` — ${note.join('; ')}` : ' — matched'));
+        }
     }
 
     // ---- Criterion 4: traffic stays bounded ---------------------------------

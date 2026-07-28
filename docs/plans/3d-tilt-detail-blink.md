@@ -518,6 +518,23 @@ surface short (for 22 ms once step 1 landed). A finer ladder asks for more
 distinct levels, including one far away. This is the right trade — the settled
 picture is a level sharper across the horizon band — but it is a trade.
 
+### A limit of the harness, found by using it
+
+The showcase drape comes from a live Leaflet layer, and
+`src/terrain/terrain-basemap.js` gives every live layer `stockLod: true` on
+purpose — an unknown host on unknown terms does not get tripled tile requests. So
+the shared fixture cannot exercise the tuned drape level-of-detail path at all:
+three wildly different settings produced byte-identical drape levels, because none
+of them was ever applied. `terrain:lod` now swaps the fixture's layer for a drape
+code the extension carries a spec for and answers that host from the interceptor,
+with the CORS headers a real provider would send. The swap happens in the check's
+own server, so `terrain:verify` and `showcase:render` render exactly what they
+rendered before.
+
+This is the shape of mistake worth remembering: the first three runs agreed
+perfectly, which looked like a clean result and was in fact the measurement not
+running.
+
 ### Intentionally not changed — owner choices still open
 
 **Step 4, the pan jolt.** Not implemented. Section 7 asks for it to be decided by
@@ -526,13 +543,24 @@ a call this implementation can make. `centerClampedToGround` is still MapLibre's
 default `true`. It remains a one-line Map option with the trade-off already
 written down in section 7, and section 6 confirms it is not the tilt bug.
 
-**Whether the drape keeps its `(4, 3)` setting** (section 7's follow-on, section 10
-decision 3). Not re-measured. The measurement is now possible — the elevation
-ladder exists — but it needs a *sharpness* comparison, which `terrain:lod` does
-not make: the harness measures elevation levels, not drape levels. Deciding it
-needs either an extension to the harness that censuses the basemap source's chosen
-levels, or a visual A/B. Current drape traffic is 112 tiles per harness run at
-`(4, 3)`.
+**Whether the drape keeps its `(4, 3)` setting** — measured, and the answer is
+**yes**, which contradicts what section 6 expected. `terrain:lod` now censuses the
+drape's chosen levels against the ceiling each render-to-texture band can carry:
+256-pixel drape tiles are painted into 2048-pixel targets, so a band at level Z
+can carry a drape at Z+3, and a pitched frame holds several bands at once.
+
+| drape setting | drape tiles on screen | levels present | against the ceilings |
+| --- | --- | --- | --- |
+| `(4, 3)` — current | 119–144 | 16–12 | matched at every pitch measured |
+| `(9.314, 3)` — MapLibre stock | 53–57 | 16–8 | 2–3 levels coarser at the horizon |
+| `(6, 1.5)` — matching the elevation ladder | 67–76 | 16–10 | 1–2 levels coarser at the horizon |
+
+Section 6 was right that `(4, 3)` buys nothing *beneath the camera*: the near band
+sits at level 16 under all three settings, because that is where the ceiling is.
+It was wrong that the rest is therefore waste. The extra tiles go to the horizon
+band, and they land **below** the ceiling, not above it — detail the pipeline
+carries rather than discards. A thriftier setting is a strictly less sharp
+picture, not the same picture for less traffic. `(4, 3)` stays.
 
 **How wide a tilt band to pre-load** (section 10 decision 1). Section 10 asks for
 this to be chosen from a measurement of how far a typical drag tilts. There is no
