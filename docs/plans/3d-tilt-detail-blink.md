@@ -199,9 +199,10 @@ the blink on its own.** Only having the tiles ready is.
 ### The "crisper drapes" fix only did half its job
 
 The extension calls MapLibre's detail-tuning function for the painted map
-layer, at [terrain-frame.js:501](../../src/terrain/terrain-frame.js:501), with a
+layer, in [terrain-frame.js](../../src/terrain/terrain-frame.js), with a
 comment explaining that it is deliberately not applied to the elevation data
-because elevation tiles are expensive.
+because elevation tiles are expensive. (Both the line number this originally
+cited and that comment are gone; section 12 records what replaced them.)
 
 The problem is the invisible intermediate canvases from section 3. Their level
 is chosen using the *elevation* source's settings. So tuning only the painted
