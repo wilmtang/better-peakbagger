@@ -7,7 +7,7 @@ import { photoProject as Project } from './photo-project.js';
 import { photoLibrary as Library } from './photo-library.js';
 
 const DATABASE_NAME = 'betterPeakbaggerPhotos';
-const DATABASE_VERSION = 1;
+const DATABASE_VERSION = 2;
 const STORES = Object.freeze({
     photos: 'photos',
     projects: 'projects',
@@ -15,6 +15,7 @@ const STORES = Object.freeze({
     thumbnails: 'thumbnails',
     operations: 'operations',
     secrets: 'secrets',
+    tombstones: 'tombstones',
 });
 const STORE_NAMES = Object.freeze(Object.values(STORES));
 
@@ -139,11 +140,41 @@ const createPhotoStore = async options => {
             .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
     };
 
+    const listBackupBundles = async () => {
+        const transaction = database.transaction([
+            STORES.photos,
+            STORES.projects,
+            STORES.tombstones,
+        ], 'readonly');
+        const [photos, projects, tombstones] = await Promise.all([
+            requestResult(transaction.objectStore(STORES.photos).getAll()),
+            requestResult(transaction.objectStore(STORES.projects).getAll()),
+            requestResult(transaction.objectStore(STORES.tombstones).getAll()),
+        ]);
+        await transactionDone(transaction);
+        const projectsById = new Map(projects.map(value => [value.localId, Project.cleanProject(value)]));
+        return {
+            bundles: photos.map(Library.cleanPhoto).filter(Boolean).map(photo => ({
+                photo,
+                project: projectsById.get(photo.localId) || null,
+            })),
+            tombstones,
+        };
+    };
+
     const putPhoto = async photo => {
         const cleaned = Library.cleanPhoto(photo);
         if (!cleaned) throw new TypeError('photo store requires a clean photo');
-        const transaction = database.transaction(STORES.photos, 'readwrite');
+        const transaction = database.transaction([STORES.photos, STORES.tombstones], 'readwrite');
         transaction.objectStore(STORES.photos).put(cleaned);
+        if (cleaned.deletedAt) {
+            transaction.objectStore(STORES.tombstones).put({
+                localId: cleaned.localId,
+                deletedAt: cleaned.deletedAt,
+            });
+        } else {
+            transaction.objectStore(STORES.tombstones).delete(cleaned.localId);
+        }
         await transactionDone(transaction);
         return cleaned;
     };
@@ -222,9 +253,94 @@ const createPhotoStore = async options => {
         await transactionDone(transaction);
     };
 
+    const applyRestore = async ({ records = [], tombstones = [] } = {}) => {
+        const restored = records.map(value => {
+            const photo = Library.cleanPhoto(value?.photo);
+            const project = value?.project == null ? null : Project.cleanProject(value.project);
+            if (!photo || (value?.project != null && (!project || project.localId !== photo.localId))) {
+                throw new TypeError('photo restore contains an invalid record');
+            }
+            return { photo, project };
+        });
+        const deleted = tombstones.map(value => {
+            const localId = typeof value?.localId === 'string' ? value.localId : '';
+            const deletedAt = typeof value?.deletedAt === 'string'
+                && Number.isFinite(Date.parse(value.deletedAt))
+                ? new Date(value.deletedAt).toISOString()
+                : null;
+            if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$/.test(localId) || !deletedAt) {
+                throw new TypeError('photo restore contains an invalid tombstone');
+            }
+            return { localId, deletedAt };
+        });
+        const transaction = database.transaction([
+            STORES.photos,
+            STORES.projects,
+            STORES.originals,
+            STORES.thumbnails,
+            STORES.secrets,
+            STORES.tombstones,
+        ], 'readwrite');
+        const stores = Object.fromEntries([
+            STORES.photos,
+            STORES.projects,
+            STORES.originals,
+            STORES.thumbnails,
+            STORES.secrets,
+            STORES.tombstones,
+        ].map(name => [name, transaction.objectStore(name)]));
+
+        const restoredLookups = restored.map(value => Promise.all([
+                requestResult(stores[STORES.photos].get(value.photo.localId)),
+                requestResult(stores[STORES.projects].get(value.photo.localId)),
+                requestResult(stores[STORES.originals].get(value.photo.localId)),
+                requestResult(stores[STORES.thumbnails].get(value.photo.localId)),
+        ]));
+        const tombstoneLookups = deleted.map(tombstone =>
+            requestResult(stores[STORES.photos].get(tombstone.localId)));
+        const restoredValues = await Promise.all(restoredLookups);
+        const tombstoneValues = await Promise.all(tombstoneLookups);
+
+        restored.forEach((value, index) => {
+            const [existingPhoto, existingProject, original, thumbnail] = restoredValues[index];
+            const existing = Library.cleanPhoto(existingPhoto);
+            const sameSource = existing?.source.sha256 === value.photo.source.sha256;
+            const sameRemote = existing?.remote.providerId
+                && existing.remote.providerId === value.photo.remote.providerId;
+            const photo = Library.cleanPhoto({
+                ...value.photo,
+                assets: {
+                    originalRetained: !!original?.blob && sameSource,
+                    projectRetained: !!value.project || (!!existingProject && sameSource),
+                    thumbnailRetained: !!thumbnail?.blob && sameSource,
+                },
+                deletedAt: null,
+            });
+            stores[STORES.photos].put(photo);
+            if (value.project) stores[STORES.projects].put(value.project);
+            else if (!sameSource) stores[STORES.projects].delete(photo.localId);
+            if (!sameSource) {
+                stores[STORES.originals].delete(photo.localId);
+                stores[STORES.thumbnails].delete(photo.localId);
+            }
+            if (!sameRemote) stores[STORES.secrets].delete(photo.localId);
+            stores[STORES.tombstones].delete(photo.localId);
+        });
+
+        deleted.forEach((tombstone, index) => {
+            const existing = Library.cleanPhoto(tombstoneValues[index]);
+            if (existing && (!existing.deletedAt || existing.deletedAt < tombstone.deletedAt)) {
+                stores[STORES.photos].put(Library.markDeleted(existing, tombstone.deletedAt));
+            }
+            stores[STORES.tombstones].put(tombstone);
+        });
+        await transactionDone(transaction);
+    };
+
     return {
         getBundle,
         listPhotos,
+        listBackupBundles,
         putDraft,
         putPhoto,
         commitUpload,
@@ -233,6 +349,7 @@ const createPhotoStore = async options => {
         deleteOperation,
         removeLocalAssets,
         purge,
+        applyRestore,
         close: () => database.close(),
     };
 };

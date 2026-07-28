@@ -7,6 +7,7 @@ import { IDBFactory } from 'fake-indexeddb';
 import { photoProject as Project } from '../../src/photos/photo-project.js';
 import { photoLibrary as Library } from '../../src/photos/photo-library.js';
 import { photoStore as Store } from '../../src/photos/photo-store.js';
+import { photoBackup as Backup } from '../../src/photos/photo-backup.js';
 
 const TIME = '2026-07-27T18:00:00.000Z';
 const LATER = '2026-07-27T18:10:00.000Z';
@@ -142,5 +143,75 @@ test('journals operations and purges all local records explicitly', async () => 
     await store.purge('photo-1');
     assert.equal((await store.listPhotos({ includeDeleted: true })).length, 0);
     assert.equal((await store.getBundle('photo-1')).deleteUrl, null);
+    store.close();
+});
+
+test('lists metadata backup bundles and persists deletion tombstones separately', async () => {
+    const store = await Store.createPhotoStore({
+        indexedDB: new IDBFactory(),
+        name: 'photo-store-backup-bundles',
+    });
+    const input = fixture();
+    await store.putDraft(input);
+    await store.putPhoto(Library.markDeleted(input.photo, LATER));
+    const snapshot = await store.listBackupBundles();
+    assert.equal(snapshot.bundles.length, 1);
+    assert.equal(snapshot.bundles[0].project.localId, 'photo-1');
+    assert.deepEqual(snapshot.tombstones, [{ localId: 'photo-1', deletedAt: LATER }]);
+    const payload = Backup.buildPayload({ ...snapshot, exportedAt: LATER });
+    assert.deepEqual(payload.photos, []);
+    assert.deepEqual(payload.tombstones, [{ localId: 'photo-1', deletedAt: LATER }]);
+    store.close();
+});
+
+test('applies a restored project atomically without inventing original pixels', async () => {
+    const store = await Store.createPhotoStore({
+        indexedDB: new IDBFactory(),
+        name: 'photo-store-restore',
+    });
+    const input = fixture();
+    const payload = Backup.buildPayload({ bundles: [input], exportedAt: TIME });
+    const signature = await Backup.signature(payload);
+    const record = Backup.restoreRecord(payload.photos[0], {
+        signature,
+        restoredAt: LATER,
+    });
+    await store.applyRestore({
+        records: [record],
+        tombstones: [{ localId: 'remote-deleted', deletedAt: LATER }],
+    });
+
+    const restored = await store.getBundle('photo-1');
+    assert.equal(restored.photo.backup.state, 'restored');
+    assert.equal(restored.project.localId, 'photo-1');
+    assert.equal(restored.original, null);
+    assert.equal(restored.thumbnail, null);
+    assert.equal(restored.deleteUrl, null);
+    const snapshot = await store.listBackupBundles();
+    assert.deepEqual(snapshot.tombstones, [{ localId: 'remote-deleted', deletedAt: LATER }]);
+    store.close();
+});
+
+test('restoring matching metadata preserves local editable assets', async () => {
+    const store = await Store.createPhotoStore({
+        indexedDB: new IDBFactory(),
+        name: 'photo-store-restore-preserve',
+    });
+    const input = fixture();
+    await store.putDraft(input);
+    const payload = Backup.buildPayload({ bundles: [input], exportedAt: TIME });
+    const record = Backup.restoreRecord(payload.photos[0], {
+        signature: await Backup.signature(payload),
+        restoredAt: LATER,
+    });
+    await store.applyRestore({ records: [record] });
+    const restored = await store.getBundle('photo-1');
+    assert.equal(await restored.original.text(), 'original');
+    assert.equal(await restored.thumbnail.text(), 'thumbnail');
+    assert.deepEqual(restored.photo.assets, {
+        originalRetained: true,
+        projectRetained: true,
+        thumbnailRetained: true,
+    });
     store.close();
 });
