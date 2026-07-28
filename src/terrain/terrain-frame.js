@@ -493,17 +493,47 @@ import { terrainCamera } from './terrain-camera.js';
     // tilt is undone. Tightening the spread to 4 zoom levels holds the drape
     // beneath the camera at full resolution through the pitches the 3D view
     // actually uses, at the cost of roughly 2-3x more tile requests — so it is
-    // opt-out per layer (see stockLod) and never applied to the terrain source,
-    // whose tiles are 2048px render targets rather than cheap images.
+    // opt-out per layer (see stockLod).
     const DRAPE_LOD_ZOOM_LEVELS_ON_SCREEN = 4;
     const DRAPE_LOD_TILE_COUNT_RATIO = 3;
 
-    const applyBasemapLod = basemap => {
-        if (!basemap || basemap.stockLod || typeof map.setSourceTileLodParams !== 'function') return;
+    // The same tuning for the elevation source, which needs it for two reasons
+    // the drape setting cannot cover.
+    //
+    // First, MapLibre's stock ladder skips rungs: measured with terrain:lod, one
+    // frame holds level 13 near the camera and level 8 at the horizon while 9
+    // through 12 go unused. A fallback then has nowhere gradual to land — it
+    // drops several levels at once, which is what reads as a blink rather than
+    // as loading. At (6, 1.5) the horizon band moves up a level or more and no
+    // frame spans more than two levels.
+    //
+    // Second, MapLibre does not paint the drape straight onto the screen: it
+    // paints into render-to-texture tiles whose grid is sized from the *DEM*
+    // source's LOD function (TerrainTileManager.update passes
+    // tileManager._source.calculateTileZoom). So tuning only 'basemap' raises
+    // how many topo tiles are fetched without raising the ceiling they are
+    // painted into. Tuning the elevation source is what lifts that ceiling.
+    //
+    // (6, 1.5) was the best of the settings measured; tighter values pushed the
+    // render-target count from ~15 toward 20 (MapLibre pools 30) and made the
+    // per-degree behaviour worse, not better.
+    const TERRAIN_LOD_ZOOM_LEVELS_ON_SCREEN = 6;
+    const TERRAIN_LOD_TILE_COUNT_RATIO = 1.5;
+
+    const setSourceLod = (sourceId, levelsOnScreen, tileCountRatio) => {
+        if (!map || typeof map.setSourceTileLodParams !== 'function') return;
         try {
-            map.setSourceTileLodParams(DRAPE_LOD_ZOOM_LEVELS_ON_SCREEN, DRAPE_LOD_TILE_COUNT_RATIO, 'basemap');
+            map.setSourceTileLodParams(levelsOnScreen, tileCountRatio, sourceId);
         } catch (error) { /* An older MapLibre or a source that already went away. */ }
     };
+
+    const applyBasemapLod = basemap => {
+        if (!basemap || basemap.stockLod) return;
+        setSourceLod('basemap', DRAPE_LOD_ZOOM_LEVELS_ON_SCREEN, DRAPE_LOD_TILE_COUNT_RATIO);
+    };
+
+    const applyTerrainLod = () =>
+        setSourceLod('terrain', TERRAIN_LOD_ZOOM_LEVELS_ON_SCREEN, TERRAIN_LOD_TILE_COUNT_RATIO);
 
     const reliefExpression = palette => [
         'interpolate', ['linear'], ['elevation'],
@@ -1454,6 +1484,10 @@ import { terrainCamera } from './terrain-camera.js';
             terrainMap.once('load', () => {
                 if (map !== terrainMap || !mapElement) return;
                 removeLoadTimer();
+                // The inline style is never replaced (see addVectorBasemap), so
+                // the elevation source outlives every drape swap and this is the
+                // only place it needs tuning.
+                applyTerrainLod();
                 terrainMap.addSource('bpb-route', {
                     type: 'geojson',
                     data: route ? route.geojson : { type: 'FeatureCollection', features: [] }
