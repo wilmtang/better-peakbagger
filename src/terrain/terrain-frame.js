@@ -555,10 +555,20 @@ import { terrainTiles as TerrainTiles } from './terrain-tiles.js';
     // pitch-sensitive heuristic. At its stock setting a ~2 degree tilt can drop
     // the drape under the camera a whole level, which halves the topo's
     // resolution across most of the frame in one step and snaps back when the
-    // tilt is undone. Tightening the spread to 4 zoom levels holds the drape
-    // beneath the camera at full resolution through the pitches the 3D view
-    // actually uses, at the cost of roughly 2-3x more tile requests — so it is
-    // opt-out per layer (see stockLod).
+    // tilt is undone. Tightening the spread to 4 zoom levels holds the drape at
+    // full resolution through the pitches the 3D view actually uses, at the cost
+    // of roughly 2-3x more tile requests — so it is opt-out per layer (see
+    // stockLod).
+    //
+    // Measured with terrain:lod once the elevation ladder below was tuned, since
+    // the plan expected this setting to be buying sharpness the render targets
+    // then discard. It is not. The drape is painted into 2048px targets from
+    // 256px tiles, so the finest level each render-to-texture band can carry is
+    // its own level plus three, and a pitched frame holds several bands at once.
+    // At (4, 3) the drape sits exactly on that ceiling across the whole frame at
+    // every pitch measured. MapLibre's stock setting leaves the horizon band 2-3
+    // levels below what the pipeline would have carried, and (6, 1.5) leaves it
+    // 1-2 below. The extra tiles are buying real far-band detail, not waste.
     const DRAPE_LOD_ZOOM_LEVELS_ON_SCREEN = 4;
     const DRAPE_LOD_TILE_COUNT_RATIO = 3;
 

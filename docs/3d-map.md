@@ -515,6 +515,15 @@ drape is painted into, which the drape's own setting cannot reach. The frame
 also keeps 8 screenfuls of off-screen tiles per source instead of MapLibre's 5,
 so reversing a tilt stays a cache hit.
 
+The drape's own `(4, 3)` is measured rather than assumed. Its tiles are painted
+into 2048-pixel render targets, so a band at level Z can carry a drape at Z+3,
+and a pitched frame holds several bands at once. At `(4, 3)` the drape sits on
+that ceiling across the whole frame; MapLibre's stock setting leaves the horizon
+band 2–3 levels below it and `(6, 1.5)` leaves it 1–2 below. The extra traffic
+buys detail the pipeline carries, not detail it discards — which is why a live
+Leaflet layer's `stockLod` opt-out costs that layer real sharpness, and is still
+the right call for a host on unknown terms.
+
 ## Peak dots and route interaction
 
 The frame cannot contact Peakbagger with the page's authenticated context. On
