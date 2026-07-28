@@ -50,6 +50,7 @@ test('3D terrain waits for the extension frame handshake before sending route co
         type: 'init',
         routeSegments: [[[48.7, -121.8], [48.71, -121.81]]],
         routeLinks: [{ id: 3230293, label: '2026-06-12 - Fei (Kautz Glacier) TR-98' }],
+        routeTracks: [0],
         camera: { center: [48.72, -121.79], zoom: 12.5 },
         focus: [48.83115, -121.60214],
         focusZoom: 13,
@@ -80,6 +81,7 @@ test('3D terrain waits for the extension frame handshake before sending route co
     assert.ok(init);
     assert.deepEqual(init.routeSegments, [[[48.7, -121.8], [48.71, -121.81]]]);
     assert.deepEqual(init.routeLinks, [{ id: 3230293, label: '2026-06-12 - Fei (Kautz Glacier) TR-98' }]);
+    assert.deepEqual(init.routeTracks, [0], 'the hover identity travels with the route it belongs to');
     assert.deepEqual(JSON.parse(JSON.stringify(init.camera)), { center: [48.72, -121.79], zoom: 12.5 });
     assert.deepEqual(init.focus, [48.83115, -121.60214]);
     assert.equal(init.focusZoom, 13);
@@ -163,6 +165,16 @@ test('3D terrain waits for the extension frame handshake before sending route co
     assert.deepEqual(JSON.parse(JSON.stringify(frameMessages.at(-1))), {
         __bpbTerrainFrame: true, dir: 'toFrame', type: 'resetNorth'
     }, 'the bridge relays the compass reset to the frame');
+
+    // Escape inside the cross-origin frame reaches the page only as a request.
+    window.dispatchEvent(new window.MessageEvent('message', {
+        source: frame.contentWindow,
+        origin: 'chrome-extension://test-id',
+        data: { __bpbTerrainFrame: true, dir: 'toParent', type: 'exit' }
+    }));
+    assert.deepEqual(JSON.parse(JSON.stringify(pageMessages.at(-1))), {
+        __bpbTerrain: true, dir: 'toPage', type: 'exit'
+    }, 'the bridge relays the frame’s Escape to the page coordinator');
 
     await window.chrome.storage.sync.set({ bpbSettings: { enable3dMap: false } });
     await new Promise(resolve => window.setTimeout(resolve, 0));
@@ -1640,6 +1652,198 @@ test('3D peak dots snap uphill to the local DEM summit, and only to a genuine on
     sendBatch();
     assert.ok(metersBetween(rendered()[0].geometry.coordinates, apexOffsetM(60)) < 5,
         'the finer DEM is adopted on the next batch after it streams in, without another zoom change');
+
+    dom.window.close();
+});
+
+test('3D group tracks highlight the hovered climber and Escape leaves the view', async () => {
+    const dom = new JSDOM('<!doctype html><body></body>', {
+        url: 'https://www.peakbagger.com/Map/BigMap.aspx?t=G&d=2414',
+        runScripts: 'outside-only',
+        pretendToBeVisual: true
+    });
+    const { window } = dom;
+    const messages = [];
+    const maps = [];
+    const popups = [];
+
+    class MapStub {
+        constructor(options) {
+            this.options = options;
+            this.sources = new Map();
+            this.layers = [];
+            this.paint = [];
+            this.handlers = new Map();
+            // What queryRenderedFeatures answers, topmost first.
+            this.routeHits = [];
+            this.canvas = { style: {} };
+            maps.push(this);
+        }
+        addControl() {}
+        once(type, callback) { if (type === 'load') window.queueMicrotask(callback); }
+        on(type, callback) { this.handlers.set(type, callback); }
+        addSource(id, source) { this.sources.set(id, { ...source, setData(data) { this.data = data; } }); }
+        addLayer(layer) { this.layers.push(layer); }
+        getLayer(id) { return this.layers.find(layer => layer.id === id); }
+        removeLayer(id) { this.layers = this.layers.filter(layer => layer.id !== id); }
+        getSource(id) { return this.sources.get(id); }
+        removeSource(id) { this.sources.delete(id); }
+        setPaintProperty(...args) { this.paint.push(args); }
+        queryRenderedFeatures() { return this.routeHits; }
+        project() { return { x: -10000, y: -10000 }; }
+        getCanvas() { return this.canvas; }
+        getZoom() { return 13; }
+        getCenter() { return { lng: -121.805, lat: 48.73 }; }
+        fitBounds() {}
+        resize() {}
+        remove() { this.removed = true; }
+    }
+    class PopupStub {
+        constructor(options) { this.options = options; popups.push(this); }
+        setLngLat(lngLat) { this.lngLat = lngLat; return this; }
+        setDOMContent(node) { this.node = node; return this; }
+        addTo(target) { this.target = target; return this; }
+        remove() { this.removedPopup = true; }
+    }
+
+    window.chrome = { runtime: { getURL: path => `chrome-extension://test-id/${path}` } };
+    window.maplibregl = {
+        Map: MapStub,
+        Popup: PopupStub,
+        NavigationControl: class {},
+        ScaleControl: class {},
+        AttributionControl: class {},
+        setWorkerUrl() {},
+        addProtocol() {},
+        removeProtocol() {}
+    };
+    window.postMessage = message => { messages.push(message); };
+    window.fetch = () => Promise.resolve();
+    window.eval(frameBundle);
+
+    const dispatch = data => window.dispatchEvent(new window.MessageEvent('message', {
+        source: window,
+        origin: window.location.origin,
+        data: { __bpbTerrainFrame: true, dir: 'toFrame', ...data }
+    }));
+    const nextFrame = () => new Promise(resolve => window.requestAnimationFrame(() => resolve()));
+    const routeStyle = { color: '#2457a7', width: 5, casingColor: '#ffffff', casingWidth: 9 };
+    const groupInit = tracks => ({
+        type: 'init',
+        // Two segments cut from one climber's track, then a second climber's.
+        routeSegments: [
+            [[48.70, -121.80], [48.71, -121.81]],
+            [[48.72, -121.82], [48.73, -121.83]],
+            [[48.75, -121.86], [48.76, -121.87]]
+        ],
+        routeColors: ['#e34a33', '#e34a33', '#3182bd'],
+        routeTracks: tracks,
+        routeStyle,
+        theme: 'light'
+    });
+    const linePaint = map => map.paint.filter(call => call[0] === 'bpb-route');
+    const escape = () => {
+        const event = new window.KeyboardEvent('keydown', { key: 'Escape', cancelable: true, bubbles: true });
+        window.document.dispatchEvent(event);
+        return event;
+    };
+
+    dispatch(groupInit([0, 0, 1]));
+    await new Promise(resolve => window.queueMicrotask(resolve));
+    const map = maps.at(-1);
+    assert.deepEqual(
+        JSON.parse(JSON.stringify(map.sources.get('bpb-route').data.features.map(feature => feature.properties.track))),
+        [0, 0, 1],
+        'every segment names the native track it was cut from');
+
+    // Hovering either half of the first climber's track blackens and thickens
+    // that whole track — Peakbagger's own 2D group-map hover cue — and leaves
+    // every other track on its native color.
+    map.routeHits = [map.sources.get('bpb-route').data.features[1]];
+    map.handlers.get('mousemove')({ point: { x: 120, y: 90 } });
+    await nextFrame();
+    const hovered = linePaint(map).slice(-2);
+    assert.deepEqual(JSON.parse(JSON.stringify(hovered)), [
+        ['bpb-route', 'line-color',
+            ['case', ['==', ['get', 'track'], 0], '#000000', ['coalesce', ['get', 'color'], '#2457a7']]],
+        ['bpb-route', 'line-width', ['case', ['==', ['get', 'track'], 0], 7, 5]]
+    ], 'only the hovered track takes the hover paint, and it stays inside its casing');
+    assert.equal(map.canvas.style.cursor, '', 'a track with no ascent link is not clickable');
+
+    // Moving onto the other climber switches the highlight rather than adding one.
+    map.routeHits = [map.sources.get('bpb-route').data.features[2]];
+    map.handlers.get('mousemove')({ point: { x: 200, y: 140 } });
+    await nextFrame();
+    assert.deepEqual(JSON.parse(JSON.stringify(linePaint(map).at(-1))),
+        ['bpb-route', 'line-width', ['case', ['==', ['get', 'track'], 1], 7, 5]]);
+
+    // Leaving the canvas restores the plain route paint.
+    map.handlers.get('mouseout')();
+    assert.deepEqual(JSON.parse(JSON.stringify(linePaint(map).slice(-2))), [
+        ['bpb-route', 'line-color', ['coalesce', ['get', 'color'], '#2457a7']],
+        ['bpb-route', 'line-width', 5]
+    ], 'the hover cue is removed with the pointer');
+
+    // A live style change while a track is hovered keeps the highlight.
+    map.routeHits = [map.sources.get('bpb-route').data.features[0]];
+    map.handlers.get('mousemove')({ point: { x: 120, y: 90 } });
+    await nextFrame();
+    dispatch({
+        type: 'update',
+        routeStyle: { color: '#347a3f', width: 6, casingColor: '#ffffff', casingWidth: 10 },
+        theme: 'light'
+    });
+    assert.deepEqual(JSON.parse(JSON.stringify(linePaint(map).at(-1))),
+        ['bpb-route', 'line-width', ['case', ['==', ['get', 'track'], 0], 8, 6]],
+        'a restyle re-applies the hover on top of the new width');
+
+    // Escape asks the page to return to 2D; the page owns whether it can.
+    const exitKey = escape();
+    assert.equal(exitKey.defaultPrevented, true);
+    assert.equal(messages.at(-1).type, 'exit');
+    assert.equal(messages.at(-1).dir, 'toParent');
+
+    // An open popup is the nearer layer: Escape dismisses it and stays in 3D.
+    map.routeHits = [{
+        type: 'Feature',
+        properties: { ascentId: 3230293, label: '2026-06-12 - Fei (Kautz Glacier) TR-98', track: 0 },
+        geometry: { type: 'LineString', coordinates: [[-121.8, 48.7], [-121.81, 48.71]] }
+    }];
+    map.handlers.get('click')({ point: { x: 120, y: 90 }, lngLat: { lng: -121.805, lat: 48.705 } });
+    assert.equal(popups.length, 1);
+    const messagesBeforeEscape = messages.length;
+    escape();
+    assert.equal(popups[0].removedPopup, true, 'the popup closes first');
+    assert.equal(messages.length, messagesBeforeEscape, 'and the view stays open');
+    escape();
+    assert.equal(messages.at(-1).type, 'exit', 'a second Escape leaves 3D');
+
+    // Partly attributed segments would highlight half a track, so hover is off.
+    dispatch({ type: 'destroy' });
+    dispatch(groupInit([0, null, 1]));
+    await new Promise(resolve => window.queueMicrotask(resolve));
+    const partial = maps.at(-1);
+    partial.routeHits = [partial.sources.get('bpb-route').data.features[0]];
+    partial.handlers.get('mousemove')({ point: { x: 120, y: 90 } });
+    await nextFrame();
+    assert.deepEqual(linePaint(partial), [],
+        'an incompletely attributed route never repaints on hover');
+
+    // The analyzer and single-ascent maps send no track identity at all.
+    dispatch({ type: 'destroy' });
+    dispatch({
+        type: 'init',
+        routeSegments: [[[48.70, -121.80], [48.71, -121.81]]],
+        routeStyle,
+        theme: 'light'
+    });
+    await new Promise(resolve => window.queueMicrotask(resolve));
+    const single = maps.at(-1);
+    assert.equal(single.sources.get('bpb-route').data.features[0].properties.track, undefined);
+    single.routeHits = [single.sources.get('bpb-route').data.features[0]];
+    single.handlers.get('mousemove')({ point: { x: 120, y: 90 } });
+    await nextFrame();
+    assert.deepEqual(linePaint(single), [], 'a lone route has nothing to be told apart from');
 
     dom.window.close();
 });

@@ -152,6 +152,14 @@ each native route color. A group route may carry one validated ascent id and a
 plain-text label so the frame can reconstruct a Peakbagger ascent link; native
 popup HTML is never forwarded.
 
+Group segments also carry the index of the native Leaflet layer they were cut
+from. Peakbagger's own 2D group map paints the hovered track black and thickens
+it, and 3D reproduces that cue — but a native track can flatten into several
+segments, so without a shared identity a hover would highlight part of a
+climber's route. Only Full Screen group maps send these indices; a lone route
+has no sibling to be told apart from, so the analyzer, single-ascent maps, and
+Peak pages send none and never highlight.
+
 A route-free Full Screen peak map is eligible only when URL parameters, the
 page's subject link, and the exact `MainPeak*Circle.gif` marker at the requested
 coordinate agree. An ambiguous or changed page fails closed to native 2D.
@@ -226,6 +234,14 @@ without reporting anything. The more specific inner failure should normally
 win.
 
 ### Return-to-2D sequence
+
+Escape is the second way out, and it is the same stop: it cancels a loading
+view or leaves an active one. The coordinator listens on the surface's own
+document, but the renderer is a cross-origin iframe, so a key pressed while the
+map holds focus is visible only inside the frame — the frame handles that press
+itself and relays it as `exit`. Inside the frame an open popup is the nearer
+layer and is dismissed first; a modified Escape is left to the browser, and an
+Escape with 3D closed is left to the page.
 
 When 3D is active, a `2D` click does not immediately discard the user's map
 position:
@@ -345,7 +361,10 @@ Route parsing is all-or-nothing in the frame:
   closed;
 - optional per-segment color must be six-digit hexadecimal;
 - optional ascent link must have a positive integer id at most `1e9` and a
-  control-character-free label of at most 200 characters.
+  control-character-free label of at most 200 characters;
+- optional per-segment track index must be an integer in `[0, 1500)`. Hover
+  highlighting turns on only when *every* segment carries one, because a partly
+  attributed route would highlight half a track and read as a rendering fault.
 
 The frame converts coordinates to GeoJSON `[lon, lat]` only after the complete
 route passes. It does not partially draw a malformed route.
@@ -467,6 +486,12 @@ Route links are different: only validated group-map segments carry link
 metadata, and the frame reconstructs a same-origin ascent URL from the integer
 id. It never renders forwarded native popup HTML.
 
+Route hover uses the same rendered-layer query. One pointer pass per animation
+frame resolves the peak rings, the ascent-link cursor, and the hovered track
+together, and a `case` expression on the track index repaints only that track's
+features. A settled camera re-runs the pass under a resting pointer, because a
+scroll-zoom can move a different track under the cursor without a mouse event.
+
 ## Failure policy
 
 | Reason | Typical source | Fatal? | User result |
@@ -516,6 +541,7 @@ than incorrectly blaming the browser.
 | `metrics` | Cross-origin bottom control-stack height for toggle placement |
 | `view` | Bearing/pitch stream for the page compass |
 | `peaksRequest` | Ask page context for native Peakbagger dots |
+| `exit` | Escape was pressed inside the frame; ask the page to return to 2D |
 | `error` | Bounded fatal reason |
 
 The bridge also uses frame-only `ready`, `resume`, `suspend`, and `destroyed`

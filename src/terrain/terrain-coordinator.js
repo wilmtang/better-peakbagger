@@ -56,6 +56,10 @@ const create = ({
 
         toggle.classList.remove('bpb-map-3d-toggle-loading');
         toggle.removeAttribute('aria-busy');
+        // Escape does the same thing as the button while 3D is open, so the
+        // shortcut is advertised exactly while it works.
+        if (state === 'loading' || state === 'active') toggle.setAttribute('aria-keyshortcuts', 'Escape');
+        else toggle.removeAttribute('aria-keyshortcuts');
         if (stopPending) {
             toggle.disabled = true;
             toggle.textContent = '2D';
@@ -67,13 +71,13 @@ const create = ({
             toggle.textContent = '3D';
             toggle.classList.add('bpb-map-3d-toggle-loading');
             toggle.setAttribute('aria-busy', 'true');
-            toggle.title = 'Cancel loading 3D terrain';
+            toggle.title = 'Cancel loading 3D terrain (Esc)';
             toggle.setAttribute('aria-label', 'Cancel loading 3D terrain');
             toggle.setAttribute('aria-pressed', 'false');
         } else if (state === 'active') {
             toggle.disabled = false;
             toggle.textContent = '2D';
-            toggle.title = 'Return to the 2D map';
+            toggle.title = 'Return to the 2D map (Esc)';
             toggle.setAttribute('aria-label', 'Return to the 2D map');
             toggle.setAttribute('aria-pressed', 'true');
         } else {
@@ -194,6 +198,12 @@ const create = ({
             if (stopPending && data.requestId === cameraRequestId) finishStop();
             return true;
         }
+        // The frame relays its own Escape because a key pressed inside the
+        // cross-origin iframe never reaches this document.
+        if (data.type === 'exit' && (state === 'loading' || state === 'active')) {
+            stop();
+            return true;
+        }
         if (data.type === 'error' && (state === 'loading' || state === 'active')) {
             fail(data.reason);
             return true;
@@ -212,6 +222,17 @@ const create = ({
             return;
         }
         start();
+    });
+
+    // Escape leaves 3D — the same exit the toggle performs, from wherever the
+    // user's focus happens to be on the page. It is inert unless 3D is open, so
+    // it never competes with the page's own Escape handling.
+    toggle.ownerDocument.addEventListener('keydown', event => {
+        if (event.key !== 'Escape' || event.defaultPrevented) return;
+        if (event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return;
+        if (state !== 'loading' && state !== 'active') return;
+        event.preventDefault();
+        stop();
     });
 
     return {

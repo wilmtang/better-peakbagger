@@ -383,36 +383,44 @@ import { mapFrameLifecycle as MapFrameLifecycle } from '../gpx/map-frame-lifecyc
 
     // Native GPS tracks (single-ascent: one; group: up to ten) flattened into
     // [[lat, lon], …] segments, reduced to the shared point/segment budget. On
-    // group maps each segment carries its track's native color and validated
-    // ascent link (parallel to segments) so 3D can keep climbers distinct and
-    // clickable. Single-ascent maps recolor to the preferred color.
+    // group maps each segment carries its track's native color, validated
+    // ascent link, and the index of the native layer it was cut from (all
+    // parallel to segments) so 3D can keep climbers distinct, clickable, and
+    // hoverable as whole tracks. Single-ascent maps recolor to the preferred
+    // color and have no second track to tell apart.
     const collectRoute = () => {
-        if (!activeMap || !activeMapWin || typeof activeMap.eachLayer !== 'function') {
-            return { segments: [], colors: [], links: [] };
-        }
+        const emptyRoute = () => ({ segments: [], colors: [], links: [], tracks: [] });
+        if (!activeMap || !activeMapWin || typeof activeMap.eachLayer !== 'function') return emptyRoute();
         const L = activeMapWin.L;
-        if (!L) return { segments: [], colors: [], links: [] };
+        if (!L) return emptyRoute();
         const segments = [];
         const colors = [];
         const links = [];
-        const pushLatLngs = (latLngs, color, link) => {
+        const tracks = [];
+        const pushLatLngs = (latLngs, color, link, track) => {
             if (!Array.isArray(latLngs) || !latLngs.length) return;
             if (latLngs.every(point => point && Number.isFinite(point.lat) && Number.isFinite(point.lng))) {
                 if (latLngs.length >= 2) {
                     segments.push(latLngs.map(point => [point.lat, point.lng]));
                     colors.push(color);
                     links.push(link);
+                    tracks.push(track);
                 }
                 return;
             }
-            latLngs.forEach(part => pushLatLngs(part, color, link));
+            latLngs.forEach(part => pushLatLngs(part, color, link, track));
         };
+        let trackIndex = 0;
         try {
             activeMap.eachLayer(layer => {
                 if (casingLayers.has(layer) || !isNativeTrack(layer, L)) return;
-                const color = mapType === 'G' ? nativeTrackColor(layer) : null;
-                const link = mapType === 'G' ? nativeAscentLink(layer) : null;
-                try { pushLatLngs(layer.getLatLngs(), color, link); } catch (error) { /* layer may be mid-removal */ }
+                const group = mapType === 'G';
+                const color = group ? nativeTrackColor(layer) : null;
+                const link = group ? nativeAscentLink(layer) : null;
+                // Native hover highlights one climber's whole track, so every
+                // segment cut from the same layer shares that layer's index.
+                const track = group ? trackIndex++ : null;
+                try { pushLatLngs(layer.getLatLngs(), color, link, track); } catch (error) { /* layer may be mid-removal */ }
             });
         } catch (error) { /* a live Leaflet layer collection can change during iteration */ }
         const limited = gpxMetrics ? gpxMetrics.limitMapRouteSegments(segments) : segments;
@@ -420,8 +428,8 @@ import { mapFrameLifecycle as MapFrameLifecycle } from '../gpx/map-frame-lifecyc
         // whole overlay; only then do the parallel metadata arrays fall out of
         // alignment and must be discarded together.
         return limited.length === segments.length
-            ? { segments: limited, colors, links }
-            : { segments: limited, colors: [], links: [] };
+            ? { segments: limited, colors, links, tracks }
+            : { segments: limited, colors: [], links: [], tracks: [] };
     };
 
     // Layer events only need to enable or disable the idle toggle. Avoid
@@ -593,7 +601,9 @@ import { mapFrameLifecycle as MapFrameLifecycle } from '../gpx/map-frame-lifecyc
     };
 
     const buildTerrainInit = () => {
-        const { segments: routeSegments, colors: routeColors, links: routeLinks } = collectRoute();
+        const {
+            segments: routeSegments, colors: routeColors, links: routeLinks, tracks: routeTracks
+        } = collectRoute();
         const focusPeak = collectPeakFocus();
         if (!routeSegments.length && !focusPeak) return null;
         const { basemap, basemaps } = terrainBasemaps();
@@ -612,6 +622,7 @@ import { mapFrameLifecycle as MapFrameLifecycle } from '../gpx/map-frame-lifecyc
                 routeSegments,
                 routeColors,
                 routeLinks,
+                routeTracks,
                 routeStyle: { ...routeStyle }
             }),
             theme: effectiveTheme(),

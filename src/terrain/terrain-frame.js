@@ -22,6 +22,13 @@ import { terrainCamera } from './terrain-camera.js';
     const TERRAIN_EXAGGERATION = 1;
     const MAP_LOAD_TIMEOUT_MS = 15000;
     const HIGHLIGHT_COLORS = Object.freeze({ distance: '#ff3b30', time: '#0055ff' });
+    // Peakbagger's native group map paints the hovered track black and thickens
+    // it so the one under the cursor is unmistakable among ten colors. 3D
+    // mirrors that cue exactly, so hovering means the same thing on both maps.
+    // The grown line stays a pixel inside the casing (the shared schema keeps
+    // the casing at least two pixels wider), so the route still reads as cased.
+    const ROUTE_HOVER_COLOR = '#000000';
+    const ROUTE_HOVER_WIDTH_GAIN = 2;
     const PEAKBAGGER_ORIGIN = /^https?:\/\/(?:www\.)?peakbagger\.com(?::\d+)?$/i;
     // Extension-provided vector basemap (not mirrored from Peakbagger's 2D
     // Leaflet menu): OpenFreeMap's keyless, CORS-clean OpenStreetMap tiles,
@@ -141,6 +148,11 @@ import { terrainCamera } from './terrain-camera.js';
     // True when the route carries per-track colors (group maps), so the route
     // line is painted data-driven from each feature instead of one flat color.
     let routeHasFeatureColors = false;
+    // True when every route feature carries the index of the native track it
+    // was cut from, which is what makes a whole-track hover highlight possible.
+    let routeHasTrackIds = false;
+    // The track index under the pointer, or null when nothing is hovered.
+    let hoveredRouteTrack = null;
     let peakPopup = null;
     let routePopup = null;
     let peaksRequestId = 0;
@@ -266,6 +278,8 @@ import { terrainCamera } from './terrain-camera.js';
         availableBasemaps = [];
         activeBasemapIndex = -1;
         routeHasFeatureColors = false;
+        routeHasTrackIds = false;
+        hoveredRouteTrack = null;
         vectorActive = false;
         vectorSwapToken++;
         vectorLayerIds = [];
@@ -302,6 +316,10 @@ import { terrainCamera } from './terrain-camera.js';
             cancelAnimationFrame(viewFrame);
             viewFrame = null;
         }
+        // The pointer left with the parked frame; a resume re-paints the route
+        // anyway, so drop the hover rather than restoring it under no cursor.
+        peakPointerPoint = null;
+        setRouteHover(null);
     };
 
     const fail = reason => {
@@ -309,11 +327,14 @@ import { terrainCamera } from './terrain-camera.js';
         post('error', { reason });
     };
 
-    const validateRoute = (segments, colors, links) => {
+    const validateRoute = (segments, colors, links, tracks) => {
         if (!Array.isArray(segments) || !segments.length || segments.length > MAX_ROUTE_SEGMENTS) return null;
         const colorList = Array.isArray(colors) ? colors : [];
         const linkList = Array.isArray(links) ? links : [];
+        const trackList = Array.isArray(tracks) ? tracks : [];
         const hexColor = value => typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value) ? value : null;
+        const trackId = value =>
+            Number.isInteger(value) && value >= 0 && value < MAX_ROUTE_SEGMENTS ? value : null;
         const cleanLink = value => {
             if (!value || typeof value !== 'object') return null;
             const { id, label } = value;
@@ -327,6 +348,10 @@ import { terrainCamera } from './terrain-camera.js';
         let minLat = Infinity, minLon = Infinity, maxLat = -Infinity, maxLon = -Infinity;
         const features = [];
         let hasFeatureColors = false;
+        // Hover identity is all-or-nothing: a route whose segments are only
+        // partly attributed would highlight part of a track, which reads as a
+        // rendering fault rather than a hover.
+        let hasTrackIds = true;
 
         for (let index = 0; index < segments.length; index++) {
             const segment = segments[index];
@@ -348,10 +373,16 @@ import { terrainCamera } from './terrain-camera.js';
             }
             const color = hexColor(colorList[index]);
             const link = cleanLink(linkList[index]);
+            const track = trackId(trackList[index]);
             if (color) hasFeatureColors = true;
+            if (track === null) hasTrackIds = false;
             features.push({
                 type: 'Feature',
-                properties: { ...(color ? { color } : {}), ...(link ? { ascentId: link.id, label: link.label } : {}) },
+                properties: {
+                    ...(color ? { color } : {}),
+                    ...(track === null ? {} : { track }),
+                    ...(link ? { ascentId: link.id, label: link.label } : {})
+                },
                 geometry: { type: 'LineString', coordinates: converted }
             });
         }
@@ -361,7 +392,8 @@ import { terrainCamera } from './terrain-camera.js';
         return {
             geojson: { type: 'FeatureCollection', features },
             bounds: [[minLon, minLat], [maxLon, maxLat]],
-            hasFeatureColors
+            hasFeatureColors,
+            hasTrackIds
         };
     };
 
@@ -744,9 +776,19 @@ import { terrainCamera } from './terrain-camera.js';
 
     // Group maps paint each track its own color (falling back to the preferred
     // color for any track without one); single tracks use one flat color.
-    const routeLineColor = style => routeHasFeatureColors
+    const routeBaseColor = style => routeHasFeatureColors
         ? ['coalesce', ['get', 'color'], style.color]
         : style.color;
+
+    // While a track is hovered, only that track's features take the hover look;
+    // everything else keeps the base paint.
+    const onHoveredTrack = (hovered, base) => hoveredRouteTrack === null
+        ? base
+        : ['case', ['==', ['get', 'track'], hoveredRouteTrack], hovered, base];
+
+    const routeLineColor = style => onHoveredTrack(ROUTE_HOVER_COLOR, routeBaseColor(style));
+    const routeLineWidth = style => onHoveredTrack(
+        Math.min(style.width + ROUTE_HOVER_WIDTH_GAIN, style.casingWidth - 1), style.width);
 
     const setRoutePaint = routeStyle => {
         const style = validateStyle(routeStyle);
@@ -755,7 +797,20 @@ import { terrainCamera } from './terrain-camera.js';
         map.setPaintProperty('bpb-route-casing', 'line-color', style.casingColor);
         map.setPaintProperty('bpb-route-casing', 'line-width', style.casingWidth);
         map.setPaintProperty('bpb-route', 'line-color', routeLineColor(style));
-        map.setPaintProperty('bpb-route', 'line-width', style.width);
+        map.setPaintProperty('bpb-route', 'line-width', routeLineWidth(style));
+    };
+
+    // Repaint only the route line when the hovered track changes; the casing
+    // and every other layer are untouched by hover.
+    const setRouteHover = track => {
+        const next = routeHasTrackIds && Number.isInteger(track) ? track : null;
+        if (next === hoveredRouteTrack) return;
+        hoveredRouteTrack = next;
+        if (!map || !loaded) return;
+        try {
+            map.setPaintProperty('bpb-route', 'line-color', routeLineColor(activeRouteStyle));
+            map.setPaintProperty('bpb-route', 'line-width', routeLineWidth(activeRouteStyle));
+        } catch (error) { /* The route layer may be mid-teardown; hover is decoration. */ }
     };
 
     const setTheme = theme => {
@@ -917,34 +972,52 @@ import { terrainCamera } from './terrain-camera.js';
         return best;
     };
 
-    const updatePeakCursor = point => {
-        const canvas = map && typeof map.getCanvas === 'function' ? map.getCanvas() : null;
-        if (canvas) canvas.style.cursor = peakFeatureAt(point) || routeFeatureAt(point) ? 'pointer' : '';
-    };
-
-    const routeFeatureAt = point => {
-        if (!map || !loaded || typeof map.queryRenderedFeatures !== 'function' || !point) return null;
+    // A line lies on the terrain, so unlike the billboarded peak rings it can
+    // be resolved with MapLibre's own rendered-layer query.
+    const routeFeaturesAt = point => {
+        if (!map || !loaded || typeof map.queryRenderedFeatures !== 'function' || !point) return [];
         try {
             const features = map.queryRenderedFeatures(point, { layers: ['bpb-route'] });
-            return Array.isArray(features) ? features.find(feature => {
-                const properties = feature && feature.properties;
-                return properties && Number.isInteger(Number(properties.ascentId))
-                    && Number(properties.ascentId) > 0
-                    && typeof properties.label === 'string' && properties.label;
-            }) || null : null;
+            return Array.isArray(features) ? features : [];
         } catch (error) {
-            return null;
+            return [];
         }
+    };
+
+    // Only group-map segments carry an ascent link, and only those are clickable.
+    const routeLinkIn = features => features.find(feature => {
+        const properties = feature && feature.properties;
+        return properties && Number.isInteger(Number(properties.ascentId))
+            && Number(properties.ascentId) > 0
+            && typeof properties.label === 'string' && properties.label;
+    }) || null;
+
+    // The topmost drawn track wins the hover, which is the one the user sees.
+    const routeTrackIn = features => {
+        for (const feature of features) {
+            const raw = feature && feature.properties ? Number(feature.properties.track) : NaN;
+            if (Number.isInteger(raw) && raw >= 0) return raw;
+        }
+        return null;
+    };
+
+    // One pass per pointer position: the peak rings, the ascent-link cursor,
+    // and the hovered group track all read the same point.
+    const updatePointer = point => {
+        const routeFeatures = routeFeaturesAt(point);
+        setRouteHover(routeTrackIn(routeFeatures));
+        const canvas = map && typeof map.getCanvas === 'function' ? map.getCanvas() : null;
+        if (canvas) canvas.style.cursor = peakFeatureAt(point) || routeLinkIn(routeFeatures) ? 'pointer' : '';
     };
 
     // Hover hit tests are deferred to the next animation frame so a fast
     // pointer costs at most one scan of the (≤400) dots per painted frame.
-    const schedulePeakCursorUpdate = point => {
+    const schedulePointerUpdate = point => {
         peakPointerPoint = point;
         if (peakPointerFrame !== null) return;
         peakPointerFrame = requestAnimationFrame(() => {
             peakPointerFrame = null;
-            if (peakPointerPoint) updatePeakCursor(peakPointerPoint);
+            if (peakPointerPoint) updatePointer(peakPointerPoint);
         });
     };
 
@@ -1081,7 +1154,7 @@ import { terrainCamera } from './terrain-camera.js';
         }
         // Keep the hover cursor honest when the dots refresh or clear under a
         // resting pointer.
-        if (peakPointerPoint) updatePeakCursor(peakPointerPoint);
+        if (peakPointerPoint) updatePointer(peakPointerPoint);
     };
 
     // The visible bounds, clamped to boundsFactor × the straight-down viewport
@@ -1220,10 +1293,12 @@ import { terrainCamera } from './terrain-camera.js';
 
     const createTerrain = data => {
         if (map || mapElement) return;
-        const route = validateRoute(data.routeSegments, data.routeColors, data.routeLinks);
+        const route = validateRoute(data.routeSegments, data.routeColors, data.routeLinks, data.routeTracks);
         const focus = validateFocus(data.focus, data.focusZoom);
         const requestedCamera = terrainCamera.toMapLibre(data.camera);
         routeHasFeatureColors = Boolean(route && route.hasFeatureColors);
+        routeHasTrackIds = Boolean(route && route.hasTrackIds);
+        hoveredRouteTrack = null;
         const maplibre = globalThis.maplibregl;
         const cacheLimitMb = settingsSchema.terrainCacheLimitMb(data.cacheLimitMb);
         if ((!route && !focus) || !maplibre || !TerrainCache || !globalThis.chrome?.runtime?.getURL) {
@@ -1404,16 +1479,17 @@ import { terrainCamera } from './terrain-camera.js';
                     const feature = peakFeatureAt(event.point);
                     if (feature) showPeakPopup(feature);
                     else {
-                        const routeFeature = routeFeatureAt(event.point);
+                        const routeFeature = routeLinkIn(routeFeaturesAt(event.point));
                         if (routeFeature) showRoutePopup(routeFeature, event.lngLat);
                     }
                 });
                 terrainMap.on('mousemove', event => {
-                    if (map === terrainMap && event && event.point) schedulePeakCursorUpdate(event.point);
+                    if (map === terrainMap && event && event.point) schedulePointerUpdate(event.point);
                 });
                 terrainMap.on('mouseout', () => {
                     if (map !== terrainMap) return;
                     peakPointerPoint = null;
+                    setRouteHover(null);
                     const canvas = typeof terrainMap.getCanvas === 'function' ? terrainMap.getCanvas() : null;
                     if (canvas) canvas.style.cursor = '';
                 });
@@ -1427,6 +1503,9 @@ import { terrainCamera } from './terrain-camera.js';
                     const camera = terrainCamera.fromMapLibre(terrainMap);
                     if (camera) post('camera', { camera });
                     schedulePeaksRequest();
+                    // A scroll-zoom moves the map under a resting pointer, so
+                    // the track it is over can change without a mouse event.
+                    if (peakPointerPoint) schedulePointerUpdate(peakPointerPoint);
                 });
                 terrainMap.on('move', () => {
                     if (map === terrainMap) scheduleView();
@@ -1482,7 +1561,7 @@ import { terrainCamera } from './terrain-camera.js';
     // the caller boots fresh via createTerrain.
     const resumeTerrain = data => {
         if (!map || !loaded) return false;
-        const route = validateRoute(data.routeSegments, data.routeColors, data.routeLinks);
+        const route = validateRoute(data.routeSegments, data.routeColors, data.routeLinks, data.routeTracks);
         const focus = validateFocus(data.focus, data.focusZoom);
         if (!route && !focus) {
             fail('unavailable');
@@ -1490,6 +1569,10 @@ import { terrainCamera } from './terrain-camera.js';
         }
         const requestedCamera = terrainCamera.toMapLibre(data.camera);
         routeHasFeatureColors = Boolean(route && route.hasFeatureColors);
+        routeHasTrackIds = Boolean(route && route.hasTrackIds);
+        // The resumed view starts under no pointer and with different features.
+        hoveredRouteTrack = null;
+        peakPointerPoint = null;
 
         const focusPeak = focus ? validatePeaks([data.focusPeak]) : null;
         focusPeakFeature = focusPeak && focusPeak.length === 1
@@ -1571,6 +1654,25 @@ import { terrainCamera } from './terrain-camera.js';
             setRoutePaint(data.routeStyle);
             setTheme(data.theme);
         }
+    });
+
+    // Escape leaves the 3D view, the way it leaves any full-bleed mode. This
+    // frame is cross-origin to the Peakbagger page, so a key pressed while the
+    // map holds focus is visible only here; ask the page to make its ordinary
+    // return to 2D. An open popup is the nearer layer and closes first.
+    document.addEventListener('keydown', event => {
+        if (event.key !== 'Escape' || event.defaultPrevented || !map || !loaded) return;
+        if (peakPopup || routePopup) {
+            event.preventDefault();
+            for (const popup of [peakPopup, routePopup]) {
+                try { popup?.remove(); } catch (error) { /* Already detached. */ }
+            }
+            peakPopup = null;
+            routePopup = null;
+            return;
+        }
+        event.preventDefault();
+        post('exit');
     });
 
     // The iframe load event can fire before this listener is installed in

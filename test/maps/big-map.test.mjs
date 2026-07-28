@@ -678,6 +678,57 @@ test('Full Screen 3D group routes carry only validated native ascent-link metada
         { id: 3230293, label: '2026-06-12 - Fei (Kautz Glacier) TR-98' },
         null
     ], 'page-owned markup is reduced to a same-origin ascent id and plain-text label');
+    assert.deepEqual(init.routeTracks, [0, 1],
+        'each segment names the native track it came from, so 3D can hover a whole climber’s route');
+
+    dom.window.close();
+});
+
+test('Full Screen 3D keeps every segment of one native track under a single hover identity', async () => {
+    const fixture = await loadBigMap({ type: 'G', settings: { enable3dMap: true } });
+    const { dom, window, messages, leaflet } = fixture;
+    // A native track whose latLngs are split into two parts, plus a second
+    // single-part track: hovering the first must highlight both of its parts.
+    const split = new leaflet.Polyline([
+        [{ lat: 44.15, lng: -121.78 }, { lat: 44.16, lng: -121.76 }],
+        [{ lat: 44.17, lng: -121.75 }, { lat: 44.18, lng: -121.74 }]
+    ], { color: '#e34a33', weight: 3 });
+    const single = new leaflet.Polyline(
+        [{ lat: 44.14, lng: -121.77 }, { lat: 44.13, lng: -121.79 }],
+        { color: '#3182bd', weight: 3 });
+    for (const route of [split, single]) {
+        route.on('mouseover', () => {});
+        route.on('click', () => {});
+    }
+    window.map = new leaflet.MapStub([split, single]);
+    fixture.evaluate();
+
+    await waitFor(dom, () => window.document.getElementById('bpb-terrain-toggle')?.disabled === false);
+    window.document.getElementById('bpb-terrain-toggle').click();
+    await waitFor(dom, () => messages.some(message => message.__bpbTerrain === true && message.type === 'init'));
+    const init = messages.find(message => message.__bpbTerrain === true && message.type === 'init');
+    assert.equal(init.routeSegments.length, 3);
+    assert.deepEqual(init.routeTracks, [0, 0, 1],
+        'both halves of the split track share one identity; the second track gets its own');
+
+    dom.window.close();
+});
+
+test('single-ascent Full Screen maps carry no track identity to hover apart', async () => {
+    const fixture = await loadBigMap({ type: 'A', settings: { enable3dMap: true } });
+    const { dom, window, messages, leaflet } = fixture;
+    const route = new leaflet.Polyline(
+        [{ lat: 44.15, lng: -121.78 }, { lat: 44.16, lng: -121.76 }],
+        { color: '#d9483b', weight: 3 });
+    window.map = new leaflet.MapStub([route]);
+    fixture.evaluate();
+
+    await waitFor(dom, () => window.document.getElementById('bpb-terrain-toggle')?.disabled === false);
+    window.document.getElementById('bpb-terrain-toggle').click();
+    await waitFor(dom, () => messages.some(message => message.__bpbTerrain === true && message.type === 'init'));
+    const init = messages.find(message => message.__bpbTerrain === true && message.type === 'init');
+    assert.deepEqual(init.routeTracks, [null],
+        'one route has no sibling to tell it apart from, so there is nothing to highlight');
 
     dom.window.close();
 });

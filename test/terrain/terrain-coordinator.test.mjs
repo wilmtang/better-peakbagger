@@ -130,6 +130,60 @@ test('a native-map identity reset discards the stale terrain camera immediately'
     fixture.dom.window.close();
 });
 
+test('Escape leaves 3D from the page and from the cross-origin frame', () => {
+    const fixture = setup();
+    const { coordinator, dom, toggle, posted } = fixture;
+    const pressEscape = () => {
+        const event = new dom.window.KeyboardEvent('keydown', { key: 'Escape', cancelable: true, bubbles: true });
+        dom.window.document.dispatchEvent(event);
+        return event;
+    };
+
+    // Inert until 3D is open, so it never competes with the page's own Escape.
+    const ignored = pressEscape();
+    assert.equal(ignored.defaultPrevented, false);
+    assert.equal(posted.length, 0);
+
+    toggle.click();
+    coordinator.handleMessage({ type: 'loaded', camera: { center: [48.82, -121.58], zoom: 12.5 } });
+    assert.equal(toggle.getAttribute('aria-keyshortcuts'), 'Escape',
+        'the shortcut is advertised exactly while it works');
+    assert.match(toggle.title, /Esc/);
+
+    const handled = pressEscape();
+    assert.equal(handled.defaultPrevented, true);
+    assert.deepEqual(posted.at(-1), { type: 'cameraRequest', requestId: 1 });
+    coordinator.handleMessage({
+        type: 'camera', requestId: 1, camera: { center: [48.83, -121.57], zoom: 13 }
+    });
+    assert.equal(coordinator.isIdle(), true);
+    assert.equal(fixture.hidden, false);
+    assert.equal(toggle.hasAttribute('aria-keyshortcuts'), false);
+
+    // A key pressed inside the extension frame never reaches this document, so
+    // the frame relays it as an exit request instead.
+    toggle.click();
+    assert.equal(coordinator.handleMessage({ type: 'exit' }), true);
+    assert.equal(coordinator.isIdle(), true, 'exit also cancels a still-loading view');
+    assert.equal(posted.at(-1).type, 'destroy');
+    assert.equal(coordinator.handleMessage({ type: 'exit' }), false,
+        'an exit request while 2D is showing is not the coordinator’s to act on');
+    fixture.dom.window.close();
+});
+
+test('a modified Escape is left to the browser and the page', () => {
+    const fixture = setup();
+    fixture.toggle.click();
+    fixture.coordinator.handleMessage({ type: 'loaded' });
+    const event = new fixture.dom.window.KeyboardEvent('keydown', {
+        key: 'Escape', shiftKey: true, cancelable: true, bubbles: true
+    });
+    fixture.dom.window.document.dispatchEvent(event);
+    assert.equal(event.defaultPrevented, false);
+    assert.equal(fixture.coordinator.isActive(), true);
+    fixture.dom.window.close();
+});
+
 test('the disabled feature delegates only idle activation to the consent owner', () => {
     const fixture = setup({ enabled: false });
     fixture.toggle.click();

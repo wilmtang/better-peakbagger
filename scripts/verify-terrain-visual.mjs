@@ -401,6 +401,70 @@ const clickAt = async (cdp, x, y) => {
     await cdp.call('Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button: 'left', clickCount: 1 });
 };
 
+const moveTo = (cdp, x, y) => cdp.call('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y });
+
+const pressEscape = async cdp => {
+    for (const type of ['rawKeyDown', 'keyUp']) {
+        await cdp.call('Input.dispatchKeyEvent', {
+            type, key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27
+        });
+    }
+};
+
+// The paint the group route is currently drawn with, as the frame's live
+// MapLibre reports it. A hovered track turns the flat/data-driven paint into a
+// 'case' expression that singles that track out.
+const readRoutePaint = cdp => evaluate(cdp, `(() => {
+    const frame = document.getElementById('bpb-terrain-frame');
+    const map = frame && frame.contentWindow && frame.contentWindow.__bpbTerrainTestMap;
+    if (!map || typeof map.getPaintProperty !== 'function') return null;
+    const read = property => {
+        const value = map.getPaintProperty('bpb-route', property);
+        return value === undefined ? null : JSON.parse(JSON.stringify(value));
+    };
+    return { color: read('line-color'), width: read('line-width') };
+})()`);
+
+// The frame pixel furthest from every drawn group track, so the pointer can be
+// parked somewhere provably off-route. Returns null when nothing is far enough
+// to be a trustworthy "not hovering" position.
+const findOffRoutePoint = cdp => evaluate(cdp, `(() => {
+    const frame = document.getElementById('bpb-terrain-frame');
+    const map = frame && frame.contentWindow && frame.contentWindow.__bpbTerrainTestMap;
+    const source = map && map.getSource('bpb-route');
+    const data = source && typeof source.serialize === 'function' ? source.serialize().data : null;
+    if (!data || !Array.isArray(data.features)) return null;
+    const rect = frame.getBoundingClientRect();
+    const drawn = [];
+    for (const feature of data.features) {
+        const line = feature.geometry.coordinates;
+        for (let index = 0; index < line.length - 1; index++) {
+            const from = map.project(line[index]);
+            const to = map.project(line[index + 1]);
+            // Sample along the drawn segment, not only its ends: a pixel can sit
+            // far from every vertex and still be right on the line.
+            for (let step = 0; step <= 10; step++) {
+                drawn.push({
+                    x: from.x + (to.x - from.x) * step / 10,
+                    y: from.y + (to.y - from.y) * step / 10
+                });
+            }
+        }
+    }
+    if (!drawn.length) return null;
+    let best = null;
+    for (let x = 30; x < rect.width - 30; x += 20) {
+        for (let y = 30; y < rect.height - 120; y += 20) {
+            let nearest = Infinity;
+            for (const point of drawn) nearest = Math.min(nearest, Math.hypot(point.x - x, point.y - y));
+            if (!best || nearest > best.distance) best = { x, y, distance: nearest };
+        }
+    }
+    return best && best.distance > 60
+        ? { x: rect.left + best.x, y: rect.top + best.y, distance: best.distance }
+        : null;
+})()`);
+
 // The vertical gap between the floating toggle's bottom and the 3D zoom stack's
 // top, in page pixels. Negative means the toggle overlaps (covers) the zoom.
 const measureToggleGap = cdp => evaluate(cdp, `(() => {
@@ -1044,6 +1108,51 @@ try {
             : null;
     })()`);
     if (!routePoint) throw new Error('Could not project the first group route for its click check');
+
+    // Peakbagger's native 2D group map blackens and thickens the track under
+    // the cursor. 3D reproduces that, and only a real pointer over a real
+    // pitched-terrain render can show that MapLibre's rendered-layer query
+    // still finds the line here (the peak rings had to abandon it entirely).
+    const offRoutePoint = await findOffRoutePoint(cdp);
+    if (!offRoutePoint) throw new Error('Could not find a frame pixel that is provably off every group track');
+    await moveTo(cdp, offRoutePoint.x, offRoutePoint.y);
+    const restingPaint = await readRoutePaint(cdp);
+    if (!restingPaint || restingPaint.color?.[0] === 'case' || restingPaint.width?.[0] === 'case') {
+        throw new Error(`The unhovered group route is already painted as hovered: ${JSON.stringify(restingPaint)}`);
+    }
+    await moveTo(cdp, routePoint.x, routePoint.y);
+    const hoverPaint = await waitForPageState(cdp, `(() => {
+        const map = document.getElementById('bpb-terrain-frame')?.contentWindow?.__bpbTerrainTestMap;
+        const color = map && map.getPaintProperty('bpb-route', 'line-color');
+        const width = map && map.getPaintProperty('bpb-route', 'line-width');
+        return {
+            ready: Array.isArray(color) && color[0] === 'case',
+            color: color === undefined ? null : JSON.parse(JSON.stringify(color ?? null)),
+            width: width === undefined ? null : JSON.parse(JSON.stringify(width ?? null))
+        };
+    })()`, 8000).catch(() => {
+        throw new Error('Hovering a group track in 3D did not highlight it');
+    });
+    const hoveredTrack = hoverPaint.color?.[1]?.[2];
+    if (hoverPaint.color?.[2] !== '#000000' || !Number.isInteger(hoveredTrack)) {
+        throw new Error(`The hovered group track is not painted like the native 2D hover: ${JSON.stringify(hoverPaint)}`);
+    }
+    if (hoverPaint.width?.[0] !== 'case' || !(hoverPaint.width[2] > hoverPaint.width[3])) {
+        throw new Error(`The hovered group track did not thicken: ${JSON.stringify(hoverPaint)}`);
+    }
+    await capture(cdp, path.join(outputDir, 'bigmap-route-hover.png'));
+    await moveTo(cdp, offRoutePoint.x, offRoutePoint.y);
+    const clearedPaint = await waitForPageState(cdp, `(() => {
+        const map = document.getElementById('bpb-terrain-frame')?.contentWindow?.__bpbTerrainTestMap;
+        const color = map && map.getPaintProperty('bpb-route', 'line-color');
+        return { ready: Boolean(color) && color[0] !== 'case', color: JSON.parse(JSON.stringify(color ?? null)) };
+    })()`, 8000).catch(() => {
+        throw new Error('Moving off a group track in 3D left the hover highlight behind');
+    });
+    if (clearedPaint.color?.[0] === 'case') {
+        throw new Error(`The hover highlight outlived the pointer: ${JSON.stringify(clearedPaint)}`);
+    }
+
     await clickAt(cdp, routePoint.x, routePoint.y);
     const routePopup = await waitForPageState(cdp, `(() => {
         const frame = document.getElementById('bpb-terrain-frame');
@@ -1063,6 +1172,65 @@ try {
         throw new Error(`Group-route popup is wrong: ${JSON.stringify(routePopup)}`);
     }
     await capture(cdp, path.join(outputDir, 'bigmap-route-popup.png'));
+
+    // Escape leaves the full-bleed 3D view. The click above put focus inside
+    // the extension frame, where the page cannot see the key at all — so this
+    // exercises the frame's own handler and its relay, including the popup
+    // being dismissed first as the nearer layer.
+    const focusInFrame = await evaluate(cdp,
+        `document.activeElement && document.activeElement.id === 'bpb-terrain-frame'`);
+    if (!focusInFrame) throw new Error('Clicking the 3D map did not move focus into the terrain frame');
+    await pressEscape(cdp);
+    const afterFirstEscape = await waitForPageState(cdp, `(() => {
+        const frame = document.getElementById('bpb-terrain-frame');
+        const toggle = document.getElementById('bpb-terrain-toggle');
+        const popup = frame && frame.contentDocument && frame.contentDocument.querySelector('.maplibregl-popup');
+        return { ready: Boolean(frame) && !popup, stillOpen: toggle && toggle.textContent === '2D' };
+    })()`, 8000).catch(() => {
+        throw new Error('Escape did not dismiss the open route popup inside the 3D frame');
+    });
+    if (!afterFirstEscape.stillOpen) {
+        throw new Error('Escape closed the whole 3D view while a popup was still open');
+    }
+    await pressEscape(cdp);
+    await waitForPageState(cdp, `(() => {
+        const toggle = document.getElementById('bpb-terrain-toggle');
+        const frame = document.getElementById('bpb-terrain-frame');
+        const nativeMap = document.getElementById('if');
+        return {
+            ready: toggle && toggle.textContent === '3D' && nativeMap
+                && nativeMap.style.visibility === 'visible'
+                && (!frame || frame.style.opacity === '0')
+        };
+    })()`, 8000).catch(() => {
+        throw new Error('Escape inside the 3D frame did not return the Full Screen map to 2D');
+    });
+
+    // The same key from the page side, where focus stays on the toggle the user
+    // just clicked and the frame never sees it.
+    await evaluate(cdp, `document.getElementById('bpb-terrain-toggle').click()`);
+    await waitForPageState(cdp, `(() => {
+        const toggle = document.getElementById('bpb-terrain-toggle');
+        const frame = document.getElementById('bpb-terrain-frame');
+        return { ready: toggle && toggle.textContent === '2D' && frame && frame.style.opacity === '1' };
+    })()`);
+    await pressEscape(cdp);
+    await waitForPageState(cdp, `(() => {
+        const toggle = document.getElementById('bpb-terrain-toggle');
+        const nativeMap = document.getElementById('if');
+        return { ready: toggle && toggle.textContent === '3D' && nativeMap && nativeMap.style.visibility === 'visible' };
+    })()`, 8000).catch(() => {
+        throw new Error('Escape from the Full Screen page did not return the map to 2D');
+    });
+
+    // Re-enter for the remaining live-renderer checks.
+    await evaluate(cdp, `document.getElementById('bpb-terrain-toggle').click()`);
+    await waitForPageState(cdp, `(() => {
+        const toggle = document.getElementById('bpb-terrain-toggle');
+        const frame = document.getElementById('bpb-terrain-frame');
+        const map = frame && frame.contentWindow && frame.contentWindow.__bpbTerrainTestMap;
+        return { ready: toggle && toggle.textContent === '2D' && frame && frame.style.opacity === '1' && Boolean(map) };
+    })()`);
     await assertPlainScrollZooms(cdp, 'BigMap 3D (group tracks)');
     if (peakFeedRequests.length !== peakFeedBeforeBigMap) {
         throw new Error('A group map queried the peak feed — the native map never shows other peaks there');

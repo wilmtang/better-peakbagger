@@ -277,6 +277,7 @@ import { terrainCamera } from './terrain-camera.js';
         routeSegments: data.routeSegments,
         routeColors: data.routeColors,
         routeLinks: data.routeLinks,
+        routeTracks: data.routeTracks,
         camera: terrainCamera.clean(data.camera),
         focus: data.focus,
         focusZoom: data.focusZoom,
@@ -417,6 +418,11 @@ import { terrainCamera } from './terrain-camera.js';
             postToPage('view', { bearing: data.bearing, pitch: data.pitch });
         } else if (data.type === 'peaksRequest') {
             postToPage('peaksRequest', { requestId: data.requestId, bounds: data.bounds });
+        } else if (data.type === 'exit') {
+            // Escape pressed while the cross-origin frame held focus. The page
+            // never saw that key, so the frame asks for the ordinary return to
+            // 2D; the coordinator still owns whether a stop is possible.
+            postToPage('exit');
         } else if (data.type === 'error') {
             fail(data.reason);
         }
