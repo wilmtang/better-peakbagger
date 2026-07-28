@@ -1579,6 +1579,15 @@ import { terrainTiles as TerrainTiles } from './terrain-tiles.js';
                 maxZoom: 18,
                 attributionControl: false,
                 fadeDuration: 0,
+                // COMPARISON BRANCH ONLY — step 4 of
+                // docs/plans/3d-tilt-detail-blink.md. MapLibre re-derives the
+                // zoom from the ground elevation under the screen centre at the
+                // end of every drag, so panning from a valley onto a ridge and
+                // releasing changes the zoom in one instantaneous step. Off,
+                // that jolt is gone, and zoom means a fixed map scale rather
+                // than a fixed height above the terrain. Shift+J toggles it live
+                // so both can be felt in one session; see the handler below.
+                centerClampedToGround: false,
                 // Tilting a few degrees and tilting back is the most common
                 // gesture in this view, and MapLibre's stock retention (5x the
                 // on-screen tile count per source) can evict the tiles of the
@@ -1856,6 +1865,22 @@ import { terrainTiles as TerrainTiles } from './terrain-tiles.js';
     // frame is cross-origin to the Peakbagger page, so a key pressed while the
     // map holds focus is visible only here; ask the page to make its ordinary
     // return to 2D. An open popup is the nearer layer and closes first.
+    // COMPARISON BRANCH ONLY — step 4 of docs/plans/3d-tilt-detail-blink.md.
+    // The pan jolt is a feel judgement, and a subtle one: it cannot be held in
+    // memory across a rebuild, so this flips MapLibre's ground-following zoom
+    // live and names the state in the frame's own notice line. Pan from a valley
+    // onto a ridge, release, and watch the scale bar. Nothing here is meant to
+    // ship; whichever way the judgement goes, main gets the Map option alone.
+    document.addEventListener('keydown', event => {
+        if (event.key !== 'J' || !event.shiftKey || event.defaultPrevented || !map || !loaded) return;
+        event.preventDefault();
+        const next = map.getCenterClampedToGround() !== true;
+        map.setCenterClampedToGround(next);
+        showNotice(next
+            ? 'Ground-following zoom ON (MapLibre default) — pan valley to ridge and release'
+            : 'Ground-following zoom OFF — pan valley to ridge and release');
+    });
+
     document.addEventListener('keydown', event => {
         if (event.key !== 'Escape' || event.defaultPrevented || !map || !loaded) return;
         if (peakPopup || routePopup) {
