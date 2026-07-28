@@ -168,8 +168,10 @@ CI does not run this command until its renderer can satisfy that condition.
 
 ## Store listing description
 
-`store-assets/description.txt` is the single source of truth for the "About
-this extension" text on both stores. The Firefox workflow reads it automatically
-via `scripts/create-amo-metadata.mjs`. The Chrome Web Store API does not
-support updating listing metadata, so after editing `description.txt`, paste
-the new text into the Chrome Developer Dashboard manually.
+`store-assets/description.md` is the single source of truth for the "About this
+extension" text on both stores. The Firefox workflow reads the Markdown
+automatically via `scripts/create-amo-metadata.mjs`. After editing it, run
+`npm run store:description:chrome` to regenerate
+`store-assets/description-chrome.txt`. The Chrome Web Store API does not support
+updating listing metadata, so paste that generated plain text into the Chrome
+Developer Dashboard manually.

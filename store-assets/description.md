@@ -20,4 +20,6 @@ Better Peakbagger turns Garmin and Strava activities—or a GPX file you already
 
 [Read the complete privacy policy](https://github.com/wilmtang/better-peakbagger/blob/main/PRIVACY.md).
 
-Better Peakbagger works with Chrome, Edge, Brave, and Firefox. It is an [independent, open-source project](https://github.com/wilmtang/better-peakbagger) and is not affiliated with Peakbagger.com, Garmin, Strava, GitHub, Mapterhorn, or the linked planning services.
+Better Peakbagger works with Chrome, Edge, Brave, and Firefox. It is an independent, open-source project and is not affiliated with Peakbagger.com, Garmin, Strava, GitHub, Mapterhorn, or the linked planning services.
+
+[Source code](https://github.com/wilmtang/better-peakbagger)

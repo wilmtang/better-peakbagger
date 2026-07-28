@@ -7,7 +7,7 @@ export function buildAmoMetadata({ licenseText, description }) {
     throw new Error("LICENSE must contain the full project license text");
   }
   if (typeof description !== "string" || description.trim() === "") {
-    throw new Error("store-assets/description.txt must contain the listing description");
+    throw new Error("store-assets/description.md must contain the listing description");
   }
 
   return {
@@ -62,7 +62,7 @@ async function main() {
 
   const [licenseText, description] = await Promise.all([
     readFile("LICENSE", "utf8"),
-    readFile("store-assets/description.txt", "utf8"),
+    readFile("store-assets/description.md", "utf8"),
   ]);
   const metadata = buildAmoMetadata({ licenseText, description });
   await mkdir(path.dirname(outputPath), { recursive: true });
