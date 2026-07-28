@@ -1,11 +1,11 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import JSZip from 'jszip';
 import { photoProject as Project } from '../src/photos/photo-project.js';
 import { photoRenderer as Renderer } from '../src/photos/photo-renderer.js';
 import { photoLibrary as Library } from '../src/photos/photo-library.js';
 import { photoStore as Store } from '../src/photos/photo-store.js';
+import { photoArchive as Archive } from '../src/photos/photo-archive.js';
 import { imgbbClient as ImgbbClient } from '../src/photos/imgbb-client.js';
 
 const ext = globalThis.browser || globalThis.chrome;
@@ -1028,13 +1028,11 @@ const downloadProject = async item => {
     if (!confirm(
         'This project bundle includes the original file and any metadata it contains. Download it?',
     )) return;
-    const zip = new JSZip();
-    zip.file('project.json', `${JSON.stringify(bundle.project, null, 2)}\n`);
-    zip.file('photo.json', `${JSON.stringify(bundle.photo, null, 2)}\n`);
-    const extension = bundle.original.type === 'image/png' ? 'png'
-        : bundle.original.type === 'image/webp' ? 'webp' : 'jpg';
-    zip.file(`original.${extension}`, bundle.original);
-    const blob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE' });
+    const blob = await Archive.createProjectArchive({
+        project: bundle.project,
+        photo: bundle.photo,
+        original: bundle.original,
+    });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;

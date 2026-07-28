@@ -20,6 +20,7 @@ test('the packaged photo page exposes the editor, library, and credential bounda
         'photos/photo-renderer.js',
         'photos/photo-library.js',
         'photos/photo-store.js',
+        'photos/photo-archive.js',
         'photos/imgbb-client.js',
         'photos-main.js',
     ]);
@@ -79,6 +80,7 @@ test('all planned topo tools and accessible editor controls are present', () => 
 test('page orchestration avoids page-owned storage sync and raw HTML assignment', () => {
     assert.doesNotMatch(source, /storage\.sync/);
     assert.doesNotMatch(source, /\.innerHTML\s*=/);
+    assert.doesNotMatch(source, /from ['"]jszip['"]/);
     assert.match(source, /PHOTO_IMGBB_LEASE_KEY/);
     assert.match(source, /PHOTO_INSERT_COMMIT/);
     assert.match(source, /outcome-unknown/);

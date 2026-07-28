@@ -43,7 +43,7 @@ export const WEB_EXT_WARNING_BASELINE = Object.freeze([
     {
         code: 'UNSAFE_VAR_ASSIGNMENT',
         file: 'content/ascent-editor.js',
-        line: 11962,
+        line: 11965,
         column: 5,
         owner: 'ProseMirror view 1.42.1',
         reason: 'dependency clipboard parser uses a detached document'
@@ -51,7 +51,7 @@ export const WEB_EXT_WARNING_BASELINE = Object.freeze([
     {
         code: 'UNSAFE_VAR_ASSIGNMENT',
         file: 'content/ascent-editor.js',
-        line: 17484,
+        line: 17487,
         column: 5,
         owner: 'TipTap core 3.28.0',
         reason: 'dependency writes its generated stylesheet into a style element'
