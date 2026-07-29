@@ -512,6 +512,86 @@ ancestor it never requested. So how *deep* a momentary fallback goes belongs to
 the detail ladder below, and how *long* it lasts belongs to warming.
 `npm run terrain:lod` measures both.
 
+### Why a small tilt can change resolution a lot
+
+The artifact is a resolution *step*: tilt two or three degrees and a band of the
+map — usually the far half — visibly drops to coarser imagery, then snaps back
+when the tilt is undone. Five things compound to produce it, and each one also
+bounds how well it can be fixed.
+
+**1. The pyramid is discrete.** Tile zoom levels are integers, and adjacent
+levels differ by 2× in linear resolution and 4× in area. The sampling rate a
+camera *wants* for a patch of ground is continuous. Any continuous input that
+crosses a rounding boundary flips a whole level, so the smallest possible
+resolution change is 2×. There is no gentle version of this event: a 1° tilt
+that crosses a boundary and a 20° tilt that crosses one produce the same step.
+
+**2. Pitch stretches the frame's depth range non-linearly.** Unpitched, every
+pixel looks at ground roughly the same distance away, and one level serves the
+frame. Pitched, the bottom edge is a few hundred metres out while the top edge
+approaches the horizon, and the distance under that top edge grows without bound
+as pitch approaches 90°. The number of levels a frame wants therefore grows with
+pitch, and grows *faster* the more pitched it already is. Measured on the stock
+drape, the far band sits at level 12 at both 60° and 62°, level 11 at 66°, and
+level 8 at 70° — one level lost over the first six degrees, three over the last
+four. The same gesture is nearly free low down and expensive high up.
+
+**3. The level budget forces something to give.** `setSourceTileLodParams` caps
+how many levels may coexist on screen. When a frame wants more depth than the
+budget allows, MapLibre coarsens the far band to fit. The budget is what converts
+"gradually more depth" into "the horizon drops a level" — and by (1) it can only
+drop by a whole one.
+
+**4. Terrain adds a second ladder that slides against the first.** MapLibre never
+paints the drape to the screen. It paints it into render-to-texture tiles and
+drapes those over the mesh, and that RTT grid is sized from the *DEM* source's
+LOD function, not the drape's. Two discrete ladders therefore move independently
+under one camera change, with a ceiling between them: an RTT tile at level Z,
+rendered into a 2048-pixel target from 256-pixel tiles, carries at most level
+Z+3. A step in either ladder is visible on screen, and tuning only the drape
+raises traffic without raising the ceiling that traffic is painted into.
+
+**5. Fallback lands on whatever was already loaded.** When the chosen tile is not
+ready, MapLibre draws the nearest *loaded* ancestor — not the next level down,
+the nearest one it happens to hold. If the ladder skipped rungs, the fall is
+deep. Measured on MapLibre's stock elevation setting: level 13 under the camera,
+level 8 at the horizon, 9 through 12 never requested, so a fallback dropped five
+levels at once and read as a blink rather than as loading.
+
+#### Why it resists a clean fix
+
+- **The step size is not ours to choose.** 2× is the floor, set by the pyramid.
+  Every lever below changes *when* a step happens, never how big it is.
+- **Smoothing is paid in tiles, superlinearly.** Widening the budget is the only
+  lever on step frequency, and it costs roughly 5× the drape traffic at `(4, 3)`
+  against the stock heuristic. On donated or unknown hosts that is not ours to
+  spend, which is the whole reason two settings exist rather than one.
+- **Prefetching cannot change fallback depth, only its duration.** By (5),
+  MapLibre falls back to a tile it already holds; nothing outside the source can
+  supply a level the source never requested. Warming shortens the wait and
+  cannot make the fall shallower.
+- **Part of the wait is not network at all.** The 67°→70° residual `terrain:lod`
+  still reports fetched **zero** tiles and still took 122–170 ms. That is cache
+  read, image decode and DEM parse on the critical path — no prefetch or LOD
+  setting touches it.
+- **Provider ceilings bound the near band independently.** OpenTopoMap stops at
+  `maxzoom: 15` regardless of anything we choose.
+- **The obvious fix — hysteresis — does not compose with MapLibre's hook.**
+  Holding a band at its current level until the camera settles would remove the
+  flip-flop outright, and `calculateTileZoom` is a public per-source extension
+  point, so a custom LOD function is genuinely available rather than a fork. But
+  its signature is `(requestedCenterZoom, distanceToTile2D, distanceToTileZ,
+  distanceToCenter3D, cameraVerticalFOV) => number`. It identifies a candidate by
+  geometry rather than by tile, returns a single level, and is told nothing about
+  the previous frame. "Keep this band where it was" therefore has to be
+  reconstructed from distance buckets held in a closure — exactly the kind of
+  state that misbehaves when the camera moves in a way the buckets did not
+  anticipate. Not impossible; not attempted.
+
+The settings below are the tractable part of this: keep the ladder gapless so a
+fall is short, keep the drape on the ceiling the pipeline can actually carry, and
+retain enough cache that undoing a tilt is a hit rather than a refetch.
+
 ### The detail ladder
 
 Both the elevation source and a tuned drape get MapLibre's
@@ -814,6 +894,7 @@ consuming extreme CPU.
 | First hover does not warm cache | Initial settings promise and worker reply | Bridge startup race or gate |
 | Peak dots disappear on pan | Request supersession, feed context, zoom cutoff | Peak relay; terrain should remain healthy |
 | GPU verification burns CPU | Reported WebGL renderer | Software fallback or wrong launch flags |
+| Small tilt visibly coarsens the map | `npm run terrain:lod`, both `BPB_LOD_DRAPE` values; which band stepped and whether tiles were fetched | Expected in part — see [Why a small tilt can change resolution a lot](#why-a-small-tilt-can-change-resolution-a-lot). Check the layer first: `thriftyLod` layers step more, and OpenTopoMap caps at zoom 15 |
 
 ## Change checklist
 

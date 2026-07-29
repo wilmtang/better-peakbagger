@@ -172,7 +172,7 @@ cleanup after 14 days, and are pruned toward 30 drafts when the editor performs
 maintenance. Plain mode does not write these drafts. The editor offers a
 differing draft for explicit restoration; it does not silently replace the
 server's text. The complete lifecycle and current Save-boundary limitations are
-documented in [the trip-report editor design](docs/trip-report-editor.md#device-local-tr-draft-lifecycle).
+documented in [the trip-report editor design](docs/trip-report-editor.md#device-local-trip-report-draft-lifecycle).
 
 When a Rich editor or Markdown preview displays a user-provided remote image,
 direct video, or YouTube embed, the browser may request that media from its
