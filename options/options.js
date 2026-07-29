@@ -9,6 +9,7 @@ import { panelTheme as Theme } from '../src/theme/panel-theme.js';
 import { initGithubBackup } from './github.js';
 import { initFavorites } from './favorites.js';
 import { initDrafts } from './drafts.js';
+import { initImgbbKey } from './imgbb.js';
 import { initSettingsBackup } from './settings-backup.js';
 import { initSectionNav } from './section-nav.js';
 
@@ -177,6 +178,8 @@ import { initSectionNav } from './section-nav.js';
     const githubBackup = initGithubBackup({ extensionApi, flash, save });
     const favorites = initFavorites({ extensionApi, flash, save });
     initDrafts({ extensionApi, flash });
+    // Device-local credential, not a synced setting: it never enters `save`.
+    initImgbbKey({ extensionApi, flash });
     const settingsBackup = initSettingsBackup({ extensionApi, flash, save });
 
     unitsEl.addEventListener('change', () => save({ units: unitsEl.value }));

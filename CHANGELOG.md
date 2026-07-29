@@ -5,11 +5,23 @@
 - **Create and reuse photo topos from the report editor.** Draw routes, curves,
   climbing symbols, pitch markers, and labels in an extension-owned editor,
   export a flattened metadata-free image, and upload it directly to ImgBB with
-  a device-local API key. The searchable local library keeps editable drafts,
-  uploaded URLs, lineage, insertion references, upload recovery state, and
-  Recently Deleted records. An independent, default-off GitHub recovery file
+  a device-local API key, which you can save up front in **Settings → Activity
+  creation → Trip report photos**. The searchable local library keeps editable
+  drafts, uploaded URLs, lineage, insertion references, upload recovery state,
+  and Recently Deleted records. An independent, default-off GitHub recovery file
   can preserve catalog metadata and annotation projects without exposing
   original pixels, ImgBB credentials, or remote deletion capability.
+
+- **Group everything an ascent write-up needs in one place.** Settings now
+  keeps the trip report editor, the photo API key, and local report drafts
+  together under **Activity creation**. Existing `#drafts` links still land on
+  the draft manager.
+
+- **Dismiss the report editor's floating panels.** The link, image, video, and
+  more-formats panels float over the ascent form, so they could cover the date
+  calendar until you found the toolbar button that opened them. Each now has a
+  close control, closes on Escape, and closes when you press anywhere outside
+  the editor.
 
 ## 3.2.0 — 2026-07-27
 

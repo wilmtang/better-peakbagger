@@ -72,25 +72,35 @@ export function createPhotoRoutes({
     // The shared worker must still boot when an embedded/test environment does
     // not expose extension-page URLs. Photo routes remain unavailable and fail
     // closed in that environment.
+    const packagedPage = page => {
+        const base = typeof ext.runtime?.getURL === 'function' ? ext.runtime.getURL(page) : null;
+        return sender => {
+            if (!base) return false;
+            try {
+                const actual = new URL(sender?.url || '');
+                const expected = new URL(base);
+                return actual.origin === expected.origin
+                    && actual.pathname === expected.pathname
+                    && Number.isInteger(sender?.tab?.id);
+            } catch { return false; }
+        };
+    };
     const photoPageBase = typeof ext.runtime?.getURL === 'function'
         ? ext.runtime.getURL('photos/photos.html')
         : null;
-    const isPhotoPage = sender => {
-        if (!photoPageBase) return false;
-        try {
-            const actual = new URL(sender?.url || '');
-            const expected = new URL(photoPageBase);
-            return actual.origin === expected.origin
-                && actual.pathname === expected.pathname
-                && Number.isInteger(sender?.tab?.id);
-        } catch { return false; }
-    };
+    const isPhotoPage = packagedPage('photos/photos.html');
+    const isOptionsPage = packagedPage('options/options.html');
+    // The key can be configured from either extension-owned surface, because
+    // Settings is where users expect to find it. Reading it back stays with the
+    // photo page alone: that is the only page that uploads, and widening the
+    // lease would hand the credential to a surface with no use for it.
+    const isCredentialPage = sender => isPhotoPage(sender) || isOptionsPage(sender);
 
     const permissionGranted = async () => !!(ext.permissions?.contains
         && await ext.permissions.contains(IMGBB_PERMISSION));
 
     const status = async (_message, sender) => {
-        if (!isPhotoPage(sender)) return { ok: false, error: { code: 'forbidden' } };
+        if (!isCredentialPage(sender)) return { ok: false, error: { code: 'forbidden' } };
         const stored = await keyStore.read();
         return {
             ok: true,
@@ -101,7 +111,7 @@ export function createPhotoRoutes({
     };
 
     const saveKey = async (message, sender) => {
-        if (!isPhotoPage(sender)) return { ok: false, error: { code: 'forbidden' } };
+        if (!isCredentialPage(sender)) return { ok: false, error: { code: 'forbidden' } };
         try {
             const result = await keyStore.setKey(message.key, new Date(now()).toISOString());
             return { ok: true, ...result };
@@ -114,7 +124,7 @@ export function createPhotoRoutes({
     };
 
     const removeKey = async (_message, sender) => {
-        if (!isPhotoPage(sender)) return { ok: false, error: { code: 'forbidden' } };
+        if (!isCredentialPage(sender)) return { ok: false, error: { code: 'forbidden' } };
         await keyStore.clear();
         return { ok: true };
     };
