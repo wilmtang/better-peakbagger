@@ -465,7 +465,10 @@ const renderProject = () => {
         if (node.getAttribute('data-bpb-object') === selectedId) node.classList.add('selected');
     }
     const selected = selectedObject();
-    if (selected?.type === 'route') {
+    // Vertex handles belong to Select. Left on screen while a placement tool is
+    // armed they swallow the click that should have placed a symbol, and the
+    // symbols a user most wants sit exactly on the route they just drew.
+    if (activeTool === 'select' && selected?.type === 'route') {
         const radius = Math.min(project.image.width, project.image.height) * 0.012;
         selected.geometry.points.forEach((point, index) => {
             const handle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
@@ -532,6 +535,9 @@ const setTool = tool => {
         button.setAttribute('aria-pressed', String(button.dataset.tool === tool));
     });
     if (tool !== 'route' && routeSession) finishRoute(false);
+    // Which handles are on screen depends on the armed tool, so the canvas has
+    // to be repainted when it changes.
+    else if (project) renderProject();
     setEditorStatus(tool === 'select'
         ? 'Select a mark to move or restyle it.'
         : tool === 'route'
@@ -717,7 +723,7 @@ const endDrag = () => {
 
 const onPointerDown = event => {
     if (!project || busy || event.button !== 0) return;
-    const vertexNode = event.target.closest?.('[data-vertex]');
+    const vertexNode = activeTool === 'select' ? event.target.closest?.('[data-vertex]') : null;
     if (vertexNode) {
         selectedId = vertexNode.dataset.objectId;
         renderProject();

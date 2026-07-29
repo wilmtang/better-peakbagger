@@ -130,6 +130,11 @@ test('placing a symbol leaves its tool armed and the route shows its first point
     assert.doesNotMatch(source, /setTool\('select'\);\s*\n\s*if \(type === 'text'\)/);
     assert.match(source, /activeTool !== 'select'\) setTool\('select'\)/);
     assert.match(source, /renderRoutePreview/);
+    // An armed placement tool must not have its click taken by the vertex
+    // handles of the route the user just drew, which is exactly where the
+    // belays and bolts go.
+    assert.match(source, /activeTool === 'select' && selected\?\.type === 'route'/);
+    assert.match(source, /activeTool === 'select' \? event\.target\.closest\?\.\('\[data-vertex\]'\) : null/);
     // The curve is an intent on the style, not handles the editor has to
     // rebuild, so adding a point cannot silently drop it.
     assert.match(source, /ui\.routeSmooth\.checked = object\.style\.smooth/);
