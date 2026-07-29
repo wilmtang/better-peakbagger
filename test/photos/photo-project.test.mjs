@@ -148,3 +148,66 @@ test('add, update, remove, and reorder preserve a clean immutable project', () =
     assert.deepEqual(removed.objects.map(object => object.id), ['route-1']);
     assert.deepEqual(Project.cleanProject(removed), removed);
 });
+
+test('every object carries a bounded opacity so a mark can stop hiding the beta', () => {
+    const project = Project.cleanProject({
+        ...emptyProject(),
+        objects: [
+            route({ style: { ...route().style, opacity: 0.4 } }),
+            {
+                id: 'bolt-1',
+                type: 'bolt',
+                z: 1,
+                geometry: { x: 400, y: 400, rotation: 0 },
+                style: { color: '#1e88e5', scale: 1, opacity: 0.55 },
+            },
+        ],
+    });
+    assert.equal(project.objects[0].style.opacity, 0.4);
+    assert.equal(project.objects[1].style.opacity, 0.55);
+    // A project written before the field existed stays fully opaque.
+    assert.equal(Project.cleanProject(emptyProject()) && Project.addObject(emptyProject(), {
+        id: 'anchor-1',
+        type: 'anchor',
+        geometry: { x: 10, y: 10, rotation: 0 },
+        style: { color: '#43a047', scale: 1 },
+    }).objects[0].style.opacity, 1);
+    // Invisible is not translucent: an out-of-range opacity rejects the whole
+    // document rather than leaving a mark the user cannot find again.
+    for (const opacity of [0, 0.02, 1.4, '0.5', Number.NaN]) {
+        assert.equal(Project.cleanProject({
+            ...emptyProject(),
+            objects: [route({ style: { ...route().style, opacity } })],
+        }), null, String(opacity));
+    }
+});
+
+test('a smooth route re-derives its curve from its own points', () => {
+    const straight = {
+        ...route(),
+        geometry: { points: [[200, 2500], [900, 1800], [1800, 900]], controls: [] },
+        style: { ...route().style, smooth: true },
+    };
+    const smoothed = Project.cleanProject({ ...emptyProject(), objects: [straight] });
+    assert.equal(smoothed.objects[0].style.smooth, true);
+    assert.deepEqual(smoothed.objects[0].geometry.controls,
+        Project.smoothControls(straight.geometry.points));
+
+    // Adding a point is exactly what used to silently straighten the route:
+    // the editor hands back empty controls and the curve has to survive.
+    const extended = Project.updateObject(smoothed, 'route-1', {
+        geometry: { points: [...straight.geometry.points, [2400, 400]], controls: [] },
+    });
+    assert.equal(extended.objects[0].style.smooth, true);
+    assert.equal(extended.objects[0].geometry.controls.length, 4);
+
+    // Turning it off drops the curve, and a project predating the flag infers
+    // its intent from the handles it already stored.
+    const flattened = Project.updateObject(extended, 'route-1', {
+        style: { ...extended.objects[0].style, smooth: false },
+    });
+    assert.deepEqual(flattened.objects[0].geometry.controls, []);
+    const legacy = Project.cleanProject({ ...emptyProject(), objects: [route()] });
+    assert.equal(legacy.objects[0].style.smooth, true);
+    assert.deepEqual(legacy.objects[0].geometry.controls, route().geometry.controls);
+});

@@ -373,6 +373,13 @@ textarea {
   min-height: 36px;
 }
 
+/* Undo and redo stay a pair. Left as bare children of the top bar they became
+   two full-width bars once the bar stacked at narrow widths. */
+.history-actions {
+  display: flex;
+  gap: 8px;
+}
+
 .icon-button {
   min-width: 36px;
   border: 1px solid var(--border);
@@ -382,24 +389,43 @@ textarea {
 
 .editor-body {
   display: grid;
-  grid-template-columns: 112px minmax(0, 1fr) 230px;
+  grid-template-columns: 138px minmax(0, 1fr) 236px;
   min-height: 600px;
 }
 
 .tool-rail {
   display: grid;
   align-content: start;
-  gap: 5px;
+  gap: 4px;
   padding: 10px;
   border-right: 1px solid var(--border);
 }
 
 .tool-rail button {
   display: flex;
-  justify-content: space-between;
-  gap: 6px;
-  padding: 8px;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  font-size: 12.5px;
   text-align: left;
+}
+
+.tool-glyph {
+  display: grid;
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  place-items: center;
+  color: var(--muted);
+}
+
+.tool-rail button[aria-pressed="true"] .tool-glyph {
+  color: inherit;
+}
+
+.tool-name {
+  flex: 1;
+  min-width: 0;
 }
 
 .tool-rail button[aria-pressed="true"] {
@@ -469,6 +495,26 @@ kbd {
   vector-effect: non-scaling-stroke;
 }
 
+/* The route being drawn: the point already clicked, and the segment the next
+   click would commit. Neither is part of the project, so neither exports. */
+#photo-overlay .route-preview {
+  pointer-events: none;
+}
+
+#photo-overlay .route-preview-dot {
+  fill: #fff;
+  stroke: #1769aa;
+  stroke-width: 3;
+  vector-effect: non-scaling-stroke;
+}
+
+#photo-overlay .route-preview-line {
+  fill: none;
+  stroke: #5ac8fa;
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+}
+
 .viewport-actions {
   display: flex;
   min-height: 50px;
@@ -497,6 +543,18 @@ kbd {
 .inspector .field,
 .inspector .check-row {
   margin-bottom: 12px;
+}
+
+.field-label {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.field-label output {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
 }
 
 .button-grid {

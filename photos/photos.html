@@ -74,20 +74,72 @@
             <input id="photo-decorative" type="checkbox">
             Decorative
           </label>
-          <button id="undo" type="button" class="icon-button" title="Undo" aria-label="Undo" disabled>↶</button>
-          <button id="redo" type="button" class="icon-button" title="Redo" aria-label="Redo" disabled>↷</button>
+          <div class="history-actions">
+            <button id="undo" type="button" class="icon-button" title="Undo" aria-label="Undo" disabled>↶</button>
+            <button id="redo" type="button" class="icon-button" title="Redo" aria-label="Redo" disabled>↷</button>
+          </div>
         </div>
 
         <div class="editor-body">
           <div class="tool-rail" role="toolbar" aria-label="Topo tools">
-            <button type="button" data-tool="select" aria-pressed="true">Select <kbd>V</kbd></button>
-            <button type="button" data-tool="route">Route <kbd>L</kbd></button>
-            <button type="button" data-tool="anchor">Anchor</button>
-            <button type="button" data-tool="piton">Piton</button>
-            <button type="button" data-tool="rappel">Rappel</button>
-            <button type="button" data-tool="belay">Belay</button>
-            <button type="button" data-tool="pitch">Pitch</button>
-            <button type="button" data-tool="text">Text <kbd>T</kbd></button>
+            <button type="button" data-tool="select" aria-pressed="true"
+                    title="Select, move, and edit a mark">
+              <span class="tool-glyph" aria-hidden="true">
+                <svg viewBox="-1.05 -1.05 2.1 2.1" width="20" height="20" focusable="false">
+                  <path d="M -0.6 -0.85 L 0.55 0.3 L 0.02 0.36 L 0.34 0.92 L 0.02 1.05 L -0.28 0.5 L -0.6 0.85 Z"
+                        fill="currentColor" stroke="currentColor" stroke-width="0.1" stroke-linejoin="round"/>
+                </svg>
+              </span>
+              <span class="tool-name">Select</span><kbd>V</kbd>
+            </button>
+            <button type="button" data-tool="route" title="Draw the line of the route">
+              <span class="tool-glyph" aria-hidden="true">
+                <svg viewBox="-1.05 -1.05 2.1 2.1" width="20" height="20" focusable="false" fill="none"
+                     stroke="currentColor" stroke-width="0.17" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M -0.8 0.85 C -0.2 0.5 -0.7 -0.1 -0.1 -0.35 C 0.5 -0.6 0.35 -0.7 0.8 -0.85"/>
+                </svg>
+              </span>
+              <span class="tool-name">Route</span><kbd>L</kbd>
+            </button>
+            <button type="button" data-tool="bolt" title="Bolt — one fixed point of protection">
+              <span class="tool-glyph" data-symbol="bolt" aria-hidden="true"></span>
+              <span class="tool-name">Bolt</span><kbd>B</kbd>
+            </button>
+            <button type="button" data-tool="anchor" title="Bolted anchor or lower-off">
+              <span class="tool-glyph" data-symbol="anchor" aria-hidden="true"></span>
+              <span class="tool-name">Anchor</span><kbd>A</kbd>
+            </button>
+            <button type="button" data-tool="piton" title="Fixed piton or peg">
+              <span class="tool-glyph" data-symbol="piton" aria-hidden="true"></span>
+              <span class="tool-name">Piton</span><kbd>P</kbd>
+            </button>
+            <button type="button" data-tool="rappel" title="Rappel or abseil station">
+              <span class="tool-glyph" data-symbol="rappel" aria-hidden="true"></span>
+              <span class="tool-name">Rappel</span><kbd>R</kbd>
+            </button>
+            <button type="button" data-tool="belay" title="Belay stance — where the pitch ends">
+              <span class="tool-glyph" data-symbol="belay" aria-hidden="true"></span>
+              <span class="tool-name">Belay</span><kbd>S</kbd>
+            </button>
+            <button type="button" data-tool="pitch" title="Numbered pitch label">
+              <span class="tool-glyph" aria-hidden="true">
+                <svg viewBox="-1.05 -1.05 2.1 2.1" width="20" height="20" focusable="false">
+                  <circle cx="0" cy="0" r="0.85" fill="none" stroke="currentColor" stroke-width="0.13"/>
+                  <text x="0" y="0.3" text-anchor="middle" font-size="0.95" font-weight="700"
+                        fill="currentColor">1</text>
+                </svg>
+              </span>
+              <span class="tool-name">Pitch</span><kbd>N</kbd>
+            </button>
+            <button type="button" data-tool="text" title="Free text label">
+              <span class="tool-glyph" aria-hidden="true">
+                <svg viewBox="-1.05 -1.05 2.1 2.1" width="20" height="20" focusable="false" fill="none"
+                     stroke="currentColor" stroke-width="0.15" stroke-linecap="round">
+                  <path d="M -0.7 -0.62 H 0.7 M 0 -0.62 V 0.75 M -0.3 0.75 H 0.3"/>
+                </svg>
+              </span>
+              <span class="tool-name">Text</span><kbd>T</kbd>
+            </button>
           </div>
 
           <div class="viewport-column">
@@ -121,6 +173,10 @@
                 <option value="#000000">Black</option>
               </select>
             </label>
+            <label class="field">
+              <span class="field-label">Opacity <output id="object-opacity-value">100%</output></span>
+              <input id="object-opacity" type="range" min="10" max="100" step="5">
+            </label>
             <label class="field route-only">
               Width
               <input id="route-width" type="range" min="1" max="100" step="1">
@@ -142,8 +198,12 @@
               Smooth curve
             </label>
             <label class="field scale-only">
-              Scale
+              Size
               <input id="object-scale" type="range" min="0.25" max="4" step="0.05">
+            </label>
+            <label class="field point-only">
+              <span class="field-label">Rotation <output id="object-rotation-value">0°</output></span>
+              <input id="object-rotation" type="range" min="-180" max="180" step="5">
             </label>
             <label class="field pitch-only">
               Pitch

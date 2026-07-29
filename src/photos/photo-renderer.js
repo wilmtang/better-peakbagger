@@ -56,44 +56,76 @@ const dashArray = (stroke, width) => {
 // drawn after a red one exported a red tip.
 const arrowId = color => `bpb-arrow-${color.slice(1)}`;
 
+// Opacity rides on the object's own group so one attribute dims the mark, its
+// arrowhead, and a label's contrast plate together. Setting stroke-opacity
+// instead would leave a referenced arrow marker and a filled plate at full
+// strength, which is exactly the beta-hiding case the control exists for.
+const opacityAttribute = opacity => opacity < 1 ? ` opacity="${number(opacity)}"` : '';
+
 const renderRoute = object => {
     const dash = dashArray(object.style.stroke, object.style.width);
     const marker = object.style.end === 'arrow'
         ? ` marker-end="url(#${arrowId(object.style.color)})"`
         : '';
-    return `<path data-bpb-object="${escapeXml(object.id)}" d="${routePath(object)}"`
+    return `<g data-bpb-object="${escapeXml(object.id)}"${opacityAttribute(object.style.opacity)}>`
+        + `<path d="${routePath(object)}"`
         + ` fill="none" stroke="${object.style.color}" stroke-width="${number(object.style.width)}"`
         + ' stroke-linecap="round" stroke-linejoin="round"'
         + (dash ? ` stroke-dasharray="${dash}"` : '')
-        + `${marker}/>`;
+        + `${marker}/></g>`;
 };
 
-const markerGeometry = type => {
+// Climbing-guidebook symbols, drawn in a unit box the marker transform scales.
+// There is no single universal legend — the UIAA publishes a recommended set
+// and publishers extend it — so these follow the conventions climbers read
+// without a key: a circle is a bolt, a bolted anchor is two of them slung to a
+// master point, a piton is a bladed peg with an eye, a rappel station is a ring
+// with the rope running down out of it, and a belay is the stance bar the
+// leader stops on. `photos/guide.html` shows the same glyphs with their names.
+const markerGeometry = (type, color) => {
+    if (type === 'bolt') {
+        return '<circle cx="0" cy="0" r="0.5" fill="none"/>'
+            + `<circle cx="0" cy="0" r="0.17" fill="${color}" stroke="none"/>`;
+    }
     if (type === 'anchor') {
-        return '<circle cx="0" cy="-0.15" r="0.52" fill="none"/>'
-            + '<path d="M 0 -0.65 V 0.72 M -0.48 0.3 Q 0 0.9 0.48 0.3" fill="none"/>';
+        return '<circle cx="-0.56" cy="-0.5" r="0.24" fill="none"/>'
+            + '<circle cx="0.56" cy="-0.5" r="0.24" fill="none"/>'
+            + '<circle cx="0" cy="0.6" r="0.24" fill="none"/>'
+            + '<path d="M -0.56 -0.26 L 0 0.36 L 0.56 -0.26" fill="none"/>';
     }
     if (type === 'piton') {
-        return '<path d="M -0.58 -0.42 L 0.42 0.58 M -0.18 -0.7 L 0.68 0.18" fill="none"/>'
-            + '<circle cx="-0.34" cy="-0.54" r="0.18" fill="none"/>';
+        return '<circle cx="-0.6" cy="-0.6" r="0.22" fill="none"/>'
+            + '<path d="M -0.62 -0.2 L -0.2 -0.62 L 0.84 0.7 L 0.7 0.84 Z" fill="none"/>';
     }
     if (type === 'rappel') {
-        return '<circle cx="0" cy="-0.34" r="0.28" fill="none"/>'
-            + '<path d="M 0 -0.05 V 0.72 M -0.38 0.24 L 0 0.56 L 0.38 0.24" fill="none"/>';
+        return '<circle cx="0" cy="-0.62" r="0.24" fill="none"/>'
+            + '<path d="M -0.16 -0.4 V 0.5 M 0.16 -0.4 V 0.5" fill="none"/>'
+            + '<path d="M -0.42 0.36 L 0 0.82 L 0.42 0.36" fill="none"/>';
     }
-    return '<circle cx="0" cy="0" r="0.54" fill="none"/>'
-        + '<path d="M -0.38 -0.38 L 0.38 0.38 M 0.38 -0.38 L -0.38 0.38" fill="none"/>';
+    return '<path d="M -0.85 0.5 H 0.85 M -0.5 0.5 V 0.78 M 0.5 0.5 V 0.78" fill="none"/>'
+        + `<circle cx="0" cy="0.04" r="0.3" fill="${color}" stroke="none"/>`
+        + '<path d="M 0 0.34 V 0.5" fill="none"/>';
 };
+
+// One standalone glyph, for the tool rail and the guide's legend. Sharing the
+// geometry is the point: a symbol the user is taught cannot drift from the
+// symbol the export paints.
+const markerSymbolSvg = (type, { color = 'currentColor', size = 20 } = {}) =>
+    `<svg xmlns="${XML_NS}" width="${size}" height="${size}" viewBox="-1.05 -1.05 2.1 2.1"`
+    + ` fill="none" stroke="${color}" stroke-width="0.13"`
+    + ' stroke-linecap="round" stroke-linejoin="round" focusable="false" aria-hidden="true">'
+    + markerGeometry(type, color)
+    + '</svg>';
 
 const renderMarker = (object, image) => {
     const unit = Math.min(image.width, image.height) * 0.027 * object.style.scale;
     const strokeWidth = Math.max(2, unit * 0.13);
-    return `<g data-bpb-object="${escapeXml(object.id)}"`
+    return `<g data-bpb-object="${escapeXml(object.id)}"${opacityAttribute(object.style.opacity)}`
         + ` transform="translate(${number(object.geometry.x)} ${number(object.geometry.y)})`
         + ` rotate(${number(object.geometry.rotation)}) scale(${number(unit)})"`
         + ` stroke="${object.style.color}" stroke-width="${number(strokeWidth / unit)}"`
         + ' stroke-linecap="round" stroke-linejoin="round">'
-        + markerGeometry(object.type)
+        + markerGeometry(object.type, object.style.color)
         + '</g>';
 };
 
@@ -115,7 +147,7 @@ const renderLabel = (object, image) => {
             + ` height="${number(fontSize * 1.15)}" rx="${number(fontSize * 0.16)}"`
             + ' fill="#000000" fill-opacity="0.72"/>'
         : '';
-    return `<g data-bpb-object="${escapeXml(object.id)}"`
+    return `<g data-bpb-object="${escapeXml(object.id)}"${opacityAttribute(object.style.opacity)}`
         + ` transform="translate(${number(object.geometry.x)} ${number(object.geometry.y)})`
         + ` rotate(${number(object.geometry.rotation)})">`
         + background
@@ -142,9 +174,7 @@ const renderOverlaySvg = value => {
         .map(object => object.style.color))];
     const children = project.objects.map(object => {
         if (object.type === 'route') return renderRoute(object);
-        if (['anchor', 'piton', 'rappel', 'belay'].includes(object.type)) {
-            return renderMarker(object, project.image);
-        }
+        if (Project.MARKER_TYPES.includes(object.type)) return renderMarker(object, project.image);
         return renderLabel(object, project.image);
     }).join('');
     const defs = arrowColors.length
@@ -217,6 +247,7 @@ const exportProject = async ({
 
 export const photoRenderer = {
     renderOverlaySvg,
+    markerSymbolSvg,
     exportProject,
     sha256,
 };

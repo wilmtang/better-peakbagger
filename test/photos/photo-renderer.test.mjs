@@ -136,3 +136,81 @@ test('hashes exported bytes with SHA-256', async () => {
     assert.equal(await Renderer.sha256(blob, webcrypto),
         '4d79c63e02c6a66d127fee87c91aa70d86bde9aada8cd271c412b079b22e538b');
 });
+
+test('opacity dims the whole mark, including its arrowhead and contrast plate', () => {
+    const svg = Renderer.renderOverlaySvg(Project.cleanProject({
+        schemaVersion: 1,
+        localId: 'photo-1',
+        image: { width: 1600, height: 1200, sourceSha256: HASH },
+        objects: [
+            {
+                id: 'route-1',
+                type: 'route',
+                z: 0,
+                geometry: { points: [[100, 100], [400, 400]], controls: [] },
+                style: {
+                    color: '#e53935', width: 8, stroke: 'solid', end: 'arrow', opacity: 0.35,
+                },
+            },
+            {
+                id: 'anchor-1',
+                type: 'anchor',
+                z: 1,
+                geometry: { x: 900, y: 200, rotation: 0 },
+                style: { color: '#ffffff', scale: 1, opacity: 0.6 },
+            },
+            {
+                id: 'text-1',
+                type: 'text',
+                z: 2,
+                text: 'Traverse',
+                geometry: { x: 300, y: 300, rotation: 0 },
+                style: {
+                    color: '#ffffff', scale: 1, align: 'left', background: true, opacity: 0.5,
+                },
+            },
+            {
+                id: 'bolt-1',
+                type: 'bolt',
+                z: 3,
+                geometry: { x: 200, y: 900, rotation: 0 },
+                style: { color: '#1e88e5', scale: 1 },
+            },
+        ],
+        export: { mime: 'image/jpeg', quality: 0.92 },
+        updatedAt: TIME,
+    }));
+    // The value sits on each object's own group: stroke-opacity would leave a
+    // referenced arrow marker and a filled label plate at full strength.
+    assert.match(svg, /<g data-bpb-object="route-1" opacity="0.35"><path /);
+    assert.match(svg, /<g data-bpb-object="anchor-1" opacity="0.6" transform=/);
+    assert.match(svg, /<g data-bpb-object="text-1" opacity="0.5" transform=/);
+    // A fully opaque mark stays attribute-free, so existing exports are
+    // byte-identical to what they were before opacity existed.
+    assert.match(svg, /<g data-bpb-object="bolt-1" transform=/);
+});
+
+test('the climbing symbols follow guidebook conventions, not a nautical anchor', () => {
+    const anchor = Renderer.markerSymbolSvg('anchor');
+    // A bolted anchor reads as two bolts slung to a master point. The old
+    // glyph was a boat anchor: a ring, a shank, and curved flukes.
+    assert.equal((anchor.match(/<circle/g) || []).length, 3);
+    assert.match(anchor, /M -0\.56 -0\.26 L 0 0\.36 L 0\.56 -0\.26/);
+    assert.doesNotMatch(anchor, /Q/, 'no fluke arc');
+    // A belay is the stance bar the leader stops on, not a circled X.
+    const belay = Renderer.markerSymbolSvg('belay');
+    assert.match(belay, /M -0\.85 0\.5 H 0\.85/);
+    assert.doesNotMatch(belay, /M -0\.38 -0\.38 L 0\.38 0\.38/, 'no crossed-out circle');
+
+    for (const type of Project.MARKER_TYPES) {
+        const symbol = Renderer.markerSymbolSvg(type);
+        assert.match(symbol, /^<svg xmlns="http:\/\/www\.w3\.org\/2000\/svg"/);
+        assert.match(symbol, /viewBox="-1\.05 -1\.05 2\.1 2\.1"/);
+        assert.match(symbol, /aria-hidden="true"/);
+        assert.doesNotMatch(symbol, /data-bpb-object/);
+    }
+    // currentColor lets the rail tint the glyph; the canvas passes a real hex
+    // so an exported fill can never resolve against a stylesheet.
+    assert.match(Renderer.markerSymbolSvg('bolt'), /fill="currentColor"/);
+    assert.match(Renderer.markerSymbolSvg('bolt', { color: '#43a047' }), /fill="#43a047"/);
+});

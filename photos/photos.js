@@ -9,6 +9,7 @@ import { photoArchive as Archive } from '../src/photos/photo-archive.js';
 import { imgbbClient as ImgbbClient } from '../src/photos/imgbb-client.js';
 
 const ext = globalThis.browser || globalThis.chrome;
+const SVG_NS = 'http://www.w3.org/2000/svg';
 const RETURN_TOKEN = new URL(location.href).searchParams.get('returnToken') || '';
 const START_MODE = new URL(location.href).searchParams.get('mode') === 'library' ? 'library' : 'edit';
 const IMGBB_PERMISSION = { origins: ['https://api.imgbb.com/*'] };
@@ -48,11 +49,15 @@ const ui = {
     editorStatus: byId('editor-status'),
     inspector: byId('inspector'),
     color: byId('object-color'),
+    opacity: byId('object-opacity'),
+    opacityValue: byId('object-opacity-value'),
     routeWidth: byId('route-width'),
     routeStroke: byId('route-stroke'),
     routeArrow: byId('route-arrow'),
     routeSmooth: byId('route-smooth'),
     scale: byId('object-scale'),
+    rotation: byId('object-rotation'),
+    rotationValue: byId('object-rotation-value'),
     pitch: byId('pitch-number'),
     text: byId('object-text'),
     align: byId('text-align'),
@@ -115,6 +120,18 @@ let libraryObjectUrls = [];
 let libraryRender = Promise.resolve();
 let libraryRenderQueued = false;
 let photoBackupBusy = false;
+// A new mark inherits the last style the user chose, the way every drawing tool
+// behaves: dial the opacity back once and the rest of the topo matches instead
+// of needing the same three adjustments on every symbol.
+let styleDefaults = {
+    color: Project.DEFAULT_COLOR,
+    opacity: 1,
+    scale: 1,
+    width: 12,
+    stroke: 'solid',
+    end: 'none',
+    smooth: false,
+};
 
 const setEditorStatus = message => { ui.editorStatus.textContent = message; };
 const setSaveStatus = message => { ui.saveStatus.textContent = message; };
@@ -370,8 +387,7 @@ const updateHistoryButtons = () => {
 
 const selectedObject = () => project?.objects.find(object => object.id === selectedId) || null;
 
-const routeHasCurves = object => object.type === 'route'
-    && object.geometry.controls.some(control => control?.in || control?.out);
+const percent = opacity => `${Math.round(opacity * 100)}%`;
 
 const renderInspector = () => {
     const object = selectedObject();
@@ -382,18 +398,22 @@ const renderInspector = () => {
     const text = object.type === 'text';
     const pitch = object.type === 'pitch';
     document.querySelectorAll('.route-only').forEach(node => { node.hidden = !route; });
-    document.querySelectorAll('.scale-only').forEach(node => { node.hidden = route; });
+    document.querySelectorAll('.scale-only, .point-only').forEach(node => { node.hidden = route; });
     document.querySelectorAll('.pitch-only').forEach(node => { node.hidden = !pitch; });
     document.querySelectorAll('.text-only').forEach(node => { node.hidden = !text; });
     document.querySelectorAll('.label-only').forEach(node => { node.hidden = !label; });
     ui.color.value = object.style.color;
+    ui.opacity.value = String(Math.round(object.style.opacity * 100));
+    ui.opacityValue.textContent = percent(object.style.opacity);
     if (route) {
         ui.routeWidth.value = String(object.style.width);
         ui.routeStroke.value = object.style.stroke;
         ui.routeArrow.checked = object.style.end === 'arrow';
-        ui.routeSmooth.checked = routeHasCurves(object);
+        ui.routeSmooth.checked = object.style.smooth;
     } else {
         ui.scale.value = String(object.style.scale);
+        ui.rotation.value = String(Math.round(object.geometry.rotation));
+        ui.rotationValue.textContent = `${Math.round(object.geometry.rotation)}°`;
     }
     if (pitch) ui.pitch.value = String(object.pitch);
     if (text) {
@@ -401,6 +421,39 @@ const renderInspector = () => {
         ui.align.value = object.style.align;
     }
     if (label) ui.background.checked = object.style.background;
+};
+
+// The first click of a route cannot create an object yet — the schema needs two
+// points — so nothing appeared on the photo until the second click landed. Draw
+// the pending point, and rubber-band the segment the next click would commit.
+const renderRoutePreview = () => {
+    ui.overlay.querySelector('.route-preview')?.remove();
+    if (!routeSession || !project) return;
+    const group = document.createElementNS(SVG_NS, 'g');
+    group.classList.add('route-preview');
+    const unit = Math.min(project.image.width, project.image.height);
+    const last = routeSession.points[routeSession.points.length - 1];
+    if (routeSession.cursor) {
+        const segment = document.createElementNS(SVG_NS, 'line');
+        segment.classList.add('route-preview-line');
+        segment.setAttribute('x1', String(last[0]));
+        segment.setAttribute('y1', String(last[1]));
+        segment.setAttribute('x2', String(routeSession.cursor[0]));
+        segment.setAttribute('y2', String(routeSession.cursor[1]));
+        segment.setAttribute('stroke-dasharray', `${unit * 0.012} ${unit * 0.012}`);
+        group.append(segment);
+    }
+    // Past the first point the committed route already draws its own vertex
+    // handles, so only the point with no object behind it needs a stand-in.
+    if (routeSession.points.length === 1) {
+        const dot = document.createElementNS(SVG_NS, 'circle');
+        dot.classList.add('route-preview-dot');
+        dot.setAttribute('cx', String(last[0]));
+        dot.setAttribute('cy', String(last[1]));
+        dot.setAttribute('r', String(unit * 0.012));
+        group.append(dot);
+    }
+    ui.overlay.append(group);
 };
 
 const renderProject = () => {
@@ -426,6 +479,7 @@ const renderProject = () => {
             ui.overlay.append(handle);
         });
     }
+    renderRoutePreview();
     ui.exportSummary.textContent = `${project.objects.length} annotation${project.objects.length === 1 ? '' : 's'}`
         + ` · ${project.image.width} × ${project.image.height}`;
     renderInspector();
@@ -466,15 +520,23 @@ const redo = () => {
     schedulePersist();
 };
 
+const toolName = tool => document.querySelector(`[data-tool="${tool}"] .tool-name`)?.textContent
+    || tool;
+
+// Placement tools stay armed until the user leaves them. Snapping back to
+// Select after one symbol made marking a pitch a click-a-tool-per-symbol chore;
+// Esc and V are the way out, and the status line says so.
 const setTool = tool => {
     activeTool = tool;
     document.querySelectorAll('[data-tool]').forEach(button => {
         button.setAttribute('aria-pressed', String(button.dataset.tool === tool));
     });
     if (tool !== 'route' && routeSession) finishRoute(false);
-    setEditorStatus(tool === 'route'
-        ? 'Click along the route. Double-click or choose Done drawing to finish.'
-        : `${tool[0].toUpperCase()}${tool.slice(1)} tool`);
+    setEditorStatus(tool === 'select'
+        ? 'Select a mark to move or restyle it.'
+        : tool === 'route'
+            ? 'Click along the route. Double-click or choose Done drawing to finish.'
+            : `${toolName(tool)}: click the photo to place one. Esc returns to Select.`);
 };
 
 const pointerPoint = event => {
@@ -485,17 +547,10 @@ const pointerPoint = event => {
     ];
 };
 
-const defaultStyle = () => ({ color: Project.DEFAULT_COLOR, scale: 1 });
-
-const smoothControls = points => points.map((point, index) => {
-    const previous = points[Math.max(0, index - 1)];
-    const next = points[Math.min(points.length - 1, index + 1)];
-    const dx = (next[0] - previous[0]) / 6;
-    const dy = (next[1] - previous[1]) / 6;
-    return {
-        in: index === 0 ? null : [point[0] - dx, point[1] - dy],
-        out: index === points.length - 1 ? null : [point[0] + dx, point[1] + dy],
-    };
+const defaultStyle = () => ({
+    color: styleDefaults.color,
+    scale: styleDefaults.scale,
+    opacity: styleDefaults.opacity,
 });
 
 const addRoutePoint = point => {
@@ -504,22 +559,28 @@ const addRoutePoint = point => {
             id: crypto.randomUUID(),
             baseline: structuredClone(project),
             points: [point],
+            cursor: null,
             historyPushed: false,
         };
         ui.finishRoute.hidden = false;
-        setEditorStatus('Route started. Add at least one more point.');
+        setEditorStatus('Route started. Click the next point; double-click to finish.');
+        renderRoutePreview();
         return;
     }
     routeSession.points.push(point);
     const object = {
         id: routeSession.id,
         type: 'route',
+        // Controls stay empty on purpose: a smooth route derives them from its
+        // own points, so the curve survives every point added after it.
         geometry: { points: routeSession.points, controls: [] },
         style: {
-            color: Project.DEFAULT_COLOR,
-            width: 12,
-            stroke: 'solid',
-            end: 'none',
+            color: styleDefaults.color,
+            width: styleDefaults.width,
+            stroke: styleDefaults.stroke,
+            end: styleDefaults.end,
+            opacity: styleDefaults.opacity,
+            smooth: styleDefaults.smooth,
         },
     };
     if (routeSession.points.length === 2) {
@@ -545,7 +606,7 @@ const finishRoute = cancel => {
     } else if (routeSession.points.length < 2) {
         setEditorStatus('Route discarded because it needs at least two points.');
     } else {
-        setEditorStatus('Route added.');
+        setEditorStatus('Route added. Click to start another, or press V to select.');
         schedulePersist();
     }
     routeSession = null;
@@ -579,7 +640,7 @@ const addPointObject = (type, point) => {
     if (!next) return;
     selectedId = object.id;
     setProject(next);
-    setTool('select');
+    setEditorStatus(`${toolName(type)} placed. Click to place another, or press V to select.`);
     if (type === 'text') {
         ui.text.focus();
         ui.text.select();
@@ -616,6 +677,10 @@ const beginDrag = (event, objectId, vertex = null) => {
 };
 
 const moveDrag = event => {
+    if (routeSession) {
+        routeSession.cursor = pointerPoint(event);
+        renderRoutePreview();
+    }
     if (!dragSession) return;
     const point = pointerPoint(event);
     const dx = point[0] - dragSession.start[0];
@@ -676,6 +741,13 @@ const onPointerDown = event => {
 const updateSelected = patch => {
     const object = selectedObject();
     if (!object) return;
+    if (patch.style) {
+        styleDefaults = {
+            ...styleDefaults,
+            ...Object.fromEntries(Object.entries(patch.style)
+                .filter(([key]) => key in styleDefaults)),
+        };
+    }
     setProject(Project.updateObject(project, object.id, patch));
 };
 
@@ -1350,18 +1422,32 @@ const bindInspector = () => {
     ui.routeSmooth.addEventListener('change', () => {
         const object = selectedObject();
         if (object?.type === 'route') {
+            // Clearing the controls hands the curve back to the model, which
+            // re-derives it from the points on every clean.
             updateSelected({
-                geometry: {
-                    ...object.geometry,
-                    controls: ui.routeSmooth.checked ? smoothControls(object.geometry.points) : [],
-                },
+                style: { ...object.style, smooth: ui.routeSmooth.checked },
+                geometry: { ...object.geometry, controls: [] },
             });
         }
+    });
+    ui.opacity.addEventListener('input', () => {
+        const object = selectedObject();
+        const opacity = Number(ui.opacity.value) / 100;
+        ui.opacityValue.textContent = percent(opacity);
+        if (object) updateSelected({ style: { ...object.style, opacity } });
     });
     ui.scale.addEventListener('input', () => {
         const object = selectedObject();
         if (object && object.type !== 'route') {
             updateSelected({ style: { ...object.style, scale: Number(ui.scale.value) } });
+        }
+    });
+    ui.rotation.addEventListener('input', () => {
+        const object = selectedObject();
+        const rotation = Number(ui.rotation.value);
+        ui.rotationValue.textContent = `${rotation}°`;
+        if (object && object.type !== 'route') {
+            updateSelected({ geometry: { ...object.geometry, rotation } });
         }
     });
     ui.pitch.addEventListener('change', () => {
@@ -1416,6 +1502,11 @@ const bindEvents = () => {
     ui.overlay.addEventListener('pointermove', moveDrag);
     ui.overlay.addEventListener('pointerup', endDrag);
     ui.overlay.addEventListener('pointercancel', endDrag);
+    ui.overlay.addEventListener('pointerleave', () => {
+        if (!routeSession) return;
+        routeSession.cursor = null;
+        renderRoutePreview();
+    });
     ui.overlay.addEventListener('dblclick', () => {
         if (activeTool === 'route') finishRoute(false);
     });
@@ -1460,7 +1551,10 @@ const bindEvents = () => {
         }
         if (editing) return;
         if (event.key === 'Escape') {
+            // One predictable ladder out of whatever the user is in the middle
+            // of: abandon the route, then disarm the tool, then deselect.
             if (routeSession) finishRoute(true);
+            else if (activeTool !== 'select') setTool('select');
             else {
                 selectedId = null;
                 renderProject();
@@ -1468,10 +1562,9 @@ const bindEvents = () => {
         } else if (event.key === 'Delete' || event.key === 'Backspace') {
             event.preventDefault();
             deleteSelected();
-        } else if (event.key.toLowerCase() === 'v') setTool('select');
-        else if (event.key.toLowerCase() === 'l') setTool('route');
-        else if (event.key.toLowerCase() === 't') setTool('text');
-        else if (event.key === 'Enter' && routeSession) finishRoute(false);
+        } else if (toolShortcuts.has(event.key.toLowerCase())) {
+            setTool(toolShortcuts.get(event.key.toLowerCase()));
+        } else if (event.key === 'Enter' && routeSession) finishRoute(false);
         else if (event.key.startsWith('Arrow')) {
             const step = event.shiftKey ? 10 : 1;
             const directions = {
@@ -1491,12 +1584,33 @@ const bindEvents = () => {
     });
 };
 
+// The rail's own <kbd> hints are the single source for the shortcuts, so a key
+// shown on a button is always the key that arms it.
+const toolShortcuts = new Map();
+
+const paintToolRail = () => {
+    for (const button of document.querySelectorAll('[data-tool]')) {
+        const key = button.querySelector('kbd')?.textContent.trim().toLowerCase();
+        if (key?.length === 1) toolShortcuts.set(key, button.dataset.tool);
+        const slot = button.querySelector('[data-symbol]');
+        if (!slot) continue;
+        // Painted from the same geometry the export uses: the symbol a climber
+        // is shown on the button cannot drift from the one on the photo.
+        const parsed = new DOMParser().parseFromString(
+            Renderer.markerSymbolSvg(slot.dataset.symbol),
+            'image/svg+xml',
+        );
+        slot.replaceChildren(document.importNode(parsed.documentElement, true));
+    }
+};
+
 const initialize = async () => {
     for (let number = 1; number <= 50; number += 1) {
         const option = element('option', '', `P${number}`);
         option.value = String(number);
         ui.pitch.append(option);
     }
+    paintToolRail();
     bindEvents();
     store = await Store.createPhotoStore();
     await recoverOperations();

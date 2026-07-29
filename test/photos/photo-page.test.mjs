@@ -6,6 +6,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import { JSDOM } from 'jsdom';
 import { COPY_FILES, ENTRIES } from '../../scripts/build-config.mjs';
+import { photoProject as Project } from '../../src/photos/photo-project.js';
 
 const html = await fs.readFile(new URL('../../photos/photos.html', import.meta.url), 'utf8');
 const source = await fs.readFile(new URL('../../photos/photos.js', import.meta.url), 'utf8');
@@ -68,7 +69,7 @@ test('the API key is a password field and upload remains one explicit primary ac
 test('all planned topo tools and accessible editor controls are present', () => {
     assert.deepEqual(
         [...doc.querySelectorAll('[data-tool]')].map(button => button.dataset.tool),
-        ['select', 'route', 'anchor', 'piton', 'rappel', 'belay', 'pitch', 'text'],
+        ['select', 'route', 'bolt', 'anchor', 'piton', 'rappel', 'belay', 'pitch', 'text'],
     );
     for (const id of [
         'photo-file',
@@ -78,6 +79,8 @@ test('all planned topo tools and accessible editor controls are present', () => 
         'photo-overlay',
         'finish-route',
         'object-color',
+        'object-opacity',
+        'object-rotation',
         'route-width',
         'route-stroke',
         'route-arrow',
@@ -96,6 +99,42 @@ test('all planned topo tools and accessible editor controls are present', () => 
     ]) assert.ok(doc.getElementById(id), id);
     assert.equal(doc.getElementById('photo-viewport').tabIndex, 0);
     assert.ok(doc.getElementById('editor-status').hasAttribute('aria-live'));
+});
+
+test('every climbing symbol is painted from the renderer and reachable by keyboard', () => {
+    // A hand-drawn glyph on the button is a symbol that can disagree with the
+    // one the export paints, so the marker tools declare a slot the page fills
+    // from photo-renderer instead of carrying their own artwork.
+    const symbolTools = [...doc.querySelectorAll('[data-tool]')]
+        .filter(button => button.querySelector('[data-symbol]'))
+        .map(button => button.dataset.tool);
+    assert.deepEqual(symbolTools, [...Project.MARKER_TYPES]);
+    for (const button of doc.querySelectorAll('[data-tool] [data-symbol]')) {
+        assert.equal(button.dataset.symbol, button.closest('[data-tool]').dataset.tool);
+        assert.equal(button.childElementCount, 0, 'the slot must be filled at runtime');
+    }
+    // The rail's own hints are what the page reads to build its shortcut map,
+    // so a key printed on a button is always a key that arms it.
+    const keys = [...doc.querySelectorAll('[data-tool]')].map(button => ({
+        tool: button.dataset.tool,
+        key: button.querySelector('kbd')?.textContent.trim().toLowerCase(),
+        title: button.getAttribute('title'),
+    }));
+    assert.ok(keys.every(entry => entry.key?.length === 1), 'every tool needs a shortcut hint');
+    assert.equal(new Set(keys.map(entry => entry.key)).size, keys.length, 'shortcuts must be unique');
+    assert.ok(keys.every(entry => entry.title), 'every tool needs a plain-language title');
+});
+
+test('placing a symbol leaves its tool armed and the route shows its first point', () => {
+    // Reverting to Select after one symbol made a pitch of protection a
+    // click-a-tool-per-mark chore; Esc is the documented way back out.
+    assert.doesNotMatch(source, /setTool\('select'\);\s*\n\s*if \(type === 'text'\)/);
+    assert.match(source, /activeTool !== 'select'\) setTool\('select'\)/);
+    assert.match(source, /renderRoutePreview/);
+    // The curve is an intent on the style, not handles the editor has to
+    // rebuild, so adding a point cannot silently drop it.
+    assert.match(source, /ui\.routeSmooth\.checked = object\.style\.smooth/);
+    assert.doesNotMatch(source, /routeHasCurves/);
 });
 
 test('page orchestration avoids page-owned storage sync and raw HTML assignment', () => {

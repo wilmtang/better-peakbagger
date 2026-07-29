@@ -16,6 +16,10 @@ const MAX_ID_LENGTH = 100;
 const MAX_DIMENSION = 100_000;
 const MAX_LINE_WIDTH = 100;
 const MAX_SCALE = 10;
+// Fully opaque marks hide the beta underneath them, so every object carries an
+// opacity. The floor keeps a mark visible: below it the object looks lost
+// rather than translucent, and the user cannot find it again to fix it.
+const MIN_OPACITY = 0.1;
 const DEFAULT_COLOR = '#e53935';
 const PALETTE = Object.freeze([
     '#e53935',
@@ -30,6 +34,7 @@ const PALETTE = Object.freeze([
 ]);
 const OBJECT_TYPES = Object.freeze([
     'route',
+    'bolt',
     'anchor',
     'piton',
     'rappel',
@@ -37,7 +42,7 @@ const OBJECT_TYPES = Object.freeze([
     'pitch',
     'text',
 ]);
-const MARKER_TYPES = new Set(['anchor', 'piton', 'rappel', 'belay']);
+const MARKER_TYPES = Object.freeze(['bolt', 'anchor', 'piton', 'rappel', 'belay']);
 const STROKES = new Set(['solid', 'dashed', 'dotted']);
 const ENDS = new Set(['none', 'arrow']);
 const ALIGNS = new Set(['left', 'center', 'right']);
@@ -86,6 +91,24 @@ const cleanPoint = (value, bounds) => {
     return x == null || y == null ? null : [x, y];
 };
 
+const clampPoint = (point, bounds) => [
+    Math.min(bounds.maxX, Math.max(bounds.minX, point[0])),
+    Math.min(bounds.maxY, Math.max(bounds.minY, point[1])),
+];
+
+// Catmull-Rom style tangents: each control sits a sixth of the way along the
+// segment its neighbours span, so the curve passes through every clicked point.
+const smoothControls = points => points.map((point, index) => {
+    const previous = points[Math.max(0, index - 1)];
+    const next = points[Math.min(points.length - 1, index + 1)];
+    const dx = (next[0] - previous[0]) / 6;
+    const dy = (next[1] - previous[1]) / 6;
+    return {
+        in: index === 0 ? null : [point[0] - dx, point[1] - dy],
+        out: index === points.length - 1 ? null : [point[0] + dx, point[1] + dy],
+    };
+});
+
 const cleanImage = value => {
     if (!ownObject(value)) return null;
     const width = integer(value.width, 1, MAX_DIMENSION);
@@ -97,11 +120,14 @@ const cleanImage = value => {
     return { width, height, sourceSha256 };
 };
 
+const cleanOpacity = value => boundedNumber(value ?? 1, MIN_OPACITY, 1);
+
 const cleanBaseStyle = value => {
     if (!ownObject(value)) return null;
     const color = cleanColor(value.color);
     const scale = boundedNumber(value.scale ?? 1, 0.25, MAX_SCALE);
-    return color && scale != null ? { color, scale } : null;
+    const opacity = cleanOpacity(value.opacity);
+    return color && scale != null && opacity != null ? { color, scale, opacity } : null;
 };
 
 const cleanRoute = (value, image) => {
@@ -131,11 +157,30 @@ const cleanRoute = (value, image) => {
     const width = boundedNumber(value.style.width, 1, MAX_LINE_WIDTH);
     const stroke = STROKES.has(value.style.stroke) ? value.style.stroke : null;
     const end = ENDS.has(value.style.end) ? value.style.end : null;
-    if (!color || width == null || !stroke || !end) return null;
+    const opacity = cleanOpacity(value.style.opacity);
+    if (!color || width == null || !stroke || !end || opacity == null) return null;
+
+    // A smooth route records the intent, not hand-placed handles: the editor
+    // exposes no control-point UI, so every point the user adds would otherwise
+    // drop the curve it just drew. Controls are derived from the points here,
+    // which keeps the curve through any edit. A project written before this
+    // field existed infers its intent from the controls it already stored, and
+    // a project that carries real handles keeps them.
+    const stored = controls;
+    const smooth = typeof value.style.smooth === 'boolean'
+        ? value.style.smooth
+        : stored.some(control => control?.in || control?.out);
+    const derived = smoothControls(points).map(control => ({
+        in: control.in ? clampPoint(control.in, bounds) : null,
+        out: control.out ? clampPoint(control.out, bounds) : null,
+    }));
 
     return {
-        geometry: { points, controls },
-        style: { color, width, stroke, end },
+        geometry: {
+            points,
+            controls: !smooth ? [] : stored.length ? stored : derived,
+        },
+        style: { color, width, stroke, end, opacity, smooth },
         pointCount: points.length,
     };
 };
@@ -194,7 +239,7 @@ const cleanObject = (value, image) => {
 
     let specific;
     if (type === 'route') specific = cleanRoute(value, image);
-    else if (MARKER_TYPES.has(type)) specific = cleanMarker(value, image);
+    else if (MARKER_TYPES.includes(type)) specific = cleanMarker(value, image);
     else if (type === 'pitch') specific = cleanPitch(value, image);
     else specific = cleanText(value, image);
     if (!specific) return null;
@@ -315,9 +360,12 @@ export const photoProject = {
     MAX_DIMENSION,
     MAX_LINE_WIDTH,
     MAX_SCALE,
+    MIN_OPACITY,
     DEFAULT_COLOR,
     PALETTE,
     OBJECT_TYPES,
+    MARKER_TYPES,
+    smoothControls,
     cleanProject,
     createProject,
     addObject,
