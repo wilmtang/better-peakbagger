@@ -539,12 +539,14 @@ running.
 
 ### Owner choices resolved
 
-**Step 4, the pan jolt — disabled.** The owner chose the fixed-scale behavior
-described in the [comparison note](pan-jolt-comparison.md).
-`centerClampedToGround: false` now prevents MapLibre from re-deriving zoom when
-a drag ends. The comparison branch's `Shift+J` toggle and diagnostic notices did
-not ship. This remains a deliberate feel choice, not a correctness claim, and
-section 6 confirms it is separate from the tilt bug.
+**Step 4, the pan jolt — not shipped.** `centerClampedToGround: false` was
+briefly merged ahead of the judgement it was waiting on, and this section
+recorded that merge as an owner decision. It was not one. The comparison was
+run afterwards, in the live map with a toggle, and the verdict was "not much
+difference" — so the option and the branch's `Shift+J` toggle were both removed
+and MapLibre's default stands. The jolt is real and measurable (section 6); it
+is simply not worth a deviation from the library default at the size it occurs.
+See the [comparison note](pan-jolt-comparison.md).
 
 **Whether the drape keeps its `(4, 3)` setting** — measured, and the answer is
 **yes**, which contradicts what section 6 expected. `terrain:lod` now censuses the

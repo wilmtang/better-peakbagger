@@ -281,11 +281,13 @@ Bearing and pitch are intentionally not carried back to 2D. A fresh or resumed
 This makes 2D the canonical navigational handoff and avoids pretending Leaflet
 can represent a 3D camera.
 
-Map scale stays fixed while the user pans across relief. MapLibre's default
-ground-following zoom is disabled because it otherwise re-derives zoom from the
-terrain elevation under the screen center when a drag ends, producing an
-instantaneous scale step after a valley-to-ridge pan. MapLibre's separate guard
-against placing the camera inside terrain remains active.
+MapLibre's ground-following zoom is left at its default. It re-derives zoom from
+the terrain elevation under the screen center when a drag ends, which is a real
+and measurable scale step after a valley-to-ridge pan — but driven side by side
+against the alternative in the live map, the difference was judged too small to
+be worth owning a deviation from the library default. See the
+[comparison note](archive/pan-jolt-comparison.md) for the measurement and the
+call.
 
 The frame streams bearing and pitch at most once per animation frame. The page
 compass normalizes pitch to `[0, 85]` and unwraps bearing into a cumulative

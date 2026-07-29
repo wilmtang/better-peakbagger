@@ -1,10 +1,11 @@
 # Comparing the pan-end zoom jolt
 
 Step 4 of [3d-tilt-detail-blink.md](3d-tilt-detail-blink.md) was a feel
-judgement, not a correctness one. The `pan-jolt-comparison` branch existed so it
-could be made in front of the real map instead of by argument. **That branch was
-not safe to merge unchanged**: it carried a debug keybinding that must not ship.
-These instructions were placed on `main` so they would survive the branch.
+judgement, not a correctness one, and it was made in front of the real map
+rather than by argument. **The answer was "no perceptible difference" and
+nothing shipped** — see [Outcome](#outcome). The rest of this note is kept
+because the trade-off and the way it was driven are the parts worth having if
+the question is ever reopened.
 
 ## What the jolt is
 
@@ -34,8 +35,14 @@ behaving, and which one feels like it is fighting you.
 
 ## How to compare
 
+The `pan-jolt-comparison` branch that carried this originally has been merged and
+its toggle removed, so reopening the question means re-adding a temporary
+keydown handler in `src/terrain/terrain-frame.js` — next to the `Escape`
+handler, calling `map.setCenterClampedToGround(...)` and naming the state
+through `showNotice`. Keep it uncommitted; it must not ship. Then:
+
 ```bash
-git checkout pan-jolt-comparison && npm run start:chromium
+npm run start:chromium
 ```
 
 That builds, loads the extension into a development Chrome, and reloads it on
@@ -55,8 +62,25 @@ centre changes.
 
 ## Outcome
 
-The owner chose **Off**. The integration kept one Map option and no keybinding:
+**Nothing shipped. MapLibre's default stands.**
 
-- `centerClampedToGround: false` in the frame's Map options;
-- no `Shift+J` handler or diagnostic notice;
-- the trade-off above preserved in the completed plan's closure ledger.
+An earlier revision of this section claimed the owner had chosen **Off**. That
+was written when `centerClampedToGround: false` was merged into `main` ahead of
+the judgement, and it recorded a decision nobody had made.
+
+The comparison was then actually run, in the live map, with the toggle flipping
+between the two behaviours in one session. The verdict was that there was not
+much difference between them.
+
+That is a real answer, and it resolves to the default: a deviation from a
+library's documented behaviour has to earn its keep in perceptible benefit,
+because it is behaviour we then own, document, and re-verify on every MapLibre
+upgrade. An effect the only person to judge it could barely feel does not clear
+that bar. So `centerClampedToGround: false` and the `Shift+J` toggle were both
+removed.
+
+This does not retract the measurement. The jolt is real — −0.097 zoom levels on
+a 60-pixel drag against synthetic terrain, and arithmetically up to a full level
+at higher zoom over 600 m of relief. If it ever becomes a complaint, the finding
+above is still valid and the option is one line; the reason it is not there is
+that it was judged, not that it was overlooked.

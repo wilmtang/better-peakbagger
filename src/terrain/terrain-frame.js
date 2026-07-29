@@ -1616,12 +1616,6 @@ import { terrainTiles as TerrainTiles } from './terrain-tiles.js';
                 maxZoom: 18,
                 attributionControl: false,
                 fadeDuration: 0,
-                // Keep map scale fixed through pans across relief. MapLibre's
-                // default re-derives zoom from the ground elevation under the
-                // screen centre when a drag ends, which makes the scale step
-                // instantaneously after a valley-to-ridge pan. Its separate
-                // camera-inside-terrain guard remains active either way.
-                centerClampedToGround: false,
                 // Tilting a few degrees and tilting back is the most common
                 // gesture in this view, and MapLibre's stock retention (5x the
                 // on-screen tile count per source) can evict the tiles of the
