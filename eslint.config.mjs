@@ -21,7 +21,7 @@ export default [
         ],
     },
     {
-        files: ['src/**/*.js', 'options/**/*.js', 'popup/**/*.js'],
+        files: ['src/**/*.js', 'options/**/*.js', 'popup/**/*.js', 'photos/**/*.js'],
         languageOptions: {
             ecmaVersion: 'latest',
             sourceType: 'module',

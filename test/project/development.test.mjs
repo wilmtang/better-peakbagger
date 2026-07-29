@@ -12,7 +12,10 @@ import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
+import { ESLint } from "eslint";
+
 import { formatReloadLog, RELOAD_SIGNAL } from "../../scripts/build.mjs";
+import { ENTRIES, resolvePageSource, root } from "../../scripts/build-config.mjs";
 import { webExtArguments } from "../../scripts/run-development.mjs";
 import {
   createFirefoxSource,
@@ -50,6 +53,39 @@ test("source and tests stay organized by owning domain", async () => {
     .filter(entry => entry.isFile() && entry.name.endsWith(".scale.mjs"))
     .map(entry => entry.name);
   assert.deepEqual(ungroupedScaleTests, [], "scale tests must live in a domain directory");
+});
+
+// A page-local bundle root lives outside src/, so nothing in the src/ glob
+// covers it. photos/photos.js shipped unlinted for exactly that reason: the
+// lint script and the ESLint browser-globals block both enumerate directories
+// by hand, and a new page surface is easy to add to neither.
+test("every page-local bundle source is linted like shared source", async () => {
+  const pageLocalFiles = [...new Set(
+    ENTRIES.flatMap(entry => entry.sources)
+      .map(name => resolvePageSource(name))
+      .filter(file => !file.startsWith(path.join(root, "src") + path.sep)),
+  )].sort();
+  assert.ok(pageLocalFiles.length > 0, "expected page-local bundle sources to exist");
+
+  const packageJson = JSON.parse(await readFile(path.join(projectRoot, "package.json"), "utf8"));
+  const lintTargets = packageJson.scripts["lint:js"].split(/\s+/).slice(1);
+  const unlintedDirectories = [...new Set(pageLocalFiles
+    .map(file => path.relative(root, file).split(path.sep)[0])
+    .filter(directory => !lintTargets.includes(directory)))].sort();
+  assert.deepEqual(unlintedDirectories, [],
+    "lint:js must pass every page-local bundle directory to ESLint");
+
+  const eslint = new ESLint({ cwd: projectRoot });
+  for (const file of pageLocalFiles) {
+    const config = await eslint.calculateConfigForFile(file);
+    const relative = path.relative(root, file);
+    assert.equal(config.rules?.["no-undef"]?.[0], 2, `${relative} must be checked for undeclared names`);
+    assert.equal(config.rules?.eqeqeq?.[0], 2, `${relative} must be checked for loose equality`);
+    assert.equal(config.languageOptions?.globals?.window, false,
+      `${relative} must resolve browser globals`);
+    assert.equal(config.languageOptions?.globals?.chrome, false,
+      `${relative} must resolve extension globals`);
+  }
 });
 
 test("development reload logs include a local timestamp", () => {
