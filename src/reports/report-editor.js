@@ -466,6 +466,21 @@ import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.js';
     const boxes = [tableBar, linkBox, imageBox, videoBox, moreBox];
     const manualBoxes = [linkBox, imageBox, videoBox, moreBox];
     const closeBoxes = () => { for (const box of boxes) box.hidden = true; };
+    const openManualBox = () => manualBoxes.find(box => !box.hidden) || null;
+
+    // The contextual layer floats over whatever sits above the report field —
+    // on the ascent form that is Peakbagger's own date calendar — so an open
+    // popover can cover controls the user still needs. Re-clicking the tool
+    // that opened it is not a discoverable way out, and the popover the photo
+    // actions live in is the tallest of them. Every manually opened popover
+    // therefore carries a visible dismiss control; Escape and a click outside
+    // the editor close it too.
+    for (const box of manualBoxes) {
+        const dismiss = button('bpb-re-boxclose', 'Close', 'Close (Esc)', '×');
+        dismiss.addEventListener('mousedown', event => event.preventDefault());
+        dismiss.addEventListener('click', () => closeBoxAndRestoreEditor());
+        box.append(dismiss);
+    }
     const toggleBox = box => {
         const wasOpen = !box.hidden;
         closeBoxes();
@@ -942,6 +957,27 @@ import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.js';
         if (event.key === 'Escape') { event.preventDefault(); closeBoxAndRestoreEditor(); }
     });
 
+    // Escape works from the writing surface and the popover's own buttons, not
+    // only from its text fields. The per-input handlers above close first, so
+    // this sees an already-closed layer and does nothing.
+    ui.addEventListener('keydown', event => {
+        if (event.key !== 'Escape' || !openManualBox()) return;
+        event.preventDefault();
+        closeBoxAndRestoreEditor();
+    });
+
+    // A press anywhere outside the editor dismisses the popover instead of
+    // being swallowed by it, so the covered form is one click away. Focus
+    // follows the press; do not pull it back into the editor here.
+    const dismissOnOutsidePointer = event => {
+        if (!openManualBox()) return;
+        const target = event.target;
+        if (target instanceof Node && ui.contains(target)) return;
+        closeBoxes();
+        refreshToolbar();
+    };
+    document.addEventListener('pointerdown', dismissOnOutsidePointer, true);
+
     // ---- Modes -------------------------------------------------------------------
 
     const showNative = visible => {
@@ -1131,6 +1167,7 @@ import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.js';
                 if (richEditor) richEditor.destroy();
                 mdEditor.destroy();
                 ext.runtime.onMessage.removeListener(handlePhotoInsertion);
+                document.removeEventListener('pointerdown', dismissOnOutsidePointer, true);
                 ui.remove();
             }
         });
