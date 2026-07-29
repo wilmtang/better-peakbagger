@@ -1455,15 +1455,22 @@ try {
             });
             check(nativeHidden, 'the native textarea should be hidden but still inside the form');
 
+            // Document-relative: focusing the panel's first control can scroll
+            // the page a pixel, and a viewport-relative reading would report
+            // that as the writing surface having moved.
             const surfaceTopBeforePanel = await editorPage.evaluate(() =>
-                document.querySelector('#bpb-report-editor .bpb-re-surface')?.getBoundingClientRect().top);
+                document.querySelector('#bpb-report-editor .bpb-re-surface')
+                    ?.getBoundingClientRect().top + scrollY);
 
             await editorPage.locator('#bpb-report-editor').getByRole('button', {
                 name: 'Insert image', exact: true
             }).click();
             const imageHostingHelp = await editorPage.evaluate(() => {
                 const box = document.querySelector('#bpb-report-editor .bpb-re-imagebox');
-                const hint = box?.querySelector('.bpb-re-image-hosting');
+                // The last help line is the one about pasted links; the first
+                // explains the upload action above it.
+                const hints = box ? [...box.querySelectorAll('.bpb-re-image-hosting')] : [];
+                const hint = hints[hints.length - 1];
                 const controls = box ? [...box.querySelectorAll('input, button')] : [];
                 const hintRect = hint?.getBoundingClientRect();
                 const controlRects = controls.map(control => control.getBoundingClientRect());
@@ -1483,9 +1490,12 @@ try {
             check(imageHostingHelp?.visible && imageHostingHelp.belowControls,
                 `image-hosting help was not visible below the image controls (state=${
                     JSON.stringify(imageHostingHelp)})`);
+            // One action, not two: the page it opens has its own Editor and
+            // Library tabs, so offering both here asked the user to understand
+            // the implementation before they could choose.
             check(JSON.stringify(imageHostingHelp?.photoActions)
-                === JSON.stringify(['Upload and edit…', 'Choose from library…']),
-            `the integrated photo-editor actions were missing (state=${JSON.stringify(imageHostingHelp)})`);
+                === JSON.stringify(['Upload a photo…']),
+            `the integrated photo-editor action was missing (state=${JSON.stringify(imageHostingHelp)})`);
             check(JSON.stringify(imageHostingHelp?.links) === JSON.stringify([
                 {
                     label: 'Peakbagger Photos',
@@ -1510,7 +1520,7 @@ try {
                 const surfaceRect = surface?.getBoundingClientRect();
                 const boxRect = box?.getBoundingClientRect();
                 return toolbarRect && surfaceRect && boxRect ? {
-                    surfaceDelta: surfaceRect.top - before,
+                    surfaceDelta: surfaceRect.top + scrollY - before,
                     overlay: getComputedStyle(box).position === 'static'
                         ? getComputedStyle(editor.querySelector('.bpb-re-contextual')).position
                         : getComputedStyle(box).position,
