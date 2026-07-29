@@ -1391,6 +1391,13 @@ const bindEvents = () => {
     ui.showLibrary.addEventListener('click', () => setView('library'));
     ui.saveKey.addEventListener('click', () => void saveCredential());
     ui.removeKey.addEventListener('click', () => void removeCredential());
+    // Settings owns the same device-local key, so a claim made when this tab
+    // loaded can be stale by the time the user comes back to it. Never refresh
+    // while they are typing in the form the answer would hide.
+    window.addEventListener('focus', () => {
+        if (ui.credentialForm.contains(document.activeElement)) return;
+        void refreshCredential();
+    });
     ui.file.addEventListener('change', () => void chooseFile(ui.file.files?.[0]));
     ui.title.addEventListener('input', schedulePersist);
     ui.alt.addEventListener('input', schedulePersist);

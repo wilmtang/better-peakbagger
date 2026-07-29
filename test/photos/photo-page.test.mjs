@@ -104,6 +104,9 @@ test('page orchestration avoids page-owned storage sync and raw HTML assignment'
     assert.match(source, /GITHUB_PHOTOS_BACKUP/);
     assert.match(source, /GITHUB_PHOTOS_RESTORE_PREVIEW/);
     assert.match(source, /autoPhotoLibraryBackup/);
+    // Settings owns the same device-local key, so this page cannot keep
+    // reporting the state it read when the tab first loaded.
+    assert.match(source, /window\.addEventListener\('focus'[\s\S]{0,240}refreshCredential\(\)/);
 });
 
 test('GitHub recovery copy states the metadata-only boundary beside its actions', () => {
