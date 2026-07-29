@@ -258,14 +258,21 @@ button.secondary:focus-visible, a.secondary:focus-visible { outline: 2px solid v
 /* Settings export/import and the GitHub settings and favorites backup rows,
    which share one control shape inside Backup & sync. */
 .settings-backup-actions,
-.favorites-github-buttons { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 7px; }
+.favorites-github-buttons,
+.photos-github-buttons { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 7px; }
 .settings-backup-actions button.secondary,
-.favorites-github-buttons button.secondary { align-self: auto; }
+.favorites-github-buttons button.secondary,
+.photos-github-buttons button.secondary { align-self: auto; }
 .settings-backup-github-actions,
-.favorites-github-actions { display: flex; flex-direction: column; align-items: flex-end; gap: 10px; }
+.favorites-github-actions,
+.photos-github-actions { display: flex; flex-direction: column; align-items: flex-end; gap: 10px; }
 .settings-backup-github-actions[hidden] { display: none; }
+.photos-github-actions[hidden] { display: none; }
 .settings-backup-github-success { color: var(--link); font-weight: 600; }
 .settings-backup-github-success a { color: inherit; }
+/* The photo restore preview reuses the destructive-confirmation shape: it
+   replaces local catalog records, and the counts have to be read first. */
+.photos-restore-confirmation,
 .settings-backup-confirmation {
     display: flex;
     align-items: center;
@@ -277,11 +284,17 @@ button.secondary:focus-visible, a.secondary:focus-visible { outline: 2px solid v
     border-top: 1px solid var(--danger-border);
 }
 .settings-backup-confirmation[hidden] { display: none; }
-.settings-backup-confirmation-title { margin: 0; color: var(--danger); font-size: 13px; font-weight: 700; }
-.settings-backup-confirmation-detail { margin: 3px 0 0; font-size: 12.5px; line-height: 1.45; }
-.settings-backup-confirmation-actions { display: flex; flex: 0 0 auto; align-items: center; gap: 7px; }
-.settings-backup-confirmation-actions button.secondary { align-self: auto; }
-.settings-backup-confirm {
+.photos-restore-confirmation[hidden] { display: none; }
+.settings-backup-confirmation-title,
+.photos-restore-title { margin: 0; color: var(--danger); font-size: 13px; font-weight: 700; }
+.settings-backup-confirmation-detail,
+.photos-restore-detail { margin: 3px 0 0; font-size: 12.5px; line-height: 1.45; }
+.settings-backup-confirmation-actions,
+.photos-restore-actions { display: flex; flex: 0 0 auto; align-items: center; gap: 7px; }
+.settings-backup-confirmation-actions button.secondary,
+.photos-restore-actions button.secondary { align-self: auto; }
+.settings-backup-confirm,
+.photos-restore-confirm {
     appearance: none;
     padding: 6px 10px;
     color: #fff;
@@ -292,8 +305,10 @@ button.secondary:focus-visible, a.secondary:focus-visible { outline: 2px solid v
     font-weight: 650;
     cursor: pointer;
 }
-.settings-backup-confirm:hover { filter: brightness(.92); }
-.settings-backup-confirm:focus-visible { outline: 2px solid var(--danger); outline-offset: 2px; }
+.settings-backup-confirm:hover,
+.photos-restore-confirm:hover { filter: brightness(.92); }
+.settings-backup-confirm:focus-visible,
+.photos-restore-confirm:focus-visible { outline: 2px solid var(--danger); outline-offset: 2px; }
 
 .beta-signals { display: flex; flex-direction: column; gap: 9px; }
 .check { display: flex; align-items: center; gap: 7px; cursor: pointer; white-space: nowrap; }
@@ -770,6 +785,8 @@ button.github-repo:focus-visible { outline: 2px solid var(--accent); outline-off
 @media (max-width: 600px) {
     .settings-backup-confirmation { align-items: stretch; flex-direction: column; gap: 10px; }
     .settings-backup-confirmation-actions { justify-content: flex-end; }
+    .photos-restore-confirmation { align-items: stretch; flex-direction: column; gap: 10px; }
+    .photos-restore-actions { justify-content: flex-end; }
     .favorites-mirror-confirmation { align-items: stretch; flex-direction: column; gap: 10px; }
     .favorites-mirror-confirmation-actions { justify-content: flex-end; }
     .favorites-list-toolbar { align-items: stretch; flex-direction: column; gap: 9px; }

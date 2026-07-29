@@ -78,8 +78,6 @@ const ui = {
     storageSummary: byId('storage-summary'),
     backupStatus: byId('photo-backup-status'),
     backupNow: byId('backup-library'),
-    restoreBackup: byId('restore-library'),
-    autoBackup: byId('auto-backup-library'),
     toast: byId('toast'),
     toastMessage: byId('toast-message'),
     toastAction: byId('toast-action'),
@@ -1351,11 +1349,8 @@ const formatBackupTime = value => {
 
 const setPhotoBackupBusy = value => {
     photoBackupBusy = value;
-    for (const control of [ui.backupNow, ui.restoreBackup, ui.autoBackup]) {
-        control.disabled = value;
-    }
+    ui.backupNow.disabled = value;
     ui.backupNow.setAttribute('aria-busy', String(value));
-    ui.restoreBackup.setAttribute('aria-busy', String(value));
 };
 
 const refreshPhotoBackupStatus = async () => {
@@ -1363,14 +1358,9 @@ const refreshPhotoBackupStatus = async () => {
     if (!response?.ok) {
         ui.backupStatus.textContent = 'GitHub recovery is unavailable.';
         ui.backupNow.disabled = true;
-        ui.restoreBackup.disabled = true;
-        ui.autoBackup.disabled = true;
         return;
     }
-    ui.autoBackup.checked = response.auto === true;
     ui.backupNow.disabled = !response.connected || photoBackupBusy;
-    ui.restoreBackup.disabled = !response.connected || photoBackupBusy;
-    ui.autoBackup.disabled = (!response.connected && !response.auto) || photoBackupBusy;
     if (!response.connected) {
         ui.backupStatus.textContent = 'Connect a GitHub backup repository in Settings to enable recovery.';
         return;
@@ -1400,76 +1390,9 @@ const backupPhotoLibrary = async () => {
         return;
     }
     ui.backupStatus.textContent = response?.error?.code === 'photo-backup-conflict'
-        ? `Backup conflict in ${response.error.conflictCount || 1} photo record(s). Restore and review before backing up.`
+        ? `Backup conflict in ${response.error.conflictCount || 1} photo record(s). `
+            + 'Restore from Settings and review before backing up again.'
         : response?.error?.message || 'The photo-library backup failed. Try again.';
-};
-
-const restorePhotoLibrary = async () => {
-    if (photoBackupBusy) return;
-    setPhotoBackupBusy(true);
-    ui.backupStatus.textContent = 'Reading photo-library.json…';
-    const preview = await send({ type: 'GITHUB_PHOTOS_RESTORE_PREVIEW' });
-    if (!preview?.ok) {
-        setPhotoBackupBusy(false);
-        ui.backupStatus.textContent = preview?.error?.message || 'The photo-library backup could not be read.';
-        return;
-    }
-    const changes = preview.counts || {};
-    const conflictCount = preview.conflicts?.length || 0;
-    const summary = [
-        `${preview.remotePhotos} photo record${preview.remotePhotos === 1 ? '' : 's'}`,
-        `${preview.remoteTombstones} deletion record${preview.remoteTombstones === 1 ? '' : 's'}`,
-        `${changes.update || 0} update${changes.update === 1 ? '' : 's'}`,
-    ].join(', ');
-    const conflictCopy = conflictCount
-        ? ` ${conflictCount} conflicting local version${conflictCount === 1 ? ' will' : 's will'} be kept.`
-        : '';
-    const accepted = confirm(
-        `Restore ${summary} from GitHub?${conflictCopy}\n\n`
-        + 'This restores metadata and annotations only. Original images and ImgBB deletion capability are not restored. '
-        + 'Local editable assets are kept only when their source hash still matches.',
-    );
-    if (!accepted) {
-        setPhotoBackupBusy(false);
-        await refreshPhotoBackupStatus();
-        return;
-    }
-    ui.backupStatus.textContent = 'Restoring photo metadata…';
-    const restored = await send({
-        type: 'GITHUB_PHOTOS_RESTORE',
-        signature: preview.signature,
-        keepLocalConflicts: conflictCount > 0,
-    });
-    setPhotoBackupBusy(false);
-    if (!restored?.ok) {
-        ui.backupStatus.textContent = restored?.error?.message || 'The photo library could not be restored.';
-        return;
-    }
-    toast(
-        'Photo metadata restored. Original images and remote deletion links were not restored.'
-        + (restored.keptLocalConflicts
-            ? ` Kept ${restored.keptLocalConflicts} local conflict(s).`
-            : ''),
-        { duration: 9000 },
-    );
-    await renderLibrary();
-    await refreshPhotoBackupStatus();
-};
-
-const setAutomaticPhotoBackup = async () => {
-    const requested = ui.autoBackup.checked;
-    ui.autoBackup.disabled = true;
-    const response = await send({
-        type: 'SETTINGS_PATCH',
-        patch: { autoPhotoLibraryBackup: requested },
-    });
-    if (!response?.ok) {
-        ui.autoBackup.checked = !requested;
-        toast('The automatic photo backup setting could not be saved.');
-    } else if (requested) {
-        notifyBackupChanged();
-    }
-    await refreshPhotoBackupStatus();
 };
 
 const bindInspector = () => {
@@ -1611,8 +1534,6 @@ const bindEvents = () => {
     ui.filter.addEventListener('change', () => void renderLibrary());
     ui.importProject.addEventListener('change', () => void importProject(ui.importProject.files?.[0]));
     ui.backupNow.addEventListener('click', () => void backupPhotoLibrary());
-    ui.restoreBackup.addEventListener('click', () => void restorePhotoLibrary());
-    ui.autoBackup.addEventListener('change', () => void setAutomaticPhotoBackup());
     ui.toastAction.addEventListener('click', () => {
         if (undoDeleted) undoDeleted = null;
     });

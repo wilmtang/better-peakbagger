@@ -11,6 +11,7 @@ import { initFavorites } from './favorites.js';
 import { initDrafts } from './drafts.js';
 import { initImgbbKey } from './imgbb.js';
 import { initSettingsBackup } from './settings-backup.js';
+import { initPhotoBackup } from './photos.js';
 import { initSectionNav } from './section-nav.js';
 
 (() => {
@@ -150,6 +151,7 @@ import { initSectionNav } from './section-nav.js';
         betaSortDateDescEl.checked = settings.betaSortDateDesc;
         favorites.populate(settings);
         settingsBackup.populate(settings);
+        photoBackup.populate(settings);
         githubBackup.populate(settings);
         applyTheme(settings.theme);
     };
@@ -181,6 +183,7 @@ import { initSectionNav } from './section-nav.js';
     // Device-local credential, not a synced setting: it never enters `save`.
     initImgbbKey({ extensionApi, flash });
     const settingsBackup = initSettingsBackup({ extensionApi, flash, save });
+    const photoBackup = initPhotoBackup({ extensionApi, flash, save });
 
     unitsEl.addEventListener('change', () => save({ units: unitsEl.value }));
     themeEl.addEventListener('change', () => save({ theme: themeEl.value }));

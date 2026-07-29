@@ -646,14 +646,11 @@ kbd {
   text-underline-offset: 2px;
 }
 
-.auto-backup-control {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  font-size: 12px;
-}
-
+/* Settings owns restore and the automatic toggle, so the library keeps only
+   the action worth having in the moment; the boundary sentence runs full width
+   under both columns. */
 .backup-boundary {
+  grid-column: 1 / -1;
   color: var(--muted);
   font-size: 11px;
   line-height: 1.45;

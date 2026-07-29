@@ -2128,7 +2128,8 @@ test('the sidebar exposes always-visible sub-links for the grouped sections', as
     assert.deepEqual(subLinks.map(link => link.getAttribute('href')),
         ['#capture-gpx', '#capture-report', '#capture-photos', '#drafts',
             '#map-chart-chart', '#map-chart-map', '#github-connection',
-            '#github-settings-backup', '#github-favorites-backup', '#github-backup']);
+            '#github-settings-backup', '#github-favorites-backup', '#github-photos-backup',
+            '#github-backup']);
     for (const link of subLinks) {
         const target = doc.getElementById(link.getAttribute('href').slice(1));
         assert.ok(target && target.classList.contains('subsection'),

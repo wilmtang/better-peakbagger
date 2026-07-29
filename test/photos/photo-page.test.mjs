@@ -95,8 +95,6 @@ test('all planned topo tools and accessible editor controls are present', () => 
         'import-project',
         'photo-backup-status',
         'backup-library',
-        'restore-library',
-        'auto-backup-library',
     ]) assert.ok(doc.getElementById(id), id);
     assert.equal(doc.getElementById('photo-viewport').tabIndex, 0);
     assert.ok(doc.getElementById('editor-status').hasAttribute('aria-live'));
@@ -158,8 +156,6 @@ test('page orchestration avoids page-owned storage sync and raw HTML assignment'
     assert.match(source, /PHOTO_INSERT_COMMIT/);
     assert.match(source, /outcome-unknown/);
     assert.match(source, /GITHUB_PHOTOS_BACKUP/);
-    assert.match(source, /GITHUB_PHOTOS_RESTORE_PREVIEW/);
-    assert.match(source, /autoPhotoLibraryBackup/);
     // Settings owns the same device-local key, so this page cannot keep
     // reporting the state it read when the tab first loaded.
     assert.match(source, /window\.addEventListener\('focus'[\s\S]{0,240}refreshCredential\(\)/);
@@ -170,7 +166,20 @@ test('GitHub recovery copy states the metadata-only boundary beside its actions'
     assert.match(card.textContent, /photo-library\.json/);
     assert.match(card.textContent, /Original images, API keys, and remote deletion links stay on this device/);
     assert.equal(card.querySelector('#photo-backup-settings').getAttribute('href'),
-        '../options/options.html#github');
+        '../options/options.html#github-photos-backup');
+    // The library keeps the one action worth having while looking at photos.
+    // Restore replaces local records and the automatic toggle is a stored
+    // preference, so both belong with every other backup, in Settings.
+    assert.ok(card.querySelector('#backup-library'));
+    assert.equal(doc.getElementById('restore-library'), null);
+    assert.equal(doc.getElementById('auto-backup-library'), null);
+    assert.ok(optionsDoc.getElementById('photos-restore'));
+    assert.ok(optionsDoc.getElementById('photos-auto-backup'));
+    // Restoring is preview-first in an in-page panel, not a confirm() the
+    // browser can suppress after the first one.
+    assert.equal(optionsDoc.getElementById('photos-restore-confirmation').hidden, true);
+    assert.match(optionsDoc.getElementById('github-photos-backup').textContent,
+        /does not store the images themselves, your ImgBB API key, or the links that delete/);
 });
 
 test('settings deep links land on section ids the settings page actually defines', () => {

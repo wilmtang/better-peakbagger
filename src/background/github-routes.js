@@ -918,17 +918,33 @@ export function createGithubRoutes({
     // Keep unrelated worker routes bootable in constrained environments that
     // do not expose extension-page URL resolution. Photo messages still fail
     // closed there; production browsers provide runtime.getURL().
-    const photoPageBase = typeof ext.runtime?.getURL === 'function'
-        ? ext.runtime.getURL('photos/photos.html')
-        : null;
-    const isPhotoPage = sender => {
-        if (!photoPageBase) return false;
-        try {
-            const actual = new URL(sender?.url || '');
-            const expected = new URL(photoPageBase);
-            return actual.origin === expected.origin && actual.pathname === expected.pathname;
-        } catch { return false; }
+    // Compare the protocol and host outright rather than trusting `origin`:
+    // only special schemes are specified to produce one, so an extension URL's
+    // origin is browser-defined and serializes as "null" in a spec-strict
+    // parser — which would let another extension's identically-pathed page
+    // through this gate.
+    const packagedPage = page => {
+        const base = typeof ext.runtime?.getURL === 'function' ? ext.runtime.getURL(page) : null;
+        return sender => {
+            if (!base) return false;
+            try {
+                const actual = new URL(sender?.url || '');
+                const expected = new URL(base);
+                return actual.protocol === expected.protocol
+                    && actual.host === expected.host
+                    && actual.origin === expected.origin
+                    && actual.pathname === expected.pathname;
+            } catch { return false; }
+        };
     };
+    const isPhotoPage = packagedPage('photos/photos.html');
+    const isOptionsPage = packagedPage('options/options.html');
+    // Backup and restore are reachable from both extension-owned surfaces:
+    // Settings is where every other GitHub backup lives, and the library is
+    // where the user is standing when a photo changes. Announcing a catalog
+    // change stays with the photo page, because that is the only page that
+    // writes the catalog.
+    const isPhotoBackupPage = sender => isPhotoPage(sender) || isOptionsPage(sender);
     const readPhotoBackupState = async () =>
         (await ext.storage.local.get(PHOTO_BACKUP_STATE_KEY))[PHOTO_BACKUP_STATE_KEY] || null;
     const sameRepo = (left, right) => !!left && !!right
@@ -1008,7 +1024,7 @@ export function createGithubRoutes({
         : writeError(error, fallback);
 
     const photoBackupStatus = async (_message, sender) => {
-        if (!isPhotoPage(sender)) return { ok: false, error: { code: 'forbidden' } };
+        if (!isPhotoBackupPage(sender)) return { ok: false, error: { code: 'forbidden' } };
         const [status, state] = await Promise.all([githubStatus(), readPhotoBackupState()]);
         const repo = status.repo ? {
             owner: status.repo.owner,
@@ -1025,7 +1041,7 @@ export function createGithubRoutes({
     };
 
     const backupPhotoLibrary = async ({ automatic = false, sender = null } = {}) => {
-        if (!automatic && !isPhotoPage(sender)) {
+        if (!automatic && !isPhotoBackupPage(sender)) {
             return { ok: false, error: { code: 'forbidden' } };
         }
         const access = await connectedGithubClient();
@@ -1095,7 +1111,7 @@ export function createGithubRoutes({
     };
 
     const previewPhotoLibraryRestore = async (_message, sender) => {
-        if (!isPhotoPage(sender)) return { ok: false, error: { code: 'forbidden' } };
+        if (!isPhotoBackupPage(sender)) return { ok: false, error: { code: 'forbidden' } };
         const access = await connectedGithubClient();
         if (access.error) return { ok: false, error: access.error };
         try {
@@ -1131,7 +1147,7 @@ export function createGithubRoutes({
     };
 
     const restorePhotoLibrary = async (message, sender) => {
-        if (!isPhotoPage(sender)) return { ok: false, error: { code: 'forbidden' } };
+        if (!isPhotoBackupPage(sender)) return { ok: false, error: { code: 'forbidden' } };
         const expectedSignature = typeof message?.signature === 'string'
             && /^[0-9a-f]{64}$/.test(message.signature)
             ? message.signature

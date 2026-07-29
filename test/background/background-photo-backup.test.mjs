@@ -17,6 +17,10 @@ const photoSender = {
     url: 'chrome-extension://test-extension/photos/photos.html?mode=library',
     tab: { id: 91 },
 };
+const optionsSender = {
+    url: 'chrome-extension://test-extension/options/options.html#github-photos-backup',
+    tab: { id: 92 },
+};
 
 const makeStorageArea = () => {
     const values = {};
@@ -155,9 +159,45 @@ test('manual backup reads IndexedDB itself and writes only the metadata recovery
     store.close();
 
     const forbidden = await h.routes.handlers.GITHUB_PHOTOS_BACKUP({}, {
-        url: 'chrome-extension://test-extension/options/options.html',
+        url: 'chrome-extension://test-extension/popup/popup.html',
     });
     assert.equal(forbidden.error.code, 'forbidden');
+});
+
+test('Settings drives the same recovery routes, and only the library announces a change', async () => {
+    // Settings is where every other GitHub backup lives, so it has to reach
+    // these routes; a page that neither shows nor writes the catalog must not.
+    const h = await harness({ seed: bundle() });
+    // STATUS reads the auth store this harness does not stand up, so reaching
+    // its failure is itself proof the sender gate let it through.
+    await assert.rejects(h.routes.handlers.GITHUB_PHOTOS_STATUS({}, optionsSender),
+        /authorization storage is unavailable/);
+    for (const type of ['GITHUB_PHOTOS_BACKUP', 'GITHUB_PHOTOS_RESTORE_PREVIEW']) {
+        const response = await h.routes.handlers[type]({}, optionsSender);
+        assert.notEqual(response.error?.code, 'forbidden', type);
+    }
+    const restored = await h.routes.handlers.GITHUB_PHOTOS_RESTORE({ signature: 'x' }, optionsSender);
+    assert.equal(restored.error.code, 'invalid-restore', 'reached the route, not the gate');
+
+    // Announcing a catalog change stays with the page that writes the catalog.
+    assert.equal(
+        (await h.routes.handlers.GITHUB_PHOTOS_CHANGED({}, optionsSender)).error.code,
+        'forbidden',
+    );
+    assert.equal((await h.routes.handlers.GITHUB_PHOTOS_CHANGED({}, photoSender)).ok, true);
+
+    for (const sender of [
+        { url: 'https://www.peakbagger.com/climber/ascentedit.aspx', tab: { id: 4 } },
+        { url: 'chrome-extension://other-extension/options/options.html' },
+        { url: 'chrome-extension://test-extension/options/evil.html' },
+        {},
+    ]) {
+        assert.equal(
+            (await h.routes.handlers.GITHUB_PHOTOS_BACKUP({}, sender)).error.code,
+            'forbidden',
+            JSON.stringify(sender),
+        );
+    }
 });
 
 test('a divergent same-id remote edit stops backup without replacing the repository file', async () => {

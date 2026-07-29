@@ -79,7 +79,13 @@ export function createPhotoRoutes({
             try {
                 const actual = new URL(sender?.url || '');
                 const expected = new URL(base);
-                return actual.origin === expected.origin
+                // Protocol and host are compared outright: only special schemes
+                // are specified to produce an `origin`, so an extension URL's
+                // is browser-defined and serializes as "null" in a spec-strict
+                // parser, which would admit another extension's same-path page.
+                return actual.protocol === expected.protocol
+                    && actual.host === expected.host
+                    && actual.origin === expected.origin
                     && actual.pathname === expected.pathname
                     && Number.isInteger(sender?.tab?.id);
             } catch { return false; }

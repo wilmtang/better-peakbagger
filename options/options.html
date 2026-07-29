@@ -44,6 +44,7 @@
                     <li><a class="nav-subitem" href="#github-connection">GitHub connection</a></li>
                     <li><a class="nav-subitem" href="#github-settings-backup">Settings backup</a></li>
                     <li><a class="nav-subitem" href="#github-favorites-backup">Favorite climbers backup</a></li>
+                    <li><a class="nav-subitem" href="#github-photos-backup">Photo library backup</a></li>
                     <li><a class="nav-subitem" href="#github-backup">Ascent backup</a></li>
                 </ul>
             </li>
@@ -590,6 +591,39 @@
                         </div>
                     </div>
                     <div id="favorites-restore-replacement-host"></div>
+                </div>
+            </div>
+
+            <div class="subsection" id="github-photos-backup" role="group" aria-labelledby="github-photos-backup-heading">
+                <h3 class="subsection-title" id="github-photos-backup-heading">Photo library backup</h3>
+                <div class="card">
+                    <div class="row">
+                        <div class="label">
+                            <span class="title">GitHub photo backup</span>
+                            <span class="desc" id="photos-github-status" role="status">Checking connection…</span>
+                            <span class="desc">Stores what your photo library knows: annotations, titles and descriptions, public ImgBB links, image hashes, and which reports used each photo — as <code>photo-library.json</code>. It does not store the images themselves, your ImgBB API key, or the links that delete a photo from ImgBB, so a restore brings back the record, not the picture. Keep the originals with <strong>Download project</strong> in the photo library.</span>
+                        </div>
+                        <div class="control photos-github-actions" id="photos-github-actions" hidden>
+                            <div class="photos-github-buttons">
+                                <button id="photos-backup" class="secondary" type="button">Back up photos</button>
+                                <button id="photos-restore" class="secondary" type="button">Restore from backup</button>
+                            </div>
+                            <label class="check" for="photos-auto-backup">
+                                <input type="checkbox" id="photos-auto-backup">
+                                <span>Keep the photo library backed up automatically</span>
+                            </label>
+                        </div>
+                    </div>
+                    <div class="photos-restore-confirmation" id="photos-restore-confirmation" role="alert" hidden>
+                        <div>
+                            <p class="photos-restore-title" id="photos-restore-title"></p>
+                            <p class="photos-restore-detail" id="photos-restore-detail"></p>
+                        </div>
+                        <div class="photos-restore-actions">
+                            <button id="photos-restore-cancel" class="secondary" type="button">Cancel</button>
+                            <button id="photos-restore-confirm" class="photos-restore-confirm" type="button">Restore photo records</button>
+                        </div>
+                    </div>
                 </div>
             </div>
 
