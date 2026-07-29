@@ -1154,3 +1154,70 @@ plan.
   IndexedDB autosave, Chrome route/export flow, and desktop/narrow layout
   boundaries. They do not prove native permission-prompt presentation, browser
   focus/window placement, toolbar chrome, or other onscreen browser UI.
+
+## 16. Audit remediation ledger — 2026-07-28
+
+A post-implementation audit of the branch. Every fix below carries a check
+that fails against the code as shipped.
+
+### Fixed and verified
+
+- The library listed every photo twice whenever the page opened on
+  `?mode=library` — the "Choose from library…" entry point — because
+  `setView()` and `initialize()` each started a render and the two passes
+  interleaved their clear-then-append. Renders now coalesce to one running
+  pass plus at most one queued, and a pass replaces the grid in one step.
+  `verify:chrome` reopens the library with a saved photo and asserts one card,
+  using a MutationObserver installed before page scripts so a settled sample
+  cannot hide a transient duplicate.
+- An upload whose provider outcome was never confirmed dead-ended the editor.
+  `putDraft` accepted only the `draft` state, so every autosave after an
+  ambiguous failure threw, and the retry path offered to abandon
+  non-destructive editing and cleared the retained-asset flags for blobs that
+  were still present. The store now accepts every pre-upload state, which is
+  exactly the set `beginUpload` already took as retry input.
+- Every arrowed route referenced one shared `<marker>` colored by whichever
+  arrow route came first, so a two-color topo exported the wrong arrowhead
+  color. One deduplicated marker per color now.
+- The photo page honored only `prefers-color-scheme`, ignoring the extension's
+  own Light/Dark setting that options and the popup both apply. It now loads
+  the shared panel-theme bootstrap ahead of its stylesheet.
+- An inserted photo's description was re-clamped to 300 characters in the
+  report editor after the photo page and worker had both allowed 500.
+- A rejected `permissions.request()` escaped as an unhandled rejection,
+  leaving "Upload and insert" inert with no message. It now reports and names
+  the host and the retry.
+- `photos/photos.js` matched no ESLint file glob and was not a `lint:js`
+  target, so 1,470 lines of page orchestration shipped with no rules and no
+  browser globals applied. Both lists now derive their coverage requirement
+  from `build-config.mjs`'s page-local roots, pinned by test.
+
+### Intentionally not changed
+
+- The upload ceiling stays at 32 MiB (33,554,432 bytes) against a provider
+  that documents "32 MB". If ImgBB means the decimal value, an export between
+  32,000,000 and 33,554,432 bytes passes the local gate and is refused by the
+  provider, which the client already surfaces as a provider message. Choosing
+  the permissive reading keeps the plan's "no extension-specific limit below
+  ImgBB's documented maximum" rule; resolving the ambiguity needs a live
+  upload this audit did not make.
+- Rendering a library card reads the photo's full bundle — five object stores,
+  including the original — to reach its thumbnail, and search re-renders on
+  every keystroke with no debounce. Coalescing bounds the wasted work to one
+  pass; narrowing the read to a thumbnail-only lookup is a separate change.
+- `github-routes.js` identifies the photo page by origin and pathname while
+  `photo-routes.js` also requires an integer tab id. The looser check is
+  redundant rather than permissive: those routes are all in the worker's
+  extension-page-only set. Left as is rather than widening the audit.
+
+### Changed but not fully proven
+
+- The permission-rejection path is reasoned from the API contract, not
+  exercised: neither packaged verifier grants an optional host permission, so
+  no run reaches `permissions.request()` at all.
+- The theme fix is proven for an explicit Dark preference on a light OS. The
+  `prefers-color-scheme` branch is exercised only by its absence, because the
+  hidden verification profiles report a light scheme.
+- Everything in section 15's "changed but not fully proven" still stands: no
+  live ImgBB upload, no live GitHub scratch-repository round trip, and no
+  onscreen verification of native prompts or window chrome.
