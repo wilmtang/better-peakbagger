@@ -112,6 +112,8 @@ let busy = false;
 let toastTimer = null;
 let undoDeleted = null;
 let libraryObjectUrls = [];
+let libraryRender = Promise.resolve();
+let libraryRenderQueued = false;
 let photoBackupBusy = false;
 
 const setEditorStatus = message => { ui.editorStatus.textContent = message; };
@@ -1152,8 +1154,7 @@ const renderStorageEstimate = async () => {
         : '';
 };
 
-async function renderLibrary() {
-    if (!store) return;
+async function drawLibrary() {
     libraryObjectUrls.forEach(url => URL.revokeObjectURL(url));
     libraryObjectUrls = [];
     const all = await store.listPhotos({ includeDeleted: true });
@@ -1162,10 +1163,31 @@ async function renderLibrary() {
     const items = filter === 'recently-deleted'
         ? all.filter(item => item.deletedAt)
         : Library.search(all, ui.search.value, filter);
-    ui.libraryList.replaceChildren();
-    for (const item of items) ui.libraryList.append(await cardFor(item));
+    // Build every card before touching the grid: an incremental append leaves a
+    // half-drawn list on screen for as long as the thumbnail reads take.
+    const cards = [];
+    for (const item of items) cards.push(await cardFor(item));
+    ui.libraryList.replaceChildren(...cards);
     ui.libraryEmpty.hidden = items.length > 0;
     await renderStorageEstimate();
+}
+
+// Two overlapping passes each clear the grid and then append into it, so every
+// photo lands twice and the newer pass revokes the thumbnail object URLs the
+// older one is still loading. Opening with ?mode=library did exactly that:
+// setView() starts a pass and initialize() immediately awaits another, and each
+// search keystroke starts one more. Coalesce to one running pass plus at most
+// one queued behind it, so the last requested state always wins.
+function renderLibrary() {
+    if (libraryRenderQueued) return libraryRender;
+    libraryRenderQueued = true;
+    libraryRender = libraryRender.then(() => {
+        libraryRenderQueued = false;
+        return store ? drawLibrary() : undefined;
+    }).catch(() => {
+        toast('The photo library could not be listed. Reload and try again.');
+    });
+    return libraryRender;
 }
 
 const formatBackupTime = value => {

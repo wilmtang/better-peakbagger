@@ -161,6 +161,27 @@ try {
         const photoPage = await context.newPage();
         const photoErrors = [];
         photoPage.on('pageerror', error => photoErrors.push(String(error)));
+        // Record the worst duplication the grid ever showed rather than a single
+        // late sample: overlapping renders can settle, so sampling once cannot
+        // prove a photo was never listed twice.
+        await photoPage.addInitScript(() => {
+            globalThis.__bpbMaxCardsPerPhoto = 0;
+            addEventListener('DOMContentLoaded', () => {
+                const list = document.getElementById('library-list');
+                if (!list) return;
+                const sample = () => {
+                    const counts = new Map();
+                    for (const heading of list.querySelectorAll('.photo-card h3')) {
+                        counts.set(heading.textContent, (counts.get(heading.textContent) || 0) + 1);
+                    }
+                    for (const count of counts.values()) {
+                        globalThis.__bpbMaxCardsPerPhoto =
+                            Math.max(globalThis.__bpbMaxCardsPerPhoto, count);
+                    }
+                };
+                new MutationObserver(sample).observe(list, { childList: true });
+            });
+        });
         await photoPage.goto(`chrome-extension://${extensionId}/photos/photos.html?mode=library`);
         await photoPage.locator('#library-view').waitFor({ state: 'visible', timeout: 5000 });
         const photoLibraryState = await photoPage.waitForFunction(() => {
@@ -261,6 +282,32 @@ try {
             && narrowPhotoState.inspectorWidth <= narrowPhotoState.bodyWidth,
         `the narrow photo editor overflowed horizontally: ${JSON.stringify(narrowPhotoState)}`);
         if (originalPhotoViewport) await photoPage.setViewportSize(originalPhotoViewport);
+
+        // Reopen on the library with that autosaved photo in IndexedDB. This is
+        // the "Choose from library…" entry point, and it is the one boot where
+        // setView() and initialize() both start a render.
+        await photoPage.goto(`chrome-extension://${extensionId}/photos/photos.html?mode=library`);
+        const listedPhotoState = await photoPage.waitForFunction(() => {
+            const cards = document.querySelectorAll('#library-list .photo-card');
+            const storage = document.getElementById('storage-summary')?.textContent || '';
+            // storage-summary is written at the end of a render pass, so this
+            // waits for a finished list rather than a partly drawn one.
+            if (!cards.length || !storage) return false;
+            return {
+                cards: cards.length,
+                titles: [...cards].map(card => card.querySelector('h3')?.textContent),
+                maxCardsPerPhoto: globalThis.__bpbMaxCardsPerPhoto,
+                emptyHidden: document.getElementById('library-empty')?.hidden,
+            };
+        }, null, { timeout: 5000 }).then(handle => handle.jsonValue()).catch(() => null);
+        check(listedPhotoState?.cards === 1
+            && listedPhotoState.maxCardsPerPhoto === 1
+            && listedPhotoState.titles[0] === 'browser-verification-topo'
+            && listedPhotoState.emptyHidden === true,
+        `the saved photo was not listed exactly once: ${JSON.stringify({
+            listedPhotoState,
+            photoErrors,
+        })}`);
         await photoPage.close();
 
         let buddyRequests = 0;
