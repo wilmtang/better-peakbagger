@@ -12,6 +12,10 @@ const source = await fs.readFile(new URL('../../photos/photos.js', import.meta.u
 const styles = await fs.readFile(new URL('../../photos/photos.css', import.meta.url), 'utf8');
 const dom = new JSDOM(html);
 const doc = dom.window.document;
+// The settings page is a separate document, so its section ids can only be
+// checked against the photo page's deep links by parsing both.
+const optionsHtml = await fs.readFile(new URL('../../options/options.html', import.meta.url), 'utf8');
+const optionsDoc = new JSDOM(optionsHtml).window.document;
 
 test('the packaged photo page exposes the editor, library, and credential boundaries', () => {
     const entry = ENTRIES.find(candidate => candidate.out === 'photos/photos.js');
@@ -111,5 +115,22 @@ test('GitHub recovery copy states the metadata-only boundary beside its actions'
     assert.match(card.textContent, /photo-library\.json/);
     assert.match(card.textContent, /Original images, API keys, and remote deletion links stay on this device/);
     assert.equal(card.querySelector('#photo-backup-settings').getAttribute('href'),
-        '../options/options.html#backup');
+        '../options/options.html#github');
+});
+
+test('settings deep links land on section ids the settings page actually defines', () => {
+    // A fragment that names nothing scrolls nowhere: the browser silently
+    // leaves the reader at the top of Settings instead of the control the
+    // link promised. Resolve every link so renaming a section breaks a test
+    // rather than the navigation.
+    const targets = [...doc.querySelectorAll('a[href]')]
+        .map(link => link.getAttribute('href'))
+        .filter(href => !/^[a-z][a-z0-9+.-]*:/i.test(href))
+        .map(href => ({ href, id: /^(?:\.{1,2}\/)*options\/options\.html#(.+)$/.exec(href)?.[1] }))
+        .filter(target => target.id);
+    assert.ok(targets.length, 'the photo page should deep-link into the settings page');
+    for (const { href, id } of targets) {
+        assert.ok(optionsDoc.getElementById(id),
+            `${href} points at a section id options.html does not define`);
+    }
 });
