@@ -175,12 +175,18 @@ const refreshCredential = async () => {
     updateCredentialUi();
 };
 
+// permissions.request() rejects outright without a fresh user gesture, and the
+// local save that runs first can spend it — a confirm() the user leaves open
+// spends it every time. An unhandled rejection here escaped before the caller's
+// try block, so the click produced no message at all. Fail visibly instead: the
+// callers ask for another click, which restores the gesture.
 const requestPermission = async () => {
-    if (await ext.permissions.contains(IMGBB_PERMISSION)) {
-        permissionGranted = true;
-        return true;
+    try {
+        permissionGranted = await ext.permissions.contains(IMGBB_PERMISSION)
+            || await ext.permissions.request(IMGBB_PERMISSION);
+    } catch {
+        permissionGranted = false;
     }
-    permissionGranted = await ext.permissions.request(IMGBB_PERMISSION);
     updateCredentialUi();
     return permissionGranted;
 };
@@ -193,7 +199,7 @@ const saveCredential = async () => {
         return;
     }
     if (!await requestPermission()) {
-        toast('ImgBB upload permission was not granted.');
+        toast('Allow Better Peakbagger to reach api.imgbb.com, then choose Continue again.');
         return;
     }
     if (ui.rememberKey.checked) {
@@ -783,7 +789,7 @@ const uploadAndInsert = async () => {
     }
     if (!await persistDraft({ required: true })) return;
     if (!await requestPermission()) {
-        toast('ImgBB upload permission is required.');
+        toast('Allow Better Peakbagger to reach api.imgbb.com, then choose Upload again.');
         return;
     }
     const key = await leaseCredential();
