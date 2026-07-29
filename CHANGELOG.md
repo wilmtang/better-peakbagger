@@ -2,15 +2,23 @@
 
 ## Unreleased
 
-- **Create and reuse photo topos from the report editor.** Draw routes, curves,
-  climbing symbols, pitch markers, and labels in an extension-owned editor,
-  export a flattened metadata-free image, and upload it directly to ImgBB with
-  a device-local API key, which you can save up front in **Settings → Activity
-  creation → Trip report photos**. The searchable local library keeps editable
-  drafts, uploaded URLs, lineage, insertion references, upload recovery state,
-  and Recently Deleted records. An independent, default-off GitHub recovery file
-  can preserve catalog metadata and annotation projects without exposing
-  original pixels, ImgBB credentials, or remote deletion capability.
+- **Create and reuse photo topos from the report editor.** One **Upload a
+  photo…** action opens an extension-owned editor: draw routes, curves, bolts,
+  anchors, pitons, rappel stations, belays, pitch markers, and labels, set each
+  mark's opacity so it stops covering the beta underneath, then export a
+  flattened metadata-free image and upload it directly to ImgBB with a
+  device-local API key you can save up front in **Settings → Activity creation →
+  Trip report photos**. The symbols follow climbing-guidebook convention, and
+  each tool button shows the symbol it draws. The searchable local library keeps
+  editable drafts, uploaded URLs, lineage, insertion references, upload recovery
+  state, and Recently Deleted records, and now imports a downloaded project
+  bundle back — the way an original image returns to a new browser. An
+  independent, default-off GitHub recovery file can preserve catalog metadata
+  and annotation projects without exposing original pixels, ImgBB credentials,
+  or remote deletion capability; its controls live in **Settings → Backup &
+  sync → Photo library backup**. A built-in guide explains the whole workflow,
+  including what a backup can bring back and why removing a photo locally does
+  not delete it from ImgBB.
 
 - **Group everything an ascent write-up needs in one place.** Settings now
   keeps the trip report editor, the photo API key, and local report drafts

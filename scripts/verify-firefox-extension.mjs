@@ -293,6 +293,307 @@ async function main() {
       "Firefox did not decode and autosave the packaged photo editor",
       firefoxPhotoEditor,
     );
+
+    // The drawing tools, in Gecko's own pointer and SVG implementation. Every
+    // assertion here is a behaviour a user reported broken, so a regression
+    // must not be able to reach Firefox unnoticed.
+    const overlay = await driver.findElement(By.id("photo-overlay"));
+    const clickOverlay = (x, y) => driver.actions({ bridge: true })
+      .move({ origin: overlay, x, y }).click().perform();
+
+    await driver.findElement(By.css('[data-tool="route"]')).click();
+    await clickOverlay(-140, 110);
+    const firefoxRouteStart = await waitForScript(
+      driver,
+      `const dot = document.querySelector("#photo-overlay .route-preview-dot");
+       return dot ? { cx: dot.getAttribute("cx"), cy: dot.getAttribute("cy") } : null;`,
+      "the Firefox route's first point",
+      5_000,
+      value => !!value,
+    );
+    assertState(
+      Number(firefoxRouteStart.cx) > 0 && Number(firefoxRouteStart.cy) > 0,
+      "Firefox did not show the route's first point before the second click",
+      firefoxRouteStart,
+    );
+
+    await clickOverlay(0, 0);
+    await driver.findElement(By.id("route-smooth")).click();
+    await clickOverlay(140, -90);
+    await driver.findElement(By.id("finish-route")).click();
+
+    // Symbols, placed back to back: the tool must stay armed, and opacity must
+    // reach the painted group rather than only the inspector.
+    await driver.findElement(By.css('[data-tool="anchor"]')).click();
+    await clickOverlay(-60, -60);
+    await clickOverlay(60, 30);
+    await driver.executeScript(`
+      const slider = document.getElementById("object-opacity");
+      slider.value = "40";
+      slider.dispatchEvent(new Event("input", { bubbles: true }));`);
+
+    const firefoxTopoState = await waitForScript(
+      driver,
+      `const armed = document.querySelector('[data-tool][aria-pressed="true"]')?.dataset.tool;
+       const route = document.querySelector('#photo-overlay g[data-bpb-object] path');
+       const anchors = document.querySelectorAll("#photo-overlay g[data-bpb-object] circle");
+       const dimmed = document.querySelector('#photo-overlay g[data-bpb-object][opacity]');
+       if (!route || !dimmed) return null;
+       return {
+         armed,
+         smoothStillChecked: document.getElementById("route-smooth").checked,
+         curved: /C/.test(route.getAttribute("d") || ""),
+         anchorShapes: anchors.length,
+         opacity: dimmed.getAttribute("opacity"),
+         symbolsPainted: document.querySelectorAll("[data-symbol] svg").length
+       };`,
+      "the Firefox topo tools",
+      5_000,
+      value => !!value,
+    );
+    assertState(
+      firefoxTopoState.armed === "anchor"
+        && firefoxTopoState.smoothStillChecked === true
+        && firefoxTopoState.curved === true
+        && firefoxTopoState.opacity === "0.4"
+        && firefoxTopoState.symbolsPainted === 5,
+      "Firefox lost the armed tool, the smooth curve, an opacity, or the rail symbols",
+      firefoxTopoState,
+    );
+
+    // The export boundary: Gecko rasterizes the marks this extension draws, and
+    // the result stays readable rather than tainting the canvas. Only a browser
+    // can answer this, and a silent failure here would surface as an upload
+    // that never produces bytes.
+    const firefoxExport = await driver.executeAsyncScript(done => {
+      const source = globalThis.document.getElementById("photo-overlay").cloneNode(true);
+      for (const node of source.querySelectorAll(".route-preview, .vertex-handle")) node.remove();
+      const width = Number(source.getAttribute("width"));
+      const height = Number(source.getAttribute("height"));
+      const markup = new globalThis.XMLSerializer().serializeToString(source);
+      const url = URL.createObjectURL(new Blob([markup], { type: "image/svg+xml" }));
+      const image = new globalThis.Image();
+      image.onload = () => {
+        URL.revokeObjectURL(url);
+        const canvas = globalThis.document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const context = canvas.getContext("2d");
+        context.drawImage(image, 0, 0, width, height);
+        let readable = false;
+        try {
+          context.getImageData(0, 0, 1, 1);
+          readable = true;
+        } catch { readable = false; }
+        canvas.toBlob(blob => done({
+          readable,
+          bytes: blob ? blob.size : 0,
+          naturalWidth: image.naturalWidth
+        }), "image/jpeg", 0.92);
+      };
+      image.onerror = () => {
+        URL.revokeObjectURL(url);
+        done({ readable: false, bytes: 0, naturalWidth: 0 });
+      };
+      image.src = url;
+    });
+    assertState(
+      firefoxExport.readable && firefoxExport.bytes > 0 && firefoxExport.naturalWidth > 0,
+      "Firefox could not rasterize the topo overlay into an untainted canvas",
+      firefoxExport,
+    );
+
+    // Project download and import, which is the only path back for an original
+    // image after a profile is cleared.
+    // Autosave is debounced, so poll the store the editor actually writes
+    // rather than sampling it once and calling a slow tick a lost drawing.
+    const readPhotoStore = () => driver.executeAsyncScript(done => {
+      const open = () => new Promise(resolve => {
+        const request = globalThis.indexedDB.open("betterPeakbaggerPhotos");
+        request.onsuccess = () => resolve(request.result);
+      });
+      const all = (database, store) => new Promise(resolve => {
+        const request = database.transaction(store).objectStore(store).getAll();
+        request.onsuccess = () => resolve(request.result);
+      });
+      open().then(async database => {
+        const [photos, projects, originals] = await Promise.all([
+          all(database, "photos"), all(database, "projects"), all(database, "originals")
+        ]);
+        database.close();
+        done({
+          localId: photos[0] ? photos[0].localId : null,
+          objects: projects[0] ? projects[0].objects.length : 0,
+          opacity: projects[0]
+            ? projects[0].objects.map(object => object.style.opacity).sort()[0]
+            : null,
+          originalBytes: originals[0] && originals[0].blob ? originals[0].blob.size : 0
+        });
+      });
+    });
+    let firefoxRoundTrip = null;
+    try {
+      await driver.wait(async () => {
+        firefoxRoundTrip = await readPhotoStore();
+        return firefoxRoundTrip.objects === 3 && firefoxRoundTrip.originalBytes > 0;
+      }, 10_000);
+    } catch (error) {
+      assertState(false,
+        `Firefox did not autosave the drawn project and its original (${error.message})`,
+        firefoxRoundTrip);
+    }
+    assertState(
+      firefoxRoundTrip.opacity === 0.4,
+      "Firefox persisted the drawn marks without the opacity the user set",
+      firefoxRoundTrip,
+    );
+
+    await driver.findElement(By.id("show-library")).click();
+    // One script end to end: a Marionette sandbox is not guaranteed to carry a
+    // global between calls, and splitting this made it look like a page bug.
+    const firefoxImport = await driver.executeAsyncScript(done => {
+      const open = () => new Promise(resolve => {
+        const request = globalThis.indexedDB.open("betterPeakbaggerPhotos");
+        request.onsuccess = () => resolve(request.result);
+      });
+      const one = (database, store, key) => new Promise(resolve => {
+        const request = database.transaction(store).objectStore(store).get(key);
+        request.onsuccess = () => resolve(request.result);
+      });
+      const allKeys = database => new Promise(resolve => {
+        const request = database.transaction("photos").objectStore("photos").getAllKeys();
+        request.onsuccess = () => resolve(request.result);
+      });
+      const encoder = new TextEncoder();
+      const table = new Uint32Array(256);
+      for (let index = 0; index < 256; index++) {
+        let value = index;
+        for (let bit = 0; bit < 8; bit++) {
+          value = (value & 1) ? (0xedb88320 ^ (value >>> 1)) : (value >>> 1);
+        }
+        table[index] = value >>> 0;
+      }
+      const crc32 = bytes => {
+        let value = 0xffffffff;
+        for (const byte of bytes) value = table[(value ^ byte) & 0xff] ^ (value >>> 8);
+        return (value ^ 0xffffffff) >>> 0;
+      };
+      // The same stored ZIP32 container photo-archive.js writes; the download
+      // itself would need a file dialog this profile has no way to answer.
+      const storedZip = files => {
+        const locals = [];
+        const centrals = [];
+        let offset = 0;
+        for (const [name, bytes] of files) {
+          const nameBytes = encoder.encode(name);
+          const crc = crc32(bytes);
+          const local = new DataView(new ArrayBuffer(30));
+          local.setUint32(0, 0x04034b50, true);
+          local.setUint16(4, 20, true);
+          local.setUint16(6, 0x0800, true);
+          local.setUint32(14, crc, true);
+          local.setUint32(18, bytes.length, true);
+          local.setUint32(22, bytes.length, true);
+          local.setUint16(26, nameBytes.length, true);
+          locals.push(new Uint8Array(local.buffer), nameBytes, bytes);
+          const central = new DataView(new ArrayBuffer(46));
+          central.setUint32(0, 0x02014b50, true);
+          central.setUint16(4, 20, true);
+          central.setUint16(6, 20, true);
+          central.setUint16(8, 0x0800, true);
+          central.setUint32(16, crc, true);
+          central.setUint32(20, bytes.length, true);
+          central.setUint32(24, bytes.length, true);
+          central.setUint16(28, nameBytes.length, true);
+          central.setUint32(42, offset, true);
+          centrals.push(new Uint8Array(central.buffer), nameBytes);
+          offset += 30 + nameBytes.length + bytes.length;
+        }
+        const centralSize = centrals.reduce((sum, part) => sum + part.length, 0);
+        const end = new DataView(new ArrayBuffer(22));
+        end.setUint32(0, 0x06054b50, true);
+        end.setUint16(8, files.length, true);
+        end.setUint16(10, files.length, true);
+        end.setUint32(12, centralSize, true);
+        end.setUint32(16, offset, true);
+        return new Blob([...locals, ...centrals, new Uint8Array(end.buffer)],
+          { type: "application/zip" });
+      };
+
+      open().then(async database => {
+        const [localId] = await allKeys(database);
+        const [photo, project, original] = await Promise.all([
+          one(database, "photos", localId),
+          one(database, "projects", localId),
+          one(database, "originals", localId)
+        ]);
+        database.close();
+        const buffer = await original.blob.arrayBuffer();
+        const archive = storedZip([
+          ["project.json", encoder.encode(JSON.stringify(project, null, 2) + "\n")],
+          ["photo.json", encoder.encode(JSON.stringify(photo, null, 2) + "\n")],
+          ["original.png", new Uint8Array(buffer)]
+        ]);
+        // Wipe the local copies first, so the import has to reconstruct them:
+        // that is the new-device case, not the duplicate case.
+        const wipe = await open();
+        await Promise.all(["photos", "projects", "originals", "thumbnails"].map(store =>
+          new Promise(resolve => {
+            const request = wipe.transaction(store, "readwrite").objectStore(store).clear();
+            request.onsuccess = () => resolve();
+          })));
+        wipe.close();
+        const transfer = new globalThis.DataTransfer();
+        transfer.items.add(new File([archive], "topo.bpb-photo", { type: "application/zip" }));
+        const input = globalThis.document.getElementById("import-project");
+        Object.defineProperty(input, "files", { configurable: true, value: transfer.files });
+        input.dispatchEvent(new Event("change", { bubbles: true }));
+        done({ localId, archiveBytes: archive.size });
+      });
+    });
+    assertState(
+      firefoxImport.archiveBytes > 0,
+      "Firefox could not stage a project bundle",
+      firefoxImport,
+    );
+    const firefoxImported = await waitForScript(
+      driver,
+      `const toast = document.getElementById("toast-message")?.textContent || "";
+       if (!/Imported/.test(toast)) return null;
+       return { toast, cards: document.querySelectorAll("#library-list .photo-card").length };`,
+      "the Firefox project import",
+      10_000,
+      value => !!value,
+    );
+    assertState(
+      firefoxImported.cards === 1 && !/new local draft/.test(firefoxImported.toast),
+      "Firefox did not reunite an imported bundle with its own record",
+      firefoxImported,
+    );
+
+    // The guide, which is a packaged page of its own and paints its legend from
+    // the renderer rather than from authored artwork.
+    await driver.get(new URL("photos/guide.html", baseUrl).href);
+    const firefoxGuide = await waitForScript(
+      driver,
+      `const painted = document.querySelectorAll(".guide-legend [data-symbol] svg").length;
+       if (!painted) return null;
+       return {
+         painted,
+         title: document.title,
+         horizontalOverflow:
+           document.documentElement.scrollWidth > document.documentElement.clientWidth
+       };`,
+      "the Firefox photo guide",
+      5_000,
+      value => !!value,
+    );
+    assertState(
+      firefoxGuide.painted === 5 && !firefoxGuide.horizontalOverflow,
+      "Firefox did not render the photo guide and its renderer-painted legend",
+      firefoxGuide,
+    );
+
     await driver.get(optionsUrl);
 
     await driver.executeAsyncScript(done => {
@@ -1073,6 +1374,9 @@ async function main() {
     console.log(`  - hidden/headless at ${verificationViewport.width}x${verificationViewport.height}`);
     console.log("  - real sync/local/session storage and storage.onChanged round-tripped");
     console.log("  - the photo library rendered its metadata-only recovery boundary and decoded/autosaved a PNG");
+    console.log("  - the topo tools drew a route from its first click, kept the smooth curve and the");
+    console.log("    armed tool, dimmed a mark to 40%, rasterized the overlay into an untainted canvas,");
+    console.log("    imported a project bundle back under its own record, and painted the guide legend");
     console.log("  - the real 1,500-row favorite list reported its total, fuzzy-searched, and kept long navigation instant");
     console.log("  - a held Buddy replacement stayed busy and focused, then failed retryably without another fetch");
     console.log("  - four native Buddy actions refreshed/synced custom favorites under both removal policies");

@@ -15,9 +15,25 @@ ImgBB profile. See the [ImgBB API v1 documentation](https://api.imgbb.com/).
 
 From the report editor's image popover, the user can:
 
-- keep the existing direct-URL workflow;
-- choose **Upload and edit…** to open a new local project; or
-- choose **Choose from library…** to reuse an earlier uploaded image.
+- keep the existing direct-URL workflow; or
+- choose **Upload a photo…** to open the photo tab.
+
+There is deliberately one photo action rather than two. *Upload and edit…*
+beside *Choose from library…* read as two different features when they are one
+page with two tabs, and neither name said the library is this browser's own
+record rather than an ImgBB gallery or the GitHub backup. Reuse lives on that
+page's **Library** tab, which is where it belongs. The popover's direct-URL path
+now also names its two requirements — a link to the image file itself, from a
+host that permits embedding — because Google Photos, Drive, iCloud, and Dropbox
+share links fail both and fail silently in a saved report.
+
+`photos/guide.html` is the user-facing explanation of the whole workflow: where
+an ImgBB key comes from, what the library is, what a backup holds, what the
+symbols mean, why local removal is not remote deletion, and what makes a pasted
+link work. It is a packaged page so it works offline and follows the extension's
+theme, and it is listed in `web_accessible_resources` for Peakbagger so the
+popover — a content script — can link to it. Its symbol legend is painted from
+`photo-renderer`, so what it teaches cannot drift from what the export draws.
 
 The extension opens `photos/photos.html` in a normal extension tab. A new
 project starts when the user chooses a browser-decodable image no larger than
@@ -87,21 +103,50 @@ The boundaries are deliberate:
 records source dimensions and SHA-256 identity, export format, viewport state,
 and an ordered list of annotation objects. Supported objects are:
 
-- routes made of points, with optional Bezier control points;
-- anchors, pitons, rappels, belays, and pitch markers; and
+- routes made of points, with a smooth-curve intent;
+- bolts, anchors, pitons, rappels, belays, and pitch markers; and
 - text labels.
 
-Every object has a stable local id, bounded geometry, style, scale, and z-order.
-The cleaner caps projects at 500 objects, 2,000 points per route, and 5,000
+Every object has a stable local id, bounded geometry, style, scale, opacity, and
+z-order. Opacity is bounded to 0.1–1 and defaults to fully opaque, so projects
+written before it existed are unchanged; the floor exists because a mark below
+it looks lost rather than translucent, and the user cannot find it again to fix
+it. The cleaner caps projects at 500 objects, 2,000 points per route, and 5,000
 points overall. It rejects malformed or oversized documents rather than
 partially accepting them.
 
-The page owns selection, dragging, route drawing, curve controls, styling,
-undo/redo, keyboard deletion and nudging, and viewport fit. History is
-in-memory UI state; the current clean project is the persisted state.
+A route's curve is an intent on its style, not handles the page maintains. The
+editor exposes no control-point UI, so storing the handles meant every point
+added after the curve silently straightened the route; the cleaner now derives
+clamped controls from the route's own points whenever `smooth` is set and no
+handles were supplied. A project written before the field infers its intent from
+the handles it already stored, and a project carrying real handles keeps them.
+
+The page owns selection, dragging, route drawing, styling, undo/redo, keyboard
+deletion and nudging, and viewport fit. History is in-memory UI state; the
+current clean project is the persisted state. Placement tools stay armed until
+the user leaves them — Escape steps out of the route, then the tool, then the
+selection — and a new object inherits the last style chosen. The route being
+drawn renders its first point and rubber-bands the next segment through a
+preview group that is never part of the project and never exports.
 
 `src/photos/photo-renderer.js` is the export boundary. It serializes a clean SVG
 representation, decodes that into Canvas, and exports a newly encoded image.
+Opacity rides on each object's own group, which dims a route's referenced
+arrowhead marker and a label's contrast plate along with the mark;
+`stroke-opacity` would have left both at full strength, which is the
+beta-hiding case the control exists for.
+
+The marker geometry follows climbing-guidebook convention. There is no single
+universal legend — the UIAA publishes a recommended set and publishers extend it
+— so the symbols follow shapes climbers read without a key: a circle is a bolt,
+a bolted anchor is two of them slung to a master point, a piton is a bladed peg
+with an eye, a rappel station is a ring with the rope running down out of it,
+and a belay is the stance bar the leader stops on. (The shipped anchor was
+previously a nautical anchor and the belay a circled X.) `markerSymbolSvg`
+exports the same geometry as a standalone glyph, which is what the tool rail and
+the guide's legend paint, so a symbol the user is taught cannot disagree with the
+one the export draws.
 The exported file contains flattened pixels only: no original EXIF, source file
 name, delete URL, API key, catalog record, project JSON, or report identity.
 JPEG quality and PNG selection belong to the project. The renderer also
@@ -113,6 +158,22 @@ writes the original plus `project.json` and `photo.json` as a bounded,
 uncompressed ZIP32 archive. It is a small CSP-safe writer; no runtime
 compression library or dynamic code-generation shim enters the extension
 bundle.
+
+The same module reads that bundle back, which is the library's **Import
+project…** action and the only path back to an original image after a profile is
+cleared. It accepts stored entries only — supporting deflate would mean bundling
+a decompressor, and a bundle this extension did not write is not one it can
+promise to reopen — and verifies every entry's CRC so a corrupt original cannot
+import as if it were the real photo. Import validates the project and catalog
+record through the same cleaners as any other write, and requires the original's
+SHA-256 to match both. A bundle whose local id is still free keeps that id, which
+is how a GitHub-restored record, its report references, and its public URL find
+their pixels again; a bundle whose id is already present lands as a new draft,
+because two records claiming one published ImgBB asset could each be removed
+independently and the second removal would look like it had freed something it
+had not. `photo-store.putBundle` performs that write for any catalog state and
+clears any tombstone; `putDraft` is the same transaction with the editor's
+stricter pre-upload gate.
 
 Editing an uploaded image creates a new local project whose
 `lineage.parentLocalId` points to the prior record. It never overwrites the
@@ -157,7 +218,11 @@ prior uploads.
 Two extension-owned surfaces can configure that credential — the photo editor
 and **Settings → Activity creation → Trip report photos** — and the worker
 gates them on the exact packaged page path, so an arbitrary extension page or
-content script fails closed. Configuring is not reading: `PHOTO_IMGBB_STATUS`
+content script fails closed. That gate compares protocol, host, and pathname
+outright: only special schemes are specified to produce a URL `origin`, so an
+extension URL's origin is browser-defined and serializes as `"null"` in a
+spec-strict parser, and comparing it alone would have admitted another
+extension's identically-pathed page. Configuring is not reading: `PHOTO_IMGBB_STATUS`
 answers only whether a key exists, and `PHOTO_IMGBB_LEASE_KEY` returns the
 value to the photo page alone, because that is the only page that uploads.
 
@@ -258,6 +323,14 @@ It excludes:
 - the selected GitHub token/repository credential; and
 - any ability to delete an ImgBB asset.
 
+**Settings → Backup & sync → Photo library backup** owns the full controls, beside
+every other GitHub backup: manual backup, preview-first restore, and the
+automatic option. The library page keeps only **Back up now**, which is the
+action worth having while looking at photos, and links to Settings for the rest.
+Status, backup, restore preview, and restore therefore accept either
+extension-owned surface; announcing a catalog change stays with the photo page,
+which is the only page that writes the catalog.
+
 Manual backup reads the current IndexedDB snapshot in the worker, reads the
 current remote root file, semantically merges by stable `localId`, and commits
 through `github-client.updateRootFile()`. A non-fast-forward ref conflict causes
@@ -294,8 +367,13 @@ validation, and packaged bundle/manifest wiring.
 
 The real packaged extension has been exercised in hidden Chrome for Testing and
 Firefox profiles. Those checks load the actual manifest, open the photo page,
-decode a PNG, autosave to IndexedDB, draw and export a route in Chrome, and
-assert desktop and narrow layout boundaries. They prove packaged runtime and
+decode a PNG, autosave to IndexedDB, draw a route, and assert desktop and narrow
+layout boundaries. The Firefox check additionally covers what only a browser can
+answer for the drawing surface: that the route's first click renders its point,
+that the smooth curve and the armed tool survive the next click, that an opacity
+reaches both the painted group and the persisted project, that Gecko rasterizes
+the overlay into an untainted canvas, that a project bundle imports back under
+its own record, and that the guide's legend paints from the renderer. They prove packaged runtime and
 DOM behavior, not the native permission prompt, browser focus/window placement,
 or toolbar chrome.
 

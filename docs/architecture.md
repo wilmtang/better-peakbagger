@@ -137,7 +137,7 @@ There is no parallel raw-source worker list and no `importScripts` fallback.
 | Background coordination | `src/background/background.js`, `src/background/github-routes.js`, `src/background/terrain-prefetch.js` | Shared state/queues and dispatch, GitHub auth/backup routes, and bounded terrain cache warming inside one worker bundle |
 | Provider extraction | `src/capture/provider-page.js` | On-demand MAIN-world injection into the active owned activity |
 | Ascent editor | `src/ascent/ascent-draft.js`, `src/ascent/ascent-upload.js`, `src/reports/report-editor.js` | Isolated-world form fill, local-file processing, report editing |
-| Photo topo editor and library | `photos/photos.js`, `src/photos/photo-project.js`, `src/photos/photo-renderer.js`, `src/photos/photo-library.js`, `src/photos/photo-store.js`, `src/photos/photo-archive.js` | Extension-page editing/export, authoritative local catalog, blobs, operation journal, per-photo delete capability, and CSP-safe project download |
+| Photo topo editor and library | `photos/photos.js`, `photos/guide.html`, `photos/guide.js`, `src/photos/photo-project.js`, `src/photos/photo-renderer.js`, `src/photos/photo-library.js`, `src/photos/photo-store.js`, `src/photos/photo-archive.js` | Extension-page editing/export, authoritative local catalog, blobs, operation journal, per-photo delete capability, CSP-safe project download and import, and the packaged user guide |
 | Ascent analysis | `src/gpx/gpx-analyzer.js` | MAIN-world GPX/chart/native-map integration |
 | Terrain lifecycle, bridge, and renderer | `src/terrain/terrain-coordinator.js`, `src/terrain/terrain-map.js`, `src/terrain/terrain-frame.js` | Shared MAIN-world state machine, isolated bridge, extension-origin MapLibre frame |
 | Full Screen and Peak maps | `src/maps/big-map.js`, `src/maps/peak-map.js` | MAIN-world native-map coordinators |
@@ -147,7 +147,7 @@ There is no parallel raw-source worker list and no `importScripts` fallback.
 | Report-draft manager | `src/reports/report-drafts.js`, `options/drafts.js` | Shared pure draft contract plus device-local list/copy/delete UI |
 | Saved-ascent backup | `src/ascent/ascent-page.js`, `src/ascent/ascent-backup.js` | Owner-only page read and user-facing backup state |
 | Peakbagger request boundary | `src/peakbagger/peakbagger-request.js`, `src/peakbagger/peakbagger-response.js`, `src/peakbagger/peakbagger-error.js`, `src/peakbagger/peakbagger-cloudflare.js` | Authenticated fetch policy, response validation, typed failures, and managed-challenge detection/recovery copy |
-| GitHub integration | `src/background/github-routes.js`, `src/github/github-error-copy.js`, `src/github/github-errors.js`, `src/github/github-api.js`, `src/github/github-auth.js`, `src/github/github-client.js`, `src/github/github-write-queue.js`, `src/github/github-backup.js`, `src/photos/photo-backup.js` | Worker-only routes and credentials, typed/authenticated transport, Git Data writes, ordering/coalescing, ascent payloads, and metadata-only photo recovery |
+| GitHub integration | `src/background/github-routes.js`, `src/github/github-error-copy.js`, `src/github/github-errors.js`, `src/github/github-api.js`, `src/github/github-auth.js`, `src/github/github-client.js`, `src/github/github-write-queue.js`, `src/github/github-backup.js`, `src/photos/photo-backup.js`, `options/photos.js` | Worker-only routes and credentials, typed/authenticated transport, Git Data writes, ordering/coalescing, ascent payloads, and metadata-only photo recovery |
 | ImgBB integration | `src/background/photo-routes.js`, `src/photos/imgbb-auth.js`, `src/photos/imgbb-client.js`, `options/imgbb.js` | Optional permission, device-local BYOK credential, settings-page entry that cannot read the key back, scoped report return, direct validated upload; no account gallery or remote deletion |
 
 Extend the owning surface rather than publishing cross-feature globals. The one
@@ -470,20 +470,26 @@ matrix.
 
 ## Deep dive: photo topo editor and local library
 
-The Rich editor's image popover can open an extension-owned photo tab for a new
-upload or the local library. `src/background/photo-routes.js` creates a random,
-single-use return context bound to the source tab/frame, editor tab, report
-identity, and a two-hour expiry. Only a sanitized HTTPS image result from that
-exact photo page can return; successful ImgBB upload remains committed if the
-report tab is gone or rejects insertion.
+The Rich editor's image popover has one photo action, which opens the
+extension-owned photo tab; that tab's own Editor/Library tabs cover both
+creating a topo and reusing an uploaded one. `src/background/photo-routes.js`
+creates a random, single-use return context bound to the source tab/frame,
+editor tab, report identity, and a two-hour expiry. Only a sanitized HTTPS image
+result from that exact photo page can return; successful ImgBB upload remains
+committed if the report tab is gone or rejects insertion.
 
 `photos/photos.js` owns the UI and local transaction orchestration.
-`src/photos/photo-project.js` owns the bounded annotation schema,
+`src/photos/photo-project.js` owns the bounded annotation schema — including
+each object's opacity and a route's smooth-curve intent, whose control points
+the model derives rather than the page storing them —
 `src/photos/photo-renderer.js` flattens a clean project into a newly encoded
-metadata-free JPEG or PNG, and `src/photos/photo-store.js` owns the authoritative
-IndexedDB catalog, projects, originals, thumbnails, operation journal, per-photo
-delete capabilities, and tombstones. Published edits are new lineaged versions,
-never in-place replacement of an existing remote URL.
+metadata-free JPEG or PNG and exports the single symbol geometry both the tool
+rail and the guide paint from, and `src/photos/photo-store.js` owns the
+authoritative IndexedDB catalog, projects, originals, thumbnails, operation
+journal, per-photo delete capabilities, and tombstones. Published edits are new
+lineaged versions, never in-place replacement of an existing remote URL.
+`src/photos/photo-archive.js` both writes and reads the CSP-safe stored-ZIP
+project bundle, so a downloaded original can be imported back.
 
 ImgBB is bring-your-own-key. Its API origin is an optional permission requested
 when the user saves a key in Settings or uploads from the editor; the key
@@ -500,8 +506,12 @@ Optional GitHub photo recovery writes a deterministic root
 `photo-library.json`. It contains catalog metadata, public URLs, projects, and
 tombstones, but never the API key, ImgBB delete URL, source/thumbnail pixels, or
 operation journal. Restore is explicit and previewed, and cannot claim to
-recover pixels or remote deletion. The complete contracts and failure states
-are maintained in [photo-topo-editor.md](photo-topo-editor.md).
+recover pixels or remote deletion. Settings owns the full controls beside every
+other GitHub backup; the library keeps only **Back up now**. `photos/guide.html`
+is the packaged user-facing explanation of the whole workflow and is
+web-accessible to Peakbagger so the report popover can link to it. The complete
+contracts and failure states are maintained in
+[photo-topo-editor.md](photo-topo-editor.md).
 
 ## Deep dive: GPX Analyzer and native 2D map integration
 
