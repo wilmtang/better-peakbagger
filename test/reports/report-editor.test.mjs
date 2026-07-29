@@ -696,15 +696,21 @@ test('the image popover validates the source and inserts alt text', async () => 
     assert.equal(ui.querySelector('.bpb-re-imagebox').hidden, false);
     const src = ui.querySelector('[aria-label="Image URL (HTTPS)"]');
     const alt = ui.querySelector('[aria-label="Image description"]');
-    const hostingHint = ui.querySelector('.bpb-re-image-hosting');
+    const hostingHint = ui.querySelectorAll('.bpb-re-image-hosting')[1];
+    // One way in. Two buttons read as two features when they are one page with
+    // two tabs, and neither name said the library is this browser's own record.
     assert.deepEqual(
         [...ui.querySelectorAll('.bpb-re-photo-launch')].map(button => button.textContent),
-        ['Upload and edit…', 'Choose from library…']
+        ['Upload a photo…']
     );
     assert.match(ui.querySelector('.bpb-re-image-divider').textContent,
-        /paste a direct HTTPS image URL/i);
+        /paste a link to an image/i);
+    // The two ways a pasted link fails are named, because the most common
+    // attempt fails both and does so silently in the saved report.
+    assert.match(hostingHint.textContent, /point at the image file itself/);
+    assert.match(hostingHint.textContent, /Google Photos, Drive, iCloud, and Dropbox links do not/);
     assert.match(hostingHint.textContent,
-        /Plans vary\. To resize, select the image and drag its lower-right handle\./);
+        /To resize, select the image and drag its lower-right handle\./);
     assert.deepEqual([...hostingHint.querySelectorAll('a')].map(link => ({
         label: link.textContent,
         href: link.href,
@@ -724,6 +730,9 @@ test('the image popover validates the source and inserts alt text', async () => 
             rel: 'noopener noreferrer'
         }
     ]);
+    const guideLink = ui.querySelectorAll('.bpb-re-image-hosting')[0].querySelector('a');
+    assert.equal(guideLink.textContent, 'How it works');
+    assert.match(guideLink.getAttribute('href'), /photos\/guide\.html$/);
 
     src.value = 'javascript:alert(1)';
     ui.querySelector('.bpb-re-imagebox .bpb-re-linkapply').click();
@@ -798,23 +807,23 @@ test('the image popover launches editor and library modes with the report identi
     });
     const ui = await editorReady(dom);
     ui.querySelector('[aria-label="Insert image"]').click();
-    const launchers = [...ui.querySelectorAll('.bpb-re-photo-launch')];
+    const launcher = ui.querySelector('.bpb-re-photo-launch');
 
-    launchers[0].click();
-    await waitFor(dom, () => launchers.every(button => button.disabled));
+    launcher.click();
+    await waitFor(dom, () => launcher.disabled);
     assert.deepEqual(JSON.parse(JSON.stringify(messages[0])), {
         type: 'PHOTO_EDITOR_OPEN',
         mode: 'edit',
         identity: { cid: '900001', aid: '1234', pid: '2296' }
     });
     release({ ok: true, tabId: 44 });
-    await waitFor(dom, () => launchers.every(button => !button.disabled));
+    await waitFor(dom, () => !launcher.disabled);
 
-    launchers[1].click();
+    launcher.click();
     await waitFor(dom, () => messages.length === 2);
-    assert.equal(messages[1].mode, 'library');
+    assert.equal(messages[1].mode, 'edit');
     release(null);
-    await waitFor(dom, () => !launchers[1].disabled);
+    await waitFor(dom, () => !launcher.disabled);
     assert.match(ui.querySelector('.bpb-re-image-status').textContent,
         /Couldn’t open the photo editor/);
 });

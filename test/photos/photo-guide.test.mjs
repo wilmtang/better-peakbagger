@@ -15,6 +15,8 @@ const manifest = JSON.parse(await fs.readFile(new URL('../../manifest.json', imp
 const photosHtml = await fs.readFile(new URL('../../photos/photos.html', import.meta.url), 'utf8');
 const photosDoc = new JSDOM(photosHtml).window.document;
 const optionsHtml = await fs.readFile(new URL('../../options/options.html', import.meta.url), 'utf8');
+const reportEditor = await fs.readFile(
+    new URL('../../src/reports/report-editor.js', import.meta.url), 'utf8');
 
 test('the guide ships as a packaged page with no inline script', () => {
     assert.ok(COPY_FILES.some(([from, to]) =>
@@ -80,4 +82,5 @@ test('each surface links to the guide rather than restating it', () => {
     assert.ok(photosDoc.querySelector('#credential-note a[href="guide.html#key"]'));
     assert.match(optionsHtml, /href="\.\.\/photos\/guide\.html"/);
     assert.match(optionsHtml, /href="\.\.\/photos\/guide\.html#backup"/);
+    assert.match(reportEditor, /getURL\?\.\('photos\/guide\.html'\)/);
 });

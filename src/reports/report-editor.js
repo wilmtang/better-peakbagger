@@ -326,31 +326,45 @@ import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.js';
     imageAltInput.placeholder = 'Description (alt text)';
     imageAltInput.setAttribute('aria-label', 'Image description');
     const imageApply = button('bpb-re-linkapply', 'Add image');
+    // One way in, not two. "Upload and edit…" beside "Choose from library…" read
+    // as two different features when they are one page with two tabs, and
+    // neither name said that the library is this browser's own record.
     const imageActions = el('div', 'bpb-re-image-actions');
-    const imageEdit = button('bpb-re-photo-launch', 'Upload and edit…');
-    const imageLibrary = button('bpb-re-photo-launch', 'Choose from library…');
-    imageActions.append(imageEdit, imageLibrary);
+    const imageEdit = button('bpb-re-photo-launch', 'Upload a photo…');
+    imageActions.append(imageEdit);
     const imageLaunchStatus = el('div', 'bpb-re-image-status');
     imageLaunchStatus.setAttribute('role', 'status');
     imageLaunchStatus.setAttribute('aria-live', 'polite');
-    const imageDivider = el('div', 'bpb-re-image-divider', 'Or paste a direct HTTPS image URL');
-    const imageHostingHint = el('div', 'bpb-re-image-hosting', 'Need another image host? Try ');
-    const hostingLinks = [
-        ['Peakbagger Photos', 'https://www.peakbagger.com/climber/photo.aspx'],
-        ['Imgur', 'https://imgur.com/upload']
-    ].map(([label, href]) => {
+    const externalLink = (label, href) => {
         const link = el('a', null, label);
         link.href = href;
         link.target = '_blank';
         link.rel = 'noopener noreferrer';
         return link;
-    });
+    };
+    const imageEditHint = el('div', 'bpb-re-image-hosting',
+        'Mark the route on it, upload with your own ImgBB key, and reuse photos you have '
+        + 'uploaded before. ');
+    // Packaged-page URL resolution is not guaranteed in every embedding, and a
+    // link with nowhere to go is worse than no link.
+    const guideUrl = ext.runtime?.getURL?.('photos/guide.html');
+    if (guideUrl) imageEditHint.append(externalLink('How it works', guideUrl));
+    const imageDivider = el('div', 'bpb-re-image-divider', 'Or paste a link to an image');
+    // The two ways a pasted link fails are worth naming: a viewer page rather
+    // than the file, and a host that refuses to be embedded elsewhere. Google
+    // Photos and Drive links fail both and are the most common attempt.
+    const imageHostingHint = el('div', 'bpb-re-image-hosting',
+        'It must point at the image file itself and come from a host that lets other sites '
+        + 'show it — Google Photos, Drive, iCloud, and Dropbox links do not. ');
     imageHostingHint.append(
-        hostingLinks[0], ' or ', hostingLinks[1],
-        '. Plans vary. To resize, select the image and drag its lower-right handle.'
+        externalLink('Peakbagger Photos', 'https://www.peakbagger.com/climber/photo.aspx'),
+        ', ',
+        externalLink('Imgur', 'https://imgur.com/upload'),
+        ', and ImgBB work. To resize, select the image and drag its lower-right handle.'
     );
     imageBox.append(
         imageActions,
+        imageEditHint,
         imageLaunchStatus,
         imageDivider,
         imageSrcInput,
@@ -839,18 +853,16 @@ import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.js';
     };
 
     let photoLaunchBusy = false;
-    const launchPhotoEditor = async mode => {
+    const launchPhotoEditor = async () => {
         if (photoLaunchBusy) return;
         photoLaunchBusy = true;
         imageLaunchStatus.textContent = '';
-        for (const control of [imageEdit, imageLibrary]) {
-            control.disabled = true;
-            control.setAttribute('aria-busy', 'true');
-        }
+        imageEdit.disabled = true;
+        imageEdit.setAttribute('aria-busy', 'true');
         try {
             const response = await RuntimeMessage.send(ext, {
                 type: 'PHOTO_EDITOR_OPEN',
-                mode,
+                mode: 'edit',
                 identity: {
                     cid: params.get('cid'),
                     aid: params.get('aid'),
@@ -862,10 +874,8 @@ import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.js';
             }
         } finally {
             photoLaunchBusy = false;
-            for (const control of [imageEdit, imageLibrary]) {
-                control.disabled = false;
-                control.removeAttribute('aria-busy');
-            }
+            imageEdit.disabled = false;
+            imageEdit.removeAttribute('aria-busy');
         }
     };
 
@@ -942,8 +952,7 @@ import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.js';
         if (event.key === 'Enter') { event.preventDefault(); applyLink(); }
         if (event.key === 'Escape') { event.preventDefault(); closeBoxAndRestoreEditor(); }
     });
-    imageEdit.addEventListener('click', () => { void launchPhotoEditor('edit'); });
-    imageLibrary.addEventListener('click', () => { void launchPhotoEditor('library'); });
+    imageEdit.addEventListener('click', () => { void launchPhotoEditor(); });
     imageApply.addEventListener('click', applyImage);
     for (const input of [imageSrcInput, imageAltInput]) {
         input.addEventListener('keydown', event => {
