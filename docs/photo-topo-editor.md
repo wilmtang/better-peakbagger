@@ -148,12 +148,18 @@ metadata.
 ## ImgBB credential and upload protocol
 
 ImgBB access is bring-your-own-key. `https://api.imgbb.com/*` is an optional
-host permission and is requested only from the editor when an upload needs it.
-The key is validated and stored under the dedicated `bpbImgbbAuth` record in
-device-local `storage.local`, never synchronized storage. The background worker
-returns it only to the exact packaged photo-page path; arbitrary extension
-pages and content scripts fail closed. Removing the key clears the credential
-but does not alter prior uploads.
+host permission, requested from the editor when an upload needs it and from
+Settings when the user saves a key there. The key is validated and stored under
+the dedicated `bpbImgbbAuth` record in device-local `storage.local`, never
+synchronized storage. Removing the key clears the credential but does not alter
+prior uploads.
+
+Two extension-owned surfaces can configure that credential — the photo editor
+and **Settings → Activity creation → Trip report photos** — and the worker
+gates them on the exact packaged page path, so an arbitrary extension page or
+content script fails closed. Configuring is not reading: `PHOTO_IMGBB_STATUS`
+answers only whether a key exists, and `PHOTO_IMGBB_LEASE_KEY` returns the
+value to the photo page alone, because that is the only page that uploads.
 
 `src/photos/imgbb-client.js` uses `POST` with `multipart/form-data`, a binary
 `image` part, and the optional name. It requires:

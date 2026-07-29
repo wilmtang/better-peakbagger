@@ -80,6 +80,17 @@ const photoSender = {
     tab: { id: 91 },
     frameId: 0,
 };
+const optionsSender = {
+    url: 'chrome-extension://test-extension/options/options.html#capture-photos',
+    tab: { id: 77 },
+    frameId: 0,
+};
+// A different packaged page of the same extension: same origin, wrong path.
+const strayExtensionSender = {
+    url: 'chrome-extension://test-extension/options/buddy-refresh.html',
+    tab: { id: 78 },
+    frameId: 0,
+};
 
 test('opens one bound extension editor and stores a short-lived return context', async () => {
     const h = harness();
@@ -125,6 +136,45 @@ test('saves and removes the remembered key without exposing it in status', async
     assert.equal(status.configured, true);
     assert.equal(JSON.stringify(status).includes('new-key'), false);
     assert.deepEqual(await h.routes.handlers.PHOTO_IMGBB_REMOVE_KEY({}, photoSender), { ok: true });
+    assert.equal(h.local.values[ImgbbAuth.STORAGE_KEY], undefined);
+});
+
+test('the settings page configures the key but can never lease it back', async () => {
+    const h = harness();
+    assert.equal((await h.routes.handlers.PHOTO_IMGBB_SAVE_KEY({
+        key: 'options-key',
+    }, optionsSender)).ok, true);
+    assert.equal(h.local.values[ImgbbAuth.STORAGE_KEY].key, 'options-key');
+
+    const status = await h.routes.handlers.PHOTO_IMGBB_STATUS({}, optionsSender);
+    assert.equal(status.configured, true);
+    assert.equal(JSON.stringify(status).includes('options-key'), false);
+
+    // Reading the credential back belongs to the page that uploads, and only
+    // that page can return an insertion to a report.
+    assert.deepEqual(await h.routes.handlers.PHOTO_IMGBB_LEASE_KEY({}, optionsSender), {
+        ok: false,
+        error: { code: 'forbidden' },
+    });
+    assert.deepEqual(await h.routes.handlers.PHOTO_INSERT_COMMIT({
+        returnToken: 'return-token',
+        localPhotoId: 'photo-1',
+        url: 'https://i.ibb.co/abc/topo.jpg',
+        alt: 'Topo',
+        decorative: false,
+    }, optionsSender), { ok: false, error: { code: 'forbidden' } });
+
+    // The gate is path-exact: another packaged page of the same extension is
+    // not a credential surface.
+    for (const type of ['PHOTO_IMGBB_STATUS', 'PHOTO_IMGBB_SAVE_KEY', 'PHOTO_IMGBB_REMOVE_KEY']) {
+        assert.deepEqual(await h.routes.handlers[type]({ key: 'stray-key' }, strayExtensionSender), {
+            ok: false,
+            error: { code: 'forbidden' },
+        }, `${type} must reject an unrelated extension page`);
+    }
+    assert.equal(h.local.values[ImgbbAuth.STORAGE_KEY].key, 'options-key');
+
+    assert.deepEqual(await h.routes.handlers.PHOTO_IMGBB_REMOVE_KEY({}, optionsSender), { ok: true });
     assert.equal(h.local.values[ImgbbAuth.STORAGE_KEY], undefined);
 });
 

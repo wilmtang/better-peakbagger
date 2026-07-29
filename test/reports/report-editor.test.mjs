@@ -738,6 +738,51 @@ test('the image popover validates the source and inserts alt text', async () => 
         '[img src="https://example.com/topo.jpg" alt="Topo"]');
 });
 
+// The popover layer floats over the ascent form, so an open popover sits on
+// top of Peakbagger's own controls — the date calendar most visibly. Every way
+// out must work without hunting for the toolbar button that opened it.
+test('an open popover is dismissible by control, Escape, and a press on the form it covers', async () => {
+    const dom = await loadEditor();
+    const ui = await editorReady(dom);
+    const doc = dom.window.document;
+    const imageTool = ui.querySelector('[aria-label="Insert image"]');
+    const imageBox = ui.querySelector('.bpb-re-imagebox');
+    const tableBar = ui.querySelector('.bpb-re-tablebar');
+    const press = node => node.dispatchEvent(
+        new dom.window.Event('pointerdown', { bubbles: true }));
+    const escape = node => node.dispatchEvent(
+        new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+
+    for (const box of ['.bpb-re-linkbox', '.bpb-re-imagebox', '.bpb-re-videobox', '.bpb-re-morebox']) {
+        assert.equal(ui.querySelector(`${box} .bpb-re-boxclose`)?.getAttribute('aria-label'),
+            'Close (Esc)', `${box} needs a visible dismiss control`);
+    }
+    assert.equal(tableBar.querySelector('.bpb-re-boxclose'), null,
+        'the caret-driven table bar is not manually opened, so it has nothing to dismiss');
+
+    imageTool.click();
+    assert.equal(imageBox.hidden, false);
+    imageBox.querySelector('.bpb-re-boxclose').click();
+    assert.equal(imageBox.hidden, true, 'the dismiss control closes the popover');
+
+    // Escape from a popover button, not only from its text fields.
+    imageTool.click();
+    escape(ui.querySelector('.bpb-re-image-actions .bpb-re-photo-launch'));
+    assert.equal(imageBox.hidden, true, 'Escape closes the popover from anywhere in the editor');
+
+    // A press on the covered ascent-date field dismisses instead of being
+    // swallowed, so the field is one further click away.
+    imageTool.click();
+    assert.equal(imageBox.hidden, false);
+    press(doc.getElementById('DateText'));
+    assert.equal(imageBox.hidden, true, 'a press outside the editor closes the popover');
+
+    // A press inside the popover keeps it open.
+    imageTool.click();
+    press(ui.querySelector('[aria-label="Image URL (HTTPS)"]'));
+    assert.equal(imageBox.hidden, false, 'a press inside the popover must not close it');
+});
+
 test('the image popover launches editor and library modes with the report identity', async () => {
     const messages = [];
     let release;

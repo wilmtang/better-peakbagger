@@ -150,26 +150,29 @@ test('settings are grouped by the surface they affect', async () => {
         'Map & GPX chart',
         'Ascent beta filter',
         'Favorite climbers',
-        'Trip report drafts',
         'Backup & sync',
         'About'
     ]);
 
-    const [general, capture, mapChart, beta, favorites, drafts, github, about] = sections;
+    const [general, capture, mapChart, beta, favorites, github, about] = sections;
     assert.ok(github.querySelector('#enable-github-backup'));
     assert.ok(github.querySelector('#github-panel'));
     assert.match(github.querySelector('#github-backup .desc').textContent, /manual backup controls/i);
     // Every settings section is labelled by its heading and carries at least
     // one card; About is informational, not a card.
-    for (const section of [general, capture, mapChart, beta, favorites, github, drafts]) {
+    for (const section of [general, capture, mapChart, beta, favorites, github]) {
         const heading = section.querySelector('h2');
         assert.equal(section.getAttribute('aria-labelledby'), heading.id);
         assert.ok(section.querySelector('.card'), 'the section carries a settings card');
     }
     assert.equal(about.getAttribute('aria-labelledby'), about.querySelector('h2').id);
     assert.ok(about.querySelector('.about-version'));
+    // Everything a trip report needs while creating an ascent lives in one
+    // section: the editor, the photo credential, and the local drafts.
+    const drafts = capture.querySelector('#drafts');
     assert.ok(drafts.querySelector('#drafts-list'));
     assert.ok(drafts.querySelector('#drafts-delete-all'));
+    assert.equal(drafts.id, 'drafts', 'the established deep-link anchor stays stable');
     assert.match(mapChart.querySelector('label[for="units"] .desc').textContent, /processing summaries/);
     assert.equal(favorites.querySelector('input[value="custom"] + span').textContent,
         'Use a custom list managed here');
@@ -192,6 +195,8 @@ test('settings are grouped by the surface they affect', async () => {
     for (const id of ['enable-report-editor', 'add-report-credit']) {
         assert.ok(capture.querySelector(`#capture-report #${id}`), `${id} should belong to Trip report editor`);
     }
+    assert.ok(capture.querySelector('#capture-photos #imgbb-key'),
+        'the ImgBB key should belong to Trip report photos');
     // Map & GPX chart → GPX chart / Map
     for (const id of ['units', 'chart-series']) {
         assert.ok(mapChart.querySelector(`#map-chart-chart #${id}`), `${id} should belong to GPX chart`);
@@ -1996,6 +2001,103 @@ test('the drafts manager shows an empty state and refreshes when another tab aut
     assert.equal(dom.chrome._localStore.unrelated, 'preserved');
 });
 
+// The ImgBB key is a device-local credential, not a synced setting: Settings
+// can configure it through the same worker routes the photo page uses, but the
+// value never round-trips back into the page.
+const loadImgbb = ({ status = { ok: true, configured: false, permissionGranted: false }, grant = true } = {}) => {
+    const messages = [];
+    let saved = null;
+    const load = loadOptions({}, {
+        prepareChrome: chrome => {
+            chrome.permissions = {
+                request: async () => grant,
+                contains: async () => status.permissionGranted,
+                remove: async () => true,
+            };
+            chrome.runtime.sendMessage = (message, callback) => {
+                messages.push(structuredClone(message));
+                let reply = {};
+                if (message.type === 'PHOTO_IMGBB_STATUS') reply = { ...status, configured: saved != null || status.configured };
+                if (message.type === 'PHOTO_IMGBB_SAVE_KEY') { saved = message.key; reply = { ok: true }; }
+                if (message.type === 'PHOTO_IMGBB_REMOVE_KEY') { saved = null; reply = { ok: true }; }
+                if (typeof callback === 'function') Promise.resolve().then(() => callback(reply));
+                return Promise.resolve(reply);
+            };
+        }
+    });
+    return { load, messages, key: () => saved };
+};
+
+test('the ImgBB key setting explains the service and links its key page and terms', async () => {
+    const { load } = loadImgbb();
+    const dom = await load;
+    const desc = el(dom, 'imgbb-key-desc');
+    assert.match(desc.textContent, /free image hosting site/i);
+    assert.deepEqual([...desc.querySelectorAll('a')].map(link => ({
+        label: link.textContent,
+        href: link.getAttribute('href'),
+        target: link.target,
+        rel: link.rel,
+    })), [
+        { label: 'ImgBB', href: 'https://imgbb.com/', target: '_blank', rel: 'noopener noreferrer' },
+        { label: 'Get API key', href: 'https://api.imgbb.com/', target: '_blank', rel: 'noopener noreferrer' },
+        { label: 'ImgBB’s terms of service', href: 'https://imgbb.com/tos', target: '_blank', rel: 'noopener noreferrer' },
+    ]);
+    assert.equal(el(dom, 'imgbb-key').type, 'password');
+    assert.match(desc.textContent, /never synced or backed up/i);
+});
+
+test('the ImgBB key saves through the worker with upload access, and is never read back', async () => {
+    const { load, messages, key } = loadImgbb();
+    const dom = await load;
+    await waitFor(dom, () => el(dom, 'imgbb-key-status').textContent === 'No key saved on this device.');
+    assert.equal(el(dom, 'imgbb-key-remove').hidden, true);
+
+    // A key with whitespace is not a key; nothing is sent.
+    el(dom, 'imgbb-key').value = 'not a key';
+    el(dom, 'imgbb-key-save').click();
+    await waitFor(dom, () => /no spaces/i.test(el(dom, 'imgbb-key-status').textContent));
+    assert.equal(messages.some(message => message.type === 'PHOTO_IMGBB_SAVE_KEY'), false);
+
+    el(dom, 'imgbb-key').value = '  abc123  ';
+    el(dom, 'imgbb-key-save').click();
+    await waitFor(dom, () => key() === 'abc123');
+    await waitFor(dom, () => el(dom, 'imgbb-key-status').textContent === 'Saved on this device.');
+    assert.equal(el(dom, 'imgbb-key').value, '', 'the entered key is cleared, never displayed back');
+    assert.equal(el(dom, 'imgbb-key-remove').hidden, false);
+    // The credential is device-local; it must not reach synced settings.
+    assert.equal(JSON.stringify(dom.chrome._store).includes('abc123'), false);
+
+    el(dom, 'imgbb-key-remove').click();
+    await waitFor(dom, () => key() === null);
+    await waitFor(dom, () => el(dom, 'imgbb-key-status').textContent === 'No key saved on this device.');
+    assert.equal(el(dom, 'imgbb-key-remove').hidden, true);
+});
+
+test('a declined ImgBB host permission blocks the save and says what to do', async () => {
+    const { load, messages } = loadImgbb({ grant: false });
+    const dom = await load;
+    await waitFor(dom, () => el(dom, 'imgbb-key-status').textContent === 'No key saved on this device.');
+
+    el(dom, 'imgbb-key').value = 'abc123';
+    el(dom, 'imgbb-key-save').click();
+    await waitFor(dom, () => /Allow access to api\.imgbb\.com/.test(el(dom, 'imgbb-key-status').textContent));
+    assert.equal(messages.some(message => message.type === 'PHOTO_IMGBB_SAVE_KEY'), false,
+        'a key that cannot upload is not stored');
+    assert.equal(el(dom, 'imgbb-key').value, 'abc123', 'the typed key survives for a second attempt');
+});
+
+test('a saved ImgBB key without upload access reports the gap instead of looking ready', async () => {
+    const { load } = loadImgbb({
+        status: { ok: true, configured: true, permissionGranted: false },
+    });
+    const dom = await load;
+    await waitFor(dom, () => el(dom, 'imgbb-key-status').textContent.startsWith('Saved, but'));
+    assert.match(el(dom, 'imgbb-key-status').textContent, /uploads still need access to api\.imgbb\.com/);
+    assert.ok(el(dom, 'imgbb-key-status').classList.contains('is-error'));
+    assert.equal(el(dom, 'imgbb-key-remove').hidden, false);
+});
+
 test('the sidebar links every settings section, in order', async () => {
     const dom = await loadOptions({});
     const doc = dom.window.document;
@@ -2016,7 +2118,7 @@ test('the sidebar links every settings section, in order', async () => {
     const linkTargets = links.map(link => link.getAttribute('href').slice(1));
     const sectionIds = Array.from(doc.querySelectorAll('.content .settings-section'), section => section.id);
     assert.deepEqual(linkTargets, sectionIds);
-    assert.deepEqual(linkTargets, ['general', 'capture', 'map-chart', 'beta', 'favorites', 'drafts', 'github', 'about']);
+    assert.deepEqual(linkTargets, ['general', 'capture', 'map-chart', 'beta', 'favorites', 'github', 'about']);
 });
 
 test('the sidebar exposes always-visible sub-links for the grouped sections', async () => {
@@ -2024,7 +2126,8 @@ test('the sidebar exposes always-visible sub-links for the grouped sections', as
     const doc = dom.window.document;
     const subLinks = Array.from(doc.querySelectorAll('.side-nav a.nav-subitem'));
     assert.deepEqual(subLinks.map(link => link.getAttribute('href')),
-        ['#capture-gpx', '#capture-report', '#map-chart-chart', '#map-chart-map', '#github-connection',
+        ['#capture-gpx', '#capture-report', '#capture-photos', '#drafts',
+            '#map-chart-chart', '#map-chart-map', '#github-connection',
             '#github-settings-backup', '#github-favorites-backup', '#github-backup']);
     for (const link of subLinks) {
         const target = doc.getElementById(link.getAttribute('href').slice(1));
@@ -2073,6 +2176,11 @@ test('a drafts deep link activates the TR-drafts manager', async () => {
     assert.equal(active.length, 1);
     assert.equal(active[0].getAttribute('href'), '#drafts');
     assert.equal(active[0].textContent, 'Trip report drafts');
+    // The manager moved under Activity creation; the worker's #drafts URL and
+    // this landing must survive that, and the parent gets the accent.
+    assert.ok(active[0].classList.contains('nav-subitem'));
+    assert.equal(dom.window.document.querySelector('.nav-item.nav-parent-active')?.getAttribute('href'),
+        '#capture');
     assert.equal(content.style.scrollBehavior, 'auto',
         'the initial native fragment landing must not inherit smooth scrolling');
     content.dispatchEvent(new dom.window.Event('scrollend'));

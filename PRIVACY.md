@@ -55,11 +55,12 @@ for that data.
   GitHub user token lives in
   `storage.local` (never `storage.sync`), is held only by the background worker,
   and is never exposed to any web page.
-- **Optional ImgBB host access** (`api.imgbb.com`) is requested only from the
-  photo editor when the user chooses to upload. It permits a direct upload of
-  the newly flattened image using the user's own API key. The extension has no
-  ImgBB relay or developer account and does not use that access to inspect
-  unrelated browsing.
+- **Optional ImgBB host access** (`api.imgbb.com`) is requested only from an
+  extension-owned page the user is acting on: the photo editor when the user
+  chooses to upload, or Settings when the user saves an ImgBB API key. It
+  permits a direct upload of the newly flattened image using the user's own API
+  key. The extension has no ImgBB relay or developer account and does not use
+  that access to inspect unrelated browsing.
 - **Firefox `locationInfo` disclosure** reports that activity coordinates are
   sent to Peakbagger for summit lookup and GPS Preview; when the user loads the
   3D view, that tile coordinates for the viewed area go to Mapterhorn,
@@ -206,12 +207,14 @@ browser-decodable images and exports through ImgBB's documented maximum of
   ImgBB returns public image/viewer URLs and a private delete URL. The public
   image URL can then be inserted into the user's report; Peakbagger and later
   report readers request it as ordinary remote media.
-- **Credential handling:** the user supplies the ImgBB API key. It is stored
-  only in the dedicated `bpbImgbbAuth` record in device-local
+- **Credential handling:** the user supplies the ImgBB API key, from either the
+  photo editor or Settings → Activity creation → Trip report photos. It is
+  stored only in the dedicated `bpbImgbbAuth` record in device-local
   `storage.local`, never `storage.sync`, GitHub, a report, or the original
-  Peakbagger content script. The background worker leases it only to the exact
-  packaged photo page for an upload request. Removing the key does not alter
-  prior uploads.
+  Peakbagger content script. Neither page can read a saved key back: the
+  background worker reports only whether one exists, and leases the value
+  itself to the exact packaged photo page for an upload request. Removing the
+  key does not alter prior uploads.
 - **Local upload history:** Better Peakbagger keeps its own searchable catalog
   because ImgBB's documented v1 API does not provide an account-gallery listing
   operation. The catalog stores public URLs, source/export metadata and hashes,

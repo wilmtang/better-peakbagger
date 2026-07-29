@@ -566,6 +566,29 @@ button.github-repo:focus-visible { outline: 2px solid var(--accent); outline-off
 
 /* Device-local trip-report drafts. Draft rows have their own restrained
  * hierarchy instead of reusing the label/control setting-row split. */
+/* Device-local ImgBB credential. The field is entry-only: a saved key is
+   reported by the status line and never read back into the input. */
+.imgbb-key-control { display: flex; flex-direction: column; align-items: flex-end; gap: 10px; }
+.imgbb-key-entry { display: flex; align-items: center; gap: 7px; }
+.imgbb-key-entry input[type="password"] {
+    min-width: 200px;
+    padding: 7px 10px;
+    color: var(--text);
+    background: var(--input-bg);
+    border: 1px solid var(--input-border);
+    border-radius: 8px;
+    font: inherit;
+}
+.imgbb-key-entry button.secondary { align-self: auto; white-space: nowrap; }
+.imgbb-key-state { display: flex; align-items: center; justify-content: flex-end; gap: 10px; }
+.imgbb-key-state button.secondary { align-self: auto; }
+/* Bounded so a long state sentence wraps instead of widening this column and
+   squeezing the description beside it. */
+.imgbb-key-status { max-width: 22ch; color: var(--sub); font-size: 12.5px; text-align: right; }
+.imgbb-key-status.is-set { color: var(--text); }
+.imgbb-key-status.is-error { color: var(--danger); }
+.imgbb-key-control button:disabled { cursor: wait; opacity: .55; }
+
 .drafts-card { padding: 16px 18px; }
 .drafts-intro { margin: 0; color: var(--sub); font-size: 12.5px; }
 .drafts-empty { margin: 18px 0 2px; color: var(--sub); font-size: 13px; }
@@ -759,6 +782,12 @@ button.github-repo:focus-visible { outline: 2px solid var(--accent); outline-off
     .control { width: 100%; }
     select, input[type="number"] { width: 100%; }
     .cache-limit { justify-content: space-between; }
+    .imgbb-key-control { align-items: stretch; }
+    .imgbb-key-entry { align-items: stretch; }
+    .imgbb-key-entry input[type="password"] { flex: 1 1 auto; min-width: 0; }
+    .imgbb-key-entry button.secondary { flex: 0 0 auto; }
+    .imgbb-key-state { justify-content: space-between; }
+    .imgbb-key-status { max-width: none; text-align: left; }
     .draft-item { align-items: stretch; flex-direction: column; gap: 11px; }
     .draft-actions { justify-content: flex-start; }
     .draft-actions .secondary { flex: 1 1 auto; }

@@ -148,7 +148,7 @@ There is no parallel raw-source worker list and no `importScripts` fallback.
 | Saved-ascent backup | `src/ascent/ascent-page.js`, `src/ascent/ascent-backup.js` | Owner-only page read and user-facing backup state |
 | Peakbagger request boundary | `src/peakbagger/peakbagger-request.js`, `src/peakbagger/peakbagger-response.js`, `src/peakbagger/peakbagger-error.js`, `src/peakbagger/peakbagger-cloudflare.js` | Authenticated fetch policy, response validation, typed failures, and managed-challenge detection/recovery copy |
 | GitHub integration | `src/background/github-routes.js`, `src/github/github-error-copy.js`, `src/github/github-errors.js`, `src/github/github-api.js`, `src/github/github-auth.js`, `src/github/github-client.js`, `src/github/github-write-queue.js`, `src/github/github-backup.js`, `src/photos/photo-backup.js` | Worker-only routes and credentials, typed/authenticated transport, Git Data writes, ordering/coalescing, ascent payloads, and metadata-only photo recovery |
-| ImgBB integration | `src/background/photo-routes.js`, `src/photos/imgbb-auth.js`, `src/photos/imgbb-client.js` | Optional permission, device-local BYOK credential, scoped report return, direct validated upload; no account gallery or remote deletion |
+| ImgBB integration | `src/background/photo-routes.js`, `src/photos/imgbb-auth.js`, `src/photos/imgbb-client.js`, `options/imgbb.js` | Optional permission, device-local BYOK credential, settings-page entry that cannot read the key back, scoped report return, direct validated upload; no account gallery or remote deletion |
 
 Extend the owning surface rather than publishing cross-feature globals. The one
 deliberate Better Peakbagger global is `globalThis.BPBProviderPage`: the worker
@@ -486,8 +486,11 @@ delete capabilities, and tombstones. Published edits are new lineaged versions,
 never in-place replacement of an existing remote URL.
 
 ImgBB is bring-your-own-key. Its API origin is an optional permission requested
-only for upload; the key remains in a dedicated device-local `storage.local`
-record and is leased only to the packaged photo page. The client makes one
+when the user saves a key in Settings or uploads from the editor; the key
+remains in a dedicated device-local `storage.local` record. The photo page and
+the options page can both configure it — each gated on its exact packaged page
+path — but only the photo page, which performs the upload, can lease the value
+back. The client makes one
 direct multipart POST and refuses source or export blobs over 32 MiB. It never
 automatically retries an ambiguous outcome because that could duplicate a
 public upload. The local catalog supplies the searchable upload history; no

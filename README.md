@@ -133,9 +133,11 @@ device, then flattens a metadata-free JPEG or PNG only when you choose
 **Upload and insert**.
 
 Uploads go directly from the extension to ImgBB with an API key you provide;
-Better Peakbagger has no upload relay or developer account. The optional ImgBB
-permission is requested only when needed, and images follow ImgBB's 32 MiB
-limit. A searchable local library records drafts and uploaded public URLs, can
+Better Peakbagger has no upload relay or developer account. Save that key in
+**Settings → Activity creation → Trip report photos**, or the first time you
+upload. It stays on this device, is never synced or backed up, and no page can
+read it back. The optional ImgBB permission is requested only when needed, and
+images follow ImgBB's 32 MiB limit. A searchable local library records drafts and uploaded public URLs, can
 reuse them in later reports, and creates a new version instead of overwriting a
 published image when you edit again.
 
