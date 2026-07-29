@@ -14,6 +14,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { accelerateTimeout, loadPage, waitFor, PAGE_FIXTURES } from '../helpers/load-page.mjs';
+import { photoLibrary as Library } from '../../src/photos/photo-library.js';
 
 const FIXTURE = 'climber-ascentedit.html';
 const URL = 'https://www.peakbagger.com/climber/ascentedit.aspx?cid=900001';
@@ -814,6 +815,46 @@ test('a validated photo result is inserted only while the rich editor is availab
         { ok: false, error: { code: 'editor-unavailable' } });
     assert.equal(doc.getElementById('JournalText').value,
         '[img src="https://i.ibb.co/example/topo.jpg" alt="North ridge route"]');
+});
+
+// The photo page accepts a description up to photoLibrary.ALT_LIMIT and the
+// worker clamps the returned result to the same bound, so a shorter bound here
+// silently drops characters the user already saw stored beside their photo.
+test('an inserted photo keeps the full description the library allows', async () => {
+    const listeners = [];
+    const dom = await loadEditor({
+        prepare: d => {
+            d.chrome.runtime.onMessage = {
+                addListener: listener => listeners.push(listener),
+                removeListener: () => {}
+            };
+        }
+    });
+    await editorReady(dom);
+    const doc = dom.window.document;
+    const insert = alt => {
+        let response;
+        for (const listener of listeners) {
+            listener({
+                type: 'PHOTO_INSERT_RESULT',
+                localPhotoId: 'photo:123',
+                url: 'https://i.ibb.co/example/topo.jpg',
+                alt,
+                decorative: false
+            }, { id: 'test-extension' }, value => { response = value; });
+        }
+        return response;
+    };
+
+    const longest = 'r'.repeat(Library.ALT_LIMIT);
+    assert.deepEqual(JSON.parse(JSON.stringify(insert(longest))), { ok: true });
+    assert.equal(doc.getElementById('JournalText').value,
+        `[img src="https://i.ibb.co/example/topo.jpg" alt="${longest}"]`);
+
+    insert('o'.repeat(Library.ALT_LIMIT + 40));
+    const clamped = doc.getElementById('JournalText').value.match(/alt="(o+)"/)?.[1];
+    assert.equal(clamped?.length, Library.ALT_LIMIT,
+        'anything longer is clamped to the same bound, not a smaller one');
 });
 
 test('link and media popovers toggle closed, share the toolbar layer, and insert safe video', async () => {

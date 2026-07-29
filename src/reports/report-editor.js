@@ -1037,6 +1037,12 @@ import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.js';
         control.addEventListener('click', () => { if (state.mode !== name) setMode(name); });
     }
 
+    // Same bound the photo library and its page input enforce
+    // (photoLibrary.ALT_LIMIT). The catalog model itself stays out of this
+    // Peakbagger content script, so the number is repeated here and pinned by
+    // "an inserted photo keeps the full description the library allows".
+    const PHOTO_ALT_LIMIT = 500;
+
     const cleanPhotoInsertion = message => {
         if (!message || message.type !== 'PHOTO_INSERT_RESULT') return null;
         const localPhotoId = typeof message.localPhotoId === 'string'
@@ -1044,7 +1050,7 @@ import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.js';
             ? message.localPhotoId
             : null;
         const decorative = typeof message.decorative === 'boolean' ? message.decorative : null;
-        const alt = String(message.alt ?? '').replace(/\s+/g, ' ').trim().slice(0, 300);
+        const alt = String(message.alt ?? '').replace(/\s+/g, ' ').trim().slice(0, PHOTO_ALT_LIMIT);
         let src = null;
         try {
             const candidate = new URL(message.url);
