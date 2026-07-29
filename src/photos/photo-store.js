@@ -84,28 +84,46 @@ const createPhotoStore = async options => {
         return result ?? null;
     };
 
-    const putDraft = async ({ photo, project, original, thumbnail }) => {
+    // One record, its project, and its local pixels, written together. The
+    // editor goes through putDraft, which additionally refuses a published
+    // record; importing a downloaded bundle cannot, because the bundle may
+    // carry a record ImgBB has already published and refusing it would strand
+    // the round trip that Download project promised.
+    const putBundle = async ({ photo, project, original, thumbnail }, { editableOnly = false } = {}) => {
         const cleanPhoto = Library.cleanPhoto(photo);
         const cleanProject = Project.cleanProject(project);
         const cleanOriginal = cleanBlobRecord(original, cleanPhoto?.localId);
         const cleanThumbnail = cleanBlobRecord(thumbnail, cleanPhoto?.localId);
         if (!cleanPhoto || !cleanProject || cleanPhoto.localId !== cleanProject.localId
-            || !cleanOriginal || !cleanThumbnail || !EDITABLE_STATES.has(cleanPhoto.remote.state)) {
-            throw new TypeError('photo store requires a matching clean draft, project, and blobs');
+            || cleanProject.image.sourceSha256 !== cleanPhoto.source.sha256
+            || !cleanOriginal || !cleanThumbnail
+            || (editableOnly && !EDITABLE_STATES.has(cleanPhoto.remote.state))) {
+            throw new TypeError('photo store requires a matching clean photo, project, and blobs');
         }
         const transaction = database.transaction([
             STORES.photos,
             STORES.projects,
             STORES.originals,
             STORES.thumbnails,
+            STORES.tombstones,
         ], 'readwrite');
         transaction.objectStore(STORES.photos).put(cleanPhoto);
         transaction.objectStore(STORES.projects).put(cleanProject);
         transaction.objectStore(STORES.originals).put(cleanOriginal);
         transaction.objectStore(STORES.thumbnails).put(cleanThumbnail);
+        if (cleanPhoto.deletedAt) {
+            transaction.objectStore(STORES.tombstones).put({
+                localId: cleanPhoto.localId,
+                deletedAt: cleanPhoto.deletedAt,
+            });
+        } else {
+            transaction.objectStore(STORES.tombstones).delete(cleanPhoto.localId);
+        }
         await transactionDone(transaction);
         return cleanPhoto;
     };
+
+    const putDraft = bundle => putBundle(bundle, { editableOnly: true });
 
     const getBundle = async localId => {
         const transaction = database.transaction([
@@ -348,6 +366,7 @@ const createPhotoStore = async options => {
         listPhotos,
         listBackupBundles,
         putDraft,
+        putBundle,
         putPhoto,
         commitUpload,
         putOperation,

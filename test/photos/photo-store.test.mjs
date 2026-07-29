@@ -69,7 +69,7 @@ test('rejects a mismatched draft without partially writing any store', async () 
     await assert.rejects(store.putDraft({
         ...input,
         project: { ...input.project, localId: 'other' },
-    }), /matching clean draft/);
+    }), /matching clean photo/);
     assert.equal((await store.listPhotos()).length, 0);
     store.close();
 });
@@ -116,7 +116,7 @@ test('re-saves a pre-upload photo through every retryable state, never a publish
         uploadedAt: LATER,
         expiresAt: null,
     }, LATER);
-    await assert.rejects(store.putDraft({ ...input, photo: published }), /matching clean draft/);
+    await assert.rejects(store.putDraft({ ...input, photo: published }), /matching clean photo/);
     assert.equal((await store.getBundle('photo-1')).photo.remote.state, 'outcome-unknown');
     store.close();
 });
@@ -260,5 +260,56 @@ test('restoring matching metadata preserves local editable assets', async () => 
         projectRetained: true,
         thumbnailRetained: true,
     });
+    store.close();
+});
+
+test('an imported bundle can carry a record ImgBB already published', async () => {
+    const store = await Store.createPhotoStore({
+        indexedDB: new IDBFactory(),
+        name: 'photo-store-import',
+    });
+    const input = fixture();
+    const exported = {
+        mime: 'image/jpeg', bytes: 20, width: 1600, height: 1200, sha256: EXPORT_HASH,
+    };
+    const published = Library.completeUpload(input.photo, exported, {
+        providerId: 'abc',
+        url: 'https://i.ibb.co/a/topo.jpg',
+        displayUrl: 'https://i.ibb.co/a/topo.jpg',
+        viewerUrl: 'https://ibb.co/abc',
+        thumbnailUrl: 'https://i.ibb.co/a/thumb.jpg',
+        mediumUrl: null,
+        uploadedAt: LATER,
+        expiresAt: null,
+    }, LATER);
+
+    // Download project offers a published record, so refusing it on the way
+    // back in would strand the round trip that action promises.
+    await store.putBundle({ ...input, photo: published });
+    const bundle = await store.getBundle('photo-1');
+    assert.equal(bundle.photo.remote.url, 'https://i.ibb.co/a/topo.jpg');
+    assert.equal(await bundle.original.text(), 'original');
+    assert.deepEqual(bundle.project, input.project);
+    // The deletion capability is never in a bundle, so importing one cannot
+    // hand back a delete URL it does not have.
+    assert.equal(bundle.deleteUrl, null);
+
+    // The identities still have to agree: a project for different pixels is
+    // exactly the mismatch an edited archive would carry.
+    await assert.rejects(store.putBundle({
+        ...input,
+        photo: published,
+        project: Project.createProject({
+            localId: 'photo-1', width: 1600, height: 1200, sourceSha256: EXPORT_HASH,
+        }),
+    }), /matching clean photo/);
+
+    // Importing a record that was deleted elsewhere must not leave the
+    // tombstone that would delete it again on the next backup merge.
+    const removed = Library.markDeleted(published, LATER);
+    await store.putPhoto(removed);
+    assert.equal((await store.listBackupBundles()).tombstones.length, 1);
+    await store.putBundle({ ...input, photo: published });
+    assert.deepEqual((await store.listBackupBundles()).tombstones, []);
     store.close();
 });

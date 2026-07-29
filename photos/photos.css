@@ -345,6 +345,27 @@ textarea {
   clip-path: inset(50%);
 }
 
+/* The real control is the visually hidden input, so the label has to show the
+   focus the keyboard actually has. */
+.file-button:focus-within {
+  outline: 3px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  outline-offset: 2px;
+}
+
+.quiet-file {
+  min-height: 34px;
+  padding: 7px 13px;
+  border: 1px solid var(--border);
+  background: var(--panel-solid);
+  color: var(--text);
+  font-weight: 600;
+  box-shadow: none;
+}
+
+.quiet-file:hover {
+  background: color-mix(in srgb, var(--text) 7%, var(--panel-solid));
+}
+
 .editor-workspace {
   overflow: hidden;
   border: 1px solid var(--border);

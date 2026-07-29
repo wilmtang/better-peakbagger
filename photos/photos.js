@@ -72,6 +72,7 @@ const ui = {
     saveStatus: byId('save-status'),
     search: byId('library-search'),
     filter: byId('library-filter'),
+    importProject: byId('import-project'),
     libraryList: byId('library-list'),
     libraryEmpty: byId('library-empty'),
     storageSummary: byId('storage-summary'),
@@ -160,6 +161,7 @@ const setBusy = (value, message = '') => {
     busy = value;
     ui.upload.disabled = value;
     ui.file.disabled = value;
+    ui.importProject.disabled = value;
     ui.saveKey.disabled = value;
     if (message) setEditorStatus(message);
 };
@@ -1106,6 +1108,80 @@ const editAsNewVersion = async item => {
     toast('Editing a new version. The existing image will stay unchanged.');
 };
 
+// The return leg of Download project. A bundle whose id is still free is
+// reunited with its own record, so a restored GitHub catalog entry, its report
+// references, and its public URL all find their pixels again. A bundle whose id
+// is already here becomes a new local draft instead: two catalog records
+// claiming one published ImgBB asset could each be "removed" independently, and
+// the second removal would look like it had freed something it had not.
+const importProject = async file => {
+    if (!file) return;
+    // The library view has no status line, so the toast carries the progress
+    // and the result replaces it.
+    setBusy(true);
+    toast('Reading project bundle…', { duration: 0 });
+    try {
+        const raw = await Archive.readProjectArchive(file);
+        const project = Project.cleanProject(raw.project);
+        const imported = Library.cleanPhoto(raw.photo);
+        if (!project || !imported || project.localId !== imported.localId) {
+            throw new Archive.ArchiveError('That project bundle is not a readable Better Peakbagger project.');
+        }
+        const sha256 = await Renderer.sha256(raw.original);
+        if (sha256 !== project.image.sourceSha256 || sha256 !== imported.source.sha256) {
+            throw new Archive.ArchiveError('That bundle’s image does not match its project.');
+        }
+        const bitmap = await decodeBlob(raw.original);
+        const thumbnail = await makeThumbnail(bitmap);
+        bitmap.close?.();
+
+        const existing = (await store.getBundle(imported.localId)).photo;
+        const now = new Date().toISOString();
+        const localId = existing ? crypto.randomUUID() : imported.localId;
+        const photo = existing
+            ? Library.createDraft({
+                localId,
+                title: `${imported.title} (imported)`.slice(0, Library.TITLE_LIMIT),
+                alt: imported.alt,
+                decorative: imported.decorative,
+                source: imported.source,
+                parentLocalId: imported.localId,
+                now,
+            })
+            : Library.cleanPhoto({
+                ...imported,
+                updatedAt: now,
+                // This device has not backed the record up, whatever the
+                // bundle recorded on the device that wrote it.
+                backup: { state: 'off', signature: null, backedUpAt: null, commitUrl: null },
+                assets: {
+                    originalRetained: true,
+                    projectRetained: true,
+                    thumbnailRetained: true,
+                },
+                deletedAt: null,
+            });
+        await store.putBundle({
+            photo,
+            project: Project.cleanProject({ ...project, localId, updatedAt: now }),
+            original: raw.original,
+            thumbnail,
+        });
+        notifyBackupChanged();
+        await renderLibrary();
+        toast(existing
+            ? 'Imported as a new local draft, because that photo is already in this library.'
+            : `Imported “${photo.title}”.`);
+    } catch (error) {
+        toast(error instanceof Archive.ArchiveError
+            ? error.message
+            : 'That project bundle could not be imported.', { duration: 9000 });
+    } finally {
+        ui.importProject.value = '';
+        setBusy(false);
+    }
+};
+
 const downloadProject = async item => {
     const bundle = await store.getBundle(item.localId);
     if (!bundle.project || !bundle.original) {
@@ -1533,6 +1609,7 @@ const bindEvents = () => {
     ui.upload.addEventListener('click', () => void uploadAndInsert());
     ui.search.addEventListener('input', () => void renderLibrary());
     ui.filter.addEventListener('change', () => void renderLibrary());
+    ui.importProject.addEventListener('change', () => void importProject(ui.importProject.files?.[0]));
     ui.backupNow.addEventListener('click', () => void backupPhotoLibrary());
     ui.restoreBackup.addEventListener('click', () => void restorePhotoLibrary());
     ui.autoBackup.addEventListener('change', () => void setAutomaticPhotoBackup());

@@ -1,11 +1,28 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
-// Better Peakbagger — CSP-safe stored-ZIP writer for downloadable projects.
+// Better Peakbagger — CSP-safe stored-ZIP writer and reader for project bundles.
+//
+// The reader is the return leg of Download project. It only understands what
+// the writer produces — stored (uncompressed) ZIP32 entries — because accepting
+// deflate would mean shipping a decompressor, and a bundle this extension did
+// not write is not a bundle it can promise to reopen.
 
 const encoder = new TextEncoder();
+const decoder = new TextDecoder('utf-8', { fatal: true });
 const MAX_UINT32 = 0xffffffff;
 const SAFE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,254}$/;
+// One original up to ImgBB's 32 MiB ceiling, plus its metadata and headers.
+const MAX_ARCHIVE_BYTES = 40 * 1024 * 1024;
+const MAX_ARCHIVE_ENTRIES = 16;
+const LOCAL_SIGNATURE = 0x04034b50;
+const CENTRAL_SIGNATURE = 0x02014b50;
+const END_SIGNATURE = 0x06054b50;
+const ORIGINAL_MIMES = Object.freeze({
+    jpg: 'image/jpeg',
+    png: 'image/png',
+    webp: 'image/webp',
+});
 
 const crcTable = (() => {
     const table = new Uint32Array(256);
@@ -135,6 +152,109 @@ const createStoredZip = async (values, { modifiedAt = new Date() } = {}) => {
     ], { type: 'application/zip' });
 };
 
+class ArchiveError extends Error {
+    constructor(message) {
+        super(message);
+        this.name = 'ArchiveError';
+    }
+}
+
+// The end-of-central-directory record is the only fixed landmark in a ZIP, and
+// it sits behind a comment of up to 64 KiB, so it is found by scanning back.
+const findEndRecord = view => {
+    const earliest = Math.max(0, view.byteLength - 22 - 0xffff);
+    for (let index = view.byteLength - 22; index >= earliest; index -= 1) {
+        if (view.getUint32(index, true) === END_SIGNATURE) return index;
+    }
+    return -1;
+};
+
+const readStoredZip = async blob => {
+    if (!(blob instanceof Blob)) throw new TypeError('photo archive reading requires a blob');
+    if (blob.size === 0 || blob.size > MAX_ARCHIVE_BYTES) {
+        throw new ArchiveError('That file is empty or larger than a project bundle can be.');
+    }
+    const bytes = new Uint8Array(await blob.arrayBuffer());
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    const end = bytes.byteLength < 22 ? -1 : findEndRecord(view);
+    if (end < 0) throw new ArchiveError('That file is not a Better Peakbagger project bundle.');
+
+    const count = view.getUint16(end + 10, true);
+    if (count === 0 || count > MAX_ARCHIVE_ENTRIES) {
+        throw new ArchiveError('That project bundle does not hold the expected files.');
+    }
+    let cursor = view.getUint32(end + 16, true);
+    const entries = new Map();
+    for (let index = 0; index < count; index += 1) {
+        if (cursor + 46 > bytes.byteLength || view.getUint32(cursor, true) !== CENTRAL_SIGNATURE) {
+            throw new ArchiveError('That project bundle is damaged.');
+        }
+        const method = view.getUint16(cursor + 10, true);
+        const crc = view.getUint32(cursor + 16, true);
+        const size = view.getUint32(cursor + 24, true);
+        const nameLength = view.getUint16(cursor + 28, true);
+        const extraLength = view.getUint16(cursor + 30, true);
+        const commentLength = view.getUint16(cursor + 32, true);
+        const localOffset = view.getUint32(cursor + 42, true);
+        if (method !== 0) {
+            throw new ArchiveError(
+                'That project bundle is compressed. Import the .bpb-photo file '
+                + 'Better Peakbagger downloaded, not a re-zipped copy.',
+            );
+        }
+        let name;
+        try { name = decoder.decode(bytes.subarray(cursor + 46, cursor + 46 + nameLength)); }
+        catch { throw new ArchiveError('That project bundle is damaged.'); }
+        if (!SAFE_NAME.test(name) || entries.has(name)) {
+            throw new ArchiveError('That project bundle names a file it should not.');
+        }
+        if (localOffset + 30 > bytes.byteLength
+            || view.getUint32(localOffset, true) !== LOCAL_SIGNATURE) {
+            throw new ArchiveError('That project bundle is damaged.');
+        }
+        const dataStart = localOffset + 30
+            + view.getUint16(localOffset + 26, true)
+            + view.getUint16(localOffset + 28, true);
+        if (dataStart + size > bytes.byteLength) {
+            throw new ArchiveError('That project bundle is damaged.');
+        }
+        const data = bytes.subarray(dataStart, dataStart + size);
+        if (crc32(data) !== crc) throw new ArchiveError('That project bundle failed its checksum.');
+        entries.set(name, data);
+        cursor += 46 + nameLength + extraLength + commentLength;
+    }
+    return entries;
+};
+
+const readJsonEntry = (entries, name) => {
+    const data = entries.get(name);
+    if (!data) throw new ArchiveError(`That project bundle is missing ${name}.`);
+    try { return JSON.parse(decoder.decode(data)); }
+    catch { throw new ArchiveError(`That project bundle's ${name} is unreadable.`); }
+};
+
+// Returns the archive verbatim. Every field still has to survive the project
+// and catalog cleaners before it reaches storage — this only gets it out of the
+// container.
+const readProjectArchive = async blob => {
+    const entries = await readStoredZip(blob);
+    const project = readJsonEntry(entries, 'project.json');
+    const photo = readJsonEntry(entries, 'photo.json');
+    const originalName = [...entries.keys()].find(name => /^original\.[a-z0-9]+$/.test(name));
+    const extension = originalName?.split('.')[1];
+    if (!originalName || !ORIGINAL_MIMES[extension]) {
+        throw new ArchiveError('That project bundle is missing its original image.');
+    }
+    const declared = typeof photo?.source?.mime === 'string' && /^image\//.test(photo.source.mime)
+        ? photo.source.mime
+        : ORIGINAL_MIMES[extension];
+    return {
+        project,
+        photo,
+        original: new Blob([entries.get(originalName)], { type: declared }),
+    };
+};
+
 const projectExtension = mime => mime === 'image/png' ? 'png'
     : mime === 'image/webp' ? 'webp'
         : 'jpg';
@@ -152,7 +272,11 @@ const createProjectArchive = ({ project, photo, original, modifiedAt } = {}) => 
 };
 
 export const photoArchive = {
+    ArchiveError,
+    MAX_ARCHIVE_BYTES,
     crc32,
     createStoredZip,
     createProjectArchive,
+    readStoredZip,
+    readProjectArchive,
 };

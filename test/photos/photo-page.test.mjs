@@ -92,6 +92,7 @@ test('all planned topo tools and accessible editor controls are present', () => 
         'label-background',
         'library-search',
         'library-filter',
+        'import-project',
         'photo-backup-status',
         'backup-library',
         'restore-library',
@@ -135,6 +136,18 @@ test('placing a symbol leaves its tool armed and the route shows its first point
     // rebuild, so adding a point cannot silently drop it.
     assert.match(source, /ui\.routeSmooth\.checked = object\.style\.smooth/);
     assert.doesNotMatch(source, /routeHasCurves/);
+});
+
+test('a downloaded project can come back in, and a duplicate cannot claim one asset twice', () => {
+    const input = doc.getElementById('import-project');
+    assert.equal(input.type, 'file');
+    assert.match(input.accept, /\.bpb-photo/);
+    // Reuniting a bundle with its own id is the point — that is how a restored
+    // GitHub record finds its pixels — but two records must never end up
+    // claiming one published ImgBB asset.
+    assert.match(source, /readProjectArchive/);
+    assert.match(source, /existing \? crypto\.randomUUID\(\) : imported\.localId/);
+    assert.match(source, /sha256 !== project\.image\.sourceSha256/);
 });
 
 test('page orchestration avoids page-owned storage sync and raw HTML assignment', () => {
