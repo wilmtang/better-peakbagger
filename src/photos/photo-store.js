@@ -60,6 +60,12 @@ const cleanBlobRecord = (value, localId) => value instanceof Blob
     ? { localId, blob: value }
     : null;
 
+// The local original stays authoritative until ImgBB confirms a URL, so a
+// draft write covers every pre-upload state — exactly the states for which
+// `cleanPhoto` keeps `export` null. `outcome-unknown` belongs here: the editor
+// has to be able to re-save an ambiguous upload before retrying it.
+const EDITABLE_STATES = new Set(['draft', 'uploading', 'outcome-unknown']);
+
 const cleanDeleteUrl = value => {
     if (typeof value !== 'string' || value.length > Library.URL_LIMIT) return null;
     try {
@@ -84,7 +90,7 @@ const createPhotoStore = async options => {
         const cleanOriginal = cleanBlobRecord(original, cleanPhoto?.localId);
         const cleanThumbnail = cleanBlobRecord(thumbnail, cleanPhoto?.localId);
         if (!cleanPhoto || !cleanProject || cleanPhoto.localId !== cleanProject.localId
-            || !cleanOriginal || !cleanThumbnail || cleanPhoto.remote.state !== 'draft') {
+            || !cleanOriginal || !cleanThumbnail || !EDITABLE_STATES.has(cleanPhoto.remote.state)) {
             throw new TypeError('photo store requires a matching clean draft, project, and blobs');
         }
         const transaction = database.transaction([

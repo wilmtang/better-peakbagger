@@ -74,6 +74,53 @@ test('rejects a mismatched draft without partially writing any store', async () 
     store.close();
 });
 
+// An ambiguous upload leaves the photo in `outcome-unknown` with the local
+// original still authoritative, and `beginUpload` accepts that state as a retry
+// input. A draft-only write gate closed the loop: every autosave and the retry
+// itself failed, so the editor dead-ended on the one failure it was designed to
+// recover from.
+test('re-saves a pre-upload photo through every retryable state, never a published one', async () => {
+    const store = await Store.createPhotoStore({
+        indexedDB: new IDBFactory(),
+        name: 'photo-store-retry',
+    });
+    const input = fixture();
+    const exported = { mime: 'image/jpeg', bytes: 9, width: 1600, height: 1200, sha256: EXPORT_HASH };
+    await store.putDraft(input);
+
+    const uploading = Library.beginUpload(input.photo, exported, LATER);
+    await store.putDraft({ ...input, photo: uploading });
+    assert.equal((await store.getBundle('photo-1')).photo.remote.state, 'uploading');
+
+    const unknown = Library.markOutcomeUnknown(uploading, LATER);
+    const edited = Library.cleanPhoto({ ...unknown, title: 'Retitled after an unknown outcome' });
+    await store.putDraft({ ...input, photo: edited });
+    const bundle = await store.getBundle('photo-1');
+    assert.equal(bundle.photo.remote.state, 'outcome-unknown');
+    assert.equal(bundle.photo.title, 'Retitled after an unknown outcome');
+    assert.deepEqual(bundle.photo.assets, {
+        originalRetained: true,
+        projectRetained: true,
+        thumbnailRetained: true,
+    }, 'a retryable re-save must not look like a lost editable copy');
+    assert.equal(await bundle.original.text(), 'original');
+    assert.deepEqual(bundle.project, input.project);
+
+    const published = Library.completeUpload(unknown, exported, {
+        providerId: 'abc',
+        url: 'https://i.ibb.co/a/topo.jpg',
+        displayUrl: 'https://i.ibb.co/a/topo.jpg',
+        viewerUrl: 'https://ibb.co/abc',
+        thumbnailUrl: 'https://i.ibb.co/a/thumb.jpg',
+        mediumUrl: null,
+        uploadedAt: LATER,
+        expiresAt: null,
+    }, LATER);
+    await assert.rejects(store.putDraft({ ...input, photo: published }), /matching clean draft/);
+    assert.equal((await store.getBundle('photo-1')).photo.remote.state, 'outcome-unknown');
+    store.close();
+});
+
 test('commits public upload metadata and local-only deletion capability together', async () => {
     const store = await Store.createPhotoStore({
         indexedDB: new IDBFactory(),

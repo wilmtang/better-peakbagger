@@ -13,6 +13,9 @@ const RETURN_TOKEN = new URL(location.href).searchParams.get('returnToken') || '
 const START_MODE = new URL(location.href).searchParams.get('mode') === 'library' ? 'library' : 'edit';
 const IMGBB_PERMISSION = { origins: ['https://api.imgbb.com/*'] };
 const HISTORY_LIMIT = 100;
+// Once ImgBB holds a URL the local copy is no longer the editable source of
+// truth; changing it in place would silently diverge from the published image.
+const PUBLISHED_STATES = ['uploaded', 'unreachable'];
 const AUTOSAVE_DELAY_MS = 500;
 const RECENTLY_DELETED_MS = 30 * 24 * 60 * 60 * 1000;
 
@@ -287,7 +290,6 @@ const cleanDraftFromFields = now => {
             now,
         });
     }
-    if (photo.remote.state !== 'draft') return photo;
     return Library.cleanPhoto({
         ...photo,
         ...fields,
@@ -296,7 +298,8 @@ const cleanDraftFromFields = now => {
 };
 
 const persistDraft = async ({ required = false } = {}) => {
-    if (!project || !originalBlob || !thumbnailBlob || photo?.remote.state === 'uploaded') return false;
+    if (!project || !originalBlob || !thumbnailBlob
+        || PUBLISHED_STATES.includes(photo?.remote.state)) return false;
     clearTimeout(autosaveTimer);
     const now = new Date().toISOString();
     const nextPhoto = cleanDraftFromFields(now);
@@ -772,6 +775,10 @@ const chooseFile = async file => {
 
 const uploadAndInsert = async () => {
     if (busy || !project || !sourceBitmap) return;
+    if (PUBLISHED_STATES.includes(photo?.remote.state)) {
+        toast('This photo is already on ImgBB. Use “Edit as new version” in the library to change it.');
+        return;
+    }
     if (!await persistDraft({ required: true })) return;
     if (!await requestPermission()) {
         toast('ImgBB upload permission is required.');
