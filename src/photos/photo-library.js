@@ -207,24 +207,22 @@ const createDraft = ({
     deletedAt: null,
 });
 
+// The pending export is validated here but deliberately not carried on the
+// record: until ImgBB confirms a URL the catalog stays in its non-uploaded
+// shape, and the export metadata belongs in the operation journal, which is
+// what `completeUpload` and crash recovery read it back from.
 const beginUpload = (value, exported, now = new Date().toISOString()) => {
     const photo = cleanPhoto(value);
-    const exportMetadata = cleanImageMetadata(exported);
-    if (!photo || !exportMetadata || !['draft', 'outcome-unknown'].includes(photo.remote.state)) return null;
+    if (!photo || !cleanImageMetadata(exported)
+        || !['draft', 'outcome-unknown'].includes(photo.remote.state)) return null;
     return cleanPhoto({
         ...photo,
         updatedAt: now,
         export: null,
         remote: { provider: 'imgbb', state: 'uploading' },
         backup: { ...photo.backup, state: photo.backup.state === 'off' ? 'off' : 'pending' },
-        _pendingExport: exportMetadata,
     });
 };
-
-// Pending export metadata belongs in the operation journal, not the clean
-// catalog record. This helper validates it while keeping the catalog in the
-// non-uploaded shape.
-const cleanPendingExport = value => cleanImageMetadata(value);
 
 const markOutcomeUnknown = (value, now = new Date().toISOString()) => {
     const photo = cleanPhoto(value);
@@ -334,7 +332,6 @@ export const photoLibrary = {
     REFERENCE_LIMIT,
     cleanPhoto,
     createDraft,
-    cleanPendingExport,
     beginUpload,
     markOutcomeUnknown,
     resetUpload,
