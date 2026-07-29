@@ -2042,6 +2042,7 @@ test('the ImgBB key setting explains the service and links its key page and term
         { label: 'ImgBB', href: 'https://imgbb.com/', target: '_blank', rel: 'noopener noreferrer' },
         { label: 'Get API key', href: 'https://api.imgbb.com/', target: '_blank', rel: 'noopener noreferrer' },
         { label: 'ImgBB’s terms of service', href: 'https://imgbb.com/tos', target: '_blank', rel: 'noopener noreferrer' },
+        { label: 'Read the photo guide', href: '../photos/guide.html', target: '_blank', rel: 'noopener noreferrer' },
     ]);
     assert.equal(el(dom, 'imgbb-key').type, 'password');
     assert.match(desc.textContent, /never synced or backed up/i);

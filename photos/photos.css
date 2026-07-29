@@ -824,3 +824,157 @@ kbd {
     transform: scale(0.98);
   }
 }
+
+/* ---- Photo guide -------------------------------------------------------- */
+
+.guide {
+  width: min(78ch, 100%);
+  margin: 0 auto;
+  line-height: 1.6;
+}
+
+.guide-lead {
+  margin: 4px 0 22px;
+  font-size: 17px;
+  line-height: 1.5;
+}
+
+.guide-toc {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  margin-bottom: 30px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--panel);
+  font-size: 13px;
+}
+
+.guide section {
+  margin-bottom: 34px;
+  scroll-margin-top: 84px;
+}
+
+.guide h2 {
+  margin: 0 0 10px;
+  font-size: 20px;
+  letter-spacing: -0.01em;
+}
+
+.guide p,
+.guide li,
+.guide dd {
+  color: var(--text);
+}
+
+.guide ul,
+.guide ol {
+  padding-left: 22px;
+}
+
+.guide li {
+  margin-bottom: 7px;
+}
+
+.guide a {
+  color: var(--accent);
+  text-underline-offset: 2px;
+}
+
+.guide code {
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+  font-size: 0.92em;
+}
+
+.guide kbd {
+  padding: 1px 5px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--panel-solid);
+  color: var(--text);
+  font-size: 0.85em;
+  font-weight: 600;
+}
+
+.guide-note {
+  padding: 11px 14px;
+  border-left: 3px solid var(--accent);
+  border-radius: 0 8px 8px 0;
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  font-size: 14px;
+}
+
+/* The legend glyphs come from the renderer, so they inherit the reading color
+   rather than a palette value the export would not use. */
+.guide-legend {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 14px;
+  margin: 16px 0;
+}
+
+.guide-legend > div {
+  padding: 13px 15px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--panel);
+}
+
+.guide-legend dt {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 5px;
+  font-weight: 700;
+}
+
+.guide-legend dd {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13.5px;
+  line-height: 1.5;
+}
+
+.guide-symbol {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  place-items: center;
+}
+
+.guide-faq dt {
+  margin-top: 14px;
+  font-weight: 700;
+}
+
+.guide-faq dd {
+  margin: 4px 0 0;
+  color: var(--muted);
+}
+
+.guide-details {
+  margin-top: 14px;
+  padding: 12px 15px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--panel);
+}
+
+.guide-details summary {
+  cursor: pointer;
+  font-weight: 650;
+}
+
+.guide-details p:last-child {
+  margin-bottom: 0;
+}
+
+.view-tabs a.tab-button {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+}

@@ -94,8 +94,11 @@ test('3D terrain is isolated from Peakbagger globals in an extension-owned frame
     assert.deepEqual(bundleSources('content/terrain-map.js'), ['terrain/terrain-camera.js', 'settings/settings-schema.js', 'settings/settings.js', 'terrain/terrain-map.js']);
     assert.ok(terrainEntry.matches.every(pattern => /peakbagger\.com\/climber\/(?:a|A)scent\.aspx/.test(pattern)));
 
+    // Both entries are pages a Peakbagger tab has to be able to reach: the
+    // terrain frame is embedded, and the photo guide is opened from the trip
+    // report editor's image popover.
     assert.deepEqual(manifest.web_accessible_resources, [{
-        resources: ['terrain/terrain.html'],
+        resources: ['terrain/terrain.html', 'photos/guide.html'],
         matches: ['https://*.peakbagger.com/*']
     }]);
     // The frame loads MapLibre (a copied vendor script) then the frame bundle,

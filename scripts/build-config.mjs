@@ -32,6 +32,7 @@ const PAGE_LOCAL = {
     'options-utils.js': path.join(root, 'options', 'options-utils.js'),
     'popup-main.js': path.join(root, 'popup', 'popup.js'),
     'photos-main.js': path.join(root, 'photos', 'photos.js'),
+    'photos-guide.js': path.join(root, 'photos', 'guide.js'),
 };
 export function resolvePageSource(name) {
     return PAGE_LOCAL[name] || srcFile(name);
@@ -67,6 +68,9 @@ export const ENTRIES = [
     { out: 'popup/popup.js', sources: ['capture/capture-phases.js', 'settings/settings-schema.js', 'settings/settings.js', 'ui/units.js', 'popup-main.js'], page: true },
     { out: 'photos/photos-head.js', sources: ['settings/settings-schema.js', 'settings/settings.js', 'theme/panel-theme.js'], page: true },
     { out: 'photos/photos.js', sources: ['photos/photo-project.js', 'photos/photo-renderer.js', 'photos/photo-library.js', 'photos/photo-store.js', 'photos/photo-archive.js', 'photos/imgbb-client.js', 'photos-main.js'], page: true },
+    // The guide paints its symbol legend from the renderer so what it teaches
+    // cannot drift from what the export draws; nothing else on it is dynamic.
+    { out: 'photos/guide.js', sources: ['photos/photo-project.js', 'photos/photo-renderer.js', 'photos-guide.js'], page: true },
 ];
 
 // Absolute source paths for one entry's bundle, in order.
@@ -95,6 +99,7 @@ export const COPY_FILES = [
     ['popup/popup.html', 'popup/popup.html'],
     ['popup/popup.css', 'popup/popup.css'],
     ['photos/photos.html', 'photos/photos.html'],
+    ['photos/guide.html', 'photos/guide.html'],
     ['photos/photos.css', 'photos/photos.css'],
 ];
 

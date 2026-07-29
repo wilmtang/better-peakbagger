@@ -1,0 +1,325 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Photo Topos guide · Better Peakbagger</title>
+  <script src="photos-head.js"></script>
+  <link rel="stylesheet" href="photos.css">
+  <script src="guide.js" defer></script>
+</head>
+<body class="guide-body">
+  <header class="app-header">
+    <div>
+      <p class="eyebrow">Better Peakbagger</p>
+      <h1>Photo Topos guide</h1>
+    </div>
+    <nav class="view-tabs" aria-label="Photo pages">
+      <button id="guide-back" type="button" class="tab-button" hidden>Back</button>
+      <a class="tab-button" href="photos.html">Open the editor</a>
+      <a class="tab-button" href="../options/options.html#capture-photos">Settings</a>
+    </nav>
+  </header>
+
+  <main class="guide">
+    <p class="guide-lead">
+      Photo Topos lets you draw a route line and climbing symbols on your own photo,
+      upload it, and drop the link into a Peakbagger trip report. Everything stays on
+      this device until you choose to upload.
+    </p>
+
+    <nav class="guide-toc" aria-label="On this page">
+      <a href="#start">Two ways to add a photo</a>
+      <a href="#key">Setting up an ImgBB key</a>
+      <a href="#draw">Drawing the topo</a>
+      <a href="#symbols">What the symbols mean</a>
+      <a href="#upload">Uploading and inserting</a>
+      <a href="#library">The library on this device</a>
+      <a href="#backup">Backing up to GitHub</a>
+      <a href="#delete">Removing a photo</a>
+      <a href="#url">Using an image link instead</a>
+      <a href="#trouble">When something goes wrong</a>
+    </nav>
+
+    <section id="start" aria-labelledby="start-heading">
+      <h2 id="start-heading">Two ways to add a photo</h2>
+      <p>
+        In the trip report editor, the image button offers both:
+      </p>
+      <ul>
+        <li>
+          <strong>Upload a photo…</strong> — opens Photo Topos. Choose a picture from
+          this device, mark the route on it, and upload it. This needs a free
+          <a href="https://imgbb.com/" target="_blank" rel="noopener noreferrer">ImgBB</a>
+          key, set up once. Photos you have already uploaded are in the same place,
+          under <strong>Library</strong>, ready to insert again.
+        </li>
+        <li>
+          <strong>Paste a direct image link</strong> — if the picture is already online
+          somewhere that allows other sites to display it, no key is needed.
+          <a href="#url">What counts as a direct link.</a>
+        </li>
+      </ul>
+      <p class="guide-note">
+        Better Peakbagger never uploads anything on its own. A photo leaves this device
+        only when you choose <strong>Upload</strong>.
+      </p>
+    </section>
+
+    <section id="key" aria-labelledby="key-heading">
+      <h2 id="key-heading">Setting up an ImgBB key</h2>
+      <p>
+        Peakbagger does not host trip-report images, so the picture has to live
+        somewhere public and be linked in. Better Peakbagger uses ImgBB, a free image
+        host, and uploads with <em>your</em> account rather than through any server of
+        its own. That means the uploads are yours, and they follow
+        <a href="https://imgbb.com/tos" target="_blank" rel="noopener noreferrer">ImgBB's terms of service</a>.
+      </p>
+      <ol>
+        <li>Create a free account at <a href="https://imgbb.com/" target="_blank" rel="noopener noreferrer">imgbb.com</a>.</li>
+        <li>Go to <a href="https://api.imgbb.com/" target="_blank" rel="noopener noreferrer">api.imgbb.com</a> and choose <strong>Get API key</strong>. It is a long string of letters and numbers.</li>
+        <li>Paste it into <strong>Settings → Activity creation → Trip report photos</strong>, or into the box at the top of the Photo Topos page, and save.</li>
+        <li>Your browser will ask permission for Better Peakbagger to reach <code>api.imgbb.com</code>. Allow it — without it, uploads cannot happen.</li>
+      </ol>
+      <p>
+        The key is stored on this device only. It is never synced between browsers,
+        never included in a backup, and never sent anywhere except ImgBB. Removing it
+        stops new uploads; photos you have already uploaded keep working.
+      </p>
+      <p class="guide-note">
+        Setting a key up on a second computer means pasting it there too. Keep a copy
+        of the key somewhere you can find it, such as a password manager.
+      </p>
+    </section>
+
+    <section id="draw" aria-labelledby="draw-heading">
+      <h2 id="draw-heading">Drawing the topo</h2>
+      <p>
+        Pick a photo, write a short description of what it shows — that is the alt text
+        screen readers announce, and it is required before saving — then mark it up.
+      </p>
+      <ul>
+        <li><strong>Route</strong> draws the line. Click each point along the route; double-click, press Enter, or choose <strong>Done drawing</strong> to finish. The first point appears as soon as you click it, and a dashed line previews the next one.</li>
+        <li><strong>Symbols</strong> stay selected after you place one, so a pitch full of bolts is a run of clicks. Press <kbd>Esc</kbd> or <kbd>V</kbd> when you are done placing.</li>
+        <li><strong>Select</strong> moves anything. Drag a route's round handles to reshape it, and use the arrow keys to nudge by one pixel, or ten with <kbd>Shift</kbd>.</li>
+      </ul>
+      <p>
+        With something selected, the panel on the right sets its colour,
+        <strong>opacity</strong>, size, and rotation. Opacity matters more than it
+        sounds: a solid line drawn over the crux hides exactly the detail the reader
+        came for. Dropping a mark to 50–70% keeps the rock visible underneath. The next
+        mark you draw inherits whatever you chose last.
+      </p>
+      <p>
+        Routes also take a width, a dashed or dotted line — useful for the part of a
+        route hidden behind an arête — an arrowhead, and a smooth curve.
+      </p>
+      <p>
+        Work saves to this browser as you go. <kbd>Ctrl</kbd>/<kbd>Cmd</kbd>+<kbd>Z</kbd>
+        undoes, and <kbd>Shift</kbd> with it redoes.
+      </p>
+    </section>
+
+    <section id="symbols" aria-labelledby="symbols-heading">
+      <h2 id="symbols-heading">What the symbols mean</h2>
+      <p>
+        There is no single legend every guidebook agrees on — the UIAA publishes a
+        recommended set and publishers extend it — so these follow the shapes climbers
+        read without a key. Each tool button shows the same symbol it draws.
+      </p>
+      <dl class="guide-legend">
+        <div>
+          <dt><span class="guide-symbol" data-symbol="bolt" aria-hidden="true"></span> Bolt</dt>
+          <dd>One fixed point of protection. A circle is the most widely read mark for a bolt.</dd>
+        </div>
+        <div>
+          <dt><span class="guide-symbol" data-symbol="anchor" aria-hidden="true"></span> Anchor</dt>
+          <dd>A fixed anchor or lower-off: two bolts slung to a master point.</dd>
+        </div>
+        <div>
+          <dt><span class="guide-symbol" data-symbol="piton" aria-hidden="true"></span> Piton</dt>
+          <dd>A fixed peg — a bladed pin with an eye. Worth marking when its condition is part of the beta.</dd>
+        </div>
+        <div>
+          <dt><span class="guide-symbol" data-symbol="rappel" aria-hidden="true"></span> Rappel</dt>
+          <dd>A rappel or abseil station: a ring with the rope running down out of it.</dd>
+        </div>
+        <div>
+          <dt><span class="guide-symbol" data-symbol="belay" aria-hidden="true"></span> Belay</dt>
+          <dd>The stance where a pitch ends, drawn as the bar the leader stops on.</dd>
+        </div>
+      </dl>
+      <p>
+        <strong>Pitch</strong> adds a numbered label, and <strong>Text</strong> adds free
+        wording — a grade, a warning, a feature name. Both can sit on a dark plate so
+        they stay readable over pale rock or snow.
+      </p>
+    </section>
+
+    <section id="upload" aria-labelledby="upload-heading">
+      <h2 id="upload-heading">Uploading and inserting</h2>
+      <p>
+        <strong>Upload and insert</strong> flattens the photo and your marks into one new
+        image and sends that to ImgBB. The uploaded file carries the picture only: no
+        camera metadata, no location, no original file name, and nothing about the
+        report it came from.
+      </p>
+      <p>
+        If you opened Photo Topos from a trip report, the public link is inserted into
+        that report for you. If the report tab has gone away in the meantime, the upload
+        still succeeds — find the photo under <strong>Library</strong> and use
+        <strong>Copy URL</strong>.
+      </p>
+      <p class="guide-note">
+        An uploaded photo is never edited in place. Changing it makes a new version and
+        a new link, so a report that already points at the old image keeps working.
+      </p>
+    </section>
+
+    <section id="library" aria-labelledby="library-heading">
+      <h2 id="library-heading">The library on this device</h2>
+      <p>
+        The <strong>Library</strong> tab is this browser's own record of your topos. It
+        is not an ImgBB gallery — ImgBB has no way to list your uploads back — and it is
+        not shared between computers unless you back it up. Each card shows whether a
+        photo is still a local draft or has been uploaded, and whether it has been used
+        in a report.
+      </p>
+      <ul>
+        <li><strong>Insert</strong> or <strong>Copy URL</strong> reuses an uploaded photo.</li>
+        <li><strong>Edit as new version</strong> starts a fresh copy to change, leaving the published one alone.</li>
+        <li><strong>Download project</strong> saves a <code>.bpb-photo</code> file holding the original picture and your annotations. This is the only copy of the original pixels outside this browser, so it is worth keeping for photos you care about. Note that the original file's own metadata travels with it.</li>
+        <li><strong>Import project…</strong> reads one of those files back — on a new computer, or after clearing browser data. If the photo is already here, it comes in as a separate draft rather than replacing anything.</li>
+      </ul>
+      <p class="guide-note">
+        Clearing your browser's site data for this extension erases the library,
+        including original images. The public ImgBB links keep working; the editable
+        copies do not come back on their own.
+      </p>
+    </section>
+
+    <section id="backup" aria-labelledby="backup-heading">
+      <h2 id="backup-heading">Backing up to GitHub</h2>
+      <p>
+        If you have connected a GitHub repository under
+        <strong>Settings → Backup &amp; sync</strong>, the photo library can keep a record
+        of itself there, in a file called <code>photo-library.json</code>. Turn it on
+        under <strong>Photo library backup</strong>, where <strong>Back up photos</strong>,
+        <strong>Restore from backup</strong>, and an automatic option live. The library
+        page also has <strong>Back up now</strong>.
+      </p>
+      <p>What it stores:</p>
+      <ul>
+        <li>titles, image descriptions, and which reports used each photo;</li>
+        <li>the annotations — every route line, symbol, and label;</li>
+        <li>the public ImgBB links, image sizes, and checksums;</li>
+        <li>a note of anything you have removed, so a restore does not bring it back.</li>
+      </ul>
+      <p>What it deliberately does not store:</p>
+      <ul>
+        <li>the images themselves — GitHub holds the record, not the picture;</li>
+        <li>your ImgBB API key;</li>
+        <li>the links that delete a photo from ImgBB.</li>
+      </ul>
+      <p>
+        So a restore on a new computer gives you back the catalogue and the public links,
+        and your annotations become editable again as soon as the matching original is
+        on that device — which is what <strong>Import project…</strong> is for. Restoring
+        always shows you the counts first and asks before it replaces anything.
+      </p>
+    </section>
+
+    <section id="delete" aria-labelledby="delete-heading">
+      <h2 id="delete-heading">Removing a photo</h2>
+      <p>
+        <strong>Remove…</strong> on a library card is a local action. It moves the photo
+        to <strong>Recently Deleted</strong>, where it can be restored for 30 days before
+        the local original and annotations are cleared. It does not touch the image on
+        ImgBB, and it does not touch a trip report you have already saved — a report that
+        links to that image still shows it.
+      </p>
+      <p>
+        That is deliberate. Beta photos are what other climbers came to your report for,
+        and an image deleted from the host leaves a broken picture in every report that
+        ever linked to it, including other people's. Better Peakbagger has no button that
+        does that, and the link needed to do it is never put in a backup or an exported
+        project.
+      </p>
+      <details class="guide-details">
+        <summary>If you really do need to delete the image from ImgBB</summary>
+        <p>
+          Check first that no report still uses it — the library card says whether the
+          photo has been inserted anywhere.
+        </p>
+        <p>
+          The straightforward route is to sign in at
+          <a href="https://imgbb.com/" target="_blank" rel="noopener noreferrer">imgbb.com</a>
+          and delete it from your account there.
+        </p>
+        <p>
+          ImgBB also returns a one-off deletion link at upload time, which this extension
+          keeps in this browser's storage and nowhere else. Reaching it means opening your
+          browser's developer tools on the Photo Topos page, going to the
+          <em>Application</em> or <em>Storage</em> panel, opening the
+          <code>betterPeakbaggerPhotos</code> database, and reading the
+          <code>deleteUrl</code> in the <code>secrets</code> store for that photo's id.
+          It is meant to take deliberate effort.
+        </p>
+      </details>
+    </section>
+
+    <section id="url" aria-labelledby="url-heading">
+      <h2 id="url-heading">Using an image link instead</h2>
+      <p>
+        You can skip Photo Topos entirely and paste a link to a picture that is already
+        online. Two things have to be true, and this is where most links fail:
+      </p>
+      <ul>
+        <li>
+          The link must point at the <strong>image file itself</strong>, not at a page
+          showing it. A direct link usually ends in <code>.jpg</code>, <code>.jpeg</code>,
+          <code>.png</code>, <code>.gif</code>, or <code>.webp</code>. On most hosts you
+          get one by right-clicking the picture and choosing <em>Copy image address</em>.
+        </li>
+        <li>
+          The host must allow <strong>other sites to display it</strong>. Many popular
+          services do not. <strong>Google Photos</strong>, <strong>Google Drive</strong>,
+          <strong>iCloud Photos</strong>, <strong>Dropbox</strong>, and
+          <strong>OneDrive</strong> share links all point at a viewer page and block
+          embedding, so they show as a broken image in a trip report even though the link
+          works when you open it yourself. Facebook and Instagram links expire.
+        </li>
+      </ul>
+      <p>
+        Hosts that do work include ImgBB,
+        <a href="https://www.peakbagger.com/climber/photo.aspx" target="_blank" rel="noopener noreferrer">Peakbagger's own photo pages</a>,
+        Imgur, Flickr's direct image links, and any web space of your own. The link must
+        start with <code>https://</code>.
+      </p>
+    </section>
+
+    <section id="trouble" aria-labelledby="trouble-heading">
+      <h2 id="trouble-heading">When something goes wrong</h2>
+      <dl class="guide-faq">
+        <dt>The upload finished but the report did not get the link.</dt>
+        <dd>The photo is safe. Open <strong>Library</strong> and use <strong>Insert</strong> or <strong>Copy URL</strong>. This usually means the report tab was closed or reloaded while the upload was running.</dd>
+
+        <dt>A photo says the upload outcome is unknown.</dt>
+        <dd>The connection broke at a point where ImgBB may or may not have accepted the image. Better Peakbagger does not retry on its own, because that could publish the same picture twice. Check your ImgBB account, then either upload again or remove the entry.</dd>
+
+        <dt>A photo says the image is unreachable.</dt>
+        <dd>The public copy did not load when the library last looked. It may be a temporary ImgBB problem, or the image may have been deleted there. Your local record and annotations are untouched.</dd>
+
+        <dt>Uploads say permission is missing.</dt>
+        <dd>The browser has not been allowed to reach <code>api.imgbb.com</code>. Save the key again from Settings and accept the prompt.</dd>
+
+        <dt>The edited image is too large to upload.</dt>
+        <dd>ImgBB accepts up to 32 MB. Start from a smaller photo — for a trip report, something around 2000 pixels wide is plenty.</dd>
+
+        <dt>The library is empty on my other computer.</dt>
+        <dd>Expected: the library lives in one browser profile. <a href="#backup">GitHub backup</a> brings the records across, and <strong>Import project…</strong> brings the originals.</dd>
+      </dl>
+    </section>
+  </main>
+</body>
+</html>

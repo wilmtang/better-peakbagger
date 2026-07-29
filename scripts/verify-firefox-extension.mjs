@@ -233,7 +233,7 @@ async function main() {
       value => !!value,
     );
     assertState(
-      firefoxPhotoLibrary.heading === "Uploaded photos"
+      firefoxPhotoLibrary.heading === "Photo library"
         && /photo-library\.json/.test(firefoxPhotoLibrary.boundary || "")
         && /Original images, API keys, and remote deletion links stay on this device/.test(
           firefoxPhotoLibrary.boundary || "",

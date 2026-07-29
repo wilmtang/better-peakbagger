@@ -194,7 +194,7 @@ try {
                 horizontalOverflow: document.documentElement.scrollWidth > document.documentElement.clientWidth,
             };
         }, null, { timeout: 5000 }).then(handle => handle.jsonValue()).catch(() => null);
-        check(photoLibraryState?.heading === 'Uploaded photos'
+        check(photoLibraryState?.heading === 'Photo library'
             && /photo-library\.json/.test(photoLibraryState?.backup || '')
             && /Original images, API keys, and remote deletion links stay on this device/.test(
                 photoLibraryState?.backup || ''

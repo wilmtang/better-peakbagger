@@ -279,7 +279,8 @@
   "web_accessible_resources": [
     {
       "resources": [
-        "terrain/terrain.html"
+        "terrain/terrain.html",
+        "photos/guide.html"
       ],
       "matches": [
         "https://*.peakbagger.com/*"

@@ -17,6 +17,7 @@
     <nav class="view-tabs" aria-label="Photo views">
       <button id="show-editor" type="button" class="tab-button" aria-current="page">Editor</button>
       <button id="show-library" type="button" class="tab-button">Library</button>
+      <a class="tab-button" href="guide.html">Guide</a>
     </nav>
   </header>
 
@@ -40,6 +41,7 @@
         </label>
         <p id="credential-note" class="fine-print">
           The key is never synced, backed up, or sent to Peakbagger.
+          <a href="guide.html#key">How to get one</a>
         </p>
         <button id="save-key" type="button" class="secondary-button">Continue</button>
       </div>
@@ -50,13 +52,13 @@
       <div id="editor-empty" class="empty-state">
         <div class="empty-icon" aria-hidden="true">⌁</div>
         <h2 id="editor-heading">Create a photo topo</h2>
-        <p>Add routes and climbing symbols locally. Nothing uploads until you choose
-          <strong>Upload and insert</strong>.</p>
+        <p>Mark the route and climbing symbols on your own photo. Everything stays on this
+          device until you choose <strong>Upload and insert</strong>.</p>
         <label class="file-button">
           Choose photo
           <input id="photo-file" type="file" accept="image/*">
         </label>
-        <p class="fine-print">Maximum file size: 32 MB, matching ImgBB.</p>
+        <p class="fine-print">Up to 32 MB, matching ImgBB. New here? <a href="guide.html">Read the guide</a>.</p>
       </div>
 
       <div id="editor-workspace" class="editor-workspace" hidden>
@@ -250,7 +252,9 @@
     <section id="library-view" aria-labelledby="library-heading" hidden>
       <div class="library-heading">
         <div>
-          <h2 id="library-heading">Uploaded photos</h2>
+          <h2 id="library-heading">Photo library</h2>
+          <p class="fine-print">Kept in this browser. Uploaded photos live on ImgBB — this is your
+            record of them, and where you reuse one in another report.</p>
           <p id="storage-summary" class="fine-print"></p>
         </div>
         <div class="library-controls">
