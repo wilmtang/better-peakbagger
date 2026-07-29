@@ -61,11 +61,67 @@ test('renders cleaned route geometry, symbols, pitch labels, and escaped text as
     assert.match(svg, /viewBox="0 0 1600 1200"/);
     assert.match(svg, /M 100 1000 C 100 1000 400 700 500 600 C 600 500 900 200 900 200/);
     assert.match(svg, /stroke-dasharray="24 16"/);
-    assert.match(svg, /marker-end="url\(#bpb-arrow\)"/);
+    assert.match(svg, /marker-end="url\(#bpb-arrow-e53935\)"/);
     assert.match(svg, /data-bpb-object="anchor-1"/);
     assert.match(svg, />P3<\/text>/);
     assert.match(svg, /Crux &lt;roof&gt; &amp; &quot;traverse&quot;/);
     assert.doesNotMatch(svg, /<script/i);
+});
+
+test('every arrowed route keeps its own arrowhead color', () => {
+    const arrowRoute = (id, color, end) => ({
+        id,
+        type: 'route',
+        z: 0,
+        geometry: { points: [[100, 100], [400, 400]], controls: [] },
+        style: { color, width: 8, stroke: 'solid', end },
+    });
+    const svg = Renderer.renderOverlaySvg(Project.cleanProject({
+        schemaVersion: 1,
+        localId: 'photo-1',
+        image: { width: 1600, height: 1200, sourceSha256: HASH },
+        objects: [
+            arrowRoute('route-red', '#e53935', 'arrow'),
+            arrowRoute('route-blue', '#1e88e5', 'arrow'),
+            arrowRoute('route-blue-again', '#1e88e5', 'arrow'),
+            arrowRoute('route-plain', '#43a047', 'none'),
+        ],
+        export: { mime: 'image/jpeg', quality: 0.92 },
+        updatedAt: TIME,
+    }));
+
+    assert.deepEqual(svg.match(/<marker id="[^"]+"/g), [
+        '<marker id="bpb-arrow-e53935"',
+        '<marker id="bpb-arrow-1e88e5"',
+    ], 'one marker per distinct arrow color, deduplicated');
+    assert.deepEqual(svg.match(/L 10 5 L 0 10 z" fill="[^"]+"/g), [
+        'L 10 5 L 0 10 z" fill="#e53935"',
+        'L 10 5 L 0 10 z" fill="#1e88e5"',
+    ]);
+    assert.deepEqual(svg.match(/marker-end="[^"]+"/g), [
+        'marker-end="url(#bpb-arrow-e53935)"',
+        'marker-end="url(#bpb-arrow-1e88e5)"',
+        'marker-end="url(#bpb-arrow-1e88e5)"',
+    ], 'the route without an arrow end references no marker');
+});
+
+test('omits the arrow defs entirely when no route ends in an arrow', () => {
+    const svg = Renderer.renderOverlaySvg(Project.cleanProject({
+        schemaVersion: 1,
+        localId: 'photo-1',
+        image: { width: 1600, height: 1200, sourceSha256: HASH },
+        objects: [{
+            id: 'anchor-1',
+            type: 'anchor',
+            z: 0,
+            geometry: { x: 900, y: 200, rotation: 0 },
+            style: { color: '#ffffff', scale: 1 },
+        }],
+        export: { mime: 'image/jpeg', quality: 0.92 },
+        updatedAt: TIME,
+    }));
+    assert.doesNotMatch(svg, /<defs>/);
+    assert.doesNotMatch(svg, /<marker/);
 });
 
 test('rejects unclean projects before generating markup', () => {

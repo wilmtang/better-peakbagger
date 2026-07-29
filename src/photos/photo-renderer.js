@@ -51,9 +51,16 @@ const dashArray = (stroke, width) => {
     return null;
 };
 
+// One marker per arrow color. A single shared marker would paint every
+// arrowhead in whichever color happened to be defined first, so a blue route
+// drawn after a red one exported a red tip.
+const arrowId = color => `bpb-arrow-${color.slice(1)}`;
+
 const renderRoute = object => {
     const dash = dashArray(object.style.stroke, object.style.width);
-    const marker = object.style.end === 'arrow' ? ' marker-end="url(#bpb-arrow)"' : '';
+    const marker = object.style.end === 'arrow'
+        ? ` marker-end="url(#${arrowId(object.style.color)})"`
+        : '';
     return `<path data-bpb-object="${escapeXml(object.id)}" d="${routePath(object)}"`
         + ` fill="none" stroke="${object.style.color}" stroke-width="${number(object.style.width)}"`
         + ' stroke-linecap="round" stroke-linejoin="round"'
@@ -121,7 +128,7 @@ const renderLabel = (object, image) => {
 };
 
 const arrowDefinition = color => [
-    '<marker id="bpb-arrow" viewBox="0 0 10 10" refX="8.5" refY="5"',
+    `<marker id="${arrowId(color)}" viewBox="0 0 10 10" refX="8.5" refY="5"`,
     ' markerWidth="5" markerHeight="5" orient="auto-start-reverse">',
     `<path d="M 0 0 L 10 5 L 0 10 z" fill="${color}"/>`,
     '</marker>',
@@ -130,8 +137,9 @@ const arrowDefinition = color => [
 const renderOverlaySvg = value => {
     const project = Project.cleanProject(value);
     if (!project) throw new TypeError('photo renderer requires a clean project');
-    const arrowColor = project.objects.find(object =>
-        object.type === 'route' && object.style.end === 'arrow')?.style.color || Project.DEFAULT_COLOR;
+    const arrowColors = [...new Set(project.objects
+        .filter(object => object.type === 'route' && object.style.end === 'arrow')
+        .map(object => object.style.color))];
     const children = project.objects.map(object => {
         if (object.type === 'route') return renderRoute(object);
         if (['anchor', 'piton', 'rappel', 'belay'].includes(object.type)) {
@@ -139,9 +147,12 @@ const renderOverlaySvg = value => {
         }
         return renderLabel(object, project.image);
     }).join('');
+    const defs = arrowColors.length
+        ? `<defs>${arrowColors.map(arrowDefinition).join('')}</defs>`
+        : '';
     return `<svg xmlns="${XML_NS}" width="${project.image.width}" height="${project.image.height}"`
         + ` viewBox="0 0 ${project.image.width} ${project.image.height}">`
-        + `<defs>${arrowDefinition(arrowColor)}</defs>${children}</svg>`;
+        + `${defs}${children}</svg>`;
 };
 
 const canvasBlob = (canvas, mime, quality) => new Promise((resolve, reject) => {
