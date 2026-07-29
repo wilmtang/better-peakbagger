@@ -11,6 +11,7 @@ import { capturePhases as CapturePhases } from '../capture/capture-phases.js';
 import { providerFromUrl, providerActivityUrl } from '../capture/provider-url.js';
 import { createFavoritesStore, favoritesStore as FavoritesStore } from './favorites-store.js';
 import { createGithubRoutes } from './github-routes.js';
+import { createPhotoRoutes } from './photo-routes.js';
 import { createTerrainPrefetch } from './terrain-prefetch.js';
 import { publicErrors as PublicErrors } from './public-errors.js';
 import { settings as Settings } from '../settings/settings.js';
@@ -1270,6 +1271,7 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
             });
         });
         await githubRoutes.cleanup(cutoff);
+        await photoRoutes.cleanup(cutoff);
     };
 
     const isPeakbaggerSender = sender => {
@@ -1308,6 +1310,14 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
         readMap,
         mutateMap,
     });
+    const photoRoutes = createPhotoRoutes({
+        ext,
+        storage,
+        now,
+        isPeakbaggerSender,
+        mutateMap,
+        readMap,
+    });
     const favoriteMutations = createFavoritesStore({ storage: ext.storage.local, now });
 
     const openDraftsManager = async sender => {
@@ -1342,6 +1352,8 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
             if (githubRoutes.isExtensionOnly(type) && !isExtensionPage(sender)) {
                 return { error: 'forbidden' };
             }
+            const photoHandler = photoRoutes.handlers[type];
+            if (photoHandler) return photoHandler(message, sender);
             const githubHandler = githubRoutes.handlers[type];
             if (githubHandler) return githubHandler(message, sender);
             switch (type) {
@@ -1403,6 +1415,7 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
 
     ext.tabs.onRemoved.addListener(tabId => {
         terrainPrefetch.forgetTab(tabId);
+        void photoRoutes.forgetTab(tabId);
         void (async () => {
             const removedDraft = await mutateMap(DRAFTS_KEY, drafts => {
                 const value = drafts[tabId] || null;

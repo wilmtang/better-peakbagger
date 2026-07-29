@@ -504,15 +504,7 @@ import { githubErrors as GithubErrors } from './github-errors.js';
             });
         };
 
-        const putRootFilesOnce = async (files, commitMessage) => {
-            const entries = normalizeRootFiles(files);
-            const message = typeof commitMessage === 'string' ? commitMessage.trim() : '';
-            if (!message) {
-                throw new TypeError('github client requires string content and a commit message');
-            }
-            const resolved = await resolveRepo();
-            const head = await readHead(resolved) || await initializeEmptyRepository(resolved);
-            const state = await inspectRootTree(head.root);
+        const commitRootEntries = async ({ entries, message, resolved, head, state }) => {
             const treeEntries = entries.map(entry => {
                 const existing = (head.root.tree || []).find(node => node.path === entry.path);
                 if (existing && existing.type !== 'blob') {
@@ -549,6 +541,18 @@ import { githubErrors as GithubErrors } from './github-errors.js';
             };
         };
 
+        const putRootFilesOnce = async (files, commitMessage) => {
+            const entries = normalizeRootFiles(files);
+            const message = typeof commitMessage === 'string' ? commitMessage.trim() : '';
+            if (!message) {
+                throw new TypeError('github client requires string content and a commit message');
+            }
+            const resolved = await resolveRepo();
+            const head = await readHead(resolved) || await initializeEmptyRepository(resolved);
+            const state = await inspectRootTree(head.root);
+            return commitRootEntries({ entries, message, resolved, head, state });
+        };
+
         const putRootFiles = (files, commitMessage) =>
             withConflictRetry(() => putRootFilesOnce(files, commitMessage));
 
@@ -562,6 +566,58 @@ import { githubErrors as GithubErrors } from './github-errors.js';
             };
         };
 
+        // Unlike a blind root-file replacement, a semantic update reruns its
+        // reader/merge callback after every non-fast-forward. Photo-library
+        // backup uses this to merge another device's records instead of
+        // retrying stale content over a newly advanced branch.
+        const updateRootFileOnce = async (path, update, commitMessage) => {
+            const filePath = rootFilePath(path);
+            if (typeof update !== 'function') {
+                throw new TypeError('github client requires a root file update function');
+            }
+            const message = typeof commitMessage === 'string' ? commitMessage.trim() : '';
+            if (!message) throw new TypeError('github client requires a commit message');
+            const resolved = await resolveRepo();
+            const head = await readHead(resolved) || await initializeEmptyRepository(resolved);
+            const state = await inspectRootTree(head.root);
+            const existing = (head.root.tree || []).find(node => node.path === filePath);
+            if (existing && existing.type !== 'blob') {
+                throw new GithubError(ERROR_CODES.REPO_CONFLICT,
+                    `The repository already uses ${filePath} for something other than a file.`);
+            }
+            const current = existing ? await readBlobText(existing.sha) : null;
+            const content = await update(current);
+            if (typeof content !== 'string') {
+                throw new TypeError('github client root file update must return string content');
+            }
+            if (content === current) {
+                return {
+                    sha: head.baseCommitSha,
+                    commitUrl: null,
+                    message,
+                    path: filePath,
+                    unchanged: true,
+                };
+            }
+            const result = await commitRootEntries({
+                entries: [{ path: filePath, content }],
+                message,
+                resolved,
+                head,
+                state,
+            });
+            return {
+                sha: result.sha,
+                commitUrl: result.commitUrl,
+                message: result.message,
+                path: filePath,
+                unchanged: false,
+            };
+        };
+
+        const updateRootFile = (path, update, commitMessage) =>
+            withConflictRetry(() => updateRootFileOnce(path, update, commitMessage));
+
         return {
             pushAscentBackup,
             pushAscentBackups,
@@ -572,6 +628,7 @@ import { githubErrors as GithubErrors } from './github-errors.js';
             readRootFile,
             putRootFile,
             putRootFiles,
+            updateRootFile,
         };
     };
 

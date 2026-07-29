@@ -816,6 +816,62 @@ test('a root file conflict retries from the newly read head', async () => {
         .map(call => call.body.parents), [['C0'], ['C1']]);
 });
 
+test('a semantic root update rereads and remerges after a branch conflict', async () => {
+    let refReads = 0;
+    let patches = 0;
+    const seen = [];
+    const blob = text => respond(200, {
+        encoding: 'base64',
+        content: Buffer.from(text, 'utf8').toString('base64'),
+    });
+    const { fetch, calls } = makeFetch({
+        'GET /repos/me/backup': REPO_OK(),
+        'GET /repos/me/backup/git/ref/heads/main': () => {
+            const sha = `C${refReads}`;
+            refReads += 1;
+            return respond(200, { object: { sha } });
+        },
+        'GET /repos/me/backup/git/commits/C0': COMMIT('C0', 'T0'),
+        'GET /repos/me/backup/git/commits/C1': COMMIT('C1', 'T1'),
+        'GET /repos/me/backup/git/trees/T0': () => respond(200, { tree: [
+            MARKER, { path: 'photo-library.json', type: 'blob', sha: 'photo0' },
+        ] }),
+        'GET /repos/me/backup/git/trees/T1': () => respond(200, { tree: [
+            MARKER, { path: 'photo-library.json', type: 'blob', sha: 'photo1' },
+        ] }),
+        'GET /repos/me/backup/git/blobs/marker': MARKER_BLOB,
+        'GET /repos/me/backup/git/blobs/photo0': () => blob('{"remote":0}\n'),
+        'GET /repos/me/backup/git/blobs/photo1': () => blob('{"remote":1}\n'),
+        'POST /repos/me/backup/git/trees': number => respond(201, { sha: `TNEW${number}` }),
+        'POST /repos/me/backup/git/commits': number => respond(201, { sha: `CNEW${number}` }),
+        'PATCH /repos/me/backup/git/refs/heads/main': () => {
+            patches += 1;
+            return patches === 1
+                ? respond(422, { message: 'Update is not a fast forward' })
+                : respond(200, { object: { sha: 'CNEW2' } });
+        },
+    });
+    const client = Client.createGithubClient({
+        fetch,
+        token: 't',
+        owner: 'me',
+        repo: 'backup',
+        sleep: async () => {},
+    });
+
+    await client.updateRootFile('photo-library.json', current => {
+        seen.push(current);
+        return `${current.trim()} local\n`;
+    }, 'Back up photo library');
+
+    assert.deepEqual(seen, ['{"remote":0}\n', '{"remote":1}\n']);
+    assert.deepEqual(calls.filter(call => call.key === 'POST /repos/me/backup/git/trees')
+        .map(call => call.body.tree.find(entry => entry.path === 'photo-library.json').content), [
+        '{"remote":0} local\n',
+        '{"remote":1} local\n',
+    ]);
+});
+
 test('root file writes fail closed on a foreign marker or path collision', async () => {
     const foreign = makeFetch({
         'GET /repos/me/backup': REPO_OK(),

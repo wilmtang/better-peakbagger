@@ -22,9 +22,11 @@ flowchart TB
 
     subgraph extension["Manifest V3 extension"]
         popup["Popup and options"]
-        worker["background.js<br/>capture jobs, summit lookup,<br/>draft identity, GitHub writes"]
+        worker["background.js<br/>capture jobs, draft identity,<br/>photo handoff, GitHub writes"]
+        photoPage["Photo topo editor + library<br/>extension-owned tab"]
+        photoDb["IndexedDB<br/>photo catalog, projects,<br/>pixels, journal, secrets"]
         sync["storage.sync<br/>preferences"]
-        local["storage.local<br/>GitHub credential + repo,<br/>favorites, drafts, terrain index"]
+        local["storage.local<br/>GitHub + ImgBB credentials,<br/>favorites, drafts, terrain index"]
         session["storage.session<br/>30-minute jobs, drafts,<br/>save snapshots, pending auth"]
     end
 
@@ -37,6 +39,7 @@ flowchart TB
     end
 
     peakApi["Peakbagger<br/>login + summit corridor endpoints"]
+    imgbb["ImgBB API<br/>flattened photo upload"]
     github["GitHub API<br/>user-selected repository"]
     tiles["Mapterhorn / OpenFreeMap /<br/>selected raster provider"]
 
@@ -46,6 +49,9 @@ flowchart TB
     providerPage -- "allowlisted analysis fields only" --> worker
     isolated <--> worker
     popup <--> worker
+    photoPage <--> worker
+    photoPage <--> photoDb
+    photoPage --> imgbb
     sync -- "read + change notifications" --> popup
     sync -- "read + change notifications" --> isolated
     worker <--> sync
@@ -60,7 +66,7 @@ flowchart TB
     terrainFrame <--> tiles
 ```
 
-The diagram encodes five important boundaries:
+The diagram encodes six important boundaries:
 
 1. Raw provider GPX stays in the provider page. The worker receives parsed,
    allowlisted fields, never the source XML.
@@ -74,7 +80,10 @@ The diagram encodes five important boundaries:
 4. The background worker coordinates short transactions and GitHub writes. It
    does not own multi-minute profile-page reads, and it never fetches raw
    provider or saved-ascent GPX itself.
-5. Final Peakbagger review and Save always belong to the user.
+5. The photo editor stores pixels and projects in local IndexedDB. Only a
+   flattened export crosses the optional ImgBB boundary; API and deletion
+   credentials never enter Peakbagger or GitHub.
+6. Final Peakbagger review and Save always belong to the user.
 
 ## Deep dives
 
@@ -82,6 +91,7 @@ The diagram encodes five important boundaries:
 - [Execution worlds, settings, and message bridges](#deep-dive-execution-worlds-settings-and-message-bridges)
 - [Garmin/Strava capture and local GPX processing](#deep-dive-garminstrava-capture-and-local-gpx-processing)
 - [Trip-report editor](#deep-dive-trip-report-editor)
+- [Photo topo editor and local library](#deep-dive-photo-topo-editor-and-local-library)
 - [GPX Analyzer and native 2D map integration](#deep-dive-gpx-analyzer-and-native-2d-map-integration)
 - [Opt-in 3D terrain](#deep-dive-opt-in-3d-terrain)
 - [Peak markers and non-ascent map surfaces](#deep-dive-peak-markers-and-non-ascent-map-surfaces)
@@ -127,6 +137,7 @@ There is no parallel raw-source worker list and no `importScripts` fallback.
 | Background coordination | `src/background/background.js`, `src/background/github-routes.js`, `src/background/terrain-prefetch.js` | Shared state/queues and dispatch, GitHub auth/backup routes, and bounded terrain cache warming inside one worker bundle |
 | Provider extraction | `src/capture/provider-page.js` | On-demand MAIN-world injection into the active owned activity |
 | Ascent editor | `src/ascent/ascent-draft.js`, `src/ascent/ascent-upload.js`, `src/reports/report-editor.js` | Isolated-world form fill, local-file processing, report editing |
+| Photo topo editor and library | `photos/photos.js`, `src/photos/photo-project.js`, `src/photos/photo-renderer.js`, `src/photos/photo-library.js`, `src/photos/photo-store.js`, `src/photos/photo-archive.js` | Extension-page editing/export, authoritative local catalog, blobs, operation journal, per-photo delete capability, and CSP-safe project download |
 | Ascent analysis | `src/gpx/gpx-analyzer.js` | MAIN-world GPX/chart/native-map integration |
 | Terrain lifecycle, bridge, and renderer | `src/terrain/terrain-coordinator.js`, `src/terrain/terrain-map.js`, `src/terrain/terrain-frame.js` | Shared MAIN-world state machine, isolated bridge, extension-origin MapLibre frame |
 | Full Screen and Peak maps | `src/maps/big-map.js`, `src/maps/peak-map.js` | MAIN-world native-map coordinators |
@@ -136,7 +147,8 @@ There is no parallel raw-source worker list and no `importScripts` fallback.
 | Report-draft manager | `src/reports/report-drafts.js`, `options/drafts.js` | Shared pure draft contract plus device-local list/copy/delete UI |
 | Saved-ascent backup | `src/ascent/ascent-page.js`, `src/ascent/ascent-backup.js` | Owner-only page read and user-facing backup state |
 | Peakbagger request boundary | `src/peakbagger/peakbagger-request.js`, `src/peakbagger/peakbagger-response.js`, `src/peakbagger/peakbagger-error.js`, `src/peakbagger/peakbagger-cloudflare.js` | Authenticated fetch policy, response validation, typed failures, and managed-challenge detection/recovery copy |
-| GitHub integration | `src/background/github-routes.js`, `src/github/github-error-copy.js`, `src/github/github-errors.js`, `src/github/github-api.js`, `src/github/github-auth.js`, `src/github/github-client.js`, `src/github/github-write-queue.js`, `src/github/github-backup.js` | Worker-only routes and credentials, user-facing error copy, typed errors, authenticated REST transport, Git Data client, write ordering and coalescing, and pure payload builder |
+| GitHub integration | `src/background/github-routes.js`, `src/github/github-error-copy.js`, `src/github/github-errors.js`, `src/github/github-api.js`, `src/github/github-auth.js`, `src/github/github-client.js`, `src/github/github-write-queue.js`, `src/github/github-backup.js`, `src/photos/photo-backup.js` | Worker-only routes and credentials, typed/authenticated transport, Git Data writes, ordering/coalescing, ascent payloads, and metadata-only photo recovery |
+| ImgBB integration | `src/background/photo-routes.js`, `src/photos/imgbb-auth.js`, `src/photos/imgbb-client.js` | Optional permission, device-local BYOK credential, scoped report return, direct validated upload; no account gallery or remote deletion |
 
 Extend the owning surface rather than publishing cross-feature globals. The one
 deliberate Better Peakbagger global is `globalThis.BPBProviderPage`: the worker
@@ -455,6 +467,38 @@ round trips, draft lifecycle, and known lossy-import limitation are maintained
 in [trip-report-editor.md](trip-report-editor.md). That focused design note is
 the source of truth for markup behavior; this guide does not duplicate its tag
 matrix.
+
+## Deep dive: photo topo editor and local library
+
+The Rich editor's image popover can open an extension-owned photo tab for a new
+upload or the local library. `src/background/photo-routes.js` creates a random,
+single-use return context bound to the source tab/frame, editor tab, report
+identity, and a two-hour expiry. Only a sanitized HTTPS image result from that
+exact photo page can return; successful ImgBB upload remains committed if the
+report tab is gone or rejects insertion.
+
+`photos/photos.js` owns the UI and local transaction orchestration.
+`src/photos/photo-project.js` owns the bounded annotation schema,
+`src/photos/photo-renderer.js` flattens a clean project into a newly encoded
+metadata-free JPEG or PNG, and `src/photos/photo-store.js` owns the authoritative
+IndexedDB catalog, projects, originals, thumbnails, operation journal, per-photo
+delete capabilities, and tombstones. Published edits are new lineaged versions,
+never in-place replacement of an existing remote URL.
+
+ImgBB is bring-your-own-key. Its API origin is an optional permission requested
+only for upload; the key remains in a dedicated device-local `storage.local`
+record and is leased only to the packaged photo page. The client makes one
+direct multipart POST and refuses source or export blobs over 32 MiB. It never
+automatically retries an ambiguous outcome because that could duplicate a
+public upload. The local catalog supplies the searchable upload history; no
+ImgBB account-gallery read is assumed.
+
+Optional GitHub photo recovery writes a deterministic root
+`photo-library.json`. It contains catalog metadata, public URLs, projects, and
+tombstones, but never the API key, ImgBB delete URL, source/thumbnail pixels, or
+operation journal. Restore is explicit and previewed, and cannot claim to
+recover pixels or remote deletion. The complete contracts and failure states
+are maintained in [photo-topo-editor.md](photo-topo-editor.md).
 
 ## Deep dive: GPX Analyzer and native 2D map integration
 
@@ -1196,10 +1240,13 @@ enabled-and-connected gate: the stable folder, structured page fields, report,
 and stored GPX must match, while sync timestamp and extension-version
 provenance are ignored. A match renders **Backed up ✓**; a difference or passive
 check failure leaves the ordinary backup action available. The worker
-serializes repository writes so per-save batches, profile batches, and the explicit root
-`favorite-climbers.json` backup cannot race each other. Root-file writes use the same
-marker validation, exact base tree, commit, non-forced ref update, and bounded
-conflict retry as ascent writes; restore is a read-only Contents API request.
+serializes repository writes so per-save batches, profile batches, and the
+explicit settings, favorites, and photo-library root files cannot race each
+other. Root-file writes use the same marker validation, exact base tree,
+commit, non-forced ref update, and bounded conflict retry as ascent writes.
+Photo-library updates additionally rerun their semantic record merge after a
+branch conflict instead of replaying stale JSON; restores use the read-only
+Contents API before their explicit apply step.
 
 Full-profile backup runs its multi-minute producer in the owner’s
 `ClimbListC.aspx` tab, whose lifetime and authenticated Peakbagger session match
@@ -1246,8 +1293,9 @@ The focused rationale, first-visit compromises, and lockstep invariant are in
 | Store | Owned data | Lifecycle rule |
 | --- | --- | --- |
 | `storage.sync` | User preferences and feature gates | Validated by the single settings schema; no secrets |
-| `storage.local` | GitHub token/repository, custom favorites, Buddy List cache, report drafts, terrain-cache index | Device-local; favorites are bounded, Buddy cache is owner-scoped, report drafts expire |
+| `storage.local` | GitHub token/repository, ImgBB API key, custom favorites, Buddy List cache, report drafts, terrain-cache index, automatic-backup state | Device-local and never browser-synced; favorites are bounded, Buddy cache is owner-scoped, report drafts expire |
 | `storage.session` | Capture jobs, prepared drafts, save-time backup snapshots, ascent-deletion intents/tombstones, pending device auth | Short-lived and identity-bound; capture/backup/delete records expire after 30 minutes |
+| IndexedDB `betterPeakbaggerPhotos` | Photo catalog, annotation projects, original/thumbnail blobs, upload journal, ImgBB delete URLs, tombstones | Authoritative device-local photo library; deleted assets are eligible for pruning after 30 days, tombstones remain |
 | CacheStorage | Successful Mapterhorn DEM responses | Best effort, bounded by the local LRU index |
 | Peakbagger `localStorage` | Filter UI state and early theme mirror | Page-local convenience state, never authoritative extension credentials |
 | Peakbagger `sessionStorage` | Pending native Buddy action marker | Tab-scoped navigation handoff; consumed on the next supported climber page, ignored after five minutes, and never treated as proof of success |
@@ -1288,8 +1336,9 @@ No single green command proves the extension works:
   manifests in hidden isolated profiles. It exercises runtime origins,
   execution worlds, storage, worker/background startup, manifest surfaces,
   native file assignment, draft identity, exactly-once Preview, the no-Save
-  boundary, 1,500-row favorite search and settings navigation, and native Buddy
-  synchronization under both removal policies.
+  boundary, 1,500-row favorite search and settings navigation, native Buddy
+  synchronization under both removal policies, and the packaged photo page's
+  image decode, IndexedDB autosave, and layout boundaries.
 - `npm run verify:packages -- CHROME.zip FIREFOX.zip` runs those gates against
   the exact minified store archives.
 - `npm run terrain:verify` and `npm run terrain:verify:firefox` render packaged
@@ -1301,9 +1350,10 @@ No single green command proves the extension works:
 
 Hidden browser checks establish DOM and runtime behavior, not native focus,
 window placement, permission-prompt presentation, toolbar popup sizing, or tab
-group chrome. Live Garmin, Strava, Peakbagger, GitHub device-flow, saved-GPX
-timing, and Cloudflare behavior remain minimal, rate-limited manual release
-checks. The exact matrix and cleanup requirements live in
+group chrome. Live Garmin, Strava, Peakbagger, ImgBB upload, GitHub device-flow
+and repository writes, saved-GPX timing, and Cloudflare behavior remain
+minimal, rate-limited manual release checks. The exact matrix and cleanup
+requirements live in
 [development.md](development.md) and [releasing.md](releasing.md).
 
 The completed cross-browser verification rollout is retained in

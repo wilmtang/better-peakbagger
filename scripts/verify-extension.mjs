@@ -157,6 +157,186 @@ try {
             ]);
         });
 
+        // --- Extension-owned photo editor and local library -----------------
+        const photoPage = await context.newPage();
+        const photoErrors = [];
+        photoPage.on('pageerror', error => photoErrors.push(String(error)));
+        // Record the worst duplication the grid ever showed rather than a single
+        // late sample: overlapping renders can settle, so sampling once cannot
+        // prove a photo was never listed twice.
+        await photoPage.addInitScript(() => {
+            globalThis.__bpbMaxCardsPerPhoto = 0;
+            addEventListener('DOMContentLoaded', () => {
+                const list = document.getElementById('library-list');
+                if (!list) return;
+                const sample = () => {
+                    const counts = new Map();
+                    for (const heading of list.querySelectorAll('.photo-card h3')) {
+                        counts.set(heading.textContent, (counts.get(heading.textContent) || 0) + 1);
+                    }
+                    for (const count of counts.values()) {
+                        globalThis.__bpbMaxCardsPerPhoto =
+                            Math.max(globalThis.__bpbMaxCardsPerPhoto, count);
+                    }
+                };
+                new MutationObserver(sample).observe(list, { childList: true });
+            });
+        });
+        await photoPage.goto(`chrome-extension://${extensionId}/photos/photos.html?mode=library`);
+        await photoPage.locator('#library-view').waitFor({ state: 'visible', timeout: 5000 });
+        const photoLibraryState = await photoPage.waitForFunction(() => {
+            const status = document.getElementById('photo-backup-status')?.textContent || '';
+            if (/Checking/.test(status)) return false;
+            return {
+                heading: document.getElementById('library-heading')?.textContent,
+                backup: document.querySelector('.backup-card')?.textContent,
+                status,
+                horizontalOverflow: document.documentElement.scrollWidth > document.documentElement.clientWidth,
+            };
+        }, null, { timeout: 5000 }).then(handle => handle.jsonValue()).catch(() => null);
+        check(photoLibraryState?.heading === 'Uploaded photos'
+            && /photo-library\.json/.test(photoLibraryState?.backup || '')
+            && /Original images, API keys, and remote deletion links stay on this device/.test(
+                photoLibraryState?.backup || ''
+            )
+            && /fixture\/backup/.test(photoLibraryState?.status || '')
+            && !photoLibraryState?.horizontalOverflow,
+        `the packaged photo library or recovery boundary was wrong: ${JSON.stringify({
+            photoLibraryState,
+            photoErrors,
+        })}`);
+
+        await photoPage.locator('#show-editor').click();
+        await photoPage.evaluate(async () => {
+            const canvas = document.createElement('canvas');
+            canvas.width = 900;
+            canvas.height = 600;
+            const drawing = canvas.getContext('2d');
+            const sky = drawing.createLinearGradient(0, 0, 0, 600);
+            sky.addColorStop(0, '#8fc7e8');
+            sky.addColorStop(1, '#f2dfba');
+            drawing.fillStyle = sky;
+            drawing.fillRect(0, 0, 900, 600);
+            drawing.fillStyle = '#566b60';
+            drawing.beginPath();
+            drawing.moveTo(0, 600);
+            drawing.lineTo(260, 230);
+            drawing.lineTo(430, 410);
+            drawing.lineTo(640, 150);
+            drawing.lineTo(900, 600);
+            drawing.closePath();
+            drawing.fill();
+            const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+            const transfer = new DataTransfer();
+            transfer.items.add(new File([blob], 'browser-verification-topo.png', { type: 'image/png' }));
+            const input = document.getElementById('photo-file');
+            Object.defineProperty(input, 'files', { configurable: true, value: transfer.files });
+            input.dispatchEvent(new Event('change', { bubbles: true }));
+        });
+        await photoPage.locator('#editor-workspace').waitFor({ state: 'visible', timeout: 5000 });
+        await photoPage.locator('#photo-alt').fill('Browser verification mountain route');
+        await photoPage.locator('[data-tool="route"]').click();
+        const overlayBounds = await photoPage.locator('#photo-overlay').boundingBox();
+        if (overlayBounds) {
+            await photoPage.mouse.click(overlayBounds.x + overlayBounds.width * 0.32,
+                overlayBounds.y + overlayBounds.height * 0.72);
+            await photoPage.mouse.click(overlayBounds.x + overlayBounds.width * 0.58,
+                overlayBounds.y + overlayBounds.height * 0.38);
+            await photoPage.locator('#finish-route').click();
+        }
+        const photoEditorState = await photoPage.waitForFunction(() => {
+            const saved = document.getElementById('save-status')?.textContent || '';
+            const route = document.querySelector('#photo-overlay path');
+            if (!/Saved on this device/.test(saved) || !route) return false;
+            const viewport = document.getElementById('photo-viewport')?.getBoundingClientRect();
+            return {
+                saved,
+                route: route.getAttribute('d'),
+                upload: document.getElementById('upload-insert')?.textContent,
+                viewport: viewport ? { width: viewport.width, height: viewport.height } : null,
+            };
+        }, null, { timeout: 5000 }).then(handle => handle.jsonValue()).catch(() => null);
+        check(photoEditorState?.route
+            && photoEditorState.upload === 'Upload to ImgBB'
+            && photoEditorState.viewport?.width > 300
+            && photoEditorState.viewport?.height > 300,
+        `the packaged topo editor did not decode, annotate, and autosave: ${JSON.stringify({
+            photoEditorState,
+            photoErrors,
+        })}`);
+        if (process.env.BPB_VERIFY_PHOTO_SCREENSHOT) {
+            await photoPage.evaluate(() => scrollTo(0, 0));
+            await photoPage.screenshot({
+                path: process.env.BPB_VERIFY_PHOTO_SCREENSHOT,
+                fullPage: true,
+            });
+        }
+        const originalPhotoViewport = photoPage.viewportSize();
+        await photoPage.setViewportSize({ width: 520, height: 800 });
+        const narrowPhotoState = await photoPage.evaluate(() => ({
+            horizontalOverflow: document.documentElement.scrollWidth > document.documentElement.clientWidth,
+            inspectorWidth: document.querySelector('.inspector')?.getBoundingClientRect().width,
+            bodyWidth: document.body.getBoundingClientRect().width,
+        }));
+        check(!narrowPhotoState.horizontalOverflow
+            && narrowPhotoState.inspectorWidth <= narrowPhotoState.bodyWidth,
+        `the narrow photo editor overflowed horizontally: ${JSON.stringify(narrowPhotoState)}`);
+        if (originalPhotoViewport) await photoPage.setViewportSize(originalPhotoViewport);
+
+        // Reopen on the library with that autosaved photo in IndexedDB. This is
+        // the "Choose from library…" entry point, and it is the one boot where
+        // setView() and initialize() both start a render.
+        await photoPage.goto(`chrome-extension://${extensionId}/photos/photos.html?mode=library`);
+        const listedPhotoState = await photoPage.waitForFunction(() => {
+            const cards = document.querySelectorAll('#library-list .photo-card');
+            const storage = document.getElementById('storage-summary')?.textContent || '';
+            // storage-summary is written at the end of a render pass, so this
+            // waits for a finished list rather than a partly drawn one.
+            if (!cards.length || !storage) return false;
+            return {
+                cards: cards.length,
+                titles: [...cards].map(card => card.querySelector('h3')?.textContent),
+                maxCardsPerPhoto: globalThis.__bpbMaxCardsPerPhoto,
+                emptyHidden: document.getElementById('library-empty')?.hidden,
+            };
+        }, null, { timeout: 5000 }).then(handle => handle.jsonValue()).catch(() => null);
+        check(listedPhotoState?.cards === 1
+            && listedPhotoState.maxCardsPerPhoto === 1
+            && listedPhotoState.titles[0] === 'browser-verification-topo'
+            && listedPhotoState.emptyHidden === true,
+        `the saved photo was not listed exactly once: ${JSON.stringify({
+            listedPhotoState,
+            photoErrors,
+        })}`);
+
+        // Every other extension panel honors the Light/Dark setting; this page
+        // shipped following only the OS color scheme.
+        const setVerificationTheme = theme => photoPage.evaluate(async value => {
+            const current = (await chrome.storage.sync.get('bpbSettings')).bpbSettings || {};
+            await chrome.storage.sync.set({ bpbSettings: { ...current, theme: value } });
+        }, theme);
+        await setVerificationTheme('dark');
+        await photoPage.goto(`chrome-extension://${extensionId}/photos/photos.html`);
+        const photoThemeState = await photoPage.waitForFunction(() => {
+            const theme = document.documentElement.getAttribute('data-bpb-theme');
+            if (theme !== 'dark') return false;
+            return {
+                theme,
+                background: getComputedStyle(document.body).backgroundColor,
+                // Native selects, ranges, and scrollbars follow color-scheme,
+                // not the custom properties.
+                colorScheme: getComputedStyle(document.documentElement).colorScheme,
+            };
+        }, null, { timeout: 5000 }).then(handle => handle.jsonValue()).catch(() => null);
+        check(photoThemeState?.background === 'rgb(18, 21, 25)'
+            && photoThemeState.colorScheme === 'dark',
+        `the photo page ignored the extension's dark theme on a light OS: ${JSON.stringify({
+            photoThemeState,
+            photoErrors,
+        })}`);
+        await setVerificationTheme('system');
+        await photoPage.close();
+
         let buddyRequests = 0;
         let fallbackReportRequests = 0;
         const signedInBuddyUrl = 'https://www.peakbagger.com/report/report.aspx?r=b';
@@ -1290,6 +1470,8 @@ try {
                 return box && hint && hintRect && controlRects.length ? {
                     visible: getComputedStyle(box).display !== 'none',
                     belowControls: hintRect.top >= Math.max(...controlRects.map(rect => rect.bottom)),
+                    photoActions: [...box.querySelectorAll('.bpb-re-photo-launch')]
+                        .map(button => button.textContent),
                     links: [...hint.querySelectorAll('a')].map(link => ({
                         label: link.textContent,
                         href: link.href,
@@ -1301,6 +1483,9 @@ try {
             check(imageHostingHelp?.visible && imageHostingHelp.belowControls,
                 `image-hosting help was not visible below the image controls (state=${
                     JSON.stringify(imageHostingHelp)})`);
+            check(JSON.stringify(imageHostingHelp?.photoActions)
+                === JSON.stringify(['Upload and edit…', 'Choose from library…']),
+            `the integrated photo-editor actions were missing (state=${JSON.stringify(imageHostingHelp)})`);
             check(JSON.stringify(imageHostingHelp?.links) === JSON.stringify([
                 {
                     label: 'Peakbagger Photos',
@@ -1311,12 +1496,6 @@ try {
                 {
                     label: 'Imgur',
                     href: 'https://imgur.com/upload',
-                    target: '_blank',
-                    rel: 'noopener noreferrer'
-                },
-                {
-                    label: 'ImgBB',
-                    href: 'https://imgbb.com/',
                     target: '_blank',
                     rel: 'noopener noreferrer'
                 }
@@ -2168,6 +2347,8 @@ if (failures.length) {
 console.log('Real-extension verification passed (hidden Chrome for Testing, new headless):');
 console.log('  - the MV3 service worker boots and answers messages (capture is alive)');
 console.log('  - sync/local/session storage, storage.onChanged, options persistence, and popup status passed');
+console.log('  - the extension-owned photo library states its metadata-only GitHub boundary, and the topo editor');
+console.log('    decodes a real PNG, draws a route, autosaves to IndexedDB, and fits desktop and narrow viewports');
 console.log('  - options loads the signed-in Buddy report directly, falls back through a first-party tab, and keeps failures actionable');
 console.log('  - Buddy mirror stays busy and focused during replacement, then retries a failure without another fetch');
 console.log('  - the real 1,500-row favorite list reports its total, fuzzy-searches, and keeps long navigation instant');

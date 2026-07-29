@@ -18,7 +18,10 @@ const FAIL_SOFT = Object.freeze({
     'popup/popup.js': [{ count: 1, kind: 'display', reason: 'resolve passive popup units' }],
     'src/ascent/ascent-delete.js': [{ count: 1, kind: 'safe-gate', reason: 'default-off GitHub deletion mirror' }],
     'src/ascent/ascent-filter.js': [{ count: 1, kind: 'display', reason: 'render filter preferences' }],
-    'src/background/github-routes.js': [{ count: 10, kind: 'safe-gate', reason: 'status and default-off GitHub gates' }],
+    'src/background/github-routes.js': [
+        { count: 12, kind: 'safe-gate', reason: 'status and default-off GitHub and photo-recovery gates' },
+        { count: 1, kind: 'display', reason: 'render the default-off photo-recovery status' },
+    ],
     'src/background/terrain-prefetch.js': [{ count: 1, kind: 'safe-gate', reason: 'default-off terrain gate' }],
     'src/favorites/climber-favorite.js': [{ count: 2, kind: 'display', reason: 'render favorite-source state' }],
     'src/maps/big-map-bridge.js': [{ count: 1, kind: 'display', reason: 'publish validated map settings' }],

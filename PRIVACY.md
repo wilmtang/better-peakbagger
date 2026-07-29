@@ -7,25 +7,30 @@ or credit decisions.
 
 Captured activity data leaves the browser only for the Peakbagger summit lookup
 and GPS Preview actions described below. Optional 3D map providers receive tile
-requests for the viewed area only after the user enables that feature. Settings
-and a custom favorite-climber list reach GitHub only through the user's connected
-repository, either on an explicit backup click or after the user separately
-enables automatic backup for that data.
+requests for the viewed area only after the user enables that feature. Settings,
+a custom favorite-climber list, and photo-library metadata or annotation
+projects reach GitHub only through the user's connected repository, either on
+an explicit backup click or after the user separately enables automatic backup
+for that data.
 
 ## Browser permissions
 
 - **`storage`** saves theme, units, chart, map, capture, editor, beta-filter,
   favorite-source, and backup-toggle preferences in `storage.sync`. It keeps
   the bounded DEM cache index, custom favorite-climber list, owner-scoped Buddy
-  List cache, GitHub backup token/repository, and automatic-backup signatures
-  and retry state in `storage.local`; short-lived capture jobs,
+  List cache, GitHub backup token/repository, the user's ImgBB API key, and
+  automatic-backup signatures and retry state in `storage.local`; short-lived
+  capture jobs,
   prepared drafts, save-time backup snapshots, short-lived ascent-deletion
   intents/tombstones, and an in-progress GitHub device authorization live in
   `storage.session`. Capture, draft, snapshot, and deletion records expire after
   30 minutes; pending authorization is removed when its GitHub
   device code completes, fails, or expires. DEM response
   bytes live in browser-managed CacheStorage and may be evicted under storage
-  pressure.
+  pressure. The photo library uses device-local IndexedDB for catalog metadata,
+  annotation projects, original/thumbnail image blobs, an upload operation
+  journal, ImgBB delete URLs, and deletion tombstones. Those records are never
+  browser-synced.
 - **`activeTab`** grants temporary access to the one Garmin Connect or Strava
   activity page where the user clicked the toolbar button. It replaces
   permanent provider host permissions.
@@ -37,7 +42,7 @@ enables automatic backup for that data.
 - **`alarms`** runs cleanup every five minutes so expired capture jobs and
   draft payloads are removed from session storage. It also provides the
   one-minute debounce and bounded delayed retries for user-enabled automatic
-  settings and favorite-climber backups.
+  settings, favorite-climber, and photo-library metadata backups.
 - **Peakbagger host access** enables GPX analysis, ascent filtering, theme,
   login and summit checks, validated draft filling, and user-initiated favorite
   management on Peakbagger. There is no persistent Garmin Connect or Strava
@@ -45,10 +50,16 @@ enables automatic backup for that data.
 - **Optional GitHub host access** (`github.com`, `api.github.com`) is requested
   only when the user connects GitHub backup. It authorizes the extension to
   sign in via GitHub's device flow and to write the selected ascent, settings,
-  and favorite-climber backups to the one repository the user grants. The
+  favorite-climber, and photo-library metadata backups to the one repository
+  the user grants. The
   GitHub user token lives in
   `storage.local` (never `storage.sync`), is held only by the background worker,
   and is never exposed to any web page.
+- **Optional ImgBB host access** (`api.imgbb.com`) is requested only from the
+  photo editor when the user chooses to upload. It permits a direct upload of
+  the newly flattened image using the user's own API key. The extension has no
+  ImgBB relay or developer account and does not use that access to inspect
+  unrelated browsing.
 - **Firefox `locationInfo` disclosure** reports that activity coordinates are
   sent to Peakbagger for summit lookup and GPS Preview; when the user loads the
   3D view, that tile coordinates for the viewed area go to Mapterhorn,
@@ -174,6 +185,53 @@ receives the requesting browser's IP address and ordinary request metadata.
 Saving remote media into a report also causes readers' browsers to request it
 when Peakbagger displays the published report.
 
+## Photo topo editor and ImgBB upload (optional)
+
+The photo topo editor is an extension-owned page. Choosing an image stores its
+original bytes, a local thumbnail, source dimensions/file name/hash, the
+versioned annotation project, title, and alt/decorative state in the browser
+profile's IndexedDB. The original may contain camera metadata; it stays in that
+local blob and is not uploaded by Better Peakbagger.
+
+Before upload, the editor flattens the photo and annotations into a newly
+encoded JPEG or PNG. That export contains pixels only and excludes the source
+file's EXIF and other metadata, source file name, project JSON, local record
+identity, report identity, API key, and delete URL. The extension accepts only
+browser-decodable images and exports through ImgBB's documented maximum of
+32 MiB; there is no larger-file or chunked path.
+
+- **What leaves the browser:** only after the user chooses **Upload and
+  insert**, ImgBB receives the flattened image bytes, the chosen upload name,
+  the user's API key, and ordinary network request data such as IP address.
+  ImgBB returns public image/viewer URLs and a private delete URL. The public
+  image URL can then be inserted into the user's report; Peakbagger and later
+  report readers request it as ordinary remote media.
+- **Credential handling:** the user supplies the ImgBB API key. It is stored
+  only in the dedicated `bpbImgbbAuth` record in device-local
+  `storage.local`, never `storage.sync`, GitHub, a report, or the original
+  Peakbagger content script. The background worker leases it only to the exact
+  packaged photo page for an upload request. Removing the key does not alter
+  prior uploads.
+- **Local upload history:** Better Peakbagger keeps its own searchable catalog
+  because ImgBB's documented v1 API does not provide an account-gallery listing
+  operation. The catalog stores public URLs, source/export metadata and hashes,
+  upload and reachability state, lineage, report references, and local asset
+  availability.
+- **Deletion capability:** the ImgBB delete URL is a sensitive capability and
+  remains only in a separate device-local IndexedDB secret record. It is never
+  put in a report or GitHub backup. Better Peakbagger does not automatically
+  delete remote ImgBB images. Removing a library entry or report reference is a
+  local action and does not remove a published image.
+- **Local deletion:** a removed item enters **Recently Deleted** and writes a
+  tombstone. It can be restored locally; after 30 days its original, project,
+  and thumbnail are eligible for pruning. The tombstone remains so recovery
+  does not resurrect an older record. Clearing extension data or uninstalling
+  can remove the entire local library without deleting already uploaded images.
+
+The ImgBB API governs remote retention and the public image URL. An interrupted
+request can have an unknown provider outcome, so Better Peakbagger does not
+automatically retry and risk a duplicate upload.
+
 ## Optional 3D terrain
 
 The 3D feature is off by default, but its control remains visible. The first
@@ -202,10 +260,10 @@ minutes to make re-entry instant, then released — but does not clear the cache
 GitHub is disconnected by default. The user must explicitly grant GitHub host
 access, authorize the extension, and select a repository. Ascent backup is a
 separate setting and remains off until enabled; settings and favorite backup or
-restore can use the connection without enabling ascent backup. Their automatic
-backup toggles are also separate and off by default. None of these features
-block or alter the Peakbagger save, and the extension never clicks a
-Peakbagger Save control.
+restore and photo-library metadata recovery can use the connection without
+enabling ascent backup. Their automatic backup toggles are also separate and
+off by default. None of these features block or alter the Peakbagger save, and
+the extension never clicks a Peakbagger Save control.
 
 - **What leaves the browser:** for an ascent the user chooses to back up, the
   extension sends that ascent's structured fields (the values the user entered),
@@ -220,6 +278,13 @@ Peakbagger Save control.
   version, and extension version. It never contains the GitHub token or selected
   repository, favorites, drafts, caches, ascent, activity, or GPS data. These two
   transfers write only those fixed root files in the same selected repository.
+  A photo-library backup separately writes `photo-library.json`, containing
+  catalog metadata, public ImgBB URLs, the sanitized source file name,
+  source/export hashes and dimensions, title and alt state, lineage, report
+  references, annotation projects, deletion tombstones, schema/export time, and
+  extension version. It never includes the ImgBB API key, ImgBB delete URLs,
+  original or thumbnail image bytes, upload journal, transient editor state, or
+  GitHub credentials.
 - **When it leaves:** only on the user's explicit **Back up to GitHub** click,
   an explicit **Back up all ascents** or confirmed **Refresh all** run from the
   user's own ascent list, or — if the user separately turns on automatic
@@ -234,8 +299,12 @@ Peakbagger Save control.
   backup click, or automatically after their stored value changes while that
   data type's user-enabled automatic-backup toggle is on. Restore is always an
   explicit Settings action with a confirmation and never runs automatically.
-  Automatic ascent backup never includes or updates `settings.json` or
-  `favorite-climbers.json`.
+  Photo metadata leaves on an explicit backup click or after a catalog change
+  while its separate automatic toggle is enabled. Photo restore is explicit,
+  shows a change/conflict preview, and requires confirmation. It reconstructs
+  metadata and annotations only; it cannot restore original pixels, thumbnails,
+  or ImgBB deletion capability. Automatic ascent backup never includes or
+  updates `settings.json`, `favorite-climbers.json`, or `photo-library.json`.
 - **Optional deletion mirroring:** if the user separately enables **Remove
   backup files after I delete an ascent**, the extension records intent before
   the native Peakbagger Delete POST, then checks the authenticated complete My
@@ -276,6 +345,10 @@ settings; it does not upload the file anywhere.
 - **User-provided media hosts** may receive image or direct-video requests when
   that media is displayed in the Rich editor, Markdown preview, or published
   report.
+- **ImgBB** receives a flattened image, upload name, the user's API key, IP
+  address, and ordinary request metadata only when the user explicitly uploads
+  from the photo editor. It later receives ordinary image requests when the
+  public URL is displayed.
 - **Windy, Copernicus Browser, NOHRSC, and AirNow** are opened only when the user
   follows their corresponding summit link.
 - **GitHub** receives ascent backups (fields, Markdown trip report, and
@@ -283,9 +356,11 @@ settings; it does not upload the file anywhere.
   connects a repository, and clicks Back up, starts a profile backup/refresh,
   or opts into automatic backup. It receives settings or the custom
   favorite-climber list on an explicit backup click, or after a change while
-  the corresponding automatic-backup toggle is enabled. It returns either fixed
-  root file only on an explicit restore click. Data goes only to the
-  user-chosen repository.
+  the corresponding automatic-backup toggle is enabled. It receives
+  photo-library metadata and annotations on an explicit backup click or after a
+  catalog change while that independent automatic toggle is enabled. It returns
+  a fixed root recovery file only on an explicit restore action. Data goes only
+  to the user-chosen repository.
 
 Better Peakbagger packages all extension code and libraries locally. A YouTube
 player is remote page content isolated in YouTube's cross-origin iframe; it is

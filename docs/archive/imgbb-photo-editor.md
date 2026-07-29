@@ -1,6 +1,6 @@
 # Plan: ImgBB-backed topo photo editor and photo library
 
-Status: approved product direction; not implemented.
+Status: implemented and archived on 2026-07-27.
 
 This plan adds a local, non-destructive topo-photo editor to the trip-report
 workflow, uploads the finished raster through the user's own ImgBB API key, and
@@ -1098,17 +1098,126 @@ plan.
 
 ### Fixed and verified
 
-- None yet.
+- Implemented a versioned, bounded photo-project schema with routes, Bezier
+  controls, text, anchors, pitons, rappels, belays, pitch markers, z-order, and
+  style cleaning. Pure schema and mutation tests pass.
+- Implemented deterministic SVG/Canvas flattening to JPEG or PNG with source
+  and export SHA-256 metadata. Export tests verify that project metadata,
+  source file names, EXIF-shaped source bytes, API keys, and delete URLs do not
+  enter the encoded output.
+- Implemented the authoritative IndexedDB catalog, projects, originals,
+  thumbnails, upload journal, per-photo secret, and tombstone stores. Atomic
+  draft/upload/restore and crash-recovery behavior are covered by tests.
+- Implemented exact optional ImgBB permission and device-local BYOK storage,
+  one direct multipart upload with a 32 MiB ceiling, strict response validation,
+  and fail-closed ambiguous-outcome handling without automatic retry.
+- Implemented the extension-owned editor and local library with autosave,
+  undo/redo, route and climbing-symbol tools, new-version lineage, search and
+  status filters, report reuse, project download disclosure, reachability
+  state, and local Recently Deleted handling. Project downloads use a
+  CSP-safe stored-ZIP writer because packaging proved the planned JSZip runtime
+  import included a forbidden dynamic-code compatibility shim.
+- Implemented one-time, source-tab/frame- and editor-tab-bound report handoff.
+  Upload success is committed before insertion, and insertion failure cannot
+  erase a public URL.
+- Implemented deterministic `photo-library.json` recovery with an 8 MiB bound,
+  metadata/project/tombstone merge, explicit conflict policy, preview signature,
+  default-off automatic backup, and semantic GitHub ref-conflict retry.
+- Unit, integration, DOM, manifest, and bundle tests pass for the implemented
+  boundaries. The packaged page was visually inspected and behavior-tested in
+  hidden Chrome for Testing at 1000×760 and 520×800 and in hidden Firefox at
+  1000×760. Both full built-extension verifiers pass.
+- Updated the public README, privacy disclosure, maintained architecture,
+  report-editor design, GitHub design, and focused photo-topo design.
 
 ### Intentionally not changed
 
 - ImgBB account-gallery import is unsupported because there is no documented
   list API.
-- Files above ImgBB's provider maximum are unsupported; no chunked path is
-  planned.
+- Files and exports above ImgBB's documented 32 MB provider maximum are
+  unsupported; no chunked path is planned.
 - Original pixels are not included in ordinary GitHub backup.
-- Remote deletion automation is withheld pending provider-behavior proof.
+- Remote ImgBB deletion is not implemented. Delete URLs stay device-local, and
+  local removal or report removal never implies remote removal.
+- GitHub restore does not guess through catalog conflicts or claim to recreate
+  original pixels, thumbnails, API credentials, or deletion capability.
 
 ### Changed but not fully proven
 
-- None yet.
+- ImgBB request and response behavior is covered with scripted fetches, but no
+  real upload was made with a live API key. Provider retention and whether a
+  particular API upload appears in an account profile remain unproven.
+- GitHub payloads, worker routes, merge policy, retry behavior, and restore are
+  covered with scripted clients and IndexedDB, but no live scratch-repository
+  photo backup/merge/restore was performed.
+- Hidden browser runs prove the packaged editor's DOM behavior, image decode,
+  IndexedDB autosave, Chrome route/export flow, and desktop/narrow layout
+  boundaries. They do not prove native permission-prompt presentation, browser
+  focus/window placement, toolbar chrome, or other onscreen browser UI.
+
+## 16. Audit remediation ledger — 2026-07-28
+
+A post-implementation audit of the branch. Every fix below carries a check
+that fails against the code as shipped.
+
+### Fixed and verified
+
+- The library listed every photo twice whenever the page opened on
+  `?mode=library` — the "Choose from library…" entry point — because
+  `setView()` and `initialize()` each started a render and the two passes
+  interleaved their clear-then-append. Renders now coalesce to one running
+  pass plus at most one queued, and a pass replaces the grid in one step.
+  `verify:chrome` reopens the library with a saved photo and asserts one card,
+  using a MutationObserver installed before page scripts so a settled sample
+  cannot hide a transient duplicate.
+- An upload whose provider outcome was never confirmed dead-ended the editor.
+  `putDraft` accepted only the `draft` state, so every autosave after an
+  ambiguous failure threw, and the retry path offered to abandon
+  non-destructive editing and cleared the retained-asset flags for blobs that
+  were still present. The store now accepts every pre-upload state, which is
+  exactly the set `beginUpload` already took as retry input.
+- Every arrowed route referenced one shared `<marker>` colored by whichever
+  arrow route came first, so a two-color topo exported the wrong arrowhead
+  color. One deduplicated marker per color now.
+- The photo page honored only `prefers-color-scheme`, ignoring the extension's
+  own Light/Dark setting that options and the popup both apply. It now loads
+  the shared panel-theme bootstrap ahead of its stylesheet.
+- An inserted photo's description was re-clamped to 300 characters in the
+  report editor after the photo page and worker had both allowed 500.
+- A rejected `permissions.request()` escaped as an unhandled rejection,
+  leaving "Upload and insert" inert with no message. It now reports and names
+  the host and the retry.
+- `photos/photos.js` matched no ESLint file glob and was not a `lint:js`
+  target, so 1,470 lines of page orchestration shipped with no rules and no
+  browser globals applied. Both lists now derive their coverage requirement
+  from `build-config.mjs`'s page-local roots, pinned by test.
+
+### Intentionally not changed
+
+- The upload ceiling stays at 32 MiB (33,554,432 bytes) against a provider
+  that documents "32 MB". If ImgBB means the decimal value, an export between
+  32,000,000 and 33,554,432 bytes passes the local gate and is refused by the
+  provider, which the client already surfaces as a provider message. Choosing
+  the permissive reading keeps the plan's "no extension-specific limit below
+  ImgBB's documented maximum" rule; resolving the ambiguity needs a live
+  upload this audit did not make.
+- Rendering a library card reads the photo's full bundle — five object stores,
+  including the original — to reach its thumbnail, and search re-renders on
+  every keystroke with no debounce. Coalescing bounds the wasted work to one
+  pass; narrowing the read to a thumbnail-only lookup is a separate change.
+- `github-routes.js` identifies the photo page by origin and pathname while
+  `photo-routes.js` also requires an integer tab id. The looser check is
+  redundant rather than permissive: those routes are all in the worker's
+  extension-page-only set. Left as is rather than widening the audit.
+
+### Changed but not fully proven
+
+- The permission-rejection path is reasoned from the API contract, not
+  exercised: neither packaged verifier grants an optional host permission, so
+  no run reaches `permissions.request()` at all.
+- The theme fix is proven for an explicit Dark preference on a light OS. The
+  `prefers-color-scheme` branch is exercised only by its absence, because the
+  hidden verification profiles report a light scheme.
+- Everything in section 15's "changed but not fully proven" still stands: no
+  live ImgBB upload, no live GitHub scratch-repository round trip, and no
+  onscreen verification of native prompts or window chrome.

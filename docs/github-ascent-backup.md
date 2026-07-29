@@ -1,11 +1,11 @@
-# GitHub ascent backup: complete design and failure model
+# GitHub backup and recovery: complete design and failure model
 
 This is the single maintained design for GitHub backup. It covers the
 manual saved-ascent action, automatic backup after Add/Edit, opt-in deletion
 mirroring, full-profile backup, source-data acquisition, snapshot correlation,
 batching, repository writes, the settings and custom-favorites companion files,
-authentication, failure handling, and the regressions that established the
-current invariants.
+the photo-library metadata recovery file, authentication, failure handling, and
+the regressions that established the current invariants.
 
 The completed implementation records remain in
 [archive/github-ascent-backup-plan.md](archive/github-ascent-backup-plan.md) and
@@ -32,11 +32,13 @@ deliberately different way to discover whether a GPX exists, but its form
 fields, response validation, GPX body validation, snapshot schema, and GitHub
 writer are shared.
 
-Settings and the custom favorite-climber list are separate fixed root-file
-operations. Each has a manual backup and restore action plus an independent,
-default-off automatic backup toggle. They share the worker's credential gate,
-write queue, repository marker validation, atomic commit, and conflict retry,
-but never enter an ascent payload or the ascent automatic-backup path.
+Settings, the custom favorite-climber list, and the photo library are separate
+fixed root-file operations. Each has a manual backup and restore action plus an
+independent, default-off automatic backup toggle. They share the worker's
+credential gate, write queue, repository marker validation, atomic commit, and
+conflict retry, but never enter an ascent payload or the ascent
+automatic-backup path. Photo recovery is metadata-only and performs a semantic
+record merge before writing or restoring.
 
 ## The three shipped ascent entry points
 
@@ -118,6 +120,9 @@ link, which automatically tracks endpoint query changes.
 | `src/profile/profile-backup.js` | Owner-list UI, full-list fetch, deletion confirmation, per-ascent production, progress/pause/resume | Raw field mapping, GitHub credentials |
 | `src/favorites/favorite-climbers.js` | Pure favorites cleaning, backup serialization, parsing, and stable signatures | DOM, storage, GitHub access |
 | `src/settings/settings-transfer.js` | Pure known-key settings payload, parsing, serialization, and stable signatures through the shared schema | DOM, storage, GitHub access |
+| `src/photos/photo-backup.js` | Pure bounded `photo-library.json` serialization, signatures, semantic merge, tombstones, and metadata-only reconstruction | IndexedDB, pixels, credentials, network |
+| `src/photos/photo-store.js` | Authoritative photo IndexedDB transactions and backup-snapshot reads | GitHub token, network, backup merge policy |
+| `photos/photos.js` | Photo recovery status, manual actions, automatic toggle, preview copy, and explicit conflict choice | GitHub credentials, repository writes, or claiming pixels were restored |
 | `options/favorites.js` | Favorites transfer controls, auto toggle, and schema-checked reversible restore | Backup serialization, GitHub credentials, or repository mutation |
 | `options/settings-backup.js` | File transfer, GitHub transfer controls, auto toggle, and confirmed settings replacement | GitHub credentials or repository mutation |
 | `src/background/background.js` | Sender gates, session-state keys, session-state serialization, cleanup coordination, message routing | Peakbagger DOM parsing or GitHub route implementation |
@@ -533,16 +538,22 @@ disclosure.
 | `GITHUB_FAVORITES_RESTORE` | Extension options page | Extension origin; auth/repo; fixed `favorite-climbers.json` path | File text or `null`, never token |
 | `GITHUB_SETTINGS_BACKUP` | Extension options page | Extension origin; auth/repo; worker reads settings through the shared schema and exports known keys only; fixed `settings.json` path | Commit metadata, never token |
 | `GITHUB_SETTINGS_RESTORE` | Extension options page | Extension origin; auth/repo; fixed `settings.json` path | File text or `null`, never token |
+| `GITHUB_PHOTOS_STATUS` | Exact packaged photo page | Extension origin/path; current repository and setting | Connection, automatic toggle, and matching backup state; never token or secret |
+| `GITHUB_PHOTOS_BACKUP` | Exact packaged photo page | Extension origin/path; auth/repo; worker reads IndexedDB and builds fixed `photo-library.json` | Commit metadata and merge counts; never pixels, API key, or delete URL |
+| `GITHUB_PHOTOS_RESTORE_PREVIEW` | Exact packaged photo page | Extension origin/path; auth/repo; bounded schema parse and semantic comparison | Counts, conflict ids, and content signature only |
+| `GITHUB_PHOTOS_RESTORE` | Exact packaged photo page | Extension origin/path; fresh expected signature; explicit conflict policy; auth/repo | Restore counts; no repository or provider credential |
 
 The individual worker gate is hostname-level; the content surface supplies the
 stricter owner proof by requiring an edit link for the same aid before it even
 asks for status. The profile worker gate is path-level because batch messages
 are valid only from the owner-list surface. Settings and favorite messages are
-extension-page only. The worker builds both backup files from cleaned storage;
-the options page parses through the same pure module and requires confirmation
-before replacing local state on restore.
+extension-page only. The worker builds the settings and favorites backup files
+from cleaned storage; the options page parses through the same pure module and
+requires confirmation before replacing local state on restore.
 
-The profile content surface treats transport availability as a discriminated
+The photo messages are extension-page only and the worker owns IndexedDB
+serialization. The page never sends API keys, ImgBB delete URLs, or pixel blobs
+through runtime messaging. The profile content surface treats transport availability as a discriminated
 result. A confirmed disabled or disconnected setting removes the owner-only
 panel; an unknown result keeps a compact error and **Try again** action. A
 successful retry remounts the normal connected state without requiring a page
@@ -554,6 +565,7 @@ reload.
 .better-peakbagger.json
 settings.json              # optional fixed root file; manual or automatic
 favorite-climbers.json     # optional fixed root file; manual or automatic
+photo-library.json         # optional metadata-only recovery; manual or automatic
 2026-07-12-mount-rainier-a1234567/
   report.md
   ascent.json
@@ -650,6 +662,38 @@ Because both alarms are armed with the same delay they fire together, and the
 queue merges them into one commit; each writer records only its own signature,
 and a writer whose content was superseded records nothing. Restore is never
 automatic.
+
+### `photo-library.json` metadata recovery
+
+Photo recovery is deliberately not a pixel backup. The schema-versioned,
+deterministic root file is limited to 8 MiB and contains clean catalog records,
+public ImgBB URLs, sanitized source file names, source/export hashes and
+dimensions, titles and alt state, lineage, bounded report references,
+annotation projects, and tombstones. It never contains the ImgBB API key, ImgBB
+delete URLs, source or thumbnail bytes, the upload operation journal, UI
+history, GitHub credentials, or a remote deletion capability.
+
+The worker builds the document from IndexedDB. A manual or automatic backup
+reads the current remote file and merges records by stable `localId`; a newer
+tombstone prevents an older record from reappearing. Unknown concurrent edits
+stop with a conflict rather than choosing a winner. `updateRootFile()` reruns
+the semantic merge against the newest branch head after a non-fast-forward
+conflict, so a repository race cannot replay stale serialized JSON.
+
+Automatic photo backup is a third independent, default-off trailing-edge alarm.
+It uses the same one-minute debounce, content-only signature check, ten-minute
+retry delay, and two-retry cap as the settings and favorites root files, while
+remaining serialized through the shared worker write queue. Restore is always
+preview-first and explicit. The worker rereads the remote file and requires the
+previewed signature before applying it. If local and remote records conflict,
+the user may stop or explicitly keep local conflicting versions while restoring
+nonconflicting changes.
+
+Restored records state the limitation: metadata and annotations can return, but
+original pixels, thumbnails, and ImgBB deletion capability cannot. A retained
+local project is usable only while its source hash still matches the original
+on that device. The full photo workflow and deletion lifecycle are in
+[photo-topo-editor.md](photo-topo-editor.md).
 
 ### `ascent.json` schema version 1
 

@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- **Create and reuse photo topos from the report editor.** Draw routes, curves,
+  climbing symbols, pitch markers, and labels in an extension-owned editor,
+  export a flattened metadata-free image, and upload it directly to ImgBB with
+  a device-local API key. The searchable local library keeps editable drafts,
+  uploaded URLs, lineage, insertion references, upload recovery state, and
+  Recently Deleted records. An independent, default-off GitHub recovery file
+  can preserve catalog metadata and annotation projects without exposing
+  original pixels, ImgBB credentials, or remote deletion capability.
+
 ## 3.2.0 — 2026-07-27
 
 - **Preserve report formatting and draft recovery.** Safe HTML spans no longer

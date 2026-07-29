@@ -20,6 +20,11 @@ living docs in [`docs/`](../).
 - [Trip-report color conversion spike](trip-report-color-conversion-spike.md) —
   comparison of CSSOM color canonicalization with raw-token preservation and
   the resulting sanitizer boundary decision.
+- [ImgBB-backed topo photo editor and photo library](imgbb-photo-editor.md) —
+  completed product and implementation plan for non-destructive photo
+  annotation, direct bring-your-own-key upload, the device-local catalog,
+  report insertion, and metadata-only GitHub recovery. Current behavior lives
+  in the maintained [photo topo design](../photo-topo-editor.md).
 - [esbuild + ES-module migration](esbuild-migration-plan.md) — completed plan
   and step-by-step migration log.
 - [Cross-browser extension verification](cross-browser-verification.md) —
