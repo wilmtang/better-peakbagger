@@ -308,6 +308,33 @@ try {
             listedPhotoState,
             photoErrors,
         })}`);
+
+        // Every other extension panel honors the Light/Dark setting; this page
+        // shipped following only the OS color scheme.
+        const setVerificationTheme = theme => photoPage.evaluate(async value => {
+            const current = (await chrome.storage.sync.get('bpbSettings')).bpbSettings || {};
+            await chrome.storage.sync.set({ bpbSettings: { ...current, theme: value } });
+        }, theme);
+        await setVerificationTheme('dark');
+        await photoPage.goto(`chrome-extension://${extensionId}/photos/photos.html`);
+        const photoThemeState = await photoPage.waitForFunction(() => {
+            const theme = document.documentElement.getAttribute('data-bpb-theme');
+            if (theme !== 'dark') return false;
+            return {
+                theme,
+                background: getComputedStyle(document.body).backgroundColor,
+                // Native selects, ranges, and scrollbars follow color-scheme,
+                // not the custom properties.
+                colorScheme: getComputedStyle(document.documentElement).colorScheme,
+            };
+        }, null, { timeout: 5000 }).then(handle => handle.jsonValue()).catch(() => null);
+        check(photoThemeState?.background === 'rgb(18, 21, 25)'
+            && photoThemeState.colorScheme === 'dark',
+        `the photo page ignored the extension's dark theme on a light OS: ${JSON.stringify({
+            photoThemeState,
+            photoErrors,
+        })}`);
+        await setVerificationTheme('system');
         await photoPage.close();
 
         let buddyRequests = 0;

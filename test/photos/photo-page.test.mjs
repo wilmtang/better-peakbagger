@@ -29,7 +29,24 @@ test('the packaged photo page exposes the editor, library, and credential bounda
     assert.ok(COPY_FILES.some(([from, to]) =>
         from === 'photos/photos.css' && to === 'photos/photos.css'));
     assert.equal(doc.querySelector('script[src="photos.js"]')?.hasAttribute('defer'), true);
-    assert.equal(doc.querySelectorAll('script').length, 1, 'the extension page must not use inline scripts');
+    assert.deepEqual([...doc.querySelectorAll('script')].map(node => node.getAttribute('src')),
+        ['photos-head.js', 'photos.js'],
+        'the extension page must not use inline scripts, and must resolve its theme first');
+    // The head bundle runs before the stylesheet so the stored Light/Dark
+    // preference is on the root element before anything can paint.
+    const head = doc.querySelector('script[src="photos-head.js"]');
+    assert.equal(head.hasAttribute('defer'), false);
+    assert.equal(head.compareDocumentPosition(doc.querySelector('link[rel="stylesheet"]'))
+        & dom.window.Node.DOCUMENT_POSITION_FOLLOWING, dom.window.Node.DOCUMENT_POSITION_FOLLOWING);
+    assert.deepEqual(ENTRIES.find(candidate => candidate.out === 'photos/photos-head.js')?.sources,
+        ['settings/settings-schema.js', 'settings/settings.js', 'theme/panel-theme.js'],
+        'the photo page must reuse the shared panel theme bootstrap');
+    // Both mapping blocks pick from one palette, so an explicit preference and
+    // the OS scheme cannot drift apart.
+    assert.match(styles, /:root\[data-bpb-theme="dark"\]\s*\{[^}]*--bg:\s*var\(--dark-bg\)/);
+    assert.match(styles, /:root\[data-bpb-theme="light"\]\s*\{[^}]*color-scheme:\s*light/);
+    assert.match(styles,
+        /@media \(prefers-color-scheme: dark\)\s*\{\s*:root:not\(\[data-bpb-theme="light"\]\)/);
     assert.match(styles,
         /\[hidden\]\s*\{\s*display:\s*none\s*!important/,
         'author layout rules must not override the native hidden state');

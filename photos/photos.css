@@ -1,31 +1,79 @@
+/* Each palette value is written once; the mapping blocks below only choose
+   between the two. The page must follow the OS scheme for the first frame,
+   before photos-head.js can read the stored preference, and then follow the
+   extension's own Light/Dark setting like every other panel. */
 :root {
   color-scheme: light dark;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  --bg: #f4f5f7;
-  --panel: rgba(255, 255, 255, 0.9);
-  --panel-solid: #fff;
-  --text: #17202a;
-  --muted: #647080;
-  --border: rgba(23, 32, 42, 0.14);
-  --accent: #1769aa;
-  --accent-strong: #0c518b;
-  --danger: #b42318;
-  --shadow: 0 14px 38px rgba(31, 42, 55, 0.12);
+
+  --light-bg: #f4f5f7;
+  --light-panel: rgba(255, 255, 255, 0.9);
+  --light-panel-solid: #fff;
+  --light-text: #17202a;
+  --light-muted: #647080;
+  --light-border: rgba(23, 32, 42, 0.14);
+  --light-accent: #1769aa;
+  --light-accent-strong: #0c518b;
+  --light-danger: #b42318;
+  --light-shadow: 0 14px 38px rgba(31, 42, 55, 0.12);
+
+  --dark-bg: #121519;
+  --dark-panel: rgba(31, 36, 42, 0.92);
+  --dark-panel-solid: #1f242a;
+  --dark-text: #f2f4f7;
+  --dark-muted: #aeb7c3;
+  --dark-border: rgba(255, 255, 255, 0.14);
+  --dark-accent: #62aee9;
+  --dark-accent-strong: #85c5f4;
+  --dark-danger: #ff7b72;
+  --dark-shadow: 0 14px 40px rgba(0, 0, 0, 0.34);
+
+  --bg: var(--light-bg);
+  --panel: var(--light-panel);
+  --panel-solid: var(--light-panel-solid);
+  --text: var(--light-text);
+  --muted: var(--light-muted);
+  --border: var(--light-border);
+  --accent: var(--light-accent);
+  --accent-strong: var(--light-accent-strong);
+  --danger: var(--light-danger);
+  --shadow: var(--light-shadow);
 }
 
 @media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #121519;
-    --panel: rgba(31, 36, 42, 0.92);
-    --panel-solid: #1f242a;
-    --text: #f2f4f7;
-    --muted: #aeb7c3;
-    --border: rgba(255, 255, 255, 0.14);
-    --accent: #62aee9;
-    --accent-strong: #85c5f4;
-    --danger: #ff7b72;
-    --shadow: 0 14px 40px rgba(0, 0, 0, 0.34);
+  :root:not([data-bpb-theme="light"]) {
+    color-scheme: dark;
+    --bg: var(--dark-bg);
+    --panel: var(--dark-panel);
+    --panel-solid: var(--dark-panel-solid);
+    --text: var(--dark-text);
+    --muted: var(--dark-muted);
+    --border: var(--dark-border);
+    --accent: var(--dark-accent);
+    --accent-strong: var(--dark-accent-strong);
+    --danger: var(--dark-danger);
+    --shadow: var(--dark-shadow);
   }
+}
+
+/* The explicit panel preference wins over the OS color scheme, for the native
+   selects, ranges, checkboxes, and scrollbars too. */
+:root[data-bpb-theme="dark"] {
+  color-scheme: dark;
+  --bg: var(--dark-bg);
+  --panel: var(--dark-panel);
+  --panel-solid: var(--dark-panel-solid);
+  --text: var(--dark-text);
+  --muted: var(--dark-muted);
+  --border: var(--dark-border);
+  --accent: var(--dark-accent);
+  --accent-strong: var(--dark-accent-strong);
+  --danger: var(--dark-danger);
+  --shadow: var(--dark-shadow);
+}
+
+:root[data-bpb-theme="light"] {
+  color-scheme: light;
 }
 
 * {
