@@ -546,7 +546,7 @@ import { terrainTiles as TerrainTiles } from './terrain-tiles.js';
             minzoom,
             maxzoom,
             scheme: value.scheme === 'tms' ? 'tms' : 'xyz',
-            stockLod: value.stockLod === true,
+            thriftyLod: value.thriftyLod === true,
             attribution: sanitizeAttribution(value.attribution)
         };
     };
@@ -558,7 +558,7 @@ import { terrainTiles as TerrainTiles } from './terrain-tiles.js';
     // tilt is undone. Tightening the spread to 4 zoom levels holds the drape at
     // full resolution through the pitches the 3D view actually uses, at the cost
     // of roughly 2-3x more tile requests — so it is opt-out per layer (see
-    // stockLod).
+    // thriftyLod).
     //
     // Measured with terrain:lod once the elevation ladder below was tuned, since
     // the plan expected this setting to be buying sharpness the render targets
@@ -571,6 +571,28 @@ import { terrainTiles as TerrainTiles } from './terrain-tiles.js';
     // 1-2 below. The extra tiles are buying real far-band detail, not waste.
     const DRAPE_LOD_ZOOM_LEVELS_ON_SCREEN = 4;
     const DRAPE_LOD_TILE_COUNT_RATIO = 3;
+
+    // A thrifty layer (see thriftyLod) still gets a setting, just a cheaper one.
+    // Leaving MapLibre's stock heuristic in place was not a neutral default: on
+    // OpenTopoMap, terrain:lod measured the drape falling to level 8 at pitch 70
+    // where the render targets were carrying level 11, and a 66->70 tilt stepping
+    // the far band three levels at once — an 8x change in texel size for four
+    // degrees of camera. One frame spanned seven zoom levels. That is visible,
+    // and it is the artifact users report after the elevation ladder is fixed.
+    //
+    // (6, 1.5) recovers most of it for a fraction of the traffic the full tuning
+    // costs: measured over the same sweep, the far band lands 1 level under the
+    // ceiling instead of 2-3, and the worst frame spans five levels instead of
+    // seven. Traffic goes to roughly 140-180 drape tiles from about 110 on the
+    // stock heuristic, where (4, 3) costs about 590. Call it 1.5x on a donated
+    // server to buy back most of the sharpness, against 5x for the rest of it.
+    // That ratio is the whole argument for keeping two settings.
+    //
+    // The per-pitch census numbers are stable run to run; the sweep total is not
+    // (136/151/151/176 over four runs), so treat the ratio as the finding and the
+    // totals as approximate.
+    const THRIFTY_DRAPE_LOD_ZOOM_LEVELS_ON_SCREEN = 6;
+    const THRIFTY_DRAPE_LOD_TILE_COUNT_RATIO = 1.5;
 
     // The same tuning for the elevation source, which needs it for two reasons
     // the drape setting cannot cover.
@@ -606,7 +628,12 @@ import { terrainTiles as TerrainTiles } from './terrain-tiles.js';
     };
 
     const applyBasemapLod = basemap => {
-        if (!basemap || basemap.stockLod) return;
+        if (!basemap) return;
+        if (basemap.thriftyLod) {
+            setSourceLod('basemap',
+                THRIFTY_DRAPE_LOD_ZOOM_LEVELS_ON_SCREEN, THRIFTY_DRAPE_LOD_TILE_COUNT_RATIO);
+            return;
+        }
         setSourceLod('basemap', DRAPE_LOD_ZOOM_LEVELS_ON_SCREEN, DRAPE_LOD_TILE_COUNT_RATIO);
     };
 

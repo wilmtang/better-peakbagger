@@ -526,9 +526,26 @@ into 2048-pixel render targets, so a band at level Z can carry a drape at Z+3,
 and a pitched frame holds several bands at once. At `(4, 3)` the drape sits on
 that ceiling across the whole frame; MapLibre's stock setting leaves the horizon
 band 2–3 levels below it and `(6, 1.5)` leaves it 1–2 below. The extra traffic
-buys detail the pipeline carries, not detail it discards — which is why a live
-Leaflet layer's `stockLod` opt-out costs that layer real sharpness, and is still
-the right call for a host on unknown terms.
+buys detail the pipeline carries, not detail it discards.
+
+Layers on unknown or donated terms — every live Leaflet layer, and OpenTopoMap —
+are marked `thriftyLod` and take `(6, 1.5)` instead. They are not left on
+MapLibre's stock heuristic, which is not a neutral default: measured on
+OpenTopoMap, it dropped the drape to level 8 at pitch 70 where the render targets
+were carrying level 11, and stepped the far band three levels across a
+four-degree tilt — an 8× change in texel size, spanning seven zoom levels in one
+frame. That is the visible tilt artifact that survives a fixed elevation ladder.
+`(6, 1.5)` brings the far band to 1 level under the ceiling and the worst frame
+to five levels, for roughly 140–180 drape tiles over the sweep against about 110
+on the stock heuristic and about 590 at `(4, 3)`. Courtesy to the host still
+outranks our sharpness; ~1.5× buys back most of it and ~5× does not buy
+proportionally more. The per-pitch census counts are stable run to run and the
+sweep totals are not, so the ratio is the finding, not the totals. Reproduce
+either setting with `BPB_LOD_DRAPE=L_OS` or `BPB_LOD_DRAPE=L_OT`.
+
+OpenTopoMap additionally caps at `maxzoom: 15`, so its near band sits one level
+under the render-target ceiling whatever LOD it is given. That is the provider's
+limit, not ours.
 
 ## Peak dots and route interaction
 

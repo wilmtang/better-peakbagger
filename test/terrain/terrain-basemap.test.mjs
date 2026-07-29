@@ -31,7 +31,7 @@ test('drapeFromCode maps known #selmap codes to fixed xyz raster specs and rejec
         minzoom: 6,
         maxzoom: 16,
         scheme: 'xyz',
-        stockLod: false,
+        thriftyLod: false,
         attribution: '&copy; <a href="https://caltopo.com" target="_blank" rel="noopener noreferrer">CalTopo</a>'
     });
     // A code with no drape spec (WMS/Google/Bing/etc.) stays 2D-only.
@@ -120,11 +120,11 @@ test('fromLayer rejects WMS and reprojected layers, expands subdomains and retin
 test('drape specs keep the stock LOD for OpenTopoMap and for unknown live layers', () => {
     const B = load();
 
-    assert.equal(B.drapeFromCode('L_OT', 'OpenTopoMap').stockLod, true,
+    assert.equal(B.drapeFromCode('L_OT', 'OpenTopoMap').thriftyLod, true,
         'OpenTopoMap must stay on the stock LOD to respect its tile usage policy');
 
     for (const code of ['L_CT', 'L_FS', 'L_MT', 'L_OS', 'L_AG', 'L_AI', 'L_XX', 'L_AU']) {
-        assert.equal(B.drapeFromCode(code, code).stockLod, false,
+        assert.equal(B.drapeFromCode(code, code).thriftyLod, false,
             `${code} is hosted on infrastructure that tolerates the volume, so it takes the tuned LOD`);
     }
 
@@ -133,5 +133,5 @@ test('drape specs keep the stock LOD for OpenTopoMap and for unknown live layers
         L: { Browser: { retina: false } },
         location: { href: 'https://www.peakbagger.com/map/MasterMap.aspx' }
     });
-    assert.equal(live.stockLod, true, 'an unknown live host must not be handed tripled tile requests');
+    assert.equal(live.thriftyLod, true, 'an unknown live host must not be handed tripled tile requests');
 });

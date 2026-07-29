@@ -23,11 +23,14 @@
         L_CT: { tiles: 'https://caltopo.s3.amazonaws.com/topo/{z}/{x}/{y}.png?v=1', minzoom: 6, maxzoom: 16, attribution: '&copy; <a href="https://caltopo.com" target="_blank" rel="noopener noreferrer">CalTopo</a>' },
         L_FS: { tiles: 'https://ctusfs.s3.amazonaws.com/fstopo/{z}/{x}/{y}.png', minzoom: 6, maxzoom: 16, attribution: '&copy; <a href="https://caltopo.com" target="_blank" rel="noopener noreferrer">CalTopo</a> / USFS' },
         L_MT: { tiles: 'https://tileserver.trimbleoutdoors.com/SecureTile/TileHandler.ashx?mapType=Topo&partnerID=12153&hash=b19f07d8-6f01-4981-9146-40875a18d2fa&x={x}&y={y}&z={z}', minzoom: 9, maxzoom: 16, attribution: '&copy; <a href="https://mytopo.com" target="_blank" rel="noopener noreferrer">MyTopo</a>' },
-        // stockLod: OpenTopoMap is volunteer-run under a tile usage policy, so
-        // it keeps MapLibre's stock (thriftier) drape LOD even though that
-        // leaves it prone to the tilt-driven resolution step the other layers
-        // are tuned out of. Courtesy to the host outranks our sharpness.
-        L_OT: { tiles: 'https://a.tile.opentopomap.org/{z}/{x}/{y}.png', minzoom: 0, maxzoom: 15, stockLod: true, attribution: '&copy; <a href="https://opentopomap.org" target="_blank" rel="noopener noreferrer">OpenTopoMap</a> (CC-BY-SA)' },
+        // thriftyLod: OpenTopoMap is volunteer-run under a tile usage policy, so
+        // it takes the cheaper of the two drape LOD settings rather than the one
+        // every other layer gets. Courtesy to the host outranks our sharpness —
+        // but MapLibre's untuned heuristic turned out to cost more sharpness than
+        // that trade was worth (an 8x texel step across a 4-degree tilt, measured
+        // in terrain:lod), so a thrifty layer now gets a gentler tuning instead of
+        // none. See the two constant pairs in terrain-frame.js for the numbers.
+        L_OT: { tiles: 'https://a.tile.opentopomap.org/{z}/{x}/{y}.png', minzoom: 0, maxzoom: 15, thriftyLod: true, attribution: '&copy; <a href="https://opentopomap.org" target="_blank" rel="noopener noreferrer">OpenTopoMap</a> (CC-BY-SA)' },
         L_OS: { tiles: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png', minzoom: 0, maxzoom: 18, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap</a> contributors' },
         L_AG: { tiles: 'https://services.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}', minzoom: 0, maxzoom: 19, attribution: '&copy; <a href="https://www.esri.com" target="_blank" rel="noopener noreferrer">Esri</a>' },
         L_AI: { tiles: 'https://services.arcgisonline.com/arcgis/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', minzoom: 0, maxzoom: 19, attribution: '&copy; <a href="https://www.esri.com" target="_blank" rel="noopener noreferrer">Esri</a>' },
@@ -45,7 +48,7 @@
             minzoom: spec.minzoom,
             maxzoom: spec.maxzoom,
             scheme: 'xyz',
-            stockLod: spec.stockLod === true,
+            thriftyLod: spec.thriftyLod === true,
             attribution: spec.attribution
         };
     };
@@ -96,9 +99,9 @@
             maxzoom,
             scheme: options.tms === true ? 'tms' : 'xyz',
             // A live Leaflet layer is whatever national basemap the page had
-            // active — an unknown host on unknown terms. Leave those on the
-            // stock LOD rather than tripling tile requests to a stranger.
-            stockLod: true,
+            // active — an unknown host on unknown terms. Give those the thrifty
+            // LOD rather than tripling tile requests to a stranger.
+            thriftyLod: true,
             attribution: typeof options.attribution === 'string' ? options.attribution.slice(0, 600) : ''
         };
     };

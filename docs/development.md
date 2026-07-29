@@ -336,6 +336,12 @@ generalize this exception.
   and serves them at a fixed 140 ms delay, so it says nothing about live
   Mapterhorn latency or tile sizes — a decode-bound residual it reports may be
   smaller against Mapterhorn's WebP than against the fixture's PNG.
+- `BPB_LOD_DRAPE` picks which of the two shipped drape LOD settings that run
+  exercises: `L_OS` (the default, full `(4, 3)`) or `L_OT` (thrifty `(6, 1.5)`,
+  what OpenTopoMap and every live Leaflet layer get). Run both when touching
+  either constant pair — the gap between them is the reason there are two. Its
+  per-pitch census counts are stable; the sweep traffic total is not, so compare
+  levels-against-ceiling rather than totals.
 - Every fixture server — the terrain verifiers, `terrain:lod`, and `showcase:render` — serves
   over **HTTPS on `www.peakbagger.com`**, with a self-signed certificate minted
   per run and deleted in teardown. This is a product constraint, not a

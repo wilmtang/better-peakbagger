@@ -197,9 +197,9 @@ behavior and the rise leash below.
    refine it (one deliberate hop onto the finer DEM's apex, delivered with
    the next feed batch). What cannot be pinned is the anchor's *rendered
    elevation*: MapLibre re-samples it in the circle shader from whatever
-   DEM tiles are currently loaded, and the terrain source keeps MapLibre's
-   stock pitch-sensitive LOD — the tightened drape LOD is deliberately not
-   applied to 2048px DEM render targets (see the `stockLod` notes in
+   DEM tiles are currently loaded, and the terrain source runs its own LOD
+   setting — `(6, 1.5)`, looser than the drape's `(4, 3)`, because the DEM
+   source sizes the render-to-texture grid (see the LOD constants in
    `src/terrain/terrain-frame.js`). A small tilt or a zoom can therefore swap the
    DEM under a peak a whole level; the mountain reshapes, the ring is
    re-elevated with it, and on a pitched camera that height change projects

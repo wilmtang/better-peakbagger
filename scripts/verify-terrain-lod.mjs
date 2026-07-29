@@ -36,16 +36,25 @@ const execFileAsync = promisify(execFile);
 const FIXTURE_HOST = 'www.peakbagger.com';
 const MAPTERHORN_TILE_ORIGIN = 'https://tiles.mapterhorn.com';
 // The showcase's own drape comes from a live Leaflet layer, and
-// src/terrain/terrain-basemap.js gives every live layer `stockLod: true` on
+// src/terrain/terrain-basemap.js gives every live layer `thriftyLod: true` on
 // purpose — an unknown host on unknown terms does not get tripled tile requests.
-// That means the shared fixture cannot exercise the tuned drape LOD at all: with
-// it, three wildly different settings produce byte-identical drape levels because
-// none of them is ever applied. So this check swaps the fixture's layer for a
-// drape code that does take the tuning, and answers that host locally. The swap
-// is done in this server, not in the shared fixture file, so terrain:verify and
-// showcase:render keep rendering exactly what they rendered before.
-const DRAPE_CODE = 'L_OS';
-const DRAPE_HOST = 'tile.openstreetmap.org';
+// So this check swaps the fixture's layer for a drape code carrying a known spec,
+// and answers that host locally. The swap is done in this server, not in the
+// shared fixture file, so terrain:verify and showcase:render keep rendering
+// exactly what they rendered before.
+//
+// BPB_LOD_DRAPE picks which spec. The two are the two drape LOD settings the
+// frame ships, and running both is how the gap between them stays measured
+// rather than assumed — that gap is the whole basis for having two.
+const DRAPE_SPECS = {
+    L_OS: { host: 'tile.openstreetmap.org', label: 'full drape LOD, maxzoom 18' },
+    L_OT: { host: 'a.tile.opentopomap.org', label: 'thrifty drape LOD, maxzoom 15' }
+};
+const DRAPE_CODE = Object.hasOwn(DRAPE_SPECS, String(process.env.BPB_LOD_DRAPE || ''))
+    ? process.env.BPB_LOD_DRAPE
+    : 'L_OS';
+const DRAPE_HOST = DRAPE_SPECS[DRAPE_CODE].host;
+const DRAPE_LABEL = DRAPE_SPECS[DRAPE_CODE].label;
 // The plan measured at 1100x700 with 140 ms per tile; keep both so the numbers
 // here and the numbers in the plan are comparable.
 const FRAME_WIDTH = 1100;
@@ -275,8 +284,8 @@ const server = createServer({ key: fixtureKey, cert: fixtureCert }, async (reque
   <script src="terrain-frame.js"></script>`));
         } else if (file.endsWith('terrain-native-map.html')) {
             // Offer a drape code the extension carries a spec for, so the frame
-            // takes the tuned drape LOD path instead of the live-layer path that
-            // is deliberately pinned to MapLibre's stock setting.
+            // resolves a known layer rather than the live-Leaflet path, whose
+            // host and terms are unknown by construction.
             contents = Buffer.from(contents.toString('utf8')
                 .replace('<option value="L_FIX" selected>Synthetic topographic map</option>',
                     `<option value="${DRAPE_CODE}" selected>Synthetic topographic map</option>`));
@@ -739,6 +748,7 @@ try {
     const drapeAtBoot = drapeRequests;
     console.log(`Renderer: ${renderer} (headless, GPU)`);
     console.log(`Frame: ${ready.width}x${ready.height} CSS px; DEM tiles served locally at ${TILE_DELAY_MS} ms each.`);
+    console.log(`Drape: ${DRAPE_CODE} (${DRAPE_LABEL}).`);
     console.log(`Boot: ${demAtBoot} DEM tiles, ${drapeAtBoot} drape tiles.`);
 
     // ---- Criterion 1 and 3: a cold-cache tilt sweep --------------------------
