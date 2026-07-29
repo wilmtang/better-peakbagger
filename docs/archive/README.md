@@ -61,6 +61,11 @@ living docs in [`docs/`](../).
   cancelable loading, visible/fatal renderer recovery, shared lifecycle,
   prefetch startup, and final browser/GPU verification. Current behavior lives
   in the maintained [3D map design](../3d-map.md).
+- [3D tilt detail collapse](3d-tilt-detail-blink.md) and its
+  [pan-jolt comparison](pan-jolt-comparison.md) — completed implementation and
+  measurement record for the elevation detail ladder, bounded tilt warming,
+  tile retention, drape level-of-detail choice, and fixed-scale pan behavior.
+  Current behavior lives in the maintained [3D map design](../3d-map.md).
 - [Profile backup HTTP-cached ref conflict fix](github-ref-cache-conflict-fix.md) —
   completed root-cause and fix for the "repository changed" pause: the GitHub
   client now sets `cache: 'no-store'`, folded into the living

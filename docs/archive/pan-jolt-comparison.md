@@ -1,10 +1,10 @@
 # Comparing the pan-end zoom jolt
 
-Step 4 of [3d-tilt-detail-blink.md](3d-tilt-detail-blink.md) is a feel judgement,
-not a correctness one. The `pan-jolt-comparison` branch exists so it can be made
-in front of the real map instead of by argument. **That branch is not a merge
-candidate**: it carries a debug keybinding that must not ship. These instructions
-live on `main` so they survive the branch being deleted.
+Step 4 of [3d-tilt-detail-blink.md](3d-tilt-detail-blink.md) was a feel
+judgement, not a correctness one. The `pan-jolt-comparison` branch existed so it
+could be made in front of the real map instead of by argument. **That branch was
+not safe to merge unchanged**: it carried a debug keybinding that must not ship.
+These instructions were placed on `main` so they would survive the branch.
 
 ## What the jolt is
 
@@ -53,13 +53,10 @@ Worth trying both a shallow pan across a valley and a long pan that climbs a lot
 of relief, since the effect scales with how much the ground under the screen
 centre changes.
 
-## What lands afterwards
+## Outcome
 
-Whichever way it goes, `main` gets one line and no keybinding:
+The owner chose **Off**. The integration kept one Map option and no keybinding:
 
-- **Off:** `centerClampedToGround: false` in the frame's Map options, as its own
-  commit, with the trade-off above recorded beside it.
-- **On:** nothing changes; the closure ledger in the plan records the decision
-  and why, so it does not get re-litigated.
-
-This branch is then deleted rather than merged.
+- `centerClampedToGround: false` in the frame's Map options;
+- no `Shift+J` handler or diagnostic notice;
+- the trade-off above preserved in the completed plan's closure ledger.

@@ -1,11 +1,12 @@
 # Plan: stop the 3D map blinking when you tilt it
 
-Status: steps 1–3 implemented and measured; step 4 and one follow-on measurement
-remain owner choices. See section 12 for the closure ledger, which is the
-authoritative record of what shipped, what did not, and what is not fully proven.
-Sections 1–11 are the original investigation, left as written so the plan's
-predictions can be compared with what the implementation actually measured — and
-in two places they were wrong. Section 12 says where.
+Status: completed. Steps 1–3 were implemented and measured, and step 4 was
+integrated as the owner's choice to keep a fixed map scale while panning. See
+section 12 for the closure ledger, which is the authoritative record of what
+shipped, what did not, and what is not fully proven. Sections 1–11 are the
+original investigation, left as written so the plan's predictions can be
+compared with what the implementation actually measured — and in two places
+they were wrong. Section 12 says where.
 
 ## 1. The complaint
 
@@ -536,13 +537,14 @@ This is the shape of mistake worth remembering: the first three runs agreed
 perfectly, which looked like a clean result and was in fact the measurement not
 running.
 
-### Intentionally not changed — owner choices still open
+### Owner choices resolved
 
-**Step 4, the pan jolt.** Not implemented. Section 7 asks for it to be decided by
-looking at the real map, and section 10 lists it as a feel judgement; that is not
-a call this implementation can make. `centerClampedToGround` is still MapLibre's
-default `true`. It remains a one-line Map option with the trade-off already
-written down in section 7, and section 6 confirms it is not the tilt bug.
+**Step 4, the pan jolt — disabled.** The owner chose the fixed-scale behavior
+described in the [comparison note](pan-jolt-comparison.md).
+`centerClampedToGround: false` now prevents MapLibre from re-deriving zoom when
+a drag ends. The comparison branch's `Shift+J` toggle and diagnostic notices did
+not ship. This remains a deliberate feel choice, not a correctness claim, and
+section 6 confirms it is separate from the tilt bug.
 
 **Whether the drape keeps its `(4, 3)` setting** — measured, and the answer is
 **yes**, which contradicts what section 6 expected. `terrain:lod` now censuses the
