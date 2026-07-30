@@ -8,7 +8,6 @@ import { terrainCache as TerrainCache } from '../src/terrain/terrain-cache.js';
 import { panelTheme as Theme } from '../src/theme/panel-theme.js';
 import { optionsUtils as OptionsUtils } from './options-utils.js';
 import { initGithubBackup } from './github.js';
-import { initFavorites } from './favorites.js';
 import { initFavoritesBackup } from './favorites-backup.js';
 import { initImgbbKey } from './imgbb.js';
 import { initSettingsBackup } from './settings-backup.js';
@@ -129,7 +128,6 @@ import { initSectionNav } from '../src/ui/section-nav.js';
         betaGpsEl.checked = settings.betaGps;
         betaLinkEl.checked = settings.betaLink;
         betaSortDateDescEl.checked = settings.betaSortDateDesc;
-        favorites.populate(settings);
         favoritesBackup.populate(settings);
         settingsBackup.populate(settings);
         photoBackup.populate(settings);
@@ -159,10 +157,8 @@ import { initSectionNav } from '../src/ui/section-nav.js';
     // GitHub connection and ascent-backup setup own their panels together; the
     // options page drives GITHUB_AUTH_* messages and never sees the token.
     const githubBackup = initGithubBackup({ extensionApi, flash, save });
-    const favorites = initFavorites({ extensionApi, flash, save });
-    // The custom-list surface and its GitHub backup were one controller that
-    // reparented a confirmation element between them. They are separate now so
-    // the list can move to its own page while backup stays in Backup & sync.
+    // The custom-list workspace lives on its own page (options/favorites.html);
+    // only its GitHub backup stays here, under Backup & sync.
     const favoritesBackup = initFavoritesBackup({ extensionApi, flash, save });
     // Device-local credential, not a synced setting: it never enters `save`.
     initImgbbKey({ extensionApi, flash });

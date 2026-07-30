@@ -147,6 +147,7 @@ async function main() {
     }
 
     const optionsUrl = new URL("options/options.html", baseUrl).href;
+    const favoritesUrl = new URL("options/favorites.html", baseUrl).href;
     await driver.get(optionsUrl);
     const runtimeProbe = await driver.executeAsyncScript(done => {
       const api = globalThis.browser || globalThis.chrome;
@@ -632,6 +633,9 @@ async function main() {
       "return document.getElementById('theme')?.value === 'dark' && document.documentElement.dataset.bpbTheme === 'dark';",
       "the persisted Firefox option",
     );
+    // The custom-list workspace is its own page; drive it there for the list
+    // checks, then return to Settings for the sidebar and backup checks.
+    await driver.get(favoritesUrl);
     await waitForScript(
       driver,
       "return document.querySelectorAll('.favorite-item').length === 1500;",
@@ -829,24 +833,15 @@ async function main() {
       globalThis.__bpbReplacementObserver.disconnect();
       globalThis.fetch = globalThis.__bpbNativeFetch;
     `);
-    await driver.executeAsyncScript(done => {
-      const api = globalThis.browser || globalThis.chrome;
-      const entries = Array.from({ length: 1500 }, (_, index) => ({
-        cid: 100000 + index,
-        name: index === 1498
-          ? "Navigation Alpine Climber 1499"
-          : `Navigation Scale Climber ${String(index + 1).padStart(4, "0")}`,
-        addedAt: index,
-        source: index % 2 ? "buddy" : "manual",
-      }));
-      api.storage.local.set({
-        bpbFavoriteClimbers: { schemaVersion: 1, entries },
-      }).then(() => done(true), error => done(String(error)));
-    });
+
+    // Back to Settings for the sidebar scroll-spy. The workspace list moved off
+    // this page, but the page stays tall enough (map, backup, about) to exercise
+    // an instant long-distance jump to the drafts anchor.
+    await driver.get(optionsUrl);
     await waitForScript(
       driver,
-      "return document.querySelectorAll('.favorite-item').length === 1500;",
-      "the restored post-replacement Firefox favorite list",
+      "return !!document.querySelector('.side-nav a[href=\"#drafts\"]') && !!document.getElementById('drafts');",
+      "the Firefox settings sidebar and drafts anchor",
     );
 
     const longDistanceBefore = await driver.executeScript(`
@@ -898,7 +893,7 @@ async function main() {
         && Math.abs(longDistanceNavigation.after) <= 2
         && longDistanceNavigation.scrollTop > 0
         && longDistanceNavigation.hash === "#drafts",
-      "the 1,500-row Firefox options list did not make long-distance sidebar navigation instant",
+      "the Firefox settings sidebar did not make long-distance navigation instant",
       longDistanceNavigation,
     );
 
@@ -943,7 +938,8 @@ async function main() {
       { buddyAdded, removalPreserved },
     );
 
-    await driver.get(optionsUrl);
+    // The "Keep Buddy removals in sync" toggle lives on the favorites page.
+    await driver.get(favoritesUrl);
     const removeWithBuddy = await driver.findElement(By.id("favorites-remove-with-buddy"));
     assertState(!(await removeWithBuddy.isSelected()),
       "Firefox rendered destructive Buddy removal sync on by default");

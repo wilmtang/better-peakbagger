@@ -36,11 +36,15 @@ test('the full 1,500-entry custom list serializes completely for worker backup',
     assert.deepEqual(exported.entries.at(-1), entries.at(-1));
 });
 
-test('settings renders the full 1,500-entry custom list and requests worker backup', async () => {
+test('the favorites page renders the full 1,500-entry custom list; Settings backs it up', async () => {
     assert.equal(LIMIT, 1500);
-    const html = await readFile(path.join(root, 'options', 'options.html'), 'utf8');
-    const dom = new JSDOM(html, {
-        url: 'https://options.better-peakbagger.test/options/options.html#favorites',
+    // The list workspace and its GitHub backup are separate pages now, so the
+    // scale gate exercises each on the page that actually ships it. One chrome
+    // stub backs both so the 1,500-entry store and the backup round trip stay
+    // consistent across them.
+    const favoritesHtml = await readFile(path.join(root, 'options', 'favorites.html'), 'utf8');
+    const dom = new JSDOM(favoritesHtml, {
+        url: 'https://options.better-peakbagger.test/options/favorites.html',
         runScripts: 'outside-only',
     });
     const chrome = makeChromeStub({ bpbSettings: { favoritesSource: 'custom' } }, {
@@ -76,7 +80,7 @@ test('settings renders the full 1,500-entry custom list and requests worker back
     dom.window.caches = { keys: async () => [] };
 
     await evalBundle(dom.window, 'options/options-head.js');
-    await evalBundle(dom.window, 'options/options.js');
+    await evalBundle(dom.window, 'options/favorites-page.js');
     await waitFor(dom, () => dom.window.document.querySelectorAll('.favorite-item').length === LIMIT, 10000);
 
     const rows = dom.window.document.querySelectorAll('.favorite-item');
@@ -104,13 +108,27 @@ test('settings renders the full 1,500-entry custom list and requests worker back
     search.dispatchEvent(new dom.window.Event('input'));
     assert.equal(dom.window.document.querySelectorAll('.favorite-item').length, LIMIT);
 
-    await waitFor(dom, () => !dom.window.document.getElementById('favorites-github-actions').hidden);
-    dom.window.document.getElementById('favorites-backup').click();
-    await waitFor(dom, () => backupMessage != null);
+    // The GitHub backup for that list lives on the Settings page. Mount it on
+    // the same 1,500-entry store and confirm the page hands serialization to the
+    // worker rather than shipping the list itself.
+    const optionsHtml = await readFile(path.join(root, 'options', 'options.html'), 'utf8');
+    const optionsDom = new JSDOM(optionsHtml, {
+        url: 'https://options.better-peakbagger.test/options/options.html#github-favorites-backup',
+        runScripts: 'outside-only',
+    });
+    optionsDom.chrome = chrome;
+    optionsDom.window.chrome = chrome;
+    optionsDom.window.caches = { keys: async () => [] };
+    await evalBundle(optionsDom.window, 'options/options-head.js');
+    await evalBundle(optionsDom.window, 'options/options.js');
+
+    await waitFor(optionsDom, () => !optionsDom.window.document.getElementById('favorites-github-actions').hidden);
+    optionsDom.window.document.getElementById('favorites-backup').click();
+    await waitFor(optionsDom, () => backupMessage != null);
     assert.equal(backupMessage.type, 'GITHUB_FAVORITES_BACKUP');
     assert.deepEqual(Object.keys(backupMessage), ['type'],
-        'the options page must leave serialization in the extension worker');
-    await waitFor(dom, () => /Favorites backed up ✓/.test(
-        dom.window.document.getElementById('favorites-github-status').textContent
+        'the Settings page must leave serialization in the extension worker');
+    await waitFor(optionsDom, () => /Favorites backed up ✓/.test(
+        optionsDom.window.document.getElementById('favorites-github-status').textContent
     ));
 });

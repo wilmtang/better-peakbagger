@@ -1,0 +1,150 @@
+<!-- Copyright (C) 2026 wilmtang <wilm.tang@outlook.com> -->
+<!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Better Peakbagger — Favorite climbers</title>
+    <!-- Same theme bootstrap as Settings: the stored Light/Dark preference must
+         be on the root element before the stylesheet paints. -->
+    <script src="options-head.js"></script>
+    <link rel="stylesheet" href="options.css">
+</head>
+<!-- Managing the custom climber list is a workspace, not a preference, so it is
+     its own page. It shares the Settings stylesheet and theme bootstrap because
+     it is the same panel surface; standalone-page drops the sidebar for a single
+     scrolling column. Its GitHub backup stays in Settings → Backup & sync. -->
+<body class="standalone-page">
+    <div class="content">
+        <div class="wrap">
+            <header class="head">
+                <img class="logo" src="../icons/icon-48.png" alt="" width="40" height="40">
+                <div>
+                    <h1>Favorite climbers</h1>
+                    <p class="sub">Filter trip reports by the climbers you follow. <a href="options.html#favorites">Favorites settings</a></p>
+                </div>
+            </header>
+
+                <div class="card favorites-card">
+                    <div class="row">
+                        <div class="label">
+                            <span class="title">Favorites source</span>
+                            <span class="desc">Favorite climbers can filter trip reports. Your custom list can hold up to 1,500 climbers; Peakbagger’s Buddy List supports up to 100. You can add your buddies to the custom list at any time.</span>
+                        </div>
+                        <fieldset class="control favorites-source" aria-label="Favorite climbers source">
+                            <label><input type="radio" name="favorites-source" value="buddies"> <span>Use my Peakbagger Buddy List</span></label>
+                            <label><input type="radio" name="favorites-source" value="custom"> <span>Use a custom list managed here</span></label>
+                        </fieldset>
+                    </div>
+            
+                    <div class="favorites-panel" id="favorites-buddy-panel">
+                        <div class="favorites-summary">
+                            <p id="favorites-buddy-status" class="favorites-status" role="status">Never loaded</p>
+                            <button id="favorites-refresh-buddies" class="secondary" type="button">Refresh now</button>
+                        </div>
+                        <p class="favorites-hint" id="favorites-buddy-cache-hint">Better Peakbagger may use a saved copy of your Buddy List for up to 7 days before checking Peakbagger again. Changes made on Peakbagger may not appear immediately; choose Refresh now after editing your buddies.</p>
+                    </div>
+            
+                    <div class="favorites-panel" id="favorites-custom-panel" hidden>
+                        <form id="favorites-add-form" class="favorites-add">
+                            <label for="favorites-add-input">
+                                <span class="title">Add a climber</span>
+                                <span class="desc">Paste a Peakbagger climber-page link or id. Stored only on this device unless you back it up from <a href="options.html#github-favorites-backup">Backup &amp; sync</a>. Up to <span id="favorites-limit"></span> climbers.</span>
+                            </label>
+                            <span class="favorites-add-controls">
+                                <input id="favorites-add-input" type="text" inputmode="numeric" autocomplete="off" placeholder="Climber link or id">
+                                <button id="favorites-add-button" class="secondary" type="submit">Add</button>
+                            </span>
+                        </form>
+            
+                        <div class="favorites-tools">
+                            <button id="favorites-merge-buddies" class="secondary" type="button">Merge buddies into favorites</button>
+                            <button id="favorites-mirror-buddies" class="secondary favorites-mirror-trigger" type="button">Mirror Buddy List…</button>
+                        </div>
+                        <p class="favorites-hint">Merge adds missing buddies and keeps every current favorite. Mirror replaces custom favorites with the exact Buddy List.</p>
+                        <label class="favorites-sync-setting" for="favorites-remove-with-buddy">
+                            <input id="favorites-remove-with-buddy" type="checkbox">
+                            <span>
+                                <span class="title">Keep Buddy removals in sync</span>
+                                <span class="desc">Adding a Buddy always adds them here. When on, removing a Buddy also removes that favorite.</span>
+                            </span>
+                        </label>
+                        <p class="favorites-status favorites-import-status" id="favorites-import-status" role="status" hidden></p>
+                        <!-- The mirror action's own confirm-then-undo. GitHub restore
+                             is the same shape but lives beside its trigger in Backup
+                             & sync now, so this block no longer moves between hosts. -->
+                        <div class="favorites-mirror-confirmation" id="favorites-mirror-confirmation"
+                            role="alertdialog" aria-labelledby="favorites-mirror-confirmation-title"
+                            aria-describedby="favorites-mirror-confirmation-detail" tabindex="-1" hidden>
+                            <div>
+                                <p class="favorites-mirror-confirmation-title" id="favorites-mirror-confirmation-title">Replace custom favorites?</p>
+                                <p class="favorites-mirror-confirmation-detail" id="favorites-mirror-confirmation-detail">
+                                    <strong id="favorites-mirror-confirmation-impact"></strong>
+                                    <span id="favorites-mirror-confirmation-summary"></span>
+                                </p>
+                            </div>
+                            <div class="favorites-mirror-confirmation-actions">
+                                <button id="favorites-mirror-cancel" class="secondary" type="button">Cancel</button>
+                                <button id="favorites-mirror-confirm" class="favorites-mirror-confirm" type="button">Replace custom list</button>
+                            </div>
+                        </div>
+                        <div class="favorites-undo-all" id="favorites-undo-all" role="status" hidden>
+                            <span id="favorites-undo-message">Custom list replaced</span>
+                            <button class="favorite-undo" id="favorites-undo-all-button" type="button">Undo</button>
+                        </div>
+                        <div class="favorites-list-toolbar">
+                            <p class="favorites-count" id="favorites-count" aria-live="polite">0 favorites</p>
+                            <div class="favorites-list-controls">
+                                <input id="favorites-search" type="search" autocomplete="off" maxlength="200"
+                                    aria-label="Search favorite climbers" placeholder="Search by name or id">
+                                <label class="favorites-sort" for="favorites-sort">
+                                    <span>Sort</span>
+                                    <select id="favorites-sort">
+                                        <option value="newest">Newest first</option>
+                                        <option value="name">Name</option>
+                                    </select>
+                                </label>
+                            </div>
+                        </div>
+                        <div class="favorites-source-filter" id="favorites-source-filter"
+                            role="group" aria-label="Filter favorites by source">
+                            <button type="button" data-favorites-source-filter="all"
+                                aria-controls="favorites-list" aria-pressed="true">
+                                <span>All</span>
+                                <span class="favorites-filter-count" data-favorites-source-count="all">0</span>
+                            </button>
+                            <button type="button" data-favorites-source-filter="buddy"
+                                aria-controls="favorites-list" aria-pressed="false">
+                                <span>From buddies</span>
+                                <span class="favorites-filter-count" data-favorites-source-count="buddy">0</span>
+                            </button>
+                            <button type="button" data-favorites-source-filter="manual"
+                                aria-controls="favorites-list" aria-pressed="false">
+                                <span>Manual</span>
+                                <span class="favorites-filter-count" data-favorites-source-count="manual">0</span>
+                            </button>
+                        </div>
+                        <p class="favorites-empty" id="favorites-empty">No favorite climbers yet.</p>
+                        <ul class="favorites-list" id="favorites-list" hidden></ul>
+                    </div>
+                </div>
+
+            <!-- Two sibling live regions rather than one whose role/aria-live is
+                 rewritten per message; only one is ever populated. -->
+            <div class="status-dock">
+                <p class="status" id="status" role="status" aria-live="polite"></p>
+                <div class="status status-error" id="status-error" role="alert" hidden>
+                    <span id="status-error-text"></span>
+                    <button type="button" id="status-error-dismiss" class="status-dismiss" aria-label="Dismiss message">
+                        <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
+                            <path d="M4 4l8 8M12 4l-8 8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script src="favorites-page.js" defer></script>
+</body>
+</html>

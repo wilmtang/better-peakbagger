@@ -391,6 +391,11 @@ button.secondary.favorites-mirror-trigger:focus-visible { outline-color: var(--d
 .favorites-sync-setting:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
 .favorites-import-status { margin-top: 10px; }
 .favorites-mirror-confirmation {
+    /* Above the sticky feedback dock (z-index 5): a confirmation the user must
+     * act on must never be covered by a transient status message that shares
+     * the lower-right corner, especially on the shorter standalone page. */
+    position: relative;
+    z-index: 6;
     display: flex;
     align-items: center;
     justify-content: space-between;

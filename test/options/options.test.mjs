@@ -197,8 +197,10 @@ test('settings are grouped by the surface they affect', async () => {
     assert.equal(drafts.querySelector('#drafts-list'), null, 'the list is not a setting');
     assert.equal(drafts.querySelector('#open-draft-manager').getAttribute('href'), 'drafts.html');
     assert.match(mapChart.querySelector('label[for="units"] .desc').textContent, /processing summaries/);
-    assert.equal(favorites.querySelector('input[value="custom"] + span').textContent,
-        'Use a custom list managed here');
+    // The custom-list workspace moved to its own page; Settings keeps the
+    // anchor and links out, the way trip report drafts do.
+    assert.equal(favorites.querySelector('input[value="custom"]'), null, 'the list is not a setting');
+    assert.equal(favorites.querySelector('#open-favorites').getAttribute('href'), 'favorites.html');
     assert.equal(github.querySelector('#github-connection-heading').textContent, 'GitHub connection');
     assert.equal(dom.window.document.querySelector('.side-nav a[href="#github"]').textContent,
         'Backup & sync');
@@ -235,14 +237,13 @@ test('settings are grouped by the surface they affect', async () => {
     for (const id of ['beta-tr', 'beta-tr-words', 'beta-gps', 'beta-link', 'beta-sort-date-desc']) {
         assert.ok(beta.querySelector(`#${id}`), `${id} should belong to Ascent beta filter`);
     }
-    assert.ok(favorites.querySelector('#favorites-buddy-panel'));
-    assert.ok(favorites.querySelector('#favorites-custom-panel'));
-    assert.equal(favorites.querySelectorAll('#favorites-source-filter button').length, 3);
-    assert.ok(favorites.querySelector('#favorites-list'));
-    assert.match(favorites.querySelector('#favorites-add-form .desc').textContent,
-        /Stored only on this device unless you back it up from Backup & sync\. Up to 1,500 climbers\./);
-    assert.equal(favorites.querySelector('#favorites-add-form .desc a').getAttribute('href'),
-        '#github-favorites-backup');
+    // The custom-list workspace moved to its own page; Settings keeps only a
+    // link to it, and its GitHub backup below.
+    assert.equal(favorites.querySelector('#favorites-buddy-panel'), null);
+    assert.equal(favorites.querySelector('#favorites-list'), null);
+    assert.equal(favorites.querySelector('#open-favorites').getAttribute('href'), 'favorites.html');
+    assert.ok(github.querySelector('#github-favorites-backup #favorites-restore'),
+        'the favorites GitHub backup stays in Backup & sync');
     assert.ok(github.querySelector('#github-backup #enable-github-backup'), 'GitHub backup lives in its subsection');
     assert.ok(github.querySelector('#github-settings-backup #settings-backup-export'));
     assert.ok(github.querySelector('#github-settings-backup #settings-backup-import'));
@@ -273,7 +274,7 @@ test('options sections log the missing ids before degrading to no-op controllers
     await loadOptions({}, {
         prepareWindow(window) {
             for (const id of [
-                'github-panel', 'settings-backup-export', 'favorites-list'
+                'github-panel', 'settings-backup-export', 'favorites-github-status'
             ]) window.document.getElementById(id).remove();
             window.console.error = message => errors.push(String(message));
         }
@@ -282,7 +283,18 @@ test('options sections log the missing ids before degrading to no-op controllers
     assert.equal(errors.length, 3);
     assert.ok(errors.some(message => /GitHub settings.*github-panel/.test(message)));
     assert.ok(errors.some(message => /settings backup.*settings-backup-export/.test(message)));
-    assert.ok(errors.some(message => /favorite climbers.*favorites-list/.test(message)));
+    assert.ok(errors.some(message => /favorite climbers backup.*favorites-github-status/.test(message)));
+});
+
+// The favorite-climbers workspace degrades the same way on its own page.
+test('the favorite climbers page logs its missing ids instead of throwing', async () => {
+    const errors = [];
+    const dom = await loadFavoritesPage({}, {});
+    dom.window.console.error = message => errors.push(String(message));
+    dom.window.document.getElementById('favorites-list').remove();
+    await evalBundle(dom.window, 'options/favorites-page.js');
+    assert.equal(errors.length, 1);
+    assert.match(errors[0], /favorite climbers.*favorites-list/);
 });
 
 // The draft manager degrades the same way on its own page.
@@ -970,8 +982,30 @@ test('the removed "minimum trip-report words" control is gone', async () => {
     assert.equal(el(dom, 'minwords'), null);
 });
 
+// The custom-list workspace is its own page now. It shares the Settings
+// stylesheet, theme bootstrap, and card styles, but has its own document and
+// bundle, and reads/writes the two settings it owns through S.get/S.set the way
+// favorites.html does. Its GitHub backup stays on the Settings page and keeps
+// using loadOptions.
+const loadFavoritesPage = async (settings = {}, { local = {}, prepareChrome = null, prepareWindow = null } = {}) => {
+    const html = await readFile(path.join(root, 'options', 'favorites.html'), 'utf8');
+    const dom = new JSDOM(html, {
+        url: 'https://options.better-peakbagger.test/options/favorites.html',
+        runScripts: 'outside-only'
+    });
+    openOptionsPages.add(dom);
+    dom.chrome = makeChromeStub({ bpbSettings: settings }, local);
+    if (prepareChrome) prepareChrome(dom.chrome);
+    dom.window.chrome = dom.chrome;
+    if (prepareWindow) prepareWindow(dom.window);
+    await evalBundle(dom.window, 'options/options-head.js');
+    await evalBundle(dom.window, 'options/favorites-page.js');
+    await new Promise(r => dom.window.setTimeout(r, 20)); // S.get().then(populate)
+    return dom;
+};
+
 test('favorite source defaults to buddies and switching to custom persists', async () => {
-    const dom = await loadOptions({});
+    const dom = await loadFavoritesPage({});
     const buddies = dom.window.document.querySelector('input[name="favorites-source"][value="buddies"]');
     const custom = dom.window.document.querySelector('input[name="favorites-source"][value="custom"]');
     const removeWithBuddy = el(dom, 'favorites-remove-with-buddy');
@@ -996,7 +1030,7 @@ test('favorite source defaults to buddies and switching to custom persists', asy
 });
 
 test('adding a climber by id resolves and validates the public profile', async () => {
-    const dom = await loadOptions({ favoritesSource: 'custom' }, {
+    const dom = await loadFavoritesPage({ favoritesSource: 'custom' }, {
         prepareWindow: window => { window.fetch = peakbaggerFetch({ climberCid: 900002 }); },
     });
     el(dom, 'favorites-add-input').value = '900002';
@@ -1018,7 +1052,7 @@ test('removing a custom favorite is reversible and list sorting is explicit', as
         { cid: 900002, name: 'Zulu Climber', addedAt: 20, source: 'manual' },
         { cid: 900003, name: 'Alpha Climber', addedAt: 10, source: 'buddy' },
     ];
-    const dom = await loadOptions({ favoritesSource: 'custom' }, {
+    const dom = await loadFavoritesPage({ favoritesSource: 'custom' }, {
         local: { [favoriteKey]: favoriteStore(entries) },
     });
     await waitFor(dom, () => dom.window.document.querySelectorAll('.favorite-item').length === 2);
@@ -1046,7 +1080,7 @@ test('custom favorites show a live total and fuzzy-search names and ids', async 
         { cid: 900003, name: 'Nick McMillen', addedAt: 20, source: 'manual' },
         { cid: 900004, name: 'Alpine Casey', addedAt: 10, source: 'buddy' },
     ];
-    const dom = await loadOptions({ favoritesSource: 'custom' }, {
+    const dom = await loadFavoritesPage({ favoritesSource: 'custom' }, {
         local: { [favoriteKey]: favoriteStore(entries) },
     });
     await waitFor(dom, () => dom.window.document.querySelectorAll('.favorite-item').length === 3);
@@ -1077,7 +1111,7 @@ test('custom favorites show source counts and compose source filtering with sear
         { cid: 900003, name: 'Nick McMillen', addedAt: 20, source: 'manual' },
         { cid: 900004, name: 'Alpine Casey', addedAt: 10, source: 'buddy' },
     ];
-    const dom = await loadOptions({ favoritesSource: 'custom' }, {
+    const dom = await loadFavoritesPage({ favoritesSource: 'custom' }, {
         local: { [favoriteKey]: favoriteStore(entries) },
     });
     await waitFor(dom, () => dom.window.document.querySelectorAll('.favorite-item').length === 3);
@@ -1113,7 +1147,7 @@ test('custom favorites show source counts and compose source filtering with sear
 
 test('Refresh now stores the signed-in owner Buddy List cache', async () => {
     const requests = [];
-    const dom = await loadOptions({}, {
+    const dom = await loadFavoritesPage({}, {
         prepareWindow: window => {
             const respond = peakbaggerFetch();
             window.fetch = url => {
@@ -1131,7 +1165,7 @@ test('Refresh now stores the signed-in owner Buddy List cache', async () => {
 
 test('failed Buddy refresh links to the Buddy List instead of the home page', async () => {
     const requests = [];
-    const dom = await loadOptions({}, {
+    const dom = await loadFavoritesPage({}, {
         prepareWindow: window => {
             window.fetch = async url => {
                 requests.push(String(url));
@@ -1161,7 +1195,7 @@ test('Buddy refresh distinguishes Cloudflare, network, and parser failures', asy
         },
     ];
     for (const item of cases) {
-        const dom = await loadOptions({}, {
+        const dom = await loadFavoritesPage({}, {
             prepareWindow: window => { window.fetch = item.response; },
         });
         el(dom, 'favorites-refresh-buddies').click();
@@ -1170,7 +1204,7 @@ test('Buddy refresh distinguishes Cloudflare, network, and parser failures', asy
         assert.equal(dom.chrome._localStore[buddyCacheKey], undefined);
     }
 
-    const parserDom = await loadOptions({}, {
+    const parserDom = await loadFavoritesPage({}, {
         prepareWindow: window => {
             window.fetch = peakbaggerFetch();
             Object.defineProperty(window, 'DOMParser', {
@@ -1187,7 +1221,7 @@ test('Buddy refresh distinguishes Cloudflare, network, and parser failures', asy
 });
 
 test('a Buddy cache write failure is not mislabeled as a Peakbagger request failure', async () => {
-    const dom = await loadOptions({}, {
+    const dom = await loadFavoritesPage({}, {
         prepareWindow: window => { window.fetch = peakbaggerFetch(); },
     });
     const originalSet = dom.chrome.storage.local.set;
@@ -1207,7 +1241,7 @@ test('a Buddy cache write failure is not mislabeled as a Peakbagger request fail
 
 test('Buddy refresh fails closed when the report has no signed-in owner identity', async () => {
     const signedOutReport = buddyPageFixture.replace('>My Home Page<', '>Public profile<');
-    const dom = await loadOptions({}, {
+    const dom = await loadFavoritesPage({}, {
         prepareWindow: window => {
             window.fetch = async () => pageResponse(signedOutReport);
         },
@@ -1222,7 +1256,7 @@ test('Buddy refresh fails closed when the report has no signed-in owner identity
 
 test('merge is additive while mirror requires destructive confirmation and supports Undo', async () => {
     const manual = { cid: 900099, name: 'Manual Favorite', addedAt: 1, source: 'manual' };
-    const dom = await loadOptions({ favoritesSource: 'custom' }, {
+    const dom = await loadFavoritesPage({ favoritesSource: 'custom' }, {
         local: { [favoriteKey]: favoriteStore([manual]) },
         prepareWindow: window => { window.fetch = peakbaggerFetch(); },
     });
@@ -1278,7 +1312,7 @@ test('a failed Buddy mirror keeps its reviewed replacement visible and retryable
     let buddyLoads = 0;
     let rejectFirstWrite;
     let favoriteWriteAttempts = 0;
-    const dom = await loadOptions({ favoritesSource: 'custom' }, {
+    const dom = await loadFavoritesPage({ favoritesSource: 'custom' }, {
         local: { [favoriteKey]: favoriteStore([manual]) },
         prepareChrome: chrome => {
             const nativeSet = chrome.storage.local.set;
@@ -1337,7 +1371,7 @@ test('a failed Buddy mirror keeps its reviewed replacement visible and retryable
 
 test('mirror reports additions and zero removals before and after replacement', async () => {
     const existingBuddy = { cid: 710195, name: 'Existing Buddy', addedAt: 1, source: 'manual' };
-    const dom = await loadOptions({ favoritesSource: 'custom' }, {
+    const dom = await loadFavoritesPage({ favoritesSource: 'custom' }, {
         local: { [favoriteKey]: favoriteStore([existingBuddy]) },
         prepareWindow: window => { window.fetch = peakbaggerFetch(); },
     });
@@ -1364,7 +1398,7 @@ test('mirror reports additions and zero removals before and after replacement', 
 test('a stale replacement preserves the prior Undo expiry and the concurrent edit', async () => {
     const manual = { cid: 900099, name: 'Manual Favorite', addedAt: 1, source: 'manual' };
     const concurrent = { cid: 900100, name: 'Other Tab Favorite', addedAt: 2, source: 'manual' };
-    const dom = await loadOptions({ favoritesSource: 'custom' }, {
+    const dom = await loadFavoritesPage({ favoritesSource: 'custom' }, {
         local: { [favoriteKey]: favoriteStore([manual]) },
         prepareWindow: window => {
             window.fetch = peakbaggerFetch();
@@ -1416,7 +1450,7 @@ test('merge reports buddies skipped when custom favorites are full', async () =>
         addedAt: 1,
         source: 'manual',
     }));
-    const dom = await loadOptions({ favoritesSource: 'custom' }, {
+    const dom = await loadFavoritesPage({ favoritesSource: 'custom' }, {
         local: { [favoriteKey]: favoriteStore(fullList) },
         prepareWindow: window => { window.fetch = peakbaggerFetch(); },
     });
@@ -1431,7 +1465,7 @@ test('merge reports buddies skipped when custom favorites are full', async () =>
 });
 
 test('custom import accepts a valid 200 Buddy report carrying Cloudflare metadata', async () => {
-    const dom = await loadOptions({ favoritesSource: 'custom' }, {
+    const dom = await loadFavoritesPage({ favoritesSource: 'custom' }, {
         prepareWindow: window => {
             window.fetch = async () => ({
                 status: 200,
@@ -1451,7 +1485,7 @@ test('custom import opens a first-party helper when extension cookies look signe
     const opened = [];
     const updated = [];
     const removed = [];
-    const dom = await loadOptions({ favoritesSource: 'custom' }, {
+    const dom = await loadFavoritesPage({ favoritesSource: 'custom' }, {
         prepareChrome: chrome => {
             chrome.runtime.getURL = path => `chrome-extension://test-extension/${path}`;
             chrome.tabs = {
@@ -1502,7 +1536,7 @@ test('custom import opens a first-party helper when extension cookies look signe
 });
 
 test('custom import keeps a failed Buddy refresh visible beside the buttons', async () => {
-    const dom = await loadOptions({ favoritesSource: 'custom' }, {
+    const dom = await loadFavoritesPage({ favoritesSource: 'custom' }, {
         prepareWindow: window => { window.fetch = async () => pageResponse('', 500); },
     });
     el(dom, 'favorites-mirror-buddies').click();
@@ -1663,7 +1697,7 @@ test('a failed favorites restore retries the reviewed backup without downloading
     assert.equal(favoriteWriteAttempts, 2);
 });
 
-test('a restore from Backup & sync stays visible when the Buddy List source hides the list', async () => {
+test('a restore from Backup & sync confirms and undoes without the list page open', async () => {
     const original = { cid: 900002, name: 'Original Favorite', addedAt: 10, source: 'manual' };
     const restored = { cid: 900003, name: 'Restored Favorite', addedAt: 20, source: 'buddy' };
     const dom = await loadOptions({ favoritesSource: 'buddies' }, {
@@ -1694,7 +1728,8 @@ test('a restore from Backup & sync stays visible when the Buddy List source hide
         },
     });
     await waitFor(dom, () => !el(dom, 'favorites-github-actions').hidden);
-    assert.equal(el(dom, 'favorites-custom-panel').hidden, true);
+    // The list workspace is a separate page; restore does its whole job here.
+    assert.equal(el(dom, 'favorites-custom-panel'), null);
 
     el(dom, 'favorites-restore').click();
     await waitFor(dom, () => el(dom, 'favorites-restore-confirmation').hidden === false);

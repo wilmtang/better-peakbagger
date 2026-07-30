@@ -391,6 +391,9 @@ try {
             fallbackReportRequests++;
             return route.fulfill({ status: 200, contentType: 'text/html', body: buddyListFixture });
         });
+        // The custom-list workspace is its own page now; drive it there, then
+        // return optionsPage to Settings for the sidebar and backup checks.
+        await optionsPage.goto(`chrome-extension://${extensionId}/options/favorites.html`);
         await optionsPage.evaluate(({ signedInBuddyUrl, buddyListFixture }) => {
             window.__bpbNativeFetch = window.fetch;
             window.__bpbBuddyRequests = 0;
@@ -426,7 +429,7 @@ try {
         check(buddyRequests === 1 && buddyRefresh?.ownerCid === 900001 && buddyRefresh?.entries === 6,
             `the options Buddy refresh did not use the direct signed-in report: ${JSON.stringify({ buddyRequests, buddyRefresh })}`);
         if (process.env.BPB_VERIFY_FAVORITES_BUDDY_SCREENSHOT) {
-            await optionsPage.locator('#favorites').screenshot({ path: process.env.BPB_VERIFY_FAVORITES_BUDDY_SCREENSHOT });
+            await optionsPage.locator('.content').screenshot({ path: process.env.BPB_VERIFY_FAVORITES_BUDDY_SCREENSHOT });
         }
 
         await optionsPage.locator('#favorites-refresh-buddies').click();
@@ -465,6 +468,8 @@ try {
             () => context.pages().some(page => page.url() === signedInBuddyUrl),
             { description: 'the first-party Buddy helper navigation', timeoutMs: 5000 }
         ).catch(() => false);
+        // The first-party fallback opens a helper tab with an 8s refresh budget,
+        // so allow well past it before deciding the merge did not land.
         const fallbackImport = await optionsPage.waitForFunction(async () => {
             const favorites = (await chrome.storage.local.get('bpbFavoriteClimbers')).bpbFavoriteClimbers;
             const status = document.getElementById('favorites-import-status');
@@ -472,7 +477,7 @@ try {
                 && /Merge complete: 6 added, 0 removed/.test(status?.textContent || '')
                 ? { count: favorites.entries.length, status: status.textContent }
                 : false;
-        }, null, { timeout: 10000 }).then(handle => handle.jsonValue()).catch(() => null);
+        }, null, { timeout: 20000 }).then(handle => handle.jsonValue()).catch(() => null);
         buddyRequests = await optionsPage.evaluate(() => window.__bpbBuddyRequests);
         await optionsPage.evaluate(() => { window.fetch = window.__bpbNativeFetch; });
         const fallbackDebug = await optionsPage.evaluate(async () => ({
@@ -560,7 +565,7 @@ try {
             && mirrorConfirmation.focused === 'favorites-mirror-cancel',
         `the Buddy mirror did not stop at an explicit destructive confirmation: ${JSON.stringify(mirrorConfirmation)}`);
         if (process.env.BPB_VERIFY_FAVORITES_MIRROR_SCREENSHOT) {
-            await optionsPage.locator('#favorites').screenshot({ path: process.env.BPB_VERIFY_FAVORITES_MIRROR_SCREENSHOT });
+            await optionsPage.locator('.content').screenshot({ path: process.env.BPB_VERIFY_FAVORITES_MIRROR_SCREENSHOT });
         }
         await optionsPage.locator('#favorites-mirror-cancel').click();
         const mirrorCancelled = await optionsPage.evaluate(async () => {
@@ -620,7 +625,7 @@ try {
             && mirrorBusy.cancelDisabled,
         `the active Buddy replacement had no deliberate busy focus state: ${JSON.stringify(mirrorBusy)}`);
         if (process.env.BPB_VERIFY_FAVORITES_BUSY_SCREENSHOT) {
-            await optionsPage.locator('#favorites').screenshot({
+            await optionsPage.locator('.content').screenshot({
                 path: process.env.BPB_VERIFY_FAVORITES_BUSY_SCREENSHOT,
             });
         }
@@ -688,7 +693,7 @@ try {
         });
 
         if (process.env.BPB_VERIFY_FAVORITES_SCREENSHOT) {
-            await optionsPage.locator('#favorites').screenshot({ path: process.env.BPB_VERIFY_FAVORITES_SCREENSHOT });
+            await optionsPage.locator('.content').screenshot({ path: process.env.BPB_VERIFY_FAVORITES_SCREENSHOT });
         }
         if (process.env.BPB_VERIFY_FAVORITES_NARROW_SCREENSHOT) {
             const previousViewport = optionsPage.viewportSize();
@@ -698,10 +703,16 @@ try {
             if (previousViewport) await optionsPage.setViewportSize(previousViewport);
         }
         if (process.env.BPB_VERIFY_FAVORITES_DARK_SCREENSHOT) {
-            await optionsPage.locator('#theme').selectOption('dark');
+            // The theme control lives on Settings; on this page set it through
+            // storage, which the shared panel-theme bootstrap reflects.
+            const setTheme = theme => optionsPage.evaluate(async value => {
+                const { bpbSettings = {} } = await chrome.storage.sync.get('bpbSettings');
+                await chrome.storage.sync.set({ bpbSettings: { ...bpbSettings, theme: value } });
+            }, theme);
+            await setTheme('dark');
             await optionsPage.waitForFunction(() => document.documentElement.getAttribute('data-bpb-theme') === 'dark');
-            await optionsPage.locator('#favorites').screenshot({ path: process.env.BPB_VERIFY_FAVORITES_DARK_SCREENSHOT });
-            await optionsPage.locator('#theme').selectOption('system');
+            await optionsPage.locator('.content').screenshot({ path: process.env.BPB_VERIFY_FAVORITES_DARK_SCREENSHOT });
+            await setTheme('system');
         }
 
         await optionsPage.evaluate(async () => {
@@ -743,6 +754,11 @@ try {
         await optionsPage.locator('#favorites-search').fill('');
         await optionsPage.waitForFunction(() => document.querySelectorAll('.favorite-item').length === 1500,
             null, { timeout: 10000 });
+
+        // Back to Settings for the sidebar scroll-spy: the workspace list moved
+        // off this page, but the page stays tall enough (map, backup, about) to
+        // exercise an instant long-distance jump to the drafts anchor.
+        await optionsPage.goto(`chrome-extension://${extensionId}/options/options.html`);
         const longDistanceNavigation = await optionsPage.evaluate(() => {
             const content = document.querySelector('.content');
             const target = document.getElementById('drafts');
@@ -772,7 +788,7 @@ try {
             && Math.abs(longDistanceNavigation.after) <= 2
             && longDistanceNavigation.scrollTop > 0
             && longDistanceNavigation.hash === '#drafts',
-        `the 1,500-row options list did not make long-distance sidebar navigation instant: ${JSON.stringify({
+        `the favorites list did not scale, or long-distance sidebar navigation was not instant: ${JSON.stringify({
             scaleFavoritesRendered, longDistanceNavigation
         })}`);
 
@@ -908,7 +924,15 @@ try {
         check(removalPreserved,
             'the default native Buddy removal did not refresh the cache while preserving the custom favorite');
 
-        await optionsPage.locator('#favorites-remove-with-buddy').check();
+        // The "Keep Buddy removals in sync" toggle lives on the favorites page;
+        // this check is about the climber-page integration, so flip the setting
+        // it controls through storage, exactly as that toggle's save() does.
+        await optionsPage.evaluate(async () => {
+            const { bpbSettings = {} } = await chrome.storage.sync.get('bpbSettings');
+            await chrome.storage.sync.set({
+                bpbSettings: { ...bpbSettings, removeFavoriteWhenBuddyRemoved: true },
+            });
+        });
         await optionsPage.waitForFunction(async () =>
             (await chrome.storage.sync.get('bpbSettings')).bpbSettings?.removeFavoriteWhenBuddyRemoved === true,
         null, { timeout: 10000 });
@@ -950,8 +974,18 @@ try {
         })}`);
         await climberPage.close();
 
-        await optionsPage.locator('#favorites-remove-with-buddy').uncheck();
-        await optionsPage.locator('input[name="favorites-source"][value="buddies"]').check();
+        // The favorites controls moved to their own page; reset the settings
+        // they own through storage before leaving Settings.
+        await optionsPage.evaluate(async () => {
+            const { bpbSettings = {} } = await chrome.storage.sync.get('bpbSettings');
+            await chrome.storage.sync.set({
+                bpbSettings: {
+                    ...bpbSettings,
+                    removeFavoriteWhenBuddyRemoved: false,
+                    favoritesSource: 'buddies',
+                },
+            });
+        });
         await optionsPage.locator('#theme').selectOption('system');
         await optionsPage.close();
 
