@@ -140,18 +140,13 @@ export const waitFor = async (dom, predicate, ms = 5000) => {
 // Keep timer-driven behavior under test without paying production wall-clock
 // delays. The caller still asserts the requested delay, so changing the runtime
 // contract fails instead of silently making the test fast for the wrong timer.
-//
-// `replacementDelay` stays 0 for a timer the test simply wants to fire now. Give
-// it a small positive value when the test needs the timer to remain *ordered*
-// against other activity — a budget that other events are supposed to outrun
-// cannot be collapsed to 0 without winning every race it was meant to lose.
-export const accelerateTimeout = (dom, expectedDelay, replacementDelay = 0) => {
+export const accelerateTimeout = (dom, expectedDelay) => {
     const requested = [];
     const nativeSetTimeout = dom.window.setTimeout.bind(dom.window);
     dom.window.setTimeout = (callback, delay = 0, ...args) => {
         if (delay === expectedDelay) {
             requested.push(delay);
-            return nativeSetTimeout(callback, replacementDelay, ...args);
+            return nativeSetTimeout(callback, 0, ...args);
         }
         return nativeSetTimeout(callback, delay, ...args);
     };

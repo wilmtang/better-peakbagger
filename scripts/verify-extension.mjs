@@ -468,11 +468,12 @@ try {
             () => context.pages().some(page => page.url() === signedInBuddyUrl),
             { description: 'the first-party Buddy helper navigation', timeoutMs: 5000 }
         ).catch(() => false);
-        // The first-party fallback opens a helper tab that loads the real site
-        // page, and it extends its own budget while that tab keeps making
-        // progress (see SITE_TAB_IDLE_MS/SITE_TAB_TOTAL_MS in
-        // options/favorites.js). Allow past the product's absolute ceiling, so
-        // a slow machine cannot make this read as a product failure.
+        // The fallback opens a helper tab that loads the real site page. That
+        // round trip measures ~5.2s, and the product abandons it at 8s, so 20s
+        // is ample for the import itself. This check is nonetheless one of
+        // several here that flake when the machine is loaded — see
+        // docs/verify-extension-load-flake.md; raising this number treats the
+        // symptom and hides real regressions, so it is deliberately not raised.
         const fallbackImport = await optionsPage.waitForFunction(async () => {
             const favorites = (await chrome.storage.local.get('bpbFavoriteClimbers')).bpbFavoriteClimbers;
             const status = document.getElementById('favorites-import-status');
@@ -480,7 +481,7 @@ try {
                 && /Merge complete: 6 added, 0 removed/.test(status?.textContent || '')
                 ? { count: favorites.entries.length, status: status.textContent }
                 : false;
-        }, null, { timeout: 35000 }).then(handle => handle.jsonValue()).catch(() => null);
+        }, null, { timeout: 20000 }).then(handle => handle.jsonValue()).catch(() => null);
         buddyRequests = await optionsPage.evaluate(() => window.__bpbBuddyRequests);
         await optionsPage.evaluate(() => { window.fetch = window.__bpbNativeFetch; });
         const fallbackDebug = await optionsPage.evaluate(async () => ({
