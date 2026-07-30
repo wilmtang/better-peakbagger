@@ -101,6 +101,8 @@ const loadEditor = async () => {
         emit,
         settle: () => settle(win),
         tool: name => click(doc.querySelector(`[data-tool="${name}"]`)),
+        armedTool: () => [...doc.querySelectorAll('[data-tool]')]
+            .find(button => button.getAttribute('aria-pressed') === 'true')?.dataset.tool,
         undoDepth: async () => {
             const undo = doc.getElementById('undo');
             let steps = 0;
@@ -205,5 +207,30 @@ test('a held arrow key is one nudge, and releasing it starts the next', async ()
     // Placing the bolt, the rightward run, the downward run.
     assert.equal(await page.undoDepth(), 3);
     assert.equal(page.markCount(), 0);
+    assert.deepEqual(page.errors, []);
+});
+
+// Reaching for a browser command used to arm a topo tool behind the dialog, so
+// the user's next click on the photo dropped a mark they never asked for.
+test('browser shortcuts do not arm a topo tool', async () => {
+    const page = await loadEditor();
+
+    page.tool('select');
+    for (const [modifier, letter] of [
+        ['metaKey', 'p'],   // Print
+        ['ctrlKey', 'a'],   // Select all
+        ['metaKey', 's'],   // Save page
+        ['ctrlKey', 'l'],   // Address bar
+        ['altKey', 't'],
+    ]) {
+        page.key('keydown', { key: letter, [modifier]: true });
+        assert.equal(page.armedTool(), 'select', `${modifier}+${letter} must not arm a tool`);
+    }
+
+    // The bare keys still work, and Shift stays this page's own nudge modifier.
+    page.key('keydown', { key: 'p' });
+    assert.equal(page.armedTool(), 'piton');
+    page.key('keydown', { key: 'v', shiftKey: true });
+    assert.equal(page.armedTool(), 'select');
     assert.deepEqual(page.errors, []);
 });

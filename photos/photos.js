@@ -1581,7 +1581,12 @@ const bindEvents = () => {
             else undo();
             return;
         }
-        if (editing) return;
+        // Everything below is a bare key. Claiming Cmd/Ctrl/Alt combinations too
+        // meant reaching for a browser command silently armed a topo tool behind
+        // the dialog — Cmd+P armed Piton, Ctrl+A armed Anchor — and the user's
+        // next click on the photo dropped a mark they never asked for. Shift is
+        // not excluded: it is this page's own "nudge further" modifier.
+        if (editing || event.metaKey || event.ctrlKey || event.altKey) return;
         if (event.key === 'Escape') {
             // One predictable ladder out of whatever the user is in the middle
             // of: abandon the route, then disarm the tool, then deselect.
