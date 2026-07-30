@@ -177,6 +177,99 @@ test('a slider drag is one undo step, and it does not evict the edits behind it'
     assert.deepEqual(page.errors, []);
 });
 
+// The style controls used to wait for a mark to exist, so the first symbol was
+// always placed at the previous style and then corrected. Arming a tool shows
+// the style its next mark will take instead.
+test('arming a placement tool shows its style before anything is placed', async () => {
+    const page = await loadEditor();
+    const { doc } = page;
+    const inspector = doc.getElementById('inspector');
+    const heading = () => doc.getElementById('inspector-heading').textContent;
+
+    assert.equal(inspector.hidden, true, 'Select with nothing selected has nothing to show');
+
+    page.tool('bolt');
+    await page.settle();
+    assert.equal(inspector.hidden, false);
+    assert.equal(heading(), 'Bolt style');
+    assert.equal(doc.getElementById('object-actions').hidden, true,
+        'there is no mark yet to reorder, duplicate, or delete');
+    assert.equal(doc.querySelector('.point-only').hidden, true,
+        'rotation describes a placed mark, not the tool');
+    assert.equal(doc.querySelector('.scale-only').hidden, false);
+    assert.equal(doc.querySelector('.route-only').hidden, true);
+
+    page.tool('route');
+    await page.settle();
+    assert.equal(heading(), 'Route style');
+    assert.equal(doc.querySelector('.route-only').hidden, false);
+    assert.equal(doc.querySelector('.scale-only').hidden, true);
+
+    page.tool('select');
+    await page.settle();
+    assert.equal(inspector.hidden, true, 'Select has only a selection to describe');
+    assert.equal(page.markCount(), 0, 'none of this drew anything');
+    assert.deepEqual(page.errors, []);
+});
+
+// Presetting is the point: the value chosen before the click has to be the
+// value the mark lands with, and choosing it must not cost an Undo step.
+test('a style chosen before the first click is the style the mark is placed at', async () => {
+    const page = await loadEditor();
+    const { doc } = page;
+
+    page.tool('bolt');
+    await page.settle();
+    const opacity = doc.getElementById('object-opacity');
+    opacity.value = '40';
+    page.emit(opacity, 'input');
+    page.emit(opacity, 'change');
+    const color = doc.getElementById('object-color');
+    color.value = '#1e88e5';
+    page.emit(color, 'change');
+    await page.settle();
+    assert.equal(page.markCount(), 0, 'presetting a tool draws nothing');
+
+    page.pointer('pointerdown', 120, 140);
+    await page.settle();
+    assert.equal(page.markCount(), 1);
+    assert.equal(doc.getElementById('inspector-heading').textContent, 'Selection');
+    assert.equal(doc.getElementById('object-opacity-value').textContent, '40%');
+    assert.equal(doc.getElementById('object-color').value, '#1e88e5');
+
+    // Placing the bolt is the only thing that happened to the photo.
+    assert.equal(await page.undoDepth(), 1);
+    assert.equal(page.markCount(), 0);
+    assert.deepEqual(page.errors, []);
+});
+
+// Arming a placement tool is a statement about the next mark, not the last one.
+// Select is the exception: pressing V after placing a symbol is how the user
+// goes on to adjust that symbol.
+test('arming a placement tool releases the selected mark, and Select keeps it', async () => {
+    const page = await loadEditor();
+    const { doc } = page;
+    const heading = () => doc.getElementById('inspector-heading').textContent;
+
+    page.tool('bolt');
+    page.pointer('pointerdown', 100, 100);
+    await page.settle();
+    assert.equal(heading(), 'Selection', 'placing a mark selects it');
+
+    page.tool('anchor');
+    await page.settle();
+    assert.equal(heading(), 'Anchor style');
+    assert.equal(doc.getElementById('object-actions').hidden, true);
+
+    page.pointer('pointerdown', 200, 200);
+    page.tool('select');
+    await page.settle();
+    assert.equal(heading(), 'Selection');
+    assert.equal(doc.getElementById('object-actions').hidden, false);
+    assert.equal(page.markCount(), 2);
+    assert.deepEqual(page.errors, []);
+});
+
 test('a full-range Route width drag leaves the marks behind it recoverable', async () => {
     const page = await loadEditor();
     const { doc } = page;

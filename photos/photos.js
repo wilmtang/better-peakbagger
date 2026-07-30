@@ -47,6 +47,8 @@ const ui = {
     finishRoute: byId('finish-route'),
     editorStatus: byId('editor-status'),
     inspector: byId('inspector'),
+    inspectorHeading: byId('inspector-heading'),
+    objectActions: byId('object-actions'),
     color: byId('object-color'),
     opacity: byId('object-opacity'),
     opacityValue: byId('object-opacity-value'),
@@ -385,29 +387,50 @@ const selectedObject = () => project?.objects.find(object => object.id === selec
 
 const percent = opacity => `${Math.round(opacity * 100)}%`;
 
+// The style controls describe the armed tool, not only a placed mark. Arming a
+// tool shows the style its next mark will take, so a colour or a lower opacity
+// can be chosen before the first click instead of being corrected after it.
+// Select has nothing to preset, so it still shows the panel only for a
+// selection. `type` is the object type either way: every placement tool is
+// named for the type it places.
+const inspectorType = () => selectedObject()?.type
+    || (activeTool === 'select' ? null : activeTool);
+
 const renderInspector = () => {
     const object = selectedObject();
-    ui.inspector.hidden = !object;
-    if (!object) return;
-    const route = object.type === 'route';
-    const label = object.type === 'pitch' || object.type === 'text';
-    const text = object.type === 'text';
-    const pitch = object.type === 'pitch';
+    const type = inspectorType();
+    ui.inspector.hidden = !type;
+    if (!type) return;
+    const route = type === 'route';
+    const label = type === 'pitch' || type === 'text';
+    const text = type === 'text';
+    const pitch = type === 'pitch';
+    ui.inspectorHeading.textContent = object ? 'Selection' : `${toolName(type)} style`;
     document.querySelectorAll('.route-only').forEach(node => { node.hidden = !route; });
-    document.querySelectorAll('.scale-only, .point-only').forEach(node => { node.hidden = route; });
-    document.querySelectorAll('.pitch-only').forEach(node => { node.hidden = !pitch; });
-    document.querySelectorAll('.text-only').forEach(node => { node.hidden = !text; });
-    document.querySelectorAll('.label-only').forEach(node => { node.hidden = !label; });
-    ui.color.value = object.style.color;
-    ui.opacity.value = String(Math.round(object.style.opacity * 100));
-    ui.opacityValue.textContent = percent(object.style.opacity);
+    document.querySelectorAll('.scale-only').forEach(node => { node.hidden = route; });
+    // Rotation, the pitch number, the text and its alignment, the contrast
+    // background, and the layer and delete actions all describe one placed
+    // mark. They are not carried to the next one, so before a mark exists there
+    // is nothing for them to show or act on.
+    document.querySelectorAll('.point-only').forEach(node => { node.hidden = route || !object; });
+    document.querySelectorAll('.pitch-only').forEach(node => { node.hidden = !pitch || !object; });
+    document.querySelectorAll('.text-only').forEach(node => { node.hidden = !text || !object; });
+    document.querySelectorAll('.label-only').forEach(node => { node.hidden = !label || !object; });
+    ui.objectActions.hidden = !object;
+    const style = object ? object.style : styleDefaults;
+    ui.color.value = style.color;
+    ui.opacity.value = String(Math.round(style.opacity * 100));
+    ui.opacityValue.textContent = percent(style.opacity);
     if (route) {
-        ui.routeWidth.value = String(object.style.width);
-        ui.routeStroke.value = object.style.stroke;
-        ui.routeArrow.checked = object.style.end === 'arrow';
-        ui.routeSmooth.checked = object.style.smooth;
+        ui.routeWidth.value = String(style.width);
+        ui.routeStroke.value = style.stroke;
+        ui.routeArrow.checked = style.end === 'arrow';
+        ui.routeSmooth.checked = style.smooth;
     } else {
-        ui.scale.value = String(object.style.scale);
+        ui.scale.value = String(style.scale);
+    }
+    if (!object) return;
+    if (!route) {
         ui.rotation.value = String(Math.round(object.geometry.rotation));
         ui.rotationValue.textContent = `${Math.round(object.geometry.rotation)}°`;
     }
@@ -543,6 +566,11 @@ const setTool = tool => {
     document.querySelectorAll('[data-tool]').forEach(button => {
         button.setAttribute('aria-pressed', String(button.dataset.tool === tool));
     });
+    // A placement tool's panel describes the mark it is about to place, so
+    // arming one lets go of the current selection — including a route that the
+    // switch itself just finished. Select keeps it: pressing V after placing a
+    // symbol is how the user goes on to adjust that symbol.
+    if (tool !== 'select') selectedId = null;
     if (tool !== 'route' && routeSession) finishRoute(false);
     // Which handles are on screen depends on the armed tool, so the canvas has
     // to be repainted when it changes.
@@ -791,6 +819,25 @@ const updateSelected = (patch, { coalesce = null } = {}) => {
     setProject(Project.updateObject(project, object.id, patch), {
         coalesce: coalesce && `${coalesce}:${object.id}`,
     });
+};
+
+// One control, two subjects: with a mark selected it restyles that mark, and
+// with only a tool armed it sets what the next mark will be. Presetting a tool
+// touches nothing on the photo, so it is deliberately not an Undo step.
+const applyStyle = (patch, { coalesce = null, geometry = null } = {}) => {
+    const object = selectedObject();
+    if (!object && !inspectorType()) return;
+    if (object) {
+        updateSelected({
+            style: { ...object.style, ...patch },
+            ...(geometry ? { geometry: { ...object.geometry, ...geometry } } : {}),
+        }, { coalesce });
+        return;
+    }
+    styleDefaults = {
+        ...styleDefaults,
+        ...Object.fromEntries(Object.entries(patch).filter(([key]) => key in styleDefaults)),
+    };
 };
 
 const duplicateSelected = () => {
@@ -1435,51 +1482,36 @@ const backupPhotoLibrary = async () => {
 };
 
 const bindInspector = () => {
-    ui.color.addEventListener('change', () => {
-        const object = selectedObject();
-        if (object) updateSelected({ style: { ...object.style, color: ui.color.value } });
-    });
+    ui.color.addEventListener('change', () => applyStyle({ color: ui.color.value }));
     ui.routeWidth.addEventListener('input', () => {
-        const object = selectedObject();
-        if (object?.type === 'route') {
-            updateSelected({ style: { ...object.style, width: Number(ui.routeWidth.value) } },
-                { coalesce: 'width' });
+        if (inspectorType() === 'route') {
+            applyStyle({ width: Number(ui.routeWidth.value) }, { coalesce: 'width' });
         }
     });
     ui.routeStroke.addEventListener('change', () => {
-        const object = selectedObject();
-        if (object?.type === 'route') {
-            updateSelected({ style: { ...object.style, stroke: ui.routeStroke.value } });
-        }
+        if (inspectorType() === 'route') applyStyle({ stroke: ui.routeStroke.value });
     });
     ui.routeArrow.addEventListener('change', () => {
-        const object = selectedObject();
-        if (object?.type === 'route') {
-            updateSelected({ style: { ...object.style, end: ui.routeArrow.checked ? 'arrow' : 'none' } });
+        if (inspectorType() === 'route') {
+            applyStyle({ end: ui.routeArrow.checked ? 'arrow' : 'none' });
         }
     });
     ui.routeSmooth.addEventListener('change', () => {
-        const object = selectedObject();
-        if (object?.type === 'route') {
+        if (inspectorType() === 'route') {
             // Clearing the controls hands the curve back to the model, which
             // re-derives it from the points on every clean.
-            updateSelected({
-                style: { ...object.style, smooth: ui.routeSmooth.checked },
-                geometry: { ...object.geometry, controls: [] },
-            });
+            applyStyle({ smooth: ui.routeSmooth.checked }, { geometry: { controls: [] } });
         }
     });
     ui.opacity.addEventListener('input', () => {
-        const object = selectedObject();
         const opacity = Number(ui.opacity.value) / 100;
         ui.opacityValue.textContent = percent(opacity);
-        if (object) updateSelected({ style: { ...object.style, opacity } }, { coalesce: 'opacity' });
+        applyStyle({ opacity }, { coalesce: 'opacity' });
     });
     ui.scale.addEventListener('input', () => {
-        const object = selectedObject();
-        if (object && object.type !== 'route') {
-            updateSelected({ style: { ...object.style, scale: Number(ui.scale.value) } },
-                { coalesce: 'scale' });
+        const type = inspectorType();
+        if (type && type !== 'route') {
+            applyStyle({ scale: Number(ui.scale.value) }, { coalesce: 'scale' });
         }
     });
     ui.rotation.addEventListener('input', () => {

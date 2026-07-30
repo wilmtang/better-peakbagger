@@ -137,7 +137,8 @@ test('placing a symbol leaves its tool armed and the route shows its first point
     assert.match(source, /activeTool === 'select' \? event\.target\.closest\?\.\('\[data-vertex\]'\) : null/);
     // The curve is an intent on the style, not handles the editor has to
     // rebuild, so adding a point cannot silently drop it.
-    assert.match(source, /ui\.routeSmooth\.checked = object\.style\.smooth/);
+    assert.match(source, /const style = object \? object\.style : styleDefaults/);
+    assert.match(source, /ui\.routeSmooth\.checked = style\.smooth/);
     assert.doesNotMatch(source, /routeHasCurves/);
 });
 
