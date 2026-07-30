@@ -142,7 +142,7 @@ There is no parallel raw-source worker list and no `importScripts` fallback.
 | Terrain lifecycle, bridge, and renderer | `src/terrain/terrain-coordinator.js`, `src/terrain/terrain-map.js`, `src/terrain/terrain-frame.js` | Shared MAIN-world state machine, isolated bridge, extension-origin MapLibre frame |
 | Full Screen and Peak maps | `src/maps/big-map.js`, `src/maps/peak-map.js` | MAIN-world native-map coordinators |
 | Ascent lists | `src/ascent/ascent-filter.js`, `src/profile/profile-backup.js` | Isolated-world filter/sort and owner-only backup pipeline |
-| Favorite climbers | `src/favorites/favorite-climbers.js`, `src/favorites/climber-favorite.js`, `options/favorites.js` | Pure local-data contract, climber-page toggle, and settings manager |
+| Favorite climbers | `src/favorites/favorite-climbers.js`, `src/favorites/climber-favorite.js`, `options/favorites.js`, `options/favorites-backup.js` | Pure local-data contract, climber-page toggle, standalone list manager, and its Settings backup surface |
 | Settings and theme | `src/settings/settings-schema.js`, `src/settings/settings.js`, `src/theme/theme-resolve.js`, `src/theme/theme.js`, `options/options.js`, `options/section-nav.js` | Pure schema and theme resolution, sync-storage access, synchronous page startup, settings wiring, and section navigation |
 | Report-draft manager | `src/reports/report-drafts.js`, `options/drafts.js` | Shared pure draft contract plus device-local list/copy/delete UI |
 | Saved-ascent backup | `src/ascent/ascent-page.js`, `src/ascent/ascent-backup.js` | Owner-only page read and user-facing backup state |
@@ -455,12 +455,15 @@ Save, implicit ASP.NET submission, or page exit, the active view flushes
 synchronously into the native textarea. Local drafts are keyed by ascent
 identity, bounded, expiring, and restored only after explicit user approval.
 `src/reports/report-drafts.js` is the pure shared contract for those identities and
-lifetimes. The options-page owner in `options/drafts.js` uses it to list every
+lifetimes. The draft-manager owner in `options/drafts.js` uses it to list every
 device-local report draft, open the matching ascent form, copy Markdown, and
 offer reversible deletion without duplicating or bypassing the editor's
-restore gate. The editor's discovery link sends `OPEN_DRAFTS_MANAGER`; the
+restore gate. It runs on its own page, `options/drafts.html`, via the thin
+`options/drafts-page.js` entry; Settings keeps the `#drafts` anchor as a stub
+that links there. The editor's discovery link sends `OPEN_DRAFTS_MANAGER`; the
 worker accepts it only from a Peakbagger tab and opens the extension-owned
-`options/options.html#drafts` URL.
+`options/drafts.html` page (an existing `options/options.html#drafts` link
+still lands on the same topic).
 
 The editor's representations, sanitization boundaries, media restrictions,
 round trips, draft lifecycle, and known lossy-import limitation are maintained
@@ -775,13 +778,20 @@ sync must never acquire the third-party names stored in either local dataset.
 | `src/favorites/favorite-climbers.js` | Pure ES module bundled into each caller | Validation, normalization, bounds, parsers, merge/mirror semantics, native Buddy-action labels, stable signatures, effective membership, comparators, and fuzzy scoring | Applying a mutation to the stored list, DOM globals, storage, fetch, extension messaging, or UI |
 | `src/ascent/ascent-filter.js` | Isolated content script at `document_start` | Peak-ascent row identities, Favorites chip state/count, automatic Buddy revalidation, and opportunistic Buddy-page caching | Custom-list management or GitHub transfer |
 | `src/favorites/climber-favorite.js` | Separate isolated content script at `document_end` | The custom-favorite control plus native Buddy-action detection, full-navigation and in-place postback refresh, and confirmed custom-list synchronization | Arbitrary profile lookup or trusting an unconfirmed click as a successful Buddy mutation |
-| `options/favorites.js` | Extension options page | Source selection, Buddy refresh status, custom-list provenance counts/filtering, reversible bulk actions, and GitHub transfer UI | Direct custom-list persistence, GitHub token access, or repository writes |
+| `options/favorites.js` (on `options/favorites.html`) | Standalone list page | Source selection, Buddy refresh status, custom-list provenance counts/filtering, and reversible bulk actions including the mirror confirm/undo | Direct custom-list persistence, GitHub token access, or repository writes |
+| `options/favorites-backup.js` | Settings → Backup & sync | The favorites GitHub backup, restore with its own confirm/undo, and the auto-backup gate | List rendering, source selection, or Buddy fetching |
 | `src/profile/profile-backup-core.js` | Pure shared module | Signed-in owner discovery and numeric URL identity | Favorites persistence or request orchestration |
 | `src/peakbagger/peakbagger-request.js`, `src/peakbagger/peakbagger-response.js`, and `src/peakbagger/peakbagger-error.js` | Shared request boundary | Authenticated fetch policy, response classification, parsing failures, and actionable error copy | Favorites schema or persistence |
 | `src/background/favorites-store.js` and `src/background/background.js` | Extension worker | Sender-gated, serialized device-local custom-list mutations; latest-value add/remove/merge operations; signature-gated replacements | Buddy-cache fetching, source selection, rendering, or GitHub transfer |
 | `src/background/github-routes.js`, `src/github/github-write-queue.js`, and `src/github/github-client.js` | Extension worker | Shared GitHub write queue, connection/token/routes, fixed `favorite-climbers.json` path, repository validation, serialized and coalesced writes, and restore reads | Interpreting or mutating the favorites schema |
 
-`options/favorites.js` owns management. It fetches authenticated Peakbagger
+`options/favorites.js` owns list management on its own page,
+`options/favorites.html`; the Settings **Favorite climbers** section keeps only a
+link to it, and `options/favorites-backup.js` keeps the GitHub backup and restore
+under **Backup & sync**. The two coordinate only through storage and the
+signature-gated worker replacement, so restore confirms and undoes on the
+Settings page while an open list page redraws from the resulting storage change.
+It fetches authenticated Peakbagger
 pages through the shared Peakbagger request boundary, then parses validated
 documents with the shared pure modules. Buddy refresh goes directly to the
 signed-in account's `report/report.aspx?r=b` page, deriving the owner id from

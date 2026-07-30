@@ -20,10 +20,24 @@
   including what a backup can bring back and why removing a photo locally does
   not delete it from ImgBB.
 
-- **Group everything an ascent write-up needs in one place.** Settings now
-  keeps the trip report editor, the photo API key, and local report drafts
-  together under **Activity creation**. Existing `#drafts` links still land on
-  the draft manager.
+- **Give the workspaces their own pages.** Managing saved trip report drafts and
+  your favorite-climbers list are workspaces, not settings, so they each open on
+  their own full-width page, linked from their **Settings** section. Settings
+  keeps the trip report editor and the photo API key under **Activity creation**,
+  and the favorite-climbers GitHub backup under **Backup & sync**. Existing
+  `#drafts` links still land on the draft manager, and the photo library is now
+  reachable straight from **Settings → Activity creation → Trip report photos**.
+
+- **Let ImgBB decide the photo size limit.** Uploads are no longer refused
+  against a fixed 32 MB cap the extension guessed at — a limit that belongs to
+  your ImgBB account and is larger on a paid plan. A large source photo opens and
+  edits, and if the export is too big ImgBB says so in its own words, with one
+  sentence on what to do next. Invalid-key and unsupported-format rejections are
+  just as specific.
+
+- **A readable contents list for the photo guide.** The guide now has a sidebar
+  table of contents that tracks the section you are reading, and every photo page
+  — editor, library, and guide — shows the same three view tabs.
 
 - **Dismiss the report editor's floating panels.** The link, image, video, and
   more-formats panels float over the ascent form, so they could cover the date
