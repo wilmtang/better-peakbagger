@@ -1382,15 +1382,18 @@ try {
             `https://www.peakbagger.com:${port}/climber/ClimbListC.aspx?cid=900001&j=-1&y=9999`,
             { waitUntil: 'load' }
         );
-        const state = await profilePage.locator(surfaceSelectors.profileBackup)
-            .waitFor({ state: 'visible', timeout: 10000 })
-            .then(() => profilePage.evaluate(selector => {
-                const panel = document.querySelector(selector);
-                return {
-                    copy: panel?.textContent || '',
-                    primary: panel?.querySelector('.bpb-profile-primary')?.textContent || ''
-                };
-            }, surfaceSelectors.profileBackup))
+        // Wait for the asserted content, not merely for the container to be
+        // visible. The panel mounts before it is filled, so a visibility-only
+        // wait samples a half-built surface and reports empty strings for a
+        // surface that was about to be correct.
+        const state = await profilePage.waitForFunction(selector => {
+            const panel = document.querySelector(selector);
+            const primary = panel?.querySelector('.bpb-profile-primary')?.textContent || '';
+            return primary
+                ? { copy: panel.textContent || '', primary }
+                : false;
+        }, surfaceSelectors.profileBackup, { timeout: 10000 })
+            .then(handle => handle.jsonValue())
             .catch(() => null);
         check(state?.primary === 'Back up all ascents' && /fixture\/backup/.test(state.copy),
             `the Chrome full-profile backup surface did not mount for its verified owner: ${JSON.stringify(state)}`);
