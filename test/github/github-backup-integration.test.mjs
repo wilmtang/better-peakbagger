@@ -103,10 +103,26 @@ const createWorker = ({ settings = { enableGithubBackup: true }, auth = null, gi
         return reply;
     };
     // A real service worker has timers; the worker uses them to hold a root-file
-    // batch open briefly and to back off from a ref conflict.
+    // batch open briefly, to back off from a ref conflict, and to ride out a
+    // transient GitHub failure on a repeatable read.
+    //
+    // That last backoff is the only one these tests would otherwise pay in real
+    // seconds — a scripted 5xx GET is a normal fixture here — so it fires
+    // immediately and its requested delays are recorded instead. The schedule
+    // is still asserted, so shortening the test cannot quietly change the
+    // shipped contract.
+    const transientBackoffs = [];
+    const TRANSIENT_DELAYS = new Set([400, 1200]);
+    const workerSetTimeout = (callback, delay = 0, ...args) => {
+        if (TRANSIENT_DELAYS.has(delay)) {
+            transientBackoffs.push(delay);
+            return setTimeout(callback, 0, ...args);
+        }
+        return setTimeout(callback, delay, ...args);
+    };
     const context = vm.createContext({
         browser, fetch, URL, URLSearchParams, Math, Date, console, structuredClone, AbortController,
-        TextEncoder, TextDecoder, atob, btoa, setTimeout, clearTimeout,
+        TextEncoder, TextDecoder, atob, btoa, setTimeout: workerSetTimeout, clearTimeout,
     });
     context.globalThis = context;
     context.self = context;
@@ -114,7 +130,7 @@ const createWorker = ({ settings = { enableGithubBackup: true }, auth = null, gi
     const listener = runtimeMessage.listeners[0];
     const send = (message, sender = {}) => new Promise(resolve => { listener(message, sender, resolve); });
     return {
-        send, session, local, sync, alarms, githubCalls,
+        send, session, local, sync, alarms, githubCalls, transientBackoffs,
         syncReadCount: () => syncReadCount,
         fireStorageChange: (changes, areaName) => storageChanged.listeners.forEach(l => l(changes, areaName)),
         fireAlarm: name => alarms.onAlarm.listeners.forEach(l => l({ name })),
@@ -615,6 +631,11 @@ test('favorites auto backup stays inert while off and retries failures only twic
         { name: 'bpb-favorites-backup', info: { delayInMinutes: 10 } },
         { name: 'bpb-favorites-backup', info: { delayInMinutes: 10 } },
     ]);
+    // The repository read is a GET, so each of the three alarm firings first
+    // rides out the 500 on the transport's own bounded schedule before the
+    // alarm-level retry takes over. Two backoffs per firing, and no more —
+    // an unbounded transport retry would starve the alarm policy above it.
+    assert.deepEqual(worker.transientBackoffs, [400, 1200, 400, 1200, 400, 1200]);
 });
 
 test('favorites restore reports an absent file and ignores the ascent-backup feature gate', async () => {
