@@ -299,8 +299,18 @@ async function main() {
     // assertion here is a behaviour a user reported broken, so a regression
     // must not be able to reach Firefox unnoticed.
     const overlay = await driver.findElement(By.id("photo-overlay"));
-    const clickOverlay = (x, y) => driver.actions({ bridge: true })
-      .move({ origin: overlay, x, y }).click().perform();
+    const clickOverlay = async (x, y) => {
+      // Firefox's requested window height includes browser chrome on Linux, so
+      // the content viewport can be shorter than it is on macOS. Re-center the
+      // drawing surface before every pointer action rather than relying on a
+      // preceding tool-button click to leave the requested offset in bounds.
+      await driver.executeScript(
+        "arguments[0].scrollIntoView({ block: 'center', inline: 'nearest' });",
+        overlay,
+      );
+      await driver.actions({ bridge: true })
+        .move({ origin: overlay, x, y }).click().perform();
+    };
 
     await driver.findElement(By.css('[data-tool="route"]')).click();
     await clickOverlay(-140, 110);
