@@ -14,10 +14,13 @@
       <p class="eyebrow">Better Peakbagger</p>
       <h1>Photo Topos guide</h1>
     </div>
-    <nav class="view-tabs" aria-label="Photo pages">
-      <button id="guide-back" type="button" class="tab-button" hidden>Back</button>
-      <a class="tab-button" href="photos.html">Open the editor</a>
-      <a class="tab-button" href="../options/options.html#capture-photos">Settings</a>
+    <!-- The same three views, in the same order, on every Photo Topos page. A
+         set that changed its labels between pages left the reader with no way
+         to see which view they were in or return to the one they left. -->
+    <nav class="view-tabs" aria-label="Photo views">
+      <a class="tab-button" href="photos.html">Editor</a>
+      <a class="tab-button" href="photos.html?mode=library">Library</a>
+      <a class="tab-button" href="guide.html" aria-current="page">Guide</a>
     </nav>
   </header>
 

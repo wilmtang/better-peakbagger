@@ -14,6 +14,7 @@ const doc = new JSDOM(html).window.document;
 const manifest = JSON.parse(await fs.readFile(new URL('../../manifest.json', import.meta.url), 'utf8'));
 const photosHtml = await fs.readFile(new URL('../../photos/photos.html', import.meta.url), 'utf8');
 const photosDoc = new JSDOM(photosHtml).window.document;
+const photosSource = await fs.readFile(new URL('../../photos/photos.js', import.meta.url), 'utf8');
 const optionsHtml = await fs.readFile(new URL('../../options/options.html', import.meta.url), 'utf8');
 const reportEditor = await fs.readFile(
     new URL('../../src/reports/report-editor.js', import.meta.url), 'utf8');
@@ -34,6 +35,31 @@ test('the guide ships as a packaged page with no inline script', () => {
         .find(record => record.resources.includes('photos/guide.html'));
     assert.ok(entry, 'the guide must be reachable from a Peakbagger tab');
     assert.deepEqual(entry.matches, ['https://*.peakbagger.com/*']);
+});
+
+// The guide used to swap the tab set for "Back / Open the editor / Settings",
+// so the reader could not see which view they were in or return to the one they
+// left. Every Photo Topos page now shows the same three views, in order, with
+// the current one marked.
+test('every photo page shows the same view tabs, marking the current one', () => {
+    const tabs = node => [...node.querySelectorAll('.view-tabs .tab-button')]
+        .map(control => control.textContent.trim());
+    assert.deepEqual(tabs(doc), ['Editor', 'Library', 'Guide']);
+    assert.deepEqual(tabs(photosDoc), ['Editor', 'Library', 'Guide']);
+    assert.equal(doc.querySelector('.view-tabs [aria-current="page"]')?.textContent.trim(), 'Guide');
+    assert.equal(photosDoc.querySelector('.view-tabs [aria-current="page"]')?.textContent.trim(), 'Editor');
+    assert.equal(doc.querySelector('.view-tabs').getAttribute('aria-label'),
+        photosDoc.querySelector('.view-tabs').getAttribute('aria-label'),
+        'one component, one accessible name');
+    // The guide's Editor and Library tabs must land on the view they name, and
+    // photos.js reads exactly this parameter to open on the library.
+    assert.deepEqual([...doc.querySelectorAll('.view-tabs .tab-button')]
+        .map(link => link.getAttribute('href')),
+    ['photos.html', 'photos.html?mode=library', 'guide.html']);
+    assert.match(photosSource, /searchParams\.get\('mode'\) === 'library'/);
+    // Nothing may reintroduce a page-specific action into the tab set.
+    assert.equal(doc.getElementById('guide-back'), null);
+    assert.doesNotMatch(source, /guide-back/);
 });
 
 test('the legend is painted from the renderer, once per symbol', () => {

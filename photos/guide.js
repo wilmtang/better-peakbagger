@@ -17,10 +17,6 @@ for (const slot of document.querySelectorAll('[data-symbol]')) {
     slot.replaceChildren(document.importNode(parsed.documentElement, true));
 }
 
-// The guide is opened from Peakbagger, from Settings, and from the editor, so
-// "go back" has to mean the tab the reader actually came from.
-const back = document.getElementById('guide-back');
-if (back && history.length > 1) {
-    back.hidden = false;
-    back.addEventListener('click', () => history.back());
-}
+// The guide's own "go back" is gone with the header rework: every Photo Topos
+// page now shows the same three views, so leaving is a matter of picking one
+// rather than retracing however the reader arrived.
