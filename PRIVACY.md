@@ -190,7 +190,7 @@ when Peakbagger displays the published report.
 
 The photo topo editor is an extension-owned page. Choosing an image stores its
 original bytes, a local thumbnail, source dimensions/file name/hash, the
-versioned annotation project, title, and alt/decorative state in the browser
+versioned annotation project, title, and alt text in the browser
 profile's IndexedDB. The original may contain camera metadata; it stays in that
 local blob and is not uploaded by Better Peakbagger.
 

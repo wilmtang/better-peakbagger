@@ -38,7 +38,6 @@ const ui = {
     file: byId('photo-file'),
     title: byId('photo-title'),
     alt: byId('photo-alt'),
-    decorative: byId('photo-decorative'),
     undo: byId('undo'),
     redo: byId('redo'),
     viewport: byId('photo-viewport'),
@@ -298,7 +297,6 @@ const cleanDraftFromFields = now => {
     const fields = {
         title: ui.title.value,
         alt: ui.alt.value,
-        decorative: ui.decorative.checked,
     };
     if (!photo) {
         return Library.createDraft({
@@ -329,9 +327,7 @@ const persistDraft = async ({ required = false } = {}) => {
     const now = new Date().toISOString();
     const nextPhoto = cleanDraftFromFields(now);
     if (!nextPhoto) {
-        setSaveStatus(ui.decorative.checked
-            ? 'Add a title to save'
-            : 'Add a title and image description to save');
+        setSaveStatus('Add a title and image description to save');
         if (required) toast('Add a title and meaningful image description before uploading.');
         return false;
     }
@@ -814,8 +810,6 @@ const loadBundle = async bundle => {
     selectedId = null;
     ui.title.value = photo.title;
     ui.alt.value = photo.alt;
-    ui.decorative.checked = photo.decorative;
-    ui.alt.disabled = photo.decorative;
     setSourceDisplay(originalBlob);
     ui.editorEmpty.hidden = true;
     ui.editorWorkspace.hidden = false;
@@ -864,8 +858,6 @@ const chooseFile = async file => {
         future = [];
         ui.title.value = defaultTitle(file.name);
         ui.alt.value = '';
-        ui.alt.disabled = false;
-        ui.decorative.checked = false;
         setSourceDisplay(file);
         ui.editorEmpty.hidden = true;
         ui.editorWorkspace.hidden = false;
@@ -954,7 +946,6 @@ const uploadAndInsert = async () => {
                 localPhotoId: photo.localId,
                 url: photo.remote.url,
                 alt: photo.alt,
-                decorative: photo.decorative,
             });
             if (!inserted?.ok) {
                 throw new ImgbbClient.ImgbbError(
@@ -1077,7 +1068,6 @@ const insertFromLibrary = async item => {
         localPhotoId: item.localId,
         url: item.remote.url,
         alt: item.alt,
-        decorative: item.decorative,
     });
     if (!inserted?.ok) {
         toast(inserted?.error?.message || 'The image could not be inserted.');
@@ -1113,7 +1103,6 @@ const editAsNewVersion = async item => {
         localId,
         title: `${item.title} revision`.slice(0, Library.TITLE_LIMIT),
         alt: item.alt,
-        decorative: item.decorative,
         source: item.source,
         parentLocalId: item.localId,
         now,
@@ -1164,7 +1153,6 @@ const importProject = async file => {
                 localId,
                 title: `${imported.title} (imported)`.slice(0, Library.TITLE_LIMIT),
                 alt: imported.alt,
-                decorative: imported.decorative,
                 source: imported.source,
                 parentLocalId: imported.localId,
                 now,
@@ -1283,7 +1271,7 @@ const cardFor = async item => {
 
     const body = element('div', 'photo-card-body');
     body.append(element('h3', '', item.title));
-    body.append(element('p', '', item.decorative ? 'Decorative image' : item.alt));
+    body.append(element('p', '', item.alt));
     body.append(element('p', '', `${item.source.width} × ${item.source.height} · `
         + `${formatBytes(item.export?.bytes || item.source.bytes)} · `
         + new Date(item.updatedAt).toLocaleDateString()));
@@ -1519,11 +1507,6 @@ const bindEvents = () => {
     ui.file.addEventListener('change', () => void chooseFile(ui.file.files?.[0]));
     ui.title.addEventListener('input', schedulePersist);
     ui.alt.addEventListener('input', schedulePersist);
-    ui.decorative.addEventListener('change', () => {
-        ui.alt.disabled = ui.decorative.checked;
-        if (ui.decorative.checked) ui.alt.value = '';
-        schedulePersist();
-    });
     ui.undo.addEventListener('click', undo);
     ui.redo.addEventListener('click', redo);
     document.querySelectorAll('[data-tool]').forEach(button => {

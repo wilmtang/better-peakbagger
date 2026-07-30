@@ -35,7 +35,6 @@ const cleanPublicInsertion = value => {
         && /^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$/.test(value.localPhotoId)
         ? value.localPhotoId
         : null;
-    const decorative = typeof value.decorative === 'boolean' ? value.decorative : null;
     const alt = String(value.alt ?? '').replace(/\s+/g, ' ').trim().slice(0, Library.ALT_LIMIT);
     let url;
     try {
@@ -44,9 +43,7 @@ const cleanPublicInsertion = value => {
             ? parsed.toString()
             : null;
     } catch { url = null; }
-    return localPhotoId && decorative != null && (decorative || alt) && url
-        ? { localPhotoId, url, alt: decorative ? '' : alt, decorative }
-        : null;
+    return localPhotoId && alt && url ? { localPhotoId, url, alt } : null;
 };
 
 const defaultToken = () => {
