@@ -84,6 +84,12 @@ body {
 
 .wrap { max-width: 640px; margin: 0 auto; }
 
+/* A panel page with no sidebar — the draft manager. It reuses every card, row,
+   and control style above, so only the frame differs: .content is still the one
+   scroll container, it just has nothing beside it. */
+body.standalone-page { display: block; }
+body.standalone-page .content { height: 100%; }
+
 .head { display: flex; align-items: center; gap: 12px; margin: 0 4px 20px; }
 .logo { border-radius: 9px; display: block; flex: 0 0 auto; }
 h1 { margin: 0; font-size: 18px; font-weight: 650; line-height: 1.2; }
@@ -188,6 +194,11 @@ label.label { cursor: pointer; }
 .title-line { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; }
 .title { font-weight: 600; }
 .desc { color: var(--sub); font-size: 12.5px; max-width: 42ch; }
+/* Link colour is declared once, on the element, rather than per context. Every
+   context that styled its own left the browser default in place everywhere
+   else — and that default is unreadable on the dark panel. The specific rules
+   below still win where they set something other than the token. */
+a { color: var(--link); }
 .desc a { color: var(--link); }
 .experimental-badge {
     padding: 1px 6px;

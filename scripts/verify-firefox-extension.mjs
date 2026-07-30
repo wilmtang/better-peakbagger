@@ -1158,10 +1158,40 @@ async function main() {
     }, 5_000);
     await driver.switchTo().window(draftsManagerHandle);
     const draftsManagerUrl = await driver.getCurrentUrl();
+    // The manager is its own page, so this also proves the standalone page
+    // boots in Firefox: its own bundle and the shared theme bootstrap.
+    // Seeding from the manager's own page proves the standalone page renders a
+    // draft and still picks up a write made while it is open. report-drafts only
+    // accepts <cid>:new | a<aid> | p<pid>, so the key has to be a real one.
+    const draftsManagerState = await driver.executeAsyncScript(`
+      const done = arguments[arguments.length - 1];
+      browser.storage.local.set({
+        "bpbReportDraft:900001:a4242": {
+          text: "Standalone drafts page verification",
+          mode: "rich",
+          savedAt: Date.now(),
+          label: { peak: "Verification Peak", date: "7/30/2026" }
+        }
+      }).then(async () => {
+        const deadline = Date.now() + 5000;
+        while (Date.now() < deadline && !document.querySelector(".drafts-list li")) {
+          await new Promise(resolve => setTimeout(resolve, 50));
+        }
+        done({
+          heading: document.querySelector("h1")?.textContent,
+          rows: document.querySelectorAll(".drafts-list li").length,
+          title: document.querySelector(".drafts-list .draft-title")?.textContent,
+          sidebar: !!document.querySelector(".side-nav")
+        });
+      });`);
     assertState(
-      draftsManagerUrl === `${baseUrl}options/options.html#drafts`,
-      "Firefox report editor did not open its drafts manager",
-      draftsManagerUrl,
+      draftsManagerUrl === `${baseUrl}options/drafts.html`
+        && draftsManagerState.heading === "Trip report drafts"
+        && draftsManagerState.rows === 1
+        && /Verification Peak/.test(draftsManagerState.title || "")
+        && draftsManagerState.sidebar === false,
+      "Firefox report editor did not open a working standalone drafts manager",
+      { draftsManagerUrl, draftsManagerState },
     );
     await driver.close();
     await driver.switchTo().window(editorHandle);
@@ -1382,7 +1412,7 @@ async function main() {
     console.log("  - four native Buddy actions refreshed/synced custom favorites under both removal policies");
     console.log("  - options, popup, ascent, editor, Peak, BigMap, PeakAscents, Buddy List, and profile-backup surfaces initialized");
     console.log("  - a fresh ascent form autofilled its local date and trusted GPX selection swapped Preview for Process");
-    console.log("  - the report editor opened the real report-drafts manager tab");
+    console.log("  - the report editor opened the standalone report-drafts manager page, which rendered a seeded draft");
     console.log("  - AMO report credit, real editor input/draft recovery, filter/sort, and 3D frame passed");
     console.log("  - a real draft tab rejected wrong identity, attached GPX, filled fields, Previewed once, and never Saved");
     console.log("  - native toolbar activeTab grant, popup chrome, prompts, and window placement were not tested");

@@ -27,6 +27,7 @@ export const srcFile = f => path.join(root, 'src', f);
 const PAGE_LOCAL = {
     'options-main.js': path.join(root, 'options', 'options.js'),
     'options-drafts.js': path.join(root, 'options', 'drafts.js'),
+    'options-drafts-page.js': path.join(root, 'options', 'drafts-page.js'),
     'options-favorites.js': path.join(root, 'options', 'favorites.js'),
     'options-utils.js': path.join(root, 'options', 'options-utils.js'),
     'popup-main.js': path.join(root, 'popup', 'popup.js'),
@@ -61,8 +62,9 @@ export const ENTRIES = [
     { out: 'terrain/terrain-frame.js', sources: ['terrain/terrain-camera.js', 'settings/settings-schema.js', 'terrain/terrain-cache.js', 'terrain/terrain-tiles.js', 'terrain/terrain-frame.js'] },
     // The options page keeps its head/tail split: the head bundle applies the
     // theme before first paint, the tail bundle runs the settings UI.
+    { out: 'options/drafts-page.js', sources: ['reports/report-drafts.js', 'reports/report-markup.js', 'options-utils.js', 'options-drafts.js', 'options-drafts-page.js'], page: true },
     { out: 'options/options-head.js', sources: ['settings/settings-schema.js', 'settings/settings.js', 'theme/panel-theme.js'], page: true },
-    { out: 'options/options.js', sources: ['terrain/terrain-cache.js', 'reports/report-markup.js', 'reports/report-drafts.js', 'favorites/favorite-climbers.js', 'peakbagger/peakbagger-cloudflare.js', 'peakbagger/peakbagger-response.js', 'peakbagger/peakbagger-error.js', 'peakbagger/peakbagger-request.js', 'profile/profile-backup-core.js', 'ui/dom.js', 'ui/runtime-message.js', 'ui/section-nav.js', 'options-utils.js', 'options-main.js', 'options-drafts.js', 'options-favorites.js'], page: true },
+    { out: 'options/options.js', sources: ['terrain/terrain-cache.js', 'reports/report-markup.js', 'reports/report-drafts.js', 'favorites/favorite-climbers.js', 'peakbagger/peakbagger-cloudflare.js', 'peakbagger/peakbagger-response.js', 'peakbagger/peakbagger-error.js', 'peakbagger/peakbagger-request.js', 'profile/profile-backup-core.js', 'ui/dom.js', 'ui/runtime-message.js', 'ui/section-nav.js', 'options-utils.js', 'options-main.js', 'options-favorites.js'], page: true },
     { out: 'popup/popup-head.js', sources: ['settings/settings-schema.js', 'settings/settings.js', 'theme/panel-theme.js'], page: true },
     { out: 'popup/popup.js', sources: ['capture/capture-phases.js', 'settings/settings-schema.js', 'settings/settings.js', 'ui/units.js', 'popup-main.js'], page: true },
     { out: 'photos/photos-head.js', sources: ['settings/settings-schema.js', 'settings/settings.js', 'theme/panel-theme.js'], page: true },
@@ -93,6 +95,7 @@ export const COPY_FILES = [
     ['src/maps/peak-links.css', 'css/peak-links.css'],
     ['terrain/terrain.html', 'terrain/terrain.html'],
     ['options/options.html', 'options/options.html'],
+    ['options/drafts.html', 'options/drafts.html'],
     ['options/buddy-refresh.html', 'options/buddy-refresh.html'],
     ['options/options.css', 'options/options.css'],
     ['popup/popup.html', 'popup/popup.html'],

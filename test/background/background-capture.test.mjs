@@ -327,8 +327,10 @@ test('only a Peakbagger tab can open the report drafts manager', async () => {
         { tab: { id: 5 }, url: 'https://www.peakbagger.com/climber/ascentedit.aspx?aid=1' }
     );
     assert.deepEqual(JSON.parse(JSON.stringify(allowed)), { ok: true, tabId: 100 });
+    // The manager is its own page; the worker opens it directly rather than
+    // deep-linking into a Settings section that now only points at it.
     assert.equal(harness.tabs.get(100).url,
-        'chrome-extension://test-extension/options/options.html#drafts');
+        'chrome-extension://test-extension/options/drafts.html');
 
     const before = harness.tabs.size;
     assert.deepEqual(JSON.parse(JSON.stringify(await harness.send(

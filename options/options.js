@@ -6,9 +6,9 @@
 import { settings as S } from '../src/settings/settings.js';
 import { terrainCache as TerrainCache } from '../src/terrain/terrain-cache.js';
 import { panelTheme as Theme } from '../src/theme/panel-theme.js';
+import { optionsUtils as OptionsUtils } from './options-utils.js';
 import { initGithubBackup } from './github.js';
 import { initFavorites } from './favorites.js';
-import { initDrafts } from './drafts.js';
 import { initImgbbKey } from './imgbb.js';
 import { initSettingsBackup } from './settings-backup.js';
 import { initPhotoBackup } from './photos.js';
@@ -57,33 +57,12 @@ import { initSectionNav } from '../src/ui/section-nav.js';
 
     const applyTheme = theme => Theme.apply(theme);
 
-    let statusTimer = null;
-    const dismissStatus = () => {
-        clearTimeout(statusTimer);
-        statusTimer = null;
-        statusEl.classList.remove('show');
-        statusErrorEl.classList.remove('show');
-        statusErrorEl.hidden = true;
-    };
-
-    // The page's only transient channel, and most of its traffic reports a
-    // failure or blocks the action. Successes confirm and fade; failures go to
-    // the alert region, keep the danger colour, and stay until the user
-    // dismisses them or the next report replaces them.
-    const flash = (msg = 'Saved', { error = false } = {}) => {
-        dismissStatus();
-        if (error) {
-            statusErrorTextEl.textContent = msg;
-            statusErrorEl.hidden = false;
-            statusErrorEl.classList.add('show');
-            return;
-        }
-        statusEl.textContent = msg;
-        statusEl.classList.add('show');
-        statusTimer = setTimeout(() => statusEl.classList.remove('show'), 1200);
-    };
-
-    statusErrorDismissEl.addEventListener('click', dismissStatus);
+    const { flash } = OptionsUtils.createStatusFlash({
+        statusEl,
+        statusErrorEl,
+        statusErrorTextEl,
+        statusErrorDismissEl,
+    });
 
     const formatCacheBytes = bytes => {
         if (bytes < 1024) return `${Math.max(0, Math.floor(bytes))} B`;
@@ -179,7 +158,6 @@ import { initSectionNav } from '../src/ui/section-nav.js';
     // options page drives GITHUB_AUTH_* messages and never sees the token.
     const githubBackup = initGithubBackup({ extensionApi, flash, save });
     const favorites = initFavorites({ extensionApi, flash, save });
-    initDrafts({ extensionApi, flash });
     // Device-local credential, not a synced setting: it never enters `save`.
     initImgbbKey({ extensionApi, flash });
     const settingsBackup = initSettingsBackup({ extensionApi, flash, save });

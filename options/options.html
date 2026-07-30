@@ -227,34 +227,21 @@
                 </div>
             </div>
 
+            <!-- The drafts themselves are records to manage, not settings, so
+                 they live on their own page. This keeps the subsection id, so
+                 an existing options.html#drafts link still lands on the topic
+                 with the manager one click away. -->
             <div class="subsection" id="drafts" role="group" aria-labelledby="drafts-heading">
                 <h3 class="subsection-title" id="drafts-heading">Trip report drafts</h3>
-                <div class="card drafts-card">
-                    <p class="drafts-intro">Rich and Markdown trip report drafts autosave on this device and become eligible for cleanup after two weeks.</p>
-                    <p class="drafts-empty" id="drafts-empty">No trip report drafts on this device.</p>
-                    <ul class="drafts-list" id="drafts-list" hidden></ul>
-                    <div class="drafts-undo-all" id="drafts-undo-all" role="status" hidden>
-                        <span>All drafts deleted</span>
-                        <button class="draft-undo" id="drafts-undo-all-button" type="button">Undo</button>
-                    </div>
-                    <!-- Third host for the same confirm-then-undo block used by the
-                         favorites mirror and the settings import. -->
-                    <div class="settings-backup-confirmation drafts-confirmation" id="drafts-delete-all-confirmation"
-                        role="alertdialog" aria-labelledby="drafts-delete-all-confirmation-title"
-                        aria-describedby="drafts-delete-all-confirmation-detail" hidden>
-                        <div>
-                            <p class="settings-backup-confirmation-title" id="drafts-delete-all-confirmation-title">Delete all drafts?</p>
-                            <p class="settings-backup-confirmation-detail" id="drafts-delete-all-confirmation-detail">
-                                You’ll have 6 seconds to undo while this Settings page stays open.
-                            </p>
+                <div class="card">
+                    <div class="row">
+                        <div class="label">
+                            <span class="title">Draft manager</span>
+                            <span class="desc">Rich and Markdown trip report drafts autosave on this device and become eligible for cleanup after two weeks. Open, copy, restore, or delete them on their own page.</span>
                         </div>
-                        <div class="settings-backup-confirmation-actions">
-                            <button id="drafts-delete-all-cancel" class="secondary" type="button">Cancel</button>
-                            <button id="drafts-delete-all-confirm" class="settings-backup-confirm" type="button">Delete drafts</button>
+                        <div class="control">
+                            <a class="secondary" id="open-draft-manager" href="drafts.html">Open draft manager</a>
                         </div>
-                    </div>
-                    <div class="drafts-footer">
-                        <button id="drafts-delete-all" class="secondary" type="button" hidden>Delete all drafts</button>
                     </div>
                 </div>
             </div>

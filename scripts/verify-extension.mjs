@@ -1425,8 +1425,44 @@ try {
                     .then(() => draftsManagerPage.url())
                     .catch(() => draftsManagerPage.url())
                 : '';
-            check(draftsManagerUrl === `chrome-extension://${extensionId}/options/options.html#drafts`,
-                `the report editor did not open its drafts manager: ${JSON.stringify(draftsManagerUrl)}`);
+            // The manager is its own page, so this also proves the standalone
+            // page boots: its own bundle, the shared theme bootstrap, and the
+            // draft this editor just saved rendered on it.
+            // Seeding from the manager's own page proves two things at once: the
+            // standalone page renders a draft, and it still picks up a write
+            // made while it is open, which is how a second tab autosaving looks.
+            const draftsManagerState = draftsManagerPage
+                ? await draftsManagerPage.evaluate(async () => {
+                    await chrome.storage.local.set({
+                        'bpbReportDraft:900001:a4242': {
+                            text: 'Standalone drafts page verification',
+                            mode: 'rich',
+                            savedAt: Date.now(),
+                            label: { peak: 'Verification Peak', date: '7/30/2026' },
+                        },
+                    });
+                    const deadline = Date.now() + 5000;
+                    while (Date.now() < deadline
+                        && !document.querySelector('.drafts-list li')) {
+                        await new Promise(resolve => setTimeout(resolve, 50));
+                    }
+                    return {
+                        heading: document.querySelector('h1')?.textContent,
+                        rows: document.querySelectorAll('.drafts-list li').length,
+                        title: document.querySelector('.drafts-list .draft-title')?.textContent,
+                        theme: document.documentElement.getAttribute('data-bpb-theme'),
+                        sidebar: !!document.querySelector('.side-nav'),
+                    };
+                }).catch(error => ({ error: String(error) }))
+                : null;
+            check(draftsManagerUrl === `chrome-extension://${extensionId}/options/drafts.html`
+                && draftsManagerState?.heading === 'Trip report drafts'
+                && draftsManagerState.rows === 1
+                && /Verification Peak/.test(draftsManagerState.title || '')
+                && draftsManagerState.sidebar === false,
+            `the report editor did not open a working standalone drafts manager: ${JSON.stringify({
+                draftsManagerUrl, draftsManagerState
+            })}`);
             if (draftsManagerPage) await draftsManagerPage.close();
             if (process.env.BPB_VERIFY_DRAFT_MANAGER_SCREENSHOT) {
                 await editorPage.locator('#bpb-report-editor').screenshot({
@@ -2423,7 +2459,8 @@ console.log('  - the Buddy List exposes six in-place sort controls and no beta f
 console.log('  - the owner-only full-profile backup surface mounts with a connected fixture repository');
 console.log('  - a fresh ascent form autofills its local date and trusted GPX selection swaps Preview for Process');
 console.log('  - the opt-in report credit renders and serializes the Chrome Web Store URL');
-console.log('  - the report editor opens the real report-drafts manager tab');
+console.log('  - the report editor opens the standalone report-drafts manager page, which renders');
+console.log('    a seeded draft with no settings sidebar');
 console.log('  - the dark trip-report palette retains seven distinct text-color swatches');
 console.log('  - a real grouped draft tab rejects a wrong identity, attaches GPX, fills fields,');
 console.log('    submits Preview exactly once, and never submits Save');

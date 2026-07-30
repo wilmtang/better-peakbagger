@@ -1332,7 +1332,7 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
         }
         try {
             const tab = await ext.tabs.create({
-                url: `${ext.runtime.getURL('options/options.html')}#drafts`
+                url: ext.runtime.getURL('options/drafts.html')
             });
             return { ok: true, tabId: Number.isInteger(tab?.id) ? tab.id : null };
         } catch (error) {

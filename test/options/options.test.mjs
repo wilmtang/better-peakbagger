@@ -141,6 +141,26 @@ test('a failed setting write restores the authoritative control value', async ()
     assert.equal(dom.window.document.documentElement.getAttribute('data-bpb-theme'), 'dark');
 });
 
+// The draft manager is its own page now: same stylesheet, theme bootstrap, and
+// card styles as Settings, but its own document and bundle. Loading it the way
+// drafts.html does keeps these tests exercising the shipped page rather than a
+// section that no longer exists.
+const loadDraftsPage = async (settings = {}, { local = {}, prepareChrome = null } = {}) => {
+    const html = await readFile(path.join(root, 'options', 'drafts.html'), 'utf8');
+    const dom = new JSDOM(html, {
+        url: 'https://options.better-peakbagger.test/options/drafts.html',
+        runScripts: 'outside-only'
+    });
+    openOptionsPages.add(dom);
+    dom.chrome = makeChromeStub({ bpbSettings: settings }, local);
+    if (prepareChrome) prepareChrome(dom.chrome);
+    dom.window.chrome = dom.chrome;
+    await evalBundle(dom.window, 'options/options-head.js');
+    await evalBundle(dom.window, 'options/drafts-page.js');
+    await new Promise(r => dom.window.setTimeout(r, 20));
+    return dom;
+};
+
 test('settings are grouped by the surface they affect', async () => {
     const dom = await loadOptions({});
     const sections = Array.from(dom.window.document.querySelectorAll('.settings-section'));
@@ -169,10 +189,13 @@ test('settings are grouped by the surface they affect', async () => {
     assert.ok(about.querySelector('.about-version'));
     // Everything a trip report needs while creating an ascent lives in one
     // section: the editor, the photo credential, and the local drafts.
+    // The drafts themselves moved to their own page — they are records to
+    // manage, not settings — but the anchor stays so existing #drafts links
+    // still land on the topic, one click from the manager.
     const drafts = capture.querySelector('#drafts');
-    assert.ok(drafts.querySelector('#drafts-list'));
-    assert.ok(drafts.querySelector('#drafts-delete-all'));
     assert.equal(drafts.id, 'drafts', 'the established deep-link anchor stays stable');
+    assert.equal(drafts.querySelector('#drafts-list'), null, 'the list is not a setting');
+    assert.equal(drafts.querySelector('#open-draft-manager').getAttribute('href'), 'drafts.html');
     assert.match(mapChart.querySelector('label[for="units"] .desc').textContent, /processing summaries/);
     assert.equal(favorites.querySelector('input[value="custom"] + span').textContent,
         'Use a custom list managed here');
@@ -250,17 +273,27 @@ test('options sections log the missing ids before degrading to no-op controllers
     await loadOptions({}, {
         prepareWindow(window) {
             for (const id of [
-                'github-panel', 'settings-backup-export', 'favorites-list', 'drafts-list'
+                'github-panel', 'settings-backup-export', 'favorites-list'
             ]) window.document.getElementById(id).remove();
             window.console.error = message => errors.push(String(message));
         }
     });
 
-    assert.equal(errors.length, 4);
+    assert.equal(errors.length, 3);
     assert.ok(errors.some(message => /GitHub settings.*github-panel/.test(message)));
     assert.ok(errors.some(message => /settings backup.*settings-backup-export/.test(message)));
     assert.ok(errors.some(message => /favorite climbers.*favorites-list/.test(message)));
-    assert.ok(errors.some(message => /draft manager.*drafts-list/.test(message)));
+});
+
+// The draft manager degrades the same way on its own page.
+test('the draft manager page logs its missing ids instead of throwing', async () => {
+    const errors = [];
+    const dom = await loadDraftsPage({}, {});
+    dom.window.console.error = message => errors.push(String(message));
+    dom.window.document.getElementById('drafts-list').remove();
+    await evalBundle(dom.window, 'options/drafts-page.js');
+    assert.equal(errors.length, 1);
+    assert.match(errors[0], /draft manager.*drafts-list/);
 });
 
 test('settings feedback separates severity: successes fade, failures persist and alert', async () => {
@@ -1779,7 +1812,7 @@ test('report drafts render newest-first with labels, fallbacks, and edit links',
             text: 'Expired', mode: 'rich', savedAt: now - 14 * 24 * 60 * 60 * 1000 - 1
         }
     };
-    const dom = await loadOptions({}, { local });
+    const dom = await loadDraftsPage({}, { local });
     await waitFor(dom, () => dom.window.document.querySelectorAll('.draft-item').length === 3);
 
     const rows = Array.from(dom.window.document.querySelectorAll('.draft-item'));
@@ -1803,7 +1836,7 @@ test('report drafts render newest-first with labels, fallbacks, and edit links',
 
 test('report drafts retain provisional peak identities and their mountain labels', async () => {
     const key = 'bpbReportDraft:900001:p-105366';
-    const dom = await loadOptions({}, { local: {
+    const dom = await loadDraftsPage({}, { local: {
         [key]: {
             text: 'Provisional peak report',
             mode: 'rich',
@@ -1823,7 +1856,7 @@ test('copy Markdown preserves exact source or converts the stored bracket report
     const now = Date.now();
     const richKey = 'bpbReportDraft:900001:a123';
     const markdownKey = 'bpbReportDraft:900001:a124';
-    const dom = await loadOptions({}, { local: {
+    const dom = await loadDraftsPage({}, { local: {
         [richKey]: { text: '[u]under[/u]', mode: 'rich', savedAt: now },
         [markdownKey]: {
             text: '[b]normalized[/b]', mode: 'markdown', source: 'exact  **source**', savedAt: now - 1
@@ -1855,7 +1888,7 @@ test('deleting one draft is reversible and its Undo survives a live refresh', as
     const key = 'bpbReportDraft:900001:a123';
     const otherKey = 'bpbReportDraft:900001:p456';
     const record = { text: 'Held verbatim', mode: 'rich', savedAt: Date.now() };
-    const dom = await loadOptions({}, { local: { [key]: record } });
+    const dom = await loadDraftsPage({}, { local: { [key]: record } });
     await waitFor(dom, () => draftRow(dom, key));
 
     draftRow(dom, key).querySelector('[data-action="delete"]').click();
@@ -1884,7 +1917,7 @@ test('deleting one draft is reversible and its Undo survives a live refresh', as
 test('a failed single-draft Undo keeps its recovery snapshot available for retry', async () => {
     const key = 'bpbReportDraft:900001:a123';
     const record = { text: 'Retry this restoration', mode: 'rich', savedAt: Date.now() };
-    const dom = await loadOptions({}, { local: { [key]: record } });
+    const dom = await loadDraftsPage({}, { local: { [key]: record } });
     await waitFor(dom, () => draftRow(dom, key));
 
     draftRow(dom, key).querySelector('[data-action="delete"]').click();
@@ -1918,7 +1951,7 @@ test('delete all states the count, requires confirmation, and retains a failed U
         [firstKey]: { text: 'First', mode: 'rich', savedAt: Date.now() },
         [secondKey]: { text: 'Second', mode: 'markdown', source: 'Second', savedAt: Date.now() - 1 }
     };
-    const dom = await loadOptions({}, {
+    const dom = await loadDraftsPage({}, {
         local: records,
         prepareWindow: window => {
             window.confirm = () => {
@@ -1986,7 +2019,7 @@ test('delete all states the count, requires confirmation, and retains a failed U
 });
 
 test('the drafts manager shows an empty state and refreshes when another tab autosaves', async () => {
-    const dom = await loadOptions({}, { local: { unrelated: 'preserved' } });
+    const dom = await loadDraftsPage({}, { local: { unrelated: 'preserved' } });
     assert.equal(el(dom, 'drafts-empty').hidden, false);
     assert.equal(el(dom, 'drafts-list').hidden, true);
     assert.equal(el(dom, 'drafts-delete-all').hidden, true);

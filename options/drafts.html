@@ -1,0 +1,75 @@
+<!-- Copyright (C) 2026 wilmtang <wilm.tang@outlook.com> -->
+<!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Better Peakbagger — Trip report drafts</title>
+    <!-- Same theme bootstrap as Settings: the stored Light/Dark preference has
+         to be on the root element before the stylesheet paints. -->
+    <script src="options-head.js"></script>
+    <link rel="stylesheet" href="options.css">
+</head>
+<!-- Managing saved drafts is not a setting, so this is its own page rather than
+     a section of one. It shares the Settings stylesheet and theme bootstrap
+     because it is the same panel surface, and standalone-page replaces the
+     sidebar frame with a single scrolling column. -->
+<body class="standalone-page">
+    <div class="content">
+        <div class="wrap">
+            <header class="head">
+                <img class="logo" src="../icons/icon-48.png" alt="" width="40" height="40">
+                <div>
+                    <h1>Trip report drafts</h1>
+                    <p class="sub">Saved on this device only. <a href="options.html#capture-report">Trip report settings</a></p>
+                </div>
+            </header>
+
+            <div class="card drafts-card">
+                <p class="drafts-intro">Rich and Markdown trip report drafts autosave on this device and become eligible for cleanup after two weeks.</p>
+                <p class="drafts-empty" id="drafts-empty">No trip report drafts on this device.</p>
+                <ul class="drafts-list" id="drafts-list" hidden></ul>
+                <div class="drafts-undo-all" id="drafts-undo-all" role="status" hidden>
+                    <span>All drafts deleted</span>
+                    <button class="draft-undo" id="drafts-undo-all-button" type="button">Undo</button>
+                </div>
+                <!-- The same confirm-then-undo block the favorites mirror and the
+                     settings import use. -->
+                <div class="settings-backup-confirmation drafts-confirmation" id="drafts-delete-all-confirmation"
+                    role="alertdialog" aria-labelledby="drafts-delete-all-confirmation-title"
+                    aria-describedby="drafts-delete-all-confirmation-detail" hidden>
+                    <div>
+                        <p class="settings-backup-confirmation-title" id="drafts-delete-all-confirmation-title">Delete all drafts?</p>
+                        <p class="settings-backup-confirmation-detail" id="drafts-delete-all-confirmation-detail">
+                            You’ll have 6 seconds to undo while this page stays open.
+                        </p>
+                    </div>
+                    <div class="settings-backup-confirmation-actions">
+                        <button id="drafts-delete-all-cancel" class="secondary" type="button">Cancel</button>
+                        <button id="drafts-delete-all-confirm" class="settings-backup-confirm" type="button">Delete drafts</button>
+                    </div>
+                </div>
+                <div class="drafts-footer">
+                    <button id="drafts-delete-all" class="secondary" type="button" hidden>Delete all drafts</button>
+                </div>
+            </div>
+
+            <!-- Two sibling live regions rather than one whose role/aria-live is
+                 rewritten per message; only one is ever populated. -->
+            <div class="status-dock">
+                <p class="status" id="status" role="status" aria-live="polite"></p>
+                <div class="status status-error" id="status-error" role="alert" hidden>
+                    <span id="status-error-text"></span>
+                    <button type="button" id="status-error-dismiss" class="status-dismiss" aria-label="Dismiss message">
+                        <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
+                            <path d="M4 4l8 8M12 4l-8 8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script src="drafts-page.js" defer></script>
+</body>
+</html>
