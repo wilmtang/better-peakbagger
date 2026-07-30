@@ -203,6 +203,33 @@ test('returns one sanitized insertion to the originating tab and rejects replay'
     assert.equal(replay.error.code, 'expired-context');
 });
 
+// The photo page leaves the description optional, so an empty one is a real
+// result to forward — not a malformed one to fail closed on.
+test('forwards an insertion whose description is empty', async () => {
+    const h = harness();
+    await h.routes.handlers.PHOTO_EDITOR_OPEN({
+        mode: 'edit',
+        identity: { cid: 22, pid: 33 },
+    }, peakSender);
+    assert.deepEqual(await h.routes.handlers.PHOTO_INSERT_COMMIT({
+        returnToken: 'return-token',
+        localPhotoId: 'photo-1',
+        url: 'https://i.ibb.co/a/topo.jpg',
+        alt: '   ',
+    }, photoSender), { ok: true, identity: { cid: 22, aid: null, pid: 33 } });
+    assert.deepEqual(h.sent, [{
+        tabId: 41,
+        message: {
+            type: 'PHOTO_INSERT_RESULT',
+            returnToken: 'return-token',
+            localPhotoId: 'photo-1',
+            url: 'https://i.ibb.co/a/topo.jpg',
+            alt: '',
+        },
+        options: { frameId: 0 },
+    }]);
+});
+
 test('fails closed for wrong editor tab, invalid public URL, and expired contexts', async () => {
     const h = harness();
     await h.routes.handlers.PHOTO_EDITOR_OPEN({

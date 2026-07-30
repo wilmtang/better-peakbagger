@@ -155,7 +155,10 @@ const cleanPhoto = value => {
     const backup = cleanBackup(value.backup);
     const assets = cleanAssets(value.assets);
     const deletedAt = cleanNullableTime(value.deletedAt);
-    if (!localId || !createdAt || !updatedAt || !title || !alt
+    // `alt` is optional: an empty description is the HTML convention for a
+    // decorative image, and forcing one blocked local autosave rather than
+    // improving what people wrote. It is still trimmed and bounded above.
+    if (!localId || !createdAt || !updatedAt || !title
         || !source || !remote || !references || !backup || !assets
         || (value.export != null && !exported)
         || (value.lineage?.parentLocalId != null && !parentLocalId)

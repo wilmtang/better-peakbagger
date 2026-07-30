@@ -229,6 +229,35 @@ test('an inserted photo keeps the full description the library allows', async ()
         'anything longer is clamped to the same bound, not a smaller one');
 });
 
+// The description is optional on the photo page, so a result can legitimately
+// arrive with none. It must still insert — as a plain image, not a video, since
+// the alt-plus-media-suffix form is what the writer reads as one.
+test('an inserted photo without a description is still accepted', async () => {
+    const listeners = [];
+    const dom = await loadEditor({
+        prepare: d => {
+            d.chrome.runtime.onMessage = {
+                addListener: listener => listeners.push(listener),
+                removeListener: () => {}
+            };
+        }
+    });
+    await editorReady(dom);
+    const doc = dom.window.document;
+    let response;
+    for (const listener of listeners) {
+        listener({
+            type: 'PHOTO_INSERT_RESULT',
+            localPhotoId: 'photo:123',
+            url: 'https://i.ibb.co/example/topo.jpg',
+            alt: '   '
+        }, { id: 'test-extension' }, value => { response = value; });
+    }
+    assert.deepEqual(JSON.parse(JSON.stringify(response)), { ok: true });
+    assert.equal(doc.getElementById('JournalText').value,
+        '[img src="https://i.ibb.co/example/topo.jpg"]');
+});
+
 test('link and media popovers toggle closed, share the toolbar layer, and insert safe video', async () => {
     const dom = await loadEditor();
     const ui = await editorReady(dom);

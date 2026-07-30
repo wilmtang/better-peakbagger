@@ -51,19 +51,29 @@ test('creates and idempotently cleans a local draft record', () => {
     assert.deepEqual(Library.cleanPhoto(photo), photo);
 });
 
-// Every catalog record describes its image: there is no opt-out that would let
-// a topo reach a trip report as an unlabelled decoration.
-test('requires alt text on every record', () => {
+// Alt text is optional — an empty description is the decorative-image
+// convention — but a record still needs the title that names it in the library.
+test('keeps alt text optional and still normalizes what is supplied', () => {
     assert.equal(Library.createDraft({
         localId: 'photo-1', title: 'Topo', source, now: TIME,
-    }), null);
+    }).alt, '');
     assert.equal(Library.createDraft({
         localId: 'photo-1', title: 'Topo', alt: '   ', source, now: TIME,
-    }), null);
-    assert.equal(Library.cleanPhoto({ ...draft(), alt: '' }), null);
+    }).alt, '');
+    assert.equal(Library.cleanPhoto({ ...draft(), alt: '' }).alt, '');
     assert.equal(Library.createDraft({
-        localId: 'photo-1', title: 'Topo', alt: 'North face', source, now: TIME,
+        localId: 'photo-1', title: 'Topo', alt: '  North   face ', source, now: TIME,
     }).alt, 'North face');
+    assert.equal(Library.createDraft({
+        localId: 'photo-1', title: 'Topo', alt: 'o'.repeat(Library.ALT_LIMIT + 10), source, now: TIME,
+    }).alt.length, Library.ALT_LIMIT);
+});
+
+test('still requires a title on every record', () => {
+    assert.equal(Library.createDraft({
+        localId: 'photo-1', alt: 'North face', source, now: TIME,
+    }), null);
+    assert.equal(Library.cleanPhoto({ ...draft(), title: '   ' }), null);
 });
 
 test('moves through upload, ambiguous, completed, and observed-health states', () => {

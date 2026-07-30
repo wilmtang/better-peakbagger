@@ -327,8 +327,8 @@ const persistDraft = async ({ required = false } = {}) => {
     const now = new Date().toISOString();
     const nextPhoto = cleanDraftFromFields(now);
     if (!nextPhoto) {
-        setSaveStatus('Add a title and image description to save');
-        if (required) toast('Add a title and meaningful image description before uploading.');
+        setSaveStatus('Add a title to save');
+        if (required) toast('Add a title before uploading.');
         return false;
     }
     const nextProject = Project.cleanProject({ ...project, updatedAt: now });
@@ -886,8 +886,12 @@ const chooseFile = async file => {
         ui.editorEmpty.hidden = true;
         ui.editorWorkspace.hidden = false;
         renderProject();
-        setSaveStatus('Add an image description to save');
+        // The title is filled from the file name and the description is
+        // optional, so the draft is already valid — autosave it rather than
+        // waiting for an edit that may never come.
+        setSaveStatus('Not saved yet');
         setEditorStatus('Photo stays local until you choose Upload and insert.');
+        schedulePersist();
         ui.alt.focus();
     } catch {
         toast('This browser could not decode that image.');
@@ -1295,7 +1299,7 @@ const cardFor = async item => {
 
     const body = element('div', 'photo-card-body');
     body.append(element('h3', '', item.title));
-    body.append(element('p', '', item.alt));
+    if (item.alt) body.append(element('p', '', item.alt));
     body.append(element('p', '', `${item.source.width} × ${item.source.height} · `
         + `${formatBytes(item.export?.bytes || item.source.bytes)} · `
         + new Date(item.updatedAt).toLocaleDateString()));

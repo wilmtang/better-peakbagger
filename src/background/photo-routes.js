@@ -43,7 +43,9 @@ const cleanPublicInsertion = value => {
             ? parsed.toString()
             : null;
     } catch { url = null; }
-    return localPhotoId && alt && url ? { localPhotoId, url, alt } : null;
+    // An empty `alt` is a valid decorative-image description, so it does not
+    // invalidate the insertion; the id and HTTPS URL still must be sound.
+    return localPhotoId && url ? { localPhotoId, url, alt } : null;
 };
 
 const defaultToken = () => {

@@ -37,8 +37,9 @@ popover — a content script — can link to it. Its symbol legend is painted fr
 
 The extension opens `photos/photos.html` in a normal extension tab. A new
 project starts when the user chooses a browser-decodable image no larger than
-32 MiB, supplies meaningful alt text, and edits it with
-the route and climbing-symbol tools. Drafts autosave to the browser profile.
+32 MiB and edits it with the route and climbing-symbol tools. A title is
+required — it is filled from the file name — and the alt text describing the
+image is optional. Drafts autosave to the browser profile.
 Nothing leaves the device until the user chooses **Upload and insert**.
 
 On upload, Better Peakbagger:
@@ -278,7 +279,8 @@ accepted only when:
 - the sender is the exact packaged photo page in the recorded editor tab;
 - the token is fresh and unconsumed;
 - the public URL is credential-free HTTPS;
-- the local photo id and alt text are valid; and
+- the local photo id is valid and the alt text — which may be empty — is within
+  its bound; and
 - the original content script acknowledges insertion.
 
 The worker consumes the token before delivery, so a replay cannot insert the

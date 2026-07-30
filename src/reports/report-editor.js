@@ -1102,7 +1102,9 @@ import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.js';
                 src = Markup.sanitizeImageSrc(candidate.toString());
             }
         } catch { /* malformed result */ }
-        return localPhotoId && src && alt ? { src, alt } : null;
+        // Matches the popover's own image path, which has always accepted an
+        // empty description; only the id and sanitized source are required.
+        return localPhotoId && src ? { src, alt } : null;
     };
 
     const handlePhotoInsertion = (message, sender, sendResponse) => {
