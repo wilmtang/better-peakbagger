@@ -709,17 +709,15 @@ const moveDrag = event => {
     dragSession.moved = true;
     let geometry;
     if (dragSession.object.type === 'route' && dragSession.vertex != null) {
-        geometry = structuredClone(dragSession.object.geometry);
         const index = dragSession.vertex;
-        geometry.points[index] = [
-            dragSession.object.geometry.points[index][0] + dx,
-            dragSession.object.geometry.points[index][1] + dy,
-        ];
-        const control = geometry.controls[index];
-        if (control) {
-            if (control.in) control.in = [control.in[0] + dx, control.in[1] + dy];
-            if (control.out) control.out = [control.out[0] + dx, control.out[1] + dy];
-        }
+        const points = dragSession.object.geometry.points.map((point, at) => at === index
+            ? [point[0] + dx, point[1] + dy]
+            : point);
+        // Clearing the controls hands the curve back to the model, the same way
+        // adding a point does. Translating only this vertex's own handles left
+        // its neighbours' tangents aimed at where the vertex used to be, so a
+        // smooth route kinked away from the point the user was dragging.
+        geometry = { points, controls: [] };
     } else {
         geometry = translatedGeometry(dragSession.object, dx, dy);
     }

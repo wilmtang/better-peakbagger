@@ -3,8 +3,8 @@
 //
 // Drives the real photo page (photos.html + the built photos.js bundle) in
 // jsdom against fake-indexeddb, so the editor's gestures — placing a mark,
-// dragging a slider, holding an arrow key — are exercised the way a user
-// performs them rather than asserted from source.
+// dragging a slider, holding an arrow key, moving a route vertex — are
+// exercised the way a user performs them rather than asserted from source.
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -114,6 +114,7 @@ const loadEditor = async () => {
             return steps;
         },
         markCount: () => Number(doc.getElementById('export-summary').textContent.match(/^(\d+)/)[1]),
+        routePath: () => overlay.querySelector('path[d]')?.getAttribute('d'),
     };
 };
 
@@ -232,5 +233,40 @@ test('browser shortcuts do not arm a topo tool', async () => {
     assert.equal(page.armedTool(), 'piton');
     page.key('keydown', { key: 'v', shiftKey: true });
     assert.equal(page.armedTool(), 'select');
+    assert.deepEqual(page.errors, []);
+});
+
+// Dragging a vertex used to translate only that vertex's own handles, leaving
+// its neighbours' tangents aimed at where the point had been: a smooth route
+// kinked away from the point the user was dragging.
+test('moving a smooth route vertex re-derives the curve around it', async () => {
+    const page = await loadEditor();
+    const { doc } = page;
+
+    page.tool('route');
+    page.pointer('pointerdown', 50, 350);
+    page.pointer('pointerdown', 250, 200);
+    page.pointer('pointerdown', 450, 50);
+    page.click(doc.getElementById('finish-route'));
+    page.tool('select');
+    const smooth = doc.getElementById('route-smooth');
+    smooth.checked = true;
+    page.emit(smooth, 'change');
+    await page.settle();
+    assert.equal(page.routePath(),
+        'M 100 700 C 166.667 650 366.667 500 500 400 C 633.333 300 833.333 150 900 100');
+
+    const handles = [...doc.querySelectorAll('[data-vertex]')];
+    assert.equal(handles.length, 3, 'a selected route offers one handle per vertex');
+    const middle = handles.find(node => node.dataset.vertex === '1');
+    page.pointer('pointerdown', 125, 100, middle);
+    page.pointer('pointermove', 125, 250);
+    page.pointer('pointerup', 125, 250);
+    await page.settle();
+
+    // The middle point lands at y = 700, level with the first. Both tangents
+    // that touch it follow; a stale neighbour would still read 166.667 650.
+    assert.equal(page.routePath(),
+        'M 100 700 C 166.667 700 366.667 800 500 700 C 633.333 600 833.333 200 900 100');
     assert.deepEqual(page.errors, []);
 });
