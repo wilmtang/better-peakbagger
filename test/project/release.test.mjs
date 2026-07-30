@@ -175,6 +175,25 @@ test("Firefox verification waits for rendered postconditions instead of fixed fr
   assert.doesNotMatch(navigationProbe, /requestAnimationFrame/);
 });
 
+test("Firefox topo pointer actions re-center the overlay before moving", async () => {
+  const verifier = await readFile(
+    new URL("../../scripts/verify-firefox-extension.mjs", import.meta.url),
+    "utf8",
+  );
+  const helperStart = verifier.indexOf("const clickOverlay =");
+  const helperEnd = verifier.indexOf("await driver.findElement(By.css('[data-tool=\"route\"]'))", helperStart);
+  assert.notEqual(helperStart, -1);
+  assert.notEqual(helperEnd, -1);
+  const pointerHelper = verifier.slice(helperStart, helperEnd);
+
+  const scrollIndex = pointerHelper.indexOf("scrollIntoView");
+  const moveIndex = pointerHelper.indexOf(".move({ origin: overlay, x, y })");
+  assert.notEqual(scrollIndex, -1);
+  assert.notEqual(moveIndex, -1);
+  assert.ok(scrollIndex < moveIndex);
+  assert.match(pointerHelper, /block: 'center'/);
+});
+
 test("release archive rejects development and internal files", async () => {
   await assert.doesNotReject(
     verifyReleaseArchive(await makeReleaseZip(), "1.4.0"),
