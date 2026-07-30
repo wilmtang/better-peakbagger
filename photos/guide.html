@@ -24,25 +24,34 @@
     </nav>
   </header>
 
-  <main class="guide">
-    <p class="guide-lead">
-      Photo Topos lets you draw a route line and climbing symbols on your own photo,
-      upload it, and drop the link into a Peakbagger trip report. Everything stays on
-      this device until you choose to upload.
-    </p>
-
-    <nav class="guide-toc" aria-label="On this page">
-      <a href="#start">Two ways to add a photo</a>
-      <a href="#key">Setting up an ImgBB key</a>
-      <a href="#draw">Drawing the topo</a>
-      <a href="#symbols">What the symbols mean</a>
-      <a href="#upload">Uploading and inserting</a>
-      <a href="#library">The library on this device</a>
-      <a href="#backup">Backing up to GitHub</a>
-      <a href="#delete">Removing a photo</a>
-      <a href="#url">Using an image link instead</a>
-      <a href="#trouble">When something goes wrong</a>
+  <!-- Sidebar + scrolling content, the same frame the settings page uses, so
+       the contents list stays in view and tracks the section being read
+       instead of being a block of links the reader scrolls away from. -->
+  <div class="guide-frame">
+    <nav class="side-nav" aria-label="On this page">
+      <p class="side-nav-title">Contents</p>
+      <ol class="nav-list">
+        <li><a class="nav-item" href="#start">Two ways to add a photo</a></li>
+        <li><a class="nav-item" href="#key">Setting up an ImgBB key</a></li>
+        <li><a class="nav-item" href="#draw">Drawing the topo</a></li>
+        <li><a class="nav-item" href="#symbols">What the symbols mean</a></li>
+        <li><a class="nav-item" href="#upload">Uploading and inserting</a></li>
+        <li><a class="nav-item" href="#library">The library on this device</a></li>
+        <li><a class="nav-item" href="#backup">Backing up to GitHub</a></li>
+        <li><a class="nav-item" href="#delete">Removing a photo</a></li>
+        <li><a class="nav-item" href="#url">Using an image link instead</a></li>
+        <li><a class="nav-item" href="#trouble">When something goes wrong</a></li>
+      </ol>
+      <a class="side-nav-link" href="../options/options.html#capture-photos">Photo settings</a>
     </nav>
+
+    <main class="content">
+     <div class="guide">
+      <p class="guide-lead">
+        Photo Topos lets you draw a route line and climbing symbols on your own photo,
+        upload it, and drop the link into a Peakbagger trip report. Everything stays on
+        this device until you choose to upload.
+      </p>
 
     <section id="start" aria-labelledby="start-heading">
       <h2 id="start-heading">Two ways to add a photo</h2>
@@ -317,12 +326,14 @@
         <dd>The browser has not been allowed to reach <code>api.imgbb.com</code>. Save the key again from Settings and accept the prompt.</dd>
 
         <dt>The edited image is too large to upload.</dt>
-        <dd>ImgBB accepts up to 32 MB. Start from a smaller photo — for a trip report, something around 2000 pixels wide is plenty.</dd>
+        <dd>ImgBB sets the size limit, and the message says what it is for your account. Start from a smaller photo — for a trip report, something around 2000 pixels wide is plenty.</dd>
 
         <dt>The library is empty on my other computer.</dt>
         <dd>Expected: the library lives in one browser profile. <a href="#backup">GitHub backup</a> brings the records across, and <strong>Import project…</strong> brings the originals.</dd>
       </dl>
     </section>
-  </main>
+     </div>
+    </main>
+  </div>
 </body>
 </html>

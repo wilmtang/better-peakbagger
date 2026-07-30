@@ -8,6 +8,7 @@
 // rest of the guide is static markup; only the glyphs come from code.
 
 import { photoRenderer as Renderer } from '../src/photos/photo-renderer.js';
+import { initSectionNav } from '../src/ui/section-nav.js';
 
 for (const slot of document.querySelectorAll('[data-symbol]')) {
     const parsed = new DOMParser().parseFromString(
@@ -17,6 +18,7 @@ for (const slot of document.querySelectorAll('[data-symbol]')) {
     slot.replaceChildren(document.importNode(parsed.documentElement, true));
 }
 
-// The guide's own "go back" is gone with the header rework: every Photo Topos
-// page now shows the same three views, so leaving is a matter of picking one
-// rather than retracing however the reader arrived.
+// The contents list is the settings page's sidebar, so it gets the same shared
+// scroll-spy: native anchors already scroll and deep-link, and this only tracks
+// which section is being read.
+initSectionNav();

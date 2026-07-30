@@ -23,7 +23,7 @@ test('the guide ships as a packaged page with no inline script', () => {
     assert.ok(COPY_FILES.some(([from, to]) =>
         from === 'photos/guide.html' && to === 'photos/guide.html'));
     assert.deepEqual(ENTRIES.find(entry => entry.out === 'photos/guide.js')?.sources,
-        ['photos/photo-project.js', 'photos/photo-renderer.js', 'photos-guide.js']);
+        ['photos/photo-project.js', 'photos/photo-renderer.js', 'ui/section-nav.js', 'photos-guide.js']);
     assert.deepEqual([...doc.querySelectorAll('script')].map(node => node.getAttribute('src')),
         ['photos-head.js', 'guide.js'],
         'no inline script, and the theme resolves before the stylesheet paints');
@@ -60,6 +60,27 @@ test('every photo page shows the same view tabs, marking the current one', () =>
     // Nothing may reintroduce a page-specific action into the tab set.
     assert.equal(doc.getElementById('guide-back'), null);
     assert.doesNotMatch(source, /guide-back/);
+});
+
+// A wrapped block of links above the prose was a contents list the reader
+// scrolled away from and could not use to tell where they were.
+test('the contents list is a sidebar that tracks the section being read', () => {
+    const items = [...doc.querySelectorAll('.side-nav .nav-item')];
+    const sections = [...doc.querySelectorAll('.content section[id]')];
+    assert.equal(items.length, sections.length, 'one contents entry per section');
+    assert.deepEqual(items.map(link => link.getAttribute('href').slice(1)),
+        sections.map(section => section.id),
+        'the contents list must follow the guide in document order');
+    for (const link of items) {
+        const heading = doc.getElementById(link.getAttribute('href').slice(1)).querySelector('h2');
+        assert.equal(link.textContent.trim(), heading.textContent.trim(),
+            'a contents entry must read as the heading it goes to');
+    }
+    // The shared scroll-spy is inert unless it finds both of these.
+    assert.ok(doc.querySelector('.side-nav'));
+    assert.ok(doc.querySelector('.content'));
+    assert.match(source, /initSectionNav\(\)/);
+    assert.equal(doc.querySelector('.guide-toc'), null, 'the old chip cloud is gone');
 });
 
 test('the legend is painted from the renderer, once per symbol', () => {

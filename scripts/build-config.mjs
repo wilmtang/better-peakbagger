@@ -28,7 +28,6 @@ const PAGE_LOCAL = {
     'options-main.js': path.join(root, 'options', 'options.js'),
     'options-drafts.js': path.join(root, 'options', 'drafts.js'),
     'options-favorites.js': path.join(root, 'options', 'favorites.js'),
-    'options-section-nav.js': path.join(root, 'options', 'section-nav.js'),
     'options-utils.js': path.join(root, 'options', 'options-utils.js'),
     'popup-main.js': path.join(root, 'popup', 'popup.js'),
     'photos-main.js': path.join(root, 'photos', 'photos.js'),
@@ -63,14 +62,14 @@ export const ENTRIES = [
     // The options page keeps its head/tail split: the head bundle applies the
     // theme before first paint, the tail bundle runs the settings UI.
     { out: 'options/options-head.js', sources: ['settings/settings-schema.js', 'settings/settings.js', 'theme/panel-theme.js'], page: true },
-    { out: 'options/options.js', sources: ['terrain/terrain-cache.js', 'reports/report-markup.js', 'reports/report-drafts.js', 'favorites/favorite-climbers.js', 'peakbagger/peakbagger-cloudflare.js', 'peakbagger/peakbagger-response.js', 'peakbagger/peakbagger-error.js', 'peakbagger/peakbagger-request.js', 'profile/profile-backup-core.js', 'ui/dom.js', 'ui/runtime-message.js', 'options-utils.js', 'options-section-nav.js', 'options-main.js', 'options-drafts.js', 'options-favorites.js'], page: true },
+    { out: 'options/options.js', sources: ['terrain/terrain-cache.js', 'reports/report-markup.js', 'reports/report-drafts.js', 'favorites/favorite-climbers.js', 'peakbagger/peakbagger-cloudflare.js', 'peakbagger/peakbagger-response.js', 'peakbagger/peakbagger-error.js', 'peakbagger/peakbagger-request.js', 'profile/profile-backup-core.js', 'ui/dom.js', 'ui/runtime-message.js', 'ui/section-nav.js', 'options-utils.js', 'options-main.js', 'options-drafts.js', 'options-favorites.js'], page: true },
     { out: 'popup/popup-head.js', sources: ['settings/settings-schema.js', 'settings/settings.js', 'theme/panel-theme.js'], page: true },
     { out: 'popup/popup.js', sources: ['capture/capture-phases.js', 'settings/settings-schema.js', 'settings/settings.js', 'ui/units.js', 'popup-main.js'], page: true },
     { out: 'photos/photos-head.js', sources: ['settings/settings-schema.js', 'settings/settings.js', 'theme/panel-theme.js'], page: true },
     { out: 'photos/photos.js', sources: ['photos/photo-project.js', 'photos/photo-renderer.js', 'photos/photo-library.js', 'photos/photo-store.js', 'photos/photo-archive.js', 'photos/imgbb-client.js', 'photos-main.js'], page: true },
     // The guide paints its symbol legend from the renderer so what it teaches
     // cannot drift from what the export draws; nothing else on it is dynamic.
-    { out: 'photos/guide.js', sources: ['photos/photo-project.js', 'photos/photo-renderer.js', 'photos-guide.js'], page: true },
+    { out: 'photos/guide.js', sources: ['photos/photo-project.js', 'photos/photo-renderer.js', 'ui/section-nav.js', 'photos-guide.js'], page: true },
 ];
 
 // Absolute source paths for one entry's bundle, in order.

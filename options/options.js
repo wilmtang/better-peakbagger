@@ -12,7 +12,7 @@ import { initDrafts } from './drafts.js';
 import { initImgbbKey } from './imgbb.js';
 import { initSettingsBackup } from './settings-backup.js';
 import { initPhotoBackup } from './photos.js';
-import { initSectionNav } from './section-nav.js';
+import { initSectionNav } from '../src/ui/section-nav.js';
 
 (() => {
     'use strict';
