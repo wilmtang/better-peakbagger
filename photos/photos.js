@@ -489,14 +489,25 @@ const renderProject = () => {
     updateHistoryButtons();
 };
 
-const setProject = (next, { pushHistory = true, persist = true } = {}) => {
+// A slider drag, a run of typing, and a held arrow key are each one thing the
+// user did, so each is one Undo. They emit a continuous stream of edits, and
+// giving every intermediate value its own history entry made Undo step back a
+// tick at a time — worse, one drag of Route width (1–100) pushed 100 entries
+// and evicted every real edit behind it from a 100-deep history. A run is
+// identified by its control and mark; it ends when the gesture does.
+let coalescing = null;
+const endCoalescing = () => { coalescing = null; };
+
+const setProject = (next, { pushHistory = true, persist = true, coalesce = null } = {}) => {
     const cleaned = Project.cleanProject(next);
     if (!cleaned) return false;
-    if (pushHistory && project) {
+    const continuing = coalesce !== null && coalesce === coalescing;
+    if (pushHistory && project && !continuing) {
         history.push(structuredClone(project));
         if (history.length > HISTORY_LIMIT) history.shift();
         future = [];
     }
+    coalescing = pushHistory ? coalesce : null;
     project = cleaned;
     renderProject();
     if (persist) schedulePersist();
@@ -505,6 +516,7 @@ const setProject = (next, { pushHistory = true, persist = true } = {}) => {
 
 const undo = () => {
     if (!history.length || !project) return;
+    endCoalescing();
     future.push(structuredClone(project));
     project = history.pop();
     selectedId = project.objects.some(object => object.id === selectedId) ? selectedId : null;
@@ -516,6 +528,7 @@ const undo = () => {
 
 const redo = () => {
     if (!future.length || !project) return;
+    endCoalescing();
     history.push(structuredClone(project));
     project = future.pop();
     selectedId = project.objects.some(object => object.id === selectedId) ? selectedId : null;
@@ -669,6 +682,7 @@ const translatedGeometry = (object, dx, dy) => {
 const beginDrag = (event, objectId, vertex = null) => {
     const object = project.objects.find(candidate => candidate.id === objectId);
     if (!object) return;
+    endCoalescing();
     dragSession = {
         start: pointerPoint(event),
         baseline: structuredClone(project),
@@ -744,7 +758,9 @@ const onPointerDown = event => {
     if (selectedId) beginDrag(event, selectedId);
 };
 
-const updateSelected = patch => {
+// `coalesce` names the control being dragged or typed into; it is scoped to the
+// mark so moving to a different one always starts a new Undo step.
+const updateSelected = (patch, { coalesce = null } = {}) => {
     const object = selectedObject();
     if (!object) return;
     if (patch.style) {
@@ -754,7 +770,9 @@ const updateSelected = patch => {
                 .filter(([key]) => key in styleDefaults)),
         };
     }
-    setProject(Project.updateObject(project, object.id, patch));
+    setProject(Project.updateObject(project, object.id, patch), {
+        coalesce: coalesce && `${coalesce}:${object.id}`,
+    });
 };
 
 const duplicateSelected = () => {
@@ -779,7 +797,7 @@ const deleteSelected = () => {
 const nudgeSelected = (dx, dy) => {
     const object = selectedObject();
     if (!object) return;
-    updateSelected({ geometry: translatedGeometry(object, dx, dy) });
+    updateSelected({ geometry: translatedGeometry(object, dx, dy) }, { coalesce: 'nudge' });
 };
 
 const loadBundle = async bundle => {
@@ -1409,7 +1427,8 @@ const bindInspector = () => {
     ui.routeWidth.addEventListener('input', () => {
         const object = selectedObject();
         if (object?.type === 'route') {
-            updateSelected({ style: { ...object.style, width: Number(ui.routeWidth.value) } });
+            updateSelected({ style: { ...object.style, width: Number(ui.routeWidth.value) } },
+                { coalesce: 'width' });
         }
     });
     ui.routeStroke.addEventListener('change', () => {
@@ -1439,12 +1458,13 @@ const bindInspector = () => {
         const object = selectedObject();
         const opacity = Number(ui.opacity.value) / 100;
         ui.opacityValue.textContent = percent(opacity);
-        if (object) updateSelected({ style: { ...object.style, opacity } });
+        if (object) updateSelected({ style: { ...object.style, opacity } }, { coalesce: 'opacity' });
     });
     ui.scale.addEventListener('input', () => {
         const object = selectedObject();
         if (object && object.type !== 'route') {
-            updateSelected({ style: { ...object.style, scale: Number(ui.scale.value) } });
+            updateSelected({ style: { ...object.style, scale: Number(ui.scale.value) } },
+                { coalesce: 'scale' });
         }
     });
     ui.rotation.addEventListener('input', () => {
@@ -1452,7 +1472,7 @@ const bindInspector = () => {
         const rotation = Number(ui.rotation.value);
         ui.rotationValue.textContent = `${rotation}°`;
         if (object && object.type !== 'route') {
-            updateSelected({ geometry: { ...object.geometry, rotation } });
+            updateSelected({ geometry: { ...object.geometry, rotation } }, { coalesce: 'rotation' });
         }
     });
     ui.pitch.addEventListener('change', () => {
@@ -1461,8 +1481,16 @@ const bindInspector = () => {
     });
     ui.text.addEventListener('input', () => {
         const object = selectedObject();
-        if (object?.type === 'text' && ui.text.value.trim()) updateSelected({ text: ui.text.value });
+        if (object?.type === 'text' && ui.text.value.trim()) {
+            updateSelected({ text: ui.text.value }, { coalesce: 'text' });
+        }
     });
+    // A range input fires `change` when the drag ends and a text field when it
+    // loses focus, so the next gesture on the same control is its own Undo step
+    // rather than being folded into the last one.
+    for (const control of [ui.opacity, ui.routeWidth, ui.scale, ui.rotation, ui.text]) {
+        control.addEventListener('change', endCoalescing);
+    }
     ui.align.addEventListener('change', () => {
         const object = selectedObject();
         if (object?.type === 'text') {
@@ -1580,6 +1608,11 @@ const bindEvents = () => {
             event.preventDefault();
             nudgeSelected(...directions[event.key]);
         }
+    });
+    // Releasing the key ends the nudge, so a held arrow is one Undo and the
+    // next press is another.
+    document.addEventListener('keyup', event => {
+        if (event.key.startsWith('Arrow')) endCoalescing();
     });
     window.addEventListener('beforeunload', () => {
         closeSource();
