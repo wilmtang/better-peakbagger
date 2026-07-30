@@ -298,6 +298,19 @@ ImgBB receives a flattened image only when you provide an API key and choose
 **Upload & insert**. Remote report media contacts its host when displayed. See
 [Privacy and data handling](PRIVACY.md) for the complete field-level list.
 
+### Will Better Peakbagger add a developer-run server or telemetry in the future?
+
+There are no plans to. Running a reliable service costs money and creates a
+long-term maintenance commitment, so Better Peakbagger is designed to work
+without a developer-run data server or telemetry. This is also why it favors
+backups you control: if Peakbagger or Better Peakbagger ever disappears, your
+backed-up trip reports can remain in your GitHub repository.
+
+If a future feature truly requires a service, it will not be introduced
+silently. The feature will require your explicit choice, collect and retain
+only the data it needs, and be documented in the README and privacy policy
+before you use it.
+
 ## Development
 
 Start with the
