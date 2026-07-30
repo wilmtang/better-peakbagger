@@ -137,7 +137,99 @@ test('an unmapped provider error still reads as ImgBB said it', async () => {
         fetch: async () => response(429, { error: { message: 'Rate limit reached', code: 999 } }),
         key: KEY,
         blob: new Blob([new Uint8Array(8)], { type: 'image/png' }),
-    }), error => error.code === 'provider' && error.message === 'Rate limit reached');
+    }), error => error.code === 'rate-limit'
+        && error.message === 'Rate limit reached'
+        // Refused before the image pipeline: nothing was stored, so a retry is
+        // safe and the library must not mark the photo's outcome unknown.
+        && error.ambiguous === false);
+});
+
+test('a rate limit with no wording of its own still says what to do', async () => {
+    await assert.rejects(Client.upload({
+        fetch: async () => response(429, '<html>429 Too Many Requests</html>'),
+        key: KEY,
+        blob: new Blob([new Uint8Array(8)], { type: 'image/png' }),
+    }), error => error.code === 'rate-limit'
+        && /rate-limiting uploads/.test(error.message)
+        && error.ambiguous === false);
+});
+
+test('an ImgBB outage reads as an outage, not as an unreadable reply', async () => {
+    // The regression: the body was parsed before the status was consulted, so
+    // an edge error page — the normal shape of an outage — surfaced as
+    // "ImgBB returned a response Better Peakbagger could not read", a parser
+    // complaint standing in for "ImgBB is down".
+    for (const status of [500, 502, 503]) {
+        await assert.rejects(Client.upload({
+            fetch: async () => response(status, '<html><body>Bad gateway</body></html>'),
+            key: KEY,
+            blob: new Blob([new Uint8Array(8)], { type: 'image/png' }),
+        }), error => error.code === 'unavailable'
+            && error.message.includes(`HTTP ${status}`)
+            && /try again in a few minutes/i.test(error.message)
+            // Nothing in front of ImgBB can say whether the backend stored it.
+            && error.ambiguous === true);
+    }
+});
+
+test('a 5xx carrying ImgBB’s own envelope stays a definite refusal', async () => {
+    await assert.rejects(Client.upload({
+        fetch: async () => response(500, { error: { message: 'Image type not supported', code: 415 } }),
+        key: KEY,
+        blob: new Blob([new Uint8Array(8)], { type: 'image/png' }),
+    }), error => error.code === 'invalid-image' && error.ambiguous === false);
+});
+
+test('a stalled upload fails on its deadline and keeps the outcome unknown', async () => {
+    const aborts = [];
+    await assert.rejects(Client.upload({
+        fetch: async (_url, init) => {
+            init.signal?.addEventListener('abort', () => aborts.push(true));
+            return new Promise(() => {});
+        },
+        key: KEY,
+        blob: new Blob([new Uint8Array(8)], { type: 'image/png' }),
+        timeoutMs: 10,
+    }), error => error.code === 'timeout'
+        // The bytes were already on the wire; ImgBB may be holding the image.
+        && error.ambiguous === true
+        && /check your imgbb account/i.test(error.message));
+    assert.equal(aborts.length, 1, 'the deadline must release the socket too');
+});
+
+test('a reply that stops mid-body keeps the outcome unknown', async () => {
+    await assert.rejects(Client.upload({
+        fetch: async () => ({ ok: true, status: 200, text: async () => { throw new TypeError('stream closed'); } }),
+        key: KEY,
+        blob: new Blob([new Uint8Array(8)], { type: 'image/png' }),
+    }), error => error.ambiguous === true && /check your imgbb account/i.test(error.message));
+});
+
+// The dangerous shape: ImgBB said yes, and the only thing lost is the URL of
+// an image it is now hosting. Reporting that as a clean failure would reset the
+// upload and let the user re-upload the same photo without ever being told.
+test('an unreadable success is ambiguous, never a clean failure', async () => {
+    await assert.rejects(Client.upload({
+        fetch: async () => response(200, '<html>gateway rewrote the body</html>'),
+        key: KEY,
+        blob: new Blob([new Uint8Array(8)], { type: 'image/png' }),
+    }), error => error.code === 'invalid-response'
+        && error.ambiguous === true
+        && /check your imgbb account/i.test(error.message));
+});
+
+test('a caller’s own cancellation tears the upload down', async () => {
+    const controller = new AbortController();
+    const aborted = Client.upload({
+        fetch: async (_url, init) => new Promise((_resolve, reject) => {
+            init.signal?.addEventListener('abort', () => reject(new Error('aborted')));
+        }),
+        key: KEY,
+        blob: new Blob([new Uint8Array(8)], { type: 'image/png' }),
+        signal: controller.signal,
+    });
+    controller.abort();
+    await assert.rejects(aborted, error => error.ambiguous === true);
 });
 
 test('treats a network end after request start as ambiguous and does not leak the key', async () => {

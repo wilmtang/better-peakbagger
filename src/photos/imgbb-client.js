@@ -2,11 +2,26 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // Better Peakbagger — ImgBB v1 upload client with a narrow response contract.
+//
+// An upload is not idempotent: ImgBB stores the image and hands back a URL, so
+// a failure the client cannot classify is not merely an error to show — it
+// decides whether the library records the photo as "outcome unknown" (and asks
+// the user to check ImgBB) or silently resets it for a retry that would upload
+// the same picture twice. Every failure below therefore states whether ImgBB
+// definitely refused the image (`ambiguous: false`) or may already be holding
+// it (`ambiguous: true`). When in doubt the client says so; a duplicate the
+// user never learns about is the worse outcome.
+
+import { requestDeadline as Deadline } from '../net/request-deadline.js';
 
 const API_ROOT = 'https://api.imgbb.com/1/upload';
 const KEY_LIMIT = 512;
 const NAME_LIMIT = 200;
 const URL_LIMIT = 4096;
+// Photos are megabytes over a consumer uplink, so this is deliberately far
+// longer than a page read — long enough for a slow upload to finish, short
+// enough that a dead connection still becomes a stated failure.
+const DEFAULT_TIMEOUT_MS = 120000;
 
 class ImgbbError extends Error {
     constructor(code, message, { status = null, ambiguous = false, cause = null } = {}) {
@@ -54,17 +69,14 @@ const nullableExpiration = value => value == null || value === 0 || value === '0
     ? null
     : unixTime(value);
 
-const parseJson = async response => {
-    const text = await response.text();
+const parseJson = text => {
     try { return JSON.parse(text); }
-    catch {
-        throw new ImgbbError(
-            'invalid-response',
-            'ImgBB returned a response Better Peakbagger could not read.',
-            { status: response.status },
-        );
-    }
+    catch { return undefined; }
 };
+
+// ImgBB's own `{ success: false, error: {...} }` envelope: proof the service
+// itself answered, rather than something in front of it.
+const hasProviderEnvelope = payload => !!payload && typeof payload === 'object' && !!payload.error;
 
 const providerMessage = payload => {
     const message = payload?.error?.message;
@@ -96,7 +108,18 @@ const providerFailure = (payload, status, fallbackCode, fallbackMessage) => {
     return new ImgbbError(known?.code || fallbackCode, message, { status });
 };
 
+// A 2xx whose body is not ImgBB's envelope is the most dangerous shape there
+// is: ImgBB said yes, and the one thing lost is the URL of an image it is now
+// hosting. It must never look like a clean refusal the caller can retry.
+const UNREADABLE_SUCCESS = 'ImgBB accepted the upload but sent a reply Better Peakbagger could not read.'
+    + ' Check your ImgBB account before uploading it again.';
+
 const cleanUploadResponse = (payload, responseStatus) => {
+    if (payload === undefined) {
+        throw new ImgbbError('invalid-response', UNREADABLE_SUCCESS, {
+            status: responseStatus, ambiguous: true,
+        });
+    }
     if (!payload || payload.success !== true || !payload.data || typeof payload.data !== 'object') {
         throw providerFailure(payload, responseStatus, 'rejected', 'ImgBB rejected the image upload.');
     }
@@ -151,12 +174,18 @@ const publicError = (error, fallback = 'The ImgBB upload failed.') => {
     return { code: 'unknown', message: fallback, ambiguous: false };
 };
 
+// The statuses where ImgBB rejected the request itself, so nothing was stored
+// and the message can name the key or the image. Rate limits and outages are
+// classified before this is consulted.
+const refusedOutright = status => status === 400 || status === 401 || status === 403;
+
 const upload = async ({
     fetch,
     key,
     blob,
     name = '',
     signal,
+    timeoutMs = DEFAULT_TIMEOUT_MS,
     FormDataCtor = globalThis.FormData,
 } = {}) => {
     if (typeof fetch !== 'function') throw new TypeError('ImgBB client requires fetch');
@@ -172,30 +201,88 @@ const upload = async ({
 
     const endpoint = new URL(API_ROOT);
     endpoint.searchParams.set('key', credential);
+
+    const deadline = Deadline.createRequestDeadline(timeoutMs);
+    // The caller's own cancellation tears down the same request. Forwarding it
+    // to the deadline's controller avoids AbortSignal.any(), which is newer
+    // than the browsers this extension supports.
+    const cancel = () => deadline.abort();
+    if (signal) {
+        if (signal.aborted) cancel();
+        else signal.addEventListener('abort', cancel, { once: true });
+    }
+    const release = () => {
+        deadline.clear();
+        signal?.removeEventListener?.('abort', cancel);
+    };
+
     let response;
     try {
-        response = await fetch(endpoint.toString(), {
+        response = await deadline.run(fetch(endpoint.toString(), {
             method: 'POST',
             body: form,
             cache: 'no-store',
             referrerPolicy: 'no-referrer',
-            signal,
-        });
+            signal: deadline.signal,
+        }));
     } catch (cause) {
+        release();
+        // Both shapes are ambiguous: the image was already on the wire. They
+        // differ only in what the user should do about it.
+        throw deadline.expired
+            ? new ImgbbError(
+                'timeout',
+                'ImgBB did not respond in time. Check your ImgBB account before uploading this photo again.',
+                { ambiguous: true, cause },
+            )
+            : new ImgbbError(
+                'ambiguous',
+                'The connection ended before ImgBB confirmed the upload. Retrying may create a duplicate.',
+                { ambiguous: true, cause },
+            );
+    }
+
+    let text;
+    try { text = await deadline.run(response.text()); }
+    catch (cause) {
+        release();
         throw new ImgbbError(
-            'ambiguous',
-            'The connection ended before ImgBB confirmed the upload. Retrying may create a duplicate.',
-            { ambiguous: true, cause },
+            deadline.expired ? 'timeout' : 'ambiguous',
+            'ImgBB stopped responding before Better Peakbagger could read the result.'
+                + ' Check your ImgBB account before uploading this photo again.',
+            { status: response.status, ambiguous: true, cause },
         );
     }
-    const payload = await parseJson(response);
+    release();
+
+    // Classify the status first. A service failure is answered by ImgBB's edge,
+    // not by its JSON envelope, so parsing before checking turned every outage
+    // page into "returned a response Better Peakbagger could not read" — a
+    // parser complaint standing in for "ImgBB is down".
+    const payload = parseJson(text);
     if (!response.ok) {
-        const rejected = response.status === 400 || response.status === 401 || response.status === 403;
+        if (response.status === 429) {
+            throw providerFailure(payload, response.status, 'rate-limit',
+                'ImgBB is rate-limiting uploads. Wait a few minutes, then try again.');
+        }
+        // A 5xx carrying ImgBB's own error envelope is ImgBB rejecting the
+        // image, so it is definite. A 5xx without one came from whatever sits
+        // in front of ImgBB and says nothing about whether the backend behind
+        // it stored the image, so the outcome stays unknown.
+        if (response.status >= 500 && !hasProviderEnvelope(payload)) {
+            throw new ImgbbError(
+                'unavailable',
+                `ImgBB is temporarily unavailable (HTTP ${response.status}). Try again in a few minutes.`
+                    + ' Check your ImgBB account before uploading this photo again.',
+                { status: response.status, ambiguous: true },
+            );
+        }
+        const refused = refusedOutright(response.status);
         throw providerFailure(
             payload,
             response.status,
-            rejected ? 'rejected' : 'provider',
-            rejected
+            refused ? 'rejected' : 'provider',
+            refused
                 ? 'ImgBB rejected the API key or image.'
                 : 'ImgBB could not accept the image. Try again later.',
         );

@@ -97,3 +97,44 @@ test('a malformed timeout falls back to the shared default instead of firing ins
         deadline.clear();
     }
 });
+test('every third-party transport bounds its requests through this one module', async () => {
+    // The failure a status code never reports is the one that never arrives.
+    // A transport added later must not quietly reintroduce an unbounded wait.
+    const transports = [
+        'github/github-api.js',
+        'github/github-auth.js',
+        'photos/imgbb-client.js',
+        'peakbagger/peakbagger-request.js',
+        // The map surfaces reach third-party hosts too: DEM tiles from
+        // Mapterhorn and the vector style from OpenFreeMap. Neither renders
+        // through a transport that reports status, so an unbounded wait there
+        // shows up as a hole in the mesh or a blank drape rather than an error.
+        'terrain/terrain-cache.js',
+        'terrain/terrain-frame.js',
+    ];
+    for (const file of transports) {
+        const source = await readFile(new URL(`../../src/${file}`, import.meta.url), 'utf8');
+        assert.ok(/request-deadline\.js/.test(source), `${file} must bound its requests`);
+    }
+});
+
+test('no source module hardcodes its own race-with-timeout', async () => {
+    const root = new URL('../../src/', import.meta.url);
+    const walk = async dir => {
+        const out = [];
+        for (const entry of await readdir(dir, { withFileTypes: true })) {
+            const child = new URL(`${entry.name}${entry.isDirectory() ? '/' : ''}`, dir);
+            if (entry.isDirectory()) out.push(...await walk(child));
+            else if (entry.name.endsWith('.js')) out.push(child);
+        }
+        return out;
+    };
+    for (const file of await walk(root)) {
+        if (path.basename(file.pathname) === 'request-deadline.js') continue;
+        const source = await readFile(file, 'utf8');
+        assert.ok(
+            !/Promise\.race\s*\(\s*\[[^\]]*\btimeout\b/i.test(source),
+            `${path.basename(file.pathname)} must use the shared deadline, not a second implementation`,
+        );
+    }
+});
