@@ -88,6 +88,18 @@ const loadEditor = async () => {
     const click = node => node.dispatchEvent(new win.MouseEvent('click', { bubbles: true }));
     const pointer = (type, x, y, node = overlay) => node.dispatchEvent(
         new win.MouseEvent(type, { bubbles: true, button: 0, clientX: x, clientY: y }));
+    // The secondary button, both halves of it: the press the editor must ignore
+    // and the context menu the browser raises from it.
+    const rightClick = (x, y) => {
+        overlay.dispatchEvent(new win.MouseEvent('pointerdown', {
+            bubbles: true, button: 2, clientX: x, clientY: y,
+        }));
+        const menu = new win.MouseEvent('contextmenu', {
+            bubbles: true, cancelable: true, button: 2, clientX: x, clientY: y,
+        });
+        overlay.dispatchEvent(menu);
+        return menu.defaultPrevented;
+    };
     const key = (type, init) => doc.dispatchEvent(new win.KeyboardEvent(type, { bubbles: true, ...init }));
     const emit = (node, type) => node.dispatchEvent(new win.Event(type, { bubbles: true }));
     return {
@@ -97,9 +109,14 @@ const loadEditor = async () => {
         overlay,
         click,
         pointer,
+        rightClick,
         key,
         emit,
         settle: () => settle(win),
+        status: () => doc.getElementById('editor-status').textContent,
+        drawing: () => doc.getElementById('finish-route').hidden === false,
+        // One handle per point, drawn only for the selected route under Select.
+        vertexCount: () => overlay.querySelectorAll('.vertex-handle').length,
         tool: name => click(doc.querySelector(`[data-tool="${name}"]`)),
         armedTool: () => [...doc.querySelectorAll('[data-tool]')]
             .find(button => button.getAttribute('aria-pressed') === 'true')?.dataset.tool,
@@ -268,5 +285,91 @@ test('moving a smooth route vertex re-derives the curve around it', async () => 
     // that touch it follow; a stale neighbour would still read 166.667 650.
     assert.equal(page.routePath(),
         'M 100 700 C 166.667 700 366.667 800 500 700 C 633.333 600 833.333 200 900 100');
+    assert.deepEqual(page.errors, []);
+});
+
+// Every advertised way out of a route has to work, because the one the user
+// reaches for is the one they believe. The double-click is the load-bearing
+// case: Chrome withholds the `click` that pairs into `dblclick` whenever the
+// press repaints the node the release lands on, which is every press here, so
+// a route drawn in the real editor could not be ended by the gesture its own
+// status line named. The gesture is read from the presses instead.
+test('a double-click, a right-click, and Enter each end a route', async () => {
+    const page = await loadEditor();
+
+    // Double-click: the second press of the pair lands on the point the first
+    // one placed, and ends the route rather than stacking a duplicate on it.
+    page.tool('route');
+    page.pointer('pointerdown', 50, 350);
+    page.pointer('pointerdown', 250, 200);
+    page.pointer('pointerdown', 450, 50);
+    page.pointer('pointerdown', 452, 52);
+    await page.settle();
+    assert.equal(page.drawing(), false, 'the double-click ended the route');
+    assert.match(page.status(), /^Route added\./);
+    assert.equal(page.markCount(), 1);
+    page.tool('select');
+    await page.settle();
+    assert.equal(page.vertexCount(), 3, 'the finishing press placed no fourth point');
+
+    // Right-click: the press itself places nothing, and the page's own menu is
+    // suppressed only because a route was in progress.
+    page.tool('route');
+    page.pointer('pointerdown', 60, 360);
+    page.pointer('pointerdown', 260, 210);
+    await page.settle();
+    assert.equal(page.drawing(), true);
+    assert.equal(page.rightClick(300, 150), true, 'the context menu is suppressed mid-route');
+    await page.settle();
+    assert.equal(page.drawing(), false, 'the right-click ended the route');
+    assert.match(page.status(), /^Route added\./);
+    assert.equal(page.markCount(), 2);
+    page.tool('select');
+    await page.settle();
+    assert.equal(page.vertexCount(), 2, 'the secondary button placed no point');
+
+    // With no route in progress the menu is the user's again.
+    assert.equal(page.rightClick(300, 150), false);
+
+    // Enter.
+    page.tool('route');
+    page.pointer('pointerdown', 70, 370);
+    page.pointer('pointerdown', 270, 220);
+    page.pointer('pointerdown', 470, 70);
+    await page.settle();
+    page.key('keydown', { key: 'Enter' });
+    await page.settle();
+    assert.equal(page.drawing(), false, 'Enter ended the route');
+    assert.match(page.status(), /^Route added\./);
+    assert.equal(page.markCount(), 3);
+
+    assert.deepEqual(page.errors, []);
+});
+
+// The finishing press is the *double*-click, not any second click: a route
+// traced with slow, deliberate clicks along a tight line must keep drawing.
+test('two unhurried presses on one spot keep the route going', async () => {
+    const page = await loadEditor();
+
+    page.tool('route');
+    page.pointer('pointerdown', 50, 350);
+    page.pointer('pointerdown', 250, 200);
+    await page.settle();
+    // Far enough apart in space to be two points, close enough in time to be
+    // one gesture — the distance alone has to keep them separate.
+    page.pointer('pointerdown', 270, 210);
+    await page.settle();
+    assert.equal(page.drawing(), true, 'a press 22px away is a new point, not a finish');
+
+    // ...and the same spot, once the double-click interval has passed.
+    await new Promise(resolve => page.win.setTimeout(resolve, 450));
+    page.pointer('pointerdown', 270, 210);
+    await page.settle();
+    assert.equal(page.drawing(), true, 'a press half a second later is a new point');
+
+    page.click(page.doc.getElementById('finish-route'));
+    page.tool('select');
+    await page.settle();
+    assert.equal(page.vertexCount(), 4);
     assert.deepEqual(page.errors, []);
 });

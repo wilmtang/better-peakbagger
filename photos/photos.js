@@ -38,7 +38,6 @@ const ui = {
     file: byId('photo-file'),
     title: byId('photo-title'),
     alt: byId('photo-alt'),
-    decorative: byId('photo-decorative'),
     undo: byId('undo'),
     redo: byId('redo'),
     viewport: byId('photo-viewport'),
@@ -298,7 +297,6 @@ const cleanDraftFromFields = now => {
     const fields = {
         title: ui.title.value,
         alt: ui.alt.value,
-        decorative: ui.decorative.checked,
     };
     if (!photo) {
         return Library.createDraft({
@@ -329,9 +327,7 @@ const persistDraft = async ({ required = false } = {}) => {
     const now = new Date().toISOString();
     const nextPhoto = cleanDraftFromFields(now);
     if (!nextPhoto) {
-        setSaveStatus(ui.decorative.checked
-            ? 'Add a title to save'
-            : 'Add a title and image description to save');
+        setSaveStatus('Add a title and image description to save');
         if (required) toast('Add a title and meaningful image description before uploading.');
         return false;
     }
@@ -554,7 +550,7 @@ const setTool = tool => {
     setEditorStatus(tool === 'select'
         ? 'Select a mark to move or restyle it.'
         : tool === 'route'
-            ? 'Click along the route. Double-click or choose Done drawing to finish.'
+            ? 'Click along the route. Double-click, right-click, or press Enter to finish.'
             : `${toolName(tool)}: click the photo to place one. Esc returns to Select.`);
 };
 
@@ -572,7 +568,29 @@ const defaultStyle = () => ({
     opacity: styleDefaults.opacity,
 });
 
-const addRoutePoint = point => {
+// Finishing on a double-click cannot be left to the browser's `dblclick`.
+// Every press repaints the overlay, so the second release lands on a node that
+// did not exist when its own press fired, and Chrome then withholds the paired
+// `click` — and with it the `dblclick` that used to end the route. The gesture
+// is recognised from the presses instead: a second press on the same spot
+// inside the double-click interval finishes the route rather than stacking a
+// duplicate point on top of the last one. Screen coordinates, not image ones,
+// because the slop has to mean the same thing whatever the photo's scale.
+const DOUBLE_PRESS_MS = 400;
+const DOUBLE_PRESS_SLOP = 8;
+
+const pressOf = event => ({ x: event.clientX, y: event.clientY, at: event.timeStamp });
+
+const isDoublePress = (previous, press) => !!previous
+    && press.at - previous.at <= DOUBLE_PRESS_MS
+    && Math.abs(press.x - previous.x) <= DOUBLE_PRESS_SLOP
+    && Math.abs(press.y - previous.y) <= DOUBLE_PRESS_SLOP;
+
+const addRoutePoint = (point, press) => {
+    if (routeSession && isDoublePress(routeSession.lastPress, press)) {
+        finishRoute(false);
+        return;
+    }
     if (!routeSession) {
         routeSession = {
             id: crypto.randomUUID(),
@@ -580,12 +598,14 @@ const addRoutePoint = point => {
             points: [point],
             cursor: null,
             historyPushed: false,
+            lastPress: press,
         };
         ui.finishRoute.hidden = false;
-        setEditorStatus('Route started. Click the next point; double-click to finish.');
+        setEditorStatus('Route started. Click the next point; double-click, right-click, or Enter finishes.');
         renderRoutePreview();
         return;
     }
+    routeSession.lastPress = press;
     routeSession.points.push(point);
     const object = {
         id: routeSession.id,
@@ -743,7 +763,7 @@ const onPointerDown = event => {
         return;
     }
     if (activeTool === 'route') {
-        addRoutePoint(pointerPoint(event));
+        addRoutePoint(pointerPoint(event), pressOf(event));
         return;
     }
     if (activeTool !== 'select') {
@@ -814,8 +834,6 @@ const loadBundle = async bundle => {
     selectedId = null;
     ui.title.value = photo.title;
     ui.alt.value = photo.alt;
-    ui.decorative.checked = photo.decorative;
-    ui.alt.disabled = photo.decorative;
     setSourceDisplay(originalBlob);
     ui.editorEmpty.hidden = true;
     ui.editorWorkspace.hidden = false;
@@ -864,8 +882,6 @@ const chooseFile = async file => {
         future = [];
         ui.title.value = defaultTitle(file.name);
         ui.alt.value = '';
-        ui.alt.disabled = false;
-        ui.decorative.checked = false;
         setSourceDisplay(file);
         ui.editorEmpty.hidden = true;
         ui.editorWorkspace.hidden = false;
@@ -954,7 +970,6 @@ const uploadAndInsert = async () => {
                 localPhotoId: photo.localId,
                 url: photo.remote.url,
                 alt: photo.alt,
-                decorative: photo.decorative,
             });
             if (!inserted?.ok) {
                 throw new ImgbbClient.ImgbbError(
@@ -1077,7 +1092,6 @@ const insertFromLibrary = async item => {
         localPhotoId: item.localId,
         url: item.remote.url,
         alt: item.alt,
-        decorative: item.decorative,
     });
     if (!inserted?.ok) {
         toast(inserted?.error?.message || 'The image could not be inserted.');
@@ -1113,7 +1127,6 @@ const editAsNewVersion = async item => {
         localId,
         title: `${item.title} revision`.slice(0, Library.TITLE_LIMIT),
         alt: item.alt,
-        decorative: item.decorative,
         source: item.source,
         parentLocalId: item.localId,
         now,
@@ -1164,7 +1177,6 @@ const importProject = async file => {
                 localId,
                 title: `${imported.title} (imported)`.slice(0, Library.TITLE_LIMIT),
                 alt: imported.alt,
-                decorative: imported.decorative,
                 source: imported.source,
                 parentLocalId: imported.localId,
                 now,
@@ -1283,7 +1295,7 @@ const cardFor = async item => {
 
     const body = element('div', 'photo-card-body');
     body.append(element('h3', '', item.title));
-    body.append(element('p', '', item.decorative ? 'Decorative image' : item.alt));
+    body.append(element('p', '', item.alt));
     body.append(element('p', '', `${item.source.width} × ${item.source.height} · `
         + `${formatBytes(item.export?.bytes || item.source.bytes)} · `
         + new Date(item.updatedAt).toLocaleDateString()));
@@ -1519,11 +1531,6 @@ const bindEvents = () => {
     ui.file.addEventListener('change', () => void chooseFile(ui.file.files?.[0]));
     ui.title.addEventListener('input', schedulePersist);
     ui.alt.addEventListener('input', schedulePersist);
-    ui.decorative.addEventListener('change', () => {
-        ui.alt.disabled = ui.decorative.checked;
-        if (ui.decorative.checked) ui.alt.value = '';
-        schedulePersist();
-    });
     ui.undo.addEventListener('click', undo);
     ui.redo.addEventListener('click', redo);
     document.querySelectorAll('[data-tool]').forEach(button => {
@@ -1539,8 +1546,19 @@ const bindEvents = () => {
         routeSession.cursor = null;
         renderRoutePreview();
     });
+    // A browser that does deliver `dblclick` here is welcome to; `finishRoute`
+    // ignores the second call once the press pair has already ended the route.
     ui.overlay.addEventListener('dblclick', () => {
         if (activeTool === 'route') finishRoute(false);
+    });
+    // Right-click ends the line the way every other polyline editor does, and
+    // only while one is being drawn — the page's own menu belongs to the user
+    // the rest of the time. The press itself places nothing: `onPointerDown`
+    // answers to the primary button alone.
+    ui.overlay.addEventListener('contextmenu', event => {
+        if (!routeSession) return;
+        event.preventDefault();
+        finishRoute(false);
     });
     ui.sendBack.addEventListener('click', () => {
         if (selectedId) setProject(Project.reorderObject(project, selectedId, 'back'));

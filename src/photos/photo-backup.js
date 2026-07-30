@@ -30,7 +30,6 @@ const publicPhoto = value => {
         updatedAt: photo.updatedAt,
         title: photo.title,
         alt: photo.alt,
-        decorative: photo.decorative,
         source: photo.source,
         export: photo.export,
         remote: photo.remote,

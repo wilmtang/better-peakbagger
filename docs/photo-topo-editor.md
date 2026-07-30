@@ -37,7 +37,7 @@ popover — a content script — can link to it. Its symbol legend is painted fr
 
 The extension opens `photos/photos.html` in a normal extension tab. A new
 project starts when the user chooses a browser-decodable image no larger than
-32 MiB, supplies meaningful alt text or marks it decorative, and edits it with
+32 MiB, supplies meaningful alt text, and edits it with
 the route and climbing-symbol tools. Drafts autosave to the browser profile.
 Nothing leaves the device until the user chooses **Upload and insert**.
 
@@ -278,7 +278,7 @@ accepted only when:
 - the sender is the exact packaged photo page in the recorded editor tab;
 - the token is fresh and unconsumed;
 - the public URL is credential-free HTTPS;
-- the local photo id, decorative flag, and alt text are valid; and
+- the local photo id and alt text are valid; and
 - the original content script acknowledges insertion.
 
 The worker consumes the token before delivery, so a replay cannot insert the
@@ -311,7 +311,7 @@ It contains:
 - clean catalog metadata and public ImgBB URLs;
 - the sanitized source file name plus source and exported dimensions, MIME
   types, byte sizes, and SHA-256 hashes;
-- titles, alt/decorative state, lineage, and report references;
+- titles, alt text, lineage, and report references;
 - retained annotation projects; and
 - tombstones.
 

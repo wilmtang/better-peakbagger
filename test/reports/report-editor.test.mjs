@@ -848,8 +848,7 @@ test('a validated photo result is inserted only while the rich editor is availab
         type: 'PHOTO_INSERT_RESULT',
         localPhotoId: 'photo:123',
         url: 'https://i.ibb.co/example/topo.jpg',
-        alt: 'North ridge route',
-        decorative: false
+        alt: 'North ridge route'
     };
     for (const listener of listeners) {
         listener(message, { id: 'test-extension' }, value => { response = value; });
@@ -893,8 +892,7 @@ test('an inserted photo keeps the full description the library allows', async ()
                 type: 'PHOTO_INSERT_RESULT',
                 localPhotoId: 'photo:123',
                 url: 'https://i.ibb.co/example/topo.jpg',
-                alt,
-                decorative: false
+                alt
             }, { id: 'test-extension' }, value => { response = value; });
         }
         return response;

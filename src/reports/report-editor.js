@@ -1094,7 +1094,6 @@ import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.js';
             && /^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$/.test(message.localPhotoId)
             ? message.localPhotoId
             : null;
-        const decorative = typeof message.decorative === 'boolean' ? message.decorative : null;
         const alt = String(message.alt ?? '').replace(/\s+/g, ' ').trim().slice(0, PHOTO_ALT_LIMIT);
         let src = null;
         try {
@@ -1103,9 +1102,7 @@ import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.js';
                 src = Markup.sanitizeImageSrc(candidate.toString());
             }
         } catch { /* malformed result */ }
-        return localPhotoId && decorative != null && src && (decorative || alt)
-            ? { src, alt: decorative ? '' : alt }
-            : null;
+        return localPhotoId && src && alt ? { src, alt } : null;
     };
 
     const handlePhotoInsertion = (message, sender, sendResponse) => {

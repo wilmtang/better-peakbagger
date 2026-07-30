@@ -145,7 +145,6 @@ const cleanPhoto = value => {
     const updatedAt = cleanTime(value.updatedAt);
     const title = trim(value.title, TITLE_LIMIT);
     const alt = trim(value.alt, ALT_LIMIT);
-    const decorative = typeof value.decorative === 'boolean' ? value.decorative : null;
     const source = cleanImageMetadata(value.source, { fileName: true });
     const exported = value.export == null ? null : cleanImageMetadata(value.export);
     const remote = cleanRemote(value.remote);
@@ -156,8 +155,8 @@ const cleanPhoto = value => {
     const backup = cleanBackup(value.backup);
     const assets = cleanAssets(value.assets);
     const deletedAt = cleanNullableTime(value.deletedAt);
-    if (!localId || !createdAt || !updatedAt || !title || decorative == null
-        || (!decorative && !alt) || !source || !remote || !references || !backup || !assets
+    if (!localId || !createdAt || !updatedAt || !title || !alt
+        || !source || !remote || !references || !backup || !assets
         || (value.export != null && !exported)
         || (value.lineage?.parentLocalId != null && !parentLocalId)
         || (value.deletedAt != null && !deletedAt)) return null;
@@ -168,8 +167,7 @@ const cleanPhoto = value => {
         createdAt,
         updatedAt,
         title,
-        alt: decorative ? '' : alt,
-        decorative,
+        alt,
         source,
         export: exported,
         remote,
@@ -185,7 +183,6 @@ const createDraft = ({
     localId,
     title,
     alt = '',
-    decorative = false,
     source,
     parentLocalId = null,
     now = new Date().toISOString(),
@@ -196,7 +193,6 @@ const createDraft = ({
     updatedAt: now,
     title,
     alt,
-    decorative,
     source,
     export: null,
     remote: { provider: 'imgbb', state: 'draft' },

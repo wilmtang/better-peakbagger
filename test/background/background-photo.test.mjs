@@ -161,7 +161,6 @@ test('the settings page configures the key but can never lease it back', async (
         localPhotoId: 'photo-1',
         url: 'https://i.ibb.co/abc/topo.jpg',
         alt: 'Topo',
-        decorative: false,
     }, optionsSender), { ok: false, error: { code: 'forbidden' } });
 
     // The gate is path-exact: another packaged page of the same extension is
@@ -189,7 +188,6 @@ test('returns one sanitized insertion to the originating tab and rejects replay'
         localPhotoId: 'photo-1',
         url: 'https://i.ibb.co/a/topo.jpg',
         alt: 'North face route',
-        decorative: false,
     };
     assert.deepEqual(await h.routes.handlers.PHOTO_INSERT_COMMIT(message, photoSender), {
         ok: true,
@@ -216,7 +214,6 @@ test('fails closed for wrong editor tab, invalid public URL, and expired context
         localPhotoId: 'photo-1',
         url: 'http://i.ibb.co/a/topo.jpg',
         alt: 'Topo',
-        decorative: false,
     };
     assert.equal((await h.routes.handlers.PHOTO_INSERT_COMMIT(base, photoSender)).error.code,
         'invalid-result');

@@ -390,10 +390,6 @@ textarea {
   flex: 1;
 }
 
-.decorative-check {
-  min-height: 36px;
-}
-
 /* Undo and redo stay a pair. Left as bare children of the top bar they became
    two full-width bars once the bar stacked at narrow widths. */
 .history-actions {

@@ -51,15 +51,19 @@ test('creates and idempotently cleans a local draft record', () => {
     assert.deepEqual(Library.cleanPhoto(photo), photo);
 });
 
-test('requires alt text unless the image is explicitly decorative', () => {
+// Every catalog record describes its image: there is no opt-out that would let
+// a topo reach a trip report as an unlabelled decoration.
+test('requires alt text on every record', () => {
     assert.equal(Library.createDraft({
         localId: 'photo-1', title: 'Topo', source, now: TIME,
     }), null);
-    const decorative = Library.createDraft({
-        localId: 'photo-1', title: 'Decoration', decorative: true,
-        alt: 'discard this', source, now: TIME,
-    });
-    assert.equal(decorative.alt, '');
+    assert.equal(Library.createDraft({
+        localId: 'photo-1', title: 'Topo', alt: '   ', source, now: TIME,
+    }), null);
+    assert.equal(Library.cleanPhoto({ ...draft(), alt: '' }), null);
+    assert.equal(Library.createDraft({
+        localId: 'photo-1', title: 'Topo', alt: 'North face', source, now: TIME,
+    }).alt, 'North face');
 });
 
 test('moves through upload, ambiguous, completed, and observed-health states', () => {
