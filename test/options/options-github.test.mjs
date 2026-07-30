@@ -1,12 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import {
     loadOptions, loadDraftsPage, el, draftRow, waitFor,
-    withGithubBackground, readBlob, registerCleanup, favoriteKey,
-    root, favoriteStore
+    withGithubBackground, registerCleanup, favoriteKey, favoriteStore
 } from '../helpers/options-helpers.mjs';
 
 registerCleanup();

@@ -2,10 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { settingsTransfer } from '../../src/settings/settings-transfer.js';
 import {
-    loadOptions, loadDraftsPage, loadFavoritesPage, el, draftRow, favoriteRow, readBlob,
+    loadOptions, loadDraftsPage, loadFavoritesPage, el, readBlob,
     optionsCss, waitFor, registerCleanup, root, evalBundle
 } from '../helpers/options-helpers.mjs';
 

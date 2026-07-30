@@ -4,7 +4,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { waitFor } from '../helpers/load-page.mjs';
-import { loadEditor, editorReady, editors, typeRich, typeMarkdown, modeButton, videoMarkup, youtubeMarkup, EDITOR_URL } from '../helpers/report-editor-helpers.mjs';
+import { loadEditor, editorReady, editors, modeButton, videoMarkup, youtubeMarkup, EDITOR_URL } from '../helpers/report-editor-helpers.mjs';
 import { photoLibrary as Library } from '../../src/photos/photo-library.js';
 
 test('the image popover validates the source and inserts alt text', async () => {
@@ -516,4 +516,3 @@ test('editing in rich mode neutralizes unsupported embed markup before submissio
     assert.doesNotMatch(submitted, /\[iframe\b/i);
     assert.match(submitted, /&#91;iframe/);
 });
-

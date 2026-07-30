@@ -9,8 +9,6 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { JSDOM } from 'jsdom';
 import { accelerateTimeout, makeChromeStub, waitFor, evalBundle } from '../helpers/load-page.mjs';
-import { settingsSchema } from '../../src/settings/settings-schema.js';
-import { settingsTransfer } from '../../src/settings/settings-transfer.js';
 
 export const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 export const optionsCss = await readFile(path.join(root, 'options', 'options.css'), 'utf8');
