@@ -209,7 +209,44 @@ retention, provider, and field-level disclosure.
 
 ## FAQ
 
-### Why doesn't Better Peakbagger update Peakbagger automatically?
+### Is this an official Peakbagger extension?
+
+No. Better Peakbagger is an independent passion project. Ideas and bug reports
+are welcome in [GitHub Issues](https://github.com/wilmtang/better-peakbagger/issues)
+and the [discussion board](https://github.com/wilmtang/better-peakbagger/discussions).
+
+### How can Better Peakbagger offer 3D maps for free? What's the catch?
+
+Most elevation data is public or openly licensed; the costly part is turning it
+into map tiles and serving them at scale. Better Peakbagger renders 3D locally
+with open-source [MapLibre](https://maplibre.org/projects/gl-js/) and uses
+public terrain tiles from
+[Mapterhorn](https://mapterhorn.com/), a project supported by grants, sponsors,
+and donated infrastructure. Better Peakbagger runs no map server and has no
+subscription, advertising, or sale of user data.
+
+The trade-off is relying on community-supported services without guaranteed
+availability. Better Peakbagger reuses a bounded local elevation cache and may
+show less distant detail at steep angles to limit traffic. After you enable 3D,
+tile providers receive the area viewed and ordinary request data such as your
+IP address. You can disable 3D at any time; Peakbagger's 2D maps remain
+available.
+
+### Does Better Peakbagger place extra demand on Peakbagger or bypass its protections?
+
+Some features make additional requests, so zero impact would be misleading.
+Activity capture searches small areas along the route; the GPX Analyzer reads
+the track linked from an ascent page; 3D requests Peakbagger's nearby-peak feed
+after the camera settles; and Buddy or backup features read only the account
+data they need. Buddy data is cached for seven days, and full-profile backups
+are explicit, read Peakbagger ascents one at a time, and skip existing backups
+by default.
+
+Better Peakbagger is an interactive client, not a crawler. It uses your normal
+signed-in session and stops or pauses for rate limits or human checks. It never
+solves CAPTCHAs, rotates identities or proxies, or evades blocks.
+
+### Why doesn't Better Peakbagger update Peakbagger ascents automatically?
 
 There is no safe, reliable hook for a small independent extension to receive new
 activities automatically. [Strava requires a subscription][strava-api] to
@@ -237,17 +274,29 @@ page must provide unambiguous ownership signals. Better Peakbagger fails closed
 if it cannot verify those conditions. You must click the toolbar icon for each
 capture; the extension does not keep permanent provider access.
 
-### What do Strong and Probable mean?
+### What do Strong and Probable mean for a captured activity?
 
-They summarize how closely the recorded route, elevation, summit shape, and
-track quality support a summit encounter. Strong matches are selected by
-default. Probable matches are always opt-in, and both still require your review.
+They describe the evidence that your recorded route encountered a summit—not a
+claim that you reached it. Better Peakbagger compares closest approach, the
+track's elevation near the summit, whether it forms a local high point, and
+track quality. **Strong** means several signals agree and is selected by
+default. **Probable** means the route is close enough to consider but the
+evidence is weaker or ambiguous, so it is never selected automatically. Review
+both before opening drafts, and review every draft before Save.
 
-### Is this an official Peakbagger extension?
+### Which third-party services can receive my information?
 
-No. Better Peakbagger is an independent passion project. Ideas and bug reports
-are welcome in [GitHub Issues](https://github.com/wilmtang/better-peakbagger/issues)
-and the [discussion board](https://github.com/wilmtang/better-peakbagger/discussions).
+Better Peakbagger has no developer data server, account, analytics, advertising,
+or telemetry. Garmin or Strava is accessed only after your toolbar click, and
+the raw activity GPX is processed on that page rather than sent to the
+developer.
+
+Optional services are contacted only for the feature you use. Map tiles are
+requested from Mapterhorn and your selected map provider after you enable 3D.
+GitHub receives only the backups you authorize for your chosen repository.
+ImgBB receives a flattened image only when you provide an API key and choose
+**Upload & insert**. Remote report media contacts its host when displayed. See
+[Privacy and data handling](PRIVACY.md) for the complete field-level list.
 
 ## Development
 
