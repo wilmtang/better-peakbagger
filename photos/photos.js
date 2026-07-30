@@ -550,7 +550,7 @@ const setTool = tool => {
     setEditorStatus(tool === 'select'
         ? 'Select a mark to move or restyle it.'
         : tool === 'route'
-            ? 'Click along the route. Double-click or choose Done drawing to finish.'
+            ? 'Click along the route. Double-click, right-click, or press Enter to finish.'
             : `${toolName(tool)}: click the photo to place one. Esc returns to Select.`);
 };
 
@@ -568,7 +568,29 @@ const defaultStyle = () => ({
     opacity: styleDefaults.opacity,
 });
 
-const addRoutePoint = point => {
+// Finishing on a double-click cannot be left to the browser's `dblclick`.
+// Every press repaints the overlay, so the second release lands on a node that
+// did not exist when its own press fired, and Chrome then withholds the paired
+// `click` — and with it the `dblclick` that used to end the route. The gesture
+// is recognised from the presses instead: a second press on the same spot
+// inside the double-click interval finishes the route rather than stacking a
+// duplicate point on top of the last one. Screen coordinates, not image ones,
+// because the slop has to mean the same thing whatever the photo's scale.
+const DOUBLE_PRESS_MS = 400;
+const DOUBLE_PRESS_SLOP = 8;
+
+const pressOf = event => ({ x: event.clientX, y: event.clientY, at: event.timeStamp });
+
+const isDoublePress = (previous, press) => !!previous
+    && press.at - previous.at <= DOUBLE_PRESS_MS
+    && Math.abs(press.x - previous.x) <= DOUBLE_PRESS_SLOP
+    && Math.abs(press.y - previous.y) <= DOUBLE_PRESS_SLOP;
+
+const addRoutePoint = (point, press) => {
+    if (routeSession && isDoublePress(routeSession.lastPress, press)) {
+        finishRoute(false);
+        return;
+    }
     if (!routeSession) {
         routeSession = {
             id: crypto.randomUUID(),
@@ -576,12 +598,14 @@ const addRoutePoint = point => {
             points: [point],
             cursor: null,
             historyPushed: false,
+            lastPress: press,
         };
         ui.finishRoute.hidden = false;
-        setEditorStatus('Route started. Click the next point; double-click to finish.');
+        setEditorStatus('Route started. Click the next point; double-click, right-click, or Enter finishes.');
         renderRoutePreview();
         return;
     }
+    routeSession.lastPress = press;
     routeSession.points.push(point);
     const object = {
         id: routeSession.id,
@@ -739,7 +763,7 @@ const onPointerDown = event => {
         return;
     }
     if (activeTool === 'route') {
-        addRoutePoint(pointerPoint(event));
+        addRoutePoint(pointerPoint(event), pressOf(event));
         return;
     }
     if (activeTool !== 'select') {
@@ -1522,8 +1546,19 @@ const bindEvents = () => {
         routeSession.cursor = null;
         renderRoutePreview();
     });
+    // A browser that does deliver `dblclick` here is welcome to; `finishRoute`
+    // ignores the second call once the press pair has already ended the route.
     ui.overlay.addEventListener('dblclick', () => {
         if (activeTool === 'route') finishRoute(false);
+    });
+    // Right-click ends the line the way every other polyline editor does, and
+    // only while one is being drawn — the page's own menu belongs to the user
+    // the rest of the time. The press itself places nothing: `onPointerDown`
+    // answers to the primary button alone.
+    ui.overlay.addEventListener('contextmenu', event => {
+        if (!routeSession) return;
+        event.preventDefault();
+        finishRoute(false);
     });
     ui.sendBack.addEventListener('click', () => {
         if (selectedId) setProject(Project.reorderObject(project, selectedId, 'back'));
