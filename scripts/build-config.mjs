@@ -29,6 +29,7 @@ const PAGE_LOCAL = {
     'options-drafts.js': path.join(root, 'options', 'drafts.js'),
     'options-drafts-page.js': path.join(root, 'options', 'drafts-page.js'),
     'options-favorites.js': path.join(root, 'options', 'favorites.js'),
+    'options-favorites-backup.js': path.join(root, 'options', 'favorites-backup.js'),
     'options-utils.js': path.join(root, 'options', 'options-utils.js'),
     'popup-main.js': path.join(root, 'popup', 'popup.js'),
     'photos-main.js': path.join(root, 'photos', 'photos.js'),
@@ -64,7 +65,7 @@ export const ENTRIES = [
     // theme before first paint, the tail bundle runs the settings UI.
     { out: 'options/drafts-page.js', sources: ['reports/report-drafts.js', 'reports/report-markup.js', 'options-utils.js', 'options-drafts.js', 'options-drafts-page.js'], page: true },
     { out: 'options/options-head.js', sources: ['settings/settings-schema.js', 'settings/settings.js', 'theme/panel-theme.js'], page: true },
-    { out: 'options/options.js', sources: ['terrain/terrain-cache.js', 'reports/report-markup.js', 'reports/report-drafts.js', 'favorites/favorite-climbers.js', 'peakbagger/peakbagger-cloudflare.js', 'peakbagger/peakbagger-response.js', 'peakbagger/peakbagger-error.js', 'peakbagger/peakbagger-request.js', 'profile/profile-backup-core.js', 'ui/dom.js', 'ui/runtime-message.js', 'ui/section-nav.js', 'options-utils.js', 'options-main.js', 'options-favorites.js'], page: true },
+    { out: 'options/options.js', sources: ['terrain/terrain-cache.js', 'reports/report-markup.js', 'reports/report-drafts.js', 'favorites/favorite-climbers.js', 'peakbagger/peakbagger-cloudflare.js', 'peakbagger/peakbagger-response.js', 'peakbagger/peakbagger-error.js', 'peakbagger/peakbagger-request.js', 'profile/profile-backup-core.js', 'ui/dom.js', 'ui/runtime-message.js', 'ui/section-nav.js', 'options-utils.js', 'options-main.js', 'options-favorites.js', 'options-favorites-backup.js'], page: true },
     { out: 'popup/popup-head.js', sources: ['settings/settings-schema.js', 'settings/settings.js', 'theme/panel-theme.js'], page: true },
     { out: 'popup/popup.js', sources: ['capture/capture-phases.js', 'settings/settings-schema.js', 'settings/settings.js', 'ui/units.js', 'popup-main.js'], page: true },
     { out: 'photos/photos-head.js', sources: ['settings/settings-schema.js', 'settings/settings.js', 'theme/panel-theme.js'], page: true },

@@ -100,6 +100,20 @@ test('favorite backup signature changes for additions, removals, and renames', (
     }), signature);
 });
 
+test('membership changes count additions and removals by cid, not by index', () => {
+    const keep = { cid: 1, name: 'Keep', addedAt: 1, source: 'manual' };
+    const drop = { cid: 2, name: 'Drop', addedAt: 2, source: 'manual' };
+    const gain = { cid: 3, name: 'Gain', addedAt: 3, source: 'buddy' };
+    // keep stays, drop leaves, gain arrives — regardless of a rename or reorder.
+    assert.deepEqual(
+        F.membershipChanges([keep, drop], [{ ...keep, name: 'Renamed' }, gain]),
+        { added: 1, removed: 1 },
+    );
+    assert.deepEqual(F.membershipChanges([], [keep, gain]), { added: 2, removed: 0 });
+    assert.deepEqual(F.membershipChanges([keep, drop], []), { added: 0, removed: 2 });
+    assert.deepEqual(F.membershipChanges([keep], [keep]), { added: 0, removed: 0 });
+});
+
 test('cleans buddy cache and applies the seven-day TTL', () => {
     const now = 20 * 24 * 60 * 60 * 1000;
     const cache = F.cleanBuddyCache({

@@ -449,31 +449,27 @@
                         </span>
                     </label>
                     <p class="favorites-status favorites-import-status" id="favorites-import-status" role="status" hidden></p>
-                    <!-- Mirror is triggered here and GitHub restore from Backup &
-                         sync, so this one confirm-then-undo block moves between
-                         the two hosts to stay beside whichever control opened it. -->
-                    <div id="favorites-replacement-host">
-                        <div id="favorites-replacement-feedback">
-                            <div class="favorites-mirror-confirmation" id="favorites-mirror-confirmation"
-                                role="alertdialog" aria-labelledby="favorites-mirror-confirmation-title"
-                                aria-describedby="favorites-mirror-confirmation-detail" tabindex="-1" hidden>
-                                <div>
-                                    <p class="favorites-mirror-confirmation-title" id="favorites-mirror-confirmation-title">Replace custom favorites?</p>
-                                    <p class="favorites-mirror-confirmation-detail" id="favorites-mirror-confirmation-detail">
-                                        <strong id="favorites-mirror-confirmation-impact"></strong>
-                                        <span id="favorites-mirror-confirmation-summary"></span>
-                                    </p>
-                                </div>
-                                <div class="favorites-mirror-confirmation-actions">
-                                    <button id="favorites-mirror-cancel" class="secondary" type="button">Cancel</button>
-                                    <button id="favorites-mirror-confirm" class="favorites-mirror-confirm" type="button">Replace custom list</button>
-                                </div>
-                            </div>
-                            <div class="favorites-undo-all" id="favorites-undo-all" role="status" hidden>
-                                <span id="favorites-undo-message">Custom list replaced</span>
-                                <button class="favorite-undo" id="favorites-undo-all-button" type="button">Undo</button>
-                            </div>
+                    <!-- The mirror action's own confirm-then-undo. GitHub restore
+                         is the same shape but lives beside its trigger in Backup
+                         & sync now, so this block no longer moves between hosts. -->
+                    <div class="favorites-mirror-confirmation" id="favorites-mirror-confirmation"
+                        role="alertdialog" aria-labelledby="favorites-mirror-confirmation-title"
+                        aria-describedby="favorites-mirror-confirmation-detail" tabindex="-1" hidden>
+                        <div>
+                            <p class="favorites-mirror-confirmation-title" id="favorites-mirror-confirmation-title">Replace custom favorites?</p>
+                            <p class="favorites-mirror-confirmation-detail" id="favorites-mirror-confirmation-detail">
+                                <strong id="favorites-mirror-confirmation-impact"></strong>
+                                <span id="favorites-mirror-confirmation-summary"></span>
+                            </p>
                         </div>
+                        <div class="favorites-mirror-confirmation-actions">
+                            <button id="favorites-mirror-cancel" class="secondary" type="button">Cancel</button>
+                            <button id="favorites-mirror-confirm" class="favorites-mirror-confirm" type="button">Replace custom list</button>
+                        </div>
+                    </div>
+                    <div class="favorites-undo-all" id="favorites-undo-all" role="status" hidden>
+                        <span id="favorites-undo-message">Custom list replaced</span>
+                        <button class="favorite-undo" id="favorites-undo-all-button" type="button">Undo</button>
                     </div>
                     <div class="favorites-list-toolbar">
                         <p class="favorites-count" id="favorites-count" aria-live="polite">0 favorites</p>
@@ -587,7 +583,28 @@
                             </label>
                         </div>
                     </div>
-                    <div id="favorites-restore-replacement-host"></div>
+                    <!-- Restore's own confirm-then-undo, beside its trigger. The
+                         mirror action on the Favorite climbers page has the same
+                         shape; the two no longer share one element. -->
+                    <div class="favorites-mirror-confirmation" id="favorites-restore-confirmation"
+                        role="alertdialog" aria-labelledby="favorites-restore-confirmation-title"
+                        aria-describedby="favorites-restore-confirmation-detail" tabindex="-1" hidden>
+                        <div>
+                            <p class="favorites-mirror-confirmation-title" id="favorites-restore-confirmation-title">Restore favorites from backup?</p>
+                            <p class="favorites-mirror-confirmation-detail" id="favorites-restore-confirmation-detail">
+                                <strong id="favorites-restore-confirmation-impact"></strong>
+                                <span id="favorites-restore-confirmation-summary"></span>
+                            </p>
+                        </div>
+                        <div class="favorites-mirror-confirmation-actions">
+                            <button id="favorites-restore-cancel" class="secondary" type="button">Cancel</button>
+                            <button id="favorites-restore-confirm" class="favorites-mirror-confirm" type="button">Restore backup</button>
+                        </div>
+                    </div>
+                    <div class="favorites-undo-all" id="favorites-restore-undo" role="status" hidden>
+                        <span>Favorites restored from GitHub</span>
+                        <button class="favorite-undo" id="favorites-restore-undo-button" type="button">Undo</button>
+                    </div>
                 </div>
             </div>
 

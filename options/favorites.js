@@ -4,14 +4,10 @@
 // Better Peakbagger — Favorite climbers settings manager.
 
 import { favoriteClimbers as F } from '../src/favorites/favorite-climbers.js';
-import { STORAGE_KEY as GITHUB_AUTH_STORAGE_KEY } from '../src/github/github-auth.js';
-import { githubError as GithubError } from '../src/github/github-error-copy.js';
 import { peakbaggerError as PeakbaggerError } from '../src/peakbagger/peakbagger-error.js';
 import { fetchPeakbaggerDocument } from '../src/peakbagger/peakbagger-request.js';
 import { numericParam, ownerClimberId } from '../src/profile/profile-backup-core.js';
-import { STORAGE_KEY as SETTINGS_STORAGE_KEY } from '../src/settings/settings.js';
 import { runtimeMessage as RuntimeMessage } from '../src/ui/runtime-message.js';
-import { hasGithubPermission } from './github.js';
 import { optionsUtils as OptionsUtils } from './options-utils.js';
 
 const UNDO_MS = 6000;
@@ -40,9 +36,6 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
     const removeWithBuddyEl = document.getElementById('favorites-remove-with-buddy');
     const importStatusEl = document.getElementById('favorites-import-status');
     const mirrorConfirmationEl = document.getElementById('favorites-mirror-confirmation');
-    const replacementFeedbackEl = document.getElementById('favorites-replacement-feedback');
-    const replacementHostEl = document.getElementById('favorites-replacement-host');
-    const restoreReplacementHostEl = document.getElementById('favorites-restore-replacement-host');
     const mirrorConfirmationTitleEl = document.getElementById('favorites-mirror-confirmation-title');
     const mirrorConfirmationImpactEl = document.getElementById('favorites-mirror-confirmation-impact');
     const mirrorConfirmationSummaryEl = document.getElementById('favorites-mirror-confirmation-summary');
@@ -53,11 +46,6 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
     const undoAllEl = document.getElementById('favorites-undo-all');
     const undoMessageEl = document.getElementById('favorites-undo-message');
     const undoAllButtonEl = document.getElementById('favorites-undo-all-button');
-    const githubStatusEl = document.getElementById('favorites-github-status');
-    const githubActionsEl = document.getElementById('favorites-github-actions');
-    const backupEl = document.getElementById('favorites-backup');
-    const restoreEl = document.getElementById('favorites-restore');
-    const autoBackupEl = document.getElementById('favorites-auto-backup');
 
     if (!store || OptionsUtils.logMissingElements('favorite climbers', {
         'input[name="favorites-source"]': sourceEls,
@@ -78,9 +66,6 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
         'favorites-remove-with-buddy': removeWithBuddyEl,
         'favorites-import-status': importStatusEl,
         'favorites-mirror-confirmation': mirrorConfirmationEl,
-        'favorites-replacement-feedback': replacementFeedbackEl,
-        'favorites-replacement-host': replacementHostEl,
-        'favorites-restore-replacement-host': restoreReplacementHostEl,
         'favorites-mirror-confirmation-title': mirrorConfirmationTitleEl,
         'favorites-mirror-confirmation-impact': mirrorConfirmationImpactEl,
         'favorites-mirror-confirmation-summary': mirrorConfirmationSummaryEl,
@@ -91,11 +76,6 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
         'favorites-undo-all': undoAllEl,
         'favorites-undo-message': undoMessageEl,
         'favorites-undo-all-button': undoAllButtonEl,
-        'favorites-github-status': githubStatusEl,
-        'favorites-github-actions': githubActionsEl,
-        'favorites-backup': backupEl,
-        'favorites-restore': restoreEl,
-        'favorites-auto-backup': autoBackupEl,
     })) return { populate() {} };
 
     limitEl.textContent = F.LIMIT.toLocaleString('en-US');
@@ -112,10 +92,6 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
     let pendingBulk = null;
     let pendingReplacement = null;
     let replacementBusy = false;
-    let githubStatus = null;
-    let githubBusy = false;
-    let githubRevision = 0;
-    let githubBackupResult = null;
     const pendingDeletes = new Map();
 
     const send = RuntimeMessage.bind(extensionApi);
@@ -165,15 +141,6 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
 
     const favoritesSignature = () => F.backupSignature(favorites);
 
-    const membershipChanges = (currentEntries, nextEntries) => {
-        const currentIds = new Set(currentEntries.map(entry => entry.cid));
-        const nextIds = new Set(nextEntries.map(entry => entry.cid));
-        return {
-            added: nextEntries.filter(entry => !currentIds.has(entry.cid)).length,
-            removed: currentEntries.filter(entry => !nextIds.has(entry.cid)).length,
-        };
-    };
-
     const completionCopy = (operation, { added, removed, total, skipped = 0 }) => {
         const climbers = total === 1 ? 'climber' : 'climbers';
         const skippedCopy = skipped > 0
@@ -197,35 +164,24 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
 
     const dismissReplacementConfirmation = ({ restoreFocus = false } = {}) => {
         if (replacementBusy) return false;
-        const trigger = pendingReplacement?.kind === 'restore' ? restoreEl : mirrorEl;
         pendingReplacement = null;
         mirrorConfirmationEl.hidden = true;
-        if (restoreFocus && !trigger.disabled) trigger.focus();
+        if (restoreFocus && !mirrorEl.disabled) mirrorEl.focus();
         return true;
     };
 
-    const showReplacementConfirmation = ({ kind, replacement, repo = '' }, { focus = true } = {}) => {
-        const { added, removed } = membershipChanges(favorites.entries, replacement.entries);
+    // Restore lives on the Backup & sync surface now; this confirmation is only
+    // the mirror action's, so it no longer branches on kind or reparents.
+    const showReplacementConfirmation = ({ replacement }, { focus = true } = {}) => {
+        const { added, removed } = F.membershipChanges(favorites.entries, replacement.entries);
         const total = replacement.entries.length;
-        const isRestore = kind === 'restore';
-        const addedNoun = isRestore ? (added === 1 ? 'favorite' : 'favorites') : (added === 1 ? 'buddy' : 'buddies');
-        mirrorConfirmationTitleEl.textContent = isRestore ? 'Restore favorites from backup?' : 'Replace custom favorites?';
+        const addedNoun = added === 1 ? 'buddy' : 'buddies';
+        mirrorConfirmationTitleEl.textContent = 'Replace custom favorites?';
         mirrorConfirmationImpactEl.textContent = `${added} ${addedNoun} will be added. ${removed} custom ${removed === 1 ? 'favorite' : 'favorites'} will be removed.`;
-        mirrorConfirmationSummaryEl.textContent = isRestore
-            ? ` The list will match the backup from ${repo}. You can undo for 6 seconds after replacement.`
-            : ` The custom list will then exactly match your ${total} current ${total === 1 ? 'buddy' : 'buddies'}. You can undo for 6 seconds after replacement.`;
-        mirrorConfirmEl.textContent = isRestore ? 'Restore backup' : 'Replace custom list';
-        // Mirror is triggered from Favorite climbers and restore from Backup &
-        // sync, so the confirmation and the undo that follows it move together
-        // to the host beside whichever control opened this. The restore host is
-        // also the only one that stays visible while the Buddy List source
-        // hides the custom panel, so undo never lands out of sight.
-        const host = isRestore ? restoreReplacementHostEl : replacementHostEl;
-        if (replacementFeedbackEl.parentElement !== host) host.append(replacementFeedbackEl);
+        mirrorConfirmationSummaryEl.textContent = ` The custom list will then exactly match your ${total} current ${total === 1 ? 'buddy' : 'buddies'}. You can undo for 6 seconds after replacement.`;
+        mirrorConfirmEl.textContent = 'Replace custom list';
         pendingReplacement = {
-            kind,
             replacement: F.cleanFavorites(replacement),
-            repo,
             favoritesSignature: favoritesSignature(),
             added,
             removed,
@@ -383,56 +339,11 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
         renderList();
     };
 
-    const githubRepoName = () => OptionsUtils.githubRepoName(githubStatus);
-
-    const renderGithub = () => {
-        const connected = !!(githubStatus?.permissionGranted && githubStatus?.connected);
-        const showBackupResult = connected
-            && githubBackupResult?.repo === githubRepoName()
-            && githubBackupResult?.signature === favoritesSignature();
-        githubActionsEl.hidden = !connected;
-        backupEl.disabled = githubBusy;
-        restoreEl.disabled = githubBusy;
-        autoBackupEl.disabled = githubBusy;
-        githubStatusEl.classList.remove('favorites-github-success');
-        githubStatusEl.textContent = '';
-        if (githubBusy) {
-            githubStatusEl.textContent = 'Working with GitHub…';
-        } else if (showBackupResult) {
-            githubStatusEl.classList.add('favorites-github-success');
-            githubStatusEl.textContent = 'Favorites backed up ✓';
-            if (githubBackupResult.commitUrl) {
-                githubStatusEl.append(' ', Object.assign(document.createElement('a'), {
-                    href: githubBackupResult.commitUrl,
-                    target: '_blank',
-                    rel: 'noopener noreferrer',
-                    textContent: 'View commit',
-                }));
-            }
-        } else if (connected) {
-            githubStatusEl.textContent = `Your custom list is stored as favorite-climbers.json in ${githubRepoName()}.`;
-        } else {
-            githubStatusEl.textContent = 'Connect GitHub above to back up your custom favorites.';
-        }
-    };
-
-    const refreshGithubStatus = async () => {
-        const revision = ++githubRevision;
-        const [status, permissionGranted] = await Promise.all([
-            send({ type: 'GITHUB_AUTH_STATUS' }),
-            hasGithubPermission(extensionApi),
-        ]);
-        if (revision !== githubRevision) return;
-        githubStatus = { ...(status || {}), permissionGranted };
-        renderGithub();
-    };
-
     const mutateFavorites = async mutation => {
         const response = await send({ type: F.MUTATION_MESSAGE_TYPE, mutation });
         if (response?.favorites) {
             favorites = F.cleanFavorites(response.favorites);
             renderList();
-            renderGithub();
         }
         if (!response?.ok) {
             const error = new Error(response?.error?.message || 'Favorite climbers are unavailable. Try again.');
@@ -450,7 +361,6 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
             favorites = F.cleanFavorites(values[F.FAVORITES_KEY]);
             buddyCache = F.cleanBuddyCache(values[F.BUDDY_CACHE_KEY]);
             renderPanels();
-            renderGithub();
             if (pendingReplacement && !replacementBusy) {
                 showReplacementConfirmation(pendingReplacement, { focus: false });
             }
@@ -657,47 +567,6 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
         }
     };
 
-    const withGithubBusy = operation => OptionsUtils.withBusy({
-        isBusy: () => githubBusy,
-        setBusy: value => { githubBusy = value; renderGithub(); },
-    }, operation);
-
-    const backupFavorites = () => withGithubBusy(async () => {
-        const response = await send({ type: 'GITHUB_FAVORITES_BACKUP' });
-        if (!response?.ok) {
-            flash(GithubError.message(response?.error), { error: true });
-            return;
-        }
-        githubBackupResult = {
-            ...(response.result || {}),
-            repo: githubRepoName(),
-            signature: favoritesSignature(),
-        };
-        flash(`Favorites backed up to ${githubRepoName()}`);
-    });
-
-    const restoreFavorites = () => withGithubBusy(async () => {
-        const response = await send({ type: 'GITHUB_FAVORITES_RESTORE' });
-        if (!response?.ok) {
-            flash(GithubError.message(response?.error), { error: true });
-            return;
-        }
-        if (response.content == null) {
-            flash(`No favorites backup found in ${githubRepoName()}.`, { error: true });
-            return;
-        }
-        const parsed = F.parseBackup(response.content);
-        if (!parsed.ok) {
-            flash('This favorites backup is not valid or uses a newer format.', { error: true });
-            return;
-        }
-        showReplacementConfirmation({
-            kind: 'restore',
-            replacement: parsed.favorites,
-            repo: githubRepoName(),
-        });
-    });
-
     const addClimber = async () => {
         const cid = F.parseClimberInput(addInputEl.value);
         if (cid == null) {
@@ -750,9 +619,6 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
     }
     removeWithBuddyEl.addEventListener('change', () => {
         void save({ removeFavoriteWhenBuddyRemoved: removeWithBuddyEl.checked });
-    });
-    autoBackupEl.addEventListener('change', () => {
-        void save({ autoFavoritesBackup: autoBackupEl.checked });
     });
     mergeEl.addEventListener('click', () => {
         dismissReplacementConfirmation();
@@ -815,45 +681,26 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
             return;
         }
         const pending = pendingReplacement;
-        const { kind, replacement, repo, added, removed } = pending;
-        const isRestore = kind === 'restore';
-        if (isRestore) {
-            githubBusy = true;
-            renderGithub();
-        } else {
-            setBusy(true);
-        }
+        const { replacement, added, removed } = pending;
+        setBusy(true);
         setReplacementBusy(true);
-        if (!isRestore) renderImportStatus('Replacing custom favorites…');
-        void beginReplacement(replacement,
-            isRestore ? 'Favorites restored from GitHub' : 'Custom list replaced with your Buddy List',
-            pending.favoritesSignature)
+        renderImportStatus('Replacing custom favorites…');
+        void beginReplacement(replacement, 'Custom list replaced with your Buddy List', pending.favoritesSignature)
             .then(changed => {
                 setReplacementBusy(false);
                 if (changed) {
                     dismissReplacementConfirmation();
-                    if (isRestore) {
-                        flash(`Favorites restored from ${repo}`);
-                    } else {
-                        renderImportStatus(completionCopy('Mirror', {
-                            added, removed, total: replacement.entries.length,
-                        }));
-                        flash(`Mirror complete: ${added} added, ${removed} removed`);
-                    }
+                    renderImportStatus(completionCopy('Mirror', {
+                        added, removed, total: replacement.entries.length,
+                    }));
+                    flash(`Mirror complete: ${added} added, ${removed} removed`);
                 } else {
-                    if (!isRestore) {
-                        renderImportStatus("The Buddy List loaded, but the custom favorites couldn't be saved.");
-                    }
+                    renderImportStatus("The Buddy List loaded, but the custom favorites couldn't be saved.");
                     mirrorConfirmEl.focus();
                 }
             }).finally(() => {
                 setReplacementBusy(false);
-                if (isRestore) {
-                    githubBusy = false;
-                    renderGithub();
-                } else {
-                    setBusy(false);
-                }
+                setBusy(false);
             });
     });
     document.addEventListener('keydown', event => {
@@ -862,8 +709,6 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
         dismissReplacementConfirmation({ restoreFocus: true });
     });
     undoAllButtonEl.addEventListener('click', () => { void undoReplacement(); });
-    backupEl.addEventListener('click', () => { void backupFavorites(); });
-    restoreEl.addEventListener('click', () => { void restoreFavorites(); });
 
     for (const radio of sourceEls) {
         radio.addEventListener('change', () => {
@@ -881,22 +726,17 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
                 globalThis.clearTimeout(refreshTimer);
                 refreshTimer = globalThis.setTimeout(() => { void refresh(); }, 20);
             }
-            if (area === 'local' && changes[GITHUB_AUTH_STORAGE_KEY]) void refreshGithubStatus();
-            if (area === 'sync' && changes[SETTINGS_STORAGE_KEY]) void refreshGithubStatus();
         });
     }
 
     void refresh();
-    void refreshGithubStatus();
 
     return {
         populate(settings) {
             source = settings && settings.favoritesSource === 'custom' ? 'custom' : 'buddies';
             removeWithBuddyEl.checked = settings?.removeFavoriteWhenBuddyRemoved === true;
-            autoBackupEl.checked = settings?.autoFavoritesBackup === true;
             if (source !== 'custom') dismissReplacementConfirmation();
             renderPanels();
-            void refreshGithubStatus();
         },
     };
 };

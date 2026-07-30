@@ -98,6 +98,19 @@ const parseBackup = text => {
 // round-trip and deliberately excludes exportedAt.
 const backupSignature = favorites => JSON.stringify(cleanFavorites(favorites).entries);
 
+// How a whole-list replacement (mirror or restore) changes membership, by cid.
+// The mirror action and the GitHub restore action each show this diff before
+// asking to confirm, and they now live on different pages, so the arithmetic is
+// here rather than in either controller.
+const membershipChanges = (currentEntries, nextEntries) => {
+    const currentIds = new Set(currentEntries.map(entry => entry.cid));
+    const nextIds = new Set(nextEntries.map(entry => entry.cid));
+    return {
+        added: nextEntries.filter(entry => !currentIds.has(entry.cid)).length,
+        removed: currentEntries.filter(entry => !nextIds.has(entry.cid)).length,
+    };
+};
+
 const cleanBuddyCache = value => {
     if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
     const ownerCid = cleanCid(value.ownerCid);
@@ -337,6 +350,7 @@ export const favoriteClimbers = {
     serializeBackup,
     parseBackup,
     backupSignature,
+    membershipChanges,
     cleanBuddyCache,
     isFresh,
     signedInBuddyListUrl,
