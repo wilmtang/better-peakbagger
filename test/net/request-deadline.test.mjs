@@ -110,7 +110,7 @@ test('every third-party transport bounds its requests through this one module', 
         // through a transport that reports status, so an unbounded wait there
         // shows up as a hole in the mesh or a blank drape rather than an error.
         'terrain/terrain-cache.js',
-        'terrain/terrain-frame.js',
+        'terrain/terrain-style.js',
     ];
     for (const file of transports) {
         const source = await readFile(new URL(`../../src/${file}`, import.meta.url), 'utf8');
