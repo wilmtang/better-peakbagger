@@ -11,7 +11,11 @@ import { runtimeMessage as RuntimeMessage } from '../src/ui/runtime-message.js';
 import { optionsUtils as OptionsUtils } from './options-utils.js';
 
 const UNDO_MS = 6000;
-const SITE_TAB_REFRESH_MS = 8000;
+// How long the helper tab may go without reporting *any* progress, and the
+// absolute ceiling on the whole fallback however busy it looks. See
+// loadBuddiesInSiteTab() for why one flat budget was the wrong measure.
+const SITE_TAB_IDLE_MS = 8000;
+const SITE_TAB_TOTAL_MS = 30000;
 const PEAKBAGGER_ORIGIN = 'https://www.peakbagger.com';
 const SOURCE_FILTERS = ['all', 'buddy', 'manual'];
 
@@ -375,8 +379,15 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
         const result = await fetchPeakbaggerDocument(url, { kind: 'buddies' });
         if (result.kind !== 'ok') {
             if (result.error?.code === 'signed-out') {
-                const pageCache = await loadBuddiesInSiteTab();
-                if (pageCache) return pageCache;
+                const fallback = await loadBuddiesInSiteTab();
+                if (fallback.cache) return fallback.cache;
+                // Only an unavailable fallback leaves the original diagnosis
+                // standing. One that ran and ran out of time must say so: the
+                // signed-out error would tell a signed-in user to sign in,
+                // which is both wrong and unactionable.
+                if (fallback.timedOut) {
+                    throw PeakbaggerError.failure('timeout', { resource: 'buddies' });
+                }
             }
             throw result.error;
         }
@@ -385,12 +396,18 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
         return { ownerCid, entries: F.parseBuddyDocument(result.document) };
     };
 
+    // Resolves { cache, timedOut }. The two null cases are deliberately
+    // distinct: an unavailable fallback never ran and says nothing about why
+    // the direct read failed, while one that ran out of time is itself the
+    // failure the user needs told about.
+    const UNAVAILABLE = { cache: null, timedOut: false };
+
     const loadBuddiesInSiteTab = async () => {
         const tabs = extensionApi.tabs;
         const changes = extensionApi.storage.onChanged;
         const helperUrl = extensionApi.runtime.getURL?.('options/buddy-refresh.html');
         if (!helperUrl || !tabs?.create || !tabs?.update || !tabs?.remove
-            || !changes?.addListener || !changes?.removeListener) return null;
+            || !changes?.addListener || !changes?.removeListener) return UNAVAILABLE;
 
         const promiseTabs = typeof globalThis.browser !== 'undefined'
             && extensionApi === globalThis.browser;
@@ -422,14 +439,20 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
 
         const startedAt = Date.now();
         let listener = null;
-        let timer = null;
+        let progressListener = null;
+        let idleTimer = null;
+        let totalTimer = null;
         let tab = null;
         const cachePromise = new Promise(resolve => {
             const finish = value => {
-                if (timer != null) globalThis.clearTimeout(timer);
+                if (idleTimer != null) globalThis.clearTimeout(idleTimer);
+                if (totalTimer != null) globalThis.clearTimeout(totalTimer);
                 if (listener) changes.removeListener(listener);
+                if (progressListener) tabs.onUpdated?.removeListener?.(progressListener);
                 listener = null;
-                timer = null;
+                progressListener = null;
+                idleTimer = null;
+                totalTimer = null;
                 resolve(value);
             };
             listener = (updates, area) => {
@@ -438,7 +461,38 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
                 if (cache && cache.fetchedAt >= startedAt) finish(cache);
             };
             changes.addListener(listener);
-            timer = globalThis.setTimeout(() => finish(null), SITE_TAB_REFRESH_MS);
+
+            // What this waits for is a real page load — a blank tab, an
+            // extension-helper navigation, the site's own Buddy List over the
+            // network, and only then the content script that writes the cache.
+            // A single flat budget for all of that gives up on a slow
+            // connection or a loaded machine while the tab is still visibly
+            // working, and the import then reports the *original* signed-out
+            // error, telling a signed-in user to sign in.
+            //
+            // So the short budget now measures the thing it can actually
+            // judge — whether the helper tab is making any progress at all —
+            // and any tab activity restarts it. A wedged tab still gives up as
+            // promptly as before; a slow one is allowed to finish, under an
+            // absolute ceiling so nothing waits forever.
+            const armIdle = () => {
+                if (idleTimer != null) globalThis.clearTimeout(idleTimer);
+                idleTimer = globalThis.setTimeout(() => finish(null), SITE_TAB_IDLE_MS);
+            };
+            progressListener = (tabId, changeInfo) => {
+                // `status` arrives without the "tabs" permission; url/title do
+                // not, which is why progress is all this reads. If the event
+                // never fires the idle budget simply never extends, which is
+                // the behavior this replaced.
+                if (Number.isInteger(tab?.id) && tabId === tab.id && changeInfo?.status) armIdle();
+            };
+            if (typeof tabs.onUpdated?.addListener === 'function') {
+                tabs.onUpdated.addListener(progressListener);
+            } else {
+                progressListener = null;
+            }
+            armIdle();
+            totalTimer = globalThis.setTimeout(() => finish(null), SITE_TAB_TOTAL_MS);
         });
 
         try {
@@ -447,14 +501,17 @@ export const initFavorites = ({ extensionApi, flash, save } = {}) => {
             // blank tab first, then start the extension-helper navigation
             // without making its callback part of the import lifecycle.
             tab = await createTab({ url: 'about:blank', active: false });
-            if (!Number.isInteger(tab?.id)) return null;
+            if (!Number.isInteger(tab?.id)) return UNAVAILABLE;
             navigateTab(tab.id, helperUrl);
-            return await cachePromise;
+            const cache = await cachePromise;
+            return { cache, timedOut: cache == null };
         } catch {
-            return null;
+            return UNAVAILABLE;
         } finally {
-            if (timer != null) globalThis.clearTimeout(timer);
+            if (idleTimer != null) globalThis.clearTimeout(idleTimer);
+            if (totalTimer != null) globalThis.clearTimeout(totalTimer);
             if (listener) changes.removeListener(listener);
+            if (progressListener) tabs.onUpdated?.removeListener?.(progressListener);
             if (Number.isInteger(tab?.id)) {
                 try { removeTab(tab.id); }
                 catch { /* the user or browser already closed it */ }

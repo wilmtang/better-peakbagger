@@ -2936,3 +2936,124 @@ test('the connected state exposes independent save and delete backup choices', a
     await new Promise(r => dom.window.setTimeout(r, 30));
     assert.equal(dom.chrome._store.bpbSettings.removeGithubBackupOnDelete, false);
 });
+
+// The first-party fallback had no unit coverage: its only test was the slowest,
+// flakiest check in the real-browser verifier, which is what made a product
+// timing bug read as a regression in whatever was last touched.
+const siteTabChrome = ({ onNavigate } = {}) => chrome => {
+    const updateListeners = new Set();
+    const created = [];
+    const removed = [];
+    chrome.runtime.getURL = page => `chrome-extension://test-extension/${page}`;
+    chrome.tabs = {
+        create: (details, callback) => {
+            created.push(details);
+            callback({ id: 77 });
+        },
+        update: (tabId, details, callback) => {
+            callback?.();
+            onNavigate?.({ tabId, details, chrome, progress: status => {
+                for (const fn of updateListeners) fn(tabId, { status });
+            } });
+        },
+        remove: (tabId, callback) => { removed.push(tabId); callback?.(); },
+        onUpdated: {
+            addListener: fn => updateListeners.add(fn),
+            removeListener: fn => updateListeners.delete(fn),
+        },
+    };
+    chrome._siteTab = { created, removed, listenerCount: () => updateListeners.size };
+};
+
+const buddyCacheFrom = () => ({
+    ownerCid: 900001,
+    fetchedAt: Date.now(),
+    entries: Array.from({ length: 6 }, (_, index) => ({
+        cid: 910000 + index,
+        name: `Fallback Buddy ${index}`,
+    })),
+});
+
+// A 401 is what a cookie-blocked extension fetch looks like, and it is the only
+// failure that opens the helper tab.
+const signedOutFetch = () => async () => pageResponse('', 401);
+
+test('a cookie-blocked Buddy read recovers through the first-party helper tab', async () => {
+    const dom = await loadFavoritesPage({}, {
+        prepareWindow: window => { window.fetch = signedOutFetch(); },
+        prepareChrome: siteTabChrome({
+            onNavigate: ({ chrome }) => {
+                void chrome.storage.local.set({ [buddyCacheKey]: buddyCacheFrom() });
+            },
+        }),
+    });
+
+    el(dom, 'favorites-refresh-buddies').click();
+    await waitFor(dom, () => /6 buddies/.test(el(dom, 'favorites-buddy-status').textContent));
+    // Chrome leaves an inactive tab at about:blank when create() gets a URL
+    // whose load does not settle, so the blank-then-navigate order matters.
+    assert.equal(dom.chrome._siteTab.created.length, 1);
+    assert.equal(dom.chrome._siteTab.created[0].url, 'about:blank');
+    assert.equal(dom.chrome._siteTab.created[0].active, false);
+    assert.deepEqual(dom.chrome._siteTab.removed, [77], 'the helper tab must never be left open');
+    assert.equal(dom.chrome._siteTab.listenerCount(), 0, 'the progress listener must be released');
+});
+
+test('a helper tab that keeps loading is not cut off by the no-progress budget', async () => {
+    // The regression: one flat budget covered a real page load over the
+    // network, so a slow connection or a loaded machine lost the import while
+    // the tab was still visibly working.
+    const dom = await loadFavoritesPage({}, {
+        prepareWindow: window => { window.fetch = signedOutFetch(); },
+        prepareChrome: siteTabChrome({
+            onNavigate: ({ chrome, progress }) => {
+                // Keep reporting progress across more than one whole budget,
+                // then write. Under the old flat budget this is precisely the
+                // load that was abandoned mid-flight.
+                let ticks = 0;
+                const beat = () => {
+                    progress('loading');
+                    if (++ticks < 4) return void dom.window.setTimeout(beat, 8);
+                    void chrome.storage.local.set({ [buddyCacheKey]: buddyCacheFrom() });
+                };
+                dom.window.setTimeout(beat, 8);
+            },
+        }),
+    });
+    // Compressed but still ordered: the budget has to be outrunnable, which a
+    // 0 ms replacement would not be.
+    const idleDelays = accelerateTimeout(dom, 8000, 20);
+
+    el(dom, 'favorites-refresh-buddies').click();
+    await waitFor(dom, () => /6 buddies/.test(el(dom, 'favorites-buddy-status').textContent));
+    assert.ok(idleDelays.length >= 2, 'each report of progress must re-arm the no-progress budget');
+});
+
+test('a wedged helper tab reports the timeout, never “sign in”', async () => {
+    // The signed-out error is the one the direct read produced. Repeating it
+    // after the fallback merely ran out of time tells a signed-in user to sign
+    // in — wrong, and nothing they can act on.
+    const dom = await loadFavoritesPage({}, {
+        prepareWindow: window => { window.fetch = signedOutFetch(); },
+        prepareChrome: siteTabChrome({ onNavigate: () => {} }),
+    });
+    accelerateTimeout(dom, 8000);
+
+    el(dom, 'favorites-refresh-buddies').click();
+    await waitFor(dom, () => !/Refreshing/.test(el(dom, 'favorites-buddy-status').textContent));
+    const status = el(dom, 'favorites-buddy-status').textContent;
+    assert.match(status, /took too long to return the Buddy List/i);
+    assert.doesNotMatch(status, /sign in/i);
+    assert.deepEqual(dom.chrome._siteTab.removed, [77], 'a timed-out helper tab is still closed');
+});
+
+test('without a helper tab available the original diagnosis still stands', async () => {
+    // Nothing ran, so nothing was learned; the signed-out error is still the
+    // best available explanation and must not be replaced by a timeout.
+    const dom = await loadFavoritesPage({}, {
+        prepareWindow: window => { window.fetch = signedOutFetch(); },
+    });
+    el(dom, 'favorites-refresh-buddies').click();
+    await waitFor(dom, () => !/Refreshing/.test(el(dom, 'favorites-buddy-status').textContent));
+    assert.match(el(dom, 'favorites-buddy-status').textContent, /sign in/i);
+});
