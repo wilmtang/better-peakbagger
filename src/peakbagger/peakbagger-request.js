@@ -7,6 +7,7 @@
 
 import { peakbaggerError as PeakbaggerError } from './peakbagger-error.js';
 import { classifyResponse } from './peakbagger-response.js';
+import { requestDeadline as Deadline } from '../net/request-deadline.js';
 
 const DEFAULT_TIMEOUT_MS = 15000;
 const PEAKBAGGER_HOSTS = new Set(['peakbagger.com', 'www.peakbagger.com']);
@@ -80,48 +81,39 @@ export const fetchPeakbaggerResource = async (url, {
         return rejected(base, 'wrong-content', error);
     }
 
-    const controller = typeof AbortController === 'function' ? new AbortController() : null;
-    let didTimeout = false;
-    let timer = null;
-    const timeout = typeof globalThis.setTimeout === 'function'
-        ? new Promise((_, reject) => {
-            timer = globalThis.setTimeout(() => {
-                didTimeout = true;
-                if (controller) controller.abort();
-                reject(Object.assign(new Error('Peakbagger request timed out.'), { name: 'TimeoutError' }));
-            }, Math.max(1, Number(timeoutMs) || DEFAULT_TIMEOUT_MS));
-        })
-        : null;
-    const withTimeout = promise => timeout ? Promise.race([promise, timeout]) : promise;
+    // One deadline covers the fetch and the body read together, so a prompt
+    // header followed by a stalled stream still fails.
+    const deadline = Deadline.createRequestDeadline(timeoutMs);
+    const timedOut = cause => deadline.expired || Deadline.isTimeout(cause);
     let response;
     try {
-        response = await withTimeout(fetchFn(requestedUrl, {
+        response = await deadline.run(fetchFn(requestedUrl, {
             ...init,
             credentials: 'include',
             redirect: 'follow',
             cache: 'no-store',
-            ...(controller ? { signal: controller.signal } : {}),
+            ...(deadline.signal ? { signal: deadline.signal } : {}),
         }));
     } catch (cause) {
-        if (timer != null && typeof globalThis.clearTimeout === 'function') globalThis.clearTimeout(timer);
+        deadline.clear();
         const base = { requestedUrl, url: requestedUrl, status: 0, redirected: false };
-        const code = didTimeout || (cause && cause.name === 'TimeoutError') ? 'timeout' : 'network';
+        const code = timedOut(cause) ? 'timeout' : 'network';
         return rejected(base, 'transient', PeakbaggerError.failure(code, { resource: kind }));
     }
 
     const base = baseResult({ requestedUrl, response });
     let text;
     try {
-        text = await withTimeout(response.text());
+        text = await deadline.run(response.text());
     } catch (cause) {
-        if (timer != null && typeof globalThis.clearTimeout === 'function') globalThis.clearTimeout(timer);
-        const code = didTimeout || (cause && cause.name === 'TimeoutError') ? 'timeout' : 'response-read';
+        deadline.clear();
+        const code = timedOut(cause) ? 'timeout' : 'response-read';
         return rejected(base, 'transient', PeakbaggerError.failure(code, {
             resource: kind,
             status: base.status,
         }));
     }
-    if (timer != null && typeof globalThis.clearTimeout === 'function') globalThis.clearTimeout(timer);
+    deadline.clear();
 
     const classification = classifyResponse(base.status, response && response.headers, text, { kind });
     if (classification !== 'ok') {

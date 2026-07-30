@@ -5,8 +5,16 @@
 // tiles. CacheStorage remains browser-managed: the browser may evict it when
 // space is tight, and a cache miss always falls back to the network.
 
+import { requestDeadline as Deadline } from '../net/request-deadline.js';
 
     const CACHE_NAME = 'bpb-mapterhorn-dem-v1';
+    // A tile the host accepts and never answers has two costs: the renderer
+    // leaves a permanent hole in the mesh where no camera move ever retries it,
+    // and the background prefetch — which passes no abort controller of its own
+    // — holds a worker awake on a request that will never settle. Generous
+    // enough that a slow connection still completes; a refused tile falls back
+    // to its parent exactly as a 404 already does.
+    const TILE_TIMEOUT_MS = 20000;
     const INDEX_KEY = 'bpbMapterhornDemIndexV1';
     const PROTOCOL = 'bpb-dem';
     const REMOTE_TILE_ORIGIN = 'https://tiles.mapterhorn.com';
@@ -52,7 +60,10 @@
         return `${REMOTE_TILE_ORIGIN}/${z}/${x}/${y}.webp`;
     };
 
-    const create = ({ limitMb, cacheStorage, storageArea, fetchFn, ResponseCtor, now = Date.now }) => {
+    const create = ({
+        limitMb, cacheStorage, storageArea, fetchFn, ResponseCtor,
+        now = Date.now, tileTimeoutMs = TILE_TIMEOUT_MS,
+    }) => {
         const limitBytes = Math.max(0, Math.floor(limitMb)) * 1024 * 1024;
         const cacheApi = cacheStorage || globalThis.caches;
         const local = resolveStorageArea(storageArea);
@@ -191,16 +202,32 @@
             const cached = await read(remoteUrl);
             if (cached) return { data: cached };
 
-            const response = await request(remoteUrl, {
-                signal: abortController && abortController.signal,
-                credentials: 'omit',
-                referrerPolicy: 'no-referrer'
-            });
-            if (!response || !response.ok) throw new Error(`DEM tile request failed (${response && response.status})`);
-            const data = await response.arrayBuffer();
-            if (!data.byteLength) throw new Error('DEM tile was empty');
-            if (limitBytes > 0) enqueueStore(remoteUrl, data, response.headers.get('content-type'));
-            return { data };
+            // MapLibre's own controller cancels tiles that scroll out of view;
+            // the deadline covers the tile nobody scrolls away from.
+            const deadline = Deadline.createRequestDeadline(tileTimeoutMs);
+            const cancel = () => deadline.abort();
+            const caller = abortController?.signal;
+            // The cache read above is awaited, so the camera can move on before
+            // this point is reached. Subscribing without checking first would
+            // miss an abort that already happened and leave the tile fetching
+            // for a view nobody is looking at.
+            if (caller?.aborted) cancel();
+            else caller?.addEventListener?.('abort', cancel, { once: true });
+            try {
+                const response = await deadline.run(request(remoteUrl, {
+                    signal: deadline.signal,
+                    credentials: 'omit',
+                    referrerPolicy: 'no-referrer'
+                }));
+                if (!response || !response.ok) throw new Error(`DEM tile request failed (${response && response.status})`);
+                const data = await deadline.run(response.arrayBuffer());
+                if (!data.byteLength) throw new Error('DEM tile was empty');
+                if (limitBytes > 0) enqueueStore(remoteUrl, data, response.headers.get('content-type'));
+                return { data };
+            } finally {
+                deadline.clear();
+                caller?.removeEventListener?.('abort', cancel);
+            }
         };
 
         const flush = async () => {

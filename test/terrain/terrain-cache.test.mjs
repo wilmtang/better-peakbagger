@@ -178,3 +178,58 @@ test('a zero DEM cache limit clears owned best-effort storage', async () => {
     assert.equal(storageArea.values[module.INDEX_KEY], undefined);
     dom.window.close();
 });
+
+test('a DEM tile that never answers fails instead of leaving a hole in the mesh', async () => {
+    // Without a bound this request never settles: the renderer leaves a
+    // permanent gap no camera move retries, and the background prefetch — which
+    // passes no controller of its own — holds a worker awake on it forever.
+    const { dom, module } = loadCacheModule();
+    const aborts = [];
+    const loader = module.create({
+        limitMb: 1,
+        cacheStorage: new MemoryCacheStorage(),
+        storageArea: makeStorageArea(),
+        ResponseCtor: Response,
+        tileTimeoutMs: 10,
+        fetchFn: (_url, init) => {
+            init.signal?.addEventListener('abort', () => aborts.push(true));
+            return new Promise(() => {});
+        }
+    });
+
+    await assert.rejects(loader.load({ url: 'bpb-dem://1/1/0.webp' }), /deadline/i);
+    assert.equal(aborts.length, 1, 'the stalled tile socket must be released');
+    dom.window.close();
+});
+
+test('MapLibre cancelling a scrolled-away tile still tears down the request', async () => {
+    const { dom, module } = loadCacheModule();
+    const aborts = [];
+    const loader = module.create({
+        limitMb: 1,
+        cacheStorage: new MemoryCacheStorage(),
+        storageArea: makeStorageArea(),
+        ResponseCtor: Response,
+        tileTimeoutMs: 50_000,
+        // Matches real fetch: an already-aborted signal rejects at once rather
+        // than waiting for an 'abort' event that has already been dispatched.
+        fetchFn: (_url, init) => new Promise((_resolve, reject) => {
+            const stop = () => { aborts.push(true); reject(new Error('aborted')); };
+            if (init.signal?.aborted) stop();
+            else init.signal?.addEventListener('abort', stop, { once: true });
+        })
+    });
+
+    // The camera can move on while the cache read is still awaited, so the
+    // abort lands before the tile fetch is even started. Subscribing without
+    // first checking `aborted` misses it, and the tile then runs to the full
+    // deadline for a view nobody is looking at — the generous bound that makes
+    // the stall survivable is exactly what makes that miss expensive.
+    const controller = new AbortController();
+    const pending = loader.load({ url: 'bpb-dem://1/1/0.webp' }, controller);
+    controller.abort();
+    await assert.rejects(pending, error => !/deadline/i.test(error.message),
+        'cancellation must end the tile, not its 50-second deadline');
+    assert.equal(aborts.length, 1);
+    dom.window.close();
+});

@@ -4,6 +4,7 @@
 // Better Peakbagger — MapLibre renderer hosted by terrain/terrain.html.
 
 import { settingsSchema } from '../settings/settings-schema.js';
+import { requestDeadline as Deadline } from '../net/request-deadline.js';
 import { terrainCache as TerrainCache } from './terrain-cache.js';
 import { terrainCamera } from './terrain-camera.js';
 import { terrainTiles as TerrainTiles } from './terrain-tiles.js';
@@ -88,6 +89,9 @@ import { terrainTiles as TerrainTiles } from './terrain-tiles.js';
         name: 'OSM Vector (experimental)',
         styleUrl: 'https://tiles.openfreemap.org/styles/liberty'
     };
+    // A drape is an enhancement over a map that already works, so it waits well
+    // under the frame's own load timeout rather than holding the picker open.
+    const VECTOR_STYLE_TIMEOUT_MS = 10000;
     const VECTOR_PREFIX = 'bpb-vector:';
     const PALETTES = {
         light: {
@@ -754,21 +758,38 @@ import { terrainTiles as TerrainTiles } from './terrain-tiles.js';
 
     // Fetch the provider's style once per frame lifetime; a failed fetch is
     // forgotten so the entry can be retried instead of staying broken.
+    //
+    // The fetch is bounded, because the picker has already switched to the
+    // vector entry by the time this resolves: a style host that accepts the
+    // connection and never answers would leave the entry selected with nothing
+    // drawn and no notice — a blank drape that reads as a broken feature rather
+    // than an unavailable one. A deadline turns that into the same terrain-only
+    // fallback every other style failure takes.
     const fetchVectorStyle = () => {
         if (!vectorStylePromise) {
-            vectorStylePromise = fetch(VECTOR_BASEMAP.styleUrl, { credentials: 'omit', referrerPolicy: 'no-referrer' })
-                .then(response => {
-                    if (!response.ok) throw new Error(`Vector style request failed (${response.status})`);
-                    return response.json();
+            const deadline = Deadline.createRequestDeadline(VECTOR_STYLE_TIMEOUT_MS);
+            vectorStylePromise = deadline.run(
+                fetch(VECTOR_BASEMAP.styleUrl, {
+                    credentials: 'omit',
+                    referrerPolicy: 'no-referrer',
+                    signal: deadline.signal
                 })
-                .then(style => {
-                    if (!style || style.version !== 8 || !style.sources
-                        || typeof style.sources !== 'object' || !Array.isArray(style.layers)) {
-                        throw new Error('Unexpected vector style shape');
-                    }
-                    return style;
-                });
-            vectorStylePromise.catch(() => { vectorStylePromise = null; });
+                    .then(response => {
+                        if (!response.ok) throw new Error(`Vector style request failed (${response.status})`);
+                        return deadline.run(response.json());
+                    })
+                    .then(style => {
+                        if (!style || style.version !== 8 || !style.sources
+                            || typeof style.sources !== 'object' || !Array.isArray(style.layers)) {
+                            throw new Error('Unexpected vector style shape');
+                        }
+                        return style;
+                    })
+            );
+            vectorStylePromise.then(
+                () => deadline.clear(),
+                () => { deadline.clear(); vectorStylePromise = null; }
+            );
         }
         return vectorStylePromise;
     };
