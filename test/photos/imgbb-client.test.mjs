@@ -81,15 +81,63 @@ test('supports a missing medium image and provider expiration timestamp', () => 
     assert.equal(result.remote.expiresAt, '2026-07-28T05:40:00.000Z');
 });
 
-test('rejects files above exactly the documented provider maximum without fetching', async () => {
-    let called = false;
-    const blob = new Blob([new Uint8Array(Client.MAX_UPLOAD_BYTES + 1)], { type: 'image/png' });
+// The size ceiling belongs to the ImgBB account and differs by plan, so a local
+// byte limit would refuse uploads a paid key accepts. The upload is attempted
+// and ImgBB's own rejection — which states the account's real maximum — becomes
+// the message, with one remedy sentence appended.
+test('a large image is offered to ImgBB, and its size rejection is what the user reads', async () => {
+    let uploaded = 0;
+    const blob = new Blob([new Uint8Array(64 * 1024 * 1024)], { type: 'image/png' });
     await assert.rejects(Client.upload({
-        fetch: async () => { called = true; },
+        fetch: async () => {
+            uploaded += 1;
+            return response(400, {
+                status_code: 400,
+                error: { message: 'File too big - max 32 MB', code: 313 },
+                status_txt: 'Bad Request',
+            });
+        },
         key: KEY,
         blob,
-    }), error => error.code === 'too-large' && /32 MB/.test(error.message));
-    assert.equal(called, false);
+    }), error => error.code === 'too-large'
+        && error.message === 'ImgBB: File too big - max 32 MB. Use a smaller photo, or crop it before drawing the topo.');
+    assert.equal(uploaded, 1, 'the provider, not a hardcoded constant, decides the ceiling');
+});
+
+// A paid account reports a different ceiling; the message has to follow it
+// rather than repeat a number this extension chose.
+test('the message follows whatever maximum the account actually reports', async () => {
+    await assert.rejects(Client.upload({
+        fetch: async () => response(400, { error: { message: 'File too big - max 64 MB', code: 313 } }),
+        key: KEY,
+        blob: new Blob([new Uint8Array(8)], { type: 'image/png' }),
+    }), error => /max 64 MB/.test(error.message) && !/32 MB/.test(error.message));
+});
+
+test('an unusable key and an undecodable file each say what to do next', async () => {
+    const reject = (message, code) => async () => response(400, { error: { message, code } });
+    await assert.rejects(Client.upload({
+        fetch: reject('Invalid API v1 key.', 100),
+        key: KEY,
+        blob: new Blob([new Uint8Array(8)], { type: 'image/png' }),
+    }), error => error.code === 'not-configured'
+        && /Invalid API v1 key/.test(error.message)
+        && /Settings → Activity creation/.test(error.message));
+    await assert.rejects(Client.upload({
+        fetch: reject('Unsupported or unrecognized file format', 415),
+        key: KEY,
+        blob: new Blob([new Uint8Array(8)], { type: 'image/png' }),
+    }), error => error.code === 'invalid-image' && /JPEG or PNG/.test(error.message));
+});
+
+// An unrecognized code must still surface ImgBB's own words rather than a
+// generic "the upload failed".
+test('an unmapped provider error still reads as ImgBB said it', async () => {
+    await assert.rejects(Client.upload({
+        fetch: async () => response(429, { error: { message: 'Rate limit reached', code: 999 } }),
+        key: KEY,
+        blob: new Blob([new Uint8Array(8)], { type: 'image/png' }),
+    }), error => error.code === 'provider' && error.message === 'Rate limit reached');
 });
 
 test('treats a network end after request start as ambiguous and does not leak the key', async () => {

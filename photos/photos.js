@@ -825,10 +825,15 @@ const loadBundle = async bundle => {
     return true;
 };
 
+// No size gate on the way in. The export is re-encoded from the decoded pixels,
+// so the file picked here does not decide the upload's size — a 60 MB source
+// routinely exports to a few MB of JPEG, and refusing to open it withheld an
+// edit that would have uploaded fine. Whether the browser can decode it is the
+// real constraint, and the decode itself answers that.
 const chooseFile = async file => {
     if (!file) return;
-    if (file.size <= 0 || file.size > ImgbbClient.MAX_UPLOAD_BYTES) {
-        toast(`Choose an image up to ${ImgbbClient.MAX_UPLOAD_BYTES / (1024 * 1024)} MB.`);
+    if (file.size <= 0) {
+        toast('That file is empty.');
         return;
     }
     setBusy(true, 'Reading photo…');
@@ -897,13 +902,9 @@ const uploadAndInsert = async () => {
     let uploadingPhoto = null;
     let providerResponse = null;
     try {
+        // Deliberately no local size check: the ceiling belongs to the ImgBB
+        // account, not to this extension, and it says so in its own rejection.
         const exported = await Renderer.exportProject({ project, source: sourceBitmap });
-        if (exported.bytes > ImgbbClient.MAX_UPLOAD_BYTES) {
-            throw new ImgbbClient.ImgbbError(
-                'too-large',
-                `The edited image is ${formatBytes(exported.bytes)}, above ImgBB's 32 MB limit.`,
-            );
-        }
         ui.exportSummary.textContent = `${formatBytes(exported.bytes)} ${exported.mime.replace('image/', '').toUpperCase()}`
             + ` · ${exported.width} × ${exported.height}`;
         const exportMetadata = {

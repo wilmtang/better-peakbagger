@@ -4,7 +4,6 @@
 // Better Peakbagger — ImgBB v1 upload client with a narrow response contract.
 
 const API_ROOT = 'https://api.imgbb.com/1/upload';
-const MAX_UPLOAD_BYTES = 32 * 1024 * 1024;
 const KEY_LIMIT = 512;
 const NAME_LIMIT = 200;
 const URL_LIMIT = 4096;
@@ -74,13 +73,32 @@ const providerMessage = payload => {
         : null;
 };
 
+// ImgBB states the size ceiling in its own rejection ("File too big - max 32
+// MB"), and that ceiling is a property of the account, not of this extension —
+// a paid plan reports a larger one. So there is no local byte limit to enforce:
+// the upload is attempted and ImgBB answers. What its answers never carry is
+// what the reader should do next, so each code we have actually observed adds
+// one remedy sentence and maps onto the caller's own error vocabulary.
+const PROVIDER_FAILURES = new Map([
+    [100, { code: 'not-configured', remedy: 'Add a working key under Settings → Activity creation → Trip report photos.' }],
+    [313, { code: 'too-large', remedy: 'Use a smaller photo, or crop it before drawing the topo.' }],
+    [415, { code: 'invalid-image', remedy: 'Choose a JPEG or PNG photo.' }],
+]);
+
+const providerFailure = (payload, status, fallbackCode, fallbackMessage) => {
+    const code = payload?.error?.code;
+    const known = PROVIDER_FAILURES.get(Number.isInteger(code) ? code : null);
+    const stated = providerMessage(payload);
+    if (!stated) return new ImgbbError(fallbackCode, fallbackMessage, { status });
+    // ImgBB's wording is the fact; the remedy is the advice. Keep them as two
+    // sentences so the reader can see which part came from the provider.
+    const message = known ? `ImgBB: ${stated.replace(/[.\s]+$/, '')}. ${known.remedy}` : stated;
+    return new ImgbbError(known?.code || fallbackCode, message, { status });
+};
+
 const cleanUploadResponse = (payload, responseStatus) => {
     if (!payload || payload.success !== true || !payload.data || typeof payload.data !== 'object') {
-        throw new ImgbbError(
-            'rejected',
-            providerMessage(payload) || 'ImgBB rejected the image upload.',
-            { status: responseStatus },
-        );
+        throw providerFailure(payload, responseStatus, 'rejected', 'ImgBB rejected the image upload.');
     }
     const data = payload.data;
     const providerId = typeof data.id === 'string' ? data.id.trim().slice(0, 200) : '';
@@ -147,12 +165,6 @@ const upload = async ({
     if (!(blob instanceof Blob) || !/^image\//i.test(blob.type) || blob.size <= 0) {
         throw new ImgbbError('invalid-image', 'Choose a browser-decodable image to upload.');
     }
-    if (blob.size > MAX_UPLOAD_BYTES) {
-        throw new ImgbbError(
-            'too-large',
-            `The edited image is larger than ImgBB's ${MAX_UPLOAD_BYTES / (1024 * 1024)} MB limit.`,
-        );
-    }
     const form = new FormDataCtor();
     form.append('image', blob, `better-peakbagger.${blob.type === 'image/png' ? 'png' : 'jpg'}`);
     const uploadName = cleanName(name);
@@ -178,13 +190,14 @@ const upload = async ({
     }
     const payload = await parseJson(response);
     if (!response.ok) {
-        const authFailure = response.status === 400 || response.status === 401 || response.status === 403;
-        throw new ImgbbError(
-            authFailure ? 'rejected' : 'provider',
-            providerMessage(payload) || (authFailure
+        const rejected = response.status === 400 || response.status === 401 || response.status === 403;
+        throw providerFailure(
+            payload,
+            response.status,
+            rejected ? 'rejected' : 'provider',
+            rejected
                 ? 'ImgBB rejected the API key or image.'
-                : 'ImgBB could not accept the image. Try again later.'),
-            { status: response.status },
+                : 'ImgBB could not accept the image. Try again later.',
         );
     }
     return cleanUploadResponse(payload, response.status);
@@ -192,7 +205,6 @@ const upload = async ({
 
 export const imgbbClient = {
     API_ROOT,
-    MAX_UPLOAD_BYTES,
     ImgbbError,
     cleanKey,
     cleanUploadResponse,
