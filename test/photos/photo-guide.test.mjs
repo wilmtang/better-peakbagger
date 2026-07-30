@@ -124,6 +124,19 @@ test('the guide answers the questions the surfaces send readers here with', () =
     assert.match(text, /allow other sites to display it|lets other sites/);
 });
 
+// Settings configures the key for the photo tools and backs the library up, so
+// it has to be able to reach the library it talks about. It previously told the
+// reader to use "Download project in the photo library" without linking there.
+test('settings can reach the photo library it configures and backs up', () => {
+    const doc = new JSDOM(optionsHtml).window.document;
+    const links = [...doc.querySelectorAll('a[href*="photos/photos.html"]')]
+        .map(link => link.getAttribute('href'));
+    assert.ok(links.length >= 2, 'the key section and the backup copy both need a way there');
+    // photos.js opens on the library only for this exact parameter.
+    for (const href of links) assert.match(href, /\?mode=library$/);
+    assert.ok(doc.querySelector('#capture-photos #open-photo-library'));
+});
+
 test('each surface links to the guide rather than restating it', () => {
     assert.ok(photosDoc.querySelector('.view-tabs a[href="guide.html"]'));
     assert.ok(photosDoc.querySelector('#credential-note a[href="guide.html#key"]'));

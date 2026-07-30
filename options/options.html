@@ -214,6 +214,16 @@
                             </div>
                         </div>
                     </div>
+
+                    <div class="row">
+                        <div class="label">
+                            <span class="title">Photo library</span>
+                            <span class="desc">Every photo you have edited on this device, with its annotations, public links, and the reports that use it. Insert an uploaded photo again, edit one as a new version, or keep an original with <strong>Download project</strong>.</span>
+                        </div>
+                        <div class="control">
+                            <a class="secondary" id="open-photo-library" href="../photos/photos.html?mode=library">Open photo library</a>
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -601,7 +611,7 @@
                         <div class="label">
                             <span class="title">GitHub photo backup</span>
                             <span class="desc" id="photos-github-status" role="status">Checking connection…</span>
-                            <span class="desc">Stores what your photo library knows: annotations, titles and descriptions, public ImgBB links, image hashes, and which reports used each photo — as <code>photo-library.json</code>. It does not store the images themselves, your ImgBB API key, or the links that delete a photo from ImgBB, so a restore brings back the record, not the picture. Keep the originals with <strong>Download project</strong> in the photo library. <a href="../photos/guide.html#backup" target="_blank" rel="noopener noreferrer">What a restore can and cannot bring back</a>.</span>
+                            <span class="desc">Stores what your photo library knows: annotations, titles and descriptions, public ImgBB links, image hashes, and which reports used each photo — as <code>photo-library.json</code>. It does not store the images themselves, your ImgBB API key, or the links that delete a photo from ImgBB, so a restore brings back the record, not the picture. Keep the originals with <strong>Download project</strong> in the <a href="../photos/photos.html?mode=library">photo library</a>. <a href="../photos/guide.html#backup" target="_blank" rel="noopener noreferrer">What a restore can and cannot bring back</a>.</span>
                         </div>
                         <div class="control photos-github-actions" id="photos-github-actions" hidden>
                             <div class="photos-github-buttons">
