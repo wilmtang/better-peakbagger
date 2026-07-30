@@ -255,6 +255,30 @@ test('settings are grouped by the surface they affect', async () => {
     }
 });
 
+test('trip report photo and draft settings follow the editor option', async () => {
+    const dom = await loadOptions({ enableReportEditor: false });
+    const doc = dom.window.document;
+    const dependentSections = ['capture-photos', 'drafts'].map(id => el(dom, id));
+    const dependentNavItems = ['#capture-photos', '#drafts'].map(href =>
+        doc.querySelector(`.side-nav a[href="${href}"]`).closest('li'));
+
+    assert.ok([...dependentSections, ...dependentNavItems].every(element => element.hidden),
+        'editor-only settings and their navigation should start hidden');
+
+    const editorToggle = el(dom, 'enable-report-editor');
+    editorToggle.checked = true;
+    editorToggle.dispatchEvent(new dom.window.Event('change'));
+    assert.ok([...dependentSections, ...dependentNavItems].every(element => !element.hidden),
+        'dependent settings should appear immediately when the editor is enabled');
+    await waitFor(dom, () => dom.chrome._store.bpbSettings.enableReportEditor === true);
+
+    editorToggle.checked = false;
+    editorToggle.dispatchEvent(new dom.window.Event('change'));
+    assert.ok([...dependentSections, ...dependentNavItems].every(element => element.hidden),
+        'dependent settings should disappear immediately when the editor is disabled');
+    await waitFor(dom, () => dom.chrome._store.bpbSettings.enableReportEditor === false);
+});
+
 test('only interactive setting labels advertise a pointer cursor', async () => {
     const dom = await loadOptions({});
     const style = dom.window.document.createElement('style');
@@ -2330,10 +2354,15 @@ test('the scroll-spy survives jsdom\'s zero-layout world', async () => {
     // jsdom reports every offset/rect as 0 and nothing scrolls; the scroll
     // handler must not throw and must keep exactly one link active. The offset
     // math itself is only provable in a real browser (see the plan's step 5).
-    const dom = await loadOptions({});
+    const dom = await loadOptions({ enableReportEditor: false });
     const content = dom.window.document.querySelector('.content');
     assert.doesNotThrow(() => content.dispatchEvent(new dom.window.Event('scroll')));
     assert.equal(activeLinks(dom).length, 1);
+    const active = activeLinks(dom)[0];
+    assert.equal(active.closest('[hidden]'), null,
+        'a hidden editor-dependent nav item must not become current');
+    assert.equal(el(dom, active.hash.slice(1)).hidden, false,
+        'the scroll-spy must resolve to a visible settings section');
 });
 
 // ---- GitHub connection and ascent-backup setup ----------------------------

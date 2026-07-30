@@ -21,6 +21,7 @@ import { initSectionNav } from '../src/ui/section-nav.js';
     const themeEl = document.getElementById('theme');
     const enable3dMapEl = document.getElementById('enable-3d-map');
     const enableReportEditorEl = document.getElementById('enable-report-editor');
+    const reportEditorDependentEls = document.querySelectorAll('[data-report-editor-dependent]');
     const addReportCreditEl = document.getElementById('add-report-credit');
     const retainWaypointsEl = document.getElementById('retain-waypoints');
     const fillAscentDetailsEl = document.getElementById('fill-ascent-details');
@@ -98,6 +99,10 @@ import { initSectionNav } from '../src/ui/section-nav.js';
         else if (!show) cacheUsageRevision++;
     };
 
+    const syncReportEditorDependentVisibility = enabled => {
+        for (const element of reportEditorDependentEls) element.hidden = enabled !== true;
+    };
+
     let confirmedSettings = null;
     const populate = settings => {
         confirmedSettings = { ...settings };
@@ -105,6 +110,7 @@ import { initSectionNav } from '../src/ui/section-nav.js';
         themeEl.value = settings.theme;
         enable3dMapEl.checked = settings.enable3dMap;
         enableReportEditorEl.checked = settings.enableReportEditor;
+        syncReportEditorDependentVisibility(settings.enableReportEditor);
         addReportCreditEl.checked = settings.addReportCredit;
         retainWaypointsEl.checked = settings.retainWaypoints;
         fillAscentDetailsEl.checked = settings.fillAscentDetails;
@@ -171,7 +177,10 @@ import { initSectionNav } from '../src/ui/section-nav.js';
         syncTerrainCacheVisibility(enable3dMapEl.checked);
         save({ enable3dMap: enable3dMapEl.checked });
     });
-    enableReportEditorEl.addEventListener('change', () => save({ enableReportEditor: enableReportEditorEl.checked }));
+    enableReportEditorEl.addEventListener('change', () => {
+        syncReportEditorDependentVisibility(enableReportEditorEl.checked);
+        save({ enableReportEditor: enableReportEditorEl.checked });
+    });
     addReportCreditEl.addEventListener('change', () => save({ addReportCredit: addReportCreditEl.checked }));
     retainWaypointsEl.addEventListener('change', () => save({ retainWaypoints: retainWaypointsEl.checked }));
     fillAscentDetailsEl.addEventListener('change', () => save({ fillAscentDetails: fillAscentDetailsEl.checked }));

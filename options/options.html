@@ -25,8 +25,8 @@
                 <ul class="nav-sublist">
                     <li><a class="nav-subitem" href="#capture-gpx">GPX capture</a></li>
                     <li><a class="nav-subitem" href="#capture-report">Trip report editor</a></li>
-                    <li><a class="nav-subitem" href="#capture-photos">Trip report photos</a></li>
-                    <li><a class="nav-subitem" href="#drafts">Trip report drafts</a></li>
+                    <li data-report-editor-dependent><a class="nav-subitem" href="#capture-photos">Trip report photos</a></li>
+                    <li data-report-editor-dependent><a class="nav-subitem" href="#drafts">Trip report drafts</a></li>
                 </ul>
             </li>
             <li>
@@ -193,7 +193,8 @@
                 </div>
             </div>
 
-            <div class="subsection" id="capture-photos" role="group" aria-labelledby="capture-photos-heading">
+            <div class="subsection" id="capture-photos" role="group" aria-labelledby="capture-photos-heading"
+                 data-report-editor-dependent>
                 <h3 class="subsection-title" id="capture-photos-heading">Trip report photos</h3>
                 <div class="card">
                     <div class="row">
@@ -231,7 +232,8 @@
                  they live on their own page. This keeps the subsection id, so
                  an existing options.html#drafts link still lands on the topic
                  with the manager one click away. -->
-            <div class="subsection" id="drafts" role="group" aria-labelledby="drafts-heading">
+            <div class="subsection" id="drafts" role="group" aria-labelledby="drafts-heading"
+                 data-report-editor-dependent>
                 <h3 class="subsection-title" id="drafts-heading">Trip report drafts</h3>
                 <div class="card">
                     <div class="row">

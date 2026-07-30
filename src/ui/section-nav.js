@@ -100,13 +100,16 @@ export const initSectionNav = () => {
     // clamp lets a short final section win once the scroll bottoms out.
     const ACTIVATE_MARGIN = 40;
     const activeFromScroll = () => {
+        const visibleEntries = entries.filter(({ link, section }) =>
+            !section.hidden && !link.closest('[hidden]'));
+        if (!visibleEntries.length) return entries[0].link;
         if (content.scrollHeight > content.clientHeight
             && content.scrollTop + content.clientHeight >= content.scrollHeight - 2) {
-            return entries[entries.length - 1].link;
+            return visibleEntries[visibleEntries.length - 1].link;
         }
         const marker = content.getBoundingClientRect().top + ACTIVATE_MARGIN;
-        let active = entries[0].link;
-        for (const { link, section } of entries) {
+        let active = visibleEntries[0].link;
+        for (const { link, section } of visibleEntries) {
             if (section.getBoundingClientRect().top <= marker) active = link;
             else break;
         }
@@ -168,4 +171,3 @@ export const initSectionNav = () => {
     }
     else setActive(entries[0].link);
 };
-
