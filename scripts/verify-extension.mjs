@@ -264,6 +264,53 @@ try {
             photoEditorState,
             photoErrors,
         })}`);
+
+        // Coalescing a slider drag into one Undo depends on Chrome's own range
+        // input: many `input` events while the thumb moves, exactly one `change`
+        // when it is released. jsdom cannot establish either, so the drag here is
+        // a real pointer moving a real thumb.
+        const widthBox = await photoPage.locator('#route-width').boundingBox();
+        const widthBefore = await photoPage.locator('#route-width').inputValue();
+        await photoPage.evaluate(() => {
+            const slider = document.getElementById('route-width');
+            globalThis.__bpbSliderEvents = { input: 0, change: 0 };
+            slider.addEventListener('input', () => { globalThis.__bpbSliderEvents.input += 1; });
+            slider.addEventListener('change', () => { globalThis.__bpbSliderEvents.change += 1; });
+        });
+        if (widthBox) {
+            const thumbFraction = (Number(widthBefore) - 1) / 99;
+            await photoPage.mouse.move(widthBox.x + widthBox.width * thumbFraction,
+                widthBox.y + widthBox.height / 2);
+            await photoPage.mouse.down();
+            for (let step = 1; step <= 20; step += 1) {
+                await photoPage.mouse.move(
+                    widthBox.x + widthBox.width * (thumbFraction + (1 - thumbFraction) * step / 20),
+                    widthBox.y + widthBox.height / 2);
+            }
+            await photoPage.mouse.up();
+        }
+        const sliderUndoState = await photoPage.evaluate(async widthAtStart => {
+            const events = { ...globalThis.__bpbSliderEvents };
+            const dragged = document.getElementById('route-width').value;
+            document.getElementById('undo').click();
+            await new Promise(resolve => setTimeout(resolve, 0));
+            return {
+                events,
+                dragged,
+                afterOneUndo: document.getElementById('route-width').value,
+                widthAtStart,
+                routeSurvived: !!document.querySelector('#photo-overlay path'),
+            };
+        }, widthBefore);
+        check(sliderUndoState.events.input >= 5
+            && sliderUndoState.events.change === 1
+            && sliderUndoState.dragged !== sliderUndoState.widthAtStart
+            && sliderUndoState.afterOneUndo === sliderUndoState.widthAtStart
+            && sliderUndoState.routeSurvived,
+        `one real drag of Route width was not one Undo: ${JSON.stringify({
+            sliderUndoState,
+            photoErrors,
+        })}`);
         if (process.env.BPB_VERIFY_PHOTO_SCREENSHOT) {
             await photoPage.evaluate(() => scrollTo(0, 0));
             await photoPage.screenshot({
@@ -2358,7 +2405,8 @@ console.log('Real-extension verification passed (hidden Chrome for Testing, new 
 console.log('  - the MV3 service worker boots and answers messages (capture is alive)');
 console.log('  - sync/local/session storage, storage.onChanged, options persistence, and popup status passed');
 console.log('  - the extension-owned photo library states its metadata-only GitHub boundary, and the topo editor');
-console.log('    decodes a real PNG, draws a route, autosaves to IndexedDB, and fits desktop and narrow viewports');
+console.log('    decodes a real PNG, draws a route, autosaves to IndexedDB, fits desktop and narrow');
+console.log('    viewports, and folds a real Route width slider drag into a single Undo');
 console.log('  - options loads the signed-in Buddy report directly, falls back through a first-party tab, and keeps failures actionable');
 console.log('  - Buddy mirror stays busy and focused during replacement, then retries a failure without another fetch');
 console.log('  - the real 1,500-row favorite list reports its total, fuzzy-searches, and keeps long navigation instant');
