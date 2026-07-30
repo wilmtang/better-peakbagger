@@ -18,6 +18,46 @@ test('every typed GitHub auth and backup failure has specific user-facing copy',
     }
 });
 
+test('a GitHub outage reads as an outage, not as a page worth reloading', () => {
+    // The regression this pins: 5xx used to classify as `unknown`, and GitHub
+    // answers an outage with an HTML page that the detail cleaner strips — so
+    // the user was told to reload a page GitHub could not serve either way.
+    assert.equal(
+        GithubError.message({ code: 'server', status: 502, message: '<html>Bad gateway</html>' }),
+        'GitHub is temporarily unavailable (HTTP 502). Try again in a few minutes.',
+    );
+    assert.equal(
+        GithubError.message({ code: 'server', message: '' }),
+        'GitHub is temporarily unavailable. Try again in a few minutes.',
+    );
+});
+
+test('a rate limit says when to come back whenever GitHub states the window', () => {
+    assert.equal(
+        GithubError.message({ code: 'rate-limit', retryAfterSeconds: 1800 }),
+        'GitHub is rate-limiting requests. Try again in about 30 minutes.',
+    );
+    assert.equal(
+        GithubError.message({ code: 'rate-limit', retryAfterSeconds: 3600 }),
+        'GitHub is rate-limiting requests. Try again in about an hour.',
+    );
+    assert.equal(
+        GithubError.message({ code: 'rate-limit', retryAfterSeconds: 45 }),
+        'GitHub is rate-limiting requests. Try again in about a minute.',
+    );
+    // Without a stated window the copy must not invent one.
+    assert.equal(
+        GithubError.message({ code: 'rate-limit' }),
+        'GitHub is temporarily rate-limiting requests. Wait a few minutes, then try again.',
+    );
+});
+
+test('a timed-out write never claims nothing was saved', () => {
+    const text = GithubError.message({ code: 'timeout' });
+    assert.match(text, /took too long/i);
+    assert.doesNotMatch(text, /nothing was (saved|changed|committed)/i);
+});
+
 test('settings-read failures never expose storage exception details', () => {
     assert.equal(
         GithubError.message({

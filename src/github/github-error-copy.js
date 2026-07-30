@@ -26,6 +26,10 @@ const ERROR_TEXT = Object.freeze({
     [ERROR_CODES.RATE_LIMIT]: 'GitHub is temporarily rate-limiting requests. Wait a few minutes, then try again.',
     [ERROR_CODES.CONFLICT]: 'The repository changed while the backup was being committed. Try the backup again.',
     [ERROR_CODES.NETWORK]: 'Better Peakbagger could not reach GitHub. Check your connection and try again.',
+    [ERROR_CODES.SERVER]: 'GitHub is temporarily unavailable. Try again in a few minutes.',
+    // Deliberately not "nothing was saved": a request that timed out may still
+    // have been applied, and a write surface must not promise otherwise.
+    [ERROR_CODES.TIMEOUT]: 'GitHub took too long to respond. Check your connection, then try again.',
     'not-connected': 'No GitHub repository is connected. Connect one in extension settings first.',
     'no-repo': 'No backup repository is selected. Choose one in extension settings first.',
     'no-data': 'Better Peakbagger could not read enough ascent information to create this backup.',
@@ -42,9 +46,33 @@ const cleanDetail = error => {
     return detail.length > 220 ? `${detail.slice(0, 219)}…` : detail;
 };
 
+// Round GitHub's stated retry window to something a person can act on. A limit
+// can clear in seconds or in most of an hour, and "wait a few minutes" is wrong
+// advice for the second case, so say the size when GitHub tells us.
+const waitText = seconds => {
+    if (!Number.isFinite(seconds) || seconds <= 0) return '';
+    if (seconds <= 90) return 'in about a minute';
+    const minutes = Math.round(seconds / 60);
+    if (minutes < 60) return `in about ${minutes} minutes`;
+    const hours = Math.round(minutes / 60);
+    return hours <= 1 ? 'in about an hour' : `in about ${hours} hours`;
+};
+
 const message = (error, { fallback = 'GitHub did not return an error description. Reload the page and try again.' } = {}) => {
     const code = typeof error === 'string' ? error : error && error.code;
     const detail = cleanDetail(error);
+    const status = Number(error && error.status) || 0;
+    if (code === ERROR_CODES.RATE_LIMIT) {
+        const wait = waitText(Number(error && error.retryAfterSeconds));
+        return wait
+            ? `GitHub is rate-limiting requests. Try again ${wait}.`
+            : ERROR_TEXT[ERROR_CODES.RATE_LIMIT];
+    }
+    // Name the status: an outage is the one case where the user's next move may
+    // be to check GitHub's own status page, and the number is what they report.
+    if (code === ERROR_CODES.SERVER && status) {
+        return `GitHub is temporarily unavailable (HTTP ${status}). Try again in a few minutes.`;
+    }
     if (code === ERROR_CODES.INVALID && detail) return `GitHub rejected the request: ${detail}`;
     if ((code === ERROR_CODES.UNKNOWN || !code) && detail) return `GitHub reported: ${detail}`;
     return ERROR_TEXT[code] || fallback;

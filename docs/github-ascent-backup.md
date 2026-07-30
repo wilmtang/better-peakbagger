@@ -899,10 +899,36 @@ See GitHub's [Git Trees API][github-trees] and
 `src/github/github-api.js` is the only authenticated REST response classifier. The UI
 distinguishes invalid/revoked auth, withdrawn repo access, missing
 selection, archived repository, branch protection, missing branch in a nonempty
-repo, ambiguous backup paths, rate limits, network errors, validation, and
-persistent conflicts. Profile GitHub errors pause with the entire rejected
-batch retained. Individual errors retain the pending save snapshot because it
-is consumed only after a successful commit.
+repo, ambiguous backup paths, rate limits, network errors, GitHub-side outages,
+requests that never answered, validation, and persistent conflicts. Profile
+GitHub errors pause with the entire rejected batch retained. Individual errors
+retain the pending save snapshot because it is consumed only after a successful
+commit.
+
+Two of those exist because a status code cannot report them:
+
+- `server` covers 5xx. GitHub answers its own outages with an HTML error page,
+  not the usual JSON envelope, so it must be decided on status alone —
+  classified as `unknown` it inherited the copy layer's HTML-stripping and left
+  the user a catch-all telling them to reload a page GitHub could not serve
+  either way.
+- `timeout` covers the failure no status reports at all. Every outbound request
+  and its body read race one shared deadline from
+  `src/net/request-deadline.js`; without it a black-holing proxy or stalled TLS
+  handshake leaves a spinner running with no error and no way out. The deadline
+  both aborts the request and rejects the race, because an injected or
+  non-conforming fetch may ignore `signal`.
+
+A `rate-limit` failure carries GitHub's own retry window — `retry-after` on a
+secondary limit, `x-ratelimit-reset` on a primary one — through
+`publicError()` to the copy layer, so the UI names the wait instead of guessing
+"a few minutes" at a limit that can last an hour. An unstated or elapsed window
+falls back to the generic sentence rather than inventing a number.
+
+Idempotent GET requests retry twice on `server`/`timeout` with a short backoff,
+so one transient blip does not end a whole backup. Writes are deliberately
+excluded: a 502 after a ref update may have applied it, and only the caller's
+compare-and-swap retry can tell.
 
 ## Incident postmortem: lossy individual re-backup
 

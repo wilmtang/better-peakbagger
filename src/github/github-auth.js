@@ -28,8 +28,13 @@
 
 import { githubApi as GithubApi } from './github-api.js';
 import { githubErrors as GithubErrors } from './github-errors.js';
+import { requestDeadline as Deadline } from '../net/request-deadline.js';
 
     const { ERROR_CODES, GithubError } = GithubErrors;
+    // Device-flow polls run on a fixed interval, so one stalled request must
+    // give way well before the next poll is due rather than stacking up behind
+    // a socket that will never answer.
+    const DEVICE_TIMEOUT_MS = 15000;
 
     // The registered Better Peakbagger backup app. Public by design.
     const CLIENT_ID = 'Iv23liZpTdD1iZfT3eL1';
@@ -60,32 +65,62 @@ import { githubErrors as GithubErrors } from './github-errors.js';
         }
     };
 
-    const createDeviceFlow = ({ fetch, clientId = CLIENT_ID, wait = defaultWait, now = defaultNow } = {}) => {
+    const createDeviceFlow = ({
+        fetch,
+        clientId = CLIENT_ID,
+        wait = defaultWait,
+        now = defaultNow,
+        timeoutMs = DEVICE_TIMEOUT_MS,
+    } = {}) => {
         if (typeof fetch !== 'function') throw new TypeError('device flow requires an injected fetch');
 
         // github.com's device endpoints default to form-encoded responses; ask
         // for JSON explicitly and send form-encoded bodies (the documented shape
         // that does not depend on CORS-preflighted JSON content types).
         const post = async (url, params) => {
+            const deadline = Deadline.createRequestDeadline(timeoutMs);
             let res;
             try {
-                res = await fetch(url, {
+                res = await deadline.run(fetch(url, {
                     method: 'POST',
+                    signal: deadline.signal,
                     headers: { Accept: 'application/json', 'Content-Type': 'application/x-www-form-urlencoded' },
                     body: new URLSearchParams(params).toString(),
-                });
+                }));
             } catch (cause) {
-                throw new GithubError(ERROR_CODES.NETWORK, 'Could not reach GitHub.', { cause });
+                deadline.clear();
+                throw deadline.expired
+                    ? new GithubError(ERROR_CODES.TIMEOUT, 'GitHub did not respond in time.', { cause })
+                    : new GithubError(ERROR_CODES.NETWORK, 'Could not reach GitHub.', { cause });
             }
             let text = '';
-            try { text = await res.text(); } catch { text = ''; }
+            try { text = await deadline.run(res.text()); }
+            catch (cause) {
+                if (deadline.expired) {
+                    deadline.clear();
+                    throw new GithubError(ERROR_CODES.TIMEOUT,
+                        'GitHub stopped responding while sending its answer.',
+                        { status: res ? res.status : null, cause });
+                }
+                text = '';
+            }
+            deadline.clear();
             let json = null;
             try { json = text ? JSON.parse(text) : null; } catch { json = null; }
             if (json && json.error) return json;
             if (!res || !res.ok || !json) {
+                const status = res ? res.status : null;
+                // An outage on github.com answers device-flow polls with an HTML
+                // error page, which has no `error` field to map — without this
+                // it would read as "GitHub returned an unexpected response",
+                // pointing the user at a connection that is working fine.
+                if (Number.isInteger(status) && status >= 500) {
+                    throw new GithubError(ERROR_CODES.SERVER,
+                        'GitHub is temporarily unavailable.', { status });
+                }
                 throw new GithubError(ERROR_CODES.UNKNOWN,
                     (json && (json.error_description || json.message)) || 'GitHub returned an unexpected response.',
-                    { status: res ? res.status : null });
+                    { status });
             }
             return json;
         };

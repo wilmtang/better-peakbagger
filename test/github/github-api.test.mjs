@@ -65,12 +65,17 @@ test('all GitHub REST status classification comes from the shared taxonomy', asy
         { status: 422, body: { message: 'Update is not a fast forward' }, phase: 'ref', expected: ERROR_CODES.CONFLICT },
         { status: 422, body: { message: 'Required status check blocked this protected branch' }, phase: 'ref', expected: ERROR_CODES.BRANCH_PROTECTED },
         { status: 422, body: { message: 'Validation Failed' }, expected: ERROR_CODES.INVALID },
-        { status: 500, body: { message: 'Server Error' }, expected: ERROR_CODES.UNKNOWN },
+        // A GitHub-side outage is its own remedy ("try again later"), and it
+        // answers with an HTML page that carries no message to fall back on.
+        { status: 500, body: { message: 'Server Error' }, expected: ERROR_CODES.SERVER },
+        { status: 502, body: '<html>Bad gateway</html>', expected: ERROR_CODES.SERVER },
+        { status: 503, body: '<html>unavailable</html>', expected: ERROR_CODES.SERVER },
     ];
 
     for (const item of cases) {
         const api = GithubApi.createGithubApi({
             token: 't',
+            sleep: async () => {},
             fetch: async () => respond(item.status, item.body, item.headers),
         });
         await assert.rejects(
@@ -92,6 +97,122 @@ test('the shared transport handles expected absence, malformed responses, and ne
 
     const offline = GithubApi.createGithubApi({ token: 't', fetch: async () => { throw new TypeError('offline'); } });
     await assert.rejects(offline.request('GET', '/user'), error => error.code === ERROR_CODES.NETWORK);
+});
+
+test('a stalled GitHub request fails on its deadline instead of hanging', async () => {
+    const aborts = [];
+    const api = GithubApi.createGithubApi({
+        token: 't',
+        timeoutMs: 10,
+        sleep: async () => {},
+        // A connection that accepts the request and never answers: no status
+        // ever arrives, so only the deadline can end it.
+        fetch: async (_url, init) => {
+            init.signal?.addEventListener('abort', () => aborts.push(true));
+            return new Promise(() => {});
+        },
+    });
+
+    await assert.rejects(
+        api.request('POST', '/repos/me/backup/git/commits', { body: {} }),
+        error => error instanceof GithubError && error.code === ERROR_CODES.TIMEOUT,
+    );
+    assert.equal(aborts.length, 1, 'the deadline must also release the socket, not just reject');
+});
+
+test('a response whose body stalls times out rather than outliving the deadline', async () => {
+    const api = GithubApi.createGithubApi({
+        token: 't',
+        timeoutMs: 10,
+        sleep: async () => {},
+        fetch: async () => ({ ok: true, status: 200, headers: { get: () => null }, text: () => new Promise(() => {}) }),
+    });
+    await assert.rejects(
+        api.request('POST', '/repos/me/backup/git/blobs', { body: {} }),
+        error => error.code === ERROR_CODES.TIMEOUT,
+    );
+});
+
+test('idempotent reads ride out a transient GitHub failure; writes are never replayed', async () => {
+    let reads = 0;
+    const flaky = GithubApi.createGithubApi({
+        token: 't',
+        sleep: async () => {},
+        fetch: async () => (++reads < 3 ? respond(503, '<html>unavailable</html>') : respond(200, { sha: 'abc' })),
+    });
+    assert.deepEqual(await flaky.request('GET', '/repos/me/backup'), { sha: 'abc' });
+    assert.equal(reads, 3);
+
+    // A 502 after a commit POST may have applied it. Replaying is the caller's
+    // compare-and-swap decision to make, never the transport's.
+    let writes = 0;
+    const writing = GithubApi.createGithubApi({
+        token: 't',
+        sleep: async () => {},
+        fetch: async () => { writes += 1; return respond(502, '<html>Bad gateway</html>'); },
+    });
+    await assert.rejects(
+        writing.request('POST', '/repos/me/backup/git/commits', { body: {} }),
+        error => error.code === ERROR_CODES.SERVER,
+    );
+    assert.equal(writes, 1);
+});
+
+test('a read that never recovers still fails with the transient code, not a catch-all', async () => {
+    let reads = 0;
+    const api = GithubApi.createGithubApi({
+        token: 't',
+        sleep: async () => {},
+        fetch: async () => { reads += 1; return respond(500, '<html>oops</html>'); },
+    });
+    await assert.rejects(api.request('GET', '/user'), error => error.code === ERROR_CODES.SERVER);
+    assert.equal(reads, 3, 'retries stay bounded');
+});
+
+test('GitHub’s own retry window rides along with a rate-limit failure', async () => {
+    const secondary = GithubApi.createGithubApi({
+        token: 't',
+        sleep: async () => {},
+        fetch: async () => respond(403, { message: 'You have exceeded a secondary rate limit' }, { 'retry-after': '60' }),
+    });
+    await assert.rejects(secondary.request('GET', '/user'), error =>
+        error.code === ERROR_CODES.RATE_LIMIT && error.retryAfterSeconds === 60);
+
+    // A primary limit states an absolute reset instant instead.
+    const primary = GithubApi.createGithubApi({
+        token: 't',
+        now: () => 1_700_000_000_000,
+        sleep: async () => {},
+        fetch: async () => respond(403, { message: 'API rate limit exceeded' }, {
+            'x-ratelimit-remaining': '0',
+            'x-ratelimit-reset': String(1_700_000_000 + 1800),
+        }),
+    });
+    await assert.rejects(primary.request('GET', '/user'), error =>
+        error.code === ERROR_CODES.RATE_LIMIT && error.retryAfterSeconds === 1800);
+
+    // An elapsed or unparseable window leaves the wait unstated rather than
+    // handing the UI a number it would present as a promise.
+    const stale = GithubApi.createGithubApi({
+        token: 't',
+        now: () => 1_700_000_000_000,
+        sleep: async () => {},
+        fetch: async () => respond(429, { message: 'Too many requests' }, { 'x-ratelimit-reset': '1699999000' }),
+    });
+    await assert.rejects(stale.request('GET', '/user'), error =>
+        error.code === ERROR_CODES.RATE_LIMIT && error.retryAfterSeconds === null);
+});
+
+test('the worker boundary carries status and retry window to the copy layer', () => {
+    const limited = new GithubError(ERROR_CODES.RATE_LIMIT, 'API rate limit exceeded', {
+        status: 403, retryAfterSeconds: 1800,
+    });
+    assert.deepEqual(GithubErrors.publicError(limited), {
+        code: ERROR_CODES.RATE_LIMIT,
+        message: 'API rate limit exceeded',
+        status: 403,
+        retryAfterSeconds: 1800,
+    });
 });
 
 test('the shared transport rejects pagination links outside api.github.com', async () => {
