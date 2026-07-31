@@ -149,10 +149,8 @@ test('overlapping writes to different keys reconcile independently', async () =>
         message: 'Settings couldn’t be saved. Try again.'
     });
 
-    assert.deepEqual(fixture.client.get(), {
-        units: 'metric',
-        mapRouteColor: '#347a3f'
-    });
+    assert.equal(fixture.client.get().units, 'metric');
+    assert.equal(fixture.client.get().mapRouteColor, '#347a3f');
     fixture.dispatch({
         kind: 'setResult',
         requestId: colorId,
@@ -160,10 +158,8 @@ test('overlapping writes to different keys reconcile independently', async () =>
         settings: { units: 'metric', mapRouteColor: '#347a3f' }
     });
     fixture.timers.advance(500);
-    assert.deepEqual(fixture.client.get(), {
-        units: 'metric',
-        mapRouteColor: '#347a3f'
-    });
+    assert.equal(fixture.client.get().units, 'metric');
+    assert.equal(fixture.client.get().mapRouteColor, '#347a3f');
     assert.equal(fixture.failures.length, 1);
     fixture.close();
 });
@@ -190,5 +186,44 @@ test('a newer success snapshot settles an older lost reply without rolling backw
     });
     assert.equal(fixture.client.get().units, 'auto');
     assert.deepEqual(fixture.failures, []);
+    fixture.close();
+});
+
+test('every bridge snapshot is schema-cleaned before becoming confirmed state', async () => {
+    const fixture = await setup();
+
+    fixture.dispatch({
+        settings: {
+            units: 'spoofed',
+            enable3dMap: 'yes',
+            mapRouteWidth: 999,
+            mapRouteCasingWidth: 1,
+        },
+    });
+    assert.equal(fixture.client.get().units, 'auto');
+    assert.equal(fixture.client.get().enable3dMap, false);
+    assert.equal(fixture.client.get().mapRouteWidth, 12);
+    assert.equal(fixture.client.get().mapRouteCasingWidth, 14);
+
+    const pendingId = fixture.client.set({ units: 'imperial' });
+    fixture.dispatch({
+        kind: 'setResult',
+        requestId: pendingId,
+        ok: true,
+        settings: { units: 'invalid acknowledgement', mapViewportHeight: 9000 },
+    });
+    assert.equal(fixture.client.get().units, 'auto');
+    assert.equal(fixture.client.get().mapViewportHeight, 720);
+
+    const lateId = fixture.client.set({ units: 'metric' });
+    fixture.timers.advance(100);
+    fixture.dispatch({
+        kind: 'setResult',
+        requestId: lateId,
+        ok: true,
+        settings: { units: 'invalid late acknowledgement', mapRouteColor: 'red' },
+    });
+    assert.equal(fixture.client.get().units, 'auto');
+    assert.equal(fixture.client.get().mapRouteColor, '#d9483b');
     fixture.close();
 });

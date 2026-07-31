@@ -5,6 +5,8 @@
 // Pending writes remain ordered by request id, and every write has a bounded
 // acknowledgement lifetime so a lost bridge reply cannot pin stale UI state.
 
+import { settingsSchema as Schema } from './settings-schema.js';
+
 const DEFAULT_READY_TIMEOUT_MS = 800;
 const DEFAULT_WRITE_ACK_TIMEOUT_MS = 5000;
 const WRITE_FAILED_FALLBACK = 'That setting couldn’t be saved.';
@@ -18,6 +20,7 @@ export const createPageSettingsClient = ({
     setTimer = globalThis.setTimeout,
     clearTimer = globalThis.clearTimeout,
 } = {}) => {
+    const safeFallback = Schema.clean(fallback);
     let settings = null;
     let confirmed = null;
     let applied = null;
@@ -38,13 +41,14 @@ export const createPageSettingsClient = ({
         const keys = new Set([...Object.keys(left), ...Object.keys(right)]);
         return Array.from(keys).every(key => left[key] === right[key]);
     };
-    const markApplied = () => { applied = { ...(settings || fallback) }; };
+    const markApplied = () => { applied = { ...(settings || safeFallback) }; };
     const recompute = () => {
         const previous = settings;
-        settings = { ...(confirmed || fallback) };
-        for (const { patch } of pending.values()) Object.assign(settings, patch);
+        const optimistic = { ...(confirmed || safeFallback) };
+        for (const { patch } of pending.values()) Object.assign(optimistic, patch);
+        settings = Schema.clean(optimistic);
         if (sameSettings(previous, settings)) return;
-        const before = applied || previous || fallback;
+        const before = applied || previous || safeFallback;
         const changed = keys => keys.some(key => before[key] !== settings[key]);
         markApplied();
         subscribers.forEach(subscriber => {
@@ -78,14 +82,14 @@ export const createPageSettingsClient = ({
                 // like an external settings push while newer pending patches
                 // remain layered on top.
                 if (data.ok === true && data.settings) {
-                    confirmed = data.settings;
+                    confirmed = Schema.clean(data.settings);
                     recompute();
                     resolveReady(settings);
                 }
                 return;
             }
             if (data.ok === true && data.settings) {
-                confirmed = data.settings;
+                confirmed = Schema.clean(data.settings);
                 // A later successful snapshot is authoritative through that
                 // request. Clear older requests too so a lost older reply
                 // cannot later roll the confirmed value backward or emit a
@@ -101,7 +105,7 @@ export const createPageSettingsClient = ({
             return;
         }
         if (!data.settings) return;
-        confirmed = data.settings;
+        confirmed = Schema.clean(data.settings);
         recompute();
         resolveReady(settings);
     };
@@ -121,7 +125,7 @@ export const createPageSettingsClient = ({
                     readyTimer = null;
                 }
             }
-            if (!settings) settings = { ...fallback };
+            if (!settings) settings = { ...safeFallback };
             markApplied();
             return settings;
         },
