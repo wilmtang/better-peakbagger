@@ -91,6 +91,30 @@ test('the API key is a password field and upload remains one explicit primary ac
     assert.equal(doc.querySelectorAll('#upload-insert').length, 1);
 });
 
+test('upload format, JPEG quality, and the encoded estimate stay beside the upload action', () => {
+    const format = doc.getElementById('upload-format');
+    assert.deepEqual([...format.options].map(option => [option.value, option.textContent.trim()]), [
+        ['original', 'Follow original format'],
+        ['png', 'PNG · lossless'],
+        ['jpeg', 'JPEG · smaller file'],
+    ]);
+    const quality = doc.getElementById('jpeg-quality');
+    assert.equal(quality.type, 'range');
+    assert.equal(quality.min, '10');
+    assert.equal(quality.max, '100');
+    assert.equal(quality.getAttribute('aria-describedby'), 'jpeg-quality-note');
+    assert.match(doc.getElementById('jpeg-quality-note').textContent, /smaller file/i);
+    assert.equal(doc.getElementById('jpeg-quality-control').hidden, true,
+        'quality only appears when the effective output is JPEG');
+    const estimate = doc.getElementById('upload-estimate').parentElement;
+    assert.equal(estimate.getAttribute('role'), 'status');
+    assert.equal(estimate.getAttribute('aria-live'), 'polite');
+    assert.match(estimate.textContent, /full resolution.+annotations included/is);
+    assert.equal(format.closest('.editor-footer'), doc.getElementById('upload-insert').closest('.editor-footer'));
+    assert.match(source, /ascentBackupEnabled && encoded\.bytes > GITHUB_CAMO_PREVIEW_BYTES/);
+    assert.match(source, /GitHub may not show this image in backed-up reports/);
+});
+
 test('report sizing is contextual, synchronized, and explicit about full-resolution upload', () => {
     const controls = [...doc.querySelectorAll('[data-report-width-control]')];
     const selects = [...doc.querySelectorAll('[data-report-width]')];

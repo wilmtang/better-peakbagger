@@ -30,6 +30,13 @@
   including what a backup can bring back and why removing a photo locally does
   not delete it from ImgBB.
 
+- **Choose the photo topo upload format before publishing.** Keep a JPEG or PNG
+  source in its original format, re-encode as lossless PNG, or choose JPEG and
+  adjust its quality for a smaller file. The editor estimates the actual
+  flattened full-resolution upload locally, includes annotations in that
+  estimate, and—when Ascent backup is enabled—warns when an image is over 5 MB
+  and may not appear in GitHub's rendered backed-up report.
+
 - **Give the workspaces their own pages.** Managing saved trip report drafts and
   your favorite-climbers list are workspaces, not settings, so they each open on
   their own full-width page, linked from their **Settings** section. Settings

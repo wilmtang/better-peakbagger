@@ -130,7 +130,11 @@ From the Rich editor's image menu, choose **Upload and edit…** to draw routes,
 curves, labels, anchors, pitons, rappels, belays, and pitch markers over a
 photo. Better Peakbagger keeps the original and editable project on this
 device, then flattens a metadata-free JPEG or PNG only when you choose
-**Upload and insert**.
+**Upload and insert**. Keep the source's JPEG or PNG format, choose lossless
+PNG, or choose JPEG and adjust its quality; the editor encodes a local estimate
+so you can see the likely upload size before anything leaves the device. With
+**Ascent backup** enabled, an estimate over 5 MB also warns that GitHub may not
+show the image in the rendered backed-up report.
 
 Uploads go directly from the extension to ImgBB with an API key you provide;
 Better Peakbagger has no upload relay or developer account. Save that key in

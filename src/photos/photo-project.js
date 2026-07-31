@@ -47,6 +47,9 @@ const STROKES = new Set(['solid', 'dashed', 'dotted']);
 const ENDS = new Set(['none', 'arrow']);
 const ALIGNS = new Set(['left', 'center', 'right']);
 const EXPORT_MIMES = new Set(['image/jpeg', 'image/png']);
+const EXPORT_FORMATS = new Set(['original', 'png', 'jpeg']);
+const DEFAULT_JPEG_QUALITY = 0.92;
+const MIN_JPEG_QUALITY = 0.1;
 const HEX_64 = /^[0-9a-f]{64}$/;
 const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]*$/;
 
@@ -251,8 +254,40 @@ const cleanObject = (value, image) => {
 const cleanExport = value => {
     if (!ownObject(value) || !EXPORT_MIMES.has(value.mime)) return null;
     if (value.mime === 'image/png') return { mime: value.mime, quality: 1 };
-    const quality = boundedNumber(value.quality, 0.1, 1);
+    const quality = boundedNumber(value.quality, MIN_JPEG_QUALITY, 1);
     return quality == null ? null : { mime: value.mime, quality };
+};
+
+// Canvas can reliably flatten the two formats ImgBB's editor contract already
+// supports. "Original" means keep one of those formats, not keep the source
+// bytes: every upload is freshly encoded so EXIF and other metadata stay
+// behind. Other browser-decodable formats therefore have no honest Original
+// choice and the page falls back to its explicit JPEG option.
+const sourceExportMime = value => {
+    const mime = typeof value === 'string' ? value.toLowerCase() : '';
+    return EXPORT_MIMES.has(mime) ? mime : null;
+};
+
+const resolveExportSettings = ({
+    format,
+    sourceMime,
+    jpegQuality = DEFAULT_JPEG_QUALITY,
+} = {}) => {
+    if (!EXPORT_FORMATS.has(format)) return null;
+    const mime = format === 'png'
+        ? 'image/png'
+        : format === 'jpeg'
+            ? 'image/jpeg'
+            : sourceExportMime(sourceMime);
+    return mime ? cleanExport({ mime, quality: mime === 'image/png' ? 1 : jpegQuality }) : null;
+};
+
+const inferExportFormat = (value, sourceMime) => {
+    const cleaned = cleanExport(value);
+    if (!cleaned) return null;
+    const original = sourceExportMime(sourceMime);
+    if (original && cleaned.mime === original) return 'original';
+    return cleaned.mime === 'image/png' ? 'png' : 'jpeg';
 };
 
 const cleanProject = value => {
@@ -293,7 +328,7 @@ const createProject = ({ localId, width, height, sourceSha256, updatedAt = new D
         localId,
         image: { width, height, sourceSha256 },
         objects: [],
-        export: { mime: 'image/jpeg', quality: 0.92 },
+        export: { mime: 'image/jpeg', quality: DEFAULT_JPEG_QUALITY },
         updatedAt,
     });
 
@@ -361,11 +396,16 @@ export const photoProject = {
     MAX_LINE_WIDTH,
     MAX_SCALE,
     MIN_OPACITY,
+    DEFAULT_JPEG_QUALITY,
+    MIN_JPEG_QUALITY,
     DEFAULT_COLOR,
     PALETTE,
     OBJECT_TYPES,
     MARKER_TYPES,
     smoothControls,
+    sourceExportMime,
+    resolveExportSettings,
+    inferExportFormat,
     cleanProject,
     createProject,
     addObject,

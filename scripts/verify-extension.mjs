@@ -339,6 +339,61 @@ try {
             sliderUndoState,
             photoErrors,
         })}`);
+        const originalUploadState = await photoPage.waitForFunction(() => {
+            const estimate = document.getElementById('upload-estimate')?.textContent || '';
+            if (!/^Estimated upload ·/.test(estimate)) return false;
+            const format = document.getElementById('upload-format');
+            return {
+                format: format?.value,
+                labels: [...(format?.options || [])].map(option => option.textContent),
+                qualityHidden: document.getElementById('jpeg-quality-control')?.hidden,
+                estimate,
+                note: document.getElementById('upload-estimate-note')?.textContent,
+            };
+        }, null, { timeout: 10_000 }).then(handle => handle.jsonValue()).catch(() => null);
+        check(originalUploadState?.format === 'original'
+            && originalUploadState.labels.join('|')
+                === 'Follow original format · PNG|PNG · lossless|JPEG · smaller file'
+            && originalUploadState.qualityHidden === true
+            && /PNG$/.test(originalUploadState.estimate || '')
+            && /900 × 600 · full resolution/.test(originalUploadState.note || ''),
+        `the original-format PNG estimate was wrong: ${JSON.stringify({
+            originalUploadState,
+            photoErrors,
+        })}`);
+
+        await photoPage.locator('#upload-format').selectOption('jpeg');
+        await photoPage.locator('#jpeg-quality').evaluate(input => {
+            input.value = '70';
+            input.dispatchEvent(new Event('input', { bubbles: true }));
+            input.dispatchEvent(new Event('change', { bubbles: true }));
+        });
+        const jpegUploadState = await photoPage.waitForFunction(() => {
+            const estimate = document.getElementById('upload-estimate')?.textContent || '';
+            const saved = document.getElementById('save-status')?.textContent || '';
+            if (!/^Estimated upload ·/.test(estimate) || !/Saved on this device/.test(saved)) return false;
+            const footer = document.querySelector('.editor-footer')?.getBoundingClientRect();
+            return {
+                format: document.getElementById('upload-format')?.value,
+                qualityHidden: document.getElementById('jpeg-quality-control')?.hidden,
+                quality: document.getElementById('jpeg-quality')?.value,
+                qualityLabel: document.getElementById('jpeg-quality-value')?.textContent,
+                estimate,
+                note: document.getElementById('upload-estimate-note')?.textContent,
+                footerHeight: footer?.height,
+            };
+        }, null, { timeout: 10_000 }).then(handle => handle.jsonValue()).catch(() => null);
+        check(jpegUploadState?.format === 'jpeg'
+            && jpegUploadState.qualityHidden === false
+            && jpegUploadState.quality === '70'
+            && jpegUploadState.qualityLabel === '70%'
+            && /JPEG$/.test(jpegUploadState.estimate || '')
+            && /900 × 600 · full resolution/.test(jpegUploadState.note || '')
+            && jpegUploadState.footerHeight < 260,
+        `the JPEG quality or encoded estimate was wrong: ${JSON.stringify({
+            jpegUploadState,
+            photoErrors,
+        })}`);
         if (process.env.BPB_VERIFY_PHOTO_SCREENSHOT) {
             await photoPage.evaluate(() => scrollTo(0, 0));
             await photoPage.screenshot({
@@ -352,9 +407,13 @@ try {
             horizontalOverflow: document.documentElement.scrollWidth > document.documentElement.clientWidth,
             inspectorWidth: document.querySelector('.inspector')?.getBoundingClientRect().width,
             bodyWidth: document.body.getBoundingClientRect().width,
+            footerHeight: document.querySelector('.editor-footer')?.getBoundingClientRect().height,
+            formatWidth: document.getElementById('upload-format')?.getBoundingClientRect().width,
         }));
         check(!narrowPhotoState.horizontalOverflow
-            && narrowPhotoState.inspectorWidth <= narrowPhotoState.bodyWidth,
+            && narrowPhotoState.inspectorWidth <= narrowPhotoState.bodyWidth
+            && narrowPhotoState.footerHeight < 420
+            && narrowPhotoState.formatWidth <= narrowPhotoState.bodyWidth,
         `the narrow photo editor overflowed horizontally: ${JSON.stringify(narrowPhotoState)}`);
         if (originalPhotoViewport) await photoPage.setViewportSize(originalPhotoViewport);
 
@@ -460,13 +519,15 @@ try {
                 controlLeft: controlRect?.left,
                 controlRight: controlRect?.right,
                 stageWidth: document.getElementById('photo-stage')?.getBoundingClientRect().width,
+                footerHeight: document.querySelector('.editor-footer')?.getBoundingClientRect().height,
             };
         });
         check(!narrowReportSizeState.horizontalOverflow
             && narrowReportSizeState.controlWidth <= narrowReportSizeState.bodyWidth
             && narrowReportSizeState.controlLeft >= 0
             && narrowReportSizeState.controlRight <= narrowReportSizeState.bodyWidth
-            && narrowReportSizeState.stageWidth <= 320.5,
+            && narrowReportSizeState.stageWidth <= 320.5
+            && narrowReportSizeState.footerHeight < 500,
         `the narrow report-size control overflowed: ${JSON.stringify(narrowReportSizeState)}`);
         if (process.env.BPB_VERIFY_PHOTO_SIZE_NARROW_SCREENSHOT) {
             await photoPage.evaluate(() => scrollTo(0, document.body.scrollHeight));

@@ -36,8 +36,8 @@ popover — a content script — can link to it. Its symbol legend is painted fr
 `photo-renderer`, so what it teaches cannot drift from what the export draws.
 
 The extension opens `photos/photos.html` in a normal extension tab. A new
-project starts when the user chooses a browser-decodable image no larger than
-32 MiB and edits it with the route and climbing-symbol tools. A title is
+project starts when the user chooses a browser-decodable image and edits it
+with the route and climbing-symbol tools. A title is
 required — it is filled from the file name — and the alt text describing the
 image is optional. Drafts autosave to the browser profile.
 Nothing leaves the device until the user chooses **Upload and insert**.
@@ -45,7 +45,7 @@ Nothing leaves the device until the user chooses **Upload and insert**.
 On upload, Better Peakbagger:
 
 1. flattens the original and annotations into a fresh JPEG or PNG;
-2. hashes and validates that export and refuses it if it exceeds 32 MiB;
+2. hashes the export and records its encoded size;
 3. requests the optional ImgBB API permission if it is not already granted;
 4. leases the device-local API key to the extension page for this request;
 5. posts the exported bytes directly to ImgBB;
@@ -150,8 +150,22 @@ the guide's legend paint, so a symbol the user is taught cannot disagree with th
 one the export draws.
 The exported file contains flattened pixels only: no original EXIF, source file
 name, delete URL, API key, catalog record, project JSON, or report identity.
-JPEG quality and PNG selection belong to the project. The renderer also
-computes SHA-256 metadata for source and export identity.
+The upload control resolves to effective `{ mime, quality }` settings in the
+project: **Follow original format** keeps a JPEG or PNG source in that format,
+**PNG** uses a lossless re-encode, and **JPEG** exposes a 10–100% quality
+control. A browser-decodable source outside the two encoded project formats
+cannot honestly follow its original format after the annotations are
+flattened, so that choice is disabled and the editor selects JPEG explicitly.
+
+The renderer produces the full-resolution encoded blob after a short debounce
+and reports that blob's byte length as the upload estimate. Annotation, format,
+quality, undo/redo, and geometry changes invalidate the cached blob. Upload
+reuses a current cached encoding and only then computes its SHA-256, avoiding a
+second full-resolution encode in the usual path. When the synced
+`enableGithubBackup` ascent-backup gate is on, an estimate above 5 MiB warns
+that GitHub may not show the external image in its rendered `report.md`. The
+warning updates live with the setting and is not an upload gate; ImgBB still
+decides the account's actual size limit.
 
 The explicit **Download project** action first warns that the original file and
 any metadata it contains will leave browser storage. `src/photos/photo-archive.js`
@@ -371,7 +385,9 @@ capability it does not possess.
 
 ## Verification boundaries
 
-Pure and DOM tests cover schema rejection, rendering and export metadata,
+Pure and DOM tests cover schema rejection, upload-format resolution, the shared
+estimate/export encoding path, JPEG quality and size-estimate interactions,
+rendering and export metadata,
 project-archive readability,
 IndexedDB transactions, upload response validation, ambiguous outcomes,
 permission and sender gates, one-time report insertion, library behavior,
