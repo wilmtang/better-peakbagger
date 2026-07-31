@@ -11,7 +11,13 @@ import { MAX_UPLOAD_POINTS, MAX_TRACK_SEGMENTS } from './upload-limits.js';
 
     const { FEET_PER_METER } = Units;
     const QUERY_PADDING_M = 300;
+    // How far a corridor query box may reach before it is split.
     const QUERY_CHUNK_M = 10000;
+    // The straight-line step above which sanitization stops calling two
+    // consecutive fixes one continuous path. Numerically equal to
+    // QUERY_CHUNK_M today, but a separate constant on purpose: retuning the
+    // corridor query must not silently retune what counts as a recording gap.
+    const SPATIAL_GAP_M = 10000;
     const ENCOUNTER_WINDOW_M = 300;
     const ENCOUNTER_WINDOW_MS = 5 * 60 * 1000;
 
@@ -102,7 +108,7 @@ import { MAX_UPLOAD_POINTS, MAX_TRACK_SEGMENTS } from './upload-limits.js';
                 if (previous) {
                     const stepDistanceM = distanceM(previous, point);
                     let breakReason = null;
-                    if (stepDistanceM > QUERY_CHUNK_M) {
+                    if (stepDistanceM > SPATIAL_GAP_M) {
                         breakReason = 'spatialGaps';
                     } else if (previous.time !== null && time !== null) {
                         const elapsedSeconds = (time - previous.time) / 1000;
@@ -208,17 +214,17 @@ import { MAX_UPLOAD_POINTS, MAX_TRACK_SEGMENTS } from './upload-limits.js';
             let referenceLon = segment[0].lon;
             let bbox = { minLat: segment[0].lat, maxLat: segment[0].lat, minLon: referenceLon, maxLon: referenceLon };
 
-            const finishChunk = endIndex => {
-                if (endIndex < chunkStart) return;
-                boxes.push(...paddedBoxes(bbox));
-            };
+            // Emit the chunk accumulated so far. Both call sites are reached
+            // only with at least one edge in the chunk, so there is nothing to
+            // guard against — the box is whatever addPointToBbox has built.
+            const finishChunk = () => boxes.push(...paddedBoxes(bbox));
 
             for (let index = 1; index < segment.length; index++) {
                 const stepM = distanceM(segment[index - 1], segment[index]);
                 const proposedBbox = addPointToBbox(bbox, segment[index], referenceLon);
                 if (index > chunkStart + 1
                     && (chunkDistanceM + stepM > QUERY_CHUNK_M || bboxDiagonalM(proposedBbox) > QUERY_CHUNK_M)) {
-                    finishChunk(index - 1);
+                    finishChunk();
                     chunkStart = index - 1;
                     chunkDistanceM = stepM;
                     referenceLon = segment[index - 1].lon;
@@ -233,7 +239,7 @@ import { MAX_UPLOAD_POINTS, MAX_TRACK_SEGMENTS } from './upload-limits.js';
                     bbox = proposedBbox;
                 }
             }
-            finishChunk(segment.length - 1);
+            finishChunk();
         });
 
         const seen = new Set();
