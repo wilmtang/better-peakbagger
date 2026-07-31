@@ -170,6 +170,10 @@ try {
             });
         }
 
+        const exportCredentials = optionsPage.locator('#settings-backup-export-credentials');
+        check(!await exportCredentials.isChecked(),
+            'Chrome Settings manual export unexpectedly included credentials by default');
+        await exportCredentials.check();
         const [settingsDownload] = await Promise.all([
             optionsPage.waitForEvent('download'),
             optionsPage.locator('#settings-backup-export').click(),
@@ -179,6 +183,7 @@ try {
         try { exportedSettings = JSON.parse(exportedSettingsContent); } catch { /* checked below */ }
         check(exportedSettings?.apiKeys?.imgbb === 'browser-verification-only'
             && exportedSettings?.settings
+            && !await exportCredentials.isChecked()
             && Object.keys(exportedSettings.settings).length >= 20,
         `Chrome manual settings export was incomplete: ${JSON.stringify({
             hasPayload: !!exportedSettings,
