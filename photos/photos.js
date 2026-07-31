@@ -22,6 +22,10 @@ const HISTORY_LIMIT = 100;
 const PUBLISHED_STATES = ['uploaded', 'unreachable'];
 const AUTOSAVE_DELAY_MS = 500;
 const RECENTLY_DELETED_MS = 30 * 24 * 60 * 60 * 1000;
+const LIBRARY_PAGE_SIZE = 48;
+const LIBRARY_SEARCH_DELAY_MS = 180;
+const LIBRARY_MAINTENANCE_DELAY_MS = 1000;
+const LIBRARY_MAINTENANCE_BATCH = 20;
 const IMAGE_LIMIT_MESSAGE = 'That image is too large to edit safely. '
     + 'Use an image no larger than 16,384 px per side and 64 megapixels.';
 const DIMENSION_MISMATCH_MESSAGE = 'That project’s dimensions do not match its image.';
@@ -83,6 +87,10 @@ const ui = {
     filter: byId('library-filter'),
     importProject: byId('import-project'),
     libraryList: byId('library-list'),
+    libraryPagination: byId('library-pagination'),
+    libraryPrevious: byId('library-previous'),
+    libraryPageStatus: byId('library-page-status'),
+    libraryNext: byId('library-next'),
     libraryEmpty: byId('library-empty'),
     storageSummary: byId('storage-summary'),
     backupStatus: byId('photo-backup-status'),
@@ -180,6 +188,9 @@ const chooseReportImageWidth = async event => {
 let libraryObjectUrls = [];
 let libraryRender = Promise.resolve();
 let libraryRenderQueued = false;
+let libraryPage = 0;
+let librarySearchTimer = null;
+let libraryMaintenanceTimer = null;
 let photoBackupBusy = false;
 // A new mark inherits the last style the user chose, the way every drawing tool
 // behaves: dial the opacity back once and the rest of the topo matches instead
@@ -1579,12 +1590,11 @@ const restoreLibraryItem = async item => {
     await renderLibrary();
 };
 
-const cardFor = async item => {
+const cardFor = (item, thumbnail, objectUrls) => {
     const card = element('article', 'photo-card');
-    const bundle = await store.getBundle(item.localId);
-    if (bundle.thumbnail) {
-        const url = URL.createObjectURL(bundle.thumbnail);
-        libraryObjectUrls.push(url);
+    if (thumbnail) {
+        const url = URL.createObjectURL(thumbnail);
+        objectUrls.push(url);
         const image = element('img');
         image.src = url;
         image.alt = '';
@@ -1636,16 +1646,6 @@ const cardFor = async item => {
     return card;
 };
 
-const pruneDeletedAssets = async items => {
-    const cutoff = Date.now() - RECENTLY_DELETED_MS;
-    for (const item of items) {
-        if (item.deletedAt && Date.parse(item.deletedAt) <= cutoff
-            && (item.assets.originalRetained || item.assets.projectRetained || item.assets.thumbnailRetained)) {
-            await store.removeLocalAssets(item.localId, new Date().toISOString());
-        }
-    }
-};
-
 const renderStorageEstimate = async () => {
     if (!navigator.storage?.estimate) return;
     const estimate = await navigator.storage.estimate();
@@ -1655,20 +1655,39 @@ const renderStorageEstimate = async () => {
 };
 
 async function drawLibrary() {
-    libraryObjectUrls.forEach(url => URL.revokeObjectURL(url));
-    libraryObjectUrls = [];
     const all = await store.listPhotos({ includeDeleted: true });
-    await pruneDeletedAssets(all);
     const filter = ui.filter.value;
     const items = filter === 'recently-deleted'
         ? all.filter(item => item.deletedAt)
         : Library.search(all, ui.search.value, filter);
-    // Build every card before touching the grid: an incremental append leaves a
-    // half-drawn list on screen for as long as the thumbnail reads take.
-    const cards = [];
-    for (const item of items) cards.push(await cardFor(item));
+    const pageCount = Math.max(1, Math.ceil(items.length / LIBRARY_PAGE_SIZE));
+    libraryPage = Math.min(libraryPage, pageCount - 1);
+    const pageStart = libraryPage * LIBRARY_PAGE_SIZE;
+    const pageItems = items.slice(pageStart, pageStart + LIBRARY_PAGE_SIZE);
+    const thumbnails = await store.getThumbnails(pageItems.map(item => item.localId));
+    // Prepare one bounded page and its object URLs before replacing the visible
+    // grid. A failed read leaves the old page intact; a successful replacement
+    // revokes every URL that belonged to it immediately afterward.
+    const nextObjectUrls = [];
+    let cards;
+    try {
+        cards = pageItems.map(item =>
+            cardFor(item, thumbnails.get(item.localId), nextObjectUrls));
+    } catch (error) {
+        nextObjectUrls.forEach(url => URL.revokeObjectURL(url));
+        throw error;
+    }
+    const previousObjectUrls = libraryObjectUrls;
+    libraryObjectUrls = nextObjectUrls;
     ui.libraryList.replaceChildren(...cards);
+    previousObjectUrls.forEach(url => URL.revokeObjectURL(url));
     ui.libraryEmpty.hidden = items.length > 0;
+    ui.libraryPagination.hidden = items.length <= LIBRARY_PAGE_SIZE;
+    ui.libraryPrevious.disabled = libraryPage === 0;
+    ui.libraryNext.disabled = libraryPage >= pageCount - 1;
+    ui.libraryPageStatus.textContent = items.length
+        ? `Page ${libraryPage + 1} of ${pageCount} · ${items.length} photos`
+        : '';
     await renderStorageEstimate();
 }
 
@@ -1689,6 +1708,36 @@ function renderLibrary() {
     });
     return libraryRender;
 }
+
+const resetLibraryPageAndRender = () => {
+    libraryPage = 0;
+    return renderLibrary();
+};
+
+const scheduleLibrarySearch = () => {
+    clearTimeout(librarySearchTimer);
+    librarySearchTimer = setTimeout(() => {
+        librarySearchTimer = null;
+        void resetLibraryPageAndRender();
+    }, LIBRARY_SEARCH_DELAY_MS);
+};
+
+const scheduleLibraryMaintenance = () => {
+    if (libraryMaintenanceTimer) return;
+    libraryMaintenanceTimer = setTimeout(async () => {
+        libraryMaintenanceTimer = null;
+        const now = new Date();
+        const before = new Date(now.getTime() - RECENTLY_DELETED_MS).toISOString();
+        await store.pruneDeletedAssets({
+            before,
+            now: now.toISOString(),
+            limit: LIBRARY_MAINTENANCE_BATCH,
+        }).then(result => {
+            if (result.pruned && ui.filter.value === 'recently-deleted'
+                && !ui.libraryView.hidden) void renderLibrary();
+        }).catch(() => {});
+    }, LIBRARY_MAINTENANCE_DELAY_MS);
+};
 
 const formatBackupTime = value => {
     const date = new Date(value);
@@ -1884,8 +1933,21 @@ const bindEvents = () => {
         });
     });
     ui.upload.addEventListener('click', () => void uploadAndInsert());
-    ui.search.addEventListener('input', () => void renderLibrary());
-    ui.filter.addEventListener('change', () => void renderLibrary());
+    ui.search.addEventListener('input', scheduleLibrarySearch);
+    ui.filter.addEventListener('change', () => {
+        clearTimeout(librarySearchTimer);
+        librarySearchTimer = null;
+        void resetLibraryPageAndRender();
+    });
+    ui.libraryPrevious.addEventListener('click', () => {
+        if (libraryPage <= 0) return;
+        libraryPage -= 1;
+        void renderLibrary();
+    });
+    ui.libraryNext.addEventListener('click', () => {
+        libraryPage += 1;
+        void renderLibrary();
+    });
     ui.importProject.addEventListener('change', () => void importProject(ui.importProject.files?.[0]));
     ui.backupNow.addEventListener('click', () => void backupPhotoLibrary());
     for (const select of ui.reportWidthSelects) {
@@ -1944,6 +2006,8 @@ const bindEvents = () => {
     });
     window.addEventListener('beforeunload', () => {
         unsubscribeSettings();
+        clearTimeout(librarySearchTimer);
+        clearTimeout(libraryMaintenanceTimer);
         closeSource();
         libraryObjectUrls.forEach(url => URL.revokeObjectURL(url));
         store?.close();
@@ -1991,6 +2055,7 @@ const initialize = async () => {
     ui.upload.textContent = RETURN_TOKEN ? 'Upload and insert' : 'Upload to ImgBB';
     setView(START_MODE === 'library' ? 'library' : 'editor');
     await renderLibrary();
+    scheduleLibraryMaintenance();
 };
 
 void initialize().catch(() => {

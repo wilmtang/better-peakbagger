@@ -220,7 +220,9 @@ The library can search titles, alt text, source file names, and recorded report
 identities. Its filters distinguish local drafts, uploaded images, images not
 yet inserted, backup-pending entries, and states needing attention. Public
 image reachability is advisory; an unreachable check never destroys local
-metadata.
+metadata. Catalog searches are debounced, and the grid reads thumbnails and
+renders at most 48 cards at a time. Expired Recently Deleted assets are pruned
+in bounded background batches instead of blocking the visible library.
 
 ## ImgBB credential and upload protocol
 

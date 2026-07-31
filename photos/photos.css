@@ -558,6 +558,21 @@ kbd {
   gap: 16px;
 }
 
+.library-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  margin-top: 20px;
+}
+
+.library-pagination span {
+  min-width: 150px;
+  color: var(--sub);
+  font-size: 12px;
+  text-align: center;
+}
+
 .photo-card {
   overflow: hidden;
   border: 1px solid var(--border);

@@ -499,7 +499,9 @@ and Original report choices without participating in rendering or export.
 Photo Topos previews the choice by changing only the stage's CSS width and
 stores the preference in the shared settings schema; the canvas and ImgBB
 upload stay at the project's full dimensions. Fixed choices are maximums, so a
-small source is never upscaled.
+small source is never upscaled. The catalog remains lifetime-sized, but the
+library UI reads thumbnails and renders them in 48-card pages, debounces search,
+and prunes expired deleted assets in bounded maintenance batches.
 
 ImgBB is bring-your-own-key. Its API origin is an optional permission requested
 when the user saves a key in Settings or uploads from the editor. The saved key

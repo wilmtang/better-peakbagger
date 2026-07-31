@@ -146,12 +146,19 @@ test('all planned topo tools and accessible editor controls are present', () => 
         'label-background',
         'library-search',
         'library-filter',
+        'library-pagination',
+        'library-previous',
+        'library-page-status',
+        'library-next',
         'import-project',
         'photo-backup-status',
         'backup-library',
     ]) assert.ok(doc.getElementById(id), id);
     assert.equal(doc.getElementById('photo-viewport').tabIndex, 0);
     assert.ok(doc.getElementById('editor-status').hasAttribute('aria-live'));
+    assert.equal(doc.getElementById('library-pagination').getAttribute('aria-label'),
+        'Photo library pages');
+    assert.equal(doc.getElementById('library-page-status').getAttribute('aria-live'), 'polite');
 });
 
 test('history actions use recognizable mirrored icons with accessible names', () => {
@@ -285,6 +292,14 @@ test('page orchestration avoids page-owned storage sync and raw HTML assignment'
     // Settings owns the same device-local key, so this page cannot keep
     // reporting the state it read when the tab first loaded.
     assert.match(source, /window\.addEventListener\('focus'[\s\S]{0,240}refreshCredential\(\)/);
+});
+
+test('the library renders one bounded thumbnail page and debounces catalog search', () => {
+    assert.match(source, /const LIBRARY_PAGE_SIZE = 48/);
+    assert.match(source, /store\.getThumbnails\(pageItems\.map/);
+    assert.doesNotMatch(source, /cardFor[\s\S]{0,240}store\.getBundle/);
+    assert.match(source, /LIBRARY_SEARCH_DELAY_MS = 180/);
+    assert.match(source, /store\.pruneDeletedAssets\(\{/);
 });
 
 test('GitHub recovery copy states the metadata-only boundary beside its actions', () => {

@@ -14,9 +14,9 @@ const LATER = '2026-07-27T18:10:00.000Z';
 const HASH = 'a'.repeat(64);
 const EXPORT_HASH = 'b'.repeat(64);
 
-const fixture = () => {
+const fixture = (localId = 'photo-1') => {
     const photo = Library.createDraft({
-        localId: 'photo-1',
+        localId,
         title: 'North face topo',
         alt: 'North face route',
         source: {
@@ -57,6 +57,25 @@ test('persists and retrieves a matching photo, project, original, and thumbnail 
     assert.equal(await bundle.original.text(), 'original');
     assert.equal(await bundle.thumbnail.text(), 'thumbnail');
     assert.equal(bundle.deleteUrl, null);
+    store.close();
+});
+
+test('reads one bounded thumbnail page without loading full bundles', async () => {
+    const store = await Store.createPhotoStore({
+        indexedDB: new IDBFactory(),
+        name: 'photo-store-thumbnail-page',
+    });
+    await store.putDraft(fixture('photo-1'));
+    await store.putDraft(fixture('photo-2'));
+
+    const thumbnails = await store.getThumbnails(['photo-1', 'missing', 'photo-2', 'photo-1']);
+    assert.deepEqual([...thumbnails.keys()], ['photo-1', 'missing', 'photo-2']);
+    assert.equal(await thumbnails.get('photo-1').text(), 'thumbnail');
+    assert.equal(thumbnails.get('missing'), null);
+    await assert.rejects(
+        store.getThumbnails(Array.from({ length: 101 }, (_, index) => `photo-${index}`)),
+        /batch is too large/,
+    );
     store.close();
 });
 
@@ -186,6 +205,30 @@ test('removes local editable assets while preserving the public catalog record',
     assert.equal(bundle.original, null);
     assert.equal(bundle.project, null);
     assert.equal(bundle.thumbnail, null);
+    store.close();
+});
+
+test('prunes only one bounded batch of expired deleted assets', async () => {
+    const store = await Store.createPhotoStore({
+        indexedDB: new IDBFactory(),
+        name: 'photo-store-prune-batch',
+    });
+    for (const localId of ['photo-1', 'photo-2', 'photo-3']) {
+        const input = fixture(localId);
+        await store.putDraft(input);
+        await store.putPhoto(Library.markDeleted(input.photo, TIME));
+    }
+
+    assert.deepEqual(await store.pruneDeletedAssets({
+        before: LATER,
+        now: LATER,
+        limit: 2,
+    }), { pruned: 2, remaining: 1 });
+    const bundles = await Promise.all(['photo-1', 'photo-2', 'photo-3']
+        .map(localId => store.getBundle(localId)));
+    assert.equal(bundles.filter(bundle => bundle.original == null).length, 2);
+    assert.equal(bundles.filter(bundle => bundle.original != null).length, 1);
+    assert.equal(bundles.filter(bundle => bundle.photo.assets.projectRetained).length, 1);
     store.close();
 });
 

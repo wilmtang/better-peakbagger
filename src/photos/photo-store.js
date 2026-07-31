@@ -18,6 +18,8 @@ const STORES = Object.freeze({
     tombstones: 'tombstones',
 });
 const STORE_NAMES = Object.freeze(Object.values(STORES));
+const MAX_THUMBNAIL_BATCH = 100;
+const MAX_MAINTENANCE_BATCH = 50;
 
 const requestResult = request => new Promise((resolve, reject) => {
     request.onsuccess = () => resolve(request.result);
@@ -165,6 +167,27 @@ const createPhotoStore = async options => {
             .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
     };
 
+    const getThumbnails = async localIds => {
+        const ids = Array.isArray(localIds)
+            ? [...new Set(localIds.filter(value => typeof value === 'string'))]
+            : [];
+        if (ids.length > MAX_THUMBNAIL_BATCH) {
+            throw new TypeError('photo store thumbnail batch is too large');
+        }
+        if (!ids.length) return new Map();
+        const transaction = database.transaction(STORES.thumbnails, 'readonly');
+        const store = transaction.objectStore(STORES.thumbnails);
+        const values = await Promise.all(ids.map(async localId => [
+            localId,
+            await requestResult(store.get(localId)),
+        ]));
+        await transactionDone(transaction);
+        return new Map(values.map(([localId, value]) => [
+            localId,
+            value?.blob instanceof Blob ? value.blob : null,
+        ]));
+    };
+
     const listBackupBundles = async () => {
         const transaction = database.transaction([
             STORES.photos,
@@ -260,6 +283,43 @@ const createPhotoStore = async options => {
         transaction.objectStore(STORES.thumbnails).delete(localId);
         await transactionDone(transaction);
         return cleaned;
+    };
+
+    const pruneDeletedAssets = async ({ before, now, limit = 20 } = {}) => {
+        const beforeTime = Date.parse(before);
+        const updatedAt = typeof now === 'string' && Number.isFinite(Date.parse(now))
+            ? new Date(now).toISOString()
+            : null;
+        if (!Number.isFinite(beforeTime) || !updatedAt
+            || !Number.isInteger(limit) || limit < 1 || limit > MAX_MAINTENANCE_BATCH) {
+            throw new TypeError('photo store requires a bounded maintenance request');
+        }
+        const transaction = database.transaction([
+            STORES.photos,
+            STORES.projects,
+            STORES.originals,
+            STORES.thumbnails,
+        ], 'readwrite');
+        const photos = transaction.objectStore(STORES.photos);
+        const values = await requestResult(photos.getAll());
+        const eligible = values.map(Library.cleanPhoto).filter(Boolean)
+            .filter(photo => photo.deletedAt && Date.parse(photo.deletedAt) <= beforeTime)
+            .filter(photo => photo.assets.originalRetained
+                || photo.assets.projectRetained
+                || photo.assets.thumbnailRetained);
+        const pruning = eligible.slice(0, limit);
+        for (const photo of pruning) {
+            photos.put(Library.updateAssets(photo, {
+                originalRetained: false,
+                projectRetained: false,
+                thumbnailRetained: false,
+            }, updatedAt));
+            transaction.objectStore(STORES.projects).delete(photo.localId);
+            transaction.objectStore(STORES.originals).delete(photo.localId);
+            transaction.objectStore(STORES.thumbnails).delete(photo.localId);
+        }
+        await transactionDone(transaction);
+        return { pruned: pruning.length, remaining: Math.max(0, eligible.length - pruning.length) };
     };
 
     const purge = async localId => {
@@ -373,6 +433,7 @@ const createPhotoStore = async options => {
     return {
         getBundle,
         listPhotos,
+        getThumbnails,
         listBackupBundles,
         putDraft,
         putBundle,
@@ -382,6 +443,7 @@ const createPhotoStore = async options => {
         getOperations,
         deleteOperation,
         removeLocalAssets,
+        pruneDeletedAssets,
         purge,
         applyRestore,
         close: () => database.close(),
