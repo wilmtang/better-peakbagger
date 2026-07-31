@@ -22,12 +22,15 @@ const optionsDoc = new JSDOM(optionsHtml).window.document;
 test('the packaged photo page exposes the editor, library, and credential boundaries', () => {
     const entry = ENTRIES.find(candidate => candidate.out === 'photos/photos.js');
     assert.deepEqual(entry?.sources, [
+        'settings/settings-schema.js',
+        'settings/settings.js',
         'photos/photo-project.js',
         'photos/photo-renderer.js',
         'photos/photo-library.js',
         'photos/photo-store.js',
         'photos/photo-archive.js',
         'photos/imgbb-client.js',
+        'photos/photo-report-size.js',
         'photos-main.js',
     ]);
     assert.ok(COPY_FILES.some(([from, to]) =>
@@ -85,6 +88,19 @@ test('the API key is a password field and upload remains one explicit primary ac
     assert.match(doc.getElementById('credential-note').textContent, /never synced, backed up, or sent/i);
     assert.equal(doc.getElementById('upload-insert').textContent.trim(), 'Upload and insert');
     assert.equal(doc.querySelectorAll('#upload-insert').length, 1);
+});
+
+test('report sizing is contextual, synchronized, and explicit about full-resolution upload', () => {
+    const controls = [...doc.querySelectorAll('[data-report-width-control]')];
+    const selects = [...doc.querySelectorAll('[data-report-width]')];
+    assert.equal(controls.length, 2, 'Editor and Library each expose the same insertion choice');
+    assert.equal(selects.length, 2);
+    assert.ok(controls.every(control => control.hidden),
+        'the choice stays out of Photo Topos unless a report is waiting');
+    assert.ok(controls.every(control => /upload stays full resolution/i.test(control.textContent)));
+    assert.match(source, /ReportSize\.displayWidth\(exportMetadata\.width, reportImageWidth\)/);
+    assert.match(source, /ReportSize\.displayWidth\(item\.export\.width, reportImageWidth\)/);
+    assert.match(source, /\{ displayWidth \}/);
 });
 
 test('all planned topo tools and accessible editor controls are present', () => {
@@ -199,6 +215,7 @@ test('page orchestration avoids page-owned storage sync and raw HTML assignment'
     assert.doesNotMatch(source, /from ['"]jszip['"]/);
     assert.match(source, /PHOTO_IMGBB_LEASE_KEY/);
     assert.match(source, /PHOTO_INSERT_COMMIT/);
+    assert.match(source, /Settings\.set\(\{ reportImageWidth: choice\.width \}\)/);
     assert.match(source, /outcome-unknown/);
     assert.match(source, /GITHUB_PHOTOS_BACKUP/);
     // Settings owns the same device-local key, so this page cannot keep

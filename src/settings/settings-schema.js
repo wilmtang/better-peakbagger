@@ -25,7 +25,8 @@
         routeCasingWidth: { min: 3, max: 20 },
         viewportWidth: { min: 320, max: 4096 },
         viewportHeight: { min: 240, max: 720 },
-        terrainCacheLimitMb: { min: 0, max: 2048 }
+        terrainCacheLimitMb: { min: 0, max: 2048 },
+        reportImageWidth: { min: 64, max: 1600 }
     };
 
     const DEFAULTS = {
@@ -47,6 +48,10 @@
         enableReportEditor: true,
         addReportCredit: false,
         reportEditorMode: 'rich',
+        // Maximum display width attached to photos inserted from Photo Topos.
+        // `null` is the user's explicit Original choice; uploaded pixels remain
+        // full resolution either way.
+        reportImageWidth: 640,
         // GitHub ascent backup. The feature gate is an ordinary synced boolean
         // like the others; the token and chosen repo deliberately do NOT live
         // in this schema (they must never sync) — src/github/github-auth.js owns those
@@ -122,6 +127,9 @@
     const terrainCacheLimitMb = value => clampInteger(
         value, BOUNDS.terrainCacheLimitMb.min, BOUNDS.terrainCacheLimitMb.max, DEFAULTS.terrainCacheLimitMb
     );
+    const reportImageWidth = value => value === null ? null : clampInteger(
+        value, BOUNDS.reportImageWidth.min, BOUNDS.reportImageWidth.max, DEFAULTS.reportImageWidth
+    );
 
     // Resolve an untrusted { color, width, casingColor, casingWidth } into a
     // drawable route style. Callers whose field names differ (the BigMap
@@ -164,6 +172,7 @@
         if (!['both', 'distance', 'time'].includes(s.chartDefaultSeries)) s.chartDefaultSeries = DEFAULTS.chartDefaultSeries;
         if (!['buddies', 'custom'].includes(s.favoritesSource)) s.favoritesSource = DEFAULTS.favoritesSource;
         if (!['rich', 'markdown', 'plain'].includes(s.reportEditorMode)) s.reportEditorMode = DEFAULTS.reportEditorMode;
+        s.reportImageWidth = reportImageWidth(s.reportImageWidth);
         s.mapRouteColor = routeColor(s.mapRouteColor);
         s.mapRouteWidth = routeWidth(s.mapRouteWidth);
         s.mapRouteCasingColor = routeCasingColor(s.mapRouteCasingColor);
@@ -200,7 +209,8 @@
         viewportWidth,
         viewportHeight,
         viewportSizeFromSettings,
-        terrainCacheLimitMb
+        terrainCacheLimitMb,
+        reportImageWidth
     };
 
     export const settingsSchema = API;

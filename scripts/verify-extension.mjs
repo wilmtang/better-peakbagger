@@ -356,6 +356,103 @@ try {
             photoErrors,
         })}`);
 
+        // A report return context adds presentation controls to both Library
+        // and Editor. The token need not be worker-valid until an insertion is
+        // attempted; keeping this fixture read-only lets the packaged page and
+        // real sync-storage route prove the contextual UI without uploading.
+        await photoPage.goto(
+            `chrome-extension://${extensionId}/photos/photos.html?mode=library`
+            + '&returnToken=browser-verification-only'
+        );
+        await photoPage.locator('#library-view [data-report-width-control]')
+            .waitFor({ state: 'visible', timeout: 5000 });
+        await photoPage.getByRole('button', { name: 'Edit as new version' }).first().click();
+        await photoPage.locator('#editor-workspace').waitFor({ state: 'visible', timeout: 5000 });
+        await photoPage.locator('[data-report-width]').first().selectOption('320');
+        await photoPage.waitForFunction(async () =>
+            (await chrome.storage.sync.get('bpbSettings')).bpbSettings?.reportImageWidth === 320,
+        null, { timeout: 5000 });
+        const reportSizeState = await photoPage.evaluate(() => {
+            const visible = [...document.querySelectorAll('[data-report-width-control]')]
+                .find(control => !control.hidden && control.offsetParent);
+            const stage = document.getElementById('photo-stage');
+            const stageRect = stage?.getBoundingClientRect();
+            const controlRect = visible?.getBoundingClientRect();
+            return {
+                choices: [...document.querySelectorAll('[data-report-width]')]
+                    .map(select => ({
+                        value: select.value,
+                        labels: [...select.options].map(option => option.textContent),
+                    })),
+                note: visible?.querySelector('.report-width-note')?.textContent,
+                stage: stageRect ? {
+                    width: stageRect.width,
+                    maxWidth: getComputedStyle(stage).maxWidth,
+                } : null,
+                control: controlRect ? {
+                    left: controlRect.left,
+                    right: controlRect.right,
+                    width: controlRect.width,
+                } : null,
+                exportSummary: document.getElementById('export-summary')?.textContent,
+                horizontalOverflow:
+                    document.documentElement.scrollWidth > document.documentElement.clientWidth,
+            };
+        });
+        check(reportSizeState.choices.length === 2
+            && reportSizeState.choices.every(choice => choice.value === '320')
+            && reportSizeState.choices.every(choice =>
+                choice.labels.join('|')
+                    === 'Small · 320 px|Medium · 480 px|Large · 640 px|Original')
+            && /Upload stays full resolution/.test(reportSizeState.note || '')
+            && reportSizeState.stage?.width <= 320.5
+            && reportSizeState.stage?.maxWidth === '320px'
+            && /900 × 600/.test(reportSizeState.exportSummary || '')
+            && !reportSizeState.horizontalOverflow,
+        `the report display choice changed pixels or failed to resize the stage: ${
+            JSON.stringify(reportSizeState)
+        }`);
+        if (process.env.BPB_VERIFY_PHOTO_SIZE_SCREENSHOT) {
+            await photoPage.evaluate(() => scrollTo(0, document.body.scrollHeight));
+            await photoPage.screenshot({
+                path: process.env.BPB_VERIFY_PHOTO_SIZE_SCREENSHOT,
+                fullPage: true,
+            });
+        }
+        await photoPage.setViewportSize({ width: 520, height: 800 });
+        const narrowReportSizeState = await photoPage.evaluate(() => {
+            const visible = [...document.querySelectorAll('[data-report-width-control]')]
+                .find(control => !control.hidden && control.offsetParent);
+            const controlRect = visible?.getBoundingClientRect();
+            return {
+                horizontalOverflow:
+                    document.documentElement.scrollWidth > document.documentElement.clientWidth,
+                bodyWidth: document.body.getBoundingClientRect().width,
+                controlWidth: controlRect?.width,
+                controlLeft: controlRect?.left,
+                controlRight: controlRect?.right,
+                stageWidth: document.getElementById('photo-stage')?.getBoundingClientRect().width,
+            };
+        });
+        check(!narrowReportSizeState.horizontalOverflow
+            && narrowReportSizeState.controlWidth <= narrowReportSizeState.bodyWidth
+            && narrowReportSizeState.controlLeft >= 0
+            && narrowReportSizeState.controlRight <= narrowReportSizeState.bodyWidth
+            && narrowReportSizeState.stageWidth <= 320.5,
+        `the narrow report-size control overflowed: ${JSON.stringify(narrowReportSizeState)}`);
+        if (process.env.BPB_VERIFY_PHOTO_SIZE_NARROW_SCREENSHOT) {
+            await photoPage.evaluate(() => scrollTo(0, document.body.scrollHeight));
+            await photoPage.screenshot({
+                path: process.env.BPB_VERIFY_PHOTO_SIZE_NARROW_SCREENSHOT,
+                fullPage: true,
+            });
+        }
+        if (originalPhotoViewport) await photoPage.setViewportSize(originalPhotoViewport);
+        await photoPage.locator('[data-report-width]').first().selectOption('640');
+        await photoPage.waitForFunction(async () =>
+            (await chrome.storage.sync.get('bpbSettings')).bpbSettings?.reportImageWidth === 640,
+        null, { timeout: 5000 });
+
         // Every other extension panel honors the Light/Dark setting; this page
         // shipped following only the OS color scheme.
         const setVerificationTheme = theme => photoPage.evaluate(async value => {
@@ -2503,6 +2600,8 @@ console.log('  - sync/local/session storage, storage.onChanged, options persiste
 console.log('  - the extension-owned photo library states its metadata-only GitHub boundary, and the topo editor');
 console.log('    decodes a real PNG, draws a route, autosaves to IndexedDB, fits desktop and narrow');
 console.log('    viewports, and folds a real Route width slider drag into a single Undo');
+console.log('  - contextual report sizing stays synchronized in Editor and Library, caps only the');
+console.log('    stage display at desktop and narrow widths, and preserves the full project dimensions');
 console.log('  - options loads the signed-in Buddy report directly, falls back through a first-party tab, and keeps failures actionable');
 console.log('  - Buddy mirror stays busy and focused during replacement, then retries a failure without another fetch');
 console.log('  - the real 1,500-row favorite list reports its total, fuzzy-searches, and keeps long navigation instant');

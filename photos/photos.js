@@ -7,6 +7,8 @@ import { photoLibrary as Library } from '../src/photos/photo-library.js';
 import { photoStore as Store } from '../src/photos/photo-store.js';
 import { photoArchive as Archive } from '../src/photos/photo-archive.js';
 import { imgbbClient as ImgbbClient } from '../src/photos/imgbb-client.js';
+import { photoReportSize as ReportSize } from '../src/photos/photo-report-size.js';
+import { settings as Settings } from '../src/settings/settings.js';
 
 const ext = globalThis.browser || globalThis.chrome;
 const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -81,6 +83,8 @@ const ui = {
     storageSummary: byId('storage-summary'),
     backupStatus: byId('photo-backup-status'),
     backupNow: byId('backup-library'),
+    reportWidthControls: [...document.querySelectorAll('[data-report-width-control]')],
+    reportWidthSelects: [...document.querySelectorAll('[data-report-width]')],
     toast: byId('toast'),
     toastMessage: byId('toast-message'),
     toastAction: byId('toast-action'),
@@ -118,6 +122,56 @@ let permissionGranted = false;
 let busy = false;
 let toastTimer = null;
 let undoDeleted = null;
+let reportImageWidth = Settings.DEFAULTS.reportImageWidth;
+let unsubscribeSettings = () => {};
+
+const applyReportWidthPreview = () => {
+    if (!RETURN_TOKEN || !project) {
+        ui.stage.style.removeProperty('width');
+        ui.stage.style.removeProperty('max-width');
+        return;
+    }
+    // "Original" means no width attribute in the report, but the editing
+    // surface still has to fit inside its viewport. Cap the preview at the
+    // source's natural width so neither Original nor a preset upscales it.
+    const width = ReportSize.displayWidth(project.image.width, reportImageWidth)
+        ?? project.image.width;
+    ui.stage.style.width = '100%';
+    ui.stage.style.maxWidth = `${width}px`;
+};
+
+const setReportImageWidth = width => {
+    const choice = ReportSize.choiceFromToken(ReportSize.tokenFromWidth(width));
+    reportImageWidth = choice ? choice.width : Settings.DEFAULTS.reportImageWidth;
+    for (const select of ui.reportWidthSelects) {
+        select.value = choice?.token || ReportSize.tokenFromWidth(Settings.DEFAULTS.reportImageWidth);
+    }
+    applyReportWidthPreview();
+};
+
+const paintReportWidthControls = () => {
+    for (const select of ui.reportWidthSelects) {
+        select.replaceChildren(...ReportSize.CHOICES.map(choice => {
+            const option = element('option', '', choice.label);
+            option.value = choice.token;
+            return option;
+        }));
+    }
+    for (const control of ui.reportWidthControls) control.hidden = !RETURN_TOKEN;
+    setReportImageWidth(reportImageWidth);
+};
+
+const chooseReportImageWidth = async event => {
+    const choice = ReportSize.choiceFromToken(event.currentTarget.value);
+    if (!choice) return;
+    setReportImageWidth(choice.width);
+    try {
+        const saved = await Settings.set({ reportImageWidth: choice.width });
+        setReportImageWidth(saved.reportImageWidth);
+    } catch {
+        toast('This size applies now, but could not be remembered for the next report photo.');
+    }
+};
 let libraryObjectUrls = [];
 let libraryRender = Promise.resolve();
 let libraryRenderQueued = false;
@@ -482,6 +536,7 @@ const renderRoutePreview = () => {
 
 const renderProject = () => {
     if (!project) return;
+    applyReportWidthPreview();
     const parsed = new DOMParser().parseFromString(Renderer.renderOverlaySvg(project), 'image/svg+xml');
     const root = parsed.documentElement;
     ui.overlay.replaceChildren(...Array.from(root.childNodes, child => document.importNode(child, true)));
@@ -1020,12 +1075,14 @@ const uploadAndInsert = async () => {
 
         if (RETURN_TOKEN) {
             setEditorStatus('Inserting into report…');
+            const displayWidth = ReportSize.displayWidth(exportMetadata.width, reportImageWidth);
             const inserted = await send({
                 type: 'PHOTO_INSERT_COMMIT',
                 returnToken: RETURN_TOKEN,
                 localPhotoId: photo.localId,
                 url: photo.remote.url,
                 alt: photo.alt,
+                ...(displayWidth === null ? {} : { displayWidth }),
             });
             if (!inserted?.ok) {
                 throw new ImgbbClient.ImgbbError(
@@ -1142,12 +1199,14 @@ const insertFromLibrary = async item => {
         toast('Image URL copied.');
         return;
     }
+    const displayWidth = ReportSize.displayWidth(item.export.width, reportImageWidth);
     const inserted = await send({
         type: 'PHOTO_INSERT_COMMIT',
         returnToken: RETURN_TOKEN,
         localPhotoId: item.localId,
         url: item.remote.url,
         alt: item.alt,
+        ...(displayWidth === null ? {} : { displayWidth }),
     });
     if (!inserted?.ok) {
         toast(inserted?.error?.message || 'The image could not be inserted.');
@@ -1630,6 +1689,9 @@ const bindEvents = () => {
     ui.filter.addEventListener('change', () => void renderLibrary());
     ui.importProject.addEventListener('change', () => void importProject(ui.importProject.files?.[0]));
     ui.backupNow.addEventListener('click', () => void backupPhotoLibrary());
+    for (const select of ui.reportWidthSelects) {
+        select.addEventListener('change', event => void chooseReportImageWidth(event));
+    }
     ui.toastAction.addEventListener('click', () => {
         if (undoDeleted) undoDeleted = null;
     });
@@ -1682,6 +1744,7 @@ const bindEvents = () => {
         if (event.key.startsWith('Arrow')) endCoalescing();
     });
     window.addEventListener('beforeunload', () => {
+        unsubscribeSettings();
         closeSource();
         libraryObjectUrls.forEach(url => URL.revokeObjectURL(url));
         store?.close();
@@ -1715,6 +1778,12 @@ const initialize = async () => {
         ui.pitch.append(option);
     }
     paintToolRail();
+    paintReportWidthControls();
+    if (RETURN_TOKEN) {
+        const settings = await Settings.get();
+        setReportImageWidth(settings.reportImageWidth);
+        unsubscribeSettings = Settings.subscribe(next => setReportImageWidth(next.reportImageWidth));
+    }
     bindEvents();
     store = await Store.createPhotoStore();
     await recoverOperations();
