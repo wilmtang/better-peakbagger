@@ -1,10 +1,10 @@
 # Codebase audit — 2026-07-30
 
-Status: **audit complete; remediation not started.** This document records eight
-current findings: three P1, three P2, and two P3. No P0 issue was found. The
-[closure ledger](#closure-ledger) separates open product and engineering risk
-from accepted upstream state, known renderer limitations, and verification that
-was outside this audit.
+Status: **remediation complete and verified.** This archived document records
+the original eight findings—three P1, three P2, and two P3—and the work that
+closed them. No P0 issue was found. The [closure ledger](#closure-ledger)
+separates fixed behavior from intentional non-changes and proof that still
+requires live services, native browser UI, or physical devices.
 
 Baseline: clean local `main` at `cccd048`, 101 commits after the `v3.2.0` tag and
 15 commits ahead of `origin/main`.
@@ -63,14 +63,14 @@ browsers, debugging processes, or disposable profiles.
 
 | ID | Severity | Category | Finding | Status |
 | --- | --- | --- | --- | --- |
-| F1 | P1 | upload transaction | A known successful ImgBB upload can be overwritten as `outcome-unknown` after a downstream failure | Open |
-| F2 | P1 | editor consistency | The photo editor remains mutable while export/upload commits an older snapshot | Open |
-| F3 | P1 | capture recovery | Provider GPX fetch has no deadline, and Cancel does not release the blocked process for retry | Open |
-| F4 | P2 | archive contract | The extension can download a project bundle that its own reader refuses to reopen | Open |
-| F5 | P2 | import robustness | Imported metadata can request a canvas up to 100,000×100,000 without matching decoded pixels | Open |
-| F6 | P2 | privacy disclosure | Public documentation falsely says neither extension page can read a saved ImgBB key | Open |
-| F7 | P3 | scalability | Photo-library rendering is an unbounded sequential N+1 IndexedDB path | Open |
-| F8 | P3 | documentation | The active-plan index and maintained source/test pointers have drifted | Open |
+| F1 | P1 | upload transaction | A known successful ImgBB upload can be overwritten as `outcome-unknown` after a downstream failure | Fixed and verified |
+| F2 | P1 | editor consistency | The photo editor remains mutable while export/upload commits an older snapshot | Fixed and verified |
+| F3 | P1 | capture recovery | Provider GPX fetch has no deadline, and Cancel does not release the blocked process for retry | Fixed and verified |
+| F4 | P2 | archive contract | The extension can download a project bundle that its own reader refuses to reopen | Fixed and verified |
+| F5 | P2 | import robustness | Imported metadata can request a canvas up to 100,000×100,000 without matching decoded pixels | Fixed and verified |
+| F6 | P2 | privacy disclosure | Public documentation falsely says neither extension page can read a saved ImgBB key | Fixed and verified |
+| F7 | P3 | scalability | Photo-library rendering is an unbounded sequential N+1 IndexedDB path | Fixed and verified |
+| F8 | P3 | documentation | The active-plan index and maintained source/test pointers have drifted | Fixed and verified |
 
 Severity is impact and urgency, not implementation effort. P1 is a material
 data-integrity or recovery defect. P2 is a bounded but user-visible correctness,
@@ -565,24 +565,48 @@ used by the browser verifier.
 
 ## Closure ledger
 
-### Open findings
+### Fixed and verified
 
-- F1 — known upload success can be downgraded and lose its public metadata.
-- F2 — editor state can diverge from the exported and committed snapshot.
-- F3 — provider fetch/cancel/retry lacks a liveness guarantee.
-- F4 — project archive writer and reader accept different size domains.
-- F5 — imported metadata can drive unsafe canvas dimensions.
-- F6 — public ImgBB key handling disclosure is inaccurate.
-- F7 — photo-library rendering is unbounded and serial.
-- F8 — maintained plan/source/test pointers have drifted.
-
-No finding above has been remediated merely by documenting it here.
+- **F1 (`d60742d`)** — upload recovery now treats the local catalog commit as
+  irreversible. Report insertion, reference persistence, and journal cleanup
+  cannot downgrade a committed ImgBB success; `catalog-committed` recovery is
+  idempotent.
+- **F2 (`7928c21`)** — export and upload use one immutable saved snapshot. Every
+  editor mutation family, including keyboard and history paths, fails closed
+  while that snapshot is being exported and committed.
+- **F3 (`03dce29`)** — provider export and body reading share one 30-second
+  page-world deadline. Cancel aborts the current generation, removes its
+  process immediately, permits immediate retry, and late results cannot replace
+  the retry. Garmin and Strava endpoint/header contracts remain unchanged.
+- **F4 and F5 (`f182980`)** — the archive writer and reader share an exact
+  40 MiB contract with preflight before allocation. Source decode, import,
+  persistence, and rendering enforce 16,384 pixels per side, 64 megapixels
+  total, matching hashes, and matching decoded/project/catalog dimensions.
+  ImgBB remains the owner of upload-size refusal.
+- **F6 (`8aba6c0`)** — every maintained public surface now states the exact saved
+  key boundary, including the one trusted packaged photo page that receives the
+  key immediately before direct upload.
+- **F7 (`a56736a`, `9da22d3`)** — the library renders at most 48 cards, fetches
+  that page's thumbnails in one transaction, debounces search, prunes deleted
+  assets in bounded maintenance batches, and revokes replaced object URLs. A
+  1,200-photo scale gate and packaged Chrome/Firefox pagination checks pin the
+  bounds.
+- **F8 (`bc167a3`)** — stale settings/report test owners were corrected. A
+  project test now resolves relative links and exact repository paths across
+  root living documents, `docs/*.md`, and active plans; archived point-in-time
+  records remain exempt.
 
 ### Intentionally not changed or not reopened
 
 - Archived documents remain historical and may contain stale paths, line
   numbers, or decisions. This audit does not convert them into maintained
   sources of truth.
+- The photo catalog remains lifetime-sized metadata so search can cover every
+  record. The bounded resource is the visible card/thumbnail page, not catalog
+  retention.
+- ImgBB upload bytes remain provider-owned. The extension bounds local decode,
+  canvas, and project archives without inventing an account-independent upload
+  ceiling.
 - The one `brace-expansion` advisory remains in the development-only
   `web-ext` 1.x compatibility path. The exact repository acceptance remains
   machine-checked and expires on 2026-08-09. `npm audit --omit=dev` is clean.
@@ -593,29 +617,38 @@ No finding above has been remediated merely by documenting it here.
 
 ### Changed but not fully proven
 
-No runtime or documentation remediation was performed during the audit itself.
-The following existing behavior was checked but remains incompletely proven:
-
-- `npm run terrain:lod` still reports the documented 67°→70° transient above
-  its 120 ms acceptance budget. Hidden hardware-GPU rendering otherwise passed.
-- No live Garmin or Strava export was made.
-- No live authenticated Peakbagger markup check was made.
-- No real ImgBB upload was made with a live key.
-- No live GitHub backup/merge/restore was made against a scratch repository.
-- Firefox desktop passed; Firefox Android was not tested on a physical device.
-- Hidden browser checks do not establish native focus, permission-prompt,
-  toolbar, window-placement, or touch behavior.
+- F1 and F2 passed fault-injected page orchestration and packaged-browser
+  checks, but no real ImgBB upload was made with a live key.
+- F3 passed never-settling fetch/body, cancel/retry, late-generation, and real
+  packaged-worker checks, but no live Garmin or Strava export was made.
+- F4 and F5 passed exact-boundary archive round trips and dimension/hash
+  mismatch tests. A real browser was not asked to decode or export an image at
+  the full 64-megapixel ceiling.
+- F7 passed the 1,200-record scale gate and hidden packaged-browser checks in
+  both engines at desktop and narrow sizes. Hidden screenshots and DOM
+  assertions do not prove native focus, window placement, browser chrome, or
+  permission-prompt presentation.
+- No live authenticated Peakbagger markup check or live GitHub
+  backup/merge/restore against a scratch repository was made.
+- Firefox desktop passed; Firefox Android and touch behavior were not tested on
+  a physical device.
+- The pre-existing `terrain:lod` 67°→70° transient was outside these changes and
+  remains above its 120 ms budget in the audit's two recorded runs.
 
 ### Audit verification complete
 
-- Unit/integration: 1,047/1,047.
-- Scale: 4/4.
-- JS and extension lint: passed with six owned warnings.
-- Runtime dependency audit: clean.
-- Hidden Chrome and Firefox extension verification: passed.
-- Hidden hardware-GPU terrain visual verification: passed.
-- Browser/profile/debug-server teardown: verified.
-- New audit-document relative-link validation: passed. The repository-wide
-  maintained-path check fails only on the stale living-document pointers
-  recorded in F8; historical `CHANGELOG.md` paths remain exempt like archived
-  notes.
+- Unit/integration: **1,074/1,074**.
+- Scale: **5/5**, including the new 1,200-photo transaction, timing, DOM, and
+  object-URL gate.
+- JavaScript and extension lint: passed with the same six owned
+  cross-browser/vendor warnings.
+- Hidden packaged Chrome for Testing and Firefox 153.0.1 verification: passed.
+  The 49-photo library rendered 48-card page 1 and one-card page 2 without
+  horizontal overflow at 1000×760 and 520×800. Protocol screenshots were
+  visually inspected in Chrome light and Firefox dark rendering.
+- The audit's earlier hidden hardware-GPU terrain verification remains valid;
+  remediation did not change terrain or graphics code.
+- Maintained-document relative links and exact repository paths: passed.
+- Browser/profile/debug-server teardown: inspected and clean.
+- The audit baseline's runtime dependency audit remained clean; remediation did
+  not change dependencies or lockfiles.

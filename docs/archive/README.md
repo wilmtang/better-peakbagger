@@ -48,6 +48,10 @@ living docs in [`docs/`](../).
   execution plan, and deviations recorded during implementation.
 - [Trip-report drafts manager](trip-report-drafts-manager.md) — completed plan
   for the device-wide manager in Settings and its editor discovery link.
+- [Codebase audit — 2026-07-30](codebase-audit-2026-07-30.md) — completed
+  remediation of photo upload consistency and resource bounds, provider capture
+  cancellation, ImgBB disclosure, library scalability, and maintained-document
+  drift, with a final closure ledger.
 - [Codebase audit — 2026-07-19](codebase-audit-2026-07-19.md) — point-in-time
   audit and remediation plan.
 - [Codebase audit — 2026-07-22](codebase-audit-2026-07-22.md) and its
