@@ -52,8 +52,8 @@ export const initImgbbKey = ({ extensionApi = globalThis.browser || globalThis.c
             setStatus('No key saved on this device.');
             return;
         }
-        if (permissionGranted) setStatus('Saved on this device.', 'set');
-        else setStatus('Saved, but uploads still need access to api.imgbb.com.', 'error');
+        if (permissionGranted) setStatus('ImgBB is configured on this device.', 'set');
+        else setStatus('ImgBB is configured, but upload permission is not granted.', 'error');
     };
 
     const refresh = async () => {

@@ -83,6 +83,7 @@ test('the API key is a password field and upload remains one explicit primary ac
     assert.equal(key.type, 'password');
     assert.equal(key.autocomplete, 'off');
     assert.match(doc.getElementById('credential-note').textContent, /never synced, backed up, or sent/i);
+    assert.equal(doc.getElementById('remove-key').textContent.trim(), 'Forget for this tab');
     assert.equal(doc.getElementById('upload-insert').textContent.trim(), 'Upload and insert');
     assert.equal(doc.querySelectorAll('#upload-insert').length, 1);
 });

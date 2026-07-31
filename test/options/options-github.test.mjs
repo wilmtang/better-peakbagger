@@ -593,7 +593,8 @@ test('the ImgBB key saves through the worker with upload access, and is never re
     el(dom, 'imgbb-key').value = '  abc123  ';
     el(dom, 'imgbb-key-save').click();
     await waitFor(dom, () => key() === 'abc123');
-    await waitFor(dom, () => el(dom, 'imgbb-key-status').textContent === 'Saved on this device.');
+    await waitFor(dom, () =>
+        el(dom, 'imgbb-key-status').textContent === 'ImgBB is configured on this device.');
     assert.equal(el(dom, 'imgbb-key').value, '', 'the entered key is cleared, never displayed back');
     assert.equal(el(dom, 'imgbb-key-remove').hidden, false);
     // The credential is device-local; it must not reach synced settings.
@@ -623,8 +624,9 @@ test('a saved ImgBB key without upload access reports the gap instead of looking
         status: { ok: true, configured: true, permissionGranted: false },
     });
     const dom = await load;
-    await waitFor(dom, () => el(dom, 'imgbb-key-status').textContent.startsWith('Saved, but'));
-    assert.match(el(dom, 'imgbb-key-status').textContent, /uploads still need access to api\.imgbb\.com/);
+    await waitFor(dom, () =>
+        el(dom, 'imgbb-key-status').textContent ===
+            'ImgBB is configured, but upload permission is not granted.');
     assert.ok(el(dom, 'imgbb-key-status').classList.contains('is-error'));
     assert.equal(el(dom, 'imgbb-key-remove').hidden, false);
 });

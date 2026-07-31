@@ -216,6 +216,38 @@ async function main() {
       "Firefox storage areas or storage.onChanged did not round-trip",
       extensionState,
     );
+    const imgbbSaved = await driver.executeAsyncScript(done => {
+      const api = globalThis.browser || globalThis.chrome;
+      api.runtime.sendMessage({
+        type: "PHOTO_IMGBB_SAVE_KEY",
+        key: "browser-verification-only",
+      }).then(response => {
+        globalThis.dispatchEvent(new Event("focus"));
+        done(response);
+      }).catch(error => done({ error: String(error) }));
+    });
+    assertState(
+      imgbbSaved?.ok,
+      "Firefox Settings could not save the ImgBB verifier key",
+      imgbbSaved,
+    );
+    const firefoxImgbbOptions = await waitForScript(
+      driver,
+      `const status = document.getElementById("imgbb-key-status")?.textContent || "";
+       if (!status.startsWith("ImgBB is configured")) return null;
+       return {
+         status,
+         removeVisible: !document.getElementById("imgbb-key-remove")?.hidden
+       };`,
+      "the Firefox ImgBB connection status",
+      5_000,
+      value => !!value,
+    );
+    assertState(
+      firefoxImgbbOptions.removeVisible && /ImgBB is configured/.test(firefoxImgbbOptions.status || ""),
+      "Firefox Settings did not own the saved ImgBB connection",
+      firefoxImgbbOptions,
+    );
 
     const photoUrl = new URL("photos/photos.html?mode=library", baseUrl).href;
     await driver.get(photoUrl);
@@ -227,6 +259,7 @@ async function main() {
          heading: document.getElementById("library-heading")?.textContent,
          boundary: document.querySelector(".backup-card")?.textContent,
          status,
+         credentialHidden: document.getElementById("credential-card")?.hidden,
          horizontalOverflow: document.documentElement.scrollWidth > document.documentElement.clientWidth
        };`,
       "the Firefox photo-library recovery surface",
@@ -239,6 +272,7 @@ async function main() {
         && /Original images, API keys, and remote deletion links stay on this device/.test(
           firefoxPhotoLibrary.boundary || "",
         )
+        && firefoxPhotoLibrary.credentialHidden === true
         && !firefoxPhotoLibrary.horizontalOverflow,
       "Firefox did not render the photo library or metadata-only recovery boundary",
       firefoxPhotoLibrary,

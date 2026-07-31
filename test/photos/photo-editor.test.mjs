@@ -30,7 +30,9 @@ const VIEW = { width: 800, height: 600 };
 // the DOM, and never carries the weight of an await that has real work behind it.
 const settle = win => new Promise(resolve => win.setTimeout(resolve, 0));
 
-const loadEditor = async () => {
+const loadEditor = async ({
+    imgbbStatus = { ok: true, configured: false, permissionGranted: false },
+} = {}) => {
     const dom = new JSDOM(html, {
         url: 'chrome-extension://test/photos/photos.html',
         runScripts: 'outside-only',
@@ -58,11 +60,14 @@ const loadEditor = async () => {
         runtime: {
             id: 'test-extension',
             sendMessage: async message => (message?.type === 'PHOTO_IMGBB_STATUS'
-                ? { ok: true, configured: false, permissionGranted: false }
+                ? imgbbStatus
                 : { ok: true }),
             onMessage: { addListener: () => {}, removeListener: () => {} },
         },
-        permissions: { contains: async () => false, request: async () => false },
+        permissions: {
+            contains: async () => imgbbStatus.permissionGranted,
+            request: async () => imgbbStatus.permissionGranted,
+        },
         tabs: { create: () => {} },
     };
     const errors = [];
@@ -134,6 +139,37 @@ const loadEditor = async () => {
         routePath: () => overlay.querySelector('path[d]')?.getAttribute('d'),
     };
 };
+
+test('a device-saved ImgBB key is managed in Settings instead of a photo-page removal card', async () => {
+    const page = await loadEditor({
+        imgbbStatus: { ok: true, configured: true, permissionGranted: true },
+    });
+    assert.equal(page.doc.getElementById('credential-card').hidden, true);
+    assert.equal(page.doc.getElementById('remove-key').hidden, true);
+    assert.deepEqual(page.errors, []);
+});
+
+test('a tab-only ImgBB key keeps its one local escape hatch', async () => {
+    const page = await loadEditor({
+        imgbbStatus: { ok: true, configured: false, permissionGranted: true },
+    });
+    const { doc } = page;
+    doc.getElementById('imgbb-key').value = 'tab-only-key';
+    doc.getElementById('remember-key').checked = false;
+    page.click(doc.getElementById('save-key'));
+    await page.settle();
+
+    assert.equal(doc.getElementById('credential-card').hidden, false);
+    assert.equal(doc.getElementById('credential-form').hidden, true);
+    assert.equal(doc.getElementById('remove-key').hidden, false);
+    assert.equal(doc.getElementById('remove-key').textContent.trim(), 'Forget for this tab');
+
+    page.click(doc.getElementById('remove-key'));
+    await page.settle();
+    assert.equal(doc.getElementById('credential-form').hidden, false);
+    assert.equal(doc.getElementById('remove-key').hidden, true);
+    assert.deepEqual(page.errors, []);
+});
 
 // One drag of a slider used to push one history entry per intermediate value:
 // Undo stepped back a single tick, and Route width (1–100) alone pushed the
