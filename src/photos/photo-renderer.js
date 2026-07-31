@@ -225,11 +225,10 @@ const sha256 = async (blob, cryptoImpl = globalThis.crypto) => {
     return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');
 };
 
-const exportProject = async ({
+const estimateProject = async ({
     project: value,
     source,
     document: documentImpl = globalThis.document,
-    crypto: cryptoImpl = globalThis.crypto,
     imageDependencies,
 } = {}) => {
     const project = Project.cleanProject(value);
@@ -251,7 +250,17 @@ const exportProject = async ({
         bytes: blob.size,
         width: canvas.width,
         height: canvas.height,
-        sha256: await sha256(blob, cryptoImpl),
+    };
+};
+
+const exportProject = async ({
+    crypto: cryptoImpl = globalThis.crypto,
+    ...options
+} = {}) => {
+    const encoded = await estimateProject(options);
+    return {
+        ...encoded,
+        sha256: await sha256(encoded.blob, cryptoImpl),
     };
 };
 
@@ -259,6 +268,7 @@ export const photoRenderer = {
     renderOverlaySvg,
     markerSymbolSvg,
     objectSizePixels,
+    estimateProject,
     exportProject,
     sha256,
 };
