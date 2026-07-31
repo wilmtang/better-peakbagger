@@ -429,20 +429,31 @@ import { units as Units } from '../ui/units.js';
         };
     };
 
+    // Two encounters are ambiguous with each other when the track cannot
+    // separate them: they sit within one encounter window by both distance and
+    // clock (an absent clock cannot separate anything).
+    const sharesEncounterWindow = (left, right) => {
+        const closeDistance = Math.abs(left.globalDistanceM - right.globalDistanceM) <= ENCOUNTER_WINDOW_M;
+        const closeTime = left.time === null || right.time === null
+            || Math.abs(left.time - right.time) <= ENCOUNTER_WINDOW_MS;
+        return closeDistance && closeTime;
+    };
+
     const applyAmbiguityCaps = matches => {
         const remaining = new Set(matches.map((_match, index) => index));
         while (remaining.size) {
             const seed = remaining.values().next().value;
             remaining.delete(seed);
+            // Ambiguity is transitive: a peak pulled into the group can itself
+            // pull in peaks the earlier members already passed over. Sweep the
+            // group as a worklist so the closure is complete. A single pass
+            // over one snapshot made the result depend on the order Peakbagger
+            // happened to return the peaks — the same track could cap a summit
+            // or leave it Strong and pre-selected.
             const group = [seed];
-            for (const index of [...remaining]) {
-                if (group.some(groupIndex => {
-                    const a = matches[groupIndex].encounter;
-                    const b = matches[index].encounter;
-                    const closeDistance = Math.abs(a.globalDistanceM - b.globalDistanceM) <= ENCOUNTER_WINDOW_M;
-                    const closeTime = a.time === null || b.time === null || Math.abs(a.time - b.time) <= ENCOUNTER_WINDOW_MS;
-                    return closeDistance && closeTime;
-                })) {
+            for (let cursor = 0; cursor < group.length; cursor++) {
+                for (const index of [...remaining]) {
+                    if (!sharesEncounterWindow(matches[group[cursor]].encounter, matches[index].encounter)) continue;
                     group.push(index);
                     remaining.delete(index);
                 }

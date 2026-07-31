@@ -105,6 +105,42 @@ test('nearby peaks sharing one encounter are capped unless one clearly leads', (
     assert.ok(matches.every(match => match.confidence <= 79 && match.evidence.ambiguous));
 });
 
+// A chain A–B–C where only the neighbours overlap: whichever peak seeds the
+// group must pull in the whole chain, or the escapee keeps an uncapped Strong
+// score and arrives at the popup pre-selected for drafting.
+test('chained ambiguity caps every peak regardless of the order Peakbagger returns them', () => {
+    const bump = (index, centre) => Math.max(0, 60 - Math.abs(index - centre));
+    const segment = Array.from({ length: 801 }, (_value, index) => point(
+        47 + index * 0.000009,
+        -121,
+        1000 + bump(index, 140) + bump(index, 420) + bump(index, 700),
+        Date.UTC(2026, 0, 1) + index * 1000
+    ));
+    const peakAt = (id, name, index) => ({
+        id,
+        name,
+        location: '',
+        lat: segment[index].lat,
+        lon: segment[index].lon,
+        elevationM: segment[index].ele
+    });
+    const a = peakAt(1, 'A', 140);
+    const b = peakAt(2, 'B', 420);
+    const c = peakAt(3, 'C', 700);
+    // A–B and B–C share an encounter window; A–C do not.
+    for (const order of [[a, b, c], [c, a, b], [b, c, a], [c, b, a]]) {
+        const matches = Core.detectPeaks([segment], order, 1);
+        assert.equal(matches.length, 3, `order ${order.map(peak => peak.name).join('')}`);
+        for (const match of matches) {
+            assert.ok(
+                match.confidence <= 79 && match.evidence.ambiguous
+                    && !Core.publicMatch(match).selected,
+                `${match.name} escaped the cap for order ${order.map(peak => peak.name).join('')}`
+            );
+        }
+    }
+});
+
 test('query boxes stay short, padded, and split at the antimeridian', () => {
     const many = Array.from({ length: 220 }, (_value, index) => point(0, index * 0.0005));
     assert.ok(Core.buildQueryBoxes([many]).length > 1);
