@@ -34,7 +34,7 @@ test('the guide ships as a packaged page with no inline script', () => {
     const entry = manifest.web_accessible_resources
         .find(record => record.resources.includes('photos/guide.html'));
     assert.ok(entry, 'the guide must be reachable from a Peakbagger tab');
-    assert.deepEqual(entry.matches, ['https://*.peakbagger.com/*']);
+    assert.deepEqual(entry.matches, ['https://www.peakbagger.com/*', 'https://peakbagger.com/*']);
 });
 
 // The guide used to swap the tab set for "Back / Open the editor / Settings",

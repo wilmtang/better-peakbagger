@@ -78,7 +78,8 @@
     },
     {
       "matches": [
-        "https://*.peakbagger.com/*"
+        "https://www.peakbagger.com/*",
+        "https://peakbagger.com/*"
       ],
       "js": [
         "content/theme-early.js",
@@ -241,8 +242,10 @@
     },
     {
       "matches": [
-        "https://*.peakbagger.com/*BigMap.aspx*",
-        "https://*.peakbagger.com/*bigmap.aspx*"
+        "https://www.peakbagger.com/*BigMap.aspx*",
+        "https://peakbagger.com/*BigMap.aspx*",
+        "https://www.peakbagger.com/*bigmap.aspx*",
+        "https://peakbagger.com/*bigmap.aspx*"
       ],
       "js": [
         "content/big-map-bridge.js"
@@ -252,8 +255,10 @@
     },
     {
       "matches": [
-        "https://*.peakbagger.com/*BigMap.aspx*",
-        "https://*.peakbagger.com/*bigmap.aspx*"
+        "https://www.peakbagger.com/*BigMap.aspx*",
+        "https://peakbagger.com/*BigMap.aspx*",
+        "https://www.peakbagger.com/*bigmap.aspx*",
+        "https://peakbagger.com/*bigmap.aspx*"
       ],
       "js": [
         "content/big-map.js"
@@ -264,8 +269,10 @@
     },
     {
       "matches": [
-        "https://*.peakbagger.com/*BigMap.aspx*",
-        "https://*.peakbagger.com/*bigmap.aspx*"
+        "https://www.peakbagger.com/*BigMap.aspx*",
+        "https://peakbagger.com/*BigMap.aspx*",
+        "https://www.peakbagger.com/*bigmap.aspx*",
+        "https://peakbagger.com/*bigmap.aspx*"
       ],
       "css": [
         "css/terrain-map.css"
@@ -284,7 +291,8 @@
         "photos/guide.html"
       ],
       "matches": [
-        "https://*.peakbagger.com/*"
+        "https://www.peakbagger.com/*",
+        "https://peakbagger.com/*"
       ]
     }
   ],

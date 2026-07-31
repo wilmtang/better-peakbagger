@@ -31,6 +31,19 @@ test('capture permissions are explicit and provider access remains activeTab-onl
     ];
     assert.ok(declarativeMatches.every(pattern => pattern.startsWith('https://')),
         'content scripts and exposed resources must stay inside the HTTPS permission boundary');
+    // One host convention, and it is the one host_permissions already states.
+    // The manifest used to mix two: most entries enumerated www and the apex
+    // while the theme, BigMap, and web-accessible entries used
+    // https://*.peakbagger.com/*, which reaches subdomains the extension holds
+    // no host permission for -- a content script injected where its own fetches
+    // would be refused.
+    const permittedHosts = manifest.host_permissions.map(pattern => pattern.replace(/\/\*$/, ''));
+    assert.deepEqual(permittedHosts.slice().sort(),
+        ['https://peakbagger.com', 'https://www.peakbagger.com']);
+    for (const pattern of declarativeMatches) {
+        assert.ok(permittedHosts.some(host => pattern.startsWith(`${host}/`)),
+            `${pattern} reaches outside host_permissions`);
+    }
     assert.equal(manifest.action.default_popup, 'popup/popup.html');
 });
 
@@ -121,7 +134,7 @@ test('3D terrain is isolated from Peakbagger globals in an extension-owned frame
     // report editor's image popover.
     assert.deepEqual(manifest.web_accessible_resources, [{
         resources: ['terrain/terrain.html', 'photos/guide.html'],
-        matches: ['https://*.peakbagger.com/*']
+        matches: ['https://www.peakbagger.com/*', 'https://peakbagger.com/*']
     }]);
     // The frame loads MapLibre (a copied vendor script) then the frame bundle,
     // which composes the shared camera/schema helpers, terrain cache, and frame.
