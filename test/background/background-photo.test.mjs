@@ -203,6 +203,47 @@ test('returns one sanitized insertion to the originating tab and rejects replay'
     assert.equal(replay.error.code, 'expired-context');
 });
 
+test('forwards only a bounded optional report display width', async () => {
+    const sized = harness();
+    await sized.routes.handlers.PHOTO_EDITOR_OPEN({
+        mode: 'edit',
+        identity: { cid: 22, pid: 33 },
+    }, peakSender);
+    assert.deepEqual(await sized.routes.handlers.PHOTO_INSERT_COMMIT({
+        returnToken: 'return-token',
+        localPhotoId: 'photo-1',
+        url: 'https://i.ibb.co/a/topo.jpg',
+        alt: 'North face route',
+        displayWidth: 640,
+    }, photoSender), {
+        ok: true,
+        identity: { cid: 22, aid: null, pid: 33 },
+    });
+    assert.deepEqual(sized.sent[0].message, {
+        type: 'PHOTO_INSERT_RESULT',
+        returnToken: 'return-token',
+        localPhotoId: 'photo-1',
+        url: 'https://i.ibb.co/a/topo.jpg',
+        alt: 'North face route',
+        displayWidth: 640,
+    });
+
+    const oversized = harness();
+    await oversized.routes.handlers.PHOTO_EDITOR_OPEN({
+        mode: 'edit',
+        identity: { cid: 22, pid: 33 },
+    }, peakSender);
+    assert.equal((await oversized.routes.handlers.PHOTO_INSERT_COMMIT({
+        returnToken: 'return-token',
+        localPhotoId: 'photo-2',
+        url: 'https://i.ibb.co/a/topo.jpg',
+        alt: 'North face route',
+        displayWidth: 4032,
+    }, photoSender)).ok, true);
+    assert.equal('displayWidth' in oversized.sent[0].message, false,
+        'invalid optional sizing must not lose an already-uploaded photo');
+});
+
 // The photo page leaves the description optional, so an empty one is a real
 // result to forward — not a malformed one to fail closed on.
 test('forwards an insertion whose description is empty', async () => {
