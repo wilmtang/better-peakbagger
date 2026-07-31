@@ -170,10 +170,24 @@ test('every showcase server speaks HTTPS on a Peakbagger host, or the analyzer r
         assert.deepEqual(plainShowcaseUrls, [],
             `${relative} points a browser at a plain-HTTP showcase URL: ${plainShowcaseUrls.join(', ')}`);
         // A self-signed fixture certificate is disposable and must be removed.
-        assert.match(source, /openssl/, `${relative} must mint its own fixture certificate`);
-        assert.match(source, /rm\(\s*certificate/i,
+        // The mint itself lives in one place now (it was four near-identical
+        // copies), so each server is pinned to obtaining a certificate through
+        // that helper and disposing of it, rather than to spelling out openssl.
+        assert.match(source, /createFixtureCertificate\(/,
+            `${relative} must mint its fixture certificate through browser-verification-fixtures.mjs`);
+        assert.match(source, /certificate\.remove\(\)/,
             `${relative} must delete its fixture key and certificate after the run`);
     }
+});
+
+test('the shared fixture certificate is self-signed for a Peakbagger host and disposable', async () => {
+    const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+    const source = await readFile(path.join(root, 'scripts/browser-verification-fixtures.mjs'), 'utf8');
+    assert.match(source, /openssl/, 'the shared helper mints the certificate itself');
+    assert.match(source, /'-x509'/, 'the certificate is self-signed');
+    assert.match(source, /\/CN=\$\{host\}/, 'the certificate names the fixture host');
+    assert.match(source, /'-days', '1'/, 'a fixture certificate outlives nothing');
+    assert.match(source, /async remove\(\)/, 'the helper owns the teardown it hands back');
 });
 
 test('the request guard that makes the HTTPS fixture necessary is still in force', async () => {

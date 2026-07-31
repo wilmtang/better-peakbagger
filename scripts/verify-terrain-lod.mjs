@@ -17,21 +17,21 @@
 // anything about native focus or window placement. A live spot-check through
 // `npm run terrain:verify` is still required before release.
 
-import { execFile, spawn } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { createServer } from 'node:https';
 import { mkdtemp, readFile, rm, stat } from 'node:fs/promises';
-import { promisify } from 'node:util';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import zlib from 'node:zlib';
+
+import { createFixtureCertificate } from './browser-verification-fixtures.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const chromePath = process.env.CHROME_BIN || ({
     darwin: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
     win32: path.join(process.env.PROGRAMFILES || 'C:\\Program Files', 'Google/Chrome/Application/chrome.exe')
 }[process.platform] || 'google-chrome');
-const execFileAsync = promisify(execFile);
 
 const FIXTURE_HOST = 'www.peakbagger.com';
 const MAPTERHORN_TILE_ORIGIN = 'https://tiles.mapterhorn.com';
@@ -224,19 +224,8 @@ const boundedMapterhornTile = value => {
 // the GPX Analyzer fetches the route through that guard, so a plain-HTTP fixture
 // makes the extension refuse its own fixture and the 3D toggle never enables.
 // Self-signed for this host only, deleted in teardown.
-const certificateRoot = await mkdtemp(path.join(os.tmpdir(), 'better-peakbagger-lod-cert-'));
-const keyPath = path.join(certificateRoot, 'fixture-key.pem');
-const certificatePath = path.join(certificateRoot, 'fixture-cert.pem');
-try {
-    await execFileAsync('openssl', [
-        'req', '-x509', '-newkey', 'rsa:2048', '-nodes',
-        '-subj', `/CN=${FIXTURE_HOST}`, '-days', '1',
-        '-keyout', keyPath, '-out', certificatePath
-    ]);
-} catch (error) {
-    throw new Error(`Could not create the isolated HTTPS fixture certificate: ${error.message}`);
-}
-const [fixtureKey, fixtureCert] = await Promise.all([readFile(keyPath), readFile(certificatePath)]);
+const certificate = await createFixtureCertificate({ host: FIXTURE_HOST, label: 'lod' });
+const { key: fixtureKey, cert: fixtureCert } = certificate;
 
 const server = createServer({ key: fixtureKey, cert: fixtureCert }, async (request, response) => {
     try {
@@ -902,5 +891,5 @@ try {
     ]);
     await rm(profile, { recursive: true, force: true });
     // The fixture key and certificate are disposable and must not outlive the run.
-    await rm(certificateRoot, { recursive: true, force: true });
+    await certificate.remove();
 }

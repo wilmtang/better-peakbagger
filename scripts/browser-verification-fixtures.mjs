@@ -2,8 +2,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { execFile } from 'node:child_process';
-import { readFile, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:https';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
@@ -217,21 +218,53 @@ const peakMasterMapHtml = `<!doctype html><html><body>
   ]);
 </script></body></html>`;
 
-export async function createBrowserFixtureServer({ temporaryRoot }) {
-    const keyPath = path.join(temporaryRoot, 'fixture-key.pem');
-    const certificatePath = path.join(temporaryRoot, 'fixture-cert.pem');
+// The disposable HTTPS identity every browser fixture needs.
+//
+// src/peakbagger/peakbagger-request.js refuses any URL whose protocol is not
+// https: or whose host is not Peakbagger's, and product code fetches through
+// that guard — so a plain-HTTP fixture makes the extension refuse its own
+// fixture and the check fails for a reason unrelated to the behavior under
+// test. AGENTS.md requires HTTPS on a real Peakbagger hostname for exactly
+// that reason, and test/project/showcase.test.mjs pins it for every
+// fixture-serving script.
+//
+// This lived as four near-identical copies (here plus the three terrain
+// verifiers), which is a poor place for the one mechanism whose absence once
+// rendered "Better Peakbagger refused an invalid Peakbagger request." into the
+// store-listing screenshots. `remove` deletes the key and certificate; callers
+// that minted their own directory get it cleaned up too.
+export async function createFixtureCertificate({ host = fixtureHost, directory = null, label = 'fixture' } = {}) {
+    const owned = directory === null;
+    const root = owned
+        ? await mkdtemp(path.join(os.tmpdir(), `better-peakbagger-${label}-cert-`))
+        : directory;
+    const keyPath = path.join(root, 'fixture-key.pem');
+    const certificatePath = path.join(root, 'fixture-cert.pem');
     try {
         await execFileAsync('openssl', [
             'req', '-x509', '-newkey', 'rsa:2048', '-nodes',
-            '-subj', `/CN=${fixtureHost}`, '-days', '1',
+            '-subj', `/CN=${host}`, '-days', '1',
             '-keyout', keyPath, '-out', certificatePath,
         ]);
     } catch (error) {
         throw new Error(`Could not create the isolated HTTPS fixture certificate: ${error.message}`);
     }
-    const [key, cert, ascentEditHtml, peakAscentsHtml, profileAscentsHtml, buddyListHtml, climberHtml] = await Promise.all([
-        readFile(keyPath),
-        readFile(certificatePath),
+    const [key, cert] = await Promise.all([readFile(keyPath), readFile(certificatePath)]);
+    return {
+        key,
+        cert,
+        root,
+        async remove() {
+            await rm(owned ? root : keyPath, { recursive: true, force: true });
+            if (!owned) await rm(certificatePath, { force: true });
+        },
+    };
+}
+
+export async function createBrowserFixtureServer({ temporaryRoot }) {
+    const certificate = await createFixtureCertificate({ directory: temporaryRoot });
+    const { key, cert } = certificate;
+    const [ascentEditHtml, peakAscentsHtml, profileAscentsHtml, buddyListHtml, climberHtml] = await Promise.all([
         readFile(
             path.join(projectRoot, 'test', 'fixtures', 'pages', 'climber-ascentedit.html'),
             'utf8',

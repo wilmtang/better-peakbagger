@@ -3,14 +3,14 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { createServer } from 'node:https';
-import { execFile, spawn } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { mkdir, mkdtemp, readFile, rm, stat } from 'node:fs/promises';
-import { promisify } from 'node:util';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const execFileAsync = promisify(execFile);
+import { createFixtureCertificate } from './browser-verification-fixtures.mjs';
+
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const outputDir = path.join(root, 'store-assets');
 // These screenshots ship to the Chrome Web Store listing, and the GPX Analyzer
@@ -128,24 +128,9 @@ const safeFile = async pathname => {
     }
 };
 
-const certificateRoot = await mkdtemp(path.join(os.tmpdir(), 'better-peakbagger-showcase-cert-'));
-const showcaseCertificate = await (async () => {
-    const keyPath = path.join(certificateRoot, 'fixture-key.pem');
-    const certificatePath = path.join(certificateRoot, 'fixture-cert.pem');
-    try {
-        await execFileAsync('openssl', [
-            'req', '-x509', '-newkey', 'rsa:2048', '-nodes',
-            '-subj', `/CN=${SHOWCASE_HOST}`, '-days', '1',
-            '-keyout', keyPath, '-out', certificatePath,
-        ]);
-    } catch (error) {
-        throw new Error(`Could not create the isolated HTTPS showcase certificate: ${error.message}`);
-    }
-    const [key, cert] = await Promise.all([readFile(keyPath), readFile(certificatePath)]);
-    return { key, cert };
-})();
+const certificate = await createFixtureCertificate({ host: SHOWCASE_HOST, label: 'showcase' });
 
-const server = createServer(showcaseCertificate, async (request, response) => {
+const server = createServer({ key: certificate.key, cert: certificate.cert }, async (request, response) => {
     try {
         const url = new URL(request.url, `https://${SHOWCASE_HOST}`);
 
@@ -263,5 +248,5 @@ try {
 } finally {
     server.close();
     // The showcase key and certificate are disposable and must not outlive the run.
-    await rm(certificateRoot, { recursive: true, force: true });
+    await certificate.remove();
 }

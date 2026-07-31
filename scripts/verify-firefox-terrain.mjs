@@ -3,17 +3,15 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 /* global document */
 
-import { execFile } from 'node:child_process';
-import { mkdtemp, readFile, rm, stat } from 'node:fs/promises';
+import { readFile, stat } from 'node:fs/promises';
 import { createServer } from 'node:https';
-import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { promisify } from 'node:util';
 
 import { firefox } from 'playwright';
 
-const execFileAsync = promisify(execFile);
+import { createFixtureCertificate } from './browser-verification-fixtures.mjs';
+
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const viewport = { width: 1000, height: 760 };
@@ -45,23 +43,6 @@ async function safeFile(pathname) {
 // refuses any URL whose protocol is not https: — a deliberate security property
 // — and the analyzer fetches its GPX through that guard, so over http:// the
 // route never loads and the 3D toggle never enables.
-async function createFixtureCertificate() {
-    const root = await mkdtemp(path.join(os.tmpdir(), 'better-peakbagger-firefox-terrain-cert-'));
-    const keyPath = path.join(root, 'fixture-key.pem');
-    const certificatePath = path.join(root, 'fixture-cert.pem');
-    try {
-        await execFileAsync('openssl', [
-            'req', '-x509', '-newkey', 'rsa:2048', '-nodes',
-            '-subj', `/CN=${fixtureHost}`, '-days', '1',
-            '-keyout', keyPath, '-out', certificatePath,
-        ]);
-    } catch (error) {
-        throw new Error(`Could not create the isolated HTTPS fixture certificate: ${error.message}`);
-    }
-    const [key, cert] = await Promise.all([readFile(keyPath), readFile(certificatePath)]);
-    return { key, cert, root };
-}
-
 function createFixtureServer({ key, cert }) {
     const server = createServer({ key, cert }, async (request, response) => {
         try {
@@ -131,7 +112,7 @@ function createFixtureServer({ key, cert }) {
 }
 
 async function main() {
-    const certificate = await createFixtureCertificate();
+    const certificate = await createFixtureCertificate({ host: fixtureHost, label: 'firefox-terrain' });
     const server = createFixtureServer(certificate);
     await new Promise((resolve, reject) => {
         server.once('error', reject);
@@ -315,7 +296,7 @@ async function main() {
         if (browser) await browser.close().catch(() => {});
         await new Promise(resolve => server.close(resolve));
         // The fixture key and certificate are disposable and must not outlive the run.
-        await rm(certificate.root, { recursive: true, force: true });
+        await certificate.remove();
     }
 }
 
