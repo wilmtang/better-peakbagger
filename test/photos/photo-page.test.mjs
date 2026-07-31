@@ -18,6 +18,7 @@ const doc = dom.window.document;
 // checked against the photo page's deep links by parsing both.
 const optionsHtml = await fs.readFile(new URL('../../options/options.html', import.meta.url), 'utf8');
 const optionsDoc = new JSDOM(optionsHtml).window.document;
+const guideHtml = await fs.readFile(new URL('../../photos/guide.html', import.meta.url), 'utf8');
 const maintainedPhotoDocs = Object.fromEntries(await Promise.all([
     ['README.md', '../../README.md'],
     ['PRIVACY.md', '../../PRIVACY.md'],
@@ -95,7 +96,10 @@ test('the API key is a password field and upload remains one explicit primary ac
     const key = doc.getElementById('imgbb-key');
     assert.equal(key.type, 'password');
     assert.equal(key.autocomplete, 'off');
-    assert.match(doc.getElementById('credential-note').textContent, /never synced, backed up, or sent/i);
+    assert.match(doc.getElementById('credential-note').textContent,
+        /never exposed to\s+Peakbagger, another website, GitHub, browser sync, or status UI/i);
+    assert.match(doc.getElementById('credential-note').textContent,
+        /packaged photo page for the direct ImgBB upload/i);
     assert.equal(doc.getElementById('remove-key').textContent.trim(), 'Forget for this tab');
     assert.equal(doc.getElementById('upload-insert').textContent.trim(), 'Upload and insert');
     assert.equal(doc.querySelectorAll('#upload-insert').length, 1);
@@ -243,6 +247,29 @@ test('maintained photo documentation separates decode, upload, and project-archi
         assert.doesNotMatch(contents,
             /images follow ImgBB's 32 MiB|refuses source or export blobs over 32 MiB|through exactly 32 MiB/i,
             `${name} must not restore the obsolete local upload limit`);
+    }
+});
+
+test('every public photo surface states the exact saved-key disclosure boundary', () => {
+    const surfaces = {
+        ...maintainedPhotoDocs,
+        'photos/photos.html': html,
+        'photos/guide.html': guideHtml,
+        'options/options.html': optionsHtml,
+    };
+    for (const [name, contents] of Object.entries(surfaces)) {
+        const normalized = contents.replace(/\s+/g, ' ');
+        assert.match(normalized, /saved key remains in device-local extension storage/i,
+            `${name} must say where the saved key remains`);
+        assert.match(normalized,
+            /never exposed to Peakbagger, another website, GitHub, browser sync, or status UI/i,
+            `${name} must name every excluded consumer`);
+        assert.match(normalized, /exact packaged photo page/i,
+            `${name} must name the only extension-page recipient`);
+        assert.match(normalized, /direct (?:ImgBB )?upload(?: to ImgBB)?/i,
+            `${name} must explain why that photo page receives the key`);
+        assert.doesNotMatch(normalized, /no page can read it back|neither page can read a saved key back/i,
+            `${name} must not restore the false disclosure`);
     }
 });
 

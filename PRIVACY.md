@@ -212,11 +212,11 @@ editable project bundles have a separate 40 MiB limit.
 - **Credential handling:** the user supplies the ImgBB API key, from either the
   photo editor or Settings → Activity creation → Trip report photos. It is
   stored only in the dedicated `bpbImgbbAuth` record in device-local
-  `storage.local`, never `storage.sync`, GitHub, a report, or the original
-  Peakbagger content script. Neither page can read a saved key back: the
-  background worker reports only whether one exists, and leases the value
-  itself to the exact packaged photo page for an upload request. Removing the
-  key does not alter prior uploads.
+  `storage.local`. The saved key remains in device-local extension storage. It
+  is never exposed to Peakbagger, another website, GitHub, browser sync, or
+  status UI. The background worker provides it only to Better Peakbagger's
+  exact packaged photo page immediately before that page sends a direct upload
+  to ImgBB. Removing the key does not alter prior uploads.
 - **Local upload history:** Better Peakbagger keeps its own searchable catalog
   because ImgBB's documented v1 API does not provide an account-gallery listing
   operation. The catalog stores public URLs, source/export metadata and hashes,

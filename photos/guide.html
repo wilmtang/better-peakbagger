@@ -95,8 +95,10 @@
         <li>Your browser will ask permission for Better Peakbagger to reach <code>api.imgbb.com</code>. Allow it — without it, uploads cannot happen.</li>
       </ol>
       <p>
-        The key is stored on this device only. It is never synced between browsers,
-        never included in a backup, and never sent anywhere except ImgBB. Removing it
+        The saved key remains in device-local extension storage. It is never exposed
+        to Peakbagger, another website, GitHub, browser sync, or status UI. The
+        background worker provides it only to Better Peakbagger's exact packaged photo
+        page immediately before that page sends a direct upload to ImgBB. Removing it
         stops new uploads; photos you have already uploaded keep working.
       </p>
       <p class="guide-note">

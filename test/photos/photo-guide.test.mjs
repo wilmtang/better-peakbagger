@@ -111,7 +111,8 @@ test('the guide answers the questions the surfaces send readers here with', () =
     // Getting a key, which is the one piece of setup the feature cannot do.
     assert.match(text, /api\.imgbb\.com/);
     assert.match(text, /Get API key/);
-    assert.match(text, /never synced between browsers, never included in a backup/);
+    assert.match(text, /never exposed to Peakbagger, another website, GitHub, browser sync, or status UI/);
+    assert.match(text, /exact packaged photo page.*direct upload to ImgBB/);
     // What a backup holds, and what a restore therefore cannot bring back.
     assert.match(text, /photo-library\.json/);
     assert.match(text, /the images themselves — GitHub holds the record, not the picture/);

@@ -135,8 +135,11 @@ device, then flattens a metadata-free JPEG or PNG only when you choose
 Uploads go directly from the extension to ImgBB with an API key you provide;
 Better Peakbagger has no upload relay or developer account. Save that key in
 **Settings → Activity creation → Trip report photos**, or the first time you
-upload. It stays on this device, is never synced or backed up, and no page can
-read it back. The optional ImgBB permission is requested only when needed, and
+upload. The saved key remains in device-local extension storage. It is never
+exposed to Peakbagger, another website, GitHub, browser sync, or status UI. The
+background worker provides it only to Better Peakbagger's exact packaged photo
+page immediately before that page sends a direct upload to ImgBB. The optional
+ImgBB permission is requested only when needed, and
 ImgBB decides the upload-size limit for that key. The editor accepts decoded
 images up to 64 megapixels and 16,384 pixels per side; downloadable/importable
 project bundles have a separate 40 MiB portability limit. A searchable local

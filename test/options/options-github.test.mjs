@@ -575,7 +575,8 @@ test('the ImgBB key setting explains the service and links its key page and term
         { label: 'Read the photo guide', href: '../photos/guide.html', target: '_blank', rel: 'noopener noreferrer' },
     ]);
     assert.equal(el(dom, 'imgbb-key').type, 'password');
-    assert.match(desc.textContent, /never synced or backed up/i);
+    assert.match(desc.textContent, /never exposed to Peakbagger, another website, GitHub, browser sync, or status UI/i);
+    assert.match(desc.textContent, /exact packaged photo page.*direct upload to ImgBB/i);
 });
 
 test('the ImgBB key saves through the worker with upload access, and is never read back', async () => {

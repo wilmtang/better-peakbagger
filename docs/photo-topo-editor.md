@@ -95,6 +95,9 @@ The boundaries are deliberate:
    Peakbagger has no relay or developer server.
 3. The API key and ImgBB delete URL are device-local secrets. Neither may enter
    synchronized settings, a report, GitHub, logs, or exported project metadata.
+   The saved key is never exposed to Peakbagger, another website, or status UI.
+   The background worker provides it only to Better Peakbagger's exact packaged
+   photo page immediately before that page sends a direct upload to ImgBB.
 4. The report return token is random, tab- and frame-bound, single-use, and
    expires after two hours. The worker validates both the extension-page sender
    and the public insertion fields before routing them.
@@ -225,8 +228,11 @@ ImgBB access is bring-your-own-key. `https://api.imgbb.com/*` is an optional
 host permission, requested from the editor when an upload needs it and from
 Settings when the user saves a key there. The key is validated and stored under
 the dedicated `bpbImgbbAuth` record in device-local `storage.local`, never
-synchronized storage. Removing the key clears the credential but does not alter
-prior uploads.
+synchronized storage. The saved key remains in device-local extension storage.
+It is never exposed to Peakbagger, another website, GitHub, browser sync, or
+status UI. The background worker provides it only to Better Peakbagger's exact
+packaged photo page immediately before that page sends a direct upload to
+ImgBB. Removing the key clears the credential but does not alter prior uploads.
 
 Two extension-owned surfaces can configure that credential — the photo editor
 and **Settings → Activity creation → Trip report photos** — and the worker
@@ -235,9 +241,9 @@ content script fails closed. That gate compares protocol, host, and pathname
 outright: only special schemes are specified to produce a URL `origin`, so an
 extension URL's origin is browser-defined and serializes as `"null"` in a
 spec-strict parser, and comparing it alone would have admitted another
-extension's identically-pathed page. Configuring is not reading: `PHOTO_IMGBB_STATUS`
-answers only whether a key exists, and `PHOTO_IMGBB_LEASE_KEY` returns the
-value to the photo page alone, because that is the only page that uploads.
+extension's identically-pathed page. `PHOTO_IMGBB_STATUS` answers only whether
+a key exists; `PHOTO_IMGBB_LEASE_KEY` provides the value only to that photo
+page immediately before its direct upload.
 
 `src/photos/imgbb-client.js` uses `POST` with `multipart/form-data`, a binary
 `image` part, and the optional name. It requires:
