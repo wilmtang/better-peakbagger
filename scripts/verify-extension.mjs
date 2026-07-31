@@ -136,6 +136,32 @@ try {
         `the Chrome options origin or manifest version was wrong: ${JSON.stringify(storageProbe)}`);
         check(storageProbe.onChanged && storageProbe.values.join(',') === 'sync,local,session',
             `Chrome storage areas or storage.onChanged did not round-trip: ${JSON.stringify(storageProbe)}`);
+        const imgbbSaved = await optionsPage.evaluate(async () => {
+            const response = await chrome.runtime.sendMessage({
+                type: 'PHOTO_IMGBB_SAVE_KEY',
+                key: 'browser-verification-only',
+            });
+            dispatchEvent(new Event('focus'));
+            return response;
+        });
+        check(imgbbSaved?.ok, `Chrome Settings could not save the ImgBB verifier key: ${
+            JSON.stringify(imgbbSaved)}`);
+        const imgbbOptionsState = await optionsPage.waitForFunction(() => {
+            const status = document.getElementById('imgbb-key-status')?.textContent || '';
+            if (!status.startsWith('ImgBB is configured')) return false;
+            return {
+                status,
+                removeVisible: !document.getElementById('imgbb-key-remove')?.hidden,
+            };
+        }, null, { timeout: 5000 }).then(handle => handle.jsonValue()).catch(() => null);
+        check(imgbbOptionsState?.removeVisible
+            && /ImgBB is configured/.test(imgbbOptionsState?.status || ''),
+        `Chrome Settings did not own the saved ImgBB connection: ${JSON.stringify(imgbbOptionsState)}`);
+        if (process.env.BPB_VERIFY_IMGBB_OPTIONS_SCREENSHOT) {
+            await optionsPage.locator('#capture-photos .card').screenshot({
+                path: process.env.BPB_VERIFY_IMGBB_OPTIONS_SCREENSHOT,
+            });
+        }
         await optionsPage.locator('#units').selectOption('metric');
         const optionPersisted = await optionsPage.waitForFunction(async () =>
             (await chrome.storage.sync.get('bpbSettings')).bpbSettings?.units === 'metric',
@@ -191,6 +217,7 @@ try {
                 heading: document.getElementById('library-heading')?.textContent,
                 backup: document.querySelector('.backup-card')?.textContent,
                 status,
+                credentialHidden: document.getElementById('credential-card')?.hidden,
                 horizontalOverflow: document.documentElement.scrollWidth > document.documentElement.clientWidth,
             };
         }, null, { timeout: 5000 }).then(handle => handle.jsonValue()).catch(() => null);
@@ -200,6 +227,7 @@ try {
                 photoLibraryState?.backup || ''
             )
             && /fixture\/backup/.test(photoLibraryState?.status || '')
+            && photoLibraryState?.credentialHidden === true
             && !photoLibraryState?.horizontalOverflow,
         `the packaged photo library or recovery boundary was wrong: ${JSON.stringify({
             photoLibraryState,

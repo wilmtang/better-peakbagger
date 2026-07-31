@@ -30,7 +30,10 @@ const VIEW = { width: 800, height: 600 };
 // the DOM, and never carries the weight of an await that has real work behind it.
 const settle = win => new Promise(resolve => win.setTimeout(resolve, 0));
 
-const loadEditor = async ({ returnToReport = false } = {}) => {
+const loadEditor = async ({
+    returnToReport = false,
+    imgbbStatus = { ok: true, configured: false, permissionGranted: false },
+} = {}) => {
     const dom = new JSDOM(html, {
         url: `chrome-extension://test/photos/photos.html${returnToReport ? '?returnToken=return-test' : ''}`,
         runScripts: 'outside-only',
@@ -56,9 +59,12 @@ const loadEditor = async ({ returnToReport = false } = {}) => {
     win.URL.revokeObjectURL = () => {};
     const chrome = makeChromeStub({ bpbSettings: { reportImageWidth: 640 } });
     chrome.runtime.sendMessage = async message => (message?.type === 'PHOTO_IMGBB_STATUS'
-        ? { ok: true, configured: false, permissionGranted: false }
+        ? imgbbStatus
         : { ok: true });
-    chrome.permissions = { contains: async () => false, request: async () => false };
+    chrome.permissions = {
+        contains: async () => imgbbStatus.permissionGranted,
+        request: async () => imgbbStatus.permissionGranted,
+    };
     chrome.tabs = { create: () => {} };
     win.chrome = chrome;
     const errors = [];
@@ -163,6 +169,37 @@ test('a report size resizes only the stage preview and is remembered across both
     assert.equal(stage.style.maxWidth, '1600px',
         'Original stays natural-size but remains contained by the editor viewport');
     assert.match(doc.getElementById('export-summary').textContent, /1600 × 1200/);
+    assert.deepEqual(page.errors, []);
+});
+
+test('a device-saved ImgBB key is managed in Settings instead of a photo-page removal card', async () => {
+    const page = await loadEditor({
+        imgbbStatus: { ok: true, configured: true, permissionGranted: true },
+    });
+    assert.equal(page.doc.getElementById('credential-card').hidden, true);
+    assert.equal(page.doc.getElementById('remove-key').hidden, true);
+    assert.deepEqual(page.errors, []);
+});
+
+test('a tab-only ImgBB key keeps its one local escape hatch', async () => {
+    const page = await loadEditor({
+        imgbbStatus: { ok: true, configured: false, permissionGranted: true },
+    });
+    const { doc } = page;
+    doc.getElementById('imgbb-key').value = 'tab-only-key';
+    doc.getElementById('remember-key').checked = false;
+    page.click(doc.getElementById('save-key'));
+    await page.settle();
+
+    assert.equal(doc.getElementById('credential-card').hidden, false);
+    assert.equal(doc.getElementById('credential-form').hidden, true);
+    assert.equal(doc.getElementById('remove-key').hidden, false);
+    assert.equal(doc.getElementById('remove-key').textContent.trim(), 'Forget for this tab');
+
+    page.click(doc.getElementById('remove-key'));
+    await page.settle();
+    assert.equal(doc.getElementById('credential-form').hidden, false);
+    assert.equal(doc.getElementById('remove-key').hidden, true);
     assert.deepEqual(page.errors, []);
 });
 

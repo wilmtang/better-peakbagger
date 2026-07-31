@@ -230,9 +230,13 @@ const formatBytes = bytes => {
 
 const updateCredentialUi = () => {
     const available = configuredKey || !!sessionKey;
+    // Device-saved credentials belong to Settings once configured. Keep this
+    // setup card only for a missing key or the session-only key that Settings
+    // cannot see or remove.
+    ui.credentialCard.hidden = configuredKey;
     ui.credentialCard.classList.toggle('configured', available && permissionGranted);
     ui.credentialForm.hidden = available;
-    ui.removeKey.hidden = !available;
+    ui.removeKey.hidden = !sessionKey;
     ui.credentialSummary.textContent = !available
         ? 'Uploads go directly from this browser using your API key.'
         : permissionGranted
@@ -244,7 +248,11 @@ const updateCredentialUi = () => {
 
 const refreshCredential = async () => {
     const response = await send({ type: 'PHOTO_IMGBB_STATUS' });
-    configuredKey = !!response?.ok && !!response.configured;
+    const nextConfiguredKey = !!response?.ok && !!response.configured;
+    // Saving a device key in Settings while this page holds a tab-only key is
+    // an explicit replacement. Do not keep leasing the now-hidden session key.
+    if (nextConfiguredKey) sessionKey = '';
+    configuredKey = nextConfiguredKey;
     permissionGranted = !!response?.ok && !!response.permissionGranted;
     updateCredentialUi();
 };
@@ -295,10 +303,8 @@ const saveCredential = async () => {
 
 const removeCredential = async () => {
     sessionKey = '';
-    await send({ type: 'PHOTO_IMGBB_REMOVE_KEY' });
-    configuredKey = false;
     updateCredentialUi();
-    toast('ImgBB key removed. Existing photos were not changed.');
+    toast('The key was forgotten for this tab. Existing photos were not changed.');
 };
 
 const leaseCredential = async () => {
