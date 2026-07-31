@@ -22,6 +22,9 @@ const EARTH_RADIUS_M = 6371008.8;
 
 const toRad = x => x * Math.PI / 180;
 
+const isValidCoordinate = (lat, lon) => Number.isFinite(lat) && lat >= -90 && lat <= 90
+    && Number.isFinite(lon) && lon >= -180 && lon <= 180;
+
 const normalizeLonDelta = delta => {
     let result = delta;
     while (result > 180) result -= 360;
@@ -100,7 +103,9 @@ const smoothElevations = (points, distMByIndex) => {
     const medianElevations = points.map((point, index) => {
         const start = Math.max(0, index - 2);
         const end = Math.min(points.length, index + 3);
-        return median(points.slice(start, end).map(p => p.rawEleM));
+        return median(points.slice(start, end)
+            .filter(candidate => candidate.coordinateGroup === point.coordinateGroup)
+            .map(candidate => candidate.rawEleM));
     });
 
     const halfWindowM = ELEVATION_SMOOTH_WINDOW_M / 2;
@@ -109,11 +114,13 @@ const smoothElevations = (points, distMByIndex) => {
         const windowValues = [];
 
         for (let i = index; i >= Math.max(0, index - ELEVATION_SMOOTH_POINT_RADIUS); i--) {
+            if (points[i].coordinateGroup !== points[index].coordinateGroup) break;
             if (centerDistM - distMByIndex[i] > halfWindowM) break;
             windowValues.push(medianElevations[i]);
         }
 
         for (let i = index + 1; i < Math.min(medianElevations.length, index + ELEVATION_SMOOTH_POINT_RADIUS + 1); i++) {
+            if (points[i].coordinateGroup !== points[index].coordinateGroup) break;
             if (distMByIndex[i] - centerDistM > halfWindowM) break;
             windowValues.push(medianElevations[i]);
         }
@@ -144,6 +151,12 @@ const computeAdjustedDistances = (points, hasTime) => {
 
     for (let i = 1; i < points.length; i++) {
         const current = points[i];
+        if (current.coordinateGroup !== prev.coordinateGroup) {
+            distMByIndex[i] = distanceM;
+            resetPending(current);
+            prev = current;
+            continue;
+        }
         const stepM = haversineDistanceM(prev, current);
         const elapsedSeconds = hasTime ? (current.ms - prev.ms) / 1000 : 0;
         const isBadJump = elapsedSeconds > 0 && stepM > DIST_CONFIRM_M && stepM / elapsedSeconds > MAX_REASONABLE_SPEED_MPS;
@@ -187,11 +200,14 @@ const computeAdjustedDistances = (points, hasTime) => {
     return { distanceM, rawDistanceM, distMByIndex };
 };
 
-const calculateGrade = (index, distMByIndex, elevations) => {
+const calculateGrade = (index, distMByIndex, elevations, points) => {
     const centerDistM = distMByIndex[index];
     let baselineIndex = index;
 
-    while (baselineIndex > 0 && index - baselineIndex < GRADE_MAX_LOOKBACK_POINTS && centerDistM - distMByIndex[baselineIndex] < GRADE_WINDOW_M) {
+    while (baselineIndex > 0
+        && points[baselineIndex - 1].coordinateGroup === points[index].coordinateGroup
+        && index - baselineIndex < GRADE_MAX_LOOKBACK_POINTS
+        && centerDistM - distMByIndex[baselineIndex] < GRADE_WINDOW_M) {
         baselineIndex--;
     }
 
@@ -200,10 +216,27 @@ const calculateGrade = (index, distMByIndex, elevations) => {
     return ((elevations[index] - elevations[baselineIndex]) / distDiffM) * 100;
 };
 
+const sumByCoordinateGroup = (points, values, calculate) => {
+    let total = 0;
+    let start = 0;
+    for (let index = 1; index <= points.length; index++) {
+        if (index < points.length && points[index].coordinateGroup === points[start].coordinateGroup) continue;
+        total += calculate(values.slice(start, index));
+        start = index;
+    }
+    return total;
+};
+
 const computeMetrics = points => {
-    const validPoints = points
-        .map((point, index) => ({ ...point, index }))
-        .filter(point => Number.isFinite(point.lat) && Number.isFinite(point.lon) && Number.isFinite(point.rawEleM));
+    let coordinateGroup = 0;
+    const validPoints = [];
+    points.forEach((point, index) => {
+        if (!isValidCoordinate(point.lat, point.lon)) {
+            coordinateGroup++;
+            return;
+        }
+        if (Number.isFinite(point.rawEleM)) validPoints.push({ ...point, index, coordinateGroup });
+    });
 
     if (!validPoints.length) {
         return {
@@ -229,8 +262,16 @@ const computeMetrics = points => {
 
     const { distanceM, rawDistanceM, distMByIndex } = computeAdjustedDistances(sortedPoints, hasTime);
     const smoothedElevations = smoothElevations(sortedPoints, distMByIndex);
-    const rawGainM = calculatePositiveGainM(sortedPoints.map(point => point.rawEleM));
-    const gainM = calculateConfirmedGainM(smoothedElevations);
+    const rawGainM = sumByCoordinateGroup(
+        sortedPoints,
+        sortedPoints.map(point => point.rawEleM),
+        calculatePositiveGainM,
+    );
+    const gainM = sumByCoordinateGroup(
+        sortedPoints,
+        smoothedElevations,
+        calculateConfirmedGainM,
+    );
 
     let maxEleM = -Infinity;
     let summitMs = 0;
@@ -248,7 +289,7 @@ const computeMetrics = points => {
             rawEleM: point.rawEleM,
             eleM,
             distM: distMByIndex[index],
-            grade: calculateGrade(index, distMByIndex, smoothedElevations)
+            grade: calculateGrade(index, distMByIndex, smoothedElevations, sortedPoints)
         };
     });
 
@@ -304,16 +345,42 @@ const limitMapRouteSegments = segments => {
     return segments.map((segment, index) => sampleRouteSegment(segment, targetCounts[index]));
 };
 
+const sanitizeMapRouteSegments = segments => {
+    const sanitized = [];
+    const flush = current => {
+        if (current.length >= 2) sanitized.push(current.splice(0));
+        else current.length = 0;
+    };
+
+    for (const segment of segments || []) {
+        const current = [];
+        for (const coordinate of segment || []) {
+            const lat = coordinate?.[0];
+            const lon = coordinate?.[1];
+            if (isValidCoordinate(lat, lon)) {
+                current.push([lat, lon]);
+            } else {
+                flush(current);
+            }
+        }
+        flush(current);
+    }
+
+    return limitMapRouteSegments(sanitized);
+};
+
 const API = {
     // Geometry primitives shared with src/capture/capture-core.js, which loads
     // after this module in the background worker.
     EARTH_RADIUS_M,
     toRad,
     normalizeLonDelta,
+    isValidCoordinate,
     distanceM: haversineDistanceM,
     calculateConfirmedGainM,
     computeMetrics,
-    limitMapRouteSegments
+    limitMapRouteSegments,
+    sanitizeMapRouteSegments,
 };
 
 export const gpxMetrics = API;

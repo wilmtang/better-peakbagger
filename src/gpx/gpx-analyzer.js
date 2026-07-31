@@ -40,29 +40,14 @@ const run = async () => {
     const COORDINATE_HINT = 'Click the chart or use \u2190/\u2192 to select a point';
     const MAP_RESIZE_PERSIST_DELAY_MS = 400;
     const parseMapRouteSegments = xml => {
-        const segments = [];
-
-        Array.from(xml.querySelectorAll('trkseg')).forEach(segmentNode => {
-            let current = [];
-
-            Array.from(segmentNode.children).forEach(node => {
-                if (node.localName !== 'trkpt') return;
-                const lat = parseFloat(node.getAttribute('lat'));
-                const lon = parseFloat(node.getAttribute('lon'));
-
-                if (Number.isFinite(lat) && Number.isFinite(lon)) {
-                    current.push([lat, lon]);
-                    return;
-                }
-
-                if (current.length >= 2) segments.push(current);
-                current = [];
-            });
-
-            if (current.length >= 2) segments.push(current);
-        });
-
-        return GpxMetrics.limitMapRouteSegments(segments);
+        const segments = Array.from(xml.querySelectorAll('trkseg'), segmentNode =>
+            Array.from(segmentNode.children)
+                .filter(node => node.localName === 'trkpt')
+                .map(node => [
+                    parseFloat(node.getAttribute('lat')),
+                    parseFloat(node.getAttribute('lon')),
+                ]));
+        return GpxMetrics.sanitizeMapRouteSegments(segments);
     };
 
     // === Better Peakbagger: theming + centralized settings (via bridge) ===
@@ -1120,7 +1105,7 @@ const run = async () => {
             if (!metrics.points.length) {
                 syncCoordinateSelection({ unavailable: true });
                 const hasValidCoordinates = parsedPoints.some(point =>
-                    Number.isFinite(point.lat) && Number.isFinite(point.lon));
+                    GpxMetrics.isValidCoordinate(point.lat, point.lon));
                 return stats.textContent = hasValidCoordinates
                     ? 'This GPS track has no usable elevation data.'
                     : 'No valid track points found.';
@@ -1139,10 +1124,9 @@ const run = async () => {
                     });
                 }
             } catch (e) {
-                // Reachable: malformed GPX can carry finite out-of-range
-                // coordinates (tzlookup throws on |lat| > 90), and a zone id
-                // from the raster may be unknown to this browser's ICU after
-                // a tzdata rename. Both keep the labelled solar estimate.
+                // A zone id from the packaged raster may be unknown to this
+                // browser's ICU after a tzdata rename. Keep the labelled solar
+                // estimate instead of losing the analyzer.
                 mountainTimeZone = null;
                 mountainDayFormatter = null;
             }
