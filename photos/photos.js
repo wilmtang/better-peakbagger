@@ -133,6 +133,7 @@ let toastTimer = null;
 let undoDeleted = null;
 let reportImageWidth = Settings.DEFAULTS.reportImageWidth;
 let unsubscribeSettings = () => {};
+let ascentBackupEnabled = Settings.DEFAULTS.enableGithubBackup;
 let uploadFormat = 'original';
 let jpegQuality = Project.DEFAULT_JPEG_QUALITY;
 let exportRevision = 0;
@@ -279,13 +280,19 @@ const cancelExportEstimate = () => {
 };
 
 const showExportEstimate = encoded => {
-    const warning = encoded.bytes > GITHUB_CAMO_PREVIEW_BYTES;
+    const warning = ascentBackupEnabled && encoded.bytes > GITHUB_CAMO_PREVIEW_BYTES;
     ui.uploadEstimate.parentElement.classList.toggle('is-warning', warning);
     ui.uploadEstimate.textContent = `Estimated upload · ${formatBytes(encoded.bytes)} `
         + exportMimeLabel(encoded.mime);
     ui.uploadEstimateNote.textContent = warning
-        ? 'Over 5 MB · GitHub may not preview this image.'
+        ? 'Over 5 MB · GitHub may not show this image in backed-up reports.'
         : `${encoded.width} × ${encoded.height} · full resolution`;
+};
+
+const applyPhotoSettings = settings => {
+    ascentBackupEnabled = settings.enableGithubBackup === true;
+    if (RETURN_TOKEN) setReportImageWidth(settings.reportImageWidth);
+    if (cachedExport?.encoded) showExportEstimate(cachedExport.encoded);
 };
 
 // Full-resolution PNG encoding can be expensive. Keep at most one background
@@ -1983,11 +1990,9 @@ const initialize = async () => {
     paintToolRail();
     paintReportWidthControls();
     syncUploadControls();
-    if (RETURN_TOKEN) {
-        const settings = await Settings.get();
-        setReportImageWidth(settings.reportImageWidth);
-        unsubscribeSettings = Settings.subscribe(next => setReportImageWidth(next.reportImageWidth));
-    }
+    const settings = await Settings.get();
+    applyPhotoSettings(settings);
+    unsubscribeSettings = Settings.subscribe(applyPhotoSettings);
     bindEvents();
     store = await Store.createPhotoStore();
     await recoverOperations();

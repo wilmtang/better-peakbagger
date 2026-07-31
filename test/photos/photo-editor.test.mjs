@@ -198,7 +198,7 @@ test('a report size resizes only the stage preview and is remembered across both
 
 test('PNG can stay lossless or switch to a quality-controlled JPEG with real size estimates', async () => {
     const page = await loadEditor({ fileName: 'north-face.png', fileType: 'image/png' });
-    const { doc, encodeCalls } = page;
+    const { chrome, doc, encodeCalls } = page;
     const format = doc.getElementById('upload-format');
     const original = doc.getElementById('upload-format-original');
     const qualityControl = doc.getElementById('jpeg-quality-control');
@@ -211,7 +211,15 @@ test('PNG can stay lossless or switch to a quality-controlled JPEG with real siz
     assert.match(original.textContent, /original format.+PNG/i);
     assert.equal(qualityControl.hidden, true);
     await waitFor(page.dom, () => /6\.0 MB PNG/.test(estimate.textContent));
-    assert.match(note.textContent, /over 5 MB.+GitHub may not preview/i);
+    assert.match(note.textContent, /1600 × 1200.+full resolution/i);
+    assert.doesNotMatch(note.textContent, /GitHub/i,
+        'an ascent-backup warning is noise while that feature is off');
+
+    await chrome.storage.sync.set({
+        bpbSettings: { ...chrome._store.bpbSettings, enableGithubBackup: true },
+    });
+    await waitFor(page.dom, () => /GitHub may not show.+backed-up reports/i.test(note.textContent));
+    assert.equal(estimate.parentElement.classList.contains('is-warning'), true);
 
     format.value = 'jpeg';
     page.emit(format, 'change');

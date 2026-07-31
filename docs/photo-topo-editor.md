@@ -161,9 +161,11 @@ The renderer produces the full-resolution encoded blob after a short debounce
 and reports that blob's byte length as the upload estimate. Annotation, format,
 quality, undo/redo, and geometry changes invalidate the cached blob. Upload
 reuses a current cached encoding and only then computes its SHA-256, avoiding a
-second full-resolution encode in the usual path. An estimate above 5 MiB is a
-warning about GitHub preview behavior, not an upload gate; ImgBB still decides
-the account's actual size limit.
+second full-resolution encode in the usual path. When the synced
+`enableGithubBackup` ascent-backup gate is on, an estimate above 5 MiB warns
+that GitHub may not show the external image in its rendered `report.md`. The
+warning updates live with the setting and is not an upload gate; ImgBB still
+decides the account's actual size limit.
 
 The explicit **Download project** action first warns that the original file and
 any metadata it contains will leave browser storage. `src/photos/photo-archive.js`
