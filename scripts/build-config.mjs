@@ -74,7 +74,7 @@ export const ENTRIES = [
     { out: 'popup/popup-head.js', sources: ['settings/settings-schema.js', 'settings/settings.js', 'theme/panel-theme.js'], page: true },
     { out: 'popup/popup.js', sources: ['capture/capture-phases.js', 'settings/settings-schema.js', 'settings/settings.js', 'ui/units.js', 'popup-main.js'], page: true },
     { out: 'photos/photos-head.js', sources: ['settings/settings-schema.js', 'settings/settings.js', 'theme/panel-theme.js'], page: true },
-    { out: 'photos/photos.js', sources: ['settings/settings-schema.js', 'settings/settings.js', 'photos/photo-project.js', 'photos/photo-renderer.js', 'photos/photo-library.js', 'photos/photo-store.js', 'photos/photo-archive.js', 'photos/imgbb-client.js', 'photos/photo-report-size.js', 'photos-main.js'], page: true },
+    { out: 'photos/photos.js', sources: ['settings/settings-schema.js', 'settings/settings.js', 'photos/photo-project.js', 'photos/photo-renderer.js', 'photos/photo-library.js', 'photos/photo-store.js', 'photos/photo-archive.js', 'photos/imgbb-client.js', 'photos/photo-report-size.js', 'photos/photo-upload-transaction.js', 'photos-main.js'], page: true },
     // The guide paints its symbol legend from the renderer so what it teaches
     // cannot drift from what the export draws; nothing else on it is dynamic.
     { out: 'photos/guide.js', sources: ['photos/photo-project.js', 'photos/photo-renderer.js', 'ui/section-nav.js', 'photos-guide.js'], page: true },

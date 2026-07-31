@@ -33,6 +33,10 @@ const settle = win => new Promise(resolve => win.setTimeout(resolve, 0));
 const loadEditor = async ({
     returnToReport = false,
     imgbbStatus = { ok: true, configured: false, permissionGranted: false },
+    runtimeHandler = async () => ({ ok: true }),
+    fetchImpl = null,
+    indexedDB = new IDBFactory(),
+    pickPhoto = true,
 } = {}) => {
     const dom = new JSDOM(html, {
         url: `chrome-extension://test/photos/photos.html${returnToReport ? '?returnToken=return-test' : ''}`,
@@ -41,7 +45,7 @@ const loadEditor = async ({
     });
     const win = dom.window;
     const doc = win.document;
-    win.indexedDB = new IDBFactory();
+    win.indexedDB = indexedDB;
     win.IDBKeyRange = IDBKeyRange;
     win.structuredClone = globalThis.structuredClone;
     let ids = 0;
@@ -55,12 +59,20 @@ const loadEditor = async ({
     win.HTMLCanvasElement.prototype.toBlob = function toBlob(callback) {
         callback(new win.Blob(['thumbnail'], { type: 'image/jpeg' }));
     };
+    win.Image = class TestImage {
+        set src(_value) {
+            win.queueMicrotask(() => this.onload?.());
+        }
+    };
     win.URL.createObjectURL = () => 'blob:test';
     win.URL.revokeObjectURL = () => {};
+    if (fetchImpl) win.fetch = fetchImpl;
     const chrome = makeChromeStub({ bpbSettings: { reportImageWidth: 640 } });
-    chrome.runtime.sendMessage = async message => (message?.type === 'PHOTO_IMGBB_STATUS'
-        ? imgbbStatus
-        : { ok: true });
+    chrome.runtime.sendMessage = async message => {
+        if (message?.type === 'PHOTO_IMGBB_STATUS') return imgbbStatus;
+        if (message?.type === 'PHOTO_IMGBB_LEASE_KEY') return { ok: true, key: 'test-imgbb-key' };
+        return runtimeHandler(message);
+    };
     chrome.permissions = {
         contains: async () => imgbbStatus.permissionGranted,
         request: async () => imgbbStatus.permissionGranted,
@@ -72,7 +84,10 @@ const loadEditor = async ({
     await evalBundle(win, 'photos/photos.js');
     // The page paints its empty library last, so this is the boot finishing —
     // in particular the IndexedDB handle the first autosave needs.
-    await waitFor(dom, () => doc.getElementById('library-empty').hidden === false);
+    await waitFor(dom, () => doc.getElementById('library-empty').hidden === false
+        || doc.getElementById('library-list').children.length > 0);
+
+    if (!pickPhoto) return { dom, win, chrome, doc, errors };
 
     // Pick a photo the way the page's file input does.
     const input = doc.getElementById('photo-file');
@@ -139,6 +154,41 @@ const loadEditor = async ({
     };
 };
 
+const readPhotoStore = (win, storeName) => new Promise((resolve, reject) => {
+    const opened = win.indexedDB.open('betterPeakbaggerPhotos', 2);
+    opened.onerror = () => reject(opened.error);
+    opened.onsuccess = () => {
+        const database = opened.result;
+        const transaction = database.transaction(storeName, 'readonly');
+        const request = transaction.objectStore(storeName).getAll();
+        transaction.oncomplete = () => {
+            database.close();
+            resolve(request.result);
+        };
+        transaction.onerror = () => reject(transaction.error);
+        transaction.onabort = () => reject(transaction.error);
+    };
+});
+
+const imgbbSuccess = {
+    data: {
+        id: 'provider-1',
+        url_viewer: 'https://ibb.co/provider-1',
+        url: 'https://i.ibb.co/a/topo.jpg',
+        display_url: 'https://i.ibb.co/a/topo.jpg',
+        width: '1600',
+        height: '1200',
+        size: 123456,
+        time: 1785213600,
+        expiration: 0,
+        thumb: { url: 'https://i.ibb.co/a/topo-thumb.jpg' },
+        medium: null,
+        delete_url: 'https://ibb.co/delete/delete-capability',
+    },
+    success: true,
+    status: 200,
+};
+
 test('a report size resizes only the stage preview and is remembered across both views', async () => {
     const page = await loadEditor({ returnToReport: true });
     const { chrome, doc, win } = page;
@@ -201,6 +251,88 @@ test('a tab-only ImgBB key keeps its one local escape hatch', async () => {
     assert.equal(doc.getElementById('credential-form').hidden, false);
     assert.equal(doc.getElementById('remove-key').hidden, true);
     assert.deepEqual(page.errors, []);
+});
+
+test('a failed report insertion keeps the real page catalog at its committed ImgBB success', async () => {
+    const messages = [];
+    const indexedDB = new IDBFactory();
+    const page = await loadEditor({
+        returnToReport: true,
+        imgbbStatus: { ok: true, configured: true, permissionGranted: true },
+        indexedDB,
+        runtimeHandler: async message => {
+            messages.push(structuredClone(message));
+            if (message?.type === 'PHOTO_INSERT_COMMIT') {
+                return {
+                    ok: false,
+                    error: { message: 'The waiting report tab is no longer available.' },
+                };
+            }
+            return { ok: true };
+        },
+        fetchImpl: async () => ({
+            ok: true,
+            status: 200,
+            text: async () => JSON.stringify(imgbbSuccess),
+        }),
+    });
+    const { doc } = page;
+    await waitFor(page.dom, () => doc.getElementById('save-status').textContent === 'Saved on this device');
+    page.click(doc.getElementById('upload-insert'));
+    await waitFor(page.dom, () => doc.getElementById('upload-insert').disabled === false
+        && /uploaded and saved in the library/i.test(page.status())).catch(error => {
+        error.message += `; status=${JSON.stringify(page.status())}`
+            + ` toast=${JSON.stringify(doc.getElementById('toast-message').textContent)}`
+            + ` errors=${JSON.stringify(page.errors)}`;
+        throw error;
+    });
+
+    const [catalog, secrets, operations] = await Promise.all([
+        readPhotoStore(page.win, 'photos'),
+        readPhotoStore(page.win, 'secrets'),
+        readPhotoStore(page.win, 'operations'),
+    ]);
+    assert.equal(messages.filter(message => message.type === 'PHOTO_INSERT_COMMIT').length, 1);
+    assert.equal(catalog.length, 1);
+    assert.equal(catalog[0].remote.state, 'uploaded');
+    assert.equal(catalog[0].remote.url, 'https://i.ibb.co/a/topo.jpg');
+    assert.ok(catalog[0].export?.sha256);
+    assert.equal(catalog[0].references.length, 0);
+    assert.deepEqual(secrets, [{
+        localId: catalog[0].localId,
+        deleteUrl: 'https://ibb.co/delete/delete-capability',
+    }]);
+    assert.equal(operations.length, 1, 'the committed journal stays available for insertion recovery');
+    assert.equal(operations[0].state, 'catalog-committed');
+    assert.match(doc.getElementById('toast-message').textContent, /waiting report tab/i);
+    assert.doesNotMatch(doc.getElementById('toast-message').textContent, /outcome unknown|cataloging failed/i);
+    assert.deepEqual(page.errors, []);
+
+    page.win.dispatchEvent(new page.win.Event('beforeunload'));
+    page.dom.window.close();
+    const recoveryMessages = [];
+    const recoveredPage = await loadEditor({
+        returnToReport: true,
+        pickPhoto: false,
+        indexedDB,
+        imgbbStatus: { ok: true, configured: true, permissionGranted: true },
+        runtimeHandler: async message => {
+            recoveryMessages.push(structuredClone(message));
+            if (message?.type === 'PHOTO_INSERT_COMMIT') {
+                return { ok: true, identity: { cid: 10, aid: 20, pid: 30 } };
+            }
+            return { ok: true };
+        },
+    });
+    const [recoveredCatalog, recoveredOperations] = await Promise.all([
+        readPhotoStore(recoveredPage.win, 'photos'),
+        readPhotoStore(recoveredPage.win, 'operations'),
+    ]);
+    assert.equal(recoveryMessages.filter(message => message.type === 'PHOTO_INSERT_COMMIT').length, 1);
+    assert.equal(recoveredCatalog[0].remote.state, 'uploaded');
+    assert.equal(recoveredCatalog[0].references.length, 1);
+    assert.equal(recoveredOperations.length, 0, 'recovery removes the journal without another upload');
+    assert.deepEqual(recoveredPage.errors, []);
 });
 
 // One drag of a slider used to push one history entry per intermediate value:

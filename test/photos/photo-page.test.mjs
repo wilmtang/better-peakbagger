@@ -31,6 +31,7 @@ test('the packaged photo page exposes the editor, library, and credential bounda
         'photos/photo-archive.js',
         'photos/imgbb-client.js',
         'photos/photo-report-size.js',
+        'photos/photo-upload-transaction.js',
         'photos-main.js',
     ]);
     assert.ok(COPY_FILES.some(([from, to]) =>
@@ -99,7 +100,7 @@ test('report sizing is contextual, synchronized, and explicit about full-resolut
     assert.ok(controls.every(control => control.hidden),
         'the choice stays out of Photo Topos unless a report is waiting');
     assert.ok(controls.every(control => /upload stays full resolution/i.test(control.textContent)));
-    assert.match(source, /ReportSize\.displayWidth\(exportMetadata\.width, reportImageWidth\)/);
+    assert.match(source, /ReportSize\.displayWidth\(inserting\.export\.width, reportImageWidth\)/);
     assert.match(source, /ReportSize\.displayWidth\(item\.export\.width, reportImageWidth\)/);
     assert.match(source, /\{ displayWidth \}/);
 });

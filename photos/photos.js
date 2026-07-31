@@ -8,6 +8,7 @@ import { photoStore as Store } from '../src/photos/photo-store.js';
 import { photoArchive as Archive } from '../src/photos/photo-archive.js';
 import { imgbbClient as ImgbbClient } from '../src/photos/imgbb-client.js';
 import { photoReportSize as ReportSize } from '../src/photos/photo-report-size.js';
+import { photoUploadTransaction as UploadTransaction } from '../src/photos/photo-upload-transaction.js';
 import { settings as Settings } from '../src/settings/settings.js';
 
 const ext = globalThis.browser || globalThis.chrome;
@@ -1034,6 +1035,7 @@ const uploadAndInsert = async () => {
     let operation = null;
     let uploadingPhoto = null;
     let providerResponse = null;
+    let committedPhoto = null;
     try {
         // Deliberately no local size check: the ceiling belongs to the ImgBB
         // account, not to this extension, and it says so in its own rejection.
@@ -1076,46 +1078,60 @@ const uploadAndInsert = async () => {
         setEditorStatus('Saving to library…');
         photo = Library.completeUpload(uploadingPhoto, exportMetadata, providerResponse.remote);
         await store.commitUpload({ photo, deleteUrl: providerResponse.deleteUrl });
+        committedPhoto = photo;
         operation = { ...operation, state: 'catalog-committed', updatedAt: new Date().toISOString() };
-        await store.putOperation(operation);
+        // The preceding response-received journal is already sufficient to
+        // reconstruct this commit, so a failed stage-label write must not stop
+        // report insertion or reclassify the provider result.
+        await store.putOperation(operation).catch(() => {});
 
+        if (RETURN_TOKEN) setEditorStatus('Inserting into report…');
+        const finished = await UploadTransaction.finishCommittedUpload({
+            store,
+            operation,
+            photo,
+            insert: ({ returnToken, photo: inserting }) => {
+                const displayWidth = ReportSize.displayWidth(inserting.export.width, reportImageWidth);
+                return send({
+                    type: 'PHOTO_INSERT_COMMIT',
+                    returnToken,
+                    localPhotoId: inserting.localId,
+                    url: inserting.remote.url,
+                    alt: inserting.alt,
+                    ...(displayWidth === null ? {} : { displayWidth }),
+                });
+            },
+        });
+        photo = finished.photo;
+        committedPhoto = photo;
         if (RETURN_TOKEN) {
-            setEditorStatus('Inserting into report…');
-            const displayWidth = ReportSize.displayWidth(exportMetadata.width, reportImageWidth);
-            const inserted = await send({
-                type: 'PHOTO_INSERT_COMMIT',
-                returnToken: RETURN_TOKEN,
-                localPhotoId: photo.localId,
-                url: photo.remote.url,
-                alt: photo.alt,
-                ...(displayWidth === null ? {} : { displayWidth }),
-            });
-            if (!inserted?.ok) {
-                throw new ImgbbClient.ImgbbError(
-                    'insert-failed',
-                    inserted?.error?.message
-                        || 'The photo was uploaded but could not be inserted into the report.',
-                );
-            }
-            photo = Library.addReference(photo, {
-                kind: inserted.identity?.aid ? 'ascent' : 'ascent-draft',
-                cid: inserted.identity?.cid ?? null,
-                aid: inserted.identity?.aid ?? null,
-                pid: inserted.identity?.pid ?? null,
-                insertedAt: new Date().toISOString(),
-            });
-            await store.putPhoto(photo);
-            await store.deleteOperation(operation.operationId);
             setEditorStatus('Uploaded and inserted. You can close this tab.');
             toast('Photo uploaded and inserted into the report. You can close this tab.');
         } else {
-            await store.deleteOperation(operation.operationId);
             setEditorStatus('Uploaded to ImgBB and saved in the library.');
             toast('Photo uploaded to ImgBB.');
         }
         notifyBackupChanged();
         await renderLibrary();
     } catch (error) {
+        if (committedPhoto) {
+            photo = committedPhoto;
+            const message = error instanceof UploadTransaction.CommittedUploadError
+                ? error.message
+                : RETURN_TOKEN
+                    ? 'The photo was uploaded and saved in the library, but report insertion is still pending. '
+                        + 'You can insert it from the photo library.'
+                    : 'The photo was uploaded and saved in the library, but local cleanup is still pending.';
+            setEditorStatus(message);
+            toast(message, {
+                action: 'Copy URL',
+                onAction: () => void navigator.clipboard.writeText(committedPhoto.remote.url),
+                duration: 0,
+            });
+            notifyBackupChanged();
+            await renderLibrary();
+            return;
+        }
         const publicFailure = ImgbbClient.publicError(error);
         if ((publicFailure.ambiguous || providerResponse) && uploadingPhoto) {
             photo = Library.markOutcomeUnknown(uploadingPhoto);
@@ -1160,17 +1176,47 @@ const recoverOperations = async () => {
                 changed = true;
             }
             if (operation.state === 'response-received') {
-                const completed = Library.completeUpload(
-                    bundle.photo,
-                    operation.export,
-                    operation.remote,
-                    operation.updatedAt,
-                );
+                const alreadyCommitted = ['uploaded', 'unreachable'].includes(bundle.photo.remote.state);
+                const completed = alreadyCommitted
+                    ? bundle.photo
+                    : Library.completeUpload(
+                        bundle.photo,
+                        operation.export,
+                        operation.remote,
+                        operation.updatedAt,
+                    );
                 if (completed) {
-                    await store.commitUpload({ photo: completed, deleteUrl: operation.deleteUrl });
-                    await store.putOperation({ ...operation, state: 'catalog-committed' });
+                    if (!alreadyCommitted) {
+                        await store.commitUpload({ photo: completed, deleteUrl: operation.deleteUrl });
+                    }
+                    operation.state = 'catalog-committed';
+                    await store.putOperation(operation).catch(() => {});
+                    bundle.photo = completed;
                     changed = true;
                 }
+            }
+            if (operation.state === 'catalog-committed'
+                && ['uploaded', 'unreachable'].includes(bundle.photo.remote.state)) {
+                await UploadTransaction.finishCommittedUpload({
+                    store,
+                    operation,
+                    photo: bundle.photo,
+                    insert: ({ returnToken, photo: inserting }) => {
+                        const displayWidth = ReportSize.displayWidth(
+                            inserting.export.width,
+                            reportImageWidth,
+                        );
+                        return send({
+                            type: 'PHOTO_INSERT_COMMIT',
+                            returnToken,
+                            localPhotoId: inserting.localId,
+                            url: inserting.remote.url,
+                            alt: inserting.alt,
+                            ...(displayWidth === null ? {} : { displayWidth }),
+                        });
+                    },
+                });
+                changed = true;
             }
         } catch {
             // Keep the journal for an explicit recovery attempt.
