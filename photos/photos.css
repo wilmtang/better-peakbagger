@@ -199,7 +199,7 @@ textarea {
   place-items: center;
   border-radius: 16px;
   background: color-mix(in srgb, var(--accent) 13%, var(--card));
-  color: var(--accent);
+  color: var(--link);
   font-size: 40px;
 }
 

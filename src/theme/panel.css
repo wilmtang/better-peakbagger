@@ -48,7 +48,7 @@
     --dark-border: #3a3f45;
     --dark-text: #e6e1d8;
     --dark-sub: #a29c92;
-    --dark-accent: #3f8a54;
+    --dark-accent: #3c8450;
     --dark-accent-fg: #ffffff;
     --dark-link: #7ac78d;
     --dark-input-bg: #2b2f34;
@@ -82,6 +82,19 @@
     --danger-border: var(--light-danger-border);
     --danger-fill: var(--light-danger-fill);
     --shadow: var(--light-shadow);
+
+    /* Summit-match confidence. These are the one Strong/Probable pair the
+       product already uses on the ascent form and the trip-report banner, so
+       they are semantic status colours rather than anything derived from the
+       accent, and they do not change when the accent does. The two injected
+       Peakbagger stylesheets keep their own copies because panel.css is not
+       loaded into a site page; change all three together. */
+    --strong: #067647;
+    --strong-bg: #ecfdf3;
+    --probable: #93370d;
+    --probable-bg: #fffaeb;
+    --strong-rule: #17b26a;
+    --probable-rule: #f79009;
 }
 
 /* No stored preference: follow the OS. The panel bootstrap normally resolves
@@ -108,6 +121,10 @@
         --danger-border: var(--dark-danger-border);
         --danger-fill: var(--dark-danger-fill);
         --shadow: var(--dark-shadow);
+        --strong: #7ac78d;
+        --strong-bg: #173322;
+        --probable: #f7c66a;
+        --probable-bg: #332a18;
     }
 }
 
@@ -133,6 +150,10 @@
     --danger-border: var(--dark-danger-border);
     --danger-fill: var(--dark-danger-fill);
     --shadow: var(--dark-shadow);
+    --strong: #7ac78d;
+    --strong-bg: #173322;
+    --probable: #f7c66a;
+    --probable-bg: #332a18;
 }
 
 :root[data-bpb-theme="light"] {
@@ -273,7 +294,10 @@ a:focus-visible,
 
 /* ---- Surfaces ----------------------------------------------------------- */
 
-.card {
+.card,
+.state-card,
+.summary,
+.peak-row {
     background: var(--card);
     border: 1px solid var(--border);
     border-radius: 12px;
@@ -330,6 +354,7 @@ a.secondary:hover,
    visible control it has, so it takes a button shape too — .quiet-file marks
    the one that is a secondary action rather than the surface's primary. */
 button.github-primary,
+button.primary,
 .primary-button,
 .file-button:not(.quiet-file) {
     display: inline-flex;
@@ -346,9 +371,11 @@ button.github-primary,
     cursor: pointer;
 }
 button.github-primary:hover,
+button.primary:hover,
 .primary-button:hover,
 .file-button:not(.quiet-file):hover { filter: brightness(1.06); }
 button.github-primary:focus-visible,
+button.primary:focus-visible,
 .primary-button:focus-visible,
 .file-button:focus-visible { outline-offset: 2px; }
 

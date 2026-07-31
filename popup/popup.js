@@ -60,7 +60,8 @@ import { units as Units } from '../src/ui/units.js';
         paragraph.textContent = detail;
         card.append(heading, paragraph);
         const actions = options.actions || (options.action ? [options.action] : []);
-        actions.forEach(action => card.append(button(action.label, action.onClick, action.primary ? 'primary' : '')));
+        actions.forEach(action => card.append(
+            button(action.label, action.onClick, action.primary ? 'primary' : 'secondary')));
         state.append(card);
     };
 

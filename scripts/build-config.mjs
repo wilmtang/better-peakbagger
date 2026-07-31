@@ -92,8 +92,9 @@ export const COPY_FILES = [
     ['PRIVACY.md', 'PRIVACY.md'],
     ['README.md', 'README.md'],
     ['manifest.json', 'manifest.json'],
-    // The panel design language, shared by every extension-owned page; each
-    // page stylesheet below is loaded after it and only adds its own layout.
+    // The panel design language, shared by every extension-owned page and the
+    // popup; each page stylesheet below is loaded after it and only adds its
+    // own layout.
     ['src/theme/panel.css', 'css/panel.css'],
     ['src/reports/report-editor.css', 'css/report-editor.css'],
     ['src/ascent/ascent-upload.css', 'css/ascent-upload.css'],

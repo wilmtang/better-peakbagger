@@ -24,7 +24,9 @@ test('popup theme bootstrap loads before the stylesheet', () => {
     const dom = new JSDOM(html);
     const resources = Array.from(dom.window.document.head.querySelectorAll('script[src], link[rel="stylesheet"]'))
         .map(node => node.getAttribute('src') || node.getAttribute('href'));
-    assert.deepEqual(resources, ['popup-head.js', 'popup.css']);
+    // The shared panel stylesheet comes first so popup rules of equal
+    // specificity win, and both come after the theme bootstrap.
+    assert.deepEqual(resources, ['popup-head.js', '../css/panel.css', 'popup.css']);
 });
 
 test('popup paints from the cached theme and reconciles the synced preference', async () => {

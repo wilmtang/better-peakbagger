@@ -1,18 +1,12 @@
-:root {
-  color-scheme: light dark;
-  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  color: #182230;
-  background: #f8fafc;
-}
+/* Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ *
+ * Better Peakbagger — the toolbar popup. The palette, type ramp, surfaces, and
+ * control shapes come from src/theme/panel.css, which every panel loads first;
+ * this file adds the popup's own 390px column and its capture-result rows.
+ */
 
-* { box-sizing: border-box; }
-
-body {
-  width: 390px;
-  min-height: 180px;
-  margin: 0;
-  background: #f8fafc;
-}
+body { width: 390px; min-height: 180px; }
 
 main { padding: 16px; }
 
@@ -25,20 +19,22 @@ main { padding: 16px; }
 
 .brand > div { min-width: 0; }
 
-h1, h2, p { margin: 0; }
-h1 { font-size: 17px; line-height: 1.2; }
+h2, p { margin: 0; }
 h2 { font-size: 14px; }
-.brand p { margin-top: 2px; color: #667085; font-size: 12px; }
+.brand p { margin-top: 2px; color: var(--sub); font-size: 12px; }
 
-.state-card, .summary {
-  border: 1px solid #d0d5dd;
-  border-radius: 10px;
-  background: #fff;
-  padding: 13px;
+/* .state-card, .summary, and .peak-row take the shared card surface; only the
+   density each one needs is set here. */
+.state-card { padding: 13px; }
+
+/* A capture that failed or is locked reads as the panel's danger state, not as
+   a second red. */
+.state-card.error, .state-card.locked {
+  color: var(--text);
+  background: var(--danger-bg);
+  border-color: var(--danger-border);
 }
 
-.state-card.error { border-color: #fda29b; background: #fef3f2; }
-.state-card.locked { border-color: #fda29b; background: #fef3f2; }
 .state-title { font-size: 14px; font-weight: 700; }
 .state-card.empty .state-title::before {
   content: "△";
@@ -48,11 +44,13 @@ h2 { font-size: 14px; }
   height: 22px;
   margin-right: 8px;
   border-radius: 7px;
-  color: #175cd3;
-  background: #eff8ff;
+  /* --link, not --accent: this glyph sits on an accent tint, where the fill
+     colour itself is too close to its own wash to read in dark. */
+  color: var(--link);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
   vertical-align: -4px;
 }
-.state-detail { margin-top: 5px; color: #475467; font-size: 12px; line-height: 1.45; }
+.state-detail { margin-top: 5px; color: var(--sub); font-size: 12px; line-height: 1.45; }
 
 .spinner {
   display: inline-block;
@@ -60,8 +58,8 @@ h2 { font-size: 14px; }
   height: 15px;
   margin-right: 7px;
   vertical-align: -2px;
-  border: 2px solid #d0d5dd;
-  border-top-color: #175cd3;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
   border-radius: 50%;
   animation: spin .8s linear infinite;
 }
@@ -72,49 +70,36 @@ h2 { font-size: 14px; }
   .spinner { animation: none; }
 }
 
-button, .button-link {
-  display: inline-flex;
-  justify-content: center;
-  align-items: center;
-  min-height: 38px;
-  margin-top: 11px;
-  border: 1px solid #d0d5dd;
-  border-radius: 8px;
-  padding: 8px 12px;
-  color: #344054;
-  background: #fff;
-  font: 600 13px/1 system-ui, sans-serif;
-  cursor: pointer;
-  text-decoration: none;
-}
+/* Every action here is a shared primary or secondary; the popup only makes them
+   a comfortable target in a small window, and gives the one action that ends
+   the task the full column. Actions offered inside a state card stay the width
+   of their label so two of them can sit together. */
+button { margin-top: 11px; min-height: 38px; font-size: 13px; font-weight: 600; }
+button.primary, button.secondary { width: 100%; }
+.state-card button.secondary { width: auto; }
+/* Only between two label-width buttons: after the full-width primary the next
+   action starts a new line, where an indent reads as a misalignment. */
+.state-card button.secondary + button.secondary { margin-left: 8px; }
 
-button.primary {
-  width: 100%;
-  border-color: #175cd3;
-  color: #fff;
-  background: #175cd3;
-}
-
-button.secondary { width: 100%; }
-
-.state-card button + button { margin-left: 8px; }
-
-button:disabled { cursor: not-allowed; opacity: .55; }
-button:focus-visible, .button-link:focus-visible { outline: 2px solid #1570ef; outline-offset: 2px; }
+/* An icon button in the header: no chrome until it is pointed at. */
 .settings-button {
   flex: 0 0 auto;
   width: 32px;
   min-height: 32px;
   margin: 0 0 0 auto;
   padding: 6px;
-  border-color: transparent;
+  border: 0;
   border-radius: 8px;
-  color: #667085;
+  color: var(--sub);
   background: transparent;
 }
-.settings-button:hover { color: #344054; background: #eaecf0; }
-.summary { margin-bottom: 13px; padding: 10px 12px; color: #475467; font-size: 12px; }
-.summary strong { color: #344054; }
+.settings-button:hover {
+  color: var(--text);
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+}
+
+.summary { margin-bottom: 13px; padding: 10px 12px; color: var(--sub); font-size: 12px; }
+.summary strong { color: var(--text); }
 
 .result-heading {
   display: flex;
@@ -123,7 +108,7 @@ button:focus-visible, .button-link:focus-visible { outline: 2px solid #1570ef; o
   margin-bottom: 8px;
 }
 
-#selection-count { color: #667085; font-size: 11px; }
+#selection-count { color: var(--sub); font-size: 11px; }
 .peak-list { display: grid; gap: 8px; max-height: 330px; overflow-y: auto; }
 
 .peak-row {
@@ -131,87 +116,26 @@ button:focus-visible, .button-link:focus-visible { outline: 2px solid #1570ef; o
   grid-template-columns: 19px 1fr auto;
   gap: 9px;
   align-items: start;
-  border: 1px solid #d0d5dd;
   border-left-width: 4px;
-  border-radius: 9px;
   padding: 10px;
-  background: #fff;
   cursor: pointer;
 }
 
-.peak-row.strong { border-left-color: #17b26a; }
-.peak-row.probable { border-left-color: #f79009; }
-.peak-row input { margin: 2px 0 0; accent-color: #175cd3; }
+/* Confidence is a status, not the accent: the same Strong and Probable pair the
+   ascent form and the trip-report banner show. */
+.peak-row.strong { border-left-color: var(--strong-rule); }
+.peak-row.probable { border-left-color: var(--probable-rule); }
+.peak-row input { margin: 2px 0 0; }
 .peak-row.selection-locked { cursor: default; }
 .peak-name { display: block; font-size: 13px; font-weight: 700; }
-.peak-evidence { display: block; margin-top: 3px; color: #667085; font-size: 11px; line-height: 1.35; }
+.peak-evidence { display: block; margin-top: 3px; color: var(--sub); font-size: 11px; line-height: 1.35; }
 .confidence { border-radius: 999px; padding: 4px 8px; font-size: 10px; font-weight: 800; white-space: nowrap; }
-.strong .confidence { color: #067647; background: #ecfdf3; }
-.probable .confidence { color: #93370d; background: #fffaeb; }
+.strong .confidence { color: var(--strong); background: var(--strong-bg); }
+.probable .confidence { color: var(--probable); background: var(--probable-bg); }
 
 .selection-lock-hint,
 .open-note,
-.privacy-note { margin: 12px 1px 0; color: #667085; font-size: 11px; line-height: 1.45; }
+.privacy-note { margin: 12px 1px 0; color: var(--sub); font-size: 11px; line-height: 1.45; }
 .selection-lock-hint + .open-note,
 .selection-lock-hint + .privacy-note,
 .open-note + .privacy-note { margin-top: 5px; }
-
-@media (prefers-color-scheme: dark) {
-  :root, body { color: #f2f4f7; background: #101828; }
-  .brand p, .state-detail, .summary, #selection-count, .peak-evidence, .selection-lock-hint, .open-note, .privacy-note { color: #98a2b3; }
-  .state-card, .summary, .peak-row { border-color: #475467; background: #1d2939; }
-  .summary strong { color: #e4e7ec; }
-  button, .button-link { border-color: #667085; color: #e4e7ec; background: #344054; }
-  .settings-button { border-color: transparent; color: #98a2b3; background: transparent; }
-  .settings-button:hover { color: #f2f4f7; background: #344054; }
-  .state-card.empty .state-title::before { color: #84adff; background: #102a56; }
-  button.primary { border-color: #1570ef; background: #1570ef; }
-  .state-card.error, .state-card.locked { border-color: #d92d20; background: #3b1515; }
-}
-
-/* The explicit panel preference wins over the OS color scheme. */
-:root[data-bpb-theme="dark"],
-:root[data-bpb-theme="dark"] body { color: #f2f4f7; background: #101828; }
-:root[data-bpb-theme="dark"] .brand p,
-:root[data-bpb-theme="dark"] .state-detail,
-:root[data-bpb-theme="dark"] .summary,
-:root[data-bpb-theme="dark"] #selection-count,
-:root[data-bpb-theme="dark"] .peak-evidence,
-:root[data-bpb-theme="dark"] .selection-lock-hint,
-:root[data-bpb-theme="dark"] .open-note,
-:root[data-bpb-theme="dark"] .privacy-note { color: #98a2b3; }
-:root[data-bpb-theme="dark"] .state-card,
-:root[data-bpb-theme="dark"] .summary,
-:root[data-bpb-theme="dark"] .peak-row { border-color: #475467; background: #1d2939; }
-:root[data-bpb-theme="dark"] .summary strong { color: #e4e7ec; }
-:root[data-bpb-theme="dark"] button,
-:root[data-bpb-theme="dark"] .button-link { border-color: #667085; color: #e4e7ec; background: #344054; }
-:root[data-bpb-theme="dark"] .settings-button { border-color: transparent; color: #98a2b3; background: transparent; }
-:root[data-bpb-theme="dark"] .settings-button:hover { color: #f2f4f7; background: #344054; }
-:root[data-bpb-theme="dark"] .state-card.empty .state-title::before { color: #84adff; background: #102a56; }
-:root[data-bpb-theme="dark"] button.primary { border-color: #1570ef; color: #fff; background: #1570ef; }
-:root[data-bpb-theme="dark"] .state-card.error,
-:root[data-bpb-theme="dark"] .state-card.locked { border-color: #d92d20; background: #3b1515; }
-
-:root[data-bpb-theme="light"],
-:root[data-bpb-theme="light"] body { color: #182230; background: #f8fafc; }
-:root[data-bpb-theme="light"] .brand p,
-:root[data-bpb-theme="light"] #selection-count,
-:root[data-bpb-theme="light"] .peak-evidence,
-:root[data-bpb-theme="light"] .selection-lock-hint,
-:root[data-bpb-theme="light"] .open-note,
-:root[data-bpb-theme="light"] .privacy-note { color: #667085; }
-:root[data-bpb-theme="light"] .state-detail,
-:root[data-bpb-theme="light"] .summary { color: #475467; }
-:root[data-bpb-theme="light"] .state-card,
-:root[data-bpb-theme="light"] .summary,
-:root[data-bpb-theme="light"] .peak-row { border-color: #d0d5dd; background: #fff; }
-:root[data-bpb-theme="light"] .summary strong { color: #344054; }
-:root[data-bpb-theme="light"] button,
-:root[data-bpb-theme="light"] .button-link { border-color: #d0d5dd; color: #344054; background: #fff; }
-:root[data-bpb-theme="light"] .settings-button { border-color: transparent; color: #667085; background: transparent; }
-:root[data-bpb-theme="light"] .settings-button:hover { color: #344054; background: #eaecf0; }
-:root[data-bpb-theme="light"] .state-card.empty .state-title::before { color: #175cd3; background: #eff8ff; }
-:root[data-bpb-theme="light"] button.primary { border-color: #175cd3; color: #fff; background: #175cd3; }
-:root[data-bpb-theme="light"] .state-card.error,
-:root[data-bpb-theme="light"] .state-card.locked { border-color: #fda29b; background: #fef3f2; }

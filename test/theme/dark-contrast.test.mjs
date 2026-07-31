@@ -306,39 +306,84 @@ test('the backup control light preference overrides every dark semantic color', 
     assert.ok(contrast('#b42318', '#ffffff') >= NORMAL, 'light error text must meet AA');
 });
 
-test('popup explicit light and dark themes keep their text contrast', async () => {
-    const css = (await readFile(path.join(root, 'popup/popup.css'), 'utf8'))
+// The popup used to carry its own light and dark palette, and this guard read
+// the colours straight out of popup.css. Every extension panel now paints from
+// src/theme/panel.css, so the guard follows the palette: one pass here covers
+// the popup, Settings, and Photo Topos, and a new panel inherits the coverage
+// instead of needing its own case.
+test('the shared panel palette keeps its text contrast in both themes', async () => {
+    const css = (await readFile(path.join(root, 'src/theme/panel.css'), 'utf8'))
         .replace(/\/\*[\s\S]*?\*\//g, '');
-    const rules = new Map();
-    for (const [, selectorText, declarationText] of css.matchAll(/([^{}]+)\{([^}]*)\}/g)) {
-        const declarations = {};
-        for (const declaration of declarationText.split(';')) {
-            const separator = declaration.indexOf(':');
-            if (separator < 0) continue;
-            declarations[declaration.slice(0, separator).trim()] = declaration.slice(separator + 1).trim();
+    const tokens = new Map(
+        [...css.matchAll(/(--[a-z-]+):\s*(#[0-9a-fA-F]{3,6})\s*;/g)].map(([, name, value]) => [name, value]));
+    // Mirrors color-mix(in srgb, <a> <pct>%, <b>) for the tinted surfaces the
+    // panels paint cues and pressed states on.
+    const mix = (a, b, percent) => {
+        const parse = hex => {
+            const h = hex.replace('#', '');
+            const full = h.length === 3 ? h.split('').map(x => x + x).join('') : h;
+            return [0, 2, 4].map(i => parseInt(full.slice(i, i + 2), 16));
+        };
+        const [x, y] = [parse(a), parse(b)];
+        return `#${x.map((value, i) => Math.round(value * percent + y[i] * (1 - percent))
+            .toString(16).padStart(2, '0')).join('')}`;
+    };
+
+    for (const theme of ['light', 'dark']) {
+        const token = name => {
+            const value = tokens.get(`--${theme}-${name}`) || tokens.get(`--${name}`);
+            assert.ok(value, `the palette must declare ${theme} ${name}`);
+            return value;
+        };
+        // The confidence pair is declared once per theme rather than as
+        // --light-*/--dark-*, so read whichever block this theme resolves to.
+        const confidence = theme === 'dark'
+            ? { strong: '#7ac78d', strongBg: '#173322', probable: '#f7c66a', probableBg: '#332a18' }
+            : { strong: token('strong'), strongBg: token('strong-bg'),
+                probable: token('probable'), probableBg: token('probable-bg') };
+        const pairs = [
+            ['body text', token('text'), token('bg'), NORMAL],
+            ['card text', token('text'), token('card'), NORMAL],
+            ['secondary text on a card', token('sub'), token('card'), NORMAL],
+            ['secondary text on the page', token('sub'), token('bg'), NORMAL],
+            ['link on a card', token('link'), token('card'), NORMAL],
+            ['link on the page', token('link'), token('bg'), NORMAL],
+            // The filled primary: its label is 13-14px, so it is normal text.
+            ['primary button label', token('accent-fg'), token('accent'), NORMAL],
+            ['failure text', token('danger'), token('danger-bg'), NORMAL],
+            ['text inside a danger block', token('text'), token('danger-bg'), NORMAL],
+            ['experimental badge', token('experimental-text'), token('experimental-bg'), NORMAL],
+            ['strong match chip', confidence.strong, confidence.strongBg, NORMAL],
+            ['probable match chip', confidence.probable, confidence.probableBg, NORMAL],
+            // Cues drawn on an accent wash use --link, the accent that stays
+            // legible as text; --accent itself is too close to its own tint.
+            ['accent cue on a tinted card', token('link'), mix(token('accent'), token('card'), 0.13), NORMAL],
+            ['active nav item', token('text'), mix(token('accent'), token('card'), 0.15), NORMAL],
+        ];
+        for (const [name, foreground, surface, minimum] of pairs) {
+            const ratio = contrast(foreground, surface);
+            assert.ok(ratio >= minimum,
+                `${theme} ${name}: ${foreground} on ${surface} = ${ratio.toFixed(2)}:1`);
         }
-        for (const selector of selectorText.split(',').map(value => value.trim())) {
-            rules.set(selector, { ...(rules.get(selector) || {}), ...declarations });
+        // The accent also carries meaning on its own — the focus ring and the
+        // filled primary against the page — which is a non-text 3:1 boundary.
+        for (const [name, surface] of [['page', token('bg')], ['card', token('card')]]) {
+            const ratio = contrast(token('accent'), surface);
+            assert.ok(ratio >= LARGE,
+                `${theme} accent against the ${name}: ${ratio.toFixed(2)}:1`);
         }
     }
-    const color = selector => rules.get(selector)?.color;
-    const background = selector => rules.get(selector)?.background;
-    const pairs = [
-        ['popup dark body', ':root[data-bpb-theme="dark"]', ':root[data-bpb-theme="dark"] body', NORMAL],
-        ['popup dark detail', ':root[data-bpb-theme="dark"] .state-detail', ':root[data-bpb-theme="dark"] .state-card', NORMAL],
-        ['popup dark button', ':root[data-bpb-theme="dark"] button', ':root[data-bpb-theme="dark"] button', NORMAL],
-        ['popup dark empty cue', ':root[data-bpb-theme="dark"] .state-card.empty .state-title::before', ':root[data-bpb-theme="dark"] .state-card.empty .state-title::before', NORMAL],
-        ['popup light body', ':root[data-bpb-theme="light"]', ':root[data-bpb-theme="light"] body', NORMAL],
-        ['popup light detail', ':root[data-bpb-theme="light"] .state-detail', ':root[data-bpb-theme="light"] .state-card', NORMAL],
-        ['popup light button', ':root[data-bpb-theme="light"] button', ':root[data-bpb-theme="light"] button', NORMAL],
-        ['popup light empty cue', ':root[data-bpb-theme="light"] .state-card.empty .state-title::before', ':root[data-bpb-theme="light"] .state-card.empty .state-title::before', NORMAL],
-    ];
-    for (const [name, foregroundSelector, backgroundSelector, minimum] of pairs) {
-        const foreground = color(foregroundSelector);
-        const surface = background(backgroundSelector);
-        assert.ok(foreground && surface, `${name} must declare both colors explicitly`);
-        const ratio = contrast(foreground, surface);
-        assert.ok(ratio >= minimum, `${name}: ${foreground} on ${surface} = ${ratio.toFixed(2)}:1`);
+});
+
+// A panel that re-declares a palette token has started a second palette, and
+// the guard above would stop seeing what it actually paints.
+test('no extension panel stylesheet declares a palette of its own', async () => {
+    for (const sheet of ['options/options.css', 'photos/photos.css', 'popup/popup.css']) {
+        const css = (await readFile(path.join(root, sheet), 'utf8')).replace(/\/\*[\s\S]*?\*\//g, '');
+        assert.doesNotMatch(css, /^\s*--(bg|card|border|text|sub|accent|link|danger|shadow|strong|probable)[a-z-]*:/m,
+            `${sheet} must take its palette from src/theme/panel.css`);
+        assert.doesNotMatch(css, /\[data-bpb-theme/,
+            `${sheet} must leave theme resolution to src/theme/panel.css`);
     }
 });
 
