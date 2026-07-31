@@ -63,6 +63,10 @@ const bundle = (localId = 'photo-1', title = 'North face topo', now = TIME) => {
     return { photo, project };
 };
 
+// onSettingsChanged fires the gate check without awaiting it (a storage
+// subscriber must not block). Drain the microtask/storage turns it needs.
+const waitForAlarms = async () => { for (let i = 0; i < 5; i++) await Promise.resolve(); };
+
 const harness = async ({ remoteText = null, seed = null } = {}) => {
     const local = makeStorageArea();
     const session = makeStorageArea();
@@ -99,13 +103,14 @@ const harness = async ({ remoteText = null, seed = null } = {}) => {
             throw new Error('coalesced writes are outside this photo-route test');
         },
     };
+    const alarmed = [];
     const ext = {
         runtime: {
             getURL: path => `chrome-extension://test-extension/${path}`,
             getManifest: () => ({ version: '3.2.0' }),
         },
         storage: { local },
-        alarms: { create() {} },
+        alarms: { create(name) { alarmed.push(name); } },
     };
     let queue = Promise.resolve();
     const readMap = async key => (await session.get(key))[key] || {};
@@ -140,6 +145,7 @@ const harness = async ({ remoteText = null, seed = null } = {}) => {
         routes,
         local,
         commits,
+        alarmed,
         createPhotoStore,
         get remoteText() { return remoteText; },
     };
@@ -245,4 +251,32 @@ test('restore previews counts then atomically imports metadata without original 
     assert.deepEqual((await store.listBackupBundles()).tombstones,
         [{ localId: 'deleted-elsewhere', deletedAt: LATER }]);
     store.close();
+});
+
+// The settings and favorites auto-backups compare a cheap signature inside
+// fire(), so nudging them on every settings write costs nothing. The photo
+// library has no such summary: deciding whether it changed means reading every
+// record out of IndexedDB and hashing the payload. Scheduling it from every
+// settings write made toggling dark mode scan the whole library.
+test('only switching the photo backup toggle on re-arms the library scan', async () => {
+    const h = await harness({ seed: bundle() });
+    const settings = enabled => ({ autoPhotoLibraryBackup: enabled });
+
+    h.routes.onSettingsChanged(settings(true));
+    await waitForAlarms();
+    assert.deepEqual(h.alarmed, ['bpb-photo-library-backup'], 'turning it on starts the first backup');
+
+    // An unrelated settings write (theme, units, any other preference) leaves
+    // the gate where it was and must not re-arm anything.
+    for (let i = 0; i < 5; i++) h.routes.onSettingsChanged(settings(true));
+    await waitForAlarms();
+    assert.deepEqual(h.alarmed, ['bpb-photo-library-backup'], 'a level, not an edge, schedules nothing');
+
+    // Off and on again is a fresh edge: the library may have drifted while the
+    // gate was down, and GITHUB_PHOTOS_CHANGED is suppressed in that state.
+    h.routes.onSettingsChanged(settings(false));
+    await waitForAlarms();
+    h.routes.onSettingsChanged(settings(true));
+    await waitForAlarms();
+    assert.deepEqual(h.alarmed, ['bpb-photo-library-backup', 'bpb-photo-library-backup']);
 });

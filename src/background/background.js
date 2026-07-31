@@ -428,7 +428,13 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
                     'not-owner': 'This activity was recorded by another account, so it cannot be captured.',
                     'ownership-unverified': 'Ownership could not be verified from this activity page. Nothing was captured.',
                     'provider-export-timeout': 'The activity provider took too long to export this GPX. Try again.',
-                    'provider-export-failed': 'The activity provider could not export this GPX. Reload the activity and try again.'
+                    'provider-export-failed': 'The activity provider could not export this GPX. Reload the activity and try again.',
+                    // cancelCapture deletes the job before it aborts the page
+                    // fetch, so this normally lands on an already-removed job
+                    // and is never shown. It is mapped anyway: an unmapped code
+                    // would surface a cancellation the user asked for as an
+                    // unexplained failure.
+                    'provider-export-cancelled': 'Capture was cancelled. Nothing was captured.'
                 };
                 await failCaptureJob(
                     tabId,

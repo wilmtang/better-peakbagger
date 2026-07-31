@@ -21,6 +21,7 @@ const FAVORITES_BACKUP_ALARM = 'bpb-favorites-backup';
 const FAVORITES_BACKUP_STATE_KEY = 'bpbFavoritesBackupState';
 const PHOTO_BACKUP_ALARM = 'bpb-photo-library-backup';
 const PHOTO_BACKUP_STATE_KEY = 'bpbPhotoLibraryBackupState';
+const PHOTO_BACKUP_GATE_KEY = 'bpbPhotoLibraryBackupGate';
 const AUTO_BACKUP_DELAY_MINUTES = 1;
 const AUTO_BACKUP_RETRY_MINUTES = 10;
 const AUTO_BACKUP_MAX_RETRIES = 2;
@@ -397,9 +398,13 @@ export function createGithubRoutes({
         const record = intents[String(ascentId)];
         return isFresh(record) ? record : null;
     };
+    // One read for the whole batch. This runs twice per profile push (once as a
+    // preflight, once inside the write queue), so a per-id read meant twenty
+    // storage round trips to answer one question about ten ascents.
     const deletionBlocksBackup = async ascentIds => {
+        const intents = await readMap(ASCENT_DELETE_INTENTS_KEY);
         for (const ascentId of ascentIds) {
-            if (await deletionRecord(ascentId)) return ascentId;
+            if (isFresh(intents[String(ascentId)])) return ascentId;
         }
         return null;
     };
@@ -1048,18 +1053,31 @@ export function createGithubRoutes({
         };
     });
 
+    // Every record carries the same backup stamp, so rewriting one whose stamp
+    // already matches is a pure cost — and this runs on every backup, including
+    // the failure path. Only the records that would actually change are put.
+    const sameBackupStamp = (photo, next) => {
+        const current = photo && photo.backup;
+        return !!current
+            && current.state === next.state
+            && (current.signature ?? null) === next.signature
+            && (current.commitUrl ?? null) === next.commitUrl
+            // backedUpAt is a timestamp; matching presence is what matters.
+            && (current.backedUpAt == null) === (next.backedUpAt == null);
+    };
+
     const markPhotoCatalogBackup = async ({ state, signature = null, commitUrl = null }) => {
         await withPhotoStore(async store => {
             const photos = await store.listPhotos({ includeDeleted: true });
-            await Promise.all(photos.map(photo => store.putPhoto(Library.cleanPhoto({
-                ...photo,
-                backup: {
-                    state,
-                    signature,
-                    backedUpAt: ['current', 'restored'].includes(state) ? photoTimestamp() : null,
-                    commitUrl,
-                },
-            }))));
+            const backup = {
+                state,
+                signature,
+                backedUpAt: ['current', 'restored'].includes(state) ? photoTimestamp() : null,
+                commitUrl,
+            };
+            await Promise.all(photos
+                .filter(photo => !sameBackupStamp(photo, backup))
+                .map(photo => store.putPhoto(Library.cleanPhoto({ ...photo, backup }))));
         });
     };
 
@@ -1308,6 +1326,24 @@ export function createGithubRoutes({
         return { ok: true };
     };
 
+    // The last gate value this worker acted on, persisted so an MV3 teardown
+    // between the toggle and the next settings write cannot turn a rising edge
+    // into a level and re-arm the scan on every subsequent write.
+    const schedulePhotoBackupOnEnable = async enabled => {
+        let previous = null;
+        try {
+            previous = (await ext.storage.local.get(PHOTO_BACKUP_GATE_KEY))[PHOTO_BACKUP_GATE_KEY] ?? null;
+        } catch {
+            // An unreadable gate record is treated as "not seen yet": a
+            // redundant first scan is better than a backup that never starts.
+        }
+        if (previous === enabled) return;
+        await ext.storage.local.set({ [PHOTO_BACKUP_GATE_KEY]: enabled });
+        if (enabled && ext.alarms) {
+            ext.alarms.create(PHOTO_BACKUP_ALARM, { delayInMinutes: AUTO_BACKUP_DELAY_MINUTES });
+        }
+    };
+
     const firePhotoAutoBackup = async () => {
         if (!(await Settings.get()).autoPhotoLibraryBackup) return;
         const result = await backupPhotoLibrary({ automatic: true });
@@ -1388,9 +1424,15 @@ export function createGithubRoutes({
     const onSettingsChanged = settings => {
         if (settings.autoSettingsBackup) settingsAutoBackup.schedule();
         if (settings.autoFavoritesBackup) favoritesAutoBackup.schedule();
-        if (settings.autoPhotoLibraryBackup && ext.alarms) {
-            ext.alarms.create(PHOTO_BACKUP_ALARM, { delayInMinutes: AUTO_BACKUP_DELAY_MINUTES });
-        }
+        // Settings and favorites are free to nudge on every settings write:
+        // fire() compares a cheap in-memory signature and returns. The photo
+        // library has no such summary — deciding whether it changed means
+        // reading every record out of IndexedDB and hashing the payload — so
+        // nudging it here made an unrelated write like toggling dark mode scan
+        // the whole library. The library announces its own changes through
+        // GITHUB_PHOTOS_CHANGED; a settings write only has to catch the one
+        // case that announcement cannot, which is the toggle being switched on.
+        void schedulePhotoBackupOnEnable(settings.autoPhotoLibraryBackup === true);
     };
 
     const onAlarm = name => {
