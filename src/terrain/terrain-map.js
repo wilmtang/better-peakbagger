@@ -56,14 +56,33 @@ import { terrainCamera } from './terrain-camera.js';
         pendingInit = null;
     };
 
+    // The frame's own origin, resolved from the packaged URL this bridge is
+    // about to load into it. The init/resume payloads carry the ascent's route
+    // coordinates, so this is the one message in the extension that must not be
+    // broadcast: '*' would hand the track to whatever document happened to
+    // occupy the frame. The frame pins its reply origin the same way.
+    const frameOrigin = () => {
+        try { return new URL(globalThis.chrome.runtime.getURL('terrain/terrain.html')).origin; }
+        catch { return null; }
+    };
+
     const postToFrame = (type, detail = {}) => {
-        if (!frame || !frame.contentWindow) return;
-        frame.contentWindow.postMessage({
-            [FRAME_MESSAGE_TAG]: true,
-            dir: 'toFrame',
-            type,
-            ...detail
-        }, '*');
+        const target = frameOrigin();
+        if (!frame || !frame.contentWindow || !target) return;
+        try {
+            frame.contentWindow.postMessage({
+                [FRAME_MESSAGE_TAG]: true,
+                dir: 'toFrame',
+                type,
+                ...detail
+            }, target);
+        } catch (error) {
+            // A frame that will not accept the message is a frame there is
+            // nothing more to say to. Never let a failed notification abort the
+            // caller — 'destroy' is followed by the teardown that actually
+            // removes the iframe, and that must happen either way.
+            console.warn('Better Peakbagger: 3D terrain frame message failed', error);
+        }
     };
 
     const fail = reason => {

@@ -1894,6 +1894,11 @@ import { terrainTiles as TerrainTiles } from './terrain-tiles.js';
 
     // The iframe load event can fire before this listener is installed in
     // Chromium. Tell the bridge when it is safe to deliver the initial route.
+    //
+    // '*' is correct here and only here: the frame has not yet been told who
+    // its parent is, and this message is a bare wake-up with no payload to
+    // disclose. Every later post goes to the parentOrigin recorded above, and
+    // the bridge likewise addresses this frame by its exact extension origin.
     window.parent.postMessage({
         [FRAME_MESSAGE_TAG]: true,
         dir: 'toParent',
