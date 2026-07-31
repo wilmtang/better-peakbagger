@@ -104,15 +104,25 @@ test('settings are grouped by the surface they affect', async () => {
     assert.equal(general.querySelector('#enable-report-editor'), null);
     assert.equal(general.querySelector('#add-report-credit'), null);
 
-    // Activity creation → GPX capture / Trip report editor
+    // Activity creation → GPX capture / TR editor
+    assert.deepEqual(
+        [...capture.querySelectorAll('.subsection-title')].map(heading => heading.textContent),
+        ['GPX capture', 'TR editor', 'TR photos', 'TR drafts'],
+    );
+    assert.deepEqual(
+        [...dom.window.document.querySelectorAll('.side-nav a.nav-subitem[href^="#capture-"],'
+            + ' .side-nav a.nav-subitem[href="#drafts"]')].map(link => link.textContent),
+        ['GPX capture', 'TR editor', 'TR photos', 'TR drafts'],
+    );
+    assert.equal(capture.querySelector('#capture-report .title').textContent, 'TR editor');
     for (const id of ['retain-waypoints', 'fill-ascent-details', 'fill-trip-info', 'fill-wilderness-nights', 'fill-external-url']) {
         assert.ok(capture.querySelector(`#capture-gpx #${id}`), `${id} should belong to GPX capture`);
     }
     for (const id of ['enable-report-editor', 'add-report-credit']) {
-        assert.ok(capture.querySelector(`#capture-report #${id}`), `${id} should belong to Trip report editor`);
+        assert.ok(capture.querySelector(`#capture-report #${id}`), `${id} should belong to TR editor`);
     }
     assert.ok(capture.querySelector('#capture-photos #imgbb-key'),
-        'the ImgBB key should belong to Trip report photos');
+        'the ImgBB key should belong to TR photos');
     // Map & GPX chart → GPX chart / Map
     for (const id of ['units', 'chart-series']) {
         assert.ok(mapChart.querySelector(`#map-chart-chart #${id}`), `${id} should belong to GPX chart`);

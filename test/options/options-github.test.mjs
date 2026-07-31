@@ -709,7 +709,7 @@ test('a drafts deep link activates the TR-drafts manager', async () => {
     const active = activeLinks(dom);
     assert.equal(active.length, 1);
     assert.equal(active[0].getAttribute('href'), '#drafts');
-    assert.equal(active[0].textContent, 'Trip report drafts');
+    assert.equal(active[0].textContent, 'TR drafts');
     // The manager moved under Activity creation; the worker's #drafts URL and
     // this landing must survive that, and the parent gets the accent.
     assert.ok(active[0].classList.contains('nav-subitem'));
