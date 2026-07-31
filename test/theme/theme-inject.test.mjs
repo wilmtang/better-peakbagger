@@ -16,8 +16,10 @@ import { JSDOM } from 'jsdom';
 import { makeChromeStub, evalBundle } from '../helpers/load-page.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+const earlyThemeBundle = await readFile(path.join(root, 'dist', 'content', 'theme-early.js'), 'utf8');
 const themeBundle = await readFile(path.join(root, 'dist', 'content', 'theme.js'), 'utf8');
 const STYLE_ID = 'bpb-site-dark';
+const FALLBACK_STYLE_ID = 'bpb-site-dark-fallback';
 
 // Load the bundled site-wide theme entry into a fresh jsdom with the given
 // stored settings.
@@ -28,6 +30,7 @@ const loadTheme = async (settings = {}) => {
     });
     dom.chrome = makeChromeStub({ bpbSettings: settings });
     dom.window.chrome = dom.chrome;
+    await evalBundle(dom.window, 'content/theme-early.js');
     await evalBundle(dom.window, 'content/theme.js');
     // Let S.get().then(apply) reconcile.
     await new Promise(r => dom.window.setTimeout(r, 20));
@@ -37,11 +40,35 @@ const loadTheme = async (settings = {}) => {
 const attr = dom => dom.window.document.documentElement.getAttribute('data-bpb-theme');
 const sheet = dom => dom.window.document.getElementById(STYLE_ID);
 
+test('the first theme bundle is a small synchronous dark fallback', async () => {
+    assert.ok(Buffer.byteLength(earlyThemeBundle) < 4096,
+        `the early theme grew beyond its bootstrap role (${Buffer.byteLength(earlyThemeBundle)} bytes)`);
+
+    const dom = new JSDOM('<!DOCTYPE html><html><head></head><body></body></html>', {
+        url: 'https://www.peakbagger.com/',
+        runScripts: 'outside-only'
+    });
+    dom.window.localStorage.setItem('bpbThemePref', 'dark');
+    await evalBundle(dom.window, 'content/theme-early.js');
+
+    assert.equal(attr(dom), 'dark');
+    assert.ok(dom.window.document.getElementById(FALLBACK_STYLE_ID));
+    assert.equal(
+        dom.window.getComputedStyle(dom.window.document.documentElement).backgroundColor,
+        'rgb(24, 26, 27)',
+        'the fallback must paint a dark canvas before the full bundle runs'
+    );
+    assert.equal(sheet(dom), null, 'the complete site sheet belongs to the second bundle');
+    dom.window.close();
+});
+
 test('theme=dark sets the attribute AND injects the dark stylesheet', async () => {
     const dom = await loadTheme({ theme: 'dark' });
     assert.equal(attr(dom), 'dark');
     assert.ok(sheet(dom), 'the dark <style> must be present when the theme is dark');
     assert.ok(sheet(dom).textContent.includes('data-bpb-theme="dark"'));
+    assert.equal(dom.window.document.getElementById(FALLBACK_STYLE_ID), null,
+        'the broad fallback must leave after the complete theme is ready');
 });
 
 test('the sheet self-heals: a later apply() re-injects it if it went missing', async () => {
@@ -86,6 +113,7 @@ test('the bundled theme initializes in a Firefox-like isolated-world context', a
         URL,
         console
     });
+    vm.runInContext(earlyThemeBundle, isolatedWorld, { filename: 'content/theme-early.js' });
     vm.runInContext(themeBundle, isolatedWorld, { filename: 'content/theme.js' });
     await new Promise(resolve => setTimeout(resolve, 20));
 

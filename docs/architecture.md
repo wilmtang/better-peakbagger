@@ -1303,11 +1303,14 @@ The original implementation records are archived in
 
 ## Deep dive: site-wide theme startup
 
-Dark mode requires both the stylesheet and `data-bpb-theme="dark"` on `<html>`
-before first paint. `src/theme/theme.js` therefore imports the dark CSS text and
-injects it synchronously at `document_start`, then reads a small page-local
-mirror of the `system`/`light`/`dark` preference and applies the attribute in
-the same tick.
+Dark mode requires dark pixels before first paint, then the complete stylesheet
+and `data-bpb-theme="dark"` on `<html>` for the final page. A tiny
+`content/theme-early.js` bundle runs first at `document_start`: it reads the
+page-local `system`/`light`/`dark` mirror and paints a temporary neutral-dark
+fallback without importing the settings schema or storage adapter. The full
+`content/theme.js` bundle then injects the reviewed site stylesheet, starts the
+dynamic inline foreground/background color watcher, reasserts the marker, and
+removes the fallback.
 
 `chrome.storage.sync` remains authoritative. Its asynchronous initial read and
 change subscription reconcile the mirror and update open pages. Every apply
@@ -1315,7 +1318,11 @@ reasserts the sheet before the attribute, making the stylesheet-before-theme
 invariant idempotent if a node was removed or an unpacked extension reloaded.
 Blocked page storage degrades to the asynchronous path.
 
-The focused rationale, first-visit compromises, and lockstep invariant are in
+The inline transformer preserves source declarations in extension-owned custom
+properties, watches later DOM/style mutations, and excludes the light
+photographic header plus extension-owned components. It is intentionally not a
+general CSS/image/SVG dark-mode engine. The focused rationale, Dark Reader
+comparison, first-visit compromises, and lockstep invariant are in
 [dark-mode-flash.md](dark-mode-flash.md).
 
 ## Deep dive: storage and lifecycle

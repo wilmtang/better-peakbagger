@@ -81,6 +81,7 @@
         "https://*.peakbagger.com/*"
       ],
       "js": [
+        "content/theme-early.js",
         "content/theme.js"
       ],
       "run_at": "document_start",

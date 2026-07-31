@@ -951,9 +951,65 @@ try {
                 }),
             ]);
         });
+        const climberPageUrl = `https://www.peakbagger.com:${port}/climber/climber.aspx?cid=900002`;
+        // The first visit writes the authoritative dark preference into the
+        // page-local mirror. Probe the next navigation from document creation:
+        // this is the cache-served/refresh path where Brave exposed a white
+        // first frame even though the final DOM looked correct. Use a dedicated
+        // page so the reload does not contaminate the Buddy-action fixture's
+        // one-load/one-refresh contract below.
+        const startupPage = await context.newPage();
+        await startupPage.setViewportSize({ width: 536, height: 500 });
+        await startupPage.goto(climberPageUrl, { waitUntil: 'load' });
+        await startupPage.waitForFunction(() =>
+            document.documentElement.getAttribute('data-bpb-theme') === 'dark'
+                && localStorage.getItem('bpbThemePref') === 'dark',
+        null, { timeout: 5000 });
+        await startupPage.addInitScript(() => {
+            const probe = {
+                addedStyles: [],
+                firstFrame: null,
+            };
+            window.__bpbThemeStartupProbe = probe;
+            const observer = new MutationObserver(mutations => {
+                for (const mutation of mutations) {
+                    for (const node of mutation.addedNodes) {
+                        if (node instanceof HTMLStyleElement && node.id) {
+                            probe.addedStyles.push(node.id);
+                        }
+                    }
+                }
+            });
+            observer.observe(document, { childList: true, subtree: true });
+            const recordFirstFrame = () => {
+                const root = document.documentElement;
+                if (!root) {
+                    requestAnimationFrame(recordFirstFrame);
+                    return;
+                }
+                probe.firstFrame = {
+                    theme: root.getAttribute('data-bpb-theme'),
+                    background: getComputedStyle(root).backgroundColor,
+                };
+                observer.disconnect();
+            };
+            requestAnimationFrame(recordFirstFrame);
+        });
+        await startupPage.reload({ waitUntil: 'load' });
+        const startupProbe = await startupPage.waitForFunction(() =>
+            window.__bpbThemeStartupProbe?.firstFrame ? window.__bpbThemeStartupProbe : false,
+        null, { timeout: 5000 }).then(handle => handle.jsonValue()).catch(() => null);
+        const fallbackIndex = startupProbe?.addedStyles?.indexOf('bpb-site-dark-fallback') ?? -1;
+        const fullThemeIndex = startupProbe?.addedStyles?.indexOf('bpb-site-dark') ?? -1;
+        check(startupProbe?.firstFrame?.theme === 'dark'
+            && startupProbe.firstFrame.background === 'rgb(24, 26, 27)'
+            && fallbackIndex >= 0
+            && fullThemeIndex > fallbackIndex,
+        `the dark bootstrap did not own the first refresh frame: ${JSON.stringify(startupProbe)}`);
+        await startupPage.close();
+
         const climberPage = await context.newPage();
         await climberPage.setViewportSize({ width: 536, height: 500 });
-        const climberPageUrl = `https://www.peakbagger.com:${port}/climber/climber.aspx?cid=900002`;
         await climberPage.goto(climberPageUrl, { waitUntil: 'load' });
         await climberPage.locator('#bpb-climber-favorite').waitFor({ state: 'visible', timeout: 5000 });
         const favoriteToggle = await climberPage.evaluate(() => {
@@ -962,6 +1018,26 @@ try {
             const button = document.getElementById('bpb-climber-favorite');
             const headingRect = heading.getBoundingClientRect();
             const buttonRect = button.getBoundingClientRect();
+            const caption = [...document.querySelectorAll('span')]
+                .find(element => element.textContent.trim() === '(Updated every 24 hours)');
+            const captionColor = caption ? getComputedStyle(caption).color : '';
+            const captionSurface = caption?.closest('table.gray');
+            const captionBackground = captionSurface ? getComputedStyle(captionSurface).backgroundColor : '';
+            const parseRgb = value => (value.match(/\d+(?:\.\d+)?/g) || []).slice(0, 3).map(Number);
+            const luminance = value => {
+                const [r, g, b] = parseRgb(value).map(channel => {
+                    const normalized = channel / 255;
+                    return normalized <= 0.04045
+                        ? normalized / 12.92
+                        : Math.pow((normalized + 0.055) / 1.055, 2.4);
+                });
+                return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+            };
+            const contrast = captionColor && captionBackground
+                ? (Math.max(luminance(captionColor), luminance(captionBackground)) + 0.05)
+                    / (Math.min(luminance(captionColor), luminance(captionBackground)) + 0.05)
+                : 0;
+            const headerLink = document.querySelector('.mainbanner a');
             return {
                 text: button.textContent,
                 label: button.getAttribute('aria-label'),
@@ -973,6 +1049,18 @@ try {
                 followsHeading: buttonRect.left >= headingRect.right - 1,
                 verticallyAligned: buttonRect.top < headingRect.bottom && buttonRect.bottom > headingRect.top,
                 theme: document.documentElement.getAttribute('data-bpb-theme'),
+                caption: caption ? {
+                    source: caption.style.color,
+                    computed: captionColor,
+                    mapped: caption.style.getPropertyValue('--bpb-dark-inline-color'),
+                    marked: caption.hasAttribute('data-bpb-dark-inline-color'),
+                    background: captionBackground,
+                    contrast,
+                } : null,
+                header: headerLink ? {
+                    computed: getComputedStyle(headerLink).color,
+                    marked: headerLink.hasAttribute('data-bpb-dark-inline-color'),
+                } : null,
             };
         });
         check(favoriteToggle?.text === '☆'
@@ -984,8 +1072,15 @@ try {
             && favoriteToggle?.buttonWidth === 30
             && favoriteToggle?.followsHeading
             && favoriteToggle?.verticallyAligned
-            && favoriteToggle?.theme === 'dark',
-        `the climber favorite toggle was not compact and inline with the title: ${JSON.stringify(favoriteToggle)}`);
+            && favoriteToggle?.theme === 'dark'
+            && favoriteToggle?.caption?.source === 'black'
+            && favoriteToggle.caption.computed !== 'rgb(0, 0, 0)'
+            && favoriteToggle.caption.mapped === favoriteToggle.caption.computed
+            && favoriteToggle.caption.marked === true
+            && favoriteToggle.caption.contrast >= 4.5
+            && favoriteToggle?.header?.computed === 'rgb(0, 0, 0)'
+            && favoriteToggle.header.marked === false,
+        `the climber dark theme or favorite toggle regressed: ${JSON.stringify(favoriteToggle)}`);
         await climberPage.locator('#BuddyButton').hover();
         const nativeBuddyHover = await climberPage.waitForFunction(() => {
             const element = document.getElementById('BuddyButton');

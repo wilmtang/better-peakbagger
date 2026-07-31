@@ -69,6 +69,23 @@ test('extension panels share one pre-paint theme bootstrap', () => {
     assert.deepEqual(bundleSources('popup/popup.js'), ['capture/capture-phases.js', 'settings/settings-schema.js', 'settings/settings.js', 'ui/units.js', 'popup-main.js']);
 });
 
+test('the site theme runs its tiny fallback before the full dynamic bundle', () => {
+    const themeEntry = contentEntry('content/theme.js');
+    assert.ok(themeEntry);
+    assert.equal(themeEntry.run_at, 'document_start');
+    assert.deepEqual(themeEntry.js, ['content/theme-early.js', 'content/theme.js']);
+    assert.deepEqual(bundleSources('content/theme-early.js'),
+        ['theme/theme-resolve.js', 'theme/theme-bootstrap.js', 'theme/theme-early.js']);
+    assert.deepEqual(bundleSources('content/theme.js'), [
+        'settings/settings-schema.js',
+        'settings/settings.js',
+        'theme/theme-bootstrap.js',
+        'theme/dynamic-inline-colors.js',
+        'theme/site-dark-css.js',
+        'theme/theme.js',
+    ]);
+});
+
 test('the Buddy refresh helper is a fixed first-party navigation', async () => {
     assert.ok(COPY_FILES.some(([source, target]) =>
         source === 'options/buddy-refresh.html' && target === 'options/buddy-refresh.html'));

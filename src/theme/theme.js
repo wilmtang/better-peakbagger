@@ -23,13 +23,15 @@
 // See docs/dark-mode-flash.md.
 
 import { settings as S } from '../settings/settings.js';
+import { createDynamicInlineColorApplier } from './dynamic-inline-colors.js';
 import { darkCss } from './site-dark-css.js';
+import {
+    EARLY_THEME_STYLE_ID,
+    THEME_CACHE_KEY,
+    readThemeMirror,
+} from './theme-bootstrap.js';
 
     const root = document.documentElement;
-
-    // Mirrors the theme preference ('system' | 'light' | 'dark') so the next
-    // page load can apply it synchronously, before chrome.storage answers.
-    const CACHE_KEY = 'bpbThemePref';
 
     // Inject the dark stylesheet once, as early as possible, straight into
     // <html>. It stays inert until data-bpb-theme="dark" is set (below, and on
@@ -50,18 +52,26 @@ import { darkCss } from './site-dark-css.js';
     };
     ensureSheet();
 
+    const inlineColors = createDynamicInlineColorApplier({ document });
+    const finishTheme = theme => {
+        ensureSheet();
+        root.setAttribute('data-bpb-theme', theme);
+        inlineColors.setTheme(theme);
+        // The complete sheet and watcher now own the page. Remove the broad
+        // bootstrap only after both are ready so no light frame can land
+        // between the early and full stages.
+        document.getElementById(EARLY_THEME_STYLE_ID)?.remove();
+    };
+
     let pref = 'system';
     const apply = () => {
-        ensureSheet();
-        root.setAttribute('data-bpb-theme', S.resolveTheme(pref));
-        try { localStorage.setItem(CACHE_KEY, pref); } catch (e) { /* storage blocked */ }
+        finishTheme(S.resolveTheme(pref));
+        try { localStorage.setItem(THEME_CACHE_KEY, pref); } catch (e) { /* storage blocked */ }
     };
 
     // Synchronous pre-paint pass from the mirror; resolveTheme falls back to
     // the OS preference for anything that isn't an explicit 'light'/'dark'.
-    let cached = null;
-    try { cached = localStorage.getItem(CACHE_KEY); } catch (e) { /* storage blocked */ }
-    root.setAttribute('data-bpb-theme', S.resolveTheme(cached));
+    finishTheme(S.resolveTheme(readThemeMirror(localStorage)));
 
     S.get().then(s => { pref = s.theme; apply(); });
     S.subscribe(s => { pref = s.theme; apply(); });

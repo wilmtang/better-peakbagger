@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- **Make site dark mode dynamic and own the first frame.** Peakbagger's literal
+  inline text/background colors now remap by hue and lightness instead of
+  relying on a growing list of named-color selectors, so black captions such as
+  **(Updated every 24 hours)** stay readable while the light photographic
+  header remains intentionally dark. A tiny first content-script bundle paints
+  a temporary neutral-dark fallback before the full settings/theme bundle is
+  parsed, then hands off only after the complete sheet and mutation watcher are
+  ready—matching the startup stage the earlier Dark Reader investigation had
+  missed.
+
 - **Create and reuse photo topos from the report editor.** One **Upload a
   photo…** action opens an extension-owned editor: draw routes, curves, bolts,
   anchors, pitons, rappel stations, belays, pitch markers, and labels, set each
