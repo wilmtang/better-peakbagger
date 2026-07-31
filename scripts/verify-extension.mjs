@@ -384,6 +384,130 @@ try {
             photoErrors,
         })}`);
 
+        // Seed enough clean catalog rows to cross the page boundary without
+        // repeating the expensive image-decode/editor path 48 times. This is
+        // still the real extension origin, IndexedDB implementation, page
+        // bundle, and CSS; the scale suite separately pins catalog timing and
+        // transaction counts in a deterministic harness.
+        await photoPage.evaluate(async () => {
+            const database = await new Promise((resolve, reject) => {
+                const request = indexedDB.open('betterPeakbaggerPhotos');
+                request.onsuccess = () => resolve(request.result);
+                request.onerror = () => reject(request.error);
+            });
+            const [photo, thumbnail] = await new Promise((resolve, reject) => {
+                const transaction = database.transaction(['photos', 'thumbnails']);
+                const photoRequest = transaction.objectStore('photos').getAll();
+                const thumbnailRequest = transaction.objectStore('thumbnails').getAll();
+                transaction.oncomplete = () =>
+                    resolve([photoRequest.result[0], thumbnailRequest.result[0]]);
+                transaction.onerror = () => reject(transaction.error);
+                transaction.onabort = () => reject(transaction.error);
+            });
+            await new Promise((resolve, reject) => {
+                const transaction = database.transaction(['photos', 'thumbnails'], 'readwrite');
+                for (let index = 1; index <= 48; index += 1) {
+                    const localId = `browser-library-page-${String(index).padStart(2, '0')}`;
+                    const timestamp = new Date(Date.UTC(2026, 0, 1, 0, 0, index)).toISOString();
+                    transaction.objectStore('photos').put({
+                        ...structuredClone(photo),
+                        localId,
+                        title: `Browser library page ${String(index).padStart(2, '0')}`,
+                        createdAt: timestamp,
+                        updatedAt: timestamp,
+                        assets: {
+                            originalRetained: false,
+                            projectRetained: false,
+                            thumbnailRetained: true,
+                        },
+                    });
+                    transaction.objectStore('thumbnails').put({
+                        localId,
+                        blob: thumbnail.blob,
+                    });
+                }
+                transaction.oncomplete = resolve;
+                transaction.onerror = () => reject(transaction.error);
+                transaction.onabort = () => reject(transaction.error);
+            });
+            database.close();
+        });
+        await photoPage.reload();
+        const pagedLibraryState = await photoPage.waitForFunction(() => {
+            const cards = document.querySelectorAll('#library-list .photo-card');
+            const pagination = document.getElementById('library-pagination');
+            if (cards.length !== 48 || pagination?.hidden) return false;
+            const pageStatus = document.getElementById('library-page-status')?.textContent || '';
+            const paginationRect = pagination.getBoundingClientRect();
+            return {
+                cards: cards.length,
+                pageStatus,
+                previousDisabled: document.getElementById('library-previous')?.disabled,
+                nextDisabled: document.getElementById('library-next')?.disabled,
+                paginationWidth: paginationRect.width,
+                viewportWidth: document.documentElement.clientWidth,
+                horizontalOverflow:
+                    document.documentElement.scrollWidth > document.documentElement.clientWidth,
+            };
+        }, null, { timeout: 5000 }).then(handle => handle.jsonValue()).catch(() => null);
+        check(pagedLibraryState?.cards === 48
+            && pagedLibraryState.pageStatus === 'Page 1 of 2 · 49 photos'
+            && pagedLibraryState.previousDisabled === true
+            && pagedLibraryState.nextDisabled === false
+            && pagedLibraryState.paginationWidth <= pagedLibraryState.viewportWidth
+            && !pagedLibraryState.horizontalOverflow,
+        `the packaged photo library did not render its first bounded page: ${JSON.stringify({
+            pagedLibraryState,
+            photoErrors,
+        })}`);
+        if (process.env.BPB_VERIFY_PHOTO_LIBRARY_SCREENSHOT) {
+            await photoPage.locator('#library-pagination').screenshot({
+                path: process.env.BPB_VERIFY_PHOTO_LIBRARY_SCREENSHOT,
+            });
+        }
+
+        await photoPage.setViewportSize({ width: 520, height: 800 });
+        const narrowLibraryState = await photoPage.evaluate(() => {
+            const pagination = document.getElementById('library-pagination');
+            const bounds = pagination.getBoundingClientRect();
+            return {
+                cards: document.querySelectorAll('#library-list .photo-card').length,
+                pageStatus: document.getElementById('library-page-status')?.textContent,
+                paginationLeft: bounds.left,
+                paginationRight: bounds.right,
+                viewportWidth: document.documentElement.clientWidth,
+                horizontalOverflow:
+                    document.documentElement.scrollWidth > document.documentElement.clientWidth,
+            };
+        });
+        check(narrowLibraryState.cards === 48
+            && narrowLibraryState.pageStatus === 'Page 1 of 2 · 49 photos'
+            && narrowLibraryState.paginationLeft >= 0
+            && narrowLibraryState.paginationRight <= narrowLibraryState.viewportWidth
+            && !narrowLibraryState.horizontalOverflow,
+        `the narrow paged photo library overflowed: ${JSON.stringify(narrowLibraryState)}`);
+        if (process.env.BPB_VERIFY_PHOTO_LIBRARY_NARROW_SCREENSHOT) {
+            await photoPage.locator('#library-pagination').screenshot({
+                path: process.env.BPB_VERIFY_PHOTO_LIBRARY_NARROW_SCREENSHOT,
+            });
+        }
+        await photoPage.locator('#library-next').click();
+        const secondPageState = await photoPage.waitForFunction(() => {
+            const pageStatus = document.getElementById('library-page-status')?.textContent || '';
+            if (pageStatus !== 'Page 2 of 2 · 49 photos') return false;
+            return {
+                cards: document.querySelectorAll('#library-list .photo-card').length,
+                previousDisabled: document.getElementById('library-previous')?.disabled,
+                nextDisabled: document.getElementById('library-next')?.disabled,
+            };
+        }, null, { timeout: 5000 }).then(handle => handle.jsonValue()).catch(() => null);
+        check(secondPageState?.cards === 1
+            && secondPageState.previousDisabled === false
+            && secondPageState.nextDisabled === true,
+        `the packaged photo library did not navigate to its final page: ${
+            JSON.stringify(secondPageState)}`);
+        if (originalPhotoViewport) await photoPage.setViewportSize(originalPhotoViewport);
+
         // A report return context adds presentation controls to both Library
         // and Editor. The token need not be worker-valid until an insertion is
         // attempted; keeping this fixture read-only lets the packaged page and
@@ -2723,6 +2847,7 @@ console.log('  - sync/local/session storage, storage.onChanged, options persiste
 console.log('  - the extension-owned photo library states its metadata-only GitHub boundary, and the topo editor');
 console.log('    decodes a real PNG, draws a route, autosaves to IndexedDB, fits desktop and narrow');
 console.log('    viewports, and folds a real Route width slider drag into a single Undo');
+console.log('  - a 49-photo library stays at 48 cards, fits desktop and narrow pagination, and opens page 2');
 console.log('  - contextual report sizing stays synchronized in Editor and Library, caps only the');
 console.log('    stage display at desktop and narrow widths, and preserves the full project dimensions');
 console.log('  - options loads the signed-in Buddy report directly, falls back through a first-party tab, and keeps failures actionable');

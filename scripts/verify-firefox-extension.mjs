@@ -6,7 +6,7 @@
 // manifest, starts background.js, and runs both execution worlds before the
 // broader browser fixtures are shared with the Chrome verifier.
 
-import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -615,6 +615,140 @@ async function main() {
       "Firefox did not reunite an imported bundle with its own record",
       firefoxImported,
     );
+
+    await driver.executeAsyncScript(done => {
+      const open = () => new Promise((resolve, reject) => {
+        const request = globalThis.indexedDB.open("betterPeakbaggerPhotos");
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      });
+      open().then(database => {
+        const read = database.transaction(["photos", "thumbnails"]);
+        const photoRequest = read.objectStore("photos").getAll();
+        const thumbnailRequest = read.objectStore("thumbnails").getAll();
+        read.oncomplete = () => {
+          const photo = photoRequest.result[0];
+          const thumbnail = thumbnailRequest.result[0];
+          const write = database.transaction(["photos", "thumbnails"], "readwrite");
+          for (let index = 1; index <= 48; index += 1) {
+            const localId = `firefox-library-page-${String(index).padStart(2, "0")}`;
+            const timestamp = new Date(Date.UTC(2026, 0, 1, 0, 0, index)).toISOString();
+            write.objectStore("photos").put({
+              ...structuredClone(photo),
+              localId,
+              title: `Firefox library page ${String(index).padStart(2, "0")}`,
+              createdAt: timestamp,
+              updatedAt: timestamp,
+              assets: {
+                originalRetained: false,
+                projectRetained: false,
+                thumbnailRetained: true,
+              },
+            });
+            write.objectStore("thumbnails").put({ localId, blob: thumbnail.blob });
+          }
+          write.oncomplete = () => {
+            database.close();
+            done({ ok: true });
+          };
+          write.onerror = () => done({ ok: false, error: String(write.error) });
+          write.onabort = () => done({ ok: false, error: String(write.error) });
+        };
+        read.onerror = () => done({ ok: false, error: String(read.error) });
+        read.onabort = () => done({ ok: false, error: String(read.error) });
+      }, error => done({ ok: false, error: String(error) }));
+    });
+    await driver.get(photoUrl);
+    const firefoxPagedLibrary = await waitForScript(
+      driver,
+      `const cards = document.querySelectorAll("#library-list .photo-card");
+       const pagination = document.getElementById("library-pagination");
+       if (cards.length !== 48 || pagination?.hidden) return null;
+       const bounds = pagination.getBoundingClientRect();
+       return {
+         cards: cards.length,
+         pageStatus: document.getElementById("library-page-status")?.textContent,
+         previousDisabled: document.getElementById("library-previous")?.disabled,
+         nextDisabled: document.getElementById("library-next")?.disabled,
+         paginationLeft: bounds.left,
+         paginationRight: bounds.right,
+         viewportWidth: document.documentElement.clientWidth,
+         horizontalOverflow:
+           document.documentElement.scrollWidth > document.documentElement.clientWidth
+       };`,
+      "the Firefox paged photo library",
+      5_000,
+      value => !!value,
+    );
+    assertState(
+      firefoxPagedLibrary.cards === 48
+        && firefoxPagedLibrary.pageStatus === "Page 1 of 2 · 49 photos"
+        && firefoxPagedLibrary.previousDisabled === true
+        && firefoxPagedLibrary.nextDisabled === false
+        && firefoxPagedLibrary.paginationLeft >= 0
+        && firefoxPagedLibrary.paginationRight <= firefoxPagedLibrary.viewportWidth
+        && !firefoxPagedLibrary.horizontalOverflow,
+      "Firefox did not render the first bounded photo-library page",
+      firefoxPagedLibrary,
+    );
+    if (process.env.BPB_VERIFY_FIREFOX_PHOTO_LIBRARY_SCREENSHOT) {
+      const screenshot = await driver.findElement(By.id("library-pagination")).takeScreenshot(true);
+      await writeFile(process.env.BPB_VERIFY_FIREFOX_PHOTO_LIBRARY_SCREENSHOT, screenshot, "base64");
+    }
+
+    const originalFirefoxRect = await driver.manage().window().getRect();
+    await driver.manage().window().setRect({ width: 520, height: 800 });
+    const firefoxNarrowLibrary = await driver.executeScript(`
+      const pagination = document.getElementById("library-pagination");
+      const bounds = pagination.getBoundingClientRect();
+      return {
+        cards: document.querySelectorAll("#library-list .photo-card").length,
+        pageStatus: document.getElementById("library-page-status")?.textContent,
+        paginationLeft: bounds.left,
+        paginationRight: bounds.right,
+        viewportWidth: document.documentElement.clientWidth,
+        horizontalOverflow:
+          document.documentElement.scrollWidth > document.documentElement.clientWidth
+      };`);
+    assertState(
+      firefoxNarrowLibrary.cards === 48
+        && firefoxNarrowLibrary.pageStatus === "Page 1 of 2 · 49 photos"
+        && firefoxNarrowLibrary.paginationLeft >= 0
+        && firefoxNarrowLibrary.paginationRight <= firefoxNarrowLibrary.viewportWidth
+        && !firefoxNarrowLibrary.horizontalOverflow,
+      "Firefox narrow photo-library pagination overflowed",
+      firefoxNarrowLibrary,
+    );
+    if (process.env.BPB_VERIFY_FIREFOX_PHOTO_LIBRARY_NARROW_SCREENSHOT) {
+      const screenshot = await driver.findElement(By.id("library-pagination")).takeScreenshot(true);
+      await writeFile(
+        process.env.BPB_VERIFY_FIREFOX_PHOTO_LIBRARY_NARROW_SCREENSHOT,
+        screenshot,
+        "base64",
+      );
+    }
+    await driver.findElement(By.id("library-next")).click();
+    const firefoxSecondPage = await waitForScript(
+      driver,
+      `const status = document.getElementById("library-page-status")?.textContent || "";
+       if (status !== "Page 2 of 2 · 49 photos") return null;
+       return {
+         cards: document.querySelectorAll("#library-list .photo-card").length,
+         previousDisabled: document.getElementById("library-previous")?.disabled,
+         nextDisabled: document.getElementById("library-next")?.disabled
+       };`,
+      "the Firefox final photo-library page",
+      5_000,
+      value => !!value,
+    );
+    assertState(
+      firefoxSecondPage.cards === 1
+        && firefoxSecondPage.previousDisabled === false
+        && firefoxSecondPage.nextDisabled === true,
+      "Firefox did not navigate to the final photo-library page",
+      firefoxSecondPage,
+    );
+    await driver.manage().window().setRect(originalFirefoxRect);
 
     // The guide, which is a packaged page of its own and paints its legend from
     // the renderer rather than from authored artwork.
@@ -1444,6 +1578,7 @@ async function main() {
     console.log(`  - hidden/headless at ${verificationViewport.width}x${verificationViewport.height}`);
     console.log("  - real sync/local/session storage and storage.onChanged round-tripped");
     console.log("  - the photo library rendered its metadata-only recovery boundary and decoded/autosaved a PNG");
+    console.log("  - a 49-photo library stayed at 48 cards, fit desktop and narrow pagination, and opened page 2");
     console.log("  - the topo tools drew a route from its first click, kept the smooth curve and the");
     console.log("    armed tool, dimmed a mark to 40%, rasterized the overlay into an untainted canvas,");
     console.log("    imported a project bundle back under its own record, and painted the guide legend");
