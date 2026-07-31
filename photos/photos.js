@@ -1038,8 +1038,8 @@ const uploadAndInsert = async () => {
             });
             await store.putPhoto(photo);
             await store.deleteOperation(operation.operationId);
-            setEditorStatus('Uploaded and inserted.');
-            toast('Photo uploaded and inserted into the report.');
+            setEditorStatus('Uploaded and inserted. You can close this tab.');
+            toast('Photo uploaded and inserted into the report. You can close this tab.');
         } else {
             await store.deleteOperation(operation.operationId);
             setEditorStatus('Uploaded to ImgBB and saved in the library.');
@@ -1157,7 +1157,7 @@ const insertFromLibrary = async item => {
     });
     await store.putPhoto(referenced);
     notifyBackupChanged();
-    toast('Photo inserted into the report.');
+    toast('Photo inserted into the report. You can close this tab.');
     await renderLibrary();
 };
 
