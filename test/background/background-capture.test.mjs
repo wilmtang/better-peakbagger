@@ -232,7 +232,7 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
     return {
         send, values, localValues, syncValues, tabs, grouped, groupUpdates, badgeCalls, fetchCalls, scriptCalls, tabMessages,
         removedTabs, providerCaptureCalls, providerCancelCalls,
-        sessionGetCalls: () => sessionGetCalls, loggedErrors, faults,
+        sessionGetCalls: () => sessionGetCalls, loggedErrors, faults, tabRemoved, alarmEvent,
     };
 };
 
@@ -757,6 +757,27 @@ test('status reads hide expired jobs without running global cleanup', async () =
         'a status poll should read only jobs, not mutate drafts, jobs, and snapshots');
     assert.ok(harness.values.bpbCaptureJobs['1'],
         'lazy filtering hides stale data; the periodic alarm owns physical cleanup');
+});
+
+test('detached tab and alarm cleanup failures are contained and reported independently', async () => {
+    const harness = createHarness({ faults: { sessionGet: 'session unavailable' } });
+    const waitForErrors = async count => {
+        const deadline = Date.now() + 2000;
+        while (harness.loggedErrors.length < count) {
+            if (Date.now() > deadline) throw new Error('cleanup errors were not reported');
+            await new Promise(resolve => setTimeout(resolve, 1));
+        }
+    };
+
+    assert.doesNotThrow(() => harness.tabRemoved.listeners[0](1));
+    await waitForErrors(2);
+    const tabRemovalLogs = harness.loggedErrors.map(args => String(args[0]));
+    assert.ok(tabRemovalLogs.some(message => message.includes('photo tab cleanup failed')));
+    assert.ok(tabRemovalLogs.some(message => message.includes('capture tab cleanup failed')));
+
+    assert.doesNotThrow(() => harness.alarmEvent.listeners[0]({ name: 'bpb-capture-cleanup' }));
+    await waitForErrors(3);
+    assert.ok(harness.loggedErrors.some(args => String(args[0]).includes('expired capture cleanup failed')));
 });
 
 test('a capture that finishes for a different activity is not reused after navigation', async () => {

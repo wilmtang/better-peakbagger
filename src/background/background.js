@@ -104,6 +104,12 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
         return operation;
     };
 
+    const runDetachedCleanup = (label, cleanup) => {
+        void Promise.resolve().then(cleanup).catch(error => {
+            console.error(`Better Peakbagger: ${label} failed`, error);
+        });
+    };
+
     // The popup's view of a job: enough to render progress and the match list,
     // and nothing a draft is filled from. boundFallback is narrowed on the same
     // terms as matches — it is an ordinary match with an extra distance, and
@@ -1523,8 +1529,8 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
 
     ext.tabs.onRemoved.addListener(tabId => {
         terrainPrefetch.forgetTab(tabId);
-        void photoRoutes.forgetTab(tabId);
-        void (async () => {
+        runDetachedCleanup('photo tab cleanup', () => photoRoutes.forgetTab(tabId));
+        runDetachedCleanup('capture tab cleanup', async () => {
             const removedDraft = await mutateMap(DRAFTS_KEY, drafts => {
                 const value = drafts[tabId] || null;
                 delete drafts[tabId];
@@ -1557,7 +1563,7 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
                 }
             });
             await notifyDraftToProceed(nextDraft);
-        })();
+        });
     });
 
     // Register synchronously: a storage event can be the event that wakes the
@@ -1573,7 +1579,9 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
     if (ext.alarms) {
         ext.alarms.create(CLEANUP_ALARM, { periodInMinutes: 5 });
         ext.alarms.onAlarm.addListener(alarm => {
-            if (alarm.name === CLEANUP_ALARM) void cleanup();
+            if (alarm.name === CLEANUP_ALARM) {
+                runDetachedCleanup('expired capture cleanup', cleanup);
+            }
             githubRoutes.onAlarm(alarm.name);
         });
     }
