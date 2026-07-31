@@ -40,6 +40,57 @@ test('creates an empty, versioned project with deterministic export defaults', (
     });
 });
 
+test('resolves upload choices without pretending unsupported sources keep their format', () => {
+    assert.equal(Project.sourceExportMime('IMAGE/JPEG'), 'image/jpeg');
+    assert.equal(Project.sourceExportMime('image/png'), 'image/png');
+    assert.equal(Project.sourceExportMime('image/webp'), null);
+
+    assert.deepEqual(Project.resolveExportSettings({
+        format: 'original',
+        sourceMime: 'image/png',
+        jpegQuality: 0.7,
+    }), { mime: 'image/png', quality: 1 });
+    assert.deepEqual(Project.resolveExportSettings({
+        format: 'original',
+        sourceMime: 'image/jpeg',
+        jpegQuality: 0.7,
+    }), { mime: 'image/jpeg', quality: 0.7 });
+    assert.deepEqual(Project.resolveExportSettings({
+        format: 'png',
+        sourceMime: 'image/jpeg',
+    }), { mime: 'image/png', quality: 1 });
+    assert.deepEqual(Project.resolveExportSettings({
+        format: 'jpeg',
+        sourceMime: 'image/png',
+        jpegQuality: 0.64,
+    }), { mime: 'image/jpeg', quality: 0.64 });
+    assert.equal(Project.resolveExportSettings({
+        format: 'original',
+        sourceMime: 'image/webp',
+    }), null);
+    assert.equal(Project.resolveExportSettings({ format: 'webp' }), null);
+});
+
+test('infers a saved project upload choice from its source and effective export', () => {
+    assert.equal(Project.inferExportFormat(
+        { mime: 'image/jpeg', quality: 0.8 },
+        'image/jpeg',
+    ), 'original');
+    assert.equal(Project.inferExportFormat(
+        { mime: 'image/png', quality: 1 },
+        'image/jpeg',
+    ), 'png');
+    assert.equal(Project.inferExportFormat(
+        { mime: 'image/jpeg', quality: 0.8 },
+        'image/png',
+    ), 'jpeg');
+    assert.equal(Project.inferExportFormat(
+        { mime: 'image/jpeg', quality: 0.8 },
+        'image/webp',
+    ), 'jpeg');
+    assert.equal(Project.inferExportFormat({ mime: 'image/webp', quality: 1 }, 'image/webp'), null);
+});
+
 test('cleans every supported topo object and normalizes z-order and colors', () => {
     const project = Project.cleanProject({
         ...emptyProject(),

@@ -43,6 +43,8 @@ const loadEditor = async ({
     pickPhoto = true,
     pickedFileSize = null,
     imageLoader = null,
+    fileName = 'north-face.jpg',
+    fileType = 'image/jpeg',
 } = {}) => {
     const dom = new JSDOM(html, {
         url: `chrome-extension://test/photos/photos.html${returnToReport ? '?returnToken=return-test' : ''}`,
@@ -62,15 +64,31 @@ const loadEditor = async ({
     // harness answers for them with the fixture's dimensions.
     win.createImageBitmap = async () => ({ ...IMAGE, close() {} });
     win.HTMLCanvasElement.prototype.getContext = () => ({ drawImage() {} });
-    win.HTMLCanvasElement.prototype.toBlob = function toBlob(callback) {
-        callback(new win.Blob(['thumbnail'], { type: 'image/jpeg' }));
-    };
-    win.Image = class TestImage {
-        set src(_value) {
-            if (imageLoader) imageLoader(this);
-            else win.queueMicrotask(() => this.onload?.());
+    const encodeCalls = [];
+    win.HTMLCanvasElement.prototype.toBlob = function toBlob(
+        callback,
+        mime = 'image/png',
+        quality,
+    ) {
+        const fullResolution = this.width === IMAGE.width && this.height === IMAGE.height;
+        const bytes = mime === 'image/png'
+            ? 6 * 1024 * 1024
+            : Math.round(2 * 1024 * 1024 * (quality ?? 0.92));
+        const blob = new win.Blob([fullResolution ? 'encoded-photo' : 'thumbnail'], { type: mime });
+        if (fullResolution) {
+            Object.defineProperty(blob, 'size', { value: bytes });
+            encodeCalls.push({ mime, quality, bytes });
         }
+        callback(blob);
     };
+    class OverlayImage {
+        set src(value) {
+            this.currentSrc = value;
+            if (imageLoader) imageLoader(this);
+            else win.setTimeout(() => this.onload?.(), 0);
+        }
+    }
+    Object.defineProperty(win, 'Image', { value: OverlayImage, configurable: true });
     win.URL.createObjectURL = () => 'blob:test';
     win.URL.revokeObjectURL = () => {};
     if (fetchImpl) win.fetch = fetchImpl;
@@ -98,7 +116,7 @@ const loadEditor = async ({
 
     // Pick a photo the way the page's file input does.
     const input = doc.getElementById('photo-file');
-    const pickedFile = new win.File(['pixels'], 'north-face.jpg', { type: 'image/jpeg' });
+    const pickedFile = new win.File(['pixels'], fileName, { type: fileType });
     if (pickedFileSize != null) {
         Object.defineProperty(pickedFile, 'size', { value: pickedFileSize });
     }
@@ -136,6 +154,7 @@ const loadEditor = async ({
         chrome,
         doc,
         errors,
+        encodeCalls,
         overlay,
         click,
         pointer,
@@ -242,6 +261,69 @@ test('a report size resizes only the stage preview and is remembered across both
     assert.equal(stage.style.maxWidth, '1600px',
         'Original stays natural-size but remains contained by the editor viewport');
     assert.match(doc.getElementById('export-summary').textContent, /1600 × 1200/);
+    assert.deepEqual(page.errors, []);
+});
+
+test('PNG can stay lossless or switch to a quality-controlled JPEG with real size estimates', async () => {
+    const page = await loadEditor({ fileName: 'north-face.png', fileType: 'image/png' });
+    const { chrome, doc, encodeCalls } = page;
+    const format = doc.getElementById('upload-format');
+    const original = doc.getElementById('upload-format-original');
+    const qualityControl = doc.getElementById('jpeg-quality-control');
+    const quality = doc.getElementById('jpeg-quality');
+    const estimate = doc.getElementById('upload-estimate');
+    const note = doc.getElementById('upload-estimate-note');
+
+    assert.equal(format.value, 'original');
+    assert.equal(original.disabled, false);
+    assert.match(original.textContent, /original format.+PNG/i);
+    assert.equal(qualityControl.hidden, true);
+    await waitFor(page.dom, () => /6\.0 MB PNG/.test(estimate.textContent));
+    assert.match(note.textContent, /1600 × 1200.+full resolution/i);
+    assert.doesNotMatch(note.textContent, /GitHub/i,
+        'an ascent-backup warning is noise while that feature is off');
+
+    await chrome.storage.sync.set({
+        bpbSettings: { ...chrome._store.bpbSettings, enableGithubBackup: true },
+    });
+    await waitFor(page.dom, () => /GitHub may not show.+backed-up reports/i.test(note.textContent));
+    assert.equal(estimate.parentElement.classList.contains('is-warning'), true);
+
+    format.value = 'jpeg';
+    page.emit(format, 'change');
+    assert.equal(qualityControl.hidden, false);
+    await waitFor(page.dom, () => /1\.8 MB JPEG/.test(estimate.textContent));
+    assert.match(note.textContent, /1600 × 1200.+full resolution/i);
+
+    quality.value = '70';
+    page.emit(quality, 'input');
+    page.emit(quality, 'change');
+    assert.equal(doc.getElementById('jpeg-quality-value').textContent, '70%');
+    await waitFor(page.dom, () => /1\.4 MB JPEG/.test(estimate.textContent));
+    assert.deepEqual(encodeCalls.at(-1), {
+        mime: 'image/jpeg',
+        quality: 0.7,
+        bytes: Math.round(2 * 1024 * 1024 * 0.7),
+    });
+
+    format.value = 'png';
+    page.emit(format, 'change');
+    assert.equal(qualityControl.hidden, true);
+    await waitFor(page.dom, () => /6\.0 MB PNG/.test(estimate.textContent));
+    assert.deepEqual(page.errors, []);
+});
+
+test('unsupported source formats expose JPEG fallback instead of a false original promise', async () => {
+    const page = await loadEditor({ fileName: 'north-face.webp', fileType: 'image/webp' });
+    const { doc } = page;
+    const format = doc.getElementById('upload-format');
+    const original = doc.getElementById('upload-format-original');
+
+    assert.equal(format.value, 'jpeg');
+    assert.equal(original.disabled, true);
+    assert.match(original.textContent, /unavailable/i);
+    assert.equal(doc.getElementById('jpeg-quality-control').hidden, false);
+    await waitFor(page.dom, () => /JPEG/.test(doc.getElementById('upload-estimate').textContent));
     assert.deepEqual(page.errors, []);
 });
 
@@ -503,6 +585,8 @@ test('export and upload hold one immutable snapshot behind every editor mutation
         doc.getElementById('duplicate-object'),
         doc.getElementById('delete-object'),
         doc.getElementById('clear-annotations'),
+        doc.getElementById('upload-format'),
+        doc.getElementById('jpeg-quality'),
         ...doc.querySelectorAll('[data-tool]'),
     ];
     assert.ok(mutationControls.every(control => control.disabled),
@@ -519,6 +603,11 @@ test('export and upload hold one immutable snapshot behind every editor mutation
     page.emit(title, 'input');
     page.emit(alt, 'input');
     page.emit(doc.getElementById('object-opacity'), 'input');
+    doc.getElementById('upload-format').value = 'png';
+    page.emit(doc.getElementById('upload-format'), 'change');
+    doc.getElementById('jpeg-quality').value = '70';
+    page.emit(doc.getElementById('jpeg-quality'), 'input');
+    page.emit(doc.getElementById('jpeg-quality'), 'change');
     page.click(doc.getElementById('duplicate-object'));
     page.click(doc.getElementById('delete-object'));
     page.click(doc.getElementById('clear-annotations'));
@@ -554,6 +643,8 @@ test('export and upload hold one immutable snapshot behind every editor mutation
     assert.equal(catalog[0].title, 'Snapshot title');
     assert.equal(catalog[0].alt, 'Snapshot description');
     assert.equal(projects[0].objects.length, 1);
+    assert.equal(projects[0].export.mime, 'image/jpeg',
+        'a programmatic format change cannot replace the frozen upload settings');
     assert.equal(title.value, 'Snapshot title');
     assert.equal(alt.value, 'Snapshot description');
     assert.equal(insertionMessages.length, 1);

@@ -249,9 +249,34 @@
         </div>
 
         <footer class="editor-footer">
-          <div>
+          <div class="editor-summary">
             <strong id="export-summary">Local draft</strong>
             <span id="save-status" class="fine-print">Not yet saved</span>
+          </div>
+          <div class="upload-options" aria-label="ImgBB upload options">
+            <label class="upload-option">
+              <span>Upload format</span>
+              <select id="upload-format">
+                <option id="upload-format-original" value="original">Follow original format</option>
+                <option value="png">PNG · lossless</option>
+                <option value="jpeg">JPEG · smaller file</option>
+              </select>
+            </label>
+            <label id="jpeg-quality-control" class="upload-option" hidden>
+              <span class="field-label">
+                JPEG quality
+                <output id="jpeg-quality-value" for="jpeg-quality">92%</output>
+              </span>
+              <input id="jpeg-quality" type="range" min="10" max="100" step="1" value="92"
+                     aria-describedby="jpeg-quality-note">
+              <span id="jpeg-quality-note" class="upload-option-note">
+                Lower quality makes a smaller file.
+              </span>
+            </label>
+            <div class="upload-estimate" role="status" aria-live="polite" aria-atomic="true">
+              <strong id="upload-estimate">Estimating upload…</strong>
+              <span id="upload-estimate-note">Full resolution · annotations included</span>
+            </div>
           </div>
           <div class="footer-actions">
             <label class="report-width-control" data-report-width-control hidden>

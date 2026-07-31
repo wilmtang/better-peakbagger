@@ -137,6 +137,72 @@ test('hashes exported bytes with SHA-256', async () => {
         '4d79c63e02c6a66d127fee87c91aa70d86bde9aada8cd271c412b079b22e538b');
 });
 
+test('estimates from the same full-resolution encoding used for export', async () => {
+    const encodes = [];
+    const draws = [];
+    const canvas = {
+        width: 0,
+        height: 0,
+        getContext: () => ({
+            drawImage: (...args) => draws.push(args),
+        }),
+        toBlob(callback, mime, quality) {
+            encodes.push({ mime, quality, width: this.width, height: this.height });
+            callback(new Blob([`${mime}:${quality}`], { type: mime }));
+        },
+    };
+    class ImageCtor {
+        set src(value) {
+            this.value = value;
+            queueMicrotask(() => this.onload());
+        }
+    }
+    const dependencies = {
+        ImageCtor,
+        URLImpl: {
+            createObjectURL: () => 'blob:overlay',
+            revokeObjectURL: () => {},
+        },
+        BlobCtor: Blob,
+    };
+    const project = Project.cleanProject({
+        ...projectWithObjects(),
+        export: { mime: 'image/jpeg', quality: 0.67 },
+    });
+    const options = {
+        project,
+        source: { fixture: 'source-bitmap', width: 1600, height: 1200 },
+        document: { createElement: () => canvas },
+        imageDependencies: dependencies,
+    };
+
+    const estimated = await Renderer.estimateProject(options);
+    assert.deepEqual({
+        mime: estimated.mime,
+        bytes: estimated.bytes,
+        width: estimated.width,
+        height: estimated.height,
+    }, {
+        mime: 'image/jpeg',
+        bytes: new Blob(['image/jpeg:0.67']).size,
+        width: 1600,
+        height: 1200,
+    });
+    assert.equal('sha256' in estimated, false, 'estimating does not hash until upload');
+    assert.deepEqual(encodes[0], {
+        mime: 'image/jpeg',
+        quality: 0.67,
+        width: 1600,
+        height: 1200,
+    });
+    assert.equal(draws.length, 2, 'source pixels and the rendered overlay are both flattened');
+
+    const exported = await Renderer.exportProject({ ...options, crypto: webcrypto });
+    assert.equal(exported.bytes, estimated.bytes);
+    assert.equal(exported.sha256.length, 64);
+    assert.deepEqual(encodes[1], encodes[0], 'export uses the exact same encoding path');
+});
+
 test('opacity dims the whole mark, including its arrowhead and contrast plate', () => {
     const svg = Renderer.renderOverlaySvg(Project.cleanProject({
         schemaVersion: 1,

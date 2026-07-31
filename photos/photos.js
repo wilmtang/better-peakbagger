@@ -21,6 +21,8 @@ const HISTORY_LIMIT = 100;
 // truth; changing it in place would silently diverge from the published image.
 const PUBLISHED_STATES = ['uploaded', 'unreachable'];
 const AUTOSAVE_DELAY_MS = 500;
+const EXPORT_ESTIMATE_DELAY_MS = 300;
+const GITHUB_CAMO_PREVIEW_BYTES = 5 * 1024 * 1024;
 const RECENTLY_DELETED_MS = 30 * 24 * 60 * 60 * 1000;
 const LIBRARY_PAGE_SIZE = 48;
 const LIBRARY_SEARCH_DELAY_MS = 180;
@@ -83,6 +85,13 @@ const ui = {
     upload: byId('upload-insert'),
     exportSummary: byId('export-summary'),
     saveStatus: byId('save-status'),
+    uploadFormat: byId('upload-format'),
+    originalFormat: byId('upload-format-original'),
+    jpegQualityControl: byId('jpeg-quality-control'),
+    jpegQuality: byId('jpeg-quality'),
+    jpegQualityValue: byId('jpeg-quality-value'),
+    uploadEstimate: byId('upload-estimate'),
+    uploadEstimateNote: byId('upload-estimate-note'),
     search: byId('library-search'),
     filter: byId('library-filter'),
     importProject: byId('import-project'),
@@ -136,6 +145,14 @@ let toastTimer = null;
 let undoDeleted = null;
 let reportImageWidth = Settings.DEFAULTS.reportImageWidth;
 let unsubscribeSettings = () => {};
+let ascentBackupEnabled = Settings.DEFAULTS.enableGithubBackup;
+let uploadFormat = 'original';
+let jpegQuality = Project.DEFAULT_JPEG_QUALITY;
+let exportRevision = 0;
+let exportEstimateTimer = null;
+let cachedExport = null;
+let exportEstimateJob = null;
+let exportEstimatePending = false;
 
 const applyReportWidthPreview = () => {
     if (!RETURN_TOKEN || !project) {
@@ -252,6 +269,8 @@ const editorMutationControls = () => [
     ui.duplicate,
     ui.deleteObject,
     ui.clear,
+    ui.uploadFormat,
+    ui.jpegQuality,
     ...document.querySelectorAll('[data-tool]'),
 ];
 
@@ -281,6 +300,160 @@ const formatBytes = bytes => {
     if (bytes < 1024) return `${bytes} B`;
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+};
+
+const exportMimeLabel = mime => mime === 'image/png' ? 'PNG' : 'JPEG';
+const sourceExportMime = () => Project.sourceExportMime(originalBlob?.type);
+
+const resolvedUploadSettings = () => Project.resolveExportSettings({
+    format: uploadFormat,
+    sourceMime: originalBlob?.type,
+    jpegQuality,
+});
+
+const syncUploadControls = () => {
+    const originalMime = sourceExportMime();
+    if (!originalMime && uploadFormat === 'original') uploadFormat = 'jpeg';
+    ui.originalFormat.disabled = !originalMime;
+    ui.originalFormat.textContent = originalMime
+        ? `Follow original format · ${exportMimeLabel(originalMime)}`
+        : 'Follow original format · unavailable';
+    ui.uploadFormat.value = uploadFormat;
+    const settings = resolvedUploadSettings();
+    ui.jpegQualityControl.hidden = settings?.mime !== 'image/jpeg';
+    const percent = Math.round(jpegQuality * 100);
+    ui.jpegQuality.value = String(percent);
+    ui.jpegQualityValue.textContent = `${percent}%`;
+};
+
+const cancelExportEstimate = () => {
+    exportRevision += 1;
+    clearTimeout(exportEstimateTimer);
+    exportEstimateTimer = null;
+    cachedExport = null;
+    exportEstimatePending = false;
+};
+
+const showExportEstimate = encoded => {
+    const warning = ascentBackupEnabled && encoded.bytes > GITHUB_CAMO_PREVIEW_BYTES;
+    ui.uploadEstimate.parentElement.classList.toggle('is-warning', warning);
+    ui.uploadEstimate.textContent = `Estimated upload · ${formatBytes(encoded.bytes)} `
+        + exportMimeLabel(encoded.mime);
+    ui.uploadEstimateNote.textContent = warning
+        ? 'Over 5 MB · GitHub may not show this image in backed-up reports.'
+        : `${encoded.width} × ${encoded.height} · full resolution`;
+};
+
+const applyPhotoSettings = settings => {
+    ascentBackupEnabled = settings.enableGithubBackup === true;
+    if (RETURN_TOKEN) setReportImageWidth(settings.reportImageWidth);
+    if (cachedExport?.encoded) showExportEstimate(cachedExport.encoded);
+};
+
+// Full-resolution PNG encoding can be expensive. Keep at most one background
+// estimate in flight; a later edit replaces the queued work with current state.
+const refreshExportEstimate = async revision => {
+    if (exportEstimateJob) {
+        exportEstimatePending = true;
+        return;
+    }
+    const estimatingProject = project;
+    const estimatingSource = sourceBitmap;
+    const job = {
+        revision,
+        source: estimatingSource,
+        promise: Renderer.estimateProject({
+            project: estimatingProject,
+            source: estimatingSource,
+        }),
+    };
+    exportEstimateJob = job;
+    try {
+        const encoded = await job.promise;
+        if (revision !== exportRevision || estimatingSource !== sourceBitmap) return;
+        cachedExport = { revision, encoded };
+        showExportEstimate(encoded);
+    } catch {
+        if (revision !== exportRevision) return;
+        ui.uploadEstimate.parentElement.classList.remove('is-warning');
+        ui.uploadEstimate.textContent = 'Upload estimate unavailable';
+        ui.uploadEstimateNote.textContent = 'The image will be encoded when you upload.';
+    } finally {
+        if (exportEstimateJob === job) exportEstimateJob = null;
+        if (exportEstimatePending) {
+            exportEstimatePending = false;
+            if (project && sourceBitmap) void refreshExportEstimate(exportRevision);
+        }
+    }
+};
+
+const invalidateExportEstimate = ({ immediate = false } = {}) => {
+    cancelExportEstimate();
+    if (!project || !sourceBitmap) {
+        ui.uploadEstimate.parentElement.classList.remove('is-warning');
+        ui.uploadEstimate.textContent = 'Choose a photo to estimate';
+        ui.uploadEstimateNote.textContent = 'Full resolution · annotations included';
+        return;
+    }
+    const revision = exportRevision;
+    ui.uploadEstimate.parentElement.classList.remove('is-warning');
+    ui.uploadEstimate.textContent = 'Estimating upload…';
+    ui.uploadEstimateNote.textContent = 'Full resolution · annotations included';
+    exportEstimateTimer = setTimeout(() => {
+        exportEstimateTimer = null;
+        void refreshExportEstimate(revision);
+    }, immediate ? 0 : EXPORT_ESTIMATE_DELAY_MS);
+};
+
+const initializeUploadSettings = () => {
+    jpegQuality = project?.export.mime === 'image/jpeg'
+        ? project.export.quality
+        : Project.DEFAULT_JPEG_QUALITY;
+    uploadFormat = Project.inferExportFormat(project?.export, originalBlob?.type) || 'jpeg';
+    syncUploadControls();
+    invalidateExportEstimate({ immediate: true });
+};
+
+const applyUploadSettings = ({ persist = true } = {}) => {
+    if (editorMutationLocked() || !project) return false;
+    const settings = resolvedUploadSettings();
+    if (!settings) return false;
+    const changed = project.export.mime !== settings.mime
+        || project.export.quality !== settings.quality;
+    if (changed) {
+        const next = Project.cleanProject({ ...project, export: settings });
+        if (!next) return false;
+        project = next;
+        invalidateExportEstimate();
+    }
+    syncUploadControls();
+    if (persist) schedulePersist();
+    return true;
+};
+
+const prepareSnapshotExport = async ({ project: exportingProject, sourceBitmap: exportingSource }) => {
+    const revision = exportRevision;
+    clearTimeout(exportEstimateTimer);
+    exportEstimateTimer = null;
+    let encoded = cachedExport?.revision === revision ? cachedExport.encoded : null;
+    if (!encoded
+        && exportEstimateJob?.revision === revision
+        && exportEstimateJob.source === exportingSource) {
+        encoded = await exportEstimateJob.promise;
+    }
+    if (!encoded) {
+        encoded = await Renderer.estimateProject({
+            project: exportingProject,
+            source: exportingSource,
+        });
+    }
+    if (revision !== exportRevision || exportingSource !== sourceBitmap) {
+        throw new Error('The photo changed while it was being prepared.');
+    }
+    cachedExport = { revision, encoded };
+    const sha256 = await Renderer.sha256(encoded.blob);
+    if (revision !== exportRevision) throw new Error('The photo changed while it was being prepared.');
+    return { ...encoded, sha256 };
 };
 
 const updateCredentialUi = () => {
@@ -371,6 +544,7 @@ const leaseCredential = async () => {
 };
 
 const closeSource = () => {
+    cancelExportEstimate();
     if (sourceBitmap?.close) sourceBitmap.close();
     sourceBitmap = null;
     if (sourceUrl) URL.revokeObjectURL(sourceUrl);
@@ -653,6 +827,7 @@ const setProject = (next, { pushHistory = true, persist = true, coalesce = null 
     }
     coalescing = pushHistory ? coalesce : null;
     project = cleaned;
+    invalidateExportEstimate();
     renderProject();
     if (persist) schedulePersist();
     return true;
@@ -666,6 +841,7 @@ const undo = () => {
     selectedId = project.objects.some(object => object.id === selectedId) ? selectedId : null;
     routeSession = null;
     ui.finishRoute.hidden = true;
+    invalidateExportEstimate();
     renderProject();
     schedulePersist();
 };
@@ -676,6 +852,7 @@ const redo = () => {
     history.push(structuredClone(project));
     project = future.pop();
     selectedId = project.objects.some(object => object.id === selectedId) ? selectedId : null;
+    invalidateExportEstimate();
     renderProject();
     schedulePersist();
 };
@@ -787,11 +964,13 @@ const addRoutePoint = (point, press) => {
         project = Project.updateObject(project, routeSession.id, { geometry: object.geometry });
     }
     selectedId = routeSession.id;
+    invalidateExportEstimate();
     renderProject();
 };
 
 const finishRoute = cancel => {
     if (editorMutationLocked() || !routeSession) return;
+    const changed = routeSession.historyPushed;
     if (cancel) {
         project = routeSession.baseline;
         if (routeSession.historyPushed) history.pop();
@@ -805,6 +984,7 @@ const finishRoute = cancel => {
     }
     routeSession = null;
     ui.finishRoute.hidden = true;
+    if (changed) invalidateExportEstimate();
     renderProject();
 };
 
@@ -906,7 +1086,10 @@ const moveDrag = event => {
 const endDrag = () => {
     if (!dragSession) return;
     if (!dragSession.moved) history.pop();
-    else schedulePersist();
+    else {
+        invalidateExportEstimate();
+        schedulePersist();
+    }
     dragSession = null;
     updateHistoryButtons();
 };
@@ -1028,6 +1211,7 @@ const loadBundle = async bundle => {
     setSourceDisplay(originalBlob);
     ui.editorEmpty.hidden = true;
     ui.editorWorkspace.hidden = false;
+    initializeUploadSettings();
     renderProject();
     setSaveStatus('Saved on this device');
     setView('editor');
@@ -1060,12 +1244,17 @@ const chooseFile = async file => {
             sourceSha256,
         });
         if (!nextProject) throw new RangeError(IMAGE_LIMIT_MESSAGE);
-        if (file.type === 'image/png') {
-            nextProject = Project.cleanProject({
-                ...nextProject,
-                export: { mime: 'image/png', quality: 1 },
-            });
-        }
+        uploadFormat = Project.sourceExportMime(file.type) ? 'original' : 'jpeg';
+        jpegQuality = Project.DEFAULT_JPEG_QUALITY;
+        nextProject = Project.cleanProject({
+            ...nextProject,
+            export: Project.resolveExportSettings({
+                format: uploadFormat,
+                sourceMime: file.type,
+                jpegQuality,
+            }),
+        });
+        if (!nextProject) throw new RangeError(IMAGE_LIMIT_MESSAGE);
         const nextThumbnail = await makeThumbnail(bitmap);
         closeSource();
         sourceBitmap = bitmap;
@@ -1082,6 +1271,7 @@ const chooseFile = async file => {
         setSourceDisplay(file);
         ui.editorEmpty.hidden = true;
         ui.editorWorkspace.hidden = false;
+        initializeUploadSettings();
         renderProject();
         // The title is filled from the file name and the description is
         // optional, so the draft is already valid — autosave it rather than
@@ -1143,10 +1333,7 @@ const uploadAndInsert = async () => {
         setEditorStatus('Preparing image…');
         // Deliberately no local size check: the ceiling belongs to the ImgBB
         // account, not to this extension, and it says so in its own rejection.
-        const exported = await Renderer.exportProject({
-            project: uploadSnapshot.project,
-            source: uploadSnapshot.sourceBitmap,
-        });
+        const exported = await prepareSnapshotExport(uploadSnapshot);
         ui.exportSummary.textContent = `${formatBytes(exported.bytes)} ${exported.mime.replace('image/', '').toUpperCase()}`
             + ` · ${exported.width} × ${exported.height}`;
         const exportMetadata = {
@@ -1933,6 +2120,18 @@ const bindEvents = () => {
         });
     });
     ui.upload.addEventListener('click', () => void uploadAndInsert());
+    ui.uploadFormat.addEventListener('change', () => {
+        uploadFormat = ui.uploadFormat.value;
+        applyUploadSettings();
+    });
+    ui.jpegQuality.addEventListener('input', () => {
+        jpegQuality = Number(ui.jpegQuality.value) / 100;
+        applyUploadSettings({ persist: false });
+    });
+    ui.jpegQuality.addEventListener('change', () => {
+        jpegQuality = Number(ui.jpegQuality.value) / 100;
+        applyUploadSettings();
+    });
     ui.search.addEventListener('input', scheduleLibrarySearch);
     ui.filter.addEventListener('change', () => {
         clearTimeout(librarySearchTimer);
@@ -1960,6 +2159,7 @@ const bindEvents = () => {
 
     document.addEventListener('keydown', event => {
         const editing = ['INPUT', 'TEXTAREA', 'SELECT'].includes(event.target.tagName);
+        if (busy) return;
         if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'z') {
             event.preventDefault();
             if (event.shiftKey) redo();
@@ -2042,11 +2242,10 @@ const initialize = async () => {
     }
     paintToolRail();
     paintReportWidthControls();
-    if (RETURN_TOKEN) {
-        const settings = await Settings.get();
-        setReportImageWidth(settings.reportImageWidth);
-        unsubscribeSettings = Settings.subscribe(next => setReportImageWidth(next.reportImageWidth));
-    }
+    syncUploadControls();
+    const settings = await Settings.get();
+    applyPhotoSettings(settings);
+    unsubscribeSettings = Settings.subscribe(applyPhotoSettings);
     bindEvents();
     store = await Store.createPhotoStore();
     await recoverOperations();
