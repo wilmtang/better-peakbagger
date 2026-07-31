@@ -169,7 +169,8 @@ test('no surface keeps its own copy of a schema default or bound', async () => {
     const banned = [
         { pattern: /#d9483b/i, what: 'the default route color' },
         { pattern: /casingWidth:\s*9\b/, what: 'the default casing width' },
-        { pattern: /\b(?:1,\s*12|3,\s*20|240,\s*720)\b/, what: 'a route/viewport bound pair' }
+        { pattern: /\b(?:1,\s*12|3,\s*20|240,\s*720)\b/, what: 'a route/viewport bound pair' },
+        { pattern: /\blet\s+pref\s*=\s*['"]system['"]/, what: 'the default theme preference' },
     ];
 
     const leaks = [];

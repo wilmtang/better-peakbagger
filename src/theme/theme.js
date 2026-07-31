@@ -63,7 +63,7 @@ const finishTheme = theme => {
     document.getElementById(EARLY_THEME_STYLE_ID)?.remove();
 };
 
-let pref = 'system';
+let pref = S.DEFAULTS.theme;
 const apply = () => {
     finishTheme(S.resolveTheme(pref));
     try { localStorage.setItem(THEME_CACHE_KEY, pref); } catch (e) { /* storage blocked */ }
