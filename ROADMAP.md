@@ -6,9 +6,12 @@ enough for an issue; shipped work belongs in [CHANGELOG.md](CHANGELOG.md).
 
 ## Candidate work
 
-- Provide a privacy-safe backup export for a signed-in user's own Peakbagger
-  profile, including trip reports and GPX attachments, with stable identifiers
-  that can be reconciled with Peakbagger's CSV export.
+- Reconcile the GitHub ascent backup with Peakbagger's own CSV export, so a
+  user can diff what the backup holds against what Peakbagger reports without
+  matching rows by hand. The backup itself shipped in 3.0.0 — see
+  [docs/github-ascent-backup.md](docs/github-ascent-backup.md) — and already
+  covers trip reports and GPX attachments; what is missing is the shared
+  identifier and the comparison.
 
 ## Not currently planned
 
