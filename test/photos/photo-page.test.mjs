@@ -11,6 +11,7 @@ import { photoProject as Project } from '../../src/photos/photo-project.js';
 const html = await fs.readFile(new URL('../../photos/photos.html', import.meta.url), 'utf8');
 const source = await fs.readFile(new URL('../../photos/photos.js', import.meta.url), 'utf8');
 const styles = await fs.readFile(new URL('../../photos/photos.css', import.meta.url), 'utf8');
+const panelStyles = await fs.readFile(new URL('../../src/theme/panel.css', import.meta.url), 'utf8');
 const dom = new JSDOM(html);
 const doc = dom.window.document;
 // The settings page is a separate document, so its section ids can only be
@@ -46,13 +47,33 @@ test('the packaged photo page exposes the editor, library, and credential bounda
     assert.deepEqual(ENTRIES.find(candidate => candidate.out === 'photos/photos-head.js')?.sources,
         ['settings/settings-schema.js', 'settings/settings.js', 'theme/panel-theme.js'],
         'the photo page must reuse the shared panel theme bootstrap');
+});
+
+// The photo editor and Settings each used to own a :root palette, and they
+// drifted into two different-looking products — cool grey and blue against warm
+// grey and green. The panel design language now has one home, loaded first by
+// every extension page; a page stylesheet that re-declares a token has started
+// a third.
+test('every extension panel paints from the one shared design language', async () => {
+    assert.ok(COPY_FILES.some(([from, to]) =>
+        from === 'src/theme/panel.css' && to === 'css/panel.css'));
+    for (const page of [doc, new JSDOM(await fs.readFile(
+        new URL('../../photos/guide.html', import.meta.url), 'utf8')).window.document, optionsDoc]) {
+        assert.deepEqual(
+            [...page.querySelectorAll('link[rel="stylesheet"]')].map(node => node.getAttribute('href'))[0],
+            '../css/panel.css',
+            'the shared stylesheet loads before the page stylesheet that overrides it');
+    }
+    assert.doesNotMatch(styles, /:root\[data-bpb-theme/);
+    assert.doesNotMatch(styles, /^\s*--(bg|card|border|text|sub|accent|link|danger|shadow):/m);
+
     // Both mapping blocks pick from one palette, so an explicit preference and
     // the OS scheme cannot drift apart.
-    assert.match(styles, /:root\[data-bpb-theme="dark"\]\s*\{[^}]*--bg:\s*var\(--dark-bg\)/);
-    assert.match(styles, /:root\[data-bpb-theme="light"\]\s*\{[^}]*color-scheme:\s*light/);
-    assert.match(styles,
+    assert.match(panelStyles, /:root\[data-bpb-theme="dark"\]\s*\{[^}]*--bg:\s*var\(--dark-bg\)/);
+    assert.match(panelStyles, /:root\[data-bpb-theme="light"\]\s*\{[^}]*color-scheme:\s*light/);
+    assert.match(panelStyles,
         /@media \(prefers-color-scheme: dark\)\s*\{\s*:root:not\(\[data-bpb-theme="light"\]\)/);
-    assert.match(styles,
+    assert.match(panelStyles,
         /\[hidden\]\s*\{\s*display:\s*none\s*!important/,
         'author layout rules must not override the native hidden state');
 });

@@ -1,86 +1,19 @@
 /* Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
  * SPDX-License-Identifier: AGPL-3.0-or-later
- * Better Peakbagger — options page styles. Themed via data-bpb-theme on <html>.
+ *
+ * Better Peakbagger — Settings, and the standalone drafts and climber
+ * workspaces that share its frame. The palette, type ramp, sidebar, and control
+ * shapes come from src/theme/panel.css, which every panel loads first; this
+ * file adds only what belongs to these pages.
  */
-
-:root {
-    --bg: #f4f4f2;
-    --card: #ffffff;
-    --border: #e2e2dc;
-    --text: #1c1c1a;
-    --sub: #6a6a63;
-    --accent: #2f6b3f;
-    --accent-fg: #ffffff;
-    --link: #2f6b3f;
-    --input-bg: #ffffff;
-    --input-border: #c8c8c2;
-    --experimental-bg: #f7ead0;
-    --experimental-border: #e2c98f;
-    --experimental-text: #68420b;
-    --danger: #912f2f;
-    --danger-bg: #fff4f4;
-    --danger-border: #dfb1b1;
-    --danger-fill: #912f2f;
-    --shadow: 0 1px 3px rgba(0, 0, 0, .08);
-}
-
-:root[data-bpb-theme="dark"] {
-    --bg: #181a1b;
-    --card: #23262a;
-    --border: #3a3f45;
-    --text: #e6e1d8;
-    --sub: #a29c92;
-    --accent: #3f8a54;
-    --accent-fg: #ffffff;
-    --link: #7ac78d;
-    --input-bg: #2b2f34;
-    --input-border: #4a5058;
-    --experimental-bg: #3a2f20;
-    --experimental-border: #665235;
-    --experimental-text: #f0cd8d;
-    --danger: #ffaaaa;
-    --danger-bg: #382326;
-    --danger-border: #704046;
-    --danger-fill: #9b353b;
-    --shadow: 0 1px 3px rgba(0, 0, 0, .35);
-}
-
-* { box-sizing: border-box; }
 
 /* App frame: a fixed-viewport flex row of sidebar + scrolling content. Only
  * .content scrolls, so the sidebar stays put and the scroll-spy has a single,
  * stable scroll container at every width. */
 html, body { height: 100%; }
-body {
-    margin: 0;
-    display: flex;
-    overflow: hidden;
-    background: var(--bg);
-    color: var(--text);
-    font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-}
+body { display: flex; overflow: hidden; }
 
-.side-nav {
-    flex: 0 0 auto;
-    width: 240px;
-    height: 100%;
-    overflow-y: auto;
-    padding: 28px 16px;
-    background: var(--card);
-    border-right: 1px solid var(--border);
-}
-
-.content {
-    flex: 1 1 auto;
-    min-width: 0;
-    height: 100%;
-    overflow-y: auto;
-    padding: 32px 20px;
-    scroll-behavior: smooth;
-}
-@media (prefers-reduced-motion: reduce) {
-    .content { scroll-behavior: auto; }
-}
+.content { padding: 32px 20px; }
 
 .wrap { max-width: 640px; margin: 0 auto; }
 
@@ -92,61 +25,7 @@ body.standalone-page .content { height: 100%; }
 
 .head { display: flex; align-items: center; gap: 12px; margin: 0 4px 20px; }
 .logo { border-radius: 9px; display: block; flex: 0 0 auto; }
-h1 { margin: 0; font-size: 18px; font-weight: 650; line-height: 1.2; }
 .sub { margin: 4px 0 0; color: var(--sub); font-size: 12px; line-height: 1.35; }
-
-.nav-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
-.nav-item {
-    display: block;
-    padding: 7px 12px;
-    border-radius: 8px;
-    color: var(--sub);
-    text-decoration: none;
-    font-size: 13px;
-    font-weight: 550;
-    line-height: 1.3;
-}
-.nav-item:hover { color: var(--text); background: color-mix(in srgb, var(--accent) 8%, transparent); }
-.nav-item:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-.nav-item[aria-current] {
-    color: var(--text);
-    font-weight: 650;
-    background: color-mix(in srgb, var(--accent) 15%, transparent);
-}
-/* A parent whose sub-item is the active one: accent text, but no filled pill —
- * the filled state belongs to the exact sub-item the reader is looking at. */
-.nav-item.nav-parent-active {
-    color: var(--accent);
-}
-
-/* Always-visible level-2 links, indented under their parent with a hairline
- * spine. Only ~6 sub-items total, so there is no collapse machinery. */
-.nav-sublist {
-    list-style: none;
-    margin: 2px 0 2px 12px;
-    padding-left: 10px;
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    border-left: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
-}
-.nav-subitem {
-    display: block;
-    padding: 6px 10px;
-    border-radius: 7px;
-    color: var(--sub);
-    text-decoration: none;
-    font-size: 12.5px;
-    font-weight: 500;
-    line-height: 1.3;
-}
-.nav-subitem:hover { color: var(--text); background: color-mix(in srgb, var(--accent) 8%, transparent); }
-.nav-subitem:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-.nav-subitem[aria-current] {
-    color: var(--text);
-    font-weight: 650;
-    background: color-mix(in srgb, var(--accent) 15%, transparent);
-}
 
 /* Anchor landings clear the content's top padding without a JS offset fudge. */
 .settings-section { scroll-margin-top: 24px; }
@@ -171,14 +50,6 @@ h1 { margin: 0; font-size: 18px; font-weight: 650; line-height: 1.2; }
     letter-spacing: .01em;
 }
 
-.card {
-    background: var(--card);
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    box-shadow: var(--shadow);
-    overflow: hidden;
-}
-
 .row {
     display: flex;
     align-items: center;
@@ -194,12 +65,6 @@ label.label { cursor: pointer; }
 .title-line { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; }
 .title { font-weight: 600; }
 .desc { color: var(--sub); font-size: 12.5px; max-width: 42ch; }
-/* Link colour is declared once, on the element, rather than per context. Every
-   context that styled its own left the browser default in place everywhere
-   else — and that default is unreadable on the dark panel. The specific rules
-   below still win where they set something other than the token. */
-a { color: var(--link); }
-.desc a { color: var(--link); }
 .experimental-badge {
     padding: 1px 6px;
     color: var(--experimental-text);
@@ -215,30 +80,14 @@ a { color: var(--link); }
 
 .control { flex: 0 0 auto; }
 
-select, input[type="number"] {
-    font: inherit;
-    color: var(--text);
-    background: var(--input-bg);
-    border: 1px solid var(--input-border);
-    border-radius: 8px;
-    padding: 7px 10px;
-    min-width: 168px;
-}
+/* The shared panel stylesheet gives every control its colour, border, and
+   radius; a setting row only decides how much width its value needs. */
+select { min-width: 168px; }
 input[type="number"] { min-width: 96px; text-align: right; }
-select:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 .route-style { border: 0; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
 .route-style-row { display: grid; grid-template-columns: 50px 34px 58px 18px; align-items: center; gap: 7px; }
-input[type="color"] {
-    width: 34px;
-    height: 30px;
-    padding: 3px;
-    color: var(--text);
-    background: var(--input-bg);
-    border: 1px solid var(--input-border);
-    border-radius: 8px;
-    cursor: pointer;
-}
+input[type="color"] { width: 34px; height: 30px; padding: 3px; cursor: pointer; }
 input[type="number"].route-width { min-width: 0; width: 58px; padding: 5px 7px; }
 
 .viewport-size { border: 0; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
@@ -249,22 +98,9 @@ input[type="number"].route-width { min-width: 0; width: 58px; padding: 5px 7px; 
 .cache-size { display: flex; align-items: center; gap: 7px; }
 .cache-size input[type="number"] { min-width: 0; width: 86px; padding: 5px 7px; }
 #terrain-cache-row[hidden] { display: none; }
-/* Secondary control. Anchors take the same shape so an action that is really a
-   destination (View repository) keeps link affordances without looking odd
-   beside the buttons it sits with. */
-button.secondary, a.secondary {
-    align-self: flex-end;
-    font: inherit;
-    color: var(--text);
-    background: transparent;
-    border: 1px solid var(--input-border);
-    border-radius: 8px;
-    padding: 5px 10px;
-    cursor: pointer;
-}
-a.secondary { display: inline-flex; align-items: center; text-decoration: none; }
-button.secondary:hover, a.secondary:hover { border-color: var(--accent); color: var(--accent); }
-button.secondary:focus-visible, a.secondary:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+/* The shared secondary control, aligned to the bottom of the row's value
+   column. Rows that lay their actions out themselves reset this to auto. */
+button.secondary, a.secondary { align-self: flex-end; }
 
 /* Settings export/import and the GitHub settings and favorites backup rows,
    which share one control shape inside Backup & sync. */
@@ -323,14 +159,14 @@ button.secondary:focus-visible, a.secondary:focus-visible { outline: 2px solid v
 
 .beta-signals { display: flex; flex-direction: column; gap: 9px; }
 .check { display: flex; align-items: center; gap: 7px; cursor: pointer; white-space: nowrap; }
-.check input[type="checkbox"] { width: 15px; height: 15px; margin: 0; accent-color: var(--accent); cursor: pointer; }
+.check input[type="checkbox"] { width: 15px; height: 15px; margin: 0; }
 input[type="number"].mini { min-width: 0; width: 72px; padding: 4px 8px; }
 .check input[type="number"]:disabled { opacity: .45; }
 
 /* Favorite climbers manager. */
 .favorites-source { display: flex; flex-direction: column; gap: 9px; border: 0; margin: 0; padding: 0; }
 .favorites-source label { display: flex; align-items: center; gap: 7px; white-space: nowrap; cursor: pointer; }
-.favorites-source input { width: 15px; height: 15px; margin: 0; accent-color: var(--accent); cursor: pointer; }
+.favorites-source input { width: 15px; height: 15px; margin: 0; }
 .favorites-panel { padding: 16px 18px; border-top: 1px solid var(--border); }
 .favorites-panel[hidden] { display: none; }
 .favorites-summary { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
@@ -341,16 +177,7 @@ input[type="number"].mini { min-width: 0; width: 72px; padding: 4px 8px; }
 .favorites-add { display: flex; align-items: flex-end; justify-content: space-between; gap: 18px; }
 .favorites-add > label { display: flex; flex-direction: column; gap: 3px; }
 .favorites-add-controls { display: flex; align-items: center; gap: 7px; }
-.favorites-add input[type="text"] {
-    min-width: 230px;
-    padding: 7px 10px;
-    color: var(--text);
-    background: var(--input-bg);
-    border: 1px solid var(--input-border);
-    border-radius: 8px;
-    font: inherit;
-}
-.favorites-add input[type="text"]:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.favorites-add input[type="text"] { min-width: 230px; }
 .favorites-add button.secondary { align-self: auto; }
 .favorites-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 16px; color: var(--sub); font-size: 12.5px; }
 .favorites-tools button.secondary { align-self: auto; }
@@ -378,8 +205,6 @@ button.secondary.favorites-mirror-trigger:focus-visible { outline-color: var(--d
     width: 15px;
     height: 15px;
     margin: 2px 0 0;
-    accent-color: var(--accent);
-    cursor: pointer;
 }
 .favorites-sync-setting > span { display: flex; min-width: 0; flex-direction: column; gap: 2px; }
 .favorites-sync-setting .title { font-size: 12.5px; }
@@ -437,20 +262,7 @@ button.secondary.favorites-mirror-trigger:focus-visible { outline-color: var(--d
 }
 .favorites-count { margin: 0; color: var(--text); font-size: 13px; font-weight: 650; white-space: nowrap; }
 .favorites-list-controls { display: flex; align-items: center; justify-content: flex-end; gap: 9px; min-width: 0; }
-.favorites-list-controls input[type="search"] {
-    width: min(250px, 34vw);
-    min-width: 170px;
-    padding: 6px 10px;
-    color: var(--text);
-    background: var(--input-bg);
-    border: 1px solid var(--input-border);
-    border-radius: 8px;
-    font: inherit;
-}
-.favorites-list-controls input[type="search"]:focus-visible {
-    outline: 2px solid var(--accent);
-    outline-offset: 1px;
-}
+.favorites-list-controls input[type="search"] { width: min(250px, 34vw); min-width: 170px; padding: 6px 10px; }
 .favorites-sort { display: flex; align-items: center; gap: 7px; color: var(--sub); font-size: 12.5px; }
 .favorites-sort select { min-width: 130px; padding: 5px 9px; }
 .favorites-source-filter { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 11px; }
@@ -492,15 +304,6 @@ button.secondary.favorites-mirror-trigger:focus-visible { outline-color: var(--d
 .favorite-name:hover { text-decoration: underline; }
 .favorite-name:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
 .favorite-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; margin: 4px 0 0; color: var(--sub); font-size: 11.5px; }
-.favorite-source-tag {
-    padding: 1px 6px;
-    color: var(--text);
-    background: color-mix(in srgb, var(--accent) 10%, transparent);
-    border: 1px solid color-mix(in srgb, var(--accent) 25%, var(--border));
-    border-radius: 999px;
-    font-size: 10px;
-    font-weight: 650;
-}
 .favorite-remove, .favorite-undo {
     appearance: none;
     padding: 4px 6px;
@@ -549,18 +352,6 @@ button.secondary.favorites-mirror-trigger:focus-visible { outline-color: var(--d
 .github-backup-confirmed { color: var(--link); font-weight: 600; }
 .github-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .github-actions button.secondary, .github-actions a.secondary { align-self: auto; }
-button.github-primary {
-    font: inherit;
-    font-weight: 600;
-    color: var(--accent-fg);
-    background: var(--accent);
-    border: 1px solid var(--accent);
-    border-radius: 8px;
-    padding: 6px 12px;
-    cursor: pointer;
-}
-button.github-primary:hover { filter: brightness(1.06); }
-button.github-primary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .github-code {
     align-self: flex-start;
     display: inline-flex;
@@ -593,7 +384,7 @@ button.github-repo:focus-visible { outline: 2px solid var(--accent); outline-off
 .github-connected { display: flex; align-items: center; gap: 8px; font-weight: 500; }
 .github-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--accent); flex: 0 0 auto; }
 .github-auto { display: flex; align-items: center; gap: 7px; font-size: 13px; color: var(--text); cursor: pointer; }
-.github-auto input[type="checkbox"] { width: 15px; height: 15px; margin: 0; accent-color: var(--accent); cursor: pointer; }
+.github-auto input[type="checkbox"] { width: 15px; height: 15px; margin: 0; }
 
 /* Device-local trip-report drafts. Draft rows have their own restrained
  * hierarchy instead of reusing the label/control setting-row split. */
@@ -601,15 +392,7 @@ button.github-repo:focus-visible { outline: 2px solid var(--accent); outline-off
    reported by the status line and never read back into the input. */
 .imgbb-key-control { display: flex; flex-direction: column; align-items: flex-end; gap: 10px; }
 .imgbb-key-entry { display: flex; align-items: center; gap: 7px; }
-.imgbb-key-entry input[type="password"] {
-    min-width: 200px;
-    padding: 7px 10px;
-    color: var(--text);
-    background: var(--input-bg);
-    border: 1px solid var(--input-border);
-    border-radius: 8px;
-    font: inherit;
-}
+.imgbb-key-entry input[type="password"] { min-width: 200px; }
 .imgbb-key-entry button.secondary { align-self: auto; white-space: nowrap; }
 .imgbb-key-state { display: flex; align-items: center; justify-content: flex-end; gap: 10px; }
 .imgbb-key-state button.secondary { align-self: auto; }
@@ -636,18 +419,6 @@ button.github-repo:focus-visible { outline: 2px solid var(--accent); outline-off
 .draft-body { flex: 1 1 auto; min-width: 0; }
 .draft-title { margin: 0; color: var(--text); font-size: 13.5px; font-weight: 650; line-height: 1.35; }
 .draft-meta { display: flex; flex-wrap: wrap; align-items: center; margin: 4px 0 0; color: var(--sub); font-size: 11.5px; }
-.draft-mode {
-    display: inline-flex;
-    align-items: center;
-    padding: 1px 6px;
-    color: var(--text);
-    background: color-mix(in srgb, var(--accent) 10%, transparent);
-    border: 1px solid color-mix(in srgb, var(--accent) 25%, var(--border));
-    border-radius: 999px;
-    font-size: 10px;
-    font-weight: 650;
-    line-height: 1.4;
-}
 .draft-excerpt {
     margin: 5px 0 0;
     overflow: hidden;
@@ -657,25 +428,15 @@ button.github-repo:focus-visible { outline: 2px solid var(--accent); outline-off
     white-space: nowrap;
 }
 .draft-actions { display: flex; flex: 0 0 auto; flex-wrap: wrap; justify-content: flex-end; gap: 7px; }
+/* The shared secondary control, one step down: several sit in a row beside a
+   draft's title, so they carry the row's smaller type. */
 .draft-actions .secondary {
     align-self: auto;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
     min-height: 31px;
     padding: 5px 9px;
-    color: var(--text);
-    background: transparent;
-    border: 1px solid var(--input-border);
-    border-radius: 8px;
-    font: inherit;
     font-size: 12px;
     line-height: 1.2;
-    text-decoration: none;
-    cursor: pointer;
 }
-.draft-actions .secondary:hover { color: var(--accent); border-color: var(--accent); }
-.draft-actions .secondary:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .draft-item-deleted { justify-content: flex-start; color: var(--sub); font-size: 13px; }
 .draft-undo {
     appearance: none;
@@ -780,22 +541,11 @@ button.github-repo:focus-visible { outline: 2px solid var(--accent); outline-off
 /* Narrow windows: the sidebar becomes a horizontal, scrollable chip row above
  * the content. .content stays the scroll container, so the scroll-spy keeps
  * working without any width-aware branching. */
+/* The shared stylesheet turns the sidebar into a horizontal chip row here; the
+ * frame around it is this page's own. */
 @media (max-width: 720px) {
     body { flex-direction: column; }
-    .side-nav {
-        width: auto;
-        height: auto;
-        overflow: visible;
-        padding: 16px 16px 12px;
-        border-right: none;
-        border-bottom: 1px solid var(--border);
-    }
     .head { margin-bottom: 14px; }
-    .nav-list { flex-direction: row; overflow-x: auto; gap: 6px; }
-    .nav-item { flex: 0 0 auto; white-space: nowrap; }
-    /* The horizontal chip row has no room for a second level; the level-1 chips
-     * cover every section on their own. */
-    .nav-sublist { display: none; }
 }
 
 @media (max-width: 600px) {

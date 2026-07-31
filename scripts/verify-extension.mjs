@@ -367,16 +367,30 @@ try {
         const photoThemeState = await photoPage.waitForFunction(() => {
             const theme = document.documentElement.getAttribute('data-bpb-theme');
             if (theme !== 'dark') return false;
+            // Resolve the shared palette's dark background through the browser
+            // rather than pinning a literal here: this check is about the page
+            // honoring the setting, and a hardcoded colour would have to be
+            // re-pinned — silently, and possibly wrongly — on every repaint.
+            const probe = document.createElement('div');
+            probe.style.color = 'var(--dark-bg)';
+            document.body.append(probe);
+            const panelDark = getComputedStyle(probe).color;
+            probe.remove();
             return {
                 theme,
+                panelDark,
                 background: getComputedStyle(document.body).backgroundColor,
                 // Native selects, ranges, and scrollbars follow color-scheme,
                 // not the custom properties.
                 colorScheme: getComputedStyle(document.documentElement).colorScheme,
+                // The palette is one file for every panel; a page painting from
+                // its own copy is the drift this consolidated away.
+                sharedSheet: [...document.styleSheets].some(sheet => /\/css\/panel\.css$/.test(sheet.href || '')),
             };
         }, null, { timeout: 5000 }).then(handle => handle.jsonValue()).catch(() => null);
-        check(photoThemeState?.background === 'rgb(18, 21, 25)'
-            && photoThemeState.colorScheme === 'dark',
+        check(photoThemeState?.background === photoThemeState?.panelDark
+            && photoThemeState.colorScheme === 'dark'
+            && photoThemeState.sharedSheet === true,
         `the photo page ignored the extension's dark theme on a light OS: ${JSON.stringify({
             photoThemeState,
             photoErrors,

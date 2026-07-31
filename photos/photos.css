@@ -1,122 +1,15 @@
-/* Each palette value is written once; the mapping blocks below only choose
-   between the two. The page must follow the OS scheme for the first frame,
-   before photos-head.js can read the stored preference, and then follow the
-   extension's own Light/Dark setting like every other panel. */
-:root {
-  color-scheme: light dark;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-
-  --light-bg: #f4f5f7;
-  --light-panel: rgba(255, 255, 255, 0.9);
-  --light-panel-solid: #fff;
-  --light-text: #17202a;
-  --light-muted: #647080;
-  --light-border: rgba(23, 32, 42, 0.14);
-  --light-accent: #1769aa;
-  --light-accent-strong: #0c518b;
-  --light-danger: #b42318;
-  --light-shadow: 0 14px 38px rgba(31, 42, 55, 0.12);
-
-  --dark-bg: #121519;
-  --dark-panel: rgba(31, 36, 42, 0.92);
-  --dark-panel-solid: #1f242a;
-  --dark-text: #f2f4f7;
-  --dark-muted: #aeb7c3;
-  --dark-border: rgba(255, 255, 255, 0.14);
-  --dark-accent: #62aee9;
-  --dark-accent-strong: #85c5f4;
-  --dark-danger: #ff7b72;
-  --dark-shadow: 0 14px 40px rgba(0, 0, 0, 0.34);
-
-  --bg: var(--light-bg);
-  --panel: var(--light-panel);
-  --panel-solid: var(--light-panel-solid);
-  --text: var(--light-text);
-  --muted: var(--light-muted);
-  --border: var(--light-border);
-  --accent: var(--light-accent);
-  --accent-strong: var(--light-accent-strong);
-  --danger: var(--light-danger);
-  --shadow: var(--light-shadow);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root:not([data-bpb-theme="light"]) {
-    color-scheme: dark;
-    --bg: var(--dark-bg);
-    --panel: var(--dark-panel);
-    --panel-solid: var(--dark-panel-solid);
-    --text: var(--dark-text);
-    --muted: var(--dark-muted);
-    --border: var(--dark-border);
-    --accent: var(--dark-accent);
-    --accent-strong: var(--dark-accent-strong);
-    --danger: var(--dark-danger);
-    --shadow: var(--dark-shadow);
-  }
-}
-
-/* The explicit panel preference wins over the OS color scheme, for the native
-   selects, ranges, checkboxes, and scrollbars too. */
-:root[data-bpb-theme="dark"] {
-  color-scheme: dark;
-  --bg: var(--dark-bg);
-  --panel: var(--dark-panel);
-  --panel-solid: var(--dark-panel-solid);
-  --text: var(--dark-text);
-  --muted: var(--dark-muted);
-  --border: var(--dark-border);
-  --accent: var(--dark-accent);
-  --accent-strong: var(--dark-accent-strong);
-  --danger: var(--dark-danger);
-  --shadow: var(--dark-shadow);
-}
-
-:root[data-bpb-theme="light"] {
-  color-scheme: light;
-}
-
-* {
-  box-sizing: border-box;
-}
-
-[hidden] {
-  display: none !important;
-}
+/* Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ *
+ * Better Peakbagger — Photo Topos: the editor, the library, and the guide. The
+ * palette, type ramp, sidebar, and control shapes come from
+ * src/theme/panel.css, which every panel loads first; this file adds the
+ * editor's own layout and the canvas chrome around the photo.
+ */
 
 body {
-  margin: 0;
   min-width: 320px;
   min-height: 100vh;
-  background:
-    radial-gradient(circle at 20% -10%, color-mix(in srgb, var(--accent) 12%, transparent), transparent 32rem),
-    var(--bg);
-  color: var(--text);
-}
-
-button,
-input,
-select,
-textarea {
-  font: inherit;
-}
-
-button {
-  cursor: pointer;
-}
-
-button:disabled {
-  cursor: default;
-  opacity: 0.46;
-}
-
-button:focus-visible,
-input:focus-visible,
-select:focus-visible,
-textarea:focus-visible,
-.photo-viewport:focus-visible {
-  outline: 3px solid color-mix(in srgb, var(--accent) 55%, transparent);
-  outline-offset: 2px;
 }
 
 .app-header {
@@ -141,17 +34,13 @@ textarea:focus-visible,
 }
 
 .eyebrow {
-  color: var(--muted);
+  color: var(--sub);
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.12em;
   text-transform: uppercase;
 }
 
-.app-header h1 {
-  font-size: 22px;
-  letter-spacing: -0.02em;
-}
 
 .view-tabs {
   display: flex;
@@ -159,12 +48,13 @@ textarea:focus-visible,
   padding: 4px;
   border: 1px solid var(--border);
   border-radius: 12px;
-  background: var(--panel);
+  background: var(--card);
 }
 
+/* The editor's own quiet controls. The secondary and primary shapes come from
+   the shared stylesheet; every control in a bar just shares its height. */
 .tab-button,
 .quiet-button,
-.secondary-button,
 .icon-button,
 .tool-rail button,
 .danger-button {
@@ -176,13 +66,20 @@ textarea:focus-visible,
   font-weight: 600;
 }
 
+.secondary-button,
+.quiet-file,
+.primary-button,
+.file-button {
+  min-height: 34px;
+}
+
 .tab-button {
   padding: 6px 14px;
 }
 
 .tab-button[aria-current="page"] {
-  background: var(--panel-solid);
-  box-shadow: 0 1px 5px rgba(0, 0, 0, 0.12);
+  background: var(--card);
+  box-shadow: var(--shadow);
 }
 
 main {
@@ -199,13 +96,13 @@ main {
   margin-bottom: 18px;
   padding: 16px 18px;
   border: 1px solid var(--border);
-  border-radius: 16px;
-  background: var(--panel);
+  border-radius: 12px;
+  background: var(--card);
   box-shadow: var(--shadow);
 }
 
 .credential-card.configured {
-  border-color: color-mix(in srgb, #2da44e 42%, var(--border));
+  border-color: color-mix(in srgb, var(--accent) 42%, var(--border));
 }
 
 .credential-card p {
@@ -227,7 +124,7 @@ main {
 .credential-form label:not(.check-row) {
   display: grid;
   gap: 5px;
-  color: var(--muted);
+  color: var(--sub);
   font-size: 12px;
   font-weight: 650;
 }
@@ -236,11 +133,6 @@ input,
 select,
 textarea {
   width: 100%;
-  border: 1px solid var(--border);
-  border-radius: 9px;
-  padding: 8px 10px;
-  background: var(--panel-solid);
-  color: var(--text);
 }
 
 textarea {
@@ -251,7 +143,7 @@ textarea {
   display: flex;
   align-items: center;
   gap: 7px;
-  color: var(--muted);
+  color: var(--sub);
   font-size: 12px;
   font-weight: 600;
 }
@@ -261,34 +153,8 @@ textarea {
 }
 
 .fine-print {
-  color: var(--muted);
+  color: var(--sub);
   font-size: 12px;
-}
-
-.primary-button,
-.file-button {
-  display: inline-flex;
-  min-height: 40px;
-  align-items: center;
-  justify-content: center;
-  border: 0;
-  border-radius: 10px;
-  padding: 9px 16px;
-  background: var(--accent);
-  color: white;
-  font-weight: 750;
-  box-shadow: 0 7px 18px color-mix(in srgb, var(--accent) 30%, transparent);
-}
-
-.primary-button:hover,
-.file-button:hover {
-  background: var(--accent-strong);
-}
-
-.secondary-button {
-  padding: 7px 13px;
-  border: 1px solid var(--border);
-  background: var(--panel-solid);
 }
 
 .quiet-button,
@@ -322,7 +188,7 @@ textarea {
 
 .empty-state p {
   max-width: 560px;
-  color: var(--muted);
+  color: var(--sub);
   line-height: 1.45;
 }
 
@@ -331,8 +197,8 @@ textarea {
   width: 62px;
   height: 62px;
   place-items: center;
-  border-radius: 18px;
-  background: color-mix(in srgb, var(--accent) 13%, var(--panel-solid));
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--accent) 13%, var(--card));
   color: var(--accent);
   font-size: 40px;
 }
@@ -348,29 +214,15 @@ textarea {
 /* The real control is the visually hidden input, so the label has to show the
    focus the keyboard actually has. */
 .file-button:focus-within {
-  outline: 3px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  outline: 2px solid var(--accent);
   outline-offset: 2px;
-}
-
-.quiet-file {
-  min-height: 34px;
-  padding: 7px 13px;
-  border: 1px solid var(--border);
-  background: var(--panel-solid);
-  color: var(--text);
-  font-weight: 600;
-  box-shadow: none;
-}
-
-.quiet-file:hover {
-  background: color-mix(in srgb, var(--text) 7%, var(--panel-solid));
 }
 
 .editor-workspace {
   overflow: hidden;
   border: 1px solid var(--border);
-  border-radius: 18px;
-  background: var(--panel);
+  border-radius: 12px;
+  background: var(--card);
   box-shadow: var(--shadow);
 }
 
@@ -399,8 +251,8 @@ textarea {
 
 .icon-button {
   min-width: 36px;
-  border: 1px solid var(--border);
-  background: var(--panel-solid);
+  border: 1px solid var(--input-border);
+  background: var(--input-bg);
   font-size: 18px;
 }
 
@@ -433,7 +285,7 @@ textarea {
   width: 20px;
   height: 20px;
   place-items: center;
-  color: var(--muted);
+  color: var(--sub);
 }
 
 .tool-rail button[aria-pressed="true"] .tool-glyph {
@@ -447,11 +299,11 @@ textarea {
 
 .tool-rail button[aria-pressed="true"] {
   background: color-mix(in srgb, var(--accent) 16%, transparent);
-  color: var(--accent-strong);
+  color: var(--link);
 }
 
 kbd {
-  color: var(--muted);
+  color: var(--sub);
   font-size: 10px;
   font-weight: 500;
 }
@@ -460,7 +312,7 @@ kbd {
   display: grid;
   min-width: 0;
   grid-template-rows: minmax(0, 1fr) auto;
-  background: #0b0d10;
+  background: var(--dark-bg);
 }
 
 .photo-viewport {
@@ -478,7 +330,7 @@ kbd {
   overflow: hidden;
   border-radius: 4px;
   box-shadow: 0 18px 50px rgba(0, 0, 0, 0.5);
-  background: #111;
+  background: var(--dark-bg);
   user-select: none;
 }
 
@@ -500,14 +352,22 @@ kbd {
   pointer-events: visiblePainted;
 }
 
+/* Affordances drawn over the user's photo, deliberately outside the panel
+   palette: a mark in the panel's green would vanish into foliage. One hue,
+   with the brighter tone reserved for what is active. */
+:root {
+  --canvas-mark: #1769aa;
+  --canvas-active: #5ac8fa;
+}
+
 #photo-overlay [data-bpb-object].selected {
-  filter: drop-shadow(0 0 5px #5ac8fa);
+  filter: drop-shadow(0 0 5px var(--canvas-active));
 }
 
 #photo-overlay .vertex-handle {
   cursor: move;
   fill: #fff;
-  stroke: #1769aa;
+  stroke: var(--canvas-mark);
   stroke-width: 3;
   vector-effect: non-scaling-stroke;
 }
@@ -520,14 +380,14 @@ kbd {
 
 #photo-overlay .route-preview-dot {
   fill: #fff;
-  stroke: #1769aa;
+  stroke: var(--canvas-mark);
   stroke-width: 3;
   vector-effect: non-scaling-stroke;
 }
 
 #photo-overlay .route-preview-line {
   fill: none;
-  stroke: #5ac8fa;
+  stroke: var(--canvas-active);
   stroke-width: 2;
   vector-effect: non-scaling-stroke;
 }
@@ -538,8 +398,8 @@ kbd {
   align-items: center;
   gap: 12px;
   padding: 8px 12px;
-  border-top: 1px solid rgba(255, 255, 255, 0.12);
-  color: #d6dde5;
+  border-top: 1px solid var(--dark-border);
+  color: var(--dark-sub);
 }
 
 .status-line {
@@ -617,7 +477,7 @@ kbd {
   padding: 14px 16px;
   border: 1px solid var(--border);
   border-radius: 12px;
-  background: color-mix(in srgb, var(--panel) 94%, var(--accent) 6%);
+  background: color-mix(in srgb, var(--card) 94%, var(--accent) 6%);
 }
 
 .backup-card h3,
@@ -637,7 +497,6 @@ kbd {
 }
 
 .backup-actions a {
-  color: var(--accent);
   font-size: 12px;
   text-underline-offset: 2px;
 }
@@ -647,7 +506,7 @@ kbd {
    under both columns. */
 .backup-boundary {
   grid-column: 1 / -1;
-  color: var(--muted);
+  color: var(--sub);
   font-size: 11px;
   line-height: 1.45;
 }
@@ -665,9 +524,9 @@ kbd {
 .photo-card {
   overflow: hidden;
   border: 1px solid var(--border);
-  border-radius: 15px;
-  background: var(--panel);
-  box-shadow: 0 8px 26px rgba(31, 42, 55, 0.08);
+  border-radius: 12px;
+  background: var(--card);
+  box-shadow: var(--shadow);
 }
 
 .photo-card img,
@@ -692,7 +551,7 @@ kbd {
 }
 
 .photo-card p {
-  color: var(--muted);
+  color: var(--sub);
   font-size: 12px;
 }
 
@@ -704,11 +563,7 @@ kbd {
 
 .status-chip {
   padding: 3px 7px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--accent) 12%, var(--panel-solid));
-  color: var(--accent-strong);
   font-size: 11px;
-  font-weight: 700;
 }
 
 .card-actions {
@@ -717,6 +572,8 @@ kbd {
   gap: 5px;
 }
 
+/* The one transient surface that floats over the page, so it keeps a lift the
+   flat panel cards do not have. */
 .toast {
   position: fixed;
   z-index: 50;
@@ -729,8 +586,8 @@ kbd {
   padding: 11px 14px;
   border: 1px solid var(--border);
   border-radius: 12px;
-  background: var(--panel-solid);
-  box-shadow: var(--shadow);
+  background: var(--card);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, .18);
 }
 
 .sr-only {
@@ -839,78 +696,28 @@ kbd {
   display: flex;
 }
 
-.side-nav {
-  flex: 0 0 auto;
-  width: 264px;
-  height: 100%;
-  overflow-y: auto;
-  padding: 22px 14px;
-  border-right: 1px solid var(--border);
-  background: var(--panel);
-}
-
 .side-nav-title {
   margin: 0 10px 10px;
-  color: var(--muted);
+  color: var(--sub);
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.12em;
   text-transform: uppercase;
 }
 
-.nav-list {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.nav-item {
-  display: block;
-  padding: 7px 10px;
-  border-radius: 8px;
-  color: var(--muted);
-  font-size: 13px;
-  font-weight: 550;
-  line-height: 1.35;
-  text-decoration: none;
-}
-
-.nav-item:hover {
-  color: var(--text);
-  background: color-mix(in srgb, var(--accent) 10%, transparent);
-}
-
-.nav-item[aria-current] {
-  color: var(--text);
-  font-weight: 650;
-  background: color-mix(in srgb, var(--accent) 18%, transparent);
-}
-
 .side-nav-link {
   display: block;
   margin-top: 14px;
-  padding: 7px 10px;
+  padding: 7px 12px;
   border-top: 1px solid var(--border);
   padding-top: 14px;
-  color: var(--accent);
   font-size: 13px;
   font-weight: 600;
 }
 
+/* A reading measure wants wider gutters than a settings column. */
 .content {
-  flex: 1 1 auto;
-  min-width: 0;
-  height: 100%;
-  overflow-y: auto;
-  scroll-behavior: smooth;
   padding: 26px clamp(16px, 4vw, 48px) 64px;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .content { scroll-behavior: auto; }
 }
 
 .guide {
@@ -921,7 +728,7 @@ kbd {
 
 .guide-lead {
   margin: 4px 0 26px;
-  font-size: 17px;
+  font-size: 16px;
   line-height: 1.5;
 }
 
@@ -932,25 +739,18 @@ kbd {
 
 /* Narrow windows: the sidebar becomes a horizontal, scrollable chip row above
    the content, which stays the scroll container so the spy keeps working. */
-@media (max-width: 760px) {
+/* The shared stylesheet turns the sidebar into a horizontal chip row here; the
+   frame around it and the guide's two extra links are this page's own. */
+@media (max-width: 720px) {
   .guide-frame { flex-direction: column; }
-  .side-nav {
-    width: auto;
-    height: auto;
-    overflow: visible;
-    padding: 12px 14px;
-    border-right: none;
-    border-bottom: 1px solid var(--border);
-  }
   .side-nav-title { display: none; }
-  .nav-list { flex-direction: row; overflow-x: auto; gap: 6px; }
-  .nav-item { flex: 0 0 auto; white-space: nowrap; }
   .side-nav-link { display: none; }
 }
 
 .guide h2 {
   margin: 0 0 10px;
-  font-size: 20px;
+  font-size: 18px;
+  font-weight: 650;
   letter-spacing: -0.01em;
 }
 
@@ -970,7 +770,6 @@ kbd {
 }
 
 .guide a {
-  color: var(--accent);
   text-underline-offset: 2px;
 }
 
@@ -983,9 +782,9 @@ kbd {
 
 .guide kbd {
   padding: 1px 5px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--input-border);
   border-radius: 5px;
-  background: var(--panel-solid);
+  background: var(--input-bg);
   color: var(--text);
   font-size: 0.85em;
   font-weight: 600;
@@ -1012,7 +811,8 @@ kbd {
   padding: 13px 15px;
   border: 1px solid var(--border);
   border-radius: 12px;
-  background: var(--panel);
+  background: var(--card);
+  box-shadow: var(--shadow);
 }
 
 .guide-legend dt {
@@ -1025,7 +825,7 @@ kbd {
 
 .guide-legend dd {
   margin: 0;
-  color: var(--muted);
+  color: var(--sub);
   font-size: 13.5px;
   line-height: 1.5;
 }
@@ -1045,7 +845,7 @@ kbd {
 
 .guide-faq dd {
   margin: 4px 0 0;
-  color: var(--muted);
+  color: var(--sub);
 }
 
 .guide-details {
@@ -1053,7 +853,8 @@ kbd {
   padding: 12px 15px;
   border: 1px solid var(--border);
   border-radius: 12px;
-  background: var(--panel);
+  background: var(--card);
+  box-shadow: var(--shadow);
 }
 
 .guide-details summary {

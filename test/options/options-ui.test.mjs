@@ -14,7 +14,17 @@ test('theme bootstrap loads before the options stylesheet', async () => {
     const dom = await loadOptions({});
     const resources = Array.from(dom.window.document.head.querySelectorAll('script[src], link[rel="stylesheet"]'))
         .map(node => node.getAttribute('src') || node.getAttribute('href'));
-    assert.deepEqual(resources, ['options-head.js', 'options.css']);
+    // The shared panel stylesheet comes first so page rules of equal
+    // specificity win, and both come after the theme bootstrap.
+    assert.deepEqual(resources, ['options-head.js', '../css/panel.css', 'options.css']);
+});
+
+// Settings and Photo Topos each used to declare their own :root palette, and
+// they drifted into two different-looking products. The palette now has one
+// home; a page stylesheet that re-declares a token has started a third.
+test('the settings pages take their palette from the shared panel stylesheet', async () => {
+    assert.doesNotMatch(optionsCss, /^\s*--(bg|card|border|text|sub|accent|link|danger|shadow):/m);
+    assert.doesNotMatch(optionsCss, /:root/);
 });
 
 test('cached dark theme is applied before the asynchronous settings read', async () => {
