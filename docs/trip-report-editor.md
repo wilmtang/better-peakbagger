@@ -754,18 +754,21 @@ shows the exact bracket source.
 - `test/reports/report-markup.test.mjs` pins Markdown tokens, bracket aliases, DOM
   import, canonical output, unsafe-input neutralization, raw color validation,
   TipTap color-token revalidation, and round trips.
-- `test/reports/report-editor.test.mjs` pins the native-textarea source of truth,
-  untouched-value preservation, expanded rich DOM, toolbar active states,
-  image-source validation, hex-color preservation after Rich and Markdown
-  edits, undo isolation across mode switches, mode switching (including
-  invalidation of stale Markdown source after a Plain edit), local drafts,
-  whitespace-only and runtime-derived credit-only suppression, deletion back
-  to credit-only in both editors, disabled-editor write rejection, and
-  pre-postback flushing. It drives the TipTap and CodeMirror instances through
+- `test/reports/report-editor-mount.test.mjs`,
+  `test/reports/report-editor-modes.test.mjs`,
+  `test/reports/report-editor-media.test.mjs`, and
+  `test/reports/report-editor-drafts.test.mjs` pin the native-textarea source of
+  truth, untouched-value preservation, expanded rich DOM, toolbar active
+  states, image-source validation, hex-color preservation after Rich and
+  Markdown edits, undo isolation across mode switches, mode switching
+  (including invalidation of stale Markdown source after a Plain edit), local
+  drafts, whitespace-only and runtime-derived credit-only suppression, deletion
+  back to credit-only in both editors, disabled-editor write rejection, and
+  pre-postback flushing. They drive the TipTap and CodeMirror instances through
   the mount's test handle.
 - `test/reports/report-drafts.test.mjs` pins key construction/parsing, edit URLs,
   compatibility record validation, fallback titles, and expiry arithmetic.
-- `test/options/options.test.mjs` pins manager ordering, labels, exact Markdown copy
+- `test/options/options-github.test.mjs` pins manager ordering, labels, exact Markdown copy
   versus bracket conversion, expiry cleanup, live refresh, and reversible
   single/bulk deletion.
 - `test/project/manifest-capture.test.mjs` pins the vendored parser before the converter

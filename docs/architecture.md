@@ -143,7 +143,7 @@ There is no parallel raw-source worker list and no `importScripts` fallback.
 | Full Screen and Peak maps | `src/maps/big-map.js`, `src/maps/peak-map.js` | MAIN-world native-map coordinators |
 | Ascent lists | `src/ascent/ascent-filter.js`, `src/profile/profile-backup.js` | Isolated-world filter/sort and owner-only backup pipeline |
 | Favorite climbers | `src/favorites/favorite-climbers.js`, `src/favorites/climber-favorite.js`, `options/favorites.js`, `options/favorites-backup.js` | Pure local-data contract, climber-page toggle, standalone list manager, and its Settings backup surface |
-| Settings and theme | `src/settings/settings-schema.js`, `src/settings/settings.js`, `src/theme/theme-resolve.js`, `src/theme/theme.js`, `options/options.js`, `options/section-nav.js` | Pure schema and theme resolution, sync-storage access, synchronous page startup, settings wiring, and section navigation |
+| Settings and theme | `src/settings/settings-schema.js`, `src/settings/settings.js`, `src/theme/theme-resolve.js`, `src/theme/theme.js`, `options/options.js`, `src/ui/section-nav.js` | Pure schema and theme resolution, sync-storage access, synchronous page startup, settings wiring, and section navigation |
 | Report-draft manager | `src/reports/report-drafts.js`, `options/drafts.js` | Shared pure draft contract plus device-local list/copy/delete UI |
 | Saved-ascent backup | `src/ascent/ascent-page.js`, `src/ascent/ascent-backup.js` | Owner-only page read and user-facing backup state |
 | Peakbagger request boundary | `src/peakbagger/peakbagger-request.js`, `src/peakbagger/peakbagger-response.js`, `src/peakbagger/peakbagger-error.js`, `src/peakbagger/peakbagger-cloudflare.js` | Authenticated fetch policy, response validation, typed failures, and managed-challenge detection/recovery copy |
@@ -205,7 +205,7 @@ context without becoming a delay.
 The distance calculation uses current bounding rectangles rather than list
 length, so it covers any dynamically tall section, browser zoom level, and
 viewport size. A zero-height test environment falls back to ordinary anchor
-behavior. `test/options/options.test.mjs` pins the threshold, initial deep-link
+behavior. `test/options/options-github.test.mjs` pins the threshold, initial deep-link
 override, nav lock, scroll spy, bottom clamp, and modified-click boundary; the
 real browser verifier exercises a 1,500-row favorite list and a long jump in
 both browser families.
@@ -1213,10 +1213,11 @@ The focused automated evidence is deliberately split by boundary:
 - `test/ascent/ascent-filter.test.mjs` covers custom AND-filtering, persisted chip state,
   live storage updates, owner-scoped cache use, stale-while-revalidate fetch,
   and zero-network Buddy-page caching.
-- `test/options/options.test.mjs` covers source switching, provenance counts/filtering,
+- `test/options/options-favorites.test.mjs` covers source switching, provenance counts/filtering,
   identity-checked add, live totals and fuzzy search, reversible delete/mirror/restore,
-  Buddy refresh, merge, the default-off removal preference, distance-aware navigation,
-  and explicit GitHub messages.
+  Buddy refresh, merge, and the default-off removal preference.
+- `test/options/options-github.test.mjs` covers distance-aware navigation and
+  explicit GitHub messages.
 - `test/favorites/climber-favorite.test.mjs` covers manual add/remove, self exclusion,
   Buddy-mode absence, live source/list changes, native action detection, owner
   validation, and both Buddy-removal policies.
