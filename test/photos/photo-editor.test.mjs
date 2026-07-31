@@ -13,7 +13,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { JSDOM } from 'jsdom';
 import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
-import { evalBundle, waitFor } from '../helpers/load-page.mjs';
+import { evalBundle, makeChromeStub, waitFor } from '../helpers/load-page.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const html = await readFile(path.join(root, 'photos', 'photos.html'), 'utf8');
@@ -31,10 +31,11 @@ const VIEW = { width: 800, height: 600 };
 const settle = win => new Promise(resolve => win.setTimeout(resolve, 0));
 
 const loadEditor = async ({
+    returnToReport = false,
     imgbbStatus = { ok: true, configured: false, permissionGranted: false },
 } = {}) => {
     const dom = new JSDOM(html, {
-        url: 'chrome-extension://test/photos/photos.html',
+        url: `chrome-extension://test/photos/photos.html${returnToReport ? '?returnToken=return-test' : ''}`,
         runScripts: 'outside-only',
         pretendToBeVisual: true,
     });
@@ -56,20 +57,16 @@ const loadEditor = async ({
     };
     win.URL.createObjectURL = () => 'blob:test';
     win.URL.revokeObjectURL = () => {};
-    win.chrome = {
-        runtime: {
-            id: 'test-extension',
-            sendMessage: async message => (message?.type === 'PHOTO_IMGBB_STATUS'
-                ? imgbbStatus
-                : { ok: true }),
-            onMessage: { addListener: () => {}, removeListener: () => {} },
-        },
-        permissions: {
-            contains: async () => imgbbStatus.permissionGranted,
-            request: async () => imgbbStatus.permissionGranted,
-        },
-        tabs: { create: () => {} },
+    const chrome = makeChromeStub({ bpbSettings: { reportImageWidth: 640 } });
+    chrome.runtime.sendMessage = async message => (message?.type === 'PHOTO_IMGBB_STATUS'
+        ? imgbbStatus
+        : { ok: true });
+    chrome.permissions = {
+        contains: async () => imgbbStatus.permissionGranted,
+        request: async () => imgbbStatus.permissionGranted,
     };
+    chrome.tabs = { create: () => {} };
+    win.chrome = chrome;
     const errors = [];
     win.addEventListener('error', event => errors.push(String(event.error?.stack || event.message)));
     await evalBundle(win, 'photos/photos.js');
@@ -108,7 +105,9 @@ const loadEditor = async ({
     const key = (type, init) => doc.dispatchEvent(new win.KeyboardEvent(type, { bubbles: true, ...init }));
     const emit = (node, type) => node.dispatchEvent(new win.Event(type, { bubbles: true }));
     return {
+        dom,
         win,
+        chrome,
         doc,
         errors,
         overlay,
@@ -139,6 +138,39 @@ const loadEditor = async ({
         routePath: () => overlay.querySelector('path[d]')?.getAttribute('d'),
     };
 };
+
+test('a report size resizes only the stage preview and is remembered across both views', async () => {
+    const page = await loadEditor({ returnToReport: true });
+    const { chrome, doc, win } = page;
+    const controls = [...doc.querySelectorAll('[data-report-width-control]')];
+    const selects = [...doc.querySelectorAll('[data-report-width]')];
+    const stage = doc.getElementById('photo-stage');
+
+    assert.ok(controls.every(control => control.hidden === false));
+    assert.deepEqual(selects.map(select => select.value), ['640', '640']);
+    assert.equal(stage.style.width, '100%');
+    assert.equal(stage.style.maxWidth, '640px');
+    assert.match(doc.getElementById('export-summary').textContent, /1600 × 1200/,
+        'the project and future raster export retain their source dimensions');
+
+    selects[0].value = '320';
+    selects[0].dispatchEvent(new win.Event('change', { bubbles: true }));
+    await waitFor(page.dom, () => chrome._store.bpbSettings.reportImageWidth === 320);
+    assert.deepEqual(selects.map(select => select.value), ['320', '320']);
+    assert.equal(stage.style.width, '100%');
+    assert.equal(stage.style.maxWidth, '320px');
+    assert.match(doc.getElementById('export-summary').textContent, /1600 × 1200/);
+
+    selects[1].value = 'original';
+    selects[1].dispatchEvent(new win.Event('change', { bubbles: true }));
+    await waitFor(page.dom, () => chrome._store.bpbSettings.reportImageWidth === null);
+    assert.deepEqual(selects.map(select => select.value), ['original', 'original']);
+    assert.equal(stage.style.width, '100%');
+    assert.equal(stage.style.maxWidth, '1600px',
+        'Original stays natural-size but remains contained by the editor viewport');
+    assert.match(doc.getElementById('export-summary').textContent, /1600 × 1200/);
+    assert.deepEqual(page.errors, []);
+});
 
 test('a device-saved ImgBB key is managed in Settings instead of a photo-page removal card', async () => {
     const page = await loadEditor({

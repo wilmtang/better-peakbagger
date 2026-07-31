@@ -33,6 +33,22 @@ test('clean() clamps oversized values but resets a sub-minimum viewport width to
     assert.equal(Schema.clean({ mapViewportHeight: 9000 }).mapViewportHeight, Schema.BOUNDS.viewportHeight.max);
 });
 
+test('report image width is bounded, defaults to 640 px, and preserves Original', () => {
+    assert.equal(Schema.DEFAULTS.reportImageWidth, 640);
+    assert.equal(Schema.clean({}).reportImageWidth, 640);
+    assert.equal(Schema.clean({ reportImageWidth: 10 }).reportImageWidth,
+        Schema.BOUNDS.reportImageWidth.min);
+    assert.equal(Schema.clean({ reportImageWidth: 5000 }).reportImageWidth,
+        Schema.BOUNDS.reportImageWidth.max);
+    assert.equal(Schema.clean({ reportImageWidth: '480' }).reportImageWidth, 480);
+    assert.equal(Schema.clean({ reportImageWidth: 'wide' }).reportImageWidth, 640);
+    assert.equal(Schema.clean({ reportImageWidth: null }).reportImageWidth, null);
+    for (const value of [null, 64, 320, 640, 1600]) {
+        const stored = Schema.clean({ reportImageWidth: value }).reportImageWidth;
+        assert.equal(Schema.reportImageWidth(stored), stored);
+    }
+});
+
 test('a casing always stays wider than the route it sits behind', () => {
     // The casing only reads as a casing when it is wider than the line, so the
     // route width raises the floor no matter what the setting says.
@@ -137,6 +153,8 @@ test('the storage writer and the page-world readers resolve a value identically'
         }, `viewport diverged for ${JSON.stringify(raw)}`);
         assert.equal(Schema.terrainCacheLimitMb(stored.terrainCacheLimitMb), stored.terrainCacheLimitMb,
             `cache limit diverged for ${JSON.stringify(raw)}`);
+        assert.equal(Schema.reportImageWidth(stored.reportImageWidth), stored.reportImageWidth,
+            `report image width diverged for ${JSON.stringify(raw)}`);
     }
 });
 

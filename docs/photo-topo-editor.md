@@ -281,7 +281,18 @@ accepted only when:
 - the public URL is credential-free HTTPS;
 - the local photo id is valid and the alt text — which may be empty — is within
   its bound; and
+- an optional `displayWidth` is a width-only report dimension accepted by the
+  shared report-markup sanitizer; and
 - the original content script acknowledges insertion.
+
+While that return context exists, Editor and Library show the same
+**Size in report** control: Small (320 px), Medium (480 px), Large (640 px,
+default), or Original. The shared synced `reportImageWidth` preference keeps
+the choice for future report insertions; `null` represents Original. A fixed
+choice is capped to the exported source width before handoff, and the report
+editor validates it again before writing a width-only image node. The stage
+uses the same cap for its live CSS preview, but `photo-renderer.js`, the stored
+export metadata, and the ImgBB blob remain full resolution.
 
 The worker consumes the token before delivery, so a replay cannot insert the
 same result again. Closing either tab removes its pending context. The catalog

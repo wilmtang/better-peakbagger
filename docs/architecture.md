@@ -478,7 +478,8 @@ extension-owned photo tab; that tab's own Editor/Library tabs cover both
 creating a topo and reusing an uploaded one. `src/background/photo-routes.js`
 creates a random, single-use return context bound to the source tab/frame,
 editor tab, report identity, and a two-hour expiry. Only a sanitized HTTPS image
-result from that exact photo page can return; successful ImgBB upload remains
+result from that exact photo page can return; it may include one separately
+validated, width-only report display hint. Successful ImgBB upload remains
 committed if the report tab is gone or rejects insertion.
 
 `photos/photos.js` owns the UI and local transaction orchestration.
@@ -493,6 +494,12 @@ journal, per-photo delete capabilities, and tombstones. Published edits are new
 lineaged versions, never in-place replacement of an existing remote URL.
 `src/photos/photo-archive.js` both writes and reads the CSP-safe stored-ZIP
 project bundle, so a downloaded original can be imported back.
+`src/photos/photo-report-size.js` resolves the contextual Small, Medium, Large,
+and Original report choices without participating in rendering or export.
+Photo Topos previews the choice by changing only the stage's CSS width and
+stores the preference in the shared settings schema; the canvas and ImgBB
+upload stay at the project's full dimensions. Fixed choices are maximums, so a
+small source is never upscaled.
 
 ImgBB is bring-your-own-key. Its API origin is an optional permission requested
 when the user saves a key in Settings or uploads from the editor; the key

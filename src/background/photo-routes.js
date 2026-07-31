@@ -5,6 +5,7 @@
 
 import { imgbbAuth as ImgbbAuth } from '../photos/imgbb-auth.js';
 import { photoLibrary as Library } from '../photos/photo-library.js';
+import { sanitizeReportDimension } from '../reports/report-markup.js';
 
 const RETURN_CONTEXTS_KEY = 'bpbPhotoEditorReturns';
 const RETURN_TTL_MS = 2 * 60 * 60 * 1000;
@@ -43,9 +44,17 @@ const cleanPublicInsertion = value => {
             ? parsed.toString()
             : null;
     } catch { url = null; }
+    const displayWidth = sanitizeReportDimension(value.displayWidth);
     // An empty `alt` is a valid decorative-image description, so it does not
-    // invalidate the insertion; the id and HTTPS URL still must be sound.
-    return localPhotoId && url ? { localPhotoId, url, alt } : null;
+    // invalidate the insertion; the id and HTTPS URL still must be sound. A
+    // malformed optional display width is discarded rather than losing an
+    // already-uploaded photo.
+    return localPhotoId && url ? {
+        localPhotoId,
+        url,
+        alt,
+        ...(displayWidth ? { displayWidth } : {}),
+    } : null;
 };
 
 const defaultToken = () => {

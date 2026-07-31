@@ -381,7 +381,8 @@ to the worker, which opens `photos/photos.html` with a random return context
 bound to the source tab/frame and editor tab.
 
 An uploaded or reused library item returns only a clean local photo id, HTTPS
-image URL, and alt text. The worker accepts that result once,
+image URL, alt text, and an optional width-only display hint chosen in Photo
+Topos. The hosted raster remains full resolution. The worker accepts that result once,
 while the context is fresh, and the report editor revalidates it before
 inserting a normal image node. Expired, replayed, mismatched-tab, malformed, and
 non-Rich results fail closed. If the report tab disappears after ImgBB accepts

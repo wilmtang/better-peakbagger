@@ -190,6 +190,43 @@ test('a validated photo result is inserted only while the rich editor is availab
         '[img src="https://i.ibb.co/example/topo.jpg" alt="North ridge route"]');
 });
 
+test('a photo result carries a bounded display width without fixing its height', async () => {
+    const listeners = [];
+    const dom = await loadEditor({
+        prepare: d => {
+            d.chrome.runtime.onMessage = {
+                addListener: listener => listeners.push(listener),
+                removeListener: () => {}
+            };
+        }
+    });
+    await editorReady(dom);
+    const doc = dom.window.document;
+    const insert = displayWidth => {
+        let response;
+        for (const listener of listeners) {
+            listener({
+                type: 'PHOTO_INSERT_RESULT',
+                localPhotoId: 'photo:123',
+                url: 'https://i.ibb.co/example/topo.jpg',
+                alt: 'North ridge route',
+                displayWidth,
+            }, { id: 'test-extension' }, value => { response = value; });
+        }
+        return response;
+    };
+
+    assert.deepEqual(JSON.parse(JSON.stringify(insert(640))), { ok: true });
+    assert.equal(doc.getElementById('JournalText').value,
+        '[img src="https://i.ibb.co/example/topo.jpg" alt="North ridge route" width="640"]');
+
+    insert(4032);
+    assert.equal(doc.getElementById('JournalText').value,
+        '[img src="https://i.ibb.co/example/topo.jpg" alt="North ridge route" width="640"]'
+        + '[img src="https://i.ibb.co/example/topo.jpg" alt="North ridge route"]',
+        'invalid optional sizing must not reject the image or leak into saved markup');
+});
+
 // The photo page accepts a description up to photoLibrary.ALT_LIMIT and the
 // worker clamps the returned result to the same bound, so a shorter bound here
 // silently drops characters the user already saw stored beside their photo.
