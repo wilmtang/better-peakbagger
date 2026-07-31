@@ -5,6 +5,7 @@
 // Dynamic Map. Runs in MAIN world to inspect the page-owned, same-origin
 // MasterMap frame while settings and the renderer remain extension-isolated.
 
+import { isPeakbaggerPageOrigin } from '../peakbagger/peakbagger-origin.js';
 import { settingsSchema as Schema } from '../settings/settings-schema.js';
 import { themeResolve as ThemeResolve } from '../theme/theme-resolve.js';
 import { terrainBasemap } from '../terrain/terrain-basemap.js';
@@ -18,15 +19,13 @@ import { terrainFailure as TerrainFailure } from '../terrain/terrain-failure.js'
 (() => {
     'use strict';
 
-    const PEAKBAGGER_ORIGIN = /^https?:\/\/(?:www\.)?peakbagger\.com(?::\d+)?$/i;
-
     const iframe = document.querySelector('iframe#Gmap');
     if (!iframe || !iframe.parentNode) return;
 
     const fullMapLink = Array.from(document.querySelectorAll('a[href]')).find(link => {
         try {
             const url = new URL(link.href, location.href);
-            return (url.origin === location.origin || PEAKBAGGER_ORIGIN.test(url.origin))
+            return (url.origin === location.origin || isPeakbaggerPageOrigin(url.origin))
                 && /\/map\/bigmap\.aspx$/i.test(url.pathname)
                 && (url.searchParams.get('t') || '').toUpperCase() === 'P';
         } catch (error) { return false; }

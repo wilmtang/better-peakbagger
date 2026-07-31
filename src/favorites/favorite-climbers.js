@@ -5,6 +5,8 @@
 // Browser surfaces pass Documents and storage values in explicitly so they all
 // apply the same validation without coupling this module to extension APIs.
 
+import { PEAKBAGGER_HOSTS } from '../peakbagger/peakbagger-origin.js';
+
 const SCHEMA_VERSION = 1;
 const FAVORITES_KEY = 'bpbFavoriteClimbers';
 const BUDDY_CACHE_KEY = 'bpbBuddyCache';
@@ -175,7 +177,11 @@ const parseClimberInput = value => {
     if (direct != null) return direct;
     try {
         const url = new URL(text);
-        if (!/^(?:www\.)?peakbagger\.com$/i.test(url.hostname)
+        // The shared host set, not a local copy of it. The protocol is
+        // deliberately not constrained here: this only reads a cid out of
+        // something the user pasted, and climberPageUrl rebuilds the address
+        // from CLIMBER_BASE, so an old http bookmark still resolves.
+        if (!PEAKBAGGER_HOSTS.has(url.hostname.toLowerCase())
             || !/\/climber\/climber\.aspx$/i.test(url.pathname)) return null;
         return cleanCid(url.searchParams.get('cid'));
     } catch { return null; }

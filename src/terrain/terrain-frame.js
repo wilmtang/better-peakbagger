@@ -3,6 +3,7 @@
 //
 // Better Peakbagger — MapLibre renderer hosted by terrain/terrain.html.
 
+import { isPeakbaggerPageOrigin } from '../peakbagger/peakbagger-origin.js';
 import { settingsSchema } from '../settings/settings-schema.js';
 import { terrainStyle as TerrainStyle } from './terrain-style.js';
 import { terrainCache as TerrainCache } from './terrain-cache.js';
@@ -78,7 +79,6 @@ import { terrainTiles as TerrainTiles } from './terrain-tiles.js';
     // the casing at least two pixels wider), so the route still reads as cased.
     const ROUTE_HOVER_COLOR = '#000000';
     const ROUTE_HOVER_WIDTH_GAIN = 2;
-    const PEAKBAGGER_ORIGIN = /^https?:\/\/(?:www\.)?peakbagger\.com(?::\d+)?$/i;
     // Extension-provided vector basemap (not mirrored from Peakbagger's 2D
     // Leaflet menu): OpenFreeMap's keyless, CORS-clean OpenStreetMap tiles,
     // grafted into the live style so labels billboard upright over the
@@ -1845,7 +1845,7 @@ import { terrainTiles as TerrainTiles } from './terrain-tiles.js';
 
     window.addEventListener('message', event => {
         const data = event.data;
-        if (event.source !== window.parent || !PEAKBAGGER_ORIGIN.test(event.origin)
+        if (event.source !== window.parent || !isPeakbaggerPageOrigin(event.origin)
             || !data || data[FRAME_MESSAGE_TAG] !== true || data.dir !== 'toFrame') return;
         parentOrigin = event.origin;
 

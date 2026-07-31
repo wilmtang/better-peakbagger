@@ -6,23 +6,17 @@
 // response classification, bounded error details, and DOM parser failures.
 
 import { peakbaggerError as PeakbaggerError } from './peakbagger-error.js';
+import { isPeakbaggerUrl } from './peakbagger-origin.js';
 import { classifyResponse } from './peakbagger-response.js';
 import { requestDeadline as Deadline } from '../net/request-deadline.js';
 
 const DEFAULT_TIMEOUT_MS = 15000;
-const PEAKBAGGER_HOSTS = new Set(['peakbagger.com', 'www.peakbagger.com']);
 const OWNER_REQUIRED_KINDS = new Set(['buddies', 'edit', 'list']);
 
 const trim = value => (typeof value === 'string' ? value : value == null ? '' : String(value)).trim();
 const pageName = value => {
     try { return new URL(value).pathname.split('/').filter(Boolean).pop() || ''; }
     catch { return ''; }
-};
-const isPeakbaggerUrl = value => {
-    try {
-        const url = new URL(value);
-        return url.protocol === 'https:' && PEAKBAGGER_HOSTS.has(url.hostname.toLowerCase());
-    } catch { return false; }
 };
 const looksSignedOut = (text, kind, resolvedUrl) => {
     const body = typeof text === 'string' ? text : '';

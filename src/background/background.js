@@ -17,6 +17,7 @@ import { createTerrainPrefetch } from './terrain-prefetch.js';
 import { publicErrors as PublicErrors } from './public-errors.js';
 import { settings as Settings } from '../settings/settings.js';
 import { peakbaggerError as PeakbaggerError } from '../peakbagger/peakbagger-error.js';
+import { isPeakbaggerSenderUrl } from '../peakbagger/peakbagger-origin.js';
 import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
 
 (() => {
@@ -749,8 +750,8 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
         if (!tab || typeof tab.url !== 'string') return false;
         try {
             const url = new URL(tab.url);
-            return url.protocol === 'https:'
-                && /(^|\.)peakbagger\.com$/i.test(url.hostname)
+            return isPeakbaggerSenderUrl(tab.url)
+                && url.protocol === 'https:'
                 && /\/climber\/ascentedit\.aspx$/i.test(url.pathname)
                 && url.searchParams.get('pid') === String(draft.pid)
                 && url.searchParams.get('cid') === String(draft.cid);
@@ -1338,11 +1339,8 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
         await photoRoutes.cleanup(cutoff);
     };
 
-    const isPeakbaggerSender = sender => {
-        try {
-            return !!(sender && sender.tab && sender.url && /(^|\.)peakbagger\.com$/i.test(new URL(sender.url).hostname));
-        } catch { return false; }
-    };
+    const isPeakbaggerSender = sender =>
+        !!(sender && sender.tab && sender.url && isPeakbaggerSenderUrl(sender.url));
 
     const isClimbListSender = sender => {
         if (!isPeakbaggerSender(sender)) return false;
