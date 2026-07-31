@@ -856,7 +856,7 @@ const run = async () => {
             const selectedPointRadius = context =>
                 context.raw?._raw === chartData[selectedCoordinateIndex] ? 5 : 0;
             const datasets = [{
-                label: `Elevation by Distance`,
+                label: 'Elevation by Distance',
                 data: eleDistData,
                 hidden: hideDistance,
                 borderColor: '#fc4c02',
@@ -867,7 +867,7 @@ const run = async () => {
 
             if (hasTime) {
                 datasets.push({
-                    label: `Elevation by Time`,
+                    label: 'Elevation by Time',
                     data: eleTimeData,
                     hidden: hideTime,
                     borderColor: '#6ab0de',
@@ -1097,7 +1097,7 @@ const run = async () => {
             }
             const xml = response.document;
             const trkpts = Array.from(xml.querySelectorAll('trkpt'));
-            if (!trkpts.length) return stats.textContent = "No track points found.";
+            if (!trkpts.length) return stats.textContent = 'No track points found.';
 
             mapRouteSegments = parseMapRouteSegments(xml);
             terrainCoordinator.update();
@@ -1122,8 +1122,8 @@ const run = async () => {
                 const hasValidCoordinates = parsedPoints.some(point =>
                     Number.isFinite(point.lat) && Number.isFinite(point.lon));
                 return stats.textContent = hasValidCoordinates
-                    ? "This GPS track has no usable elevation data."
-                    : "No valid track points found.";
+                    ? 'This GPS track has no usable elevation data.'
+                    : 'No valid track points found.';
             }
 
             // The climb's timezone comes from the track's starting point: the
@@ -1171,7 +1171,7 @@ const run = async () => {
             scheduleRouteOverlay();
 
         } catch (e) {
-            stats.textContent = "Error parsing GPX file.";
+            stats.textContent = 'Error parsing GPX file.';
             console.error(e);
         }
     };

@@ -379,10 +379,10 @@ const createPhotoStore = async options => {
         ].map(name => [name, transaction.objectStore(name)]));
 
         const restoredLookups = restored.map(value => Promise.all([
-                requestResult(stores[STORES.photos].get(value.photo.localId)),
-                requestResult(stores[STORES.projects].get(value.photo.localId)),
-                requestResult(stores[STORES.originals].get(value.photo.localId)),
-                requestResult(stores[STORES.thumbnails].get(value.photo.localId)),
+            requestResult(stores[STORES.photos].get(value.photo.localId)),
+            requestResult(stores[STORES.projects].get(value.photo.localId)),
+            requestResult(stores[STORES.originals].get(value.photo.localId)),
+            requestResult(stores[STORES.thumbnails].get(value.photo.localId)),
         ]));
         const tombstoneLookups = deleted.map(tombstone =>
             requestResult(stores[STORES.photos].get(tombstone.localId)));

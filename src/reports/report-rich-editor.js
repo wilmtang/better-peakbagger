@@ -460,7 +460,7 @@ export const richState = editor => {
     return {
         block: editor.isActive('codeBlock') ? 'pre'
             : headingLevel ? `h${headingLevel}`
-            : editor.isActive('blockquote') ? 'blockquote' : 'p',
+                : editor.isActive('blockquote') ? 'blockquote' : 'p',
         marks: Object.fromEntries(MARKS.map(name => [name, editor.isActive(name)])),
         bulletList: editor.isActive('bulletList'),
         orderedList: editor.isActive('orderedList'),

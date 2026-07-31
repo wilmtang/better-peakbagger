@@ -1664,7 +1664,7 @@ try {
         `the first-use confirmation did not name both providers: ${JSON.stringify(consent)}`);
     check(consent?.links.some(link => link === 'https://mapterhorn.com/privacy-policy/')
         && consent?.links.some(link => link === 'https://openfreemap.org/privacy/'),
-        `the first-use confirmation is missing provider privacy links: ${JSON.stringify(consent)}`);
+    `the first-use confirmation is missing provider privacy links: ${JSON.stringify(consent)}`);
     await offPage.locator('.bpb-terrain-consent-secondary').click();
     check(await offPage.locator('#bpb-terrain-consent').count() === 0,
         'declining the first-use confirmation did not close it');
@@ -1781,7 +1781,7 @@ try {
             && peakBigMapInit?.focusPeak?.name === 'Mount Shuksan'
             && peakBigMapInit?.focusPeak?.state === 'unclimbed'
             && !Object.hasOwn(peakBigMapInit || {}, 'routeSegments'),
-            `the Full Screen peak map did not start a route-free summit view (init=${JSON.stringify(peakBigMapInit)})`);
+        `the Full Screen peak map did not start a route-free summit view (init=${JSON.stringify(peakBigMapInit)})`);
         const peakBigMapFrameCreated = await peakBigMapPage.locator('#bpb-terrain-frame')
             .waitFor({ state: 'attached', timeout: 3000 }).then(() => true).catch(() => false);
         check(peakBigMapFrameCreated,
@@ -1838,7 +1838,7 @@ try {
             && peakInit?.focusZoom === 13
             && peakInit?.focusPeak?.id === 2829
             && !Object.hasOwn(peakInit || {}, 'routeSegments'),
-            `the real Peak-page click did not start a route-free summit view (init=${JSON.stringify(peakInit)})`);
+        `the real Peak-page click did not start a route-free summit view (init=${JSON.stringify(peakInit)})`);
         const peakFrameCreated = await peakPage.locator('#bpb-terrain-frame').waitFor({ state: 'attached', timeout: 3000 })
             .then(() => true).catch(() => false);
         check(peakFrameCreated, 'the isolated terrain bridge did not create a frame for the Peak-page summit view');

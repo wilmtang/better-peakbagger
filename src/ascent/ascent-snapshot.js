@@ -18,225 +18,225 @@
 // has no server-assigned aid yet.
 // It does NOT read the token or touch the network; it only reads the form.
 
-    const trim = value => (typeof value === 'string' ? value : value == null ? '' : String(value)).trim();
-    const pad2 = value => String(value).padStart(2, '0');
-    const displayText = (value, limit) => trim(value).replace(/\s+/g, ' ').slice(0, limit);
+const trim = value => (typeof value === 'string' ? value : value == null ? '' : String(value)).trim();
+const pad2 = value => String(value).padStart(2, '0');
+const displayText = (value, limit) => trim(value).replace(/\s+/g, ' ').slice(0, limit);
 
-    // Peakbagger dates are typed M/D/YYYY; partial dates leave the day (or month)
-    // out. Normalize to the ISO-ish shape github-backup understands, using 00 for
-    // an unknown month/day so the slug and JSON degrade gracefully.
-    const normalizeDate = raw => {
-        const t = trim(raw);
-        if (!t) return '';
-        if (/^\d{4}-\d{2}-\d{2}$/.test(t)) return t;
-        let m = t.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-        if (m) return `${m[3]}-${pad2(m[1])}-${pad2(m[2])}`;
-        m = t.match(/^(\d{1,2})\/(\d{4})$/);           // M/YYYY (day unknown)
-        if (m) return `${m[2]}-${pad2(m[1])}-00`;
-        m = t.match(/^(\d{4})$/);                      // year only
-        if (m) return `${m[1]}-00-00`;
-        return t;
-    };
+// Peakbagger dates are typed M/D/YYYY; partial dates leave the day (or month)
+// out. Normalize to the ISO-ish shape github-backup understands, using 00 for
+// an unknown month/day so the slug and JSON degrade gracefully.
+const normalizeDate = raw => {
+    const t = trim(raw);
+    if (!t) return '';
+    if (/^\d{4}-\d{2}-\d{2}$/.test(t)) return t;
+    let m = t.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    if (m) return `${m[3]}-${pad2(m[1])}-${pad2(m[2])}`;
+    m = t.match(/^(\d{1,2})\/(\d{4})$/);           // M/YYYY (day unknown)
+    if (m) return `${m[2]}-${pad2(m[1])}-00`;
+    m = t.match(/^(\d{4})$/);                      // year only
+    if (m) return `${m[1]}-00-00`;
+    return t;
+};
 
-    // ---- form field readers -----------------------------------------------
+// ---- form field readers -----------------------------------------------
 
-    const field = (form, name) => (form && form.elements ? form.elements[name] : null);
+const field = (form, name) => (form && form.elements ? form.elements[name] : null);
 
-    const fieldValue = (form, name) => {
-        const el = field(form, name);
-        if (!el) return '';
-        // A RadioNodeList (same-named group) exposes the chosen .value.
-        return trim(el.value);
-    };
+const fieldValue = (form, name) => {
+    const el = field(form, name);
+    if (!el) return '';
+    // A RadioNodeList (same-named group) exposes the chosen .value.
+    return trim(el.value);
+};
 
-    // The visible label for a control, for human-readable dropdown/radio text.
-    const labelText = el => {
-        if (!el) return '';
-        if (el.labels && el.labels.length) return trim(el.labels[0].textContent);
-        const next = el.nextElementSibling;
-        if (next && next.tagName === 'LABEL') return trim(next.textContent);
-        return '';
-    };
+// The visible label for a control, for human-readable dropdown/radio text.
+const labelText = el => {
+    if (!el) return '';
+    if (el.labels && el.labels.length) return trim(el.labels[0].textContent);
+    const next = el.nextElementSibling;
+    if (next && next.tagName === 'LABEL') return trim(next.textContent);
+    return '';
+};
 
-    // The selected option's visible text (Precip, etc.), not its numeric code.
-    const selectedText = (form, name) => {
-        const el = field(form, name);
-        if (!el || !el.options || el.selectedIndex < 0) return '';
-        const option = el.options[el.selectedIndex];
-        if (!option || trim(option.value) === '0') return '';
-        return trim(option.textContent);
-    };
+// The selected option's visible text (Precip, etc.), not its numeric code.
+const selectedText = (form, name) => {
+    const el = field(form, name);
+    if (!el || !el.options || el.selectedIndex < 0) return '';
+    const option = el.options[el.selectedIndex];
+    if (!option || trim(option.value) === '0') return '';
+    return trim(option.textContent);
+};
 
-    // A "hours:minutes" time from Peakbagger's split Hr/Min inputs, or '' when
-    // both are blank.
-    const splitTime = (form, hrName, minName) => {
-        const hr = fieldValue(form, hrName);
-        const min = fieldValue(form, minName);
-        if (!hr && !min) return '';
-        return `${hr || '0'}:${pad2(min || '0')}`;
-    };
+// A "hours:minutes" time from Peakbagger's split Hr/Min inputs, or '' when
+// both are blank.
+const splitTime = (form, hrName, minName) => {
+    const hr = fieldValue(form, hrName);
+    const min = fieldValue(form, minName);
+    if (!hr && !min) return '';
+    return `${hr || '0'}:${pad2(min || '0')}`;
+};
 
-    // Checked items of an ASP.NET CheckBoxList (Name$0, Name$1, …) as their
-    // visible labels.
-    const checkedList = (form, prefix) => {
-        if (!form || !form.elements) return [];
-        const labels = [];
-        for (const el of form.elements) {
-            if (el.type === 'checkbox' && el.checked && el.name && el.name.startsWith(`${prefix}$`)) {
-                const text = labelText(el);
-                if (text) labels.push(text);
-            }
+// Checked items of an ASP.NET CheckBoxList (Name$0, Name$1, …) as their
+// visible labels.
+const checkedList = (form, prefix) => {
+    if (!form || !form.elements) return [];
+    const labels = [];
+    for (const el of form.elements) {
+        if (el.type === 'checkbox' && el.checked && el.name && el.name.startsWith(`${prefix}$`)) {
+            const text = labelText(el);
+            if (text) labels.push(text);
         }
-        return labels;
-    };
+    }
+    return labels;
+};
 
-    // The chosen radio of an ASP.NET RadioButtonList as its visible label.
-    const checkedRadioLabel = (form, prefix) => {
-        if (!form || !form.elements) return '';
-        for (const el of form.elements) {
-            if (el.type === 'radio' && el.checked && el.name && el.name.startsWith(prefix)) {
-                return labelText(el);
-            }
+// The chosen radio of an ASP.NET RadioButtonList as its visible label.
+const checkedRadioLabel = (form, prefix) => {
+    if (!form || !form.elements) return '';
+    for (const el of form.elements) {
+        if (el.type === 'radio' && el.checked && el.name && el.name.startsWith(prefix)) {
+            return labelText(el);
         }
-        return '';
-    };
+    }
+    return '';
+};
 
-    // Added companions live in #OthersTable. OthersText is only the autocomplete
-    // search box and is cleared after each Add, so it is never backup data.
-    const readCompanions = form => {
-        const table = form && form.ownerDocument ? form.ownerDocument.getElementById('OthersTable') : null;
-        const registered = [];
-        const others = [];
-        if (!table) return { registered, others: '' };
-        for (const row of Array.from(table.rows).slice(1)) {
-            const cells = Array.from(row.cells);
-            if (!cells.length) continue;
-            const anchor = row.querySelector('a[href*="cid="]');
-            if (anchor) {
-                let id = null;
-                try {
-                    const rawId = new URL(anchor.href, 'https://peakbagger.com/').searchParams.get('cid');
-                    if (/^\d+$/.test(rawId || '')) id = Number(rawId);
-                } catch { /* malformed link */ }
-                const name = trim(anchor.textContent);
-                if (name) registered.push({ ...(Number.isFinite(id) ? { id } : {}), name });
-                continue;
-            }
-            // The last cell normally contains only a Remove control. Read the
-            // first cell so button labels and party-role controls cannot leak.
-            const name = trim(cells[0].textContent);
-            if (name) others.push(name);
+// Added companions live in #OthersTable. OthersText is only the autocomplete
+// search box and is cleared after each Add, so it is never backup data.
+const readCompanions = form => {
+    const table = form && form.ownerDocument ? form.ownerDocument.getElementById('OthersTable') : null;
+    const registered = [];
+    const others = [];
+    if (!table) return { registered, others: '' };
+    for (const row of Array.from(table.rows).slice(1)) {
+        const cells = Array.from(row.cells);
+        if (!cells.length) continue;
+        const anchor = row.querySelector('a[href*="cid="]');
+        if (anchor) {
+            let id = null;
+            try {
+                const rawId = new URL(anchor.href, 'https://peakbagger.com/').searchParams.get('cid');
+                if (/^\d+$/.test(rawId || '')) id = Number(rawId);
+            } catch { /* malformed link */ }
+            const name = trim(anchor.textContent);
+            if (name) registered.push({ ...(Number.isFinite(id) ? { id } : {}), name });
+            continue;
         }
-        return { registered, others: others.join(', ') };
-    };
+        // The last cell normally contains only a Remove control. Read the
+        // first cell so button labels and party-role controls cannot leak.
+        const name = trim(cells[0].textContent);
+        if (name) others.push(name);
+    }
+    return { registered, others: others.join(', ') };
+};
 
-    // The peak identity from the peak <select>, falling back to the URL's pid.
-    const readPeak = (form, params) => {
-        const select = field(form, 'PeakListBox');
-        let id = null;
-        let name = '';
-        if (select && select.options && select.selectedIndex >= 0) {
-            const option = select.options[select.selectedIndex];
-            if (option && trim(option.value)) { id = Number(option.value); name = trim(option.textContent); }
-        }
-        if (id == null && params && params.get('pid')) id = Number(params.get('pid'));
-        return { id: Number.isFinite(id) ? id : null, name };
-    };
+// The peak identity from the peak <select>, falling back to the URL's pid.
+const readPeak = (form, params) => {
+    const select = field(form, 'PeakListBox');
+    let id = null;
+    let name = '';
+    if (select && select.options && select.selectedIndex >= 0) {
+        const option = select.options[select.selectedIndex];
+        if (option && trim(option.value)) { id = Number(option.value); name = trim(option.textContent); }
+    }
+    if (id == null && params && params.get('pid')) id = Number(params.get('pid'));
+    return { id: Number.isFinite(id) ? id : null, name };
+};
 
-    // Existing-ascent forms can leave PeakListBox empty even though Peakbagger
-    // renders the peak in its native title:
-    //   "Ascent of Mount Daniel by Alex Doe [on YYYY-MM-DD]"
-    // Only accept that exact existing-ascent shape. New-ascent and unrelated
-    // headings must not become draft labels.
-    const pageTitlePeakName = form => {
-        const title = form?.ownerDocument?.getElementById('PageTitle');
-        const text = displayText(title?.textContent, 1000);
-        const match = text.match(/^Ascent of (.+?) by .+(?: on \d{4}-\d{2}-\d{2})?$/);
-        return match ? displayText(match[1], 200) : '';
-    };
+// Existing-ascent forms can leave PeakListBox empty even though Peakbagger
+// renders the peak in its native title:
+//   "Ascent of Mount Daniel by Alex Doe [on YYYY-MM-DD]"
+// Only accept that exact existing-ascent shape. New-ascent and unrelated
+// headings must not become draft labels.
+const pageTitlePeakName = form => {
+    const title = form?.ownerDocument?.getElementById('PageTitle');
+    const text = displayText(title?.textContent, 1000);
+    const match = text.match(/^Ascent of (.+?) by .+(?: on \d{4}-\d{2}-\d{2})?$/);
+    return match ? displayText(match[1], 200) : '';
+};
 
-    // Compact, device-local display metadata for a report draft. The draft key
-    // already carries identity; this is deliberately just the human label the
-    // form currently shows, with conservative caps for options-page rendering.
-    const label = ({ form, params } = {}) => {
-        const selectedPeak = displayText(readPeak(form, params).name, 200);
-        const pageTitlePeak = pageTitlePeakName(form);
-        const preparedPeak = form && params?.get('pid')
+// Compact, device-local display metadata for a report draft. The draft key
+// already carries identity; this is deliberately just the human label the
+// form currently shows, with conservative caps for options-page rendering.
+const label = ({ form, params } = {}) => {
+    const selectedPeak = displayText(readPeak(form, params).name, 200);
+    const pageTitlePeak = pageTitlePeakName(form);
+    const preparedPeak = form && params?.get('pid')
             && form.dataset?.bpbDraftPeakId === params.get('pid')
-            ? displayText(form.dataset.bpbDraftPeakName, 200)
-            : '';
-        const peak = selectedPeak || pageTitlePeak || preparedPeak;
-        const date = displayText(fieldValue(form, 'DateText'), 20);
-        return {
-            ...(peak ? { peak } : {}),
-            ...(date ? { date } : {})
-        };
+        ? displayText(form.dataset.bpbDraftPeakName, 200)
+        : '';
+    const peak = selectedPeak || pageTitlePeak || preparedPeak;
+    const date = displayText(fieldValue(form, 'DateText'), 20);
+    return {
+        ...(peak ? { peak } : {}),
+        ...(date ? { date } : {})
+    };
+};
+
+// ---- snapshot ----------------------------------------------------------
+
+// Build the save-time snapshot from the live form and the editor's report.
+// `params` is a URLSearchParams of the edit page's query (cid/aid/pid);
+// `report` is { markdown } — the final Markdown body the editor already
+// resolved (exact sidecar or bracket→Markdown), so this module needs no DOM.
+const build = ({ form, params, report = {}, extensionVersion = '' } = {}) => {
+    const climberId = params && params.get('cid') ? Number(params.get('cid')) : null;
+    const ascentId = params && params.get('aid') ? Number(params.get('aid')) : null;
+    const peak = readPeak(form, params);
+    const date = normalizeDate(fieldValue(form, 'DateText'));
+
+    const ascent = {
+        id: ascentId,
+        date,
+        suffix: fieldValue(form, 'SuffixText'),
+        type: checkedRadioLabel(form, 'AscentTypeRBL'),
+        route: fieldValue(form, 'RouteUp'),
+        routeDown: fieldValue(form, 'RouteDn'),
+        externalUrl: fieldValue(form, 'URLTB'),
+        gainFt: fieldValue(form, 'GainFt'),
+        lossFt: fieldValue(form, 'LossFt'),
+        distanceUpMi: fieldValue(form, 'UpMi'),
+        distanceDnMi: fieldValue(form, 'DnMi'),
+        extraGainFt: fieldValue(form, 'ExUpFt'),
+        extraLossFt: fieldValue(form, 'ExDnFt'),
+        timeUp: splitTime(form, 'UpHr', 'UpMin'),
+        timeDn: splitTime(form, 'DnHr', 'DnMin'),
+        nightsOut: fieldValue(form, 'AscentNightsDD'),
+        startFt: fieldValue(form, 'StartFt'),
+        endFt: fieldValue(form, 'EndFt'),
+        pointFt: fieldValue(form, 'PointFt'),
+        quality: fieldValue(form, 'AscentQuality'),
+        gear: checkedList(form, 'GearCheckBoxList'),
+        companions: readCompanions(form),
+        weather: {
+            precip: selectedText(form, 'PrecipDD'),
+            temperature: selectedText(form, 'TempDD'),
+            wind: selectedText(form, 'WindDD'),
+            visibility: selectedText(form, 'VisDD'),
+            description: fieldValue(form, 'WeatherText'),
+        },
     };
 
-    // ---- snapshot ----------------------------------------------------------
-
-    // Build the save-time snapshot from the live form and the editor's report.
-    // `params` is a URLSearchParams of the edit page's query (cid/aid/pid);
-    // `report` is { markdown } — the final Markdown body the editor already
-    // resolved (exact sidecar or bracket→Markdown), so this module needs no DOM.
-    const build = ({ form, params, report = {}, extensionVersion = '' } = {}) => {
-        const climberId = params && params.get('cid') ? Number(params.get('cid')) : null;
-        const ascentId = params && params.get('aid') ? Number(params.get('aid')) : null;
-        const peak = readPeak(form, params);
-        const date = normalizeDate(fieldValue(form, 'DateText'));
-
-        const ascent = {
-            id: ascentId,
-            date,
-            suffix: fieldValue(form, 'SuffixText'),
-            type: checkedRadioLabel(form, 'AscentTypeRBL'),
-            route: fieldValue(form, 'RouteUp'),
-            routeDown: fieldValue(form, 'RouteDn'),
-            externalUrl: fieldValue(form, 'URLTB'),
-            gainFt: fieldValue(form, 'GainFt'),
-            lossFt: fieldValue(form, 'LossFt'),
-            distanceUpMi: fieldValue(form, 'UpMi'),
-            distanceDnMi: fieldValue(form, 'DnMi'),
-            extraGainFt: fieldValue(form, 'ExUpFt'),
-            extraLossFt: fieldValue(form, 'ExDnFt'),
-            timeUp: splitTime(form, 'UpHr', 'UpMin'),
-            timeDn: splitTime(form, 'DnHr', 'DnMin'),
-            nightsOut: fieldValue(form, 'AscentNightsDD'),
-            startFt: fieldValue(form, 'StartFt'),
-            endFt: fieldValue(form, 'EndFt'),
-            pointFt: fieldValue(form, 'PointFt'),
-            quality: fieldValue(form, 'AscentQuality'),
-            gear: checkedList(form, 'GearCheckBoxList'),
-            companions: readCompanions(form),
-            weather: {
-                precip: selectedText(form, 'PrecipDD'),
-                temperature: selectedText(form, 'TempDD'),
-                wind: selectedText(form, 'WindDD'),
-                visibility: selectedText(form, 'VisDD'),
-                description: fieldValue(form, 'WeatherText'),
-            },
-        };
-
-        const snapshot = {
-            ascent,
-            peak: { id: peak.id, name: peak.name },
-            report: { markdown: typeof report.markdown === 'string' ? report.markdown : '' },
-            backup: { extensionVersion: trim(extensionVersion), syncedAt: null },
-        };
-
-        return {
-            key: identityKey({ climberId, peakId: peak.id, date }),
-            identity: { climberId, ascentId, peakId: peak.id, date },
-            snapshot,
-        };
+    const snapshot = {
+        ascent,
+        peak: { id: peak.id, name: peak.name },
+        report: { markdown: typeof report.markdown === 'string' ? report.markdown : '' },
+        backup: { extensionVersion: trim(extensionVersion), syncedAt: null },
     };
 
-    // A stable match key: same climber + peak + submitted date. The worker adds
-    // the source tab before storage, so identical new ascents in different tabs
-    // cannot overwrite one another before Peakbagger assigns their aids.
-    const identityKey = ({ climberId, peakId, date }) =>
-        `${climberId ?? ''}|${peakId ?? ''}|${date ?? ''}`;
+    return {
+        key: identityKey({ climberId, peakId: peak.id, date }),
+        identity: { climberId, ascentId, peakId: peak.id, date },
+        snapshot,
+    };
+};
 
-    const API = { build, identityKey, normalizeDate, label };
+// A stable match key: same climber + peak + submitted date. The worker adds
+// the source tab before storage, so identical new ascents in different tabs
+// cannot overwrite one another before Peakbagger assigns their aids.
+const identityKey = ({ climberId, peakId, date }) =>
+    `${climberId ?? ''}|${peakId ?? ''}|${date ?? ''}`;
 
-    export const ascentSnapshot = API;
+const API = { build, identityKey, normalizeDate, label };
+
+export const ascentSnapshot = API;

@@ -844,7 +844,7 @@ test('Full Screen 3D maps serve peak-dot requests from the native PLLBB feed', a
         feedRequests.push(String(url));
         return {
             ok: true,
-            text: async () => `<ts><t i="58603" n="Iron Mountain" a="44.155" o="-121.77" c="1" r="246"/></ts>`
+            text: async () => '<ts><t i="58603" n="Iron Mountain" a="44.155" o="-121.77" c="1" r="246"/></ts>'
         };
     };
     fixture.evaluate();
@@ -886,7 +886,7 @@ test('Full Screen 3D group maps answer peak-dot requests as unavailable, like th
         '<iframe id="if" src="https://www.peakbagger.com/map/MasterMap.aspx?cy=44.16&cx=-121.76&z=14&t=G&d=2414&c=900001"></iframe>');
     const route = new leaflet.Polyline([{ lat: 44.15, lng: -121.78 }, { lat: 44.16, lng: -121.76 }], {
         color: '#3388ff', weight: 3,
-        // Group-map tracks need native hover/click handlers to be recognized.
+    // Group-map tracks need native hover/click handlers to be recognized.
     });
     route.on('mouseover', () => {});
     route.on('click', () => {});

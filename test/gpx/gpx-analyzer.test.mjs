@@ -137,10 +137,10 @@ test('GPX analyzer adds a thick, segment-preserving route casing behind native L
     window.matchMedia = () => ({ matches: false });
     window.HTMLCanvasElement.prototype.getContext = () => ({});
     const peakFeedRequests = [];
-    const peakFeedXml = `<?xml version='1.0' encoding='UTF-8'?><ts>`
-        + `<t i="58603" n="Iron Mountain" a="48.72" o="-121.79" c="1" r="246"/>`
-        + `<t i="-114297" n="Peak 5000 (Prov)" a="48.74" o="-121.82" c="2" r="10"/>`
-        + `</ts>`;
+    const peakFeedXml = '<?xml version=\'1.0\' encoding=\'UTF-8\'?><ts>'
+        + '<t i="58603" n="Iron Mountain" a="48.72" o="-121.79" c="1" r="246"/>'
+        + '<t i="-114297" n="Peak 5000 (Prov)" a="48.74" o="-121.82" c="2" r="10"/>'
+        + '</ts>';
     window.fetch = async url => {
         if (String(url).includes('/Async/PLLBB.aspx')) {
             peakFeedRequests.push(String(url));

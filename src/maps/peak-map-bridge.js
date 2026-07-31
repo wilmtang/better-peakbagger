@@ -7,19 +7,19 @@
 
 import { settings as S } from '../settings/settings.js';
 
-    const send = settings => window.postMessage({
-        __bpbPeakMap: true,
-        dir: 'toPage',
-        enable3dMap: settings.enable3dMap === true,
-        theme: settings.theme,
-        terrainCacheLimitMb: settings.terrainCacheLimitMb
-    }, location.origin);
+const send = settings => window.postMessage({
+    __bpbPeakMap: true,
+    dir: 'toPage',
+    enable3dMap: settings.enable3dMap === true,
+    theme: settings.theme,
+    terrainCacheLimitMb: settings.terrainCacheLimitMb
+}, location.origin);
 
-    window.addEventListener('message', async event => {
-        if (event.source !== window || event.origin !== location.origin) return;
-        const data = event.data;
-        if (!data || data.__bpbPeakMap !== true || data.dir !== 'toCS' || data.type !== 'get') return;
-        send(await S.get());
-    });
+window.addEventListener('message', async event => {
+    if (event.source !== window || event.origin !== location.origin) return;
+    const data = event.data;
+    if (!data || data.__bpbPeakMap !== true || data.dir !== 'toCS' || data.type !== 'get') return;
+    send(await S.get());
+});
 
-    S.subscribe(send);
+S.subscribe(send);

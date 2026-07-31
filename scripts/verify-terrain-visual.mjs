@@ -89,11 +89,11 @@ const server = createServer({ key: fixtureKey, cert: fixtureCert }, async (reque
             const dy = (maxy - miny) / 8;
             const dx = (maxx - minx) / 8;
             response.writeHead(200, { 'content-type': 'text/xml; charset=utf-8', 'cache-control': 'no-store' });
-            response.end(`<?xml version='1.0' encoding='UTF-8'?><ts>`
+            response.end('<?xml version=\'1.0\' encoding=\'UTF-8\'?><ts>'
                 + `<t i="58603" n="Iron Mountain" a="${cy}" o="${cx}" c="1" r="246"/>`
                 + `<t i="38375" n="Peak 6057" a="${cy + dy}" o="${cx + dx}" c="0" r="137"/>`
                 + `<t i="-114297" n="Peak 5000 (Prov)" a="${cy - dy}" o="${cx - dx}" c="2" r="10"/>`
-                + `</ts>`);
+                + '</ts>');
             return;
         }
         const showcaseRoutes = {
@@ -425,7 +425,7 @@ const clickTerrainToggle = async cdp => {
     })()`);
     if (!spot) throw new Error('The 3D toggle is missing or unclickable');
     await clickAt(cdp, spot.x, spot.y);
-    return evaluate(cdp, `document.activeElement && document.activeElement.id`);
+    return evaluate(cdp, 'document.activeElement && document.activeElement.id');
 };
 
 // The paint the group route is currently drawn with, as the frame's live
@@ -1249,7 +1249,7 @@ try {
     // exercises the frame's own handler and its relay, including the popup
     // being dismissed first as the nearer layer.
     const focusInFrame = await evaluate(cdp,
-        `document.activeElement && document.activeElement.id === 'bpb-terrain-frame'`);
+        'document.activeElement && document.activeElement.id === \'bpb-terrain-frame\'');
     if (!focusInFrame) throw new Error('Clicking the 3D map did not move focus into the terrain frame');
     await pressEscape(cdp);
     const afterFirstEscape = await waitForPageState(cdp, `(() => {

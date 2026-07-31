@@ -709,7 +709,7 @@ test('3D terrain frame validates coordinate-only routes before loading public DE
     });
     assert.ok(map.paint.some(call => call[0] === 'bpb-highlight'
         && call[1] === 'circle-color' && call[2] === '#0055ff'),
-        'the time-series chaser is blue in 3D');
+    'the time-series chaser is blue in 3D');
 
     dispatch({ type: 'highlight', coordinates: [-121.81, 48.71], series: 'unsupported' });
     assert.deepEqual(map.paint.at(-1), ['bpb-highlight', 'circle-color', '#ff3b30'],

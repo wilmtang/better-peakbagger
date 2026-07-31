@@ -104,7 +104,7 @@ import { units as Units } from '../src/ui/units.js';
                             },
                             { label: 'I’m signed in — try again', onClick: retry }
                         ]
-                    : (notOwner ? [] : [{ label: 'Try again', onClick: retry }])
+                        : (notOwner ? [] : [{ label: 'Try again', onClick: retry }])
             }
         );
     };

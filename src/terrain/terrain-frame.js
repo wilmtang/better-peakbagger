@@ -1236,10 +1236,10 @@ import { terrainTiles as TerrainTiles } from './terrain-tiles.js';
                 // the dot at the feed position and let the next batch retry.
                 return feature;
             }
-            // An unreadable climb with a stale verdict means zooming in outran
-            // the finer DEM tile: hold the stale verdict (its zoom stays old,
-            // so the next batch re-climbs once the tile loads) rather than
-            // hopping to the feed coordinates and back off the summit.
+        // An unreadable climb with a stale verdict means zooming in outran
+        // the finer DEM tile: hold the stale verdict (its zoom stays old,
+        // so the next batch re-climbs once the tile loads) rather than
+        // hopping to the feed coordinates and back off the summit.
         }
         // Delete-then-set refreshes recency: the cache trims from the oldest
         // end, and dots still on screen must never be the ones trimmed.
@@ -1581,11 +1581,11 @@ import { terrainTiles as TerrainTiles } from './terrain-tiles.js';
             // would fetch and mesh a throwaway tileset the user never sees.
             const initialCamera = requestedCamera
                 || (route
-                ? {
-                    bounds: route.bounds,
-                    fitBoundsOptions: { padding: 46, maxZoom: 15.5, pitch: 60, bearing: 0 }
-                }
-                : { center: focus.center, zoom: focus.zoom });
+                    ? {
+                        bounds: route.bounds,
+                        fitBoundsOptions: { padding: 46, maxZoom: 15.5, pitch: 60, bearing: 0 }
+                    }
+                    : { center: focus.center, zoom: focus.zoom });
             map = new maplibre.Map({
                 container: canvas,
                 // A raster drape must never gate MapLibre's initial `load`:

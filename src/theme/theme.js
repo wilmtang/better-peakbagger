@@ -31,54 +31,54 @@ import {
     readThemeMirror,
 } from './theme-bootstrap.js';
 
-    const root = document.documentElement;
+const root = document.documentElement;
 
-    // Inject the dark stylesheet once, as early as possible, straight into
-    // <html>. It stays inert until data-bpb-theme="dark" is set (below, and on
-    // reconcile), so the same sheet also covers light mode and later live
-    // toggles without re-injection.
-    const STYLE_ID = 'bpb-site-dark';
-    // Idempotent sheet injection. Tied to *every* apply() below (not just this
-    // one document_start pass) so the sheet can never be missing while
-    // data-bpb-theme is set — the exact state that renders self-themed panels
-    // (the GPX chart) dark on an otherwise-light page. `<head>` doesn't exist at
-    // document_start, so fall back to `<html>`; once it exists we prefer it.
-    const ensureSheet = () => {
-        if (!darkCss || document.getElementById(STYLE_ID)) return;
-        const style = document.createElement('style');
-        style.id = STYLE_ID;
-        style.textContent = darkCss;
-        (document.head || root).appendChild(style);
-    };
+// Inject the dark stylesheet once, as early as possible, straight into
+// <html>. It stays inert until data-bpb-theme="dark" is set (below, and on
+// reconcile), so the same sheet also covers light mode and later live
+// toggles without re-injection.
+const STYLE_ID = 'bpb-site-dark';
+// Idempotent sheet injection. Tied to *every* apply() below (not just this
+// one document_start pass) so the sheet can never be missing while
+// data-bpb-theme is set — the exact state that renders self-themed panels
+// (the GPX chart) dark on an otherwise-light page. `<head>` doesn't exist at
+// document_start, so fall back to `<html>`; once it exists we prefer it.
+const ensureSheet = () => {
+    if (!darkCss || document.getElementById(STYLE_ID)) return;
+    const style = document.createElement('style');
+    style.id = STYLE_ID;
+    style.textContent = darkCss;
+    (document.head || root).appendChild(style);
+};
+ensureSheet();
+
+const inlineColors = createDynamicInlineColorApplier({ document });
+const finishTheme = theme => {
     ensureSheet();
+    root.setAttribute('data-bpb-theme', theme);
+    inlineColors.setTheme(theme);
+    // The complete sheet and watcher now own the page. Remove the broad
+    // bootstrap only after both are ready so no light frame can land
+    // between the early and full stages.
+    document.getElementById(EARLY_THEME_STYLE_ID)?.remove();
+};
 
-    const inlineColors = createDynamicInlineColorApplier({ document });
-    const finishTheme = theme => {
-        ensureSheet();
-        root.setAttribute('data-bpb-theme', theme);
-        inlineColors.setTheme(theme);
-        // The complete sheet and watcher now own the page. Remove the broad
-        // bootstrap only after both are ready so no light frame can land
-        // between the early and full stages.
-        document.getElementById(EARLY_THEME_STYLE_ID)?.remove();
-    };
+let pref = 'system';
+const apply = () => {
+    finishTheme(S.resolveTheme(pref));
+    try { localStorage.setItem(THEME_CACHE_KEY, pref); } catch (e) { /* storage blocked */ }
+};
 
-    let pref = 'system';
-    const apply = () => {
-        finishTheme(S.resolveTheme(pref));
-        try { localStorage.setItem(THEME_CACHE_KEY, pref); } catch (e) { /* storage blocked */ }
-    };
+// Synchronous pre-paint pass from the mirror; resolveTheme falls back to
+// the OS preference for anything that isn't an explicit 'light'/'dark'.
+finishTheme(S.resolveTheme(readThemeMirror(localStorage)));
 
-    // Synchronous pre-paint pass from the mirror; resolveTheme falls back to
-    // the OS preference for anything that isn't an explicit 'light'/'dark'.
-    finishTheme(S.resolveTheme(readThemeMirror(localStorage)));
+S.get().then(s => { pref = s.theme; apply(); });
+S.subscribe(s => { pref = s.theme; apply(); });
 
-    S.get().then(s => { pref = s.theme; apply(); });
-    S.subscribe(s => { pref = s.theme; apply(); });
-
-    if (window.matchMedia) {
-        const mq = window.matchMedia('(prefers-color-scheme: dark)');
-        const onChange = () => { if (pref === 'system') apply(); };
-        if (mq.addEventListener) mq.addEventListener('change', onChange);
-        else if (mq.addListener) mq.addListener(onChange);
-    }
+if (window.matchMedia) {
+    const mq = window.matchMedia('(prefers-color-scheme: dark)');
+    const onChange = () => { if (pref === 'system') apply(); };
+    if (mq.addEventListener) mq.addEventListener('change', onChange);
+    else if (mq.addListener) mq.addListener(onChange);
+}

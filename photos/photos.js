@@ -643,7 +643,7 @@ const persistDraft = async ({ required = false } = {}) => {
     } catch {
         setSaveStatus('Could not save locally');
         if (required && confirm(
-                'Better Peakbagger could not retain an editable local copy. '
+            'Better Peakbagger could not retain an editable local copy. '
                 + 'Continue with upload without the promise of future non-destructive editing?',
         )) {
             const minimal = Library.updateAssets(nextPhoto, {
@@ -1457,7 +1457,7 @@ const uploadAndInsert = async () => {
         setEditorStatus(publicFailure.message);
         if (providerResponse?.remote?.url) {
             toast(
-                `ImgBB accepted the image, but Better Peakbagger could not finish cataloging it. `
+                'ImgBB accepted the image, but Better Peakbagger could not finish cataloging it. '
                 + `Save this URL: ${providerResponse.remote.url}`,
                 {
                     action: 'Copy URL',
@@ -1531,7 +1531,7 @@ const recoverOperations = async () => {
                 changed = true;
             }
         } catch {
-            // Keep the journal for an explicit recovery attempt.
+        // Keep the journal for an explicit recovery attempt.
         }
     }
     if (changed) notifyBackupChanged();

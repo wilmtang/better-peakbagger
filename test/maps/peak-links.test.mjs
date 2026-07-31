@@ -144,7 +144,7 @@ const renderMinimalPeak = (coordinateValue, { includeLinks = true } = {}) => {
 
 test('coordinate parsing fails closed for ambiguous, malformed, or out-of-range values', () => {
     for (const coordinate of [
-        `46° 51' 6'' N, 121° 45' 37'' W (DMS)`,
+        '46° 51\' 6\'\' N, 121° 45\' 37\'\' W (DMS)',
         'unknown (Dec Deg)',
         '91.0, -121.0 (Dec Deg)',
         '46.0, -181.0 (Dec Deg)'
