@@ -75,12 +75,12 @@
         mapViewportWidth: VIEWPORT.width, mapViewportHeight: VIEWPORT.height,
         terrainCacheLimitMb: 512,
         rememberMapLayer: false, mapLastLayer: '',
-        // What the ascent filter's "Has beta" chip counts: an ascent
-        // qualifies if it has any of the enabled signals.
         favoritesSource: 'buddies',
         // Custom favorites always absorb a newly added Buddy. Removing the
         // corresponding favorite is destructive, so it remains opt-in.
         removeFavoriteWhenBuddyRemoved: false,
+        // What the ascent filter's "Has beta" chip counts: an ascent
+        // qualifies if it has any of the enabled signals.
         betaTr: true, betaTrMinWords: 1, betaGps: true, betaLink: true,
         // Open a default (oldest-first) ascent list sorted newest-first. A sort
         // chosen by clicking a column, or carried in the URL, always wins.

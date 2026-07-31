@@ -53,11 +53,19 @@ test('the bridge writes only analyzer-owned settings keys', async () => {
     dom.window.close();
 });
 
-test('a patch containing no writable keys never reaches storage', async () => {
+test('a patch containing no writable keys is refused, not silently dropped', async () => {
     const dom = await loadBridge();
-    sendToBridge(dom, { enable3dMap: true, fillAscentDetails: false, fillTripInfo: false });
-    await new Promise(resolve => setTimeout(resolve, 20));
-    assert.equal(dom.chrome._store.bpbSettings, undefined);
+    sendToBridge(dom, { enable3dMap: true, fillAscentDetails: false, fillTripInfo: false }, 7);
+    await waitFor(dom, () => dom.postedMessages.some(message => message.kind === 'setResult'));
+    assert.equal(dom.chrome._store.bpbSettings, undefined, 'nothing reached storage');
+    // Answering matters as much as refusing: the page client keeps every write
+    // pending until it hears back, so silence became a five-second timeout that
+    // reported a storage failure the bridge never had.
+    const result = dom.postedMessages.find(message => message.kind === 'setResult');
+    assert.equal(result.requestId, 7);
+    assert.equal(result.ok, false);
+    assert.ok(result.message && !/try again/i.test(result.message),
+        'a refusal does not invite a retry that would be refused identically');
     dom.window.close();
 });
 

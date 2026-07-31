@@ -29,6 +29,10 @@ import { settings as S } from './settings.js';
     // page says rather than snapping a control back in silence. The underlying
     // exception is logged here, never sent: it is browser internals.
     const WRITE_FAILED_MESSAGE = 'Settings couldn’t be saved. Try again.';
+    // A page-world write outside WRITABLE_KEYS is a bug in the caller, not a
+    // condition the user can act on, so the copy stays generic rather than
+    // naming a key or inviting a retry that would be refused identically.
+    const WRITE_REFUSED_MESSAGE = 'That setting can’t be changed from this page.';
 
     const send = (settings, detail = {}) =>
         window.postMessage({ __bpb: true, dir: 'toPage', ...detail, ...(settings && { settings }) }, location.origin);
@@ -43,7 +47,19 @@ import { settings as S } from './settings.js';
         } else if (data.kind === 'set' && data.patch && typeof data.patch === 'object') {
             const patch = Object.fromEntries(Object.entries(data.patch)
                 .filter(([key]) => WRITABLE_KEYS.has(key)));
-            if (!Object.keys(patch).length) return;
+            // A patch with nothing writable left in it is refused, not ignored.
+            // Staying silent left the page client's pending write to time out
+            // and then blame a storage failure it never had — five seconds
+            // after a decision this bridge made immediately.
+            if (!Object.keys(patch).length) {
+                send(null, {
+                    kind: 'setResult',
+                    requestId: data.requestId,
+                    ok: false,
+                    message: WRITE_REFUSED_MESSAGE
+                });
+                return;
+            }
             try {
                 const next = await S.set(patch);
                 send(next, { kind: 'setResult', requestId: data.requestId, ok: true });
