@@ -851,10 +851,20 @@ export function createGithubRoutes({
             if (!(await enabled())) return;
             const access = await connectedGithubClient();
             if (access.error) return;
+            // Read the persisted record before anything that can throw. When
+            // build() failed with `state` still unread, the catch below wrote a
+            // bare retry counter over the stored signature and syncedAt, which
+            // both lost the last-backed-up timestamp and defeated the
+            // unchanged-content check on the following run.
             let state = null;
             try {
-                const { text, signature } = await build();
                 state = await readState();
+            } catch {
+                // An unreadable retry record is not worth abandoning the backup
+                // for; treat it as absent and let the write settle it.
+            }
+            try {
+                const { text, signature } = await build();
                 if (state && state.signature === signature) return;
                 const result = await writeQueue.putFile({ path, content: text, message: commitMessage });
                 // A newer write to this path won the batch, so this signature
@@ -953,8 +963,12 @@ export function createGithubRoutes({
     const backupFavorites = async () => {
         const access = await connectedGithubClient();
         if (access.error) return { ok: false, error: access.error };
-        const { text, signature } = await buildFavoritesBackup();
         try {
+            // Build inside the try, like backupSettings: a storage read that
+            // throws here must still answer with this route's { ok, error }
+            // contract rather than rejecting into the worker's generic handler,
+            // which replies in the unrelated { phase: 'error' } shape.
+            const { text, signature } = await buildFavoritesBackup();
             const result = await writeQueue.putFile({
                 path: FAVORITE_CLIMBERS_BACKUP_PATH, content: text, message: 'Back up favorite climbers',
             });
@@ -1088,15 +1102,22 @@ export function createGithubRoutes({
     const photoBackupStatus = async (_message, sender) => {
         if (!isPhotoBackupPage(sender)) return { ok: false, error: { code: 'forbidden' } };
         const [status, state] = await Promise.all([githubStatus(), readPhotoBackupState()]);
+        // The identity this backup state is about, plus the display name the
+        // library header renders. Deliberately not the stored record: the
+        // installation id and repository id are account plumbing no page needs.
         const repo = status.repo ? {
             owner: status.repo.owner,
             name: status.repo.name,
             branch: status.repo.branch || null,
+            fullName: status.repo.fullName || `${status.repo.owner}/${status.repo.name}`,
         } : null;
         return {
             ok: true,
             connected: status.connected,
-            repo: status.repo,
+            // The narrowed identity, not the stored record: this route answers
+            // "which repository is this backup state about", and the page has
+            // no use for the installation id or cached full name.
+            repo,
             auto: (await Settings.get()).autoPhotoLibraryBackup,
             state: state && sameRepo(state.repo, repo) ? state : null,
         };
