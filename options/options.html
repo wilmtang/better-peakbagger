@@ -295,18 +295,18 @@
                             <span class="desc">Style the ascent-page GPX overlay. Route width also applies to native GPS tracks on Full Screen Maps; their original colors, hover highlights, and click details remain unchanged.</span>
                         </div>
                         <fieldset class="control route-style" aria-label="Map route appearance">
-                            <label class="route-style-row" for="map-route-color">
+                            <div class="route-style-row">
                                 <span>Route</span>
                                 <input id="map-route-color" type="color" aria-label="Route color">
                                 <input id="map-route-width" class="route-width" type="number" min="1" max="12" step="1" inputmode="numeric" aria-label="Route width in pixels">
                                 <span>px</span>
-                            </label>
-                            <label class="route-style-row" for="map-route-casing-color">
+                            </div>
+                            <div class="route-style-row">
                                 <span>Outline</span>
                                 <input id="map-route-casing-color" type="color" aria-label="Route outline color">
                                 <input id="map-route-casing-width" class="route-width" type="number" min="3" max="20" step="1" inputmode="numeric" aria-label="Route outline width in pixels">
                                 <span>px</span>
-                            </label>
+                            </div>
                             <button id="map-route-reset" class="secondary" type="button">Reset appearance</button>
                         </fieldset>
                     </div>
@@ -373,12 +373,15 @@
                         <span class="desc">What the ascent-list <em>Has beta</em> chip counts. An ascent qualifies if it has at least one of the checked signals.</span>
                     </div>
                     <div class="control beta-signals">
-                        <label class="check">
+                        <div class="check beta-tr-signal">
                             <input type="checkbox" id="beta-tr">
-                            <span>Trip report with ≥</span>
-                            <input id="beta-tr-words" class="mini" type="number" min="1" step="1" inputmode="numeric" aria-label="Minimum words for a trip report to count as beta">
-                            <span>words</span>
-                        </label>
+                            <label for="beta-tr">Trip report</label>
+                            <label class="beta-tr-threshold" for="beta-tr-words">
+                                <span>with ≥</span>
+                                <input id="beta-tr-words" class="mini" type="number" min="1" step="1" inputmode="numeric" aria-label="Minimum words for a trip report to count as beta">
+                                <span>words</span>
+                            </label>
+                        </div>
                         <label class="check">
                             <input type="checkbox" id="beta-gps">
                             <span>GPS track</span>

@@ -239,6 +239,16 @@ test('settings are grouped by the surface they affect', async () => {
     for (const id of ['beta-tr', 'beta-tr-words', 'beta-gps', 'beta-link', 'beta-sort-date-desc']) {
         assert.ok(beta.querySelector(`#${id}`), `${id} should belong to Ascent beta filter`);
     }
+    for (const label of dom.window.document.querySelectorAll('label')) {
+        const controls = label.querySelectorAll(
+            'button, input:not([type="hidden"]), meter, output, progress, select, textarea',
+        );
+        assert.ok(controls.length <= 1,
+            `a label must not contain multiple controls: ${label.outerHTML.slice(0, 120)}`);
+    }
+    assert.equal(mapChart.querySelector('.route-style-row').localName, 'div');
+    assert.equal(beta.querySelector('label[for="beta-tr"]').textContent, 'Trip report');
+    assert.ok(beta.querySelector('label[for="beta-tr-words"] #beta-tr-words'));
     // The custom-list workspace moved to its own page; Settings keeps only a
     // link to it, and its GitHub backup below.
     assert.equal(favorites.querySelector('#favorites-buddy-panel'), null);
