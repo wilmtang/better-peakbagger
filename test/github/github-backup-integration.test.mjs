@@ -666,7 +666,7 @@ test('favorites restore reports an absent file and ignores the ascent-backup fea
     }, EXTENSION_SENDER)).error.code, 'not-connected');
 });
 
-test('the built worker keeps GitHub out of manual settings files unless explicitly included', async () => {
+test('the built worker keeps credentials out of manual settings files unless explicitly included', async () => {
     const worker = createWorker({
         settings: { theme: 'dark', units: 'imperial' },
         local: {
@@ -680,11 +680,13 @@ test('the built worker keeps GitHub out of manual settings files unless explicit
     assert.equal(exported.ok, true);
     const parsed = Transfer.parse(exported.content);
     assert.equal(parsed.settings.theme, 'dark');
-    assert.deepEqual(parsed.apiKeys, { imgbb: 'old-imgbb-key' });
+    // One opt-in covers both device-local credentials; without it the built
+    // worker emits neither.
+    assert.equal('apiKeys' in parsed, false);
     assert.equal('githubConnection' in parsed, false);
 
     const sensitive = await worker.send({
-        type: 'SETTINGS_FILE_EXPORT', includeGithubConnection: true,
+        type: 'SETTINGS_FILE_EXPORT', includeCredentials: true,
     }, EXTENSION_SENDER);
     assert.equal(sensitive.ok, true);
     assert.deepEqual(Transfer.parse(sensitive.content).githubConnection, {

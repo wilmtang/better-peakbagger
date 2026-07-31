@@ -216,13 +216,13 @@ editable project bundles have a separate 40 MiB limit.
   stored only in the dedicated `bpbImgbbAuth` record in device-local
   `storage.local`. The saved key remains in device-local extension storage. It
   is never exposed to Peakbagger, another website, GitHub, browser sync, or
-  status UI. A manual settings-file export includes the key so the user can
-  move the complete configuration; that same export can optionally include the
-  GitHub connection. The Settings page warns that this unencrypted downloaded
-  file must be kept private. The background worker otherwise provides the key
-  only to Better Peakbagger's exact packaged photo page immediately before that
-  page sends a direct upload to ImgBB. Removing the key does not alter prior
-  uploads.
+  status UI. The one exception is a manual settings-file export the user asks
+  to include saved credentials in, which writes the key into an unencrypted
+  file the user then moves themselves; the same opt-in covers the GitHub
+  connection, and the Settings page warns that the file must be kept private.
+  The background worker otherwise provides the key only to Better Peakbagger's
+  exact packaged photo page immediately before that page sends a direct upload
+  to ImgBB. Removing the key does not alter prior uploads.
 - **Local upload history:** Better Peakbagger keeps its own searchable catalog
   because ImgBB's documented v1 API does not provide an account-gallery listing
   operation. The catalog stores public URLs, source/export metadata and hashes,
@@ -338,14 +338,15 @@ the extension never clicks a Peakbagger Save control.
 
 Settings can also be exported as a JSON file downloaded by the browser and
 imported into another profile without GitHub. Export happens only when the user
-clicks **Export settings**. Unlike the credential-free GitHub backup, this
-manual file contains every validated setting and the saved ImgBB API key in
-plain text. If the user separately checks **Include GitHub connection**, it also
-contains the GitHub user access token and selected repository in plain text.
-Settings tells the user that the file is not encrypted and must be kept private,
-and resets that checkbox after each successful export. Import validates the file
-and requires an inline confirmation before replacing the current settings, API
-key, and any included GitHub connection. Before storing an included connection,
+clicks **Export settings**. Like the GitHub backup, that file is credential-free
+by default: it contains every validated setting and nothing else. Checking
+**Include saved credentials** adds both device-local secrets in plain text — the
+ImgBB API key and, when one is connected, the GitHub user access token and
+selected repository. Settings tells the user that the file is not encrypted and
+must be kept private, and resets that checkbox after each successful export, so
+including credentials is a per-file decision rather than a standing one. Import
+validates the file and requires an inline confirmation before replacing the
+current settings, API key, and any included GitHub connection. Before storing an included connection,
 the extension requests GitHub host access if needed and uses GitHub to verify
 the token, repository grant, writability, branch, and backup-path safety. A file
 without the optional connection leaves the destination's current GitHub

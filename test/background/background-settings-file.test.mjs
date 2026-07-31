@@ -77,7 +77,7 @@ const straySender = {
     url: 'chrome-extension://test-extension/options/favorites.html',
 };
 
-test('manual file export includes schema settings and the ImgBB API key', async () => {
+test('a manual file export is credential-free unless the user opts in', async () => {
     const h = harness({ imgbb: 'secret-imgbb-key' });
     const response = await h.routes.handlers.SETTINGS_FILE_EXPORT({}, optionsSender);
 
@@ -85,7 +85,10 @@ test('manual file export includes schema settings and the ImgBB API key', async 
     const parsed = Transfer.parse(response.content);
     assert.equal(parsed.ok, true);
     assert.equal(parsed.settings.theme, 'dark');
-    assert.deepEqual(parsed.apiKeys, { imgbb: 'secret-imgbb-key' });
+    // The ImgBB key used to ride along on every export while the GitHub token
+    // required a checkbox. One opt-in now covers both, so a file exported to
+    // share carries neither.
+    assert.equal('apiKeys' in parsed, false);
     assert.equal('githubConnection' in parsed, false);
     assert.match(response.exportedAt, /^\d{4}-\d{2}-\d{2}T/);
 
@@ -93,6 +96,20 @@ test('manual file export includes schema settings and the ImgBB API key', async 
         (await h.routes.handlers.SETTINGS_FILE_EXPORT({}, straySender)).error.code,
         'forbidden'
     );
+});
+
+test('opting in carries the API key even with no GitHub connection to export', async () => {
+    const h = harness({ imgbb: 'secret-imgbb-key' });
+    const response = await h.routes.handlers.SETTINGS_FILE_EXPORT(
+        { includeCredentials: true }, optionsSender
+    );
+
+    assert.equal(response.ok, true);
+    const parsed = Transfer.parse(response.content);
+    assert.deepEqual(parsed.apiKeys, { imgbb: 'secret-imgbb-key' });
+    // Asking for credentials on an unconnected profile is not an error; there
+    // is simply no connection to add.
+    assert.equal('githubConnection' in parsed, false);
 });
 
 test('manual file export includes the GitHub token and selected repository only after opt-in', async () => {
@@ -109,7 +126,7 @@ test('manual file export includes the GitHub token and selected repository only 
     assert.equal('githubConnection' in ordinary, false);
 
     const optedIn = await h.routes.handlers.SETTINGS_FILE_EXPORT({
-        includeGithubConnection: true,
+        includeCredentials: true,
     }, optionsSender);
     assert.equal(optedIn.ok, true);
     assert.deepEqual(Transfer.parse(optedIn.content).githubConnection, {

@@ -64,20 +64,31 @@ export function createSettingsFileRoutes({
     }
     const isOptionsPage = exactPackagedPage(ext, 'options/options.html');
 
+    // One credential decision covers the whole file. The ImgBB key used to ride
+    // along unconditionally while the GitHub token needed a checkbox, so two
+    // device-local secrets in the same unencrypted download had two different
+    // consent models. Both are now opt-in, and an export nobody opted in for is
+    // credential-free — which is what a settings file shared for troubleshooting
+    // should be.
     const exportFile = async (message, sender) => {
         if (!isOptionsPage(sender)) return forbidden();
-        const includeGithubConnection = message?.includeGithubConnection === true;
+        const includeCredentials = message?.includeCredentials === true;
         try {
             const [currentSettings, imgbb, auth] = await Promise.all([
                 settings.requireCurrent(),
-                keyStore.read(),
-                includeGithubConnection ? authStore.read() : null,
+                includeCredentials ? keyStore.read() : null,
+                includeCredentials ? authStore.read() : null,
             ]);
             const payload = Transfer.buildPayload(currentSettings, {
                 extensionVersion: ext.runtime.getManifest().version,
                 exportedAt: new Date().toISOString(),
-                apiKeys: { imgbb: imgbb?.key || null },
-                ...(includeGithubConnection ? { githubConnection: connectionPayload(auth) } : {}),
+                // A connection is exported only when one exists to export;
+                // asking for credentials on an unconnected profile is not an
+                // error, it just has nothing to add.
+                ...(includeCredentials ? { apiKeys: { imgbb: imgbb?.key || null } } : {}),
+                ...(includeCredentials && auth?.token && auth?.repo?.owner && auth?.repo?.name
+                    ? { githubConnection: connectionPayload(auth) }
+                    : {}),
             });
             return {
                 ok: true,
@@ -90,9 +101,9 @@ export function createSettingsFileRoutes({
                 ok: false,
                 error: {
                     code: 'settings-unavailable',
-                    message: includeGithubConnection
-                        ? 'Settings, API keys, and the GitHub connection could not be read, so no export was created.'
-                        : 'Settings and API keys could not be read, so no export was created.',
+                    message: includeCredentials
+                        ? 'Settings and saved credentials could not be read, so no export was created.'
+                        : 'Settings could not be read, so no export was created.',
                 },
             };
         }

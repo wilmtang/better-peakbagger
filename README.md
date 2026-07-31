@@ -102,8 +102,8 @@ editable projects, and your ImgBB API key are device-local. The saved key
 remains in device-local extension storage and is never exposed to Peakbagger,
 another website, GitHub, browser sync, or status UI. The background worker gives
 it only to Better Peakbagger's exact packaged photo page for the direct ImgBB
-upload. An explicit manual settings export includes the key and warns you to
-keep the file private. Images decode up to 64 megapixels and 16,384 pixels per
+upload. A manual settings export includes the key only if you tick **Include
+saved credentials**, and warns you to keep that file private. Images decode up to 64 megapixels and 16,384 pixels per
 side; editable project bundles are capped at 40 MiB, while ImgBB decides the
 upload size allowed for your account. A searchable local library keeps drafts
 and published versions reusable, while optional GitHub recovery can preserve
@@ -130,8 +130,9 @@ services.
 Use a site-wide theme that follows your system or stays light or dark. Shared
 settings cover units, maps, GPX charts, activity capture, trip reports, photo
 topos, backups, and beta filters, and can be exported for safekeeping. The
-download always includes saved API keys and can optionally include the current
-GitHub connection; it is not encrypted and must be kept private.
+download is credential-free unless you tick **Include saved credentials**, which
+adds your ImgBB API key and GitHub connection; it is not encrypted and must be
+kept private.
 
 ![Better Peakbagger settings beside Peakbagger dark mode](store-assets/showcase-3-dark-mode-settings.png)
 

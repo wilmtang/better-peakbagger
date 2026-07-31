@@ -35,8 +35,8 @@ const installSettingsFileWorker = (chrome, {
                 content: settingsTransfer.serialize(settingsTransfer.buildPayload(settings, {
                     extensionVersion: '3.3.0',
                     exportedAt,
-                    apiKeys: { imgbb: imgbb?.key || null },
-                    ...(message.includeGithubConnection ? {
+                    ...(message.includeCredentials ? { apiKeys: { imgbb: imgbb?.key || null } } : {}),
+                    ...(message.includeCredentials && github?.token ? {
                         githubConnection: {
                             token: github?.token,
                             repository: {
@@ -385,7 +385,7 @@ test('the options controller exclusively owns shared status timing', async () =>
     assert.doesNotMatch(draftsSource, /getElementById\(['"]status['"]\)|2200/);
 });
 
-test('settings export downloads all known settings and the saved API key without GitHub by default', async () => {
+test('settings export downloads all known settings and no credentials by default', async () => {
     const download = {};
     const dom = await loadOptions({ theme: 'dark', unknownSetting: 'private' }, {
         local: { bpbImgbbAuth: { key: 'private-imgbb-key', savedAt: '2026-07-29T12:00:00.000Z' } },
@@ -409,14 +409,16 @@ test('settings export downloads all known settings and the saved API key without
     assert.equal(parsed.ok, true);
     assert.equal(parsed.settings.theme, 'dark');
     assert.equal('unknownSetting' in parsed.settings, false);
-    assert.deepEqual(parsed.apiKeys, { imgbb: 'private-imgbb-key' });
+    // A settings file the user did not ask to put credentials in carries none,
+    // so one shared for troubleshooting cannot leak either secret.
+    assert.equal('apiKeys' in parsed, false);
     assert.equal('githubConnection' in parsed, false);
     assert.equal(download.href, 'blob:settings-export');
     assert.match(download.name, /^better-peakbagger-settings-\d{4}-\d{2}-\d{2}\.json$/);
     assert.equal(download.revoked, 'blob:settings-export');
 });
 
-test('settings export includes the connected GitHub token only after explicit opt-in', async () => {
+test('settings export includes saved credentials only after explicit opt-in', async () => {
     const download = {};
     const messages = [];
     const github = {
@@ -444,9 +446,8 @@ test('settings export includes the connected GitHub token only after explicit op
         },
     });
 
-    const include = el(dom, 'settings-backup-export-github');
-    await waitFor(dom, () => include.disabled === false);
-    assert.equal(include.checked, false);
+    const include = el(dom, 'settings-backup-export-credentials');
+    assert.equal(include.checked, false, 'credentials are never included by default');
     include.checked = true;
     el(dom, 'settings-backup-export').click();
     await waitFor(dom, () => download.blob);
@@ -457,7 +458,7 @@ test('settings export includes the connected GitHub token only after explicit op
         repository: { owner: 'ada', name: 'peaks', id: 123 },
     });
     assert.deepEqual(messages.find(message => message.type === 'SETTINGS_FILE_EXPORT'), {
-        type: 'SETTINGS_FILE_EXPORT', includeGithubConnection: true,
+        type: 'SETTINGS_FILE_EXPORT', includeCredentials: true,
     });
     assert.equal(include.checked, false, 'each sensitive export requires a fresh opt-in');
 });

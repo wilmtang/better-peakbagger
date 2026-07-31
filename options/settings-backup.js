@@ -21,7 +21,7 @@ export function initSettingsBackup({ extensionApi, flash, save, refreshCredentia
     const exportEl = document.getElementById('settings-backup-export');
     const importEl = document.getElementById('settings-backup-import');
     const fileEl = document.getElementById('settings-backup-file');
-    const exportGithubEl = document.getElementById('settings-backup-export-github');
+    const exportCredentialsEl = document.getElementById('settings-backup-export-credentials');
     const confirmationEl = document.getElementById('settings-backup-confirmation');
     const confirmationNameEl = document.getElementById('settings-backup-confirmation-name');
     const confirmationDetailEl = document.getElementById('settings-backup-confirmation-detail');
@@ -36,7 +36,7 @@ export function initSettingsBackup({ extensionApi, flash, save, refreshCredentia
         'settings-backup-export': exportEl,
         'settings-backup-import': importEl,
         'settings-backup-file': fileEl,
-        'settings-backup-export-github': exportGithubEl,
+        'settings-backup-export-credentials': exportCredentialsEl,
         'settings-backup-confirmation': confirmationEl,
         'settings-backup-confirmation-name': confirmationNameEl,
         'settings-backup-confirmation-detail': confirmationDetailEl,
@@ -99,7 +99,7 @@ export function initSettingsBackup({ extensionApi, flash, save, refreshCredentia
     exportEl.addEventListener('click', async () => {
         const response = await send({
             type: 'SETTINGS_FILE_EXPORT',
-            includeGithubConnection: exportGithubEl.checked,
+            includeCredentials: exportCredentialsEl.checked,
         });
         if (!response?.ok || typeof response.content !== 'string') {
             flash(response?.error?.message || 'Settings could not be exported. Try again.', { error: true });
@@ -116,7 +116,8 @@ export function initSettingsBackup({ extensionApi, flash, save, refreshCredentia
         });
         link.click();
         URL.revokeObjectURL(url);
-        exportGithubEl.checked = false;
+        // A credential export is a per-file decision, never a standing one.
+        exportCredentialsEl.checked = false;
     });
 
     importEl.addEventListener('click', () => fileEl.click());
@@ -203,10 +204,9 @@ export function initSettingsBackup({ extensionApi, flash, save, refreshCredentia
 
     const renderGithub = () => {
         const connected = githubStatus?.permissionGranted && githubStatus?.connected === true;
-        const canExportGithub = githubStatus?.connected === true;
-        exportGithubEl.disabled = !canExportGithub;
-        exportGithubEl.closest('label')?.classList.toggle('is-disabled', !canExportGithub);
-        if (!canExportGithub) exportGithubEl.checked = false;
+        // The checkbox now covers the ImgBB key as well, which needs no GitHub
+        // connection, so it stays available whether or not GitHub is connected.
+        // An export with nothing saved to include is simply credential-free.
         const showBackupResult = connected
             && githubBackupResult?.repo === repoName()
             && githubBackupResult?.signature === settingsSignature;

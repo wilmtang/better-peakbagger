@@ -114,7 +114,6 @@ button.secondary, a.secondary { align-self: flex-end; }
 .settings-backup-github-actions,
 .favorites-github-actions,
 .photos-github-actions { display: flex; flex-direction: column; align-items: flex-end; gap: 10px; }
-.settings-export-github.is-disabled { cursor: default; opacity: .5; }
 .settings-backup-github-actions[hidden] { display: none; }
 .photos-github-actions[hidden] { display: none; }
 .settings-backup-github-success { color: var(--link); font-weight: 600; }

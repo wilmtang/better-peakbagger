@@ -201,7 +201,7 @@
                     <div class="row">
                         <div class="label">
                             <span class="title" id="imgbb-key-title">ImgBB API key</span>
-                            <span class="desc" id="imgbb-key-desc">The photo topo editor uploads your image to <a href="https://imgbb.com/" target="_blank" rel="noopener noreferrer">ImgBB</a>, a free image hosting site, and puts the public link in your trip report. Sign in there, choose <a href="https://api.imgbb.com/" target="_blank" rel="noopener noreferrer">Get API key</a>, and paste the key here. Uploads are yours and follow <a href="https://imgbb.com/tos" target="_blank" rel="noopener noreferrer">ImgBB’s terms of service</a>. The saved key remains in device-local extension storage. It is never exposed to Peakbagger, another website, GitHub, browser sync, or status UI. The background worker provides it only to Better Peakbagger’s exact packaged photo page immediately before that page sends a direct upload to ImgBB. <a href="../photos/guide.html" target="_blank" rel="noopener noreferrer">Read the photo guide</a> for more info.</span>
+                            <span class="desc" id="imgbb-key-desc">The photo topo editor uploads your image to <a href="https://imgbb.com/" target="_blank" rel="noopener noreferrer">ImgBB</a>, a free image hosting site, and puts the public link in your trip report. Sign in there, choose <a href="https://api.imgbb.com/" target="_blank" rel="noopener noreferrer">Get API key</a>, and paste the key here. Uploads are yours and follow <a href="https://imgbb.com/tos" target="_blank" rel="noopener noreferrer">ImgBB’s terms of service</a>. The saved key remains in device-local extension storage. It is never exposed to Peakbagger, another website, GitHub, browser sync, or status UI. The one exception is a manual settings-file export you ask to include saved credentials in, which writes the key into an unencrypted file for you to move yourself. The background worker otherwise provides it only to Better Peakbagger’s exact packaged photo page immediately before that page sends a direct upload to ImgBB. <a href="../photos/guide.html" target="_blank" rel="noopener noreferrer">Read the photo guide</a> for more info.</span>
                         </div>
                         <div class="control imgbb-key-control">
                             <div class="imgbb-key-entry">
@@ -442,7 +442,7 @@
                     <div class="row">
                         <div class="label">
                             <span class="title">Transfer settings with a file</span>
-                            <span class="desc">Move your Better Peakbagger settings to another browser or keep a personal copy. Files always include saved API keys and can optionally include your GitHub connection. They are not encrypted; keep them private.</span>
+                            <span class="desc">Move your Better Peakbagger settings to another browser or keep a personal copy. Files are credential-free unless you include your saved credentials below. They are not encrypted; keep them private.</span>
                         </div>
                         <div class="control settings-file-transfer-actions">
                             <div class="settings-backup-actions">
@@ -450,9 +450,9 @@
                                 <button id="settings-backup-import" class="secondary" type="button">Import from file…</button>
                                 <input id="settings-backup-file" type="file" accept=".json,application/json" hidden>
                             </div>
-                            <label class="check settings-export-github is-disabled" for="settings-backup-export-github">
-                                <input type="checkbox" id="settings-backup-export-github" disabled>
-                                <span>Include GitHub connection</span>
+                            <label class="check settings-export-credentials" for="settings-backup-export-credentials">
+                                <input type="checkbox" id="settings-backup-export-credentials">
+                                <span>Include saved credentials (ImgBB API key and GitHub connection)</span>
                             </label>
                         </div>
                     </div>
