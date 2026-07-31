@@ -240,7 +240,15 @@ test('Strava displayed wall-clock time derives the activity timezone from GPX UT
     }, start);
     assert.equal(formatted.date, '2026-07-11');
     assert.equal(formatted.time, '17:13');
-    assert.equal(formatted.timezoneKnown, true);
+});
+
+test('an unusable displayed wall clock falls back to UTC without claiming a timezone', () => {
+    const start = Date.UTC(2026, 6, 11, 23, 13);
+    const formatted = Core.formatEncounterDateTime(start, { displayedLocalStart: 'not a timestamp' }, start);
+    assert.equal(formatted.date, '2026-07-11');
+    assert.equal(formatted.time, '23:13');
+    // The shape carries no timezone-confidence field to be wrong about.
+    assert.deepEqual(Object.keys(formatted).sort(), ['date', 'time']);
 });
 
 test('nights out uses the activity-local calendar span and stays unknown without timestamps', () => {

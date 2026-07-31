@@ -722,17 +722,21 @@ import { units as Units } from '../ui/units.js';
         return 0;
     };
 
+    // The result carries no "was the offset resolved or assumed" flag. One used
+    // to ride along, but nothing ever read it and it could not be trusted: it
+    // reported a known timezone whenever displayedLocalStart was merely
+    // present, including the cases where timezoneOffsetMinutes had rejected it
+    // as unparseable or out of range and quietly fallen back to UTC. Anything
+    // that needs that distinction must get it from timezoneOffsetMinutes, which
+    // is where the decision is actually made.
     const formatEncounterDateTime = (time, providerMeta, referenceTime = null) => {
-        if (!Number.isFinite(time)) return { date: '', time: '', timezoneKnown: false };
+        if (!Number.isFinite(time)) return { date: '', time: '' };
         const offsetMinutes = timezoneOffsetMinutes(providerMeta, referenceTime);
         const date = new Date(time + offsetMinutes * 60 * 1000);
         const pad = value => String(value).padStart(2, '0');
         return {
             date: `${date.getUTCFullYear()}-${pad(date.getUTCMonth() + 1)}-${pad(date.getUTCDate())}`,
-            time: `${pad(date.getUTCHours())}:${pad(date.getUTCMinutes())}`,
-            timezoneKnown: Number.isFinite(providerMeta && providerMeta.utcOffsetMinutes)
-                || /([+-])(\d{2}):(\d{2})$/.test((providerMeta && providerMeta.localStart) || '')
-                || !!(providerMeta && providerMeta.displayedLocalStart && Number.isFinite(referenceTime))
+            time: `${pad(date.getUTCHours())}:${pad(date.getUTCMinutes())}`
         };
     };
 
@@ -838,15 +842,14 @@ import { units as Units } from '../ui/units.js';
         const firstTime = firstFinite(segments, 'time');
         const lastTime = firstFinite(segments, 'time', true);
         const dateTime = formatEncounterDateTime(encounter.time, providerMeta, firstTime);
+        // A timeless encounter still deserves the activity's own start date.
         if (!dateTime.date && providerMeta.displayedLocalStart) {
             dateTime.date = providerMeta.displayedLocalStart.slice(0, 10);
-            dateTime.timezoneKnown = true;
         }
         const elevationPaths = splitElevationPaths(segments, encounter);
         return {
             date: dateTime.date,
             time: dateTime.time,
-            timezoneKnown: dateTime.timezoneKnown,
             startElevationM: firstFinite(segments, 'ele'),
             endElevationM: firstFinite(segments, 'ele', true),
             upDistanceM: encounter.globalDistanceM,

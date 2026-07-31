@@ -102,6 +102,12 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
         return operation;
     };
 
+    // The popup's view of a job: enough to render progress and the match list,
+    // and nothing a draft is filled from. boundFallback is narrowed on the same
+    // terms as matches — it is an ordinary match with an extra distance, and
+    // leaving its draftFields attached would have quietly reopened the hole
+    // this function exists to close.
+    const publicMatchSummary = match => ({ ...match, draftFields: undefined });
     const publicJob = job => isFresh(job) ? {
         ...job,
         hasCachedGpx: typeof job.uploadGpx === 'string' && job.uploadGpx.length > 0,
@@ -110,7 +116,8 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
         tripName: undefined,
         nightsOut: undefined,
         dayStats: undefined,
-        matches: (job.matches || []).map(match => ({ ...match, draftFields: undefined }))
+        matches: (job.matches || []).map(publicMatchSummary),
+        boundFallback: job.boundFallback ? publicMatchSummary(job.boundFallback) : job.boundFallback
     } : null;
 
     const setBadge = async (tabId, text = '', color = '#b42318') => {
@@ -298,7 +305,7 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
                 'No valid path remained for summit lookup.'
             );
         }
-        await onPhase('finding-peaks', { queryCount: boxes.length });
+        await onPhase('finding-peaks');
         const peaks = await fetchPeaks(boxes);
         const allMatches = Core.detectPeaks(sanitized.segments, peaks, sanitized.quality.score);
         const visibleMatches = allMatches.filter(match => match.classification === 'strong' || match.classification === 'probable');
@@ -438,7 +445,7 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
                 waypoints: capture.waypoints,
                 metadata: capture.metadata,
                 capturePreferences,
-                onPhase: (phase, extra) => updateCaptureJob(tabId, generation, { phase, ...extra })
+                onPhase: phase => updateCaptureJob(tabId, generation, { phase })
             });
             if (analysis.status === 'no-gps') {
                 await finishCaptureWithoutGps(tabId, generation, analysis.message);
