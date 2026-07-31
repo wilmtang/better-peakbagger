@@ -3,8 +3,14 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { captureCore as Core } from '../../src/capture/capture-core.js';
+import { readFile } from 'node:fs/promises';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
+import { captureCore as Core } from '../../src/capture/capture-core.js';
+import { walkFiles } from '../helpers/walk-files.mjs';
+
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const point = (lat, lon, ele = 100, time = null) => ({ lat, lon, ele, time });
 
 test('sanitization breaks, rather than bridges, invalid and impossible edges', () => {
@@ -344,4 +350,29 @@ test('draft selection prepares one track order, confidence order, and fallback t
     assert.equal(prepared.fallbackTripName, 'Earlier / Later');
     assert.deepEqual(prepared.matches.map(match => match.draftFields.suffix), ['b', 'a']);
     assert.equal(matches[0].draftFields.suffix, undefined);
+});
+
+// The same regression the settings-schema guard prevents, in the other pure
+// module pair: capture-core serializes a GPX to fit Peakbagger's limits and
+// ascent-draft re-validates it against them from a different bundle, so a
+// literal in either one is free to drift out of agreement with the other.
+test('no surface keeps its own copy of a Peakbagger upload limit', async () => {
+    const sourceRoot = path.join(root, 'src');
+    const sources = (await walkFiles(sourceRoot, file => file.endsWith('.js')))
+        .filter(file => path.basename(file) !== 'upload-limits.js');
+    assert.ok(sources.length >= 15, 'expected the src module set to be present');
+
+    const leaks = [];
+    for (const file of sources) {
+        const text = await readFile(file, 'utf8');
+        // The upload limits are only ever compared against a point or segment
+        // count, so look for the numbers in that company rather than banning
+        // 3000 and 50 outright — both are ordinary numbers elsewhere.
+        const pattern = /(?:points?|waypoints?|segments?)\w*\.length\s*[<>]=?\s*(?:3000|50)\b|[<>]=?\s*(?:3000|50)\b\s*(?:\)|;).*(?:point|segment)/i;
+        if (pattern.test(text)) {
+            leaks.push(`${path.relative(root, file)} hardcodes a Peakbagger upload limit`);
+        }
+    }
+    assert.deepEqual(leaks, [],
+        `import MAX_UPLOAD_POINTS / MAX_TRACK_SEGMENTS from src/capture/upload-limits.js:\n${leaks.join('\n')}`);
 });

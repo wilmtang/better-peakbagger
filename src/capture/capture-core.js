@@ -7,10 +7,9 @@
 
 import { gpxMetrics as Metrics } from '../gpx/gpx-metrics.js';
 import { units as Units } from '../ui/units.js';
+import { MAX_UPLOAD_POINTS, MAX_TRACK_SEGMENTS } from './upload-limits.js';
 
     const { FEET_PER_METER } = Units;
-    const MAX_UPLOAD_POINTS = 3000;
-    const MAX_TRACK_SEGMENTS = 50;
     const QUERY_PADDING_M = 300;
     const QUERY_CHUNK_M = 10000;
     const ENCOUNTER_WINDOW_M = 300;

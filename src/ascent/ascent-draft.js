@@ -4,6 +4,7 @@
 // Fills a prepared Peakbagger ascent editor and submits each acknowledged
 // Preview once. A failed Preview can be retried explicitly; Save stays manual.
 
+import { MAX_UPLOAD_POINTS, MAX_TRACK_SEGMENTS } from '../capture/upload-limits.js';
 import { units as Units } from '../ui/units.js';
 
 (() => {
@@ -277,7 +278,9 @@ import { units as Units } from '../ui/units.js';
         const elevations = elements.filter(element => element.localName === 'ele');
         const times = elements.filter(element => element.localName === 'time');
         const segments = elements.filter(element => element.localName === 'trkseg');
-        if ((!allowWaypoints && waypoints.length) || points.length + waypoints.length > 3000 || segments.length > 50) return false;
+        if ((!allowWaypoints && waypoints.length)
+            || points.length + waypoints.length > MAX_UPLOAD_POINTS
+            || segments.length > MAX_TRACK_SEGMENTS) return false;
         const validCoordinate = point => {
             if (!point.hasAttribute('lat') || !point.hasAttribute('lon')) return false;
             const attributes = [...point.attributes];
