@@ -57,6 +57,13 @@ const buddyListFixture = await readFile(path.join(root, 'test', 'fixtures', 'pag
 const failureCollector = createFailureCollector();
 const { failures, check } = failureCollector;
 
+const readDownloadText = async download => {
+    const stream = await download.createReadStream();
+    const chunks = [];
+    for await (const chunk of stream) chunks.push(Buffer.from(chunk));
+    return Buffer.concat(chunks).toString('utf8');
+};
+
 let context;
 try {
     context = await chromium.launchPersistentContext(profile, {
@@ -162,6 +169,82 @@ try {
                 path: process.env.BPB_VERIFY_IMGBB_OPTIONS_SCREENSHOT,
             });
         }
+
+        const [settingsDownload] = await Promise.all([
+            optionsPage.waitForEvent('download'),
+            optionsPage.locator('#settings-backup-export').click(),
+        ]);
+        const exportedSettingsContent = await readDownloadText(settingsDownload);
+        let exportedSettings = null;
+        try { exportedSettings = JSON.parse(exportedSettingsContent); } catch { /* checked below */ }
+        check(exportedSettings?.apiKeys?.imgbb === 'browser-verification-only'
+            && exportedSettings?.settings
+            && Object.keys(exportedSettings.settings).length >= 20,
+        `Chrome manual settings export was incomplete: ${JSON.stringify({
+            hasPayload: !!exportedSettings,
+            apiKey: exportedSettings?.apiKeys?.imgbb,
+            settingCount: Object.keys(exportedSettings?.settings || {}).length,
+        })}`);
+
+        const importedSettings = structuredClone(exportedSettings);
+        if (importedSettings) {
+            importedSettings.settings.units = 'imperial';
+            importedSettings.apiKeys.imgbb = 'browser-verification-imported';
+            await optionsPage.locator('#settings-backup-file').setInputFiles({
+                name: 'browser-verification-settings.json',
+                mimeType: 'application/json',
+                buffer: Buffer.from(`${JSON.stringify(importedSettings)}\n`),
+            });
+        }
+        const settingsImportCopy = await optionsPage.locator('#settings-backup-confirmation-detail')
+            .textContent().catch(() => '');
+        check(/settings and saved API keys/i.test(settingsImportCopy || ''),
+            `Chrome settings import did not disclose API-key replacement: ${JSON.stringify(settingsImportCopy)}`);
+        if (process.env.BPB_VERIFY_SETTINGS_TRANSFER_SCREENSHOT) {
+            await optionsPage.locator('#github-settings-backup .card').screenshot({
+                path: process.env.BPB_VERIFY_SETTINGS_TRANSFER_SCREENSHOT,
+            });
+        }
+        if (process.env.BPB_VERIFY_SETTINGS_TRANSFER_NARROW_SCREENSHOT) {
+            const previousViewport = optionsPage.viewportSize();
+            await optionsPage.setViewportSize({ width: 480, height: 760 });
+            await optionsPage.locator('#github-settings-backup .card').screenshot({
+                path: process.env.BPB_VERIFY_SETTINGS_TRANSFER_NARROW_SCREENSHOT,
+            });
+            if (previousViewport) await optionsPage.setViewportSize(previousViewport);
+        }
+        await optionsPage.locator('#settings-backup-confirm').click();
+        const importedSettingsState = await optionsPage.waitForFunction(async () => {
+            const [{ bpbSettings }, { bpbImgbbAuth }] = await Promise.all([
+                chrome.storage.sync.get('bpbSettings'),
+                chrome.storage.local.get('bpbImgbbAuth'),
+            ]);
+            return bpbSettings?.units === 'imperial'
+                && bpbImgbbAuth?.key === 'browser-verification-imported';
+        }, null, { timeout: 5000 }).then(() => true).catch(() => false);
+        check(importedSettingsState,
+            'Chrome manual settings import did not replace both settings and the API key');
+        const restoredSettingsState = await optionsPage.evaluate(async content => {
+            const response = await chrome.runtime.sendMessage({
+                type: 'SETTINGS_FILE_IMPORT',
+                content,
+            });
+            const [{ bpbSettings }, { bpbImgbbAuth }] = await Promise.all([
+                chrome.storage.sync.get('bpbSettings'),
+                chrome.storage.local.get('bpbImgbbAuth'),
+            ]);
+            return {
+                response,
+                units: bpbSettings?.units,
+                apiKey: bpbImgbbAuth?.key,
+            };
+        }, exportedSettingsContent);
+        check(restoredSettingsState.response?.ok
+            && restoredSettingsState.units === exportedSettings?.settings?.units
+            && restoredSettingsState.apiKey === 'browser-verification-only',
+        `Chrome settings verifier cleanup did not restore its values: ${
+            JSON.stringify(restoredSettingsState)}`);
+
         await optionsPage.locator('#units').selectOption('metric');
         const optionPersisted = await optionsPage.waitForFunction(async () =>
             (await chrome.storage.sync.get('bpbSettings')).bpbSettings?.units === 'metric',
@@ -2905,6 +2988,7 @@ if (failures.length) {
 console.log('Real-extension verification passed (hidden Chrome for Testing, new headless):');
 console.log('  - the MV3 service worker boots and answers messages (capture is alive)');
 console.log('  - sync/local/session storage, storage.onChanged, options persistence, and popup status passed');
+console.log('  - manual settings export/import round-tripped schema settings and the saved ImgBB API key');
 console.log('  - the extension-owned photo library states its metadata-only GitHub boundary, and the topo editor');
 console.log('    decodes a real PNG, draws a route, autosaves to IndexedDB, fits desktop and narrow');
 console.log('    viewports, and folds a real Route width slider drag into a single Undo');

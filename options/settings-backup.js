@@ -17,12 +17,13 @@ const invalidFileMessage = reason => reason === 'newer-version'
     ? 'This settings file was made by a newer version of the extension.'
     : 'That is not a Better Peakbagger settings file.';
 
-export function initSettingsBackup({ extensionApi, flash, save }) {
+export function initSettingsBackup({ extensionApi, flash, save, refreshCredentials = async () => {} }) {
     const exportEl = document.getElementById('settings-backup-export');
     const importEl = document.getElementById('settings-backup-import');
     const fileEl = document.getElementById('settings-backup-file');
     const confirmationEl = document.getElementById('settings-backup-confirmation');
     const confirmationNameEl = document.getElementById('settings-backup-confirmation-name');
+    const confirmationDetailEl = document.getElementById('settings-backup-confirmation-detail');
     const confirmEl = document.getElementById('settings-backup-confirm');
     const cancelEl = document.getElementById('settings-backup-cancel');
     const githubStatusEl = document.getElementById('settings-backup-github-status');
@@ -36,6 +37,7 @@ export function initSettingsBackup({ extensionApi, flash, save }) {
         'settings-backup-file': fileEl,
         'settings-backup-confirmation': confirmationEl,
         'settings-backup-confirmation-name': confirmationNameEl,
+        'settings-backup-confirmation-detail': confirmationDetailEl,
         'settings-backup-confirm': confirmEl,
         'settings-backup-cancel': cancelEl,
         'settings-backup-github-status': githubStatusEl,
@@ -63,37 +65,43 @@ export function initSettingsBackup({ extensionApi, flash, save }) {
         pendingImport = null;
         confirmationEl.hidden = true;
         confirmationNameEl.textContent = '';
+        confirmationDetailEl.textContent = '';
         confirmEl.disabled = false;
         cancelEl.disabled = false;
         confirmationEl.removeAttribute('aria-busy');
         if (restoreFocus && returnFocus?.isConnected) returnFocus.focus();
     };
 
-    const showConfirmation = (name, settings, successMessage = 'Settings imported', returnFocus = importEl) => {
-        pendingImport = { settings, successMessage, returnFocus };
+    const showConfirmation = (
+        name,
+        settings,
+        successMessage = 'Settings imported',
+        returnFocus = importEl,
+        { fileContent = null, includesApiKeys = false } = {}
+    ) => {
+        pendingImport = { settings, successMessage, returnFocus, fileContent };
         confirmationNameEl.textContent = name;
+        confirmationDetailEl.textContent = includesApiKeys
+            ? 'Replaces your current settings and saved API keys.'
+            : 'Replaces your current settings.';
         confirmationEl.hidden = false;
         confirmEl.focus();
     };
 
     exportEl.addEventListener('click', async () => {
-        let settings;
-        try {
-            settings = await S.requireCurrent();
-        } catch (error) {
-            console.error('Better Peakbagger: settings export read failed', error);
-            flash('Settings could not be read, so no backup was created.', { error: true });
+        const response = await send({ type: 'SETTINGS_FILE_EXPORT' });
+        if (!response?.ok || typeof response.content !== 'string') {
+            flash(response?.error?.message || 'Settings could not be exported. Try again.', { error: true });
             return;
         }
-        const payload = Transfer.buildPayload(settings, {
-            extensionVersion: extensionApi.runtime.getManifest().version,
-            exportedAt: new Date().toISOString()
-        });
-        const blob = new Blob([Transfer.serialize(payload)], { type: 'application/json' });
+        const exportedAt = typeof response.exportedAt === 'string'
+            ? response.exportedAt
+            : new Date().toISOString();
+        const blob = new Blob([response.content], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
         const link = Object.assign(document.createElement('a'), {
             href: url,
-            download: `better-peakbagger-settings-${payload.exportedAt.slice(0, 10)}.json`
+            download: `better-peakbagger-settings-${exportedAt.slice(0, 10)}.json`
         });
         link.click();
         URL.revokeObjectURL(url);
@@ -117,7 +125,16 @@ export function initSettingsBackup({ extensionApi, flash, save }) {
             flash(invalidFileMessage(parsed.reason), { error: true });
             return;
         }
-        showConfirmation(file.name || 'Selected settings file', parsed.settings, 'Settings imported', importEl);
+        showConfirmation(
+            file.name || 'Selected settings file',
+            parsed.settings,
+            'Settings imported',
+            importEl,
+            {
+                fileContent: text,
+                includesApiKeys: Object.hasOwn(parsed, 'apiKeys'),
+            }
+        );
     });
 
     cancelEl.addEventListener('click', hideConfirmation);
@@ -134,7 +151,19 @@ export function initSettingsBackup({ extensionApi, flash, save }) {
         cancelEl.disabled = true;
         confirmationEl.setAttribute('aria-busy', 'true');
         try {
-            await save(pending.settings);
+            if (pending.fileContent != null) {
+                const response = await send({
+                    type: 'SETTINGS_FILE_IMPORT',
+                    content: pending.fileContent,
+                });
+                if (!response?.ok) {
+                    flash(response?.error?.message || 'Settings could not be imported. Try again.', { error: true });
+                    throw new Error(response?.error?.code || 'settings-file-import-failed');
+                }
+                await refreshCredentials();
+            } else {
+                await save(pending.settings);
+            }
             hideConfirmation();
             flash(pending.successMessage);
         } catch {

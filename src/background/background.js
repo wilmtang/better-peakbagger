@@ -12,6 +12,7 @@ import { providerFromUrl, providerActivityUrl } from '../capture/provider-url.js
 import { createFavoritesStore, favoritesStore as FavoritesStore } from './favorites-store.js';
 import { createGithubRoutes } from './github-routes.js';
 import { createPhotoRoutes } from './photo-routes.js';
+import { createSettingsFileRoutes } from './settings-file-routes.js';
 import { createTerrainPrefetch } from './terrain-prefetch.js';
 import { publicErrors as PublicErrors } from './public-errors.js';
 import { settings as Settings } from '../settings/settings.js';
@@ -1374,6 +1375,7 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
         mutateMap,
         readMap,
     });
+    const settingsFileRoutes = createSettingsFileRoutes({ ext });
     const favoriteMutations = createFavoritesStore({ storage: ext.storage.local, now });
 
     const openDraftsManager = async sender => {
@@ -1408,6 +1410,8 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
             if (githubRoutes.isExtensionOnly(type) && !isExtensionPage(sender)) {
                 return { error: 'forbidden' };
             }
+            const settingsFileHandler = settingsFileRoutes.handlers[type];
+            if (settingsFileHandler) return settingsFileHandler(message, sender);
             const photoHandler = photoRoutes.handlers[type];
             if (photoHandler) return photoHandler(message, sender);
             const githubHandler = githubRoutes.handlers[type];

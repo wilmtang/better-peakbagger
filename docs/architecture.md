@@ -149,6 +149,7 @@ There is no parallel raw-source worker list and no `importScripts` fallback.
 | Peakbagger request boundary | `src/peakbagger/peakbagger-request.js`, `src/peakbagger/peakbagger-response.js`, `src/peakbagger/peakbagger-error.js`, `src/peakbagger/peakbagger-cloudflare.js` | Authenticated fetch policy, response validation, typed failures, and managed-challenge detection/recovery copy |
 | GitHub integration | `src/background/github-routes.js`, `src/github/github-error-copy.js`, `src/github/github-errors.js`, `src/github/github-api.js`, `src/github/github-auth.js`, `src/github/github-client.js`, `src/github/github-write-queue.js`, `src/github/github-backup.js`, `src/photos/photo-backup.js`, `options/photos.js` | Worker-only routes and credentials, typed/authenticated transport, Git Data writes, ordering/coalescing, ascent payloads, and metadata-only photo recovery |
 | ImgBB integration | `src/background/photo-routes.js`, `src/photos/imgbb-auth.js`, `src/photos/imgbb-client.js`, `options/imgbb.js` | Optional permission, device-local BYOK credential leased only to the exact packaged photo page for direct upload, scoped report return; no account gallery or remote deletion |
+| Manual settings transfer | `src/settings/settings-transfer.js`, `src/background/settings-file-routes.js`, `options/settings-backup.js` | Versioned known-setting and API-key file, exact-options-page worker reads/writes, confirmation and private-file warning; GitHub settings backup remains credential-free |
 
 Extend the owning surface rather than publishing cross-feature globals. The one
 deliberate Better Peakbagger global is `globalThis.BPBProviderPage`: the worker
@@ -507,11 +508,13 @@ ImgBB is bring-your-own-key. Its API origin is an optional permission requested
 when the user saves a key in Settings or uploads from the editor. The saved key
 remains in device-local extension storage, in the dedicated `bpbImgbbAuth`
 record. It is never exposed to Peakbagger, another website, GitHub, browser
-sync, or status UI. The
-background worker provides it only to Better Peakbagger's exact packaged photo
-page immediately before that page sends a direct upload to ImgBB. The photo
-page and the options page can both configure it, each gated on its exact
-packaged page path. The client makes one direct multipart POST without imposing a local byte
+sync, or status UI. A manual settings-file export includes it with a
+keep-private warning, through an exact-options-page worker route; GitHub backup
+still excludes it. The background worker otherwise provides it only to Better
+Peakbagger's exact packaged photo page immediately before that page sends a
+direct upload to ImgBB. The photo page and the options page can both configure
+it, each gated on its exact packaged page path. The client makes one direct
+multipart POST without imposing a local byte
 ceiling; ImgBB decides the upload limit for the user's key. Source decode and
 canvas export are instead bounded to 64 megapixels and 16,384 pixels per side,
 while the symmetric project-archive writer/reader contract is 40 MiB. It never

@@ -98,10 +98,16 @@ native textarea available for unsupported legacy markup. See the
 
 Draw routes, curves, labels, and familiar climbing symbols over a photo, then
 insert a flattened, metadata-free JPEG or PNG into your report. Originals,
-editable projects, and your ImgBB API key stay on this device; uploads go
-directly to your own ImgBB account. A searchable local library keeps drafts and
-published versions reusable, while optional GitHub recovery can preserve the
-catalog and annotation projects. See the
+editable projects, and your ImgBB API key are device-local. The saved key
+remains in device-local extension storage and is never exposed to Peakbagger,
+another website, GitHub, browser sync, or status UI. The background worker gives
+it only to Better Peakbagger's exact packaged photo page for the direct ImgBB
+upload. An explicit manual settings export includes the key and warns you to
+keep the file private. Images decode up to 64 megapixels and 16,384 pixels per
+side; editable project bundles are capped at 40 MiB, while ImgBB decides the
+upload size allowed for your account. A searchable local library keeps drafts
+and published versions reusable, while optional GitHub recovery can preserve
+the catalog and annotation projects. See the
 [photo workflow and privacy boundaries](https://github.com/wilmtang/better-peakbagger/blob/main/docs/photo-topo-editor.md).
 
 ### Back up your Peakbagger data to GitHub

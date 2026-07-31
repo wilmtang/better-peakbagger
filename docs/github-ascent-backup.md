@@ -612,12 +612,12 @@ preference, and settings-page search/sort state are never exported or changed by
 restore. A missing file is reported as an empty backup state, not treated as an
 empty list to restore.
 
-### `settings.json` schema version 1
+### `settings.json` schema version 2
 
 ```jsonc
 {
   "kind": "better-peakbagger-settings",
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "exportedAt": "2026-07-22T18:04:05.000Z",
   "extensionVersion": "3.0.0",
   "settings": {
@@ -629,12 +629,15 @@ empty list to restore.
 
 The example abbreviates `settings`; the real file is a complete, deterministic
 pick of every key owned by `settings-schema.js`, after that schema cleans values
-and fills defaults. Unknown keys are excluded. The GitHub token and repository,
-favorite climbers, drafts, caches, and other local/session data are never
-included. Import and GitHub restore reject another kind or a newer schema,
-re-clean every value, and require inline confirmation before wholesale
-replacement. Older schema versions are accepted so current defaults can fill
-new fields. A missing GitHub file is reported without changing settings.
+and fills defaults. Unknown keys are excluded. GitHub `settings.json` never
+includes the GitHub token/repository or the ImgBB API key. An explicit manual
+file export uses the same schema plus `apiKeys.imgbb`; it always records either
+the validated key or `null`, warns that the file is private, and restores that
+state on import. Favorite climbers, drafts, caches, and other local/session data
+remain excluded. Import and GitHub restore reject another kind or a newer
+schema, re-clean every value, and require inline confirmation before wholesale
+replacement. Version 1 files remain accepted and leave the destination API key
+unchanged. A missing GitHub file is reported without changing settings.
 During a manual GitHub write, the Settings row reports that the backup is in
 progress; after GitHub accepts the commit, it keeps **Settings backed up ✓** and
 a commit link visible until the backed-up settings change or the repository is

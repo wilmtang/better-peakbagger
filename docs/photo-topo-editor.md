@@ -95,7 +95,9 @@ The boundaries are deliberate:
    Peakbagger has no relay or developer server.
 3. The API key and ImgBB delete URL are device-local secrets. Neither may enter
    synchronized settings, a report, GitHub, logs, or exported project metadata.
-   The saved key is never exposed to Peakbagger, another website, or status UI.
+   A manual settings-file export includes the API key with a keep-private
+   warning; the delete URL remains excluded. The saved key is never exposed to
+   Peakbagger, another website, or status UI.
    The background worker provides it only to Better Peakbagger's exact packaged
    photo page immediately before that page sends a direct upload to ImgBB.
 4. The report return token is random, tab- and frame-bound, single-use, and
@@ -246,9 +248,11 @@ Settings when the user saves a key there. The key is validated and stored under
 the dedicated `bpbImgbbAuth` record in device-local `storage.local`, never
 synchronized storage. The saved key remains in device-local extension storage.
 It is never exposed to Peakbagger, another website, GitHub, browser sync, or
-status UI. The background worker provides it only to Better Peakbagger's exact
-packaged photo page immediately before that page sends a direct upload to
-ImgBB. Removing the key clears the credential but does not alter prior uploads.
+status UI. An explicit manual settings-file export includes it, warns the user
+to keep the file private, and can restore it on another browser. The background
+worker otherwise provides it only to Better Peakbagger's exact packaged photo
+page immediately before that page sends a direct upload to ImgBB. Removing the
+key clears the credential but does not alter prior uploads.
 
 Two extension-owned surfaces can configure that credential — the photo editor
 and **Settings → Activity creation → Trip report photos** — and the worker

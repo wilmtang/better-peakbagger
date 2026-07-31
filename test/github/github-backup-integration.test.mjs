@@ -666,6 +666,38 @@ test('favorites restore reports an absent file and ignores the ascent-backup fea
     }, EXTENSION_SENDER)).error.code, 'not-connected');
 });
 
+test('the built worker transfers manual settings files with the API key only for Settings', async () => {
+    const worker = createWorker({
+        settings: { theme: 'dark', units: 'imperial' },
+        local: { bpbImgbbAuth: { key: 'old-imgbb-key', savedAt: '2026-07-29T12:00:00.000Z' } },
+        github: gitDataBackend().handler,
+    });
+
+    const exported = await worker.send({ type: 'SETTINGS_FILE_EXPORT' }, EXTENSION_SENDER);
+    assert.equal(exported.ok, true);
+    const parsed = Transfer.parse(exported.content);
+    assert.equal(parsed.settings.theme, 'dark');
+    assert.deepEqual(parsed.apiKeys, { imgbb: 'old-imgbb-key' });
+
+    const replacement = Transfer.buildPayload({ theme: 'light', units: 'metric' }, {
+        extensionVersion: '3.3.0',
+        exportedAt: '2026-07-30T12:00:00.000Z',
+        apiKeys: { imgbb: 'new-imgbb-key' },
+    });
+    const imported = await worker.send({
+        type: 'SETTINGS_FILE_IMPORT',
+        content: Transfer.serialize(replacement),
+    }, EXTENSION_SENDER);
+    assert.equal(imported.ok, true);
+    assert.equal(worker.sync.bpbSettings.theme, 'light');
+    assert.equal(worker.sync.bpbSettings.units, 'metric');
+    assert.equal(worker.local.bpbImgbbAuth.key, 'new-imgbb-key');
+
+    const forbidden = await worker.send({ type: 'SETTINGS_FILE_EXPORT' }, PEAK_SENDER);
+    assert.equal(forbidden.error.code, 'forbidden');
+    assert.equal('content' in forbidden, false);
+});
+
 test('settings backup and restore stay extension-only and ignore the ascent-backup gate', async () => {
     const backend = gitDataBackend();
     const restorePayload = Transfer.buildPayload({ theme: 'light', units: 'metric' }, {
@@ -682,7 +714,12 @@ test('settings backup and restore stay extension-only and ignore the ascent-back
         return backend.handler(method, path, body);
     };
     const worker = createWorker({
-        settings: { enableGithubBackup: false, theme: 'dark' }, auth: AUTH, github,
+        settings: { enableGithubBackup: false, theme: 'dark' },
+        local: {
+            bpbGithubAuth: structuredClone(AUTH),
+            bpbImgbbAuth: { key: 'must-not-reach-github' },
+        },
+        github,
     });
 
     const backup = await worker.send({ type: 'GITHUB_SETTINGS_BACKUP' }, EXTENSION_SENDER);
@@ -693,6 +730,8 @@ test('settings backup and restore stay extension-only and ignore the ascent-back
     assert.equal(committed.extensionVersion, '2.2.0');
     assert.equal(committed.settings.theme, 'dark');
     assert.deepEqual(Object.keys(committed.settings), Object.keys(Schema.DEFAULTS));
+    assert.equal('apiKeys' in committed, false,
+        'GitHub settings backup must remain credential-free even when a local API key exists');
     assert.equal(worker.local.bpbSettingsBackupState.signature,
         Transfer.signature(Schema.clean({ enableGithubBackup: false, theme: 'dark' })));
     assert.equal('token' in backup, false);

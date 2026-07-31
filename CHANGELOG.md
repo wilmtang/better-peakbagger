@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **Transfer complete settings files.** Manual settings export and import now
+  include the saved ImgBB API key as well as every schema-backed preference.
+  Settings warns that the downloaded file contains API keys and should be kept
+  private; GitHub settings backup remains credential-free.
+
 - **Make site dark mode dynamic and own the first frame.** Peakbagger's literal
   inline text/background colors now remap by hue and lightness instead of
   relying on a growing list of named-color selectors, so black captions such as

@@ -35,10 +35,12 @@ const FAIL_SOFT = Object.freeze({
 });
 
 const AUTHORITATIVE = Object.freeze({
-    'options/settings-backup.js': [{ count: 1, kind: 'preservation', reason: 'do not replace a local backup with defaults' }],
     'src/ascent/ascent-upload.js': [{ count: 1, kind: 'privacy', reason: 'gate local-file parsing and allowlisted fields' }],
     'src/background/background.js': [{ count: 1, kind: 'privacy', reason: 'gate provider and local-upload capture in the worker' }],
     'src/background/github-routes.js': [{ count: 1, kind: 'preservation', reason: 'do not replace a remote backup with defaults' }],
+    'src/background/settings-file-routes.js': [
+        { count: 2, kind: 'preservation', reason: 'export and import complete authoritative settings with API keys' },
+    ],
 });
 
 const sourceFiles = async directory => {

@@ -10,6 +10,67 @@ import {
 
 registerCleanup();
 
+const installSettingsFileWorker = (chrome, {
+    exportFailure = () => false,
+} = {}) => {
+    chrome.runtime.sendMessage = async message => {
+        if (message.type === 'SETTINGS_FILE_EXPORT') {
+            if (exportFailure()) {
+                return {
+                    ok: false,
+                    error: {
+                        code: 'settings-unavailable',
+                        message: 'Settings and API keys could not be read, so no export was created.',
+                    },
+                };
+            }
+            const settings = (await chrome.storage.sync.get('bpbSettings')).bpbSettings;
+            const imgbb = (await chrome.storage.local.get('bpbImgbbAuth')).bpbImgbbAuth;
+            const exportedAt = '2026-07-30T12:00:00.000Z';
+            return {
+                ok: true,
+                content: settingsTransfer.serialize(settingsTransfer.buildPayload(settings, {
+                    extensionVersion: '3.3.0',
+                    exportedAt,
+                    apiKeys: { imgbb: imgbb?.key || null },
+                })),
+                exportedAt,
+            };
+        }
+        if (message.type === 'SETTINGS_FILE_IMPORT') {
+            const parsed = settingsTransfer.parse(message.content);
+            if (!parsed.ok) return { ok: false, error: { code: 'invalid-file' } };
+            try {
+                await chrome.storage.sync.set({ bpbSettings: parsed.settings });
+                if (Object.hasOwn(parsed, 'apiKeys')) {
+                    if (parsed.apiKeys.imgbb) {
+                        await chrome.storage.local.set({
+                            bpbImgbbAuth: {
+                                key: parsed.apiKeys.imgbb,
+                                savedAt: '2026-07-30T12:00:00.000Z',
+                            },
+                        });
+                    } else {
+                        await chrome.storage.local.remove('bpbImgbbAuth');
+                    }
+                }
+                return { ok: true, settings: parsed.settings };
+            } catch {
+                return {
+                    ok: false,
+                    error: { code: 'import-failed', message: 'Settings could not be imported. Nothing was changed.' },
+                };
+            }
+        }
+        if (message.type === 'PHOTO_IMGBB_STATUS') {
+            const imgbb = (await chrome.storage.local.get('bpbImgbbAuth')).bpbImgbbAuth;
+            return { ok: true, configured: !!imgbb, permissionGranted: true };
+        }
+        if (message.type === 'GITHUB_AUTH_STATUS') return {};
+        return {};
+    };
+};
+
 test('theme bootstrap loads before the options stylesheet', async () => {
     const dom = await loadOptions({});
     const resources = Array.from(dom.window.document.head.querySelectorAll('script[src], link[rel="stylesheet"]'))
@@ -284,9 +345,11 @@ test('the options controller exclusively owns shared status timing', async () =>
     assert.doesNotMatch(draftsSource, /getElementById\(['"]status['"]\)|2200/);
 });
 
-test('settings export downloads a parseable known-key-only payload', async () => {
+test('settings export downloads all known settings and the saved API key', async () => {
     const download = {};
     const dom = await loadOptions({ theme: 'dark', unknownSetting: 'private' }, {
+        local: { bpbImgbbAuth: { key: 'private-imgbb-key', savedAt: '2026-07-29T12:00:00.000Z' } },
+        prepareChrome: chrome => installSettingsFileWorker(chrome),
         prepareWindow(window) {
             window.URL.createObjectURL = blob => {
                 download.blob = blob;
@@ -306,24 +369,20 @@ test('settings export downloads a parseable known-key-only payload', async () =>
     assert.equal(parsed.ok, true);
     assert.equal(parsed.settings.theme, 'dark');
     assert.equal('unknownSetting' in parsed.settings, false);
+    assert.deepEqual(parsed.apiKeys, { imgbb: 'private-imgbb-key' });
     assert.equal(download.href, 'blob:settings-export');
     assert.match(download.name, /^better-peakbagger-settings-\d{4}-\d{2}-\d{2}\.json$/);
     assert.equal(download.revoked, 'blob:settings-export');
 });
 
-test('settings export preserves the previous backup when settings cannot be read and retries cleanly', async () => {
+test('settings export creates no file when the worker cannot read every setting and retries cleanly', async () => {
     const download = { created: 0, clicked: 0 };
-    const errors = [];
-    let restoreSettingsRead;
+    let failExport = true;
     const dom = await loadOptions({ theme: 'dark' }, {
         prepareChrome(chrome) {
-            restoreSettingsRead = chrome.storage.sync.get;
-            chrome.storage.sync.get = async () => {
-                throw new Error('SYNC_EXPORT_SETTINGS_SENTINEL');
-            };
+            installSettingsFileWorker(chrome, { exportFailure: () => failExport });
         },
         prepareWindow(window) {
-            window.console.error = (...args) => errors.push(args.map(String).join(' '));
             window.URL.createObjectURL = blob => {
                 download.created++;
                 download.blob = blob;
@@ -338,14 +397,13 @@ test('settings export preserves the previous backup when settings cannot be read
 
     el(dom, 'settings-backup-export').click();
     await waitFor(dom, () => el(dom, 'status-error-text').textContent
-        === 'Settings could not be read, so no backup was created.');
+        === 'Settings and API keys could not be read, so no export was created.');
 
-    assert.equal(download.created, 0, 'a failed read must not serialize a default-valued backup');
+    assert.equal(download.created, 0, 'a failed read must not serialize a partial backup');
     assert.equal(download.clicked, 0, 'a failed read must not start a download');
     assert.equal(download.revoked, undefined);
-    assert.ok(errors.some(message => message.includes('SYNC_EXPORT_SETTINGS_SENTINEL')));
 
-    dom.chrome.storage.sync.get = restoreSettingsRead;
+    failExport = false;
     el(dom, 'settings-backup-export').click();
     await waitFor(dom, () => download.blob);
 
@@ -358,12 +416,19 @@ test('settings export preserves the previous backup when settings cannot be read
     assert.equal(download.revoked, 'blob:settings-export');
 });
 
-test('settings import replaces known settings only after inline confirmation', async () => {
-    const dom = await loadOptions({ theme: 'dark', units: 'imperial' });
+test('settings import replaces known settings and API keys only after inline confirmation', async () => {
+    const dom = await loadOptions(
+        { theme: 'dark', units: 'imperial' },
+        {
+            local: { bpbImgbbAuth: { key: 'old-imgbb-key' } },
+            prepareChrome: chrome => installSettingsFileWorker(chrome),
+        }
+    );
     const input = el(dom, 'settings-backup-file');
     const payload = settingsTransfer.buildPayload({ theme: 'light', units: 'metric' }, {
         extensionVersion: '3.0.0',
-        exportedAt: '2026-07-22T12:00:00.000Z'
+        exportedAt: '2026-07-22T12:00:00.000Z',
+        apiKeys: { imgbb: 'new-imgbb-key' },
     });
     Object.defineProperty(input, 'files', {
         configurable: true,
@@ -373,12 +438,15 @@ test('settings import replaces known settings only after inline confirmation', a
     input.dispatchEvent(new dom.window.Event('change'));
     await waitFor(dom, () => el(dom, 'settings-backup-confirmation').hidden === false);
     assert.match(el(dom, 'settings-backup-confirmation').textContent,
-        /trail-settings\.json.*Replaces your current settings/s);
+        /trail-settings\.json.*Replaces your current settings and saved API keys/s);
     assert.equal(dom.chrome._store.bpbSettings.theme, 'dark', 'reading a file must not apply it');
+    assert.equal(dom.chrome._localStore.bpbImgbbAuth.key, 'old-imgbb-key');
 
     el(dom, 'settings-backup-confirm').click();
     await waitFor(dom, () => dom.chrome._store.bpbSettings.theme === 'light');
+    await waitFor(dom, () => el(dom, 'settings-backup-confirmation').hidden);
     assert.equal(dom.chrome._store.bpbSettings.units, 'metric');
+    assert.equal(dom.chrome._localStore.bpbImgbbAuth.key, 'new-imgbb-key');
     assert.equal(el(dom, 'settings-backup-confirmation').hidden, true);
     assert.equal(el(dom, 'status').textContent, 'Settings imported');
 });
@@ -387,6 +455,7 @@ test('settings import keeps its confirmation retryable when persistence fails', 
     let failWrite = true;
     const dom = await loadOptions({ theme: 'dark', units: 'imperial' }, {
         prepareChrome: chrome => {
+            installSettingsFileWorker(chrome);
             const nativeSet = chrome.storage.sync.set;
             chrome.storage.sync.set = async values => {
                 if (failWrite && values.bpbSettings?.theme === 'light') {
@@ -409,7 +478,7 @@ test('settings import keeps its confirmation retryable when persistence fails', 
     input.dispatchEvent(new dom.window.Event('change'));
     await waitFor(dom, () => el(dom, 'settings-backup-confirmation').hidden === false);
     el(dom, 'settings-backup-confirm').click();
-    await waitFor(dom, () => /couldn’t be saved/i.test(el(dom, 'status-error-text').textContent));
+    await waitFor(dom, () => /could not be imported/i.test(el(dom, 'status-error-text').textContent));
 
     assert.equal(dom.chrome._store.bpbSettings.theme, 'dark');
     assert.equal(el(dom, 'settings-backup-confirmation').hidden, false);
@@ -455,6 +524,7 @@ test('Escape cannot visually cancel an import after its write has started', asyn
     const writeGate = new Promise(resolve => { releaseWrite = resolve; });
     const dom = await loadOptions({ theme: 'dark' }, {
         prepareChrome: chrome => {
+            installSettingsFileWorker(chrome);
             const nativeSet = chrome.storage.sync.set;
             chrome.storage.sync.set = async values => {
                 if (values.bpbSettings?.theme === 'light') {

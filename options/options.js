@@ -166,9 +166,15 @@ import { initSectionNav } from '../src/ui/section-nav.js';
     // The custom-list workspace lives on its own page (options/favorites.html);
     // only its GitHub backup stays here, under Backup & sync.
     const favoritesBackup = initFavoritesBackup({ extensionApi, flash, save });
-    // Device-local credential, not a synced setting: it never enters `save`.
-    initImgbbKey({ extensionApi, flash });
-    const settingsBackup = initSettingsBackup({ extensionApi, flash, save });
+    // The credential stays out of synced settings and enters only an explicit
+    // manual settings-file transfer through the worker.
+    const imgbbKey = initImgbbKey({ extensionApi, flash });
+    const settingsBackup = initSettingsBackup({
+        extensionApi,
+        flash,
+        save,
+        refreshCredentials: imgbbKey.refresh,
+    });
     const photoBackup = initPhotoBackup({ extensionApi, flash, save });
 
     unitsEl.addEventListener('change', () => save({ units: unitsEl.value }));

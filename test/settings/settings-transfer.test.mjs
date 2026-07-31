@@ -26,6 +26,32 @@ test('settings transfer payload round-trips known cleaned settings', () => {
 
     const parsed = Transfer.parse(Transfer.serialize(payload));
     assert.deepEqual(parsed, { ok: true, settings: payload.settings });
+    assert.equal('apiKeys' in payload, false,
+        'credential-free callers such as GitHub backup must opt in to API keys');
+});
+
+test('manual settings transfer round-trips every supported API key state', () => {
+    const configured = Transfer.buildPayload({ theme: 'dark' }, {
+        extensionVersion: '3.3.0',
+        exportedAt: '2026-07-30T12:00:00.000Z',
+        apiKeys: { imgbb: 'secret-imgbb-key' },
+    });
+    assert.deepEqual(
+        Transfer.parse(Transfer.serialize(configured)).apiKeys,
+        { imgbb: 'secret-imgbb-key' }
+    );
+
+    const unconfigured = Transfer.buildPayload({}, {
+        extensionVersion: '3.3.0',
+        exportedAt: '2026-07-30T12:00:00.000Z',
+        apiKeys: { imgbb: null },
+    });
+    assert.deepEqual(
+        Transfer.parse(Transfer.serialize(unconfigured)).apiKeys,
+        { imgbb: null },
+        'an explicit empty key lets import clear a key the destination already has'
+    );
+    assert.deepEqual(Transfer.API_KEY_NAMES, ['imgbb']);
 });
 
 test('settings transfer strips unknown input keys and cleans imported values', () => {
@@ -44,6 +70,27 @@ test('settings transfer strips unknown input keys and cleans imported values', (
     assert.equal(parsed.settings.mapViewportHeight, Schema.BOUNDS.viewportHeight.max);
     assert.equal('futureSetting' in parsed.settings, false);
     assert.deepEqual(Object.keys(parsed.settings), Object.keys(Schema.DEFAULTS));
+});
+
+test('legacy settings files leave API keys untouched and malformed keys reject the whole file', () => {
+    const legacy = Transfer.parse(JSON.stringify({
+        kind: Transfer.KIND,
+        schemaVersion: 1,
+        settings: { theme: 'light' },
+    }));
+    assert.equal(legacy.ok, true);
+    assert.equal(Object.hasOwn(legacy, 'apiKeys'), false);
+
+    assert.deepEqual(Transfer.parse(JSON.stringify({
+        kind: Transfer.KIND,
+        schemaVersion: Transfer.SCHEMA_VERSION,
+        settings: {},
+        apiKeys: { imgbb: 'contains spaces' },
+    })), { ok: false, reason: 'invalid-api-keys' });
+    assert.throws(() => Transfer.buildPayload({}, {
+        exportedAt: '2026-07-30T12:00:00.000Z',
+        apiKeys: {},
+    }), /API keys are invalid/);
 });
 
 test('settings transfer rejects invalid and unsupported payloads', () => {

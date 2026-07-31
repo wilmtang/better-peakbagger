@@ -214,9 +214,12 @@ editable project bundles have a separate 40 MiB limit.
   stored only in the dedicated `bpbImgbbAuth` record in device-local
   `storage.local`. The saved key remains in device-local extension storage. It
   is never exposed to Peakbagger, another website, GitHub, browser sync, or
-  status UI. The background worker provides it only to Better Peakbagger's
-  exact packaged photo page immediately before that page sends a direct upload
-  to ImgBB. Removing the key does not alter prior uploads.
+  status UI. A manual settings-file export includes the key so the user can
+  move the complete configuration; the Settings page warns that this downloaded
+  file must be kept private. The background worker otherwise provides the key
+  only to Better Peakbagger's exact packaged photo page immediately before that
+  page sends a direct upload to ImgBB. Removing the key does not alter prior
+  uploads.
 - **Local upload history:** Better Peakbagger keeps its own searchable catalog
   because ImgBB's documented v1 API does not provide an account-gallery listing
   operation. The catalog stores public URLs, source/export metadata and hashes,
@@ -281,8 +284,9 @@ the extension never clicks a Peakbagger Save control.
   provenance, and export time. A settings backup sends `settings.json`, containing
   only the extension's validated settings schema values, export time, schema
   version, and extension version. It never contains the GitHub token or selected
-  repository, favorites, drafts, caches, ascent, activity, or GPS data. These two
-  transfers write only those fixed root files in the same selected repository.
+  repository, ImgBB API key, favorites, drafts, caches, ascent, activity, or GPS
+  data. These two transfers write only those fixed root files in the same
+  selected repository.
   A photo-library backup separately writes `photo-library.json`, containing
   catalog metadata, public ImgBB URLs, the sanitized source file name,
   source/export hashes and dimensions, title and alt state, lineage, report
@@ -330,9 +334,11 @@ the extension never clicks a Peakbagger Save control.
 
 Settings can also be exported as a JSON file downloaded by the browser and
 imported into another profile without GitHub. Export happens only when the user
-clicks **Export settings**. Import validates the file through the current
-settings schema and requires an inline confirmation before replacing the current
-settings; it does not upload the file anywhere.
+clicks **Export settings**. Unlike the credential-free GitHub backup, this
+manual file contains every validated setting and the saved ImgBB API key in
+plain text; Settings tells the user to keep it private. Import validates the
+file and requires an inline confirmation before replacing the current settings
+and API key. The extension does not upload the file anywhere.
 
 ## Third-party services
 
