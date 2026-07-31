@@ -571,9 +571,10 @@ used by the browser verifier.
   irreversible. Report insertion, reference persistence, and journal cleanup
   cannot downgrade a committed ImgBB success; `catalog-committed` recovery is
   idempotent.
-- **F2 (`7928c21`)** — export and upload use one immutable saved snapshot. Every
-  editor mutation family, including keyboard and history paths, fails closed
-  while that snapshot is being exported and committed.
+- **F2 (`7928c21`, integrated with current `main` in `83fbf19`)** — export and
+  upload use one immutable saved snapshot. Every editor mutation family,
+  including upload format, JPEG quality, keyboard, and history paths, fails
+  closed while that snapshot is being exported and committed.
 - **F3 (`03dce29`)** — provider export and body reading share one 30-second
   page-world deadline. Cancel aborts the current generation, removes its
   process immediately, permits immediate retry, and late results cannot replace
@@ -637,7 +638,7 @@ used by the browser verifier.
 
 ### Audit verification complete
 
-- Unit/integration: **1,074/1,074**.
+- Unit/integration: **1,080/1,080**.
 - Scale: **5/5**, including the new 1,200-photo transaction, timing, DOM, and
   object-URL gate.
 - JavaScript and extension lint: passed with the same six owned
