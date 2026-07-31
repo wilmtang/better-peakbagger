@@ -4,10 +4,9 @@ This directory is reserved for approved work that has not shipped.
 
 Current active plans:
 
-- [Sensible default size for report images](report-image-default-size.md) —
-  insert photos pre-sized to fit the report instead of at full camera
-  resolution, with one-click sizes, a rememberable default, and an opt-in fix
-  for images already in a saved report.
+- [Codebase audit — 2026-07-30](codebase-audit-2026-07-30.md) — current
+  findings covering photo upload transactions and resource bounds, provider
+  capture liveness, privacy/documentation accuracy, and library scalability.
 
 Once a plan is implemented or abandoned, move it to [archive/](../archive/) and
 update the maintained architecture or focused design note with the resulting
