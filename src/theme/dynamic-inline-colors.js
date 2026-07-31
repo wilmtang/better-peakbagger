@@ -312,9 +312,7 @@ export const createDynamicInlineColorApplier = ({
             return;
         }
 
-        const attributeColor = element.localName === 'link' && element.rel === 'mask-icon'
-            ? ''
-            : element.getAttribute('color') || '';
+        const attributeColor = element.getAttribute('color') || '';
         const foreground = element.style.getPropertyValue('color') || attributeColor;
         const background = element.style.getPropertyValue('background-color')
             || element.getAttribute('bgcolor')

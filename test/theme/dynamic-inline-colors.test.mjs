@@ -128,3 +128,20 @@ test('later inline color changes and inserted legacy backgrounds are watched', a
     applier.disconnect();
     dom.window.close();
 });
+
+test('non-rendered link elements remain outside dynamic inline-color processing', () => {
+    const dom = new JSDOM('<!doctype html><html><head><link rel="mask-icon" color="#102030"></head><body></body></html>', {
+        url: 'https://www.peakbagger.com/',
+    });
+    const { document } = dom.window;
+    const applier = createDynamicInlineColorApplier({ document, normalizeColor: () => null });
+    applier.setTheme('dark');
+
+    const link = document.querySelector('link');
+    assert.equal(link.getAttribute('color'), '#102030');
+    assert.equal(link.hasAttribute(INLINE_COLOR_ATTRIBUTE), false);
+    assert.equal(link.style.getPropertyValue(INLINE_COLOR_PROPERTY), '');
+
+    applier.disconnect();
+    dom.window.close();
+});
