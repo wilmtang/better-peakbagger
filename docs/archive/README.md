@@ -52,6 +52,10 @@ living docs in [`docs/`](../).
   remediation of photo upload consistency and resource bounds, provider capture
   cancellation, ImgBB disclosure, library scalability, and maintained-document
   drift, with a final closure ledger.
+- [Codebase audit remediation — 2026-07-31](codebase-audit-remediation-2026-07-31.md) —
+  completed source-grounded fixes for capture admission, detached cleanup,
+  page-world settings validation, analyzer coordinate bounds, options labels,
+  theme schema ownership, and dead inline-color code, with explicit proof gaps.
 - [Codebase audit — 2026-07-19](codebase-audit-2026-07-19.md) — point-in-time
   audit and remediation plan.
 - [Codebase audit — 2026-07-22](codebase-audit-2026-07-22.md) and its
