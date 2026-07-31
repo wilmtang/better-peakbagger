@@ -198,8 +198,10 @@ Before upload, the editor flattens the photo and annotations into a newly
 encoded JPEG or PNG. That export contains pixels only and excludes the source
 file's EXIF and other metadata, source file name, project JSON, local record
 identity, report identity, API key, and delete URL. The extension accepts only
-browser-decodable images and exports through ImgBB's documented maximum of
-32 MiB; there is no larger-file or chunked path.
+browser-decodable images up to 64 megapixels and 16,384 pixels per side. It
+does not impose an upload-byte ceiling: the flattened export is offered once
+and ImgBB applies the limit for the user's key. Downloadable and importable
+editable project bundles have a separate 40 MiB limit.
 
 - **What leaves the browser:** only after the user chooses **Upload and
   insert**, ImgBB receives the flattened image bytes, the chosen upload name,

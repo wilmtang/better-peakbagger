@@ -227,3 +227,56 @@ test('editor pixel sizes come from the same dimensions the renderer paints', () 
     assert.match(svg, /data-bpb-object="anchor-1"[^>]*scale\(38\.88\)/);
     assert.match(svg, /data-bpb-object="pitch-1"[\s\S]*font-size="42"/);
 });
+
+test('checks source dimensions before allocating the export canvas', async () => {
+    let allocated = false;
+    await assert.rejects(Renderer.exportProject({
+        project: projectWithObjects(),
+        source: { width: 1200, height: 1600 },
+        document: {
+            createElement() {
+                allocated = true;
+                throw new Error('canvas must not be allocated');
+            },
+        },
+    }), /dimensions do not match/);
+    assert.equal(allocated, false);
+});
+
+test('exports a legitimate panorama at the exact pixel budget', async () => {
+    const project = Project.createProject({
+        localId: 'panorama',
+        width: 16_000,
+        height: 4_000,
+        sourceSha256: HASH,
+        updatedAt: TIME,
+    });
+    const canvas = {
+        width: 0,
+        height: 0,
+        getContext: () => ({ drawImage() {} }),
+        toBlob: callback => callback(new Blob(['panorama'], { type: 'image/jpeg' })),
+    };
+    class TestImage {
+        set src(_value) { queueMicrotask(() => this.onload?.()); }
+    }
+    const exported = await Renderer.exportProject({
+        project,
+        source: { width: project.image.width, height: project.image.height },
+        document: { createElement: () => canvas },
+        crypto: webcrypto,
+        imageDependencies: {
+            ImageCtor: TestImage,
+            URLImpl: {
+                createObjectURL: () => 'blob:overlay',
+                revokeObjectURL() {},
+            },
+            BlobCtor: Blob,
+        },
+    });
+    assert.equal(canvas.width * canvas.height, Project.MAX_PIXELS);
+    assert.deepEqual(
+        { width: exported.width, height: exported.height },
+        { width: 16_000, height: 4_000 },
+    );
+});

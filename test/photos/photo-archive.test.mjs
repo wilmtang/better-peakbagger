@@ -58,6 +58,46 @@ test('reads back exactly what it wrote, so a downloaded project can return', asy
         new Uint8Array(await original.arrayBuffer()));
 });
 
+test('round-trips the exact project-bundle maximum and preflights one byte above it', async () => {
+    const project = { schemaVersion: 1, localId: 'photo-maximum', objects: [] };
+    const photo = {
+        schemaVersion: 1,
+        localId: 'photo-maximum',
+        title: 'Maximum bundle',
+        source: { mime: 'image/png' },
+    };
+    const empty = new Blob([], { type: 'image/png' });
+    const fixedBytes = Archive.projectArchiveSize({ project, photo, original: empty });
+    const originalBytes = Archive.MAX_ARCHIVE_BYTES - fixedBytes;
+    const original = new Blob([new Uint8Array(originalBytes)], { type: 'image/png' });
+    const archive = await Archive.createProjectArchive({ project, photo, original });
+
+    assert.equal(Archive.projectArchiveSize({ project, photo, original }),
+        Archive.MAX_ARCHIVE_BYTES);
+    assert.equal(archive.size, Archive.MAX_ARCHIVE_BYTES);
+    const read = await Archive.readProjectArchive(archive);
+    assert.equal(read.original.size, originalBytes);
+
+    let originalRead = false;
+    const tooLarge = new Blob([], { type: 'image/png' });
+    Object.defineProperties(tooLarge, {
+        size: { value: originalBytes + 1 },
+        arrayBuffer: {
+            value: () => {
+                originalRead = true;
+                throw new Error('the original must not be read before the size check');
+            },
+        },
+    });
+    assert.equal(Archive.projectArchiveSize({ project, photo, original: tooLarge }),
+        Archive.MAX_ARCHIVE_BYTES + 1);
+    await assert.rejects(
+        Archive.createProjectArchive({ project, photo, original: tooLarge }),
+        error => error instanceof Archive.ArchiveError && /40 MiB/.test(error.message),
+    );
+    assert.equal(originalRead, false, 'the writer must reject before buffering the original');
+});
+
 test('the reader refuses a bundle it cannot honestly reopen', async () => {
     // Compressed entries would need a decompressor in the extension bundle,
     // and a re-zipped copy is the common way a user produces one.

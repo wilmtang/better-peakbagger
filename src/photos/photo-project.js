@@ -13,7 +13,14 @@ const MAX_ROUTE_POINTS = 2000;
 const MAX_PROJECT_POINTS = 5000;
 const MAX_TEXT_LENGTH = 500;
 const MAX_ID_LENGTH = 100;
-const MAX_DIMENSION = 100_000;
+// A decoded image is at least four bytes per pixel before the browser adds the
+// source bitmap, canvas backing store, overlay, and encoded output. Sixty-four
+// megapixels admits current 48 MP cameras and a 16,000 × 4,000 panorama while
+// bounding the primary RGBA allocation at about 244 MiB. The axis cap also
+// rejects pathological thin images that fit the area budget but exceed
+// cross-browser canvas limits.
+const MAX_DIMENSION = 16_384;
+const MAX_PIXELS = 64_000_000;
 const MAX_LINE_WIDTH = 100;
 const MAX_SCALE = 10;
 // Fully opaque marks hide the beta underneath them, so every object carries an
@@ -58,6 +65,22 @@ const boundedNumber = (value, min, max) => finite(value) && value >= min && valu
 const integer = (value, min, max) => Number.isInteger(value) && value >= min && value <= max
     ? value
     : null;
+
+const cleanImageDimensions = value => {
+    if (!ownObject(value)) return null;
+    const width = integer(value.width, 1, MAX_DIMENSION);
+    const height = integer(value.height, 1, MAX_DIMENSION);
+    if (width == null || height == null || width * height > MAX_PIXELS) return null;
+    return { width, height };
+};
+
+const matchingImageDimensions = (left, right) => {
+    const cleanLeft = cleanImageDimensions(left);
+    const cleanRight = cleanImageDimensions(right);
+    return !!cleanLeft && !!cleanRight
+        && cleanLeft.width === cleanRight.width
+        && cleanLeft.height === cleanRight.height;
+};
 
 const cleanId = value => {
     if (typeof value !== 'string') return null;
@@ -110,14 +133,12 @@ const smoothControls = points => points.map((point, index) => {
 });
 
 const cleanImage = value => {
-    if (!ownObject(value)) return null;
-    const width = integer(value.width, 1, MAX_DIMENSION);
-    const height = integer(value.height, 1, MAX_DIMENSION);
+    const dimensions = cleanImageDimensions(value);
     const sourceSha256 = typeof value.sourceSha256 === 'string'
         ? value.sourceSha256.toLowerCase()
         : '';
-    if (width == null || height == null || !HEX_64.test(sourceSha256)) return null;
-    return { width, height, sourceSha256 };
+    if (!dimensions || !HEX_64.test(sourceSha256)) return null;
+    return { ...dimensions, sourceSha256 };
 };
 
 const cleanOpacity = value => boundedNumber(value ?? 1, MIN_OPACITY, 1);
@@ -358,6 +379,7 @@ export const photoProject = {
     MAX_PROJECT_POINTS,
     MAX_TEXT_LENGTH,
     MAX_DIMENSION,
+    MAX_PIXELS,
     MAX_LINE_WIDTH,
     MAX_SCALE,
     MIN_OPACITY,
@@ -365,6 +387,8 @@ export const photoProject = {
     PALETTE,
     OBJECT_TYPES,
     MARKER_TYPES,
+    cleanImageDimensions,
+    matchingImageDimensions,
     smoothControls,
     cleanProject,
     createProject,

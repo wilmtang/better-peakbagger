@@ -236,6 +236,9 @@ const exportProject = async ({
     if (!project || !source || !documentImpl?.createElement) {
         throw new TypeError('photo renderer requires a clean project, source image, and document');
     }
+    if (!Project.matchingImageDimensions(project.image, source)) {
+        throw new RangeError('Photo project dimensions do not match its source image.');
+    }
     const canvas = documentImpl.createElement('canvas');
     canvas.width = project.image.width;
     canvas.height = project.image.height;

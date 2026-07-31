@@ -74,6 +74,26 @@ test('rejects a mismatched draft without partially writing any store', async () 
     store.close();
 });
 
+test('rejects project and photo dimensions that disagree even when their source hash matches', async () => {
+    const store = await Store.createPhotoStore({
+        indexedDB: new IDBFactory(),
+        name: 'photo-store-dimension-reject',
+    });
+    const input = fixture();
+    await assert.rejects(store.putDraft({
+        ...input,
+        project: Project.createProject({
+            localId: input.photo.localId,
+            width: input.photo.source.height,
+            height: input.photo.source.width,
+            sourceSha256: input.photo.source.sha256,
+            updatedAt: TIME,
+        }),
+    }), /matching clean photo/);
+    assert.equal((await store.listPhotos()).length, 0);
+    store.close();
+});
+
 // An ambiguous upload leaves the photo in `outcome-unknown` with the local
 // original still authoritative, and `beginUpload` accepts that state as a retry
 // input. A draft-only write gate closed the loop: every autosave and the retry
@@ -236,6 +256,28 @@ test('applies a restored project atomically without inventing original pixels', 
     assert.equal(restored.deleteUrl, null);
     const snapshot = await store.listBackupBundles();
     assert.deepEqual(snapshot.tombstones, [{ localId: 'remote-deleted', deletedAt: LATER }]);
+    store.close();
+});
+
+test('metadata restore rejects matching ids and hashes with conflicting dimensions', async () => {
+    const store = await Store.createPhotoStore({
+        indexedDB: new IDBFactory(),
+        name: 'photo-store-restore-dimension-reject',
+    });
+    const input = fixture();
+    await assert.rejects(store.applyRestore({
+        records: [{
+            photo: input.photo,
+            project: Project.createProject({
+                localId: input.photo.localId,
+                width: input.photo.source.height,
+                height: input.photo.source.width,
+                sourceSha256: input.photo.source.sha256,
+                updatedAt: TIME,
+            }),
+        }],
+    }), /invalid record/);
+    assert.deepEqual(await store.listPhotos(), []);
     store.close();
 });
 

@@ -119,6 +119,51 @@ test('bounds project and route complexity', () => {
     }), null);
 });
 
+test('bounds each decoded-image axis and the total pixel allocation', () => {
+    const exactPanorama = Project.createProject({
+        localId: 'panorama',
+        width: 16_000,
+        height: 4_000,
+        sourceSha256: HASH,
+        updatedAt: TIME,
+    });
+    assert.deepEqual(exactPanorama.image, {
+        width: 16_000,
+        height: 4_000,
+        sourceSha256: HASH,
+    });
+    assert.deepEqual(Project.cleanImageDimensions(exactPanorama.image), {
+        width: 16_000,
+        height: 4_000,
+    });
+    assert.ok(Project.createProject({
+        localId: 'axis-boundary',
+        width: Project.MAX_DIMENSION,
+        height: 1,
+        sourceSha256: HASH,
+        updatedAt: TIME,
+    }));
+
+    assert.equal(Project.createProject({
+        localId: 'axis-too-wide',
+        width: Project.MAX_DIMENSION + 1,
+        height: 1,
+        sourceSha256: HASH,
+        updatedAt: TIME,
+    }), null);
+    assert.equal(Project.createProject({
+        localId: 'too-many-pixels',
+        width: 16_000,
+        height: 4_001,
+        sourceSha256: HASH,
+        updatedAt: TIME,
+    }), null);
+    assert.equal(Project.cleanImageDimensions({
+        width: 16_000,
+        height: 4_001,
+    }), null);
+});
+
 test('add, update, remove, and reorder preserve a clean immutable project', () => {
     const original = emptyProject();
     const withRoute = Project.addObject(original, route(), NEXT_TIME);

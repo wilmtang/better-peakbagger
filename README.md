@@ -137,7 +137,10 @@ Better Peakbagger has no upload relay or developer account. Save that key in
 **Settings → Activity creation → Trip report photos**, or the first time you
 upload. It stays on this device, is never synced or backed up, and no page can
 read it back. The optional ImgBB permission is requested only when needed, and
-images follow ImgBB's 32 MiB limit. A searchable local library records drafts and uploaded public URLs, can
+ImgBB decides the upload-size limit for that key. The editor accepts decoded
+images up to 64 megapixels and 16,384 pixels per side; downloadable/importable
+project bundles have a separate 40 MiB portability limit. A searchable local
+library records drafts and uploaded public URLs, can
 reuse them in later reports, and creates a new version instead of overwriting a
 published image when you edit again.
 

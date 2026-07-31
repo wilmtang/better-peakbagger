@@ -18,6 +18,15 @@ const doc = dom.window.document;
 // checked against the photo page's deep links by parsing both.
 const optionsHtml = await fs.readFile(new URL('../../options/options.html', import.meta.url), 'utf8');
 const optionsDoc = new JSDOM(optionsHtml).window.document;
+const maintainedPhotoDocs = Object.fromEntries(await Promise.all([
+    ['README.md', '../../README.md'],
+    ['PRIVACY.md', '../../PRIVACY.md'],
+    ['docs/architecture.md', '../../docs/architecture.md'],
+    ['docs/photo-topo-editor.md', '../../docs/photo-topo-editor.md'],
+].map(async ([name, relative]) => [
+    name,
+    await fs.readFile(new URL(relative, import.meta.url), 'utf8'),
+])));
 
 test('the packaged photo page exposes the editor, library, and credential boundaries', () => {
     const entry = ENTRIES.find(candidate => candidate.out === 'photos/photos.js');
@@ -209,6 +218,32 @@ test('a downloaded project can come back in, and a duplicate cannot claim one as
     assert.match(source, /readProjectArchive/);
     assert.match(source, /existing \? crypto\.randomUUID\(\) : imported\.localId/);
     assert.match(source, /sha256 !== project\.image\.sourceSha256/);
+    assert.match(source, /Project\.matchingImageDimensions\(project\.image, imported\.source\)/);
+    assert.match(source, /Project\.matchingImageDimensions\(project\.image, bitmap\)/);
+    assert.match(source, /Archive\.projectArchiveSize/);
+    assert.match(source, /archiveBytes > Archive\.MAX_ARCHIVE_BYTES/);
+});
+
+test('the photo chooser states decode bounds separately from provider and project limits', () => {
+    assert.match(doc.querySelector('#editor-empty .fine-print').textContent,
+        /64 MP and 16,384 px per side/);
+    assert.match(doc.querySelector('#editor-empty .fine-print').textContent,
+        /ImgBB decides upload size/);
+    assert.doesNotMatch(doc.querySelector('#editor-empty .fine-print').textContent, /32 MB/);
+    assert.match(source, /above the 40 MiB project limit/);
+});
+
+test('maintained photo documentation separates decode, upload, and project-archive bounds', () => {
+    for (const [name, contents] of Object.entries(maintainedPhotoDocs)) {
+        assert.match(contents, /64 megapixels/i, `${name} must state the decoded-pixel budget`);
+        assert.match(contents, /16,384 pixels/i, `${name} must state the per-axis budget`);
+        assert.match(contents, /40 MiB/i, `${name} must state the project-bundle budget`);
+        assert.match(contents, /ImgBB.{0,40}(?:applies|decides)/i,
+            `${name} must leave the upload-size decision with ImgBB`);
+        assert.doesNotMatch(contents,
+            /images follow ImgBB's 32 MiB|refuses source or export blobs over 32 MiB|through exactly 32 MiB/i,
+            `${name} must not restore the obsolete local upload limit`);
+    }
 });
 
 test('page orchestration avoids page-owned storage sync and raw HTML assignment', () => {

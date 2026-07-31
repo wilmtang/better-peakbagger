@@ -14,6 +14,10 @@ import { fileURLToPath } from 'node:url';
 import { JSDOM } from 'jsdom';
 import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
 import { evalBundle, makeChromeStub, waitFor } from '../helpers/load-page.mjs';
+import { photoArchive as Archive } from '../../src/photos/photo-archive.js';
+import { photoLibrary as Library } from '../../src/photos/photo-library.js';
+import { photoProject as Project } from '../../src/photos/photo-project.js';
+import { photoRenderer as Renderer } from '../../src/photos/photo-renderer.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const html = await readFile(path.join(root, 'photos', 'photos.html'), 'utf8');
@@ -37,6 +41,7 @@ const loadEditor = async ({
     fetchImpl = null,
     indexedDB = new IDBFactory(),
     pickPhoto = true,
+    pickedFileSize = null,
     imageLoader = null,
 } = {}) => {
     const dom = new JSDOM(html, {
@@ -93,8 +98,12 @@ const loadEditor = async ({
 
     // Pick a photo the way the page's file input does.
     const input = doc.getElementById('photo-file');
+    const pickedFile = new win.File(['pixels'], 'north-face.jpg', { type: 'image/jpeg' });
+    if (pickedFileSize != null) {
+        Object.defineProperty(pickedFile, 'size', { value: pickedFileSize });
+    }
     Object.defineProperty(input, 'files', {
-        value: [new win.File(['pixels'], 'north-face.jpg', { type: 'image/jpeg' })],
+        value: [pickedFile],
         configurable: true,
     });
     input.dispatchEvent(new win.Event('change'));
@@ -264,6 +273,79 @@ test('a tab-only ImgBB key keeps its one local escape hatch', async () => {
     await page.settle();
     assert.equal(doc.getElementById('credential-form').hidden, false);
     assert.equal(doc.getElementById('remove-key').hidden, true);
+    assert.deepEqual(page.errors, []);
+});
+
+test('a source larger than 32 MiB can flatten to an export the scripted provider accepts', async () => {
+    let uploaded = false;
+    const page = await loadEditor({
+        pickedFileSize: 32 * 1024 * 1024 + 1,
+        imgbbStatus: { ok: true, configured: true, permissionGranted: true },
+        fetchImpl: async (_url, options) => {
+            uploaded = true;
+            const image = options.body.get('image');
+            assert.ok(image.size < 32 * 1024 * 1024,
+                'the provider receives the flattened export, not the larger source');
+            return {
+                ok: true,
+                status: 200,
+                text: async () => JSON.stringify(imgbbSuccess),
+            };
+        },
+    });
+    const { doc } = page;
+    await waitFor(page.dom, () => doc.getElementById('save-status').textContent === 'Saved on this device');
+    page.click(doc.getElementById('upload-insert'));
+    await waitFor(page.dom, () => uploaded
+        && doc.getElementById('photo-viewport').getAttribute('aria-busy') === 'false'
+        && /Uploaded to ImgBB/i.test(page.status()));
+
+    const [catalog] = await readPhotoStore(page.win, 'photos');
+    assert.equal(catalog.source.bytes, 32 * 1024 * 1024 + 1);
+    assert.ok(catalog.export.bytes < catalog.source.bytes);
+    assert.equal(catalog.remote.state, 'uploaded');
+    assert.deepEqual(page.errors, []);
+});
+
+test('project import rejects valid matching hashes when decoded dimensions disagree', async () => {
+    const original = new Blob(['pixels'], { type: 'image/jpeg' });
+    const sourceSha256 = await Renderer.sha256(original);
+    const project = Project.createProject({
+        localId: 'mismatched-dimensions',
+        width: IMAGE.height,
+        height: IMAGE.width,
+        sourceSha256,
+        updatedAt: '2026-07-30T18:00:00.000Z',
+    });
+    const photo = Library.createDraft({
+        localId: project.localId,
+        title: 'Mismatched dimensions',
+        source: {
+            fileName: 'mismatch.jpg',
+            mime: 'image/jpeg',
+            bytes: original.size,
+            width: project.image.width,
+            height: project.image.height,
+            sha256: sourceSha256,
+        },
+        now: project.updatedAt,
+    });
+    const archive = await Archive.createProjectArchive({ project, photo, original });
+    const page = await loadEditor({ pickPhoto: false });
+    const input = page.doc.getElementById('import-project');
+    const file = new page.win.File(
+        [await archive.arrayBuffer()],
+        'mismatch.bpb-photo',
+        { type: 'application/zip' },
+    );
+    Object.defineProperty(input, 'files', { value: [file], configurable: true });
+    input.dispatchEvent(new page.win.Event('change'));
+    await waitFor(page.dom, () => /dimensions do not match its image/i.test(
+        page.doc.getElementById('toast-message').textContent,
+    ));
+
+    assert.deepEqual(await readPhotoStore(page.win, 'photos'), []);
+    assert.equal(page.doc.getElementById('photo-viewport').getAttribute('aria-busy'), 'false');
     assert.deepEqual(page.errors, []);
 });
 

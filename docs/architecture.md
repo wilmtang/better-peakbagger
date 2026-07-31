@@ -506,8 +506,10 @@ when the user saves a key in Settings or uploads from the editor; the key
 remains in a dedicated device-local `storage.local` record. The photo page and
 the options page can both configure it — each gated on its exact packaged page
 path — but only the photo page, which performs the upload, can lease the value
-back. The client makes one
-direct multipart POST and refuses source or export blobs over 32 MiB. It never
+back. The client makes one direct multipart POST without imposing a local byte
+ceiling; ImgBB decides the upload limit for the user's key. Source decode and
+canvas export are instead bounded to 64 megapixels and 16,384 pixels per side,
+while the symmetric project-archive writer/reader contract is 40 MiB. It never
 automatically retries an ambiguous outcome because that could duplicate a
 public upload. The local catalog supplies the searchable upload history; no
 ImgBB account-gallery read is assumed.

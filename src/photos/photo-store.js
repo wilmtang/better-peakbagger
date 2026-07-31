@@ -96,6 +96,7 @@ const createPhotoStore = async options => {
         const cleanThumbnail = cleanBlobRecord(thumbnail, cleanPhoto?.localId);
         if (!cleanPhoto || !cleanProject || cleanPhoto.localId !== cleanProject.localId
             || cleanProject.image.sourceSha256 !== cleanPhoto.source.sha256
+            || !Project.matchingImageDimensions(cleanProject.image, cleanPhoto.source)
             || !cleanOriginal || !cleanThumbnail
             || (editableOnly && !EDITABLE_STATES.has(cleanPhoto.remote.state))) {
             throw new TypeError('photo store requires a matching clean photo, project, and blobs');
@@ -281,7 +282,10 @@ const createPhotoStore = async options => {
         const restored = records.map(value => {
             const photo = Library.cleanPhoto(value?.photo);
             const project = value?.project == null ? null : Project.cleanProject(value.project);
-            if (!photo || (value?.project != null && (!project || project.localId !== photo.localId))) {
+            if (!photo || (value?.project != null && (!project
+                || project.localId !== photo.localId
+                || project.image.sourceSha256 !== photo.source.sha256
+                || !Project.matchingImageDimensions(project.image, photo.source)))) {
                 throw new TypeError('photo restore contains an invalid record');
             }
             return { photo, project };
@@ -328,21 +332,26 @@ const createPhotoStore = async options => {
         restored.forEach((value, index) => {
             const [existingPhoto, existingProject, original, thumbnail] = restoredValues[index];
             const existing = Library.cleanPhoto(existingPhoto);
-            const sameSource = existing?.source.sha256 === value.photo.source.sha256;
+            const cleanExistingProject = Project.cleanProject(existingProject);
+            const sameSource = existing?.source.sha256 === value.photo.source.sha256
+                && Project.matchingImageDimensions(existing.source, value.photo.source);
+            const sameProject = sameSource
+                && cleanExistingProject?.image.sourceSha256 === value.photo.source.sha256
+                && Project.matchingImageDimensions(cleanExistingProject.image, value.photo.source);
             const sameRemote = existing?.remote.providerId
                 && existing.remote.providerId === value.photo.remote.providerId;
             const photo = Library.cleanPhoto({
                 ...value.photo,
                 assets: {
                     originalRetained: !!original?.blob && sameSource,
-                    projectRetained: !!value.project || (!!existingProject && sameSource),
+                    projectRetained: !!value.project || !!sameProject,
                     thumbnailRetained: !!thumbnail?.blob && sameSource,
                 },
                 deletedAt: null,
             });
             stores[STORES.photos].put(photo);
             if (value.project) stores[STORES.projects].put(value.project);
-            else if (!sameSource) stores[STORES.projects].delete(photo.localId);
+            else if (!sameProject) stores[STORES.projects].delete(photo.localId);
             if (!sameSource) {
                 stores[STORES.originals].delete(photo.localId);
                 stores[STORES.thumbnails].delete(photo.localId);

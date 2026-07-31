@@ -12,7 +12,11 @@ const encoder = new TextEncoder();
 const decoder = new TextDecoder('utf-8', { fatal: true });
 const MAX_UINT32 = 0xffffffff;
 const SAFE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,254}$/;
-// One original up to ImgBB's 32 MiB ceiling, plus its metadata and headers.
+// Project portability has its own bound. Upload size belongs to the user's
+// ImgBB account, while a project import necessarily buffers the stored ZIP and
+// the original image. Keep that independent 40 MiB memory contract symmetric:
+// the writer preflights the exact ZIP size before reading the original bytes,
+// and the reader accepts every byte count the writer can emit.
 const MAX_ARCHIVE_BYTES = 40 * 1024 * 1024;
 const MAX_ARCHIVE_ENTRIES = 16;
 const LOCAL_SIGNATURE = 0x04034b50;
@@ -23,6 +27,13 @@ const ORIGINAL_MIMES = Object.freeze({
     png: 'image/png',
     webp: 'image/webp',
 });
+
+class ArchiveError extends Error {
+    constructor(message) {
+        super(message);
+        this.name = 'ArchiveError';
+    }
+}
 
 const crcTable = (() => {
     const table = new Uint32Array(256);
@@ -109,11 +120,10 @@ const endRecord = ({ entries, centralSize, centralOffset }) => header(22, view =
     view.setUint16(20, 0, true);
 });
 
-const createStoredZip = async (values, { modifiedAt = new Date() } = {}) => {
-    if (!Array.isArray(values) || values.length === 0 || values.length > 0xffff) {
+const prepareStoredZip = values => {
+    if (!Array.isArray(values) || values.length === 0 || values.length > MAX_ARCHIVE_ENTRIES) {
         throw new TypeError('photo archive requires a bounded entry list');
     }
-    const timestamp = cleanDate(modifiedAt);
     const names = new Set();
     const entries = [];
     let offset = 0;
@@ -123,41 +133,67 @@ const createStoredZip = async (values, { modifiedAt = new Date() } = {}) => {
             : null;
         if (!name || names.has(name)) throw new TypeError('photo archive requires unique safe file names');
         names.add(name);
-        const bytes = await bytesFrom(value.data);
         const nameBytes = encoder.encode(name);
-        if (bytes.length > MAX_UINT32 || offset + 30 + nameBytes.length + bytes.length > MAX_UINT32) {
+        const inlineBytes = typeof value.data === 'string' ? encoder.encode(value.data)
+            : value.data instanceof Uint8Array ? value.data
+                : null;
+        const dataSize = inlineBytes?.length
+            ?? (value.data instanceof Blob ? value.data.size : null);
+        if (!Number.isSafeInteger(dataSize) || dataSize < 0) {
+            throw new TypeError('photo archive entries must be text, bytes, or blobs');
+        }
+        if (dataSize > MAX_UINT32 || offset + 30 + nameBytes.length + dataSize > MAX_UINT32) {
             throw new RangeError('photo archive exceeds the ZIP32 limit');
         }
-        const entry = {
+        entries.push({
+            data: value.data,
+            dataSize,
+            inlineBytes,
             nameBytes,
-            bytes,
-            crc: crc32(bytes),
             offset,
-            ...timestamp,
-        };
-        entries.push(entry);
-        offset += 30 + nameBytes.length + bytes.length;
+        });
+        offset += 30 + nameBytes.length + dataSize;
     }
 
-    const localParts = entries.flatMap(entry => [localHeader(entry), entry.nameBytes, entry.bytes]);
-    const centralParts = entries.flatMap(entry => [centralHeader(entry), entry.nameBytes]);
-    const centralSize = centralParts.reduce((sum, part) => sum + part.length, 0);
-    if (offset + centralSize + 22 > MAX_UINT32) {
+    const centralSize = entries.reduce((sum, entry) => sum + 46 + entry.nameBytes.length, 0);
+    const totalSize = offset + centralSize + 22;
+    if (totalSize > MAX_UINT32) {
         throw new RangeError('photo archive exceeds the ZIP32 limit');
     }
+    return { entries, centralOffset: offset, centralSize, totalSize };
+};
+
+const storedZipSize = values => prepareStoredZip(values).totalSize;
+
+const createStoredZip = async (values, { modifiedAt = new Date() } = {}) => {
+    const prepared = prepareStoredZip(values);
+    if (prepared.totalSize > MAX_ARCHIVE_BYTES) {
+        throw new ArchiveError('This project would exceed the 40 MiB project-bundle limit.');
+    }
+    const timestamp = cleanDate(modifiedAt);
+    const entries = [];
+    for (const value of prepared.entries) {
+        const bytes = value.inlineBytes || await bytesFrom(value.data);
+        entries.push({
+            nameBytes: value.nameBytes,
+            bytes,
+            crc: crc32(bytes),
+            offset: value.offset,
+            ...timestamp,
+        });
+    }
+    const localParts = entries.flatMap(entry => [localHeader(entry), entry.nameBytes, entry.bytes]);
+    const centralParts = entries.flatMap(entry => [centralHeader(entry), entry.nameBytes]);
     return new Blob([
         ...localParts,
         ...centralParts,
-        endRecord({ entries: entries.length, centralSize, centralOffset: offset }),
+        endRecord({
+            entries: entries.length,
+            centralSize: prepared.centralSize,
+            centralOffset: prepared.centralOffset,
+        }),
     ], { type: 'application/zip' });
 };
-
-class ArchiveError extends Error {
-    constructor(message) {
-        super(message);
-        this.name = 'ArchiveError';
-    }
-}
 
 // The end-of-central-directory record is the only fixed landmark in a ZIP, and
 // it sits behind a comment of up to 64 KiB, so it is found by scanning back.
@@ -259,22 +295,30 @@ const projectExtension = mime => mime === 'image/png' ? 'png'
     : mime === 'image/webp' ? 'webp'
         : 'jpg';
 
-const createProjectArchive = ({ project, photo, original, modifiedAt } = {}) => {
+const projectArchiveEntries = ({ project, photo, original } = {}) => {
     if (!project || typeof project !== 'object' || !photo || typeof photo !== 'object'
         || !(original instanceof Blob)) {
         throw new TypeError('photo project archive requires project, photo, and original');
     }
-    return createStoredZip([
+    return [
         { name: 'project.json', data: `${JSON.stringify(project, null, 2)}\n` },
         { name: 'photo.json', data: `${JSON.stringify(photo, null, 2)}\n` },
         { name: `original.${projectExtension(original.type)}`, data: original },
-    ], { modifiedAt });
+    ];
+};
+
+const projectArchiveSize = value => storedZipSize(projectArchiveEntries(value));
+
+const createProjectArchive = ({ project, photo, original, modifiedAt } = {}) => {
+    return createStoredZip(projectArchiveEntries({ project, photo, original }), { modifiedAt });
 };
 
 export const photoArchive = {
     ArchiveError,
     MAX_ARCHIVE_BYTES,
     crc32,
+    storedZipSize,
+    projectArchiveSize,
     createStoredZip,
     createProjectArchive,
     readStoredZip,

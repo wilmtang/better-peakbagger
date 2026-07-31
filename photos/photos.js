@@ -22,6 +22,9 @@ const HISTORY_LIMIT = 100;
 const PUBLISHED_STATES = ['uploaded', 'unreachable'];
 const AUTOSAVE_DELAY_MS = 500;
 const RECENTLY_DELETED_MS = 30 * 24 * 60 * 60 * 1000;
+const IMAGE_LIMIT_MESSAGE = 'That image is too large to edit safely. '
+    + 'Use an image no larger than 16,384 px per side and 64 megapixels.';
+const DIMENSION_MISMATCH_MESSAGE = 'That project’s dimensions do not match its image.';
 
 const byId = id => document.getElementById(id);
 const ui = {
@@ -992,12 +995,20 @@ const loadBundle = async bundle => {
         toast('The editable original is not available on this device.');
         return false;
     }
+    const bitmap = await decodeBlob(bundle.original);
+    if (!Project.matchingImageDimensions(bundle.project.image, bundle.photo.source)
+        || !Project.matchingImageDimensions(bundle.project.image, bitmap)) {
+        bitmap.close?.();
+        toast(DIMENSION_MISMATCH_MESSAGE);
+        return false;
+    }
+    const thumbnail = bundle.thumbnail || await makeThumbnail(bitmap);
     closeSource();
-    sourceBitmap = await decodeBlob(bundle.original);
+    sourceBitmap = bitmap;
     project = bundle.project;
     photo = bundle.photo;
     originalBlob = bundle.original;
-    thumbnailBlob = bundle.thumbnail || await makeThumbnail(sourceBitmap);
+    thumbnailBlob = thumbnail;
     history = [];
     future = [];
     selectedId = null;
@@ -1025,27 +1036,32 @@ const chooseFile = async file => {
     }
     setBusy(true, 'Reading photo…');
     let shouldPersist = false;
+    let bitmap = null;
     try {
-        const bitmap = await decodeBlob(file);
+        bitmap = await decodeBlob(file);
         if (!bitmap.width || !bitmap.height) throw new Error('The image has no dimensions.');
+        if (!Project.cleanImageDimensions(bitmap)) throw new RangeError(IMAGE_LIMIT_MESSAGE);
         const sourceSha256 = await Renderer.sha256(file);
-        closeSource();
-        sourceBitmap = bitmap;
-        originalBlob = file;
-        thumbnailBlob = await makeThumbnail(bitmap);
-        const localId = crypto.randomUUID();
-        project = Project.createProject({
-            localId,
+        let nextProject = Project.createProject({
+            localId: crypto.randomUUID(),
             width: bitmap.width,
             height: bitmap.height,
             sourceSha256,
         });
+        if (!nextProject) throw new RangeError(IMAGE_LIMIT_MESSAGE);
         if (file.type === 'image/png') {
-            project = Project.cleanProject({
-                ...project,
+            nextProject = Project.cleanProject({
+                ...nextProject,
                 export: { mime: 'image/png', quality: 1 },
             });
         }
+        const nextThumbnail = await makeThumbnail(bitmap);
+        closeSource();
+        sourceBitmap = bitmap;
+        bitmap = null;
+        originalBlob = file;
+        thumbnailBlob = nextThumbnail;
+        project = nextProject;
         photo = null;
         selectedId = null;
         history = [];
@@ -1063,8 +1079,9 @@ const chooseFile = async file => {
         setEditorStatus('Photo stays local until you choose Upload and insert.');
         shouldPersist = true;
         ui.alt.focus();
-    } catch {
-        toast('This browser could not decode that image.');
+    } catch (error) {
+        bitmap?.close?.();
+        toast(error instanceof RangeError ? error.message : 'This browser could not decode that image.');
     } finally {
         setBusy(false);
         if (shouldPersist) schedulePersist();
@@ -1426,13 +1443,23 @@ const importProject = async file => {
         if (!project || !imported || project.localId !== imported.localId) {
             throw new Archive.ArchiveError('That project bundle is not a readable Better Peakbagger project.');
         }
+        if (!Project.matchingImageDimensions(project.image, imported.source)) {
+            throw new Archive.ArchiveError(DIMENSION_MISMATCH_MESSAGE);
+        }
         const sha256 = await Renderer.sha256(raw.original);
         if (sha256 !== project.image.sourceSha256 || sha256 !== imported.source.sha256) {
             throw new Archive.ArchiveError('That bundle’s image does not match its project.');
         }
         const bitmap = await decodeBlob(raw.original);
-        const thumbnail = await makeThumbnail(bitmap);
-        bitmap.close?.();
+        let thumbnail;
+        try {
+            if (!Project.matchingImageDimensions(project.image, bitmap)) {
+                throw new Archive.ArchiveError(DIMENSION_MISMATCH_MESSAGE);
+            }
+            thumbnail = await makeThumbnail(bitmap);
+        } finally {
+            bitmap.close?.();
+        }
 
         const existing = (await store.getBundle(imported.localId)).photo;
         const now = new Date().toISOString();
@@ -1486,14 +1513,35 @@ const downloadProject = async item => {
         toast('The editable project is not available on this device.');
         return;
     }
-    if (!confirm(
-        'This project bundle includes the original file and any metadata it contains. Download it?',
-    )) return;
-    const blob = await Archive.createProjectArchive({
+    const archiveBytes = Archive.projectArchiveSize({
         project: bundle.project,
         photo: bundle.photo,
         original: bundle.original,
     });
+    if (archiveBytes > Archive.MAX_ARCHIVE_BYTES) {
+        toast(
+            `This project needs ${formatBytes(archiveBytes)} to download, above the 40 MiB project limit. `
+            + 'Create a new topo from a smaller or cropped source image.',
+            { duration: 9000 },
+        );
+        return;
+    }
+    if (!confirm(
+        'This project bundle includes the original file and any metadata it contains. Download it?',
+    )) return;
+    let blob;
+    try {
+        blob = await Archive.createProjectArchive({
+            project: bundle.project,
+            photo: bundle.photo,
+            original: bundle.original,
+        });
+    } catch (error) {
+        toast(error instanceof Archive.ArchiveError
+            ? error.message
+            : 'This project could not be downloaded.', { duration: 9000 });
+        return;
+    }
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;

@@ -5,11 +5,13 @@ covers the extension-owned editor, direct bring-your-own-key ImgBB upload, the
 device-local catalog, trip-report insertion, and the optional metadata-only
 GitHub recovery document.
 
-ImgBB's documented v1 API exposes image upload and accepts a binary file,
-base64 value, or image URL up to 32 MB. It does not document an account-gallery
-listing endpoint. Better Peakbagger therefore treats its own local catalog as
-the upload history and never promises that an API upload will appear in an
-ImgBB profile. See the [ImgBB API v1 documentation](https://api.imgbb.com/).
+ImgBB's documented v1 API exposes image upload by binary file, base64 value, or
+image URL. Its rejection states the size ceiling applicable to the user's key;
+Better Peakbagger does not guess or replace that provider-owned limit. ImgBB
+does not document an account-gallery listing endpoint, so Better Peakbagger
+treats its own local catalog as the upload history and never promises that an
+API upload will appear in an ImgBB profile. See the
+[ImgBB API v1 documentation](https://api.imgbb.com/).
 
 ## User workflow
 
@@ -37,18 +39,20 @@ popover — a content script — can link to it. Its symbol legend is painted fr
 
 The extension opens `photos/photos.html` in a normal extension tab. A new
 project starts when the user chooses a browser-decodable image no larger than
-32 MiB and edits it with the route and climbing-symbol tools. A title is
-required — it is filled from the file name — and the alt text describing the
-image is optional. Drafts autosave to the browser profile.
+64 megapixels or 16,384 pixels on either side and edits it with the route and
+climbing-symbol tools. A title is required — it is filled from the file name —
+and the alt text describing the image is optional. Drafts autosave to the
+browser profile.
 Nothing leaves the device until the user chooses **Upload and insert**.
 
 On upload, Better Peakbagger:
 
 1. flattens the original and annotations into a fresh JPEG or PNG;
-2. hashes and validates that export and refuses it if it exceeds 32 MiB;
+2. hashes and validates that export;
 3. requests the optional ImgBB API permission if it is not already granted;
 4. leases the device-local API key to the extension page for this request;
-5. posts the exported bytes directly to ImgBB;
+5. posts the exported bytes directly to ImgBB, which applies the upload limit
+   for that key;
 6. commits the provider response and delete URL to IndexedDB; and
 7. inserts the public HTTPS URL into the originating rich-text report when a
    valid one-time return context exists.
@@ -158,7 +162,11 @@ any metadata it contains will leave browser storage. `src/photos/photo-archive.j
 writes the original plus `project.json` and `photo.json` as a bounded,
 uncompressed ZIP32 archive. It is a small CSP-safe writer; no runtime
 compression library or dynamic code-generation shim enters the extension
-bundle.
+bundle. Project download and import share an exact 40 MiB ceiling. The writer
+measures the stored archive before it reads the original bytes or allocates the
+ZIP, so it cannot download a bundle the reader would reject. Editing and upload
+remain available when a large original makes project download unavailable; the
+remedy is to create a new topo from a smaller or cropped source.
 
 The same module reads that bundle back, which is the library's **Import
 project…** action and the only path back to an original image after a profile is
@@ -167,7 +175,11 @@ a decompressor, and a bundle this extension did not write is not one it can
 promise to reopen — and verifies every entry's CRC so a corrupt original cannot
 import as if it were the real photo. Import validates the project and catalog
 record through the same cleaners as any other write, and requires the original's
-SHA-256 to match both. A bundle whose local id is still free keeps that id, which
+SHA-256 and decoded dimensions to match both. The project schema bounds decoded
+images to 64 megapixels and 16,384 pixels per side, the store repeats the
+project/catalog dimension invariant, and the renderer checks the decoded source
+again before it allocates a canvas. A bundle whose local id is still free keeps
+that id, which
 is how a GitHub-restored record, its report references, and its public URL find
 their pixels again; a bundle whose id is already present lands as a new draft,
 because two records claiming one published ImgBB asset could each be removed
@@ -231,7 +243,7 @@ value to the photo page alone, because that is the only page that uploads.
 `image` part, and the optional name. It requires:
 
 - a nonempty valid key;
-- an `image/*` blob from 1 byte through exactly 32 MiB;
+- a nonempty `image/*` blob; ImgBB states any key-specific size refusal;
 - an HTTPS ImgBB response with success status;
 - validated public image, display, viewer, thumbnail, optional medium, and
   delete URLs; and
