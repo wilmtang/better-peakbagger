@@ -46,6 +46,7 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
         message: 'Report drafts could not be opened. Try again.',
     });
     const processes = new Map();
+    const captureAdmissions = new Map();
     const draftOpeningQueues = new Map();
     let mutationQueue = Promise.resolve();
 
@@ -494,30 +495,38 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
         }
     };
 
-    const startCapture = async message => {
-        const tabId = Number(message.tabId);
+    const serializeCaptureAdmission = (tabId, admit) => {
+        const previous = captureAdmissions.get(tabId) || Promise.resolve();
+        const operation = previous.catch(() => {}).then(admit);
+        captureAdmissions.set(tabId, operation);
+        return operation.finally(() => {
+            if (captureAdmissions.get(tabId) === operation) captureAdmissions.delete(tabId);
+        });
+    };
+
+    const admitCapture = async (message, tabId) => {
         const tab = await ext.tabs.get(tabId);
         const capturePreferences = await readCapturePreferences();
         const activity = providerFromUrl(tab.url);
         if (!activity) {
             await setBadge(tabId, '');
-            return { phase: 'error', error: { code: 'unsupported', message: 'Open a Garmin Connect or Strava activity first.' } };
+            return {
+                kind: 'complete',
+                value: {
+                    phase: 'error',
+                    error: { code: 'unsupported', message: 'Open a Garmin Connect or Strava activity first.' },
+                },
+            };
         }
         const jobs = await readMap(JOBS_KEY);
         const current = jobs[tabId];
         const sameActivity = current && current.provider === activity.provider && current.activityId === activity.activityId;
         if (processes.has(tabId)) {
-            await processes.get(tabId).promise;
-            const completed = (await readMap(JOBS_KEY))[tabId];
-            const completedSameActivity = completed && completed.provider === activity.provider
-                && completed.activityId === activity.activityId;
-            if (completedSameActivity && sameCapturePreferences(completed.capturePreferences, capturePreferences)) {
-                return publicJob(completed);
-            }
+            return { kind: 'wait', process: processes.get(tabId), activity, capturePreferences };
         }
         if (!message.force && sameActivity && sameCapturePreferences(current.capturePreferences, capturePreferences)
             && current.expiresAt > now() && CapturePhases.isTerminal(current.phase)) {
-            return publicJob(current);
+            return { kind: 'complete', value: publicJob(current) };
         }
         await setBadge(tabId, '');
 
@@ -538,9 +547,34 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
         await mutateMap(JOBS_KEY, map => { map[tabId] = job; });
         const process = processCapture(tabId, tab.url, capturePreferences, job.id);
         processes.set(tabId, { generation: job.id, promise: process });
-        await process;
-        const completed = (await readMap(JOBS_KEY))[tabId];
-        return completed?.id === job.id ? publicJob(completed) : null;
+        return { kind: 'started', job, process };
+    };
+
+    const startCapture = async message => {
+        const tabId = Number(message.tabId);
+        while (true) {
+            const admission = await serializeCaptureAdmission(
+                tabId,
+                () => admitCapture(message, tabId),
+            );
+            if (admission.kind === 'complete') return admission.value;
+            if (admission.kind === 'wait') {
+                await admission.process.promise;
+                const completed = (await readMap(JOBS_KEY))[tabId];
+                const completedSameActivity = completed
+                    && completed.provider === admission.activity.provider
+                    && completed.activityId === admission.activity.activityId;
+                if (completedSameActivity
+                    && sameCapturePreferences(completed.capturePreferences, admission.capturePreferences)) {
+                    return publicJob(completed);
+                }
+                continue;
+            }
+
+            await admission.process;
+            const completed = (await readMap(JOBS_KEY))[tabId];
+            return completed?.id === admission.job.id ? publicJob(completed) : null;
+        }
     };
 
     const clearCapture = async message => {

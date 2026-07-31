@@ -17,7 +17,7 @@ const event = () => {
 };
 
 const createHarness = ({ peakXml = null, captureResult = null, ownershipResult = null, settings = {}, beforePeakFetch = null,
-    beforeProviderCapture = null, groupError = null, faults = {},
+    beforeProviderCapture = null, beforeBadgeText = null, groupError = null, faults = {},
     loginHtml = '<a href="climber/climber.aspx?cid=77">My Home Page</a>' } = {}) => {
     const values = {};
     const localValues = {};
@@ -49,6 +49,7 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
     let tabCreateCalls = 0;
     let tabNavigationCalls = 0;
     let draftSetCalls = 0;
+    let badgeTextCalls = 0;
     const loggedErrors = [];
     const capture = captureResult || {
         ok: true,
@@ -139,7 +140,11 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
         },
         action: {
             setBadgeBackgroundColor: async details => badgeCalls.push(['color', details]),
-            setBadgeText: async details => badgeCalls.push(['text', details])
+            setBadgeText: async details => {
+                badgeCalls.push(['text', details]);
+                badgeTextCalls++;
+                if (beforeBadgeText) await beforeBadgeText({ number: badgeTextCalls, details });
+            }
         },
         tabs: {
             get: async tabId => structuredClone(tabs.get(tabId)),
@@ -783,6 +788,27 @@ test('a capture that finishes for a different activity is not reused after navig
     assert.equal(firstJob.phase, 'ready');
     assert.notEqual(secondJob.id, firstJob.id,
         'the completed job for the previous activity must not answer a capture of the new activity');
+});
+
+test('overlapping starts serialize admission before either capture process is registered', async () => {
+    let releaseAdmissions;
+    const admissionGate = new Promise(resolve => { releaseAdmissions = resolve; });
+    const harness = createHarness({
+        beforeBadgeText: async call => {
+            if (call.number <= 2) await admissionGate;
+        },
+    });
+
+    const firstStart = harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    const secondStart = harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    await new Promise(resolve => setTimeout(resolve, 0));
+    releaseAdmissions();
+    const [first, second] = await Promise.all([firstStart, secondStart]);
+
+    assert.equal(first.phase, 'ready');
+    assert.equal(second.phase, 'ready');
+    assert.equal(first.id, second.id, 'both callers must observe the one admitted job');
+    assert.equal(harness.providerCaptureCalls.length, 1, 'only one provider pipeline may start');
 });
 
 test('cancelling an in-progress capture discards its job and ignores later results', async () => {
