@@ -46,12 +46,13 @@ export function createGithubRoutes({
 }) {
     // ---- GitHub ascent backup: auth + repository setup ---------------------
     //
-    // The token lives only here (via GithubAuth.authStore over storage.local)
-    // and is never returned to any page. The device-flow poll is driven in the
-    // worker; the options page shows the user code and advances a persisted,
-    // one-request-at-a-time poll through GITHUB_AUTH_STATE. Repo scoping happens
-    // on GitHub's own install page, then discovery lists exactly what the token
-    // can reach.
+    // These GitHub routes keep the token in the worker and never return it in a
+    // GitHub response. The separate exact-Settings-page file route may include
+    // it only for an explicit manual transfer. The device-flow poll is driven
+    // in the worker; the options page shows the user code and advances a
+    // persisted, one-request-at-a-time poll through GITHUB_AUTH_STATE. Repo
+    // scoping happens on GitHub's own install page, then discovery lists exactly
+    // what the token can reach.
 
     const netFetch = (url, init) => fetch(url, init);
     const readPendingGithubAuth = async () => (await storage().get(GITHUB_AUTH_PENDING_KEY))[GITHUB_AUTH_PENDING_KEY] || null;
@@ -127,6 +128,67 @@ export function createGithubRoutes({
         if (stillGranted) return;
         await GithubAuth.authStore.setRepo(null);
         await GithubAuth.authStore.setInstallationId(null);
+    };
+
+    const sameImportedRepository = (candidate, requested) => {
+        if (requested.id != null) return candidate.id === requested.id;
+        return candidate.owner?.toLocaleLowerCase('en-US') === requested.owner.toLocaleLowerCase('en-US')
+            && candidate.name?.toLocaleLowerCase('en-US') === requested.name.toLocaleLowerCase('en-US');
+    };
+
+    // A portable settings file carries an opaque user token and the repository
+    // identity that was previously selected. Re-prove both against GitHub and
+    // run the ordinary repository inspection before the settings-file route is
+    // allowed to replace any local store.
+    const validateImportedConnection = async connection => {
+        try {
+            const { token, repository: requested } = connection;
+            const [account, discovered] = await Promise.all([
+                GithubAuth.fetchAccount({ fetch: netFetch, token }),
+                GithubAuth.listBackupRepositories({ fetch: netFetch, token }),
+            ]);
+            const granted = discovered.repos.find(repo => sameImportedRepository(repo, requested));
+            if (!granted) {
+                throw new GithubErrors.GithubError(
+                    GithubErrors.ERROR_CODES.NO_ACCESS,
+                    'The exported GitHub repository is no longer granted to Better Peakbagger.'
+                );
+            }
+            const client = GithubClient.createGithubClient({
+                fetch: netFetch,
+                token,
+                owner: granted.owner,
+                repo: granted.name,
+                branch: granted.defaultBranch || undefined,
+            });
+            const inspection = await client.inspectRepository();
+            return {
+                ok: true,
+                auth: {
+                    token,
+                    tokenType: 'bearer',
+                    scope: '',
+                    grantedAt: new Date().toISOString(),
+                    account,
+                    repo: {
+                        owner: granted.owner,
+                        name: granted.name,
+                        branch: inspection.branch,
+                        id: granted.id ?? null,
+                        fullName: granted.fullName || `${granted.owner}/${granted.name}`,
+                    },
+                    installationId: granted.installationId ?? null,
+                },
+            };
+        } catch (error) {
+            return {
+                ok: false,
+                error: GithubErrors.publicError(
+                    error,
+                    'The GitHub connection in this file could not be verified.'
+                ),
+            };
+        }
     };
 
     const githubBeginAuth = async () => {
@@ -1322,6 +1384,7 @@ export function createGithubRoutes({
         onStorageChanged,
         onSettingsChanged,
         onAlarm,
+        validateImportedConnection,
         isExtensionOnly(type) {
             return extensionOnly.has(type)
                 || (typeof type === 'string' && type.startsWith('GITHUB_AUTH_'));

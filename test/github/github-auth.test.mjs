@@ -320,6 +320,23 @@ test('clear drops the local token and repo', async () => {
     assert.ok(!('bpbGithubAuth' in area.data));
 });
 
+test('auth-store replacement atomically installs or restores one complete connection', async () => {
+    const area = makeArea();
+    const store = Auth.createAuthStore(area);
+    const imported = {
+        token: 'ghu_imported',
+        account: { login: 'ada' },
+        repo: { owner: 'ada', name: 'peaks', branch: 'main' },
+        installationId: 7,
+    };
+
+    assert.deepEqual(await store.replace(imported), imported);
+    assert.deepEqual(await store.read(), imported);
+    await store.replace(null);
+    assert.equal(await store.read(), null);
+    await assert.rejects(store.replace([]), /must be an object/);
+});
+
 test('concurrent auth-store writes preserve both patches', async () => {
     const area = makeArea();
     const store = Auth.createAuthStore(area);

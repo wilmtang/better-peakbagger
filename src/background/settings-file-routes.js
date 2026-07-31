@@ -6,6 +6,7 @@
 import { settings as Settings } from '../settings/settings.js';
 import { settingsTransfer as Transfer } from '../settings/settings-transfer.js';
 import { imgbbAuth as ImgbbAuth } from '../photos/imgbb-auth.js';
+import { githubAuth as GithubAuth } from '../github/github-auth.js';
 
 const EXPORT_TYPE = 'SETTINGS_FILE_EXPORT';
 const IMPORT_TYPE = 'SETTINGS_FILE_IMPORT';
@@ -36,27 +37,47 @@ const replaceImgbbKey = async (keyStore, key, savedAt = null) => {
     else await keyStore.clear();
 };
 
+const connectionPayload = auth => {
+    if (!auth?.token || !auth?.repo?.owner || !auth?.repo?.name) {
+        throw new Error('No complete GitHub connection is available to export.');
+    }
+    return {
+        token: auth.token,
+        repository: {
+            owner: auth.repo.owner,
+            name: auth.repo.name,
+            ...(Number.isSafeInteger(auth.repo.id) && auth.repo.id > 0 ? { id: auth.repo.id } : {}),
+        },
+    };
+};
+
 export function createSettingsFileRoutes({
     ext,
     settings = Settings,
     keyStore = ImgbbAuth.keyStore,
+    authStore = GithubAuth.authStore,
+    verifyGithubConnection,
 } = {}) {
-    if (!ext || !settings?.requireCurrent || !settings?.applyPatch || !keyStore?.read) {
+    if (!ext || !settings?.requireCurrent || !settings?.applyPatch || !keyStore?.read
+        || !authStore?.read || !authStore?.replace || typeof verifyGithubConnection !== 'function') {
         throw new TypeError('settings file routes require extension and storage dependencies');
     }
     const isOptionsPage = exactPackagedPage(ext, 'options/options.html');
 
-    const exportFile = async (_message, sender) => {
+    const exportFile = async (message, sender) => {
         if (!isOptionsPage(sender)) return forbidden();
+        const includeGithubConnection = message?.includeGithubConnection === true;
         try {
-            const [currentSettings, imgbb] = await Promise.all([
+            const [currentSettings, imgbb, auth] = await Promise.all([
                 settings.requireCurrent(),
                 keyStore.read(),
+                includeGithubConnection ? authStore.read() : null,
             ]);
             const payload = Transfer.buildPayload(currentSettings, {
                 extensionVersion: ext.runtime.getManifest().version,
                 exportedAt: new Date().toISOString(),
                 apiKeys: { imgbb: imgbb?.key || null },
+                ...(includeGithubConnection ? { githubConnection: connectionPayload(auth) } : {}),
             });
             return {
                 ok: true,
@@ -69,7 +90,9 @@ export function createSettingsFileRoutes({
                 ok: false,
                 error: {
                     code: 'settings-unavailable',
-                    message: 'Settings and API keys could not be read, so no export was created.',
+                    message: includeGithubConnection
+                        ? 'Settings, API keys, and the GitHub connection could not be read, so no export was created.'
+                        : 'Settings and API keys could not be read, so no export was created.',
                 },
             };
         }
@@ -85,12 +108,49 @@ export function createSettingsFileRoutes({
             };
         }
 
+        const importsApiKeys = Object.hasOwn(parsed, 'apiKeys');
+        const importsGithubConnection = Object.hasOwn(parsed, 'githubConnection');
+        let importedGithubAuth = null;
+        if (importsGithubConnection) {
+            try {
+                const verification = await verifyGithubConnection(parsed.githubConnection);
+                if (!verification?.ok || !verification.auth) {
+                    return {
+                        ok: false,
+                        error: {
+                            source: 'github',
+                            code: verification?.error?.code || 'unknown',
+                            message: verification?.error?.message
+                                || 'The GitHub connection in this file could not be verified.',
+                            ...(verification?.error?.status == null
+                                ? {} : { status: verification.error.status }),
+                            ...(verification?.error?.retryAfterSeconds == null
+                                ? {} : { retryAfterSeconds: verification.error.retryAfterSeconds }),
+                        },
+                    };
+                }
+                importedGithubAuth = verification.auth;
+            } catch (error) {
+                console.error('Better Peakbagger: imported GitHub connection validation failed', error);
+                return {
+                    ok: false,
+                    error: {
+                        source: 'github',
+                        code: 'unknown',
+                        message: 'The GitHub connection in this file could not be verified.',
+                    },
+                };
+            }
+        }
+
         let previousSettings;
         let previousImgbb;
+        let previousGithubAuth;
         try {
-            [previousSettings, previousImgbb] = await Promise.all([
+            [previousSettings, previousImgbb, previousGithubAuth] = await Promise.all([
                 settings.requireCurrent(),
                 keyStore.read(),
+                importsGithubConnection ? authStore.read() : null,
             ]);
         } catch (error) {
             console.error('Better Peakbagger: settings file import read failed', error);
@@ -103,23 +163,38 @@ export function createSettingsFileRoutes({
             };
         }
 
-        const importsApiKeys = Object.hasOwn(parsed, 'apiKeys');
+        let settingsWritten = false;
+        let apiKeysWritten = false;
+        let githubWritten = false;
         try {
             const importedSettings = await settings.applyPatch(parsed.settings);
+            settingsWritten = true;
             if (importsApiKeys) {
                 await replaceImgbbKey(keyStore, parsed.apiKeys.imgbb);
+                apiKeysWritten = true;
             }
-            return { ok: true, settings: importedSettings, apiKeysImported: importsApiKeys };
+            if (importsGithubConnection) {
+                await authStore.replace(importedGithubAuth);
+                githubWritten = true;
+            }
+            return {
+                ok: true,
+                settings: importedSettings,
+                apiKeysImported: importsApiKeys,
+                githubConnectionImported: importsGithubConnection,
+            };
         } catch (error) {
             console.error('Better Peakbagger: settings file import failed', error);
             let rollbackFailed = false;
-            try {
-                await settings.applyPatch(previousSettings);
-            } catch (rollbackError) {
-                rollbackFailed = true;
-                console.error('Better Peakbagger: settings import rollback failed', rollbackError);
+            if (importsGithubConnection && (githubWritten || settingsWritten)) {
+                try {
+                    await authStore.replace(previousGithubAuth);
+                } catch (rollbackError) {
+                    rollbackFailed = true;
+                    console.error('Better Peakbagger: GitHub connection import rollback failed', rollbackError);
+                }
             }
-            if (importsApiKeys) {
+            if (importsApiKeys && (apiKeysWritten || settingsWritten)) {
                 try {
                     await replaceImgbbKey(
                         keyStore,
@@ -131,12 +206,20 @@ export function createSettingsFileRoutes({
                     console.error('Better Peakbagger: API key import rollback failed', rollbackError);
                 }
             }
+            if (settingsWritten) {
+                try {
+                    await settings.applyPatch(previousSettings);
+                } catch (rollbackError) {
+                    rollbackFailed = true;
+                    console.error('Better Peakbagger: settings import rollback failed', rollbackError);
+                }
+            }
             return {
                 ok: false,
                 error: {
                     code: rollbackFailed ? 'rollback-failed' : 'import-failed',
                     message: rollbackFailed
-                        ? 'Import could not be completed. Reload Settings and check your settings and ImgBB key.'
+                        ? 'Import could not be completed. Reload Settings and check your settings and connections.'
                         : 'Settings could not be imported. Nothing was changed.',
                 },
             };

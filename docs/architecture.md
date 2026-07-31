@@ -149,7 +149,7 @@ There is no parallel raw-source worker list and no `importScripts` fallback.
 | Peakbagger request boundary | `src/peakbagger/peakbagger-request.js`, `src/peakbagger/peakbagger-response.js`, `src/peakbagger/peakbagger-error.js`, `src/peakbagger/peakbagger-cloudflare.js` | Authenticated fetch policy, response validation, typed failures, and managed-challenge detection/recovery copy |
 | GitHub integration | `src/background/github-routes.js`, `src/github/github-error-copy.js`, `src/github/github-errors.js`, `src/github/github-api.js`, `src/github/github-auth.js`, `src/github/github-client.js`, `src/github/github-write-queue.js`, `src/github/github-backup.js`, `src/photos/photo-backup.js`, `options/photos.js` | Worker-only routes and credentials, typed/authenticated transport, Git Data writes, ordering/coalescing, ascent payloads, and metadata-only photo recovery |
 | ImgBB integration | `src/background/photo-routes.js`, `src/photos/imgbb-auth.js`, `src/photos/imgbb-client.js`, `options/imgbb.js` | Optional permission, device-local BYOK credential leased only to the exact packaged photo page for direct upload, scoped report return; no account gallery or remote deletion |
-| Manual settings transfer | `src/settings/settings-transfer.js`, `src/background/settings-file-routes.js`, `options/settings-backup.js` | Versioned known-setting and API-key file, exact-options-page worker reads/writes, confirmation and private-file warning; GitHub settings backup remains credential-free |
+| Manual settings transfer | `src/settings/settings-transfer.js`, `src/background/settings-file-routes.js`, `options/settings-backup.js` | Versioned known-setting and API-key file, explicit optional GitHub-connection inclusion, exact-options-page worker reads/writes, live credential validation, confirmation and unencrypted-private-file warning; GitHub settings backup remains credential-free |
 
 Extend the owning surface rather than publishing cross-feature globals. The one
 deliberate Better Peakbagger global is `globalThis.BPBProviderPage`: the worker
@@ -509,8 +509,10 @@ when the user saves a key in Settings or uploads from the editor. The saved key
 remains in device-local extension storage, in the dedicated `bpbImgbbAuth`
 record. It is never exposed to Peakbagger, another website, GitHub, browser
 sync, or status UI. A manual settings-file export includes it with a
-keep-private warning, through an exact-options-page worker route; GitHub backup
-still excludes it. The background worker otherwise provides it only to Better
+keep-private warning, through an exact-options-page worker route; that manual
+file can also include the GitHub connection after a separate explicit opt-in.
+GitHub backup still excludes both credentials. The background worker otherwise
+provides it only to Better
 Peakbagger's exact packaged photo page immediately before that page sends a
 direct upload to ImgBB. The photo page and the options page can both configure
 it, each gated on its exact packaged page path. The client makes one direct
@@ -1250,7 +1252,11 @@ classification, or the live options/climber UI.
 GitHub backup is explicit and opt-in. The optional host permissions are
 requested only when the feature is enabled. GitHub device flow and repository
 selection run through the worker; the token and chosen repository live in
-`storage.local`, never synced storage, and never enter a content script.
+`storage.local`, never synced storage, and never enter a content script. The
+exact packaged Settings page handles the token only while creating or importing
+a user-selected manual settings file with **Include GitHub connection**. That
+file is unencrypted; import validates the token and repository live before
+transactionally replacing the local record.
 
 On Save, `src/ascent/ascent-snapshot.js` captures the submitted form and report
 sidecar into a short-lived, source-tab-namespaced `storage.session` snapshot.
@@ -1341,7 +1347,7 @@ comparison, first-visit compromises, and lockstep invariant are in
 | Store | Owned data | Lifecycle rule |
 | --- | --- | --- |
 | `storage.sync` | User preferences and feature gates | Validated by the single settings schema; no secrets |
-| `storage.local` | GitHub token/repository, ImgBB API key, custom favorites, Buddy List cache, report drafts, terrain-cache index, automatic-backup state | Device-local and never browser-synced; favorites are bounded, Buddy cache is owner-scoped, report drafts expire |
+| `storage.local` | GitHub token/repository, ImgBB API key, custom favorites, Buddy List cache, report drafts, terrain-cache index, automatic-backup state | Device-local and never browser-synced; credentials leave it only for their explicit manual settings-file export, favorites are bounded, Buddy cache is owner-scoped, report drafts expire |
 | `storage.session` | Capture jobs, prepared drafts, save-time backup snapshots, ascent-deletion intents/tombstones, pending device auth | Short-lived and identity-bound; capture/backup/delete records expire after 30 minutes |
 | IndexedDB `betterPeakbaggerPhotos` | Photo catalog, annotation projects, original/thumbnail blobs, upload journal, ImgBB delete URLs, tombstones | Authoritative device-local photo library; deleted assets are eligible for pruning after 30 days, tombstones remain |
 | CacheStorage | Successful Mapterhorn DEM responses | Best effort, bounded by the local LRU index |

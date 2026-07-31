@@ -666,10 +666,13 @@ test('favorites restore reports an absent file and ignores the ascent-backup fea
     }, EXTENSION_SENDER)).error.code, 'not-connected');
 });
 
-test('the built worker transfers manual settings files with the API key only for Settings', async () => {
+test('the built worker keeps GitHub out of manual settings files unless explicitly included', async () => {
     const worker = createWorker({
         settings: { theme: 'dark', units: 'imperial' },
-        local: { bpbImgbbAuth: { key: 'old-imgbb-key', savedAt: '2026-07-29T12:00:00.000Z' } },
+        local: {
+            bpbImgbbAuth: { key: 'old-imgbb-key', savedAt: '2026-07-29T12:00:00.000Z' },
+            bpbGithubAuth: structuredClone(AUTH),
+        },
         github: gitDataBackend().handler,
     });
 
@@ -678,6 +681,16 @@ test('the built worker transfers manual settings files with the API key only for
     const parsed = Transfer.parse(exported.content);
     assert.equal(parsed.settings.theme, 'dark');
     assert.deepEqual(parsed.apiKeys, { imgbb: 'old-imgbb-key' });
+    assert.equal('githubConnection' in parsed, false);
+
+    const sensitive = await worker.send({
+        type: 'SETTINGS_FILE_EXPORT', includeGithubConnection: true,
+    }, EXTENSION_SENDER);
+    assert.equal(sensitive.ok, true);
+    assert.deepEqual(Transfer.parse(sensitive.content).githubConnection, {
+        token: 'gho_secret',
+        repository: { owner: 'me', name: 'backup' },
+    });
 
     const replacement = Transfer.buildPayload({ theme: 'light', units: 'metric' }, {
         extensionVersion: '3.3.0',
@@ -696,6 +709,64 @@ test('the built worker transfers manual settings files with the API key only for
     const forbidden = await worker.send({ type: 'SETTINGS_FILE_EXPORT' }, PEAK_SENDER);
     assert.equal(forbidden.error.code, 'forbidden');
     assert.equal('content' in forbidden, false);
+});
+
+test('the built worker validates an imported GitHub token and repository before replacing local state', async () => {
+    const backend = gitDataBackend();
+    const github = (method, path, body) => {
+        if (method === 'GET' && path === '/user') return respond(200, { login: 'me', id: 9 });
+        if (method === 'GET' && path === '/user/installations') {
+            return respond(200, {
+                installations: [{ id: 7, app_slug: 'better-peakbagger-backup' }],
+            });
+        }
+        if (method === 'GET' && path === '/user/installations/7/repositories') {
+            return respond(200, {
+                repositories: [{
+                    id: 123,
+                    name: 'backup',
+                    full_name: 'me/backup',
+                    default_branch: 'main',
+                    owner: { login: 'me' },
+                }],
+            });
+        }
+        return backend.handler(method, path, body);
+    };
+    const worker = createWorker({
+        settings: { theme: 'dark' },
+        local: {
+            bpbGithubAuth: {
+                token: 'ghu_old_token',
+                repo: { owner: 'old', name: 'backup', branch: 'main' },
+            },
+        },
+        github,
+    });
+    const payload = Transfer.buildPayload({ theme: 'light' }, {
+        extensionVersion: '3.3.0',
+        exportedAt: '2026-07-31T12:00:00.000Z',
+        githubConnection: {
+            token: 'ghu_imported_token',
+            repository: { owner: 'me', name: 'backup', id: 123 },
+        },
+    });
+    const imported = await worker.send({
+        type: 'SETTINGS_FILE_IMPORT', content: Transfer.serialize(payload),
+    }, EXTENSION_SENDER);
+
+    assert.equal(imported.ok, true);
+    assert.equal(imported.githubConnectionImported, true);
+    assert.equal(worker.sync.bpbSettings.theme, 'light');
+    assert.equal(worker.local.bpbGithubAuth.token, 'ghu_imported_token');
+    assert.deepEqual(structuredClone(worker.local.bpbGithubAuth.account), { login: 'me', id: 9 });
+    assert.deepEqual(structuredClone(worker.local.bpbGithubAuth.repo), {
+        owner: 'me', name: 'backup', branch: 'main', id: 123, fullName: 'me/backup',
+    });
+    assert.equal(worker.local.bpbGithubAuth.installationId, 7);
+    assert.ok(worker.githubCalls.some(call => call.url === 'https://api.github.com/user'));
+    assert.ok(worker.githubCalls.some(call => call.url.includes('/user/installations')));
+    assert.ok(worker.githubCalls.some(call => call.url === 'https://api.github.com/repos/me/backup'));
 });
 
 test('settings backup and restore stay extension-only and ignore the ascent-backup gate', async () => {
@@ -732,6 +803,8 @@ test('settings backup and restore stay extension-only and ignore the ascent-back
     assert.deepEqual(Object.keys(committed.settings), Object.keys(Schema.DEFAULTS));
     assert.equal('apiKeys' in committed, false,
         'GitHub settings backup must remain credential-free even when a local API key exists');
+    assert.equal('githubConnection' in committed, false,
+        'GitHub settings backup must never write its own bearer token into the repository');
     assert.equal(worker.local.bpbSettingsBackupState.signature,
         Transfer.signature(Schema.clean({ enableGithubBackup: false, theme: 'dark' })));
     assert.equal('token' in backup, false);

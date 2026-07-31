@@ -129,7 +129,9 @@ services.
 
 Use a site-wide theme that follows your system or stays light or dark. Shared
 settings cover units, maps, GPX charts, activity capture, trip reports, photo
-topos, backups, and beta filters, and can be exported for safekeeping.
+topos, backups, and beta filters, and can be exported for safekeeping. The
+download always includes saved API keys and can optionally include the current
+GitHub connection; it is not encrypted and must be kept private.
 
 ![Better Peakbagger settings beside Peakbagger dark mode](store-assets/showcase-3-dark-mode-settings.png)
 
@@ -145,6 +147,8 @@ toggle may prefetch a small bounded elevation tile set before the view opens.
 GitHub
 backup is off until you enable it, sends an ascent only to the repository you
 choose, and keeps its access token in local extension storage, never synced.
+The token enters a manual settings download only when you explicitly choose
+**Include GitHub connection**; that file is not encrypted.
 
 See [Privacy and data handling](PRIVACY.md) for the complete permissions,
 retention, provider, and field-level disclosure.

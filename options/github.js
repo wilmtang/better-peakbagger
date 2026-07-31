@@ -3,7 +3,7 @@
 //
 // Better Peakbagger — options-page GitHub connection and ascent-backup setup.
 //
-// This is the setup surface only. It never sees the token: the background
+// This controller is the setup surface only and never sees the token: the background
 // worker owns the device-flow poll and the storage.local token/repo, and this
 // page drives it through GITHUB_AUTH_* messages, showing the user code, handing
 // off to GitHub's own install page for repository scoping, then discovering and

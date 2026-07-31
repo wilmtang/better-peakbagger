@@ -7,7 +7,7 @@ import { settingsSchema as Schema } from './settings-schema.js';
 import { imgbbClient as ImgbbClient } from '../photos/imgbb-client.js';
 
 const KIND = 'better-peakbagger-settings';
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 const BACKUP_PATH = 'settings.json';
 const API_KEY_NAMES = Object.freeze(['imgbb']);
 
@@ -28,10 +28,42 @@ const cleanApiKeys = value => {
     return imgbb ? { imgbb } : null;
 };
 
-// `apiKeys` is opt-in so GitHub settings backups keep their established
-// credential-free contract. Manual file export passes the complete object,
-// including an explicit null when no key is configured.
-const buildPayload = (settings, { extensionVersion = '', exportedAt, apiKeys } = {}) => {
+const cleanGithubPart = (value, { max = 255, slash = false } = {}) => {
+    if (typeof value !== 'string' || !value || value !== value.trim()
+        || value.length > max || /\s|[\u0000-\u001f\u007f]/.test(value)
+        || (!slash && /[\\/]/.test(value))) return null;
+    return value;
+};
+
+// A GitHub user access token is opaque: token prefixes and lengths may change,
+// so the file boundary rejects whitespace/control characters and unreasonable
+// sizes without pretending to validate a GitHub-managed format. Import still
+// has to prove the token and selected repository against GitHub before storing
+// either one.
+const cleanGithubConnection = value => {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+    const token = cleanGithubPart(value.token, { max: 2048, slash: true });
+    const repository = value.repository;
+    if (!token || token.length < 8 || !repository || typeof repository !== 'object'
+        || Array.isArray(repository)) return null;
+    const owner = cleanGithubPart(repository.owner);
+    const name = cleanGithubPart(repository.name);
+    if (!owner || !name || owner === '.' || owner === '..' || name === '.' || name === '..') return null;
+    const cleaned = { token, repository: { owner, name } };
+    if (repository.id != null) {
+        if (!Number.isSafeInteger(repository.id) || repository.id <= 0) return null;
+        cleaned.repository.id = repository.id;
+    }
+    return cleaned;
+};
+
+// Credential fields are opt-in so GitHub settings backups keep their
+// established credential-free contract. Manual file export always passes the
+// API-key object (including an explicit null) and passes `githubConnection`
+// only after the user selects the sensitive-file option.
+const buildPayload = (settings, {
+    extensionVersion = '', exportedAt, apiKeys, githubConnection,
+} = {}) => {
     const payload = {
         kind: KIND,
         schemaVersion: SCHEMA_VERSION,
@@ -43,6 +75,11 @@ const buildPayload = (settings, { extensionVersion = '', exportedAt, apiKeys } =
         const cleaned = cleanApiKeys(apiKeys);
         if (!cleaned) throw new TypeError('Settings transfer API keys are invalid.');
         payload.apiKeys = cleaned;
+    }
+    if (githubConnection !== undefined) {
+        const cleaned = cleanGithubConnection(githubConnection);
+        if (!cleaned) throw new TypeError('Settings transfer GitHub connection is invalid.');
+        payload.githubConnection = cleaned;
     }
     return payload;
 };
@@ -70,6 +107,12 @@ const parse = text => {
         const apiKeys = cleanApiKeys(parsed.apiKeys);
         if (!apiKeys) return { ok: false, reason: 'invalid-api-keys' };
         result.apiKeys = apiKeys;
+    }
+    if (Object.hasOwn(parsed, 'githubConnection')) {
+        if (parsed.schemaVersion < 3) return { ok: false, reason: 'invalid-github-connection' };
+        const githubConnection = cleanGithubConnection(parsed.githubConnection);
+        if (!githubConnection) return { ok: false, reason: 'invalid-github-connection' };
+        result.githubConnection = githubConnection;
     }
     return result;
 };

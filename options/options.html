@@ -442,12 +442,18 @@
                     <div class="row">
                         <div class="label">
                             <span class="title">Transfer settings with a file</span>
-                            <span class="desc">Move your Better Peakbagger settings to another browser or keep a personal copy. File exports include saved API keys; keep them private.</span>
+                            <span class="desc">Move your Better Peakbagger settings to another browser or keep a personal copy. Files always include saved API keys and can optionally include your GitHub connection. They are not encrypted; keep them private.</span>
                         </div>
-                        <div class="control settings-backup-actions">
-                            <button id="settings-backup-export" class="secondary" type="button">Export settings</button>
-                            <button id="settings-backup-import" class="secondary" type="button">Import from file…</button>
-                            <input id="settings-backup-file" type="file" accept=".json,application/json" hidden>
+                        <div class="control settings-file-transfer-actions">
+                            <div class="settings-backup-actions">
+                                <button id="settings-backup-export" class="secondary" type="button">Export settings</button>
+                                <button id="settings-backup-import" class="secondary" type="button">Import from file…</button>
+                                <input id="settings-backup-file" type="file" accept=".json,application/json" hidden>
+                            </div>
+                            <label class="check settings-export-github is-disabled" for="settings-backup-export-github">
+                                <input type="checkbox" id="settings-backup-export-github" disabled>
+                                <span>Include GitHub connection</span>
+                            </label>
                         </div>
                     </div>
                     <div class="settings-backup-confirmation" id="settings-backup-confirmation" role="alert" hidden>

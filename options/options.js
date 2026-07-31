@@ -166,8 +166,9 @@ import { initSectionNav } from '../src/ui/section-nav.js';
     // The custom-list workspace lives on its own page (options/favorites.html);
     // only its GitHub backup stays here, under Backup & sync.
     const favoritesBackup = initFavoritesBackup({ extensionApi, flash, save });
-    // The credential stays out of synced settings and enters only an explicit
-    // manual settings-file transfer through the worker.
+    // Credentials stay out of synced settings. The exact Settings file route
+    // supplies the ImgBB key and, after a separate opt-in, the GitHub token only
+    // for an explicit manual transfer.
     const imgbbKey = initImgbbKey({ extensionApi, flash });
     const settingsBackup = initSettingsBackup({
         extensionApi,

@@ -54,7 +54,9 @@ for that data.
   the user grants. The
   GitHub user token lives in
   `storage.local` (never `storage.sync`), is held only by the background worker,
-  and is never exposed to any web page.
+  and is never exposed to a web page. It reaches the exact packaged Settings
+  page only when the user explicitly includes it in a manual settings-file
+  export or selects a settings file that already contains it.
 - **Optional ImgBB host access** (`api.imgbb.com`) is requested only from an
   extension-owned page the user is acting on: the photo editor when the user
   chooses to upload, or Settings when the user saves an ImgBB API key. It
@@ -215,7 +217,8 @@ editable project bundles have a separate 40 MiB limit.
   `storage.local`. The saved key remains in device-local extension storage. It
   is never exposed to Peakbagger, another website, GitHub, browser sync, or
   status UI. A manual settings-file export includes the key so the user can
-  move the complete configuration; the Settings page warns that this downloaded
+  move the complete configuration; that same export can optionally include the
+  GitHub connection. The Settings page warns that this unencrypted downloaded
   file must be kept private. The background worker otherwise provides the key
   only to Better Peakbagger's exact packaged photo page immediately before that
   page sends a direct upload to ImgBB. Removing the key does not alter prior
@@ -330,15 +333,23 @@ the extension never clicks a Peakbagger Save control.
   GitHub's own installation page ("Only select repositories"). The resulting
   token can reach only that repository's contents and is revocable at any time
   by disconnecting in Settings or uninstalling the app on GitHub. The token is
-  stored in `storage.local` and never synced.
+  stored in `storage.local` and never synced. A manual settings-file export
+  includes it only when the user checks **Include GitHub connection**.
 
 Settings can also be exported as a JSON file downloaded by the browser and
 imported into another profile without GitHub. Export happens only when the user
 clicks **Export settings**. Unlike the credential-free GitHub backup, this
 manual file contains every validated setting and the saved ImgBB API key in
-plain text; Settings tells the user to keep it private. Import validates the
-file and requires an inline confirmation before replacing the current settings
-and API key. The extension does not upload the file anywhere.
+plain text. If the user separately checks **Include GitHub connection**, it also
+contains the GitHub user access token and selected repository in plain text.
+Settings tells the user that the file is not encrypted and must be kept private,
+and resets that checkbox after each successful export. Import validates the file
+and requires an inline confirmation before replacing the current settings, API
+key, and any included GitHub connection. Before storing an included connection,
+the extension requests GitHub host access if needed and uses GitHub to verify
+the token, repository grant, writability, branch, and backup-path safety. A file
+without the optional connection leaves the destination's current GitHub
+connection unchanged. The extension does not upload the file anywhere.
 
 ## Third-party services
 
@@ -371,7 +382,10 @@ and API key. The extension does not upload the file anywhere.
   photo-library metadata and annotations on an explicit backup click or after a
   catalog change while that independent automatic toggle is enabled. It returns
   a fixed root recovery file only on an explicit restore action. Data goes only
-  to the user-chosen repository.
+  to the user-chosen repository. When the user imports a manual settings file
+  containing a GitHub connection, GitHub receives the authenticated account,
+  installation, repository, branch, and root-tree reads needed to validate it
+  before anything local is replaced.
 
 Better Peakbagger packages all extension code and libraries locally. A YouTube
 player is remote page content isolated in YouTube's cross-origin iframe; it is

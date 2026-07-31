@@ -8,7 +8,7 @@ import { settingsTransfer as Transfer } from '../src/settings/settings-transfer.
 import { STORAGE_KEY as GITHUB_AUTH_STORAGE_KEY } from '../src/github/github-auth.js';
 import { githubError as GithubError } from '../src/github/github-error-copy.js';
 import { runtimeMessage as RuntimeMessage } from '../src/ui/runtime-message.js';
-import { hasGithubPermission } from './github.js';
+import { GITHUB_ORIGINS, hasGithubPermission } from './github.js';
 import { optionsUtils as OptionsUtils } from './options-utils.js';
 
 const SETTINGS_STORAGE_KEY = S.STORAGE_KEY;
@@ -21,6 +21,7 @@ export function initSettingsBackup({ extensionApi, flash, save, refreshCredentia
     const exportEl = document.getElementById('settings-backup-export');
     const importEl = document.getElementById('settings-backup-import');
     const fileEl = document.getElementById('settings-backup-file');
+    const exportGithubEl = document.getElementById('settings-backup-export-github');
     const confirmationEl = document.getElementById('settings-backup-confirmation');
     const confirmationNameEl = document.getElementById('settings-backup-confirmation-name');
     const confirmationDetailEl = document.getElementById('settings-backup-confirmation-detail');
@@ -35,6 +36,7 @@ export function initSettingsBackup({ extensionApi, flash, save, refreshCredentia
         'settings-backup-export': exportEl,
         'settings-backup-import': importEl,
         'settings-backup-file': fileEl,
+        'settings-backup-export-github': exportGithubEl,
         'settings-backup-confirmation': confirmationEl,
         'settings-backup-confirmation-name': confirmationNameEl,
         'settings-backup-confirmation-detail': confirmationDetailEl,
@@ -77,19 +79,28 @@ export function initSettingsBackup({ extensionApi, flash, save, refreshCredentia
         settings,
         successMessage = 'Settings imported',
         returnFocus = importEl,
-        { fileContent = null, includesApiKeys = false } = {}
+        { fileContent = null, includesApiKeys = false, includesGithubConnection = false } = {}
     ) => {
-        pendingImport = { settings, successMessage, returnFocus, fileContent };
+        pendingImport = {
+            settings, successMessage, returnFocus, fileContent, includesGithubConnection,
+        };
         confirmationNameEl.textContent = name;
-        confirmationDetailEl.textContent = includesApiKeys
-            ? 'Replaces your current settings and saved API keys.'
-            : 'Replaces your current settings.';
+        confirmationDetailEl.textContent = includesApiKeys && includesGithubConnection
+            ? 'Replaces your current settings, saved API keys, and GitHub connection.'
+            : includesGithubConnection
+                ? 'Replaces your current settings and GitHub connection.'
+                : includesApiKeys
+                    ? 'Replaces your current settings and saved API keys.'
+                    : 'Replaces your current settings.';
         confirmationEl.hidden = false;
         confirmEl.focus();
     };
 
     exportEl.addEventListener('click', async () => {
-        const response = await send({ type: 'SETTINGS_FILE_EXPORT' });
+        const response = await send({
+            type: 'SETTINGS_FILE_EXPORT',
+            includeGithubConnection: exportGithubEl.checked,
+        });
         if (!response?.ok || typeof response.content !== 'string') {
             flash(response?.error?.message || 'Settings could not be exported. Try again.', { error: true });
             return;
@@ -105,6 +116,7 @@ export function initSettingsBackup({ extensionApi, flash, save, refreshCredentia
         });
         link.click();
         URL.revokeObjectURL(url);
+        exportGithubEl.checked = false;
     });
 
     importEl.addEventListener('click', () => fileEl.click());
@@ -133,6 +145,7 @@ export function initSettingsBackup({ extensionApi, flash, save, refreshCredentia
             {
                 fileContent: text,
                 includesApiKeys: Object.hasOwn(parsed, 'apiKeys'),
+                includesGithubConnection: Object.hasOwn(parsed, 'githubConnection'),
             }
         );
     });
@@ -152,15 +165,27 @@ export function initSettingsBackup({ extensionApi, flash, save, refreshCredentia
         confirmationEl.setAttribute('aria-busy', 'true');
         try {
             if (pending.fileContent != null) {
+                if (pending.includesGithubConnection && !(await hasGithubPermission(extensionApi))) {
+                    let granted = false;
+                    try {
+                        granted = !!(await extensionApi.permissions?.request?.({ origins: GITHUB_ORIGINS }));
+                    } catch { granted = false; }
+                    if (!granted) {
+                        flash('GitHub access was not granted, so nothing was imported.', { error: true });
+                        throw new Error('github-permission-denied');
+                    }
+                }
                 const response = await send({
                     type: 'SETTINGS_FILE_IMPORT',
                     content: pending.fileContent,
                 });
                 if (!response?.ok) {
-                    flash(response?.error?.message || 'Settings could not be imported. Try again.', { error: true });
+                    flash(response?.error?.source === 'github'
+                        ? GithubError.message(response.error)
+                        : response?.error?.message || 'Settings could not be imported. Try again.', { error: true });
                     throw new Error(response?.error?.code || 'settings-file-import-failed');
                 }
-                await refreshCredentials();
+                await Promise.all([refreshCredentials(), refreshGithub()]);
             } else {
                 await save(pending.settings);
             }
@@ -178,6 +203,10 @@ export function initSettingsBackup({ extensionApi, flash, save, refreshCredentia
 
     const renderGithub = () => {
         const connected = githubStatus?.permissionGranted && githubStatus?.connected === true;
+        const canExportGithub = githubStatus?.connected === true;
+        exportGithubEl.disabled = !canExportGithub;
+        exportGithubEl.closest('label')?.classList.toggle('is-disabled', !canExportGithub);
+        if (!canExportGithub) exportGithubEl.checked = false;
         const showBackupResult = connected
             && githubBackupResult?.repo === repoName()
             && githubBackupResult?.signature === settingsSignature;

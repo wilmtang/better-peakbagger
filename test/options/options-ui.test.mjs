@@ -12,8 +12,10 @@ registerCleanup();
 
 const installSettingsFileWorker = (chrome, {
     exportFailure = () => false,
+    messages = null,
 } = {}) => {
     chrome.runtime.sendMessage = async message => {
+        messages?.push(structuredClone(message));
         if (message.type === 'SETTINGS_FILE_EXPORT') {
             if (exportFailure()) {
                 return {
@@ -26,6 +28,7 @@ const installSettingsFileWorker = (chrome, {
             }
             const settings = (await chrome.storage.sync.get('bpbSettings')).bpbSettings;
             const imgbb = (await chrome.storage.local.get('bpbImgbbAuth')).bpbImgbbAuth;
+            const github = (await chrome.storage.local.get('bpbGithubAuth')).bpbGithubAuth;
             const exportedAt = '2026-07-30T12:00:00.000Z';
             return {
                 ok: true,
@@ -33,6 +36,16 @@ const installSettingsFileWorker = (chrome, {
                     extensionVersion: '3.3.0',
                     exportedAt,
                     apiKeys: { imgbb: imgbb?.key || null },
+                    ...(message.includeGithubConnection ? {
+                        githubConnection: {
+                            token: github?.token,
+                            repository: {
+                                owner: github?.repo?.owner,
+                                name: github?.repo?.name,
+                                ...(github?.repo?.id ? { id: github.repo.id } : {}),
+                            },
+                        },
+                    } : {}),
                 })),
                 exportedAt,
             };
@@ -54,7 +67,26 @@ const installSettingsFileWorker = (chrome, {
                         await chrome.storage.local.remove('bpbImgbbAuth');
                     }
                 }
-                return { ok: true, settings: parsed.settings };
+                if (Object.hasOwn(parsed, 'githubConnection')) {
+                    const connection = parsed.githubConnection;
+                    await chrome.storage.local.set({
+                        bpbGithubAuth: {
+                            token: connection.token,
+                            account: { login: connection.repository.owner },
+                            repo: {
+                                ...connection.repository,
+                                branch: 'main',
+                                fullName: `${connection.repository.owner}/${connection.repository.name}`,
+                            },
+                            installationId: 7,
+                        },
+                    });
+                }
+                return {
+                    ok: true,
+                    settings: parsed.settings,
+                    githubConnectionImported: Object.hasOwn(parsed, 'githubConnection'),
+                };
             } catch {
                 return {
                     ok: false,
@@ -66,7 +98,15 @@ const installSettingsFileWorker = (chrome, {
             const imgbb = (await chrome.storage.local.get('bpbImgbbAuth')).bpbImgbbAuth;
             return { ok: true, configured: !!imgbb, permissionGranted: true };
         }
-        if (message.type === 'GITHUB_AUTH_STATUS') return {};
+        if (message.type === 'GITHUB_AUTH_STATUS') {
+            const github = (await chrome.storage.local.get('bpbGithubAuth')).bpbGithubAuth;
+            return {
+                connected: !!(github?.token && github?.repo?.owner && github?.repo?.name),
+                hasToken: !!github?.token,
+                account: github?.account || null,
+                repo: github?.repo || null,
+            };
+        }
         return {};
     };
 };
@@ -345,7 +385,7 @@ test('the options controller exclusively owns shared status timing', async () =>
     assert.doesNotMatch(draftsSource, /getElementById\(['"]status['"]\)|2200/);
 });
 
-test('settings export downloads all known settings and the saved API key', async () => {
+test('settings export downloads all known settings and the saved API key without GitHub by default', async () => {
     const download = {};
     const dom = await loadOptions({ theme: 'dark', unknownSetting: 'private' }, {
         local: { bpbImgbbAuth: { key: 'private-imgbb-key', savedAt: '2026-07-29T12:00:00.000Z' } },
@@ -370,9 +410,56 @@ test('settings export downloads all known settings and the saved API key', async
     assert.equal(parsed.settings.theme, 'dark');
     assert.equal('unknownSetting' in parsed.settings, false);
     assert.deepEqual(parsed.apiKeys, { imgbb: 'private-imgbb-key' });
+    assert.equal('githubConnection' in parsed, false);
     assert.equal(download.href, 'blob:settings-export');
     assert.match(download.name, /^better-peakbagger-settings-\d{4}-\d{2}-\d{2}\.json$/);
     assert.equal(download.revoked, 'blob:settings-export');
+});
+
+test('settings export includes the connected GitHub token only after explicit opt-in', async () => {
+    const download = {};
+    const messages = [];
+    const github = {
+        token: 'ghu_private_token',
+        account: { login: 'ada' },
+        repo: { owner: 'ada', name: 'peaks', id: 123, branch: 'main', fullName: 'ada/peaks' },
+    };
+    const dom = await loadOptions({ theme: 'dark' }, {
+        local: { bpbGithubAuth: github },
+        prepareChrome: chrome => {
+            chrome.permissions = {
+                contains: async () => true,
+                request: async () => true,
+                remove: async () => true,
+            };
+            installSettingsFileWorker(chrome, { messages });
+        },
+        prepareWindow(window) {
+            window.URL.createObjectURL = blob => {
+                download.blob = blob;
+                return 'blob:settings-export';
+            };
+            window.URL.revokeObjectURL = () => {};
+            window.HTMLAnchorElement.prototype.click = function click() {};
+        },
+    });
+
+    const include = el(dom, 'settings-backup-export-github');
+    await waitFor(dom, () => include.disabled === false);
+    assert.equal(include.checked, false);
+    include.checked = true;
+    el(dom, 'settings-backup-export').click();
+    await waitFor(dom, () => download.blob);
+
+    const parsed = settingsTransfer.parse(await readBlob(dom, download.blob));
+    assert.deepEqual(parsed.githubConnection, {
+        token: 'ghu_private_token',
+        repository: { owner: 'ada', name: 'peaks', id: 123 },
+    });
+    assert.deepEqual(messages.find(message => message.type === 'SETTINGS_FILE_EXPORT'), {
+        type: 'SETTINGS_FILE_EXPORT', includeGithubConnection: true,
+    });
+    assert.equal(include.checked, false, 'each sensitive export requires a fresh opt-in');
 });
 
 test('settings export creates no file when the worker cannot read every setting and retries cleanly', async () => {
@@ -449,6 +536,94 @@ test('settings import replaces known settings and API keys only after inline con
     assert.equal(dom.chrome._localStore.bpbImgbbAuth.key, 'new-imgbb-key');
     assert.equal(el(dom, 'settings-backup-confirmation').hidden, true);
     assert.equal(el(dom, 'status').textContent, 'Settings imported');
+});
+
+test('settings import requests GitHub permission and restores a validated connection after confirmation', async () => {
+    const messages = [];
+    const permissionRequests = [];
+    let granted = false;
+    const dom = await loadOptions({ theme: 'dark' }, {
+        prepareChrome: chrome => {
+            chrome.permissions = {
+                contains: async () => granted,
+                request: async details => {
+                    permissionRequests.push(structuredClone(details));
+                    granted = true;
+                    return true;
+                },
+                remove: async () => true,
+            };
+            installSettingsFileWorker(chrome, { messages });
+        },
+    });
+    const input = el(dom, 'settings-backup-file');
+    const payload = settingsTransfer.buildPayload({ theme: 'light' }, {
+        extensionVersion: '3.3.0',
+        exportedAt: '2026-07-31T12:00:00.000Z',
+        apiKeys: { imgbb: null },
+        githubConnection: {
+            token: 'ghu_imported_token',
+            repository: { owner: 'ada', name: 'peaks', id: 123 },
+        },
+    });
+    Object.defineProperty(input, 'files', {
+        configurable: true,
+        value: [{ name: 'private-settings.json', text: async () => settingsTransfer.serialize(payload) }],
+    });
+
+    input.dispatchEvent(new dom.window.Event('change'));
+    await waitFor(dom, () => el(dom, 'settings-backup-confirmation').hidden === false);
+    assert.match(el(dom, 'settings-backup-confirmation').textContent,
+        /Replaces your current settings, saved API keys, and GitHub connection/);
+    assert.equal(dom.chrome._localStore.bpbGithubAuth, undefined);
+
+    el(dom, 'settings-backup-confirm').click();
+    await waitFor(dom, () => dom.chrome._localStore.bpbGithubAuth?.token === 'ghu_imported_token');
+    await waitFor(dom, () => el(dom, 'settings-backup-confirmation').hidden);
+    assert.deepEqual(permissionRequests, [{
+        origins: ['https://github.com/*', 'https://api.github.com/*'],
+    }]);
+    assert.equal(dom.chrome._localStore.bpbGithubAuth.repo.fullName, 'ada/peaks');
+    assert.ok(messages.some(message => message.type === 'SETTINGS_FILE_IMPORT'));
+    assert.equal(el(dom, 'status').textContent, 'Settings imported');
+});
+
+test('settings import keeps everything unchanged when GitHub permission is declined', async () => {
+    const messages = [];
+    const dom = await loadOptions({ theme: 'dark' }, {
+        prepareChrome: chrome => {
+            chrome.permissions = {
+                contains: async () => false,
+                request: async () => false,
+                remove: async () => true,
+            };
+            installSettingsFileWorker(chrome, { messages });
+        },
+    });
+    const input = el(dom, 'settings-backup-file');
+    const payload = settingsTransfer.buildPayload({ theme: 'light' }, {
+        extensionVersion: '3.3.0',
+        exportedAt: '2026-07-31T12:00:00.000Z',
+        githubConnection: {
+            token: 'ghu_imported_token',
+            repository: { owner: 'ada', name: 'peaks' },
+        },
+    });
+    Object.defineProperty(input, 'files', {
+        configurable: true,
+        value: [{ name: 'private-settings.json', text: async () => settingsTransfer.serialize(payload) }],
+    });
+
+    input.dispatchEvent(new dom.window.Event('change'));
+    await waitFor(dom, () => el(dom, 'settings-backup-confirmation').hidden === false);
+    el(dom, 'settings-backup-confirm').click();
+    await waitFor(dom, () => /GitHub access was not granted/.test(el(dom, 'status-error-text').textContent));
+
+    assert.equal(dom.chrome._store.bpbSettings.theme, 'dark');
+    assert.equal(dom.chrome._localStore.bpbGithubAuth, undefined);
+    assert.equal(messages.some(message => message.type === 'SETTINGS_FILE_IMPORT'), false);
+    assert.equal(el(dom, 'settings-backup-confirmation').hidden, false);
+    assert.equal(dom.window.document.activeElement, el(dom, 'settings-backup-confirm'));
 });
 
 test('settings import keeps its confirmation retryable when persistence fails', async () => {

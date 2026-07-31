@@ -20,9 +20,11 @@
 //
 //   authStore — the token/repo accessor over chrome.storage.local. The token
 //   must never ride storage.sync (secrets must not sync onto every signed-in
-//   browser), which also keeps it outside src/settings/settings.js's sync schema. The
-//   background worker is the only holder; content scripts never receive it.
-//   Disconnect drops the local token; full revocation is uninstalling the app.
+//   browser), which also keeps it outside src/settings/settings.js's sync schema.
+//   The background worker is the only runtime holder; content scripts never
+//   receive it. The one deliberate exception is an explicit manual settings
+//   file export/import on the exact packaged Settings page. Disconnect drops
+//   the local token; full revocation is uninstalling the app.
 //
 // Idempotent: safe to inject more than once into the same global.
 
@@ -284,11 +286,29 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
             await area.set({ [STORAGE_KEY]: next });
             return next;
         });
+        // Exact record replacement is reserved for the transactional manual
+        // settings-file import. Its caller validates the token/repository
+        // against GitHub first and uses the same operation to restore the prior
+        // record if a later credential write fails.
+        const replace = value => mutate(async () => {
+            if (!area) throw new Error('GitHub authorization storage is unavailable.');
+            if (value == null) {
+                await area.remove(STORAGE_KEY);
+                return null;
+            }
+            if (typeof value !== 'object' || Array.isArray(value)) {
+                throw new TypeError('GitHub authorization record must be an object.');
+            }
+            const next = { ...value };
+            await area.set({ [STORAGE_KEY]: next });
+            return next;
+        });
         return {
             STORAGE_KEY,
             read,
-            // The credential half; the token stays local and is only ever held
-            // by the background worker.
+            replace,
+            // The credential half; outside the explicit manual file-transfer
+            // exception, the token stays local and is held only by the worker.
             setCredential: ({ token, tokenType = 'bearer', scope = '' }) =>
                 write({ token, tokenType, scope, grantedAt: new Date().toISOString() }),
             setAccount: account => write({ account: account || null }),

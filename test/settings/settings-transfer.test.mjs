@@ -54,6 +54,61 @@ test('manual settings transfer round-trips every supported API key state', () =>
     assert.deepEqual(Transfer.API_KEY_NAMES, ['imgbb']);
 });
 
+test('manual settings transfer includes a cleaned GitHub connection only when requested', () => {
+    const withoutConnection = Transfer.buildPayload({ theme: 'dark' }, {
+        extensionVersion: '3.3.0',
+        exportedAt: '2026-07-31T12:00:00.000Z',
+    });
+    assert.equal('githubConnection' in withoutConnection, false);
+
+    const withConnection = Transfer.buildPayload({ theme: 'dark' }, {
+        extensionVersion: '3.3.0',
+        exportedAt: '2026-07-31T12:00:00.000Z',
+        githubConnection: {
+            token: 'ghu_private_token',
+            repository: {
+                owner: 'ada', name: 'peaks', id: 123,
+                branch: 'discarded', fullName: 'ada/peaks',
+            },
+            account: { login: 'discarded' },
+        },
+    });
+    assert.deepEqual(withConnection.githubConnection, {
+        token: 'ghu_private_token',
+        repository: { owner: 'ada', name: 'peaks', id: 123 },
+    });
+    assert.deepEqual(Transfer.parse(Transfer.serialize(withConnection)).githubConnection,
+        withConnection.githubConnection);
+});
+
+test('settings transfer rejects malformed or falsely backported GitHub credentials', () => {
+    assert.throws(() => Transfer.buildPayload({}, {
+        exportedAt: '2026-07-31T12:00:00.000Z',
+        githubConnection: { token: 'short', repository: { owner: 'ada', name: 'peaks' } },
+    }), /GitHub connection is invalid/);
+
+    const malformed = {
+        kind: Transfer.KIND,
+        schemaVersion: Transfer.SCHEMA_VERSION,
+        settings: {},
+        githubConnection: {
+            token: 'ghu_private_token\nsmuggled',
+            repository: { owner: 'ada', name: '../peaks' },
+        },
+    };
+    assert.deepEqual(Transfer.parse(JSON.stringify(malformed)), {
+        ok: false, reason: 'invalid-github-connection',
+    });
+
+    malformed.schemaVersion = 2;
+    malformed.githubConnection = {
+        token: 'ghu_private_token', repository: { owner: 'ada', name: 'peaks' },
+    };
+    assert.deepEqual(Transfer.parse(JSON.stringify(malformed)), {
+        ok: false, reason: 'invalid-github-connection',
+    });
+});
+
 test('settings transfer strips unknown input keys and cleans imported values', () => {
     const parsed = Transfer.parse(JSON.stringify({
         kind: Transfer.KIND,

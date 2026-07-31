@@ -1375,7 +1375,10 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
         mutateMap,
         readMap,
     });
-    const settingsFileRoutes = createSettingsFileRoutes({ ext });
+    const settingsFileRoutes = createSettingsFileRoutes({
+        ext,
+        verifyGithubConnection: githubRoutes.validateImportedConnection,
+    });
     const favoriteMutations = createFavoritesStore({ storage: ext.storage.local, now });
 
     const openDraftsManager = async sender => {

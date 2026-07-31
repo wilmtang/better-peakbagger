@@ -124,7 +124,7 @@ link, which automatically tracks endpoint query changes.
 | `src/photos/photo-store.js` | Authoritative photo IndexedDB transactions and backup-snapshot reads | GitHub token, network, backup merge policy |
 | `photos/photos.js` | Photo recovery status, manual actions, automatic toggle, preview copy, and explicit conflict choice | GitHub credentials, repository writes, or claiming pixels were restored |
 | `options/favorites.js` | Favorites transfer controls, auto toggle, and schema-checked reversible restore | Backup serialization, GitHub credentials, or repository mutation |
-| `options/settings-backup.js` | File transfer, GitHub transfer controls, auto toggle, and confirmed settings replacement | GitHub credentials or repository mutation |
+| `options/settings-backup.js` | File transfer, the explicit sensitive-connection opt-in, GitHub transfer controls, auto toggle, and confirmed settings replacement | Repository mutation or exposing a credential outside the selected manual file operation |
 | `src/background/background.js` | Sender gates, session-state keys, session-state serialization, cleanup coordination, message routing | Peakbagger DOM parsing or GitHub route implementation |
 | `src/background/github-routes.js` | Session snapshots, auth lookup, the shared write queue and its commit, root-file serialization, GitHub message handlers, automatic-backup alarms/state | Peakbagger DOM parsing or exposing credentials outside the worker |
 | `src/github/github-write-queue.js` | Pure write ordering: exclusive operations, root-file batching, last-write-wins squashing, superseded reporting | Network, storage, tokens, or what a commit contains |
@@ -538,6 +538,8 @@ disclosure.
 | `GITHUB_FAVORITES_RESTORE` | Extension options page | Extension origin; auth/repo; fixed `favorite-climbers.json` path | File text or `null`, never token |
 | `GITHUB_SETTINGS_BACKUP` | Extension options page | Extension origin; auth/repo; worker reads settings through the shared schema and exports known keys only; fixed `settings.json` path | Commit metadata, never token |
 | `GITHUB_SETTINGS_RESTORE` | Extension options page | Extension origin; auth/repo; fixed `settings.json` path | File text or `null`, never token |
+| `SETTINGS_FILE_EXPORT` | Exact packaged Settings page | Exact extension protocol/host/path; authoritative settings/API-key reads; GitHub auth is read only when the message carries the explicit opt-in | JSON file text; contains the token only for that opted-in manual download |
+| `SETTINGS_FILE_IMPORT` | Exact packaged Settings page | Exact extension protocol/host/path; strict schema and credential parsing; included GitHub token/repository and the authenticated account are validated live before transactional replacement | Success/error only; imported token is not echoed |
 | `GITHUB_PHOTOS_STATUS` | Exact packaged photo page | Extension origin/path; current repository and setting | Connection, automatic toggle, and matching backup state; never token or secret |
 | `GITHUB_PHOTOS_BACKUP` | Exact packaged photo page | Extension origin/path; auth/repo; worker reads IndexedDB and builds fixed `photo-library.json` | Commit metadata and merge counts; never pixels, API key, or delete URL |
 | `GITHUB_PHOTOS_RESTORE_PREVIEW` | Exact packaged photo page | Extension origin/path; auth/repo; bounded schema parse and semantic comparison | Counts, conflict ids, and content signature only |
@@ -546,8 +548,9 @@ disclosure.
 The individual worker gate is hostname-level; the content surface supplies the
 stricter owner proof by requiring an edit link for the same aid before it even
 asks for status. The profile worker gate is path-level because batch messages
-are valid only from the owner-list surface. Settings and favorite messages are
-extension-page only. The worker builds the settings and favorites backup files
+are valid only from the owner-list surface. GitHub settings and favorite
+messages are extension-page only; manual file transfer is restricted to the
+exact packaged Settings path. The worker builds the settings and favorites backup files
 from cleaned storage; the options page parses through the same pure module and
 requires confirmation before replacing local state on restore.
 
@@ -612,12 +615,12 @@ preference, and settings-page search/sort state are never exported or changed by
 restore. A missing file is reported as an empty backup state, not treated as an
 empty list to restore.
 
-### `settings.json` schema version 2
+### `settings.json` schema version 3
 
 ```jsonc
 {
   "kind": "better-peakbagger-settings",
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "exportedAt": "2026-07-22T18:04:05.000Z",
   "extensionVersion": "3.0.0",
   "settings": {
@@ -632,12 +635,20 @@ pick of every key owned by `settings-schema.js`, after that schema cleans values
 and fills defaults. Unknown keys are excluded. GitHub `settings.json` never
 includes the GitHub token/repository or the ImgBB API key. An explicit manual
 file export uses the same schema plus `apiKeys.imgbb`; it always records either
-the validated key or `null`, warns that the file is private, and restores that
-state on import. Favorite climbers, drafts, caches, and other local/session data
-remain excluded. Import and GitHub restore reject another kind or a newer
-schema, re-clean every value, and require inline confirmation before wholesale
-replacement. Version 1 files remain accepted and leave the destination API key
-unchanged. A missing GitHub file is reported without changing settings.
+the validated key or `null`. When the user checks **Include GitHub connection**,
+it additionally writes `githubConnection.token` and the selected repository's
+owner, name, and available numeric id. The file is not encrypted, the checkbox
+resets after a successful download, and the Settings page warns that the file
+is private. Import requests GitHub host permission if needed, then validates the
+token, current account, granted repository, writability, branch, and repository
+root before transactionally replacing the stored connection. A file without
+`githubConnection` preserves the destination connection. Favorite climbers,
+drafts, caches, and other local/session data remain excluded. Import and GitHub
+restore reject another kind or a newer schema, re-clean every value, and require
+inline confirmation before wholesale replacement. Versions 1 and 2 remain
+accepted; version 1 without `apiKeys` leaves the destination API key unchanged,
+and neither legacy version can carry a GitHub connection. A missing GitHub file
+is reported without changing settings.
 During a manual GitHub write, the Settings row reports that the backup is in
 progress; after GitHub accepts the commit, it keeps **Settings backed up ✓** and
 a commit link visible until the backed-up settings change or the repository is
@@ -791,7 +802,9 @@ and write**:
 Pending device state lives in `storage.session` so an MV3 worker restart does
 not lose a code while the user is entering it. The long-lived user token and
 chosen repository live in `storage.local`, never `storage.sync`. Content scripts
-never receive the token.
+never receive the token. The exact packaged Settings page sees it only while
+creating or reading a user-selected manual settings file that explicitly
+includes the GitHub connection.
 
 An empty or recognized backup repository connects directly. A populated,
 unmarked repository needs confirmation. A repository containing root folders
