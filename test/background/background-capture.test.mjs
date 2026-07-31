@@ -17,7 +17,7 @@ const event = () => {
 };
 
 const createHarness = ({ peakXml = null, captureResult = null, ownershipResult = null, settings = {}, beforePeakFetch = null,
-    groupError = null, faults = {},
+    beforeProviderCapture = null, groupError = null, faults = {},
     loginHtml = '<a href="climber/climber.aspx?cid=77">My Home Page</a>' } = {}) => {
     const values = {};
     const localValues = {};
@@ -42,6 +42,8 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
     const groupUpdates = [];
     const badgeCalls = [];
     const scriptCalls = [];
+    const providerCaptureCalls = [];
+    const providerCancelCalls = [];
     const tabMessages = [];
     const removedTabs = [];
     let tabCreateCalls = 0;
@@ -112,8 +114,26 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
                 if (faults.scripting) throw new Error(faults.scripting);
                 scriptCalls.push(structuredClone({ files: details.files, args: details.args, world: details.world }));
                 if (details.files) return [];
-                const isOwnershipCheck = String(details.func).includes('inspectOwnership');
-                const result = isOwnershipCheck && ownershipResult ? ownershipResult : capture;
+                const functionSource = String(details.func);
+                const isOwnershipCheck = functionSource.includes('inspectOwnership');
+                const isProviderCapture = functionSource.includes('BPBProviderPage.capture');
+                const isProviderCancel = functionSource.includes('cancelCapture');
+                if (isProviderCancel) {
+                    providerCancelCalls.push(details.args?.[0]);
+                    return [{ result: true }];
+                }
+                if (isProviderCapture) {
+                    const call = {
+                        number: providerCaptureCalls.length + 1,
+                        options: structuredClone(details.args?.[0]),
+                        generation: details.args?.[1],
+                    };
+                    providerCaptureCalls.push(call);
+                    if (beforeProviderCapture) await beforeProviderCapture(call);
+                }
+                const result = isOwnershipCheck && ownershipResult ? ownershipResult
+                    : typeof captureResult === 'function' ? captureResult(providerCaptureCalls.at(-1))
+                        : capture;
                 return [{ result: structuredClone(result) }];
             }
         },
@@ -206,7 +226,7 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
     });
     return {
         send, values, localValues, syncValues, tabs, grouped, groupUpdates, badgeCalls, fetchCalls, scriptCalls, tabMessages,
-        removedTabs,
+        removedTabs, providerCaptureCalls, providerCancelCalls,
         sessionGetCalls: () => sessionGetCalls, loggedErrors, faults,
     };
 };
@@ -227,10 +247,10 @@ test('background capture persists a private job, opens grouped drafts, and previ
         /<trkpt lat="0" lon="-0.001"><ele>100<\/ele><time>2026-07-01T15:00:00Z<\/time><\/trkpt>/);
     assert.doesNotMatch(storedJob.uploadGpx, /<extensions(?:\s|>)/i);
     assert.equal(JSON.stringify(storedJob).includes('heart'), false);
-    assert.deepEqual(harness.scriptCalls.find(call => call.args)?.args, [{
+    assert.deepEqual(harness.scriptCalls.find(call => call.args?.length === 2)?.args[0], {
         retainWaypoints: true,
         includeTripName: true
-    }]);
+    });
 
     const opened = await harness.send({ type: 'CAPTURE_OPEN_DRAFTS', tabId: 1, selectedIds: [7] });
     assert.deepEqual([...opened.tabIds], [100]);
@@ -789,6 +809,47 @@ test('cancelling an in-progress capture discards its job and ignores later resul
         'the abandoned process must not recreate or retain its late result');
 });
 
+test('cancel followed immediately by retry starts a new provider generation', async () => {
+    let releaseFirstCapture;
+    const firstCaptureGate = new Promise(resolve => { releaseFirstCapture = resolve; });
+    const harness = createHarness({
+        beforeProviderCapture: call => call.number === 1 ? firstCaptureGate : undefined,
+    });
+    const until = async predicate => {
+        const deadline = Date.now() + 2000;
+        while (!predicate()) {
+            if (Date.now() > deadline) {
+                throw new Error(
+                    `condition not reached; captures=${harness.providerCaptureCalls.length}`
+                        + ` cancellations=${harness.providerCancelCalls.length}`,
+                );
+            }
+            await new Promise(resolve => setTimeout(resolve, 1));
+        }
+    };
+
+    const abandoned = harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    await until(() => harness.providerCaptureCalls.length === 1);
+    const firstGeneration = harness.values.bpbCaptureJobs['1'].id;
+
+    const cancelled = await harness.send({ type: 'CAPTURE_CANCEL', tabId: 1 });
+    assert.deepEqual({ ...cancelled }, { ok: true, cancelled: true, job: null });
+    assert.deepEqual(harness.providerCancelCalls, [firstGeneration]);
+
+    const retry = harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    await until(() => harness.providerCaptureCalls.length === 2);
+    const retried = await retry;
+    assert.equal(retried.phase, 'ready');
+    assert.notEqual(retried.id, firstGeneration);
+    assert.equal(harness.values.bpbCaptureJobs['1'].id, retried.id);
+
+    releaseFirstCapture();
+    assert.equal(await abandoned, null,
+        'the cancelled generation returns no later job, even after the retry completes');
+    assert.equal(harness.values.bpbCaptureJobs['1'].id, retried.id);
+    assert.equal(harness.values.bpbCaptureJobs['1'].phase, 'ready');
+});
+
 test('a tab-grouping failure is a flag, never raw exception text handed to a surface', async () => {
     const harness = createHarness({ groupError: 'tabs.group is not a function' });
     await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
@@ -992,10 +1053,10 @@ test('changing capture settings invalidates a reusable job for the same activity
 
     await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
     assert.notEqual(harness.values.bpbCaptureJobs['1'].id, firstId);
-    assert.deepEqual(harness.scriptCalls.filter(call => call.args).at(-1).args, [{
+    assert.deepEqual(harness.scriptCalls.filter(call => call.args?.length === 2).at(-1).args[0], {
         retainWaypoints: false,
         includeTripName: true
-    }]);
+    });
 });
 
 test('Possible and Weak matches are hidden and no coordinate upload is retained', async () => {
@@ -1039,6 +1100,28 @@ test('provider export failures discard page-world exception text without misrepo
     assert.doesNotMatch(JSON.stringify(result), /RAW_PAGE_SENTINEL|chrome\.runtime/);
     assert.doesNotMatch(JSON.stringify(harness.values), /RAW_PAGE_SENTINEL|chrome\.runtime/);
     assert.doesNotMatch(result.error.message, /ownership changed/i);
+});
+
+test('provider export timeouts preserve the public retryable timeout contract', async () => {
+    const harness = createHarness({
+        ownershipResult: { ok: true, provider: 'garmin', activityId: '777', viewerId: 'abc', authorId: 'abc' },
+        captureResult: {
+            ok: false,
+            code: 'provider-export-timeout',
+            provider: 'garmin',
+            activityId: '777',
+            message: 'RAW_PAGE_SENTINEL: internal timeout details'
+        }
+    });
+
+    const result = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    assert.equal(result.phase, 'error');
+    assert.deepEqual(JSON.parse(JSON.stringify(result.error)), {
+        code: 'provider-export-timeout',
+        message: 'The activity provider took too long to export this GPX. Try again.'
+    });
+    assert.doesNotMatch(JSON.stringify(result), /RAW_PAGE_SENTINEL|internal timeout/i);
+    assert.doesNotMatch(JSON.stringify(harness.values), /RAW_PAGE_SENTINEL|internal timeout/i);
 });
 
 test('an activity without a provider GPX ends in a neutral, reusable no-GPS state', async () => {

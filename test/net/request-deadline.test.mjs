@@ -9,6 +9,17 @@ import path from 'node:path';
 import { requestDeadline as Deadline } from '../../src/net/request-deadline.js';
 
 const { createRequestDeadline, isTimeout } = Deadline;
+const sourceRoot = new URL('../../src/', import.meta.url);
+const sourceFiles = async (dir = sourceRoot) => {
+    const out = [];
+    for (const entry of await readdir(dir, { withFileTypes: true })) {
+        const child = new URL(`${entry.name}${entry.isDirectory() ? '/' : ''}`, dir);
+        if (entry.isDirectory()) out.push(...await sourceFiles(child));
+        else if (entry.name.endsWith('.js')) out.push(child);
+    }
+    return out;
+};
+const relativeSourcePath = file => decodeURIComponent(file.pathname.split('/src/')[1]);
 
 test('a request that never answers ends on the deadline rather than pending forever', async () => {
     const deadline = createRequestDeadline(10);
@@ -100,7 +111,7 @@ test('a malformed timeout falls back to the shared default instead of firing ins
 test('every third-party transport bounds its requests through this one module', async () => {
     // The failure a status code never reports is the one that never arrives.
     // A transport added later must not quietly reintroduce an unbounded wait.
-    const transports = [
+    const injectedTransports = [
         'github/github-api.js',
         'github/github-auth.js',
         'photos/imgbb-client.js',
@@ -110,26 +121,42 @@ test('every third-party transport bounds its requests through this one module', 
         // through a transport that reports status, so an unbounded wait there
         // shows up as a hole in the mesh or a blank drape rather than an error.
         'terrain/terrain-cache.js',
-        'terrain/terrain-style.js',
     ];
-    for (const file of transports) {
+    for (const file of injectedTransports) {
         const source = await readFile(new URL(`../../src/${file}`, import.meta.url), 'utf8');
         assert.ok(/request-deadline\.js/.test(source), `${file} must bound its requests`);
     }
+
+    // Discover every module that calls the global fetch directly. Two narrow
+    // adapters are explicit exceptions: GitHub routes hand the native fetch to
+    // the deadline-owning clients above, while peak markers keep one abort
+    // timer alive across both fetch and body read for their native same-origin
+    // request. Any new direct owner has to import the shared deadline or make a
+    // reviewed exception here; it cannot disappear from a hand-kept allowlist.
+    const directExceptions = new Map([
+        ['background/github-routes.js', source => /const netFetch = \(url, init\) => fetch\(url, init\)/.test(source)
+            && /github-client\.js/.test(source) && /github-auth\.js/.test(source)],
+        ['maps/peak-markers.js', source => /setTimeout\(\(\) => controller\.abort\(\), REQUEST_TIMEOUT_MS\)/.test(source)
+            && /await response\.text\(\)/.test(source)
+            && /clearTimeout\(timeout\)/.test(source)],
+    ]);
+    const discoveredExceptions = new Set();
+    for (const file of await sourceFiles()) {
+        const source = await readFile(file, 'utf8');
+        if (!/\bfetch\s*\(/.test(source)) continue;
+        const relative = relativeSourcePath(file);
+        if (/request-deadline\.js/.test(source)) continue;
+        const exception = directExceptions.get(relative);
+        assert.ok(exception, `${relative} directly calls fetch without the shared deadline`);
+        assert.ok(exception(source), `${relative} no longer satisfies its explicit deadline exception`);
+        discoveredExceptions.add(relative);
+    }
+    assert.deepEqual(discoveredExceptions, new Set(directExceptions.keys()),
+        'every exception must still describe a direct fetch owner');
 });
 
 test('no source module hardcodes its own race-with-timeout', async () => {
-    const root = new URL('../../src/', import.meta.url);
-    const walk = async dir => {
-        const out = [];
-        for (const entry of await readdir(dir, { withFileTypes: true })) {
-            const child = new URL(`${entry.name}${entry.isDirectory() ? '/' : ''}`, dir);
-            if (entry.isDirectory()) out.push(...await walk(child));
-            else if (entry.name.endsWith('.js')) out.push(child);
-        }
-        return out;
-    };
-    for (const file of await walk(root)) {
+    for (const file of await sourceFiles()) {
         if (path.basename(file.pathname) === 'request-deadline.js') continue;
         const source = await readFile(file, 'utf8');
         assert.ok(

@@ -8,6 +8,7 @@
 
 import { providerFromUrl } from './provider-url.js';
 import { gpxParse } from '../gpx/gpx-parse.js';
+import { requestDeadline as Deadline } from '../net/request-deadline.js';
 
     const PROFILE_PATTERNS = {
         garmin: /\/(?:modern\/)?profile\/([^/?#]+)/i,
@@ -15,6 +16,9 @@ import { gpxParse } from '../gpx/gpx-parse.js';
     };
     const NO_GPS_MESSAGE = 'This activity has no recorded route to capture.';
     const EXPORT_FAILURE_MESSAGE = 'The activity provider could not export this GPX. Reload the activity and try again.';
+    const EXPORT_TIMEOUT_MESSAGE = 'The activity provider took too long to export this GPX. Try again.';
+    const PROVIDER_TIMEOUT_MS = 30000;
+    const activeCaptures = new Map();
 
     const profileId = (href, provider) => {
         if (!href) return null;
@@ -147,24 +151,28 @@ import { gpxParse } from '../gpx/gpx-parse.js';
         return { endpoint: path, headers };
     };
 
-    const capture = async (options = {}) => {
+    const capture = async (options = {}, generation = null, timeoutMs = PROVIDER_TIMEOUT_MS) => {
         const ownership = inspectOwnership();
         if (!ownership.ok) return ownership;
+        const request = ownership.provider === 'garmin'
+            ? garminExportRequest(ownership.activityId)
+            : { endpoint: `/activities/${ownership.activityId}/export_gpx`, headers: {} };
+        const captureKey = typeof generation === 'string' && generation ? generation : Symbol('capture');
+        const deadline = Deadline.createRequestDeadline(timeoutMs);
+        activeCaptures.set(captureKey, deadline);
         try {
-            const request = ownership.provider === 'garmin'
-                ? garminExportRequest(ownership.activityId)
-                : { endpoint: `/activities/${ownership.activityId}/export_gpx`, headers: {} };
-            const response = await fetch(request.endpoint, {
+            const response = await deadline.run(fetch(request.endpoint, {
                 credentials: 'include',
                 redirect: 'follow',
-                headers: request.headers
-            });
+                headers: request.headers,
+                signal: deadline.signal
+            }));
             if (response.status === 204 || response.status === 404) throw noGpsError();
             if (!response.ok) {
                 const providerName = ownership.provider === 'garmin' ? 'Garmin' : 'Strava';
                 throw new Error(`${providerName} GPX export failed with HTTP ${response.status}. Reload the activity and try again.`);
             }
-            const text = await response.text();
+            const text = await deadline.run(response.text());
             if (!text.trim()) throw noGpsError();
             const parsed = parseGpxData(text, options);
             const metadata = activityMetadata(ownership.provider);
@@ -180,17 +188,42 @@ import { gpxParse } from '../gpx/gpx-parse.js';
             };
         } catch (error) {
             const noGps = error?.code === 'no-gps-data';
+            const timedOut = deadline.expired || Deadline.isTimeout(error);
+            const cancelled = !timedOut && !!deadline.signal?.aborted;
             return {
                 ok: false,
-                code: noGps ? 'no-gps-data' : 'provider-export-failed',
+                code: noGps ? 'no-gps-data'
+                    : timedOut ? 'provider-export-timeout'
+                        : cancelled ? 'provider-export-cancelled'
+                            : 'provider-export-failed',
                 provider: ownership.provider,
                 activityId: ownership.activityId,
-                message: noGps ? NO_GPS_MESSAGE : EXPORT_FAILURE_MESSAGE
+                message: noGps ? NO_GPS_MESSAGE
+                    : timedOut ? EXPORT_TIMEOUT_MESSAGE
+                        : EXPORT_FAILURE_MESSAGE
             };
+        } finally {
+            deadline.clear();
+            if (activeCaptures.get(captureKey) === deadline) activeCaptures.delete(captureKey);
         }
     };
 
-    const API = { providerFromUrl, profileId, inspectOwnership, parseGpxData, garminExportRequest, capture };
+    const cancelCapture = generation => {
+        const deadline = activeCaptures.get(generation);
+        if (!deadline) return false;
+        deadline.abort();
+        return true;
+    };
+
+    const API = {
+        providerFromUrl,
+        profileId,
+        inspectOwnership,
+        parseGpxData,
+        garminExportRequest,
+        capture,
+        cancelCapture
+    };
     export const providerPage = API;
 
     // Deliberate page-world global (NOT a transitional bridge): background.js

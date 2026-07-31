@@ -16,6 +16,14 @@ const load = (html, url) => {
     return dom;
 };
 
+const until = async predicate => {
+    const deadline = Date.now() + 2000;
+    while (!predicate()) {
+        if (Date.now() > deadline) throw new Error('condition not reached');
+        await new Promise(resolve => setTimeout(resolve, 1));
+    }
+};
+
 const stravaPage = ({ viewer = '42', author = '42', edit = true } = {}) => `
 <!doctype html><body>
   <header id="global-header"><a href="/athletes/${viewer}">Viewer</a></header>
@@ -167,6 +175,61 @@ test('Garmin export failures return bounded copy instead of page exception text'
         'The activity provider could not export this GPX. Reload the activity and try again.');
     assert.doesNotMatch(capture.message, /503|Garmin/);
     assert.doesNotMatch(capture.message, /ownership/i);
+});
+
+test('a never-settling provider fetch ends at one public deadline and releases the socket', async () => {
+    const dom = load(stravaPage(), 'https://www.strava.com/activities/123');
+    let aborted = false;
+    dom.window.fetch = async (_url, options) => {
+        options.signal?.addEventListener('abort', () => { aborted = true; });
+        return new Promise(() => {});
+    };
+
+    const capture = await dom.window.BPBProviderPage.capture({}, 'capture-timeout', 10);
+    assert.equal(capture.ok, false);
+    assert.equal(capture.code, 'provider-export-timeout');
+    assert.equal(capture.message, 'The activity provider took too long to export this GPX. Try again.');
+    assert.equal(aborted, true);
+});
+
+test('the same provider deadline bounds a stalled GPX body read', async () => {
+    const dom = load(stravaPage(), 'https://www.strava.com/activities/123');
+    let aborted = false;
+    dom.window.fetch = async (_url, options) => {
+        options.signal?.addEventListener('abort', () => { aborted = true; });
+        return {
+            ok: true,
+            status: 200,
+            text: async () => new Promise(() => {}),
+        };
+    };
+
+    const capture = await dom.window.BPBProviderPage.capture({}, 'body-timeout', 10);
+    assert.equal(capture.code, 'provider-export-timeout');
+    assert.match(capture.message, /took too long/i);
+    assert.equal(aborted, true);
+});
+
+test('cancelling one provider generation aborts only its in-page request', async () => {
+    const dom = load(stravaPage(), 'https://www.strava.com/activities/123');
+    let signal;
+    dom.window.fetch = async (_url, options) => {
+        signal = options.signal;
+        return new Promise((_resolve, reject) => {
+            signal?.addEventListener('abort', () => reject(new Error('aborted')));
+        });
+    };
+
+    const pending = dom.window.BPBProviderPage.capture({}, 'capture-cancel', 1000);
+    await until(() => !!signal);
+    assert.equal(dom.window.BPBProviderPage.cancelCapture('other-generation'), false);
+    assert.equal(signal.aborted, false);
+    assert.equal(dom.window.BPBProviderPage.cancelCapture('capture-cancel'), true);
+    const capture = await pending;
+    assert.equal(capture.code, 'provider-export-cancelled');
+    assert.equal(signal.aborted, true);
+    assert.equal(dom.window.BPBProviderPage.cancelCapture('capture-cancel'), false,
+        'the completed generation no longer owns an abort controller');
 });
 
 test('an unavailable or trackless provider export is reported as no GPS data', async t => {

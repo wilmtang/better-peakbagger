@@ -123,15 +123,25 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
         return jobs[tabId];
     });
 
-    const failJob = async (tabId, code, message) => {
+    const updateCaptureJob = (tabId, generation, patch) => mutateMap(JOBS_KEY, jobs => {
+        if (!jobs[tabId] || jobs[tabId].id !== generation) return null;
+        jobs[tabId] = { ...jobs[tabId], ...patch, updatedAt: now() };
+        return jobs[tabId];
+    });
+
+    const failCaptureJob = async (tabId, generation, code, message) => {
+        const failed = await updateCaptureJob(tabId, generation, {
+            phase: 'error',
+            error: { code, message },
+        });
+        if (!failed) return null;
         if (code === 'not-owner') await setBadge(tabId, '!', '#b42318');
         else if (code === 'ownership-unverified' || code === 'provider-signed-out') await setBadge(tabId, '!', '#b54708');
-        return updateJob(tabId, { phase: 'error', error: { code, message } });
+        return failed;
     };
 
-    const finishWithoutGps = async (tabId, message) => {
-        await setBadge(tabId, '');
-        return updateJob(tabId, {
+    const finishCaptureWithoutGps = async (tabId, generation, message) => {
+        const finished = await updateCaptureJob(tabId, generation, {
             phase: 'no-gps',
             matches: [],
             selectedIds: [],
@@ -141,6 +151,9 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
             message: message || 'This activity has no recorded route to capture.',
             expiresAt: now() + JOB_TTL_MS
         });
+        if (!finished) return null;
+        await setBadge(tabId, '');
+        return finished;
     };
 
     const peakbaggerLogin = async () => {
@@ -212,12 +225,12 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
         return results[0].result;
     };
 
-    const captureProvider = async (tabId, capturePreferences) => {
+    const captureProvider = async (tabId, capturePreferences, generation) => {
         const results = await ext.scripting.executeScript({
             target: { tabId },
-            func: async options => {
+            func: async (options, captureGeneration) => {
                 try {
-                    return await globalThis.BPBProviderPage.capture(options);
+                    return await globalThis.BPBProviderPage.capture(options, captureGeneration);
                 } catch (error) {
                     return {
                         ok: false,
@@ -229,11 +242,22 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
             args: [{
                 retainWaypoints: capturePreferences.retainWaypoints,
                 includeTripName: capturePreferences.fillTripInfo
-            }],
+            }, generation],
             world: 'MAIN'
         });
         if (!results || !results[0]) throw new Error('The activity page returned no capture result.');
         return results[0].result;
+    };
+
+    const cancelProviderCapture = async (tabId, generation) => {
+        const results = await ext.scripting.executeScript({
+            target: { tabId },
+            func: captureGeneration =>
+                globalThis.BPBProviderPage?.cancelCapture?.(captureGeneration) === true,
+            args: [generation],
+            world: 'MAIN'
+        });
+        return !!results?.[0]?.result;
     };
 
     // Shared post-capture pipeline: sanitize → corridor lookup → detect →
@@ -335,15 +359,20 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
         };
     };
 
-    const processCapture = async (tabId, expectedUrl, capturePreferences) => {
+    const processCapture = async (tabId, expectedUrl, capturePreferences, generation) => {
         try {
             const tab = await ext.tabs.get(tabId);
             if (!tab.url || tab.url !== expectedUrl) {
-                await failJob(tabId, 'page-changed', 'The active tab changed before capture started.');
+                await failCaptureJob(
+                    tabId,
+                    generation,
+                    'page-changed',
+                    'The active tab changed before capture started.',
+                );
                 return;
             }
 
-            await updateJob(tabId, { phase: 'checking-ownership' });
+            if (!await updateCaptureJob(tabId, generation, { phase: 'checking-ownership' })) return;
             await injectProvider(tabId);
             const ownership = await inspectProviderOwnership(tabId);
             if (!ownership || !ownership.ok) {
@@ -353,52 +382,69 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
                     'not-owner': 'This activity was recorded by another account, so it cannot be captured.',
                     'ownership-unverified': 'Ownership could not be verified from this activity page. Nothing was captured.'
                 };
-                await failJob(tabId, ownership?.code || 'capture-failed', messages[ownership?.code] || 'The activity could not be captured.');
+                await failCaptureJob(
+                    tabId,
+                    generation,
+                    ownership?.code || 'capture-failed',
+                    messages[ownership?.code] || 'The activity could not be captured.',
+                );
                 return;
             }
 
-            await updateJob(tabId, { phase: 'checking-peakbagger' });
+            if (!await updateCaptureJob(tabId, generation, { phase: 'checking-peakbagger' })) return;
             const cid = await peakbaggerLogin();
             if (!cid) {
-                await failJob(tabId, 'peakbagger-signed-out', 'Your Peakbagger login could not be verified. Open Peakbagger, confirm you’re signed in, then try again.');
+                await failCaptureJob(
+                    tabId,
+                    generation,
+                    'peakbagger-signed-out',
+                    'Your Peakbagger login could not be verified. Open Peakbagger, confirm you’re signed in, then try again.',
+                );
                 return;
             }
+            if (!await updateCaptureJob(tabId, generation, { phase: 'checking-peakbagger' })) return;
 
-            const capture = await captureProvider(tabId, capturePreferences);
+            const capture = await captureProvider(tabId, capturePreferences, generation);
             if (!capture || !capture.ok) {
                 if (capture?.code === 'no-gps-data') {
-                    await finishWithoutGps(tabId, 'This activity has no recorded route to capture.');
+                    await finishCaptureWithoutGps(
+                        tabId,
+                        generation,
+                        'This activity has no recorded route to capture.',
+                    );
                     return;
                 }
                 const messages = {
                     'provider-signed-out': 'Sign in to the activity provider before capturing.',
                     'not-owner': 'This activity was recorded by another account, so it cannot be captured.',
                     'ownership-unverified': 'Ownership could not be verified from this activity page. Nothing was captured.',
+                    'provider-export-timeout': 'The activity provider took too long to export this GPX. Try again.',
                     'provider-export-failed': 'The activity provider could not export this GPX. Reload the activity and try again.'
                 };
-                await failJob(
+                await failCaptureJob(
                     tabId,
+                    generation,
                     capture?.code || 'capture-failed',
                     messages[capture?.code] || 'The activity could not be captured.'
                 );
                 return;
             }
-            await setBadge(tabId, '');
 
-            await updateJob(tabId, { phase: 'analyzing' });
+            if (!await updateCaptureJob(tabId, generation, { phase: 'analyzing' })) return;
+            await setBadge(tabId, '');
             const analysis = await analyzeTrack({
                 segments: capture.segments,
                 waypoints: capture.waypoints,
                 metadata: capture.metadata,
                 capturePreferences,
-                onPhase: (phase, extra) => updateJob(tabId, { phase, ...extra })
+                onPhase: (phase, extra) => updateCaptureJob(tabId, generation, { phase, ...extra })
             });
             if (analysis.status === 'no-gps') {
-                await finishWithoutGps(tabId, analysis.message);
+                await finishCaptureWithoutGps(tabId, generation, analysis.message);
                 return;
             }
             if (analysis.status === 'no-matches') {
-                await updateJob(tabId, {
+                await updateCaptureJob(tabId, generation, {
                     phase: 'no-matches',
                     matches: [],
                     selectedIds: [],
@@ -410,7 +456,7 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
                 return;
             }
 
-            await updateJob(tabId, {
+            await updateCaptureJob(tabId, generation, {
                 phase: 'ready',
                 cid,
                 provider: capture.provider,
@@ -427,9 +473,9 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
             });
         } catch (error) {
             const failure = publicFailure('activity capture', error, UNEXPECTED_CAPTURE_ERROR);
-            await failJob(tabId, failure.code, failure.message);
+            await failCaptureJob(tabId, generation, failure.code, failure.message);
         } finally {
-            processes.delete(tabId);
+            if (processes.get(tabId)?.generation === generation) processes.delete(tabId);
         }
     };
 
@@ -446,7 +492,7 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
         const current = jobs[tabId];
         const sameActivity = current && current.provider === activity.provider && current.activityId === activity.activityId;
         if (processes.has(tabId)) {
-            await processes.get(tabId);
+            await processes.get(tabId).promise;
             const completed = (await readMap(JOBS_KEY))[tabId];
             const completedSameActivity = completed && completed.provider === activity.provider
                 && completed.activityId === activity.activityId;
@@ -475,10 +521,11 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
             error: null
         };
         await mutateMap(JOBS_KEY, map => { map[tabId] = job; });
-        const process = processCapture(tabId, tab.url, capturePreferences);
-        processes.set(tabId, process);
+        const process = processCapture(tabId, tab.url, capturePreferences, job.id);
+        processes.set(tabId, { generation: job.id, promise: process });
         await process;
-        return publicJob((await readMap(JOBS_KEY))[tabId]);
+        const completed = (await readMap(JOBS_KEY))[tabId];
+        return completed?.id === job.id ? publicJob(completed) : null;
     };
 
     const clearCapture = async message => {
@@ -549,7 +596,16 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
             delete jobs[tabId];
             cancelled = true;
         });
-        if (cancelled) await setBadge(tabId, '');
+        if (cancelled) {
+            const process = processes.get(tabId);
+            if (process?.generation === current.id) processes.delete(tabId);
+            try {
+                await cancelProviderCapture(tabId, current.id);
+            } catch (error) {
+                console.error('Better Peakbagger: provider capture cancellation failed', error);
+            }
+            await setBadge(tabId, '');
+        }
         return { ok: cancelled, cancelled, job: cancelled ? null : publicJob(current) };
     };
 
