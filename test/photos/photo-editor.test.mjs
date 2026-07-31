@@ -198,12 +198,30 @@ test('arming a placement tool shows its style before anything is placed', async 
         'rotation describes a placed mark, not the tool');
     assert.equal(doc.querySelector('.scale-only').hidden, false);
     assert.equal(doc.querySelector('.route-only').hidden, true);
+    assert.equal(doc.getElementById('object-scale-value').textContent, '32 px',
+        'marker size is reported in source-image pixels');
+
+    const scale = doc.getElementById('object-scale');
+    scale.value = '2';
+    page.emit(scale, 'input');
+    assert.equal(doc.getElementById('object-scale-value').textContent, '65 px');
 
     page.tool('route');
     await page.settle();
     assert.equal(heading(), 'Route style');
     assert.equal(doc.querySelector('.route-only').hidden, false);
     assert.equal(doc.querySelector('.scale-only').hidden, true);
+    assert.equal(doc.getElementById('route-width-value').textContent, '12 px');
+
+    const width = doc.getElementById('route-width');
+    width.value = '24';
+    page.emit(width, 'input');
+    assert.equal(doc.getElementById('route-width-value').textContent, '24 px');
+
+    page.tool('text');
+    await page.settle();
+    assert.equal(doc.getElementById('object-scale-value').textContent, '84 px',
+        'text reports the renderer font size for its preserved 2× scale default');
 
     page.tool('select');
     await page.settle();

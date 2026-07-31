@@ -103,10 +103,12 @@ test('all planned topo tools and accessible editor controls are present', () => 
         'object-opacity',
         'object-rotation',
         'route-width',
+        'route-width-value',
         'route-stroke',
         'route-arrow',
         'route-smooth',
         'object-scale',
+        'object-scale-value',
         'pitch-number',
         'object-text',
         'text-align',
@@ -119,6 +121,22 @@ test('all planned topo tools and accessible editor controls are present', () => 
     ]) assert.ok(doc.getElementById(id), id);
     assert.equal(doc.getElementById('photo-viewport').tabIndex, 0);
     assert.ok(doc.getElementById('editor-status').hasAttribute('aria-live'));
+});
+
+test('history actions use recognizable mirrored icons with accessible names', () => {
+    const undo = doc.getElementById('undo');
+    const redo = doc.getElementById('redo');
+    assert.equal(undo.getAttribute('aria-label'), 'Undo');
+    assert.equal(redo.getAttribute('aria-label'), 'Redo');
+    assert.equal(undo.textContent.trim(), '');
+    assert.equal(redo.textContent.trim(), '');
+    assert.equal(undo.querySelector('svg')?.getAttribute('aria-hidden'), 'true');
+    assert.equal(redo.querySelector('svg')?.getAttribute('aria-hidden'), 'true');
+    assert.notEqual(
+        undo.querySelector('path')?.getAttribute('d'),
+        redo.querySelector('path')?.getAttribute('d'),
+        'undo and redo should point in opposite directions',
+    );
 });
 
 test('every climbing symbol is painted from the renderer and reachable by keyboard', () => {

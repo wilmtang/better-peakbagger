@@ -250,10 +250,18 @@ textarea {
 }
 
 .icon-button {
+  display: grid;
   min-width: 36px;
+  padding: 6px;
+  place-items: center;
   border: 1px solid var(--input-border);
   background: var(--input-bg);
-  font-size: 18px;
+}
+
+.history-icon {
+  width: 20px;
+  height: 20px;
+  pointer-events: none;
 }
 
 .editor-body {

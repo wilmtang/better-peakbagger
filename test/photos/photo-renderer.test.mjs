@@ -214,3 +214,16 @@ test('the climbing symbols follow guidebook conventions, not a nautical anchor',
     assert.match(Renderer.markerSymbolSvg('bolt'), /fill="currentColor"/);
     assert.match(Renderer.markerSymbolSvg('bolt', { color: '#43a047' }), /fill="#43a047"/);
 });
+
+test('editor pixel sizes come from the same dimensions the renderer paints', () => {
+    const image = { width: 1600, height: 1200 };
+    const rendered = value => Math.round(value * 1000) / 1000;
+    assert.equal(rendered(Renderer.objectSizePixels('bolt', image, 1)), 32.4);
+    assert.equal(rendered(Renderer.objectSizePixels('anchor', image, 2)), 64.8);
+    assert.equal(rendered(Renderer.objectSizePixels('pitch', image, 1)), 42);
+    assert.equal(rendered(Renderer.objectSizePixels('text', image, 0.5)), 21);
+
+    const svg = Renderer.renderOverlaySvg(projectWithObjects());
+    assert.match(svg, /data-bpb-object="anchor-1"[^>]*scale\(38\.88\)/);
+    assert.match(svg, /data-bpb-object="pitch-1"[\s\S]*font-size="42"/);
+});

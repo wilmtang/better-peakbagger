@@ -53,10 +53,12 @@ const ui = {
     opacity: byId('object-opacity'),
     opacityValue: byId('object-opacity-value'),
     routeWidth: byId('route-width'),
+    routeWidthValue: byId('route-width-value'),
     routeStroke: byId('route-stroke'),
     routeArrow: byId('route-arrow'),
     routeSmooth: byId('route-smooth'),
     scale: byId('object-scale'),
+    scaleValue: byId('object-scale-value'),
     rotation: byId('object-rotation'),
     rotationValue: byId('object-rotation-value'),
     pitch: byId('pitch-number'),
@@ -386,6 +388,7 @@ const updateHistoryButtons = () => {
 const selectedObject = () => project?.objects.find(object => object.id === selectedId) || null;
 
 const percent = opacity => `${Math.round(opacity * 100)}%`;
+const pixels = value => `${Math.round(value)} px`;
 
 // The style controls describe the armed tool, not only a placed mark. Arming a
 // tool shows the style its next mark will take, so a colour or a lower opacity
@@ -423,11 +426,13 @@ const renderInspector = () => {
     ui.opacityValue.textContent = percent(style.opacity);
     if (route) {
         ui.routeWidth.value = String(style.width);
+        ui.routeWidthValue.textContent = pixels(style.width);
         ui.routeStroke.value = style.stroke;
         ui.routeArrow.checked = style.end === 'arrow';
         ui.routeSmooth.checked = style.smooth;
     } else {
         ui.scale.value = String(style.scale);
+        ui.scaleValue.textContent = pixels(Renderer.objectSizePixels(type, project.image, style.scale));
     }
     if (!object) return;
     if (!route) {
@@ -1485,7 +1490,9 @@ const bindInspector = () => {
     ui.color.addEventListener('change', () => applyStyle({ color: ui.color.value }));
     ui.routeWidth.addEventListener('input', () => {
         if (inspectorType() === 'route') {
-            applyStyle({ width: Number(ui.routeWidth.value) }, { coalesce: 'width' });
+            const width = Number(ui.routeWidth.value);
+            ui.routeWidthValue.textContent = pixels(width);
+            applyStyle({ width }, { coalesce: 'width' });
         }
     });
     ui.routeStroke.addEventListener('change', () => {
@@ -1511,7 +1518,9 @@ const bindInspector = () => {
     ui.scale.addEventListener('input', () => {
         const type = inspectorType();
         if (type && type !== 'route') {
-            applyStyle({ scale: Number(ui.scale.value) }, { coalesce: 'scale' });
+            const scale = Number(ui.scale.value);
+            ui.scaleValue.textContent = pixels(Renderer.objectSizePixels(type, project.image, scale));
+            applyStyle({ scale }, { coalesce: 'scale' });
         }
     });
     ui.rotation.addEventListener('input', () => {

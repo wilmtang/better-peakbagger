@@ -11,6 +11,8 @@ import { photoProject as Project } from './photo-project.js';
 
 const XML_NS = 'http://www.w3.org/2000/svg';
 const FONT_FAMILY = '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+const MARKER_SIZE_RATIO = 0.027;
+const LABEL_SIZE_RATIO = 0.035;
 
 const escapeXml = value => String(value)
     .replace(/&/g, '&amp;')
@@ -117,8 +119,17 @@ const markerSymbolSvg = (type, { color = 'currentColor', size = 20 } = {}) =>
     + markerGeometry(type, color)
     + '</svg>';
 
+// The editor reports the nominal rendered size in source-image pixels. Marker
+// geometry is normalized around this unit; labels use it as their font size.
+// Keeping the calculation beside the renderer prevents the inspector from
+// promising a pixel value that the flattened export does not use.
+const objectSizePixels = (type, image, scale) => {
+    const ratio = Project.MARKER_TYPES.includes(type) ? MARKER_SIZE_RATIO : LABEL_SIZE_RATIO;
+    return Math.min(image.width, image.height) * ratio * scale;
+};
+
 const renderMarker = (object, image) => {
-    const unit = Math.min(image.width, image.height) * 0.027 * object.style.scale;
+    const unit = objectSizePixels(object.type, image, object.style.scale);
     const strokeWidth = Math.max(2, unit * 0.13);
     return `<g data-bpb-object="${escapeXml(object.id)}"${opacityAttribute(object.style.opacity)}`
         + ` transform="translate(${number(object.geometry.x)} ${number(object.geometry.y)})`
@@ -134,8 +145,7 @@ const textAnchor = align => align === 'center' ? 'middle' : align === 'right' ? 
 const renderLabel = (object, image) => {
     const isPitch = object.type === 'pitch';
     const text = isPitch ? `P${object.pitch}` : object.text;
-    const scale = object.style.scale;
-    const fontSize = Math.min(image.width, image.height) * 0.035 * scale;
+    const fontSize = objectSizePixels(object.type, image, object.style.scale);
     const align = isPitch ? 'center' : object.style.align;
     const anchor = textAnchor(align);
     const estimatedWidth = Math.max(fontSize * 1.15, text.length * fontSize * 0.61);
@@ -248,6 +258,7 @@ const exportProject = async ({
 export const photoRenderer = {
     renderOverlaySvg,
     markerSymbolSvg,
+    objectSizePixels,
     exportProject,
     sha256,
 };

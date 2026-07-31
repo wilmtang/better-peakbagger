@@ -74,8 +74,20 @@
                    placeholder="Describe the terrain and marked route">
           </label>
           <div class="history-actions">
-            <button id="undo" type="button" class="icon-button" title="Undo" aria-label="Undo" disabled>↶</button>
-            <button id="redo" type="button" class="icon-button" title="Redo" aria-label="Redo" disabled>↷</button>
+            <button id="undo" type="button" class="icon-button" title="Undo" aria-label="Undo" disabled>
+              <svg class="history-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                   stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+                   focusable="false" aria-hidden="true">
+                <path d="M9 14 4 9l5-5M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/>
+              </svg>
+            </button>
+            <button id="redo" type="button" class="icon-button" title="Redo" aria-label="Redo" disabled>
+              <svg class="history-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                   stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+                   focusable="false" aria-hidden="true">
+                <path d="m15 14 5-5-5-5m5 5H9.5a5.5 5.5 0 0 0 0 11H13"/>
+              </svg>
+            </button>
           </div>
         </div>
 
@@ -177,7 +189,7 @@
               <input id="object-opacity" type="range" min="10" max="100" step="5">
             </label>
             <label class="field route-only">
-              Width
+              <span class="field-label">Width <output id="route-width-value" for="route-width">12 px</output></span>
               <input id="route-width" type="range" min="1" max="100" step="1">
             </label>
             <label class="field route-only">
@@ -197,7 +209,7 @@
               Smooth curve
             </label>
             <label class="field scale-only">
-              Size
+              <span class="field-label">Size <output id="object-scale-value" for="object-scale"></output></span>
               <input id="object-scale" type="range" min="0.25" max="4" step="0.05">
             </label>
             <label class="field point-only">
