@@ -163,6 +163,7 @@ const paintReportWidthControls = () => {
 };
 
 const chooseReportImageWidth = async event => {
+    if (busy) return;
     const choice = ReportSize.choiceFromToken(event.currentTarget.value);
     if (!choice) return;
     setReportImageWidth(choice.width);
@@ -205,6 +206,7 @@ const toast = (message, { action = '', onAction = null, duration = 5000 } = {}) 
 };
 
 const setView = view => {
+    if (busy) return;
     const editor = view === 'editor';
     ui.editorView.hidden = !editor;
     ui.libraryView.hidden = editor;
@@ -213,12 +215,50 @@ const setView = view => {
     if (!editor) void renderLibrary();
 };
 
+const editorMutationLocked = () => busy || PUBLISHED_STATES.includes(photo?.remote.state);
+
+const editorMutationControls = () => [
+    ui.title,
+    ui.alt,
+    ui.finishRoute,
+    ui.color,
+    ui.opacity,
+    ui.routeWidth,
+    ui.routeStroke,
+    ui.routeArrow,
+    ui.routeSmooth,
+    ui.scale,
+    ui.rotation,
+    ui.pitch,
+    ui.text,
+    ui.align,
+    ui.background,
+    ui.sendBack,
+    ui.bringFront,
+    ui.duplicate,
+    ui.deleteObject,
+    ui.clear,
+    ...document.querySelectorAll('[data-tool]'),
+];
+
+const updateEditorControls = () => {
+    const locked = editorMutationLocked();
+    for (const control of editorMutationControls()) control.disabled = locked;
+    ui.upload.disabled = busy || !project || PUBLISHED_STATES.includes(photo?.remote.state);
+    ui.showEditor.disabled = busy;
+    ui.showLibrary.disabled = busy;
+    ui.file.disabled = busy;
+    ui.importProject.disabled = busy;
+    ui.saveKey.disabled = busy;
+    for (const select of ui.reportWidthSelects) select.disabled = busy;
+    ui.viewport.setAttribute('aria-busy', String(busy));
+    ui.overlay.setAttribute('aria-disabled', String(locked));
+    updateHistoryButtons();
+};
+
 const setBusy = (value, message = '') => {
     busy = value;
-    ui.upload.disabled = value;
-    ui.file.disabled = value;
-    ui.importProject.disabled = value;
-    ui.saveKey.disabled = value;
+    updateEditorControls();
     if (message) setEditorStatus(message);
 };
 
@@ -275,6 +315,7 @@ const requestPermission = async () => {
 };
 
 const saveCredential = async () => {
+    if (busy) return;
     const key = ImgbbClient.cleanKey(ui.key.value);
     if (!key) {
         toast('Enter a valid ImgBB API key.');
@@ -303,6 +344,7 @@ const saveCredential = async () => {
 };
 
 const removeCredential = async () => {
+    if (busy) return;
     sessionKey = '';
     updateCredentialUi();
     toast('The key was forgotten for this tab. Existing photos were not changed.');
@@ -437,6 +479,7 @@ const persistDraft = async ({ required = false } = {}) => {
 };
 
 const schedulePersist = () => {
+    if (editorMutationLocked()) return;
     clearTimeout(autosaveTimer);
     autosaveTimer = setTimeout(() => void persistDraft(), AUTOSAVE_DELAY_MS);
 };
@@ -572,7 +615,7 @@ const renderProject = () => {
     ui.exportSummary.textContent = `${project.objects.length} annotation${project.objects.length === 1 ? '' : 's'}`
         + ` · ${project.image.width} × ${project.image.height}`;
     renderInspector();
-    updateHistoryButtons();
+    updateEditorControls();
 };
 
 // A slider drag, a run of typing, and a held arrow key are each one thing the
@@ -585,6 +628,7 @@ let coalescing = null;
 const endCoalescing = () => { coalescing = null; };
 
 const setProject = (next, { pushHistory = true, persist = true, coalesce = null } = {}) => {
+    if (editorMutationLocked()) return false;
     const cleaned = Project.cleanProject(next);
     if (!cleaned) return false;
     const continuing = coalesce !== null && coalesce === coalescing;
@@ -601,7 +645,7 @@ const setProject = (next, { pushHistory = true, persist = true, coalesce = null 
 };
 
 const undo = () => {
-    if (!history.length || !project) return;
+    if (editorMutationLocked() || !history.length || !project) return;
     endCoalescing();
     future.push(structuredClone(project));
     project = history.pop();
@@ -613,7 +657,7 @@ const undo = () => {
 };
 
 const redo = () => {
-    if (!future.length || !project) return;
+    if (editorMutationLocked() || !future.length || !project) return;
     endCoalescing();
     history.push(structuredClone(project));
     project = future.pop();
@@ -629,6 +673,7 @@ const toolName = tool => document.querySelector(`[data-tool="${tool}"] .tool-nam
 // Select after one symbol made marking a pitch a click-a-tool-per-symbol chore;
 // Esc and V are the way out, and the status line says so.
 const setTool = tool => {
+    if (editorMutationLocked()) return;
     activeTool = tool;
     document.querySelectorAll('[data-tool]').forEach(button => {
         button.setAttribute('aria-pressed', String(button.dataset.tool === tool));
@@ -682,6 +727,7 @@ const isDoublePress = (previous, press) => !!previous
     && Math.abs(press.y - previous.y) <= DOUBLE_PRESS_SLOP;
 
 const addRoutePoint = (point, press) => {
+    if (editorMutationLocked()) return;
     if (routeSession && isDoublePress(routeSession.lastPress, press)) {
         finishRoute(false);
         return;
@@ -731,7 +777,7 @@ const addRoutePoint = (point, press) => {
 };
 
 const finishRoute = cancel => {
-    if (!routeSession) return;
+    if (editorMutationLocked() || !routeSession) return;
     if (cancel) {
         project = routeSession.baseline;
         if (routeSession.historyPushed) history.pop();
@@ -749,6 +795,7 @@ const finishRoute = cancel => {
 };
 
 const addPointObject = (type, point) => {
+    if (editorMutationLocked()) return;
     const base = {
         id: crypto.randomUUID(),
         type,
@@ -795,6 +842,7 @@ const translatedGeometry = (object, dx, dy) => {
 };
 
 const beginDrag = (event, objectId, vertex = null) => {
+    if (editorMutationLocked()) return;
     const object = project.objects.find(candidate => candidate.id === objectId);
     if (!object) return;
     endCoalescing();
@@ -812,6 +860,7 @@ const beginDrag = (event, objectId, vertex = null) => {
 };
 
 const moveDrag = event => {
+    if (editorMutationLocked()) return;
     if (routeSession) {
         routeSession.cursor = pointerPoint(event);
         renderRoutePreview();
@@ -849,7 +898,7 @@ const endDrag = () => {
 };
 
 const onPointerDown = event => {
-    if (!project || busy || event.button !== 0) return;
+    if (!project || editorMutationLocked() || event.button !== 0) return;
     const vertexNode = activeTool === 'select' ? event.target.closest?.('[data-vertex]') : null;
     if (vertexNode) {
         selectedId = vertexNode.dataset.objectId;
@@ -874,6 +923,7 @@ const onPointerDown = event => {
 // `coalesce` names the control being dragged or typed into; it is scoped to the
 // mark so moving to a different one always starts a new Undo step.
 const updateSelected = (patch, { coalesce = null } = {}) => {
+    if (editorMutationLocked()) return;
     const object = selectedObject();
     if (!object) return;
     if (patch.style) {
@@ -892,6 +942,7 @@ const updateSelected = (patch, { coalesce = null } = {}) => {
 // with only a tool armed it sets what the next mark will be. Presetting a tool
 // touches nothing on the photo, so it is deliberately not an Undo step.
 const applyStyle = (patch, { coalesce = null, geometry = null } = {}) => {
+    if (editorMutationLocked()) return;
     const object = selectedObject();
     if (!object && !inspectorType()) return;
     if (object) {
@@ -908,6 +959,7 @@ const applyStyle = (patch, { coalesce = null, geometry = null } = {}) => {
 };
 
 const duplicateSelected = () => {
+    if (editorMutationLocked()) return;
     const object = selectedObject();
     if (!object) return;
     const copy = structuredClone(object);
@@ -920,6 +972,7 @@ const duplicateSelected = () => {
 };
 
 const deleteSelected = () => {
+    if (editorMutationLocked()) return;
     if (!selectedId) return;
     const next = Project.removeObjects(project, [selectedId]);
     selectedId = null;
@@ -927,12 +980,14 @@ const deleteSelected = () => {
 };
 
 const nudgeSelected = (dx, dy) => {
+    if (editorMutationLocked()) return;
     const object = selectedObject();
     if (!object) return;
     updateSelected({ geometry: translatedGeometry(object, dx, dy) }, { coalesce: 'nudge' });
 };
 
 const loadBundle = async bundle => {
+    if (busy) return false;
     if (!bundle?.photo || !bundle.project || !bundle.original) {
         toast('The editable original is not available on this device.');
         return false;
@@ -963,12 +1018,13 @@ const loadBundle = async bundle => {
 // edit that would have uploaded fine. Whether the browser can decode it is the
 // real constraint, and the decode itself answers that.
 const chooseFile = async file => {
-    if (!file) return;
+    if (busy || !file) return;
     if (file.size <= 0) {
         toast('That file is empty.');
         return;
     }
     setBusy(true, 'Reading photo…');
+    let shouldPersist = false;
     try {
         const bitmap = await decodeBlob(file);
         if (!bitmap.width || !bitmap.height) throw new Error('The image has no dimensions.');
@@ -1005,12 +1061,13 @@ const chooseFile = async file => {
         // waiting for an edit that may never come.
         setSaveStatus('Not saved yet');
         setEditorStatus('Photo stays local until you choose Upload and insert.');
-        schedulePersist();
+        shouldPersist = true;
         ui.alt.focus();
     } catch {
         toast('This browser could not decode that image.');
     } finally {
         setBusy(false);
+        if (shouldPersist) schedulePersist();
     }
 };
 
@@ -1020,26 +1077,48 @@ const uploadAndInsert = async () => {
         toast('This photo is already on ImgBB. Use “Edit as new version” in the library to change it.');
         return;
     }
-    if (!await persistDraft({ required: true })) return;
-    if (!await requestPermission()) {
-        toast('Allow Better Peakbagger to reach api.imgbb.com, then choose Upload again.');
-        return;
-    }
-    const key = await leaseCredential();
-    if (!key) {
-        toast('Connect an ImgBB API key before uploading.');
-        ui.key.focus();
-        return;
-    }
-    setBusy(true, 'Preparing image…');
+    if (dragSession) endDrag();
+    if (routeSession) finishRoute(false);
+    setBusy(true, 'Saving upload snapshot…');
     let operation = null;
     let uploadingPhoto = null;
     let providerResponse = null;
     let committedPhoto = null;
+    let uploadSnapshot = null;
     try {
+        if (!await persistDraft({ required: true })) return;
+        clearTimeout(autosaveTimer);
+        autosaveTimer = null;
+        const snapshotProject = Project.cleanProject(project);
+        const snapshotPhoto = Library.cleanPhoto(photo);
+        if (!snapshotProject || !snapshotPhoto || snapshotProject.localId !== snapshotPhoto.localId) {
+            toast('The saved photo changed before upload could begin. Try again.');
+            return;
+        }
+        uploadSnapshot = {
+            project: structuredClone(snapshotProject),
+            photo: structuredClone(snapshotPhoto),
+            sourceBitmap,
+            originalBlob,
+            reportImageWidth,
+        };
+        if (!await requestPermission()) {
+            toast('Allow Better Peakbagger to reach api.imgbb.com, then choose Upload again.');
+            return;
+        }
+        const key = await leaseCredential();
+        if (!key) {
+            toast('Connect an ImgBB API key before uploading.');
+            ui.key.focus();
+            return;
+        }
+        setEditorStatus('Preparing image…');
         // Deliberately no local size check: the ceiling belongs to the ImgBB
         // account, not to this extension, and it says so in its own rejection.
-        const exported = await Renderer.exportProject({ project, source: sourceBitmap });
+        const exported = await Renderer.exportProject({
+            project: uploadSnapshot.project,
+            source: uploadSnapshot.sourceBitmap,
+        });
         ui.exportSummary.textContent = `${formatBytes(exported.bytes)} ${exported.mime.replace('image/', '').toUpperCase()}`
             + ` · ${exported.width} × ${exported.height}`;
         const exportMetadata = {
@@ -1049,14 +1128,18 @@ const uploadAndInsert = async () => {
             height: exported.height,
             sha256: exported.sha256,
         };
-        uploadingPhoto = Library.beginUpload(photo, exportMetadata);
+        uploadingPhoto = Library.beginUpload(uploadSnapshot.photo, exportMetadata);
         await store.putPhoto(uploadingPhoto);
         operation = {
             operationId: crypto.randomUUID(),
-            localId: photo.localId,
+            localId: uploadSnapshot.photo.localId,
             state: 'request-started',
             export: exportMetadata,
             returnToken: RETURN_TOKEN || null,
+            displayWidth: ReportSize.displayWidth(
+                exportMetadata.width,
+                uploadSnapshot.reportImageWidth,
+            ),
             updatedAt: new Date().toISOString(),
         };
         await store.putOperation(operation);
@@ -1065,7 +1148,7 @@ const uploadAndInsert = async () => {
             fetch: globalThis.fetch.bind(globalThis),
             key,
             blob: exported.blob,
-            name: photo.title,
+            name: uploadSnapshot.photo.title,
         });
         operation = {
             ...operation,
@@ -1079,6 +1162,15 @@ const uploadAndInsert = async () => {
         photo = Library.completeUpload(uploadingPhoto, exportMetadata, providerResponse.remote);
         await store.commitUpload({ photo, deleteUrl: providerResponse.deleteUrl });
         committedPhoto = photo;
+        project = structuredClone(uploadSnapshot.project);
+        ui.title.value = uploadSnapshot.photo.title;
+        ui.alt.value = uploadSnapshot.photo.alt;
+        selectedId = null;
+        routeSession = null;
+        dragSession = null;
+        history = [];
+        future = [];
+        renderProject();
         operation = { ...operation, state: 'catalog-committed', updatedAt: new Date().toISOString() };
         // The preceding response-received journal is already sufficient to
         // reconstruct this commit, so a failed stage-label write must not stop
@@ -1091,7 +1183,7 @@ const uploadAndInsert = async () => {
             operation,
             photo,
             insert: ({ returnToken, photo: inserting }) => {
-                const displayWidth = ReportSize.displayWidth(inserting.export.width, reportImageWidth);
+                const displayWidth = operation.displayWidth;
                 return send({
                     type: 'PHOTO_INSERT_COMMIT',
                     returnToken,
@@ -1116,6 +1208,12 @@ const uploadAndInsert = async () => {
     } catch (error) {
         if (committedPhoto) {
             photo = committedPhoto;
+            if (uploadSnapshot) {
+                project = structuredClone(uploadSnapshot.project);
+                ui.title.value = uploadSnapshot.photo.title;
+                ui.alt.value = uploadSnapshot.photo.alt;
+                renderProject();
+            }
             const message = error instanceof UploadTransaction.CommittedUploadError
                 ? error.message
                 : RETURN_TOKEN
@@ -1202,10 +1300,9 @@ const recoverOperations = async () => {
                     operation,
                     photo: bundle.photo,
                     insert: ({ returnToken, photo: inserting }) => {
-                        const displayWidth = ReportSize.displayWidth(
-                            inserting.export.width,
-                            reportImageWidth,
-                        );
+                        const displayWidth = Object.hasOwn(operation, 'displayWidth')
+                            ? operation.displayWidth
+                            : ReportSize.displayWidth(inserting.export.width, reportImageWidth);
                         return send({
                             type: 'PHOTO_INSERT_COMMIT',
                             returnToken,
@@ -1278,6 +1375,7 @@ const insertFromLibrary = async item => {
 };
 
 const editAsNewVersion = async item => {
+    if (busy) return;
     const bundle = await store.getBundle(item.localId);
     if (!bundle.original || !bundle.project) {
         toast('The original photo is not available on this device.');
@@ -1316,7 +1414,7 @@ const editAsNewVersion = async item => {
 // claiming one published ImgBB asset could each be "removed" independently, and
 // the second removal would look like it had freed something it had not.
 const importProject = async file => {
-    if (!file) return;
+    if (busy || !file) return;
     // The library view has no status line, so the toast carries the progress
     // and the result replaces it.
     setBusy(true);
@@ -1725,6 +1823,7 @@ const bindEvents = () => {
     ui.duplicate.addEventListener('click', duplicateSelected);
     ui.deleteObject.addEventListener('click', deleteSelected);
     ui.clear.addEventListener('click', () => {
+        if (editorMutationLocked()) return;
         const count = project?.objects.length || 0;
         if (!count || !confirm(`Remove all ${count} annotation${count === 1 ? '' : 's'}? You can Undo this.`)) {
             return;

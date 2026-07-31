@@ -37,6 +37,7 @@ const loadEditor = async ({
     fetchImpl = null,
     indexedDB = new IDBFactory(),
     pickPhoto = true,
+    imageLoader = null,
 } = {}) => {
     const dom = new JSDOM(html, {
         url: `chrome-extension://test/photos/photos.html${returnToReport ? '?returnToken=return-test' : ''}`,
@@ -61,7 +62,8 @@ const loadEditor = async ({
     };
     win.Image = class TestImage {
         set src(_value) {
-            win.queueMicrotask(() => this.onload?.());
+            if (imageLoader) imageLoader(this);
+            else win.queueMicrotask(() => this.onload?.());
         }
     };
     win.URL.createObjectURL = () => 'blob:test';
@@ -169,6 +171,18 @@ const readPhotoStore = (win, storeName) => new Promise((resolve, reject) => {
         transaction.onabort = () => reject(transaction.error);
     };
 });
+
+const waitForPhotoStore = async (win, storeName, predicate, ms = 5000) => {
+    const start = Date.now();
+    while (true) {
+        const records = await readPhotoStore(win, storeName);
+        if (predicate(records)) return records;
+        if (Date.now() - start > ms) {
+            throw new Error(`photo store wait timed out; store=${storeName} count=${records.length}`);
+        }
+        await new Promise(resolve => win.setTimeout(resolve, 5));
+    }
+};
 
 const imgbbSuccess = {
     data: {
@@ -279,7 +293,7 @@ test('a failed report insertion keeps the real page catalog at its committed Img
     const { doc } = page;
     await waitFor(page.dom, () => doc.getElementById('save-status').textContent === 'Saved on this device');
     page.click(doc.getElementById('upload-insert'));
-    await waitFor(page.dom, () => doc.getElementById('upload-insert').disabled === false
+    await waitFor(page.dom, () => doc.getElementById('photo-viewport').getAttribute('aria-busy') === 'false'
         && /uploaded and saved in the library/i.test(page.status())).catch(error => {
         error.message += `; status=${JSON.stringify(page.status())}`
             + ` toast=${JSON.stringify(doc.getElementById('toast-message').textContent)}`
@@ -333,6 +347,168 @@ test('a failed report insertion keeps the real page catalog at its committed Img
     assert.equal(recoveredCatalog[0].references.length, 1);
     assert.equal(recoveredOperations.length, 0, 'recovery removes the journal without another upload');
     assert.deepEqual(recoveredPage.errors, []);
+});
+
+test('export and upload hold one immutable snapshot behind every editor mutation path', async () => {
+    let releaseExport;
+    const exportGate = new Promise(resolve => { releaseExport = resolve; });
+    let exportStarted = false;
+    let resolveUpload;
+    let uploadStarted = false;
+    const uploadGate = new Promise(resolve => { resolveUpload = resolve; });
+    const insertionMessages = [];
+    const page = await loadEditor({
+        returnToReport: true,
+        imgbbStatus: { ok: true, configured: true, permissionGranted: true },
+        imageLoader: image => {
+            exportStarted = true;
+            void exportGate.then(() => image.onload?.());
+        },
+        fetchImpl: async () => {
+            uploadStarted = true;
+            await uploadGate;
+            return {
+                ok: true,
+                status: 200,
+                text: async () => JSON.stringify(imgbbSuccess),
+            };
+        },
+        runtimeHandler: async message => {
+            if (message?.type === 'PHOTO_INSERT_COMMIT') {
+                insertionMessages.push(structuredClone(message));
+                return { ok: true, identity: { cid: 10, aid: 20, pid: 30 } };
+            }
+            return { ok: true };
+        },
+    });
+    const { doc, win } = page;
+    const title = doc.getElementById('photo-title');
+    const alt = doc.getElementById('photo-alt');
+    title.value = 'Snapshot title';
+    alt.value = 'Snapshot description';
+    page.emit(title, 'input');
+    page.emit(alt, 'input');
+    page.tool('bolt');
+    page.pointer('pointerdown', 100, 100);
+    await waitForPhotoStore(win, 'photos', records =>
+        records[0]?.title === 'Snapshot title' && records[0]?.alt === 'Snapshot description');
+    await waitForPhotoStore(win, 'projects', records => records[0]?.objects.length === 1);
+
+    page.click(doc.getElementById('upload-insert'));
+    await waitFor(page.dom, () => exportStarted && doc.getElementById('photo-viewport')
+        .getAttribute('aria-busy') === 'true');
+
+    const mutationControls = [
+        title,
+        alt,
+        doc.getElementById('undo'),
+        doc.getElementById('redo'),
+        doc.getElementById('finish-route'),
+        doc.getElementById('object-color'),
+        doc.getElementById('object-opacity'),
+        doc.getElementById('route-width'),
+        doc.getElementById('route-stroke'),
+        doc.getElementById('route-arrow'),
+        doc.getElementById('route-smooth'),
+        doc.getElementById('object-scale'),
+        doc.getElementById('object-rotation'),
+        doc.getElementById('pitch-number'),
+        doc.getElementById('object-text'),
+        doc.getElementById('text-align'),
+        doc.getElementById('label-background'),
+        doc.getElementById('send-back'),
+        doc.getElementById('bring-front'),
+        doc.getElementById('duplicate-object'),
+        doc.getElementById('delete-object'),
+        doc.getElementById('clear-annotations'),
+        ...doc.querySelectorAll('[data-tool]'),
+    ];
+    assert.ok(mutationControls.every(control => control.disabled),
+        'every visible editor mutation is disabled before export begins');
+    assert.equal(doc.getElementById('photo-overlay').getAttribute('aria-disabled'), 'true');
+    assert.equal(doc.getElementById('photo-file').disabled, true);
+    assert.equal(doc.getElementById('import-project').disabled, true);
+    assert.ok([...doc.querySelectorAll('[data-report-width]')].every(control => control.disabled));
+
+    // Dispatch directly as well as clicking disabled controls: the mutation
+    // helpers themselves must reject programmatic and already-queued events.
+    title.value = 'Late title';
+    alt.value = 'Late description';
+    page.emit(title, 'input');
+    page.emit(alt, 'input');
+    page.emit(doc.getElementById('object-opacity'), 'input');
+    page.click(doc.getElementById('duplicate-object'));
+    page.click(doc.getElementById('delete-object'));
+    page.click(doc.getElementById('clear-annotations'));
+    page.tool('anchor');
+    page.pointer('pointerdown', 200, 200);
+    page.key('keydown', { key: 'Delete' });
+    page.key('keydown', { key: 'z', metaKey: true });
+    page.key('keydown', { key: 'ArrowRight' });
+    page.key('keydown', { key: 'a' });
+    const input = doc.getElementById('photo-file');
+    Object.defineProperty(input, 'files', {
+        value: [new win.File(['replacement'], 'replacement.jpg', { type: 'image/jpeg' })],
+        configurable: true,
+    });
+    input.dispatchEvent(new win.Event('change'));
+
+    releaseExport();
+    await waitFor(page.dom, () => uploadStarted);
+    title.value = 'Later still';
+    page.emit(title, 'input');
+    page.click(doc.getElementById('undo'));
+    page.pointer('pointerdown', 300, 300);
+    resolveUpload();
+    await waitFor(page.dom, () => /Uploaded and inserted/.test(page.status())
+        && doc.getElementById('photo-viewport').getAttribute('aria-busy') === 'false');
+
+    const [catalog, projects] = await Promise.all([
+        readPhotoStore(win, 'photos'),
+        readPhotoStore(win, 'projects'),
+    ]);
+    assert.equal(catalog.length, 1);
+    assert.equal(catalog[0].remote.state, 'uploaded');
+    assert.equal(catalog[0].title, 'Snapshot title');
+    assert.equal(catalog[0].alt, 'Snapshot description');
+    assert.equal(projects[0].objects.length, 1);
+    assert.equal(title.value, 'Snapshot title');
+    assert.equal(alt.value, 'Snapshot description');
+    assert.equal(insertionMessages.length, 1);
+    assert.equal(insertionMessages[0].alt, 'Snapshot description');
+    assert.ok(mutationControls.every(control => control.disabled),
+        'the committed snapshot remains read-only until Edit as new version');
+    assert.equal(doc.getElementById('photo-file').disabled, false,
+        'choosing a different source remains available after commit');
+    assert.equal(doc.getElementById('import-project').disabled, false);
+    assert.deepEqual(page.errors, []);
+});
+
+test('a definite provider refusal unlocks the draft for correction and retry', async () => {
+    const page = await loadEditor({
+        imgbbStatus: { ok: true, configured: true, permissionGranted: true },
+        fetchImpl: async () => ({
+            ok: false,
+            status: 400,
+            text: async () => JSON.stringify({
+                error: { message: 'Unsupported or unrecognized file format', code: 415 },
+            }),
+        }),
+    });
+    const { doc } = page;
+    await waitFor(page.dom, () => doc.getElementById('save-status').textContent === 'Saved on this device');
+    page.tool('bolt');
+    page.pointer('pointerdown', 100, 100);
+    page.click(doc.getElementById('upload-insert'));
+    await waitFor(page.dom, () => /JPEG or PNG/.test(page.status())
+        && doc.getElementById('photo-viewport').getAttribute('aria-busy') === 'false');
+
+    assert.equal(doc.getElementById('photo-title').disabled, false);
+    assert.ok([...doc.querySelectorAll('[data-tool]')].every(control => control.disabled === false));
+    assert.equal(doc.getElementById('undo').disabled, false);
+    assert.equal(doc.getElementById('upload-insert').disabled, false);
+    assert.equal(doc.getElementById('photo-overlay').getAttribute('aria-disabled'), 'false');
+    assert.deepEqual(page.errors, []);
 });
 
 // One drag of a slider used to push one history entry per intermediate value:
