@@ -652,7 +652,13 @@ try {
 
     const terrainRequests = [];
     const mockedTerrainResponses = [];
+    const missingTerrainResponses = [];
     const terrainMockFailures = [];
+    // The deepest level the mocked provider covers. Mapterhorn's archives stop
+    // at different levels in different regions — most of the world runs out
+    // around zoom 11-13 while a few areas are served deeper — so a summit view
+    // routinely asks for tiles that do not exist. Lowering this replays that.
+    let terrainCoverageMaxZoom = Infinity;
     const basemapRequests = [];
     const pendingBasemapRequestIds = [];
     let holdBasemapRequests = false;
@@ -668,6 +674,22 @@ try {
             }
             if (request.method !== 'GET' || !isBoundedMapterhornTile(request.url)) {
                 throw new Error(`Refusing unexpected Mapterhorn request: ${request.method} ${request.url}`);
+            }
+            if (Number(new URL(request.url).pathname.split('/')[1]) > terrainCoverageMaxZoom) {
+                // Byte-for-byte what Mapterhorn answers for ground it has no
+                // archive for: a 404 with a plain-text body, not an image.
+                await cdp.call('Fetch.fulfillRequest', {
+                    requestId,
+                    responseCode: 404,
+                    responseHeaders: [
+                        { name: 'Access-Control-Allow-Origin', value: '*' },
+                        { name: 'Cache-Control', value: 'no-store' },
+                        { name: 'Content-Type', value: 'text/plain;charset=UTF-8' }
+                    ],
+                    body: Buffer.from('Tile not found').toString('base64')
+                });
+                missingTerrainResponses.push(request.url);
+                return;
             }
             await cdp.call('Fetch.fulfillRequest', {
                 requestId,
@@ -705,6 +727,10 @@ try {
         if (!/\.mapterhorn\.com\//.test(response.url)) return;
         const header = name => Object.entries(response.headers || {})
             .find(([candidate]) => candidate.toLowerCase() === name)?.[1];
+        // A 404 is a mocked outcome too, but only for a tile this run decided to
+        // withhold — anything else 404ing means a real request escaped.
+        if (response.status === 404 && missingTerrainResponses.includes(response.url)
+            && header('access-control-allow-origin') === '*') return;
         if (response.status !== 200 || header('access-control-allow-origin') !== '*'
             || header('x-bpb-terrain-fixture') !== TERRAIN_FIXTURE_HEADER) {
             terrainMockFailures.push(`Unexpected Mapterhorn response escaped the mock: ${response.status} ${response.url}`);
@@ -743,6 +769,47 @@ try {
     if (ascent2dMetrics.gap < 0) throw new Error(`Ascent 2D toggle overlaps the native zoom (gap ${ascent2dMetrics.gap}px)`);
     if (ascent2dMetrics.gap > 40) throw new Error(`Ascent 2D toggle floats too far above the native zoom (gap ${ascent2dMetrics.gap}px)`);
     await capture(cdp, path.join(outputDir, 'map-default-450.png'));
+
+    // Regression: a peak whose region the elevation provider does not cover to
+    // the level the view wants must degrade to the coarser tiles that do exist,
+    // not tear the whole 3D view down. This ran first for a reason — the DEM
+    // cache is per profile and survives navigation, so a coverage gap replayed
+    // after any successful open would be answered from cache and prove nothing.
+    //
+    // What used to happen: the custom DEM protocol threw a status-less Error, so
+    // MapLibre could not tell an absent tile from a broken one, raised a source
+    // error instead of falling back to the parent level, and — the elevation
+    // source being the only one in the boot style — did so before its own `load`
+    // event. The frame read that as a renderer failure and the user was told
+    // "Your browser could not render 3D terrain" about a working GPU.
+    terrainCoverageMaxZoom = 8;
+    const missingBefore = missingTerrainResponses.length;
+    await navigate(cdp, `${baseUrl}?mode=terrain&map=wide`, 1280, 950);
+    const gapState = await waitForPageState(cdp, `(() => {
+        const toggle = document.getElementById('bpb-terrain-toggle');
+        const frame = document.getElementById('bpb-terrain-frame');
+        const message = document.getElementById('bpb-terrain-message');
+        const text = message && message.textContent;
+        return {
+            ready: Boolean(toggle && toggle.textContent === '2D' && frame && frame.style.opacity === '1')
+                || Boolean(text && text.trim()),
+            message: text
+        };
+    })()`, 20000).catch(() => ({ message: 'never settled' }));
+    if (gapState.message && gapState.message.trim()) {
+        throw new Error(`A partial elevation coverage gap failed the 3D view: "${gapState.message.trim()}"`);
+    }
+    // The gap has to have actually happened, or this proves nothing.
+    await waitForCondition(() => missingTerrainResponses.length > missingBefore,
+        () => 'The coverage-gap regression withheld no tiles');
+    let gapMesh;
+    await waitForCondition(async () => {
+        gapMesh = await terrainMeshState(cdp);
+        return gapMesh.ready;
+    }, () => `A coverage gap left no usable terrain mesh: ${JSON.stringify(gapMesh)}`);
+    console.log(`Coverage gap: ${missingTerrainResponses.length - missingBefore} tiles withheld above z8; `
+        + `terrain still rendered ${gapMesh.min}-${gapMesh.max}m from the coarser levels.`);
+    terrainCoverageMaxZoom = Infinity;
 
     // Regression: a configured raster drape whose requests remain permanently
     // pending must not hold MapLibre's initial load event and page handshake.

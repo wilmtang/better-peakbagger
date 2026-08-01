@@ -7,6 +7,7 @@
 
 import { settings } from '../settings/settings.js';
 import { terrainCamera } from './terrain-camera.js';
+import { terrainFailure } from './terrain-failure.js';
 
 // Kept as an IIFE for scoping; dependencies are ES imports, no globals published.
 (() => {
@@ -14,7 +15,9 @@ import { terrainCamera } from './terrain-camera.js';
 
     const PAGE_MESSAGE_TAG = '__bpbTerrain';
     const FRAME_MESSAGE_TAG = '__bpbTerrainFrame';
-    const ALLOWED_FAILURES = new Set(['frame', 'maplibre', 'renderer', 'timeout', 'unavailable']);
+    // A reason crosses a trust boundary here, so it is checked — against the set
+    // src/terrain/terrain-failure.js owns, never a local copy of it.
+    const ALLOWED_FAILURES = terrainFailure.REASONS;
 
     let frame = null;
     let pendingInit = null;

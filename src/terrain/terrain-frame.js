@@ -193,6 +193,14 @@ import { terrainTiles as TerrainTiles } from './terrain-tiles.js';
     let noticeElement = null;
     let terrainCache = null;
     let terrainProtocolRegistered = false;
+    // Elevation outcomes for this frame, counted at the protocol because that is
+    // the only place that sees them: MapLibre answers a missing DEM tile with a
+    // coarser ancestor and reports elevation 0 where it has none, so a view over
+    // ground the provider does not cover renders as a convincing flat plane
+    // rather than as a failure. A cache hit counts as data, since it is.
+    let demTilesWithData = 0;
+    let demTilesMissing = 0;
+    let elevationChecked = false;
     // Warming writes into the DEM cache, so a zero cache budget makes it pure
     // waste: every tile would be fetched and then thrown away.
     let terrainCacheWarmable = false;
@@ -335,6 +343,9 @@ import { terrainTiles as TerrainTiles } from './terrain-tiles.js';
         if (terrainCache) void terrainCache.flush();
         terrainCache = null;
         terrainCacheWarmable = false;
+        demTilesWithData = 0;
+        demTilesMissing = 0;
+        elevationChecked = false;
         tiltWarmAt = 0;
         tiltWarmedTiles.clear();
         terrainProtocolRegistered = false;
@@ -1391,8 +1402,11 @@ import { terrainTiles as TerrainTiles } from './terrain-tiles.js';
                 try {
                     await terrainCache.load({ url: `${TerrainCache.PROTOCOL}://${tile.z}/${tile.x}/${tile.y}.webp` });
                 } catch (error) {
-                    // A failed warm stays retryable on a later settle.
-                    tiltWarmedTiles.delete(key);
+                    // A failed warm stays retryable on a later settle — but a
+                    // tile the provider says does not exist is a settled answer,
+                    // and retrying it every time the camera rests would spend a
+                    // donated server's bandwidth on ground it does not cover.
+                    if (!TerrainCache.isMissingTile(error)) tiltWarmedTiles.delete(key);
                 }
             }
         };
@@ -1579,7 +1593,14 @@ import { terrainTiles as TerrainTiles } from './terrain-tiles.js';
             maplibre.setWorkerUrl(chrome.runtime.getURL('vendor/maplibre-gl-csp-worker.js'));
             terrainCache = TerrainCache.create({ limitMb: cacheLimitMb });
             terrainCacheWarmable = cacheLimitMb > 0;
-            maplibre.addProtocol(TerrainCache.PROTOCOL, terrainCache.load);
+            maplibre.addProtocol(TerrainCache.PROTOCOL, (parameters, controller) =>
+                terrainCache.load(parameters, controller).then(result => {
+                    demTilesWithData++;
+                    return result;
+                }, error => {
+                    if (TerrainCache.isMissingTile(error)) demTilesMissing++;
+                    throw error;
+                }));
             terrainProtocolRegistered = true;
             // Start at the live 2D camera when one was available; otherwise
             // route views frame the track and Peak pages center on their summit.
@@ -1643,11 +1664,21 @@ import { terrainTiles as TerrainTiles } from './terrain-tiles.js';
                     return;
                 }
                 if (map !== terrainMap) return;
-                if (!loaded) fail('maplibre');
                 // Loaded source errors are ordinary network gaps and remain
                 // fail-open. A source-less error is a renderer/style failure,
                 // which cannot recover into a trustworthy interactive map.
-                else if (!event || !event.sourceId) fail('renderer');
+                if (loaded) {
+                    if (!event || !event.sourceId) fail('renderer');
+                    return;
+                }
+                // Before load the elevation source is the only one in the style,
+                // so a boot failure is usually its. Whether the provider can be
+                // reached is not a fact about the browser, and saying otherwise
+                // sends the user to check a GPU that is working: name the source
+                // that failed instead. A missing tile never lands here — the
+                // protocol reports its 404 status and MapLibre falls back to a
+                // coarser level rather than raising an error at all.
+                fail(event && event.sourceId ? 'elevation' : 'maplibre');
             });
             // A raster tile that loads fires a 'source' data event carrying the
             // tile. One such event proves the drape can render, so a handful of
@@ -1660,7 +1691,21 @@ import { terrainTiles as TerrainTiles } from './terrain-tiles.js';
             // only when it errored and never loaded a single tile (an entire
             // layer blocked by CORS), but keep it through partial coverage gaps.
             terrainMap.on('idle', () => {
-                if (basemapChecked || map !== terrainMap || !loaded) return;
+                if (map !== terrainMap || !loaded) return;
+                // A view whose every elevation tile was absent has no surface to
+                // render. MapLibre draws that as a flat plane at sea level, which
+                // is a far worse answer than 2D: it looks like a working 3D map of
+                // a mountain that has been paved. Decide once, after the first
+                // full settle, so a view still fetching is never mistaken for one
+                // the provider does not cover.
+                if (!elevationChecked) {
+                    elevationChecked = true;
+                    if (demTilesMissing > 0 && demTilesWithData === 0) {
+                        fail('coverage');
+                        return;
+                    }
+                }
+                if (basemapChecked) return;
                 basemapChecked = true;
                 if (activeBasemap && basemapErrored && !basemapContentLoaded) markBasemapFailed(activeBasemapIndex);
             });

@@ -38,7 +38,12 @@ class MemoryCacheStorage {
     async delete(name) { return this.named.delete(name); }
 }
 
-const createHarness = ({ settings = { enable3dMap: true, terrainCacheLimitMb: 512 } } = {}) => {
+const createHarness = ({
+    settings = { enable3dMap: true, terrainCacheLimitMb: 512 },
+    // The status the tile host answers each request with, so a region the
+    // provider does not cover can be replayed.
+    tileStatus = () => 200
+} = {}) => {
     const syncValues = { bpbSettings: structuredClone(settings) };
     const localValues = {};
     const sessionValues = {};
@@ -68,10 +73,11 @@ const createHarness = ({ settings = { enable3dMap: true, terrainCacheLimitMb: 51
     const fetch = async url => {
         const value = String(url);
         fetchCalls.push(value);
+        const status = tileStatus(value);
         // A tiny non-empty WebP-ish body; the cache only needs bytes + headers.
         return {
-            ok: true,
-            status: 200,
+            ok: status === 200,
+            status,
             headers: { get: name => (name === 'content-type' ? 'image/webp' : null) },
             arrayBuffer: async () => new Uint8Array([1, 2, 3, 4]).buffer
         };
@@ -186,4 +192,29 @@ test('DEM prefetch rate-limits per tab and dedupes tiles across tabs', async () 
     const other = await harness.send(ROUTE, harness.peakbaggerSender(9));
     assert.deepEqual(other, { ok: true, tiles: 0 }, 'an already-warmed view fetches no new tiles');
     assert.equal(harness.fetchCalls.length, warmed, 'no duplicate tile fetches across tabs');
+});
+
+test('DEM prefetch stops re-asking for tiles the provider says do not exist', async () => {
+    // Warming is driven by hovering the idle 3D toggle, so a peak in a region
+    // Mapterhorn's archives do not cover would otherwise re-request the same
+    // absent tiles on every hover — permanent, pointless load on a donated
+    // server for ground it has already said it does not have. A 404 is a
+    // settled answer; a 503 is not, and stays retryable.
+    const absent = createHarness({ tileStatus: () => 404 });
+    const first = await absent.send(ROUTE, absent.peakbaggerSender(5));
+    assert.deepEqual(first, { ok: true, tiles: 0 }, 'no tile was warmed');
+    const attempted = absent.fetchCalls.length;
+    assert.ok(attempted > 0, 'the absent tiles were tried once');
+
+    // Another tab bypasses the per-tab rate limit, so only the dedupe set can
+    // hold the second attempt back.
+    assert.deepEqual(await absent.send(ROUTE, absent.peakbaggerSender(9)), { ok: true, tiles: 0 });
+    assert.equal(absent.fetchCalls.length, attempted, 'an absent tile must not be re-requested');
+
+    const failing = createHarness({ tileStatus: () => 503 });
+    await failing.send(ROUTE, failing.peakbaggerSender(5));
+    const tried = failing.fetchCalls.length;
+    assert.ok(tried > 0);
+    await failing.send(ROUTE, failing.peakbaggerSender(9));
+    assert.ok(failing.fetchCalls.length > tried, 'a provider that is merely failing stays retryable');
 });

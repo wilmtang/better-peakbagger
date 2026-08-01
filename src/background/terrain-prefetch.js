@@ -88,9 +88,13 @@ export function createTerrainPrefetch({ isPeakbaggerSender, mapWithConcurrency, 
             try {
                 await cacheState.cache.load({ url: `bpb-dem://${tile.z}/${tile.x}/${tile.y}.webp` });
                 return true;
-            } catch {
-                // Failed tiles remain retryable on a later prefetch.
-                recentTiles.delete(key);
+            } catch (error) {
+                // Failed tiles remain retryable on a later prefetch — but a tile
+                // the provider says does not exist will not appear on the next
+                // hover either, and a peak in a region the archive does not cover
+                // would otherwise re-request the same absent set every time the
+                // toggle is hovered.
+                if (!TerrainCache.isMissingTile(error)) recentTiles.delete(key);
                 return false;
             }
         });

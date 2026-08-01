@@ -8,6 +8,11 @@
 import { requestDeadline as Deadline } from '../net/request-deadline.js';
 
 const CACHE_NAME = 'bpb-mapterhorn-dem-v1';
+// The status a tile host returns for ground it does not cover. Mapterhorn's
+// archives stop at different levels in different regions — global coverage runs
+// to roughly zoom 11-13 and only a few areas are served deeper — so a view that
+// asks for a level past the local archive is routine, not an error.
+const MISSING_TILE_STATUS = 404;
 // A tile the host accepts and never answers has two costs: the renderer
 // leaves a permanent hole in the mesh where no camera move ever retries it,
 // and the background prefetch — which passes no abort controller of its own
@@ -19,6 +24,24 @@ const INDEX_KEY = 'bpbMapterhornDemIndexV1';
 const PROTOCOL = 'bpb-dem';
 const REMOTE_TILE_ORIGIN = 'https://tiles.mapterhorn.com';
 const MAX_ZOOM = 18;
+
+// MapLibre's tile manager reads `error.status` to tell an absent tile from a
+// broken one: a 404 keeps its parent/child fallback running and deliberately
+// raises no map-level error, while anything else surfaces as a source error. A
+// status-less Error therefore turned every gap in a provider's coverage into a
+// renderer failure — and because the elevation source is the only one in the
+// boot style, that failure landed before MapLibre's `load` and tore the whole
+// 3D view down. Carrying the status through is what lets a coverage gap fall
+// back to the coarser level that does exist.
+class TileRequestError extends Error {
+    constructor(message, status) {
+        super(message);
+        this.name = 'TileRequestError';
+        this.status = status;
+    }
+}
+
+const isMissingTile = error => error instanceof TileRequestError && error.status === MISSING_TILE_STATUS;
 
 const cleanIndex = raw => {
     const index = {};
@@ -219,7 +242,12 @@ const create = ({
                 credentials: 'omit',
                 referrerPolicy: 'no-referrer'
             }));
-            if (!response || !response.ok) throw new Error(`DEM tile request failed (${response && response.status})`);
+            if (!response || !response.ok) {
+                throw new TileRequestError(
+                    `DEM tile request failed (${response && response.status})`,
+                    response && response.status
+                );
+            }
             const data = await deadline.run(response.arrayBuffer());
             if (!data.byteLength) throw new Error('DEM tile was empty');
             if (limitBytes > 0) enqueueStore(remoteUrl, data, response.headers.get('content-type'));
@@ -278,4 +306,4 @@ const getUsage = async ({ cacheStorage, storageArea } = {}) => {
     }
 };
 
-export const terrainCache = { CACHE_NAME, INDEX_KEY, PROTOCOL, create, getUsage, parseTileUrl };
+export const terrainCache = { CACHE_NAME, INDEX_KEY, PROTOCOL, create, getUsage, isMissingTile, parseTileUrl };

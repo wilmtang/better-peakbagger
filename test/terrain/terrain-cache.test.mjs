@@ -179,6 +179,42 @@ test('a zero DEM cache limit clears owned best-effort storage', async () => {
     dom.window.close();
 });
 
+test('a DEM tile the provider does not cover is reported as absent, not as a failure', async () => {
+    // MapLibre's tile manager reads error.status to tell "this tile does not
+    // exist" from "this tile is broken": a 404 keeps its parent/child fallback
+    // running and raises no map-level error, anything else surfaces as a source
+    // error. Dropping the status made every coverage gap a renderer failure —
+    // and because elevation is the only source in the boot style, that failure
+    // landed before MapLibre's `load` and tore the whole 3D view down with
+    // "Your browser could not render 3D terrain." Mapterhorn's archives stop at
+    // different levels in different regions, so those gaps are routine.
+    const { dom, module } = loadCacheModule();
+    const statuses = [404, 500];
+    const loader = module.create({
+        limitMb: 1,
+        cacheStorage: new MemoryCacheStorage(),
+        storageArea: makeStorageArea(),
+        ResponseCtor: Response,
+        fetchFn: async () => new Response('Tile not found', { status: statuses.shift() })
+    });
+
+    await assert.rejects(loader.load({ url: 'bpb-dem://14/2650/5772.webp' }), error => {
+        assert.equal(error.status, 404, 'the tile host status must survive the protocol');
+        assert.equal(module.isMissingTile(error), true);
+        return true;
+    });
+    // A provider that is failing rather than empty stays a real error, so the
+    // frame can still fall back to 2D instead of pretending the world is flat.
+    await assert.rejects(loader.load({ url: 'bpb-dem://14/2650/5773.webp' }), error => {
+        assert.equal(error.status, 500);
+        assert.equal(module.isMissingTile(error), false);
+        return true;
+    });
+    assert.equal(module.isMissingTile(new Error('DEM tile request failed (404)')), false,
+        'only a real tile-request error carries a trustworthy status');
+    dom.window.close();
+});
+
 test('a DEM tile that never answers fails instead of leaving a hole in the mesh', async () => {
     // Without a bound this request never settles: the renderer leaves a
     // permanent gap no camera move retries, and the background prefetch — which

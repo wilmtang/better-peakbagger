@@ -9,10 +9,26 @@ const MESSAGES = Object.freeze({
     // represent (for example an antimeridian-spanning route), so do not blame
     // the browser here.
     unavailable: '3D terrain is unavailable for this map. The 2D map is unchanged.',
+    // The elevation provider covers different regions to different depths, and
+    // some ground not at all. Neither the browser nor the user can act on that,
+    // so say what is true and leave it there.
+    coverage: 'No 3D elevation data is available for this area. The 2D map is unchanged.',
+    // Reaching the provider failed. Unlike `coverage` this may well work later,
+    // and unlike `maplibre` it is not the browser's doing.
+    elevation: '3D elevation data could not be loaded. The 2D map is unchanged.',
     maplibre: 'Your browser could not render 3D terrain. The 2D map is unchanged.',
     renderer: 'Your browser could not render 3D terrain. The 2D map is unchanged.',
     timeout: '3D terrain took too long to load. The 2D map is unchanged.'
 });
+
+// The reasons a surface may be told about, derived from the messages rather
+// than listed again. The isolated bridge relays a reason across a trust
+// boundary and must reject anything it does not recognise — but a second,
+// hand-maintained copy of this set is exactly how `coverage` reached the user
+// as "Your browser could not render 3D terrain": the frame reported the right
+// thing and the relay overwrote it, silently, in a build where every test was
+// green. One list, one place.
+const REASONS = new Set(Object.keys(MESSAGES));
 
 const message = reason => MESSAGES[reason]
     || '3D terrain could not load. The 2D map is unchanged.';
@@ -53,4 +69,4 @@ const createNotice = ({ container, toggle }) => {
     return { clear, element, position, setTheme, show };
 };
 
-export const terrainFailure = { createNotice, message };
+export const terrainFailure = { REASONS, createNotice, message };

@@ -8,6 +8,7 @@ import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { JSDOM } from 'jsdom';
 import { makeChromeStub } from '../helpers/load-page.mjs';
+import { terrainFailure } from '../../src/terrain/terrain-failure.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 // The bridge imports settings, so tests provide the real chrome.storage shape
@@ -1846,4 +1847,205 @@ test('3D group tracks highlight the hovered climber and Escape leaves the view',
     assert.deepEqual(linePaint(single), [], 'a lone route has nothing to be told apart from');
 
     dom.window.close();
+});
+
+// Boot the terrain frame against a MapLibre stub whose DEM protocol answers
+// from `tileStatus`, so a region the provider does not cover can be replayed
+// without a network or a renderer. Returns the pieces a coverage assertion
+// needs: the posted messages, the live map stub, and the protocol handler
+// MapLibre would call for each tile.
+const bootFrameWithTileHost = ({ tileStatus, deferLoad = false } = {}) => {
+    const dom = new JSDOM('<!doctype html><body></body>', {
+        url: 'https://www.peakbagger.com/climber/ascent.aspx?aid=1',
+        runScripts: 'outside-only',
+        pretendToBeVisual: true
+    });
+    const { window } = dom;
+    const messages = [];
+    const maps = [];
+    const requested = [];
+    let protocol = null;
+    let fireLoad = null;
+
+    class MapStub {
+        constructor(options) {
+            this.options = options;
+            this.sources = new Map();
+            this.layers = [];
+            this.handlers = new Map();
+            this.canvas = { style: {}, addEventListener() {}, removeEventListener() {} };
+            maps.push(this);
+        }
+        addControl() {}
+        once(type, callback) {
+            if (type !== 'load') return;
+            if (deferLoad) fireLoad = callback;
+            else window.queueMicrotask(callback);
+        }
+        on(type, callback) { this.handlers.set(type, callback); }
+        addSource(id, source) { this.sources.set(id, { ...source, setData(data) { this.data = data; } }); }
+        addLayer(layer) { this.layers.push(layer); }
+        getLayer(id) { return this.layers.find(layer => layer.id === id); }
+        removeLayer(id) { this.layers = this.layers.filter(layer => layer.id !== id); }
+        getSource(id) { return this.sources.get(id); }
+        removeSource(id) { this.sources.delete(id); }
+        setPaintProperty() {}
+        setSourceTileLodParams() {}
+        queryRenderedFeatures() { return []; }
+        project() { return { x: -10000, y: -10000 }; }
+        getCanvas() { return this.canvas; }
+        getZoom() { return 13; }
+        getCenter() { return { lng: -121.805, lat: 48.73 }; }
+        getBounds() {
+            return {
+                getWest: () => -121.9, getEast: () => -121.7,
+                getSouth: () => 48.6, getNorth: () => 48.8
+            };
+        }
+        isMoving() { return false; }
+        isZooming() { return false; }
+        isRotating() { return false; }
+        fitBounds() {}
+        resize() {}
+        remove() { this.removed = true; }
+    }
+
+    window.chrome = { runtime: { getURL: path => `chrome-extension://test-id/${path}` } };
+    window.maplibregl = {
+        Map: MapStub,
+        Popup: class { setLngLat() { return this; } setDOMContent() { return this; } addTo() { return this; } remove() {} },
+        NavigationControl: class {},
+        ScaleControl: class {},
+        AttributionControl: class {},
+        setWorkerUrl() {},
+        addProtocol(name, handler) { protocol = handler; },
+        removeProtocol() { protocol = null; }
+    };
+    window.postMessage = message => { messages.push(message); };
+    window.fetch = async url => {
+        requested.push(String(url));
+        const status = tileStatus(String(url));
+        if (status === 200) {
+            return new Response(new Uint8Array([1, 2, 3, 4]), {
+                status: 200, headers: { 'content-type': 'image/webp' }
+            });
+        }
+        return new Response('Tile not found', { status });
+    };
+    window.eval(frameBundle);
+
+    window.dispatchEvent(new window.MessageEvent('message', {
+        source: window,
+        origin: window.location.origin,
+        data: {
+            __bpbTerrainFrame: true,
+            dir: 'toFrame',
+            type: 'init',
+            routeSegments: [[[48.7, -121.8], [48.71, -121.81]]],
+            theme: 'light',
+            // No CacheStorage in jsdom, so the loader is network-only: every
+            // tile the renderer asks for reaches the stubbed host.
+            cacheLimitMb: 0
+        }
+    }));
+
+    // Each tile MapLibre would fetch, driven through the frame's own protocol
+    // registration so the outcome is counted exactly as it is in the browser.
+    const loadTiles = async (...urls) => Promise.all(urls.map(url =>
+        protocol({ url }, new AbortController()).then(() => 'data', error => error)));
+
+    return { dom, window, messages, maps, requested, loadTiles, fireLoad: () => fireLoad() };
+};
+
+test('a region the elevation provider does not cover returns to 2D instead of paving the mountain', async () => {
+    // MapLibre renders elevation 0 where it has no DEM, so a view over ground
+    // Mapterhorn's archives do not cover paints as a convincing flat plane —
+    // a working-looking 3D map of a mountain that has been bulldozed. Nothing
+    // errors, so nothing else can catch this: the protocol is the only place
+    // that sees a tile come back absent.
+    const host = bootFrameWithTileHost({ tileStatus: () => 404 });
+    await new Promise(resolve => host.window.queueMicrotask(resolve));
+    const map = host.maps[0];
+    assert.equal(host.messages.at(-1).type, 'loaded', 'a coverage gap must not block the boot handshake');
+
+    const outcomes = await host.loadTiles(
+        'bpb-dem://12/662/1443.webp', 'bpb-dem://11/331/721.webp', 'bpb-dem://10/165/360.webp');
+    assert.ok(outcomes.every(outcome => outcome.status === 404), 'every tile was absent');
+
+    map.handlers.get('idle')();
+    assert.deepEqual(
+        { type: host.messages.at(-1).type, reason: host.messages.at(-1).reason },
+        { type: 'error', reason: 'coverage' });
+    host.dom.window.close();
+});
+
+test('an elevation gap above the provider level keeps the 3D view on the coarser tiles that do exist', async () => {
+    // The common shape by far: Mapterhorn serves most of the world to about
+    // zoom 11-13 and only a few regions deeper, so a summit view routinely
+    // asks for levels the local archive does not have. MapLibre answers those
+    // from the parent level it does have, which is a slightly softer mesh —
+    // not a failure, and not something to tear the view down for.
+    const host = bootFrameWithTileHost({
+        tileStatus: url => (Number(url.match(/(\d+)\/\d+\/\d+\.webp$/)[1]) > 13 ? 404 : 200)
+    });
+    await new Promise(resolve => host.window.queueMicrotask(resolve));
+    const map = host.maps[0];
+
+    const outcomes = await host.loadTiles(
+        'bpb-dem://14/2650/5772.webp', 'bpb-dem://13/1325/2886.webp', 'bpb-dem://12/662/1443.webp');
+    assert.deepEqual(outcomes.map(outcome => outcome.status ?? outcome), [404, 'data', 'data']);
+
+    map.handlers.get('idle')();
+    assert.ok(!host.messages.some(message => message.type === 'error'),
+        `a partial coverage gap must not fail: ${JSON.stringify(host.messages.map(m => m.type))}`);
+    assert.equal(host.messages.at(-1).type, 'loaded');
+    host.dom.window.close();
+});
+
+test('an elevation source that cannot be reached during boot does not blame the browser', async () => {
+    // Before load the elevation source is the only one in the style, so its
+    // failures land here — and telling the user their browser cannot render 3D
+    // sends them to check a GPU that is working fine.
+    const host = bootFrameWithTileHost({ tileStatus: () => 500, deferLoad: true });
+    const map = host.maps[0];
+    map.handlers.get('error')({ sourceId: 'terrain', error: new Error('DEM tile request failed (500)') });
+    assert.deepEqual(
+        { type: host.messages.at(-1).type, reason: host.messages.at(-1).reason },
+        { type: 'error', reason: 'elevation' });
+    host.dom.window.close();
+});
+
+test('a style or renderer failure during boot still reports the browser', async () => {
+    const host = bootFrameWithTileHost({ tileStatus: () => 200, deferLoad: true });
+    const map = host.maps[0];
+    map.handlers.get('error')({ error: new Error('WebGL context could not be created') });
+    assert.deepEqual(
+        { type: host.messages.at(-1).type, reason: host.messages.at(-1).reason },
+        { type: 'error', reason: 'maplibre' });
+    host.dom.window.close();
+});
+
+test('every failure reason the frame can report survives the bridge relay intact', async () => {
+    // The bridge checks the reason because it crosses a trust boundary, and it
+    // used to check against its own hand-written copy of the list. A reason the
+    // copy had not heard of was silently rewritten to 'renderer' — so the frame
+    // correctly reported a provider coverage gap and the user was told "Your
+    // browser could not render 3D terrain", in a build where every test passed.
+    // Pin the relay against the module that owns the reasons, not a second list.
+    for (const reason of terrainFailure.REASONS) {
+        const harness = await bootLoadedFrame();
+        harness.dispatchFrame({ type: 'error', reason });
+        const relayed = harness.pageMessages.at(-1);
+        assert.equal(relayed.type, 'error');
+        assert.equal(relayed.reason, reason, `the bridge rewrote '${reason}'`);
+        // Whatever survives must also have something to say for itself.
+        assert.match(terrainFailure.message(reason), /2D map is unchanged/);
+        harness.dom.window.close();
+    }
+
+    const unknown = await bootLoadedFrame();
+    unknown.dispatchFrame({ type: 'error', reason: 'something-a-page-made-up' });
+    assert.equal(unknown.pageMessages.at(-1).reason, 'renderer',
+        'an unrecognised reason must still fail closed to a known one');
+    unknown.dom.window.close();
 });

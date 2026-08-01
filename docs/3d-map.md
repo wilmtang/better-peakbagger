@@ -27,7 +27,10 @@ details:
    renderer failure restores it.
 3. **Elevation is required; imagery is optional.** Mapterhorn DEM tiles build
    the surface. A raster drape or vector basemap can fail without taking down
-   valid terrain.
+   valid terrain. Elevation the provider does not have is not the same as
+   elevation that failed: an absent tile costs resolution and nothing else,
+   while a view with no elevation at all returns to 2D rather than paint a flat
+   plane where a mountain is.
 4. **No raw GPX enters the renderer.** Route views receive bounded
    coordinate-only segments and validated display metadata. They do not
    receive GPX XML, timestamps, GPX elevations, activity metadata, or device
@@ -663,12 +666,41 @@ scroll-zoom can move a different track under the cursor without a mouse event.
 | --- | --- | --- | --- |
 | `frame` | Iframe resource could not start | Yes | Native 2D restored; visible shared failure |
 | `unavailable` | Invalid/unsupported route or focus, missing required runtime, feature disabled | Yes | “Unavailable for this map”; native 2D unchanged |
+| `coverage` | Every elevation tile the opening view asked for was absent | Yes | “No 3D elevation data for this area”; native 2D restored |
+| `elevation` | Elevation source error before activation (host down, throttled, refused, tile deadline) | Yes | Native 2D restored; names the data, not the browser |
 | `maplibre` | Startup/style construction failure before activation | Yes | Native 2D restored; visible render failure |
 | `renderer` | WebGL context loss or source-less post-load renderer/style error | Yes | Native 2D restored; visible render failure |
 | `timeout` | 15 s frame load timeout or 17 s page backstop | Yes | Native 2D restored; visible timeout failure |
+| Absent elevation tile (404) | Region or level outside the provider's archive | No | MapLibre draws the parent level; no error is raised at all |
 | Basemap source/tile error | CORS, throttling, missing imagery tile | No | Terrain stays interactive; wholly unusable drape falls back |
 | Peak feed error | Same-origin feed/network/parser failure | No | Dots clear until a later camera settle |
 | Cache/index error | Eviction, quota, storage failure | No | Network fallback; terrain remains usable |
+
+### Elevation coverage gaps
+
+Mapterhorn's archives stop at different levels in different regions: most of
+the world is served to roughly zoom 11-13, and only a few areas go deeper. A
+summit view therefore asks for tiles that do not exist as a matter of course,
+and that must cost nothing but resolution.
+
+MapLibre already knows how to do this — an absent tile keeps its parent/child
+fallback running and raises no map-level error — but it tells the two cases
+apart by `error.status`, so `src/terrain/terrain-cache.js` must carry the tile
+host's HTTP status on the error it throws. A status-less error is read as a
+broken source instead of an absent tile, and because elevation is the only
+source in the boot style, that lands before MapLibre's own `load` and takes the
+whole view down. A missing tile is also a settled answer, so the prefetch and
+the tilt warmer remember it rather than re-asking a donated server for ground
+it has already said it does not have.
+
+The frame counts elevation outcomes at the protocol, because that is the only
+place that sees them: MapLibre reports elevation 0 where it has no DEM, so a
+view over ground the provider does not cover at any level renders as a
+convincing flat plane rather than as a failure. If the first settle after
+`load` finds that no tile ever produced data and at least one was absent, the
+view is `coverage` and returns to 2D. The check runs once per boot and is not
+repeated on resume, where MapLibre's in-memory tiles would make the same
+counters mean something else.
 
 WebGL context loss calls `preventDefault()` because the product is abandoning
 that renderer and restoring 2D rather than competing with MapLibre's context
@@ -711,7 +743,11 @@ than incorrectly blaming the browser.
 
 The bridge also uses frame-only `ready`, `resume`, `suspend`, and `destroyed`
 messages. Unknown failure strings are collapsed to `renderer` before they reach
-the page.
+the page — checked against the reason set `src/terrain/terrain-failure.js`
+exports, never a second copy of that list in the bridge. A hand-maintained copy
+is how `coverage` once reached the user as “Your browser could not render 3D
+terrain”: the frame reported the right thing and the relay quietly overwrote it,
+in a build where every check was green.
 
 Why is `postToFrame` sent with target origin `*`? The iframe has a
 browser-specific extension origin distinct from the Peakbagger parent. Authority
@@ -730,7 +766,7 @@ receiver check.
 | `npm run lint` | Built extension/package lint | User interaction or renderer output |
 | `npm run verify:extension` | Real unpacked `dist/` in hidden Chrome for Testing: manifest order/worlds, content injection, worker and bridge boot | Firefox behavior, visual WebGL correctness, native focus/window placement |
 | `npm run verify:browsers` | Real unpacked Chrome and Firefox profiles | Live provider behavior and GPU terrain visuals |
-| `npm run terrain:verify` | Real packaged MapLibre frame in hidden Chrome on asserted hardware GPU; route, drape, pending-drape boot, compass placement, context-loss fallback | Real storage/settings bridge, live Mapterhorn or Peakbagger services, native focus |
+| `npm run terrain:verify` | Real packaged MapLibre frame in hidden Chrome on asserted hardware GPU; route, drape, elevation coverage gap, pending-drape boot, compass placement, context-loss fallback | Real storage/settings bridge, live Mapterhorn or Peakbagger services, native focus |
 | `npm run terrain:verify:firefox` | Focused Firefox hardware-WebGL terrain and interaction | Full extension workflow or live services |
 
 The terrain showcase intentionally stubs storage and bridge protocol, but it is
@@ -791,6 +827,13 @@ GeoJSON source can have a transient network gap. A source-less MapLibre error
 after activation points at renderer/style machinery rather than an individual
 tile and can leave an untrustworthy canvas. WebGL context loss is likewise a
 renderer failure. The policy distinguishes missing data from a dead renderer.
+
+The same distinction applies before activation, where it used to be lost. A
+boot failure was reported as `maplibre` whatever caused it, so a provider that
+could not be reached was announced as a browser that could not render — sending
+the user to check a GPU that is working. A source id before `load` still names
+a data dependency, so it reports `elevation`; only a source-less boot failure
+is the browser's.
 
 ### Why request a camera on stop if move events already stream camera updates?
 

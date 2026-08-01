@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- **Open 3D on peaks outside the elevation provider's deepest coverage.** The
+  open-data elevation service covers most of the world to a limited zoom and
+  only some regions in finer detail, so summits from Rainier to Everest asked
+  for tiles it does not publish. Those views used to stop with “Your browser
+  could not render 3D terrain” — about a browser that was working perfectly.
+  3D now draws the finest elevation the area actually has, and only the
+  resolution changes. When an area has no elevation data at all, the map
+  returns to 2D and says so, instead of presenting a flat plane where a
+  mountain should be, and a service that cannot be reached during startup no
+  longer reads as a broken browser. Elevation tiles the service reports as
+  absent are also no longer re-requested on every hover.
+
 - **Transfer complete settings files.** Manual settings export and import move
   every schema-backed preference, and one **Include saved credentials** tickbox
   adds your ImgBB API key and GitHub connection to the file when you want them.
