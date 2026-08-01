@@ -31,6 +31,29 @@ const PROFILE_BACKUP_BATCH_LIMIT = 10;
 const ASCENT_DELETE_INTENTS_KEY = 'bpbGithubAscentDeleteIntents';
 const ASCENT_DELETE_TTL_MS = 30 * 60 * 1000;
 
+// Keep access policy beside every handler. A bare function is rejected while
+// the worker boots, so adding a route without deciding who may call it cannot
+// silently inherit a stale hand-maintained allowlist.
+export const createGithubRouteTable = definitions => {
+    const handlers = {};
+    const extensionOnly = new Set();
+    for (const [type, definition] of Object.entries(definitions || {})) {
+        if (!definition || typeof definition.handler !== 'function'
+            || typeof definition.extensionOnly !== 'boolean') {
+            throw new TypeError(`GitHub route ${type} must declare its access policy.`);
+        }
+        handlers[type] = definition.handler;
+        if (definition.extensionOnly) extensionOnly.add(type);
+    }
+    return {
+        handlers: Object.freeze(handlers),
+        isExtensionOnly: type => extensionOnly.has(type),
+    };
+};
+
+const extensionPage = handler => ({ handler, extensionOnly: true });
+const peakbaggerPage = handler => ({ handler, extensionOnly: false });
+
 export function createGithubRoutes({
     ext,
     snapshotKey: SNAPSHOTS_KEY,
@@ -1357,49 +1380,36 @@ export function createGithubRoutes({
     };
 
 
-    const handlers = {
-        PEAKBAGGER_MY_ASCENTS: () => peakbaggerMyAscents(),
-        GITHUB_AUTH_STATUS: () => githubStatus(),
-        GITHUB_AUTH_BEGIN: () => githubBeginAuth(),
-        GITHUB_AUTH_STATE: () => githubPollAuth(),
-        GITHUB_AUTH_DISCOVER: () => githubDiscoverRepos(),
-        GITHUB_AUTH_SELECT_REPO: message => githubSelectRepo(message),
-        GITHUB_AUTH_DISCONNECT: () => githubDisconnect(),
-        GITHUB_BACKUP_SNAPSHOT: (message, sender) => storeBackupSnapshot(message, sender),
-        GITHUB_BACKUP_STATUS: (_message, sender) => githubBackupStatus(sender),
-        GITHUB_ASCENT_BACKUP_PREFLIGHT: (message, sender) => preflightAscentBackup(message, sender),
-        GITHUB_CHECK_ASCENT_BACKUP: (message, sender) => checkAscentBackup(message, sender),
-        GITHUB_BACKUP_ASCENT: (message, sender) => backupAscent(message, sender),
-        GITHUB_ASCENT_DELETE_INTENT: (message, sender) => storeAscentDeleteIntent(message, sender),
-        GITHUB_ASCENT_DELETE_PENDING: (_message, sender) => pendingAscentDeletions(sender),
-        GITHUB_ASCENT_DELETE_CONFIRM: (message, sender) => confirmAscentDeletion(message, sender),
-        GITHUB_ASCENT_BACKUP_SUMMARY: () => githubAscentBackupSummary(),
-        GITHUB_BACKUP_PROFILE_STATUS: (_message, sender) => githubProfileBackupStatus(sender),
-        GITHUB_BACKUP_PROFILE_BATCH: (message, sender) => backupProfileBatch(message, sender),
-        GITHUB_FAVORITES_BACKUP: () => backupFavorites(),
-        GITHUB_FAVORITES_RESTORE: () => restoreFavorites(),
-        GITHUB_SETTINGS_BACKUP: () => backupSettings(),
-        GITHUB_SETTINGS_RESTORE: () => restoreSettings(),
-        GITHUB_PHOTOS_STATUS: (message, sender) => photoBackupStatus(message, sender),
-        GITHUB_PHOTOS_BACKUP: (_message, sender) => backupPhotoLibrary({ sender }),
-        GITHUB_PHOTOS_RESTORE_PREVIEW: (message, sender) => previewPhotoLibraryRestore(message, sender),
-        GITHUB_PHOTOS_RESTORE: (message, sender) => restorePhotoLibrary(message, sender),
-        GITHUB_PHOTOS_CHANGED: (message, sender) => photoLibraryChanged(message, sender),
-    };
-
-    const extensionOnly = new Set([
-        'PEAKBAGGER_MY_ASCENTS',
-        'GITHUB_ASCENT_BACKUP_SUMMARY',
-        'GITHUB_FAVORITES_BACKUP',
-        'GITHUB_FAVORITES_RESTORE',
-        'GITHUB_SETTINGS_BACKUP',
-        'GITHUB_SETTINGS_RESTORE',
-        'GITHUB_PHOTOS_STATUS',
-        'GITHUB_PHOTOS_BACKUP',
-        'GITHUB_PHOTOS_RESTORE_PREVIEW',
-        'GITHUB_PHOTOS_RESTORE',
-        'GITHUB_PHOTOS_CHANGED',
-    ]);
+    const routeTable = createGithubRouteTable({
+        PEAKBAGGER_MY_ASCENTS: extensionPage(() => peakbaggerMyAscents()),
+        GITHUB_AUTH_STATUS: extensionPage(() => githubStatus()),
+        GITHUB_AUTH_BEGIN: extensionPage(() => githubBeginAuth()),
+        GITHUB_AUTH_STATE: extensionPage(() => githubPollAuth()),
+        GITHUB_AUTH_DISCOVER: extensionPage(() => githubDiscoverRepos()),
+        GITHUB_AUTH_SELECT_REPO: extensionPage(message => githubSelectRepo(message)),
+        GITHUB_AUTH_DISCONNECT: extensionPage(() => githubDisconnect()),
+        GITHUB_BACKUP_SNAPSHOT: peakbaggerPage((message, sender) => storeBackupSnapshot(message, sender)),
+        GITHUB_BACKUP_STATUS: peakbaggerPage((_message, sender) => githubBackupStatus(sender)),
+        GITHUB_ASCENT_BACKUP_PREFLIGHT: peakbaggerPage((message, sender) => preflightAscentBackup(message, sender)),
+        GITHUB_CHECK_ASCENT_BACKUP: peakbaggerPage((message, sender) => checkAscentBackup(message, sender)),
+        GITHUB_BACKUP_ASCENT: peakbaggerPage((message, sender) => backupAscent(message, sender)),
+        GITHUB_ASCENT_DELETE_INTENT: peakbaggerPage((message, sender) => storeAscentDeleteIntent(message, sender)),
+        GITHUB_ASCENT_DELETE_PENDING: peakbaggerPage((_message, sender) => pendingAscentDeletions(sender)),
+        GITHUB_ASCENT_DELETE_CONFIRM: peakbaggerPage((message, sender) => confirmAscentDeletion(message, sender)),
+        GITHUB_ASCENT_BACKUP_SUMMARY: extensionPage(() => githubAscentBackupSummary()),
+        GITHUB_BACKUP_PROFILE_STATUS: peakbaggerPage((_message, sender) => githubProfileBackupStatus(sender)),
+        GITHUB_BACKUP_PROFILE_BATCH: peakbaggerPage((message, sender) => backupProfileBatch(message, sender)),
+        GITHUB_FAVORITES_BACKUP: extensionPage(() => backupFavorites()),
+        GITHUB_FAVORITES_RESTORE: extensionPage(() => restoreFavorites()),
+        GITHUB_SETTINGS_BACKUP: extensionPage(() => backupSettings()),
+        GITHUB_SETTINGS_RESTORE: extensionPage(() => restoreSettings()),
+        GITHUB_PHOTOS_STATUS: extensionPage((message, sender) => photoBackupStatus(message, sender)),
+        GITHUB_PHOTOS_BACKUP: extensionPage((_message, sender) => backupPhotoLibrary({ sender })),
+        GITHUB_PHOTOS_RESTORE_PREVIEW: extensionPage((message, sender) => previewPhotoLibraryRestore(message, sender)),
+        GITHUB_PHOTOS_RESTORE: extensionPage((message, sender) => restorePhotoLibrary(message, sender)),
+        GITHUB_PHOTOS_CHANGED: extensionPage((message, sender) => photoLibraryChanged(message, sender)),
+    });
+    const { handlers } = routeTable;
 
     const cleanup = async cutoff => {
         await mutateMap(SNAPSHOTS_KEY, snapshots => {
@@ -1448,10 +1458,7 @@ export function createGithubRoutes({
         onSettingsChanged,
         onAlarm,
         validateImportedConnection,
-        isExtensionOnly(type) {
-            return extensionOnly.has(type)
-                || (typeof type === 'string' && type.startsWith('GITHUB_AUTH_'));
-        },
+        isExtensionOnly: routeTable.isExtensionOnly,
         isPhotoPage,
     };
 }
