@@ -6,7 +6,6 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { walkFiles } from '../helpers/walk-files.mjs';
 
 const gpxShowcase = await readFile(new URL('../../scripts/showcase/gpx.html', import.meta.url), 'utf8');
 const mapShowcase = await readFile(new URL('../../scripts/showcase/map.html', import.meta.url), 'utf8');
@@ -60,80 +59,6 @@ test('BigMap showcase contains only synthetic multi-route interaction data', () 
     assert.match(bigMapNativeShowcase, /trip-report link/);
     assert.doesNotMatch(bigMapShowcase, /(?:Garmin|Strava|Zihao|Wilm Tang)/i);
     assert.doesNotMatch(bigMapNativeShowcase, /(?:Garmin|Strava|Zihao|Wilm Tang)/i);
-});
-
-// The showcase pages and terrain/terrain.html hand-mirror the manifest's script
-// order, because they stand in for a real extension load. Nothing used to check
-// that mirror, so adding a dependency to a src module could leave a page loading
-// a consumer without its provider. The consumer then hits its fail-closed guard
-// and the whole surface silently renders nothing, which no unit test sees.
-//
-// Only *hard* dependencies are listed: globals whose absence makes the module
-// bail out or throw. Modules also read BPBPeakMarkers and BPBTerrainBasemap
-// behind null checks and degrade gracefully, so a page may legitimately omit
-// those (scripts/showcase/gpx.html is chart-only and does).
-// Every content module now imports its dependencies, so no module reads a
-// cross-module global. This provider-order guard therefore has nothing left to
-// pin; Step 10 replaces the showcase pages with built bundles and retires this
-// machinery. Kept empty (not deleted) until then so the harness stays stable.
-const REQUIRES = {};
-
-const providerOf = async () => {
-    const root = fileURLToPath(new URL('../../', import.meta.url));
-    const dir = path.join(root, 'src');
-    const providers = new Map();
-    for (const file of await walkFiles(dir, candidate => candidate.endsWith('.js'))) {
-        const text = await readFile(file, 'utf8');
-        for (const [, global] of text.matchAll(/^\s*(?:globalThis|window)\.(BPB[A-Za-z]+)\s*=/gm)) {
-            providers.set(global, path.relative(root, file));
-        }
-    }
-    return providers;
-};
-
-const loadedScripts = html =>
-    [...html.matchAll(/<script\s+src="([^"]+)"/g)].map(match => match[1].replace(/^[./]*/, ''));
-
-// A global a page satisfies with its own inline stub instead of the real module.
-const inlineStubs = html =>
-    new Set([...html.matchAll(/(?:globalThis|window)\.(BPB[A-Za-z]+)\s*=/g)].map(match => match[1]));
-
-test('every REQUIRES entry names a real module and a real provider', async () => {
-    const providers = await providerOf();
-    for (const [module, globals] of Object.entries(REQUIRES)) {
-        const text = await readFile(new URL(`../../${module}`, import.meta.url), 'utf8');
-        for (const global of globals) {
-            assert.ok(providers.has(global), `${module} requires ${global}, which nothing provides`);
-            assert.match(text, new RegExp(`\\b${global}\\b`), `${module} no longer reads ${global}`);
-        }
-    }
-});
-
-test('every harness page loads the providers its scripts hard-require, in order', async () => {
-    const providers = await providerOf();
-    const pages = [
-        ['scripts/showcase/gpx.html', gpxShowcase],
-        ['scripts/showcase/map.html', mapShowcase],
-        ['scripts/showcase/terrain.html', terrainShowcase],
-        ['scripts/showcase/big-map.html', bigMapShowcase],
-        ['scripts/showcase/big-map-native.html', bigMapNativeShowcase],
-        ['terrain/terrain.html', terrainFrame]
-    ];
-
-    const problems = [];
-    for (const [pageName, html] of pages) {
-        const scripts = loadedScripts(html);
-        const stubbed = inlineStubs(html);
-        scripts.forEach((script, index) => {
-            const earlier = new Set(scripts.slice(0, index));
-            for (const global of REQUIRES[script] || []) {
-                const provider = providers.get(global);
-                if (earlier.has(provider) || stubbed.has(global)) continue;
-                problems.push(`${pageName}: ${script} requires ${global}, but ${provider} does not load before it`);
-            }
-        });
-    }
-    assert.deepEqual(problems, [], `harness pages drifted from the module graph:\n${problems.join('\n')}`);
 });
 
 // Every script that serves the showcase to a real browser must do so over HTTPS
