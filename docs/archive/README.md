@@ -56,6 +56,10 @@ living docs in [`docs/`](../).
   completed source-grounded fixes for capture admission, detached cleanup,
   page-world settings validation, analyzer coordinate bounds, options labels,
   theme schema ownership, and dead inline-color code, with explicit proof gaps.
+- [Codebase audit remediation — 2026-08-01](codebase-audit-remediation-2026-08-01.md) —
+  completed fixes for popup error boundaries, capture trip naming, schema and
+  route ownership, canonical URLs, showcase contracts, and Garmin redirects,
+  with hidden-browser evidence and explicit live-service and terrain LOD gaps.
 - [Codebase audit — 2026-07-19](codebase-audit-2026-07-19.md) — point-in-time
   audit and remediation plan.
 - [Codebase audit — 2026-07-22](codebase-audit-2026-07-22.md) and its
