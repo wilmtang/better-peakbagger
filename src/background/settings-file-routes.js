@@ -37,10 +37,12 @@ const replaceImgbbKey = async (keyStore, key, savedAt = null) => {
     else await keyStore.clear();
 };
 
+// Null when there is no complete connection to export. Asking for credentials
+// on an unconnected profile is not an error — the file simply has nothing to
+// add — so the completeness test lives here rather than being repeated by the
+// caller as a guard around an unreachable throw.
 const connectionPayload = auth => {
-    if (!auth?.token || !auth?.repo?.owner || !auth?.repo?.name) {
-        throw new Error('No complete GitHub connection is available to export.');
-    }
+    if (!auth?.token || !auth?.repo?.owner || !auth?.repo?.name) return null;
     return {
         token: auth.token,
         repository: {
@@ -79,16 +81,12 @@ export function createSettingsFileRoutes({
                 includeCredentials ? keyStore.read() : null,
                 includeCredentials ? authStore.read() : null,
             ]);
+            const connection = includeCredentials ? connectionPayload(auth) : null;
             const payload = Transfer.buildPayload(currentSettings, {
                 extensionVersion: ext.runtime.getManifest().version,
                 exportedAt: new Date().toISOString(),
-                // A connection is exported only when one exists to export;
-                // asking for credentials on an unconnected profile is not an
-                // error, it just has nothing to add.
                 ...(includeCredentials ? { apiKeys: { imgbb: imgbb?.key || null } } : {}),
-                ...(includeCredentials && auth?.token && auth?.repo?.owner && auth?.repo?.name
-                    ? { githubConnection: connectionPayload(auth) }
-                    : {}),
+                ...(connection ? { githubConnection: connection } : {}),
             });
             return {
                 ok: true,
