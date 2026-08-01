@@ -23,12 +23,17 @@ const FALLBACK_STYLE_ID = 'bpb-site-dark-fallback';
 
 // Load the bundled site-wide theme entry into a fresh jsdom with the given
 // stored settings.
-const loadTheme = async (settings = {}) => {
+const loadTheme = async (settings = {}, { mirror = null, syncGetError = null } = {}) => {
     const dom = new JSDOM('<!DOCTYPE html><html><head></head><body></body></html>', {
         url: 'https://www.peakbagger.com/',
         runScripts: 'outside-only'
     });
+    if (mirror !== null) dom.window.localStorage.setItem('bpbThemePref', mirror);
     dom.chrome = makeChromeStub({ bpbSettings: settings });
+    if (syncGetError) {
+        dom.chrome.storage.sync.get = async () => { throw new Error(syncGetError); };
+        dom.window.console = { ...dom.window.console, warn: () => {} };
+    }
     dom.window.chrome = dom.chrome;
     await evalBundle(dom.window, 'content/theme-early.js');
     await evalBundle(dom.window, 'content/theme.js');
@@ -93,6 +98,19 @@ test('theme=light sets the attribute but the inert sheet is still present', asyn
     // The sheet is scoped under [data-bpb-theme="dark"], so it is inert in light
     // mode — but injecting it up front is what makes later toggles flash-free.
     assert.ok(sheet(dom));
+});
+
+test('a failed authoritative read preserves the explicit pre-paint mirror', async () => {
+    const dom = await loadTheme({ theme: 'system' }, {
+        mirror: 'dark',
+        syncGetError: 'SYNC_THEME_SENTINEL',
+    });
+
+    assert.equal(attr(dom), 'dark');
+    assert.equal(dom.window.localStorage.getItem('bpbThemePref'), 'dark',
+        'a fail-soft default must not replace the last authoritative preference');
+    assert.ok(sheet(dom));
+    dom.window.close();
 });
 
 test('the bundled theme initializes in a Firefox-like isolated-world context', async () => {

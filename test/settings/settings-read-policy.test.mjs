@@ -31,7 +31,6 @@ const FAIL_SOFT = Object.freeze({
     'src/settings/bridge.js': [{ count: 1, kind: 'display', reason: 'publish validated analyzer settings' }],
     'src/terrain/terrain-map.js': [{ count: 1, kind: 'safe-gate', reason: 'default-off terrain gate' }],
     'src/theme/panel-theme.js': [{ count: 1, kind: 'display', reason: 'paint passive panel theme' }],
-    'src/theme/theme.js': [{ count: 1, kind: 'display', reason: 'paint passive site theme' }],
 });
 
 const AUTHORITATIVE = Object.freeze({
@@ -41,6 +40,7 @@ const AUTHORITATIVE = Object.freeze({
     'src/background/settings-file-routes.js': [
         { count: 2, kind: 'preservation', reason: 'export and import complete authoritative settings with API keys' },
     ],
+    'src/theme/theme.js': [{ count: 1, kind: 'preservation', reason: 'reconcile the synchronous theme mirror' }],
 });
 
 const sourceFiles = async directory => {

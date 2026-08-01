@@ -63,7 +63,11 @@ const finishTheme = theme => {
     document.getElementById(EARLY_THEME_STYLE_ID)?.remove();
 };
 
-let pref = S.DEFAULTS.theme;
+// Keep the pre-paint mirror as the active preference until an authoritative
+// sync read succeeds. A fail-soft defaults snapshot must never overwrite an
+// explicit mirror: that would turn a transient storage failure into a visible
+// theme change on the next navigation.
+let pref = S.clean({ theme: readThemeMirror(localStorage) }).theme;
 const apply = () => {
     finishTheme(S.resolveTheme(pref));
     try { localStorage.setItem(THEME_CACHE_KEY, pref); } catch (e) { /* storage blocked */ }
@@ -71,9 +75,11 @@ const apply = () => {
 
 // Synchronous pre-paint pass from the mirror; resolveTheme falls back to
 // the OS preference for anything that isn't an explicit 'light'/'dark'.
-finishTheme(S.resolveTheme(readThemeMirror(localStorage)));
+finishTheme(S.resolveTheme(pref));
 
-S.get().then(s => { pref = s.theme; apply(); });
+void S.requireCurrent()
+    .then(s => { pref = s.theme; apply(); })
+    .catch(error => { console.warn('Better Peakbagger: theme settings reconciliation failed', error); });
 S.subscribe(s => { pref = s.theme; apply(); });
 
 if (window.matchMedia) {
