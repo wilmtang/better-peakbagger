@@ -6,6 +6,11 @@
 // tests. This file intentionally has no DOM or extension-API dependency:
 // input is parsed track points, output is adjusted distances, smoothed
 // elevations, confirmed gain, grades, and bounded map-route sampling.
+//
+// The route-payload bounds live in src/gpx/map-route-limits.js because the
+// terrain frame re-checks the same numbers on the far side of the bridge.
+
+import { MAX_MAP_ROUTE_POINTS, MAX_MAP_ROUTE_SEGMENTS } from './map-route-limits.js';
 
 const DIST_CONFIRM_M = 5;
 const ELEVATION_GAIN_THRESHOLD_M = 3;
@@ -16,7 +21,6 @@ const GRADE_MIN_DISTANCE_M = 10;
 const GRADE_MAX_LOOKBACK_POINTS = 50;
 const MAX_REASONABLE_SPEED_MPS = 10;
 const PAUSE_RESET_SECONDS = 300;
-const MAX_MAP_ROUTE_POINTS = 3000;
 
 const EARTH_RADIUS_M = 6371008.8;
 
@@ -323,10 +327,11 @@ const limitMapRouteSegments = segments => {
     if (pointCount <= MAX_MAP_ROUTE_POINTS) return segments;
 
     // Every segment needs both endpoints or the overlay would either bridge
-    // a gap or silently truncate it. Pathological GPX with more than 1,500
-    // usable segments keeps Peakbagger's native route instead of drawing an
-    // incomplete enhancement.
-    if (segments.length * 2 > MAX_MAP_ROUTE_POINTS) return [];
+    // a gap or silently truncate it. Pathological GPX with more segments than
+    // that budget allows keeps Peakbagger's native route instead of drawing an
+    // incomplete enhancement — and the terrain frame rejects the same shape,
+    // which is why both sides read one constant.
+    if (segments.length > MAX_MAP_ROUTE_SEGMENTS) return [];
 
     const extraBudget = MAX_MAP_ROUTE_POINTS - segments.length * 2;
     const totalExtraPoints = pointCount - segments.length * 2;

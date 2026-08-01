@@ -3,6 +3,7 @@
 //
 // Better Peakbagger — MapLibre renderer hosted by terrain/terrain.html.
 
+import { MAX_MAP_ROUTE_POINTS, MAX_MAP_ROUTE_SEGMENTS } from '../gpx/map-route-limits.js';
 import { isPeakbaggerPageOrigin } from '../peakbagger/peakbagger-origin.js';
 import { settingsSchema } from '../settings/settings-schema.js';
 import { terrainStyle as TerrainStyle } from './terrain-style.js';
@@ -17,8 +18,13 @@ import { terrainTiles as TerrainTiles } from './terrain-tiles.js';
 
     const FRAME_MESSAGE_TAG = '__bpbTerrainFrame';
     const TERRAIN_TILE_TEMPLATE = 'bpb-dem://{z}/{x}/{y}.webp';
-    const MAX_ROUTE_POINTS = 3000;
-    const MAX_ROUTE_SEGMENTS = 1500;
+    // The producer on the far side of the bridge samples routes down to these
+    // same bounds. Reading them from the shared module keeps a payload this
+    // frame would reject from being one src/gpx/gpx-metrics.js thought valid;
+    // the user-visible symptom of that drift is a lost route reported as a
+    // renderer failure, not a bounds mismatch.
+    const MAX_ROUTE_POINTS = MAX_MAP_ROUTE_POINTS;
+    const MAX_ROUTE_SEGMENTS = MAX_MAP_ROUTE_SEGMENTS;
     const MAX_MERCATOR_LAT = 85.0511287;
     const MAX_BASEMAP_URL_LENGTH = 2048;
     const MAX_BASEMAP_ATTRIBUTION_LENGTH = 600;
