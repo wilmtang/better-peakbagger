@@ -33,6 +33,18 @@ import { units as Units } from '../src/ui/units.js';
 
     const clear = element => { while (element.firstChild) element.firstChild.remove(); };
 
+    // The worker reports its own failures as data — a job with phase 'error', or
+    // a route result carrying { error: { code, message } } — so those sentences
+    // are product copy and belong on screen. A *rejected* sendMessage is the
+    // messaging layer instead, and its text is browser internals ("Could not
+    // establish connection. Receiving end does not exist."). Mark the errors
+    // this file raises from a worker answer so the catch can tell them apart;
+    // anything unmarked gets the same plain transport copy poll() and
+    // beginCapture() already use.
+    const TRANSPORT_FAILURE = 'The extension couldn’t be reached. Try again in a moment.';
+    const reportedFailure = message => Object.assign(new Error(message), { fromWorker: true });
+    const publicMessage = error => (error?.fromWorker && error.message) || TRANSPORT_FAILURE;
+
     const button = (label, onClick, className = '') => {
         const element = document.createElement('button');
         element.type = 'button';
@@ -126,7 +138,7 @@ import { units as Units } from '../src/ui/units.js';
             const response = await ext.runtime.sendMessage({ type: 'CAPTURE_CANCEL', tabId: activeTab.id });
             if (!response?.ok) {
                 if (response?.job) return render(response.job);
-                throw new Error('The capture could not be cancelled.');
+                throw reportedFailure('The capture could not be cancelled.');
             }
             currentJob = null;
             stateCard(
@@ -135,7 +147,7 @@ import { units as Units } from '../src/ui/units.js';
                 { action: { label: 'Start again', primary: true, onClick: () => beginCapture(true) } }
             );
         } catch (error) {
-            stateCard('Couldn’t cancel capture', error.message, {
+            stateCard('Couldn’t cancel capture', publicMessage(error), {
                 kind: 'error', action: { label: 'Try again', onClick: cancelCapture }
             });
         }
@@ -321,7 +333,7 @@ import { units as Units } from '../src/ui/units.js';
         clearCaptureButton.textContent = 'Deleting…';
         try {
             const response = await ext.runtime.sendMessage({ type: 'CAPTURE_CLEAR', tabId: activeTab.id });
-            if (!response?.ok) throw new Error(response?.error?.message || 'The captured track data could not be deleted.');
+            if (!response?.ok) throw reportedFailure(response?.error?.message || 'The captured track data could not be deleted.');
             currentJob = null;
             stateCard(
                 'Captured track data deleted',
@@ -329,7 +341,7 @@ import { units as Units } from '../src/ui/units.js';
                 { action: { label: 'Capture again', primary: true, onClick: () => beginCapture(false) } }
             );
         } catch (error) {
-            stateCard('Couldn’t delete captured track data', error.message, {
+            stateCard('Couldn’t delete captured track data', publicMessage(error), {
                 kind: 'error',
                 action: { label: 'Back to results', onClick: () => renderResults(currentJob) }
             });
@@ -347,7 +359,7 @@ import { units as Units } from '../src/ui/units.js';
                 tabId: activeTab.id,
                 selectedIds: selectedIds()
             });
-            if (response?.phase === 'error') throw new Error(response.error?.message || 'Drafts could not be opened.');
+            if (response?.phase === 'error') throw reportedFailure(response.error?.message || 'Drafts could not be opened.');
             // Re-render from the worker's own state so the selection lock engages
             // in this turn. Patching only the label leaves a "ready" card offering
             // an open the worker would refuse — polling has already stopped.
@@ -362,7 +374,7 @@ import { units as Units } from '../src/ui/units.js';
             openButton.disabled = false;
         } catch (error) {
             refreshSelection();
-            stateCard('Draft opening stopped', error.message, { kind: 'error', action: { label: 'Back to results', onClick: () => renderResults(currentJob) } });
+            stateCard('Draft opening stopped', publicMessage(error), { kind: 'error', action: { label: 'Back to results', onClick: () => renderResults(currentJob) } });
         }
     });
 

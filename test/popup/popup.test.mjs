@@ -507,8 +507,18 @@ test('popup explains when every previewed draft tab is gone and offers recovery'
         runtime: {
             sendMessage: async message => {
                 if (message.type === 'CAPTURE_START' || message.type === 'CAPTURE_STATUS') return job;
+                // The worker reports a route failure as data, not as a rejected
+                // message: openDrafts() throws a public error, and the onMessage
+                // boundary turns it into this response. Rejection is reserved
+                // for the transport, which is covered separately below.
                 if (message.type === 'CAPTURE_OPEN_DRAFTS') {
-                    throw new Error('Capture results are no longer available. Capture the activity again.');
+                    return {
+                        phase: 'error',
+                        error: {
+                            code: 'job-expired',
+                            message: 'Capture results are no longer available. Capture the activity again.'
+                        }
+                    };
                 }
                 return { ok: true };
             }
@@ -770,5 +780,126 @@ test('popup can cancel an in-progress capture without retaining track data', asy
     assert.ok(Array.from(dom.window.document.querySelectorAll('#state button'))
         .some(button => button.textContent === 'Start again'));
     finishStart(null);
+    dom.window.close();
+});
+
+// Every popup action reaches the worker through runtime messaging, and that
+// transport rejects with browser-internal text when the MV3 worker is not
+// reachable ("Could not establish connection. Receiving end does not exist.").
+// poll() and beginCapture() already discard it; these three action handlers
+// used to render it verbatim as the explanation for a failed action. A worker
+// *answer* that reports a failure is product copy and must still be shown, so
+// both directions are pinned here.
+const WORKER_UNREACHABLE = 'Could not establish connection. Receiving end does not exist.';
+
+const readyJob = {
+    phase: 'ready', provider: 'garmin', hasCachedGpx: true, selectedIds: [1],
+    trackSummary: { originalPointCount: 2, retainedPointCount: 2, maxDeviationM: 0 },
+    matches: [{
+        id: 1, name: 'One Peak', classification: 'strong', confidence: 95,
+        evidence: { distanceM: 5, elevationDeltaM: 2, trackQuality: 1 }
+    }]
+};
+
+const mountPopup = (respond, job = readyJob) => {
+    const dom = new JSDOM(html, {
+        url: 'chrome-extension://better-peakbagger/popup/popup.html',
+        runScripts: 'outside-only'
+    });
+    dom.window.chrome = {
+        tabs: { query: async () => [{ id: 9 }] },
+        runtime: {
+            sendMessage: async message => {
+                if (message.type === 'CAPTURE_START' || message.type === 'CAPTURE_STATUS') return job;
+                return respond(message);
+            }
+        }
+    };
+    dom.window.eval(source);
+    return dom;
+};
+
+const stateText = dom => dom.window.document.getElementById('state').textContent;
+
+test('an unreachable worker never explains a failed popup action with messaging internals', async () => {
+    const actions = [
+        { type: 'CAPTURE_OPEN_DRAFTS', control: 'open-drafts', ready: node => node.textContent === 'Open 1 draft' },
+        { type: 'CAPTURE_CLEAR', control: 'clear-capture', ready: node => node.hidden === false },
+    ];
+    for (const { type, control: controlId, ready } of actions) {
+        const dom = mountPopup(message => {
+            if (message.type === type) throw new Error(WORKER_UNREACHABLE);
+            return { ok: true };
+        });
+        const control = dom.window.document.getElementById(controlId);
+        await waitFor(() => ready(control));
+        control.click();
+        await waitFor(() => /Try again in a moment/.test(stateText(dom)));
+
+        assert.doesNotMatch(stateText(dom), /Receiving end does not exist/,
+            `${type}: browser messaging internals reached the popup`);
+        assert.match(stateText(dom), /The extension couldn’t be reached\. Try again in a moment\./,
+            `${type}: the transport failure needs plain, recoverable copy`);
+        assert.ok([...dom.window.document.querySelectorAll('#state button')]
+            .some(button => button.textContent === 'Back to results'),
+        `${type}: the user must be able to get back to the results`);
+        dom.window.close();
+    }
+});
+
+test('an unreachable worker does not explain a failed cancel with messaging internals', async () => {
+    const dom = mountPopup(message => {
+        if (message.type === 'CAPTURE_CANCEL') throw new Error(WORKER_UNREACHABLE);
+        return { ok: true };
+    }, { phase: 'checking-peakbagger', provider: 'strava' });
+    await waitFor(() => [...dom.window.document.querySelectorAll('#state button')]
+        .some(button => button.textContent === 'Cancel'));
+    [...dom.window.document.querySelectorAll('#state button')]
+        .find(button => button.textContent === 'Cancel').click();
+    await waitFor(() => /Couldn’t cancel capture/.test(stateText(dom)));
+
+    assert.doesNotMatch(stateText(dom), /Receiving end does not exist/);
+    assert.match(stateText(dom), /The extension couldn’t be reached\. Try again in a moment\./);
+    dom.window.close();
+});
+
+test('a failure the worker itself reports keeps its own copy on screen', async () => {
+    // The other half of the boundary: a route that answers with a public error,
+    // or a job that comes back in phase 'error', is describing something the
+    // user can act on. Replacing that with the transport sentence would be the
+    // opposite regression.
+    const dom = mountPopup(message => {
+        if (message.type === 'CAPTURE_OPEN_DRAFTS') {
+            return {
+                phase: 'error',
+                error: { code: 'job-expired', message: 'Capture results are no longer available. Capture the activity again.' }
+            };
+        }
+        return { ok: true };
+    });
+    const openButton = dom.window.document.getElementById('open-drafts');
+    await waitFor(() => openButton.textContent === 'Open 1 draft');
+    openButton.click();
+    await waitFor(() => /Draft opening stopped/.test(stateText(dom)));
+
+    assert.match(stateText(dom), /Capture results are no longer available/);
+    assert.doesNotMatch(stateText(dom), /couldn’t be reached/);
+    dom.window.close();
+});
+
+test('a worker-reported delete failure keeps its own copy on screen', async () => {
+    const dom = mountPopup(message => {
+        if (message.type === 'CAPTURE_CLEAR') {
+            return { ok: false, error: { code: 'capture-busy', message: 'Wait for the current capture to finish before discarding it.' } };
+        }
+        return { ok: true };
+    });
+    const clearButton = dom.window.document.getElementById('clear-capture');
+    await waitFor(() => clearButton.hidden === false);
+    clearButton.click();
+    await waitFor(() => /Couldn’t delete captured track data/.test(stateText(dom)));
+
+    assert.match(stateText(dom), /Wait for the current capture to finish/);
+    assert.doesNotMatch(stateText(dom), /couldn’t be reached/);
     dom.window.close();
 });
