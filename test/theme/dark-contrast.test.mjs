@@ -274,9 +274,12 @@ test('every filter-bar theme token has a dark counterpart', () => {
     // hardcoded past the dark reassignment.
     for (const [selector, declarations] of BAR_RULES) {
         if (selector === ':root' || selector === P) continue;
-        for (const property of ['color', 'background', 'background-color', 'border-color']) {
+        for (const property of [
+            'color', 'background', 'background-color',
+            'border', 'border-color', 'outline', 'box-shadow'
+        ]) {
             const value = declarations[property];
-            if (!value || value === 'transparent' || value === 'none') continue;
+            if (!value || /^(?:transparent|none|0)$/.test(value)) continue;
             assert.match(value, /var\(--pbaf-/,
                 `${selector} { ${property} } must use a --pbaf-* token, not ${value}`);
         }
