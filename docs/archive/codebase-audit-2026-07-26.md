@@ -879,7 +879,7 @@ hang. Run to completion:
 
 - isolated test: exits on its own after **125.9 s**, exit 0, 1 pass, 0 cancelled.
   125 s is the device code's own lifetime (`expiresIn: 125` in
-  [`options.test.mjs:2127`](../../test/options/options.test.mjs)), so the leaked
+  `options.test.mjs:2127` (since split into `test/options/`)), so the leaked
   poll dies when the code expires.
 - `npm test`: **807 passed, 0 failed, 0 cancelled, exit 0, 135 s wall clock**
   (Node 26.5.0).

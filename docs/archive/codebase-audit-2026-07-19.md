@@ -222,7 +222,7 @@ the dead branch in E6) at near-zero noise cost.
   vs. repo selection) can clobber each other. Low risk today; a one-line
   promise queue (the pattern `background.js` already uses for `mutateMap`)
   would close it.
-- [manifest.json](../manifest.json): content-script `matches` use `*://`
+- [manifest.json](../../manifest.json): content-script `matches` use `*://`
   (http + https) while `host_permissions` are https-only, and only two case
   spellings of each ASP.NET path are matched even though IIS URLs are
   case-insensitive (`AscentEdit.ASPX` would silently get no features).
