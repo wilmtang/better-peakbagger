@@ -859,7 +859,15 @@
     transition: opacity 160ms ease, transform 160ms ease;
 }
 
+/* The block's own variables above are the Probable palette, so -probable is
+   declared here for symmetry rather than inheriting it by accident: every tone
+   src/capture/match-confidence.js can return has a rule in all four blocks,
+   and an unmatched class can no longer take the light amber default into a
+   dark page. -off matches .bpb-summit-chip-off in ascent-upload.css, because
+   the picker and this banner describe the same peak. */
 .bpb-draft-banner-strong { --bpb-draft-color: #067647; --bpb-draft-bg: #ecfdf3; --bpb-draft-border: #a6f4c5; }
+.bpb-draft-banner-probable { --bpb-draft-color: #93370d; --bpb-draft-bg: #fffaeb; --bpb-draft-border: #fedf89; }
+.bpb-draft-banner-off { --bpb-draft-color: #475467; --bpb-draft-bg: #f2f4f7; --bpb-draft-border: #d0d5dd; }
 .bpb-draft-banner-waiting { --bpb-draft-color: #175cd3; --bpb-draft-bg: #eff8ff; --bpb-draft-border: #b2ddff; }
 .bpb-draft-banner-error { --bpb-draft-color: #b42318; --bpb-draft-bg: #fef3f2; --bpb-draft-border: #fecdca; }
 .bpb-draft-banner-text { all: initial; flex: 1; color: inherit; font: inherit; }
@@ -883,6 +891,7 @@
 @media (prefers-color-scheme: dark) {
     .bpb-draft-banner-strong { --bpb-draft-color: #7ac78d; --bpb-draft-bg: #173322; --bpb-draft-border: #28623c; }
     .bpb-draft-banner-probable { --bpb-draft-color: #f7c66a; --bpb-draft-bg: #332a18; --bpb-draft-border: #6b5518; }
+    .bpb-draft-banner-off { --bpb-draft-color: #98a2b3; --bpb-draft-bg: #232b35; --bpb-draft-border: #3a4450; }
     .bpb-draft-banner-waiting { --bpb-draft-color: #8ab4f8; --bpb-draft-bg: #172b46; --bpb-draft-border: #365b86; }
     .bpb-draft-banner-error { --bpb-draft-color: #f2a099; --bpb-draft-bg: #3b1515; --bpb-draft-border: #7a2e2a; }
     .bpb-draft-banner-action { background: #202224; }
@@ -890,11 +899,13 @@
 
 html[data-bpb-theme="dark"] .bpb-draft-banner-strong { --bpb-draft-color: #7ac78d; --bpb-draft-bg: #173322; --bpb-draft-border: #28623c; }
 html[data-bpb-theme="dark"] .bpb-draft-banner-probable { --bpb-draft-color: #f7c66a; --bpb-draft-bg: #332a18; --bpb-draft-border: #6b5518; }
+html[data-bpb-theme="dark"] .bpb-draft-banner-off { --bpb-draft-color: #98a2b3; --bpb-draft-bg: #232b35; --bpb-draft-border: #3a4450; }
 html[data-bpb-theme="dark"] .bpb-draft-banner-waiting { --bpb-draft-color: #8ab4f8; --bpb-draft-bg: #172b46; --bpb-draft-border: #365b86; }
 html[data-bpb-theme="dark"] .bpb-draft-banner-error { --bpb-draft-color: #f2a099; --bpb-draft-bg: #3b1515; --bpb-draft-border: #7a2e2a; }
 html[data-bpb-theme="dark"] .bpb-draft-banner-action { background: #202224; }
 
 html[data-bpb-theme="light"] .bpb-draft-banner-probable { --bpb-draft-color: #93370d; --bpb-draft-bg: #fffaeb; --bpb-draft-border: #fedf89; }
+html[data-bpb-theme="light"] .bpb-draft-banner-off { --bpb-draft-color: #475467; --bpb-draft-bg: #f2f4f7; --bpb-draft-border: #d0d5dd; }
 html[data-bpb-theme="light"] .bpb-draft-banner-strong { --bpb-draft-color: #067647; --bpb-draft-bg: #ecfdf3; --bpb-draft-border: #a6f4c5; }
 html[data-bpb-theme="light"] .bpb-draft-banner-waiting { --bpb-draft-color: #175cd3; --bpb-draft-bg: #eff8ff; --bpb-draft-border: #b2ddff; }
 html[data-bpb-theme="light"] .bpb-draft-banner-error { --bpb-draft-color: #b42318; --bpb-draft-bg: #fef3f2; --bpb-draft-border: #fecdca; }

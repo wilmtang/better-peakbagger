@@ -383,6 +383,16 @@ geometry, track direction, and elevation behavior. Strong matches are selected
 by default; Probable matches remain opt-in. Neither label claims that the user
 summited the mountain.
 
+`src/capture/capture-core.js` assigns four classifications, but only two clear
+the visible-match bar. The remaining two reach a surface solely through the
+bound-peak closest-approach fallback below, and
+`src/capture/match-confidence.js` owns what every surface calls them: Strong,
+Probable, or **Off track**, with one CSS tone each. Confidence copy is the one
+place in this product that must not overstate, so no renderer may re-derive
+that name — a summit picker that said "Off track" and a draft banner that then
+said "Probable match" were each spelling the mapping as their own two-way
+ternary.
+
 Track encounter order and confidence order serve different purposes. Encounter
 order determines same-date Peakbagger suffixes and trip-name ordering.
 Confidence order determines which draft tabs open first. Mixing the two would

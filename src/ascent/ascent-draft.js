@@ -4,6 +4,7 @@
 // Fills a prepared Peakbagger ascent editor and submits each acknowledged
 // Preview once. A failed Preview can be retried explicitly; Save stays manual.
 
+import { matchLabel, matchTone } from '../capture/match-confidence.js';
 import { MAX_UPLOAD_POINTS, MAX_TRACK_SEGMENTS } from '../capture/upload-limits.js';
 import { units as Units } from '../ui/units.js';
 
@@ -343,8 +344,8 @@ import { units as Units } from '../ui/units.js';
         });
         if (!acknowledgment?.ok) throw draftError('preview-conflict');
         const preview = document.getElementById('GPXPreview');
-        showBanner(payload.classification,
-            `${payload.classification === 'strong' ? 'Strong' : 'Probable'} match · ${payload.confidence}% confidence. Preparing GPS Preview…`);
+        showBanner(matchTone(payload.classification),
+            `${matchLabel(payload.classification)} match · ${payload.confidence}% confidence. Preparing GPS Preview…`);
         preview.click();
     };
 
@@ -378,9 +379,8 @@ import { units as Units } from '../ui/units.js';
                         // retry while the short-lived draft is still present.
                     }
                 }
-                const label = response.classification === 'strong' ? 'Strong' : 'Probable';
-                showBanner(response.classification,
-                    `${label} match · ${response.confidence}% confidence. Preview is ready—review Peakbagger’s result before saving.`);
+                showBanner(matchTone(response.classification),
+                    `${matchLabel(response.classification)} match · ${response.confidence}% confidence. Preview is ready—review Peakbagger’s result before saving.`);
                 return;
             }
             if (response.action === 'wait') {

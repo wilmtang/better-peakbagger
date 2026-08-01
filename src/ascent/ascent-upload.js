@@ -13,6 +13,7 @@
 // and the exactly-once GPS Preview all belong to src/ascent/ascent-draft.js; Save is
 // always the user's.
 
+import { matchLabel, matchTone } from '../capture/match-confidence.js';
 import { gpxParse } from '../gpx/gpx-parse.js';
 import { settings as Settings } from '../settings/settings.js';
 import { units as Units } from '../ui/units.js';
@@ -243,10 +244,8 @@ import { units as Units } from '../ui/units.js';
 
         const summitChip = match => {
             const chip = document.createElement('span');
-            const kind = match.classification === 'strong' ? 'strong'
-                : match.classification === 'probable' ? 'probable' : 'off';
-            chip.className = `bpb-summit-chip bpb-summit-chip-${kind}`;
-            chip.textContent = kind === 'strong' ? 'Strong' : kind === 'probable' ? 'Probable' : 'Off track';
+            chip.className = `bpb-summit-chip bpb-summit-chip-${matchTone(match.classification)}`;
+            chip.textContent = matchLabel(match.classification);
             return chip;
         };
 

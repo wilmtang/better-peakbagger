@@ -369,12 +369,59 @@ test('a post-preview reload shows a dismissible, short-lived confidence toast wi
 
 test('draft banner CSS covers semantic states in explicit light and dark themes', () => {
     for (const theme of ['light', 'dark']) {
-        for (const kind of ['strong', 'probable', 'waiting', 'error']) {
+        for (const kind of ['strong', 'probable', 'off', 'waiting', 'error']) {
             assert.match(editorCss, new RegExp(`html\\[data-bpb-theme="${theme}"\\] \\.bpb-draft-banner-${kind}\\s*\\{`));
         }
     }
     assert.match(editorCss, /prefers-color-scheme:\s*dark/);
     assert.match(editorCss, /prefers-reduced-motion:\s*reduce/);
+});
+
+// The bound-peak closest-approach fallback is the one path that carries a
+// below-bar classification to this form. The picker calls that peak "Off
+// track"; the banner used to answer "Probable match" seconds later, on the
+// strength of a `classification === 'strong' ? … : 'Probable'` ternary.
+test('a closest-approach fallback draft is never announced as a Probable match', async () => {
+    for (const classification of ['possible', 'weak']) {
+        const payload = {
+            action: 'apply', jobId: 'job', pid: '12', cid: '34', classification, confidence: 41,
+            peakName: 'Brushed Peak',
+            fields: {
+                date: '2026-07-01', suffix: '', startElevationM: 1000, endElevationM: 900,
+                upDistanceM: 5000, downDistanceM: 6000, upGainM: 1200, downGainM: 80,
+                upDuration: { days: 0, hours: 2, minutes: 5 },
+                downDuration: { days: 0, hours: 1, minutes: 55 }
+            },
+            gpx: '<?xml version="1.0"?><gpx><trk><trkseg>'
+                + '<trkpt lat="47" lon="-121"></trkpt><trkpt lat="47.1" lon="-121.1"></trkpt>'
+                + '</trkseg></trk></gpx>'
+        };
+        const { dom } = loadDraft(message => message.type === 'DRAFT_READY' ? payload : { ok: true });
+        let previewClicks = 0;
+        dom.window.document.getElementById('GPXPreview')
+            .addEventListener('click', () => { previewClicks++; });
+        await waitForCondition(() => previewClicks === 1);
+        const banner = dom.window.document.getElementById('bpb-draft-banner');
+        assert.match(banner.textContent, /Off track match · 41% confidence/);
+        assert.doesNotMatch(banner.textContent, /Probable|Strong/);
+        // The tone must be one the stylesheet declares in every theme block;
+        // an unmatched class takes the block's light-mode defaults, which put
+        // a light amber banner on a dark page.
+        assert.ok(banner.classList.contains('bpb-draft-banner-off'));
+        assert.equal(banner.className.includes(`bpb-draft-banner-${classification}`), false);
+        dom.window.close();
+    }
+});
+
+test('a post-preview reload names a below-bar match the same way the picker did', async () => {
+    const { dom } = loadDraft(
+        () => ({ action: 'banner', peakName: 'Brushed Peak', classification: 'possible', confidence: 38 }),
+        { statusText: 'Your file is now successfully uploaded.' });
+    await waitForCondition(() => dom.window.document.getElementById('bpb-draft-banner'));
+    const banner = dom.window.document.getElementById('bpb-draft-banner');
+    assert.match(banner.textContent, /Off track match · 38% confidence/);
+    assert.ok(banner.classList.contains('bpb-draft-banner-off'));
+    dom.window.close();
 });
 
 test('a rejected Preview reports Peakbagger’s error and retries only after the user asks', async () => {

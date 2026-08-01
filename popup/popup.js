@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { capturePhases as CapturePhases } from '../src/capture/capture-phases.js';
+import { matchLabel } from '../src/capture/match-confidence.js';
 import { PEAKBAGGER_ORIGIN } from '../src/peakbagger/peakbagger-origin.js';
 import { settings as Settings } from '../src/settings/settings.js';
 import { units as Units } from '../src/ui/units.js';
@@ -218,7 +219,11 @@ import { units as Units } from '../src/ui/units.js';
             text.append(name, evidence);
             const confidence = document.createElement('span');
             confidence.className = 'confidence';
-            confidence.textContent = `${match.classification === 'strong' ? 'Strong' : 'Probable'} match · ${match.confidence}% confidence`;
+            // Activity capture never binds a peak, so this list only ever
+            // holds visible matches. Resolve the name through the shared owner
+            // anyway: a row whose classification changed would otherwise keep
+            // reading "Probable" while saying nothing changed.
+            confidence.textContent = `${matchLabel(match.classification)} match · ${match.confidence}% confidence`;
             row.append(checkbox, text, confidence);
             list.append(row);
         });
