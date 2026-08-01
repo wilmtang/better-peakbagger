@@ -36,6 +36,9 @@ jobs:
       - name: Check dependency advisories
         run: npm run audit:ci
 
+      - name: Lint source
+        run: npm run lint:js
+
       - name: Run tests
         run: npm test
 

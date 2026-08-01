@@ -122,6 +122,12 @@ test('release and browser development commands use the dist build', async () => 
         /- name: Build store packages[\s\S]*?npm run package[\s\S]*?chrome_archive=/,
     );
     assert.match(workflow, /- name: Run scale tests\s+run: npm run test:scale/);
+    // Both linters, named separately. `npm run lint` is a prefix of
+    // `npm run lint:js`, so a loose match would report the source linter as
+    // present whenever only the package linter ran — which is exactly how
+    // lint:js stayed unwired while a job called "lints" passed.
+    assert.match(workflow, /run: npm run lint:js\n/);
+    assert.match(workflow, /run: npm run lint\n/);
 });
 
 test('bare web-ext commands use only the dist build', async () => {
@@ -132,7 +138,11 @@ test('bare web-ext commands use only the dist build', async () => {
 
 test('CI tests, lints, and exercises both real browser extensions', async () => {
     const workflow = await readFile(new URL('../../.github/workflows/test.yml', import.meta.url), 'utf8');
-    assert.match(workflow, /node:\s*\n[\s\S]*?run: npm run audit:ci[\s\S]*?run: npm test[\s\S]*?run: npm run lint/);
+    // Source lint and package lint are distinct gates: ESLint reads source and
+    // web-ext reads the built package, so neither substitutes for the other.
+    // Anchor each on its own line ending, because `npm run lint` also matches
+    // the leading characters of `npm run lint:js`.
+    assert.match(workflow, /node:\s*\n[\s\S]*?run: npm run audit:ci[\s\S]*?run: npm run lint:js\n[\s\S]*?run: npm test[\s\S]*?run: npm run lint\n/);
     assert.match(workflow, /scale:\s*\n[\s\S]*?run: npm run test:scale/);
     assert.match(workflow, /chrome:\s*\n[\s\S]*?run: npm run verify:chrome/);
     assert.match(workflow, /firefox:\s*\n[\s\S]*?run: npm run verify:firefox/);

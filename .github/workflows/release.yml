@@ -34,6 +34,9 @@ jobs:
       - name: Validate tag and version metadata
         run: npm run release:check -- "$GITHUB_REF_NAME"
 
+      - name: Lint source
+        run: npm run lint:js
+
       - name: Run tests
         run: npm test
 

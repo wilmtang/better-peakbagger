@@ -168,10 +168,13 @@ only exist under `dist/` after a build.
 Pushes and pull requests use one least-privilege workflow with four independent
 jobs: Node tests/lint, the scale suite, the real Chrome extension smoke, and
 the real Firefox extension smoke. Each job installs its own runtime and reports
-failures separately. The Node job also runs `audit:ci`, so a new advisory,
-dependency-path drift, or expiry of the current bounded exception fails CI.
-Release CI additionally runs the scale test and executes both generated store
-archives before either publication job can start.
+failures separately. The Node job runs both linters — `lint:js` over source
+before the build, `lint` over the built package after it — because they read
+different artifacts and neither substitutes for the other. It also runs
+`audit:ci`, so a new advisory, dependency-path drift, or expiry of the current
+bounded exception fails CI. Release CI runs the same two linters, adds the
+scale test, and executes both generated store archives before either
+publication job can start.
 
 The source manifest declares Firefox desktop 140.0 and Firefox Android 142.0
 independently because
