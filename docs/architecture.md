@@ -1415,9 +1415,12 @@ No single green command proves the extension works:
   notice fails. Generated line and column numbers are not pinned, because every
   vendored warning's position is a byte offset into a bundle. Both linters run
   in CI and in release CI. Neither command establishes runtime behavior.
-- `npm run audit:ci` rejects every unowned production or development advisory.
-  Its sole current exception is the exact dev-only `web-ext` compatibility
-  path for GHSA-mh99-v99m-4gvg, with locked parents and a 2026-08-09 expiry.
+- `npm run audit:ci` rejects every production or development advisory, with no
+  exceptions. Its one bounded acceptance — GHSA-mh99-v99m-4gvg reaching
+  `brace-expansion` 1.x through dev-only `web-ext`/`addons-linter`/`minimatch@3`
+  — was removed once a patched 1.1.17 shipped; `package.json` pins it through
+  an override scoped to `minimatch@^3` so the 5.x installs ESLint resolves are
+  untouched.
 - `npm run verify:browsers` loads the real unpacked Chrome and derived Firefox
   manifests in hidden isolated profiles. It exercises runtime origins,
   execution worlds, storage, worker/background startup, manifest surfaces,

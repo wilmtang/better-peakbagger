@@ -143,9 +143,10 @@ visible in the AMO Developer Hub.
    into `dist/` intentionally, update the build config and archive policy
    together rather than relying on web-ext's old repository-root ignore list.
    `audit:ci` must pass without editing its baseline during release rehearsal.
-   Its current development-only advisory acceptance is exact and expires on
-   2026-08-09; expiry or dependency-path drift requires a fresh source review,
-   not a date extension made only to unblock publication. `npm run lint`
+   It accepts no advisories today. A finding is fixed by moving the dependency,
+   not by adding an acceptance to unblock publication; if an acceptance is
+   genuinely unavoidable it needs a fresh source review, the exact install
+   path, and an expiry. `npm run lint`
    likewise permits only the owner-annotated warnings checked into
    `scripts/check-web-ext-lint.mjs`, at the exact per-file occurrence counts
    recorded there.

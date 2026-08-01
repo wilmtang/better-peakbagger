@@ -161,7 +161,7 @@ only exist under `dist/` after a build.
 | `npm run showcase:render` | Builds and renders the local UI showcase fixtures into `store-assets/`. Same HTTPS showcase host. |
 | `npm run lint:js` | Runs errors-only ESLint over source, extension surfaces, scripts, and tests. |
 | `npm run lint` | Builds, runs `web-ext lint` as JSON, and accepts only the six owner-annotated manifest/dependency warnings in `scripts/check-web-ext-lint.mjs`, counted per `(code, file)`. A new warning, an extra or missing occurrence in an owned file, any error, or any notice fails. Generated line and column numbers are deliberately not pinned. |
-| `npm run audit:ci` | Runs npm audit through the repository policy: no unowned advisory may pass. The current exact dev-only `web-ext`/`brace-expansion` compatibility exception expires 2026-08-09. |
+| `npm run audit:ci` | Runs npm audit through the repository policy: no advisory may pass, and there are currently no accepted exceptions. Fix the dependency, or add an exception deliberately — advisory id, exact install path, dev-only lock pins, and an expiry. |
 | `npm run package` | Release build + `web-ext build` from `dist/`; writes the canonical Chrome ZIP under `web-ext-artifacts/`. |
 | `npm run start:chromium` / `start:firefox` | Build, watch, launch a web-ext development browser, and auto-reload the extension after successful rebuilds. Firefox mirrors each complete build into its inline-Preferences source first. |
 
@@ -171,8 +171,7 @@ the real Firefox extension smoke. Each job installs its own runtime and reports
 failures separately. The Node job runs both linters — `lint:js` over source
 before the build, `lint` over the built package after it — because they read
 different artifacts and neither substitutes for the other. It also runs
-`audit:ci`, so a new advisory, dependency-path drift, or expiry of the current
-bounded exception fails CI. Release CI runs the same two linters, adds the
+`audit:ci`, so any new advisory fails CI. Release CI runs the same two linters, adds the
 scale test, and executes both generated store archives before either
 publication job can start.
 

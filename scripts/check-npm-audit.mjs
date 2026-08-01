@@ -2,95 +2,41 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { spawnSync } from 'node:child_process';
-import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
-export const AUDIT_ACCEPTANCE = Object.freeze({
-    advisory: 'GHSA-mh99-v99m-4gvg',
-    source: 1124334,
-    expires: '2026-08-09',
-    vulnerablePackages: Object.freeze([
-        '@eslint/config-array',
-        '@eslint/eslintrc',
-        'addons-linter',
-        'brace-expansion',
-        'eslint',
-        'minimatch',
-        'multimatch',
-        'web-ext'
-    ]),
-    lockedPackages: Object.freeze({
-        'node_modules/web-ext': '10.5.0',
-        'node_modules/addons-linter': '10.8.0',
-        'node_modules/multimatch': '6.0.0',
-        'node_modules/minimatch': '3.1.5',
-        'node_modules/brace-expansion': '1.1.16',
-        'node_modules/@eslint/config-array/node_modules/brace-expansion': '5.0.8',
-        'node_modules/eslint/node_modules/brace-expansion': '5.0.8'
-    })
-});
-
-const exactMembers = (actual, expected) =>
-    actual.length === expected.length
-    && actual.every((value, index) => value === expected[index]);
-
-const requireKnownLock = lockfile => {
-    for (const [packagePath, version] of Object.entries(AUDIT_ACCEPTANCE.lockedPackages)) {
-        const entry = lockfile.packages?.[packagePath];
-        if (entry?.version !== version || entry.dev !== true) {
-            throw new Error(`Audit acceptance lock changed at ${packagePath}; expected dev-only ${version}`);
-        }
+// No advisory is accepted. The one bounded exception this gate ever carried —
+// GHSA-mh99-v99m-4gvg reaching brace-expansion 1.x through the dev-only
+// web-ext/addons-linter/minimatch@3 chain — is gone: the advisory range widened
+// to <1.1.17, a patched 1.1.17 shipped, and package.json pins it through an
+// override scoped to minimatch@^3 so the 5.x installs eslint resolves are left
+// alone. Every finding now fails, which is the policy the exception was always
+// a dated departure from.
+//
+// Re-adding an exception means re-adding the machinery deliberately: an
+// advisory id, the exact vulnerable install path, dev-only lock pins, and an
+// expiry. Extending a date to unblock a release is not that.
+export function evaluateAudit(audit) {
+    const counts = audit.metadata?.vulnerabilities;
+    if (!counts || typeof counts.total !== 'number') {
+        throw new Error('npm audit reported no vulnerability metadata');
     }
-};
-
-export function evaluateAudit(audit, lockfile, today = new Date().toISOString().slice(0, 10)) {
-    const total = audit.metadata?.vulnerabilities?.total;
-    if (total === 0) return { status: 'clean' };
-
-    if (today > AUDIT_ACCEPTANCE.expires) {
-        throw new Error(
-            `Audit acceptance for ${AUDIT_ACCEPTANCE.advisory} expired on ${AUDIT_ACCEPTANCE.expires}`
-        );
-    }
+    if (counts.total === 0) return { status: 'clean' };
 
     const names = Object.keys(audit.vulnerabilities || {}).sort();
-    if (!exactMembers(names, [...AUDIT_ACCEPTANCE.vulnerablePackages].sort())) {
-        throw new Error(`Unowned npm audit findings: ${names.join(', ') || 'missing vulnerability detail'}`);
-    }
-    if (total !== names.length
-        || audit.metadata.vulnerabilities.high !== names.length
-        || audit.metadata.vulnerabilities.critical !== 0) {
-        throw new Error('npm audit severity/counts changed outside the accepted finding');
-    }
-
-    const rootFinding = audit.vulnerabilities['brace-expansion'];
-    const advisories = rootFinding?.via?.filter(value => typeof value === 'object') || [];
-    if (advisories.length !== 1
-        || advisories[0].source !== AUDIT_ACCEPTANCE.source
-        || !String(advisories[0].url || '').endsWith(`/${AUDIT_ACCEPTANCE.advisory}`)
-        || !exactMembers(rootFinding.nodes || [], ['node_modules/brace-expansion'])) {
-        throw new Error('The accepted brace-expansion advisory or vulnerable install path changed');
-    }
-
-    for (const [name, finding] of Object.entries(audit.vulnerabilities)) {
-        if (name === 'brace-expansion') continue;
-        const nestedAdvisory = (finding.via || []).some(value => typeof value === 'object');
-        const unknownDependency = (finding.via || []).some(value =>
-            typeof value === 'string' && !AUDIT_ACCEPTANCE.vulnerablePackages.includes(value));
-        if (nestedAdvisory || unknownDependency) {
-            throw new Error(`Audit path for ${name} no longer resolves solely to the accepted advisory`);
-        }
-    }
-
-    requireKnownLock(lockfile);
-    return {
-        status: 'accepted',
-        message: `${AUDIT_ACCEPTANCE.advisory} remains only in the dev-only web-ext 1.x compatibility path; `
-            + `compatible 5.x installs are patched. Acceptance expires ${AUDIT_ACCEPTANCE.expires}.`
-    };
+    const detail = names.length
+        ? names.map(name => {
+            const finding = audit.vulnerabilities[name];
+            const advisories = (finding.via || [])
+                .filter(value => typeof value === 'object')
+                .map(value => value.url || value.source)
+                .join(', ');
+            return `${name}${finding.severity ? ` (${finding.severity})` : ''}${advisories ? ` — ${advisories}` : ''}`;
+        }).join('; ')
+        : 'missing vulnerability detail';
+    throw new Error(`Unowned npm audit findings: ${detail}`);
 }
 
 async function main() {
@@ -104,12 +50,8 @@ async function main() {
         throw new Error(`npm audit produced no JSON: ${auditRun.stderr.trim() || `exit ${auditRun.status}`}`);
     }
 
-    const [audit, lockfile] = await Promise.all([
-        Promise.resolve(JSON.parse(auditRun.stdout)),
-        readFile(path.join(root, 'package-lock.json'), 'utf8').then(JSON.parse)
-    ]);
-    const result = evaluateAudit(audit, lockfile);
-    console.log(result.status === 'clean' ? 'npm audit passed with no vulnerabilities.' : result.message);
+    evaluateAudit(JSON.parse(auditRun.stdout));
+    console.log('npm audit passed with no vulnerabilities.');
 }
 
 const isCli = process.argv[1]

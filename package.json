@@ -81,6 +81,9 @@
     },
     "fx-runner": {
       "shell-quote": "1.9.0"
+    },
+    "minimatch@^3.0.0": {
+      "brace-expansion": "1.1.17"
     }
   },
   "webExt": {
