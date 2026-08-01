@@ -54,7 +54,7 @@ them must degrade instead of breaking the analysis panel:
 3. **Missing global.** MAIN-world scripts share the page's global namespace
    with Peakbagger's scripts and other extensions, so `globalThis.tzlookup`
    can be absent (packaging or ordering regression) or clobbered. The guard
-   also lets tests and the showcase load the analyzer without the raster.
+   also lets the focused fallback test load the analyzer without the raster.
 
 **Fallback:** on any of these, times use solar time rounded to the whole hour
 from the start longitude (`Math.round(lon / 15)`), and the hint honestly

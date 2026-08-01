@@ -16,7 +16,9 @@
   <script>
     // Showcase/harness stubs so the production content scripts run without the
     // packaged extension. Not shipped — this is a synthetic visual fixture.
-    window.chrome = { runtime: { getURL: path => `/dist/${path}` } };
+    window.chrome = {
+      runtime: { getURL: path => new URL(`/dist/${path}`, location.origin).href }
+    };
     (() => {
       const params = new URLSearchParams(location.search);
       const settings = {

@@ -19,7 +19,7 @@
     // Extension resources live under dist/; the isolated 3D bridge reads real
     // settings from chrome.storage (it imports settings now, not a page global).
     window.chrome = {
-      runtime: { getURL: path => `/dist/${path}` },
+      runtime: { getURL: path => new URL(`/dist/${path}`, location.origin).href },
       storage: {
         sync: { get: async () => ({ bpbSettings: { enable3dMap: true } }) },
         onChanged: { addListener: () => {}, removeListener: () => {} }
@@ -74,6 +74,7 @@
 
   <script src="/dist/vendor/chart.umd.min.js"></script>
   <script src="/dist/content/terrain-map.js"></script>
+  <script src="/dist/vendor/tz-lookup.js"></script>
   <script src="/dist/content/gpx-analyzer.js"></script>
   <script>
     // The toggle enables as soon as the GPX parses, but the drape is read from

@@ -13,7 +13,7 @@
   <script>
     const theme = new URLSearchParams(location.search).get('theme') === 'dark' ? 'dark' : 'light';
     window.chrome = {
-      runtime: { getURL: path => `/dist/${path}` },
+      runtime: { getURL: path => new URL(`/dist/${path}`, location.origin).href },
       storage: {
         sync: { get: async () => ({ bpbSettings: { enable3dMap: true, theme, terrainCacheLimitMb: 256 } }) },
         onChanged: { addListener: () => {}, removeListener: () => {} }

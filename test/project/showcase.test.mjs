@@ -11,6 +11,7 @@ const gpxShowcase = await readFile(new URL('../../scripts/showcase/gpx.html', im
 const mapShowcase = await readFile(new URL('../../scripts/showcase/map.html', import.meta.url), 'utf8');
 const terrainShowcase = await readFile(new URL('../../scripts/showcase/terrain.html', import.meta.url), 'utf8');
 const bigMapShowcase = await readFile(new URL('../../scripts/showcase/big-map.html', import.meta.url), 'utf8');
+const peakMapShowcase = await readFile(new URL('../../scripts/showcase/peak-map.html', import.meta.url), 'utf8');
 const bigMapNativeShowcase = await readFile(new URL('../../scripts/showcase/big-map-native.html', import.meta.url), 'utf8');
 const terrainFrame = await readFile(new URL('../../terrain/terrain.html', import.meta.url), 'utf8');
 const terrainGpx = await readFile(new URL('../../scripts/showcase/terrain.gpx', import.meta.url), 'utf8');
@@ -43,6 +44,18 @@ test('3D terrain showcase uses the production renderer with a synthetic route', 
     // bundle composition is asserted in manifest-capture.test.mjs.
     assert.match(terrainFrame, /terrain-frame\.js/);
     assert.match(terrainShowcase, /dist\/content\/gpx-analyzer\.js/);
+    for (const [name, source] of [
+        ['ascent', terrainShowcase],
+        ['BigMap', bigMapShowcase],
+        ['peak', peakMapShowcase],
+    ]) {
+        assert.match(source, /runtime:\s*\{\s*getURL:\s*path\s*=>\s*new URL\(/,
+            `${name} terrain bridge requires an absolute chrome.runtime.getURL() result`);
+    }
+    const timezoneIndex = terrainShowcase.indexOf('/dist/vendor/tz-lookup.js');
+    const analyzerIndex = terrainShowcase.indexOf('/dist/content/gpx-analyzer.js');
+    assert.ok(timezoneIndex >= 0 && timezoneIndex < analyzerIndex,
+        'the terrain analyzer must load the production timezone raster first');
     assert.match(terrainShowcase, /enable3dMap:\s*true/);
     assert.doesNotMatch(terrainShowcase, /bpb-terrain-disclosure/);
     assert.match(terrainGpx, /Synthetic Mount Baker terrain check/);
