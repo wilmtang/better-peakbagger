@@ -11,9 +11,15 @@
 // ships — the same reason src/settings/settings-schema.js owns every settings
 // bound and src/gpx/gpx-metrics.js owns the shared geometry.
 //
-// The three predicates below are deliberately not identical. They answer three
-// different questions, and each states why its answer differs. Add a caller to
-// one of them rather than writing a fourth check.
+// The three predicates below answer three different questions. Two of them —
+// "may we fetch this?" and "may we trust this sender?" — currently reach the
+// same answer, and both are defined from one `httpsPeakbaggerHost()` rather
+// than restated, so they cannot drift apart by accident. That is a fact about
+// today's policy, not a contract: they are kept as separate names because the
+// questions are separate, and a future host or port rule could legitimately
+// apply to one and not the other. The third differs already.
+//
+// Add a caller to one of these rather than writing a fourth check.
 //
 // Pure by construction: no DOM, no extension APIs, no imports. That is what
 // lets the background worker, both content-script worlds, and the
@@ -26,29 +32,27 @@
 export const PEAKBAGGER_ORIGIN = 'https://www.peakbagger.com';
 export const PEAKBAGGER_HOSTS = new Set(['peakbagger.com', 'www.peakbagger.com']);
 
-// "May the extension fetch this URL with the user's Peakbagger cookies?"
-// The strictest of the three: an authenticated read is only ever aimed at the
-// two canonical hosts, and only over https. A port is irrelevant here — it is
-// carried by the URL the caller already chose, not supplied by a page.
-export const isPeakbaggerUrl = value => {
+// Shared basis for the two URL predicates: an exact canonical host over https.
+// A port is not considered — it is carried by a URL the extension itself chose
+// or by a sender the browser already matched against manifest.json.
+const httpsPeakbaggerHost = value => {
     try {
         const url = new URL(value);
         return url.protocol === 'https:' && PEAKBAGGER_HOSTS.has(url.hostname.toLowerCase());
     } catch { return false; }
 };
 
+// "May the extension fetch this URL with the user's Peakbagger cookies?"
+// An authenticated read is only ever aimed at the two canonical hosts, and
+// only over https.
+export const isPeakbaggerUrl = value => httpsPeakbaggerHost(value);
+
 // "Did this runtime message come from one of our own content scripts?"
 // Exact https hosts match manifest.json. A future host must be granted in the
 // manifest and added to PEAKBAGGER_HOSTS before its messages become trusted.
 // This does not authorize a fetch or a credential — the routes behind it apply
 // their own page, identity, and feature gates.
-export const isPeakbaggerSenderUrl = value => {
-    try {
-        const url = new URL(value);
-        return url.protocol === 'https:' && PEAKBAGGER_HOSTS.has(url.hostname.toLowerCase());
-    }
-    catch { return false; }
-};
+export const isPeakbaggerSenderUrl = value => httpsPeakbaggerHost(value);
 
 // "Is this postMessage MessageEvent.origin a Peakbagger page?"
 // Exact hosts and https only, like the fetch boundary. A non-default port is

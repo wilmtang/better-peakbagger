@@ -79,3 +79,35 @@ test('host checks and extension-authored absolute URLs stay canonical', async ()
     assert.deepEqual(offenders, [],
         'derive URLs and trust checks from src/peakbagger/peakbagger-origin.js');
 });
+
+// The module header claims the fetch and sender predicates currently agree.
+// Keep that claim honest: if a future rule makes one stricter, this fails and
+// the header has to be rewritten alongside it rather than quietly becoming
+// wrong.
+test('the fetch and sender predicates agree, as the module states', () => {
+    const cases = [
+        'https://www.peakbagger.com/climber/ascent.aspx?aid=1',
+        'https://peakbagger.com/',
+        'https://WWW.PeakBagger.com/Peak.aspx',
+        'https://www.peakbagger.com:8443/report/report.aspx?r=b',
+        'http://www.peakbagger.com/',
+        'https://peakbagger.com.evil.example/',
+        'https://evil.example/?x=https://www.peakbagger.com/',
+        'chrome-extension://abc/options/options.html',
+        'not a url',
+        '',
+    ];
+    for (const value of cases) {
+        assert.equal(
+            isPeakbaggerUrl(value),
+            isPeakbaggerSenderUrl(value),
+            `fetch and sender policy disagree on ${value || '(empty)'}`
+        );
+    }
+    assert.equal(isPeakbaggerUrl('https://www.peakbagger.com:8443/'), true);
+    assert.equal(isPeakbaggerUrl('http://www.peakbagger.com/'), false);
+    // The postMessage predicate is the one that differs: an origin carries no
+    // path, so anything beyond a bare origin is not one.
+    assert.equal(isPeakbaggerPageOrigin('https://www.peakbagger.com/Peak.aspx'), false);
+    assert.equal(isPeakbaggerPageOrigin('https://www.peakbagger.com'), true);
+});
