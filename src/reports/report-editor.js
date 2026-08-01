@@ -22,6 +22,7 @@
 // the save fails server-side.
 
 import { settings as Settings } from '../settings/settings.js';
+import { settingsSchema as Schema } from '../settings/settings-schema.js';
 import { reportMarkup as Markup } from './report-markup.js';
 import { reportDrafts as ReportDrafts } from './report-drafts.js';
 import { ascentSnapshot as AscentSnapshot } from '../ascent/ascent-snapshot.js';
@@ -46,7 +47,7 @@ import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.js';
     const SYNC_DEBOUNCE_MS = 150;
     const AUTOSAVE_DEBOUNCE_MS = 800;
     const DRAFT_MANAGER_FEEDBACK_MS = 6000;
-    const MODES = ['rich', 'markdown', 'plain'];
+    const MODES = Schema.REPORT_EDITOR_MODES;
     const SAVE_BUTTON_IDS = new Set(['SaveButton', 'SaveButton2']);
     const STORE_URL = ext.runtime?.getURL?.('').startsWith('moz-extension://')
         ? 'https://addons.mozilla.org/en-US/firefox/addon/better-peakbagger/'

@@ -4,6 +4,7 @@
 // Better Peakbagger — custom favorite toggle on public climber pages.
 
 import { settings as S } from '../settings/settings.js';
+import { settingsSchema as Schema } from '../settings/settings-schema.js';
 import { favoriteClimbers as F } from './favorite-climbers.js';
 import { fetchPeakbaggerDocument } from '../peakbagger/peakbagger-request.js';
 import { numericParam, ownerClimberId } from '../profile/profile-backup-core.js';
@@ -23,7 +24,7 @@ const BUDDY_CONTROL_SELECTOR = 'button, input[type="submit"], input[type="button
     if (pageCid == null || pageCid === ownCid || !heading || !host || !name) return;
 
     const store = chrome.storage.local;
-    let mode = 'buddies';
+    let mode = Schema.DEFAULTS.favoritesSource;
     let favorites = F.cleanFavorites(null);
     let button = null;
     let busy = false;
@@ -287,12 +288,12 @@ html[data-bpb-theme="dark"] #bpb-climber-favorite[aria-pressed="true"] { border-
         mount();
     });
     S.subscribe(settings => {
-        mode = settings.favoritesSource === 'custom' ? 'custom' : 'buddies';
+        mode = Schema.favoritesSource(settings.favoritesSource);
         mount();
     });
 
     void Promise.all([S.get(), store.get(F.FAVORITES_KEY)]).then(([settings, stored]) => {
-        mode = settings.favoritesSource === 'custom' ? 'custom' : 'buddies';
+        mode = Schema.favoritesSource(settings.favoritesSource);
         favorites = F.cleanFavorites(stored[F.FAVORITES_KEY]);
         mount();
     }).catch(() => { unmount(); });

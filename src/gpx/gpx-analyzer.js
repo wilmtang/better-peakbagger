@@ -79,7 +79,7 @@ const run = async () => {
     // Which series to show on load. Only the initial visibility is bound to the
     // setting; the legend's own click handler toggles visibility for the current
     // view without writing it back, so a temporary peek never changes the pref.
-    const resolveChartSeries = s => (s.chartDefaultSeries === 'distance' || s.chartDefaultSeries === 'time') ? s.chartDefaultSeries : 'both';
+    const resolveChartSeries = settings => Schema.chartDefaultSeries(settings.chartDefaultSeries);
     // Settings arrive over postMessage, so they are re-validated here rather
     // than trusted; the shared schema keeps those checks identical to the ones
     // src/settings/settings.js applies on the way into storage.

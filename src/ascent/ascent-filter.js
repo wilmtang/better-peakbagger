@@ -8,6 +8,7 @@
 // Buddy List reuses only the sorter; it has no beta data or filter surface.
 
 import { settings as S } from '../settings/settings.js';
+import { settingsSchema as Schema } from '../settings/settings-schema.js';
 import { favoriteClimbers as F } from '../favorites/favorite-climbers.js';
 import { peakbaggerError as PeakbaggerError } from '../peakbagger/peakbagger-error.js';
 import { fetchPeakbaggerDocument } from '../peakbagger/peakbagger-request.js';
@@ -668,13 +669,8 @@ const init = async () => {
 
     // What "has beta" means is user-configurable (extension settings);
     // the default matches any trip report, GPS track, or link.
-    let betaCfg = { tr: true, trMinWords: 1, gps: true, link: true };
-    const betaCfgFrom = settings => ({
-        tr: settings.betaTr !== false,
-        trMinWords: Math.max(1, parseInt(settings.betaTrMinWords, 10) || 1),
-        gps: settings.betaGps !== false,
-        link: settings.betaLink !== false
-    });
+    let betaCfg = Schema.betaDefinitionFromSettings({});
+    const betaCfgFrom = Schema.betaDefinitionFromSettings;
     const betaOf = record =>
         (betaCfg.tr && record.words >= betaCfg.trMinWords) ||
             (betaCfg.gps && record.gps) ||
@@ -719,7 +715,7 @@ const init = async () => {
         const cache = F.cleanBuddyCache(value);
         return cache && ownCid != null && cache.ownerCid !== ownCid ? null : cache;
     };
-    let favoritesSource = currentSettings && currentSettings.favoritesSource === 'custom' ? 'custom' : 'buddies';
+    let favoritesSource = Schema.favoritesSource(currentSettings?.favoritesSource);
     let favorites = F.cleanFavorites(initialFavorites[F.FAVORITES_KEY]);
     let buddyCache = cacheForOwner(initialFavorites[F.BUDDY_CACHE_KEY]);
     let favoriteIds = new Set();
@@ -964,7 +960,7 @@ const init = async () => {
     if (S && S.subscribe) {
         S.subscribe(settings => {
             const nextBeta = betaCfgFrom(settings);
-            const nextSource = settings.favoritesSource === 'custom' ? 'custom' : 'buddies';
+            const nextSource = Schema.favoritesSource(settings.favoritesSource);
             let changed = false;
             if (JSON.stringify(nextBeta) !== JSON.stringify(betaCfg)) {
                 betaCfg = nextBeta;

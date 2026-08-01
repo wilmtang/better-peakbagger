@@ -77,6 +77,28 @@ const setup = async () => {
     };
 };
 
+test('pre-init reads and optimistic writes use the cleaned fallback', () => {
+    const dom = new JSDOM('<!doctype html>', {
+        url: 'https://www.peakbagger.com/climber/ascent.aspx?aid=1'
+    });
+    const posted = [];
+    dom.window.postMessage = message => posted.push(message);
+    const client = PageSettingsClient.create({
+        fallback: { units: 'spoofed', mapRouteWidth: 999 },
+        ownerWindow: dom.window,
+        ownerLocation: dom.window.location,
+    });
+
+    assert.equal(client.get().units, 'auto');
+    assert.equal(client.get().mapRouteWidth, 12);
+    client.set({ units: 'still spoofed', theme: 'dark' });
+    assert.equal(client.get().units, 'auto');
+    assert.equal(client.get().theme, 'dark');
+    assert.equal(posted.at(-1).kind, 'set');
+    client.dispose();
+    dom.window.close();
+});
+
 test('a missing settings acknowledgement rolls back, while its late snapshot remains usable', async () => {
     const fixture = await setup();
     const requestId = fixture.client.set({ units: 'imperial' });

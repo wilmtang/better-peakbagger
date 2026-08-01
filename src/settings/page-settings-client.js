@@ -129,13 +129,13 @@ export const createPageSettingsClient = ({
             markApplied();
             return settings;
         },
-        get: () => settings || fallback,
+        get: () => settings || safeFallback,
         set: patch => {
             if (disposed) return null;
             const requestId = nextRequestId++;
             const timer = setTimer(() => fail(requestId), writeAckTimeoutMs);
             pending.set(requestId, { patch, timer });
-            settings = { ...(settings || fallback), ...patch };
+            settings = Schema.clean({ ...(settings || safeFallback), ...patch });
             // The caller applies this patch itself; subscribers should only
             // receive later reconciliation or external changes.
             markApplied();

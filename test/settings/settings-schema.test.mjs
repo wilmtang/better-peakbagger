@@ -7,8 +7,10 @@
 // the page-world BigMap, and the terrain frame on the way back out (each
 // receives settings over postMessage, which crosses a trust boundary).
 //
-// These tests pin the validation semantics and then guard the arrangement
-// itself: no surface may reintroduce its own copy of a default or a bound.
+// These tests pin the validation semantics and scan for the route, viewport,
+// and theme literals that previously drifted. A new shared setting needs its
+// own structural guard when it is introduced; a regex cannot prove the absence
+// of every possible literal copy throughout arbitrary source code.
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -65,6 +67,33 @@ test('favorite climber source defaults to buddies and accepts only known modes',
     assert.equal(Schema.clean({ favoritesSource: 'custom' }).favoritesSource, 'custom');
     assert.equal(Schema.clean({ favoritesSource: 'shared' }).favoritesSource, 'buddies');
     assert.equal(Schema.clean({ favoritesSource: null }).favoritesSource, 'buddies');
+});
+
+test('enum and beta consumers resolve through the shared schema', () => {
+    assert.equal(Schema.chartDefaultSeries('time'), 'time');
+    assert.equal(Schema.chartDefaultSeries('future-series'), Schema.DEFAULTS.chartDefaultSeries);
+    assert.equal(Schema.favoritesSource('custom'), 'custom');
+    assert.equal(Schema.favoritesSource('shared'), Schema.DEFAULTS.favoritesSource);
+    assert.equal(Schema.reportEditorMode('markdown'), 'markdown');
+    assert.equal(Schema.reportEditorMode('source'), Schema.DEFAULTS.reportEditorMode);
+
+    assert.deepEqual(Schema.betaDefinitionFromSettings({
+        betaTr: false,
+        betaTrMinWords: '25',
+        betaGps: true,
+        betaLink: false,
+    }), { tr: false, trMinWords: 25, gps: true, link: false });
+    assert.deepEqual(Schema.betaDefinitionFromSettings({
+        betaTr: false,
+        betaGps: false,
+        betaLink: false,
+        betaTrMinWords: 'invalid',
+    }), {
+        tr: Schema.DEFAULTS.betaTr,
+        trMinWords: Schema.DEFAULTS.betaTrMinWords,
+        gps: Schema.DEFAULTS.betaGps,
+        link: Schema.DEFAULTS.betaLink,
+    });
 });
 
 test('removing a Buddy from custom favorites is opt-in', () => {
@@ -158,9 +187,9 @@ test('the storage writer and the page-world readers resolve a value identically'
     }
 });
 
-test('no surface keeps its own copy of a schema default or bound', async () => {
-    // This is the regression this module exists to prevent: the route defaults
-    // once lived in four files and the bounds in three, free to drift apart.
+test('known route, viewport, and theme defaults and bounds stay schema-owned', async () => {
+    // This is the concrete regression this scan prevents: these route,
+    // viewport, and theme values once lived in multiple files and drifted.
     const sourceRoot = path.join(root, 'src');
     const sources = (await walkFiles(sourceRoot, file => file.endsWith('.js')))
         .filter(file => path.basename(file) !== 'settings-schema.js');

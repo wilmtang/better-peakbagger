@@ -15,6 +15,9 @@
 // src/settings/settings.js owns storage access and layers it on top of this module.
 
 const MAP_LAYERS = new Set(['L_CT', 'L_MT', 'L_FS', 'L_3D', 'L_SN', 'L_AG', 'L_OT', 'L_OS', 'L_AI', 'L_XX', 'B_B1', 'G_SA']);
+const CHART_DEFAULT_SERIES = Object.freeze(['both', 'distance', 'time']);
+const FAVORITES_SOURCES = Object.freeze(['buddies', 'custom']);
+const REPORT_EDITOR_MODES = Object.freeze(['rich', 'markdown', 'plain']);
 
 // The one definition of the extension's route look. Every surface that
 // draws or validates a route resolves through ROUTE_STYLE and BOUNDS.
@@ -89,7 +92,32 @@ const DEFAULTS = {
 
 const clampWords = value => {
     const words = parseInt(value, 10);
-    return Number.isFinite(words) && words > 0 ? words : 1;
+    return Number.isFinite(words) && words > 0 ? words : DEFAULTS.betaTrMinWords;
+};
+
+const chartDefaultSeries = value => CHART_DEFAULT_SERIES.includes(value)
+    ? value
+    : DEFAULTS.chartDefaultSeries;
+const favoritesSource = value => FAVORITES_SOURCES.includes(value)
+    ? value
+    : DEFAULTS.favoritesSource;
+const reportEditorMode = value => REPORT_EDITOR_MODES.includes(value)
+    ? value
+    : DEFAULTS.reportEditorMode;
+const betaDefinitionFromSettings = settings => {
+    const source = settings && typeof settings === 'object' ? settings : {};
+    const definition = {
+        tr: typeof source.betaTr === 'boolean' ? source.betaTr : DEFAULTS.betaTr,
+        trMinWords: clampWords(source.betaTrMinWords),
+        gps: typeof source.betaGps === 'boolean' ? source.betaGps : DEFAULTS.betaGps,
+        link: typeof source.betaLink === 'boolean' ? source.betaLink : DEFAULTS.betaLink,
+    };
+    if (!definition.tr && !definition.gps && !definition.link) {
+        definition.tr = DEFAULTS.betaTr;
+        definition.gps = DEFAULTS.betaGps;
+        definition.link = DEFAULTS.betaLink;
+    }
+    return definition;
 };
 
 const cleanColor = (value, fallback) =>
@@ -169,9 +197,9 @@ const clean = raw => {
         s.autoGithubBackup = false;
         s.removeGithubBackupOnDelete = false;
     }
-    if (!['both', 'distance', 'time'].includes(s.chartDefaultSeries)) s.chartDefaultSeries = DEFAULTS.chartDefaultSeries;
-    if (!['buddies', 'custom'].includes(s.favoritesSource)) s.favoritesSource = DEFAULTS.favoritesSource;
-    if (!['rich', 'markdown', 'plain'].includes(s.reportEditorMode)) s.reportEditorMode = DEFAULTS.reportEditorMode;
+    s.chartDefaultSeries = chartDefaultSeries(s.chartDefaultSeries);
+    s.favoritesSource = favoritesSource(s.favoritesSource);
+    s.reportEditorMode = reportEditorMode(s.reportEditorMode);
     s.reportImageWidth = reportImageWidth(s.reportImageWidth);
     s.mapRouteColor = routeColor(s.mapRouteColor);
     s.mapRouteWidth = routeWidth(s.mapRouteWidth);
@@ -182,24 +210,28 @@ const clean = raw => {
     s.terrainCacheLimitMb = terrainCacheLimitMb(s.terrainCacheLimitMb);
     if (typeof s.rememberMapLayer !== 'boolean') s.rememberMapLayer = DEFAULTS.rememberMapLayer;
     if (!MAP_LAYERS.has(s.mapLastLayer)) s.mapLastLayer = DEFAULTS.mapLastLayer;
-    for (const key of ['betaTr', 'betaGps', 'betaLink']) {
-        if (typeof s[key] !== 'boolean') s[key] = DEFAULTS[key];
-    }
-    // A "has beta" that matches nothing is never a valid state.
-    if (!s.betaTr && !s.betaGps && !s.betaLink) {
-        s.betaTr = s.betaGps = s.betaLink = true;
-    }
-    s.betaTrMinWords = clampWords(s.betaTrMinWords);
+    const beta = betaDefinitionFromSettings(s);
+    s.betaTr = beta.tr;
+    s.betaTrMinWords = beta.trMinWords;
+    s.betaGps = beta.gps;
+    s.betaLink = beta.link;
     return s;
 };
 
 const API = {
     MAP_LAYERS,
+    CHART_DEFAULT_SERIES,
+    FAVORITES_SOURCES,
+    REPORT_EDITOR_MODES,
     ROUTE_STYLE,
     VIEWPORT,
     BOUNDS,
     DEFAULTS,
     clean,
+    chartDefaultSeries,
+    favoritesSource,
+    reportEditorMode,
+    betaDefinitionFromSettings,
     routeColor,
     routeCasingColor,
     routeWidth,
