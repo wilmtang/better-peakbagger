@@ -255,3 +255,34 @@ test('an unavailable or trackless provider export is reported as no GPS data', a
         });
     }
 });
+
+// The adapter's output to the worker is documented as narrow. Ownership is
+// decided by comparing Garmin/Strava profile identifiers, and those compared
+// values are third-party account identities that PRIVACY.md's capture
+// allowlist does not include — they belong to the page realm that read them.
+test('no provider profile identity crosses to the background worker', async () => {
+    const dom = load(stravaPage(), 'https://www.strava.com/activities/123');
+    const api = dom.window.BPBProviderPage;
+
+    const decision = api.inspectOwnership();
+    assert.equal(decision.viewerId, '42', 'the page still resolves both identities to compare them');
+
+    assert.deepEqual({ ...api.publicOwnership(decision) },
+        { ok: true, provider: 'strava', activityId: '123' });
+    assert.deepEqual({ ...api.publicOwnership(api.inspectOwnership.call(null, 'https://example.com/x')) },
+        { ok: false, code: 'unsupported' });
+    for (const value of [null, undefined, 'nope', 42]) {
+        assert.deepEqual({ ...api.publicOwnership(value) },
+            { ok: false, code: 'ownership-unverified' }, `unusable input: ${value}`);
+    }
+
+    dom.window.fetch = async () => ({
+        ok: true,
+        text: async () => '<gpx><trk><trkseg><trkpt lat="1" lon="2"/><trkpt lat="1.1" lon="2.1"/></trkseg></trk></gpx>'
+    });
+    const captured = await api.capture();
+    assert.equal(captured.ok, true);
+    assert.deepEqual(Object.keys(captured).filter(key => /viewer|author|profile/i.test(key)), []);
+    assert.equal('viewerId' in captured, false);
+    assert.equal('authorId' in captured, false);
+});

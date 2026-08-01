@@ -234,7 +234,10 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
     const inspectProviderOwnership = async tabId => {
         const results = await ext.scripting.executeScript({
             target: { tabId },
-            func: () => globalThis.BPBProviderPage.inspectOwnership(),
+            // Narrowed in the page realm: the worker needs the verdict, not the
+            // provider profile identifiers the adapter compared to reach it.
+            func: () => globalThis.BPBProviderPage.publicOwnership(
+                globalThis.BPBProviderPage.inspectOwnership()),
             world: 'MAIN'
         });
         if (!results || !results[0]) throw new Error('The activity page returned no ownership result.');

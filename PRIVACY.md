@@ -76,7 +76,10 @@ for that data.
 
 - **Ownership gate:** capture stops before reading GPS coordinates unless the
   provider page gives unambiguous evidence that the signed-in user owns the
-  activity.
+  activity. Proving that means comparing your Garmin or Strava profile
+  identifier with the activity author's. Those identifiers are read and
+  compared inside the activity page and stay there; the extension receives only
+  the verdict, the provider name, and the activity id.
 - **Settings gate:** capture and local-file processing stop before parsing or
   retaining data if the extension cannot read the current capture settings.
   Schema defaults keep passive UI renderable; they never authorize capture or

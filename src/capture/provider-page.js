@@ -101,6 +101,25 @@ const inspectOwnership = (urlValue = location.href) => {
     return { ok: true, provider, activityId, viewerId, authorId };
 };
 
+// Everything that may cross from this page realm to the background worker.
+//
+// inspectOwnership() also resolves the Garmin/Strava profile identifiers it
+// compared. Those are the *evidence* for the decision, not the decision: they
+// are third-party account identities, and PRIVACY.md's capture allowlist does
+// not list them. They used to ride along on both the ownership reply and the
+// successful capture result — never persisted, but the adapters' output is
+// documented as narrow, and a field the worker never asked for is exactly how
+// that stops being true. They stay here.
+const publicOwnership = result => {
+    if (!result || typeof result !== 'object') return { ok: false, code: 'ownership-unverified' };
+    return {
+        ok: result.ok === true,
+        ...(result.code ? { code: result.code } : {}),
+        ...(result.provider ? { provider: result.provider } : {}),
+        ...(result.activityId ? { activityId: result.activityId } : {})
+    };
+};
+
 const { parseGpxData, cleanName, noGpsError } = gpxParse;
 
 const activityMetadata = provider => {
@@ -181,7 +200,7 @@ const capture = async (options = {}, generation = null, timeoutMs = PROVIDER_TIM
                     || cleanName((document.querySelector('main') || document.body).querySelector('h1')?.textContent || '');
         }
         return {
-            ...ownership,
+            ...publicOwnership(ownership),
             segments: parsed.segments,
             waypoints: parsed.waypoints,
             metadata
@@ -219,6 +238,7 @@ const API = {
     providerFromUrl,
     profileId,
     inspectOwnership,
+    publicOwnership,
     parseGpxData,
     garminExportRequest,
     capture,

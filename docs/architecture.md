@@ -336,10 +336,23 @@ controller requires the same read before parsing, and the worker independently
 re-reads those privacy choices before retaining allowlisted fields. A storage
 failure captures nothing.
 
+The compared identities stay in the page realm. `publicOwnership()` narrows
+both the ownership reply and the capture result to the verdict — `ok`, a
+failure `code`, the provider, and the activity id — so the Garmin or Strava
+profile identifier that proved ownership never reaches the worker. It is
+evidence for the decision, not part of it, and PRIVACY.md's capture allowlist
+does not include it.
+
 Garmin and Strava keep separate DOM and export adapters because those are
 undocumented provider dependencies. Their shared output is intentionally
 narrow; a provider change should fail that adapter, not weaken ownership or
 fall through to a second scraping strategy.
+
+Ownership detection reads English provider affordances — Strava's
+`/activities/<id>/edit` link and Garmin's "Edit an Activity" control. A
+localized provider UI therefore fails closed as `ownership-unverified` rather
+than capturing; that is the correct direction, but it is a known coverage
+limit, not a proof of non-ownership.
 
 ### 2. One parser and two representations
 
