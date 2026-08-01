@@ -310,7 +310,7 @@ const createGithubClient = ({
                 content: REPOSITORY_MARKER_CONTENT,
             });
         }
-        for (const path of new Set(removals.filter(path => !newPaths.has(path)))) {
+        for (const path of new Set(removals.filter(candidate => !newPaths.has(candidate)))) {
             treeEntries.push({ path, mode: BLOB_MODE, type: 'blob', sha: null });
         }
 

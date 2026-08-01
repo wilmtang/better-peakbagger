@@ -1068,9 +1068,13 @@ const moveDrag = event => {
     let geometry;
     if (dragSession.object.type === 'route' && dragSession.vertex != null) {
         const index = dragSession.vertex;
-        const points = dragSession.object.geometry.points.map((point, at) => at === index
-            ? [point[0] + dx, point[1] + dy]
-            : point);
+        // `existing` is this vertex's own stored position. It was named
+        // `point` and shadowed the pointer position above, so the untouched
+        // branch below read as "keep the cursor" while meaning "keep the
+        // vertex" — the two are the same identifier and opposite values.
+        const points = dragSession.object.geometry.points.map((existing, at) => at === index
+            ? [existing[0] + dx, existing[1] + dy]
+            : existing);
         // Clearing the controls hands the curve back to the model, the same way
         // adding a point does. Translating only this vertex's own handles left
         // its neighbours' tangents aimed at where the vertex used to be, so a
@@ -1636,22 +1640,22 @@ const importProject = async file => {
     toast('Reading project bundle…', { duration: 0 });
     try {
         const raw = await Archive.readProjectArchive(file);
-        const project = Project.cleanProject(raw.project);
+        const importedProject = Project.cleanProject(raw.project);
         const imported = Library.cleanPhoto(raw.photo);
-        if (!project || !imported || project.localId !== imported.localId) {
+        if (!importedProject || !imported || importedProject.localId !== imported.localId) {
             throw new Archive.ArchiveError('That project bundle is not a readable Better Peakbagger project.');
         }
-        if (!Project.matchingImageDimensions(project.image, imported.source)) {
+        if (!Project.matchingImageDimensions(importedProject.image, imported.source)) {
             throw new Archive.ArchiveError(DIMENSION_MISMATCH_MESSAGE);
         }
         const sha256 = await Renderer.sha256(raw.original);
-        if (sha256 !== project.image.sourceSha256 || sha256 !== imported.source.sha256) {
+        if (sha256 !== importedProject.image.sourceSha256 || sha256 !== imported.source.sha256) {
             throw new Archive.ArchiveError('That bundle’s image does not match its project.');
         }
         const bitmap = await decodeBlob(raw.original);
         let thumbnail;
         try {
-            if (!Project.matchingImageDimensions(project.image, bitmap)) {
+            if (!Project.matchingImageDimensions(importedProject.image, bitmap)) {
                 throw new Archive.ArchiveError(DIMENSION_MISMATCH_MESSAGE);
             }
             thumbnail = await makeThumbnail(bitmap);
@@ -1662,7 +1666,7 @@ const importProject = async file => {
         const existing = (await store.getBundle(imported.localId)).photo;
         const now = new Date().toISOString();
         const localId = existing ? crypto.randomUUID() : imported.localId;
-        const photo = existing
+        const nextPhoto = existing
             ? Library.createDraft({
                 localId,
                 title: `${imported.title} (imported)`.slice(0, Library.TITLE_LIMIT),
@@ -1685,8 +1689,8 @@ const importProject = async file => {
                 deletedAt: null,
             });
         await store.putBundle({
-            photo,
-            project: Project.cleanProject({ ...project, localId, updatedAt: now }),
+            photo: nextPhoto,
+            project: Project.cleanProject({ ...importedProject, localId, updatedAt: now }),
             original: raw.original,
             thumbnail,
         });
@@ -1694,7 +1698,7 @@ const importProject = async file => {
         await renderLibrary();
         toast(existing
             ? 'Imported as a new local draft, because that photo is already in this library.'
-            : `Imported “${photo.title}”.`);
+            : `Imported “${nextPhoto.title}”.`);
     } catch (error) {
         toast(error instanceof Archive.ArchiveError
             ? error.message

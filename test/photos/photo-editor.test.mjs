@@ -1033,3 +1033,50 @@ test('two unhurried presses on one spot keep the route going', async () => {
     assert.equal(page.vertexCount(), 4);
     assert.deepEqual(page.errors, []);
 });
+
+// Dragging one vertex must move that vertex and leave its neighbours where the
+// user put them. Nothing covered this, and the callback that rebuilds the point
+// list named its parameter over the pointer position — so its untouched branch
+// read `point` and could be "keep this vertex" or "collapse every vertex onto
+// the cursor" depending on which `point` was in scope.
+test('dragging one route vertex moves only that vertex', async () => {
+    const page = await loadEditor();
+    const { doc } = page;
+
+    page.tool('route');
+    page.pointer('pointerdown', 100, 100);
+    page.pointer('pointerdown', 200, 100);
+    page.pointer('pointerdown', 300, 100);
+    page.click(doc.getElementById('finish-route'));
+    page.tool('select');
+    await page.settle();
+    assert.equal(page.vertexCount(), 3, 'the drawn route exposes one handle per point');
+
+    const before = page.routePath();
+    assert.ok(before, 'the route is drawn');
+
+    // Grab the middle vertex by its own handle — jsdom does no hit testing, so
+    // the press has to land on the element the editor routes drags from — and
+    // pull it down.
+    const handles = [...page.overlay.querySelectorAll('.vertex-handle')];
+    assert.equal(handles.length, 3);
+    page.pointer('pointerdown', 200, 100, handles[1]);
+    page.pointer('pointermove', 200, 260);
+    page.pointer('pointerup', 200, 260);
+    await page.settle();
+
+    const after = page.routePath();
+    assert.notEqual(after, before, 'the dragged vertex moved');
+    const moved = [...after.matchAll(/-?\d+(?:\.\d+)?/g)].map(Number);
+    // First and last vertices keep their x; only the middle one gained height.
+    assert.ok(moved.length >= 6, `expected at least three coordinate pairs, got ${after}`);
+    assert.equal(page.vertexCount(), 3, 'no vertex was added or lost');
+
+    const ys = [];
+    for (let index = 1; index < moved.length; index += 2) ys.push(moved[index]);
+    const distinctYs = new Set(ys.map(value => Math.round(value)));
+    assert.ok(distinctYs.size > 1,
+        `every vertex ended at the same height, so the drag moved all of them: ${after}`);
+
+    assert.deepEqual(page.errors, []);
+});

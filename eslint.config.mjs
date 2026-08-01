@@ -53,7 +53,17 @@ export default [
             sourceType: 'module',
             globals: { ...globals.browser, ...globals.webextensions },
         },
-        rules,
+        rules: {
+            ...rules,
+            // Runtime source only. A shadow here is not a style question: in
+            // photos.js a route-drag callback named its parameter `point` over
+            // the pointer position, so its untouched branch returned the same
+            // identifier meaning the opposite value, and in terrain-map.js the
+            // settings *store* import was shadowed by a settings *snapshot* in
+            // three places. Test and script files shadow harmless locals like
+            // `dom` and `path` freely, and are left alone.
+            'no-shadow': 'error',
+        },
     },
     {
         files: ['src/gpx/gpx-analyzer.js'],

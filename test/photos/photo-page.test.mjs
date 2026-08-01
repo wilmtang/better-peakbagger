@@ -252,9 +252,9 @@ test('a downloaded project can come back in, and a duplicate cannot claim one as
     // claiming one published ImgBB asset.
     assert.match(source, /readProjectArchive/);
     assert.match(source, /existing \? crypto\.randomUUID\(\) : imported\.localId/);
-    assert.match(source, /sha256 !== project\.image\.sourceSha256/);
-    assert.match(source, /Project\.matchingImageDimensions\(project\.image, imported\.source\)/);
-    assert.match(source, /Project\.matchingImageDimensions\(project\.image, bitmap\)/);
+    assert.match(source, /sha256 !== importedProject\.image\.sourceSha256/);
+    assert.match(source, /Project\.matchingImageDimensions\(importedProject\.image, imported\.source\)/);
+    assert.match(source, /Project\.matchingImageDimensions\(importedProject\.image, bitmap\)/);
     assert.match(source, /Archive\.projectArchiveSize/);
     assert.match(source, /archiveBytes > Archive\.MAX_ARCHIVE_BYTES/);
 });

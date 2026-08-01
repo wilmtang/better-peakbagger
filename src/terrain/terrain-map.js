@@ -127,9 +127,12 @@ import { terrainCamera } from './terrain-camera.js';
         }
     };
 
-    const applySettings = settings => {
-        terrainEnabled = settings && settings.enable3dMap === true;
-        terrainTheme = settings && typeof settings.theme === 'string' ? settings.theme : 'system';
+    // Named `next`, not `settings`: the module-level import is the settings
+    // store, and shadowing it here made `settings.set(...)` inside this file
+    // read as though it might mean the snapshot rather than the store.
+    const applySettings = next => {
+        terrainEnabled = next && next.enable3dMap === true;
+        terrainTheme = next && typeof next.theme === 'string' ? next.theme : 'system';
         if (!terrainEnabled && frame) fail('unavailable');
     };
 
@@ -278,18 +281,18 @@ import { terrainCamera } from './terrain-camera.js';
 
     const initialSettingsRevision = settingsRevision;
     const settingsReady = settings
-        ? settings.get().then(settings => {
+        ? settings.get().then(initial => {
             // A storage push can beat the initial async read. Never let that
             // stale read override the newer feature-gate value.
-            if (settingsRevision === initialSettingsRevision) applySettings(settings);
+            if (settingsRevision === initialSettingsRevision) applySettings(initial);
         }, () => {
             if (settingsRevision === initialSettingsRevision) terrainEnabled = false;
         })
         : Promise.resolve();
 
-    if (settings) settings.subscribe(settings => {
+    if (settings) settings.subscribe(changed => {
         settingsRevision++;
-        applySettings(settings);
+        applySettings(changed);
     });
 
     const buildInitPayload = data => ({

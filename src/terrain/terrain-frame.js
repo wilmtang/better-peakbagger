@@ -1708,8 +1708,8 @@ import { terrainTiles as TerrainTiles } from './terrain-tiles.js';
                     if (map !== terrainMap) return;
                     peakPointerPoint = null;
                     setRouteHover(null);
-                    const canvas = typeof terrainMap.getCanvas === 'function' ? terrainMap.getCanvas() : null;
-                    if (canvas) canvas.style.cursor = '';
+                    const mapCanvas = typeof terrainMap.getCanvas === 'function' ? terrainMap.getCanvas() : null;
+                    if (mapCanvas) mapCanvas.style.cursor = '';
                 });
                 terrainMap.addSource('bpb-highlight', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
                 terrainMap.addLayer({
