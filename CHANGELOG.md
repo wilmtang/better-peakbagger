@@ -2,10 +2,13 @@
 
 ## Unreleased
 
-- **Transfer complete settings files.** Manual settings export and import now
-  include the saved ImgBB API key as well as every schema-backed preference.
-  Settings warns that the downloaded file contains API keys and should be kept
-  private; GitHub settings backup remains credential-free.
+- **Transfer complete settings files.** Manual settings export and import move
+  every schema-backed preference, and one **Include saved credentials** tickbox
+  adds your ImgBB API key and GitHub connection to the file when you want them.
+  Leave it unticked and the download is credential-free, which is what you want
+  when sharing a settings file for troubleshooting; tick it and Settings warns
+  that the file is unencrypted and should be kept private. GitHub settings
+  backup remains credential-free either way.
 
 - **Make site dark mode dynamic and own the first frame.** Peakbagger's literal
   inline text/background colors now remap by hue and lightness instead of

@@ -149,7 +149,7 @@ There is no parallel raw-source worker list and no `importScripts` fallback.
 | Peakbagger request boundary | `src/peakbagger/peakbagger-request.js`, `src/peakbagger/peakbagger-response.js`, `src/peakbagger/peakbagger-error.js`, `src/peakbagger/peakbagger-cloudflare.js` | Authenticated fetch policy, response validation, typed failures, and managed-challenge detection/recovery copy |
 | GitHub integration | `src/background/github-routes.js`, `src/github/github-error-copy.js`, `src/github/github-errors.js`, `src/github/github-api.js`, `src/github/github-auth.js`, `src/github/github-client.js`, `src/github/github-write-queue.js`, `src/github/github-backup.js`, `src/photos/photo-backup.js`, `options/photos.js` | Worker-only routes and credentials, typed/authenticated transport, Git Data writes, ordering/coalescing, ascent payloads, and metadata-only photo recovery |
 | ImgBB integration | `src/background/photo-routes.js`, `src/photos/imgbb-auth.js`, `src/photos/imgbb-client.js`, `options/imgbb.js` | Optional permission, device-local BYOK credential leased only to the exact packaged photo page for direct upload, scoped report return; no account gallery or remote deletion |
-| Manual settings transfer | `src/settings/settings-transfer.js`, `src/background/settings-file-routes.js`, `options/settings-backup.js` | Versioned known-setting and API-key file, explicit optional GitHub-connection inclusion, exact-options-page worker reads/writes, live credential validation, confirmation and unencrypted-private-file warning; GitHub settings backup remains credential-free |
+| Manual settings transfer | `src/settings/settings-transfer.js`, `src/background/settings-file-routes.js`, `options/settings-backup.js` | Versioned known-setting file, one explicit opt-in covering both saved credentials, exact-options-page worker reads/writes, live credential validation, confirmation and unencrypted-private-file warning; an export nobody opted in for and every GitHub settings backup stay credential-free |
 
 Extend the owning surface rather than publishing cross-feature globals. The one
 deliberate Better Peakbagger global is `globalThis.BPBProviderPage`: the worker
@@ -179,14 +179,17 @@ export is not a Peakbagger request, and native map-marker polling treats an
 aborted superseded camera request as normal. Neither exception duplicates the
 user-facing Peakbagger error mapper.
 
-### Options-page navigation
+### Sidebar section navigation
 
 Settings remains one continuous document inside the `.content` scroll
 container. Sidebar entries are ordinary fragment links, so the URL, history,
 keyboard behavior, and modified-click behavior stay browser-native. The
-controller in `options/options.js` adds only active-section tracking, a nav lock
-that prevents the highlight from sweeping through intermediate sections, and a
-distance-aware override of the CSS motion.
+controller is `src/ui/section-nav.js`, and it adds only active-section
+tracking, a nav lock that prevents the highlight from sweeping through
+intermediate sections, and a distance-aware override of the CSS motion.
+`options/options.js` and `photos/guide.js` each call `initSectionNav()` and own
+nothing else about it — the behavior below is shared by both pages, so a change
+here moves the photo guide's contents list too.
 
 A normal click keeps smooth scrolling only when the target is no farther than:
 
@@ -206,7 +209,7 @@ context without becoming a delay.
 The distance calculation uses current bounding rectangles rather than list
 length, so it covers any dynamically tall section, browser zoom level, and
 viewport size. A zero-height test environment falls back to ordinary anchor
-behavior. `test/options/options-github.test.mjs` pins the threshold, initial deep-link
+behavior. `test/options/options-ui.test.mjs` pins the threshold, initial deep-link
 override, nav lock, scroll spy, bottom clamp, and modified-click boundary; the
 real browser verifier exercises a 1,500-row favorite list and a long jump in
 both browser families.
@@ -531,10 +534,14 @@ ImgBB is bring-your-own-key. Its API origin is an optional permission requested
 when the user saves a key in Settings or uploads from the editor. The saved key
 remains in device-local extension storage, in the dedicated `bpbImgbbAuth`
 record. It is never exposed to Peakbagger, another website, GitHub, browser
-sync, or status UI. A manual settings-file export includes it with a
-keep-private warning, through an exact-options-page worker route; that manual
-file can also include the GitHub connection after a separate explicit opt-in.
-GitHub backup still excludes both credentials. The background worker otherwise
+sync, or status UI. A manual settings-file export can include it, but only
+after the user ticks **Include saved credentials** — one per-file decision
+that covers the ImgBB key and the GitHub connection together, so two
+device-local secrets in the same unencrypted download do not have two consent
+models. An export nobody opted in for is credential-free, which is what a
+settings file shared for troubleshooting should be. The write goes through an
+exact-options-page worker route and carries a keep-private warning. GitHub
+backup still excludes both credentials. The background worker otherwise
 provides it only to Better
 Peakbagger's exact packaged photo page immediately before that page sends a
 direct upload to ImgBB. The photo page and the options page can both configure
@@ -1244,8 +1251,8 @@ The focused automated evidence is deliberately split by boundary:
 - `test/options/options-favorites.test.mjs` covers source switching, provenance counts/filtering,
   identity-checked add, live totals and fuzzy search, reversible delete/mirror/restore,
   Buddy refresh, merge, and the default-off removal preference.
-- `test/options/options-github.test.mjs` covers distance-aware navigation and
-  explicit GitHub messages.
+- `test/options/options-ui.test.mjs` covers distance-aware sidebar navigation;
+  `test/options/options-github.test.mjs` covers the explicit GitHub messages.
 - `test/favorites/climber-favorite.test.mjs` covers manual add/remove, self exclusion,
   Buddy-mode absence, live source/list changes, native action detection, owner
   validation, and both Buddy-removal policies.
@@ -1277,9 +1284,9 @@ requested only when the feature is enabled. GitHub device flow and repository
 selection run through the worker; the token and chosen repository live in
 `storage.local`, never synced storage, and never enter a content script. The
 exact packaged Settings page handles the token only while creating or importing
-a user-selected manual settings file with **Include GitHub connection**. That
-file is unencrypted; import validates the token and repository live before
-transactionally replacing the local record.
+a user-selected manual settings file whose **Include saved credentials** option
+was ticked. That file is unencrypted; import validates the token and repository
+live before transactionally replacing the local record.
 
 On Save, `src/ascent/ascent-snapshot.js` captures the submitted form and report
 sidecar into a short-lived, source-tab-namespaced `storage.session` snapshot.
