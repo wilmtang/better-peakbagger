@@ -522,7 +522,7 @@ test('a bound peak the track only brushes surfaces as an explicit closest-approa
         peakXml: '<p><t i="7" n="Bound Peak" a="0.002" o="0" e="426.51" r="100" l="Test Range"/><t i="8" n="On Track Peak" a="0" o="0" e="426.51" r="100" l="Test Range"/></p>'
     });
     const ready = await harness.send({
-        type: 'GPX_PROCESS_START', segments: SEGMENTS, waypoints: [], trackName: '', utcOffsetMinutes: 0
+        type: 'GPX_PROCESS_START', segments: SEGMENTS, waypoints: [], trackName: '  Bound   traverse  ', utcOffsetMinutes: 0
     });
     assert.equal(ready.phase, 'ready');
     assert.deepEqual(JSON.parse(JSON.stringify(ready.matches.map(match => match.id))), [8],
@@ -531,6 +531,8 @@ test('a bound peak the track only brushes surfaces as an explicit closest-approa
     assert.ok(ready.boundFallback.closestApproachM > 150 && ready.boundFallback.closestApproachM < 300,
         `closest approach should be ~222 m, got ${ready.boundFallback.closestApproachM}`);
     assert.equal(ready.boundFallback.selected, false);
+    assert.equal(harness.values.bpbCaptureJobs['5'].tripName, 'Bound traverse',
+        'a selectable fallback must not make the worker discard the GPX track name');
 
     // "Use ⟨peak⟩ anyway" fills the current page from the closest-approach
     // point and still opens the detected summit as a sibling draft.
@@ -540,6 +542,8 @@ test('a bound peak the track only brushes surfaces as an explicit closest-approa
     assert.equal(applied.ok, true);
     assert.equal(harness.values.bpbDraftTabs['5'].pid, 7);
     assert.equal(harness.values.bpbDraftTabs['100'].pid, 8);
+    assert.equal(harness.values.bpbDraftTabs['5'].tripInfo.name, 'Bound traverse');
+    assert.equal(harness.values.bpbDraftTabs['100'].tripInfo.name, 'Bound traverse');
     const apply = await harness.send({ type: 'DRAFT_READY', pid: '7', cid: '77' });
     assert.equal(apply.action, 'apply');
     assert.ok(Number.isFinite(apply.fields.upDistanceM));

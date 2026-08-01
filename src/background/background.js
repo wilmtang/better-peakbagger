@@ -341,7 +341,12 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
             draftFields: Core.calculateDraftFields(sanitized.segments, match, metadata)
         }));
         const rawTripName = typeof metadata?.title === 'string' ? metadata.title : '';
-        const tripName = capturePreferences.fillTripInfo && matches.length > 1
+        // A below-bar bound peak is still selectable on the ascent form. Keep
+        // the source name whenever that fallback can turn the operation into a
+        // multi-peak trip; prepareDraftOpening() remains the owner of whether
+        // the user's eventual selection actually receives Trip Info.
+        const tripName = capturePreferences.fillTripInfo
+            && matches.length + (boundBelowBar ? 1 : 0) > 1
             ? rawTripName.replace(/\s+/g, ' ').trim().slice(0, 200)
             : '';
         const nightsOut = Core.calculateNightsOut(sanitized.segments, metadata);
