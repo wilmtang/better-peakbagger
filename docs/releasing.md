@@ -146,8 +146,9 @@ visible in the AMO Developer Hub.
    Its current development-only advisory acceptance is exact and expires on
    2026-08-09; expiry or dependency-path drift requires a fresh source review,
    not a date extension made only to unblock publication. `npm run lint`
-   likewise permits only the exact owner-annotated warning locations checked
-   into `scripts/check-web-ext-lint.mjs`.
+   likewise permits only the owner-annotated warnings checked into
+   `scripts/check-web-ext-lint.mjs`, at the exact per-file occurrence counts
+   recorded there.
 
 4. Push the release:
 

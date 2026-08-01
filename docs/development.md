@@ -160,7 +160,7 @@ only exist under `dist/` after a build.
 | `npm run terrain:lod` | Measures the 3D tilt detail collapse against the acceptance criteria in `docs/archive/3d-tilt-detail-blink.md`: which elevation level every visible pixel is drawn from across a cold-cache pitch sweep, plus the elevation and drape traffic it costs. Same HTTPS showcase host and GPU rules as `terrain:verify`. |
 | `npm run showcase:render` | Builds and renders the local UI showcase fixtures into `store-assets/`. Same HTTPS showcase host. |
 | `npm run lint:js` | Runs errors-only ESLint over source, extension surfaces, scripts, and tests. |
-| `npm run lint` | Builds, runs `web-ext lint` as JSON, and accepts only the six exact owner-annotated manifest/dependency warnings in `scripts/check-web-ext-lint.mjs`. New, moved, duplicate warnings, errors, or notices fail. |
+| `npm run lint` | Builds, runs `web-ext lint` as JSON, and accepts only the six owner-annotated manifest/dependency warnings in `scripts/check-web-ext-lint.mjs`, counted per `(code, file)`. A new warning, an extra or missing occurrence in an owned file, any error, or any notice fails. Generated line and column numbers are deliberately not pinned. |
 | `npm run audit:ci` | Runs npm audit through the repository policy: no unowned advisory may pass. The current exact dev-only `web-ext`/`brace-expansion` compatibility exception expires 2026-08-09. |
 | `npm run package` | Release build + `web-ext build` from `dist/`; writes the canonical Chrome ZIP under `web-ext-artifacts/`. |
 | `npm run start:chromium` / `start:firefox` | Build, watch, launch a web-ext development browser, and auto-reload the extension after successful rebuilds. Firefox mirrors each complete build into its inline-Preferences source first. |

@@ -1379,10 +1379,12 @@ No single green command proves the extension works:
   manager/search/backup path so the default local loop can stay fast without
   losing large-input coverage.
 - `npm run lint:js` catches JavaScript errors without rewriting source.
-  `npm run lint` checks the built extension package and accepts only six exact
-  owner-annotated manifest/dependency warnings; any new, moved, duplicate
-  warning, error, or notice fails. Neither command establishes runtime
-  behavior.
+  `npm run lint` checks the built extension package and accepts only the six
+  owner-annotated manifest/dependency warnings, counted per `(code, file)`; a
+  new warning, an extra or missing occurrence in an owned file, an error, or a
+  notice fails. Generated line and column numbers are not pinned, because every
+  vendored warning's position is a byte offset into a bundle. Both linters run
+  in CI and in release CI. Neither command establishes runtime behavior.
 - `npm run audit:ci` rejects every unowned production or development advisory.
   Its sole current exception is the exact dev-only `web-ext` compatibility
   path for GHSA-mh99-v99m-4gvg, with locked parents and a 2026-08-09 expiry.
