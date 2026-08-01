@@ -17,7 +17,7 @@ import { createTerrainPrefetch } from './terrain-prefetch.js';
 import { publicErrors as PublicErrors } from './public-errors.js';
 import { settings as Settings } from '../settings/settings.js';
 import { peakbaggerError as PeakbaggerError } from '../peakbagger/peakbagger-error.js';
-import { isPeakbaggerSenderUrl } from '../peakbagger/peakbagger-origin.js';
+import { PEAKBAGGER_ORIGIN, isPeakbaggerSenderUrl } from '../peakbagger/peakbagger-origin.js';
 import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
 
 (() => {
@@ -173,7 +173,7 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
     };
 
     const peakbaggerLogin = async () => {
-        const response = await fetchPeakbaggerResource('https://peakbagger.com/Default.aspx', { kind: 'html' });
+        const response = await fetchPeakbaggerResource(`${PEAKBAGGER_ORIGIN}/Default.aspx`, { kind: 'html' });
         if (response.kind !== 'ok') throw PeakbaggerError.exception(response.error);
         const html = response.text;
         const match = /href=["'][^"']*\bcid=(\d+)[^"']*["'][^>]*>[\s\S]{0,80}?My Home Page/i.exec(html)
@@ -878,7 +878,7 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
         }
         if (onBeforeNavigate) await onBeforeNavigate({ created, groupWarning });
         await Promise.all(created.map(draft => ext.tabs.update(draft.tabId, {
-            url: `https://peakbagger.com/climber/ascentedit.aspx?pid=${draft.pid}&cid=${draft.cid}`,
+            url: `${PEAKBAGGER_ORIGIN}/climber/ascentedit.aspx?pid=${draft.pid}&cid=${draft.cid}`,
             active: false
         })));
         return { created, groupWarning };
@@ -1167,7 +1167,7 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
                     // postback, so the standard draft delivery fills the page
                     // this navigation reloads.
                     await ext.tabs.update(tabId, {
-                        url: `https://peakbagger.com/climber/ascentedit.aspx?pid=${primaryMatch.id}&cid=${job.cid}`
+                        url: `${PEAKBAGGER_ORIGIN}/climber/ascentedit.aspx?pid=${primaryMatch.id}&cid=${job.cid}`
                     });
                 }
             }

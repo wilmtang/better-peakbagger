@@ -40,17 +40,17 @@ test('draft key parsing rejects unrelated and malformed storage entries', () => 
 
 test('edit URLs preserve the draft target and omit the unknown climber id', () => {
     assert.equal(Drafts.editUrl(Drafts.parseKey('bpbReportDraft:77:a123')),
-        'https://peakbagger.com/climber/ascentedit.aspx?aid=123&cid=77');
+        'https://www.peakbagger.com/climber/ascentedit.aspx?aid=123&cid=77');
     assert.equal(Drafts.editUrl(Drafts.parseKey('bpbReportDraft:77:p456')),
-        'https://peakbagger.com/climber/ascentedit.aspx?pid=456&cid=77');
+        'https://www.peakbagger.com/climber/ascentedit.aspx?pid=456&cid=77');
     assert.equal(Drafts.editUrl(Drafts.parseKey('bpbReportDraft:77:p-105366')),
-        'https://peakbagger.com/climber/ascentedit.aspx?pid=-105366&cid=77');
+        'https://www.peakbagger.com/climber/ascentedit.aspx?pid=-105366&cid=77');
     assert.equal(Drafts.editUrl(Drafts.parseKey('bpbReportDraft:77:new')),
-        'https://peakbagger.com/climber/ascentedit.aspx?cid=77');
+        'https://www.peakbagger.com/climber/ascentedit.aspx?cid=77');
     assert.equal(Drafts.editUrl(Drafts.parseKey('bpbReportDraft:0:p456')),
-        'https://peakbagger.com/climber/ascentedit.aspx?pid=456');
+        'https://www.peakbagger.com/climber/ascentedit.aspx?pid=456');
     assert.equal(Drafts.editUrl(Drafts.parseKey('bpbReportDraft:0:new')),
-        'https://peakbagger.com/climber/ascentedit.aspx');
+        'https://www.peakbagger.com/climber/ascentedit.aspx');
 });
 
 test('fallback titles distinguish the draft targets', () => {

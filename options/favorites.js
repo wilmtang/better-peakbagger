@@ -5,6 +5,7 @@
 
 import { favoriteClimbers as F } from '../src/favorites/favorite-climbers.js';
 import { peakbaggerError as PeakbaggerError } from '../src/peakbagger/peakbagger-error.js';
+import { PEAKBAGGER_ORIGIN } from '../src/peakbagger/peakbagger-origin.js';
 import { fetchPeakbaggerDocument } from '../src/peakbagger/peakbagger-request.js';
 import { numericParam, ownerClimberId } from '../src/profile/profile-backup-core.js';
 import { runtimeMessage as RuntimeMessage } from '../src/ui/runtime-message.js';
@@ -19,7 +20,6 @@ const UNDO_MS = 6000;
 // replaced it with a progress-extended budget on the assumption it was firing,
 // which measurement showed it was not.
 const SITE_TAB_REFRESH_MS = 8000;
-const PEAKBAGGER_ORIGIN = 'https://www.peakbagger.com';
 const SOURCE_FILTERS = ['all', 'buddy', 'manual'];
 
 export const initFavorites = ({ extensionApi, flash, save } = {}) => {

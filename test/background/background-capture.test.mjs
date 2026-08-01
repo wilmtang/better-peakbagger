@@ -261,7 +261,7 @@ test('background capture persists a private job, opens grouped drafts, and previ
     assert.deepEqual([...opened.tabIds], [100]);
     assert.deepEqual(harness.grouped, [{ tabIds: [100], createProperties: { windowId: 9 } }]);
     assert.deepEqual(harness.groupUpdates, [[3, { title: 'Peak Drafts', color: 'green', collapsed: false }]]);
-    assert.equal(harness.tabs.get(100).url, 'https://peakbagger.com/climber/ascentedit.aspx?pid=7&cid=77');
+    assert.equal(harness.tabs.get(100).url, 'https://www.peakbagger.com/climber/ascentedit.aspx?pid=7&cid=77');
 
     const apply = await harness.send({ type: 'DRAFT_READY', pid: '7', cid: '77' }, { tab: { id: 100 } });
     assert.equal(apply.action, 'apply');
@@ -527,7 +527,7 @@ test('a stale recorded draft is pruned and replaced instead of falsely reused', 
     assert.equal(harness.values.bpbDraftTabs['100'], undefined);
     assert.equal(harness.values.bpbDraftTabs['101'].pid, 7);
     assert.equal(harness.tabs.get(101).url,
-        'https://peakbagger.com/climber/ascentedit.aspx?pid=7&cid=77');
+        'https://www.peakbagger.com/climber/ascentedit.aspx?pid=7&cid=77');
 });
 
 test('replacing a draft whose tab navigated away never closes the user-controlled tab', async () => {

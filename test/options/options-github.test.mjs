@@ -321,9 +321,9 @@ test('report drafts render newest-first with labels, fallbacks, and edit links',
     assert.deepEqual(rows.map(row => row.querySelector('.draft-mode').textContent), ['Rich', 'Rich', 'Markdown']);
     assert.equal(rows[0].querySelector('.draft-excerpt').textContent, '**Newest report**');
     assert.deepEqual(rows.map(row => row.querySelector('a.secondary').href), [
-        'https://peakbagger.com/climber/ascentedit.aspx?aid=123&cid=900001',
-        'https://peakbagger.com/climber/ascentedit.aspx?pid=456&cid=900001',
-        'https://peakbagger.com/climber/ascentedit.aspx?cid=900001'
+        'https://www.peakbagger.com/climber/ascentedit.aspx?aid=123&cid=900001',
+        'https://www.peakbagger.com/climber/ascentedit.aspx?pid=456&cid=900001',
+        'https://www.peakbagger.com/climber/ascentedit.aspx?cid=900001'
     ]);
     assert.equal('bpbReportDraft:900001:a999' in dom.chrome._localStore, false,
         'opening the manager should prune expired drafts');
@@ -346,7 +346,7 @@ test('report drafts retain provisional peak identities and their mountain labels
     const row = draftRow(dom, key);
     assert.equal(row.querySelector('.draft-title').textContent, 'Hibox Mountain · 7/18/2026');
     assert.equal(row.querySelector('a.secondary').href,
-        'https://peakbagger.com/climber/ascentedit.aspx?pid=-105366&cid=900001');
+        'https://www.peakbagger.com/climber/ascentedit.aspx?pid=-105366&cid=900001');
 });
 
 test('copy Markdown preserves exact source or converts the stored bracket report', async () => {

@@ -90,7 +90,7 @@ const createWorker = ({ settings = { enableGithubBackup: true }, auth = null, gi
     const githubCalls = [];
     const fetch = async (url, init = {}) => {
         const method = init.method || 'GET';
-        if (String(url) === 'https://peakbagger.com/Default.aspx') {
+        if (String(url) === 'https://www.peakbagger.com/Default.aspx') {
             return respond(200, peakbaggerLoginHtml);
         }
         let body = init.body;

@@ -4,12 +4,13 @@
 // Pure profile-backup primitives shared by the ClimbListC content script and
 // fixture/unit tests. No extension APIs or ambient document are read here.
 
+import { PEAKBAGGER_ORIGIN } from '../peakbagger/peakbagger-origin.js';
 import { classifyResponse } from '../peakbagger/peakbagger-response.js';
 export { classifyResponse } from '../peakbagger/peakbagger-response.js';
 
 const trim = value => String(value ?? '').replace(/\u00a0/g, ' ').replace(/\s+/g, ' ').trim();
 
-export const numericParam = (href, name, base = 'https://peakbagger.com/') => {
+export const numericParam = (href, name, base = `${PEAKBAGGER_ORIGIN}/`) => {
     try {
         const raw = new URL(href, base).searchParams.get(name);
         return /^-?\d+$/.test(raw || '') ? Number(raw) : null;
@@ -18,7 +19,7 @@ export const numericParam = (href, name, base = 'https://peakbagger.com/') => {
 
 const findLink = (row, pathPattern) => Array.from(row.querySelectorAll('a[href]')).find(anchor => {
     if (anchor.closest('tr') !== row) return false;
-    try { return pathPattern.test(new URL(anchor.href, 'https://peakbagger.com/').pathname); }
+    try { return pathPattern.test(new URL(anchor.href, `${PEAKBAGGER_ORIGIN}/`).pathname); }
     catch { return false; }
 }) || null;
 

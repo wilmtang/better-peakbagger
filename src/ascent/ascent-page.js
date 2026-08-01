@@ -16,10 +16,12 @@
 // persisted form omits it. Selectors here are validated against a masked
 // ascent.aspx fixture and confirmed on live Peakbagger before release.
 
+import { PEAKBAGGER_ORIGIN } from '../peakbagger/peakbagger-origin.js';
+
 const clean = value => (typeof value === 'string' ? value : '').replace(/\s+/g, ' ').trim();
 
 const paramFrom = (href, name) => {
-    try { return new URL(href, 'https://peakbagger.com/').searchParams.get(name); }
+    try { return new URL(href, `${PEAKBAGGER_ORIGIN}/`).searchParams.get(name); }
     catch { return null; }
 };
 

@@ -18,6 +18,8 @@
 // has no server-assigned aid yet.
 // It does NOT read the token or touch the network; it only reads the form.
 
+import { PEAKBAGGER_ORIGIN } from '../peakbagger/peakbagger-origin.js';
+
 const trim = value => (typeof value === 'string' ? value : value == null ? '' : String(value)).trim();
 const pad2 = value => String(value).padStart(2, '0');
 const displayText = (value, limit) => trim(value).replace(/\s+/g, ' ').slice(0, limit);
@@ -115,7 +117,7 @@ const readCompanions = form => {
         if (anchor) {
             let id = null;
             try {
-                const rawId = new URL(anchor.href, 'https://peakbagger.com/').searchParams.get('cid');
+                const rawId = new URL(anchor.href, `${PEAKBAGGER_ORIGIN}/`).searchParams.get('cid');
                 if (/^\d+$/.test(rawId || '')) id = Number(rawId);
             } catch { /* malformed link */ }
             const name = trim(anchor.textContent);

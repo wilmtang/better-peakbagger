@@ -116,7 +116,7 @@ test('ascent.json coerces units and carries identity, peak, and provenance', () 
     const json = Backup.buildAscentJson(baseSnapshot());
     assert.equal(json.schemaVersion, 1);
     assert.equal(json.ascent.id, 1234567);
-    assert.equal(json.ascent.url, 'https://peakbagger.com/climber/ascent.aspx?aid=1234567');
+    assert.equal(json.ascent.url, 'https://www.peakbagger.com/climber/ascent.aspx?aid=1234567');
     assert.equal(json.ascent.date, '2026-07-12');
     assert.equal(json.ascent.gainFt, 9000);        // "9000" → 9000
     assert.equal(json.ascent.distanceUpMi, 8);      // "8.0" → 8
@@ -130,7 +130,7 @@ test('ascent.json coerces units and carries identity, peak, and provenance', () 
     });
     assert.deepEqual(json.peak, {
         id: 2296,
-        url: 'https://peakbagger.com/peak.aspx?pid=2296',
+        url: 'https://www.peakbagger.com/peak.aspx?pid=2296',
         name: 'Mount Rainier',
         elevationFt: 14411,
         location: 'Washington, USA',
@@ -185,7 +185,7 @@ test('report.md wraps the resolved Markdown body verbatim under self-describing 
     assert.ok(md.startsWith('---\n'));
     assert.ok(md.includes('peak: "Mount Rainier"'));
     assert.ok(md.includes('date: 2026-07-12'));
-    assert.ok(md.includes('peakbagger: https://peakbagger.com/climber/ascent.aspx?aid=1234567'));
+    assert.ok(md.includes('peakbagger: https://www.peakbagger.com/climber/ascent.aspx?aid=1234567'));
     // Verbatim body, including the user's exact list markers and emphasis.
     assert.ok(md.includes('We climbed **Baker** under blue skies.\n\n- ice axe\n- crampons'));
     assert.ok(md.endsWith('\n'));
@@ -196,7 +196,7 @@ test('report.md tolerates a missing body (frontmatter only)', () => {
     snap.report = { markdown: '' };
     const md = Backup.buildReportMarkdown(snap);
     assert.ok(md.startsWith('---\n'));
-    assert.ok(md.includes('peakbagger: https://peakbagger.com/climber/ascent.aspx?aid=1234567'));
+    assert.ok(md.includes('peakbagger: https://www.peakbagger.com/climber/ascent.aspx?aid=1234567'));
     // Frontmatter only: the closing fence is the last content line.
     assert.equal(md.trimEnd().split('\n').pop(), '---');
 });

@@ -8,10 +8,12 @@
 // silently disagreeing. This module intentionally has no DOM or browser-API
 // dependency.
 
+import { PEAKBAGGER_ORIGIN } from '../peakbagger/peakbagger-origin.js';
+
 const PREFIX = 'bpbReportDraft:';
 const TTL_MS = 14 * 24 * 60 * 60 * 1000;
 const LIMIT = 30;
-const EDIT_BASE = 'https://peakbagger.com/climber/ascentedit.aspx';
+const EDIT_BASE = `${PEAKBAGGER_ORIGIN}/climber/ascentedit.aspx`;
 
 const keyFor = ({ cid, aid, pid } = {}) => {
     const owner = cid || '0';

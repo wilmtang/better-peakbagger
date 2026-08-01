@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { capturePhases as CapturePhases } from '../src/capture/capture-phases.js';
+import { PEAKBAGGER_ORIGIN } from '../src/peakbagger/peakbagger-origin.js';
 import { settings as Settings } from '../src/settings/settings.js';
 import { units as Units } from '../src/ui/units.js';
 
@@ -101,7 +102,7 @@ import { units as Units } from '../src/ui/units.js';
                 kind: notOwner ? 'locked' : 'error',
                 actions: signedOut
                     ? [
-                        { label: 'Open Peakbagger', onClick: () => ext.tabs.create({ url: 'https://peakbagger.com/Default.aspx' }) },
+                        { label: 'Open Peakbagger', onClick: () => ext.tabs.create({ url: `${PEAKBAGGER_ORIGIN}/Default.aspx` }) },
                         { label: 'I’m signed in — try again', onClick: retry }
                     ]
                     : providerSignedOut

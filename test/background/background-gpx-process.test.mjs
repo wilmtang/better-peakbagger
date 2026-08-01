@@ -392,7 +392,7 @@ test('a multi-summit selection fills the current tab and opens grouped sibling d
     assert.deepEqual(JSON.parse(JSON.stringify(harness.grouped)), [{ tabIds: [100], createProperties: { windowId: 9 } }]);
     assert.deepEqual(JSON.parse(JSON.stringify(harness.groupUpdates)), [[3, { title: 'Peak Drafts', color: 'green', collapsed: false }]]);
     const siblingNavigation = harness.navigations.find(entry => entry.tabId === 100);
-    assert.equal(siblingNavigation.url, 'https://peakbagger.com/climber/ascentedit.aspx?pid=8&cid=77');
+    assert.equal(siblingNavigation.url, 'https://www.peakbagger.com/climber/ascentedit.aspx?pid=8&cid=77');
     assert.equal(siblingNavigation.draftRegistered, true, 'the sibling draft exists before its tab navigates');
     assert.deepEqual(harness.tabMessages, [{ tabId: 5, message: { type: 'DRAFT_PROCEED' } }]);
 
@@ -490,7 +490,7 @@ test('a failed unbound current-tab navigation rolls back the sibling and restore
     }, unboundSender);
     assert.equal(retried.ok, true);
     assert.equal(harness.tabs.get(5).url,
-        'https://peakbagger.com/climber/ascentedit.aspx?pid=7&cid=77');
+        'https://www.peakbagger.com/climber/ascentedit.aspx?pid=7&cid=77');
     assert.equal(harness.values.bpbDraftTabs['101'].pid, 8);
 });
 
@@ -508,7 +508,7 @@ test('an unbound page registers its draft first and then navigates to the chosen
     }, unboundSender);
     assert.equal(applied.ok, true);
     const navigation = harness.navigations.find(entry => entry.tabId === 5);
-    assert.equal(navigation.url, 'https://peakbagger.com/climber/ascentedit.aspx?pid=7&cid=77');
+    assert.equal(navigation.url, 'https://www.peakbagger.com/climber/ascentedit.aspx?pid=7&cid=77');
     assert.equal(navigation.draftRegistered, true, 'registration precedes the URL change');
     assert.equal(harness.tabMessages.length, 0, 'the reloaded page runs its own ready handshake');
 

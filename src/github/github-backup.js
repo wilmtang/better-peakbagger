@@ -45,12 +45,14 @@
 // module coerces them and omits anything blank or unparseable rather than
 // inventing a value. Idempotent: safe to inject more than once into the global.
 
+import { PEAKBAGGER_ORIGIN } from '../peakbagger/peakbagger-origin.js';
+
 const SCHEMA_VERSION = 1;
 
 // Peakbagger's public URLs are deterministic from the numeric ids, so they
 // are derived here rather than trusted from the snapshot.
-const ascentUrl = id => `https://peakbagger.com/climber/ascent.aspx?aid=${id}`;
-const peakUrl = id => `https://peakbagger.com/peak.aspx?pid=${id}`;
+const ascentUrl = id => `${PEAKBAGGER_ORIGIN}/climber/ascent.aspx?aid=${id}`;
+const peakUrl = id => `${PEAKBAGGER_ORIGIN}/peak.aspx?pid=${id}`;
 
 const trimString = value => (typeof value === 'string' ? value : value == null ? '' : String(value)).trim();
 

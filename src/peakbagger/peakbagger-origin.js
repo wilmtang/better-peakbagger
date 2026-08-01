@@ -19,14 +19,12 @@
 // lets the background worker, both content-script worlds, and the
 // extension-owned terrain frame all bundle it.
 
-// The two hostnames Peakbagger actually serves the site from. Exported for the
-// callers whose protocol policy differs from the predicates below but whose
-// idea of "which host" must not.
+// Both hosts are accepted because Peakbagger serves both. Extension-generated
+// navigation and backup links use the www origin below so users and exported
+// artifacts see one stable canonical form; accepting the bare host remains a
+// compatibility boundary, not a second output policy.
+export const PEAKBAGGER_ORIGIN = 'https://www.peakbagger.com';
 export const PEAKBAGGER_HOSTS = new Set(['peakbagger.com', 'www.peakbagger.com']);
-
-// Every content script is declared against https://*.peakbagger.com/*, so a
-// runtime message can legitimately arrive from a subdomain the site adds later.
-const PEAKBAGGER_HOST_SUFFIX = /(^|\.)peakbagger\.com$/i;
 
 // "May the extension fetch this URL with the user's Peakbagger cookies?"
 // The strictest of the three: an authenticated read is only ever aimed at the
@@ -40,11 +38,15 @@ export const isPeakbaggerUrl = value => {
 };
 
 // "Did this runtime message come from one of our own content scripts?"
-// Subdomain-tolerant on purpose, to match the manifest's own match patterns.
+// Exact https hosts match manifest.json. A future host must be granted in the
+// manifest and added to PEAKBAGGER_HOSTS before its messages become trusted.
 // This does not authorize a fetch or a credential — the routes behind it apply
 // their own page, identity, and feature gates.
 export const isPeakbaggerSenderUrl = value => {
-    try { return PEAKBAGGER_HOST_SUFFIX.test(new URL(value).hostname); }
+    try {
+        const url = new URL(value);
+        return url.protocol === 'https:' && PEAKBAGGER_HOSTS.has(url.hostname.toLowerCase());
+    }
     catch { return false; }
 };
 
@@ -67,6 +69,7 @@ export const isPeakbaggerPageOrigin = origin => {
 };
 
 export const peakbaggerOrigin = {
+    PEAKBAGGER_ORIGIN,
     PEAKBAGGER_HOSTS,
     isPeakbaggerUrl,
     isPeakbaggerSenderUrl,
