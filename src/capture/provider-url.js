@@ -8,7 +8,10 @@
 export const providerFromUrl = urlValue => {
     try {
         const url = new URL(urlValue);
-        let match = /^\/app\/activity\/(\d+)(?:[/?#]|$)/i.exec(url.pathname);
+        // Garmin redirects its legacy /modern/activity route to /app/activity.
+        // Accept both so a toolbar click that races that navigation still
+        // identifies the same activity; generated links remain canonical.
+        let match = /^\/(?:app|modern)\/activity\/(\d+)(?:[/?#]|$)/i.exec(url.pathname);
         if (url.hostname === 'connect.garmin.com' && match) {
             return { provider: 'garmin', activityId: match[1] };
         }
@@ -25,8 +28,9 @@ export const providerFromUrl = urlValue => {
 // The inverse: rebuild a canonical activity URL from the { provider,
 // activityId } a capture job already stores, so the raw tab URL never has to
 // be persisted. The Garmin form mirrors what providerFromUrl recognizes
-// (/app/activity/<id>). Junk ids or unknown providers yield null so nothing is
-// written into the form.
+// (/app/activity/<id>), while parsing also accepts Garmin's redirecting
+// /modern/activity alias. Junk ids or unknown providers yield null so nothing
+// is written into the form.
 export const providerActivityUrl = ({ provider, activityId } = {}) => {
     if (!/^\d+$/.test(String(activityId))) return null;
     if (provider === 'garmin') return `https://connect.garmin.com/app/activity/${activityId}`;

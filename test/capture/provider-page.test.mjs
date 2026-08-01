@@ -42,11 +42,14 @@ const garminPage = ({ csrfToken = 'csrf-123' } = {}) => `
   </div>
 </body></html>`;
 
-test('provider activity URL parsing is canonical and fails closed', () => {
+test('provider activity URL parsing accepts Garmin redirects and fails closed', () => {
     const dom = load(stravaPage(), 'https://www.strava.com/activities/123');
     const parse = dom.window.BPBProviderPage.providerFromUrl;
 
     assert.deepEqual({ ...parse('https://connect.garmin.com/app/activity/777?foo=bar') }, {
+        provider: 'garmin', activityId: '777'
+    });
+    assert.deepEqual({ ...parse('https://connect.garmin.com/modern/activity/777') }, {
         provider: 'garmin', activityId: '777'
     });
     assert.deepEqual({ ...parse('https://m.strava.com/activities/456/overview') }, {

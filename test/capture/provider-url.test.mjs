@@ -18,6 +18,12 @@ test('providerActivityUrl round-trips through providerFromUrl', () => {
     }
 });
 
+test('providerFromUrl accepts Garmin activity URLs on both sides of its redirect', () => {
+    const activity = { provider: 'garmin', activityId: '999' };
+    assert.deepEqual(providerFromUrl('https://connect.garmin.com/app/activity/999'), activity);
+    assert.deepEqual(providerFromUrl('https://connect.garmin.com/modern/activity/999'), activity);
+});
+
 test('providerActivityUrl returns null for junk ids, unknown providers, and local GPX', () => {
     assert.equal(providerActivityUrl({ provider: 'garmin', activityId: 'abc' }), null);
     assert.equal(providerActivityUrl({ provider: 'garmin', activityId: '' }), null);
