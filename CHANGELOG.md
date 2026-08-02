@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 3.3.0 — 2026-08-02
 
 - **Make 3D group maps as easy to read and leave as the native map.** Moving
   across a Full Screen group map now highlights the whole track under the
