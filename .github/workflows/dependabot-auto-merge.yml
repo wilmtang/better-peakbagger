@@ -1,0 +1,50 @@
+name: Dependabot auto-merge
+
+# Queues GitHub's native auto-merge on Dependabot pull requests that cannot
+# reach a user. The merge still waits for every required check in the `main`
+# ruleset; this workflow only sets the flag.
+#
+# The privilege boundary matters more than the convenience. This uses
+# `pull_request`, not `pull_request_target`, never checks out or executes the
+# branch, and runs no step that reads the diff, so the contents of a pull
+# request cannot influence what happens here. `dependabot/fetch-metadata` is
+# pinned to a full commit SHA and verifies the commits were signed by
+# Dependabot before reporting any metadata.
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  tooling:
+    name: Auto-merge tooling updates
+    # Dependabot's own pull requests, from a branch on this repository.
+    if: >-
+      github.repository == 'wilmtang/better-peakbagger'
+      && github.event.pull_request.user.login == 'dependabot[bot]'
+      && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Read Dependabot metadata
+        id: metadata
+        # dependabot/fetch-metadata v3.1.0
+        uses: dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98
+
+      # Only the tooling group. A bad bump there turns CI red and stops, and
+      # nothing in it is bundled into dist/. The editor and vendored groups do
+      # ship, and no check in this repository proves a rendered result, so they
+      # stay manual. Security updates are ungrouped and so land here with an
+      # empty `dependency-group`, which also leaves them for a human.
+      - name: Queue the merge once required checks pass
+        if: steps.metadata.outputs.dependency-group == 'tooling'
+        run: gh pr merge --auto --merge "$PR_URL"
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
