@@ -943,3 +943,54 @@ test('Full Screen maps keep the 3D toggle visible and request consent when the f
     await new Promise(resolve => window.setTimeout(resolve, 0));
     dom.window.close();
 });
+
+test('a Full Screen page whose map never resolves stops polling instead of retrying forever', async () => {
+    // resolveMapContext() returns null for every failure this enhancer already
+    // decides to leave native: no `mapsPlaceholder`, a renamed page global, a
+    // cross-origin frame. The retry used to have no ceiling, so those pages kept
+    // a 4 Hz interval alive for the life of the tab.
+    const dom = new JSDOM('<!doctype html><body></body>', {
+        url: 'https://www.peakbagger.com/Map/BigMap.aspx?t=G&d=1&gt=rc',
+        runScripts: 'outside-only'
+    });
+    const { window } = dom;
+    const intervals = new Map();
+    let intervalId = 0;
+    let clockMs = 1_000_000;
+    window.chrome = makeChromeStub({ bpbSettings: { mapRouteWidth: 8 } });
+    window.Date.now = () => clockMs;
+    window.setInterval = callback => {
+        const id = ++intervalId;
+        intervals.set(id, callback);
+        return id;
+    };
+    window.clearInterval = id => intervals.delete(id);
+    window.postMessage = message => window.queueMicrotask(() => window.dispatchEvent(
+        new window.MessageEvent('message', { source: window, origin: window.location.origin, data: message })));
+
+    window.eval(bridgeBundle);
+    window.eval(mainBundle);
+
+    // No Leaflet map anywhere: the enhancer registers its binding retry.
+    assert.equal(intervals.size, 1, 'a page with no resolvable map starts one binding retry');
+    const tick = () => [...intervals.values()].forEach(callback => callback());
+
+    // Well inside the ceiling the retry is still live, because a MasterMap
+    // frame that is merely slow must still be picked up.
+    clockMs += 20000;
+    tick();
+    assert.equal(intervals.size, 1, 'the retry survives a slow map');
+
+    clockMs += 10000;
+    tick();
+    assert.equal(intervals.size, 0, 'the retry stops once the 30-second ceiling passes');
+
+    // Giving up is not permanent: a frame appearing later restarts the wait
+    // through the shared lifecycle, with a fresh deadline.
+    const iframe = window.document.createElement('iframe');
+    iframe.src = 'https://www.peakbagger.com/map/MasterMap.aspx?t=G&d=1&l=L_CT';
+    window.document.body.appendChild(iframe);
+    await waitFor(dom, () => intervals.size === 1);
+    assert.equal(intervals.size, 1, 'a later MasterMap frame starts a fresh bounded attempt');
+    dom.window.close();
+});

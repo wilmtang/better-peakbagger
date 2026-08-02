@@ -750,10 +750,21 @@ import { mapFrameLifecycle as MapFrameLifecycle } from '../gpx/map-frame-lifecyc
         retryTimer = null;
     };
 
-    // The map iframe loads and initialises Leaflet after this script runs. Keep
-    // checking the condition until it is true; elapsed wall time is diagnostic,
-    // not a correctness boundary. Frame insertion, replacement, and reload each
-    // start a fresh attempt through the shared lifecycle.
+    // The map iframe loads and initialises Leaflet after this script runs, so
+    // the condition is polled rather than awaited. The wait is bounded: a page
+    // whose map never resolves — no `mapsPlaceholder`, a renamed page global, a
+    // cross-origin frame — is a page this enhancer has already decided to leave
+    // native, and polling it forever leaves a timer running at 4 Hz for the life
+    // of the tab. src/gpx/map-overlay.js bounds the same wait on the same
+    // condition; these two used to disagree, and the unbounded one was wrong.
+    //
+    // Giving up is not permanent: frame insertion, replacement, and reload each
+    // call startBinding() again through the shared lifecycle, and a fresh
+    // attempt gets a fresh deadline. The 10-second notice stays separate because
+    // "slow" and "gave up" are different facts — a map that binds at 12 seconds
+    // still reports that it was slow.
+    const BIND_RETRY_MS = 250;
+    const BIND_CEILING_MS = 30000;
     const startBinding = () => {
         if (retryTimer || bindMap()) return;
         const startedAt = Date.now();
@@ -763,11 +774,16 @@ import { mapFrameLifecycle as MapFrameLifecycle } from '../gpx/map-frame-lifecyc
                 stopBinding();
                 return;
             }
-            if (!warned && Date.now() - startedAt >= 10000) {
+            const elapsedMs = Date.now() - startedAt;
+            if (!warned && elapsedMs >= 10000) {
                 warned = true;
                 console.warn('Better Peakbagger: still waiting for the Full Screen Map');
             }
-        }, 250);
+            if (elapsedMs >= BIND_CEILING_MS) {
+                stopBinding();
+                console.warn('Better Peakbagger: gave up waiting for the Full Screen Map');
+            }
+        }, BIND_RETRY_MS);
     };
 
     const resetFrameState = () => {
