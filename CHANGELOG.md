@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- **Ctrl- or Cmd-click an ascent-list column heading to sort in a new tab.**
+  Those headings are Peakbagger's own sort links until the instant sorter
+  replaces them, so a modified click should open that sorted list somewhere
+  else. On a long list — where the sorter takes longest to appear, and where
+  you are most likely to want a second tab — the click was swallowed and the
+  page you were on sorted itself instead. A plain click still sorts in place
+  without reloading.
+
 - **Keep newest-first sorting when you follow Peakbagger's own list links.**
   With **Newest ascents first** on, a peak's “Show all viewable
   ascents/attempts” opened newest-first, but the **All** and per-year links on
