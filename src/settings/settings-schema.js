@@ -86,7 +86,8 @@ const DEFAULTS = {
     // qualifies if it has any of the enabled signals.
     betaTr: true, betaTrMinWords: 1, betaGps: true, betaLink: true,
     // Open a default (oldest-first) ascent list sorted newest-first. A sort
-    // chosen by clicking a column, or carried in the URL, always wins.
+    // chosen by clicking a column, or a non-default sort carried in the URL,
+    // always wins; sort=ascentdate is the default order, not a chosen sort.
     betaSortDateDesc: false
 };
 

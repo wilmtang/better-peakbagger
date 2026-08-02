@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- **Keep newest-first sorting when you follow Peakbagger's own list links.**
+  With **Newest ascents first** on, a peak's “Show all viewable
+  ascents/attempts” opened newest-first, but the **All** and per-year links on
+  the list itself went back to oldest-first. Peakbagger copies the page's
+  current sort into every one of those links, so arriving through them looked
+  like a sort you had chosen when it was only the site's default order. Those
+  views now open newest-first too. A column you click still wins, as does a
+  link carrying a genuinely different sort.
+
 - **Open 3D on peaks outside the elevation provider's deepest coverage.** The
   open-data elevation service covers most of the world to a limited zoom and
   only some regions in finer detail, so summits from Rainier to Everest asked

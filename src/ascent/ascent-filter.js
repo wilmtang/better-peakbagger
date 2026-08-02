@@ -648,7 +648,14 @@ const init = async () => {
     // applies to date-only lists too.
     void settingsPromise.then(s => {
         if (!s || s.betaSortDateDesc !== true) return;
-        if (new URLSearchParams(location.search).has('sort')) return; // an explicit URL sort wins
+        // Peakbagger carries the page's current sort into every year-navigation
+        // link, so the "All" (y=9999) and per-year links off a default list all
+        // arrive as sort=ascentdate. That is the site's default oldest-first
+        // order, not a sort anyone chose — exactly what this setting exists to
+        // flip — so normalize it to "no sort" the way the sorter above does.
+        // Only a genuinely different key (ascentdated, quality, ...) wins.
+        const urlSort = (new URLSearchParams(location.search).get('sort') || '').toLowerCase();
+        if (urlSort && urlSort !== 'ascentdate') return;              // an explicit URL sort wins
         if (userSorted || !applyInstantSort) return;                  // never fight a user's click
         applyInstantSort({ columnIndex: -1, key: 'ascentdate', dir: 'desc' });
     });

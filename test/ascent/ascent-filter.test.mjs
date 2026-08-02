@@ -690,14 +690,31 @@ test('newest-first off leaves the served oldest-first order untouched', async ()
     assert.equal(arrow(dom).textContent.trim(), '▲');
 });
 
-test('newest-first respects an explicit URL sort and never rewrites it', async () => {
+// Peakbagger carries the page's current sort into every year-navigation link,
+// so the "All" (y=9999) link off a default list lands on sort=ascentdate — the
+// site's default oldest-first order, which the setting exists to flip.
+test('newest-first flips a list reached through the year navigation "All" link', async () => {
+    const ALL_URL = 'https://www.peakbagger.com/climber/PeakAscents.aspx?pid=21500&sort=ascentdate&u=ft&y=9999';
+    const served = dateTexts(await loadPageWithBar('21500-y9999-sort-ascentdate.html', { url: ALL_URL }));
+
     const dom = await loadPageWithBar('21500-y9999-sort-ascentdate.html', {
-        url: 'https://www.peakbagger.com/climber/PeakAscents.aspx?pid=21500&u=ft&y=9999&sort=ascentdate',
+        url: ALL_URL,
+        settings: { betaSortDateDesc: true }
+    });
+    await waitFor(dom, () => sortParam(dom) === 'ascentdated');
+    assert.deepEqual(dateTexts(dom), served.slice().reverse());
+    assert.equal(arrow(dom).textContent.trim(), '▼');
+});
+
+test('newest-first respects an explicit non-default URL sort and never rewrites it', async () => {
+    const dom = await loadPageWithBar('8241-y9999-sort-quality.html', {
+        url: 'https://www.peakbagger.com/climber/PeakAscents.aspx?pid=8241&u=ft&y=9999&sort=Quality',
         settings: { betaSortDateDesc: true }
     });
     await new Promise(resolve => setTimeout(resolve, 10)); // let a mis-firing flip land, if any
-    assert.equal(sortParam(dom), 'ascentdate');
-    assert.equal(arrow(dom).textContent.trim(), '▲');
+    assert.equal(sortParam(dom), 'Quality');
+    assert.equal(tableSortControl(dom, 'Qlty').querySelector('.pbaf-sort-arrow').textContent.trim(), '▼');
+    assert.equal(arrow(dom).textContent.trim(), '');
 });
 
 test('newest-first leaves an already-descending served page untouched', async () => {
