@@ -313,27 +313,8 @@ To add or update a runtime dependency:
 4. Run `npm test`, the relevant real-browser check, and `npm run package` when
    packaging paths or vendor outputs changed.
 
-### Automated updates
-
-Dependabot opens weekly grouped pull requests (`.github/dependabot.yml`). The
-groups are not cosmetic: `@tiptap/*`, `@codemirror/*`, and `@lezer/*` are
-released in lockstep and carry peer relationships, so each family moves as a
-single pull request. A lone bump of one member against an unchanged sibling is
-exactly the breakage the grouping prevents.
-
-The split follows what reaches a user, because that—not the semver level—is
-what decides whether a bad bump can ship. Every package sits under
-`devDependencies`, but only the `tooling` group is genuinely development-only;
-`editor` is bundled into `dist/` and `vendored` is copied into `dist/vendor`,
-so both ship inside the extension.
-
-Only `tooling` merges without a human
-(`.github/workflows/dependabot-auto-merge.yml`), because a bad bump there turns
-CI red and stops. The shipping groups stay manual since no check here proves a
-rendered result—see [What each check can and cannot see](#what-each-check-can-and-cannot-see).
-GitHub Actions bumps stay manual too, as they change what CI itself runs.
-Merging to `main` never publishes: the store release still runs only from an
-explicit `vX.Y.Z` tag.
+Dependency updates arrive automatically; see
+[Dependency updates](#dependency-updates) for what merges on its own.
 
 ### The intentional provider API
 
@@ -342,6 +323,85 @@ deliberate boundary rather than a module dependency: `background.js` injects
 the built adapter into a provider page, then injects inline functions that call
 the API across the worker→page boundary, where an ES import cannot reach. Do not
 generalize this exception.
+
+## Dependency updates
+
+Dependabot opens weekly grouped pull requests, and exactly one of those groups
+merges without a human. Four pieces carry that:
+
+| Piece | Where |
+| --- | --- |
+| Schedule, grouping, cooldown | `.github/dependabot.yml` |
+| Auto-merge trigger | `.github/workflows/dependabot-auto-merge.yml` |
+| Checks that must pass first | `.github/workflows/test.yml` |
+| Enforcement of those checks | the `main` ruleset, in repository settings |
+
+### Why the groups exist
+
+Grouping is a correctness constraint, not tidiness. `@tiptap/*`,
+`@codemirror/*`, and `@lezer/*` are released in lockstep and carry peer
+relationships, so each family moves as a single pull request. A lone bump of one
+member against an unchanged sibling is exactly the breakage grouping prevents.
+
+The split follows what reaches a user, because that—not the semver level—is what
+decides whether a bad bump can ship:
+
+| Group | Reaches `dist/` via | Ships? |
+| --- | --- | --- |
+| `editor` | bundled by esbuild | yes |
+| `vendored` | copied by `scripts/build-config.mjs` | yes |
+| `tooling` | nothing; build and test only | no |
+
+Every package is declared under `devDependencies`, so that field says nothing
+about whether a package ships. Only the group does.
+
+### What merges on its own
+
+Only `tooling`. A bad bump there turns CI red and stops, and nothing in it can
+reach a user. Everything else waits for a human:
+
+- **`editor` and `vendored`** ship inside the extension, and no check here
+  proves a rendered result—see
+  [What each check can and cannot see](#what-each-check-can-and-cannot-see). A
+  dependency that breaks layout rather than behavior passes all four checks.
+- **GitHub Actions bumps** change what CI itself runs.
+- **Security updates** are ungrouped, so they reach the workflow with an empty
+  `dependency-group` and fall through the gate. They also ignore cooldown, so
+  they arrive immediately instead of waiting out the delay version updates get.
+
+### How the merge happens
+
+1. Dependabot opens a pull request against `main`.
+2. `dependabot-auto-merge.yml` runs on `pull_request`. It confirms the author is
+   `dependabot[bot]` and the branch is on this repository, then reads the
+   update's metadata with `dependabot/fetch-metadata`.
+3. If `dependency-group` is `tooling`, it runs `gh pr merge --auto`. That sets a
+   flag and nothing more—it does not merge.
+4. GitHub merges once the `main` ruleset is satisfied, which means the four jobs
+   in `test.yml` have passed. Dependabot cannot skip that: the ruleset's only
+   bypass is the repository-admin role, which it does not hold.
+
+The ruleset does not require a pull request, so ordinary work still commits
+straight to `main`. Dependabot goes through a pull request because that is the
+only way it proposes changes, and the required checks apply to its merge either
+way. Merge commits are enforced in repository settings rather than by the
+ruleset—squash and rebase merges are disabled.
+
+The workflow is deliberately unprivileged: `pull_request` rather than
+`pull_request_target`, no checkout and no step that reads the branch,
+`contents: read` at the top level with write scoped to the single job, and
+`dependabot/fetch-metadata` pinned to a full commit SHA. Nothing in a pull
+request's contents can influence what it does.
+
+### Turning it off
+
+Remove the `tooling` group from `.github/dependabot.yml`, or delete
+`.github/workflows/dependabot-auto-merge.yml`. Either one leaves every update
+waiting for a human, and neither affects the checks themselves.
+
+Nothing here publishes. A merge to `main` only updates `main`; the store release
+runs solely from an explicit `vX.Y.Z` tag (see [releasing.md](releasing.md)),
+which re-runs the whole suite against the tagged tree.
 
 ## What each check can and cannot see
 
