@@ -34,6 +34,14 @@ jobs:
       - name: Validate tag and version metadata
         run: npm run release:check -- "$GITHUB_REF_NAME"
 
+      # The test workflow runs this too, but nothing makes a release wait for
+      # that workflow, and test/project/dependency-audit.test.mjs only exercises
+      # evaluateAudit() against synthetic reports — it never calls npm audit. The
+      # gate accepts no finding of any severity in any package, so the build that
+      # actually reaches both stores has to run it.
+      - name: Check dependency advisories
+        run: npm run audit:ci
+
       - name: Lint source
         run: npm run lint:js
 
