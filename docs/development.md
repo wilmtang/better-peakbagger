@@ -17,6 +17,13 @@ Better Peakbagger module uses a global as an internal dependency.
 - Node.js 22 or newer (CI uses Node.js 24) and npm.
 - `npm ci` to install the exact dependency graph in `package-lock.json`
   (esbuild, runtime vendor packages, jsdom, Playwright, Selenium, and web-ext).
+  Its `prepare` step also points this clone's `core.hooksPath` at `.githooks`,
+  which is what makes `.githooks/pre-commit` run the staged privacy scan in
+  `scripts/privacy-guard.mjs`. That scan refuses to commit any file containing
+  the account holder's identifiers, so it is the one check whose absence is
+  invisible until something has already been committed. If you already set
+  `core.hooksPath` yourself the install leaves it alone and says so; enable the
+  scan by hand with `git config core.hooksPath .githooks`.
 - For Chrome verification: `npx playwright install chromium` (Chrome for
   Testing — stable Chrome refuses `--load-extension`).
 - For Firefox verification: Firefox Stable and `geckodriver` on `PATH`.

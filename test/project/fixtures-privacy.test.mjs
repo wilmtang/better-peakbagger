@@ -15,6 +15,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { JSDOM } from 'jsdom';
 import { containsFixtureBannedIdentifier } from '../../scripts/privacy-guard.mjs';
+import { decideHookInstall, HOOKS_PATH } from '../../scripts/install-git-hooks.mjs';
 
 const FIXTURES = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../fixtures');
 
@@ -125,4 +126,46 @@ test('the Buddy List fixture contains only the reviewed synthetic row data', asy
         assert.match(row.cells[2].querySelector('a').href, /[?&]aid=810\d{3}$/);
         assert.match(row.cells[3].querySelector('a').href, /[?&]pid=610\d{3}$/);
     }
+});
+
+// The staged scan above is only half the guard. The other half is that
+// .githooks/pre-commit actually runs, which depends on core.hooksPath — a
+// setting nothing in the repository used to touch and no document mentioned, so
+// it silently worked in one clone and was silently absent everywhere else.
+test('the staged privacy scan is wired into every clone, not just a configured one', async () => {
+    const repoRoot = path.resolve(FIXTURES, '../..');
+
+    const hook = await readFile(path.join(repoRoot, '.githooks', 'pre-commit'), 'utf8');
+    assert.match(hook, /scripts\/privacy-guard\.mjs/,
+        'the pre-commit hook must run the shared privacy scanner');
+
+    const manifest = JSON.parse(await readFile(path.join(repoRoot, 'package.json'), 'utf8'));
+    assert.match(manifest.scripts.prepare ?? '', /install-git-hooks\.mjs/,
+        'npm install/ci must point this clone at .githooks');
+
+    // Installing must never break an install, and must never overwrite a
+    // hooksPath the user chose for this repository.
+    assert.equal(HOOKS_PATH, '.githooks');
+    const decide = (configuredPath, insideWorkTree = true) =>
+        decideHookInstall({ insideWorkTree, configuredPath, root: repoRoot });
+
+    // A fresh clone. The caller must read the *local* config: `git config
+    // --get` falls back to a machine-wide core.hooksPath, and treating that as
+    // a decision about this repository would leave exactly the clones this
+    // guard is for with no scan at all.
+    assert.deepEqual(decide(null), { action: 'install' });
+    assert.equal(decide(null, false).action, 'skip',
+        'a tarball install or a checkout with no .git is not a failure');
+
+    // Git accepts a relative or an absolute hooksPath; both spellings of this
+    // repository's own directory are installed, not foreign.
+    assert.equal(decide('.githooks').reason, 'already-installed');
+    assert.equal(decide('./.githooks').reason, 'already-installed');
+    assert.equal(decide(path.join(repoRoot, '.githooks')).reason, 'already-installed');
+    assert.equal(decide('.myhooks').reason, 'foreign-hooks-path');
+    assert.equal(decide('/opt/hooks').reason, 'foreign-hooks-path');
+
+    const guide = await readFile(path.join(repoRoot, 'docs', 'development.md'), 'utf8');
+    assert.match(guide, /core\.hooksPath/,
+        'the development guide must tell a reader the scan exists and how to enable it');
 });

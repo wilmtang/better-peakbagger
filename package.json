@@ -12,6 +12,7 @@
     "url": "https://github.com/wilmtang/better-peakbagger.git"
   },
   "scripts": {
+    "prepare": "node scripts/install-git-hooks.mjs",
     "build": "node scripts/build.mjs",
     "build:release": "node scripts/build.mjs --minify",
     "watch": "node scripts/build.mjs --watch",
