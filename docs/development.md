@@ -313,6 +313,28 @@ To add or update a runtime dependency:
 4. Run `npm test`, the relevant real-browser check, and `npm run package` when
    packaging paths or vendor outputs changed.
 
+### Automated updates
+
+Dependabot opens weekly grouped pull requests (`.github/dependabot.yml`). The
+groups are not cosmetic: `@tiptap/*`, `@codemirror/*`, and `@lezer/*` are
+released in lockstep and carry peer relationships, so each family moves as a
+single pull request. A lone bump of one member against an unchanged sibling is
+exactly the breakage the grouping prevents.
+
+The split follows what reaches a user, because that—not the semver level—is
+what decides whether a bad bump can ship. Every package sits under
+`devDependencies`, but only the `tooling` group is genuinely development-only;
+`editor` is bundled into `dist/` and `vendored` is copied into `dist/vendor`,
+so both ship inside the extension.
+
+Only `tooling` merges without a human
+(`.github/workflows/dependabot-auto-merge.yml`), because a bad bump there turns
+CI red and stops. The shipping groups stay manual since no check here proves a
+rendered result—see [What each check can and cannot see](#what-each-check-can-and-cannot-see).
+GitHub Actions bumps stay manual too, as they change what CI itself runs.
+Merging to `main` never publishes: the store release still runs only from an
+explicit `vX.Y.Z` tag.
+
 ### The intentional provider API
 
 `src/capture/provider-page.js` publishes `globalThis.BPBProviderPage`. That is a narrow,
