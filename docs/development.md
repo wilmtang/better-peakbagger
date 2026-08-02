@@ -326,8 +326,8 @@ generalize this exception.
 
 ## Dependency updates
 
-Dependabot opens weekly grouped pull requests, and exactly one of those groups
-merges without a human. Four pieces carry that:
+Dependabot opens weekly grouped pull requests and every one of them merges
+without a human, majors included. Four pieces carry that:
 
 | Piece | Where |
 | --- | --- |
@@ -343,8 +343,9 @@ Grouping is a correctness constraint, not tidiness. `@tiptap/*`,
 relationships, so each family moves as a single pull request. A lone bump of one
 member against an unchanged sibling is exactly the breakage grouping prevents.
 
-The split follows what reaches a user, because that—not the semver level—is what
-decides whether a bad bump can ship:
+Group membership no longer decides whether an update waits, since none of them
+do. It decides how much of `dist/` one merge can move, which is what you need
+when a release rehearsal fails and the cause has to be attributed:
 
 | Group | Reaches `dist/` via | Ships? |
 | --- | --- | --- |
@@ -355,28 +356,37 @@ decides whether a bad bump can ship:
 Every package is declared under `devDependencies`, so that field says nothing
 about whether a package ships. Only the group does.
 
-### What merges on its own
+### What gates a release, since review no longer does
 
-Only `tooling`. A bad bump there turns CI red and stops, and nothing in it can
-reach a user. Everything else waits for a human:
+Nothing here publishes. A merge only updates `main`. The store release runs
+solely from a manually pushed `vX.Y.Z` tag, and that tag sits behind the manual
+rehearsal in [releasing.md](releasing.md)—real Chrome and Firefox profiles, a
+live owned capture through the native toolbar action, native popup
+presentation, Firefox for Android.
 
-- **`editor` and `vendored`** ship inside the extension, and no check here
-  proves a rendered result—see
-  [What each check can and cannot see](#what-each-check-can-and-cannot-see). A
-  dependency that breaks layout rather than behavior passes all four checks.
-- **GitHub Actions bumps** change what CI itself runs.
-- **Security updates** are ungrouped, so they reach the workflow with an empty
-  `dependency-group` and fall through the gate. They also ignore cooldown, so
-  they arrive immediately instead of waiting out the delay version updates get.
+That rehearsal is now the gate. It matters because the four automated checks
+cannot see a rendered result, so a dependency that breaks layout rather than
+behavior passes all of them—see
+[What each check can and cannot see](#what-each-check-can-and-cannot-see). An
+`editor` or `vendored` bump that ruins the report editor will reach `main`
+green. It should not reach a store, and the rehearsal is the only reason it
+does not. Skipping the rehearsal removes the last human check in the chain.
+
+GitHub Actions bumps are the exception the rehearsal does not cover at all. They
+change what CI itself runs, including the release workflow holding the Chrome
+workload-identity and AMO credentials, and the rehearsal exercises the
+extension rather than the workflow that publishes it. Their cooldown in
+`.github/dependabot.yml` is deliberately longer than npm's, because it is the
+whole mitigation rather than a convenience.
 
 ### How the merge happens
 
 1. Dependabot opens a pull request against `main`.
 2. `dependabot-auto-merge.yml` runs on `pull_request`. It confirms the author is
-   `dependabot[bot]` and the branch is on this repository, then reads the
-   update's metadata with `dependabot/fetch-metadata`.
-3. If `dependency-group` is `tooling`, it runs `gh pr merge --auto`. That sets a
-   flag and nothing more—it does not merge.
+   `dependabot[bot]` and the branch is on this repository, then runs
+   `dependabot/fetch-metadata`.
+3. It runs `gh pr merge --auto`, unconditionally. That sets a flag and nothing
+   more—it does not merge.
 4. GitHub merges once the `main` ruleset is satisfied, which means the four jobs
    in `test.yml` have passed. Dependabot cannot skip that: the ruleset's only
    bypass is the repository-admin role, which it does not hold.
@@ -387,21 +397,39 @@ only way it proposes changes, and the required checks apply to its merge either
 way. Merge commits are enforced in repository settings rather than by the
 ruleset—squash and rebase merges are disabled.
 
-The workflow is deliberately unprivileged: `pull_request` rather than
-`pull_request_target`, no checkout and no step that reads the branch,
-`contents: read` at the top level with write scoped to the single job, and
-`dependabot/fetch-metadata` pinned to a full commit SHA. Nothing in a pull
-request's contents can influence what it does.
+### What still stops a bad merge
+
+Three things, none of them a person:
+
+- **The four required checks.** A bump that breaks the build, the tests, or
+  either browser smoke never merges.
+- **Cooldown.** Version updates wait 3, 7, or 21 days by semver level—longer for
+  Actions—which is what lets an ecosystem find a bad release first. Security
+  updates ignore cooldown by design and arrive immediately.
+- **`fetch-metadata`'s verification.** It is kept for this rather than its
+  outputs: with `skip-verification` at its default it fails the job unless every
+  commit on the branch is a verified Dependabot commit. That is what stops an
+  extra commit pushed onto an open Dependabot branch from riding an automatic
+  merge in. A hand-pushed fixup on a Dependabot branch therefore stops the
+  automatic merge, which is the intended direction—finish it and merge by hand.
+
+### A wart worth knowing
+
+Dependabot rewrites the SHA in a `uses:` line but does not touch a version
+comment on the line above it, which is how the pinned actions in this repository
+are annotated. After an automatic Actions merge, `# actions/checkout v7.0.0` can
+sit above a SHA that is no longer v7.0.0. **The SHA is the truth; the comment is
+a hint that drifts.** Dependabot does maintain a trailing `# vX.Y.Z` comment on
+the same line, so moving the annotations there would fix it for the actions
+whose SHA it can resolve to a version—though not for `browser-actions/*`, which
+it tracks SHA-to-SHA with no version to report.
 
 ### Turning it off
 
-Remove the `tooling` group from `.github/dependabot.yml`, or delete
-`.github/workflows/dependabot-auto-merge.yml`. Either one leaves every update
-waiting for a human, and neither affects the checks themselves.
-
-Nothing here publishes. A merge to `main` only updates `main`; the store release
-runs solely from an explicit `vX.Y.Z` tag (see [releasing.md](releasing.md)),
-which re-runs the whole suite against the tagged tree.
+Delete `.github/workflows/dependabot-auto-merge.yml`. Every update then waits
+for a human, and the checks are unaffected. To hold back one group instead,
+restore a condition on the merge step, for example
+`if: steps.metadata.outputs.dependency-group != 'editor'`.
 
 ## What each check can and cannot see
 
