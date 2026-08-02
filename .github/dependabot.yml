@@ -1,0 +1,67 @@
+# Dependency updates.
+#
+# Grouping is a correctness requirement here, not a convenience. The
+# `@tiptap/*`, `@codemirror/*`, and `@lezer/*` families carry peer
+# relationships and are released in lockstep, so a lone bump of one member
+# against an unchanged sibling is precisely the breakage to avoid. Grouping
+# also collapses a TipTap release from ten pull requests into one.
+#
+# The groups mirror what actually reaches users, because that — not the
+# semver level — is what decides whether a bad bump can ship. `package.json`
+# lists every dependency under devDependencies, but only `tooling` is
+# genuinely development-only: everything in `editor` and `vendored` is
+# bundled or copied into `dist/` by `scripts/build-config.mjs` and ships
+# inside the extension. Only `tooling` is auto-merged; see
+# `.github/workflows/dependabot-auto-merge.yml`.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    # One per group.
+    open-pull-requests-limit: 3
+    # Version updates wait out their initial release churn. Security updates
+    # ignore cooldown and still arrive immediately.
+    cooldown:
+      semver-patch-days: 3
+      semver-minor-days: 7
+      semver-major-days: 21
+    groups:
+      # Bundled into the shipped extension by esbuild.
+      editor:
+        patterns:
+          - "@tiptap/*"
+          - "@codemirror/*"
+          - "@lezer/*"
+      # Copied into dist/vendor as browser builds.
+      vendored:
+        patterns:
+          - chart.js
+          - maplibre-gl
+          - marked
+          - tz-lookup
+      # Build and test only. Never reaches dist/, so never reaches a user.
+      tooling:
+        patterns:
+          - esbuild
+          - eslint
+          - fake-indexeddb
+          - globals
+          - jsdom
+          - jszip
+          - playwright
+          - selenium-webdriver
+          - web-ext
+
+  # Action bumps change what CI itself runs, so they stay manual regardless of
+  # how small the diff looks.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 1
+    groups:
+      actions:
+        patterns:
+          - "*"
