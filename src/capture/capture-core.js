@@ -214,9 +214,14 @@ const buildQueryBoxes = segments => {
         let referenceLon = segment[0].lon;
         let bbox = { minLat: segment[0].lat, maxLat: segment[0].lat, minLon: referenceLon, maxLon: referenceLon };
 
-        // Emit the chunk accumulated so far. Both call sites are reached
-        // only with at least one edge in the chunk, so there is nothing to
-        // guard against — the box is whatever addPointToBbox has built.
+        // Emit the chunk accumulated so far. The mid-loop call always has at
+        // least one edge behind it; the call after the loop may have none,
+        // because sanitizeTrack's flush() keeps a single-point segment (which
+        // findEncounters handles explicitly below). That case wants exactly what
+        // this does: bbox is still the degenerate start point, and paddedBoxes
+        // turns it into the corridor box around that fix. There is nothing to
+        // guard — but the reason is that a zero-edge chunk is correct here, not
+        // that it cannot happen.
         const finishChunk = () => boxes.push(...paddedBoxes(bbox));
 
         for (let index = 1; index < segment.length; index++) {

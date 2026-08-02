@@ -153,6 +153,18 @@ test('query boxes stay short, padded, and split at the antimeridian', () => {
     const dateline = Core.buildQueryBoxes([[point(10, 179.999), point(10, -179.999)]]);
     assert.equal(dateline.length, 2);
     assert.ok(dateline.every(box => box.minx >= -180 && box.maxx <= 180));
+
+    // sanitizeTrack's flush() keeps a single-point segment, so the chunk
+    // emitted after the edge loop can have no edges at all. That is not a case
+    // to guard against: the degenerate bbox is the fix itself, and it must
+    // still become the padded corridor box around it — findEncounters looks for
+    // summits near lone points too.
+    const lone = Core.buildQueryBoxes([[point(47.5, -121.5)]]);
+    assert.equal(lone.length, 1);
+    const [box] = lone;
+    assert.ok(box.miny < 47.5 && box.maxy > 47.5 && box.minx < -121.5 && box.maxx > -121.5,
+        'a lone fix must be padded on every side, not collapsed to a zero-area box');
+    assert.ok(Core.buildQueryBoxes([[]]).length === 0, 'an empty segment contributes no box');
 });
 
 test('priority reduction retains original objects, summit brackets, and an exact 3,000-point cap', () => {
