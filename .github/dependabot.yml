@@ -7,11 +7,11 @@
 # also collapses a TipTap release from ten pull requests into one.
 #
 # The groups still mirror what reaches users, which is worth knowing when a
-# rehearsal fails and the cause has to be attributed. `package.json` lists
+# rehearsal fails and the cause has to be attributed. Both runtime groups are
+# third-party code shipped with the extension; their names distinguish esbuild
+# bundling from copying a prebuilt browser file intact. `package.json` lists
 # every dependency under devDependencies, but only `tooling` is genuinely
-# development-only: everything in `bundled-runtime` and `copied-runtime` is
-# bundled or copied into `dist/` by `scripts/build-config.mjs` and ships inside
-# the extension.
+# development-only.
 #
 # Every npm group merges automatically once the four required checks pass; see
 # `.github/workflows/dependabot-auto-merge.yml`. Cooldown is the only delay left

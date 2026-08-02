@@ -13,6 +13,10 @@ const dependabotConfig = await readFile(
     new URL('../../.github/dependabot.yml', import.meta.url),
     'utf8',
 );
+const developmentGuide = await readFile(
+    new URL('../../docs/development.md', import.meta.url),
+    'utf8',
+);
 
 const stepIndex = name => workflow.indexOf(`- name: ${name}`);
 
@@ -55,4 +59,7 @@ test('npm group names describe how shipped dependencies enter dist', () => {
     assert.match(dependabotConfig, /^      tooling:\s*$/m);
     assert.doesNotMatch(dependabotConfig, /^      editor:\s*$/m);
     assert.doesNotMatch(dependabotConfig, /^      vendored:\s*$/m);
+    assert.match(developmentGuide, /Both runtime groups are third-party code vendored/);
+    assert.match(developmentGuide, /`bundled-runtime` modules[\s\S]*`copied-runtime` packages/);
+    assert.doesNotMatch(developmentGuide, /\| `(?:editor|vendored)` \|/);
 });

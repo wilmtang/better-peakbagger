@@ -41,8 +41,9 @@ rather than accepting the maintained guide's security claims at face value.
   `--match-head-commit`, so a changed head cannot reuse the earlier decision.
 - **F4 — release-workflow boundary:** the `github-actions` ecosystem is still
   grouped and cooled down, but the queue step now accepts only metadata whose
-  package ecosystem is `npm`. This retains automatic editor, vendored, tooling,
-  and npm security updates while making workflow implementation changes manual.
+  package ecosystem is `npm`. This retains automatic `bundled-runtime`,
+  `copied-runtime`, `tooling`, and npm security updates while making workflow
+  implementation changes manual.
 - **F5 — tested merge base:** the live `main` ruleset now requires status checks
   against the latest base. A post-update API read confirmed strict mode is
   `true`, the four check contexts are unchanged, and the repository-admin

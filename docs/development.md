@@ -356,6 +356,11 @@ attributed:
 | `copied-runtime` | copied by `scripts/build-config.mjs` | yes |
 | `tooling` | nothing; build and test only | no |
 
+Both runtime groups are third-party code vendored with the extension in the
+broad sense. Their names describe the packaging path: `bundled-runtime` modules
+are imported into Better Peakbagger bundles, while `copied-runtime` packages
+remain separately loaded browser builds under `dist/vendor/`.
+
 Every package is declared under `devDependencies`, so that field says nothing
 about whether a package ships. Only the group does.
 
