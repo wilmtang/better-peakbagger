@@ -397,9 +397,10 @@ upstream change and the workflows it reaches before merging one.
    uses `--match-head-commit` so the head cannot change between verification and
    queueing. GitHub Actions updates stop here for human review.
 5. Queueing sets a flag and nothing more. GitHub merges once the `main` ruleset
-   is satisfied, which means the four jobs in `test.yml` have passed. Dependabot
-   cannot skip that: the ruleset's only bypass is the repository-admin role,
-   which it does not hold.
+   is satisfied, which means the pull request is current with `main` and the
+   four jobs in `test.yml` have passed against that base. Dependabot cannot skip
+   that: the ruleset's only bypass is the repository-admin role, which it does
+   not hold.
 
 The ruleset does not require a pull request, so ordinary work still commits
 straight to `main`. Dependabot goes through a pull request because that is the

@@ -60,6 +60,10 @@ living docs in [`docs/`](../).
   completed fixes for popup error boundaries, capture trip naming, schema and
   route ownership, canonical URLs, showcase contracts, and Garmin redirects,
   with hidden-browser evidence and explicit live-service and terrain LOD gaps.
+- [Dependabot auto-merge audit — 2026-08-02](dependabot-auto-merge-audit-2026-08-02.md) —
+  source-grounded hardening of the trusted workflow boundary, full-branch
+  provenance, head-bound queueing, and manual review for GitHub Actions updates,
+  with the remaining live-event proof gap kept explicit.
 - [Codebase audit — 2026-07-19](codebase-audit-2026-07-19.md) — point-in-time
   audit and remediation plan.
 - [Codebase audit — 2026-07-22](codebase-audit-2026-07-22.md) and its
