@@ -2,52 +2,11 @@
 
 ## Unreleased
 
-- **Ctrl- or Cmd-click an ascent-list column heading to sort in a new tab.**
-  Those headings are Peakbagger's own sort links until the instant sorter
-  replaces them, so a modified click should open that sorted list somewhere
-  else. On a long list — where the sorter takes longest to appear, and where
-  you are most likely to want a second tab — the click was swallowed and the
-  page you were on sorted itself instead. A plain click still sorts in place
-  without reloading.
-
-- **Keep newest-first sorting when you follow Peakbagger's own list links.**
-  With **Newest ascents first** on, a peak's “Show all viewable
-  ascents/attempts” opened newest-first, but the **All** and per-year links on
-  the list itself went back to oldest-first. Peakbagger copies the page's
-  current sort into every one of those links, so arriving through them looked
-  like a sort you had chosen when it was only the site's default order. Those
-  views now open newest-first too. A column you click still wins, as does a
-  link carrying a genuinely different sort.
-
-- **Open 3D on peaks outside the elevation provider's deepest coverage.** The
-  open-data elevation service covers most of the world to a limited zoom and
-  only some regions in finer detail, so summits from Rainier to Everest asked
-  for tiles it does not publish. Those views used to stop with “Your browser
-  could not render 3D terrain” — about a browser that was working perfectly.
-  3D now draws the finest elevation the area actually has, and only the
-  resolution changes. When an area has no elevation data at all, the map
-  returns to 2D and says so, instead of presenting a flat plane where a
-  mountain should be, and a service that cannot be reached during startup no
-  longer reads as a broken browser. Elevation tiles the service reports as
-  absent are also no longer re-requested on every hover.
-
-- **Transfer complete settings files.** Manual settings export and import move
-  every schema-backed preference, and one **Include saved credentials** tickbox
-  adds your ImgBB API key and GitHub connection to the file when you want them.
-  Leave it unticked and the download is credential-free, which is what you want
-  when sharing a settings file for troubleshooting; tick it and Settings warns
-  that the file is unencrypted and should be kept private. GitHub settings
-  backup remains credential-free either way.
-
-- **Make site dark mode dynamic and own the first frame.** Peakbagger's literal
-  inline text/background colors now remap by hue and lightness instead of
-  relying on a growing list of named-color selectors, so black captions such as
-  **(Updated every 24 hours)** stay readable while the light photographic
-  header remains intentionally dark. A tiny first content-script bundle paints
-  a temporary neutral-dark fallback before the full settings/theme bundle is
-  parsed, then hands off only after the complete sheet and mutation watcher are
-  ready—matching the startup stage the earlier Dark Reader investigation had
-  missed.
+- **Make 3D group maps as easy to read and leave as the native map.** Moving
+  across a Full Screen group map now highlights the whole track under the
+  pointer, even when Peakbagger split it into several segments. Escape returns
+  both Full Screen maps and ascent-page maps to 2D whether focus is on the page
+  or inside the 3D frame.
 
 - **Create and reuse photo topos from the report editor.** One **Upload a
   photo…** action opens an extension-owned editor: draw routes, curves, bolts,
@@ -67,12 +26,29 @@
   including what a backup can bring back and why removing a photo locally does
   not delete it from ImgBB.
 
-- **Choose the photo topo upload format before publishing.** Keep a JPEG or PNG
-  source in its original format, re-encode as lossless PNG, or choose JPEG and
-  adjust its quality for a smaller file. The editor estimates the actual
-  flattened full-resolution upload locally, includes annotations in that
-  estimate, and—when Ascent backup is enabled—warns when an image is over 5 MB
-  and may not appear in GitHub's rendered backed-up report.
+- **Reduce 3D detail drops during small tilts.** The terrain renderer now uses
+  a more gradual elevation-detail ladder, keeps enough recently viewed tiles
+  for a reverse tilt, and warms the bounded set a resting camera is likely to
+  ask for next. That removed network fetches from the measured tilt sweep and
+  sharply shortened one cold transition; a brief cache-and-decode step can
+  still appear at a steep pitch.
+
+- **Dismiss the report editor's floating panels.** The link, image, video, and
+  more-formats panels float over the ascent form, so they could cover the date
+  calendar until you found the toolbar button that opened them. Each now has a
+  close control, closes on Escape, and closes when you press anywhere outside
+  the editor.
+
+- **Let ImgBB decide the photo size limit.** Uploads are no longer refused
+  against a fixed 32 MB cap the extension guessed at — a limit that belongs to
+  your ImgBB account and is larger on a paid plan. A large source photo opens
+  and edits, and if the export is too big ImgBB says so in its own words, with
+  one sentence on what to do next. Invalid-key and unsupported-format
+  rejections are just as specific.
+
+- **A readable contents list for the photo guide.** The guide now has a sidebar
+  table of contents that tracks the section you are reading, and every photo
+  page — editor, library, and guide — shows the same three view tabs.
 
 - **Give the workspaces their own pages.** Managing saved trip report drafts and
   your favorite-climbers list are workspaces, not settings, so they each open on
@@ -82,22 +58,92 @@
   `#drafts` links still land on the draft manager, and the photo library is now
   reachable straight from **Settings → Activity creation → Trip report photos**.
 
-- **Let ImgBB decide the photo size limit.** Uploads are no longer refused
-  against a fixed 32 MB cap the extension guessed at — a limit that belongs to
-  your ImgBB account and is larger on a paid plan. A large source photo opens and
-  edits, and if the export is too big ImgBB says so in its own words, with one
-  sentence on what to do next. Invalid-key and unsupported-format rejections are
-  just as specific.
+- **Turn stalled services into actionable errors.** Peakbagger, GitHub, ImgBB,
+  map-style, and elevation requests now share bounded deadlines, including
+  response-body reads. GitHub outages and rate-limit windows are named, safe
+  reads retry brief transient failures, and an ImgBB upload whose outcome
+  cannot be known stays recoverable instead of quietly inviting a duplicate.
 
-- **A readable contents list for the photo guide.** The guide now has a sidebar
-  table of contents that tracks the section you are reading, and every photo page
-  — editor, library, and guide — shows the same three view tabs.
+- **Give every extension panel one design language.** Settings, the draft and
+  favorite-climber workspaces, Photo Topos, its guide, and the toolbar popup now
+  share the same restrained green palette, controls, focus treatment, cards,
+  and light/dark theme. The photo canvas stays neutral so route marks remain
+  legible, and match-confidence states keep their semantic colors.
 
-- **Dismiss the report editor's floating panels.** The link, image, video, and
-  more-formats panels float over the ascent form, so they could cover the date
-  calendar until you found the toolbar button that opened them. Each now has a
-  close control, closes on Escape, and closes when you press anywhere outside
-  the editor.
+- **Choose how wide a topo photo appears in the trip report.** Small, Medium,
+  Large, and Original change only the width displayed in Peakbagger; the editor
+  still exports and uploads the full-resolution image, never upscales a small
+  source, and previews the selected width before insertion.
+
+- **Make site dark mode dynamic and own the first frame.** Peakbagger's literal
+  inline text/background colors now remap by hue and lightness instead of
+  relying on a growing list of named-color selectors, so black captions such as
+  **(Updated every 24 hours)** stay readable while the light photographic
+  header remains intentionally dark. A tiny first content-script bundle paints
+  a temporary neutral-dark fallback before the full settings/theme bundle is
+  parsed, then hands off only after the complete sheet and mutation watcher are
+  ready—matching the startup stage the earlier Dark Reader investigation had
+  missed.
+
+- **Choose the photo topo upload format before publishing.** Keep a JPEG or PNG
+  source in its original format, re-encode as lossless PNG, or choose JPEG and
+  adjust its quality for a smaller file. The editor estimates the actual
+  flattened full-resolution upload locally, includes annotations in that
+  estimate, and—when Ascent backup is enabled—warns when an image is over 5 MB
+  and may not appear in GitHub's rendered backed-up report.
+
+- **Keep photo work recoverable at full-library scale.** Publishing freezes one
+  saved project snapshot, preserves a committed ImgBB upload through later
+  insertion failures, and resumes without uploading twice. Decoded images and
+  portable project bundles have explicit resource bounds, while the library
+  pages and searches large catalogs instead of rendering every thumbnail at
+  once.
+
+- **Make activity capture safer across cancellation, redirects, and ambiguous
+  peaks.** Cancel aborts the matching provider read and frees Retry immediately;
+  overlapping starts share one job; Garmin's redirected activity URL works;
+  and chained nearby peaks can no longer escape the ambiguity cap because of
+  response order. Selectable fallback peaks keep the GPX trip name, an
+  intentionally below-threshold draft says **Off track** instead of
+  **Probable**, and provider profile identifiers never leave the activity page.
+
+- **Transfer complete settings files.** Manual settings export and import move
+  every schema-backed preference, and one **Include saved credentials** tickbox
+  adds your ImgBB API key and GitHub connection to the file when you want them.
+  Leave it unticked and the download is credential-free, which is what you want
+  when sharing a settings file for troubleshooting; tick it and Settings warns
+  that the file is unencrypted and should be kept private. GitHub settings
+  backup remains credential-free either way.
+
+- **Open 3D on peaks outside the elevation provider's deepest coverage.** The
+  open-data elevation service covers most of the world to a limited zoom and
+  only some regions in finer detail, so summits from Rainier to Everest asked
+  for tiles it does not publish. Those views used to stop with “Your browser
+  could not render 3D terrain” — about a browser that was working perfectly.
+  3D now draws the finest elevation the area actually has, and only the
+  resolution changes. When an area has no elevation data at all, the map
+  returns to 2D and says so, instead of presenting a flat plane where a
+  mountain should be, and a service that cannot be reached during startup no
+  longer reads as a broken browser. Elevation tiles the service reports as
+  absent are also no longer re-requested on every hover.
+
+- **Keep newest-first lists and ordinary browser gestures working together.**
+  With **Newest ascents first** on, Peakbagger's **All** and per-year links now
+  stay newest-first instead of quietly restoring the site's default order. A
+  genuinely different sort still wins, and Ctrl- or Cmd-clicking a column
+  heading while the instant sorter loads opens the sorted list in a new tab
+  instead of swallowing the click.
+
+- **Clear map highlights when the chart pointer leaves.** The GPX Analyzer's
+  native-map marker and 3D route highlight now disappear with Chart.js's own
+  point and tooltip, rather than staying frozen at the last hovered location.
+
+- **Strengthen the gates behind every release.** Source lint, a zero-advisory
+  dependency audit, archive contents, packaged Chrome and Firefox execution,
+  documentation links, and privacy boundaries are all checked before store
+  submission. Dependabot updates are grouped by runtime ownership and can merge
+  automatically only from the trusted Dependabot identity after the full Test
+  workflow succeeds.
 
 ## 3.2.0 — 2026-07-27
 
