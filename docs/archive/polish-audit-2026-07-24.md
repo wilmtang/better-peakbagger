@@ -55,11 +55,11 @@ ledger.
 
 ### F1 — The popup offers "Open N drafts" after drafts are already open, and the click does nothing — **verified** · **fixed**
 
-[popup.js:290](../../popup/popup.js:290) updates only the button's label after
+[popup.js:290](../../popup/popup.js) updates only the button's label after
 `CAPTURE_OPEN_DRAFTS` succeeds. It never re-renders the results, so `currentJob`
 keeps `phase: 'ready'` — polling has already stopped, because `ready` is
 terminal. The lock affordances that exist for exactly this state
-(`checkbox.disabled` in [popup.js:179](../../popup/popup.js:179) and the
+(`checkbox.disabled` in [popup.js:179](../../popup/popup.js) and the
 `selection-lock-hint` paragraph) engage only when the popup is closed and
 reopened.
 
@@ -74,9 +74,9 @@ CAPTURE_SELECTION sent while opened  : [ [1,2], [1,2], [1] ]
 ```
 
 The worker accepts that selection change —
-[background.js:495](../../src/background/background.js:495) permits
+[background.js:495](../../src/background/background.js) permits
 `updateSelection` in phase `opened` — and then
-[`openDrafts`](../../src/background/background.js:583) short-circuits on
+[`openDrafts`](../../src/background/background.js) short-circuits on
 `existingForJob.length` and returns `{ reused: true }`. So the user deselects a
 peak, the popup says "Open 1 draft", they click it, and the old tabs are
 re-focused with the deselected peak's tab still open. The popup promises an
@@ -109,7 +109,7 @@ selection writes and hands the popup its locked state`.
 
 ### F2 — Settings feedback is severity-blind, 1.2 seconds long, and rendered where the user is not looking — **verified** · **fixed**
 
-[`flash()`](../../options/options.js:56) is the settings page's only transient
+[`flash()`](../../options/options.js) is the settings page's only transient
 channel. It has **51 call sites** across the four controllers, and **28 of them
 report a failure or block the action** — "Settings couldn't be saved. Try
 again.", "Couldn't delete the drafts", "That settings file could not be read.",
@@ -120,11 +120,11 @@ structured recovery copy: `GithubError.message(...)` and
 All 51 render identically:
 
 - `.status` is `color: var(--accent)` — the success color — with no error
-  variant ([options.css:651](../../options/options.css:651)); the file's only
+  variant ([options.css:651](../../options/options.css)); the file's only
   two `.status` rules are that block and `.status.show { opacity: 1 }`.
 - It fades out after 1200 ms whether it said "Saved" or "couldn't".
 - It is a plain in-flow `<p>` at the very end of `.wrap`
-  ([options.html:591](../../options/options.html:591)). `.content` is the
+  ([options.html:591](../../options/options.html)). `.content` is the
   scroll container (`overflow-y: auto`), and `options.css` contains **no**
   `position: fixed` or `position: sticky` rule at all — so the status line is on
   screen only when the user has scrolled to the About section at the bottom.
@@ -194,16 +194,16 @@ always have been making, since severity is now part of the contract.
 
 ### F3 — The popup is the only surface that ignores the Units setting — **verified** · **fixed**
 
-[`evidenceText`](../../popup/popup.js:134) hardcodes metres: `"${…} m from
+[`evidenceText`](../../popup/popup.js) hardcodes metres: `"${…} m from
 summit"`, `"${…} m elevation difference"`, and the track summary line reports
 `max deviation ${…} m`. The popup bundle's sources are
 `['capture/capture-phases.js', 'popup-main.js']`
-([build-config.mjs:66](../../scripts/build-config.mjs:66)) — it has no settings
+([build-config.mjs:66](../../scripts/build-config.mjs)) — it has no settings
 module and literally cannot read the preference today.
 
 Meanwhile `ascent-upload.js` resolves display units
-([`resolveDisplayUnits`](../../src/ascent/ascent-upload.js:99)) and the GPX
-Analyzer resolves them ([`resolveUnits`](../../src/gpx/gpx-analyzer.js:142)).
+([`resolveDisplayUnits`](../../src/ascent/ascent-upload.js)) and the GPX
+Analyzer resolves them ([`resolveUnits`](../../src/gpx/gpx-analyzer.js)).
 An imperial user therefore gets feet and miles everywhere in the product except
 the one panel that opens from the toolbar.
 
@@ -242,9 +242,9 @@ systems`. `npm run verify:extension` re-run because the popup bundle changed.
 
 ### F4 — The analyzer's inline controls roll back silently on a failed write — **fixed**
 
-[bridge.js:47](../../src/settings/bridge.js:47) answers a rejected write with
+[bridge.js:47](../../src/settings/bridge.js) answers a rejected write with
 `{ kind: 'setResult', ok: false }` and no message. The MAIN-world client
-([gpx-analyzer.js:106](../../src/gpx/gpx-analyzer.js:106)) deletes the pending
+([gpx-analyzer.js:106](../../src/gpx/gpx-analyzer.js)) deletes the pending
 patch and calls `recompute()`, so the unit dropdown or route color snaps back to
 its old value with nothing said.
 
@@ -283,18 +283,18 @@ it is not addressed here.
 
 ### F5 — Raw JavaScript error text reaches users; the Firefox path is unestablished — **fixed**
 
-[background.js:572](../../src/background/background.js:572) builds
+[background.js:572](../../src/background/background.js) builds
 `` `Drafts opened, but tab grouping failed: ${error.message}` `` and ships it to
 two surfaces:
 
-- [ascent-upload.js:229](../../src/ascent/ascent-upload.js:229) renders it
+- [ascent-upload.js:229](../../src/ascent/ascent-upload.js) renders it
   verbatim in the status line — so a user can see a raw exception string.
-- [popup.js:300](../../popup/popup.js:300) collapses it to the button *label*
+- [popup.js:300](../../popup/popup.js) collapses it to the button *label*
   `"Drafts opened without group"`, which uses the primary action's label as a
   status message and never explains what happened.
 
 Separately: `manifest.json` requests the `tabGroups` permission and the same
-manifest ships to Firefox — [`createFirefoxManifest`](../../scripts/build-firefox-package.mjs:19)
+manifest ships to Firefox — [`createFirefoxManifest`](../../scripts/build-firefox-package.mjs)
 changes only `options_ui.open_in_tab`. If `tabs.group` is unavailable or
 restricted on the supported Firefox floor (`strict_min_version: 140.0`), every
 Firefox capture lands in this path, and the user's only signal is a button that
@@ -347,10 +347,10 @@ primary button`.
 
 ### F6 — Bulk draft deletion uses a native `confirm()`; every other destructive action uses an in-page card — **fixed**
 
-[drafts.js:264](../../options/drafts.js:264) calls `globalThis.confirm(...)`.
+[drafts.js:264](../../options/drafts.js) calls `globalThis.confirm(...)`.
 The favorites mirror confirmation
-([options.html:402](../../options/options.html:402)) and the settings-import
-confirmation ([options.html:503](../../options/options.html:503)) are both
+([options.html:402](../../options/options.html)) and the settings-import
+confirmation ([options.html:503](../../options/options.html)) are both
 in-page `role="alertdialog"` blocks with Cancel/confirm buttons, Escape
 handling, and focus return. The native dialog cannot follow the extension's
 dark theme, cannot be styled, and blocks the page.
@@ -389,13 +389,13 @@ the settings page — and was deliberately left alone.
 
 ### F7 — Deleting a single draft drops keyboard focus — **fixed**
 
-[`beginDeleteAll`](../../options/drafts.js:257) explicitly calls
+[`beginDeleteAll`](../../options/drafts.js) explicitly calls
 `undoAllButtonEl.focus()` after the bulk delete.
-[`beginDelete`](../../options/drafts.js:101) does not: `render()` replaces the
+[`beginDelete`](../../options/drafts.js) does not: `render()` replaces the
 row with a deleted-row containing an Undo button, the Delete button the user
 activated is removed from the DOM, and focus falls to `<body>`. `render()`
 restores focus only when it was already on an undo control
-([drafts.js:207](../../options/drafts.js:207)).
+([drafts.js:207](../../options/drafts.js)).
 
 A keyboard user deleting a draft loses their place and has to tab back in — and
 the Undo they now need is 6 seconds from expiring.
@@ -413,17 +413,17 @@ with the fix.
 
 ### F8 — The GitHub panel re-queries GitHub on every window focus, and can destroy a confirmation the user is reading — **fixed**
 
-[github.js:573](../../options/github.js:573) listens on `window.focus`, clears
+[github.js:573](../../options/github.js) listens on `window.focus`, clears
 `currentAscentSummary`, and re-runs the whole flow. `renderAscentConnected` then
 calls `refreshAscentSummary`, which paints "Checking existing backups…" and
 sends `GITHUB_ASCENT_BACKUP_SUMMARY` — a real GitHub API call
-([`githubAscentBackupSummary`](../../src/background/github-routes.js:534) →
+([`githubAscentBackupSummary`](../../src/background/github-routes.js) →
 `client.getAscentFolders()`).
 
 So with Settings open and ascent backup connected, **every alt-tab back to the
 browser costs one GitHub API request and one visible "Checking…" flash.**
 
-Worse: [`renderExistingRepoConfirmation`](../../options/github.js:184) sets
+Worse: [`renderExistingRepoConfirmation`](../../options/github.js) sets
 `choosingRepo = true`, and the focus handler branches on that flag straight into
 `refreshRepos({ choose: true })` — which replaces the panel. Focus another
 window while reading "*owner/repo* already contains files" and come back, and
@@ -462,14 +462,14 @@ and asserts the confirmation is still there.
 
 **Observation, not changed:** `options/settings-backup.js:236` also refreshes on
 every window focus. It sends `GITHUB_AUTH_STATUS`, which
-[`githubStatus`](../../src/background/github-routes.js:94) answers from
+[`githubStatus`](../../src/background/github-routes.js) answers from
 `authStore.read()` and `Settings.get()` with no network call at all — so it
 does not carry the per-alt-tab API cost this finding is about, and was left
 alone rather than swept in.
 
 ### F9 — A transient poll failure declares the capture dead and shows browser-internal text — **fixed**
 
-[popup.js:237](../../popup/popup.js:237): `poll()`'s catch calls
+[popup.js:237](../../popup/popup.js): `poll()`'s catch calls
 `errorState({ message: error.message })`. Three things follow from one failed
 tick:
 
@@ -518,11 +518,11 @@ and `popup gives up on a sustained poll outage with recoverable, plain copy`
 
 Every ascent-list column control is a `<button class="pbaf-table-sort">`; the
 date column additionally gets `pbaf-date-sort`
-([ascent-filter.js:353](../../src/ascent/ascent-filter.js:353)). The dark
+([ascent-filter.js:353](../../src/ascent/ascent-filter.js)). The dark
 stylesheet overrides only `button.pbaf-date-sort`
-([site-dark-css.js:167](../../src/theme/site-dark-css.js:167)). Every other
+([site-dark-css.js:167](../../src/theme/site-dark-css.js)). Every other
 header falls through to the generic form-control rule at
-[site-dark-css.js:125](../../src/theme/site-dark-css.js:125), whose
+[site-dark-css.js:125](../../src/theme/site-dark-css.js), whose
 `!important` beats the light `.pbaf-table-sort` rule.
 
 Computed styles in one dark document:
@@ -551,7 +551,7 @@ same colour, background, and border.
 
 `.pbaf-chip:focus-visible`, `.pbaf-reset:focus-visible`,
 `.pbaf-table-sort:focus-visible`, and `.pbaf-words input:focus-visible` all use
-`outline: 2px solid #2f6b3f` ([ascent-filter.js:404](../../src/ascent/ascent-filter.js:404)
+`outline: 2px solid #2f6b3f` ([ascent-filter.js:404](../../src/ascent/ascent-filter.js)
 and following). There is no dark override, so in dark mode that ring sits on the
 bar's `#23262a` background:
 
@@ -592,7 +592,7 @@ both the bar and the table header.
 
 ### F12 — A dark rule ships for an element the code no longer creates — **verified** · **fixed**
 
-[site-dark-css.js:141](../../src/theme/site-dark-css.js:141) styles
+[site-dark-css.js:141](../../src/theme/site-dark-css.js) styles
 `.pbaf-divider`. That class appears nowhere in `ascent-filter.js`, and
 `test/ascent/ascent-filter.test.mjs:85` asserts the divider is *absent* from the
 bar. Dead CSS shipping in the injected stylesheet.
@@ -616,9 +616,9 @@ rule and watching the assertion fire.
 ### F13 — The beta-filter bar's theme has two owners in two files — **fixed**
 
 The light palette is a JS template string inside
-[`ascent-filter.js`](../../src/ascent/ascent-filter.js:393); the dark palette is
+[`ascent-filter.js`](../../src/ascent/ascent-filter.js); the dark palette is
 a separate block of per-property `!important` overrides in
-[`site-dark-css.js`](../../src/theme/site-dark-css.js:133). Nothing binds them.
+[`site-dark-css.js`](../../src/theme/site-dark-css.js). Nothing binds them.
 Counting the classes each file defines:
 
 - light-only, no dark rule: `.pbaf-chip-label`, `.pbaf-spacer`,
@@ -696,7 +696,7 @@ column header is a bare underlined blue link, and the bar itself renders on
 
 ### F14 — `gpx-analyzer.js` is one 1,190-line closure with two theming systems — **fixed**
 
-[`initChart`](../../src/gpx/gpx-analyzer.js:159) runs from line 159 to 1349 and
+[`initChart`](../../src/gpx/gpx-analyzer.js) runs from line 159 to 1349 and
 owns: map viewport resize (pointer drag, keyboard steps, debounced persist),
 panel construction, panel theming, the Chart.js instance and all its callbacks,
 terrain coordination and consent, the Leaflet route overlay, map-layer
@@ -708,16 +708,16 @@ Concrete consequences, all in this one file:
 - **Two theming systems.** `PALETTES` + `applyPanelTheme()` (JS, inline styles)
   for the panel; `data-theme` + `terrain-map.css` for the floating 3D toggle.
 - **Three copies of the same selector.** The MasterMap iframe query appears at
-  [:171](../../src/gpx/gpx-analyzer.js:171), inside
-  [`findMapIframe`](../../src/gpx/gpx-analyzer.js:755), and again inline in the
-  chart's `onHover` at [:1071](../../src/gpx/gpx-analyzer.js:1071) — the last of
+  [:171](../../src/gpx/gpx-analyzer.js), inside
+  [`findMapIframe`](../../src/gpx/gpx-analyzer.js), and again inline in the
+  chart's `onHover` at [:1071](../../src/gpx/gpx-analyzer.js) — the last of
   which re-queries the DOM on **every hover event**.
 - **Manual bookkeeping.** `appliedSettings = { ...BPB.get() }` is repeated after
   six separate `BPB.set()` calls; forgetting one silently breaks the
   change-detection in the subscriber.
 - **One string, two literals.** `"Double-click point to copy coordinates"` is
-  written at [:425](../../src/gpx/gpx-analyzer.js:425) and again at
-  [:486](../../src/gpx/gpx-analyzer.js:486).
+  written at [:425](../../src/gpx/gpx-analyzer.js) and again at
+  [:486](../../src/gpx/gpx-analyzer.js).
 - **Typography drift.** `"Analyzing GPX data..."` and
   `"Double-click point..."` use ASCII ellipses and title case, against the
   polished `…` copy used in the popup and settings page.
@@ -778,8 +778,8 @@ twice, with **two unrelated heuristics**:
 
 | module | heuristic |
 | --- | --- |
-| [`detectPageMetric`](../../src/gpx/gpx-analyzer.js:137) | finds the `Elevation:` cell, tests its sibling for an `m` suffix |
-| [`detectPageUnits`](../../src/ascent/ascent-upload.js:91) | reads the DOM order of the `#UpMi`/`#UpKm` and `#StartFt`/`#StartM` field pairs |
+| [`detectPageMetric`](../../src/gpx/gpx-analyzer.js) | finds the `Elevation:` cell, tests its sibling for an `m` suffix |
+| [`detectPageUnits`](../../src/ascent/ascent-upload.js) | reads the DOM order of the `#UpMi`/`#UpKm` and `#StartFt`/`#StartM` field pairs |
 
 They run on different pages today, so they cannot visibly disagree — which is
 precisely why a divergence would ship unnoticed. AGENTS.md already names this
@@ -863,8 +863,8 @@ comment is present, so the split cannot silently become undocumented again.
 
 ### F17 — Fixed-attempt polling gives up silently — **fixed**
 
-[`scheduleRouteOverlay`](../../src/gpx/gpx-analyzer.js:934) and
-[`scheduleMapLayerSync`](../../src/gpx/gpx-analyzer.js:920) both retry
+[`scheduleRouteOverlay`](../../src/gpx/gpx-analyzer.js) and
+[`scheduleMapLayerSync`](../../src/gpx/gpx-analyzer.js) both retry
 `setInterval(…, 250)` for exactly 20 attempts, then stop. On a slow load the
 extension's route overlay never appears and the remembered map layer is never
 applied — with no error, no retry, and no signal that a feature silently did not
@@ -893,9 +893,9 @@ Confirmed to fail against the unfixed `gpx-analyzer.js` and pass with it.
 
 ### F18 — Two tab-opening helpers with different failure behavior in one file — **fixed**
 
-[options/github.js:73](../../options/github.js:73) defines `openTab` (uses
+[options/github.js:73](../../options/github.js) defines `openTab` (uses
 `window.open`, and swallows a popup block in `catch { /* popup blocked */ }`)
-and [:74](../../options/github.js:74) defines `createTab` (prefers
+and [:74](../../options/github.js) defines `createTab` (prefers
 `tabs.create`, falls back to `openTab`). GitHub URLs go through `openTab`;
 Peakbagger URLs go through `createTab`. So clicking **"Open
 github.com/login/device"** — the single action the whole device-flow depends on
