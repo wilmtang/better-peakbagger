@@ -446,6 +446,54 @@ test('capture guard intercepts native header sort links but lets year links navi
     assert.equal(preventedByGuard, false);
 });
 
+test('a modified click on a native header sort link is left to the browser', async () => {
+    // Until the sorter replaces them these headers are still anchors carrying
+    // Peakbagger's own sort= URL, and the guard runs at document_start during
+    // exactly that window. Ctrl/cmd/shift-click means "open that sorted list in
+    // a new tab"; the guard used to swallow it and sort this page instead.
+    const dom = await loadPageWithBar(SMALL, { url: SMALL_URL });
+    const { document, MouseEvent } = dom.window;
+
+    const nativeHeader = document.createElement('th');
+    nativeHeader.innerHTML = '<a href="?pid=1039&sort=ascentdated&u=ft&y=9998">Ascent Date</a>';
+    document.body.appendChild(nativeHeader);
+    const header = nativeHeader.querySelector('a');
+
+    const servedOrder = dateTexts(dom);
+    const servedArrow = arrow(dom).textContent.trim();
+    for (const modifier of ['metaKey', 'ctrlKey', 'shiftKey', 'altKey']) {
+        let preventedByGuard = null;
+        const observe = event => {
+            preventedByGuard = event.defaultPrevented;
+            event.preventDefault(); // Keep jsdom from attempting a real navigation.
+        };
+        header.addEventListener('click', observe);
+        header.dispatchEvent(new MouseEvent('click', {
+            bubbles: true, cancelable: true, [modifier]: true
+        }));
+        header.removeEventListener('click', observe);
+        assert.equal(preventedByGuard, false, `${modifier}-click must reach the browser`);
+        assert.deepEqual(dateTexts(dom), servedOrder, `${modifier}-click must not reorder this page`);
+        assert.equal(arrow(dom).textContent.trim(), servedArrow);
+    }
+
+    // A middle click never opens a sort in place either.
+    let middlePrevented = null;
+    header.addEventListener('click', event => {
+        middlePrevented = event.defaultPrevented;
+        event.preventDefault();
+    });
+    header.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, button: 1 }));
+    assert.equal(middlePrevented, false, 'a middle click must reach the browser');
+    assert.deepEqual(dateTexts(dom), servedOrder);
+
+    // The plain click still belongs to the sorter.
+    const plain = new MouseEvent('click', { bubbles: true, cancelable: true });
+    header.dispatchEvent(plain);
+    assert.equal(plain.defaultPrevented, true);
+    assert.equal(arrow(dom).textContent.trim(), '▼');
+});
+
 test('sort clicks fall back to native navigation when initialization fails', async () => {
     // Force a deterministic fault inside setupInstantTableSort. The JSDOM
     // window has its own intrinsics, so this cannot leak into other tests.

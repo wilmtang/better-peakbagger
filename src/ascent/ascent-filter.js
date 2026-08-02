@@ -88,7 +88,21 @@ let pendingSortTarget = null;// a click held before the sorter decided
 let applyInstantSort = null; // (target) => reorder in the DOM, set once ready
 let userSorted = false;      // a header sort the user chose must beat the auto-flip
 
+// A modified click belongs to the browser. Until the sorter replaces them,
+// these headers are still real anchors carrying Peakbagger's own `sort=` URL,
+// so ctrl/cmd/shift-click is an ordinary "open the sorted list over there"
+// gesture — and this guard runs at document_start precisely during the window
+// when they are still anchors. Swallowing it opened nothing, then either sorted
+// this page in place or navigated it through optOutInstantSort(). It is also
+// not evidence of a chosen sort: whatever the other tab shows, this page's
+// order is still the one Peakbagger served, so `userSorted` must stay false and
+// the newest-first flip must still apply here. src/ui/section-nav.js holds the
+// same bar for the settings sidebar.
+const isModifiedClick = event => event.defaultPrevented || event.button !== 0
+    || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey;
+
 document.addEventListener('click', event => {
+    if (isModifiedClick(event)) return;
     const target = tableSortTarget(event.target);
     if (!target || sortOptOut) return; // not ours, or navigation is allowed
     // Record the intent as soon as the click is captured — this fires for
