@@ -21,7 +21,7 @@ jobs:
     steps:
       - name: Check out source
         # actions/checkout v7.0.0
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
 
       - name: Set up Node.js
         # actions/setup-node v7.0.0
@@ -52,7 +52,7 @@ jobs:
     steps:
       - name: Check out source
         # actions/checkout v7.0.0
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
 
       - name: Set up Node.js
         # actions/setup-node v7.0.0
@@ -74,7 +74,7 @@ jobs:
     steps:
       - name: Check out source
         # actions/checkout v7.0.0
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
 
       - name: Set up Node.js
         # actions/setup-node v7.0.0
@@ -99,7 +99,7 @@ jobs:
     steps:
       - name: Check out source
         # actions/checkout v7.0.0
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
 
       - name: Set up Node.js
         # actions/setup-node v7.0.0
@@ -113,7 +113,7 @@ jobs:
 
       - name: Install Firefox
         # browser-actions/setup-firefox v1.7.2
-        uses: browser-actions/setup-firefox@8058e910ee76e74bb76b7b2e5b61a55b3a65ed78
+        uses: browser-actions/setup-firefox@0bc507ddf224827e3b1af68e014d5e42ab93e795
         with:
           firefox-version: latest
 
