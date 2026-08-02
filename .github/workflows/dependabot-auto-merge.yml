@@ -1,24 +1,23 @@
 name: Dependabot auto-merge
 
-# Queues GitHub's native auto-merge on every Dependabot pull request. The merge
+# Queues GitHub's native auto-merge for npm Dependabot pull requests. The merge
 # still waits for all four required checks in the `main` ruleset; this workflow
-# only sets the flag, and Dependabot holds no bypass.
+# only sets the flag, and Dependabot holds no bypass. GitHub Actions updates do
+# not auto-merge because they can change the credential-bearing release path
+# without any required check exercising it.
 #
-# Nothing here publishes. A merge only updates `main`; the store release runs
-# solely from a manually pushed `vX.Y.Z` tag, behind the manual release
-# rehearsal in docs/releasing.md. That rehearsal — real Chrome and Firefox
-# profiles, a live capture, native popup presentation — is the gate that
-# catches a dependency which breaks the rendered result rather than behavior,
-# because no automated check here can.
-#
-# The privilege boundary matters more than the convenience. This uses
-# `pull_request`, not `pull_request_target`, never checks out or executes the
-# branch, and runs no step that reads the diff, so the contents of a pull
-# request cannot influence what happens here.
+# This privileged decision runs from the trusted default-branch workflow via
+# `pull_request_target`. It never checks out, downloads, or executes pull-request
+# content. The ordinary `pull_request` test workflow remains responsible for
+# building and running the proposed dependency update with a read-only token.
 on:
-  pull_request:
+  pull_request_target:
     branches:
       - main
+    types:
+      - opened
+      - reopened
+      - synchronize
 
 permissions:
   contents: read
@@ -37,19 +36,48 @@ jobs:
       contents: write
       pull-requests: write
     steps:
-      # Retained for its verification, not its outputs: with `skip-verification`
-      # left at its default this fails the job unless every commit on the branch
-      # is a verified Dependabot commit. That is what stops an extra commit
-      # pushed onto an open Dependabot branch from riding an automatic merge in,
-      # and it is the last check standing now that no group waits for a human.
-      # It also means a hand-pushed fixup on a Dependabot branch stops the
-      # automatic merge, which is the intended direction.
-      - name: Verify the branch carries only Dependabot commits
+      # A write-capable maintainer push does not necessarily make GitHub clear
+      # an existing auto-merge request. Reset it before inspecting every new
+      # head so a failed provenance check always leaves the PR manual.
+      - name: Reset any previously queued merge
+        run: gh pr merge --disable-auto "$PR_URL" 2>/dev/null || true
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # fetch-metadata validates only the first commit. Dependabot PRs are
+      # single-commit changes, so enforce that stronger invariant independently
+      # and verify that exact commit is the signed head from the event.
+      - name: Verify the complete Dependabot branch
+        run: |
+          commits="$(gh api \
+            -H 'Accept: application/vnd.github+json' \
+            -H 'X-GitHub-Api-Version: 2022-11-28' \
+            "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/commits?per_page=2")"
+          if ! jq -e --arg head "$HEAD_SHA" '
+            length == 1
+            and .[0].sha == $head
+            and .[0].author.login == "dependabot[bot]"
+            and .[0].commit.verification.verified == true
+          ' <<<"$commits" >/dev/null; then
+            echo 'Refusing auto-merge: expected one verified Dependabot commit at the current PR head.' >&2
+            exit 1
+          fi
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Retained for its parsed ecosystem metadata. Its own first-commit check
+      # is defense in depth after the complete-branch check above.
+      - name: Read Dependabot metadata
         id: metadata
         uses: dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98 # v3.1.0
 
-      - name: Queue the merge once required checks pass
-        run: gh pr merge --auto --merge "$PR_URL"
+      - name: Queue the npm merge once required checks pass
+        if: steps.metadata.outputs.package-ecosystem == 'npm'
+        run: gh pr merge --auto --merge --match-head-commit "$HEAD_SHA" "$PR_URL"
         env:
           PR_URL: ${{ github.event.pull_request.html_url }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

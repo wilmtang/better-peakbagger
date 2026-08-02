@@ -12,11 +12,11 @@
 # development-only: everything in `editor` and `vendored` is bundled or copied
 # into `dist/` by `scripts/build-config.mjs` and ships inside the extension.
 #
-# Every group merges automatically once the four required checks pass; see
-# `.github/workflows/dependabot-auto-merge.yml`. Cooldown is the only delay
-# left in the path, so it carries more weight than it would if a human were
-# reading each pull request: it is what lets an ecosystem find a bad release
-# before this repository takes it.
+# Every npm group merges automatically once the four required checks pass; see
+# `.github/workflows/dependabot-auto-merge.yml`. Cooldown is the only delay left
+# in that path, so it carries more weight than it would if a human were reading
+# each pull request: it is what lets an ecosystem find a bad release before this
+# repository takes it. GitHub Actions updates remain grouped but wait for review.
 version: 2
 updates:
   - package-ecosystem: npm
@@ -58,12 +58,12 @@ updates:
           - selenium-webdriver
           - web-ext
 
-  # Action bumps merge automatically too, but they are the one ecosystem whose
-  # risk the release rehearsal cannot cover: they change what CI itself runs,
+  # Action bumps wait for review because they are the one ecosystem whose risk
+  # the release rehearsal cannot cover: they change what CI itself runs,
   # including the release workflow that holds the Chrome workload-identity and
   # AMO credentials. The rehearsal exercises the extension, never the workflow
-  # that publishes it. Cooldown is therefore the whole mitigation here rather
-  # than a convenience, and it is deliberately longer than npm's.
+  # that publishes it. Their cooldown is deliberately longer than npm's, but it
+  # is defense in depth rather than authorization to merge.
   - package-ecosystem: github-actions
     directory: /
     schedule:

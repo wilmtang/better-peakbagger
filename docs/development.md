@@ -326,13 +326,15 @@ generalize this exception.
 
 ## Dependency updates
 
-Dependabot opens weekly grouped pull requests and every one of them merges
-without a human, majors included. Four pieces carry that:
+Dependabot opens weekly grouped pull requests. npm updates merge without a
+human once their checks pass, majors included; GitHub Actions updates wait for
+review because they change CI and release machinery rather than extension code.
+Four pieces carry that:
 
 | Piece | Where |
 | --- | --- |
 | Schedule, grouping, cooldown | `.github/dependabot.yml` |
-| Auto-merge trigger | `.github/workflows/dependabot-auto-merge.yml` |
+| npm auto-merge trigger and provenance gate | `.github/workflows/dependabot-auto-merge.yml` |
 | Checks that must pass first | `.github/workflows/test.yml` |
 | Enforcement of those checks | the `main` ruleset, in repository settings |
 
@@ -343,9 +345,10 @@ Grouping is a correctness constraint, not tidiness. `@tiptap/*`,
 relationships, so each family moves as a single pull request. A lone bump of one
 member against an unchanged sibling is exactly the breakage grouping prevents.
 
-Group membership no longer decides whether an update waits, since none of them
-do. It decides how much of `dist/` one merge can move, which is what you need
-when a release rehearsal fails and the cause has to be attributed:
+Within npm, group membership no longer decides whether an update waits, since
+none of those groups do. It decides how much of `dist/` one merge can move,
+which is what you need when a release rehearsal fails and the cause has to be
+attributed:
 
 | Group | Reaches `dist/` via | Ships? |
 | --- | --- | --- |
@@ -356,7 +359,7 @@ when a release rehearsal fails and the cause has to be attributed:
 Every package is declared under `devDependencies`, so that field says nothing
 about whether a package ships. Only the group does.
 
-### What gates a release, since review no longer does
+### What gates a release after an npm update
 
 Nothing here publishes. A merge only updates `main`. The store release runs
 solely from a manually pushed `vX.Y.Z` tag, and that tag sits behind the manual
@@ -375,21 +378,28 @@ does not. Skipping the rehearsal removes the last human check in the chain.
 GitHub Actions bumps are the exception the rehearsal does not cover at all. They
 change what CI itself runs, including the release workflow holding the Chrome
 workload-identity and AMO credentials, and the rehearsal exercises the
-extension rather than the workflow that publishes it. Their cooldown in
-`.github/dependabot.yml` is deliberately longer than npm's, because it is the
-whole mitigation rather than a convenience.
+extension rather than the workflow that publishes it. They stay grouped and
+carry a longer cooldown, but they do **not** auto-merge; inspect the action's
+upstream change and the workflows it reaches before merging one.
 
 ### How the merge happens
 
 1. Dependabot opens a pull request against `main`.
-2. `dependabot-auto-merge.yml` runs on `pull_request`. It confirms the author is
-   `dependabot[bot]` and the branch is on this repository, then runs
-   `dependabot/fetch-metadata`.
-3. It runs `gh pr merge --auto`, unconditionally. That sets a flag and nothing
-   more—it does not merge.
-4. GitHub merges once the `main` ruleset is satisfied, which means the four jobs
-   in `test.yml` have passed. Dependabot cannot skip that: the ruleset's only
-   bypass is the repository-admin role, which it does not hold.
+2. `dependabot-auto-merge.yml` runs on `pull_request_target`, so the privileged
+   job comes from trusted `main`, not from the proposed merge commit. It never
+   checks out, downloads, or executes the pull-request branch.
+3. On every opened, reopened, or changed head, the job first clears any existing
+   auto-merge request. It then asks GitHub for up to two commits and requires
+   exactly one: the event's current head, authored by `dependabot[bot]`, with a
+   verified signature. A hand-pushed commit therefore leaves the PR manual.
+4. `dependabot/fetch-metadata` parses that verified Dependabot commit. Only an
+   `npm` ecosystem result reaches `gh pr merge --auto --merge`, and the command
+   uses `--match-head-commit` so the head cannot change between verification and
+   queueing. GitHub Actions updates stop here for human review.
+5. Queueing sets a flag and nothing more. GitHub merges once the `main` ruleset
+   is satisfied, which means the four jobs in `test.yml` have passed. Dependabot
+   cannot skip that: the ruleset's only bypass is the repository-admin role,
+   which it does not hold.
 
 The ruleset does not require a pull request, so ordinary work still commits
 straight to `main`. Dependabot goes through a pull request because that is the
@@ -399,19 +409,22 @@ ruleset—squash and rebase merges are disabled.
 
 ### What still stops a bad merge
 
-Three things, none of them a person:
+For npm updates, three automated controls remain:
 
 - **The four required checks.** A bump that breaks the build, the tests, or
   either browser smoke never merges.
-- **Cooldown.** Version updates wait 3, 7, or 21 days by semver level—longer for
-  Actions—which is what lets an ecosystem find a bad release first. Security
-  updates ignore cooldown by design and arrive immediately.
-- **`fetch-metadata`'s verification.** It is kept for this rather than its
-  outputs: with `skip-verification` at its default it fails the job unless every
-  commit on the branch is a verified Dependabot commit. That is what stops an
-  extra commit pushed onto an open Dependabot branch from riding an automatic
-  merge in. A hand-pushed fixup on a Dependabot branch therefore stops the
-  automatic merge, which is the intended direction—finish it and merge by hand.
+- **Cooldown.** npm version updates wait 3, 7, or 21 days by semver level, which
+  lets an ecosystem find a bad release first. Security updates ignore cooldown
+  by design and arrive immediately.
+- **Complete branch provenance.** The trusted workflow resets stale auto-merge,
+  requires a single verified Dependabot commit at the exact event head, and
+  binds queueing to that SHA. `fetch-metadata` is retained for ecosystem parsing
+  and a redundant first-commit check; it is not treated as an all-commit
+  verifier because its implementation only checks the first commit.
+
+GitHub Actions updates add a fourth control—a person—because the extension tests
+cannot establish that a new action implementation handles release credentials
+safely.
 
 ### Why the action pins are annotated the way they are
 
@@ -437,8 +450,8 @@ In every case the SHA is the truth and the comment is a hint.
 ### Turning it off
 
 Delete `.github/workflows/dependabot-auto-merge.yml`. Every update then waits
-for a human, and the checks are unaffected. To hold back one group instead,
-restore a condition on the merge step, for example
+for a human, and the checks are unaffected. To hold back one npm group instead,
+add it to the merge-step condition, for example
 `if: steps.metadata.outputs.dependency-group != 'editor'`.
 
 ## What each check can and cannot see
