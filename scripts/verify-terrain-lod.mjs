@@ -19,13 +19,20 @@
 
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:https';
-import { mkdtemp, readFile, rm, stat } from 'node:fs/promises';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import zlib from 'node:zlib';
 
-import { createFixtureCertificate } from './browser-verification-fixtures.mjs';
+import {
+    createFixtureCertificate,
+    resolveFixtureFile,
+    sendFixtureError,
+    sendFixtureFile,
+    sendFixtureNotFound,
+    instrumentTerrainFrameHtml,
+} from './browser-verification-fixtures.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const chromePath = process.env.CHROME_BIN || ({
@@ -92,26 +99,7 @@ const DWELL_MS = 1200;
 // the bar is a duration and not only a depth.
 const TRANSIENT_BUDGET_MS = 120;
 
-const contentTypes = new Map([
-    ['.css', 'text/css; charset=utf-8'],
-    ['.gpx', 'application/gpx+xml; charset=utf-8'],
-    ['.html', 'text/html; charset=utf-8'],
-    ['.js', 'text/javascript; charset=utf-8'],
-    ['.png', 'image/png'],
-    ['.svg', 'image/svg+xml; charset=utf-8']
-]);
-
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
-
-const safeFile = async pathname => {
-    const resolved = path.resolve(root, `.${pathname}`);
-    if (resolved !== root && !resolved.startsWith(`${root}${path.sep}`)) return null;
-    try {
-        return (await stat(resolved)).isFile() ? resolved : null;
-    } catch {
-        return null;
-    }
-};
 
 // ---------------------------------------------------------------------------
 // Synthetic DEM tiles
@@ -242,47 +230,28 @@ const server = createServer({ key: fixtureKey, cert: fixtureCert }, async (reque
         if (crossOriginDrape || pathname.startsWith('/scripts/showcase/terrain-tiles/')) {
             pathname = '/scripts/showcase/terrain-basemap-tile.png';
         }
-        const file = await safeFile(pathname);
+        const file = await resolveFixtureFile(pathname);
         if (!file) {
-            response.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' });
-            response.end('Not found');
+            sendFixtureNotFound(response);
             return;
         }
-        response.writeHead(200, {
-            'content-type': contentTypes.get(path.extname(file)) || 'application/octet-stream',
-            'cache-control': 'no-store'
-        });
-        let contents = await readFile(file);
+        // The frame instrumentation is shared with the other terrain verifiers:
+        // exposing MapLibre's Map instance is what lets this check read its own
+        // tile bookkeeping. The drape swap below is this check's alone — it
+        // offers a code the extension carries a spec for, so the frame resolves
+        // a known layer rather than the live-Leaflet path, whose host and terms
+        // are unknown by construction.
+        let transform = null;
         if (url.pathname === '/dist/terrain/terrain.html') {
-            // Extension resources live under dist/; map getURL('x') to /dist/x so
-            // the frame's MapLibre worker and bundle resolve. Exposing the frame's
-            // Map instance is what lets this check read MapLibre's own tile
-            // bookkeeping; production publishes no MapLibre internals.
-            contents = Buffer.from(contents.toString('utf8').replace('</head>', `  <script>
-    globalThis.chrome = { runtime: { getURL: resource => new URL('/dist/' + resource, location.origin).href } };
-  </script>
-</head>`).replace('  <script src="terrain-frame.js"></script>', `  <script>
-    maplibregl.Map = new Proxy(maplibregl.Map, {
-      construct(Target, args, newTarget) {
-        const instance = Reflect.construct(Target, args, newTarget);
-        globalThis.__bpbTerrainTestMap = instance;
-        return instance;
-      }
-    });
-  </script>
-  <script src="terrain-frame.js"></script>`));
+            transform = instrumentTerrainFrameHtml;
         } else if (file.endsWith('terrain-native-map.html')) {
-            // Offer a drape code the extension carries a spec for, so the frame
-            // resolves a known layer rather than the live-Leaflet path, whose
-            // host and terms are unknown by construction.
-            contents = Buffer.from(contents.toString('utf8')
-                .replace('<option value="L_FIX" selected>Synthetic topographic map</option>',
-                    `<option value="${DRAPE_CODE}" selected>Synthetic topographic map</option>`));
+            transform = html => html.replace(
+                '<option value="L_FIX" selected>Synthetic topographic map</option>',
+                `<option value="${DRAPE_CODE}" selected>Synthetic topographic map</option>`);
         }
-        response.end(contents);
+        await sendFixtureFile(response, file, { transform });
     } catch (error) {
-        response.writeHead(500, { 'content-type': 'text/plain; charset=utf-8' });
-        response.end(error.stack || error.message);
+        sendFixtureError(response, error);
     }
 });
 

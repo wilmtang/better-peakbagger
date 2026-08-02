@@ -4,12 +4,19 @@
 
 import { createServer } from 'node:https';
 import { spawn } from 'node:child_process';
-import { mkdir, mkdtemp, readFile, rm, stat } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { createFixtureCertificate } from './browser-verification-fixtures.mjs';
+import {
+    createFixtureCertificate,
+    resolveFixtureFile,
+    sendFixtureError,
+    sendFixtureFile,
+    sendFixtureNotFound,
+    sendFixtureText,
+} from './browser-verification-fixtures.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const outputDir = path.join(root, 'store-assets');
@@ -27,16 +34,6 @@ const chrome = process.env.CHROME_BIN || ({
 const ffmpeg = process.env.FFMPEG_BIN || 'ffmpeg';
 const usgsTopoUrl = 'https://basemap.nationalmap.gov/arcgis/rest/services/USGSTopo/MapServer/export?bbox=-122.005,48.70,-121.625,48.79&bboxSR=4326&imageSR=4326&size=800,190&format=png32&transparent=false&f=image';
 let usgsTopo;
-
-const contentTypes = new Map([
-    ['.css', 'text/css; charset=utf-8'],
-    ['.gif', 'image/gif'],
-    ['.html', 'text/html; charset=utf-8'],
-    ['.js', 'text/javascript; charset=utf-8'],
-    ['.png', 'image/png'],
-    ['.svg', 'image/svg+xml'],
-    ['.mjs', 'text/javascript; charset=utf-8']
-]);
 
 const popupMock = provider => `
 <script>
@@ -117,17 +114,6 @@ const multiDayGpx = () => {
     ).join('\n')}\n</trkseg></trk></gpx>`;
 };
 
-const safeFile = async pathname => {
-    const resolved = path.resolve(root, `.${pathname}`);
-    if (resolved !== root && !resolved.startsWith(`${root}${path.sep}`)) return null;
-    try {
-        if (!(await stat(resolved)).isFile()) return null;
-        return resolved;
-    } catch {
-        return null;
-    }
-};
-
 const certificate = await createFixtureCertificate({ host: SHOWCASE_HOST, label: 'showcase' });
 
 const server = createServer({ key: certificate.key, cert: certificate.cert }, async (request, response) => {
@@ -135,14 +121,13 @@ const server = createServer({ key: certificate.key, cert: certificate.cert }, as
         const url = new URL(request.url, `https://${SHOWCASE_HOST}`);
 
         if (url.pathname === '/scripts/showcase/multiday.gpx') {
-            response.writeHead(200, { 'content-type': 'application/gpx+xml; charset=utf-8' });
-            response.end(multiDayGpx());
+            sendFixtureText(response, 200, multiDayGpx(), 'application/gpx+xml; charset=utf-8');
             return;
         }
 
         if (url.pathname === '/scripts/showcase/MasterMap.aspx') {
-            response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
-            response.end(await readFile(path.join(root, 'scripts/showcase/map.html')));
+            sendFixtureText(response, 200,
+                await readFile(path.join(root, 'scripts/showcase/map.html')), 'text/html; charset=utf-8');
             return;
         }
 
@@ -155,23 +140,19 @@ const server = createServer({ key: certificate.key, cert: certificate.cert }, as
         if (url.pathname === '/popup/popup.html' && url.searchParams.get('showcase') === '1') {
             const provider = url.searchParams.get('provider') === 'garmin' ? 'garmin' : 'strava';
             const html = await readFile(path.join(root, 'popup/popup.html'), 'utf8');
-            response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
-            response.end(html.replace('</head>', `${popupMock(provider)}\n</head>`));
+            sendFixtureText(response, 200,
+                html.replace('</head>', `${popupMock(provider)}\n</head>`), 'text/html; charset=utf-8');
             return;
         }
 
-        const file = await safeFile(url.pathname);
+        const file = await resolveFixtureFile(url.pathname);
         if (!file) {
-            response.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' });
-            response.end('Not found');
+            sendFixtureNotFound(response);
             return;
         }
-
-        response.writeHead(200, { 'content-type': contentTypes.get(path.extname(file)) || 'application/octet-stream' });
-        response.end(await readFile(file));
+        await sendFixtureFile(response, file);
     } catch (error) {
-        response.writeHead(500, { 'content-type': 'text/plain; charset=utf-8' });
-        response.end(error.stack || error.message);
+        sendFixtureError(response, error);
     }
 });
 

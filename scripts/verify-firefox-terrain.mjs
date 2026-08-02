@@ -3,42 +3,27 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 /* global document */
 
-import { readFile, stat } from 'node:fs/promises';
 import { createServer } from 'node:https';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 
 import { firefox } from 'playwright';
 
-import { createFixtureCertificate } from './browser-verification-fixtures.mjs';
+import {
+    createFixtureCertificate,
+    resolveFixtureFile,
+    sendFixtureError,
+    sendFixtureFile,
+    sendFixtureNotFound,
+    sendFixtureText,
+    instrumentTerrainFrameHtml,
+} from './browser-verification-fixtures.mjs';
 
 
-const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const viewport = { width: 1000, height: 760 };
 const fixtureHost = 'www.peakbagger.com';
 const syntheticTerrariumWebp = Buffer.from(
     'UklGRoIAAABXRUJQVlA4THYAAAAv/8F/AD8gFkzyR94dhICgyHPTY/6zQwZFtW1TKqigggoqqKCC/rM/wx3R/wkI/M//A+P38h+YpefnP1DLz8t/4Fauz38gV4/Pf2DXtuc/0OvT+Y//+I/41uc/wDsv/wHdffkP4N6T/4DtvfkP0P6T/4CM/8Ef',
     'base64',
 );
-const contentTypes = new Map([
-    ['.css', 'text/css; charset=utf-8'],
-    ['.gpx', 'application/gpx+xml; charset=utf-8'],
-    ['.html', 'text/html; charset=utf-8'],
-    ['.js', 'text/javascript; charset=utf-8'],
-    ['.png', 'image/png'],
-    ['.svg', 'image/svg+xml; charset=utf-8'],
-]);
-
-async function safeFile(pathname) {
-    const resolved = path.resolve(projectRoot, `.${pathname}`);
-    if (resolved !== projectRoot && !resolved.startsWith(`${projectRoot}${path.sep}`)) return null;
-    try {
-        return (await stat(resolved)).isFile() ? resolved : null;
-    } catch {
-        return null;
-    }
-}
-
 // The showcase must be served over HTTPS. src/peakbagger/peakbagger-request.js
 // refuses any URL whose protocol is not https: — a deliberate security property
 // — and the analyzer fetches its GPX through that guard, so over http:// the
@@ -51,18 +36,16 @@ function createFixtureServer({ key, cert }) {
                 const bounds = ['miny', 'maxy', 'minx', 'maxx'].map(name =>
                     Number(url.searchParams.get(name)));
                 if (bounds.some(value => !Number.isFinite(value))) {
-                    response.writeHead(400);
-                    response.end('bad bounds');
+                    sendFixtureText(response, 400, 'bad bounds');
                     return;
                 }
                 const [miny, maxy, minx, maxx] = bounds;
                 const latitude = (miny + maxy) / 2;
                 const longitude = (minx + maxx) / 2;
-                response.writeHead(200, {
-                    'content-type': 'text/xml; charset=utf-8',
-                    'cache-control': 'no-store',
-                });
-                response.end(`<ts><t i="58603" n="Iron Mountain" a="${latitude}" o="${longitude}" c="1" r="246"/></ts>`);
+                sendFixtureText(
+                    response, 200,
+                    `<ts><t i="58603" n="Iron Mountain" a="${latitude}" o="${longitude}" c="1" r="246"/></ts>`,
+                    'text/xml; charset=utf-8');
                 return;
             }
 
@@ -74,38 +57,18 @@ function createFixtureServer({ key, cert }) {
             if (pathname.startsWith('/scripts/showcase/terrain-tiles/')) {
                 pathname = '/scripts/showcase/terrain-basemap-tile.png';
             }
-            const file = await safeFile(pathname);
+            const file = await resolveFixtureFile(pathname);
             if (!file) {
-                response.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' });
-                response.end('not found');
+                sendFixtureNotFound(response, 'not found');
                 return;
             }
-            let contents = await readFile(file);
-            if (url.pathname === '/dist/terrain/terrain.html') {
-                contents = Buffer.from(contents.toString('utf8')
-                    .replace('</head>', `  <script>
-    globalThis.chrome = { runtime: { getURL: resource => new URL('/dist/' + resource, location.origin).href } };
-  </script>
-</head>`)
-                    .replace('  <script src="terrain-frame.js"></script>', `  <script>
-    maplibregl.Map = new Proxy(maplibregl.Map, {
-      construct(Target, args, newTarget) {
-        const instance = Reflect.construct(Target, args, newTarget);
-        globalThis.__bpbTerrainTestMap = instance;
-        return instance;
-      }
-    });
-  </script>
-  <script src="terrain-frame.js"></script>`));
-            }
-            response.writeHead(200, {
-                'content-type': contentTypes.get(path.extname(file)) || 'application/octet-stream',
-                'cache-control': 'no-store',
+            await sendFixtureFile(response, file, {
+                transform: url.pathname === '/dist/terrain/terrain.html'
+                    ? instrumentTerrainFrameHtml
+                    : null,
             });
-            response.end(contents);
         } catch (error) {
-            response.writeHead(500, { 'content-type': 'text/plain; charset=utf-8' });
-            response.end(error.stack || error.message);
+            sendFixtureError(response, error);
         }
     });
     return server;

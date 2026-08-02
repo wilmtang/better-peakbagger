@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { execFile } from 'node:child_process';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:https';
 import os from 'node:os';
 import path from 'node:path';
@@ -433,3 +433,112 @@ export async function createBrowserFixtureServer({ temporaryRoot }) {
             server.close(error => error ? reject(error) : resolve())),
     };
 }
+
+// ---------------------------------------------------------------------------
+// Static fixture serving
+// ---------------------------------------------------------------------------
+//
+// Four scripts — both terrain verifiers, the LOD check, and the showcase
+// renderer — each served files out of this repository over HTTPS, and each had
+// written its own copy of the content-type table, the traversal-safe file
+// resolver, and the 404/500 replies. Three copies of the table were identical
+// apart from a trailing comma; render-showcase.mjs had already drifted, losing
+// `.gpx` (so it needed a hard-coded route to answer a GPX request at all) and
+// the charset on `.svg`, while gaining `.gif` and `.mjs`.
+//
+// That is the same failure src/gpx/map-route-limits.js and
+// src/capture/upload-limits.js exist to prevent, and this file family is the one
+// where it has already cost something: the plain-HTTP fixture that silently
+// disabled terrain:verify, terrain:verify:firefox, and showcase:render, and
+// rendered "Better Peakbagger refused an invalid Peakbagger request." into the
+// store-listing screenshots. Callers keep their own special routes — the peak
+// feed, the synthetic DEM tiles, the popup mock — and compose them with these.
+
+// Every extension asset any fixture serves. A type missing here would reach the
+// browser as application/octet-stream, which for a stylesheet or a module is a
+// silent, confusing failure rather than a loud one.
+export const fixtureContentTypes = new Map([
+    ['.css', 'text/css; charset=utf-8'],
+    ['.gif', 'image/gif'],
+    ['.gpx', 'application/gpx+xml; charset=utf-8'],
+    ['.html', 'text/html; charset=utf-8'],
+    ['.js', 'text/javascript; charset=utf-8'],
+    ['.json', 'application/json; charset=utf-8'],
+    ['.mjs', 'text/javascript; charset=utf-8'],
+    ['.png', 'image/png'],
+    ['.svg', 'image/svg+xml; charset=utf-8'],
+    ['.webp', 'image/webp'],
+]);
+
+export const fixtureContentType = file =>
+    fixtureContentTypes.get(path.extname(file).toLowerCase()) || 'application/octet-stream';
+
+// Resolve a request path to a real file inside `root`, or null. Rejects
+// traversal out of the root and anything that is not a regular file.
+export async function resolveFixtureFile(pathname, root = projectRoot) {
+    let decoded = pathname;
+    try { decoded = decodeURIComponent(pathname); } catch { /* keep the raw spelling */ }
+    if (decoded.includes('\0')) return null;
+    const resolved = path.resolve(root, `.${decoded}`);
+    if (resolved !== root && !resolved.startsWith(`${root}${path.sep}`)) return null;
+    try {
+        return (await stat(resolved)).isFile() ? resolved : null;
+    } catch {
+        return null;
+    }
+}
+
+export function sendFixtureText(response, status, body, contentType = 'text/plain; charset=utf-8') {
+    response.writeHead(status, { 'content-type': contentType, 'cache-control': 'no-store' });
+    response.end(body);
+}
+
+export const sendFixtureNotFound = (response, body = 'Not found') =>
+    sendFixtureText(response, 404, body);
+
+// A fixture server must never swallow its own faults: the stack is the only
+// signal a check has that its harness broke rather than the product.
+export const sendFixtureError = (response, error) =>
+    sendFixtureText(response, 500, error?.stack || String(error?.message ?? error));
+
+// Serve one resolved file. `transform` receives the UTF-8 text and returns the
+// text to send, for the callers that instrument a page before the browser sees
+// it; leaving it out sends the bytes untouched, which is what binary assets
+// need. `cacheControl` defaults to no-store so a check never reads a stale
+// build; the showcase renderer overrides it for tiles it wants cached.
+export async function sendFixtureFile(response, file, { transform = null, cacheControl = 'no-store' } = {}) {
+    const contents = transform
+        ? Buffer.from(transform(await readFile(file, 'utf8')))
+        : await readFile(file);
+    response.writeHead(200, {
+        'content-type': fixtureContentType(file),
+        'cache-control': cacheControl,
+    });
+    response.end(contents);
+}
+
+// Both terrain verifiers load terrain/terrain.html directly rather than through
+// the extension, so both have to supply the two things the real frame gets from
+// its extension origin. This was copied byte-for-byte between them; if the two
+// copies ever drifted, the Chrome and Firefox terrain checks would be rendering
+// materially different frames while still reporting the same pass.
+//
+// `chrome.runtime.getURL` is what the frame's MapLibre worker and bundle resolve
+// against, and dist/ is where the fixture serves them. The Map proxy exposes
+// only this fixture's instance, so a check can prove the mocked DEM decoded into
+// non-flat terrain; production publishes no MapLibre internals.
+export const instrumentTerrainFrameHtml = html => html
+    .replace('</head>', `  <script>
+    globalThis.chrome = { runtime: { getURL: resource => new URL('/dist/' + resource, location.origin).href } };
+  </script>
+</head>`)
+    .replace('  <script src="terrain-frame.js"></script>', `  <script>
+    maplibregl.Map = new Proxy(maplibregl.Map, {
+      construct(Target, args, newTarget) {
+        const instance = Reflect.construct(Target, args, newTarget);
+        globalThis.__bpbTerrainTestMap = instance;
+        return instance;
+      }
+    });
+  </script>
+  <script src="terrain-frame.js"></script>`);

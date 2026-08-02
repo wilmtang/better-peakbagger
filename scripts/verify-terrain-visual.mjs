@@ -4,15 +4,21 @@
 
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:https';
-import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import zlib from 'node:zlib';
 
-import { createFixtureCertificate } from './browser-verification-fixtures.mjs';
+import {
+    createFixtureCertificate,
+    resolveFixtureFile,
+    sendFixtureError,
+    sendFixtureFile,
+    sendFixtureNotFound,
+    sendFixtureText,
+    instrumentTerrainFrameHtml,
+} from './browser-verification-fixtures.mjs';
 
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const chromePath = process.env.CHROME_BIN || ({
     darwin: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
     win32: path.join(process.env.PROGRAMFILES || 'C:\\Program Files', 'Google/Chrome/Application/chrome.exe')
@@ -26,26 +32,7 @@ const TERRAIN_FIXTURE_HEADER = 'synthetic-terrarium-v1';
 // requested coordinate keeps this visual test deterministic and offline while
 // still making MapLibre decode an actual WebP DEM and build a non-flat mesh.
 const SYNTHETIC_TERRARIUM_WEBP = 'UklGRoIAAABXRUJQVlA4THYAAAAv/8F/AD8gFkzyR94dhICgyHPTY/6zQwZFtW1TKqigggoqqKCC/rM/wx3R/wkI/M//A+P38h+YpefnP1DLz8t/4Fauz38gV4/Pf2DXtuc/0OvT+Y//+I/41uc/wDsv/wHdffkP4N6T/4DtvfkP0P6T/4CM/8Ef';
-const contentTypes = new Map([
-    ['.css', 'text/css; charset=utf-8'],
-    ['.gpx', 'application/gpx+xml; charset=utf-8'],
-    ['.html', 'text/html; charset=utf-8'],
-    ['.js', 'text/javascript; charset=utf-8'],
-    ['.png', 'image/png'],
-    ['.svg', 'image/svg+xml; charset=utf-8']
-]);
-
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
-
-const safeFile = async pathname => {
-    const resolved = path.resolve(root, `.${pathname}`);
-    if (resolved !== root && !resolved.startsWith(`${root}${path.sep}`)) return null;
-    try {
-        return (await stat(resolved)).isFile() ? resolved : null;
-    } catch {
-        return null;
-    }
-};
 
 // The showcase must be served over HTTPS, not HTTP. src/peakbagger/peakbagger-request.js
 // refuses any URL whose protocol is not https: — a deliberate security property
@@ -67,8 +54,7 @@ const server = createServer({ key: fixtureKey, cert: fixtureCert }, async (reque
         if (url.pathname.toLowerCase() === '/async/pllbb.aspx') {
             const bounds = ['miny', 'maxy', 'minx', 'maxx'].map(name => Number(url.searchParams.get(name)));
             if (bounds.some(value => !Number.isFinite(value))) {
-                response.writeHead(400, { 'content-type': 'text/plain; charset=utf-8' });
-                response.end('Bad bounds');
+                sendFixtureText(response, 400, 'Bad bounds');
                 return;
             }
             const [miny, maxy, minx, maxx] = bounds;
@@ -76,12 +62,11 @@ const server = createServer({ key: fixtureKey, cert: fixtureCert }, async (reque
             const cx = (minx + maxx) / 2;
             const dy = (maxy - miny) / 8;
             const dx = (maxx - minx) / 8;
-            response.writeHead(200, { 'content-type': 'text/xml; charset=utf-8', 'cache-control': 'no-store' });
-            response.end('<?xml version=\'1.0\' encoding=\'UTF-8\'?><ts>'
+            sendFixtureText(response, 200, '<?xml version=\'1.0\' encoding=\'UTF-8\'?><ts>'
                 + `<t i="58603" n="Iron Mountain" a="${cy}" o="${cx}" c="1" r="246"/>`
                 + `<t i="38375" n="Peak 6057" a="${cy + dy}" o="${cx + dx}" c="0" r="137"/>`
                 + `<t i="-114297" n="Peak 5000 (Prov)" a="${cy - dy}" o="${cx - dx}" c="2" r="10"/>`
-                + '</ts>');
+                + '</ts>', 'text/xml; charset=utf-8');
             return;
         }
         const showcaseRoutes = {
@@ -99,43 +84,19 @@ const server = createServer({ key: fixtureKey, cert: fixtureCert }, async (reque
         if (pathname.startsWith('/scripts/showcase/terrain-tiles/')) {
             pathname = '/scripts/showcase/terrain-basemap-tile.png';
         }
-        const file = await safeFile(pathname);
+        const file = await resolveFixtureFile(pathname);
         if (!file) {
-            response.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' });
-            response.end('Not found');
+            sendFixtureNotFound(response);
             return;
         }
-        response.writeHead(200, {
-            'content-type': contentTypes.get(path.extname(file)) || 'application/octet-stream',
-            'cache-control': 'no-store'
-        });
-        let contents = await readFile(file);
-        if (url.pathname === '/dist/terrain/terrain.html') {
-            // The extension resources live under dist/; map getURL('x') to /dist/x
-            // so the frame's MapLibre worker and the frame bundle resolve there.
-            // Expose only this fixture's Map instance so the check can prove the
-            // mocked DEM was decoded into non-flat terrain; production publishes
-            // no MapLibre internals.
-            contents = Buffer.from(contents.toString('utf8').replace('</head>', `  <script>
-    globalThis.chrome = { runtime: { getURL: resource => new URL('/dist/' + resource, location.origin).href } };
-  </script>
-</head>`).replace('  <script src="terrain-frame.js"></script>', `  <script>
-    maplibregl.Map = new Proxy(maplibregl.Map, {
-      construct(Target, args, newTarget) {
-        const instance = Reflect.construct(Target, args, newTarget);
-        globalThis.__bpbTerrainTestMap = instance;
-        return instance;
-      }
-    });
-  </script>
-  <script src="terrain-frame.js"></script>`));
-        } else if (url.pathname === '/dist/options/options.html' && url.searchParams.get('visual') === '1') {
-            contents = Buffer.from(contents.toString('utf8').replace('    <script src="options.js"></script>\n', ''));
-        }
-        response.end(contents);
+        const transform = url.pathname === '/dist/terrain/terrain.html'
+            ? instrumentTerrainFrameHtml
+            : (url.pathname === '/dist/options/options.html' && url.searchParams.get('visual') === '1'
+                ? html => html.replace('    <script src="options.js"></script>\n', '')
+                : null);
+        await sendFixtureFile(response, file, { transform });
     } catch (error) {
-        response.writeHead(500, { 'content-type': 'text/plain; charset=utf-8' });
-        response.end(error.stack || error.message);
+        sendFixtureError(response, error);
     }
 });
 
