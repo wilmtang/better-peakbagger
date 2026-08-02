@@ -116,8 +116,14 @@ jobs:
           firefox-version: latest
 
       - name: Install geckodriver
-        # browser-actions/setup-geckodriver release for 6e97fca80859e868aed49bd960f7b73520a077f5
-        uses: browser-actions/setup-geckodriver@eb8b0670366f719ca31703766a8cb7e3ea2c56ed
+        # Pinned to master rather than a tag: this action's only tag is v0.0.0,
+        # which is the commit being replaced here. `token` landed after it and is
+        # the reason for the move — without it the geckodriver release lookup is
+        # unauthenticated and shares a GitHub API rate limit with every runner on
+        # the same IP, which is how this job failed on 70956ad.
+        uses: browser-actions/setup-geckodriver@bf8266f624ca122cedb6d0381a031f18f6c431cd
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Verify the real Firefox extension
         run: npm run verify:firefox
