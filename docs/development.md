@@ -413,16 +413,26 @@ Three things, none of them a person:
   merge in. A hand-pushed fixup on a Dependabot branch therefore stops the
   automatic merge, which is the intended direction—finish it and merge by hand.
 
-### A wart worth knowing
+### Why the action pins are annotated the way they are
 
-Dependabot rewrites the SHA in a `uses:` line but does not touch a version
-comment on the line above it, which is how the pinned actions in this repository
-are annotated. After an automatic Actions merge, `# actions/checkout v7.0.0` can
-sit above a SHA that is no longer v7.0.0. **The SHA is the truth; the comment is
-a hint that drifts.** Dependabot does maintain a trailing `# vX.Y.Z` comment on
-the same line, so moving the annotations there would fix it for the actions
-whose SHA it can resolve to a version—though not for `browser-actions/*`, which
-it tracks SHA-to-SHA with no version to report.
+Every `uses:` line pins a full commit SHA and carries its version as a **trailing
+comment on the same line**:
+
+```yaml
+uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+```
+
+That position is load-bearing, not style. Dependabot rewrites the SHA and the
+trailing comment together, but it will not touch a comment on the line above—so
+annotations written above the pin silently claim a version the SHA no longer is.
+This repository learned that on the first automatic Actions merge, which left
+seven pins reading `v7.0.0` above a v7.0.1 SHA. Keep new pins in the trailing
+form.
+
+`browser-actions/setup-firefox` and `setup-geckodriver` are the exception.
+Dependabot tracks them SHA-to-SHA and reports no version, so nothing it does can
+maintain an annotation for them. Their comments stay above the pin and say so.
+In every case the SHA is the truth and the comment is a hint.
 
 ### Turning it off
 

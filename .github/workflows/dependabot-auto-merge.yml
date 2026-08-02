@@ -46,8 +46,7 @@ jobs:
       # automatic merge, which is the intended direction.
       - name: Verify the branch carries only Dependabot commits
         id: metadata
-        # dependabot/fetch-metadata v3.1.0
-        uses: dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98
+        uses: dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98 # v3.1.0
 
       - name: Queue the merge once required checks pass
         run: gh pr merge --auto --merge "$PR_URL"
