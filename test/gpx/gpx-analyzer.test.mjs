@@ -884,6 +884,16 @@ test('a late or replaced map frame atomically receives every analyzer map featur
     assert.equal(markerCalls.at(-1).map, replacement.map,
         'the hover marker follows the replacement map identity');
 
+    // Chart.js never replays onHover once the pointer leaves the plot area, so
+    // the panel has to clear the map marker itself; otherwise it stays parked
+    // on the last hovered point after the cursor has left the chart.
+    const chartCanvas = window.document.querySelector('#bpb-gpx-analysis canvas');
+    const hoverMarker = markerCalls.at(-1).marker;
+    assert.equal(hoverMarker.style, undefined, 'the marker is visible while the cursor is on the chart');
+    chartCanvas.dispatchEvent(new window.Event('mouseleave'));
+    assert.deepEqual(JSON.parse(JSON.stringify(hoverMarker.style)), { opacity: 0, fillOpacity: 0 },
+        'leaving the chart hides the hover marker on the map');
+
     const terrainToggle = window.document.getElementById('bpb-terrain-toggle');
     await waitFor(dom, () => terrainToggle.disabled === false);
     terrainToggle.click();
@@ -897,6 +907,18 @@ test('a late or replaced map frame atomically receives every analyzer map featur
         data: { __bpbTerrain: true, dir: 'toPage', type: 'loaded' }
     }));
     assert.equal(replacement.iframe.style.visibility, 'hidden');
+
+    chartConfig.options.onHover(null, [{ datasetIndex: 0, index: 0 }]);
+    assert.deepEqual(JSON.parse(JSON.stringify(terrainMessages.at(-1).coordinates)), [-121.8, 48.7],
+        'hovering the chart highlights the point in 3D');
+    chartCanvas.dispatchEvent(new window.Event('mouseleave'));
+    assert.deepEqual(JSON.parse(JSON.stringify(terrainMessages.at(-1))), {
+        __bpbTerrain: true, dir: 'toCS', type: 'highlight', coordinates: null, series: 'distance'
+    }, 'leaving the chart clears the 3D highlight too');
+    const messagesAfterClear = terrainMessages.length;
+    chartCanvas.dispatchEvent(new window.Event('mouseleave'));
+    assert.equal(terrainMessages.length, messagesAfterClear,
+        'a second exit with nothing highlighted stays silent');
 
     window.dispatchEvent(new window.MessageEvent('message', {
         source: window,

@@ -750,6 +750,24 @@ const run = async () => {
             frameLifecycle.dispose();
         }, { once: true });
 
+        // Chart.js runs `onHover` only while the pointer is inside the plot
+        // rectangle, and it never replays it on the way out: leaving the canvas
+        // clears the chart's own point and tooltip without telling us, so the
+        // marker this panel puts on the map — or the 3D highlight — would sit
+        // frozen on the last hovered location. Clearing on exit is the missing
+        // half of that contract. The boundary is the canvas rather than the
+        // plot rectangle so the marker and Chart.js's tooltip disappear
+        // together; Chart.js deliberately keeps the tooltip alive while the
+        // pointer crosses the axis gutter and legend below the plot.
+        let hoverHighlightShown = false;
+        const clearHoverHighlight = () => {
+            if (!hoverHighlightShown) return;
+            hoverHighlightShown = false;
+            if (terrainCoordinator.isActive()) postTerrain('highlight', { coordinates: null, series: 'distance' });
+            if (hoverMarker) hoverMarker.setStyle({ opacity: 0, fillOpacity: 0 });
+        };
+        canvas.addEventListener('mouseleave', clearHoverHighlight);
+
         // 4. Chart & UI Renderer Engine
         const renderData = () => {
             const p = panelPalette();
@@ -898,6 +916,10 @@ const run = async () => {
                             hoverSeries = datasetIndex === 0 ? 'distance' : 'time';
                             if (candidate && Number.isFinite(candidate.lat) && Number.isFinite(candidate.lon)) hoveredPoint = candidate;
                         }
+
+                        // Only a highlight this handler actually placed needs
+                        // clearing when the pointer leaves the canvas.
+                        hoverHighlightShown = hoveredPoint !== null;
 
                         if (terrainCoordinator.isActive()) {
                             postTerrain('highlight', {
