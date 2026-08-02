@@ -61,6 +61,11 @@ Verification evidence:
 - A live ruleset read after the update reported
   `strict_required_status_checks_policy: true` with the same four required
   checks and the same repository-admin bypass.
+- The [post-push Test run](https://github.com/wilmtang/better-peakbagger/actions/runs/30738075561)
+  passed all four hosted jobs: Node tests/lint, scale tests, hidden Chrome for
+  Testing 149.0.7827.55 in new headless at the 1000×760 base and exercised
+  narrow viewports, and hidden Firefox 152.0.6 at 1000×760. These packaged
+  smokes do not assert a WebGL renderer; graphics were not part of this change.
 
 ### Intentionally not changed
 
@@ -87,7 +92,8 @@ Verification evidence:
 - No live head was deliberately contaminated to exercise the synchronize reset;
   doing so would mutate an authentic dependency PR. The ordering and negative
   provenance cases are structurally and locally tested instead.
-- No extension browser or visual check was run for this audit. The changed
-  files are GitHub policy, documentation, and a Node structural test; packaged
-  browser checks cannot execute a GitHub-hosted event or establish repository
+- The hosted extension checks were hidden and protocol-driven. They do not
+  prove native focus, browser chrome, window placement, permission prompts,
+  touch, accessibility, or visual polish, and packaged browser checks cannot
+  execute the Dependabot auto-merge event or establish its repository
   permissions.
