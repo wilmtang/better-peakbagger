@@ -9,8 +9,9 @@
 # The groups still mirror what reaches users, which is worth knowing when a
 # rehearsal fails and the cause has to be attributed. `package.json` lists
 # every dependency under devDependencies, but only `tooling` is genuinely
-# development-only: everything in `editor` and `vendored` is bundled or copied
-# into `dist/` by `scripts/build-config.mjs` and ships inside the extension.
+# development-only: everything in `bundled-runtime` and `copied-runtime` is
+# bundled or copied into `dist/` by `scripts/build-config.mjs` and ships inside
+# the extension.
 #
 # Every npm group merges automatically once the four required checks pass; see
 # `.github/workflows/dependabot-auto-merge.yml`. Cooldown is the only delay left
@@ -33,13 +34,13 @@ updates:
       semver-major-days: 21
     groups:
       # Bundled into the shipped extension by esbuild.
-      editor:
+      bundled-runtime:
         patterns:
           - "@tiptap/*"
           - "@codemirror/*"
           - "@lezer/*"
       # Copied into dist/vendor as browser builds.
-      vendored:
+      copied-runtime:
         patterns:
           - chart.js
           - maplibre-gl

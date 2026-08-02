@@ -352,8 +352,8 @@ attributed:
 
 | Group | Reaches `dist/` via | Ships? |
 | --- | --- | --- |
-| `editor` | bundled by esbuild | yes |
-| `vendored` | copied by `scripts/build-config.mjs` | yes |
+| `bundled-runtime` | bundled by esbuild | yes |
+| `copied-runtime` | copied by `scripts/build-config.mjs` | yes |
 | `tooling` | nothing; build and test only | no |
 
 Every package is declared under `devDependencies`, so that field says nothing
@@ -371,9 +371,10 @@ That rehearsal is now the gate. It matters because the four automated checks
 cannot see a rendered result, so a dependency that breaks layout rather than
 behavior passes all of them—see
 [What each check can and cannot see](#what-each-check-can-and-cannot-see). An
-`editor` or `vendored` bump that ruins the report editor will reach `main`
-green. It should not reach a store, and the rehearsal is the only reason it
-does not. Skipping the rehearsal removes the last human check in the chain.
+`bundled-runtime` or `copied-runtime` bump that ruins the report editor will
+reach `main` green. It should not reach a store, and the rehearsal is the only
+reason it does not. Skipping the rehearsal removes the last human check in the
+chain.
 
 GitHub Actions bumps are the exception the rehearsal does not cover at all. They
 change what CI itself runs, including the release workflow holding the Chrome
@@ -453,7 +454,7 @@ In every case the SHA is the truth and the comment is a hint.
 Delete `.github/workflows/dependabot-auto-merge.yml`. Every update then waits
 for a human, and the checks are unaffected. To hold back one npm group instead,
 add it to the merge-step condition, for example
-`if: steps.metadata.outputs.dependency-group != 'editor'`.
+`if: steps.metadata.outputs.dependency-group != 'bundled-runtime'`.
 
 ## What each check can and cannot see
 

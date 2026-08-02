@@ -9,6 +9,10 @@ const workflow = await readFile(
     new URL('../../.github/workflows/dependabot-auto-merge.yml', import.meta.url),
     'utf8',
 );
+const dependabotConfig = await readFile(
+    new URL('../../.github/dependabot.yml', import.meta.url),
+    'utf8',
+);
 
 const stepIndex = name => workflow.indexOf(`- name: ${name}`);
 
@@ -43,4 +47,12 @@ test('only npm updates auto-merge and queueing is bound to the verified head', (
     assert.match(workflow, /if: steps\.metadata\.outputs\.package-ecosystem == 'npm'/);
     assert.match(workflow,
         /gh pr merge --auto --merge --match-head-commit "\$HEAD_SHA" "\$PR_URL"/);
+});
+
+test('npm group names describe how shipped dependencies enter dist', () => {
+    assert.match(dependabotConfig, /^      bundled-runtime:\s*$/m);
+    assert.match(dependabotConfig, /^      copied-runtime:\s*$/m);
+    assert.match(dependabotConfig, /^      tooling:\s*$/m);
+    assert.doesNotMatch(dependabotConfig, /^      editor:\s*$/m);
+    assert.doesNotMatch(dependabotConfig, /^      vendored:\s*$/m);
 });
