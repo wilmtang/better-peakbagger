@@ -6,13 +6,17 @@
 # against an unchanged sibling is precisely the breakage to avoid. Grouping
 # also collapses a TipTap release from ten pull requests into one.
 #
-# The groups mirror what actually reaches users, because that — not the
-# semver level — is what decides whether a bad bump can ship. `package.json`
-# lists every dependency under devDependencies, but only `tooling` is
-# genuinely development-only: everything in `editor` and `vendored` is
-# bundled or copied into `dist/` by `scripts/build-config.mjs` and ships
-# inside the extension. Only `tooling` is auto-merged; see
-# `.github/workflows/dependabot-auto-merge.yml`.
+# The groups still mirror what reaches users, which is worth knowing when a
+# rehearsal fails and the cause has to be attributed. `package.json` lists
+# every dependency under devDependencies, but only `tooling` is genuinely
+# development-only: everything in `editor` and `vendored` is bundled or copied
+# into `dist/` by `scripts/build-config.mjs` and ships inside the extension.
+#
+# Every group merges automatically once the four required checks pass; see
+# `.github/workflows/dependabot-auto-merge.yml`. Cooldown is the only delay
+# left in the path, so it carries more weight than it would if a human were
+# reading each pull request: it is what lets an ecosystem find a bad release
+# before this repository takes it.
 version: 2
 updates:
   - package-ecosystem: npm
@@ -54,13 +58,21 @@ updates:
           - selenium-webdriver
           - web-ext
 
-  # Action bumps change what CI itself runs, so they stay manual regardless of
-  # how small the diff looks.
+  # Action bumps merge automatically too, but they are the one ecosystem whose
+  # risk the release rehearsal cannot cover: they change what CI itself runs,
+  # including the release workflow that holds the Chrome workload-identity and
+  # AMO credentials. The rehearsal exercises the extension, never the workflow
+  # that publishes it. Cooldown is therefore the whole mitigation here rather
+  # than a convenience, and it is deliberately longer than npm's.
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
     open-pull-requests-limit: 1
+    cooldown:
+      semver-patch-days: 7
+      semver-minor-days: 14
+      semver-major-days: 30
     groups:
       actions:
         patterns:
