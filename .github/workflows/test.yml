@@ -1,7 +1,13 @@
 name: Test
 
+# A pull request branch on this repository would otherwise match both triggers
+# and run every job twice, which for a Dependabot update means eight jobs and
+# four browser smokes where four and two would do. Pushes to main still run the
+# suite after a merge.
 on:
   push:
+    branches:
+      - main
   pull_request:
     branches:
       - main
