@@ -1,6 +1,6 @@
 Upgrade your Peakbagger.com experience.
 
-Better Peakbagger turns Garmin and Strava activities—or a GPX file you already have—into review-ready ascent drafts. It also adds 3D terrain, richer GPX analysis, faster ways to find useful ascent beta, a modern trip-report editor, optional GitHub backup, and a polished dark theme.
+Better Peakbagger turns Garmin and Strava activities—or a GPX file you already have—into review-ready ascent drafts. It also adds 3D terrain, richer GPX analysis, faster ways to find useful ascent beta, a modern trip-report editor with photo-topo tools, optional GitHub backup, and a polished dark theme.
 
 FEATURES
 
@@ -16,6 +16,8 @@ FEATURES
 
 • Write better trip reports — Draft rich-text or GitHub-flavored Markdown reports with media, previews, and device-local recovery.
 
+• Create photo topos — Draw Mountain Project–style routes, curves, climbing symbols, pitch labels, and text over your photos, then upload directly to ImgBB with your own API key.
+
 • Back up your ascents to GitHub — Explicitly back up new ascents, ascent edits, ascent history, and favorite climbers to a GitHub repository you control.
 
 • Plan with better links — Open weather, live satellite imagery, snow-depth, and fire or smoke information for supported summits.
@@ -29,7 +31,7 @@ No analytics, telemetry, ads, or developer data server.
 Read the complete privacy policy:
 https://github.com/wilmtang/better-peakbagger/blob/main/PRIVACY.md
 
-Better Peakbagger works with Chrome, Edge, Brave, and Firefox. It is an independent, open-source project and is not affiliated with Peakbagger.com, Garmin, Strava, GitHub, Mapterhorn, or the linked planning services.
+Better Peakbagger works with Chrome, Edge, Brave, and Firefox. It is an independent, open-source project and is not affiliated with Peakbagger.com, Garmin, Strava, Mountain Project, ImgBB, GitHub, Mapterhorn, or the linked planning services.
 
 Source code:
 https://github.com/wilmtang/better-peakbagger
