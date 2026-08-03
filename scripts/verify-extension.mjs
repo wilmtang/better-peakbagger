@@ -40,6 +40,12 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const dist = process.env.BPB_VERIFY_EXTENSION_SOURCE
     ? path.resolve(process.env.BPB_VERIFY_EXTENSION_SOURCE)
     : path.join(root, 'dist');
+// Keep the normal verifier synthetic and self-contained. An explicit source
+// swaps in a real repository-owned image and representative annotations when
+// regenerating the Photo Topos showcase through the same packaged surface.
+const photoShowcaseSource = process.env.BPB_VERIFY_PHOTO_SHOWCASE_SOURCE
+    ? path.resolve(process.env.BPB_VERIFY_PHOTO_SHOWCASE_SOURCE)
+    : null;
 
 let chromium;
 try {
@@ -323,41 +329,58 @@ try {
         })}`);
 
         await photoPage.locator('#show-editor').click();
-        await photoPage.evaluate(async () => {
-            const canvas = document.createElement('canvas');
-            canvas.width = 900;
-            canvas.height = 600;
-            const drawing = canvas.getContext('2d');
-            const sky = drawing.createLinearGradient(0, 0, 0, 600);
-            sky.addColorStop(0, '#8fc7e8');
-            sky.addColorStop(1, '#f2dfba');
-            drawing.fillStyle = sky;
-            drawing.fillRect(0, 0, 900, 600);
-            drawing.fillStyle = '#566b60';
-            drawing.beginPath();
-            drawing.moveTo(0, 600);
-            drawing.lineTo(260, 230);
-            drawing.lineTo(430, 410);
-            drawing.lineTo(640, 150);
-            drawing.lineTo(900, 600);
-            drawing.closePath();
-            drawing.fill();
-            const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
-            const transfer = new DataTransfer();
-            transfer.items.add(new File([blob], 'browser-verification-topo.png', { type: 'image/png' }));
-            const input = document.getElementById('photo-file');
-            Object.defineProperty(input, 'files', { configurable: true, value: transfer.files });
-            input.dispatchEvent(new Event('change', { bubbles: true }));
-        });
+        const photoTitle = photoShowcaseSource
+            ? 'Alpine ridge topo'
+            : 'browser-verification-topo';
+        if (photoShowcaseSource) {
+            await photoPage.locator('#photo-file').setInputFiles(photoShowcaseSource);
+        } else {
+            await photoPage.evaluate(async () => {
+                const canvas = document.createElement('canvas');
+                canvas.width = 900;
+                canvas.height = 600;
+                const drawing = canvas.getContext('2d');
+                const sky = drawing.createLinearGradient(0, 0, 0, 600);
+                sky.addColorStop(0, '#8fc7e8');
+                sky.addColorStop(1, '#f2dfba');
+                drawing.fillStyle = sky;
+                drawing.fillRect(0, 0, 900, 600);
+                drawing.fillStyle = '#566b60';
+                drawing.beginPath();
+                drawing.moveTo(0, 600);
+                drawing.lineTo(260, 230);
+                drawing.lineTo(430, 410);
+                drawing.lineTo(640, 150);
+                drawing.lineTo(900, 600);
+                drawing.closePath();
+                drawing.fill();
+                const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+                const transfer = new DataTransfer();
+                transfer.items.add(new File([blob], 'browser-verification-topo.png', { type: 'image/png' }));
+                const input = document.getElementById('photo-file');
+                Object.defineProperty(input, 'files', { configurable: true, value: transfer.files });
+                input.dispatchEvent(new Event('change', { bubbles: true }));
+            });
+        }
         await photoPage.locator('#editor-workspace').waitFor({ state: 'visible', timeout: 5000 });
-        await photoPage.locator('#photo-alt').fill('Browser verification mountain route');
+        await photoPage.locator('#photo-title').fill(photoTitle);
+        await photoPage.locator('#photo-alt').fill(photoShowcaseSource
+            ? 'An example climbing route marked over an alpine ridge'
+            : 'Browser verification mountain route');
         await photoPage.locator('[data-tool="route"]').click();
+        if (photoShowcaseSource) {
+            await photoPage.locator('#route-arrow').check();
+            await photoPage.locator('#route-smooth').check();
+        }
         const overlayBounds = await photoPage.locator('#photo-overlay').boundingBox();
         if (overlayBounds) {
-            await photoPage.mouse.click(overlayBounds.x + overlayBounds.width * 0.32,
-                overlayBounds.y + overlayBounds.height * 0.72);
-            await photoPage.mouse.click(overlayBounds.x + overlayBounds.width * 0.58,
-                overlayBounds.y + overlayBounds.height * 0.38);
+            const routePoints = photoShowcaseSource
+                ? [[0.31, 0.78], [0.39, 0.65], [0.46, 0.56], [0.52, 0.43], [0.57, 0.31], [0.62, 0.2]]
+                : [[0.32, 0.72], [0.58, 0.38]];
+            for (const [x, y] of routePoints) {
+                await photoPage.mouse.click(overlayBounds.x + overlayBounds.width * x,
+                    overlayBounds.y + overlayBounds.height * y);
+            }
             await photoPage.locator('#finish-route').click();
         }
         const photoEditorState = await photoPage.waitForFunction(() => {
@@ -437,6 +460,8 @@ try {
                 qualityHidden: document.getElementById('jpeg-quality-control')?.hidden,
                 estimate,
                 note: document.getElementById('upload-estimate-note')?.textContent,
+                sourceWidth: document.getElementById('source-image')?.naturalWidth,
+                sourceHeight: document.getElementById('source-image')?.naturalHeight,
             };
         }, null, { timeout: 10_000 }).then(handle => handle.jsonValue()).catch(() => null);
         check(originalUploadState?.format === 'original'
@@ -444,7 +469,8 @@ try {
                 === 'Follow original format · PNG|PNG · lossless|JPEG · smaller file'
             && originalUploadState.qualityHidden === true
             && /PNG$/.test(originalUploadState.estimate || '')
-            && /900 × 600 · full resolution/.test(originalUploadState.note || ''),
+            && originalUploadState.note === `${originalUploadState.sourceWidth} × ${
+                originalUploadState.sourceHeight} · full resolution`,
         `the original-format PNG estimate was wrong: ${JSON.stringify({
             originalUploadState,
             photoErrors,
@@ -468,6 +494,8 @@ try {
                 qualityLabel: document.getElementById('jpeg-quality-value')?.textContent,
                 estimate,
                 note: document.getElementById('upload-estimate-note')?.textContent,
+                sourceWidth: document.getElementById('source-image')?.naturalWidth,
+                sourceHeight: document.getElementById('source-image')?.naturalHeight,
                 footerHeight: footer?.height,
             };
         }, null, { timeout: 10_000 }).then(handle => handle.jsonValue()).catch(() => null);
@@ -476,12 +504,40 @@ try {
             && jpegUploadState.quality === '70'
             && jpegUploadState.qualityLabel === '70%'
             && /JPEG$/.test(jpegUploadState.estimate || '')
-            && /900 × 600 · full resolution/.test(jpegUploadState.note || '')
+            && jpegUploadState.note === `${jpegUploadState.sourceWidth} × ${
+                jpegUploadState.sourceHeight} · full resolution`
             && jpegUploadState.footerHeight < 260,
         `the JPEG quality or encoded estimate was wrong: ${JSON.stringify({
             jpegUploadState,
             photoErrors,
         })}`);
+        if (photoShowcaseSource && overlayBounds) {
+            const place = async (tool, x, y) => {
+                await photoPage.locator(`[data-tool="${tool}"]`).click();
+                await photoPage.mouse.click(overlayBounds.x + overlayBounds.width * x,
+                    overlayBounds.y + overlayBounds.height * y);
+            };
+            await photoPage.locator('[data-tool="bolt"]').click();
+            await photoPage.locator('#object-color').selectOption('#ffffff');
+            await photoPage.mouse.click(overlayBounds.x + overlayBounds.width * 0.46,
+                overlayBounds.y + overlayBounds.height * 0.56);
+            await photoPage.mouse.click(overlayBounds.x + overlayBounds.width * 0.57,
+                overlayBounds.y + overlayBounds.height * 0.31);
+            await place('anchor', 0.62, 0.2);
+            await place('pitch', 0.52, 0.43);
+            await place('text', 0.67, 0.31);
+            await photoPage.locator('#object-text').fill('Example route');
+            await photoPage.locator('[data-tool="select"]').click();
+            await photoPage.mouse.click(overlayBounds.x + overlayBounds.width * 0.39,
+                overlayBounds.y + overlayBounds.height * 0.65);
+            await photoPage.waitForFunction(() => {
+                const saved = document.getElementById('save-status')?.textContent || '';
+                const estimate = document.getElementById('upload-estimate')?.textContent || '';
+                return /Saved on this device/.test(saved)
+                    && /^Estimated upload ·/.test(estimate)
+                    && document.querySelectorAll('#photo-overlay [data-bpb-object]').length >= 6;
+            }, null, { timeout: 10_000 });
+        }
         if (process.env.BPB_VERIFY_PHOTO_SCREENSHOT) {
             await photoPage.evaluate(() => scrollTo(0, 0));
             await photoPage.screenshot({
@@ -524,7 +580,7 @@ try {
         }, null, { timeout: 5000 }).then(handle => handle.jsonValue()).catch(() => null);
         check(listedPhotoState?.cards === 1
             && listedPhotoState.maxCardsPerPhoto === 1
-            && listedPhotoState.titles[0] === 'browser-verification-topo'
+            && listedPhotoState.titles[0] === photoTitle
             && listedPhotoState.emptyHidden === true,
         `the saved photo was not listed exactly once: ${JSON.stringify({
             listedPhotoState,
@@ -694,6 +750,8 @@ try {
                     width: controlRect.width,
                 } : null,
                 exportSummary: document.getElementById('export-summary')?.textContent,
+                sourceWidth: document.getElementById('source-image')?.naturalWidth,
+                sourceHeight: document.getElementById('source-image')?.naturalHeight,
                 horizontalOverflow:
                     document.documentElement.scrollWidth > document.documentElement.clientWidth,
             };
@@ -706,7 +764,9 @@ try {
             && /Upload stays full resolution/.test(reportSizeState.note || '')
             && reportSizeState.stage?.width <= 320.5
             && reportSizeState.stage?.maxWidth === '320px'
-            && /900 × 600/.test(reportSizeState.exportSummary || '')
+            && (reportSizeState.exportSummary || '').includes(
+                `${reportSizeState.sourceWidth} × ${reportSizeState.sourceHeight}`
+            )
             && !reportSizeState.horizontalOverflow,
         `the report display choice changed pixels or failed to resize the stage: ${
             JSON.stringify(reportSizeState)

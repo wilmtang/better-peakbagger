@@ -110,6 +110,8 @@ and published versions reusable, while optional GitHub recovery can preserve
 the catalog and annotation projects. See the
 [photo workflow and privacy boundaries](https://github.com/wilmtang/better-peakbagger/blob/main/docs/photo-topo-editor.md).
 
+![Photo Topos editor with an annotated alpine route and direct ImgBB upload](store-assets/showcase-6-photo-topos.png)
+
 ### Back up your Peakbagger data to GitHub
 
 Keep portable copies of your ascents in a GitHub repository you control, with
