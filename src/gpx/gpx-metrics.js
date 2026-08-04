@@ -342,6 +342,7 @@ const computeMetrics = points => {
             lat: point.lat,
             lon: point.lon,
             ms: point.ms || 0,
+            coordinateGroup: point.coordinateGroup,
             rawEleM: point.rawEleM,
             eleM,
             distM: distMByIndex[index],
@@ -357,6 +358,17 @@ const computeMetrics = points => {
         : [];
     const sampledPoints = new Set(adjustedPoints.filter((point, index) =>
         index % 3 === 0 || index === adjustedPoints.length - 1));
+    // A chart break is useful only if both sides survive sampling. Preserve
+    // every segment's endpoints so a short segment is not reduced to a lone
+    // point and no visual connection is inferred across its boundary.
+    let groupStart = 0;
+    for (let index = 1; index <= adjustedPoints.length; index++) {
+        if (index < adjustedPoints.length
+            && adjustedPoints[index].coordinateGroup === adjustedPoints[groupStart].coordinateGroup) continue;
+        sampledPoints.add(adjustedPoints[groupStart]);
+        sampledPoints.add(adjustedPoints[index - 1]);
+        groupStart = index;
+    }
     if (hasTime) {
         // Combined tracks can put the chronological endpoints anywhere in GPX
         // order. Keep both in the bounded shared sample so the time chart spans

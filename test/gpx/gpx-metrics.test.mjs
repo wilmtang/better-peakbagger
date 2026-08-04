@@ -47,6 +47,8 @@ test('metrics do not bridge declared track-segment boundaries', () => {
         `expected only the two segment edges, got ${metrics.rawDistanceM} m`);
     assert.equal(metrics.rawGainM, 20,
         'elevation gain must not include the jump between segments');
+    assert.deepEqual(metrics.chartPoints.map(point => point.coordinateGroup), [0, 0, 1, 1],
+        'each segment must retain both endpoints and its break identity after sampling');
 });
 
 test('map routes split at impossible coordinates and discard unusable fragments', () => {

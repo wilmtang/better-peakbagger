@@ -1233,12 +1233,12 @@ test('GPX analyzer sorts reversed multi-day segments for time and camping only',
     await waitFor(dom, () => chartConfig() !== null);
     await waitFor(dom, () => polylineCalls.length === 2);
     const [distanceSeries, timeSeries] = chartConfig().data.datasets;
-    assert.deepEqual(Array.from(distanceSeries.data, point => point._raw.lat), [48.2, 48.3, 47, 47.1],
+    assert.deepEqual(Array.from(distanceSeries.data, point => point._raw?.lat ?? null), [48.2, 48.3, null, 47, 47.1],
         'distance analysis must retain reversed GPX segment order');
     assert.ok(distanceSeries.data.at(-1)._raw.distM > 25_000
         && distanceSeries.data.at(-1)._raw.distM < 30_000,
     `distance analysis must not bridge the segment gap, got ${distanceSeries.data.at(-1)._raw.distM} m`);
-    assert.deepEqual(Array.from(timeSeries.data, point => point._raw.lat), [47, 47.1, 48.2, 48.3],
+    assert.deepEqual(Array.from(timeSeries.data, point => point._raw?.lat ?? null), [47, 47.1, null, 48.2, 48.3],
         'time analysis must span the segments chronologically');
     assert.equal(chartConfig().options.scales.xTime.min, Date.parse('2026-07-10T16:00:00Z'));
     assert.equal(chartConfig().options.scales.xTime.max, Date.parse('2026-07-11T17:00:00Z'));

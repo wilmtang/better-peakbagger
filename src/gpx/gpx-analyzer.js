@@ -886,13 +886,25 @@ const run = async () => {
 
             // Map adjusted arrays
             const eleDistData = [], eleTimeData = [];
+            const appendChartPoint = (target, point, x, y) => {
+                const previous = target.at(-1)?._raw;
+                if (previous && previous.coordinateGroup !== point.coordinateGroup) {
+                    target.push({ x, y: null, _raw: null });
+                }
+                target.push({ x, y, _raw: point });
+            };
             chartData.forEach(d => {
                 const eleConv = parseFloat((d.eleM * eMult).toFixed(0));
-                eleDistData.push({ x: parseFloat((d.distM * dMult).toFixed(2)), y: eleConv, _raw: d });
+                appendChartPoint(
+                    eleDistData,
+                    d,
+                    parseFloat((d.distM * dMult).toFixed(2)),
+                    eleConv
+                );
             });
             timeChartData.forEach(d => {
                 const eleConv = parseFloat((d.eleM * eMult).toFixed(0));
-                eleTimeData.push({ x: d.ms, y: eleConv, _raw: d });
+                appendChartPoint(eleTimeData, d, d.ms, eleConv);
             });
 
             if (chartInstance) chartInstance.destroy();
