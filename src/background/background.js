@@ -92,6 +92,12 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
         && left.fillTripInfo === right.fillTripInfo
         && left.fillWildernessNights === right.fillWildernessNights
         && left.fillExternalUrl === right.fillExternalUrl;
+    const sameProviderActivity = (left, right) => !!left && !!right
+        && left.provider === right.provider
+        && String(left.activityId) === String(right.activityId);
+    const hasProviderActivity = value => !!value
+        && typeof value.provider === 'string'
+        && value.activityId != null;
 
     const readMap = async key => (await storage().get(key))[key] || {};
     const mutateMap = (key, mutate) => {
@@ -232,25 +238,31 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
         world: 'MAIN'
     });
 
-    const inspectProviderOwnership = async tabId => {
+    const inspectProviderOwnership = async (tabId, expectedActivity) => {
         const results = await ext.scripting.executeScript({
             target: { tabId },
             // Narrowed in the page realm: the worker needs the verdict, not the
             // provider profile identifiers the adapter compared to reach it.
-            func: () => globalThis.BPBProviderPage.publicOwnership(
-                globalThis.BPBProviderPage.inspectOwnership()),
+            func: expected => globalThis.BPBProviderPage.publicOwnership(
+                globalThis.BPBProviderPage.inspectExpectedOwnership(expected)),
+            args: [expectedActivity],
             world: 'MAIN'
         });
         if (!results || !results[0]) throw new Error('The activity page returned no ownership result.');
         return results[0].result;
     };
 
-    const captureProvider = async (tabId, capturePreferences, generation) => {
+    const captureProvider = async (tabId, capturePreferences, generation, expectedActivity) => {
         const results = await ext.scripting.executeScript({
             target: { tabId },
-            func: async (options, captureGeneration) => {
+            func: async (options, captureGeneration, activity) => {
                 try {
-                    return await globalThis.BPBProviderPage.capture(options, captureGeneration);
+                    return await globalThis.BPBProviderPage.capture(
+                        options,
+                        captureGeneration,
+                        undefined,
+                        activity,
+                    );
                 } catch (error) {
                     return {
                         ok: false,
@@ -262,7 +274,7 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
             args: [{
                 retainWaypoints: capturePreferences.retainWaypoints,
                 includeTripName: capturePreferences.fillTripInfo
-            }, generation],
+            }, generation, expectedActivity],
             world: 'MAIN'
         });
         if (!results || !results[0]) throw new Error('The activity page returned no capture result.');
@@ -386,6 +398,16 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
 
     const processCapture = async (tabId, expectedUrl, capturePreferences, generation) => {
         try {
+            const expectedActivity = providerFromUrl(expectedUrl);
+            if (!expectedActivity) {
+                await failCaptureJob(
+                    tabId,
+                    generation,
+                    'activity-changed',
+                    'The activity page changed before capture started.',
+                );
+                return;
+            }
             const tab = await ext.tabs.get(tabId);
             if (!tab.url || tab.url !== expectedUrl) {
                 await failCaptureJob(
@@ -399,10 +421,14 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
 
             if (!await updateCaptureJob(tabId, generation, { phase: 'checking-ownership' })) return;
             await injectProvider(tabId);
-            const ownership = await inspectProviderOwnership(tabId);
-            if (!ownership || !ownership.ok) {
+            const ownership = await inspectProviderOwnership(tabId, expectedActivity);
+            const ownershipMatches = sameProviderActivity(ownership, expectedActivity);
+            const ownershipChanged = ownership?.code === 'activity-changed'
+                || (hasProviderActivity(ownership) && !ownershipMatches);
+            if (!ownership || !ownership.ok || !ownershipMatches) {
                 const messages = {
                     unsupported: 'Open a Garmin Connect or Strava activity first.',
+                    'activity-changed': 'The activity page changed before capture could finish.',
                     'provider-signed-out': 'Sign in to the activity provider before capturing.',
                     'not-owner': 'This activity was recorded by another account, so it cannot be captured.',
                     'ownership-unverified': 'Ownership could not be verified from this activity page. Nothing was captured.'
@@ -410,8 +436,10 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
                 await failCaptureJob(
                     tabId,
                     generation,
-                    ownership?.code || 'capture-failed',
-                    messages[ownership?.code] || 'The activity could not be captured.',
+                    ownershipChanged ? 'activity-changed' : (ownership?.code || 'capture-failed'),
+                    ownershipChanged
+                        ? messages['activity-changed']
+                        : (messages[ownership?.code] || 'The activity could not be captured.'),
                 );
                 return;
             }
@@ -429,9 +457,29 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
             }
             if (!await updateCaptureJob(tabId, generation, { phase: 'checking-peakbagger' })) return;
 
-            const capture = await captureProvider(tabId, capturePreferences, generation);
-            if (!capture || !capture.ok) {
-                if (capture?.code === 'no-gps-data') {
+            const currentTab = await ext.tabs.get(tabId);
+            const currentActivity = providerFromUrl(currentTab.url);
+            if (!sameProviderActivity(currentActivity, expectedActivity)) {
+                await failCaptureJob(
+                    tabId,
+                    generation,
+                    'activity-changed',
+                    'The activity page changed before capture could finish.',
+                );
+                return;
+            }
+
+            const capture = await captureProvider(
+                tabId,
+                capturePreferences,
+                generation,
+                expectedActivity,
+            );
+            const captureMatches = sameProviderActivity(capture, expectedActivity);
+            const captureChanged = capture?.code === 'activity-changed'
+                || (hasProviderActivity(capture) && !captureMatches);
+            if (!capture || !capture.ok || !captureMatches) {
+                if (capture?.code === 'no-gps-data' && captureMatches) {
                     await finishCaptureWithoutGps(
                         tabId,
                         generation,
@@ -440,6 +488,7 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
                     return;
                 }
                 const messages = {
+                    'activity-changed': 'The activity page changed before capture could finish.',
                     'provider-signed-out': 'Sign in to the activity provider before capturing.',
                     'not-owner': 'This activity was recorded by another account, so it cannot be captured.',
                     'ownership-unverified': 'Ownership could not be verified from this activity page. Nothing was captured.',
@@ -455,8 +504,10 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
                 await failCaptureJob(
                     tabId,
                     generation,
-                    capture?.code || 'capture-failed',
-                    messages[capture?.code] || 'The activity could not be captured.'
+                    captureChanged ? 'activity-changed' : (capture?.code || 'capture-failed'),
+                    captureChanged
+                        ? messages['activity-changed']
+                        : (messages[capture?.code] || 'The activity could not be captured.')
                 );
                 return;
             }

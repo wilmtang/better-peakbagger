@@ -17,6 +17,7 @@ const event = () => {
 };
 
 const createHarness = ({ peakXml = null, captureResult = null, ownershipResult = null, settings = {}, beforePeakFetch = null,
+    beforePeakbaggerLogin = null,
     beforeProviderCapture = null, beforeBadgeText = null, groupError = null, faults = {},
     loginHtml = '<a href="climber/climber.aspx?cid=77">My Home Page</a>' } = {}) => {
     const values = {};
@@ -116,7 +117,8 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
                 scriptCalls.push(structuredClone({ files: details.files, args: details.args, world: details.world }));
                 if (details.files) return [];
                 const functionSource = String(details.func);
-                const isOwnershipCheck = functionSource.includes('inspectOwnership');
+                const isOwnershipCheck = functionSource.includes('inspectOwnership')
+                    || functionSource.includes('inspectExpectedOwnership');
                 const isProviderCapture = functionSource.includes('BPBProviderPage.capture');
                 const isProviderCancel = functionSource.includes('cancelCapture');
                 if (isProviderCancel) {
@@ -197,6 +199,7 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
         const value = String(url);
         fetchCalls.push(value);
         if (value.includes('/Default.aspx')) {
+            if (beforePeakbaggerLogin) await beforePeakbaggerLogin();
             return { ok: true, text: async () => loginHtml };
         }
         if (value.includes('/Async/pllbb2.aspx')) {
@@ -252,7 +255,7 @@ test('background capture persists a private job, opens grouped drafts, and previ
         /<trkpt lat="0" lon="-0.001"><ele>100<\/ele><time>2026-07-01T15:00:00Z<\/time><\/trkpt>/);
     assert.doesNotMatch(storedJob.uploadGpx, /<extensions(?:\s|>)/i);
     assert.equal(JSON.stringify(storedJob).includes('heart'), false);
-    assert.deepEqual(harness.scriptCalls.find(call => call.args?.length === 2)?.args[0], {
+    assert.deepEqual(harness.scriptCalls.find(call => call.args?.length === 3)?.args[0], {
         retainWaypoints: true,
         includeTripName: true
     });
@@ -811,6 +814,32 @@ test('a capture that finishes for a different activity is not reused after navig
         'the completed job for the previous activity must not answer a capture of the new activity');
 });
 
+test('capture does not follow a same-tab activity navigation after ownership approval', async () => {
+    let releaseLogin;
+    let loginReached;
+    const loginGate = new Promise(resolve => { releaseLogin = resolve; });
+    const reached = new Promise(resolve => { loginReached = resolve; });
+    const harness = createHarness({
+        beforePeakbaggerLogin: async () => {
+            loginReached();
+            await loginGate;
+        },
+    });
+
+    const capture = harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    await reached;
+    harness.tabs.get(1).url = 'https://www.strava.com/activities/456';
+    releaseLogin();
+    const result = await capture;
+
+    assert.equal(result.phase, 'error');
+    assert.equal(result.error.code, 'activity-changed');
+    assert.equal(harness.providerCaptureCalls.length, 0,
+        'the provider export is never requested for the replacement activity');
+    assert.equal(harness.fetchCalls.filter(call => call.includes('/Async/pllbb2.aspx')).length, 0,
+        'no coordinates from the replacement activity reach summit analysis');
+});
+
 test('overlapping starts serialize admission before either capture process is registered', async () => {
     let releaseAdmissions;
     const admissionGate = new Promise(resolve => { releaseAdmissions = resolve; });
@@ -1128,7 +1157,7 @@ test('changing capture settings invalidates a reusable job for the same activity
 
     await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
     assert.notEqual(harness.values.bpbCaptureJobs['1'].id, firstId);
-    assert.deepEqual(harness.scriptCalls.filter(call => call.args?.length === 2).at(-1).args[0], {
+    assert.deepEqual(harness.scriptCalls.filter(call => call.args?.length === 3).at(-1).args[0], {
         retainWaypoints: false,
         includeTripName: true
     });
@@ -1158,12 +1187,12 @@ test('non-owned activities show the failure badge and never query coordinates', 
 
 test('provider export failures discard page-world exception text without misreporting ownership', async () => {
     const harness = createHarness({
-        ownershipResult: { ok: true, provider: 'garmin', activityId: '777', viewerId: 'abc', authorId: 'abc' },
+        ownershipResult: { ok: true, provider: 'strava', activityId: '123', viewerId: '42', authorId: '42' },
         captureResult: {
             ok: false,
             code: 'provider-export-failed',
-            provider: 'garmin',
-            activityId: '777',
+            provider: 'strava',
+            activityId: '123',
             message: 'RAW_PAGE_SENTINEL: chrome.runtime.lastError'
         }
     });
@@ -1179,12 +1208,12 @@ test('provider export failures discard page-world exception text without misrepo
 
 test('provider export timeouts preserve the public retryable timeout contract', async () => {
     const harness = createHarness({
-        ownershipResult: { ok: true, provider: 'garmin', activityId: '777', viewerId: 'abc', authorId: 'abc' },
+        ownershipResult: { ok: true, provider: 'strava', activityId: '123', viewerId: '42', authorId: '42' },
         captureResult: {
             ok: false,
             code: 'provider-export-timeout',
-            provider: 'garmin',
-            activityId: '777',
+            provider: 'strava',
+            activityId: '123',
             message: 'RAW_PAGE_SENTINEL: internal timeout details'
         }
     });
@@ -1221,7 +1250,7 @@ test('an activity without a provider GPX ends in a neutral, reusable no-GPS stat
     assert.equal(harness.badgeCalls.some(([kind, details]) => kind === 'text' && details.text === '!'), false);
 
     const firstJobId = result.id;
-    const captureCalls = () => harness.scriptCalls.filter(call => call.args).length;
+    const captureCalls = () => harness.providerCaptureCalls.length;
     assert.equal(captureCalls(), 1);
     const reused = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
     assert.equal(reused.id, firstJobId);

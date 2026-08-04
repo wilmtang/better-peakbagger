@@ -131,6 +131,42 @@ test('successful capture fetches only the provider GPX endpoint', async () => {
     assert.equal(capture.metadata.displayedLocalStart, '2026-07-11T16:13:00');
 });
 
+test('capture rejects a same-tab activity change after the GPX body starts', async () => {
+    const dom = load(stravaPage(), 'https://www.strava.com/activities/123');
+    let releaseBody;
+    let bodyStarted;
+    const bodyGate = new Promise(resolve => { releaseBody = resolve; });
+    const started = new Promise(resolve => { bodyStarted = resolve; });
+    dom.window.fetch = async () => ({
+        ok: true,
+        status: 200,
+        text: async () => {
+            bodyStarted();
+            await bodyGate;
+            return '<gpx><trk><trkseg><trkpt lat="1" lon="2"/><trkpt lat="1.1" lon="2.1"/></trkseg></trk></gpx>';
+        },
+    });
+
+    const pending = dom.window.BPBProviderPage.capture(
+        {},
+        'activity-identity',
+        1000,
+        { provider: 'strava', activityId: '123' },
+    );
+    await started;
+    dom.window.history.pushState({}, '', '/activities/456');
+    releaseBody();
+    const capture = await pending;
+
+    assert.deepEqual({ ...capture }, {
+        ok: false,
+        code: 'activity-changed',
+        provider: 'strava',
+        activityId: '123',
+    });
+    assert.equal('segments' in capture, false);
+});
+
 test('capture returns allowlisted waypoint and trip-name data for enabled settings', async () => {
     const dom = load(stravaPage(), 'https://www.strava.com/activities/123');
     dom.window.fetch = async () => ({

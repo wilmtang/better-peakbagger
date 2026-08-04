@@ -101,6 +101,28 @@ const inspectOwnership = (urlValue = location.href) => {
     return { ok: true, provider, activityId, viewerId, authorId };
 };
 
+const cleanExpectedActivity = value => {
+    if (!value || typeof value !== 'object'
+        || !['garmin', 'strava'].includes(value.provider)
+        || !/^\d+$/.test(String(value.activityId || ''))) return null;
+    return { provider: value.provider, activityId: String(value.activityId) };
+};
+
+const inspectExpectedOwnership = expectedValue => {
+    if (expectedValue == null) return inspectOwnership();
+    const expected = cleanExpectedActivity(expectedValue);
+    if (!expected) return { ok: false, code: 'unsupported' };
+    const current = providerFromUrl(location.href);
+    if (!current || current.provider !== expected.provider || current.activityId !== expected.activityId) {
+        return { ok: false, code: 'activity-changed', ...expected };
+    }
+    const ownership = inspectOwnership();
+    if (ownership.provider !== expected.provider || ownership.activityId !== expected.activityId) {
+        return { ok: false, code: 'activity-changed', ...expected };
+    }
+    return ownership;
+};
+
 // Everything that may cross from this page realm to the background worker.
 //
 // inspectOwnership() also resolves the Garmin/Strava profile identifiers it
@@ -170,8 +192,13 @@ const garminExportRequest = activityId => {
     return { endpoint: path, headers };
 };
 
-const capture = async (options = {}, generation = null, timeoutMs = PROVIDER_TIMEOUT_MS) => {
-    const ownership = inspectOwnership();
+const capture = async (
+    options = {},
+    generation = null,
+    timeoutMs = PROVIDER_TIMEOUT_MS,
+    expectedActivity = null,
+) => {
+    const ownership = inspectExpectedOwnership(expectedActivity);
     if (!ownership.ok) return ownership;
     const request = ownership.provider === 'garmin'
         ? garminExportRequest(ownership.activityId)
@@ -191,8 +218,12 @@ const capture = async (options = {}, generation = null, timeoutMs = PROVIDER_TIM
             const providerName = ownership.provider === 'garmin' ? 'Garmin' : 'Strava';
             throw new Error(`${providerName} GPX export failed with HTTP ${response.status}. Reload the activity and try again.`);
         }
+        const beforeBody = inspectExpectedOwnership(expectedActivity);
+        if (!beforeBody.ok) return publicOwnership(beforeBody);
         const text = await deadline.run(response.text());
         if (!text.trim()) throw noGpsError();
+        const afterBody = inspectExpectedOwnership(expectedActivity);
+        if (!afterBody.ok) return publicOwnership(afterBody);
         const parsed = parseGpxData(text, options);
         const metadata = activityMetadata(ownership.provider);
         if (options.includeTripName) {
@@ -238,6 +269,7 @@ const API = {
     providerFromUrl,
     profileId,
     inspectOwnership,
+    inspectExpectedOwnership,
     publicOwnership,
     parseGpxData,
     garminExportRequest,
