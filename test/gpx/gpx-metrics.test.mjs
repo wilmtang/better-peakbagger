@@ -129,6 +129,21 @@ test('metrics sort the time view without reordering route geometry', () => {
         'distance must remain cumulative in GPX route order');
 });
 
+test('timestamp direction cannot bypass bad-jump filtering', () => {
+    const start = Date.UTC(2026, 6, 10, 12);
+    const analyze = descending => GpxMetrics.computeMetrics([
+        { lat: 0, lon: 0, rawEleM: 100, ms: start + (descending ? 1000 : 0) },
+        { lat: 0, lon: 0.02, rawEleM: 101, ms: start + (descending ? 0 : 1000) },
+    ]);
+
+    const ascending = analyze(false);
+    const descending = analyze(true);
+    assert.ok(ascending.rawDistanceM > 2200 && ascending.rawDistanceM < 2250);
+    assert.equal(ascending.distanceM, 0, 'the one-second jump is not credible travel');
+    assert.equal(descending.distanceM, ascending.distanceM,
+        'serializing the same timed edge in reverse must not restore the bad jump');
+});
+
 test('timestamp ordering permutations affect only the chronological view', async t => {
     const start = Date.UTC(2026, 6, 10, 12);
     const buildPoints = offsets => offsets.map((offset, index) => ({

@@ -162,7 +162,11 @@ const computeAdjustedDistances = (points, hasTime) => {
             continue;
         }
         const stepM = haversineDistanceM(prev, current);
-        const elapsedSeconds = hasTime ? (current.ms - prev.ms) / 1000 : 0;
+        // Time-derived views sort chronologically, while route metrics retain
+        // GPX document order. A recoverable out-of-order series can therefore
+        // put the later timestamp first; jump and pause filtering depend on the
+        // elapsed magnitude, not on which adjacent sample was serialized first.
+        const elapsedSeconds = hasTime ? Math.abs(current.ms - prev.ms) / 1000 : 0;
         const isBadJump = elapsedSeconds > 0 && stepM > DIST_CONFIRM_M && stepM / elapsedSeconds > MAX_REASONABLE_SPEED_MPS;
 
         rawDistanceM += stepM;
