@@ -260,6 +260,9 @@ test('a downloaded project can come back in, and a duplicate cannot claim one as
 });
 
 test('the photo chooser states decode bounds separately from provider and project limits', () => {
+    assert.match(doc.querySelector('#editor-empty .photo-import-hint').textContent,
+        /drag a photo here or paste one/i);
+    assert.equal(doc.getElementById('photo-file').accept, 'image/*');
     assert.match(doc.querySelector('#editor-empty .fine-print').textContent,
         /64 MP and 16,384 px per side/);
     assert.match(doc.querySelector('#editor-empty .fine-print').textContent,

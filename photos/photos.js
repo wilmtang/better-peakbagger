@@ -157,6 +157,7 @@ let exportEstimateTimer = null;
 let cachedExport = null;
 let exportEstimateJob = null;
 let exportEstimatePending = false;
+let photoDragDepth = 0;
 
 const applyReportWidthPreview = () => {
     if (!RETURN_TOKEN || !project) {
@@ -1362,6 +1363,72 @@ const chooseFile = async file => {
     }
 };
 
+const transferHasFiles = transfer => {
+    if (!transfer) return false;
+    if ([...(transfer.types || [])].includes('Files')) return true;
+    return [...(transfer.items || [])].some(item => item.kind === 'file');
+};
+
+const photoFromTransfer = transfer => {
+    if (!transfer) return null;
+    const item = [...(transfer.items || [])].find(candidate =>
+        candidate.kind === 'file'
+        && (!candidate.type || candidate.type.startsWith('image/')));
+    const itemFile = item?.getAsFile?.();
+    if (itemFile) return itemFile;
+    return [...(transfer.files || [])].find(file =>
+        !file.type || file.type.startsWith('image/')) || null;
+};
+
+const resetPhotoDrag = () => {
+    photoDragDepth = 0;
+    ui.editorEmpty.classList.remove('is-photo-drag-over');
+};
+
+const emptyEditorAcceptsPhoto = () =>
+    !ui.editorEmpty.hidden && !ui.editorView.hidden;
+
+const onPhotoDragEnter = event => {
+    if (!emptyEditorAcceptsPhoto() || !transferHasFiles(event.dataTransfer)) return;
+    event.preventDefault();
+    photoDragDepth += 1;
+    ui.editorEmpty.classList.add('is-photo-drag-over');
+};
+
+const onPhotoDragOver = event => {
+    if (!emptyEditorAcceptsPhoto() || !transferHasFiles(event.dataTransfer)) return;
+    event.preventDefault();
+    if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
+};
+
+const onPhotoDragLeave = event => {
+    if (!ui.editorEmpty.classList.contains('is-photo-drag-over')) return;
+    event.preventDefault();
+    photoDragDepth = Math.max(0, photoDragDepth - 1);
+    if (!photoDragDepth) resetPhotoDrag();
+};
+
+const onPhotoDrop = event => {
+    if (!emptyEditorAcceptsPhoto() || !transferHasFiles(event.dataTransfer)) return;
+    event.preventDefault();
+    resetPhotoDrag();
+    if (busy) return;
+    const file = photoFromTransfer(event.dataTransfer);
+    if (!file) {
+        toast('Drop an image file to create a photo topo.');
+        return;
+    }
+    void chooseFile(file);
+};
+
+const onPhotoPaste = event => {
+    if (busy || !emptyEditorAcceptsPhoto()) return;
+    const file = photoFromTransfer(event.clipboardData);
+    if (!file) return;
+    event.preventDefault();
+    void chooseFile(file);
+};
+
 const uploadAndInsert = async () => {
     if (busy || !project || !sourceBitmap) return;
     if (PUBLISHED_STATES.includes(photo?.remote.state)) {
@@ -2140,6 +2207,11 @@ const bindEvents = () => {
         void refreshCredential();
     });
     ui.file.addEventListener('change', () => void chooseFile(ui.file.files?.[0]));
+    ui.editorEmpty.addEventListener('dragenter', onPhotoDragEnter);
+    ui.editorEmpty.addEventListener('dragover', onPhotoDragOver);
+    ui.editorEmpty.addEventListener('dragleave', onPhotoDragLeave);
+    ui.editorEmpty.addEventListener('drop', onPhotoDrop);
+    document.addEventListener('paste', onPhotoPaste);
     ui.title.addEventListener('input', schedulePersist);
     ui.alt.addEventListener('input', schedulePersist);
     ui.undo.addEventListener('click', undo);

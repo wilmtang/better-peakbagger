@@ -275,6 +275,78 @@ const imgbbSuccess = {
     status: 200,
 };
 
+const transferEvent = (win, type, property, transfer) => {
+    const event = new win.Event(type, { bubbles: true, cancelable: true });
+    Object.defineProperty(event, property, { value: transfer });
+    return event;
+};
+
+const photoTransfer = file => ({
+    types: ['Files'],
+    items: [{
+        kind: 'file',
+        type: file.type,
+        getAsFile: () => file,
+    }],
+    files: [file],
+    dropEffect: 'none',
+});
+
+test('dragging a photo highlights the empty editor and imports through the normal file path', async () => {
+    const page = await loadEditor({ pickPhoto: false });
+    const { doc, win } = page;
+    const target = doc.getElementById('editor-empty');
+    const file = new win.File(['pixels'], 'dragged-north-face.jpg', { type: 'image/jpeg' });
+    const transfer = photoTransfer(file);
+
+    const enter = transferEvent(win, 'dragenter', 'dataTransfer', transfer);
+    target.dispatchEvent(enter);
+    assert.equal(enter.defaultPrevented, true);
+    assert.equal(target.classList.contains('is-photo-drag-over'), true);
+
+    const over = transferEvent(win, 'dragover', 'dataTransfer', transfer);
+    target.dispatchEvent(over);
+    assert.equal(over.defaultPrevented, true);
+    assert.equal(transfer.dropEffect, 'copy');
+
+    const drop = transferEvent(win, 'drop', 'dataTransfer', transfer);
+    target.dispatchEvent(drop);
+    assert.equal(drop.defaultPrevented, true);
+    assert.equal(target.classList.contains('is-photo-drag-over'), false);
+    await waitFor(page.dom, () => doc.getElementById('editor-workspace').hidden === false);
+    assert.equal(doc.getElementById('photo-title').value, 'dragged-north-face');
+    assert.deepEqual(page.errors, []);
+});
+
+test('pasting imports an image only while the editor is empty and leaves text paste alone', async () => {
+    const page = await loadEditor({ pickPhoto: false });
+    const { doc, win } = page;
+
+    const textPaste = transferEvent(win, 'paste', 'clipboardData', {
+        types: ['text/plain'],
+        items: [],
+        files: [],
+    });
+    doc.dispatchEvent(textPaste);
+    assert.equal(textPaste.defaultPrevented, false);
+    assert.equal(doc.getElementById('editor-workspace').hidden, true);
+
+    const file = new win.File(['pixels'], 'pasted-mountain.png', { type: 'image/png' });
+    const imagePaste = transferEvent(win, 'paste', 'clipboardData', photoTransfer(file));
+    doc.dispatchEvent(imagePaste);
+    assert.equal(imagePaste.defaultPrevented, true);
+    await waitFor(page.dom, () => doc.getElementById('editor-workspace').hidden === false);
+    assert.equal(doc.getElementById('photo-title').value, 'pasted-mountain');
+
+    const replacement = new win.File(['different'], 'replacement.jpg', { type: 'image/jpeg' });
+    const laterPaste = transferEvent(win, 'paste', 'clipboardData', photoTransfer(replacement));
+    doc.dispatchEvent(laterPaste);
+    assert.equal(laterPaste.defaultPrevented, false,
+        'an incidental paste must not replace the open project');
+    assert.equal(doc.getElementById('photo-title').value, 'pasted-mountain');
+    assert.deepEqual(page.errors, []);
+});
+
 test('a late autosave completion cannot replace a newer editor revision', async t => {
     const indexedDB = new IDBFactory();
     let deferred;

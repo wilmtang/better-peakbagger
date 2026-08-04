@@ -38,11 +38,13 @@ popover — a content script — can link to it. Its symbol legend is painted fr
 `photo-renderer`, so what it teaches cannot drift from what the export draws.
 
 The extension opens `photos/photos.html` in a normal extension tab. A new
-project starts when the user chooses a browser-decodable image no larger than
-64 megapixels or 16,384 pixels on either side and edits it with the route and
-climbing-symbol tools. A title is required — it is filled from the file name —
-and the alt text describing the image is optional. Drafts autosave to the
-browser profile.
+project starts when the user chooses, drags, or pastes a browser-decodable image
+no larger than 64 megapixels or 16,384 pixels on either side and edits it with
+the route and climbing-symbol tools. Drag and paste are accepted only while the
+editor is empty, so an incidental gesture cannot replace an open project. A
+title is required — it is filled from the file name when available — and the
+alt text describing the image is optional. Drafts autosave to the browser
+profile.
 Nothing leaves the device until the user chooses **Upload and insert**.
 
 On upload, Better Peakbagger:

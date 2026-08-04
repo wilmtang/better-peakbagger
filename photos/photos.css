@@ -177,7 +177,12 @@ textarea {
   place-items: center;
   align-content: center;
   padding: 38px;
+  border: 2px dashed transparent;
+  border-radius: 14px;
   text-align: center;
+  transition:
+    border-color 120ms ease,
+    background-color 120ms ease;
 }
 
 .empty-state h2,
@@ -203,6 +208,20 @@ textarea {
   font-size: 40px;
 }
 
+.photo-drop-zone.is-photo-drag-over {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+}
+
+.photo-drop-zone.is-photo-drag-over .empty-icon {
+  background: color-mix(in srgb, var(--accent) 20%, var(--card));
+}
+
+.empty-state .photo-import-hint {
+  margin-top: 10px;
+  font-weight: 600;
+}
+
 .file-button input {
   position: absolute;
   width: 1px;
@@ -216,6 +235,12 @@ textarea {
 .file-button:focus-within {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .empty-state {
+    transition: none;
+  }
 }
 
 .editor-workspace {
