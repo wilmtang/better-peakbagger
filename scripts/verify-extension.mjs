@@ -1629,6 +1629,24 @@ try {
         && coordinateSelection?.outlineWidth === '3px'
         && coordinateSelection?.outlineStyle === 'solid',
     `the analyzer keyboard selection or visible focus ring failed: ${JSON.stringify(coordinateSelection)}`);
+    await coordinateCanvas.press('ArrowRight');
+    const routeScrubber = await offPage.waitForFunction(() => {
+        const status = document.getElementById('bpb-gpx-coordinate-status')?.textContent || '';
+        const selected = status.match(/: (-?\d+\.\d+), (-?\d+\.\d+)$/);
+        const iframe = document.querySelector('iframe[src*="MasterMap.aspx"]');
+        const marker = iframe?.contentWindow?.mapsPlaceholder?.layers?.find(
+            layer => layer?.options?.radius === 9
+        );
+        const raw = marker?.getLatLngs?.()[0];
+        const lat = Array.isArray(raw) ? raw[0] : raw?.lat;
+        const lon = Array.isArray(raw) ? raw[1] : raw?.lng;
+        if (!selected || !Number.isFinite(lat) || !Number.isFinite(lon)) return false;
+        if (Math.abs(lat - Number(selected[1])) > 1e-5
+            || Math.abs(lon - Number(selected[2])) > 1e-5) return false;
+        return { status, lat, lon };
+    }, null, { timeout: 5000 }).then(handle => handle.jsonValue()).catch(() => null);
+    check(!!routeScrubber,
+        `the analyzer keyboard selection did not move the route scrubber: ${JSON.stringify(routeScrubber)}`);
     await offPage.locator('#bpb-gpx-copy-coordinates').click();
     const coordinateCopy = await offPage.waitForFunction(() => {
         const status = document.getElementById('bpb-gpx-coordinate-status');
@@ -3065,7 +3083,8 @@ console.log('  - Buddy mirror stays busy and focused during replacement, then re
 console.log('  - the real 1,500-row favorite list reports its total, fuzzy-searches, and keeps long navigation instant');
 console.log('  - the compact profile star persists, and four in-place native Buddy actions refreshed/synced under both removal policies');
 console.log('  - settings.js initialises in the isolated world and the bridge answers');
-console.log('  - the GPX analyzer renders stats, selects by keyboard with visible focus, and confirms or recovers coordinate copy');
+console.log('  - the GPX analyzer renders stats, moves the route scrubber with keyboard selection and visible focus,');
+console.log('    and confirms or recovers coordinate copy');
 console.log('  - the 3D toggle stays visible when disabled and opens the provider/privacy confirmation');
 console.log('  - trusted confirmation persists the feature gate without contacting tile providers');
 console.log('  - the Full Screen BigMap receives settings and shows an enabled 3D toggle');

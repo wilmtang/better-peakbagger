@@ -1029,6 +1029,7 @@ const loadElevationAnalyzer = async (gpxSource, {
     const updateModes = [];
     const eventQueries = [];
     const polylineCalls = [];
+    const markerMoves = [];
     if (withMap) {
         const map = {
             layers: [],
@@ -1046,6 +1047,24 @@ const loadElevationAnalyzer = async (gpxSource, {
                 };
                 polylineCalls.push({ latLngs, options });
                 return layer;
+            },
+            circleMarker(latLng, options) {
+                return {
+                    _map: null,
+                    latLng,
+                    style: { ...options },
+                    addTo(target) {
+                        this._map = target;
+                        target.layers.push(this);
+                        markerMoves.push([...latLng]);
+                        return this;
+                    },
+                    setLatLng(next) {
+                        this.latLng = next;
+                        markerMoves.push([...next]);
+                    },
+                    setStyle(style) { this.style = { ...this.style, ...style }; }
+                };
             }
         };
         Object.defineProperty(window.document.querySelector('iframe'), 'contentWindow', {
@@ -1101,7 +1120,8 @@ const loadElevationAnalyzer = async (gpxSource, {
         setActiveElements: elements => { activeElements = elements; },
         updateModes,
         eventQueries,
-        polylineCalls
+        polylineCalls,
+        markerMoves
     };
 };
 
@@ -1253,6 +1273,29 @@ test('GPX analyzer selects coordinates by click and keyboard before copying them
         '47.10000, -121.10000',
         '47.30000, -121.30000'
     ]);
+
+    dom.window.close();
+});
+
+test('GPX analyzer moves the route scrubber with keyboard selection', async () => {
+    const source = `<?xml version="1.0"?><gpx><trk><trkseg>
+      <trkpt lat="47.10000" lon="-121.10000"><ele>100</ele></trkpt>
+      <trkpt lat="47.20000" lon="-121.20000"><ele>110</ele></trkpt>
+      <trkpt lat="47.30000" lon="-121.30000"><ele>120</ele></trkpt>
+    </trkseg></trk></gpx>`;
+    const { dom, chartConfig, markerMoves } = await loadElevationAnalyzer(source, { withMap: true });
+    const { window } = dom;
+
+    await waitFor(dom, () => chartConfig() !== null);
+    const canvas = window.document.querySelector('#bpb-gpx-analysis canvas');
+    canvas.focus();
+    canvas.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+    canvas.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+
+    assert.deepEqual(markerMoves, [
+        [47.1, -121.1],
+        [47.3, -121.3]
+    ], 'the map marker follows the same points selected on the chart');
 
     dom.window.close();
 });

@@ -396,7 +396,7 @@ const run = async () => {
                 ? `Interactive elevation chart. ${selectedCoordinateAnnouncement()}. Use Left and Right Arrow keys to move.`
                 : 'Interactive elevation chart. Use Left and Right Arrow keys to select a point.');
         };
-        const selectCoordinateIndex = index => {
+        const selectCoordinateIndex = (index, series = 'distance') => {
             if (!isCoordinatePoint(chartData[index])) return false;
             clearCoordinateFeedbackTimer();
             selectedCoordinateIndex = index;
@@ -409,6 +409,7 @@ const run = async () => {
                 `Interactive elevation chart. ${selectedCoordinateAnnouncement()}. Use Left and Right Arrow keys to move.`
             );
             if (chartInstance) chartInstance.update('none');
+            syncRouteHighlight(chartData[index], series);
             return true;
         };
         const selectCoordinateFromEvent = event => {
@@ -422,7 +423,8 @@ const run = async () => {
             for (const active of activeElements) {
                 const point = chartInstance.data.datasets[active.datasetIndex]?.data[active.index]?._raw;
                 const index = chartData.indexOf(point);
-                if (selectCoordinateIndex(index)) return true;
+                const series = active.datasetIndex === 1 ? 'time' : 'distance';
+                if (selectCoordinateIndex(index, series)) return true;
             }
             return false;
         };
@@ -759,10 +761,57 @@ const run = async () => {
         // plot rectangle so the marker and Chart.js's tooltip disappear
         // together; Chart.js deliberately keeps the tooltip alive while the
         // pointer crosses the axis gutter and legend below the plot.
-        let hoverHighlightShown = false;
+        let routeHighlightShown = false;
+        const syncRouteHighlight = (point, series = 'distance') => {
+            const highlightedPoint = isCoordinatePoint(point) ? point : null;
+            const fillColor = series === 'time' ? '#0055FF' : '#FF0000';
+            const hoverFrame = currentMapIframe();
+            const iframeWin = hoverFrame ? hoverFrame.contentWindow : null;
+
+            routeHighlightShown = highlightedPoint !== null;
+
+            if (terrainCoordinator.isActive()) {
+                postTerrain('highlight', {
+                    coordinates: highlightedPoint ? [highlightedPoint.lon, highlightedPoint.lat] : null,
+                    series
+                });
+            }
+
+            if (highlightedPoint && !terrainCoordinator.isActive()
+                && iframeWin && iframeWin.mapsPlaceholder && iframeWin.L) {
+                ensureRouteOverlay();
+                const L = iframeWin.L;
+                const map = iframeWin.mapsPlaceholder;
+
+                // Recreate marker if it doesn't match the current map instance (e.g. iframe reloaded)
+                if (hoverMarker) {
+                    try {
+                        if (hoverMarker._map !== map) hoverMarker = null;
+                    } catch (e) {
+                        hoverMarker = null;
+                    }
+                }
+
+                if (!hoverMarker) {
+                    hoverMarker = L.circleMarker([highlightedPoint.lat, highlightedPoint.lon], {
+                        radius: 9,
+                        color: '#FFFFFF',
+                        fillColor,
+                        fillOpacity: 1,
+                        opacity: 1,
+                        weight: 2
+                    }).addTo(map);
+                } else {
+                    hoverMarker.setLatLng([highlightedPoint.lat, highlightedPoint.lon]);
+                    hoverMarker.setStyle({ color: '#FFFFFF', fillColor, opacity: 1, fillOpacity: 1 });
+                }
+            } else if (hoverMarker) {
+                hoverMarker.setStyle({ opacity: 0, fillOpacity: 0 });
+            }
+        };
         const clearHoverHighlight = () => {
-            if (!hoverHighlightShown) return;
-            hoverHighlightShown = false;
+            if (!routeHighlightShown) return;
+            routeHighlightShown = false;
             if (terrainCoordinator.isActive()) postTerrain('highlight', { coordinates: null, series: 'distance' });
             if (hoverMarker) hoverMarker.setStyle({ opacity: 0, fillOpacity: 0 });
         };
@@ -902,10 +951,7 @@ const run = async () => {
                         // renames or restructures them this feature stops
                         // working. It fails closed (the guard below simply skips
                         // the marker), so the chart itself is unaffected.
-                        const hoverFrame = currentMapIframe();
-                        const iframeWin = hoverFrame ? hoverFrame.contentWindow : null;
                         let hoveredPoint = null;
-                        let fillColor = '#FF0000';
                         let hoverSeries = 'distance';
 
                         if (activeElements.length > 0) {
@@ -913,56 +959,11 @@ const run = async () => {
                             const idx = activeElements[0].index;
                             const dataArray = datasetIndex === 0 ? eleDistData : eleTimeData;
                             const candidate = dataArray[idx] ? dataArray[idx]._raw : null;
-                            fillColor = datasetIndex === 0 ? '#FF0000' : '#0055FF';
                             hoverSeries = datasetIndex === 0 ? 'distance' : 'time';
                             if (candidate && Number.isFinite(candidate.lat) && Number.isFinite(candidate.lon)) hoveredPoint = candidate;
                         }
 
-                        // Only a highlight this handler actually placed needs
-                        // clearing when the pointer leaves the canvas.
-                        hoverHighlightShown = hoveredPoint !== null;
-
-                        if (terrainCoordinator.isActive()) {
-                            postTerrain('highlight', {
-                                coordinates: hoveredPoint ? [hoveredPoint.lon, hoveredPoint.lat] : null,
-                                series: hoverSeries
-                            });
-                        }
-
-                        if (hoveredPoint && !terrainCoordinator.isActive() && iframeWin && iframeWin.mapsPlaceholder && iframeWin.L) {
-                            ensureRouteOverlay();
-                            const L = iframeWin.L;
-                            const map = iframeWin.mapsPlaceholder;
-
-                            // Recreate marker if it doesn't match the current map instance (e.g. iframe reloaded)
-                            if (hoverMarker) {
-                                try {
-                                    if (hoverMarker._map !== map) {
-                                        hoverMarker = null;
-                                    }
-                                } catch (e) {
-                                    hoverMarker = null;
-                                }
-                            }
-
-                            if (!hoverMarker) {
-                                hoverMarker = L.circleMarker([hoveredPoint.lat, hoveredPoint.lon], {
-                                    radius: 9,
-                                    color: '#FFFFFF',
-                                    fillColor: fillColor,
-                                    fillOpacity: 1,
-                                    opacity: 1,
-                                    weight: 2
-                                }).addTo(map);
-                            } else {
-                                hoverMarker.setLatLng([hoveredPoint.lat, hoveredPoint.lon]);
-                                hoverMarker.setStyle({ color: '#FFFFFF', fillColor: fillColor, opacity: 1, fillOpacity: 1 });
-                            }
-                        } else {
-                            if (hoverMarker) {
-                                hoverMarker.setStyle({ opacity: 0, fillOpacity: 0 });
-                            }
-                        }
+                        syncRouteHighlight(hoveredPoint, hoverSeries);
                     },
                     plugins: {
                         legend: {

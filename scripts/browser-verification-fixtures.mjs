@@ -123,7 +123,7 @@ export function createSyntheticCaptureJob(sourceTabId) {
 
 const ascentHtml = `<!doctype html><html><head><title>Ascent</title></head><body>
 <table><tr><td>Elevation:</td><td>10,781 ft</td></tr></table>
-<iframe src="/map/MasterMap.aspx?t=P&d=2296&c=900001&hj=300" width="450" height="450"></iframe>
+<iframe src="/map/MasterMap.aspx?t=A&d=2296&c=900001&hj=300" width="450" height="450"></iframe>
 <a href="/track.gpx">Download this GPS track</a>
 <a href="/map/BigMap.aspx?t=A">Full Screen Map</a>
 </body></html>`;
@@ -165,6 +165,7 @@ const masterMapHtml = `<!doctype html><html><body>
     addTo(map) { map.addLayer(this); return this; }
     bringToBack() { return this; }
     getLatLngs() { return this.latLngs; }
+    setLatLng(latLng) { this.latLngs = [latLng]; return this; }
     setStyle(style) { Object.assign(this.options, style); return this; }
     on(type, handler) { (this.events[type] ||= []).push(handler); return this; }
   }

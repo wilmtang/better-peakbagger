@@ -626,8 +626,8 @@ mapping, including the distinction between `t=G` and `gt`, is documented in
 The analyzer draws an extension-owned route line and casing without mutating
 Peakbagger's native layers. Both are non-interactive and sent behind the native
 route and markers. Segment breaks and the shared map-point budget are
-preserved. On chart hover, an extension-owned circle marker moves to the
-selected coordinate; it is hidden when hover ends.
+preserved. On chart hover or keyboard selection, an extension-owned circle
+marker moves to the selected coordinate; pointer hover is hidden when it ends.
 
 The map iframe can reload underneath the parent. The analyzer re-resolves the
 iframe, map, overlay, hover marker, and remembered layer rather than trusting

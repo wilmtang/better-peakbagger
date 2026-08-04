@@ -133,7 +133,7 @@ coordinates and the validated route style enter the terrain payload.
 The Analyzer additionally owns two interactions that are not generic terrain
 lifecycle concerns:
 
-- chart hover posts a bounded `highlight` coordinate while 3D is active;
+- chart hover and keyboard selection post a bounded `highlight` coordinate while 3D is active;
 - the inline analyzer status area displays renderer errors and drape notices.
 
 ### Full Screen Map
@@ -723,7 +723,7 @@ than incorrectly blaming the browser.
 | `init` | Start or resume with fresh bounded surface payload |
 | `destroy` | Return to 2D; park or destroy frame depending on load state |
 | `cameraRequest` | Ask for latest center/zoom before returning to 2D |
-| `highlight` | Analyzer chart-hover coordinate or clear |
+| `highlight` | Analyzer chart-interaction coordinate or clear |
 | `resetNorth` | Compass reset action |
 | `prefetch` | Bounded route/peak intent hint |
 | `peaks` | Validated page-side peak feed reply |
