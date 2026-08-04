@@ -73,6 +73,8 @@ test('metrics reject an all-equal timestamp series without losing the elevation 
     assert.equal(metrics.endMs, 0);
     assert.equal(metrics.summitMs, 0);
     assert.equal(metrics.points.length, 3);
+    assert.deepEqual(metrics.timePoints, []);
+    assert.deepEqual(metrics.timeChartPoints, []);
     assert.ok(metrics.distanceM > 0);
 });
 
@@ -87,16 +89,25 @@ test('metrics allow duplicate timestamps inside a progressing track', () => {
     assert.equal(metrics.hasTime, true);
     assert.equal(metrics.startMs, start);
     assert.equal(metrics.endMs, start + 60_000);
+    assert.deepEqual(metrics.timePoints.map(point => point.lat), [47, 47.001, 47.002],
+        'a stable time sort must preserve GPX order for equal timestamps');
 });
 
-test('metrics reject backward timestamps instead of reordering route geometry', () => {
+test('metrics sort the time view without reordering route geometry', () => {
     const start = Date.UTC(2026, 6, 10, 12);
     const metrics = GpxMetrics.computeMetrics([
-        { lat: 47, lon: -121, rawEleM: 100, ms: start },
-        { lat: 47.001, lon: -121.001, rawEleM: 110, ms: start + 60_000 },
+        { lat: 47, lon: -121, rawEleM: 100, ms: start + 60_000 },
+        { lat: 47.001, lon: -121.001, rawEleM: 110, ms: start },
         { lat: 47.002, lon: -121.002, rawEleM: 120, ms: start + 30_000 },
     ]);
 
-    assert.equal(metrics.hasTime, false);
+    assert.equal(metrics.hasTime, true);
+    assert.equal(metrics.startMs, start);
+    assert.equal(metrics.endMs, start + 60_000);
     assert.deepEqual(metrics.points.map(point => point.lat), [47, 47.001, 47.002]);
+    assert.deepEqual(metrics.timePoints.map(point => point.lat), [47.001, 47.002, 47]);
+    assert.deepEqual(metrics.chartPoints.map(point => point.lat), [47, 47.001, 47.002]);
+    assert.deepEqual(metrics.timeChartPoints.map(point => point.lat), [47.001, 47.002, 47]);
+    assert.ok(metrics.points[1].distM >= metrics.points[0].distM,
+        'distance must remain cumulative in GPX route order');
 });

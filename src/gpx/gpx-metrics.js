@@ -251,18 +251,18 @@ const sumByCoordinateGroup = (points, values, calculate) => {
     return total;
 };
 
-const hasUsableTimeSequence = points => {
+const hasUsableTimeValues = points => {
     if (points.length < 2) return false;
 
-    let advanced = false;
-    for (let index = 0; index < points.length; index++) {
-        const ms = points[index].ms;
+    let minMs = Infinity;
+    let maxMs = -Infinity;
+    for (const point of points) {
+        const ms = point.ms;
         if (!Number.isFinite(ms) || ms <= 0) return false;
-        if (index === 0) continue;
-        if (ms < points[index - 1].ms) return false;
-        if (ms > points[index - 1].ms) advanced = true;
+        minMs = Math.min(minMs, ms);
+        maxMs = Math.max(maxMs, ms);
     }
-    return advanced;
+    return maxMs > minMs;
 };
 
 const computeMetrics = points => {
@@ -284,7 +284,9 @@ const computeMetrics = points => {
             rawDistanceM: 0,
             rawGainM: 0,
             points: [],
+            timePoints: [],
             chartPoints: [],
+            timeChartPoints: [],
             startMs: 0,
             endMs: 0,
             summitMs: 0,
@@ -295,10 +297,10 @@ const computeMetrics = points => {
     // A syntactically valid timestamp is not necessarily a usable time
     // series. Peakbagger exports exist with one generated timestamp copied to
     // every point; treating those as timed tracks produced a zero-duration
-    // chart collapsed onto one x coordinate. Preserve GPX document order and
-    // expose time only when that order is nondecreasing and advances at least
-    // once. Duplicate samples remain valid within a progressing track.
-    const hasTime = hasUsableTimeSequence(validPoints);
+    // chart collapsed onto one x coordinate. Require real advancement, but do
+    // not require GPX document order: combined multi-day files can append
+    // individually valid tracks out of chronological order.
+    const hasTime = hasUsableTimeValues(validPoints);
     const analysisPoints = validPoints;
 
     const { distanceM, rawDistanceM, distMByIndex } = computeAdjustedDistances(analysisPoints, hasTime);
@@ -334,6 +336,27 @@ const computeMetrics = points => {
         };
     });
 
+    // Route, distance, gain, and the distance chart retain GPX document order.
+    // Only time-derived views use chronological order. Array#sort is stable,
+    // so points with duplicate timestamps keep their relative GPX order.
+    const timePoints = hasTime
+        ? adjustedPoints.slice().sort((a, b) => a.ms - b.ms)
+        : [];
+    const sampledPoints = new Set(adjustedPoints.filter((point, index) =>
+        index % 3 === 0 || index === adjustedPoints.length - 1));
+    if (hasTime) {
+        // Combined tracks can put the chronological endpoints anywhere in GPX
+        // order. Keep both in the bounded shared sample so the time chart spans
+        // the full duration and every time-chart point remains selectable from
+        // the distance-chart coordinate model.
+        sampledPoints.add(timePoints[0]);
+        sampledPoints.add(timePoints[timePoints.length - 1]);
+    }
+    const chartPoints = adjustedPoints.filter(point => sampledPoints.has(point));
+    const timeChartPoints = hasTime
+        ? chartPoints.slice().sort((a, b) => a.ms - b.ms)
+        : [];
+
     return {
         hasTime,
         distanceM,
@@ -341,9 +364,11 @@ const computeMetrics = points => {
         rawDistanceM,
         rawGainM,
         points: adjustedPoints,
-        chartPoints: adjustedPoints.filter((point, index) => index % 3 === 0 || index === adjustedPoints.length - 1),
-        startMs: hasTime ? adjustedPoints[0].ms : 0,
-        endMs: hasTime ? adjustedPoints[adjustedPoints.length - 1].ms : 0,
+        timePoints,
+        chartPoints,
+        timeChartPoints,
+        startMs: hasTime ? timePoints[0].ms : 0,
+        endMs: hasTime ? timePoints[timePoints.length - 1].ms : 0,
         summitMs: hasTime ? summitMs : 0,
         maxEleM
     };

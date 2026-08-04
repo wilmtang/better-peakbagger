@@ -345,6 +345,7 @@ const run = async () => {
         // Processing Arrays & Core Metrics
         let chartInstance = null;
         let chartData = [];
+        let timeChartData = [];
         let selectedCoordinateIndex = -1;
         let coordinateFeedbackTimer = null;
         let metrics = { distanceM: 0, gainM: 0, rawDistanceM: 0, rawGainM: 0 };
@@ -839,9 +840,10 @@ const run = async () => {
             chartData.forEach(d => {
                 const eleConv = parseFloat((d.eleM * eMult).toFixed(0));
                 eleDistData.push({ x: parseFloat((d.distM * dMult).toFixed(2)), y: eleConv, _raw: d });
-                if (hasTime && d.ms) {
-                    eleTimeData.push({ x: d.ms, y: eleConv, _raw: d });
-                }
+            });
+            timeChartData.forEach(d => {
+                const eleConv = parseFloat((d.eleM * eMult).toFixed(0));
+                eleTimeData.push({ x: d.ms, y: eleConv, _raw: d });
             });
 
             if (chartInstance) chartInstance.destroy();
@@ -1177,6 +1179,7 @@ const run = async () => {
             }
 
             chartData = metrics.chartPoints;
+            timeChartData = metrics.timeChartPoints;
             hasTime = metrics.hasTime;
             startMs = metrics.startMs;
             endMs = metrics.endMs;
@@ -1185,9 +1188,9 @@ const run = async () => {
 
             if (hasTime) {
                 totalMs = endMs - startMs;
-                metrics.points.forEach((point, index) => {
+                metrics.timePoints.forEach((point, index) => {
                     if (index === 0) return;
-                    const prev = metrics.points[index - 1];
+                    const prev = metrics.timePoints[index - 1];
                     const prevDay = getRelativeDay(prev.ms, startMs);
                     const currDay = getRelativeDay(point.ms, startMs);
                     if (currDay > prevDay) {

@@ -1172,6 +1172,30 @@ test('GPX analyzer omits time UI when every point has the same timestamp', async
     dom.window.close();
 });
 
+test('GPX analyzer sorts a combined track only for the time series', async () => {
+    const source = `<?xml version="1.0"?><gpx><trk><trkseg>
+      <trkpt lat="47.000" lon="-121.000"><ele>100</ele><time>2026-07-10T12:01:00Z</time></trkpt>
+      <trkpt lat="47.001" lon="-121.001"><ele>110</ele><time>2026-07-10T12:00:00Z</time></trkpt>
+      <trkpt lat="47.002" lon="-121.002"><ele>120</ele><time>2026-07-10T12:00:30Z</time></trkpt>
+    </trkseg></trk></gpx>`;
+    const { dom, analysisText, chartConfig } = await loadElevationAnalyzer(source);
+
+    await waitFor(dom, () => chartConfig() !== null);
+    const [distanceSeries, timeSeries] = chartConfig().data.datasets;
+    assert.deepEqual(Array.from(distanceSeries.data, point => point._raw.lat), [47, 47.001, 47.002],
+        'the distance series must retain GPX route order');
+    assert.deepEqual(Array.from(timeSeries.data, point => point._raw.lat), [47.001, 47.002, 47],
+        'the time series must use chronological order');
+    assert.deepEqual(Array.from(timeSeries.data, point => point.x), [
+        Date.parse('2026-07-10T12:00:00Z'),
+        Date.parse('2026-07-10T12:00:30Z'),
+        Date.parse('2026-07-10T12:01:00Z')
+    ]);
+    assert.match(analysisText(), /Time: 0h 1m/);
+
+    dom.window.close();
+});
+
 test('GPX analyzer selects coordinates by click and keyboard before copying them', async () => {
     const source = `<?xml version="1.0"?><gpx><trk><trkseg>
       <trkpt lat="47.10000" lon="-121.10000"><ele>100</ele></trkpt>
