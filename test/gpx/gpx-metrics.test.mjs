@@ -49,3 +49,44 @@ test('map routes split at impossible coordinates and discard unusable fragments'
         [[47.03, -121.03], [47.04, -121.04]],
     ]);
 });
+
+test('metrics reject an all-equal timestamp series without losing the elevation route', () => {
+    const timestamp = Date.UTC(2025, 6, 7, 1, 55);
+    const metrics = GpxMetrics.computeMetrics([
+        { lat: 40.27, lon: -105.56, rawEleM: 2800, ms: timestamp },
+        { lat: 40.26, lon: -105.57, rawEleM: 3200, ms: timestamp },
+        { lat: 40.25, lon: -105.58, rawEleM: 3000, ms: timestamp },
+    ]);
+
+    assert.equal(metrics.hasTime, false);
+    assert.equal(metrics.startMs, 0);
+    assert.equal(metrics.endMs, 0);
+    assert.equal(metrics.summitMs, 0);
+    assert.equal(metrics.points.length, 3);
+    assert.ok(metrics.distanceM > 0);
+});
+
+test('metrics allow duplicate timestamps inside a progressing track', () => {
+    const start = Date.UTC(2026, 6, 10, 12);
+    const metrics = GpxMetrics.computeMetrics([
+        { lat: 47, lon: -121, rawEleM: 100, ms: start },
+        { lat: 47.001, lon: -121.001, rawEleM: 110, ms: start },
+        { lat: 47.002, lon: -121.002, rawEleM: 120, ms: start + 60_000 },
+    ]);
+
+    assert.equal(metrics.hasTime, true);
+    assert.equal(metrics.startMs, start);
+    assert.equal(metrics.endMs, start + 60_000);
+});
+
+test('metrics reject backward timestamps instead of reordering route geometry', () => {
+    const start = Date.UTC(2026, 6, 10, 12);
+    const metrics = GpxMetrics.computeMetrics([
+        { lat: 47, lon: -121, rawEleM: 100, ms: start },
+        { lat: 47.001, lon: -121.001, rawEleM: 110, ms: start + 60_000 },
+        { lat: 47.002, lon: -121.002, rawEleM: 120, ms: start + 30_000 },
+    ]);
+
+    assert.equal(metrics.hasTime, false);
+    assert.deepEqual(metrics.points.map(point => point.lat), [47, 47.001, 47.002]);
+});

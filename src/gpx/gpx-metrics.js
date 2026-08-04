@@ -231,6 +231,20 @@ const sumByCoordinateGroup = (points, values, calculate) => {
     return total;
 };
 
+const hasUsableTimeSequence = points => {
+    if (points.length < 2) return false;
+
+    let advanced = false;
+    for (let index = 0; index < points.length; index++) {
+        const ms = points[index].ms;
+        if (!Number.isFinite(ms) || ms <= 0) return false;
+        if (index === 0) continue;
+        if (ms < points[index - 1].ms) return false;
+        if (ms > points[index - 1].ms) advanced = true;
+    }
+    return advanced;
+};
+
 const computeMetrics = points => {
     let coordinateGroup = 0;
     const validPoints = [];
@@ -258,28 +272,31 @@ const computeMetrics = points => {
         };
     }
 
-    const hasTime = validPoints.every(point => Number.isFinite(point.ms) && point.ms > 0);
-    const sortedPoints = validPoints.slice().sort((a, b) => {
-        if (hasTime && a.ms !== b.ms) return a.ms - b.ms;
-        return a.index - b.index;
-    });
+    // A syntactically valid timestamp is not necessarily a usable time
+    // series. Peakbagger exports exist with one generated timestamp copied to
+    // every point; treating those as timed tracks produced a zero-duration
+    // chart collapsed onto one x coordinate. Preserve GPX document order and
+    // expose time only when that order is nondecreasing and advances at least
+    // once. Duplicate samples remain valid within a progressing track.
+    const hasTime = hasUsableTimeSequence(validPoints);
+    const analysisPoints = validPoints;
 
-    const { distanceM, rawDistanceM, distMByIndex } = computeAdjustedDistances(sortedPoints, hasTime);
-    const smoothedElevations = smoothElevations(sortedPoints, distMByIndex);
+    const { distanceM, rawDistanceM, distMByIndex } = computeAdjustedDistances(analysisPoints, hasTime);
+    const smoothedElevations = smoothElevations(analysisPoints, distMByIndex);
     const rawGainM = sumByCoordinateGroup(
-        sortedPoints,
-        sortedPoints.map(point => point.rawEleM),
+        analysisPoints,
+        analysisPoints.map(point => point.rawEleM),
         calculatePositiveGainM,
     );
     const gainM = sumByCoordinateGroup(
-        sortedPoints,
+        analysisPoints,
         smoothedElevations,
         calculateConfirmedGainM,
     );
 
     let maxEleM = -Infinity;
     let summitMs = 0;
-    const adjustedPoints = sortedPoints.map((point, index) => {
+    const adjustedPoints = analysisPoints.map((point, index) => {
         const eleM = smoothedElevations[index];
         if (eleM > maxEleM) {
             maxEleM = eleM;
@@ -293,7 +310,7 @@ const computeMetrics = points => {
             rawEleM: point.rawEleM,
             eleM,
             distM: distMByIndex[index],
-            grade: calculateGrade(index, distMByIndex, smoothedElevations, sortedPoints)
+            grade: calculateGrade(index, distMByIndex, smoothedElevations, analysisPoints)
         };
     });
 
@@ -307,7 +324,7 @@ const computeMetrics = points => {
         chartPoints: adjustedPoints.filter((point, index) => index % 3 === 0 || index === adjustedPoints.length - 1),
         startMs: hasTime ? adjustedPoints[0].ms : 0,
         endMs: hasTime ? adjustedPoints[adjustedPoints.length - 1].ms : 0,
-        summitMs,
+        summitMs: hasTime ? summitMs : 0,
         maxEleM
     };
 };

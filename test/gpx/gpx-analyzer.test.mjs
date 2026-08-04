@@ -1110,6 +1110,25 @@ test('GPX analyzer labels a track with no usable elevation instead of reporting 
     dom.window.close();
 });
 
+test('GPX analyzer omits time UI when every point has the same timestamp', async () => {
+    const source = `<?xml version="1.0"?><gpx><trk><trkseg>
+      <trkpt lat="40.27" lon="-105.56"><ele>2800</ele><time>2025-07-07T01:55:00Z</time></trkpt>
+      <trkpt lat="40.26" lon="-105.57"><ele>3200</ele><time>2025-07-07T01:55:00Z</time></trkpt>
+      <trkpt lat="40.25" lon="-105.58"><ele>3000</ele><time>2025-07-07T01:55:00Z</time></trkpt>
+    </trkseg></trk></gpx>`;
+    const { dom, analysisText, chartConfig } = await loadElevationAnalyzer(source);
+
+    await waitFor(dom, () => chartConfig() !== null);
+    assert.deepEqual(Array.from(chartConfig().data.datasets, dataset => dataset.label), [
+        'Elevation by Distance'
+    ]);
+    assert.equal(chartConfig().options.scales.xTime, undefined);
+    assert.doesNotMatch(analysisText(), /Time: 0m/);
+    assert.doesNotMatch(analysisText(), /Times in the mountain/);
+
+    dom.window.close();
+});
+
 test('GPX analyzer selects coordinates by click and keyboard before copying them', async () => {
     const source = `<?xml version="1.0"?><gpx><trk><trkseg>
       <trkpt lat="47.10000" lon="-121.10000"><ele>100</ele></trkpt>
