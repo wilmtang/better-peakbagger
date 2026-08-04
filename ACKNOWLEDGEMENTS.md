@@ -29,10 +29,10 @@ editor.
 
 ### BetaCreator
 
-Better Peakbagger's Anchor, Piton, Rappel, and Belay photo-topo SVG paths adapt
-the corresponding canvas stamp geometry from BetaCreator, the editor used by
+Better Peakbagger's X-shaped Bolt, plus the Piton, Rappel, and Belay photo-topo
+SVG paths, adapt canvas stamp geometry from BetaCreator, the editor used by
 Mountain Project. The coordinates were normalized and translated to SVG; the
-Better Peakbagger-only Bolt symbol is not derived from BetaCreator.
+Better Peakbagger-only Anchor symbol is not derived from BetaCreator.
 
 - Project: [BetaCreator](https://github.com/nemophrost/betacreator)
 - Source: [BetaCreator stamp views](https://github.com/nemophrost/betacreator/tree/2a3b7898f009fbf4cf116673e121cf16202a5498/js/betacreator/views/stamps)

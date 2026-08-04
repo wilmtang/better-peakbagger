@@ -78,21 +78,21 @@ const renderRoute = object => {
 };
 
 // Climbing-guidebook symbols, drawn in a unit box the marker transform scales.
-// Anchor, piton, rappel, and belay adapt the four stamps in Mountain Project's
-// Apache-licensed BetaCreator editor. Their canvas coordinates were normalized
-// and translated to SVG paths here; see ACKNOWLEDGEMENTS.md and
-// vendor/betacreator-LICENSE.txt. Copyright 2012 Alma Madsen.
+// The X-shaped bolt, plus piton, rappel, and belay, adapt geometry from the
+// four stamps in Mountain Project's Apache-licensed BetaCreator editor. Their
+// canvas coordinates were normalized and translated to SVG paths here; see
+// ACKNOWLEDGEMENTS.md and vendor/betacreator-LICENSE.txt. Copyright 2012 Alma
+// Madsen.
 //
-// Bolt is Better Peakbagger's additional marker and intentionally remains
-// available even though BetaCreator does not offer it. `photos/guide.html`
+// Anchor is Better Peakbagger's additional bullseye marker. `photos/guide.html`
 // shows the same glyphs with their names.
 const markerGeometry = (type, color) => {
     if (type === 'bolt') {
-        return '<circle cx="0" cy="0" r="0.5" fill="none"/>'
-            + `<circle cx="0" cy="0" r="0.17" fill="${color}" stroke="none"/>`;
+        return '<path d="M -0.72 -0.72 L 0.72 0.72 M 0.72 -0.72 L -0.72 0.72" fill="none"/>';
     }
     if (type === 'anchor') {
-        return '<path d="M -0.72 -0.72 L 0.72 0.72 M 0.72 -0.72 L -0.72 0.72" fill="none"/>';
+        return '<circle cx="0" cy="0" r="0.5" fill="none"/>'
+            + `<circle cx="0" cy="0" r="0.17" fill="${color}" stroke="none"/>`;
     }
     if (type === 'piton') {
         return '<path d="M -0.15 0.72 V -0.72 H 0.29'

@@ -256,15 +256,16 @@ test('opacity dims the whole mark, including its arrowhead and contrast plate', 
     assert.match(svg, /<g data-bpb-object="bolt-1" transform=/);
 });
 
-test('the climbing symbols reuse Mountain Project shapes and retain the additional bolt', () => {
+test('the climbing symbols reuse Mountain Project shapes and retain the additional anchor', () => {
     assert.deepEqual(Project.MARKER_TYPES,
         ['bolt', 'anchor', 'piton', 'rappel', 'belay'],
-        'the Better Peakbagger-only bolt stays beside the four Mountain Project stamps');
+        'the Better Peakbagger-only anchor stays beside the reused Mountain Project shapes');
 
-    const anchor = Renderer.markerSymbolSvg('anchor');
-    assert.match(anchor,
+    const bolt = Renderer.markerSymbolSvg('bolt');
+    assert.match(bolt,
         /M -0\.72 -0\.72 L 0\.72 0\.72 M 0\.72 -0\.72 L -0\.72 0\.72/,
-        'Mountain Project draws an anchor as an X');
+        'bolt uses Mountain Project X geometry');
+    assert.doesNotMatch(bolt, /<circle/);
 
     const piton = Renderer.markerSymbolSvg('piton');
     assert.match(piton,
@@ -281,10 +282,11 @@ test('the climbing symbols reuse Mountain Project shapes and retain the addition
         'Mountain Project draws belay as a plain circle');
     assert.doesNotMatch(belay, /<path/);
 
-    const bolt = Renderer.markerSymbolSvg('bolt');
-    assert.equal((bolt.match(/<circle/g) || []).length, 2);
-    assert.match(bolt, /r="0\.17" fill="currentColor"/,
-        'the additional bolt remains visually distinct from Mountain Project belay');
+    const anchor = Renderer.markerSymbolSvg('anchor');
+    assert.equal((anchor.match(/<circle/g) || []).length, 2);
+    assert.match(anchor, /r="0\.17" fill="currentColor"/,
+        'the additional anchor is a bullseye distinct from Mountain Project belay');
+    assert.doesNotMatch(anchor, /<path/);
 
     for (const type of Project.MARKER_TYPES) {
         const symbol = Renderer.markerSymbolSvg(type);
@@ -295,8 +297,8 @@ test('the climbing symbols reuse Mountain Project shapes and retain the addition
     }
     // currentColor lets the rail tint the glyph; the canvas passes a real hex
     // so an exported fill can never resolve against a stylesheet.
-    assert.match(bolt, /fill="currentColor"/);
-    assert.match(Renderer.markerSymbolSvg('bolt', { color: '#43a047' }), /fill="#43a047"/);
+    assert.match(anchor, /fill="currentColor"/);
+    assert.match(Renderer.markerSymbolSvg('anchor', { color: '#43a047' }), /fill="#43a047"/);
 });
 
 test('editor pixel sizes come from the same dimensions the renderer paints', () => {
