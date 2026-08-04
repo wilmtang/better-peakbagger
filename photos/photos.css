@@ -475,25 +475,33 @@ kbd {
 }
 
 .editor-footer {
-  align-items: center;
-  flex-wrap: wrap;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: minmax(210px, 0.65fr) minmax(638px, 2.35fr);
+  align-items: start;
+  gap: 12px 24px;
   border-top: 1px solid var(--border);
 }
 
 .editor-summary {
   display: grid;
-  flex: 0 1 auto;
+  grid-row: 1 / span 2;
   gap: 2px;
 }
 
 .upload-options {
   display: grid;
-  min-width: min(620px, 100%);
-  flex: 1 1 620px;
-  grid-template-columns: minmax(155px, 0.8fr) minmax(190px, 1fr) minmax(210px, 1.1fr);
+  min-width: 0;
+  grid-template-columns: minmax(210px, 0.8fr) minmax(190px, 1fr) minmax(210px, 1.1fr);
   align-items: end;
   gap: 8px 14px;
+}
+
+.upload-options > .upload-option:first-child {
+  grid-column: 1;
+}
+
+#jpeg-quality-control {
+  grid-column: 2;
 }
 
 .upload-option,
@@ -517,7 +525,8 @@ kbd {
 }
 
 .upload-estimate {
-  align-self: center;
+  grid-column: 3;
+  align-self: end;
 }
 
 .upload-estimate strong {
@@ -531,11 +540,24 @@ kbd {
 }
 
 .footer-actions {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(210px, 0.8fr) minmax(190px, 1fr) minmax(210px, 1.1fr);
   align-items: end;
-  flex-wrap: wrap;
-  margin-left: auto;
-  gap: 8px;
+  gap: 14px;
+}
+
+.editor-footer .report-width-control {
+  min-width: 0;
+}
+
+#clear-annotations {
+  grid-column: 2;
+  justify-self: end;
+}
+
+#upload-insert {
+  grid-column: 3;
+  justify-self: end;
 }
 
 .library-heading {
@@ -725,6 +747,16 @@ kbd {
   border: 0;
 }
 
+@media (max-width: 1050px) {
+  .editor-footer {
+    grid-template-columns: 1fr;
+  }
+
+  .editor-summary {
+    grid-row: auto;
+  }
+}
+
 @media (max-width: 900px) {
   .credential-card,
   .editor-topbar,
@@ -784,13 +816,12 @@ kbd {
   }
 
   .view-tabs button,
-  .library-controls label,
-  .footer-actions button {
+  .library-controls label {
     flex: 1;
   }
 
   .report-width-control {
-    flex-basis: 100%;
+    grid-column: 1 / -1;
   }
 
   .tool-rail {
@@ -799,22 +830,32 @@ kbd {
 
   .editor-footer {
     align-items: stretch;
-    flex-direction: column;
   }
 
   .upload-options {
     width: 100%;
     min-width: 0;
-    flex: 0 1 auto;
     grid-template-columns: 1fr;
   }
 
+  .upload-options > .upload-option:first-child,
+  #jpeg-quality-control,
   .upload-estimate {
     grid-column: auto;
   }
 
   .footer-actions {
-    margin-left: 0;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  #clear-annotations {
+    grid-column: 1;
+    justify-self: stretch;
+  }
+
+  #upload-insert {
+    grid-column: 2;
+    justify-self: stretch;
   }
 }
 

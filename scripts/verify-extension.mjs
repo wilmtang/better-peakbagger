@@ -715,6 +715,7 @@ try {
         // and Editor. The token need not be worker-valid until an insertion is
         // attempted; keeping this fixture read-only lets the packaged page and
         // real sync-storage route prove the contextual UI without uploading.
+        await photoPage.setViewportSize({ width: 1600, height: 900 });
         await photoPage.goto(
             `chrome-extension://${extensionId}/photos/photos.html?mode=library`
             + '&returnToken=browser-verification-only'
@@ -724,10 +725,23 @@ try {
         await photoPage.getByRole('button', { name: 'Edit as new version' }).first().click();
         await photoPage.locator('#editor-workspace').waitFor({ state: 'visible', timeout: 5000 });
         await photoPage.locator('[data-report-width]').first().selectOption('320');
+        await photoPage.locator('#upload-format').selectOption('jpeg');
+        await photoPage.locator('#jpeg-quality-control').waitFor({ state: 'visible', timeout: 5000 });
         await photoPage.waitForFunction(async () =>
             (await chrome.storage.sync.get('bpbSettings')).bpbSettings?.reportImageWidth === 320,
         null, { timeout: 5000 });
         const reportSizeState = await photoPage.evaluate(() => {
+            const rect = node => {
+                const bounds = node?.getBoundingClientRect();
+                return bounds ? {
+                    top: bounds.top,
+                    right: bounds.right,
+                    bottom: bounds.bottom,
+                    left: bounds.left,
+                    width: bounds.width,
+                    height: bounds.height,
+                } : null;
+            };
             const visible = [...document.querySelectorAll('[data-report-width-control]')]
                 .find(control => !control.hidden && control.offsetParent);
             const stage = document.getElementById('photo-stage');
@@ -752,10 +766,24 @@ try {
                 exportSummary: document.getElementById('export-summary')?.textContent,
                 sourceWidth: document.getElementById('source-image')?.naturalWidth,
                 sourceHeight: document.getElementById('source-image')?.naturalHeight,
+                footer: {
+                    box: rect(document.querySelector('.editor-footer')),
+                    summary: rect(document.querySelector('.editor-summary')),
+                    options: rect(document.querySelector('.upload-options')),
+                    actions: rect(document.querySelector('.footer-actions')),
+                    format: rect(document.querySelector('.upload-options > .upload-option:first-child')),
+                    quality: rect(document.getElementById('jpeg-quality-control')),
+                    estimate: rect(document.querySelector('.upload-estimate')),
+                    reportSize: rect(visible),
+                    clear: rect(document.getElementById('clear-annotations')),
+                    primary: rect(document.getElementById('upload-insert')),
+                },
                 horizontalOverflow:
                     document.documentElement.scrollWidth > document.documentElement.clientWidth,
             };
         });
+        const aligned = (first, second, edge, tolerance = 1) =>
+            Math.abs((first?.[edge] ?? Number.NaN) - (second?.[edge] ?? Number.NaN)) <= tolerance;
         check(reportSizeState.choices.length === 2
             && reportSizeState.choices.every(choice => choice.value === '320')
             && reportSizeState.choices.every(choice =>
@@ -770,6 +798,17 @@ try {
             && !reportSizeState.horizontalOverflow,
         `the report display choice changed pixels or failed to resize the stage: ${
             JSON.stringify(reportSizeState)
+        }`);
+        check(reportSizeState.footer.box?.height < 210
+            && reportSizeState.footer.summary?.right < reportSizeState.footer.options?.left
+            && aligned(reportSizeState.footer.options, reportSizeState.footer.actions, 'left')
+            && aligned(reportSizeState.footer.options, reportSizeState.footer.actions, 'right')
+            && aligned(reportSizeState.footer.format, reportSizeState.footer.reportSize, 'left')
+            && aligned(reportSizeState.footer.estimate, reportSizeState.footer.primary, 'right')
+            && aligned(reportSizeState.footer.reportSize, reportSizeState.footer.clear, 'bottom')
+            && aligned(reportSizeState.footer.clear, reportSizeState.footer.primary, 'bottom'),
+        `the wide photo footer lost its two-row control and action grid: ${
+            JSON.stringify(reportSizeState.footer)
         }`);
         if (process.env.BPB_VERIFY_PHOTO_SIZE_SCREENSHOT) {
             await photoPage.evaluate(() => scrollTo(0, document.body.scrollHeight));
