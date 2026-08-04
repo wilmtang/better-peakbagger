@@ -50,6 +50,16 @@ test('map routes split at impossible coordinates and discard unusable fragments'
     ]);
 });
 
+test('coordinate-only route distance preserves segment and invalid-coordinate gaps', () => {
+    const distanceM = GpxMetrics.computeRouteDistanceM([
+        [[0, 0], [0, 0.001], [91, 0.002], [0, 1], [0, 1.001]],
+        [[0, 2], [0, 2.001]],
+    ]);
+
+    assert.ok(distanceM > 300 && distanceM < 360,
+        `expected only three local edges, got ${distanceM} m`);
+});
+
 test('metrics reject an all-equal timestamp series without losing the elevation route', () => {
     const timestamp = Date.UTC(2025, 6, 7, 1, 55);
     const metrics = GpxMetrics.computeMetrics([

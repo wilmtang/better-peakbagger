@@ -39,16 +39,14 @@ const run = async () => {
     const MAP_RESIZE_RAIL_HEIGHT = 18;
     const COORDINATE_HINT = 'Click the chart or use \u2190/\u2192 to select a point';
     const MAP_RESIZE_PERSIST_DELAY_MS = 400;
-    const parseMapRouteSegments = xml => {
-        const segments = Array.from(xml.querySelectorAll('trkseg'), segmentNode =>
+    const parseRouteSegments = xml =>
+        Array.from(xml.querySelectorAll('trkseg'), segmentNode =>
             Array.from(segmentNode.children)
                 .filter(node => node.localName === 'trkpt')
                 .map(node => [
                     parseFloat(node.getAttribute('lat')),
                     parseFloat(node.getAttribute('lon')),
                 ]));
-        return GpxMetrics.sanitizeMapRouteSegments(segments);
-    };
 
     // === Better Peakbagger: theming + centralized settings (via bridge) ===
     // Chart.js takes colors as JS options, not CSS, so these have to stay in
@@ -354,6 +352,7 @@ const run = async () => {
         let startMs = 0, endMs = 0, summitMs = 0;
         let campingSpots = [];
         let mapRouteSegments = [];
+        let routeOnlyDistanceM = null;
         let hoverMarker = null;
 
         const isCoordinatePoint = point =>
@@ -1049,9 +1048,22 @@ const run = async () => {
             syncCoordinateSelection();
         };
 
+        const renderRouteOnlyData = () => {
+            applyPanelTheme();
+            const isMet = resolveUnits(BPB.get()) === 'metric';
+            const distance = isMet
+                ? `${(routeOnlyDistanceM / 1000).toFixed(2)} km`
+                : `${(routeOnlyDistanceM / METERS_PER_MILE).toFixed(2)} miles`;
+            stats.textContent = `Route: ${distance}`;
+            subStats.textContent = 'Elevation data is unavailable in this GPX.';
+            canvasContainer.hidden = true;
+            coordinateControls.hidden = true;
+        };
+
         unitSelect.addEventListener('change', () => {
             BPB.set({ units: unitSelect.value });
-            renderData();
+            if (routeOnlyDistanceM !== null) renderRouteOnlyData();
+            else renderData();
         });
 
         const bindRouteColor = (control, key) => control.input.addEventListener('change', () => {
@@ -1087,7 +1099,9 @@ const run = async () => {
             if (changed(['rememberMapLayer', 'mapLastLayer'])) scheduleMapLayerSync();
             if (changed(['units', 'theme', 'chartDefaultSeries'])) {
                 unitSelect.value = unitPreference(settings);
-                if (chartInstance) renderData(); else applyPanelTheme();
+                if (chartInstance) renderData();
+                else if (routeOnlyDistanceM !== null) renderRouteOnlyData();
+                else applyPanelTheme();
             }
         });
 
@@ -1106,8 +1120,11 @@ const run = async () => {
             const trkpts = Array.from(xml.querySelectorAll('trkpt'));
             if (!trkpts.length) return stats.textContent = 'No track points found.';
 
-            mapRouteSegments = parseMapRouteSegments(xml);
+            const routeSegments = parseRouteSegments(xml);
+            mapRouteSegments = GpxMetrics.sanitizeMapRouteSegments(routeSegments);
+            const routeDistanceM = GpxMetrics.computeRouteDistanceM(routeSegments);
             terrainCoordinator.update();
+            scheduleRouteOverlay();
 
             const parsedPoints = trkpts.map(pt => {
                 const eleNode = pt.querySelector('ele');
@@ -1128,9 +1145,15 @@ const run = async () => {
                 syncCoordinateSelection({ unavailable: true });
                 const hasValidCoordinates = parsedPoints.some(point =>
                     GpxMetrics.isValidCoordinate(point.lat, point.lon));
-                return stats.textContent = hasValidCoordinates
+                if (hasValidCoordinates && mapRouteSegments.length) {
+                    routeOnlyDistanceM = routeDistanceM;
+                    renderRouteOnlyData();
+                    return;
+                }
+                stats.textContent = hasValidCoordinates
                     ? 'This GPS track has no usable elevation data.'
                     : 'No valid track points found.';
+                return;
             }
 
             // The climb's timezone comes from the track's starting point: the
@@ -1174,7 +1197,6 @@ const run = async () => {
             }
 
             renderData();
-            scheduleRouteOverlay();
 
         } catch (e) {
             stats.textContent = 'Error parsing GPX file.';

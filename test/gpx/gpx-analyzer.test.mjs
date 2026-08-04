@@ -1011,9 +1011,11 @@ test('a missing GPS track is reported as missing instead of a parse failure', as
 
 const loadElevationAnalyzer = async (gpxSource, {
     clipboard,
-    theme = 'light'
+    theme = 'light',
+    withMap = false
 } = {}) => {
     const dom = new JSDOM(`<!doctype html><body>
+      ${withMap ? '<iframe src="https://www.peakbagger.com/map/MasterMap.aspx?cy=47&cx=-121&z=14"></iframe>' : ''}
       <p><a href="https://www.peakbagger.com/demo.gpx">Download this GPS track</a></p>
     </body>`, {
         url: 'https://www.peakbagger.com/climber/ascent.aspx?aid=1',
@@ -1026,6 +1028,36 @@ const loadElevationAnalyzer = async (gpxSource, {
     let activeElements = [];
     const updateModes = [];
     const eventQueries = [];
+    const polylineCalls = [];
+    if (withMap) {
+        const map = {
+            layers: [],
+            removeLayer(layer) {
+                this.layers = this.layers.filter(candidate => candidate !== layer);
+                layer._map = null;
+            }
+        };
+        const L = {
+            polyline(latLngs, options) {
+                const layer = {
+                    _map: null,
+                    addTo(target) { this._map = target; target.layers.push(this); return this; },
+                    bringToBack() { return this; }
+                };
+                polylineCalls.push({ latLngs, options });
+                return layer;
+            }
+        };
+        Object.defineProperty(window.document.querySelector('iframe'), 'contentWindow', {
+            configurable: true,
+            value: {
+                mapsPlaceholder: map,
+                L,
+                document: { getElementById: () => null },
+                location: { href: 'https://www.peakbagger.com/map/MasterMap.aspx' }
+            }
+        });
+    }
     window.matchMedia = () => ({ matches: false });
     window.HTMLCanvasElement.prototype.getContext = () => ({});
     window.fetch = async () => ({ ok: true, text: async () => gpxSource });
@@ -1068,7 +1100,8 @@ const loadElevationAnalyzer = async (gpxSource, {
         chartInstance: () => chartInstance,
         setActiveElements: elements => { activeElements = elements; },
         updateModes,
-        eventQueries
+        eventQueries,
+        polylineCalls
     };
 };
 
@@ -1091,21 +1124,31 @@ test('GPX analyzer drops points whose elevation is missing or invalid', async ()
     dom.window.close();
 });
 
-test('GPX analyzer labels a track with no usable elevation instead of reporting zero gain', async () => {
+test('GPX analyzer renders a coordinate-only route without reporting zero gain', async () => {
     const source = `<?xml version="1.0"?><gpx><trk><trkseg>
       <trkpt lat="47" lon="-121"></trkpt>
       <trkpt lat="47" lon="-121.001"><ele>unknown</ele></trkpt>
+      <trkpt lat="47" lon="-121.002"></trkpt>
     </trkseg></trk></gpx>`;
-    const { dom, analysisText, chartConfig } = await loadElevationAnalyzer(source);
+    const { dom, analysisText, chartConfig, polylineCalls } = await loadElevationAnalyzer(source, { withMap: true });
 
-    await waitFor(dom, () => analysisText().includes('no usable elevation data'));
-    assert.match(analysisText(), /This GPS track has no usable elevation data\./);
+    await waitFor(dom, () => analysisText().includes('Elevation data is unavailable'));
+    await waitFor(dom, () => polylineCalls.length === 2);
+    assert.match(analysisText(), /Route: 0\.15 km/);
+    assert.match(analysisText(), /Elevation data is unavailable in this GPX\./);
     assert.doesNotMatch(analysisText(), /0 (?:m|ft) gain/);
     assert.equal(chartConfig(), null);
-    const copyButton = dom.window.document.getElementById('bpb-gpx-copy-coordinates');
-    const status = dom.window.document.getElementById('bpb-gpx-coordinate-status');
-    assert.equal(copyButton.disabled, true);
-    assert.equal(status.textContent, 'No chart point with coordinates is available.');
+    assert.equal(dom.window.document.querySelector('#bpb-gpx-analysis canvas').parentElement.hidden, true);
+    assert.equal(dom.window.document.querySelector('.bpb-gpx-coordinate-controls').hidden, true);
+    assert.deepEqual(JSON.parse(JSON.stringify(polylineCalls[0].latLngs)), [
+        [47, -121], [47, -121.001], [47, -121.002]
+    ]);
+
+    const units = dom.window.document.getElementById('bpb-gpx-units');
+    units.value = 'imperial';
+    units.dispatchEvent(new dom.window.Event('change'));
+    assert.match(analysisText(), /Route: 0\.09 miles/);
+    assert.equal(chartConfig(), null, 'changing units must not instantiate an empty chart');
 
     dom.window.close();
 });

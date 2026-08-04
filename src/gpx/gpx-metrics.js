@@ -204,6 +204,26 @@ const computeAdjustedDistances = (points, hasTime) => {
     return { distanceM, rawDistanceM, distMByIndex };
 };
 
+const computeRouteDistanceM = segments => {
+    let coordinateGroup = 0;
+    const points = [];
+
+    (segments || []).forEach((segment, segmentIndex) => {
+        if (segmentIndex > 0) coordinateGroup++;
+        (segment || []).forEach(coordinate => {
+            const lat = coordinate?.[0];
+            const lon = coordinate?.[1];
+            if (!isValidCoordinate(lat, lon)) {
+                coordinateGroup++;
+                return;
+            }
+            points.push({ lat, lon, coordinateGroup });
+        });
+    });
+
+    return computeAdjustedDistances(points, false).distanceM;
+};
+
 const calculateGrade = (index, distMByIndex, elevations, points) => {
     const centerDistM = distMByIndex[index];
     let baselineIndex = index;
@@ -399,6 +419,7 @@ const API = {
     normalizeLonDelta,
     isValidCoordinate,
     distanceM: haversineDistanceM,
+    computeRouteDistanceM,
     calculateConfirmedGainM,
     computeMetrics,
     limitMapRouteSegments,
