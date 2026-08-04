@@ -78,35 +78,34 @@ const renderRoute = object => {
 };
 
 // Climbing-guidebook symbols, drawn in a unit box the marker transform scales.
-// There is no single universal legend — the UIAA publishes a recommended set
-// and publishers extend it — so these follow the conventions climbers read
-// without a key: a circle is a bolt, a bolted anchor is two of them slung to a
-// master point, a piton is a bladed peg with an eye, a rappel station is a ring
-// with the rope running down out of it, and a belay is the stance bar the
-// leader stops on. `photos/guide.html` shows the same glyphs with their names.
+// Anchor, piton, rappel, and belay adapt the four stamps in Mountain Project's
+// Apache-licensed BetaCreator editor. Their canvas coordinates were normalized
+// and translated to SVG paths here; see ACKNOWLEDGEMENTS.md and
+// vendor/betacreator-LICENSE.txt. Copyright 2012 Alma Madsen.
+//
+// Bolt is Better Peakbagger's additional marker and intentionally remains
+// available even though BetaCreator does not offer it. `photos/guide.html`
+// shows the same glyphs with their names.
 const markerGeometry = (type, color) => {
     if (type === 'bolt') {
         return '<circle cx="0" cy="0" r="0.5" fill="none"/>'
             + `<circle cx="0" cy="0" r="0.17" fill="${color}" stroke="none"/>`;
     }
     if (type === 'anchor') {
-        return '<circle cx="-0.56" cy="-0.5" r="0.24" fill="none"/>'
-            + '<circle cx="0.56" cy="-0.5" r="0.24" fill="none"/>'
-            + '<circle cx="0" cy="0.6" r="0.24" fill="none"/>'
-            + '<path d="M -0.56 -0.26 L 0 0.36 L 0.56 -0.26" fill="none"/>';
+        return '<path d="M -0.72 -0.72 L 0.72 0.72 M 0.72 -0.72 L -0.72 0.72" fill="none"/>';
     }
     if (type === 'piton') {
-        return '<circle cx="-0.6" cy="-0.6" r="0.22" fill="none"/>'
-            + '<path d="M -0.62 -0.2 L -0.2 -0.62 L 0.84 0.7 L 0.7 0.84 Z" fill="none"/>';
+        return '<path d="M -0.15 0.72 V -0.72 H 0.29'
+            + ' A 0.43 0.43 0 0 1 0.29 0.14 H -0.15" fill="none"/>';
     }
     if (type === 'rappel') {
-        return '<circle cx="0" cy="-0.62" r="0.24" fill="none"/>'
-            + '<path d="M -0.16 -0.4 V 0.5 M 0.16 -0.4 V 0.5" fill="none"/>'
-            + '<path d="M -0.42 0.36 L 0 0.82 L 0.42 0.36" fill="none"/>';
+        return '<circle cx="0" cy="0" r="0.72" fill="none"/>'
+            + '<path d="M 0 -0.36 V 0.36 M -0.36 0 L 0 0.36 L 0.36 0" fill="none"/>';
     }
-    return '<path d="M -0.85 0.5 H 0.85 M -0.5 0.5 V 0.78 M 0.5 0.5 V 0.78" fill="none"/>'
-        + `<circle cx="0" cy="0.04" r="0.3" fill="${color}" stroke="none"/>`
-        + '<path d="M 0 0.34 V 0.5" fill="none"/>';
+    if (type === 'belay') {
+        return '<circle cx="0" cy="0" r="0.72" fill="none"/>';
+    }
+    return '';
 };
 
 // One standalone glyph, for the tool rail and the guide's legend. Sharing the

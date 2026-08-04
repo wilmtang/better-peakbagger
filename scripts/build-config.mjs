@@ -92,6 +92,7 @@ export const COPY_FILES = [
     ['LICENSE', 'LICENSE'],
     ['PRIVACY.md', 'PRIVACY.md'],
     ['README.md', 'README.md'],
+    ['third_party/betacreator-LICENSE.txt', 'vendor/betacreator-LICENSE.txt'],
     ['manifest.json', 'manifest.json'],
     // The panel design language, shared by every extension-owned page and the
     // popup; each page stylesheet below is loaded after it and only adds its

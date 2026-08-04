@@ -256,17 +256,35 @@ test('opacity dims the whole mark, including its arrowhead and contrast plate', 
     assert.match(svg, /<g data-bpb-object="bolt-1" transform=/);
 });
 
-test('the climbing symbols follow guidebook conventions, not a nautical anchor', () => {
+test('the climbing symbols reuse Mountain Project shapes and retain the additional bolt', () => {
+    assert.deepEqual(Project.MARKER_TYPES,
+        ['bolt', 'anchor', 'piton', 'rappel', 'belay'],
+        'the Better Peakbagger-only bolt stays beside the four Mountain Project stamps');
+
     const anchor = Renderer.markerSymbolSvg('anchor');
-    // A bolted anchor reads as two bolts slung to a master point. The old
-    // glyph was a boat anchor: a ring, a shank, and curved flukes.
-    assert.equal((anchor.match(/<circle/g) || []).length, 3);
-    assert.match(anchor, /M -0\.56 -0\.26 L 0 0\.36 L 0\.56 -0\.26/);
-    assert.doesNotMatch(anchor, /Q/, 'no fluke arc');
-    // A belay is the stance bar the leader stops on, not a circled X.
+    assert.match(anchor,
+        /M -0\.72 -0\.72 L 0\.72 0\.72 M 0\.72 -0\.72 L -0\.72 0\.72/,
+        'Mountain Project draws an anchor as an X');
+
+    const piton = Renderer.markerSymbolSvg('piton');
+    assert.match(piton,
+        /M -0\.15 0\.72 V -0\.72 H 0\.29 A 0\.43 0\.43 0 0 1 0\.29 0\.14 H -0\.15/,
+        'Mountain Project draws a piton as a P-shaped peg');
+
+    const rappel = Renderer.markerSymbolSvg('rappel');
+    assert.match(rappel, /<circle cx="0" cy="0" r="0\.72"/);
+    assert.match(rappel, /M 0 -0\.36 V 0\.36 M -0\.36 0 L 0 0\.36 L 0\.36 0/,
+        'Mountain Project draws rappel as a circled down-arrow');
+
     const belay = Renderer.markerSymbolSvg('belay');
-    assert.match(belay, /M -0\.85 0\.5 H 0\.85/);
-    assert.doesNotMatch(belay, /M -0\.38 -0\.38 L 0\.38 0\.38/, 'no crossed-out circle');
+    assert.match(belay, /<circle cx="0" cy="0" r="0\.72"/,
+        'Mountain Project draws belay as a plain circle');
+    assert.doesNotMatch(belay, /<path/);
+
+    const bolt = Renderer.markerSymbolSvg('bolt');
+    assert.equal((bolt.match(/<circle/g) || []).length, 2);
+    assert.match(bolt, /r="0\.17" fill="currentColor"/,
+        'the additional bolt remains visually distinct from Mountain Project belay');
 
     for (const type of Project.MARKER_TYPES) {
         const symbol = Renderer.markerSymbolSvg(type);
@@ -277,7 +295,7 @@ test('the climbing symbols follow guidebook conventions, not a nautical anchor',
     }
     // currentColor lets the rail tint the glyph; the canvas passes a real hex
     // so an exported fill can never resolve against a stylesheet.
-    assert.match(Renderer.markerSymbolSvg('bolt'), /fill="currentColor"/);
+    assert.match(bolt, /fill="currentColor"/);
     assert.match(Renderer.markerSymbolSvg('bolt', { color: '#43a047' }), /fill="#43a047"/);
 });
 
