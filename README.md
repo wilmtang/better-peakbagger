@@ -71,7 +71,9 @@ route metrics, grades, mountain-local timing, and multi-day details. Chart
 points stay synchronized with the map and can be selected by pointer or
 keyboard for coordinate copying. Custom route colors, width, and outline carry
 through to Full Screen GPS maps without covering Peakbagger's native route or
-markers.
+markers. Older coordinate-only tracks still show their route and distance;
+missing elevation or unusable timestamps disable only the views that need
+those fields.
 
 ### Find useful ascent beta faster
 

@@ -571,13 +571,30 @@ contracts and failure states are maintained in
 
 `src/gpx/gpx-analyzer.js` runs only when an ascent page exposes Peakbagger's stored
 GPX download link. It fetches that saved track in the page session, parses
-trackpoints and segment breaks, and builds chronological chart data. Invalid
-points split map geometry rather than joining a route across a gap.
+trackpoints and segment breaks, and admits route, elevation, and time data as
+independent capabilities. Invalid points split map geometry rather than
+joining a route across a gap.
 
 Distance and gain come from `src/gpx/gpx-metrics.js`. The analyzer reports adjusted
 metrics and shows a raw-versus-adjusted note when the difference is material.
 Timestamped tracks add elapsed time, time-to-summit/back, local clock labels,
 multi-day boundaries, and possible camping stops.
+
+Peakbagger can serve a structurally valid GPX whose points have coordinates
+but no `<ele>` values, especially when an older or transformed source retained
+only route geometry. Those tracks still receive a segment-aware route distance,
+the extension-owned 2D overlay, and the opt-in 3D route; the empty elevation
+canvas and chart-only coordinate controls stay hidden. Better Peakbagger does
+not invent a missing elevation profile from the 3D map.
+
+Per-point `<time>` values are also optional and can be degraded by a source or
+export conversion. One observed Peakbagger export copied a single generated
+timestamp onto every trackpoint. Timing is usable only when every analyzed
+timestamp parses, GPX order is nondecreasing, and the sequence advances at
+least once. Duplicate samples inside a progressing track remain valid. An
+all-equal or backward sequence keeps the distance/elevation analysis in GPX
+order but omits duration, clock labels, camping inference, and the time series
+instead of reporting zero time or reordering the route.
 
 Clock times use the climb's local timezone resolved offline from the starting
 coordinate with packaged `tz-lookup`. Failure falls back to a labelled

@@ -35,6 +35,28 @@ zone's real political offset and DST for the trip's date, while respecting
 the viewer's 12/24-hour locale preference. Day boundaries come from the
 zone's `YYYY-MM-DD` (`en-CA`) date of each timestamp.
 
+## When a saved GPX has no usable time
+
+GPX permits trackpoints without timestamps, and stored tracks can pass through
+devices, mapping tools, format conversions, and Peakbagger's saved-track export
+before the analyzer reads them. That process can leave time absent or invalid.
+It can also produce syntactically valid but meaningless data: a confirmed live
+case had the same generated timestamp copied onto every point, several days
+after the ascent date.
+
+The analyzer therefore treats time as a capability, not as a consequence of a
+`<time>` element existing. A series is usable only when every analyzed point
+has a finite positive timestamp, timestamps are nondecreasing in GPX order,
+and at least one sample advances. Equal adjacent samples are allowed within an
+otherwise progressing track. An all-equal or backward series is not sorted or
+guessed into shape: the route and elevation-by-distance analysis remain, while
+duration, mountain-local clock labels, camping inference, and the time series
+are omitted.
+
+This validation happens before timezone resolution. A displayed mountain time
+therefore always comes from a usable UTC sequence; timezone conversion cannot
+repair incorrect source chronology.
+
 ## Why an offline whole-earth lookup can still fail
 
 Every point on earth has a zone, but three failure paths are real, and all of
