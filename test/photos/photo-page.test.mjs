@@ -138,6 +138,8 @@ test('upload format, JPEG quality, and the encoded estimate stay beside the uplo
     assert.equal(format.closest('.editor-footer'), doc.getElementById('upload-insert').closest('.editor-footer'));
     assert.match(source, /ascentBackupEnabled && encoded\.bytes > GITHUB_CAMO_PREVIEW_BYTES/);
     assert.match(source, /GitHub may not show this image in backed-up reports/);
+    assert.doesNotMatch(styles, /\.upload-estimate\.is-warning/,
+        'a GitHub preview limitation is descriptive context, not an upload error');
 });
 
 test('report sizing is contextual, synchronized, and explicit about full-resolution upload', () => {

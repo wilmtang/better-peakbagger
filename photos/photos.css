@@ -534,16 +534,11 @@ kbd {
   font-variant-numeric: tabular-nums;
 }
 
-.upload-estimate.is-warning strong,
-.upload-estimate.is-warning span {
-  color: color-mix(in srgb, var(--danger) 82%, var(--text));
-}
-
 .footer-actions {
   display: grid;
-  grid-template-columns: minmax(210px, 0.8fr) minmax(190px, 1fr) minmax(210px, 1.1fr);
+  grid-template-columns: minmax(210px, 0.8fr) 1fr auto auto;
   align-items: end;
-  gap: 14px;
+  gap: 8px;
 }
 
 .editor-footer .report-width-control {
@@ -551,12 +546,12 @@ kbd {
 }
 
 #clear-annotations {
-  grid-column: 2;
+  grid-column: 3;
   justify-self: end;
 }
 
 #upload-insert {
-  grid-column: 3;
+  grid-column: 4;
   justify-self: end;
 }
 

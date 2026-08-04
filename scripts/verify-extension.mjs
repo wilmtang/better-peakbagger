@@ -747,6 +747,19 @@ try {
             const stage = document.getElementById('photo-stage');
             const stageRect = stage?.getBoundingClientRect();
             const controlRect = visible?.getBoundingClientRect();
+            const estimateBox = document.querySelector('.upload-estimate');
+            const estimateStrong = document.getElementById('upload-estimate');
+            const estimateNote = document.getElementById('upload-estimate-note');
+            const estimateColors = () => ({
+                strong: getComputedStyle(estimateStrong).color,
+                note: getComputedStyle(estimateNote).color,
+            });
+            const estimateWasWarning = estimateBox?.classList.contains('is-warning');
+            estimateBox?.classList.remove('is-warning');
+            const neutralEstimateColors = estimateColors();
+            estimateBox?.classList.add('is-warning');
+            const warningEstimateColors = estimateColors();
+            estimateBox?.classList.toggle('is-warning', estimateWasWarning);
             return {
                 choices: [...document.querySelectorAll('[data-report-width]')]
                     .map(select => ({
@@ -778,12 +791,18 @@ try {
                     clear: rect(document.getElementById('clear-annotations')),
                     primary: rect(document.getElementById('upload-insert')),
                 },
+                estimateColors: {
+                    neutral: neutralEstimateColors,
+                    warning: warningEstimateColors,
+                },
                 horizontalOverflow:
                     document.documentElement.scrollWidth > document.documentElement.clientWidth,
             };
         });
         const aligned = (first, second, edge, tolerance = 1) =>
             Math.abs((first?.[edge] ?? Number.NaN) - (second?.[edge] ?? Number.NaN)) <= tolerance;
+        const actionGap = reportSizeState.footer.primary?.left
+            - reportSizeState.footer.clear?.right;
         check(reportSizeState.choices.length === 2
             && reportSizeState.choices.every(choice => choice.value === '320')
             && reportSizeState.choices.every(choice =>
@@ -806,9 +825,18 @@ try {
             && aligned(reportSizeState.footer.format, reportSizeState.footer.reportSize, 'left')
             && aligned(reportSizeState.footer.estimate, reportSizeState.footer.primary, 'right')
             && aligned(reportSizeState.footer.reportSize, reportSizeState.footer.clear, 'bottom')
-            && aligned(reportSizeState.footer.clear, reportSizeState.footer.primary, 'bottom'),
+            && aligned(reportSizeState.footer.clear, reportSizeState.footer.primary, 'bottom')
+            && actionGap >= 7
+            && actionGap <= 9
+            && reportSizeState.estimateColors.warning.strong
+                === reportSizeState.estimateColors.neutral.strong
+            && reportSizeState.estimateColors.warning.note
+                === reportSizeState.estimateColors.neutral.note,
         `the wide photo footer lost its two-row control and action grid: ${
-            JSON.stringify(reportSizeState.footer)
+            JSON.stringify({
+                footer: reportSizeState.footer,
+                estimateColors: reportSizeState.estimateColors,
+            })
         }`);
         if (process.env.BPB_VERIFY_PHOTO_SIZE_SCREENSHOT) {
             await photoPage.evaluate(() => scrollTo(0, document.body.scrollHeight));
