@@ -832,6 +832,34 @@ test('overlapping starts serialize admission before either capture process is re
     assert.equal(harness.providerCaptureCalls.length, 1, 'only one provider pipeline may start');
 });
 
+test('cancel during capture admission prevents provider access and reports success', async () => {
+    let releaseAdmission;
+    let admissionReached;
+    const admissionGate = new Promise(resolve => { releaseAdmission = resolve; });
+    const reached = new Promise(resolve => { admissionReached = resolve; });
+    const harness = createHarness({
+        beforeBadgeText: async call => {
+            if (call.number !== 1) return;
+            admissionReached();
+            await admissionGate;
+        },
+    });
+
+    const capture = harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    await reached;
+    const cancellation = harness.send({ type: 'CAPTURE_CANCEL', tabId: 1 });
+    releaseAdmission();
+
+    const [started, cancelled] = await Promise.all([capture, cancellation]);
+    assert.equal(started, null);
+    assert.deepEqual({ ...cancelled }, { ok: true, cancelled: true, job: null });
+    assert.equal(harness.values.bpbCaptureJobs?.['1'], undefined);
+    assert.equal(harness.scriptCalls.length, 0,
+        'ownership inspection and provider capture must not start after the cancellation intent');
+    assert.equal(harness.fetchCalls.length, 0,
+        'Peakbagger login and corridor requests must not start after the cancellation intent');
+});
+
 test('cancelling an in-progress capture discards its job and ignores later results', async () => {
     let releasePeakFetch;
     const peakFetchGate = new Promise(resolve => { releasePeakFetch = resolve; });

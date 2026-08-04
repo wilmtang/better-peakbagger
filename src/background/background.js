@@ -47,6 +47,7 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
     });
     const processes = new Map();
     const captureAdmissions = new Map();
+    const captureCancellationEpochs = new Map();
     const draftOpeningQueues = new Map();
     let mutationQueue = Promise.resolve();
 
@@ -518,12 +519,17 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
         });
     };
 
-    const admitCapture = async (message, tabId) => {
+    const admitCapture = async (message, tabId, admissionEpoch) => {
+        const cancelled = () => captureCancellationEpochs.get(tabId) !== admissionEpoch;
+        const cancelledAdmission = () => ({ kind: 'cancelled' });
         const tab = await ext.tabs.get(tabId);
+        if (cancelled()) return cancelledAdmission();
         const capturePreferences = await readCapturePreferences();
+        if (cancelled()) return cancelledAdmission();
         const activity = providerFromUrl(tab.url);
         if (!activity) {
             await setBadge(tabId, '');
+            if (cancelled()) return cancelledAdmission();
             return {
                 kind: 'complete',
                 value: {
@@ -533,6 +539,7 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
             };
         }
         const jobs = await readMap(JOBS_KEY);
+        if (cancelled()) return cancelledAdmission();
         const current = jobs[tabId];
         const sameActivity = current && current.provider === activity.provider && current.activityId === activity.activityId;
         if (processes.has(tabId)) {
@@ -543,6 +550,7 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
             return { kind: 'complete', value: publicJob(current) };
         }
         await setBadge(tabId, '');
+        if (cancelled()) return cancelledAdmission();
 
         const job = {
             id: makeId(),
@@ -559,6 +567,12 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
             error: null
         };
         await mutateMap(JOBS_KEY, map => { map[tabId] = job; });
+        if (cancelled()) {
+            await mutateMap(JOBS_KEY, map => {
+                if (map[tabId]?.id === job.id) delete map[tabId];
+            });
+            return cancelledAdmission();
+        }
         const process = processCapture(tabId, tab.url, capturePreferences, job.id);
         processes.set(tabId, { generation: job.id, promise: process });
         return { kind: 'started', job, process };
@@ -567,10 +581,12 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
     const startCapture = async message => {
         const tabId = Number(message.tabId);
         while (true) {
+            const admissionEpoch = captureCancellationEpochs.get(tabId);
             const admission = await serializeCaptureAdmission(
                 tabId,
-                () => admitCapture(message, tabId),
+                () => admitCapture(message, tabId, admissionEpoch),
             );
+            if (admission.kind === 'cancelled') return null;
             if (admission.kind === 'complete') return admission.value;
             if (admission.kind === 'wait') {
                 await admission.process.promise;
@@ -646,12 +662,8 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
         return { ok: true, removedGpx, removedDraftCount: removedDraftTabIds.length };
     };
 
-    const cancelCapture = async message => {
-        const tabId = Number(message.tabId);
-        if (!Number.isInteger(tabId)) {
-            throw PublicErrors.exception('invalid-tab', 'Activity tab identity is unavailable.');
-        }
-        let cancelled = false;
+    const cancelAdmittedCapture = async (tabId, cancelledAdmission) => {
+        let cancelled = cancelledAdmission;
         let current = null;
         await mutateMap(JOBS_KEY, jobs => {
             current = jobs[tabId] || null;
@@ -659,7 +671,7 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
             delete jobs[tabId];
             cancelled = true;
         });
-        if (cancelled) {
+        if (cancelled && current) {
             const process = processes.get(tabId);
             if (process?.generation === current.id) processes.delete(tabId);
             try {
@@ -667,9 +679,22 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
             } catch (error) {
                 console.error('Better Peakbagger: provider capture cancellation failed', error);
             }
-            await setBadge(tabId, '');
         }
+        if (cancelled) await setBadge(tabId, '');
         return { ok: cancelled, cancelled, job: cancelled ? null : publicJob(current) };
+    };
+
+    const cancelCapture = message => {
+        const tabId = Number(message.tabId);
+        if (!Number.isInteger(tabId)) {
+            throw PublicErrors.exception('invalid-tab', 'Activity tab identity is unavailable.');
+        }
+        const cancelledAdmission = captureAdmissions.has(tabId) && !processes.has(tabId);
+        captureCancellationEpochs.set(tabId, (captureCancellationEpochs.get(tabId) || 0) + 1);
+        return serializeCaptureAdmission(
+            tabId,
+            () => cancelAdmittedCapture(tabId, cancelledAdmission),
+        );
     };
 
     // The selection that produced the open draft tabs is the one that matters.
