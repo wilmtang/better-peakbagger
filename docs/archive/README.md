@@ -64,6 +64,11 @@ living docs in [`docs/`](../).
   source-grounded hardening of the trusted workflow boundary, full-branch
   provenance, head-bound queueing, and manual review for GitHub Actions updates,
   with the remaining live-event proof gap kept explicit.
+- [Codebase audit remediation — 2026-08-03](codebase-audit-remediation-2026-08-03.md) —
+  ten focused fixes for GPX segment/time correctness, stable chart selection,
+  photo autosave and delivery, GitHub authorization cancellation, and
+  provider-capture identity, with broader transaction, storage-concurrency,
+  live-service, and native-UI gaps kept explicit.
 - [Codebase audit — 2026-07-19](codebase-audit-2026-07-19.md) — point-in-time
   audit and remediation plan.
 - [Codebase audit — 2026-07-22](codebase-audit-2026-07-22.md) and its
