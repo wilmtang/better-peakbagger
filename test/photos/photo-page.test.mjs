@@ -94,11 +94,22 @@ test('every extension panel paints from the one shared design language', async (
 
 test('the API key is a password field and upload remains one explicit primary action', () => {
     const key = doc.getElementById('imgbb-key');
+    const credentialForm = doc.getElementById('credential-form');
+    const credentialHelp = doc.getElementById('credential-help');
+    const credentialNote = doc.getElementById('credential-note');
     assert.equal(key.type, 'password');
     assert.equal(key.autocomplete, 'off');
-    assert.match(doc.getElementById('credential-note').textContent,
+    assert.equal(key.getAttribute('aria-describedby'), 'credential-help credential-note');
+    assert.equal(credentialForm.firstElementChild, credentialHelp,
+        'key setup should come before the credential controls and storage details');
+    assert.equal(credentialHelp.querySelector('a')?.textContent, 'How to get your key');
+    assert.equal(credentialHelp.querySelector('a')?.getAttribute('href'), 'guide.html#key');
+    assert.match(credentialHelp.textContent,
+        /about 15 seconds with\s+Google or another third-party sign-in/i);
+    const credentialText = credentialNote.textContent.replace(/\s+/g, ' ');
+    assert.match(credentialText,
         /never exposed to\s+Peakbagger, another website, GitHub, browser sync, or status UI/i);
-    assert.match(doc.getElementById('credential-note').textContent,
+    assert.match(credentialText,
         /packaged photo page for the direct ImgBB upload/i);
     assert.equal(doc.getElementById('remove-key').textContent.trim(), 'Forget for this tab');
     assert.equal(doc.getElementById('upload-insert').textContent.trim(), 'Upload and insert');

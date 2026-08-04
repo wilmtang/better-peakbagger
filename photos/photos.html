@@ -31,21 +31,24 @@
         </p>
       </div>
       <div id="credential-form" class="credential-form">
+        <p id="credential-help" class="fine-print">
+          <a href="guide.html#key">How to get your key</a> — about 15 seconds with
+          Google or another third-party sign-in.
+        </p>
         <label>
           ImgBB API key
           <input id="imgbb-key" type="password" autocomplete="off" spellcheck="false"
-                 aria-describedby="credential-note">
+                 aria-describedby="credential-help credential-note">
         </label>
         <label class="check-row">
           <input id="remember-key" type="checkbox" checked>
           Remember on this device
         </label>
         <p id="credential-note" class="fine-print">
-          The saved key remains in device-local extension storage. It is never exposed to
-          Peakbagger, another website, GitHub, browser sync, or status UI. The worker gives
-          it only to Better Peakbagger's exact packaged photo page for the direct ImgBB upload.
-          A manual settings export includes it and should be kept private.
-          <a href="guide.html#key">How to get one</a>
+          The saved key remains in device-local extension storage. It is given only to
+          Better Peakbagger's exact packaged photo page for the direct ImgBB upload and is
+          never exposed to Peakbagger, another website, GitHub, browser sync, or status UI.
+          Manual exports can include it; keep them private.
         </p>
         <button id="save-key" type="button" class="secondary-button">Continue</button>
       </div>

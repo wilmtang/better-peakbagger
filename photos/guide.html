@@ -83,18 +83,19 @@
     <section id="key" aria-labelledby="key-heading">
       <h2 id="key-heading">Setting up an ImgBB key</h2>
       <p>
-        Peakbagger does not host trip-report images, so the picture has to live
-        somewhere public and be linked in. Better Peakbagger uses ImgBB, a free image
-        host, and uploads with <em>your</em> account rather than through any server of
-        its own. That means the uploads are yours, and they follow
-        <a href="https://imgbb.com/tos" target="_blank" rel="noopener noreferrer">ImgBB's terms of service</a>.
+        With Google or another third-party sign-in, the whole setup usually takes about
+        15 seconds.
       </p>
       <ol>
-        <li>Create a free account at <a href="https://imgbb.com/" target="_blank" rel="noopener noreferrer">imgbb.com</a>.</li>
-        <li>Go to <a href="https://api.imgbb.com/" target="_blank" rel="noopener noreferrer">api.imgbb.com</a> and choose <strong>Get API key</strong>. It is a long string of letters and numbers.</li>
+        <li>Go to <a href="https://api.imgbb.com/" target="_blank" rel="noopener noreferrer">api.imgbb.com</a> and choose <strong>Get API key</strong>. Sign in or create a free account if asked.</li>
         <li>Paste it into <strong>Settings → Activity creation → Trip report photos</strong>, or into the box at the top of the Photo Topos page, and save.</li>
         <li>Your browser will ask permission for Better Peakbagger to reach <code>api.imgbb.com</code>. Allow it — without it, uploads cannot happen.</li>
       </ol>
+      <p>
+        Peakbagger does not host trip-report images, so Better Peakbagger uses your
+        ImgBB account rather than its own server. The uploads are yours and follow
+        <a href="https://imgbb.com/tos" target="_blank" rel="noopener noreferrer">ImgBB's terms of service</a>.
+      </p>
       <p>
         The saved key remains in device-local extension storage. It is never exposed
         to Peakbagger, another website, GitHub, browser sync, or status UI. The

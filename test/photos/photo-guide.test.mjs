@@ -111,6 +111,8 @@ test('the guide answers the questions the surfaces send readers here with', () =
     // Getting a key, which is the one piece of setup the feature cannot do.
     assert.match(text, /api\.imgbb\.com/);
     assert.match(text, /Get API key/);
+    assert.match(text,
+        /Google or another third-party sign-in, the whole setup usually takes about 15 seconds/i);
     assert.match(text, /never exposed to Peakbagger, another website, GitHub, browser sync, or status UI/);
     assert.match(text, /exact packaged photo page.*direct upload to ImgBB/);
     // What a backup holds, and what a restore therefore cannot bring back.
@@ -140,7 +142,7 @@ test('settings can reach the photo library it configures and backs up', () => {
 
 test('each surface links to the guide rather than restating it', () => {
     assert.ok(photosDoc.querySelector('.view-tabs a[href="guide.html"]'));
-    assert.ok(photosDoc.querySelector('#credential-note a[href="guide.html#key"]'));
+    assert.ok(photosDoc.querySelector('#credential-help a[href="guide.html#key"]'));
     assert.match(optionsHtml, /href="\.\.\/photos\/guide\.html"/);
     assert.match(optionsHtml, /href="\.\.\/photos\/guide\.html#backup"/);
     assert.match(reportEditor, /getURL\?\.\('photos\/guide\.html'\)/);
