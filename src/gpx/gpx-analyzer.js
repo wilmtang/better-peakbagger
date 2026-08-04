@@ -347,6 +347,7 @@ const run = async () => {
         let chartData = [];
         let timeChartData = [];
         let selectedCoordinateIndex = -1;
+        let selectedCoordinateSeries = 'distance';
         let coordinateFeedbackTimer = null;
         let metrics = { distanceM: 0, gainM: 0, rawDistanceM: 0, rawGainM: 0 };
         let totalMs = 0, hasTime = false;
@@ -359,9 +360,18 @@ const run = async () => {
         const isCoordinatePoint = point =>
             point && Number.isFinite(point.lat) && Number.isFinite(point.lon);
         const coordinateText = point => `${point.lat.toFixed(5)}, ${point.lon.toFixed(5)}`;
-        const coordinateIndexes = () => chartData
-            .map((point, index) => isCoordinatePoint(point) ? index : -1)
-            .filter(index => index >= 0);
+        const coordinatePointsFor = series => (series === 'time' && hasTime ? timeChartData : chartData)
+            .filter(isCoordinatePoint);
+        const defaultCoordinateSeries = () => {
+            if (!hasTime) return 'distance';
+            if (chartInstance && typeof chartInstance.isDatasetVisible === 'function') {
+                const distanceVisible = chartInstance.isDatasetVisible(0);
+                const timeVisible = chartInstance.isDatasetVisible(1);
+                if (timeVisible && !distanceVisible) return 'time';
+                if (distanceVisible && !timeVisible) return 'distance';
+            }
+            return resolveChartSeries(BPB.get()) === 'time' ? 'time' : 'distance';
+        };
         const clearCoordinateFeedbackTimer = () => {
             if (coordinateFeedbackTimer !== null) {
                 clearTimeout(coordinateFeedbackTimer);
@@ -376,8 +386,8 @@ const run = async () => {
         const selectedCoordinateAnnouncement = () => {
             const point = chartData[selectedCoordinateIndex];
             if (!isCoordinatePoint(point)) return COORDINATE_HINT;
-            const selectable = coordinateIndexes();
-            const position = selectable.indexOf(selectedCoordinateIndex);
+            const selectable = coordinatePointsFor(selectedCoordinateSeries);
+            const position = selectable.indexOf(point);
             return `Selected point ${position + 1} of ${selectable.length}: ${coordinateText(point)}`;
         };
         const syncCoordinateSelection = ({ unavailable = false } = {}) => {
@@ -386,6 +396,7 @@ const run = async () => {
             copyCoordinatesButton.disabled = !hasSelection;
             if (!hasSelection) {
                 selectedCoordinateIndex = -1;
+                selectedCoordinateSeries = defaultCoordinateSeries();
                 coordinateFallback.hidden = true;
                 coordinateFallback.value = '';
                 setCoordinateStatus(unavailable
@@ -400,6 +411,7 @@ const run = async () => {
             if (!isCoordinatePoint(chartData[index])) return false;
             clearCoordinateFeedbackTimer();
             selectedCoordinateIndex = index;
+            selectedCoordinateSeries = series === 'time' && hasTime ? 'time' : 'distance';
             coordinateFallback.hidden = true;
             coordinateFallback.value = '';
             copyCoordinatesButton.disabled = false;
@@ -409,7 +421,7 @@ const run = async () => {
                 `Interactive elevation chart. ${selectedCoordinateAnnouncement()}. Use Left and Right Arrow keys to move.`
             );
             if (chartInstance) chartInstance.update('none');
-            syncRouteHighlight(chartData[index], series);
+            renderRouteHighlight(chartData[index], selectedCoordinateSeries);
             return true;
         };
         const selectCoordinateFromEvent = event => {
@@ -438,7 +450,7 @@ const run = async () => {
         const copySelectedCoordinate = async () => {
             const point = chartData[selectedCoordinateIndex];
             if (!isCoordinatePoint(point)) {
-                syncCoordinateSelection({ unavailable: coordinateIndexes().length === 0 });
+                syncCoordinateSelection({ unavailable: coordinatePointsFor(defaultCoordinateSeries()).length === 0 });
                 return;
             }
             clearCoordinateFeedbackTimer();
@@ -468,19 +480,23 @@ const run = async () => {
         canvas.addEventListener('keydown', event => {
             if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
             event.preventDefault();
-            const selectable = coordinateIndexes();
+            const series = selectedCoordinateIndex >= 0
+                ? selectedCoordinateSeries
+                : defaultCoordinateSeries();
+            const selectable = coordinatePointsFor(series);
             if (!selectable.length) {
                 syncCoordinateSelection({ unavailable: true });
                 return;
             }
-            const currentPosition = selectable.indexOf(selectedCoordinateIndex);
+            const currentPoint = chartData[selectedCoordinateIndex];
+            const currentPosition = selectable.indexOf(currentPoint);
             const nextPosition = currentPosition < 0
                 ? (event.key === 'ArrowRight' ? 0 : selectable.length - 1)
                 : Math.max(0, Math.min(
                     selectable.length - 1,
                     currentPosition + (event.key === 'ArrowRight' ? 1 : -1)
                 ));
-            selectCoordinateIndex(selectable[nextPosition]);
+            selectCoordinateIndex(chartData.indexOf(selectable[nextPosition]), series);
         });
         copyCoordinatesButton.addEventListener('click', () => {
             void copySelectedCoordinate();
@@ -580,6 +596,7 @@ const run = async () => {
             mapIframe.style.visibility = 'visible';
             mapIframe.removeAttribute('aria-hidden');
             scheduleMapInvalidate();
+            queueMicrotask(() => restoreSelectedRouteHighlight());
         };
 
         const buildTerrainInit = () => {
@@ -614,6 +631,7 @@ const run = async () => {
                 if (!mapIframe) return;
                 mapIframe.style.visibility = 'hidden';
                 mapIframe.setAttribute('aria-hidden', 'true');
+                queueMicrotask(() => restoreSelectedRouteHighlight());
             },
             restoreNativeMap,
             post: postTerrain,
@@ -701,7 +719,10 @@ const run = async () => {
             scheduleInvalidate: scheduleMapInvalidate,
             terrainBasemap,
             // The chart's hover marker belongs to a map that no longer exists.
-            onFrameReload: () => { hoverMarker = null; },
+            onFrameReload: () => {
+                hoverMarker = null;
+                queueMicrotask(() => restoreSelectedRouteHighlight());
+            },
         });
         const removeRouteOverlay = overlay.removeRouteOverlay;
         const scheduleRouteOverlay = overlay.scheduleRouteOverlay;
@@ -753,22 +774,18 @@ const run = async () => {
         }, { once: true });
 
         // Chart.js runs `onHover` only while the pointer is inside the plot
-        // rectangle, and it never replays it on the way out: leaving the canvas
-        // clears the chart's own point and tooltip without telling us, so the
-        // marker this panel puts on the map — or the 3D highlight — would sit
-        // frozen on the last hovered location. Clearing on exit is the missing
-        // half of that contract. The boundary is the canvas rather than the
-        // plot rectangle so the marker and Chart.js's tooltip disappear
-        // together; Chart.js deliberately keeps the tooltip alive while the
-        // pointer crosses the axis gutter and legend below the plot.
+        // rectangle. On exit, restore the point the user deliberately selected
+        // (if any) instead of letting a transient hover replace it. The boundary
+        // is the canvas rather than the plot rectangle so Chart.js can retain
+        // its own tooltip while the pointer crosses the axis gutter and legend.
         let routeHighlightShown = false;
-        const syncRouteHighlight = (point, series = 'distance') => {
+        const renderRouteHighlight = (point, series = 'distance') => {
             const highlightedPoint = isCoordinatePoint(point) ? point : null;
+            if (!highlightedPoint && !routeHighlightShown) return;
+            routeHighlightShown = highlightedPoint !== null;
             const fillColor = series === 'time' ? '#0055FF' : '#FF0000';
             const hoverFrame = currentMapIframe();
             const iframeWin = hoverFrame ? hoverFrame.contentWindow : null;
-
-            routeHighlightShown = highlightedPoint !== null;
 
             if (terrainCoordinator.isActive()) {
                 postTerrain('highlight', {
@@ -809,13 +826,11 @@ const run = async () => {
                 hoverMarker.setStyle({ opacity: 0, fillOpacity: 0 });
             }
         };
-        const clearHoverHighlight = () => {
-            if (!routeHighlightShown) return;
-            routeHighlightShown = false;
-            if (terrainCoordinator.isActive()) postTerrain('highlight', { coordinates: null, series: 'distance' });
-            if (hoverMarker) hoverMarker.setStyle({ opacity: 0, fillOpacity: 0 });
-        };
-        canvas.addEventListener('mouseleave', clearHoverHighlight);
+        const restoreSelectedRouteHighlight = () => renderRouteHighlight(
+            chartData[selectedCoordinateIndex],
+            selectedCoordinateSeries
+        );
+        canvas.addEventListener('mouseleave', restoreSelectedRouteHighlight);
 
         // 4. Chart & UI Renderer Engine
         const renderData = () => {
@@ -975,7 +990,8 @@ const run = async () => {
                             if (candidate && Number.isFinite(candidate.lat) && Number.isFinite(candidate.lon)) hoveredPoint = candidate;
                         }
 
-                        syncRouteHighlight(hoveredPoint, hoverSeries);
+                        if (hoveredPoint) renderRouteHighlight(hoveredPoint, hoverSeries);
+                        else restoreSelectedRouteHighlight();
                     },
                     plugins: {
                         legend: {

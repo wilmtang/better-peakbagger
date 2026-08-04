@@ -1014,6 +1014,7 @@ const loadElevationAnalyzer = async (gpxSource, {
     theme = 'light',
     withMap = false,
     tzlookup,
+    settings = {},
 } = {}) => {
     const dom = new JSDOM(`<!doctype html><body>
       ${withMap ? '<iframe src="https://www.peakbagger.com/map/MasterMap.aspx?cy=47&cx=-121&z=14"></iframe>' : ''}
@@ -1031,14 +1032,17 @@ const loadElevationAnalyzer = async (gpxSource, {
     const eventQueries = [];
     const polylineCalls = [];
     const markerMoves = [];
+    const markerStyles = [];
+    let replaceMap = null;
     if (withMap) {
-        const map = {
+        const makeMap = () => ({
             layers: [],
             removeLayer(layer) {
                 this.layers = this.layers.filter(candidate => candidate !== layer);
                 layer._map = null;
             }
-        };
+        });
+        const map = makeMap();
         const L = {
             polyline(latLngs, options) {
                 const layer = {
@@ -1064,19 +1068,30 @@ const loadElevationAnalyzer = async (gpxSource, {
                         this.latLng = next;
                         markerMoves.push([...next]);
                     },
-                    setStyle(style) { this.style = { ...this.style, ...style }; }
+                    setStyle(style) {
+                        this.style = { ...this.style, ...style };
+                        markerStyles.push({ ...this.style });
+                    }
                 };
             }
         };
-        Object.defineProperty(window.document.querySelector('iframe'), 'contentWindow', {
+        const iframe = window.document.querySelector('iframe');
+        const attachMap = nextMap => Object.defineProperty(iframe, 'contentWindow', {
             configurable: true,
             value: {
-                mapsPlaceholder: map,
+                mapsPlaceholder: nextMap,
                 L,
                 document: { getElementById: () => null },
                 location: { href: 'https://www.peakbagger.com/map/MasterMap.aspx' }
             }
         });
+        attachMap(map);
+        replaceMap = () => {
+            const nextMap = makeMap();
+            attachMap(nextMap);
+            iframe.dispatchEvent(new window.Event('load'));
+            return nextMap;
+        };
     }
     window.matchMedia = () => ({ matches: false });
     if (tzlookup) window.tzlookup = tzlookup;
@@ -1094,9 +1109,12 @@ const loadElevationAnalyzer = async (gpxSource, {
             chartInstance = this;
             this.data = config.data;
             this.options = config.options;
+            this.visibility = config.data.datasets.map(dataset => dataset.hidden !== true);
         }
         destroy() {}
         update(mode) { updateModes.push(mode); }
+        isDatasetVisible(index) { return this.visibility[index] === true; }
+        setDatasetVisibility(index, visible) { this.visibility[index] = visible; }
         getElementsAtEventForMode(event, mode, options) {
             eventQueries.push({ mode, intersect: options.intersect, axis: options.axis });
             return activeElements;
@@ -1107,7 +1125,7 @@ const loadElevationAnalyzer = async (gpxSource, {
         window.queueMicrotask(() => window.dispatchEvent(new window.MessageEvent('message', {
             source: window,
             origin: window.location.origin,
-            data: { __bpb: true, dir: 'toPage', settings: { units: 'metric', theme } }
+            data: { __bpb: true, dir: 'toPage', settings: { units: 'metric', theme, ...settings } }
         })));
     };
 
@@ -1123,7 +1141,9 @@ const loadElevationAnalyzer = async (gpxSource, {
         updateModes,
         eventQueries,
         polylineCalls,
-        markerMoves
+        markerMoves,
+        markerStyles,
+        replaceMap,
     };
 };
 
@@ -1362,7 +1382,9 @@ test('GPX analyzer moves the route scrubber with keyboard selection', async () =
       <trkpt lat="47.20000" lon="-121.20000"><ele>110</ele></trkpt>
       <trkpt lat="47.30000" lon="-121.30000"><ele>120</ele></trkpt>
     </trkseg></trk></gpx>`;
-    const { dom, chartConfig, markerMoves } = await loadElevationAnalyzer(source, { withMap: true });
+    const {
+        dom, chartConfig, markerMoves, markerStyles, replaceMap
+    } = await loadElevationAnalyzer(source, { withMap: true });
     const { window } = dom;
 
     await waitFor(dom, () => chartConfig() !== null);
@@ -1375,6 +1397,47 @@ test('GPX analyzer moves the route scrubber with keyboard selection', async () =
         [47.1, -121.1],
         [47.3, -121.3]
     ], 'the map marker follows the same points selected on the chart');
+
+    chartConfig().options.onHover({}, []);
+    canvas.dispatchEvent(new window.MouseEvent('mouseleave'));
+    assert.equal(markerStyles.at(-1).opacity, 1);
+    assert.equal(markerStyles.at(-1).fillOpacity, 1,
+        'ending a hover restores the persistent keyboard selection');
+
+    replaceMap();
+    await waitFor(dom, () => markerMoves.length >= 3);
+    assert.deepEqual(markerMoves.at(-1), [47.3, -121.3],
+        'replacing the native map replays the persistent selection');
+
+    dom.window.close();
+});
+
+test('GPX analyzer keyboard traversal follows chronological time-series order', async () => {
+    const source = `<?xml version="1.0"?><gpx><trk><trkseg>
+      <trkpt lat="47.30000" lon="-121.30000"><ele>120</ele><time>2026-01-01T12:02:00Z</time></trkpt>
+      <trkpt lat="47.10000" lon="-121.10000"><ele>100</ele><time>2026-01-01T12:00:00Z</time></trkpt>
+      <trkpt lat="47.20000" lon="-121.20000"><ele>110</ele><time>2026-01-01T12:01:00Z</time></trkpt>
+    </trkseg></trk></gpx>`;
+    const { dom, chartConfig, markerMoves, markerStyles } = await loadElevationAnalyzer(source, {
+        withMap: true,
+        settings: { chartDefaultSeries: 'time' }
+    });
+    const { window } = dom;
+
+    await waitFor(dom, () => chartConfig() !== null);
+    const canvas = window.document.querySelector('#bpb-gpx-analysis canvas');
+    const status = window.document.getElementById('bpb-gpx-coordinate-status');
+    canvas.focus();
+    canvas.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+    canvas.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+
+    assert.deepEqual(markerMoves, [
+        [47.1, -121.1],
+        [47.2, -121.2]
+    ], 'time-only traversal starts at the earliest timestamp rather than route order');
+    assert.equal(status.textContent, 'Selected point 2 of 3: 47.20000, -121.20000');
+    assert.equal(markerStyles.at(-1).fillColor, '#0055FF',
+        'the route marker retains the time-series identity');
 
     dom.window.close();
 });
