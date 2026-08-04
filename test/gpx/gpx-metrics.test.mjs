@@ -62,17 +62,20 @@ test('coordinate-only route distance preserves segment and invalid-coordinate ga
 
 test('metrics reject an all-equal timestamp series without losing the elevation route', () => {
     const timestamp = Date.UTC(2025, 6, 7, 1, 55);
-    const metrics = GpxMetrics.computeMetrics([
-        { lat: 40.27, lon: -105.56, rawEleM: 2800, ms: timestamp },
-        { lat: 40.26, lon: -105.57, rawEleM: 3200, ms: timestamp },
-        { lat: 40.25, lon: -105.58, rawEleM: 3000, ms: timestamp },
-    ]);
+    const metrics = GpxMetrics.computeMetrics(Array.from({ length: 355 }, (_, index) => ({
+        lat: 40.27 - index * 0.00001,
+        lon: -105.56 - index * 0.00001,
+        rawEleM: 2800 + Math.sin(index / 20) * 200,
+        ms: timestamp,
+    })));
 
     assert.equal(metrics.hasTime, false);
     assert.equal(metrics.startMs, 0);
     assert.equal(metrics.endMs, 0);
     assert.equal(metrics.summitMs, 0);
-    assert.equal(metrics.points.length, 3);
+    assert.equal(metrics.points.length, 355,
+        'the observed 355-point equal-time export must keep its elevation route');
+    assert.equal(metrics.chartPoints.length, 119);
     assert.deepEqual(metrics.timePoints, []);
     assert.deepEqual(metrics.timeChartPoints, []);
     assert.ok(metrics.distanceM > 0);
@@ -110,4 +113,101 @@ test('metrics sort the time view without reordering route geometry', () => {
     assert.deepEqual(metrics.timeChartPoints.map(point => point.lat), [47.001, 47.002, 47]);
     assert.ok(metrics.points[1].distM >= metrics.points[0].distM,
         'distance must remain cumulative in GPX route order');
+});
+
+test('timestamp ordering permutations affect only the chronological view', async t => {
+    const start = Date.UTC(2026, 6, 10, 12);
+    const buildPoints = offsets => offsets.map((offset, index) => ({
+        lat: 40 + index * 0.001,
+        lon: -105 - index * 0.001,
+        rawEleM: 100 + index,
+        ms: start + offset * 60_000,
+    }));
+    const chronologicalMetrics = GpxMetrics.computeMetrics(buildPoints([0, 1, 2, 3]));
+    const cases = [
+        { name: 'already chronological', offsets: [0, 1, 2, 3], expected: [0, 1, 2, 3] },
+        { name: 'strictly descending', offsets: [3, 2, 1, 0], expected: [3, 2, 1, 0] },
+        { name: 'interleaved multi-day append', offsets: [1440, 0, 1500, 60], expected: [1, 3, 0, 2] },
+        { name: 'scrambled with duplicate samples', offsets: [2, 0, 0, 1], expected: [1, 2, 3, 0] },
+    ];
+
+    for (const { name, offsets, expected } of cases) {
+        await t.test(name, () => {
+            const metrics = GpxMetrics.computeMetrics(buildPoints(offsets));
+            const pointIndexes = points => points.map(point => point.rawEleM - 100);
+
+            assert.equal(metrics.hasTime, true);
+            assert.deepEqual(pointIndexes(metrics.points), [0, 1, 2, 3],
+                'route analysis must retain GPX document order');
+            assert.deepEqual(pointIndexes(metrics.timePoints), expected);
+            assert.equal(metrics.distanceM, chronologicalMetrics.distanceM);
+            assert.equal(metrics.rawDistanceM, chronologicalMetrics.rawDistanceM);
+            assert.equal(metrics.gainM, chronologicalMetrics.gainM);
+            assert.equal(metrics.rawGainM, chronologicalMetrics.rawGainM);
+            assert.deepEqual(metrics.points.map(point => point.distM),
+                chronologicalMetrics.points.map(point => point.distM),
+                'timestamp order must not change route-order cumulative distance');
+            assert.ok(metrics.timeChartPoints.every((point, index, points) =>
+                index === 0 || point.ms >= points[index - 1].ms));
+        });
+    }
+});
+
+test('one absent or invalid analyzed timestamp disables only time-derived output', async t => {
+    const start = Date.UTC(2026, 6, 10, 12);
+    const cases = [
+        { name: 'missing timestamp', value: 0 },
+        { name: 'invalid timestamp', value: Number.NaN },
+        { name: 'infinite timestamp', value: Infinity },
+        { name: 'pre-epoch timestamp', value: -1 },
+    ];
+
+    for (const { name, value } of cases) {
+        await t.test(name, () => {
+            const metrics = GpxMetrics.computeMetrics([
+                { lat: 47, lon: -121, rawEleM: 100, ms: start },
+                { lat: 47.001, lon: -121.001, rawEleM: 110, ms: value },
+                { lat: 47.002, lon: -121.002, rawEleM: 120, ms: start + 60_000 },
+            ]);
+
+            assert.equal(metrics.hasTime, false);
+            assert.deepEqual(metrics.timePoints, []);
+            assert.deepEqual(metrics.timeChartPoints, []);
+            assert.equal(metrics.points.length, 3);
+            assert.ok(metrics.distanceM > 0);
+        });
+    }
+});
+
+test('chronological endpoints survive route-order chart sampling', () => {
+    const start = Date.UTC(2026, 6, 10, 12);
+    const offsets = [60, 0, 20, 30, 40, 50, 70, 80, 120, 90, 100, 110];
+    const metrics = GpxMetrics.computeMetrics(offsets.map((offset, index) => ({
+        lat: 40 + index * 0.001,
+        lon: -105 - index * 0.001,
+        rawEleM: 100 + index,
+        ms: start + offset * 60_000,
+    })));
+    const pointIndexes = points => points.map(point => point.rawEleM - 100);
+
+    assert.deepEqual(pointIndexes(metrics.chartPoints), [0, 1, 3, 6, 8, 9, 11],
+        'route sampling must add chronological endpoints without changing route order');
+    assert.equal(pointIndexes(metrics.timeChartPoints)[0], 1);
+    assert.equal(pointIndexes(metrics.timeChartPoints).at(-1), 8);
+    assert.equal(metrics.timeChartPoints[0].ms, metrics.startMs);
+    assert.equal(metrics.timeChartPoints.at(-1).ms, metrics.endMs);
+});
+
+test('summit time remains attached to the highest route point after chronological sorting', () => {
+    const start = Date.UTC(2026, 6, 10, 12);
+    const summitMs = start + 120_000;
+    const metrics = GpxMetrics.computeMetrics([
+        { lat: 47, lon: -121, rawEleM: 300, ms: summitMs },
+        { lat: 47.001, lon: -121.001, rawEleM: 100, ms: start },
+        { lat: 47.002, lon: -121.002, rawEleM: 200, ms: start + 60_000 },
+    ]);
+
+    assert.equal(metrics.summitMs, summitMs);
+    assert.deepEqual(metrics.timePoints.map(point => point.rawEleM), [100, 200, 300]);
+    assert.deepEqual(metrics.points.map(point => point.rawEleM), [300, 100, 200]);
 });

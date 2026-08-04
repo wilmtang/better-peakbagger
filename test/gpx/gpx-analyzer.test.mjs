@@ -1216,6 +1216,67 @@ test('GPX analyzer sorts a combined track only for the time series', async () =>
     dom.window.close();
 });
 
+test('GPX analyzer sorts reversed multi-day segments for time and camping only', async () => {
+    const source = `<?xml version="1.0"?><gpx><trk>
+      <trkseg>
+        <trkpt lat="48.200" lon="-121.200"><ele>130</ele><time>2026-07-11T16:00:00Z</time></trkpt>
+        <trkpt lat="48.300" lon="-121.300"><ele>120</ele><time>2026-07-11T17:00:00Z</time></trkpt>
+      </trkseg>
+      <trkseg>
+        <trkpt lat="47.000" lon="-121.000"><ele>100</ele><time>2026-07-10T16:00:00Z</time></trkpt>
+        <trkpt lat="47.100" lon="-121.100"><ele>110</ele><time>2026-07-10T23:00:00Z</time></trkpt>
+      </trkseg>
+    </trk></gpx>`;
+    const { dom, analysisText, chartConfig, polylineCalls } =
+        await loadElevationAnalyzer(source, { withMap: true });
+
+    await waitFor(dom, () => chartConfig() !== null);
+    await waitFor(dom, () => polylineCalls.length === 2);
+    const [distanceSeries, timeSeries] = chartConfig().data.datasets;
+    assert.deepEqual(Array.from(distanceSeries.data, point => point._raw.lat), [48.2, 48.3, 47, 47.1],
+        'distance analysis must retain reversed GPX segment order');
+    assert.deepEqual(Array.from(timeSeries.data, point => point._raw.lat), [47, 47.1, 48.2, 48.3],
+        'time analysis must span the segments chronologically');
+    assert.equal(chartConfig().options.scales.xTime.min, Date.parse('2026-07-10T16:00:00Z'));
+    assert.equal(chartConfig().options.scales.xTime.max, Date.parse('2026-07-11T17:00:00Z'));
+    assert.match(analysisText(), /Possible Camping: Day 1 \(47\.10000, -121\.10000\)/,
+        'camping inference must use the last chronological point before the local day boundary');
+    assert.deepEqual(JSON.parse(JSON.stringify(polylineCalls[0].latLngs)), [
+        [[48.2, -121.2], [48.3, -121.3]],
+        [[47, -121], [47.1, -121.1]]
+    ], 'the map overlay must retain GPX segment order and boundaries');
+
+    dom.window.close();
+});
+
+test('GPX analyzer omits time when one charted point has no valid timestamp', async t => {
+    const cases = [
+        { name: 'missing time element', middleTime: '' },
+        { name: 'invalid time element', middleTime: '<time>not-a-date</time>' },
+    ];
+
+    for (const { name, middleTime } of cases) {
+        await t.test(name, async () => {
+            const source = `<?xml version="1.0"?><gpx><trk><trkseg>
+              <trkpt lat="47.000" lon="-121.000"><ele>100</ele><time>2026-07-10T12:00:00Z</time></trkpt>
+              <trkpt lat="47.001" lon="-121.001"><ele>110</ele>${middleTime}</trkpt>
+              <trkpt lat="47.002" lon="-121.002"><ele>120</ele><time>2026-07-10T12:01:00Z</time></trkpt>
+            </trkseg></trk></gpx>`;
+            const { dom, analysisText, chartConfig } = await loadElevationAnalyzer(source);
+
+            await waitFor(dom, () => chartConfig() !== null);
+            assert.deepEqual(Array.from(chartConfig().data.datasets, dataset => dataset.label), [
+                'Elevation by Distance'
+            ]);
+            assert.equal(chartConfig().options.scales.xTime, undefined);
+            assert.doesNotMatch(analysisText(), /Time:/);
+            assert.match(analysisText(), /Interactive Stats:/);
+
+            dom.window.close();
+        });
+    }
+});
+
 test('GPX analyzer selects coordinates by click and keyboard before copying them', async () => {
     const source = `<?xml version="1.0"?><gpx><trk><trkseg>
       <trkpt lat="47.10000" lon="-121.10000"><ele>100</ele></trkpt>
