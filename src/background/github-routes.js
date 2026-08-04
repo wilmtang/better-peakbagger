@@ -82,6 +82,16 @@ export function createGithubRoutes({
     const readPendingGithubAuth = async () => (await storage().get(GITHUB_AUTH_PENDING_KEY))[GITHUB_AUTH_PENDING_KEY] || null;
     const writePendingGithubAuth = pending => storage().set({ [GITHUB_AUTH_PENDING_KEY]: pending });
     const clearPendingGithubAuth = () => storage().remove(GITHUB_AUTH_PENDING_KEY);
+    let githubAuthEpoch = 0;
+    let githubAuthStateQueue = Promise.resolve();
+    const mutateGithubAuthState = operation => {
+        const pending = githubAuthStateQueue.then(operation, operation);
+        githubAuthStateQueue = pending.catch(() => {});
+        return pending;
+    };
+    const samePendingGithubAuth = (left, right) => !!left && !!right
+        && left.deviceCode === right.deviceCode
+        && left.startedAt === right.startedAt;
     const publicGithubAuthState = pending => ({
         phase: 'polling',
         userCode: pending.userCode,
@@ -216,14 +226,17 @@ export function createGithubRoutes({
     };
 
     const githubBeginAuth = async () => {
-        await clearPendingGithubAuth();
+        const epoch = ++githubAuthEpoch;
+        await mutateGithubAuthState(() => clearPendingGithubAuth());
         const flow = GithubAuth.createDeviceFlow({ fetch: netFetch });
         let code;
         try {
             code = await flow.requestCode();
         } catch (error) {
+            if (epoch !== githubAuthEpoch) return { phase: 'idle' };
             return { phase: 'error', ...GithubErrors.publicError(error) };
         }
+        if (epoch !== githubAuthEpoch) return { phase: 'idle' };
         const startedAt = now();
         const pending = {
             deviceCode: code.deviceCode,
@@ -236,49 +249,95 @@ export function createGithubRoutes({
             expiresAt: startedAt + code.expiresIn * 1000,
             nextPollAt: startedAt + Math.max(1, Number(code.interval) || 5) * 1000,
         };
-        await writePendingGithubAuth(pending);
-        return publicGithubAuthState(pending);
+        const stored = await mutateGithubAuthState(async () => {
+            if (epoch !== githubAuthEpoch) return false;
+            await writePendingGithubAuth(pending);
+            return epoch === githubAuthEpoch;
+        });
+        return stored ? publicGithubAuthState(pending) : { phase: 'idle' };
     };
 
     const githubPollAuth = async () => {
-        const pending = await readPendingGithubAuth();
+        const snapshot = await mutateGithubAuthState(async () => ({
+            pending: await readPendingGithubAuth(),
+            epoch: githubAuthEpoch,
+        }));
+        const { pending, epoch } = snapshot;
         if (!pending) return { phase: 'idle' };
         if (now() > pending.expiresAt) {
-            await clearPendingGithubAuth();
-            return { phase: 'error', code: 'expired' };
+            const cleared = await mutateGithubAuthState(async () => {
+                if (epoch !== githubAuthEpoch) return false;
+                const current = await readPendingGithubAuth();
+                if (!samePendingGithubAuth(current, pending)) return false;
+                await clearPendingGithubAuth();
+                return true;
+            });
+            return cleared ? { phase: 'error', code: 'expired' } : { phase: 'idle' };
         }
         if (now() < pending.nextPollAt) return publicGithubAuthState(pending);
 
         const flow = GithubAuth.createDeviceFlow({ fetch: netFetch });
         try {
             const result = await flow.pollTokenOnce(pending);
+            if (epoch !== githubAuthEpoch) return { phase: 'idle' };
             if (result.phase === 'pending' || result.phase === 'slow-down') {
                 const interval = result.phase === 'slow-down'
                     ? Math.max(pending.interval + 5, result.interval)
                     : pending.interval;
                 const next = { ...pending, interval, nextPollAt: now() + interval * 1000 };
-                await writePendingGithubAuth(next);
-                return publicGithubAuthState(next);
+                const stored = await mutateGithubAuthState(async () => {
+                    if (epoch !== githubAuthEpoch) return false;
+                    const current = await readPendingGithubAuth();
+                    if (!samePendingGithubAuth(current, pending)) return false;
+                    await writePendingGithubAuth(next);
+                    return epoch === githubAuthEpoch;
+                });
+                return stored ? publicGithubAuthState(next) : { phase: 'idle' };
             }
 
             const cred = result.credential;
-            await GithubAuth.authStore.setCredential(cred);
-            await GithubAuth.authStore.setRepo(null);
-            await GithubAuth.authStore.setInstallationId(null);
             let account = null;
-            try { account = await GithubAuth.fetchAccount({ fetch: netFetch, token: cred.token }); await GithubAuth.authStore.setAccount(account); } catch { /* non-fatal */ }
+            try { account = await GithubAuth.fetchAccount({ fetch: netFetch, token: cred.token }); } catch { /* non-fatal */ }
+            if (epoch !== githubAuthEpoch) return { phase: 'idle' };
             let repos = [];
             let installationCount = 0;
             try {
                 const discovered = await GithubAuth.listBackupRepositories({ fetch: netFetch, token: cred.token });
                 repos = discovered.repos;
                 installationCount = discovered.installationCount;
-                await reconcileDiscoveredRepo(repos);
             } catch { /* the user may not have installed yet; discover again later */ }
-            await clearPendingGithubAuth();
+            if (epoch !== githubAuthEpoch) return { phase: 'idle' };
+
+            // Claim the persisted device flow before the first credential
+            // write. A second poll, a new flow, or Disconnect can then make
+            // this response stale without letting it recreate local auth.
+            const claimed = await mutateGithubAuthState(async () => {
+                if (epoch !== githubAuthEpoch) return false;
+                const current = await readPendingGithubAuth();
+                if (!samePendingGithubAuth(current, pending)) return false;
+                await clearPendingGithubAuth();
+                return epoch === githubAuthEpoch;
+            });
+            if (!claimed) return { phase: 'idle' };
+
+            await GithubAuth.authStore.setCredential(cred);
+            if (epoch !== githubAuthEpoch) return { phase: 'idle' };
+            await GithubAuth.authStore.setRepo(null);
+            if (epoch !== githubAuthEpoch) return { phase: 'idle' };
+            await GithubAuth.authStore.setInstallationId(null);
+            if (epoch !== githubAuthEpoch) return { phase: 'idle' };
+            if (account) await GithubAuth.authStore.setAccount(account);
+            if (epoch !== githubAuthEpoch) return { phase: 'idle' };
+            await reconcileDiscoveredRepo(repos);
+            if (epoch !== githubAuthEpoch) return { phase: 'idle' };
             return { phase: 'authorized', account, repos, installationCount };
         } catch (error) {
-            await clearPendingGithubAuth();
+            if (epoch !== githubAuthEpoch) return { phase: 'idle' };
+            await mutateGithubAuthState(async () => {
+                if (epoch !== githubAuthEpoch) return;
+                const current = await readPendingGithubAuth();
+                if (samePendingGithubAuth(current, pending)) await clearPendingGithubAuth();
+            });
             return { phase: 'error', ...GithubErrors.publicError(error) };
         }
     };
@@ -338,8 +397,11 @@ export function createGithubRoutes({
     };
 
     const githubDisconnect = async () => {
-        await clearPendingGithubAuth();
-        await GithubAuth.authStore.clear();
+        githubAuthEpoch += 1;
+        await Promise.all([
+            mutateGithubAuthState(() => clearPendingGithubAuth()),
+            GithubAuth.authStore.clear(),
+        ]);
         // Clearing the one local record removes the token, repository, and
         // derived account together. Do not immediately re-read that storage
         // just to prove what the successful remove already established: a

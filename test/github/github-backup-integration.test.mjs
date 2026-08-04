@@ -1482,6 +1482,44 @@ test('disconnect returns a known cleared state without a fallible credential re-
     assert.equal(worker.local.bpbGithubAuth, undefined);
 });
 
+test('disconnect invalidates an authorized device poll before it can restore credentials', async t => {
+    const extensionSender = { url: 'chrome-extension://test/options/options.html' };
+    let releaseToken;
+    let tokenRequested;
+    const tokenRequest = new Promise(resolve => { tokenRequested = resolve; });
+    const tokenResponse = new Promise(resolve => { releaseToken = resolve; });
+    t.after(() => releaseToken(respond(200, { error: 'access_denied' })));
+    const github = (method, path) => {
+        if (method === 'POST' && path === 'https://github.com/login/device/code') return respond(200, {
+            device_code: 'DC', user_code: 'ABCD-1234', verification_uri: 'https://github.com/login/device',
+            expires_in: 900, interval: 5,
+        });
+        if (method === 'POST' && path === 'https://github.com/login/oauth/access_token') {
+            tokenRequested();
+            return tokenResponse;
+        }
+        if (method === 'GET' && path === '/user') return respond(200, { login: 'ada', id: 7 });
+        if (method === 'GET' && path === '/user/installations') return respond(200, { installations: [] });
+        return null;
+    };
+    const worker = createWorker({ github });
+
+    const began = await worker.send({ type: 'GITHUB_AUTH_BEGIN' }, extensionSender);
+    assert.equal(began.phase, 'polling');
+    worker.session.bpbGithubAuthPending.nextPollAt = 0;
+    const polling = worker.send({ type: 'GITHUB_AUTH_STATE' }, extensionSender);
+    await tokenRequest;
+
+    const disconnected = await worker.send({ type: 'GITHUB_AUTH_DISCONNECT' }, extensionSender);
+    assert.equal(disconnected.connected, false);
+    releaseToken(respond(200, { access_token: 'gho_too_late', token_type: 'bearer', scope: '' }));
+    const result = await polling;
+
+    assert.equal(result.phase, 'idle');
+    assert.equal(worker.local.bpbGithubAuth, undefined);
+    assert.equal(worker.session.bpbGithubAuthPending, undefined);
+});
+
 test('repository selection inspects populated content before storing the choice', async () => {
     const extensionSender = { url: 'chrome-extension://test/options/options.html' };
     const repo = { owner: 'me', name: 'project', fullName: 'me/project', defaultBranch: 'main', installationId: 7 };
