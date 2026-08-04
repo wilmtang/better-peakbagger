@@ -137,6 +137,10 @@ let dragSession = null;
 let history = [];
 let future = [];
 let autosaveTimer = null;
+let draftRevision = 0;
+let draftDirty = false;
+let draftWriteQueue = Promise.resolve(true);
+let teardownStarted = false;
 let sessionKey = '';
 let configuredKey = false;
 let permissionGranted = false;
@@ -587,89 +591,147 @@ const setSourceDisplay = blob => {
     ui.overlay.setAttribute('height', String(project.image.height));
 };
 
-const cleanDraftFromFields = now => {
-    if (!project || !originalBlob || !thumbnailBlob) return null;
+const cleanDraftFromFields = ({ now, project: draftProject, photo: draftPhoto, original, title, alt }) => {
+    if (!draftProject || !original) return null;
     const fields = {
-        title: ui.title.value,
-        alt: ui.alt.value,
+        title,
+        alt,
     };
-    if (!photo) {
+    if (!draftPhoto) {
         return Library.createDraft({
-            localId: project.localId,
+            localId: draftProject.localId,
             ...fields,
             source: {
-                fileName: originalBlob.name || 'photo',
-                mime: originalBlob.type,
-                bytes: originalBlob.size,
-                width: project.image.width,
-                height: project.image.height,
-                sha256: project.image.sourceSha256,
+                fileName: original.name || 'photo',
+                mime: original.type,
+                bytes: original.size,
+                width: draftProject.image.width,
+                height: draftProject.image.height,
+                sha256: draftProject.image.sourceSha256,
             },
             now,
         });
     }
     return Library.cleanPhoto({
-        ...photo,
+        ...draftPhoto,
         ...fields,
         updatedAt: now,
     });
 };
 
+const currentDraftMatches = snapshot => draftRevision === snapshot.revision
+    && project === snapshot.project
+    && photo === snapshot.photo
+    && originalBlob === snapshot.original
+    && thumbnailBlob === snapshot.thumbnail
+    && ui.title.value === snapshot.title
+    && ui.alt.value === snapshot.alt;
+
+const enqueueDraftWrite = write => {
+    const operation = draftWriteQueue.then(write, write);
+    draftWriteQueue = operation.catch(() => false);
+    return operation;
+};
+
 const persistDraft = async ({ required = false } = {}) => {
+    clearTimeout(autosaveTimer);
+    autosaveTimer = null;
+    // Upload freezes editor mutations before taking its required snapshot. Let
+    // an already-started autosave settle first; when it saved the current
+    // generation, that durable result already satisfies the upload gate.
+    if (required) {
+        const saved = await draftWriteQueue;
+        if (saved && !draftDirty) return true;
+    }
     if (!project || !originalBlob || !thumbnailBlob
         || PUBLISHED_STATES.includes(photo?.remote.state)) return false;
-    clearTimeout(autosaveTimer);
     const now = new Date().toISOString();
-    const nextPhoto = cleanDraftFromFields(now);
+    const snapshot = {
+        revision: draftRevision,
+        project,
+        photo,
+        original: originalBlob,
+        thumbnail: thumbnailBlob,
+        title: ui.title.value,
+        alt: ui.alt.value,
+    };
+    const nextPhoto = cleanDraftFromFields({ now, ...snapshot });
     if (!nextPhoto) {
         setSaveStatus('Add a title to save');
         if (required) toast('Add a title before uploading.');
         return false;
     }
-    const nextProject = Project.cleanProject({ ...project, updatedAt: now });
+    const nextProject = Project.cleanProject({ ...snapshot.project, updatedAt: now });
+    draftDirty = false;
     setSaveStatus('Saving locally…');
-    try {
-        await store.putDraft({
-            photo: nextPhoto,
-            project: nextProject,
-            original: originalBlob,
-            thumbnail: thumbnailBlob,
-        });
-        photo = nextPhoto;
-        project = nextProject;
-        setSaveStatus('Saved on this device');
-        notifyBackupChanged();
-        return true;
-    } catch {
-        setSaveStatus('Could not save locally');
-        if (required && confirm(
-            'Better Peakbagger could not retain an editable local copy. '
-                + 'Continue with upload without the promise of future non-destructive editing?',
-        )) {
-            const minimal = Library.updateAssets(nextPhoto, {
-                originalRetained: false,
-                projectRetained: false,
-                thumbnailRetained: false,
-            }, now);
-            try {
-                await store.putPhoto(minimal);
-                photo = minimal;
+    return enqueueDraftWrite(async () => {
+        try {
+            await store.putDraft({
+                photo: nextPhoto,
+                project: nextProject,
+                original: snapshot.original,
+                thumbnail: snapshot.thumbnail,
+            });
+            const stillCurrent = currentDraftMatches(snapshot);
+            if (stillCurrent) {
+                photo = nextPhoto;
                 project = nextProject;
-                setSaveStatus('URL record only · editable copy not retained');
-                notifyBackupChanged();
-                return true;
-            } catch {
-                toast('The photo catalog is unavailable, so upload cannot safely continue.');
+                setSaveStatus('Saved on this device');
             }
+            notifyBackupChanged();
+            return !required || stillCurrent;
+        } catch {
+            const stillCurrent = currentDraftMatches(snapshot);
+            if (stillCurrent) {
+                draftDirty = true;
+                setSaveStatus('Could not save locally');
+            }
+            if (required && stillCurrent && confirm(
+                'Better Peakbagger could not retain an editable local copy. '
+                    + 'Continue with upload without the promise of future non-destructive editing?',
+            )) {
+                const minimal = Library.updateAssets(nextPhoto, {
+                    originalRetained: false,
+                    projectRetained: false,
+                    thumbnailRetained: false,
+                }, now);
+                try {
+                    await store.putPhoto(minimal);
+                    if (!currentDraftMatches(snapshot)) return false;
+                    photo = minimal;
+                    project = nextProject;
+                    draftDirty = false;
+                    setSaveStatus('URL record only · editable copy not retained');
+                    notifyBackupChanged();
+                    return true;
+                } catch {
+                    toast('The photo catalog is unavailable, so upload cannot safely continue.');
+                }
+            }
+            return false;
         }
-        return false;
-    }
+    });
 };
 
 const schedulePersist = () => {
     if (editorMutationLocked()) return;
+    draftRevision += 1;
+    draftDirty = true;
+    if (project && originalBlob && thumbnailBlob
+        && !PUBLISHED_STATES.includes(photo?.remote.state)) {
+        setSaveStatus('Unsaved changes');
+    }
     clearTimeout(autosaveTimer);
-    autosaveTimer = setTimeout(() => void persistDraft(), AUTOSAVE_DELAY_MS);
+    autosaveTimer = setTimeout(() => {
+        autosaveTimer = null;
+        void persistDraft();
+    }, AUTOSAVE_DELAY_MS);
+};
+
+const flushDraftPersistence = () => {
+    clearTimeout(autosaveTimer);
+    autosaveTimer = null;
+    return draftDirty ? persistDraft() : draftWriteQueue;
 };
 
 const updateHistoryButtons = () => {
@@ -1207,6 +1269,13 @@ const loadBundle = async bundle => {
     photo = bundle.photo;
     originalBlob = bundle.original;
     thumbnailBlob = thumbnail;
+    clearTimeout(autosaveTimer);
+    autosaveTimer = null;
+    // A library bundle is already durable. Advance the generation so a write
+    // started by the previously open photo cannot publish its completion into
+    // this editor state or replace this status with its own result.
+    draftRevision += 1;
+    draftDirty = false;
     history = [];
     future = [];
     selectedId = null;
@@ -2208,13 +2277,24 @@ const bindEvents = () => {
     document.addEventListener('keyup', event => {
         if (event.key.startsWith('Arrow')) endCoalescing();
     });
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'hidden') void flushDraftPersistence();
+    });
+    window.addEventListener('pagehide', () => { void flushDraftPersistence(); });
     window.addEventListener('beforeunload', () => {
+        if (teardownStarted) return;
+        teardownStarted = true;
+        const pendingDraftWrite = flushDraftPersistence();
         unsubscribeSettings();
         clearTimeout(librarySearchTimer);
         clearTimeout(libraryMaintenanceTimer);
         closeSource();
         libraryObjectUrls.forEach(url => URL.revokeObjectURL(url));
-        store?.close();
+        // Closing IndexedDB here used to abort the only chance to persist an
+        // edit made inside the autosave debounce. Keep the connection alive
+        // until the serialized queue settles; the lifecycle event itself
+        // remains synchronous and never delays navigation.
+        void pendingDraftWrite.finally(() => store?.close());
     });
 };
 

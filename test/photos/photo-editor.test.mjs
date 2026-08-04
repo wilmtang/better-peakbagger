@@ -45,6 +45,7 @@ const loadEditor = async ({
     imageLoader = null,
     fileName = 'north-face.jpg',
     fileType = 'image/jpeg',
+    onStoreReady = null,
 } = {}) => {
     const dom = new JSDOM(html, {
         url: `chrome-extension://test/photos/photos.html${returnToReport ? '?returnToken=return-test' : ''}`,
@@ -111,6 +112,7 @@ const loadEditor = async ({
     // in particular the IndexedDB handle the first autosave needs.
     await waitFor(dom, () => doc.getElementById('library-empty').hidden === false
         || doc.getElementById('library-list').children.length > 0);
+    if (onStoreReady) await onStoreReady({ indexedDB, win });
 
     if (!pickPhoto) return { dom, win, chrome, doc, errors };
 
@@ -212,6 +214,48 @@ const waitForPhotoStore = async (win, storeName, predicate, ms = 5000) => {
     }
 };
 
+// Hold the completion callback of one real fake-indexeddb draft transaction.
+// The records themselves commit normally; only the page's awaited completion
+// is delayed, which reproduces the browser race where a large blob write
+// finishes after the user has already made another editor mutation.
+const deferNextDraftCompletion = indexedDB => {
+    const raw = indexedDB._databases.get('betterPeakbaggerPhotos');
+    const database = raw?.connections.find(connection => !connection._closed);
+    assert.ok(database, 'the photo page must have an open IndexedDB connection');
+    const transaction = database.transaction.bind(database);
+    let armed = true;
+    let release;
+    let started;
+    const released = new Promise(resolve => { release = resolve; });
+    const transactionStarted = new Promise(resolve => { started = resolve; });
+
+    database.transaction = (storeNames, mode, options) => {
+        const next = transaction(storeNames, mode, options);
+        const names = typeof storeNames === 'string' ? [storeNames] : [...storeNames];
+        if (!armed || mode !== 'readwrite'
+            || !['photos', 'projects', 'originals', 'thumbnails'].every(name => names.includes(name))) {
+            return next;
+        }
+        armed = false;
+        let completion = null;
+        Object.defineProperty(next, 'oncomplete', {
+            configurable: true,
+            get: () => completion,
+            set: handler => {
+                completion = event => { void released.then(() => handler.call(next, event)); };
+            },
+        });
+        started();
+        return next;
+    };
+
+    return {
+        started: transactionStarted,
+        release,
+        restore: () => { database.transaction = transaction; },
+    };
+};
+
 const imgbbSuccess = {
     data: {
         id: 'provider-1',
@@ -230,6 +274,76 @@ const imgbbSuccess = {
     success: true,
     status: 200,
 };
+
+test('a late autosave completion cannot replace a newer editor revision', async t => {
+    const indexedDB = new IDBFactory();
+    let deferred;
+    const page = await loadEditor({
+        indexedDB,
+        onStoreReady: () => { deferred = deferNextDraftCompletion(indexedDB); },
+    });
+    t.after(() => {
+        deferred.restore();
+        deferred.release();
+    });
+
+    await deferred.started;
+    deferred.restore();
+    page.tool('bolt');
+    page.pointer('pointerdown', 100, 100);
+    assert.equal(page.markCount(), 1);
+    assert.equal(page.doc.getElementById('save-status').textContent, 'Unsaved changes');
+
+    // The first write contains the empty project. Its completion must not put
+    // that snapshot back into the live editor before the second save begins.
+    deferred.release();
+    await waitFor(page.dom, () => page.doc.getElementById('save-status').textContent
+        === 'Saved on this device');
+    const projects = await waitForPhotoStore(page.win, 'projects', records =>
+        records[0]?.objects.length === 1);
+    assert.equal(projects[0].objects.length, 1);
+    assert.equal(page.markCount(), 1);
+    assert.deepEqual(page.errors, []);
+});
+
+test('pagehide flushes an edit before its autosave debounce expires', async t => {
+    const page = await loadEditor();
+    const { doc, win } = page;
+    await waitFor(page.dom, () => doc.getElementById('save-status').textContent
+        === 'Saved on this device');
+
+    const setTimeout = win.setTimeout.bind(win);
+    const clearTimeout = win.clearTimeout.bind(win);
+    const heldTimer = 987654;
+    let heldAutosave = false;
+    win.setTimeout = (callback, delay, ...args) => {
+        if (delay === 500 && !heldAutosave) {
+            heldAutosave = true;
+            return heldTimer;
+        }
+        return setTimeout(callback, delay, ...args);
+    };
+    win.clearTimeout = timer => {
+        if (timer !== heldTimer) clearTimeout(timer);
+    };
+    t.after(() => {
+        win.setTimeout = setTimeout;
+        win.clearTimeout = clearTimeout;
+    });
+
+    page.tool('bolt');
+    page.pointer('pointerdown', 100, 100);
+    assert.equal(heldAutosave, true, 'the normal 500 ms autosave is held by the test');
+    assert.equal(doc.getElementById('save-status').textContent, 'Unsaved changes');
+    win.dispatchEvent(new win.PageTransitionEvent('pagehide'));
+
+    const projects = await waitForPhotoStore(win, 'projects', records =>
+        records[0]?.objects.length === 1);
+    assert.equal(projects[0].objects.length, 1,
+        'pagehide, not the held debounce callback, persists the annotation');
+    assert.equal(doc.getElementById('save-status').textContent, 'Saved on this device');
+    assert.deepEqual(page.errors, []);
+});
 
 test('a report size resizes only the stage preview and is remembered across both views', async () => {
     const page = await loadEditor({ returnToReport: true });
