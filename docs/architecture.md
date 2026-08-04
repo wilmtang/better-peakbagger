@@ -583,9 +583,13 @@ multi-day boundaries, and possible camping stops.
 Peakbagger can serve a structurally valid GPX whose points have coordinates
 but no `<ele>` values, especially when an older or transformed source retained
 only route geometry. Those tracks still receive a segment-aware route distance,
-the extension-owned 2D overlay, and the opt-in 3D route; the empty elevation
-canvas and chart-only coordinate controls stay hidden. Better Peakbagger does
-not invent a missing elevation profile from the 3D map.
+the extension-owned 2D overlay, and the opt-in 3D route. Usable timestamps still
+provide duration, local clock labels, day boundaries, and possible camping
+locations; the empty elevation canvas and chart-only coordinate controls stay
+hidden. When only part of a route lacks elevation, its complete coordinate path
+still owns distance and timing while the elevation profile breaks across the
+missing run instead of smoothing, counting gain, or drawing through it. Better
+Peakbagger does not invent a missing elevation profile from the 3D map.
 
 Per-point `<time>` values are also optional and can be degraded by a source or
 export conversion. One observed Peakbagger export copied a single generated

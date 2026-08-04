@@ -76,6 +76,54 @@ test('coordinate-only route distance preserves segment and invalid-coordinate ga
         `expected only three local edges, got ${distanceM} m`);
 });
 
+test('missing elevation does not shortcut route distance or invent an elevation span', () => {
+    const metrics = GpxMetrics.computeMetrics([
+        { lat: 0, lon: 0, rawEleM: 100, ms: 0 },
+        { lat: 0.01, lon: 0, rawEleM: Number.NaN, ms: 0 },
+        { lat: 0.01, lon: 0.01, rawEleM: 110, ms: 0 },
+    ]);
+
+    assert.ok(metrics.distanceM > 2200 && metrics.distanceM < 2250,
+        `the route must follow both legs instead of their chord: ${metrics.distanceM} m`);
+    assert.equal(metrics.points.at(-1).distM, metrics.distanceM,
+        'the next elevation sample keeps its position on the complete route');
+    assert.deepEqual(metrics.chartPoints.map(point => point.coordinateGroup), [0, 1],
+        'missing elevation splits the profile instead of drawing through it');
+    assert.equal(metrics.rawGainM, 0,
+        'gain cannot be inferred across a section with no elevation samples');
+});
+
+test('route timing remains usable when elevation is absent at its endpoints', () => {
+    const start = Date.UTC(2026, 6, 10, 12);
+    const metrics = GpxMetrics.computeMetrics([
+        { lat: 47, lon: -121, rawEleM: Number.NaN, ms: start },
+        { lat: 47.001, lon: -121.001, rawEleM: 100, ms: start + 30 * 60_000 },
+        { lat: 47.002, lon: -121.002, rawEleM: Number.NaN, ms: start + 60 * 60_000 },
+    ]);
+
+    assert.equal(metrics.hasTime, true);
+    assert.equal(metrics.startMs, start);
+    assert.equal(metrics.endMs, start + 60 * 60_000);
+    assert.equal(metrics.routePoints.length, 3);
+    assert.equal(metrics.timePoints.length, 3);
+    assert.equal(metrics.points.length, 1, 'only the actual elevation sample belongs in the profile');
+});
+
+test('a timed coordinate-only route retains duration without inventing elevation', () => {
+    const start = Date.UTC(2026, 6, 10, 12);
+    const metrics = GpxMetrics.computeMetrics([
+        { lat: 47, lon: -121, rawEleM: Number.NaN, ms: start },
+        { lat: 47.001, lon: -121.001, rawEleM: Number.NaN, ms: start + 60_000 },
+    ]);
+
+    assert.equal(metrics.hasTime, true);
+    assert.equal(metrics.startMs, start);
+    assert.equal(metrics.endMs, start + 60_000);
+    assert.ok(metrics.distanceM > 100);
+    assert.deepEqual(metrics.points, []);
+    assert.deepEqual(metrics.chartPoints, []);
+});
+
 test('metrics reject an all-equal timestamp series without losing the elevation route', () => {
     const timestamp = Date.UTC(2025, 6, 7, 1, 55);
     const metrics = GpxMetrics.computeMetrics(Array.from({ length: 355 }, (_, index) => ({

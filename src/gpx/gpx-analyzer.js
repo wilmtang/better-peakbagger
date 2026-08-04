@@ -1069,8 +1069,26 @@ const run = async () => {
             const distance = isMet
                 ? `${(routeOnlyDistanceM / 1000).toFixed(2)} km`
                 : `${(routeOnlyDistanceM / METERS_PER_MILE).toFixed(2)} miles`;
-            stats.textContent = `Route: ${distance}`;
-            subStats.textContent = 'Elevation data is unavailable in this GPX.';
+            const isMultiDay = hasTime && (getRelativeDay(endMs, startMs) > 1);
+            stats.textContent = `Route: ${distance}${hasTime ? ` | Time: ${fmtTime(totalMs)}` : ''}`;
+            const detailLines = [];
+            const addDetail = text => {
+                const line = document.createElement('div');
+                line.textContent = text;
+                detailLines.push(line);
+            };
+            if (hasTime) {
+                addDetail(`Start time: ${formatTimeStr(startMs, startMs, isMultiDay)} | Back to car: ${formatTimeStr(endMs, startMs, isMultiDay)}`);
+                if (campingSpots.length > 0) {
+                    const spots = campingSpots
+                        .map(spot => `Day ${spot.day} (${spot.lat.toFixed(5)}, ${spot.lon.toFixed(5)})`)
+                        .join(' | ');
+                    addDetail(`Possible Camping: ${spots}`);
+                }
+                addDetail(`Times in the mountain’s local time (${mountainZoneLabel(startMs)})`);
+            }
+            addDetail('Elevation data is unavailable in this GPX.');
+            subStats.replaceChildren(...detailLines);
             canvasContainer.hidden = true;
             coordinateControls.hidden = true;
         };
@@ -1141,7 +1159,6 @@ const run = async () => {
 
             const routeSegments = parseRouteSegments(xml);
             mapRouteSegments = GpxMetrics.sanitizeMapRouteSegments(routeSegments);
-            const routeDistanceM = GpxMetrics.computeRouteDistanceM(routeSegments);
             terrainCoordinator.update();
             scheduleRouteOverlay();
 
@@ -1161,51 +1178,39 @@ const run = async () => {
             });
 
             metrics = GpxMetrics.computeMetrics(parsedPoints);
-            if (!metrics.points.length) {
-                syncCoordinateSelection({ unavailable: true });
-                const hasValidCoordinates = parsedPoints.some(point =>
-                    GpxMetrics.isValidCoordinate(point.lat, point.lon));
-                if (hasValidCoordinates && mapRouteSegments.length) {
-                    routeOnlyDistanceM = routeDistanceM;
-                    renderRouteOnlyData();
-                    return;
-                }
-                stats.textContent = hasValidCoordinates
-                    ? 'This GPS track has no usable elevation data.'
-                    : 'No valid track points found.';
-                return;
-            }
-
-            // The climb's timezone comes from the track's starting point: the
-            // trailhead decides which side of a zone border (or of a border
-            // peak) the trip's civil time belongs to.
-            const startPoint = metrics.points[0];
-            mountainOffsetMs = Math.round(startPoint.lon / 15) * 3600000;
-            try {
-                if (typeof globalThis.tzlookup === 'function') {
-                    mountainTimeZone = globalThis.tzlookup(startPoint.lat, startPoint.lon);
-                    mountainDayFormatter = new Intl.DateTimeFormat('en-CA', {
-                        timeZone: mountainTimeZone, year: 'numeric', month: '2-digit', day: '2-digit'
-                    });
-                }
-            } catch (e) {
-                // A zone id from the packaged raster may be unknown to this
-                // browser's ICU after a tzdata rename. Keep the labelled solar
-                // estimate instead of losing the analyzer.
-                mountainTimeZone = null;
-                mountainDayFormatter = null;
-            }
-
             chartData = metrics.chartPoints;
             timeChartData = metrics.timeChartPoints;
             hasTime = metrics.hasTime;
             startMs = metrics.startMs;
             endMs = metrics.endMs;
             summitMs = metrics.summitMs;
+            totalMs = hasTime ? endMs - startMs : 0;
             campingSpots = [];
 
+            // The trailhead decides the climb's civil time. When timing is
+            // usable, that is the earliest chronological route point rather
+            // than whichever appended GPX segment happened to be serialized
+            // first; untimed routes retain document order.
+            const startPoint = hasTime ? metrics.timePoints[0] : metrics.routePoints[0];
+            if (startPoint) {
+                mountainOffsetMs = Math.round(startPoint.lon / 15) * 3600000;
+                try {
+                    if (typeof globalThis.tzlookup === 'function') {
+                        mountainTimeZone = globalThis.tzlookup(startPoint.lat, startPoint.lon);
+                        mountainDayFormatter = new Intl.DateTimeFormat('en-CA', {
+                            timeZone: mountainTimeZone, year: 'numeric', month: '2-digit', day: '2-digit'
+                        });
+                    }
+                } catch (e) {
+                    // A zone id from the packaged raster may be unknown to this
+                    // browser's ICU after a tzdata rename. Keep the labelled
+                    // solar estimate instead of losing the analyzer.
+                    mountainTimeZone = null;
+                    mountainDayFormatter = null;
+                }
+            }
+
             if (hasTime) {
-                totalMs = endMs - startMs;
                 metrics.timePoints.forEach((point, index) => {
                     if (index === 0) return;
                     const prev = metrics.timePoints[index - 1];
@@ -1215,6 +1220,17 @@ const run = async () => {
                         campingSpots.push({ day: prevDay, lat: prev.lat, lon: prev.lon });
                     }
                 });
+            }
+
+            if (!metrics.points.length) {
+                syncCoordinateSelection({ unavailable: true });
+                if (metrics.routePoints.length) {
+                    routeOnlyDistanceM = metrics.distanceM;
+                    renderRouteOnlyData();
+                    return;
+                }
+                stats.textContent = 'No valid track points found.';
+                return;
             }
 
             renderData();

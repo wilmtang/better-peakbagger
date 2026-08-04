@@ -272,7 +272,7 @@ const hasUsableTimeValues = points => {
 const computeMetrics = points => {
     let coordinateGroup = 0;
     let sourceCoordinateGroup = null;
-    const validPoints = [];
+    const routePoints = [];
     points.forEach((point, index) => {
         // Callers that still pass one flat route omit coordinateGroup and keep
         // the legacy behavior. GPX callers provide the owning <trkseg> index:
@@ -286,10 +286,10 @@ const computeMetrics = points => {
             coordinateGroup++;
             return;
         }
-        if (Number.isFinite(point.rawEleM)) validPoints.push({ ...point, index, coordinateGroup });
+        routePoints.push({ ...point, index, coordinateGroup });
     });
 
-    if (!validPoints.length) {
+    if (!routePoints.length) {
         return {
             hasTime: false,
             distanceM: 0,
@@ -297,6 +297,7 @@ const computeMetrics = points => {
             rawDistanceM: 0,
             rawGainM: 0,
             points: [],
+            routePoints: [],
             timePoints: [],
             chartPoints: [],
             timeChartPoints: [],
@@ -307,17 +308,76 @@ const computeMetrics = points => {
         };
     }
 
-    // A syntactically valid timestamp is not necessarily a usable time
-    // series. Peakbagger exports exist with one generated timestamp copied to
-    // every point; treating those as timed tracks produced a zero-duration
-    // chart collapsed onto one x coordinate. Require real advancement, but do
-    // not require GPX document order: combined multi-day files can append
-    // individually valid tracks out of chronological order.
-    const hasTime = hasUsableTimeValues(validPoints);
-    const analysisPoints = validPoints;
+    // Route distance and time belong to every coordinate-valid point, not only
+    // the subset whose optional elevation survived. This keeps a missing <ele>
+    // sample from replacing a bent route with the straight chord between the
+    // nearest elevation samples, or from truncating the trip's clock span.
+    // A syntactically valid timestamp is not necessarily a usable time series:
+    // require real advancement, but allow combined tracks to be appended out
+    // of chronological order.
+    const hasTime = hasUsableTimeValues(routePoints);
+    const { distanceM, rawDistanceM, distMByIndex } = computeAdjustedDistances(routePoints, hasTime);
+    const adjustedRoutePoints = routePoints.map((point, index) => ({
+        lat: point.lat,
+        lon: point.lon,
+        ms: point.ms || 0,
+        coordinateGroup: point.coordinateGroup,
+        rawEleM: point.rawEleM,
+        distM: distMByIndex[index],
+    }));
+    const timePoints = hasTime
+        ? adjustedRoutePoints.slice().sort((a, b) => a.ms - b.ms)
+        : [];
 
-    const { distanceM, rawDistanceM, distMByIndex } = computeAdjustedDistances(analysisPoints, hasTime);
-    const smoothedElevations = smoothElevations(analysisPoints, distMByIndex);
+    // Elevation stays independent too. Missing samples split the elevation
+    // profile so smoothing, gain, grade, and Chart.js never invent a climb over
+    // a portion of the GPX that supplied coordinates but no heights.
+    let elevationGroup = 0;
+    let previousRouteGroup = null;
+    let needsElevationBreak = false;
+    const analysisPoints = [];
+    routePoints.forEach((point, index) => {
+        if (previousRouteGroup !== null && point.coordinateGroup !== previousRouteGroup) {
+            elevationGroup++;
+            needsElevationBreak = false;
+        }
+        previousRouteGroup = point.coordinateGroup;
+        if (!Number.isFinite(point.rawEleM)) {
+            needsElevationBreak = true;
+            return;
+        }
+        if (needsElevationBreak) {
+            elevationGroup++;
+            needsElevationBreak = false;
+        }
+        analysisPoints.push({
+            ...point,
+            coordinateGroup: elevationGroup,
+            distM: distMByIndex[index],
+        });
+    });
+
+    if (!analysisPoints.length) {
+        return {
+            hasTime,
+            distanceM,
+            gainM: 0,
+            rawDistanceM,
+            rawGainM: 0,
+            points: [],
+            routePoints: adjustedRoutePoints,
+            timePoints,
+            chartPoints: [],
+            timeChartPoints: [],
+            startMs: hasTime ? timePoints[0].ms : 0,
+            endMs: hasTime ? timePoints[timePoints.length - 1].ms : 0,
+            summitMs: 0,
+            maxEleM: -Infinity
+        };
+    }
+
+    const analysisDistances = analysisPoints.map(point => point.distM);
+    const smoothedElevations = smoothElevations(analysisPoints, analysisDistances);
     const rawGainM = sumByCoordinateGroup(
         analysisPoints,
         analysisPoints.map(point => point.rawEleM),
@@ -345,17 +405,17 @@ const computeMetrics = points => {
             coordinateGroup: point.coordinateGroup,
             rawEleM: point.rawEleM,
             eleM,
-            distM: distMByIndex[index],
-            grade: calculateGrade(index, distMByIndex, smoothedElevations, analysisPoints)
+            distM: point.distM,
+            grade: calculateGrade(index, analysisDistances, smoothedElevations, analysisPoints)
         };
     });
+    const elevationTimePoints = hasTime
+        ? adjustedPoints.slice().sort((a, b) => a.ms - b.ms)
+        : [];
 
     // Route, distance, gain, and the distance chart retain GPX document order.
     // Only time-derived views use chronological order. Array#sort is stable,
     // so points with duplicate timestamps keep their relative GPX order.
-    const timePoints = hasTime
-        ? adjustedPoints.slice().sort((a, b) => a.ms - b.ms)
-        : [];
     const sampledPoints = new Set(adjustedPoints.filter((point, index) =>
         index % 3 === 0 || index === adjustedPoints.length - 1));
     // A chart break is useful only if both sides survive sampling. Preserve
@@ -370,12 +430,11 @@ const computeMetrics = points => {
         groupStart = index;
     }
     if (hasTime) {
-        // Combined tracks can put the chronological endpoints anywhere in GPX
-        // order. Keep both in the bounded shared sample so the time chart spans
-        // the full duration and every time-chart point remains selectable from
-        // the distance-chart coordinate model.
-        sampledPoints.add(timePoints[0]);
-        sampledPoints.add(timePoints[timePoints.length - 1]);
+        // Combined tracks can put the elevation series' chronological endpoints
+        // anywhere in GPX order. Keep both in the bounded shared sample so the
+        // time chart retains every available end of its own profile.
+        sampledPoints.add(elevationTimePoints[0]);
+        sampledPoints.add(elevationTimePoints[elevationTimePoints.length - 1]);
     }
     const chartPoints = adjustedPoints.filter(point => sampledPoints.has(point));
     const timeChartPoints = hasTime
@@ -389,6 +448,7 @@ const computeMetrics = points => {
         rawDistanceM,
         rawGainM,
         points: adjustedPoints,
+        routePoints: adjustedRoutePoints,
         timePoints,
         chartPoints,
         timeChartPoints,

@@ -1012,7 +1012,8 @@ test('a missing GPS track is reported as missing instead of a parse failure', as
 const loadElevationAnalyzer = async (gpxSource, {
     clipboard,
     theme = 'light',
-    withMap = false
+    withMap = false,
+    tzlookup,
 } = {}) => {
     const dom = new JSDOM(`<!doctype html><body>
       ${withMap ? '<iframe src="https://www.peakbagger.com/map/MasterMap.aspx?cy=47&cx=-121&z=14"></iframe>' : ''}
@@ -1078,6 +1079,7 @@ const loadElevationAnalyzer = async (gpxSource, {
         });
     }
     window.matchMedia = () => ({ matches: false });
+    if (tzlookup) window.tzlookup = tzlookup;
     window.HTMLCanvasElement.prototype.getContext = () => ({});
     window.fetch = async () => ({ ok: true, text: async () => gpxSource });
     if (clipboard) {
@@ -1128,33 +1130,37 @@ const loadElevationAnalyzer = async (gpxSource, {
 test('GPX analyzer drops points whose elevation is missing or invalid', async () => {
     const source = `<?xml version="1.0"?><gpx><trk><trkseg>
       <trkpt lat="47" lon="-121"><ele>100</ele></trkpt>
-      <trkpt lat="47" lon="-121.001"></trkpt>
-      <trkpt lat="47" lon="-121.002"><ele>unknown</ele></trkpt>
-      <trkpt lat="47" lon="-121.003"></trkpt>
-      <trkpt lat="47" lon="-121.004"><ele>110</ele></trkpt>
+      <trkpt lat="47.01" lon="-121"></trkpt>
+      <trkpt lat="47.01" lon="-120.995"><ele>unknown</ele></trkpt>
+      <trkpt lat="47.01" lon="-120.99"><ele>110</ele></trkpt>
     </trkseg></trk></gpx>`;
     const { dom, chartConfig } = await loadElevationAnalyzer(source);
 
     await waitFor(dom, () => chartConfig() !== null);
     const chartPoints = chartConfig().data.datasets[0].data;
-    assert.deepEqual(Array.from(chartPoints, point => point._raw.rawEleM), [100, 110]);
-    assert.ok(chartPoints.every(point => point.y > 0),
+    assert.deepEqual(Array.from(chartPoints, point => point._raw?.rawEleM ?? null), [100, null, 110]);
+    assert.ok(chartPoints.every(point => point.y === null || point.y > 0),
         'missing elevation must not become a charted dip to sea level');
+    assert.ok(chartPoints.at(-1)._raw.distM > 1800,
+        `distance must follow the coordinate-only bend, got ${chartPoints.at(-1)._raw.distM} m`);
 
     dom.window.close();
 });
 
 test('GPX analyzer renders a coordinate-only route without reporting zero gain', async () => {
     const source = `<?xml version="1.0"?><gpx><trk><trkseg>
-      <trkpt lat="47" lon="-121"></trkpt>
-      <trkpt lat="47" lon="-121.001"><ele>unknown</ele></trkpt>
-      <trkpt lat="47" lon="-121.002"></trkpt>
+      <trkpt lat="47" lon="-121"><time>2026-07-10T07:30:00Z</time></trkpt>
+      <trkpt lat="47" lon="-121.001"><ele>unknown</ele><time>2026-07-10T08:30:00Z</time></trkpt>
+      <trkpt lat="47" lon="-121.002"><time>2026-07-10T09:30:00Z</time></trkpt>
     </trkseg></trk></gpx>`;
     const { dom, analysisText, chartConfig, polylineCalls } = await loadElevationAnalyzer(source, { withMap: true });
 
     await waitFor(dom, () => analysisText().includes('Elevation data is unavailable'));
     await waitFor(dom, () => polylineCalls.length === 2);
     assert.match(analysisText(), /Route: 0\.15 km/);
+    assert.match(analysisText(), /Time: 2h 0m/);
+    assert.match(analysisText(), /Possible Camping: Day 1 \(47\.00000, -121\.00000\)/);
+    assert.match(analysisText(), /Times in the mountain’s local time/);
     assert.match(analysisText(), /Elevation data is unavailable in this GPX\./);
     assert.doesNotMatch(analysisText(), /0 (?:m|ft) gain/);
     assert.equal(chartConfig(), null);
@@ -1227,8 +1233,15 @@ test('GPX analyzer sorts reversed multi-day segments for time and camping only',
         <trkpt lat="47.100" lon="-121.100"><ele>110</ele><time>2026-07-10T23:00:00Z</time></trkpt>
       </trkseg>
     </trk></gpx>`;
+    const timezoneLookups = [];
     const { dom, analysisText, chartConfig, polylineCalls } =
-        await loadElevationAnalyzer(source, { withMap: true });
+        await loadElevationAnalyzer(source, {
+            withMap: true,
+            tzlookup: (lat, lon) => {
+                timezoneLookups.push([lat, lon]);
+                return 'UTC';
+            }
+        });
 
     await waitFor(dom, () => chartConfig() !== null);
     await waitFor(dom, () => polylineCalls.length === 2);
@@ -1242,6 +1255,8 @@ test('GPX analyzer sorts reversed multi-day segments for time and camping only',
         'time analysis must span the segments chronologically');
     assert.equal(chartConfig().options.scales.xTime.min, Date.parse('2026-07-10T16:00:00Z'));
     assert.equal(chartConfig().options.scales.xTime.max, Date.parse('2026-07-11T17:00:00Z'));
+    assert.deepEqual(timezoneLookups, [[47, -121]],
+        'mountain time must come from the earliest route point, not the first appended segment');
     assert.match(analysisText(), /Possible Camping: Day 1 \(47\.10000, -121\.10000\)/,
         'camping inference must use the last chronological point before the local day boundary');
     assert.deepEqual(JSON.parse(JSON.stringify(polylineCalls[0].latLngs)), [
