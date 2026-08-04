@@ -166,6 +166,7 @@ test('a validated photo result is inserted only while the rich editor is availab
     let response;
     const message = {
         type: 'PHOTO_INSERT_RESULT',
+        returnToken: 'return-123',
         localPhotoId: 'photo:123',
         url: 'https://i.ibb.co/example/topo.jpg',
         alt: 'North ridge route'
@@ -178,10 +179,19 @@ test('a validated photo result is inserted only while the rich editor is availab
         '[img src="https://i.ibb.co/example/topo.jpg" alt="North ridge route"]');
     assert.equal(ui.querySelector('.bpb-re-status').textContent, 'Photo inserted');
 
+    response = null;
+    for (const listener of listeners) {
+        listener(message, { id: 'test-extension' }, value => { response = value; });
+    }
+    assert.deepEqual(JSON.parse(JSON.stringify(response)), { ok: true });
+    assert.equal(doc.getElementById('JournalText').value,
+        '[img src="https://i.ibb.co/example/topo.jpg" alt="North ridge route"]',
+        'an ambiguous delivery retry must acknowledge without inserting twice');
+
     modeButton(doc, 'Markdown').click();
     response = null;
     for (const listener of listeners) {
-        listener({ ...message, localPhotoId: 'photo:456' },
+        listener({ ...message, returnToken: 'return-456', localPhotoId: 'photo:456' },
             { id: 'test-extension' }, value => { response = value; });
     }
     assert.deepEqual(JSON.parse(JSON.stringify(response)),

@@ -173,6 +173,7 @@ export function createPhotoRoutes({
                 createdAt,
                 expiresAt: createdAt + RETURN_TTL_MS,
                 consumed: false,
+                inFlight: false,
             };
         });
         let tab;
@@ -203,9 +204,9 @@ export function createPhotoRoutes({
 
         const context = await mutateMap(RETURN_CONTEXTS_KEY, contexts => {
             const candidate = contexts[token];
-            if (!candidate || candidate.consumed || candidate.expiresAt <= now()
+            if (!candidate || candidate.consumed || candidate.inFlight || candidate.expiresAt <= now()
                 || candidate.editorTabId !== sender.tab.id) return null;
-            candidate.consumed = true;
+            candidate.inFlight = true;
             return { ...candidate };
         });
         if (!context) {
@@ -214,22 +215,28 @@ export function createPhotoRoutes({
                 error: { code: 'expired-context', message: 'The original report is no longer available.' },
             };
         }
+        const releaseClaim = () => mutateMap(RETURN_CONTEXTS_KEY, contexts => {
+            const candidate = contexts[token];
+            if (candidate && !candidate.consumed && candidate.editorTabId === sender.tab.id) {
+                candidate.inFlight = false;
+            }
+        });
+        const consumeClaim = () => mutateMap(RETURN_CONTEXTS_KEY, contexts => {
+            const candidate = contexts[token];
+            if (candidate && !candidate.consumed && candidate.editorTabId === sender.tab.id) {
+                candidate.inFlight = false;
+                candidate.consumed = true;
+            }
+        });
+        let response;
         try {
-            const response = await ext.tabs.sendMessage(context.sourceTabId, {
+            response = await ext.tabs.sendMessage(context.sourceTabId, {
                 type: 'PHOTO_INSERT_RESULT',
                 returnToken: token,
                 ...insertion,
             }, { frameId: context.sourceFrameId });
-            return response?.ok
-                ? { ok: true, identity: context.identity }
-                : {
-                    ok: false,
-                    error: {
-                        code: 'insert-failed',
-                        message: 'The photo was uploaded but could not be inserted into the report.',
-                    },
-                };
         } catch {
+            await releaseClaim();
             return {
                 ok: false,
                 error: {
@@ -238,6 +245,18 @@ export function createPhotoRoutes({
                 },
             };
         }
+        if (!response?.ok) {
+            await releaseClaim();
+            return {
+                ok: false,
+                error: {
+                    code: 'insert-failed',
+                    message: 'The photo was uploaded but could not be inserted into the report.',
+                },
+            };
+        }
+        await consumeClaim();
+        return { ok: true, identity: context.identity };
     };
 
     const cleanup = cutoff => mutateMap(RETURN_CONTEXTS_KEY, contexts => {

@@ -1088,6 +1088,13 @@ import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.js';
     // Peakbagger content script, so the number is repeated here and pinned by
     // "an inserted photo keeps the full description the library allows".
     const PHOTO_ALT_LIMIT = 500;
+    const handledPhotoReturnTokens = new Set();
+    const rememberPhotoReturnToken = token => {
+        handledPhotoReturnTokens.add(token);
+        if (handledPhotoReturnTokens.size > 50) {
+            handledPhotoReturnTokens.delete(handledPhotoReturnTokens.values().next().value);
+        }
+    };
 
     const cleanPhotoInsertion = message => {
         if (!message || message.type !== 'PHOTO_INSERT_RESULT') return null;
@@ -1117,8 +1124,15 @@ import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.js';
         if (message?.type !== 'PHOTO_INSERT_RESULT') return undefined;
         const insertion = cleanPhotoInsertion(message);
         const trustedSender = sender?.id === ext.runtime.id;
+        const returnToken = typeof message.returnToken === 'string' && message.returnToken
+            ? message.returnToken
+            : null;
         if (!trustedSender || !insertion) {
             sendResponse?.({ ok: false, error: { code: 'invalid-result' } });
+            return false;
+        }
+        if (returnToken && handledPhotoReturnTokens.has(returnToken)) {
+            sendResponse?.({ ok: true });
             return false;
         }
         if (state.mode !== 'rich' || !richEditor || !ui.isConnected) {
@@ -1127,6 +1141,7 @@ import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.js';
         }
         richCommands.insertImage(richEditor, insertion);
         flushSync();
+        if (returnToken) rememberPhotoReturnToken(returnToken);
         closeBoxes();
         refreshToolbar();
         setDraftManagerStatus('Photo inserted');

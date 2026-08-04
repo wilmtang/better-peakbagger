@@ -16,7 +16,7 @@ const makeStorageArea = () => {
     };
 };
 
-const harness = () => {
+const harness = ({ sendResult = null } = {}) => {
     const local = makeStorageArea();
     const session = makeStorageArea();
     const sent = [];
@@ -32,7 +32,7 @@ const harness = () => {
             },
             sendMessage: async (tabId, message, options) => {
                 sent.push({ tabId, message, options });
-                return { ok: true };
+                return sendResult ? sendResult({ tabId, message, options, attempt: sent.length }) : { ok: true };
             },
         },
     };
@@ -201,6 +201,45 @@ test('returns one sanitized insertion to the originating tab and rejects replay'
     const replay = await h.routes.handlers.PHOTO_INSERT_COMMIT(message, photoSender);
     assert.equal(replay.ok, false);
     assert.equal(replay.error.code, 'expired-context');
+});
+
+test('failed delivery and negative acknowledgement both release the return context', async () => {
+    const h = harness({
+        sendResult: ({ attempt }) => {
+            if (attempt === 1) throw new Error('receiving end disappeared');
+            if (attempt === 2) return { ok: false, error: { code: 'editor-unavailable' } };
+            return { ok: true };
+        },
+    });
+    await h.routes.handlers.PHOTO_EDITOR_OPEN({
+        mode: 'edit',
+        identity: { cid: 22, pid: 33 },
+    }, peakSender);
+    const message = {
+        returnToken: 'return-token',
+        localPhotoId: 'photo-1',
+        url: 'https://i.ibb.co/a/topo.jpg',
+        alt: 'North face route',
+    };
+
+    const first = await h.routes.handlers.PHOTO_INSERT_COMMIT(message, photoSender);
+    assert.equal(first.ok, false);
+    assert.equal(first.error.code, 'insert-failed');
+    assert.equal(h.session.values[PhotoRoutes.RETURN_CONTEXTS_KEY]['return-token'].consumed, false);
+    assert.equal(h.session.values[PhotoRoutes.RETURN_CONTEXTS_KEY]['return-token'].inFlight, false);
+
+    const second = await h.routes.handlers.PHOTO_INSERT_COMMIT(message, photoSender);
+    assert.equal(second.ok, false);
+    assert.equal(second.error.code, 'insert-failed');
+    assert.equal(h.session.values[PhotoRoutes.RETURN_CONTEXTS_KEY]['return-token'].consumed, false);
+    assert.equal(h.session.values[PhotoRoutes.RETURN_CONTEXTS_KEY]['return-token'].inFlight, false);
+
+    assert.deepEqual(await h.routes.handlers.PHOTO_INSERT_COMMIT(message, photoSender), {
+        ok: true,
+        identity: { cid: 22, aid: null, pid: 33 },
+    });
+    assert.equal(h.sent.length, 3);
+    assert.equal(h.session.values[PhotoRoutes.RETURN_CONTEXTS_KEY]['return-token'].consumed, true);
 });
 
 test('forwards only a bounded optional report display width', async () => {
