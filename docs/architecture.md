@@ -590,11 +590,13 @@ not invent a missing elevation profile from the 3D map.
 Per-point `<time>` values are also optional and can be degraded by a source or
 export conversion. One observed Peakbagger export copied a single generated
 timestamp onto every trackpoint. Timing is usable only when every analyzed
-timestamp parses, GPX order is nondecreasing, and the sequence advances at
-least once. Duplicate samples inside a progressing track remain valid. An
-all-equal or backward sequence keeps the distance/elevation analysis in GPX
-order but omits duration, clock labels, camping inference, and the time series
-instead of reporting zero time or reordering the route.
+timestamp parses and the set advances at least once. The route, distance,
+gain, and elevation-by-distance remain in GPX document order. Time-derived
+views use a separate stable chronological ordering, so combined multi-day
+tracks whose days were appended out of order retain duration, clock labels,
+camping inference, and the time series without reordering route geometry.
+Duplicate timestamps retain their GPX order; an all-equal series still omits
+time-derived output instead of reporting a false zero duration.
 
 Clock times use the climb's local timezone resolved offline from the starting
 coordinate with packaged `tz-lookup`. Failure falls back to a labelled

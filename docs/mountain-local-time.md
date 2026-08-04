@@ -46,12 +46,13 @@ after the ascent date.
 
 The analyzer therefore treats time as a capability, not as a consequence of a
 `<time>` element existing. A series is usable only when every analyzed point
-has a finite positive timestamp, timestamps are nondecreasing in GPX order,
-and at least one sample advances. Equal adjacent samples are allowed within an
-otherwise progressing track. An all-equal or backward series is not sorted or
-guessed into shape: the route and elevation-by-distance analysis remain, while
-duration, mountain-local clock labels, camping inference, and the time series
-are omitted.
+has a finite positive timestamp and at least one sample differs. Route geometry
+and elevation-by-distance stay in GPX document order. Duration, mountain-local
+clock labels, camping inference, and elevation-by-time use a separate stable
+timestamp sort. This recovers combined multi-day files whose tracks were
+appended out of chronological order without reordering the distance analysis;
+equal timestamps retain their relative GPX order. An all-equal series
+cannot be repaired by sorting, so only its time-derived output is omitted.
 
 This validation happens before timezone resolution. A displayed mountain time
 therefore always comes from a usable UTC sequence; timezone conversion cannot
