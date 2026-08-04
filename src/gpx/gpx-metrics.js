@@ -267,8 +267,17 @@ const hasUsableTimeValues = points => {
 
 const computeMetrics = points => {
     let coordinateGroup = 0;
+    let sourceCoordinateGroup = null;
     const validPoints = [];
     points.forEach((point, index) => {
+        // Callers that still pass one flat route omit coordinateGroup and keep
+        // the legacy behavior. GPX callers provide the owning <trkseg> index:
+        // adjacent segments are separate paths, so distance, gain, smoothing,
+        // and grade must never bridge the straight-line gap between them.
+        const nextSourceCoordinateGroup = Number.isSafeInteger(point.coordinateGroup)
+            && point.coordinateGroup >= 0 ? point.coordinateGroup : null;
+        if (index > 0 && nextSourceCoordinateGroup !== sourceCoordinateGroup) coordinateGroup++;
+        sourceCoordinateGroup = nextSourceCoordinateGroup;
         if (!isValidCoordinate(point.lat, point.lon)) {
             coordinateGroup++;
             return;

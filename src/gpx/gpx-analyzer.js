@@ -1122,6 +1122,10 @@ const run = async () => {
             const xml = response.document;
             const trkpts = Array.from(xml.querySelectorAll('trkpt'));
             if (!trkpts.length) return stats.textContent = 'No track points found.';
+            const segmentGroups = new Map(Array.from(
+                xml.querySelectorAll('trkseg'),
+                (segment, index) => [segment, index]
+            ));
 
             const routeSegments = parseRouteSegments(xml);
             mapRouteSegments = GpxMetrics.sanitizeMapRouteSegments(routeSegments);
@@ -1139,7 +1143,8 @@ const run = async () => {
                     lat: parseFloat(pt.getAttribute('lat')),
                     lon: parseFloat(pt.getAttribute('lon')),
                     rawEleM,
-                    ms: Number.isFinite(parsedMs) ? parsedMs : 0
+                    ms: Number.isFinite(parsedMs) ? parsedMs : 0,
+                    coordinateGroup: segmentGroups.get(pt.parentNode) ?? 0
                 };
             });
 

@@ -35,6 +35,20 @@ test('metrics discard impossible coordinates without bridging across the resulti
     assert.equal(metrics.maxEleM < 9999, true);
 });
 
+test('metrics do not bridge declared track-segment boundaries', () => {
+    const metrics = GpxMetrics.computeMetrics([
+        { lat: 48.2, lon: -121.2, rawEleM: 100, ms: 0, coordinateGroup: 0 },
+        { lat: 48.3, lon: -121.3, rawEleM: 110, ms: 0, coordinateGroup: 0 },
+        { lat: 47, lon: -121, rawEleM: 1000, ms: 0, coordinateGroup: 1 },
+        { lat: 47.1, lon: -121.1, rawEleM: 1010, ms: 0, coordinateGroup: 1 },
+    ]);
+
+    assert.ok(metrics.rawDistanceM > 25_000 && metrics.rawDistanceM < 30_000,
+        `expected only the two segment edges, got ${metrics.rawDistanceM} m`);
+    assert.equal(metrics.rawGainM, 20,
+        'elevation gain must not include the jump between segments');
+});
+
 test('map routes split at impossible coordinates and discard unusable fragments', () => {
     assert.deepEqual(GpxMetrics.sanitizeMapRouteSegments([[
         [47, -121],
