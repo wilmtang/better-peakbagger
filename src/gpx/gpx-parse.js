@@ -19,6 +19,59 @@ const cleanName = value => typeof value === 'string'
     ? value.replace(/\s+/g, ' ').trim().slice(0, 200)
     : '';
 
+const parseOptionalNumber = text => {
+    if (text === null || !String(text).trim()) {
+        return { value: null, state: 'missing' };
+    }
+    const value = Number(String(text).trim());
+    return Number.isFinite(value)
+        ? { value, state: 'valid' }
+        : { value: Number.NaN, state: 'invalid' };
+};
+
+// GPX 1.1 uses XML Schema dateTime. Date.parse also admits locale-like strings
+// such as "July 10", which makes the ascent-page analyzer disagree with the
+// stricter provider/upload path and can turn malformed input into a plausible
+// chart. Accept the ISO-shaped forms GPX writers emit, then let Date.parse
+// validate their calendar and offset semantics.
+const GPX_TIME_PATTERN =
+    /^-?\d{4,}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/i;
+
+const parseOptionalTime = (text, hasElement = false) => {
+    if (text === null) {
+        return { value: null, state: 'missing' };
+    }
+    const normalized = String(text).trim();
+    if (!normalized) {
+        return { value: null, state: hasElement ? 'invalid' : 'missing' };
+    }
+    const value = GPX_TIME_PATTERN.test(normalized) ? Date.parse(normalized) : Number.NaN;
+    return Number.isFinite(value)
+        ? { value, state: 'valid' }
+        : { value: null, state: 'invalid' };
+};
+
+const parseTrackPoint = (trackPoint, options = {}) => {
+    const lat = parseOptionalNumber(trackPoint.getAttribute('lat'));
+    const lon = parseOptionalNumber(trackPoint.getAttribute('lon'));
+    const elevationElement = directChild(trackPoint, 'ele');
+    const elevation = parseOptionalNumber(elevationElement?.textContent ?? null);
+    const timeElement = directChild(trackPoint, 'time');
+    const time = parseOptionalTime(timeElement?.textContent ?? null, !!timeElement);
+    const parsed = {
+        lat: lat.value,
+        lon: lon.value,
+        ele: elevation.value,
+        time: time.value,
+        invalidTime: time.state === 'invalid'
+    };
+    if (options.includeQuality) {
+        parsed.elevationState = elevation.state;
+        parsed.timeState = time.state;
+    }
+    return parsed;
+};
+
 const noGpsError = () => {
     const error = new Error('This activity has no recorded route to capture. Manually created activities need recorded track data before a GPX can be generated.');
     error.code = 'no-gps-data';
@@ -33,21 +86,8 @@ const parseGpxData = (text, options = {}) => {
         throw error;
     }
     const trackSegments = elementsByLocalName(xml, 'trkseg');
-    const segments = trackSegments.map(segment => elementsByLocalName(segment, 'trkpt').map(trackPoint => {
-        const latText = trackPoint.getAttribute('lat');
-        const lonText = trackPoint.getAttribute('lon');
-        const elevationText = directChild(trackPoint, 'ele')?.textContent?.trim() || '';
-        const timeElement = directChild(trackPoint, 'time');
-        const timeText = timeElement?.textContent?.trim() || '';
-        const parsedTime = timeText ? Date.parse(timeText) : NaN;
-        return {
-            lat: latText === null || !latText.trim() ? null : Number(latText),
-            lon: lonText === null || !lonText.trim() ? null : Number(lonText),
-            ele: elevationText === '' ? null : Number(elevationText),
-            time: Number.isFinite(parsedTime) ? parsedTime : null,
-            invalidTime: !!timeElement && !Number.isFinite(parsedTime)
-        };
-    }));
+    const segments = trackSegments.map(segment =>
+        elementsByLocalName(segment, 'trkpt').map(trackPoint => parseTrackPoint(trackPoint)));
     if (!segments.length || !segments.some(segment => segment.length)) throw noGpsError();
     const waypoints = options.retainWaypoints
         ? elementsByLocalName(xml, 'wpt').map(waypoint => {
@@ -67,4 +107,4 @@ const parseGpxData = (text, options = {}) => {
     return { segments, waypoints, trackName };
 };
 
-export const gpxParse = { parseGpxData, cleanName, noGpsError };
+export const gpxParse = { parseGpxData, parseTrackPoint, cleanName, noGpsError };

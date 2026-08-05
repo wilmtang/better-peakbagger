@@ -12,6 +12,7 @@
 // isolated-world bridge (src/settings/bridge.js) over window.postMessage. Affected map
 // and chart surfaces update live when settings change.
 
+import { gpxParse as GpxParse } from './gpx-parse.js';
 import { gpxMetrics as GpxMetrics } from './gpx-metrics.js';
 import { peakbaggerError as PeakbaggerError } from '../peakbagger/peakbagger-error.js';
 import { fetchPeakbaggerDocument } from '../peakbagger/peakbagger-request.js';
@@ -901,9 +902,9 @@ const run = async () => {
 
             // Map adjusted arrays
             const eleDistData = [], eleTimeData = [];
-            const appendChartPoint = (target, point, x, y) => {
+            const appendChartPoint = (target, point, x, y, groupProperty = 'coordinateGroup') => {
                 const previous = target.at(-1)?._raw;
-                if (previous && previous.coordinateGroup !== point.coordinateGroup) {
+                if (previous && previous[groupProperty] !== point[groupProperty]) {
                     target.push({ x, y: null, _raw: null });
                 }
                 target.push({ x, y, _raw: point });
@@ -919,7 +920,7 @@ const run = async () => {
             });
             timeChartData.forEach(d => {
                 const eleConv = parseFloat((d.eleM * eMult).toFixed(0));
-                appendChartPoint(eleTimeData, d, d.ms, eleConv);
+                appendChartPoint(eleTimeData, d, d.ms, eleConv, 'timeCoordinateGroup');
             });
 
             if (chartInstance) chartInstance.destroy();
@@ -1179,16 +1180,15 @@ const run = async () => {
             scheduleRouteOverlay();
 
             const parsedPoints = trkpts.map(pt => {
-                const eleNode = pt.querySelector('ele');
-                const timeNode = pt.querySelector('time');
-                const parsedMs = timeNode ? new Date(timeNode.textContent).getTime() : 0;
-                const rawEleM = eleNode ? parseFloat(eleNode.textContent) : Number.NaN;
+                const parsed = GpxParse.parseTrackPoint(pt, { includeQuality: true });
 
                 return {
-                    lat: parseFloat(pt.getAttribute('lat')),
-                    lon: parseFloat(pt.getAttribute('lon')),
-                    rawEleM,
-                    ms: Number.isFinite(parsedMs) ? parsedMs : 0,
+                    lat: parsed.lat,
+                    lon: parsed.lon,
+                    rawEleM: parsed.ele,
+                    elevationState: parsed.elevationState,
+                    ms: parsed.time,
+                    timeState: parsed.timeState,
                     coordinateGroup: segmentGroups.get(pt.parentNode) ?? 0
                 };
             });

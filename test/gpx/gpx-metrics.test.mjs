@@ -232,7 +232,7 @@ test('timestamp ordering permutations affect only the chronological view', async
     }
 });
 
-test('one absent or invalid analyzed timestamp disables only time-derived output', async t => {
+test('one absent or invalid timestamp preserves a partial time series with a visible break', async t => {
     const start = Date.UTC(2026, 6, 10, 12);
     const cases = [
         { name: 'missing timestamp', value: 0 },
@@ -249,13 +249,69 @@ test('one absent or invalid analyzed timestamp disables only time-derived output
                 { lat: 47.002, lon: -121.002, rawEleM: 120, ms: start + 60_000 },
             ]);
 
-            assert.equal(metrics.hasTime, false);
-            assert.deepEqual(metrics.timePoints, []);
-            assert.deepEqual(metrics.timeChartPoints, []);
+            assert.equal(metrics.hasTime, true);
+            assert.equal(metrics.timeQuality.status, 'partial');
+            assert.equal(metrics.timeQuality.validPoints, 2);
+            assert.equal(metrics.timeQuality.missingPoints, value === 0 ? 1 : 0);
+            assert.equal(metrics.timeQuality.invalidPoints, value === 0 ? 0 : 1);
+            assert.deepEqual(metrics.timePoints.map(point => point.rawEleM), [100, 120]);
+            assert.deepEqual(metrics.timeChartPoints.map(point => point.rawEleM), [100, 120]);
+            assert.notEqual(
+                metrics.timeChartPoints[0].timeCoordinateGroup,
+                metrics.timeChartPoints[1].timeCoordinateGroup,
+                'the time chart must not draw through an excluded timestamp'
+            );
             assert.equal(metrics.points.length, 3);
             assert.ok(metrics.distanceM > 0);
         });
     }
+});
+
+test('quality summaries distinguish missing, invalid, and suspect elevation samples', () => {
+    const metrics = GpxMetrics.computeMetrics([
+        { lat: 47, lon: -121, rawEleM: 100, ms: 0 },
+        { lat: 47.001, lon: -121.001, rawEleM: Number.NaN, elevationState: 'missing', ms: 0 },
+        { lat: 47.002, lon: -121.002, rawEleM: Number.NaN, elevationState: 'invalid', ms: 0 },
+        { lat: 47.003, lon: -121.003, rawEleM: 999999, ms: 0 },
+    ]);
+
+    assert.deepEqual(metrics.elevationQuality, {
+        status: 'partial',
+        totalPoints: 4,
+        validPoints: 1,
+        missingPoints: 1,
+        invalidPoints: 1,
+        suspectPoints: 1,
+        coverage: 0.25,
+    });
+    assert.deepEqual(metrics.points.map(point => point.rawEleM), [100],
+        'impossible elevations must be excluded rather than pulling the chart off scale');
+    assert.equal(GpxMetrics.isPlausibleElevationM(-1000), true);
+    assert.equal(GpxMetrics.isPlausibleElevationM(10000), true);
+    assert.equal(GpxMetrics.isPlausibleElevationM(-1000.1), false);
+    assert.equal(GpxMetrics.isPlausibleElevationM(10000.1), false);
+});
+
+test('coordinate and non-progressing time quality remain independently visible', () => {
+    const timestamp = Date.UTC(2026, 6, 10, 12);
+    const metrics = GpxMetrics.computeMetrics([
+        { lat: 47, lon: -121, rawEleM: 100, ms: timestamp },
+        { lat: 999, lon: -121, rawEleM: 110, ms: timestamp + 60_000 },
+        { lat: 47.002, lon: -121.002, rawEleM: 120, ms: timestamp },
+    ]);
+
+    assert.deepEqual(metrics.coordinateQuality, {
+        status: 'partial',
+        totalPoints: 3,
+        validPoints: 2,
+        invalidPoints: 1,
+        coverage: 2 / 3,
+    });
+    assert.equal(metrics.timeQuality.status, 'suspect');
+    assert.equal(metrics.timeQuality.reason, 'not-progressing');
+    assert.equal(metrics.timeQuality.coverage, 1);
+    assert.equal(metrics.hasTime, false);
+    assert.equal(metrics.points.length, 2);
 });
 
 test('chronological endpoints survive route-order chart sampling', () => {

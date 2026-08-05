@@ -10,9 +10,10 @@ import { JSDOM } from 'jsdom';
 import { gpxParse } from '../../src/gpx/gpx-parse.js';
 
 // The parser's only platform dependency is DOMParser; give it jsdom's.
-globalThis.DOMParser = new JSDOM('').window.DOMParser;
+const { DOMParser } = new JSDOM('').window;
+globalThis.DOMParser = DOMParser;
 
-const { parseGpxData, cleanName, noGpsError } = gpxParse;
+const { parseGpxData, parseTrackPoint, cleanName, noGpsError } = gpxParse;
 
 test('multi-track GPX flattens to segments in document order with analysis fields only', () => {
     const gpx = `<?xml version="1.0"?><gpx xmlns="http://www.topografix.com/GPX/1/1"
@@ -45,6 +46,41 @@ test('missing and malformed coordinates, elevations, and times become null (with
     assert.deepEqual(segment[1], { lat: 47, lon: -121, ele: null, time: null, invalidTime: true });
     assert.equal(Number.isNaN(segment[2].lat), true, 'non-numeric text stays a sanitizer problem, not a parser crash');
     assert.equal(Number.isNaN(segment[2].ele), true);
+});
+
+test('track-point parsing rejects partial numbers and non-ISO dates consistently', () => {
+    const xml = new DOMParser().parseFromString(`<gpx><trk><trkseg>
+      <trkpt lat="47north" lon="-121west"><ele>100m</ele><time>July 10, 2026</time></trkpt>
+    </trkseg></trk></gpx>`, 'application/xml');
+    const parsed = parseTrackPoint(xml.querySelector('trkpt'), { includeQuality: true });
+
+    assert.equal(Number.isNaN(parsed.lat), true);
+    assert.equal(Number.isNaN(parsed.lon), true);
+    assert.equal(Number.isNaN(parsed.ele), true);
+    assert.equal(parsed.time, null);
+    assert.equal(parsed.invalidTime, true);
+    assert.equal(parsed.elevationState, 'invalid');
+    assert.equal(parsed.timeState, 'invalid');
+});
+
+test('quality metadata is opt-in and distinguishes absent from malformed samples', () => {
+    const source = `<gpx><trk><trkseg>
+      <trkpt lat="47" lon="-121"/>
+      <trkpt lat="47.1" lon="-121.1"><ele>bad</ele><time>bad</time></trkpt>
+      <trkpt lat="47.2" lon="-121.2"><time></time></trkpt>
+    </trkseg></trk></gpx>`;
+    const xml = new DOMParser().parseFromString(source, 'application/xml');
+    const [missing, invalid, empty] = [...xml.querySelectorAll('trkpt')]
+        .map(point => parseTrackPoint(point, { includeQuality: true }));
+
+    assert.equal(missing.elevationState, 'missing');
+    assert.equal(missing.timeState, 'missing');
+    assert.equal(invalid.elevationState, 'invalid');
+    assert.equal(invalid.timeState, 'invalid');
+    assert.equal(empty.timeState, 'invalid');
+    assert.deepEqual(Object.keys(parseGpxData(source).segments[0][0]).sort(),
+        ['ele', 'invalidTime', 'lat', 'lon', 'time'],
+        'capture/upload payloads must not gain analyzer-only quality fields');
 });
 
 test('waypoints and the track name are extracted only when the options request them', () => {

@@ -1287,7 +1287,7 @@ test('GPX analyzer sorts reversed multi-day segments for time and camping only',
     dom.window.close();
 });
 
-test('GPX analyzer omits time when one charted point has no valid timestamp', async t => {
+test('GPX analyzer shows partial time runs without drawing through an invalid timestamp', async t => {
     const cases = [
         { name: 'missing time element', middleTime: '' },
         { name: 'invalid time element', middleTime: '<time>not-a-date</time>' },
@@ -1304,10 +1304,16 @@ test('GPX analyzer omits time when one charted point has no valid timestamp', as
 
             await waitFor(dom, () => chartConfig() !== null);
             assert.deepEqual(Array.from(chartConfig().data.datasets, dataset => dataset.label), [
-                'Elevation by Distance'
+                'Elevation by Distance',
+                'Elevation by Time'
             ]);
-            assert.equal(chartConfig().options.scales.xTime, undefined);
-            assert.doesNotMatch(analysisText(), /Time:/);
+            assert.deepEqual(
+                Array.from(chartConfig().data.datasets[1].data, point => point._raw?.rawEleM ?? null),
+                [100, null, 120],
+                'the missing or invalid timestamp must become a visible chart break'
+            );
+            assert.ok(chartConfig().options.scales.xTime);
+            assert.match(analysisText(), /Time:/);
             assert.match(analysisText(), /Interactive Stats:/);
 
             dom.window.close();

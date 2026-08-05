@@ -21,6 +21,11 @@ const GRADE_MIN_DISTANCE_M = 10;
 const GRADE_MAX_LOOKBACK_POINTS = 50;
 const MAX_REASONABLE_SPEED_MPS = 10;
 const PAUSE_RESET_SECONDS = 300;
+// Conservative terrestrial bounds. Values outside them cannot describe a
+// Peakbagger ascent, but the wide margin avoids treating ordinary GPS/geoid
+// disagreement near the lowest and highest land elevations as corrupt data.
+const MIN_PLAUSIBLE_ELEVATION_M = -1000;
+const MAX_PLAUSIBLE_ELEVATION_M = 10000;
 
 const EARTH_RADIUS_M = 6371008.8;
 
@@ -28,6 +33,12 @@ const toRad = x => x * Math.PI / 180;
 
 const isValidCoordinate = (lat, lon) => Number.isFinite(lat) && lat >= -90 && lat <= 90
     && Number.isFinite(lon) && lon >= -180 && lon <= 180;
+
+const isValidTimestamp = ms => Number.isFinite(ms) && ms > 0;
+
+const isPlausibleElevationM = elevationM => Number.isFinite(elevationM)
+    && elevationM >= MIN_PLAUSIBLE_ELEVATION_M
+    && elevationM <= MAX_PLAUSIBLE_ELEVATION_M;
 
 const normalizeLonDelta = delta => {
     let result = delta;
@@ -134,7 +145,7 @@ const smoothElevations = (points, distMByIndex) => {
     });
 };
 
-const computeAdjustedDistances = (points, hasTime) => {
+const computeAdjustedDistances = points => {
     const distMByIndex = new Array(points.length).fill(0);
     if (points.length < 2) {
         return { distanceM: 0, rawDistanceM: 0, distMByIndex };
@@ -166,7 +177,9 @@ const computeAdjustedDistances = (points, hasTime) => {
         // GPX document order. A recoverable out-of-order series can therefore
         // put the later timestamp first; jump and pause filtering depend on the
         // elapsed magnitude, not on which adjacent sample was serialized first.
-        const elapsedSeconds = hasTime ? Math.abs(current.ms - prev.ms) / 1000 : 0;
+        const elapsedSeconds = isValidTimestamp(current.ms) && isValidTimestamp(prev.ms)
+            ? Math.abs(current.ms - prev.ms) / 1000
+            : 0;
         const isBadJump = elapsedSeconds > 0 && stepM > DIST_CONFIRM_M && stepM / elapsedSeconds > MAX_REASONABLE_SPEED_MPS;
 
         rawDistanceM += stepM;
@@ -225,7 +238,7 @@ const computeRouteDistanceM = segments => {
         });
     });
 
-    return computeAdjustedDistances(points, false).distanceM;
+    return computeAdjustedDistances(points).distanceM;
 };
 
 const calculateGrade = (index, distMByIndex, elevations, points) => {
@@ -255,18 +268,95 @@ const sumByCoordinateGroup = (points, values, calculate) => {
     return total;
 };
 
-const hasUsableTimeValues = points => {
-    if (points.length < 2) return false;
+const timeStateFor = point => {
+    if (point.timeState === 'invalid') return 'invalid';
+    if (point.timeState === 'missing') return 'missing';
+    if (isValidTimestamp(point.ms)) return 'valid';
+    return point.ms === undefined || point.ms === null || point.ms === 0 ? 'missing' : 'invalid';
+};
 
+const elevationStateFor = point => {
+    if (point.elevationState === 'invalid') return 'invalid';
+    if (point.elevationState === 'missing') return 'missing';
+    if (!Number.isFinite(point.rawEleM)) return 'missing';
+    return isPlausibleElevationM(point.rawEleM) ? 'valid' : 'suspect';
+};
+
+const summarizeCoordinateQuality = (totalPoints, validPoints) => ({
+    status: validPoints === 0 ? 'unavailable' : validPoints === totalPoints ? 'complete' : 'partial',
+    totalPoints,
+    validPoints,
+    invalidPoints: totalPoints - validPoints,
+    coverage: totalPoints ? validPoints / totalPoints : 0,
+});
+
+const summarizeElevationQuality = points => {
+    const counts = { valid: 0, missing: 0, invalid: 0, suspect: 0 };
+    points.forEach(point => counts[point.elevationState]++);
+    let status = 'unavailable';
+    if (counts.valid === points.length && points.length) status = 'complete';
+    else if (counts.valid > 0) status = 'partial';
+    else if (counts.suspect > 0) status = 'suspect';
+    return {
+        status,
+        totalPoints: points.length,
+        validPoints: counts.valid,
+        missingPoints: counts.missing,
+        invalidPoints: counts.invalid,
+        suspectPoints: counts.suspect,
+        coverage: points.length ? counts.valid / points.length : 0,
+    };
+};
+
+const summarizeTimeQuality = points => {
+    const counts = { valid: 0, missing: 0, invalid: 0 };
     let minMs = Infinity;
     let maxMs = -Infinity;
-    for (const point of points) {
-        const ms = point.ms;
-        if (!Number.isFinite(ms) || ms <= 0) return false;
-        minMs = Math.min(minMs, ms);
-        maxMs = Math.max(maxMs, ms);
+    points.forEach(point => {
+        counts[point.timeState]++;
+        if (point.timeState === 'valid') {
+            minMs = Math.min(minMs, point.ms);
+            maxMs = Math.max(maxMs, point.ms);
+        }
+    });
+    const hasProgress = counts.valid >= 2 && maxMs > minMs;
+    let status = 'unavailable';
+    let reason = 'missing';
+    if (hasProgress) {
+        status = counts.valid === points.length ? 'complete' : 'partial';
+        reason = '';
+    } else if (counts.valid > 0) {
+        status = 'suspect';
+        reason = counts.valid < 2 ? 'insufficient' : 'not-progressing';
+    } else if (counts.invalid > 0) {
+        reason = 'invalid';
     }
-    return maxMs > minMs;
+    return {
+        status,
+        reason,
+        totalPoints: points.length,
+        validPoints: counts.valid,
+        missingPoints: counts.missing,
+        invalidPoints: counts.invalid,
+        coverage: points.length ? counts.valid / points.length : 0,
+        hasProgress,
+        minMs: hasProgress ? minMs : 0,
+        maxMs: hasProgress ? maxMs : 0,
+    };
+};
+
+const sampledPointSet = (points, groupProperty) => {
+    const sampled = new Set(points.filter((point, index) =>
+        index % 3 === 0 || index === points.length - 1));
+    let groupStart = 0;
+    for (let index = 1; index <= points.length; index++) {
+        if (index < points.length
+            && points[index][groupProperty] === points[groupStart][groupProperty]) continue;
+        if (points[groupStart]) sampled.add(points[groupStart]);
+        if (points[index - 1]) sampled.add(points[index - 1]);
+        groupStart = index;
+    }
+    return sampled;
 };
 
 const computeMetrics = points => {
@@ -286,12 +376,22 @@ const computeMetrics = points => {
             coordinateGroup++;
             return;
         }
-        routePoints.push({ ...point, index, coordinateGroup });
+        routePoints.push({
+            ...point,
+            index,
+            coordinateGroup,
+            elevationState: elevationStateFor(point),
+            timeState: timeStateFor(point),
+        });
     });
 
+    const coordinateQuality = summarizeCoordinateQuality(points.length, routePoints.length);
     if (!routePoints.length) {
         return {
             hasTime: false,
+            coordinateQuality,
+            elevationQuality: summarizeElevationQuality([]),
+            timeQuality: summarizeTimeQuality([]),
             distanceM: 0,
             gainM: 0,
             rawDistanceM: 0,
@@ -299,6 +399,8 @@ const computeMetrics = points => {
             points: [],
             routePoints: [],
             timePoints: [],
+            routeChartPoints: [],
+            timeProgressChartPoints: [],
             chartPoints: [],
             timeChartPoints: [],
             startMs: 0,
@@ -312,37 +414,82 @@ const computeMetrics = points => {
     // the subset whose optional elevation survived. This keeps a missing <ele>
     // sample from replacing a bent route with the straight chord between the
     // nearest elevation samples, or from truncating the trip's clock span.
-    // A syntactically valid timestamp is not necessarily a usable time series:
-    // require real advancement, but allow combined tracks to be appended out
-    // of chronological order.
-    const hasTime = hasUsableTimeValues(routePoints);
-    const { distanceM, rawDistanceM, distMByIndex } = computeAdjustedDistances(routePoints, hasTime);
-    const adjustedRoutePoints = routePoints.map((point, index) => ({
+    // Missing timing on one point no longer erases every trustworthy timestamp.
+    // Per-edge distance filtering uses time only when both adjacent values are
+    // valid, while time-derived views use the valid chronological subset.
+    const timeQuality = summarizeTimeQuality(routePoints);
+    const elevationQuality = summarizeElevationQuality(routePoints);
+    const hasTime = timeQuality.hasProgress;
+    const { distanceM, rawDistanceM, distMByIndex } = computeAdjustedDistances(routePoints);
+
+    let timeCoordinateGroup = 0;
+    let previousTimeRouteGroup = null;
+    let needsTimeBreak = false;
+    const groupedRoutePoints = routePoints.map(point => {
+        if (previousTimeRouteGroup !== null && point.coordinateGroup !== previousTimeRouteGroup) {
+            timeCoordinateGroup++;
+            needsTimeBreak = false;
+        }
+        previousTimeRouteGroup = point.coordinateGroup;
+        if (point.timeState !== 'valid') {
+            needsTimeBreak = true;
+            return { ...point, timeCoordinateGroup: null };
+        }
+        if (needsTimeBreak) {
+            timeCoordinateGroup++;
+            needsTimeBreak = false;
+        }
+        return { ...point, timeCoordinateGroup };
+    });
+
+    const adjustedRoutePoints = groupedRoutePoints.map((point, index) => ({
         lat: point.lat,
         lon: point.lon,
         ms: point.ms || 0,
         coordinateGroup: point.coordinateGroup,
+        timeCoordinateGroup: point.timeCoordinateGroup,
         rawEleM: point.rawEleM,
+        elevationState: point.elevationState,
+        timeState: point.timeState,
         distM: distMByIndex[index],
     }));
     const timePoints = hasTime
-        ? adjustedRoutePoints.slice().sort((a, b) => a.ms - b.ms)
+        ? adjustedRoutePoints.filter(point => point.timeState === 'valid')
+            .sort((a, b) => a.ms - b.ms)
+        : [];
+
+    const routeSampled = sampledPointSet(adjustedRoutePoints, 'coordinateGroup');
+    const timedRoutePoints = hasTime
+        ? adjustedRoutePoints.filter(point => point.timeState === 'valid')
+        : [];
+    const timeProgressSampled = sampledPointSet(timedRoutePoints, 'timeCoordinateGroup');
+    if (hasTime) {
+        timeProgressSampled.add(timePoints[0]);
+        timeProgressSampled.add(timePoints[timePoints.length - 1]);
+        timeProgressSampled.forEach(point => routeSampled.add(point));
+    }
+    const routeChartPoints = adjustedRoutePoints.filter(point => routeSampled.has(point));
+    const timeProgressChartPoints = hasTime
+        ? routeChartPoints.filter(point => point.timeState === 'valid')
+            .sort((a, b) => a.ms - b.ms)
         : [];
 
     // Elevation stays independent too. Missing samples split the elevation
     // profile so smoothing, gain, grade, and Chart.js never invent a climb over
-    // a portion of the GPX that supplied coordinates but no heights.
+    // a portion of the GPX that supplied coordinates but no trustworthy
+    // heights. Numerically impossible terrestrial elevations are treated as
+    // suspect rather than silently pulling the profile off scale.
     let elevationGroup = 0;
     let previousRouteGroup = null;
     let needsElevationBreak = false;
     const analysisPoints = [];
-    routePoints.forEach((point, index) => {
+    groupedRoutePoints.forEach((point, index) => {
         if (previousRouteGroup !== null && point.coordinateGroup !== previousRouteGroup) {
             elevationGroup++;
             needsElevationBreak = false;
         }
         previousRouteGroup = point.coordinateGroup;
-        if (!Number.isFinite(point.rawEleM)) {
+        if (point.elevationState !== 'valid') {
             needsElevationBreak = true;
             return;
         }
@@ -360,6 +507,9 @@ const computeMetrics = points => {
     if (!analysisPoints.length) {
         return {
             hasTime,
+            coordinateQuality,
+            elevationQuality,
+            timeQuality,
             distanceM,
             gainM: 0,
             rawDistanceM,
@@ -367,10 +517,12 @@ const computeMetrics = points => {
             points: [],
             routePoints: adjustedRoutePoints,
             timePoints,
+            routeChartPoints,
+            timeProgressChartPoints,
             chartPoints: [],
             timeChartPoints: [],
-            startMs: hasTime ? timePoints[0].ms : 0,
-            endMs: hasTime ? timePoints[timePoints.length - 1].ms : 0,
+            startMs: timeQuality.minMs,
+            endMs: timeQuality.maxMs,
             summitMs: 0,
             maxEleM: -Infinity
         };
@@ -403,57 +555,68 @@ const computeMetrics = points => {
             lon: point.lon,
             ms: point.ms || 0,
             coordinateGroup: point.coordinateGroup,
+            timeCoordinateGroup: point.timeCoordinateGroup,
             rawEleM: point.rawEleM,
+            elevationState: point.elevationState,
+            timeState: point.timeState,
             eleM,
             distM: point.distM,
             grade: calculateGrade(index, analysisDistances, smoothedElevations, analysisPoints)
         };
     });
+    let elevationTimeGroup = 0;
+    let previousElevationTimeKey = null;
+    const groupedAdjustedPoints = adjustedPoints.map(point => {
+        if (point.timeState !== 'valid') {
+            return { ...point, timeCoordinateGroup: null };
+        }
+        const key = `${point.coordinateGroup}:${point.timeCoordinateGroup}`;
+        if (previousElevationTimeKey !== null && key !== previousElevationTimeKey) {
+            elevationTimeGroup++;
+        }
+        previousElevationTimeKey = key;
+        return { ...point, timeCoordinateGroup: elevationTimeGroup };
+    });
     const elevationTimePoints = hasTime
-        ? adjustedPoints.slice().sort((a, b) => a.ms - b.ms)
+        ? groupedAdjustedPoints.filter(point => point.timeState === 'valid')
+            .sort((a, b) => a.ms - b.ms)
         : [];
 
     // Route, distance, gain, and the distance chart retain GPX document order.
     // Only time-derived views use chronological order. Array#sort is stable,
     // so points with duplicate timestamps keep their relative GPX order.
-    const sampledPoints = new Set(adjustedPoints.filter((point, index) =>
-        index % 3 === 0 || index === adjustedPoints.length - 1));
-    // A chart break is useful only if both sides survive sampling. Preserve
-    // every segment's endpoints so a short segment is not reduced to a lone
-    // point and no visual connection is inferred across its boundary.
-    let groupStart = 0;
-    for (let index = 1; index <= adjustedPoints.length; index++) {
-        if (index < adjustedPoints.length
-            && adjustedPoints[index].coordinateGroup === adjustedPoints[groupStart].coordinateGroup) continue;
-        sampledPoints.add(adjustedPoints[groupStart]);
-        sampledPoints.add(adjustedPoints[index - 1]);
-        groupStart = index;
-    }
-    if (hasTime) {
+    const sampledPoints = sampledPointSet(groupedAdjustedPoints, 'coordinateGroup');
+    if (elevationTimePoints.length) {
         // Combined tracks can put the elevation series' chronological endpoints
         // anywhere in GPX order. Keep both in the bounded shared sample so the
         // time chart retains every available end of its own profile.
         sampledPoints.add(elevationTimePoints[0]);
         sampledPoints.add(elevationTimePoints[elevationTimePoints.length - 1]);
     }
-    const chartPoints = adjustedPoints.filter(point => sampledPoints.has(point));
+    const chartPoints = groupedAdjustedPoints.filter(point => sampledPoints.has(point));
     const timeChartPoints = hasTime
-        ? chartPoints.slice().sort((a, b) => a.ms - b.ms)
+        ? chartPoints.filter(point => point.timeState === 'valid')
+            .sort((a, b) => a.ms - b.ms)
         : [];
 
     return {
         hasTime,
+        coordinateQuality,
+        elevationQuality,
+        timeQuality,
         distanceM,
         gainM,
         rawDistanceM,
         rawGainM,
-        points: adjustedPoints,
+        points: groupedAdjustedPoints,
         routePoints: adjustedRoutePoints,
         timePoints,
+        routeChartPoints,
+        timeProgressChartPoints,
         chartPoints,
         timeChartPoints,
-        startMs: hasTime ? timePoints[0].ms : 0,
-        endMs: hasTime ? timePoints[timePoints.length - 1].ms : 0,
+        startMs: timeQuality.minMs,
+        endMs: timeQuality.maxMs,
         summitMs: hasTime ? summitMs : 0,
         maxEleM
     };
@@ -525,9 +688,12 @@ const API = {
     // Geometry primitives shared with src/capture/capture-core.js, which loads
     // after this module in the background worker.
     EARTH_RADIUS_M,
+    MIN_PLAUSIBLE_ELEVATION_M,
+    MAX_PLAUSIBLE_ELEVATION_M,
     toRad,
     normalizeLonDelta,
     isValidCoordinate,
+    isPlausibleElevationM,
     distanceM: haversineDistanceM,
     computeRouteDistanceM,
     calculateConfirmedGainM,
