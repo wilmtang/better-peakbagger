@@ -21,6 +21,11 @@ const GRADE_MIN_DISTANCE_M = 10;
 const GRADE_MAX_LOOKBACK_POINTS = 50;
 const MAX_REASONABLE_SPEED_MPS = 10;
 const PAUSE_RESET_SECONDS = 300;
+// A GPX <trkseg> boundary is often only a recorder pause or an export
+// container boundary. Treat nearby endpoints as one route, while keeping a
+// conservative spatial cap so equal-elevation teleports cannot be joined.
+const MAX_SEGMENT_JOIN_DISTANCE_M = 100;
+const MAX_SEGMENT_JOIN_ELEVATION_DELTA_M = 100;
 // Conservative terrestrial bounds. Values outside them cannot describe a
 // Peakbagger ascent, but the wide margin avoids treating ordinary GPS/geoid
 // disagreement near the lowest and highest land elevations as corrupt data.
@@ -173,10 +178,9 @@ const computeAdjustedDistances = points => {
             continue;
         }
         const stepM = haversineDistanceM(prev, current);
-        // Time-derived views sort chronologically, while route metrics retain
-        // GPX document order. A recoverable out-of-order series can therefore
-        // put the later timestamp first; jump and pause filtering depend on the
-        // elapsed magnitude, not on which adjacent sample was serialized first.
+        // Individual samples are never reordered, so a malformed or partial
+        // series can still put the later timestamp first. Jump and pause
+        // filtering depend on the elapsed magnitude, not serialization order.
         const elapsedSeconds = isValidTimestamp(current.ms) && isValidTimestamp(prev.ms)
             ? Math.abs(current.ms - prev.ms) / 1000
             : 0;
@@ -224,10 +228,22 @@ const computeAdjustedDistances = points => {
 const computeRouteDistanceM = segments => {
     let coordinateGroup = 0;
     const points = [];
+    let previousSegmentEnd = null;
 
     (segments || []).forEach((segment, segmentIndex) => {
-        if (segmentIndex > 0) coordinateGroup++;
-        (segment || []).forEach(coordinate => {
+        const coordinates = segment || [];
+        const firstCoordinate = coordinates[0];
+        const firstPoint = {
+            lat: firstCoordinate?.[0],
+            lon: firstCoordinate?.[1],
+        };
+        if (segmentIndex > 0
+            && (!previousSegmentEnd
+                || !isValidCoordinate(firstPoint.lat, firstPoint.lon)
+                || haversineDistanceM(previousSegmentEnd, firstPoint) > MAX_SEGMENT_JOIN_DISTANCE_M)) {
+            coordinateGroup++;
+        }
+        coordinates.forEach(coordinate => {
             const lat = coordinate?.[0];
             const lon = coordinate?.[1];
             if (!isValidCoordinate(lat, lon)) {
@@ -236,6 +252,12 @@ const computeRouteDistanceM = segments => {
             }
             points.push({ lat, lon, coordinateGroup });
         });
+        const lastCoordinate = coordinates.at(-1);
+        const lastPoint = {
+            lat: lastCoordinate?.[0],
+            lon: lastCoordinate?.[1],
+        };
+        previousSegmentEnd = isValidCoordinate(lastPoint.lat, lastPoint.lon) ? lastPoint : null;
     });
 
     return computeAdjustedDistances(points).distanceM;
@@ -359,29 +381,108 @@ const sampledPointSet = (points, groupProperty) => {
     return sampled;
 };
 
+const sourceCoordinateGroupFor = point => Number.isSafeInteger(point.coordinateGroup)
+    && point.coordinateGroup >= 0 ? point.coordinateGroup : null;
+
+const splitSourceSegments = points => {
+    const segments = [];
+    let current = null;
+    points.forEach((point, sourceIndex) => {
+        const sourceCoordinateGroup = sourceCoordinateGroupFor(point);
+        if (!current || current.sourceCoordinateGroup !== sourceCoordinateGroup) {
+            current = {
+                sourceCoordinateGroup,
+                sourceOrder: segments.length,
+                entries: [],
+            };
+            segments.push(current);
+        }
+        current.entries.push({ point, sourceIndex });
+    });
+    return segments;
+};
+
+const completeOrderedTimeRange = segment => {
+    let previousMs = -Infinity;
+    for (const { point } of segment.entries) {
+        if (timeStateFor(point) !== 'valid' || point.ms < previousMs) return null;
+        previousMs = point.ms;
+    }
+    return {
+        startMs: segment.entries[0].point.ms,
+        endMs: segment.entries.at(-1).point.ms,
+    };
+};
+
+const safelySequenceSourceSegments = points => {
+    const segments = splitSourceSegments(points);
+    if (segments.length < 2) return segments;
+
+    const timedSegments = segments.map(segment => ({
+        ...segment,
+        timeRange: completeOrderedTimeRange(segment),
+    }));
+    if (timedSegments.some(segment => !segment.timeRange)) return segments;
+
+    const chronological = timedSegments.slice().sort((a, b) =>
+        a.timeRange.startMs - b.timeRange.startMs || a.sourceOrder - b.sourceOrder);
+    const intervalsDoNotOverlap = chronological.every((segment, index) =>
+        index === 0 || chronological[index - 1].timeRange.endMs <= segment.timeRange.startMs);
+    return intervalsDoNotOverlap ? chronological : segments;
+};
+
+const segmentBoundaryContinuity = (previousSegment, currentSegment) => {
+    if (!previousSegment || !currentSegment) {
+        return { coordinates: false, elevations: false };
+    }
+    const previous = previousSegment.entries.at(-1).point;
+    const current = currentSegment.entries[0].point;
+    const distanceM = isValidCoordinate(previous.lat, previous.lon)
+        && isValidCoordinate(current.lat, current.lon)
+        ? haversineDistanceM(previous, current)
+        : Infinity;
+    const elapsedSeconds = isValidTimestamp(previous.ms) && isValidTimestamp(current.ms)
+        ? Math.abs(current.ms - previous.ms) / 1000
+        : 0;
+    const isBadJump = elapsedSeconds > 0
+        && distanceM > DIST_CONFIRM_M
+        && distanceM / elapsedSeconds > MAX_REASONABLE_SPEED_MPS;
+    if (!isValidCoordinate(previous.lat, previous.lon)
+        || !isValidCoordinate(current.lat, current.lon)
+        || distanceM > MAX_SEGMENT_JOIN_DISTANCE_M
+        || isBadJump) {
+        return { coordinates: false, elevations: false };
+    }
+    const elevations = elevationStateFor(previous) === 'valid'
+        && elevationStateFor(current) === 'valid'
+        && Math.abs(previous.rawEleM - current.rawEleM) <= MAX_SEGMENT_JOIN_ELEVATION_DELTA_M;
+    return { coordinates: true, elevations };
+};
+
 const computeMetrics = points => {
     let coordinateGroup = 0;
-    let sourceCoordinateGroup = null;
+    let elevationSourceGroup = 0;
     const routePoints = [];
-    points.forEach((point, index) => {
-        // Callers that still pass one flat route omit coordinateGroup and keep
-        // the legacy behavior. GPX callers provide the owning <trkseg> index:
-        // adjacent segments are separate paths, so distance, gain, smoothing,
-        // and grade must never bridge the straight-line gap between them.
-        const nextSourceCoordinateGroup = Number.isSafeInteger(point.coordinateGroup)
-            && point.coordinateGroup >= 0 ? point.coordinateGroup : null;
-        if (index > 0 && nextSourceCoordinateGroup !== sourceCoordinateGroup) coordinateGroup++;
-        sourceCoordinateGroup = nextSourceCoordinateGroup;
-        if (!isValidCoordinate(point.lat, point.lon)) {
-            coordinateGroup++;
-            return;
-        }
-        routePoints.push({
-            ...point,
-            index,
-            coordinateGroup,
-            elevationState: elevationStateFor(point),
-            timeState: timeStateFor(point),
+    const sequencedSegments = safelySequenceSourceSegments(points);
+    sequencedSegments.forEach((segment, segmentIndex) => {
+        const continuity = segmentBoundaryContinuity(sequencedSegments[segmentIndex - 1], segment);
+        if (segmentIndex > 0 && !continuity.coordinates) coordinateGroup++;
+        if (segmentIndex > 0 && !continuity.elevations) elevationSourceGroup++;
+
+        segment.entries.forEach(({ point, sourceIndex }) => {
+            if (!isValidCoordinate(point.lat, point.lon)) {
+                coordinateGroup++;
+                elevationSourceGroup++;
+                return;
+            }
+            routePoints.push({
+                ...point,
+                index: sourceIndex,
+                coordinateGroup,
+                elevationSourceGroup,
+                elevationState: elevationStateFor(point),
+                timeState: timeStateFor(point),
+            });
         });
     });
 
@@ -484,11 +585,11 @@ const computeMetrics = points => {
     let needsElevationBreak = false;
     const analysisPoints = [];
     groupedRoutePoints.forEach((point, index) => {
-        if (previousRouteGroup !== null && point.coordinateGroup !== previousRouteGroup) {
+        if (previousRouteGroup !== null && point.elevationSourceGroup !== previousRouteGroup) {
             elevationGroup++;
             needsElevationBreak = false;
         }
-        previousRouteGroup = point.coordinateGroup;
+        previousRouteGroup = point.elevationSourceGroup;
         if (point.elevationState !== 'valid') {
             needsElevationBreak = true;
             return;
@@ -582,9 +683,10 @@ const computeMetrics = points => {
             .sort((a, b) => a.ms - b.ms)
         : [];
 
-    // Route, distance, gain, and the distance chart retain GPX document order.
-    // Only time-derived views use chronological order. Array#sort is stable,
-    // so points with duplicate timestamps keep their relative GPX order.
+    // Safely sequenced whole segments own route, distance, gain, and both chart
+    // views. Individual samples are never sorted: malformed, partial, or
+    // overlapping segment timing leaves source order intact. Array#sort is
+    // stable, so equal timestamps retain their relative source order.
     const sampledPoints = sampledPointSet(groupedAdjustedPoints, 'coordinateGroup');
     if (elevationTimePoints.length) {
         // Combined tracks can put the elevation series' chronological endpoints

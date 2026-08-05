@@ -35,7 +35,7 @@ test('metrics discard impossible coordinates without bridging across the resulti
     assert.equal(metrics.maxEleM < 9999, true);
 });
 
-test('metrics do not bridge declared track-segment boundaries', () => {
+test('metrics do not bridge implausible track-segment boundaries', () => {
     const metrics = GpxMetrics.computeMetrics([
         { lat: 48.2, lon: -121.2, rawEleM: 100, ms: 0, coordinateGroup: 0 },
         { lat: 48.3, lon: -121.3, rawEleM: 110, ms: 0, coordinateGroup: 0 },
@@ -49,6 +49,110 @@ test('metrics do not bridge declared track-segment boundaries', () => {
         'elevation gain must not include the jump between segments');
     assert.deepEqual(metrics.chartPoints.map(point => point.coordinateGroup), [0, 0, 1, 1],
         'each segment must retain both endpoints and its break identity after sampling');
+});
+
+test('metrics safely sequence and join nearby chronological track segments', () => {
+    const dayOne = Date.UTC(2026, 6, 10, 12);
+    const dayTwo = Date.UTC(2026, 6, 11, 12);
+    const sourcePoints = [
+        { lat: 40, lon: -105, rawEleM: 100, ms: dayOne, coordinateGroup: 0 },
+        { lat: 40.0001, lon: -105, rawEleM: 110, ms: dayOne + 60_000, coordinateGroup: 0 },
+        { lat: 40.00061, lon: -105, rawEleM: 130, ms: dayTwo + 3 * 3_600_000, coordinateGroup: 1 },
+        { lat: 40.0007, lon: -105, rawEleM: 120, ms: dayTwo + 3 * 3_600_000 + 60_000, coordinateGroup: 1 },
+        { lat: 40.0002, lon: -105, rawEleM: 105, ms: dayTwo, coordinateGroup: 2 },
+        { lat: 40.0003, lon: -105, rawEleM: 150, ms: dayTwo + 60_000, coordinateGroup: 2 },
+        { lat: 40.00035, lon: -105, rawEleM: 154, ms: dayTwo + 2 * 3_600_000, coordinateGroup: 3 },
+        { lat: 40.0006, lon: -105, rawEleM: 135, ms: dayTwo + 2 * 3_600_000 + 60_000, coordinateGroup: 3 },
+    ];
+    const metrics = GpxMetrics.computeMetrics(sourcePoints);
+    const expectedOrder = [100, 110, 105, 150, 154, 135, 130, 120];
+    const orderedSourcePoints = expectedOrder.map(rawEleM =>
+        sourcePoints.find(point => point.rawEleM === rawEleM));
+    const expectedRawDistanceM = orderedSourcePoints.slice(1).reduce((sum, point, index) =>
+        sum + GpxMetrics.distanceM(orderedSourcePoints[index], point), 0);
+
+    assert.deepEqual(metrics.points.map(point => point.rawEleM), expectedOrder,
+        'non-overlapping, internally ordered segments should use chronological segment order');
+    assert.deepEqual(metrics.points.map(point => point.coordinateGroup), Array(8).fill(0),
+        'nearby endpoints with ballpark elevations should form one elevation profile');
+    assert.ok(Math.abs(metrics.rawDistanceM - expectedRawDistanceM) < 0.001,
+        'route distance should include every plausible cross-segment edge');
+    assert.equal(metrics.rawGainM, 59,
+        'gain should include the plausible four-metre rise across a segment boundary');
+});
+
+test('nearby segment endpoints with an implausible elevation reset keep a profile break', () => {
+    const start = Date.UTC(2026, 6, 10, 12);
+    const metrics = GpxMetrics.computeMetrics([
+        { lat: 40, lon: -105, rawEleM: 100, ms: start, coordinateGroup: 0 },
+        { lat: 40.0001, lon: -105, rawEleM: 100, ms: start + 60_000, coordinateGroup: 0 },
+        { lat: 40.00011, lon: -105, rawEleM: 250, ms: start + 120_000, coordinateGroup: 1 },
+        { lat: 40.0002, lon: -105, rawEleM: 260, ms: start + 180_000, coordinateGroup: 1 },
+    ]);
+
+    assert.deepEqual(metrics.routePoints.map(point => point.coordinateGroup), [0, 0, 0, 0],
+        'coordinate distance may cross a nearby recorder boundary');
+    assert.deepEqual(metrics.points.map(point => point.coordinateGroup), [0, 0, 1, 1],
+        'a 150-metre endpoint reset must remain a visible elevation break');
+    assert.equal(metrics.rawGainM, 10,
+        'gain must not include the implausible elevation reset');
+});
+
+test('a nearby but impossibly fast segment boundary remains a gap', () => {
+    const start = Date.UTC(2026, 6, 10, 12);
+    const metrics = GpxMetrics.computeMetrics([
+        { lat: 40, lon: -105, rawEleM: 100, ms: start, coordinateGroup: 0 },
+        { lat: 40.0001, lon: -105, rawEleM: 110, ms: start + 60_000, coordinateGroup: 0 },
+        { lat: 40.0009, lon: -105, rawEleM: 115, ms: start + 61_000, coordinateGroup: 1 },
+        { lat: 40.001, lon: -105, rawEleM: 120, ms: start + 120_000, coordinateGroup: 1 },
+    ]);
+
+    assert.deepEqual(metrics.routePoints.map(point => point.coordinateGroup), [0, 0, 1, 1],
+        'an 89-metre jump in one second must not become route continuity');
+    assert.equal(metrics.rawGainM, 15,
+        'gain must not cross the rejected coordinate boundary');
+});
+
+test('partial segment timing preserves source segment order', () => {
+    const start = Date.UTC(2026, 6, 10, 12);
+    const metrics = GpxMetrics.computeMetrics([
+        { lat: 40.0002, lon: -105, rawEleM: 120, ms: start + 120_000, coordinateGroup: 0 },
+        { lat: 40.0003, lon: -105, rawEleM: 130, ms: 0, coordinateGroup: 0 },
+        { lat: 40, lon: -105, rawEleM: 100, ms: start, coordinateGroup: 1 },
+        { lat: 40.0001, lon: -105, rawEleM: 110, ms: start + 60_000, coordinateGroup: 1 },
+    ]);
+
+    assert.deepEqual(metrics.points.map(point => point.rawEleM), [120, 130, 100, 110],
+        'one incomplete segment must prevent speculative whole-segment reordering');
+});
+
+test('unsafe segment time ranges preserve source segment order', async t => {
+    const start = Date.UTC(2026, 6, 10, 12);
+    const cases = [
+        {
+            name: 'internally reversed segment',
+            firstTimes: [start + 180_000, start + 120_000],
+            secondTimes: [start, start + 60_000],
+        },
+        {
+            name: 'overlapping segment ranges',
+            firstTimes: [start + 120_000, start + 300_000],
+            secondTimes: [start, start + 180_000],
+        },
+    ];
+
+    for (const { name, firstTimes, secondTimes } of cases) {
+        await t.test(name, () => {
+            const metrics = GpxMetrics.computeMetrics([
+                { lat: 40.0002, lon: -105, rawEleM: 120, ms: firstTimes[0], coordinateGroup: 0 },
+                { lat: 40.0003, lon: -105, rawEleM: 130, ms: firstTimes[1], coordinateGroup: 0 },
+                { lat: 40, lon: -105, rawEleM: 100, ms: secondTimes[0], coordinateGroup: 1 },
+                { lat: 40.0001, lon: -105, rawEleM: 110, ms: secondTimes[1], coordinateGroup: 1 },
+            ]);
+
+            assert.deepEqual(metrics.points.map(point => point.rawEleM), [120, 130, 100, 110]);
+        });
+    }
 });
 
 test('map routes split at impossible coordinates and discard unusable fragments', () => {
@@ -74,6 +178,16 @@ test('coordinate-only route distance preserves segment and invalid-coordinate ga
 
     assert.ok(distanceM > 300 && distanceM < 360,
         `expected only three local edges, got ${distanceM} m`);
+});
+
+test('coordinate-only route distance joins nearby segment endpoints', () => {
+    const distanceM = GpxMetrics.computeRouteDistanceM([
+        [[0, 0], [0, 0.001]],
+        [[0, 0.0011], [0, 0.002]],
+    ]);
+
+    assert.ok(distanceM > 220 && distanceM < 225,
+        `expected the nearby cross-segment edge to count, got ${distanceM} m`);
 });
 
 test('missing elevation does not shortcut route distance or invent an elevation span', () => {

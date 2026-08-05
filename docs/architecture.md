@@ -582,12 +582,12 @@ multi-day boundaries, and possible camping stops.
 
 Peakbagger can serve a structurally valid GPX whose points have coordinates
 but no `<ele>` values, especially when an older or transformed source retained
-only route geometry. Those tracks still receive a segment-aware route distance,
-the extension-owned 2D overlay, and the opt-in 3D route. Progressing timestamps
-produce a cumulative-distance-over-time chart; without them, a compact
-distance scrubber retains chart-to-map inspection. When only part of a route
-lacks elevation, its complete coordinate path still owns distance and timing
-while the elevation profile breaks across the missing run instead of
+only route geometry. Those tracks still receive a continuity-aware route
+distance, the extension-owned 2D overlay, and the opt-in 3D route. Progressing
+timestamps produce a cumulative-distance-over-time chart; without them, a
+compact distance scrubber retains chart-to-map inspection. When only part of a
+route lacks elevation, its complete coordinate path still owns distance and
+timing while the elevation profile breaks across the missing run instead of
 smoothing, counting gain, or drawing through it. Values outside the
 conservative −1,000 to 10,000 metre terrestrial range are excluded as suspect.
 Better Peakbagger does not invent a missing elevation profile from the 3D map.
@@ -599,12 +599,21 @@ before any time view is shown. A missing or malformed timestamp no longer
 erases the valid timed runs around it: the chart breaks at that sample,
 coverage is disclosed, and the elapsed value is labelled **Known time span**
 rather than complete duration. Full start/back, summit-duration, and camping
-inferences remain limited to complete timing. The route, distance, gain, and
-elevation-by-distance remain in GPX document order. Time-derived views use a
-separate stable chronological ordering, so combined multi-day tracks whose
-days were appended out of order do not reorder route geometry. Duplicate
-timestamps retain their GPX order; an all-equal series still omits time-derived
-output instead of reporting a false zero duration.
+inferences remain limited to complete timing.
+
+The native and extension-owned map paths preserve GPX document order and
+explicit `<trkseg>` geometry. Metrics and charts sequence whole segments by
+time only when every segment is internally chronological and the segment
+ranges do not overlap; otherwise they preserve source order. Individual
+trackpoints are never reordered. After that safe sequencing, a segment boundary
+does not automatically split distance or the chart: endpoints within 100 metres
+share coordinate continuity unless their timestamps imply an impossible jump,
+and gain/elevation continuity additionally requires two plausible endpoint
+elevations within 100 metres. This recovers recorder pauses and out-of-order
+multi-day exports without connecting a same-elevation teleport or an
+implausible vertical reset. Duplicate timestamps retain source order; an
+all-equal series still omits time-derived output instead of reporting a false
+zero duration.
 
 The complete degraded-data behavior matrix, including the no-coordinate empty
 state, is maintained in

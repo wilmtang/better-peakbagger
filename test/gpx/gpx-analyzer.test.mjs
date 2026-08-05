@@ -1329,7 +1329,7 @@ test('GPX analyzer sorts a combined track only for the time series', async () =>
     dom.window.close();
 });
 
-test('GPX analyzer sorts reversed multi-day segments for time and camping only', async () => {
+test('GPX analyzer safely sequences reversed multi-day segments without reordering the map', async () => {
     const source = `<?xml version="1.0"?><gpx><trk>
       <trkseg>
         <trkpt lat="48.200" lon="-121.200"><ele>130</ele><time>2026-07-11T16:00:00Z</time></trkpt>
@@ -1353,8 +1353,8 @@ test('GPX analyzer sorts reversed multi-day segments for time and camping only',
     await waitFor(dom, () => chartConfig() !== null);
     await waitFor(dom, () => polylineCalls.length === 2);
     const [distanceSeries, timeSeries] = chartConfig().data.datasets;
-    assert.deepEqual(Array.from(distanceSeries.data, point => point._raw?.lat ?? null), [48.2, 48.3, null, 47, 47.1],
-        'distance analysis must retain reversed GPX segment order');
+    assert.deepEqual(Array.from(distanceSeries.data, point => point._raw?.lat ?? null), [47, 47.1, null, 48.2, 48.3],
+        'distance analysis must use safe chronological whole-segment order');
     assert.ok(distanceSeries.data.at(-1)._raw.distM > 25_000
         && distanceSeries.data.at(-1)._raw.distM < 30_000,
     `distance analysis must not bridge the segment gap, got ${distanceSeries.data.at(-1)._raw.distM} m`);
@@ -1370,6 +1370,38 @@ test('GPX analyzer sorts reversed multi-day segments for time and camping only',
         [[48.2, -121.2], [48.3, -121.3]],
         [[47, -121], [47.1, -121.1]]
     ], 'the map overlay must retain GPX segment order and boundaries');
+
+    dom.window.close();
+});
+
+test('GPX analyzer connects nearby track-segment boundaries in both chart series', async () => {
+    const source = `<?xml version="1.0"?><gpx><trk>
+      <trkseg>
+        <trkpt lat="40.00000" lon="-105.00000"><ele>100</ele><time>2026-07-10T12:00:00Z</time></trkpt>
+        <trkpt lat="40.00010" lon="-105.00000"><ele>110</ele><time>2026-07-10T12:01:00Z</time></trkpt>
+      </trkseg>
+      <trkseg>
+        <trkpt lat="40.00020" lon="-105.00000"><ele>105</ele><time>2026-07-11T12:00:00Z</time></trkpt>
+        <trkpt lat="40.00030" lon="-105.00000"><ele>150</ele><time>2026-07-11T12:01:00Z</time></trkpt>
+      </trkseg>
+      <trkseg>
+        <trkpt lat="40.00035" lon="-105.00000"><ele>154</ele><time>2026-07-11T14:00:00Z</time></trkpt>
+        <trkpt lat="40.00060" lon="-105.00000"><ele>135</ele><time>2026-07-11T14:01:00Z</time></trkpt>
+      </trkseg>
+    </trk></gpx>`;
+    const { dom, chartConfig } = await loadElevationAnalyzer(source);
+
+    await waitFor(dom, () => chartConfig() !== null);
+    const [distanceSeries, timeSeries] = chartConfig().data.datasets;
+    assert.equal(distanceSeries.data.some(point => point._raw === null), false,
+        'the distance profile should not force breaks at plausible recorder boundaries');
+    assert.equal(timeSeries.data.some(point => point._raw === null), false,
+        'the time profile should not force breaks at plausible recorder boundaries');
+    assert.deepEqual(
+        Array.from(distanceSeries.data, point => point._raw.lat),
+        Array.from(timeSeries.data, point => point._raw.lat),
+        'distance and time series should share the same chronological segment sequence'
+    );
 
     dom.window.close();
 });

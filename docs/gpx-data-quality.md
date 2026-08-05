@@ -22,9 +22,15 @@ track:
 | Partially valid | Any | Any | Invalid coordinate points split the route and are excluded. Remaining valid route sections use the applicable visualization above, and the panel reports the exclusion count. |
 | Unavailable | Any | Any | **No chart:** the canvas and chart-only controls are hidden because no honest plot or map-synchronized coordinate selection is possible. |
 
-Separate GPX track segments always remain separate. Missing or excluded samples
-also create chart breaks; Chart.js is never allowed to connect a line across
-an unknown run.
+A `<trkseg>` boundary alone does not force a visual or metric break. Recorders
+often start a new segment after a pause even though the route continues.
+Adjacent segment endpoints form one coordinate route when they are within
+100 metres and any recorded elapsed time does not imply an impossible jump.
+The elevation profile and gain also cross that boundary only when both endpoint
+elevations are recorded, plausible, and within 100 metres of each other. More
+distant endpoints, impossible timed jumps, and larger elevation resets remain
+separate. Missing or excluded samples still create chart breaks; Chart.js is
+never allowed to connect a line across an unknown run.
 
 ## What “complete,” “partial,” and “suspect” mean
 
@@ -39,8 +45,11 @@ an unknown run.
   timestamps advance but other timestamps are absent or malformed, time is
   partial. Equal timestamps may occur within a progressing track, but an
   all-equal series is non-progressing and cannot support a time view.
-- Time-derived views use a stable chronological copy. Route geometry,
-  distance, gain, and elevation-by-distance retain GPX document order.
+- The 2D/3D map geometry preserves GPX document order and explicit segment
+  paths. Metrics and charts may reorder complete whole segments when every
+  segment is internally chronological and their time ranges do not overlap.
+  Partial, malformed, internally reversed, or overlapping segment timing
+  keeps source order. Individual points are never reordered.
 
 The analyzer labels complete timing as **Time** and incomplete timing as
 **Known time span**. Start/back, summit-duration, and camping inferences require
@@ -54,6 +63,7 @@ Better Peakbagger does not:
 
 - replace missing elevation with sea level;
 - connect gain, grade, or profile lines across missing elevation;
+- treat matching elevation alone as proof that distant segments connect;
 - interpolate missing timestamps;
 - sample the optional 3D terrain tiles to manufacture a GPX elevation profile;
 - present a partial known time span as the route’s complete duration.

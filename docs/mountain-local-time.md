@@ -52,13 +52,15 @@ remain available with visible breaks and coverage; the elapsed value is
 labelled **Known time span** rather than complete duration. Start/back,
 summit-duration, and camping inference remain limited to complete timing.
 
-Route geometry and elevation-by-distance stay in GPX document order. Complete
-and partial time views use a separate stable timestamp sort. This recovers
-combined multi-day files whose tracks were appended out of chronological order
-without reordering the distance analysis; equal timestamps retain their
-relative GPX order. An all-equal series cannot be repaired by sorting, so its
-time-derived output is omitted. The full chart fallback matrix is maintained
-in [gpx-data-quality.md](gpx-data-quality.md#resulting-chart).
+Map geometry stays in GPX document order. When every segment has complete,
+internally chronological timing and the segment ranges do not overlap, metrics
+and charts may safely sequence those whole segments chronologically. Partial,
+malformed, internally reversed, or overlapping timing preserves source order;
+individual points are never reordered. Time views still use a stable timestamp
+sort, so equal timestamps retain their relative source order. An all-equal
+series cannot be repaired by sorting, so its time-derived output is omitted.
+The full continuity and chart fallback matrix is maintained in
+[gpx-data-quality.md](gpx-data-quality.md#resulting-chart).
 
 This validation happens before timezone resolution. A displayed mountain time
 therefore always comes from a usable UTC sequence; timezone conversion cannot
