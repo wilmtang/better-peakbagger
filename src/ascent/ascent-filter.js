@@ -4,8 +4,8 @@
 // Better Peakbagger — ascent-list filter and instant table-sort content script.
 // Runs in the default isolated content-script world: it only reads list-table
 // DOM, reorders existing rows, and persists PeakAscents chip preferences in the
-// page's (same-origin) localStorage, so no page-global access is needed. The
-// Buddy List reuses only the sorter; it has no beta data or filter surface.
+// page's (same-origin) localStorage, so no page-global access is needed. Buddy
+// and peak-list pages reuse only the sorter; they have no beta filter surface.
 
 import { settings as S } from '../settings/settings.js';
 import { settingsSchema as Schema } from '../settings/settings-schema.js';
@@ -20,11 +20,13 @@ const isAscentListPage = /\/climber\/(?:peakascents|climblistc)\.aspx$/.test(pag
 const isPeakAscentsPage = pagePathname.endsWith('/climber/peakascents.aspx');
 const isBuddyListPage = pagePathname.endsWith('/report/report.aspx')
         && (pageParams.get('r') || '').toLowerCase() === 'b';
+const isPeakListPage = pagePathname.endsWith('/list.aspx');
+const isSorterOnlyPage = isBuddyListPage || isPeakListPage;
 
 // This script runs at document_start; kick off the one settings read now, at
 // module load, so both the newest-first auto-sort and the "has beta"
 // definition reuse it instead of adding a storage round-trip to the critical
-// path. Buddy/report pages do not need ascent settings. Resolves to the
+// path. Sorter-only pages do not need ascent settings. Resolves to the
 // cleaned settings, or null on any read failure.
 const settingsPromise = S && isAscentListPage
     ? S.get().catch(() => null)
@@ -54,6 +56,15 @@ const saveState = state => {
 
 // Cells that "look empty" may contain a literal &nbsp; depending on column.
 const normalize = text => (text || '').replace(/\u00a0/g, ' ').trim();
+const canonicalSortKey = key => {
+    const lower = (key || '').toLowerCase();
+    return {
+        ascent: 'ascentdate',
+        ascentdated: 'ascentdate',
+        elev: 'elevft',
+        prom: 'promft'
+    }[lower] || lower;
+};
 
 // --- Early table-sort click guard -----------------------------------------
 // The client-side sorter (below) only wires up once the DOM is parsed. On a
@@ -61,7 +72,7 @@ const normalize = text => (text || '').replace(/\u00a0/g, ' ').trim();
 // sort-link clicks until the sorter has decided whether it owns this table.
 // Links outside table headers (year jumps, unit toggles, etc.) are untouched.
 const tableSortTarget = target => {
-    if (!isAscentListPage && !isBuddyListPage) return null;
+    if (!isAscentListPage && !isSorterOnlyPage) return null;
     const anchor = target && target.closest ? target.closest('a[href]') : null;
     if (!anchor) return null;
     const header = anchor.closest('th');
@@ -77,8 +88,9 @@ const tableSortTarget = target => {
     return {
         href: anchor.href,
         columnIndex: header.cellIndex,
-        key: lowerKey === 'ascentdated' ? 'ascentdate' : (lowerKey || fallbackKey),
-        dir: lowerKey === 'ascentdated' ? 'desc' : (lowerKey === 'ascentdate' ? 'asc' : null)
+        key: canonicalSortKey(lowerKey || fallbackKey),
+        dir: lowerKey === 'ascentdated' ? 'desc'
+            : (lowerKey === 'ascentdate' || lowerKey === 'ascent' ? 'asc' : null)
     };
 };
 
@@ -128,13 +140,16 @@ const optOutInstantSort = () => {
 };
 
 // --- Instant table sorting ------------------------------------------------
-// Replace every native backend sort link with a button that reorders only the
-// rows already on the page. Date-sorted pages keep Peakbagger's exact served
-// order so Unknown, partial, and malformed dates retain backend semantics.
-// Other columns use values already present in their cells; their sort is
-// stable and type-aware for numbers, presence flags, icons, and dates.
+// Replace sortable headers with buttons that reorder only the rows already on
+// the page. Sorter-only tables also gain a control for unlinked fields such as
+// Rank. Date-sorted ascent pages keep Peakbagger's exact served order so
+// Unknown, partial, and malformed dates retain backend semantics. Other
+// columns use values already present in their cells; their sort is stable and
+// type-aware for numbers, presence flags, icons, and dates.
 const setupInstantTableSort = ({
-    headerRow, sections, preamble, rows, dataRows, sortEveryHeader = false
+    headerRow, sections, preamble, rows, dataRows,
+    sortEveryHeader = false, inferActiveSort = false, preserveUrl = false,
+    defaultSortKey = 'ascentdate'
 }) => {
     const keyOf = anchor => {
         try { return new URL(anchor.href, location.href).searchParams.get('sort') || ''; }
@@ -142,10 +157,11 @@ const setupInstantTableSort = ({
     };
     const numericKeys = new Set([
         'words', 'vertpeakft', 'tripupft', 'totalkm', 'tripkm',
-        'quality', 'elevft', 'promft'
+        'quality', 'elevft', 'promft', 'ascents', 'rank'
     ]);
     const descendingFirstKeys = new Set([
-        ...numericKeys, 'gps', 'routestring', 'gearstring', 'urllink'
+        ...Array.from(numericKeys).filter(key => key !== 'rank'),
+        'gps', 'routestring', 'gearstring', 'urllink'
     ]);
     const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
 
@@ -155,8 +171,8 @@ const setupInstantTableSort = ({
         const rawKey = primary ? keyOf(primary) : '';
         if (!rawKey && !sortEveryHeader) return [];
         const label = normalize(primary && primary.textContent) || normalize(cell.textContent);
-        const key = rawKey.toLowerCase()
-                || label.toLowerCase().replace(/[^a-z0-9]+/g, '');
+        const key = canonicalSortKey(rawKey
+                || label.toLowerCase().replace(/[^a-z0-9]+/g, ''));
         if (!key || !label) return [];
         return [{
             id: `${index}:${key}`,
@@ -250,15 +266,16 @@ const setupInstantTableSort = ({
         return null;
     };
 
-    const requestedSort = (new URLSearchParams(location.search).get('sort') || '').toLowerCase();
-    const urlSort = requestedSort || (sortEveryHeader ? '' : 'ascentdate');
-    const dateServed = !sortEveryHeader && (urlSort === 'ascentdate' || urlSort === 'ascentdated');
+    const requestedSortRaw = (new URLSearchParams(location.search).get('sort') || '').toLowerCase();
+    const requestedSort = canonicalSortKey(requestedSortRaw);
+    const urlSort = requestedSort || (inferActiveSort ? '' : defaultSortKey);
+    const dateServed = !preserveUrl && urlSort === 'ascentdate';
     const years = sections
         .map(section => parseInt(normalize(section.row.textContent), 10))
         .filter(Number.isFinite);
     const servedDateDir = years.length > 1
         ? (years[0] > years[years.length - 1] ? 'desc' : 'asc')
-        : (urlSort === 'ascentdated' ? 'desc' : 'asc');
+        : (requestedSortRaw === 'ascentdated' ? 'desc' : 'asc');
     const servedOrder = rows.slice(rows.indexOf(headerRow) + 1);
     const reversedDateOrder = [];
     for (let i = sections.length - 1; i >= 0; i--) {
@@ -286,7 +303,7 @@ const setupInstantTableSort = ({
 
     let currentColumn = null;
     let currentDir = null;
-    if (sortEveryHeader) {
+    if (inferActiveSort) {
         // GridView pages do not expose their active sort in the URL. Mark a
         // column active only when its displayed values prove a direction;
         // all-equal action columns are not evidence of a served sort.
@@ -353,7 +370,7 @@ const setupInstantTableSort = ({
 
         // Date has native ascending/descending URL keys. Preserve the current
         // row-set parameters without adopting defaults from a header link.
-        if (column.key === 'ascentdate' && !sortEveryHeader) {
+        if (column.key === 'ascentdate' && !preserveUrl) {
             try {
                 const url = new URL(location.href);
                 url.searchParams.set('sort', dir === 'asc' ? 'ascentdate' : 'ascentdated');
@@ -570,9 +587,19 @@ const renderCompactNotice = table => {
 
 const init = async () => {
     if (document.getElementById('pbaf-bar')) return;
-    if (!isAscentListPage && !isBuddyListPage) return optOutInstantSort();
+    if (!isAscentListPage && !isSorterOnlyPage) return optOutInstantSort();
 
-    const table = document.querySelector(isBuddyListPage ? '#RGridView' : 'table.gray');
+    const table = isBuddyListPage
+        ? document.querySelector('#RGridView')
+        : Array.from(document.querySelectorAll('table.gray')).find(candidate => {
+            const candidateHeader = Array.from(candidate.rows)
+                .find(row => row.cells.length > 1 && row.cells[0].tagName === 'TH');
+            return candidateHeader && Array.from(candidateHeader.querySelectorAll('a[href]'))
+                .some(anchor => {
+                    try { return new URL(anchor.href, location.href).searchParams.has('sort'); }
+                    catch (e) { return false; }
+                });
+        });
     if (!table) return optOutInstantSort();
     if (table.dataset.bpbInstantSort === 'ready') return;
 
@@ -644,15 +671,18 @@ const init = async () => {
     // click replayed) as early as possible, not after the storage round-trip.
     const sorterMounted = setupInstantTableSort({
         headerRow, sections, preamble, rows, dataRows,
-        sortEveryHeader: isBuddyListPage
+        sortEveryHeader: isSorterOnlyPage,
+        inferActiveSort: isBuddyListPage,
+        preserveUrl: isSorterOnlyPage,
+        defaultSortKey: isPeakListPage ? 'rank' : 'ascentdate'
     });
     if (!sorterMounted) return;
     table.dataset.bpbInstantSort = 'ready';
 
-    // Buddy rows have no trip-report, GPS, or external-link beta signals.
-    // Sorting is the complete feature on this surface: do not mount a
+    // These rows have no trip-report, GPS, or external-link beta signals.
+    // Sorting is the complete feature on these surfaces: do not mount a
     // misleading filter/compact-view notice or apply ascent-list settings.
-    if (isBuddyListPage) {
+    if (isSorterOnlyPage) {
         return;
     }
 

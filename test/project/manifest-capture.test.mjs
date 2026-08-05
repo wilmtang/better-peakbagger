@@ -209,7 +209,7 @@ test('peak planning links are isolated to Peak.aspx in the extension world', () 
     assert.ok(peakLinks.matches.every(pattern => /peakbagger\.com\/(?:P|p)eak\.aspx/.test(pattern)));
 });
 
-test('the ascent sorter also reaches the Buddy List report endpoint', () => {
+test('the ascent sorter also reaches the Buddy List and Peak List endpoints', () => {
     const sorter = contentEntry('content/ascent-filter.js');
     assert.ok(sorter);
     assert.equal(sorter.run_at, 'document_start');
@@ -218,6 +218,8 @@ test('the ascent sorter also reaches the Buddy List report endpoint', () => {
         ['settings/settings-schema.js', 'settings/settings.js', 'favorites/favorite-climbers.js', 'peakbagger/peakbagger-origin.js', 'peakbagger/peakbagger-cloudflare.js', 'peakbagger/peakbagger-response.js', 'peakbagger/peakbagger-error.js', 'peakbagger/peakbagger-request.js', 'profile/profile-backup-core.js', 'ascent/ascent-filter.js']);
     for (const host of ['https://www.peakbagger.com', 'https://peakbagger.com']) {
         assert.ok(sorter.matches.includes(`${host}/report/report.aspx*`));
+        assert.ok(sorter.matches.includes(`${host}/List.aspx*`));
+        assert.ok(sorter.matches.includes(`${host}/list.aspx*`));
     }
 });
 

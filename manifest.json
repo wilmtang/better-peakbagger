@@ -173,7 +173,11 @@
         "https://peakbagger.com/climber/ClimbListC.aspx*",
         "https://peakbagger.com/climber/climblistc.aspx*",
         "https://www.peakbagger.com/report/report.aspx*",
-        "https://peakbagger.com/report/report.aspx*"
+        "https://peakbagger.com/report/report.aspx*",
+        "https://www.peakbagger.com/List.aspx*",
+        "https://www.peakbagger.com/list.aspx*",
+        "https://peakbagger.com/List.aspx*",
+        "https://peakbagger.com/list.aspx*"
       ],
       "js": [
         "content/ascent-filter.js"

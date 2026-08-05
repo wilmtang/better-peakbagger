@@ -25,6 +25,8 @@ it has been **masked** before committing:
   name/id, elevation, and location is replaced with deterministic synthetic
   data. The fixture is a reduced structural extraction of the downloaded MHTML,
   not a retained copy of any buddy's activity history.
+- The **Peak List** is likewise a reduced structural fixture with deterministic
+  synthetic peaks, ranges, counties, elevations, ascent counts, and dates.
 
 `test/project/fixtures-privacy.test.mjs` fails the build if a raw identifier reappears
 (e.g. when refreshing a capture) — the banned identifiers live there only as
@@ -44,6 +46,7 @@ MHTML `cid:` stylesheet leftovers are dropped.
 | `climber-ascents.html` | `ClimbListC.aspx?cid=…` (personal ascent list) | A climber's own ascent list (`ClimbListC.aspx`), fully genericized (peaks → `Sample Peak N`, dates → `2020-01-01`, etc.). |
 | `climber-ascentedit.html` | `climber/ascentedit.aspx?cid=…` (Ascent Editor, new-ascent form) | The signed-in **ascent add/edit form**: `Form1` with the `JournalText` trip-report textarea plus its square-bracket hints row, `URLTB`, save/cancel buttons, GPX upload block, and dropdowns. Grounds the trip-report editor. Additional masking: the personal **BuddyList** (real names + climber ids of third parties) is replaced by four generic `Doe/Peak/Summit` entries, and the `jsDatePick_ltr.min.css` link is dropped for self-containment. The calendar tables are frozen at the July 2026 capture date. |
 | `report-buddy-list.html` | `report/report.aspx?r=b&cid=…` (Buddy List) | Reduced structural extraction of the downloaded live MHTML. All row data is synthetic. Preserves the ASP.NET `#RGridView`, its six headers (including the non-link Ascent List header), and realistic link/cell shapes for sorter-only coverage. |
+| `list-peak-list.html` | `list.aspx?lid=…&sort=ascent&cid=…` (Peak List) | Reduced structural extraction of the linked list layout. All row data is synthetic. Preserves the eight-column `table.gray`, blank spacer row, backend sort keys, numeric formatting, partial ascent dates, and a second map table so sorter selection stays scoped to the peak list. |
 
 ## Structural notes (shared site chrome)
 
