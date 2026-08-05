@@ -1163,11 +1163,13 @@ test('GPX analyzer drops points whose elevation is missing or invalid', async ()
         'missing elevation must not become a charted dip to sea level');
     assert.ok(chartPoints.at(-1)._raw.distM > 1800,
         `distance must follow the coordinate-only bend, got ${chartPoints.at(-1)._raw.distM} m`);
+    assert.match(dom.window.document.getElementById('bpb-gpx-analysis').textContent,
+        /Elevation: 2 of 4 route points \(50%\); 1 missing, 1 malformed\. Gaps mark unavailable data\./);
 
     dom.window.close();
 });
 
-test('GPX analyzer renders a coordinate-only route without reporting zero gain', async () => {
+test('GPX analyzer renders timed coordinate-only data as route progress', async () => {
     const source = `<?xml version="1.0"?><gpx><trk><trkseg>
       <trkpt lat="47" lon="-121"><time>2026-07-10T07:30:00Z</time></trkpt>
       <trkpt lat="47" lon="-121.001"><ele>unknown</ele><time>2026-07-10T08:30:00Z</time></trkpt>
@@ -1175,17 +1177,26 @@ test('GPX analyzer renders a coordinate-only route without reporting zero gain',
     </trkseg></trk></gpx>`;
     const { dom, analysisText, chartConfig, polylineCalls } = await loadElevationAnalyzer(source, { withMap: true });
 
-    await waitFor(dom, () => analysisText().includes('Elevation data is unavailable'));
+    await waitFor(dom, () => chartConfig() !== null);
     await waitFor(dom, () => polylineCalls.length === 2);
-    assert.match(analysisText(), /Route: 0\.15 km/);
+    assert.match(analysisText(), /Route Progress: 0\.15 km/);
     assert.match(analysisText(), /Time: 2h 0m/);
     assert.match(analysisText(), /Possible Camping: Day 1 \(47\.00000, -121\.00000\)/);
     assert.match(analysisText(), /Times in the mountain’s local time/);
     assert.match(analysisText(), /Elevation data is unavailable in this GPX\./);
     assert.doesNotMatch(analysisText(), /0 (?:m|ft) gain/);
-    assert.equal(chartConfig(), null);
-    assert.equal(dom.window.document.querySelector('#bpb-gpx-analysis canvas').parentElement.hidden, true);
-    assert.equal(dom.window.document.querySelector('.bpb-gpx-coordinate-controls').hidden, true);
+    assert.deepEqual(Array.from(chartConfig().data.datasets, dataset => dataset.label), [
+        'Distance over Time'
+    ]);
+    assert.equal(chartConfig().options.scales.xTime.position, 'bottom');
+    assert.equal(chartConfig().options.scales.yDistance.title.text, 'Distance traveled (km)');
+    assert.equal(dom.window.document.querySelector('#bpb-gpx-analysis canvas').parentElement.hidden, false);
+    assert.equal(dom.window.document.querySelector('#bpb-gpx-analysis canvas').parentElement.style.height, '260px');
+    assert.equal(dom.window.document.querySelector('.bpb-gpx-coordinate-controls').hidden, false);
+    assert.match(
+        dom.window.document.querySelector('#bpb-gpx-analysis canvas').getAttribute('aria-label'),
+        /route progress chart/i
+    );
     assert.deepEqual(JSON.parse(JSON.stringify(polylineCalls[0].latLngs)), [
         [47, -121], [47, -121.001], [47, -121.002]
     ]);
@@ -1193,8 +1204,84 @@ test('GPX analyzer renders a coordinate-only route without reporting zero gain',
     const units = dom.window.document.getElementById('bpb-gpx-units');
     units.value = 'imperial';
     units.dispatchEvent(new dom.window.Event('change'));
-    assert.match(analysisText(), /Route: 0\.09 miles/);
-    assert.equal(chartConfig(), null, 'changing units must not instantiate an empty chart');
+    assert.match(analysisText(), /Route Progress: 0\.09 miles/);
+    assert.equal(chartConfig().options.scales.yDistance.title.text, 'Distance traveled (miles)');
+
+    dom.window.close();
+});
+
+test('GPX analyzer renders an untimed coordinate-only route as a distance scrubber', async () => {
+    const source = `<?xml version="1.0"?><gpx><trk><trkseg>
+      <trkpt lat="47" lon="-121"/>
+      <trkpt lat="47" lon="-121.001"/>
+      <trkpt lat="47" lon="-121.002"/>
+    </trkseg></trk></gpx>`;
+    const { dom, analysisText, chartConfig } = await loadElevationAnalyzer(source);
+
+    await waitFor(dom, () => chartConfig() !== null);
+    assert.match(analysisText(), /Route: 0\.15 km/);
+    assert.match(analysisText(), /Elevation data is unavailable in this GPX\./);
+    assert.match(analysisText(), /Time data is unavailable in this GPX/);
+    assert.deepEqual(Array.from(chartConfig().data.datasets, dataset => dataset.label), [
+        'Route Position'
+    ]);
+    assert.equal(chartConfig().data.datasets[0]._bpbSeries, 'distance');
+    assert.equal(chartConfig().options.scales.x.title.text, 'Distance (km)');
+    assert.equal(chartConfig().options.scales.yRoute.display, false);
+    assert.equal(chartConfig().options.plugins.legend.display, false);
+    assert.equal(dom.window.document.querySelector('#bpb-gpx-analysis canvas').parentElement.style.height, '110px');
+    assert.match(
+        dom.window.document.querySelector('#bpb-gpx-analysis canvas').getAttribute('aria-label'),
+        /route position chart/i
+    );
+    const canvas = dom.window.document.querySelector('#bpb-gpx-analysis canvas');
+    canvas.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'ArrowRight' }));
+    assert.match(dom.window.document.querySelector('#bpb-gpx-coordinate-status').textContent,
+        /Selected point 1 of \d+: 47\.00000, -121\.00000/);
+
+    dom.window.close();
+});
+
+test('GPX analyzer excludes impossible elevations and falls back to recorded route progress', async () => {
+    const source = `<?xml version="1.0"?><gpx><trk><trkseg>
+      <trkpt lat="47" lon="-121"><ele>999999</ele><time>2026-07-10T07:30:00Z</time></trkpt>
+      <trkpt lat="47" lon="-121.001"><ele>-999999</ele><time>2026-07-10T08:30:00Z</time></trkpt>
+    </trkseg></trk></gpx>`;
+    const { dom, analysisText, chartConfig } = await loadElevationAnalyzer(source);
+
+    await waitFor(dom, () => chartConfig() !== null);
+    assert.deepEqual(Array.from(chartConfig().data.datasets, dataset => dataset.label), [
+        'Distance over Time'
+    ]);
+    assert.match(analysisText(), /Elevation data is unavailable in this GPX\. 2 outside the plausible elevation range\./);
+    assert.doesNotMatch(analysisText(), /999999|-999999/);
+
+    dom.window.close();
+});
+
+test('GPX analyzer hides the chart when no track point has valid coordinates', async () => {
+    const source = `<?xml version="1.0"?><gpx><trk><trkseg>
+      <trkpt lat="north" lon="-121"><ele>100</ele></trkpt>
+      <trkpt lat="91" lon="-121"><ele>110</ele></trkpt>
+    </trkseg></trk></gpx>`;
+    const { dom, analysisText, chartConfig } = await loadElevationAnalyzer(source);
+
+    await waitFor(dom, () => analysisText().includes('No valid track points found.'));
+    assert.equal(chartConfig(), null);
+    assert.equal(dom.window.document.querySelector('#bpb-gpx-analysis canvas').parentElement.hidden, true);
+    assert.equal(dom.window.document.querySelector('.bpb-gpx-coordinate-controls').hidden, true);
+
+    dom.window.close();
+});
+
+test('GPX analyzer hides the chart when the GPX contains no track points', async () => {
+    const source = '<?xml version="1.0"?><gpx><trk><trkseg></trkseg></trk></gpx>';
+    const { dom, analysisText, chartConfig } = await loadElevationAnalyzer(source);
+
+    await waitFor(dom, () => analysisText().includes('No track points found.'));
+    assert.equal(chartConfig(), null);
+    assert.equal(dom.window.document.querySelector('#bpb-gpx-analysis canvas').parentElement.hidden, true);
+    assert.equal(dom.window.document.querySelector('.bpb-gpx-coordinate-controls').hidden, true);
 
     dom.window.close();
 });
@@ -1313,7 +1400,10 @@ test('GPX analyzer shows partial time runs without drawing through an invalid ti
                 'the missing or invalid timestamp must become a visible chart break'
             );
             assert.ok(chartConfig().options.scales.xTime);
-            assert.match(analysisText(), /Time:/);
+            assert.match(analysisText(), /Known time span: 0h 1m/);
+            assert.match(analysisText(), /Time: 2 of 3 route points \(67%\)/);
+            assert.match(analysisText(), /Gaps mark unavailable timestamps\./);
+            assert.doesNotMatch(analysisText(), /Time to summit:|Time back:/);
             assert.match(analysisText(), /Interactive Stats:/);
 
             dom.window.close();

@@ -258,7 +258,7 @@ const run = async () => {
         const canvas = document.createElement('canvas');
         canvas.tabIndex = 0;
         canvas.setAttribute('role', 'application');
-        canvas.setAttribute('aria-label', 'Interactive elevation chart. Use Left and Right Arrow keys to select a point.');
+        canvas.setAttribute('aria-label', 'Interactive GPX chart. Use Left and Right Arrow keys to select a point.');
         canvas.setAttribute('aria-describedby', hintText.id);
         canvas.setAttribute('aria-keyshortcuts', 'ArrowLeft ArrowRight');
         canvasContainer.append(canvas);
@@ -347,6 +347,8 @@ const run = async () => {
         let chartInstance = null;
         let chartData = [];
         let timeChartData = [];
+        let chartMode = 'elevation';
+        let hasTimeSeries = false;
         let selectedCoordinateIndex = -1;
         let selectedCoordinateSeries = 'distance';
         let coordinateFeedbackTimer = null;
@@ -355,21 +357,26 @@ const run = async () => {
         let startMs = 0, endMs = 0, summitMs = 0;
         let campingSpots = [];
         let mapRouteSegments = [];
-        let routeOnlyDistanceM = null;
         let hoverMarker = null;
 
         const isCoordinatePoint = point =>
             point && Number.isFinite(point.lat) && Number.isFinite(point.lon);
         const coordinateText = point => `${point.lat.toFixed(5)}, ${point.lon.toFixed(5)}`;
-        const coordinatePointsFor = series => (series === 'time' && hasTime ? timeChartData : chartData)
+        const coordinatePointsFor = series => (series === 'time' && hasTimeSeries ? timeChartData : chartData)
             .filter(isCoordinatePoint);
+        const chartDescription = () => chartMode === 'elevation'
+            ? 'elevation chart'
+            : chartMode === 'progress' ? 'route progress chart' : 'route position chart';
         const defaultCoordinateSeries = () => {
-            if (!hasTime) return 'distance';
-            if (chartInstance && typeof chartInstance.isDatasetVisible === 'function') {
-                const distanceVisible = chartInstance.isDatasetVisible(0);
-                const timeVisible = chartInstance.isDatasetVisible(1);
-                if (timeVisible && !distanceVisible) return 'time';
-                if (distanceVisible && !timeVisible) return 'distance';
+            if (!hasTimeSeries) return chartMode === 'progress' ? 'time' : 'distance';
+            if (chartInstance && Array.isArray(chartInstance.data?.datasets)
+                && typeof chartInstance.isDatasetVisible === 'function') {
+                const visibleSeries = chartInstance.data.datasets
+                    .map((dataset, index) => chartInstance.isDatasetVisible(index)
+                        ? dataset._bpbSeries
+                        : null)
+                    .filter(Boolean);
+                if (visibleSeries.length === 1) return visibleSeries[0];
             }
             return resolveChartSeries(BPB.get()) === 'time' ? 'time' : 'distance';
         };
@@ -405,21 +412,21 @@ const run = async () => {
                     : COORDINATE_HINT);
             }
             canvas.setAttribute('aria-label', hasSelection
-                ? `Interactive elevation chart. ${selectedCoordinateAnnouncement()}. Use Left and Right Arrow keys to move.`
-                : 'Interactive elevation chart. Use Left and Right Arrow keys to select a point.');
+                ? `Interactive ${chartDescription()}. ${selectedCoordinateAnnouncement()}. Use Left and Right Arrow keys to move.`
+                : `Interactive ${chartDescription()}. Use Left and Right Arrow keys to select a point.`);
         };
         const selectCoordinateIndex = (index, series = 'distance') => {
             if (!isCoordinatePoint(chartData[index])) return false;
             clearCoordinateFeedbackTimer();
             selectedCoordinateIndex = index;
-            selectedCoordinateSeries = series === 'time' && hasTime ? 'time' : 'distance';
+            selectedCoordinateSeries = series === 'time' && hasTimeSeries ? 'time' : 'distance';
             coordinateFallback.hidden = true;
             coordinateFallback.value = '';
             copyCoordinatesButton.disabled = false;
             setCoordinateStatus(selectedCoordinateAnnouncement());
             canvas.setAttribute(
                 'aria-label',
-                `Interactive elevation chart. ${selectedCoordinateAnnouncement()}. Use Left and Right Arrow keys to move.`
+                `Interactive ${chartDescription()}. ${selectedCoordinateAnnouncement()}. Use Left and Right Arrow keys to move.`
             );
             if (chartInstance) chartInstance.update('none');
             renderRouteHighlight(chartData[index], selectedCoordinateSeries);
@@ -434,9 +441,10 @@ const run = async () => {
                 true
             );
             for (const active of activeElements) {
-                const point = chartInstance.data.datasets[active.datasetIndex]?.data[active.index]?._raw;
+                const dataset = chartInstance.data.datasets[active.datasetIndex];
+                const point = dataset?.data[active.index]?._raw;
                 const index = chartData.indexOf(point);
-                const series = active.datasetIndex === 1 ? 'time' : 'distance';
+                const series = dataset?._bpbSeries || 'distance';
                 if (selectCoordinateIndex(index, series)) return true;
             }
             return false;
@@ -837,6 +845,10 @@ const run = async () => {
         const renderData = () => {
             const p = panelPalette();
             applyPanelTheme();
+            canvasContainer.hidden = false;
+            canvasContainer.style.height = chartMode === 'route' ? '110px'
+                : chartMode === 'progress' ? '260px' : '300px';
+            coordinateControls.hidden = false;
 
             const isMet = resolveUnits(BPB.get()) === 'metric';
             const dMult = isMet ? 0.001 : 1 / METERS_PER_MILE, eMult = isMet ? 1 : FEET_PER_METER;
@@ -849,13 +861,15 @@ const run = async () => {
                 const distDeltaM = metrics.rawDistanceM - metrics.distanceM;
                 const gainDeltaM = metrics.rawGainM - metrics.gainM;
                 const distWorthShowing = Math.abs(distDeltaM) >= Math.max(0.03 * Math.max(metrics.distanceM, 1), 0.1 * METERS_PER_MILE);
-                const gainWorthShowing = Math.abs(gainDeltaM) >= Math.max(0.05 * Math.max(metrics.gainM, 1), 100 / FEET_PER_METER);
+                const gainWorthShowing = chartMode === 'elevation'
+                    && Math.abs(gainDeltaM) >= Math.max(0.05 * Math.max(metrics.gainM, 1), 100 / FEET_PER_METER);
                 const parts = [];
 
                 if (distWorthShowing) parts.push(`${formatSignedDistanceDelta(distDeltaM)} distance`);
                 if (gainWorthShowing) parts.push(`${formatSignedElevationDelta(gainDeltaM)} gain`);
 
-                return parts.length ? `Adjusted GPX metrics (raw GPX ${parts.join(', ')})` : 'Adjusted GPX metrics';
+                if (parts.length) return `Adjusted GPX metrics (raw GPX ${parts.join(', ')})`;
+                return chartMode === 'elevation' ? 'Adjusted GPX metrics' : '';
             };
 
             const isMultiDay = hasTime && (getRelativeDay(endMs, startMs) > 1);
@@ -875,11 +889,62 @@ const run = async () => {
                 line.textContent = text;
                 return line;
             };
-            let txt = `Interactive Stats: ${formatDistanceM(metrics.distanceM)} | ${formatElevationM(metrics.gainM)} gain`;
-            const subLines = [subLine(buildMetricNote(), { color: TONE.muted, fontSize: '0.95em', marginBottom: '2px' })];
+            const qualityIssues = (quality, type) => {
+                const parts = [];
+                if (quality.missingPoints) parts.push(`${quality.missingPoints} missing`);
+                if (quality.invalidPoints) parts.push(`${quality.invalidPoints} malformed`);
+                if (quality.suspectPoints) {
+                    parts.push(`${quality.suspectPoints} outside the plausible ${type} range`);
+                }
+                return parts.join(', ');
+            };
+            const qualityPercent = quality => Math.round(quality.coverage * 100);
+            const qualityLines = [];
+            if (metrics.coordinateQuality.invalidPoints) {
+                const count = metrics.coordinateQuality.invalidPoints;
+                qualityLines.push(`${count} track ${count === 1 ? 'point has' : 'points have'} invalid coordinates and ${count === 1 ? 'was' : 'were'} excluded.`);
+            }
+            if (metrics.elevationQuality.status !== 'complete') {
+                const quality = metrics.elevationQuality;
+                if (quality.validPoints) {
+                    qualityLines.push(
+                        `Elevation: ${quality.validPoints} of ${quality.totalPoints} route points (${qualityPercent(quality)}%); ${qualityIssues(quality, 'elevation')}. Gaps mark unavailable data.`
+                    );
+                } else {
+                    const issues = qualityIssues(quality, 'elevation');
+                    qualityLines.push(`Elevation data is unavailable in this GPX.${issues ? ` ${issues}.` : ''}`);
+                }
+            }
+            if (metrics.timeQuality.status !== 'complete') {
+                const quality = metrics.timeQuality;
+                if (quality.status === 'partial') {
+                    qualityLines.push(
+                        `Time: ${quality.validPoints} of ${quality.totalPoints} route points (${qualityPercent(quality)}%); ${qualityIssues(quality, 'time')}. Gaps mark unavailable timestamps.`
+                    );
+                } else if (quality.reason === 'not-progressing') {
+                    qualityLines.push('Time data is unavailable because the timestamps do not progress.');
+                } else if (quality.reason === 'insufficient') {
+                    qualityLines.push('Time data is unavailable because fewer than two distinct timestamps are usable.');
+                } else {
+                    const issues = qualityIssues(quality, 'time');
+                    qualityLines.push(`Time data is unavailable in this GPX.${issues ? ` ${issues}.` : ''}`);
+                }
+            }
+
+            let txt = chartMode === 'elevation'
+                ? `Interactive Stats: ${formatDistanceM(metrics.distanceM)} | ${formatElevationM(metrics.gainM)} gain`
+                : chartMode === 'progress'
+                    ? `Route Progress: ${formatDistanceM(metrics.distanceM)}`
+                    : `Route: ${formatDistanceM(metrics.distanceM)}`;
+            const subLines = [];
+            const metricNote = buildMetricNote();
+            if (metricNote) {
+                subLines.push(subLine(metricNote, { color: TONE.muted, fontSize: '0.95em', marginBottom: '2px' }));
+            }
             if (hasTime) {
-                txt += ` | Time: ${fmtTime(totalMs)}`;
-                if (summitMs > startMs) {
+                const completeTime = metrics.timeQuality.status === 'complete';
+                txt += ` | ${completeTime ? 'Time' : 'Known time span'}: ${fmtTime(totalMs)}`;
+                if (completeTime && summitMs > startMs) {
                     const timeToSummit = summitMs - startMs;
                     const timeBack = endMs - summitMs;
                     subLines.push(subLine(
@@ -888,6 +953,14 @@ const run = async () => {
                     subLines.push(subLine(
                         `Time to summit: ${fmtTime(timeToSummit)} | Time back: ${fmtTime(timeBack)}`,
                         { color: TONE.faint, fontSize: '0.95em' }));
+                } else if (completeTime) {
+                    subLines.push(subLine(
+                        `Start time: ${formatTimeStr(startMs, startMs, isMultiDay)} | Back to car: ${formatTimeStr(endMs, startMs, isMultiDay)}`,
+                        { color: TONE.sub, marginBottom: '2px' }));
+                } else {
+                    subLines.push(subLine(
+                        `First known time: ${formatTimeStr(startMs, startMs, isMultiDay)} | Last known time: ${formatTimeStr(endMs, startMs, isMultiDay)}`,
+                        { color: TONE.sub, marginBottom: '2px' }));
                 }
                 if (campingSpots.length > 0) {
                     const spotStrs = campingSpots.map(s => `Day ${s.day} (${s.lat.toFixed(5)}, ${s.lon.toFixed(5)})`).join(' | ');
@@ -897,11 +970,19 @@ const run = async () => {
                     `Times in the mountain’s local time (${mountainZoneLabel(startMs)})`,
                     { color: TONE.faint, fontSize: '0.95em', marginTop: '2px' }));
             }
+            qualityLines.forEach(text => {
+                subLines.push(subLine(text, {
+                    color: TONE.sub,
+                    fontSize: '0.95em',
+                    marginTop: '3px',
+                    fontStyle: 'normal'
+                }));
+            });
             stats.textContent = txt;
             subStats.replaceChildren(...subLines);
 
             // Map adjusted arrays
-            const eleDistData = [], eleTimeData = [];
+            const distanceData = [], timeData = [];
             const appendChartPoint = (target, point, x, y, groupProperty = 'coordinateGroup') => {
                 const previous = target.at(-1)?._raw;
                 if (previous && previous[groupProperty] !== point[groupProperty]) {
@@ -909,19 +990,40 @@ const run = async () => {
                 }
                 target.push({ x, y, _raw: point });
             };
-            chartData.forEach(d => {
-                const eleConv = parseFloat((d.eleM * eMult).toFixed(0));
-                appendChartPoint(
-                    eleDistData,
-                    d,
-                    parseFloat((d.distM * dMult).toFixed(2)),
-                    eleConv
-                );
-            });
-            timeChartData.forEach(d => {
-                const eleConv = parseFloat((d.eleM * eMult).toFixed(0));
-                appendChartPoint(eleTimeData, d, d.ms, eleConv, 'timeCoordinateGroup');
-            });
+            if (chartMode === 'elevation') {
+                chartData.forEach(d => {
+                    const eleConv = parseFloat((d.eleM * eMult).toFixed(0));
+                    appendChartPoint(
+                        distanceData,
+                        d,
+                        parseFloat((d.distM * dMult).toFixed(2)),
+                        eleConv
+                    );
+                });
+                timeChartData.forEach(d => {
+                    const eleConv = parseFloat((d.eleM * eMult).toFixed(0));
+                    appendChartPoint(timeData, d, d.ms, eleConv, 'timeCoordinateGroup');
+                });
+            } else if (chartMode === 'progress') {
+                timeChartData.forEach(d => {
+                    appendChartPoint(
+                        timeData,
+                        d,
+                        d.ms,
+                        parseFloat((d.distM * dMult).toFixed(2)),
+                        'timeCoordinateGroup'
+                    );
+                });
+            } else {
+                chartData.forEach(d => {
+                    appendChartPoint(
+                        distanceData,
+                        d,
+                        parseFloat((d.distM * dMult).toFixed(2)),
+                        0
+                    );
+                });
+            }
 
             if (chartInstance) chartInstance.destroy();
 
@@ -930,38 +1032,112 @@ const run = async () => {
             // handler can still reveal the hidden one for this view; it doesn't
             // write the setting, so the peek is transient.
             const seriesPref = resolveChartSeries(BPB.get());
-            const splittable = hasTime;
+            const splittable = chartMode === 'elevation' && hasTimeSeries;
             const hideDistance = splittable && seriesPref === 'time';
             const hideTime = splittable && seriesPref === 'distance';
 
             const selectedPointRadius = context =>
                 context.raw?._raw === chartData[selectedCoordinateIndex] ? 5 : 0;
-            const datasets = [{
-                label: 'Elevation by Distance',
-                data: eleDistData,
-                hidden: hideDistance,
-                borderColor: '#fc4c02',
-                backgroundColor: 'rgba(252, 76, 2, 0.15)',
-                borderWidth: 2, fill: true, tension: 0.2, yAxisID: 'y', xAxisID: 'x',
-                pointRadius: selectedPointRadius, pointHoverRadius: 5, hitRadius: 40
-            }];
-
-            if (hasTime) {
+            const datasets = [];
+            if (chartMode === 'elevation') {
                 datasets.push({
-                    label: 'Elevation by Time',
-                    data: eleTimeData,
-                    hidden: hideTime,
+                    label: 'Elevation by Distance',
+                    data: distanceData,
+                    hidden: hideDistance,
+                    _bpbSeries: 'distance',
+                    borderColor: '#fc4c02',
+                    backgroundColor: 'rgba(252, 76, 2, 0.15)',
+                    borderWidth: 2, fill: true, tension: 0.2, yAxisID: 'y', xAxisID: 'x',
+                    pointRadius: selectedPointRadius, pointHoverRadius: 5, hitRadius: 40
+                });
+                if (hasTimeSeries) {
+                    datasets.push({
+                        label: 'Elevation by Time',
+                        data: timeData,
+                        hidden: hideTime,
+                        _bpbSeries: 'time',
+                        borderColor: '#6ab0de',
+                        backgroundColor: 'rgba(0, 127, 182, 0.15)',
+                        borderWidth: 2, fill: true, tension: 0.2, yAxisID: 'y', xAxisID: 'xTime',
+                        pointRadius: selectedPointRadius, pointHoverRadius: 5, hitRadius: 40
+                    });
+                }
+            } else if (chartMode === 'progress') {
+                datasets.push({
+                    label: 'Distance over Time',
+                    data: timeData,
+                    _bpbSeries: 'time',
                     borderColor: '#6ab0de',
-                    backgroundColor: 'rgba(0, 127, 182, 0.15)',
-                    borderWidth: 2, fill: true, tension: 0.2, yAxisID: 'y', xAxisID: 'xTime',
+                    backgroundColor: 'rgba(0, 127, 182, 0.12)',
+                    borderWidth: 2, fill: false, tension: 0.15, yAxisID: 'yDistance', xAxisID: 'xTime',
+                    pointRadius: selectedPointRadius, pointHoverRadius: 5, hitRadius: 40
+                });
+            } else {
+                datasets.push({
+                    label: 'Route Position',
+                    data: distanceData,
+                    _bpbSeries: 'distance',
+                    borderColor: '#fc4c02',
+                    backgroundColor: 'rgba(252, 76, 2, 0.15)',
+                    borderWidth: 3, fill: false, tension: 0, yAxisID: 'yRoute', xAxisID: 'x',
                     pointRadius: selectedPointRadius, pointHoverRadius: 5, hitRadius: 40
                 });
             }
 
             // Match the legend handler's rule: one series visible -> index mode.
-            const startsSingle = hideDistance || hideTime;
+            const startsSingle = datasets.length === 1 || hideDistance || hideTime;
 
             const maxDist = parseFloat((metrics.distanceM * dMult).toFixed(2));
+            const distanceAxis = {
+                type: 'linear',
+                position: 'bottom',
+                min: 0,
+                max: maxDist > 0 ? maxDist : 1,
+                title: { display: true, text: `Distance (${dUnit})`, color: p.axisTitle },
+                grid: { color: p.chartGrid },
+                ticks: { maxTicksLimit: 10, color: p.chartText, callback: function (v) { return parseFloat(v).toFixed(1) + ` ${dUnit}`; } }
+            };
+            const timeAxis = position => ({
+                type: 'linear',
+                position,
+                min: startMs,
+                max: endMs > startMs ? endMs : startMs + 1000,
+                title: { display: true, text: 'Time', color: p.timeAxis },
+                ticks: {
+                    maxTicksLimit: 10,
+                    color: p.timeAxis,
+                    callback: function (v) {
+                        return formatTimeStr(v, startMs, isMultiDay);
+                    }
+                },
+                grid: position === 'top' ? { drawOnChartArea: false } : { color: p.chartGrid }
+            });
+            const scales = chartMode === 'elevation'
+                ? {
+                    x: distanceAxis,
+                    ...(hasTimeSeries && { xTime: timeAxis('top') }),
+                    y: {
+                        type: 'linear', position: 'left',
+                        title: { display: true, text: `Elevation (${eUnit})`, color: p.axisTitle },
+                        grid: { color: p.chartGrid },
+                        ticks: { color: p.chartText }
+                    }
+                }
+                : chartMode === 'progress'
+                    ? {
+                        xTime: timeAxis('bottom'),
+                        yDistance: {
+                            type: 'linear', position: 'left', min: 0,
+                            max: maxDist > 0 ? maxDist : 1,
+                            title: { display: true, text: `Distance traveled (${dUnit})`, color: p.axisTitle },
+                            grid: { color: p.chartGrid },
+                            ticks: { color: p.chartText }
+                        }
+                    }
+                    : {
+                        x: distanceAxis,
+                        yRoute: { display: false, min: -1, max: 1 }
+                    };
 
             chartInstance = new Chart(canvas.getContext('2d'), {
                 type: 'line',
@@ -985,9 +1161,9 @@ const run = async () => {
                         if (activeElements.length > 0) {
                             const datasetIndex = activeElements[0].datasetIndex;
                             const idx = activeElements[0].index;
-                            const dataArray = datasetIndex === 0 ? eleDistData : eleTimeData;
-                            const candidate = dataArray[idx] ? dataArray[idx]._raw : null;
-                            hoverSeries = datasetIndex === 0 ? 'distance' : 'time';
+                            const dataset = datasets[datasetIndex];
+                            const candidate = dataset?.data[idx]?._raw;
+                            hoverSeries = dataset?._bpbSeries || 'distance';
                             if (candidate && Number.isFinite(candidate.lat) && Number.isFinite(candidate.lon)) hoveredPoint = candidate;
                         }
 
@@ -996,7 +1172,7 @@ const run = async () => {
                     },
                     plugins: {
                         legend: {
-                            display: true,
+                            display: chartMode === 'elevation',
                             position: 'bottom',
                             labels: { usePointStyle: true, boxWidth: 8, color: p.chartText },
                             onClick: function (e, legendItem, legend) {
@@ -1023,10 +1199,17 @@ const run = async () => {
                             callbacks: {
                                 title: items => {
                                     const d = items[0].raw._raw;
+                                    if (chartMode === 'progress') {
+                                        return formatTimeStr(d.ms, startMs, isMultiDay);
+                                    }
                                     return `Dist: ${(d.distM * dMult).toFixed(2)} ${dUnit}`;
                                 },
                                 label: item => {
                                     const d = item.raw._raw;
+                                    if (chartMode === 'progress') {
+                                        return `Distance traveled: ${(d.distM * dMult).toFixed(2)} ${dUnit}`;
+                                    }
+                                    if (chartMode === 'route') return 'Recorded route position';
                                     let lbl = `${item.dataset.label}: ${item.parsed.y} ${eUnit}`;
                                     if (d.grade !== undefined) lbl += ` (Grade: ${d.grade.toFixed(1)}%)`;
                                     return lbl;
@@ -1041,79 +1224,15 @@ const run = async () => {
                             }
                         }
                     },
-                    scales: {
-                        x: {
-                            type: 'linear',
-                            position: 'bottom',
-                            min: 0,
-                            max: maxDist > 0 ? maxDist : 1,
-                            title: { display: true, text: `Distance (${dUnit})`, color: p.axisTitle },
-                            grid: { color: p.chartGrid },
-                            ticks: { maxTicksLimit: 10, color: p.chartText, callback: function (v) { return parseFloat(v).toFixed(1) + ` ${dUnit}`; } }
-                        },
-                        ...(hasTime && {
-                            xTime: {
-                                type: 'linear',
-                                position: 'top',
-                                min: startMs,
-                                max: endMs > startMs ? endMs : startMs + 1000,
-                                title: { display: true, text: 'Time', color: p.timeAxis },
-                                ticks: {
-                                    maxTicksLimit: 10,
-                                    color: p.timeAxis,
-                                    callback: function (v) {
-                                        return formatTimeStr(v, startMs, isMultiDay);
-                                    }
-                                },
-                                grid: { drawOnChartArea: false }
-                            }
-                        }),
-                        y: {
-                            type: 'linear', position: 'left',
-                            title: { display: true, text: `Elevation (${eUnit})`, color: p.axisTitle },
-                            grid: { color: p.chartGrid },
-                            ticks: { color: p.chartText }
-                        }
-                    }
+                    scales
                 }
             });
             syncCoordinateSelection();
         };
 
-        const renderRouteOnlyData = () => {
-            applyPanelTheme();
-            const isMet = resolveUnits(BPB.get()) === 'metric';
-            const distance = isMet
-                ? `${(routeOnlyDistanceM / 1000).toFixed(2)} km`
-                : `${(routeOnlyDistanceM / METERS_PER_MILE).toFixed(2)} miles`;
-            const isMultiDay = hasTime && (getRelativeDay(endMs, startMs) > 1);
-            stats.textContent = `Route: ${distance}${hasTime ? ` | Time: ${fmtTime(totalMs)}` : ''}`;
-            const detailLines = [];
-            const addDetail = text => {
-                const line = document.createElement('div');
-                line.textContent = text;
-                detailLines.push(line);
-            };
-            if (hasTime) {
-                addDetail(`Start time: ${formatTimeStr(startMs, startMs, isMultiDay)} | Back to car: ${formatTimeStr(endMs, startMs, isMultiDay)}`);
-                if (campingSpots.length > 0) {
-                    const spots = campingSpots
-                        .map(spot => `Day ${spot.day} (${spot.lat.toFixed(5)}, ${spot.lon.toFixed(5)})`)
-                        .join(' | ');
-                    addDetail(`Possible Camping: ${spots}`);
-                }
-                addDetail(`Times in the mountain’s local time (${mountainZoneLabel(startMs)})`);
-            }
-            addDetail('Elevation data is unavailable in this GPX.');
-            subStats.replaceChildren(...detailLines);
-            canvasContainer.hidden = true;
-            coordinateControls.hidden = true;
-        };
-
         unitSelect.addEventListener('change', () => {
             BPB.set({ units: unitSelect.value });
-            if (routeOnlyDistanceM !== null) renderRouteOnlyData();
-            else renderData();
+            if (metrics.routePoints?.length) renderData();
         });
 
         const bindRouteColor = (control, key) => control.input.addEventListener('change', () => {
@@ -1149,8 +1268,7 @@ const run = async () => {
             if (changed(['rememberMapLayer', 'mapLastLayer'])) scheduleMapLayerSync();
             if (changed(['units', 'theme', 'chartDefaultSeries'])) {
                 unitSelect.value = unitPreference(settings);
-                if (chartInstance) renderData();
-                else if (routeOnlyDistanceM !== null) renderRouteOnlyData();
+                if (metrics.routePoints?.length) renderData();
                 else applyPanelTheme();
             }
         });
@@ -1168,7 +1286,12 @@ const run = async () => {
             }
             const xml = response.document;
             const trkpts = Array.from(xml.querySelectorAll('trkpt'));
-            if (!trkpts.length) return stats.textContent = 'No track points found.';
+            if (!trkpts.length) {
+                canvasContainer.hidden = true;
+                coordinateControls.hidden = true;
+                stats.textContent = 'No track points found.';
+                return;
+            }
             const segmentGroups = new Map(Array.from(
                 xml.querySelectorAll('trkseg'),
                 (segment, index) => [segment, index]
@@ -1194,9 +1317,19 @@ const run = async () => {
             });
 
             metrics = GpxMetrics.computeMetrics(parsedPoints);
-            chartData = metrics.chartPoints;
-            timeChartData = metrics.timeChartPoints;
             hasTime = metrics.hasTime;
+            chartMode = metrics.points.length
+                ? 'elevation'
+                : hasTime ? 'progress' : 'route';
+            chartData = chartMode === 'elevation'
+                ? metrics.chartPoints
+                : metrics.routeChartPoints;
+            timeChartData = chartMode === 'elevation'
+                ? metrics.timeChartPoints
+                : metrics.timeProgressChartPoints;
+            hasTimeSeries = chartMode === 'progress'
+                ? timeChartData.length >= 2
+                : hasTime && timeChartData.length >= 2;
             startMs = metrics.startMs;
             endMs = metrics.endMs;
             summitMs = metrics.summitMs;
@@ -1226,7 +1359,7 @@ const run = async () => {
                 }
             }
 
-            if (hasTime) {
+            if (hasTime && metrics.timeQuality.status === 'complete') {
                 metrics.timePoints.forEach((point, index) => {
                     if (index === 0) return;
                     const prev = metrics.timePoints[index - 1];
@@ -1239,12 +1372,17 @@ const run = async () => {
             }
 
             if (!metrics.points.length) {
-                syncCoordinateSelection({ unavailable: true });
                 if (metrics.routePoints.length) {
-                    routeOnlyDistanceM = metrics.distanceM;
-                    renderRouteOnlyData();
+                    renderData();
                     return;
                 }
+                if (chartInstance) {
+                    chartInstance.destroy();
+                    chartInstance = null;
+                }
+                canvasContainer.hidden = true;
+                coordinateControls.hidden = true;
+                subStats.replaceChildren();
                 stats.textContent = 'No valid track points found.';
                 return;
             }
