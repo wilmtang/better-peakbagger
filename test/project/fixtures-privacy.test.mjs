@@ -128,6 +128,37 @@ test('the Buddy List fixture contains only the reviewed synthetic row data', asy
     }
 });
 
+test('the Peak List fixture contains only the reviewed synthetic row data', async () => {
+    const html = await readFile(path.join(FIXTURES, 'pages', 'list-peak-list.html'), 'utf8');
+    const document = new JSDOM(html).window.document;
+    const table = document.querySelector('table.gray');
+    const rows = [...table.rows].filter(row => row.cells.length === 8 && row.cells[0].tagName === 'TD');
+    assert.equal(rows.length, 5);
+
+    const values = column => rows.map(row => row.cells[column].textContent.trim());
+    assert.deepEqual(values(1), [
+        'Juniper Dome', 'Alpine Point', 'Placeholder Butte', 'Echo Ridge', 'Fiction Peak'
+    ]);
+    assert.deepEqual(values(3), [
+        'Example Basin', 'Test Range', 'Mock Highlands', 'Sample Mountains', 'Synthetic Range'
+    ]);
+    assert.deepEqual(values(5), [
+        'North County', 'West County', 'Central District', 'East County', 'South County'
+    ]);
+    assert.deepEqual(values(7), [
+        '2018', '2019-06-09', '2021-09', '2023-01-09', '2025-08-30'
+    ]);
+
+    const expectedPeakIds = ['610104', '610101', '610105', '610102', '610103'];
+    for (const [index, row] of rows.entries()) {
+        assert.match(row.cells[1].querySelector('a').href, new RegExp(`[?&]pid=${expectedPeakIds[index]}$`));
+        assert.match(row.cells[7].querySelector('a').href, /[?&]aid=81010\d$/);
+    }
+    const climberIds = [...html.matchAll(/[?&]cid=(\d+)/g)].map(match => match[1]);
+    assert.ok(climberIds.length > 0);
+    assert.ok(climberIds.every(cid => cid === MASKED_CLIMBER_ID));
+});
+
 // The staged scan above is only half the guard. The other half is that
 // .githooks/pre-commit actually runs, which depends on core.hooksPath — a
 // setting nothing in the repository used to touch and no document mentioned, so

@@ -1297,6 +1297,41 @@ async function main() {
             { before: buddyStateBefore, after: buddyStateAfter },
         );
 
+        const listUrl = `https://${fixtureHost}:${fixture.port}/list.aspx?lid=95005&sort=ascent&cid=900001&u=ft`;
+        await driver.get(listUrl);
+        await driver.wait(until.elementLocated(By.css('table.gray .pbaf-table-sort')), 10_000);
+        const listStateBefore = await driver.executeScript(`const table = document.querySelector("table.gray");
+    const rows = [...table.rows]
+      .filter(row => row.cells.length === 8 && row.cells[0].tagName === "TD");
+    return {
+      labels: [...table.querySelectorAll(".pbaf-table-sort")]
+        .map(control => control.firstChild.textContent.trim()),
+      betaBar: Boolean(document.getElementById("pbaf-bar")),
+      firstPeak: rows[0]?.cells[1].textContent.trim(),
+      url: location.href,
+      horizontalOverflow: document.documentElement.scrollWidth > document.documentElement.clientWidth,
+    };`);
+        const listControls = await driver.findElements(By.css('table.gray .pbaf-table-sort'));
+        await listControls[1].click();
+        const listStateAfter = await driver.executeScript(`const table = document.querySelector("table.gray");
+    const rows = [...table.rows]
+      .filter(row => row.cells.length === 8 && row.cells[0].tagName === "TD");
+    return {
+      firstPeak: rows[0]?.cells[1].textContent.trim(),
+      sort: table.rows[0].cells[1].getAttribute("aria-sort"),
+      url: location.href,
+    };`);
+        assertState(
+            listStateBefore.labels.length === 8
+        && listStateBefore.betaBar === false
+        && listStateBefore.horizontalOverflow === false
+        && listStateAfter.sort === 'ascending'
+        && listStateAfter.firstPeak !== listStateBefore.firstPeak
+        && listStateAfter.url === listStateBefore.url,
+            'Firefox Peak List did not expose eight in-place sort controls',
+            { before: listStateBefore, after: listStateAfter },
+        );
+
         await driver.get(
             `https://${fixtureHost}:${fixture.port}/climber/ClimbListC.aspx?cid=900001&j=-1&y=9999`,
         );
@@ -1585,7 +1620,7 @@ async function main() {
         console.log('  - the real 1,500-row favorite list reported its total, fuzzy-searched, and kept long navigation instant');
         console.log('  - a held Buddy replacement stayed busy and focused, then failed retryably without another fetch');
         console.log('  - four native Buddy actions refreshed/synced custom favorites under both removal policies');
-        console.log('  - options, popup, ascent, editor, Peak, BigMap, PeakAscents, Buddy List, and profile-backup surfaces initialized');
+        console.log('  - options, popup, ascent, editor, Peak, BigMap, PeakAscents, Buddy List, Peak List, and profile-backup surfaces initialized');
         console.log('  - a fresh ascent form autofilled its local date and trusted GPX selection swapped Preview for Process');
         console.log('  - the report editor opened the standalone report-drafts manager page, which rendered a seeded draft');
         console.log('  - AMO report credit, real editor input/draft recovery, filter/sort, and 3D frame passed');

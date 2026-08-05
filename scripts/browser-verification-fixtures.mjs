@@ -265,7 +265,14 @@ export async function createFixtureCertificate({ host = fixtureHost, directory =
 export async function createBrowserFixtureServer({ temporaryRoot }) {
     const certificate = await createFixtureCertificate({ directory: temporaryRoot });
     const { key, cert } = certificate;
-    const [ascentEditHtml, peakAscentsHtml, profileAscentsHtml, buddyListHtml, climberHtml] = await Promise.all([
+    const [
+        ascentEditHtml,
+        peakAscentsHtml,
+        profileAscentsHtml,
+        buddyListHtml,
+        peakListHtml,
+        climberHtml,
+    ] = await Promise.all([
         readFile(
             path.join(projectRoot, 'test', 'fixtures', 'pages', 'climber-ascentedit.html'),
             'utf8',
@@ -280,6 +287,10 @@ export async function createBrowserFixtureServer({ temporaryRoot }) {
         ),
         readFile(
             path.join(projectRoot, 'test', 'fixtures', 'pages', 'report-buddy-list.html'),
+            'utf8',
+        ),
+        readFile(
+            path.join(projectRoot, 'test', 'fixtures', 'pages', 'list-peak-list.html'),
             'utf8',
         ),
         readFile(
@@ -408,6 +419,9 @@ export async function createBrowserFixtureServer({ temporaryRoot }) {
             requests.buddyReports += 1;
             requests.buddyReportStates.push(otherClimberIsBuddy);
             return send('text/html; charset=utf-8', renderBuddyList());
+        }
+        if (/\/list\.aspx$/i.test(url.pathname)) {
+            return send('text/html; charset=utf-8', peakListHtml);
         }
         if (/peak\.aspx/i.test(url.pathname)) return send('text/html; charset=utf-8', peakHtml);
         if (/bigmap\.aspx/i.test(url.pathname)) {

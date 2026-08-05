@@ -702,6 +702,72 @@ test('Buddy List sorts every displayed field without showing beta controls', asy
         'frontend Buddy sorting must not invent unsupported backend sort parameters');
 });
 
+test('Peak Lists sort every displayed field in place without showing beta controls', async () => {
+    const pageUrl = 'https://www.peakbagger.com/list.aspx?lid=95005&sort=ascent&cid=900001&u=ft';
+    const dom = await loadPage('list-peak-list.html', {
+        fixtures: PAGE_FIXTURES,
+        url: pageUrl
+    });
+    await waitFor(dom, () =>
+        dom.window.document.querySelectorAll('table.gray:first-of-type .pbaf-table-sort').length === 8);
+
+    const peakTable = dom.window.document.querySelector('table.gray');
+    const rows = () => [...peakTable.rows]
+        .filter(row => row.cells.length === 8 && row.cells[0].tagName === 'TD');
+    const controls = [...peakTable.querySelectorAll('.pbaf-table-sort')];
+    const labels = controls.map(control => control.firstChild.textContent.trim());
+    assert.deepEqual(labels, [
+        'Rank', 'Peak', 'Elev-Ft', 'Range (Level 5)',
+        'Prom-Ft', 'County', 'Ascents', 'Ascent Date'
+    ]);
+    assert.equal(bar(dom), null, 'Peak Lists must remain sorter-only');
+    assert.equal(peakTable.dataset.bpbInstantSort, 'ready');
+    assert.equal(tableSortControl(dom, 'Ascent Date').closest('th').getAttribute('aria-sort'), 'ascending');
+    assert.equal(peakTable.querySelectorAll('th a[href]').length, 0);
+
+    const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
+    const numericColumns = new Set([0, 2, 4, 6]);
+    const dateValue = text => {
+        const match = /(\d{4})(?:-(\d{1,2}))?(?:-(\d{1,2}))?/.exec(text);
+        return match
+            ? [Number(match[1]), Number(match[2] || 0), Number(match[3] || 0)]
+            : [0, 0, 0];
+    };
+    const valueAt = (row, index) => {
+        const text = row.cells[index].textContent.trim();
+        if (numericColumns.has(index)) return Number(text.replace(/[^\d.-]/g, ''));
+        return index === 7 ? dateValue(text) : text;
+    };
+    const compare = (left, right) => {
+        if (Array.isArray(left)) {
+            for (let index = 0; index < left.length; index++) {
+                if (left[index] !== right[index]) return left[index] - right[index];
+            }
+            return 0;
+        }
+        return typeof left === 'number' ? left - right : collator.compare(left, right);
+    };
+    const isOrdered = (values, direction) => values.every((value, index) =>
+        index === 0 || direction * compare(values[index - 1], value) <= 0);
+
+    for (const [columnIndex, control] of controls.entries()) {
+        control.click();
+        const ariaSort = control.closest('th').getAttribute('aria-sort');
+        const direction = ariaSort === 'ascending' ? 1 : -1;
+        assert.ok(ariaSort === 'ascending' || ariaSort === 'descending',
+            `${labels[columnIndex]} did not activate`);
+        assert.ok(isOrdered(rows().map(row => valueAt(row, columnIndex)), direction),
+            `${labels[columnIndex]} did not sort ${ariaSort}`);
+
+        control.click();
+        assert.notEqual(control.closest('th').getAttribute('aria-sort'), ariaSort,
+            `${labels[columnIndex]} did not toggle direction`);
+    }
+
+    assert.equal(dom.window.location.href, pageUrl,
+        'frontend Peak List sorting must preserve list, climber, unit, and served-sort parameters');
+});
+
 test('other report modes remain untouched despite the query-agnostic manifest match', async () => {
     const dom = await loadPage('report-buddy-list.html', {
         fixtures: PAGE_FIXTURES,

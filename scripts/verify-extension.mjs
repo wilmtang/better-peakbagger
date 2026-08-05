@@ -2082,6 +2082,52 @@ try {
         await buddyPage.close();
     }
 
+    // --- Peak List sorter-only surface -------------------------------------
+    {
+        const listPage = await context.newPage();
+        await listPage.goto(
+            `https://www.peakbagger.com:${port}/list.aspx?lid=95005&sort=ascent&cid=900001&u=ft`,
+            { waitUntil: 'load' }
+        );
+        const controls = listPage.locator('table.gray').first().locator('.pbaf-table-sort');
+        const mounted = await controls.first().waitFor({ state: 'visible', timeout: 10000 })
+            .then(() => true).catch(() => false);
+        check(mounted, 'the Chrome Peak List sorter never mounted through the real manifest');
+        if (mounted) {
+            const before = await listPage.evaluate(() => {
+                const table = document.querySelector('table.gray');
+                const rows = [...table.rows]
+                    .filter(row => row.cells.length === 8 && row.cells[0].tagName === 'TD');
+                return {
+                    labels: [...table.querySelectorAll('.pbaf-table-sort')]
+                        .map(control => control.firstChild.textContent.trim()),
+                    betaBar: !!document.getElementById('pbaf-bar'),
+                    firstPeak: rows[0]?.cells[1].textContent.trim(),
+                    url: location.href,
+                    horizontalOverflow: document.documentElement.scrollWidth
+                        > document.documentElement.clientWidth
+                };
+            });
+            await controls.nth(1).click();
+            const after = await listPage.evaluate(() => {
+                const table = document.querySelector('table.gray');
+                const rows = [...table.rows]
+                    .filter(row => row.cells.length === 8 && row.cells[0].tagName === 'TD');
+                return {
+                    firstPeak: rows[0]?.cells[1].textContent.trim(),
+                    sort: table.rows[0].cells[1].getAttribute('aria-sort'),
+                    url: location.href
+                };
+            });
+            check(before.labels.length === 8 && before.betaBar === false
+                && before.horizontalOverflow === false
+                && after.sort === 'ascending' && after.firstPeak !== before.firstPeak
+                && after.url === before.url,
+            `the Chrome Peak List did not expose eight in-place sort controls: ${JSON.stringify({ before, after })}`);
+        }
+        await listPage.close();
+    }
+
     // --- Trip-report editor on the real ascent form --------------------------
     // Real typing, real keyboard shortcuts, and real input rules against the
     // TipTap surface and the CodeMirror markdown pane, which jsdom cannot
@@ -3159,6 +3205,7 @@ console.log('  - the Peak Dynamic Map preserves its native frame and shows an en
 console.log('  - clicking Peak 3D creates the isolated frame with a route-free summit focus');
 console.log('  - the PeakAscents filter mounts, reveals rows, and sorts in place');
 console.log('  - the Buddy List exposes six in-place sort controls and no beta filter');
+console.log('  - Peak Lists expose eight in-place sort controls, preserve the URL, and fit the viewport');
 console.log('  - the owner-only full-profile backup surface mounts with a connected fixture repository');
 console.log('  - a fresh ascent form autofills its local date and trusted GPX selection swaps Preview for Process');
 console.log('  - the opt-in report credit renders and serializes the Chrome Web Store URL');
