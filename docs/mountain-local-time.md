@@ -45,14 +45,20 @@ case had the same generated timestamp copied onto every point, several days
 after the ascent date.
 
 The analyzer therefore treats time as a capability, not as a consequence of a
-`<time>` element existing. A series is usable only when every analyzed point
-has a finite positive timestamp and at least one sample differs. Route geometry
-and elevation-by-distance stay in GPX document order. Duration, mountain-local
-clock labels, camping inference, and elevation-by-time use a separate stable
-timestamp sort. This recovers combined multi-day files whose tracks were
-appended out of chronological order without reordering the distance analysis;
-equal timestamps retain their relative GPX order. An all-equal series
-cannot be repaired by sorting, so only its time-derived output is omitted.
+`<time>` element existing. At least two valid timestamps must advance. When
+every coordinate-valid point has one, timing is complete. When some timestamps
+are missing or malformed but the valid subset still advances, timed chart runs
+remain available with visible breaks and coverage; the elapsed value is
+labelled **Known time span** rather than complete duration. Start/back,
+summit-duration, and camping inference remain limited to complete timing.
+
+Route geometry and elevation-by-distance stay in GPX document order. Complete
+and partial time views use a separate stable timestamp sort. This recovers
+combined multi-day files whose tracks were appended out of chronological order
+without reordering the distance analysis; equal timestamps retain their
+relative GPX order. An all-equal series cannot be repaired by sorting, so its
+time-derived output is omitted. The full chart fallback matrix is maintained
+in [gpx-data-quality.md](gpx-data-quality.md#resulting-chart).
 
 This validation happens before timezone resolution. A displayed mountain time
 therefore always comes from a usable UTC sequence; timezone conversion cannot
@@ -63,11 +69,11 @@ repair incorrect source chronology.
 Every point on earth has a zone, but three failure paths are real, and all of
 them must degrade instead of breaking the analysis panel:
 
-1. **Out-of-range coordinates (reachable today).** `tzlookup` throws
+1. **Out-of-range coordinates.** `tzlookup` throws
    `RangeError: invalid coordinates` for anything outside |lat| ≤ 90 /
-   |lon| ≤ 180. The analyzer's GPX parser only checks that coordinates are
-   *finite* — it renders tracks other people uploaded to Peakbagger, so a
-   malformed `lat="95"` flows straight into the lookup.
+   |lon| ≤ 180. The analyzer excludes these before timezone resolution and
+   reports the coordinate-quality loss instead of passing malformed data into
+   the lookup.
 2. **tzdata rename skew.** The raster returns zone ids frozen at the tzdata
    edition it was built from; the browser's ICU has its own. After a rename
    (`Europe/Kiev` → `Europe/Kyiv`), `new Intl.DateTimeFormat({ timeZone })`

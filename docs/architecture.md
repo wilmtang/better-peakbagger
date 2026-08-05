@@ -583,24 +583,32 @@ multi-day boundaries, and possible camping stops.
 Peakbagger can serve a structurally valid GPX whose points have coordinates
 but no `<ele>` values, especially when an older or transformed source retained
 only route geometry. Those tracks still receive a segment-aware route distance,
-the extension-owned 2D overlay, and the opt-in 3D route. Usable timestamps still
-provide duration, local clock labels, day boundaries, and possible camping
-locations; the empty elevation canvas and chart-only coordinate controls stay
-hidden. When only part of a route lacks elevation, its complete coordinate path
-still owns distance and timing while the elevation profile breaks across the
-missing run instead of smoothing, counting gain, or drawing through it. Better
-Peakbagger does not invent a missing elevation profile from the 3D map.
+the extension-owned 2D overlay, and the opt-in 3D route. Progressing timestamps
+produce a cumulative-distance-over-time chart; without them, a compact
+distance scrubber retains chart-to-map inspection. When only part of a route
+lacks elevation, its complete coordinate path still owns distance and timing
+while the elevation profile breaks across the missing run instead of
+smoothing, counting gain, or drawing through it. Values outside the
+conservative −1,000 to 10,000 metre terrestrial range are excluded as suspect.
+Better Peakbagger does not invent a missing elevation profile from the 3D map.
 
 Per-point `<time>` values are also optional and can be degraded by a source or
 export conversion. One observed Peakbagger export copied a single generated
-timestamp onto every trackpoint. Timing is usable only when every analyzed
-timestamp parses and the set advances at least once. The route, distance,
-gain, and elevation-by-distance remain in GPX document order. Time-derived
-views use a separate stable chronological ordering, so combined multi-day
-tracks whose days were appended out of order retain duration, clock labels,
-camping inference, and the time series without reordering route geometry.
-Duplicate timestamps retain their GPX order; an all-equal series still omits
-time-derived output instead of reporting a false zero duration.
+timestamp onto every trackpoint. At least two valid timestamps must advance
+before any time view is shown. A missing or malformed timestamp no longer
+erases the valid timed runs around it: the chart breaks at that sample,
+coverage is disclosed, and the elapsed value is labelled **Known time span**
+rather than complete duration. Full start/back, summit-duration, and camping
+inferences remain limited to complete timing. The route, distance, gain, and
+elevation-by-distance remain in GPX document order. Time-derived views use a
+separate stable chronological ordering, so combined multi-day tracks whose
+days were appended out of order do not reorder route geometry. Duplicate
+timestamps retain their GPX order; an all-equal series still omits time-derived
+output instead of reporting a false zero duration.
+
+The complete degraded-data behavior matrix, including the no-coordinate empty
+state, is maintained in
+[gpx-data-quality.md](gpx-data-quality.md#resulting-chart).
 
 Clock times use the climb's local timezone resolved offline from the starting
 coordinate with packaged `tz-lookup`. Failure falls back to a labelled
@@ -608,14 +616,15 @@ longitude estimate and never breaks the panel or sends coordinates to a time
 service. See [mountain-local-time.md](mountain-local-time.md) for the timezone,
 DST, fallback, and performance design.
 
-Chart.js renders distance and time series. The initial visibility follows the
-user setting, while legend clicks affect only the current view. Hovered points
-retain their original coordinates, allowing one chart point to drive either the
-native Leaflet hover marker or the 3D highlight. Click/tap and arrow keys select
-a point, an explicit **Copy coordinates** action copies it, and double-click
-remains a shortcut. Selection and copy results use a live status region. If the
-Clipboard API fails, the analyzer exposes a selected read-only coordinate field
-for the platform's ordinary copy command.
+Chart.js renders elevation, route-progress, and route-position modes. When both
+elevation series exist, initial visibility follows the user setting while
+legend clicks affect only the current view. Hovered points retain their
+original coordinates in every mode, allowing one chart point to drive either
+the native Leaflet hover marker or the 3D highlight. Click/tap and arrow keys
+select a point, an explicit **Copy coordinates** action copies it, and
+double-click remains a shortcut. Selection and copy results use a live status
+region. If the Clipboard API fails, the analyzer exposes a selected read-only
+coordinate field for the platform's ordinary copy command.
 
 ### The fragile Leaflet seam
 

@@ -66,14 +66,15 @@ original file anywhere else.
 
 ![Three-day GPX analysis with chart-synchronized map marker and custom route](store-assets/showcase-gpx-map-sync.gif)
 
-Ascent pages gain an interactive elevation chart with distance and time views,
-route metrics, grades, mountain-local timing, and multi-day details. Chart
-points stay synchronized with the map and can be selected by pointer or
-keyboard for coordinate copying. Custom route colors, width, and outline carry
-through to Full Screen GPS maps without covering Peakbagger's native route or
-markers. Older coordinate-only tracks still show their route and distance;
-missing elevation or unusable timestamps disable only the views that need
-those fields.
+Ascent pages gain interactive GPX charts, route metrics, grades,
+mountain-local timing, and multi-day details. Chart points stay synchronized
+with the map and can be selected by pointer or keyboard for coordinate copying.
+Custom route colors, width, and outline carry through to Full Screen GPS maps
+without covering Peakbagger's native route or markers. Degraded tracks remain
+useful without invented measurements: partial data produces visible gaps,
+timed coordinate-only tracks show distance over time, and untimed
+coordinate-only tracks get a compact route scrubber. See the
+[missing-data result table](docs/gpx-data-quality.md#resulting-chart).
 
 ### Find useful ascent beta faster
 
