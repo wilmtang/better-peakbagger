@@ -166,10 +166,13 @@ test('Firefox verification waits for rendered postconditions instead of fixed fr
     const analyzerProbe = verifier.slice(start, end);
 
     assert.match(analyzerProbe, /await waitForScript\(driver,/);
-    assert.match(
-        analyzerProbe,
-        /ready: state\.analyzer && \/Interactive Stats\/\.test\(state\.stats\),/,
-    );
+    assert.match(analyzerProbe, /ready: state\.analyzer/);
+    assert.ok(analyzerProbe.includes('Interactive Stats: 17\\\\.53 miles'),
+        'the Firefox verifier must wait for the exact Capitol metric signature');
+    assert.match(analyzerProbe,
+        /state\.chart\?\.pointCounts\?\.join\("\|"\) === "971\|971"/);
+    assert.match(analyzerProbe,
+        /state\.chart\?\.breakCounts\?\.join\("\|"\) === "0\|0"/);
     assert.match(analyzerProbe, /state => state\?\.ready/);
     assert.doesNotMatch(analyzerProbe, /until\.elementLocated/);
 

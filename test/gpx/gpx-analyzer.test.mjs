@@ -7,6 +7,7 @@ import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { JSDOM } from 'jsdom';
+import { readCompressedGpxFixture } from '../helpers/gpx-fixtures.mjs';
 import { waitFor } from '../helpers/load-page.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
@@ -15,6 +16,8 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 // the peak-marker feed, schema, and the analyzer itself.
 const tzLookupSource = await readFile(path.join(root, 'dist', 'vendor', 'tz-lookup.js'), 'utf8');
 const analyzerBundle = await readFile(path.join(root, 'dist', 'content', 'gpx-analyzer.js'), 'utf8');
+const capitolRegressionGpx =
+    await readCompressedGpxFixture('capitol-2021-segment-order.gpx.gz.b64');
 
 const gpx = `<?xml version="1.0"?>
 <gpx version="1.1">
@@ -1402,6 +1405,34 @@ test('GPX analyzer connects nearby track-segment boundaries in both chart series
         Array.from(timeSeries.data, point => point._raw.lat),
         'distance and time series should share the same chronological segment sequence'
     );
+
+    dom.window.close();
+});
+
+test('shipped GPX analyzer renders the full Capitol regression without artificial breaks', async () => {
+    const { dom, analysisText, chartConfig } = await loadElevationAnalyzer(
+        capitolRegressionGpx,
+        { settings: { units: 'imperial' } }
+    );
+
+    await waitFor(dom, () => chartConfig() !== null);
+    const [distanceSeries, timeSeries] = chartConfig().data.datasets;
+
+    assert.match(analysisText(),
+        /Interactive Stats: 17\.53 miles \| 5735 ft gain \| Time: 36h 20m/);
+    assert.match(analysisText(), /Adjusted GPX metrics \(raw GPX \+15824 ft gain\)/);
+    assert.equal(distanceSeries.data.length, 971);
+    assert.equal(timeSeries.data.length, 971);
+    assert.equal(distanceSeries.data.some(point => point._raw === null), false,
+        'the shipped distance chart must not reintroduce a break at any Capitol segment boundary');
+    assert.equal(timeSeries.data.some(point => point._raw === null), false,
+        'the shipped time chart must not reintroduce a break at any Capitol segment boundary');
+    assert.ok(distanceSeries.data.every((point, index, points) =>
+        index === 0 || point.x >= points[index - 1].x),
+    'the shipped distance chart must use the safely sequenced route');
+    assert.ok(timeSeries.data.every((point, index, points) =>
+        index === 0 || point.x >= points[index - 1].x),
+    'the shipped time chart must remain chronological');
 
     dom.window.close();
 });

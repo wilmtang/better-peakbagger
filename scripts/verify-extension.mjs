@@ -34,6 +34,7 @@ import {
     verificationViewport,
     waitForCondition
 } from './browser-verification-fixtures.mjs';
+import { readCompressedGpxFixture } from '../test/helpers/gpx-fixtures.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 // The unpacked extension is the built bundle tree, not the source root.
@@ -56,7 +57,12 @@ try {
 }
 
 const profile = await mkdtemp(path.join(os.tmpdir(), 'better-peakbagger-extension-'));
-const fixture = await createBrowserFixtureServer({ temporaryRoot: profile });
+const capitolRegressionGpx =
+    await readCompressedGpxFixture('capitol-2021-segment-order.gpx.gz.b64');
+const fixture = await createBrowserFixtureServer({
+    temporaryRoot: profile,
+    analyzerGpx: capitolRegressionGpx,
+});
 const port = fixture.port;
 const buddyListFixture = await readFile(path.join(root, 'test', 'fixtures', 'pages', 'report-buddy-list.html'), 'utf8');
 
@@ -1673,8 +1679,24 @@ try {
     check(off.isolatedWorldReady !== null,
         'settings.js did not initialise in the isolated world (the bridge would be silent)');
     check(off.analyzerPanel, 'the GPX analyzer panel never rendered');
-    check(/Interactive Stats/.test(off.stats), `the analyzer never produced stats: ${off.stats.slice(0, 80)}`);
+    check(/Interactive Stats: 17\.53 miles \| 5735 ft gain \| Time: 36h 20m/.test(off.stats)
+        && /Adjusted GPX metrics \(raw GPX \+15824 ft gain\)/.test(off.stats),
+    `the packaged analyzer did not produce the Capitol regression metrics: ${off.stats.slice(0, 160)}`);
     const coordinateCanvas = offPage.locator('#bpb-gpx-analysis canvas');
+    const capitolChartState = await coordinateCanvas.evaluate(canvas => {
+        const chart = globalThis.Chart?.getChart?.(canvas);
+        if (!chart) return null;
+        return {
+            labels: chart.data.datasets.map(dataset => dataset.label),
+            pointCounts: chart.data.datasets.map(dataset => dataset.data.length),
+            breakCounts: chart.data.datasets.map(dataset =>
+                dataset.data.filter(point => point?._raw === null).length),
+        };
+    });
+    check(capitolChartState?.labels?.join('|') === 'Elevation by Distance|Elevation by Time'
+        && capitolChartState.pointCounts?.join('|') === '971|971'
+        && capitolChartState.breakCounts?.join('|') === '0|0',
+    `the packaged analyzer reintroduced a Capitol chart break: ${JSON.stringify(capitolChartState)}`);
     await coordinateCanvas.focus();
     await coordinateCanvas.press('ArrowRight');
     const coordinateSelection = await offPage.waitForFunction(() => {
@@ -3196,8 +3218,8 @@ console.log('  - Buddy mirror stays busy and focused during replacement, then re
 console.log('  - the real 1,500-row favorite list reports its total, fuzzy-searches, and keeps long navigation instant');
 console.log('  - the compact profile star persists, and four in-place native Buddy actions refreshed/synced under both removal policies');
 console.log('  - settings.js initialises in the isolated world and the bridge answers');
-console.log('  - the GPX analyzer renders stats, moves the route scrubber with keyboard selection and visible focus,');
-console.log('    and confirms or recovers coordinate copy');
+console.log('  - the GPX analyzer reproduces the full Capitol metrics with 971 points per series and zero breaks,');
+console.log('    moves the route scrubber with keyboard selection and visible focus, and confirms or recovers coordinate copy');
 console.log('  - the 3D toggle stays visible when disabled and opens the provider/privacy confirmation');
 console.log('  - trusted confirmation persists the feature gate without contacting tile providers');
 console.log('  - the Full Screen BigMap receives settings and shows an enabled 3D toggle');

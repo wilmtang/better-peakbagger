@@ -3,7 +3,10 @@
 
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { JSDOM } from 'jsdom';
+import { gpxParse as GpxParse } from '../../src/gpx/gpx-parse.js';
 import { gpxMetrics as GpxMetrics } from '../../src/gpx/gpx-metrics.js';
+import { readCompressedGpxFixture } from '../helpers/gpx-fixtures.mjs';
 
 test('geographic coordinate validation accepts only finite latitude and longitude bounds', () => {
     for (const [lat, lon] of [[-90, -180], [0, 0], [90, 180]]) {
@@ -79,6 +82,57 @@ test('metrics safely sequence and join nearby chronological track segments', () 
         'route distance should include every plausible cross-segment edge');
     assert.equal(metrics.rawGainM, 59,
         'gain should include the plausible four-metre rise across a segment boundary');
+});
+
+test('Capitol regression keeps the full four-segment track chronological and continuous', async () => {
+    const source = await readCompressedGpxFixture('capitol-2021-segment-order.gpx.gz.b64');
+    const document = new JSDOM(source, { contentType: 'text/xml' }).window.document;
+    const segmentNodes = Array.from(document.querySelectorAll('trkseg'));
+    const sourcePoints = segmentNodes.flatMap((segment, coordinateGroup) =>
+        Array.from(segment.querySelectorAll('trkpt'), point => {
+            const parsed = GpxParse.parseTrackPoint(point, { includeQuality: true });
+            return {
+                lat: parsed.lat,
+                lon: parsed.lon,
+                rawEleM: parsed.ele,
+                elevationState: parsed.elevationState,
+                ms: parsed.time,
+                timeState: parsed.timeState,
+                coordinateGroup,
+            };
+        }));
+
+    assert.equal(document.querySelector('metadata, wpt, name, author'), null,
+        'the committed regression fixture must not retain identifying metadata');
+    assert.deepEqual(segmentNodes.map(segment => segment.querySelectorAll('trkpt').length),
+        [767, 553, 838, 753]);
+    assert.deepEqual(segmentNodes.map(segment =>
+        segment.querySelector('trkpt time').textContent), [
+        '2021-07-26T14:52:00Z',
+        '2021-07-27T22:32:00Z',
+        '2021-07-27T11:08:00Z',
+        '2021-07-27T17:10:00Z',
+    ], 'the fixture must retain the source-order segment defect');
+
+    const metrics = GpxMetrics.computeMetrics(sourcePoints);
+    const chronologicalSegmentStarts = [0, 767, 767 + 838, 767 + 838 + 753]
+        .map(index => new Date(metrics.points[index].ms).toISOString());
+
+    assert.deepEqual(chronologicalSegmentStarts, [
+        '2021-07-26T14:52:00.000Z',
+        '2021-07-27T11:08:00.000Z',
+        '2021-07-27T17:10:00.000Z',
+        '2021-07-27T22:32:00.000Z',
+    ], 'whole segments must be safely sequenced as 0, 2, 3, 1');
+    assert.deepEqual([...new Set(metrics.points.map(point => point.coordinateGroup))], [0],
+        'all three nearby, ballpark-elevation boundaries must form one distance profile');
+    assert.deepEqual([...new Set(metrics.timeChartPoints.map(point => point.timeCoordinateGroup))], [0],
+        'all three boundaries must also form one time profile');
+    assert.equal(Math.round(metrics.distanceM), 28_209);
+    assert.equal(Math.round(metrics.gainM), 1_748);
+    assert.equal(Math.round(metrics.rawGainM - metrics.gainM), 4_823);
+    assert.equal(metrics.chartPoints.length, 971);
+    assert.equal(metrics.timeChartPoints.length, 971);
 });
 
 test('nearby segment endpoints with an implausible elevation reset keep a profile break', () => {

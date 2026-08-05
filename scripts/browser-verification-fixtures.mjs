@@ -262,7 +262,7 @@ export async function createFixtureCertificate({ host = fixtureHost, directory =
     };
 }
 
-export async function createBrowserFixtureServer({ temporaryRoot }) {
+export async function createBrowserFixtureServer({ temporaryRoot, analyzerGpx = gpx }) {
     const certificate = await createFixtureCertificate({ directory: temporaryRoot });
     const { key, cert } = certificate;
     const [
@@ -432,7 +432,7 @@ export async function createBrowserFixtureServer({ temporaryRoot }) {
             return send('text/html; charset=utf-8',
                 (url.searchParams.get('t') || '').toUpperCase() === 'P' ? peakMasterMapHtml : masterMapHtml);
         }
-        if (/track\.gpx/i.test(url.pathname)) return send('application/gpx+xml', gpx);
+        if (/track\.gpx/i.test(url.pathname)) return send('application/gpx+xml', analyzerGpx);
         response.writeHead(404);
         response.end('not found');
     });

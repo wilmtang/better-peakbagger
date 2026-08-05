@@ -24,6 +24,7 @@ import {
     waitForCondition,
 } from './browser-verification-fixtures.mjs';
 import { prepareFirefoxSource } from './run-firefox.mjs';
+import { readCompressedGpxFixture } from '../test/helpers/gpx-fixtures.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -106,7 +107,12 @@ async function main() {
             : null;
         if (!suppliedSource) prepared = await prepareFirefoxSource({ temporaryRoot });
         const extensionSource = suppliedSource || prepared.sourceDir;
-        fixture = await createBrowserFixtureServer({ temporaryRoot });
+        const capitolRegressionGpx =
+            await readCompressedGpxFixture('capitol-2021-segment-order.gpx.gz.b64');
+        fixture = await createBrowserFixtureServer({
+            temporaryRoot,
+            analyzerGpx: capitolRegressionGpx,
+        });
         const buddyListFixture = await readFile(
             path.join(root, 'test', 'fixtures', 'pages', 'report-buddy-list.html'),
             'utf8',
@@ -1174,10 +1180,26 @@ async function main() {
         theme: document.documentElement.getAttribute("data-bpb-theme"),
         analyzer: Boolean(document.getElementById("bpb-gpx-analysis")),
         stats: document.querySelector("#bpb-gpx-analysis div")?.textContent || "",
+        chart: (() => {
+          const canvas = document.querySelector("#bpb-gpx-analysis canvas");
+          const chart = canvas ? globalThis.Chart?.getChart?.(canvas) : null;
+          if (!chart) return null;
+          return {
+            labels: chart.data.datasets.map(dataset => dataset.label),
+            pointCounts: chart.data.datasets.map(dataset => dataset.data.length),
+            breakCounts: chart.data.datasets.map(dataset =>
+              dataset.data.filter(point => point?._raw === null).length),
+          };
+        })(),
       };
       return {
         ...state,
-        ready: state.analyzer && /Interactive Stats/.test(state.stats),
+        ready: state.analyzer
+          && /Interactive Stats: 17\\.53 miles \\| 5735 ft gain \\| Time: 36h 20m/.test(state.stats)
+          && /Adjusted GPX metrics \\(raw GPX \\+15824 ft gain\\)/.test(state.stats)
+          && state.chart?.labels?.join("|") === "Elevation by Distance|Elevation by Time"
+          && state.chart?.pointCounts?.join("|") === "971|971"
+          && state.chart?.breakCounts?.join("|") === "0|0",
       };
     `, 'the Firefox MAIN-world analyzer stats', 15_000, state => state?.ready);
         if (surfaceState.theme === null) {
@@ -1621,6 +1643,7 @@ async function main() {
         console.log('  - a held Buddy replacement stayed busy and focused, then failed retryably without another fetch');
         console.log('  - four native Buddy actions refreshed/synced custom favorites under both removal policies');
         console.log('  - options, popup, ascent, editor, Peak, BigMap, PeakAscents, Buddy List, Peak List, and profile-backup surfaces initialized');
+        console.log('  - the full Capitol GPX rendered 971 points per chart series with the corrected metrics and zero breaks');
         console.log('  - a fresh ascent form autofilled its local date and trusted GPX selection swapped Preview for Process');
         console.log('  - the report editor opened the standalone report-drafts manager page, which rendered a seeded draft');
         console.log('  - AMO report credit, real editor input/draft recovery, filter/sort, and 3D frame passed');
