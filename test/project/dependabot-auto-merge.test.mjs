@@ -58,13 +58,25 @@ test('only npm updates auto-merge and queueing is bound to the verified head', (
         /gh pr merge --auto --merge --match-head-commit "\$HEAD_SHA" "\$PR_URL"/);
 });
 
-test('npm group names describe how shipped dependencies enter dist', () => {
+test('npm groups preserve release paths and catch otherwise separate updates', () => {
     assert.match(dependabotConfig, /^      bundled-runtime:\s*$/m);
     assert.match(dependabotConfig, /^      copied-runtime:\s*$/m);
     assert.match(dependabotConfig, /^      tooling:\s*$/m);
+    assert.match(dependabotConfig,
+        /^      remaining-npm:\n        applies-to: version-updates\n        patterns:\n          - "\*"\s*$/m);
+    assert.match(dependabotConfig,
+        /^      security-fixes:\n        applies-to: security-updates\n        patterns:\n          - "\*"\s*$/m);
     assert.doesNotMatch(dependabotConfig, /^      editor:\s*$/m);
     assert.doesNotMatch(dependabotConfig, /^      vendored:\s*$/m);
+
+    const tooling = dependabotConfig.indexOf('      tooling:');
+    const remaining = dependabotConfig.indexOf('      remaining-npm:');
+    assert.ok(tooling >= 0 && tooling < remaining,
+        'the version-update wildcard must stay after the named release-path groups');
+
     assert.match(developmentGuide, /Both runtime groups are third-party code vendored/);
     assert.match(developmentGuide, /`bundled-runtime` modules[\s\S]*`copied-runtime` packages/);
+    assert.match(developmentGuide, /first matching group[\s\S]*otherwise unmatched direct and transitive/);
+    assert.match(developmentGuide, /security updates[\s\S]*does not combine with ordinary version updates/);
     assert.doesNotMatch(developmentGuide, /\| `(?:editor|vendored)` \|/);
 });

@@ -355,6 +355,8 @@ attributed:
 | `bundled-runtime` | bundled by esbuild | yes |
 | `copied-runtime` | copied by `scripts/build-config.mjs` | yes |
 | `tooling` | nothing; build and test only | no |
+| `remaining-npm` | depends on the owning dependency path | inspect |
+| `security-fixes` | depends on the vulnerable dependency path | inspect |
 
 Both runtime groups are third-party code vendored with the extension in the
 broad sense. Their names describe the packaging path: `bundled-runtime` modules
@@ -362,7 +364,15 @@ are imported into Better Peakbagger bundles, while `copied-runtime` packages
 remain separately loaded browser builds under `dist/vendor/`.
 
 Every package is declared under `devDependencies`, so that field says nothing
-about whether a package ships. Only the group does.
+about whether a package ships. The three named release-path groups do; updates
+in either catch-all require tracing the package through its parent dependency.
+
+Dependabot assigns a version update to the first matching group. The
+`remaining-npm` wildcard therefore stays after the three release-path groups
+and combines only otherwise unmatched direct and transitive updates. This
+prevents separate incomplete lockfile repairs from deadlocking the global
+zero-advisory check. `security-fixes` applies the same all-npm grouping to
+security updates, which GitHub does not combine with ordinary version updates.
 
 ### What gates a release after an npm update
 

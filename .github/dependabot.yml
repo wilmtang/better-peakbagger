@@ -14,10 +14,14 @@
 # development-only.
 #
 # Every npm group merges automatically once the four required checks pass; see
-# `.github/workflows/dependabot-auto-merge.yml`. Cooldown is the only delay left
-# in that path, so it carries more weight than it would if a human were reading
-# each pull request: it is what lets an ecosystem find a bad release before this
-# repository takes it. GitHub Actions updates remain grouped but wait for review.
+# `.github/workflows/dependabot-auto-merge.yml`. The last two npm groups are
+# coordination catch-alls: unmatched version updates stay together instead of
+# deadlocking the zero-advisory gate in separate pull requests, while GitHub
+# requires security updates to use a distinct group. Cooldown is the only delay
+# left in the version-update path, so it carries more weight than it would if a
+# human were reading each pull request: it is what lets an ecosystem find a bad
+# release before this repository takes it. GitHub Actions updates remain grouped
+# but wait for review.
 version: 2
 updates:
   - package-ecosystem: npm
@@ -58,6 +62,23 @@ updates:
           - playwright
           - selenium-webdriver
           - web-ext
+
+      # GitHub assigns an update to the first matching group. Keep this last
+      # among version-update rules so named release-path groups retain their
+      # boundaries while otherwise ungrouped direct and transitive updates move
+      # together. Their shipping status must be traced through the owning path.
+      remaining-npm:
+        applies-to: version-updates
+        patterns:
+          - "*"
+
+      # Security and version updates cannot share a Dependabot pull request.
+      # Group every npm security repair so the global zero-advisory gate does
+      # not make independently incomplete security pull requests block forever.
+      security-fixes:
+        applies-to: security-updates
+        patterns:
+          - "*"
 
   # Action bumps wait for review because they are the one ecosystem whose risk
   # the release rehearsal cannot cover: they change what CI itself runs,
