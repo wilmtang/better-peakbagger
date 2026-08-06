@@ -64,15 +64,16 @@ test('the vulnerable dev-only brace-expansion path stays pinned to a patched rel
         readFile(new URL('../../package.json', import.meta.url), 'utf8').then(JSON.parse),
         readFile(new URL('../../package-lock.json', import.meta.url), 'utf8').then(JSON.parse),
     ]);
-    assert.deepEqual(packageJson.overrides['minimatch@^3.0.0'], { 'brace-expansion': '1.1.17' });
+    assert.deepEqual(packageJson.overrides['minimatch@^3.0.0'], { 'brace-expansion': '1.1.18' });
 
     const entry = lockfile.packages['node_modules/brace-expansion'];
-    assert.equal(entry.version, '1.1.17');
+    assert.equal(entry.version, '1.1.18');
     assert.equal(entry.dev, true, 'brace-expansion must never become a production dependency');
+    const patchedVersions = new Set(['1.1.18', '5.0.9']);
     for (const [packagePath, resolved] of Object.entries(lockfile.packages)) {
         if (!packagePath.endsWith('node_modules/brace-expansion')) continue;
         assert.equal(resolved.dev, true, `${packagePath} must stay development-only`);
-        assert.ok(!/^1\.1\.(?:[0-9]|1[0-6])$/.test(resolved.version),
-            `${packagePath} resolves ${resolved.version}, which the advisory covers`);
+        assert.ok(patchedVersions.has(resolved.version),
+            `${packagePath} resolves ${resolved.version}, not a reviewed patched version`);
     }
 });

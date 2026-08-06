@@ -9,11 +9,10 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 // No advisory is accepted. The one bounded exception this gate ever carried —
 // GHSA-mh99-v99m-4gvg reaching brace-expansion 1.x through the dev-only
-// web-ext/addons-linter/minimatch@3 chain — is gone: the advisory range widened
-// to <1.1.17, a patched 1.1.17 shipped, and package.json pins it through an
-// override scoped to minimatch@^3 so the 5.x installs eslint resolves are left
-// alone. Every finding now fails, which is the policy the exception was always
-// a dated departure from.
+// web-ext/addons-linter/minimatch@3 chain — is gone. A scoped package override
+// keeps that path on a patched release without changing the 5.x installs eslint
+// resolves, and every finding fails. The later GHSA-rgw5-rvv9-x895 raised the
+// patched floors again to 1.1.18 and 5.0.9; the lockfile guard pins both paths.
 //
 // Re-adding an exception means re-adding the machinery deliberately: an
 // advisory id, the exact vulnerable install path, dev-only lock pins, and an
