@@ -48,7 +48,12 @@ test('every new Dependabot head clears stale auto-merge before full provenance v
 });
 
 test('only npm updates auto-merge and queueing is bound to the verified head', () => {
-    assert.match(workflow, /if: steps\.metadata\.outputs\.package-ecosystem == 'npm'/);
+    assert.match(workflow,
+        /if: steps\.metadata\.outputs\.package-ecosystem == 'npm_and_yarn'/,
+        'fetch-metadata reports npm updates with the npm_and_yarn ecosystem identifier');
+    assert.doesNotMatch(workflow,
+        /if: steps\.metadata\.outputs\.package-ecosystem == 'npm'/,
+        'the dependabot.yml ecosystem name is not a fetch-metadata output value');
     assert.match(workflow,
         /gh pr merge --auto --merge --match-head-commit "\$HEAD_SHA" "\$PR_URL"/);
 });

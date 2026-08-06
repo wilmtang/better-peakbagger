@@ -75,7 +75,9 @@ jobs:
         uses: dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98 # v3.1.0
 
       - name: Queue the npm merge once required checks pass
-        if: steps.metadata.outputs.package-ecosystem == 'npm'
+        # fetch-metadata uses Dependabot's internal npm ecosystem identifier,
+        # not the shorter package-ecosystem value from dependabot.yml.
+        if: steps.metadata.outputs.package-ecosystem == 'npm_and_yarn'
         run: gh pr merge --auto --merge --match-head-commit "$HEAD_SHA" "$PR_URL"
         env:
           PR_URL: ${{ github.event.pull_request.html_url }}

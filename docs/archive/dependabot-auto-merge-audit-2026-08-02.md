@@ -86,10 +86,12 @@ Verification evidence:
 
 ### Changed but not fully proven
 
-- The current workflow has not yet handled a live npm Dependabot PR. PR #2 ran
-  the earlier tooling-only workflow; its queue step was skipped and a maintainer
-  enabled native auto-merge later. The next real npm update must establish that
-  the hosted `pull_request_target` run clears, verifies, and queues as designed.
+- Live npm PRs #3 and #4 exposed a metadata-token mismatch: the pinned
+  `fetch-metadata` action reported `npm_and_yarn`, while the queue condition
+  expected `npm`, so GitHub skipped the queue step and still marked the job
+  successful. The condition and structural regression test now pin the actual
+  action output. Hosted queueing remains unproven until this correction reaches
+  `main` and a new or synchronized npm Dependabot head exercises it.
 - No live head was deliberately contaminated to exercise the synchronize reset;
   doing so would mutate an authentic dependency PR. The ordering and negative
   provenance cases are structurally and locally tested instead.
