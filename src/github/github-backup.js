@@ -45,7 +45,10 @@
 // module coerces them and omits anything blank or unparseable rather than
 // inventing a value. Idempotent: safe to inject more than once into the global.
 
-import { PEAKBAGGER_ORIGIN } from '../peakbagger/peakbagger-origin.js';
+import {
+    PEAKBAGGER_ORIGIN,
+    isPeakbaggerUrl,
+} from '../peakbagger/peakbagger-origin.js';
 
 const SCHEMA_VERSION = 1;
 
@@ -53,6 +56,39 @@ const SCHEMA_VERSION = 1;
 // are derived here rather than trusted from the snapshot.
 const ascentUrl = id => `${PEAKBAGGER_ORIGIN}/climber/ascent.aspx?aid=${id}`;
 const peakUrl = id => `${PEAKBAGGER_ORIGIN}/peak.aspx?pid=${id}`;
+
+// Backup links are derived navigation, not user-authored ascent data. Accept a
+// previously generated host/query spelling only after it still proves the same
+// Peakbagger entity; malformed, hostile, and wrong-id links remain different.
+const canonicalEntityUrl = (value, { id, pathname, parameter, build }) => {
+    if (id == null || typeof value !== 'string') return null;
+    try {
+        const url = new URL(value);
+        const identities = url.searchParams.getAll(parameter);
+        if (!isPeakbaggerUrl(url.href)
+                || url.username || url.password || url.port
+                || url.pathname.toLowerCase() !== pathname.toLowerCase()
+                || identities.length !== 1
+                || identities[0] !== String(id)) return null;
+        return build(id);
+    } catch {
+        return null;
+    }
+};
+
+const comparableAscentUrl = (value, id) => canonicalEntityUrl(value, {
+    id,
+    pathname: '/climber/ascent.aspx',
+    parameter: 'aid',
+    build: ascentUrl,
+});
+
+const comparablePeakUrl = (value, id) => canonicalEntityUrl(value, {
+    id,
+    pathname: '/peak.aspx',
+    parameter: 'pid',
+    build: peakUrl,
+});
 
 const trimString = value => (typeof value === 'string' ? value : value == null ? '' : String(value)).trim();
 
@@ -305,8 +341,9 @@ const buildFiles = (snapshot, options = {}) => {
 // Compare the user-owned payload of a committed folder with what a fresh
 // backup would write. The backup block is provenance, not ascent-page
 // content: syncedAt necessarily changes on every push and the extension
-// version can change without the saved ascent changing. Everything else,
-// including report and GPX bytes and track presence, must still match.
+// version can change without the saved ascent changing. Derived Peakbagger
+// links compare by validated entity identity; every user-owned report byte,
+// structured field, GPX byte, and track-presence decision must still match.
 const stableJson = value => {
     if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`;
     if (value && typeof value === 'object') {
@@ -321,10 +358,39 @@ const comparableAscentJson = content => {
         if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
         const pageContent = { ...parsed };
         delete pageContent.backup;
+        if (pageContent.ascent && typeof pageContent.ascent === 'object'
+                && !Array.isArray(pageContent.ascent)) {
+            pageContent.ascent = { ...pageContent.ascent };
+            const url = comparableAscentUrl(pageContent.ascent.url, pageContent.ascent.id);
+            if (url) pageContent.ascent.url = url;
+        }
+        if (pageContent.peak && typeof pageContent.peak === 'object'
+                && !Array.isArray(pageContent.peak)) {
+            pageContent.peak = { ...pageContent.peak };
+            const url = comparablePeakUrl(pageContent.peak.url, pageContent.peak.id);
+            if (url) pageContent.peak.url = url;
+        }
         return stableJson(pageContent);
     } catch {
         return null;
     }
+};
+
+const comparableReportMarkdown = (content, ascentId) => {
+    if (typeof content !== 'string' || !content.startsWith('---\n')) return content;
+    const frontmatterEnd = content.indexOf('\n---\n', 4);
+    if (frontmatterEnd < 0) return content;
+
+    const lines = content.slice(4, frontmatterEnd).split('\n');
+    const links = lines
+        .map((line, index) => ({ index, match: line.match(/^peakbagger: (\S+)$/) }))
+        .filter(entry => entry.match);
+    if (links.length !== 1) return content;
+
+    const canonical = comparableAscentUrl(links[0].match[1], ascentId);
+    if (!canonical) return content;
+    lines[links[0].index] = `peakbagger: ${canonical}`;
+    return `---\n${lines.join('\n')}${content.slice(frontmatterEnd)}`;
 };
 
 const matchesBackupFiles = (snapshot, { gpx, contents } = {}) => {
@@ -337,6 +403,11 @@ const matchesBackupFiles = (snapshot, { gpx, contents } = {}) => {
     return expected.every(file => {
         const actual = contents[file.name];
         if (typeof actual !== 'string') return false;
+        if (file.name === 'report.md') {
+            const ascentId = snapshot && snapshot.ascent ? snapshot.ascent.id : null;
+            return comparableReportMarkdown(actual, ascentId)
+                === comparableReportMarkdown(file.content, ascentId);
+        }
         if (file.name !== 'ascent.json') return actual === file.content;
         const expectedJson = comparableAscentJson(file.content);
         const actualJson = comparableAscentJson(actual);

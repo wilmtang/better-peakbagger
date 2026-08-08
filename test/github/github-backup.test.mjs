@@ -249,6 +249,56 @@ test('backup comparison ignores provenance but pins report, ascent, and track co
     }), false, 'a stale track file makes a no-track page different');
 });
 
+test('backup comparison treats validated Peakbagger URL variants as the same derived identity', () => {
+    const contents = Object.fromEntries(Backup.buildFiles(baseSnapshot(), { gpx: '<gpx/>' })
+        .map(file => [file.name, file.content]));
+    const legacyJson = JSON.parse(contents['ascent.json']);
+    legacyJson.ascent.url = 'https://peakbagger.com/climber/ascent.aspx?source=backup&aid=1234567#details';
+    legacyJson.peak.url = 'https://peakbagger.com/peak.aspx?view=summary&pid=2296';
+    legacyJson.backup = { syncedAt: '2026-07-13T00:00:00Z', extensionVersion: '3.0.0' };
+    const legacyContents = {
+        ...contents,
+        'ascent.json': `${JSON.stringify(legacyJson, null, 2)}\n`,
+        'report.md': contents['report.md'].replace(
+            'https://www.peakbagger.com/climber/ascent.aspx?aid=1234567',
+            'https://peakbagger.com/climber/ascent.aspx?source=backup&aid=1234567#details',
+        ),
+    };
+
+    assert.equal(Backup.matchesBackupFiles(baseSnapshot(), {
+        gpx: '<gpx/>', contents: legacyContents,
+    }), true, 'host aliases and harmless URL decoration do not make the same ascent stale');
+});
+
+test('backup comparison rejects URLs that do not prove the backed-up entity', () => {
+    const contents = Object.fromEntries(Backup.buildFiles(baseSnapshot(), { gpx: '<gpx/>' })
+        .map(file => [file.name, file.content]));
+    const replace = (from, to) => ({
+        ...contents,
+        'report.md': contents['report.md'].replace(from, to),
+    });
+    const canonical = 'https://www.peakbagger.com/climber/ascent.aspx?aid=1234567';
+
+    for (const url of [
+        'https://www.peakbagger.com/climber/ascent.aspx?aid=7654321',
+        'https://evil.example/climber/ascent.aspx?aid=1234567',
+        'http://www.peakbagger.com/climber/ascent.aspx?aid=1234567',
+        'https://www.peakbagger.com/climber/ascentedit.aspx?aid=1234567',
+        'https://www.peakbagger.com/climber/ascent.aspx?aid=1234567&aid=7654321',
+    ]) {
+        assert.equal(Backup.matchesBackupFiles(baseSnapshot(), {
+            gpx: '<gpx/>', contents: replace(canonical, url),
+        }), false, url);
+    }
+
+    const hostileJson = JSON.parse(contents['ascent.json']);
+    hostileJson.peak.url = 'https://evil.example/peak.aspx?pid=2296';
+    assert.equal(Backup.matchesBackupFiles(baseSnapshot(), {
+        gpx: '<gpx/>',
+        contents: { ...contents, 'ascent.json': `${JSON.stringify(hostileJson, null, 2)}\n` },
+    }), false, 'a hostile structured URL remains stale');
+});
+
 // ---- commit subject -------------------------------------------------------
 
 test('commit subject reads as a sentence and drops an unknown date', () => {
