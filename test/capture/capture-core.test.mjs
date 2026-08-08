@@ -6,8 +6,12 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { JSDOM } from 'jsdom';
 
 import { captureCore as Core } from '../../src/capture/capture-core.js';
+import { gpxParse as Parse } from '../../src/gpx/gpx-parse.js';
+import { gpxMetrics as Metrics } from '../../src/gpx/gpx-metrics.js';
+import { readCompressedGpxFixture } from '../helpers/gpx-fixtures.mjs';
 import { walkFiles } from '../helpers/walk-files.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
@@ -32,6 +36,35 @@ test('sanitization breaks, rather than bridges, invalid and impossible edges', (
     assert.equal(result.quality.longGaps, 1);
     assert.equal(result.segments.length, 5);
     assert.equal(result.quality.retainedPoints, 6);
+});
+
+test('sanitization excludes impossible elevations from matching and serialized GPX', () => {
+    const { segments, quality } = Core.sanitizeTrack([[
+        point(0, -0.001, 100),
+        point(0, 0, 1_000_000_000),
+        point(0, 0.001, 100),
+    ]]);
+
+    assert.equal(quality.suspectElevation, 1);
+    assert.equal(segments[0][1].ele, null);
+    const [match] = Core.detectPeaks(
+        segments,
+        [{ id: 99, name: 'Peak', location: '', lat: 0, lon: 0, elevationM: 1_000_000_000 }],
+        quality.score,
+    );
+    assert.notEqual(match.classification, 'strong');
+    assert.equal(match.evidence.elevationDeltaM, null);
+    assert.doesNotMatch(Core.serializeUploadGpx(segments), /1000000000/);
+
+    const boundaries = Core.sanitizeTrack([[
+        point(0, 0, -1000),
+        point(0, 0.0001, 10000),
+        point(0, 0.0002, -1000.1),
+        point(0, 0.0003, 10000.1),
+    ]]);
+    assert.deepEqual(boundaries.segments[0].map(candidate => candidate.ele), [
+        -1000, 10000, null, null,
+    ]);
 });
 
 test('kilometre-scale edges without usable time are treated as gaps', () => {
@@ -246,9 +279,99 @@ test('draft fields use full-resolution distance, gains, durations, and activity 
     assert.equal(fields.time, '08:30');
     assert.deepEqual(fields.upDuration, { days: 0, hours: 0, minutes: 30 });
     assert.deepEqual(fields.downDuration, { days: 0, hours: 0, minutes: 30 });
-    assert.ok(fields.upGainM >= 30);
+    const shared = Metrics.computeMetricsForSegments(segments);
+    assert.equal(fields.upGainM + fields.downGainM, shared.gainM);
     assert.equal(fields.startElevationM, 100);
     assert.equal(fields.endElevationM, 110);
+});
+
+test('draft metrics expose gaps instead of bridging or substituting zero', () => {
+    const start = Date.UTC(2026, 6, 1, 15);
+    const segments = [[
+        point(0, 0, 100, start),
+        point(0, 0.0001, null, null),
+        point(0, 0.0002, 200, start + 120_000),
+        point(0, 0.0003, 210, start + 180_000),
+    ]];
+    const fields = Core.calculateDraftFields(segments, {
+        encounter: {
+            segmentIndex: 0,
+            edgeIndex: 1,
+            fraction: 1,
+            lat: 0,
+            lon: 0.0002,
+            ele: 200,
+            time: start + 120_000,
+        },
+    }, { utcOffsetMinutes: 0 });
+
+    assert.equal(fields.upGainM, null, 'missing elevation must split the ascent gain');
+    assert.equal(fields.downGainM, 0, 'the complete flat/down half may report its recorded gain');
+    assert.equal(fields.upDuration, null, 'missing time must not become a zero duration');
+    assert.deepEqual(fields.downDuration, { days: 0, hours: 0, minutes: 1 });
+    assert.equal(fields.quality.elevation.status, 'partial');
+    assert.equal(fields.quality.time.status, 'partial');
+});
+
+test('draft duration requires complete, progressing, ordered timestamps', () => {
+    const start = Date.UTC(2026, 6, 1, 15);
+    const encounter = {
+        segmentIndex: 0, edgeIndex: 0, fraction: 1,
+        lat: 0, lon: 0.0001, ele: 110, time: start,
+    };
+    const equal = Core.calculateDraftFields([[
+        point(0, 0, 100, start),
+        point(0, 0.0001, 110, start),
+        point(0, 0.0002, 100, start),
+    ]], { encounter });
+    assert.equal(equal.upDuration, null);
+    assert.equal(equal.downDuration, null);
+
+    const reversed = Core.calculateDraftFields([[
+        point(0, 0, 100, start + 60_000),
+        point(0, 0.0001, 110, start),
+        point(0, 0.0002, 100, start + 120_000),
+    ]], { encounter: { ...encounter, time: start } });
+    assert.equal(reversed.upDuration, null);
+});
+
+test('Capitol draft totals match shared analyzer metrics without reordering serialized GPX', async () => {
+    const source = await readCompressedGpxFixture('capitol-2021-segment-order.gpx.gz.b64');
+    const document = new JSDOM(source, { contentType: 'text/xml' }).window.document;
+    const rawSegments = [...document.querySelectorAll('trkseg')].map(segment =>
+        [...segment.querySelectorAll(':scope > trkpt')].map(pointNode =>
+            Parse.parseTrackPoint(pointNode)));
+    const { segments } = Core.sanitizeTrack(rawSegments);
+    let summit = { ele: -Infinity };
+    segments.forEach((segment, segmentIndex) => segment.forEach((candidate, pointIndex) => {
+        if (candidate.ele > summit.ele) summit = { ...candidate, segmentIndex, pointIndex };
+    }));
+    const encounter = {
+        segmentIndex: summit.segmentIndex,
+        edgeIndex: Math.max(0, summit.pointIndex - 1),
+        fraction: summit.pointIndex === 0 ? 0 : 1,
+        lat: summit.lat,
+        lon: summit.lon,
+        ele: summit.ele,
+        time: summit.time,
+    };
+    const fields = Core.calculateDraftFields(segments, { encounter }, { utcOffsetMinutes: -360 });
+    const metrics = Metrics.computeMetricsForSegments(segments);
+
+    assert.ok(Math.abs(fields.upGainM + fields.downGainM - metrics.gainM) < 1e-9);
+    assert.ok(Math.abs(fields.upDistanceM + fields.downDistanceM - metrics.distanceM) < 1e-9);
+    assert.equal(Math.round(metrics.gainM * 100) / 100, 1747.89);
+
+    const serialized = new JSDOM(Core.serializeUploadGpx(segments), {
+        contentType: 'text/xml',
+    }).window.document;
+    assert.deepEqual([...serialized.querySelectorAll('trkseg')].map(segment =>
+        segment.querySelector('time')?.textContent), [
+        '2021-07-26T14:52:00Z',
+        '2021-07-27T22:32:00Z',
+        '2021-07-27T11:08:00Z',
+        '2021-07-27T17:10:00Z',
+    ], 'serialized route geometry must retain GPX source segment order');
 });
 
 test('Strava displayed wall-clock time derives the activity timezone from GPX UTC', () => {
@@ -291,13 +414,13 @@ test('day statistics use activity-local dates and preserve the cross-midnight ed
     const stats = Core.calculateDayStats(segments, { utcOffsetMinutes: -420 });
 
     assert.deepEqual(stats.map(row => row.date), ['2026-06-30', '2026-07-01']);
-    assert.equal(stats[0].gainM, 30);
+    assert.equal(stats[0].gainM, 0);
     assert.equal(stats[0].lossM, 0);
-    assert.equal(stats[0].maxElevationM, 130);
+    assert.equal(stats[0].maxElevationM, 115);
     assert.equal(stats[0].campElevationM, 130);
-    assert.equal(stats[1].gainM, 40);
-    assert.equal(stats[1].lossM, 10);
-    assert.equal(stats[1].maxElevationM, 160);
+    assert.equal(stats[1].gainM, 0);
+    assert.equal(stats[1].lossM, 0);
+    assert.equal(stats[1].maxElevationM, 130);
     assert.equal(stats[1].campElevationM, null);
     assert.ok(Math.abs(stats.reduce((sum, row) => sum + row.distanceM, 0)
         - Core.distanceM(segments[0][0], segments[0][1])

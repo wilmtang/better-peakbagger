@@ -57,6 +57,26 @@ complete timing; partial timing shows only the first and last known clock
 values. Every displayed clock still uses the mountain-local timezone behavior
 documented in [mountain-local-time.md](mountain-local-time.md).
 
+## Prepared ascent fields
+
+Prepared Peakbagger drafts use the same sequencing, continuity, smoothing, and
+plausible-elevation rules as the analyzer. The privacy-cleaned GPX upload still
+keeps its original track and point order; a separate stable metric view may
+sequence complete, non-overlapping track segments chronologically.
+
+| Draft field | Required recorded data | Degraded result |
+| --- | --- | --- |
+| Start/end elevation | A plausible recorded elevation at that sequenced endpoint | Leave the existing or blank field unchanged. |
+| Up/down distance | Complete admitted coordinates through the summit encounter | Leave the affected distance fields unchanged. |
+| Up/down gain | Complete plausible elevations on that side of the encounter | Leave the affected gain fields unchanged; never bridge the missing run. |
+| Up/down duration | Complete, ordered, progressing timestamps on that side | Leave the duration fields unchanged; never substitute zero. |
+| Day gain/loss/max/camp | Complete plausible elevations for that day row | Leave every unavailable elevation-derived cell unchanged. |
+| Day distance | Complete admitted coordinates for that day row | Leave the distance cells unchanged. |
+
+An impossible elevation is removed before summit matching, reduction anchors,
+draft derivation, and GPX serialization. It therefore cannot turn a match
+Strong, inflate gain, or reach Peakbagger as if the recorder supplied it.
+
 ## No silent reconstruction
 
 Better Peakbagger does not:

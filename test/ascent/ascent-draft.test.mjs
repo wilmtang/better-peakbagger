@@ -100,6 +100,43 @@ test('fills the expected fields, attaches reduced GPX with elevation and time, p
     dom.window.close();
 });
 
+test('unavailable draft measurements preserve existing fields and never write zero substitutes', async () => {
+    let previewClicks = 0;
+    const html = formHtml
+        .replace('<input id="StartM">', '<input id="StartM" value="777">')
+        .replace('<input id="UpMi">', '<input id="UpMi" value="9.5">')
+        .replace('<input id="UpHr">', '<input id="UpHr" value="4">');
+    const payload = {
+        action: 'apply', jobId: 'job', pid: '12', cid: '34',
+        classification: 'probable', confidence: 69,
+        fields: {
+            date: '', suffix: '', startElevationM: null, endElevationM: null,
+            upDistanceM: null, downDistanceM: null,
+            upGainM: null, downGainM: null,
+            upDuration: null, downDuration: null,
+        },
+        gpx: '<gpx><trk><trkseg><trkpt lat="47" lon="-121"/></trkseg></trk></gpx>',
+    };
+    const { dom } = loadDraft(
+        message => message.type === 'DRAFT_READY' ? payload : { ok: true },
+        { html },
+    );
+    dom.window.document.getElementById('GPXPreview').addEventListener('click', () => {
+        previewClicks++;
+    });
+    await waitForCondition(() => previewClicks === 1);
+
+    assert.equal(dom.window.document.getElementById('StartM').value, '777');
+    assert.equal(dom.window.document.getElementById('StartFt').value, '');
+    assert.equal(dom.window.document.getElementById('UpMi').value, '9.5');
+    assert.equal(dom.window.document.getElementById('UpKm').value, '');
+    assert.equal(dom.window.document.getElementById('UpHr').value, '4');
+    assert.equal(dom.window.document.getElementById('UpDay').value, '');
+    assert.equal(dom.window.document.getElementById('ExUpM').value, '');
+    assert.equal(dom.window.document.getElementById('ExDnM').value, '');
+    dom.window.close();
+});
+
 test('unexpected draft exceptions are logged without entering the page banner', async () => {
     const sentinel = 'RAW_DRAFT_SENTINEL: chrome.runtime.lastError';
     const { dom, errors } = loadDraft(() => {

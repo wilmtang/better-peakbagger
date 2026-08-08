@@ -343,7 +343,7 @@ test('capture privacy settings govern the upload flow identically', async () => 
     assert.doesNotMatch(JSON.stringify(job), /Should not appear|Camp/);
 });
 
-test('a timeless GPX keeps a blank derived date and zero durations', async () => {
+test('a timeless GPX keeps a blank derived date and unavailable durations', async () => {
     const harness = createHarness();
     const ready = await harness.send({
         type: 'GPX_PROCESS_START',
@@ -355,7 +355,8 @@ test('a timeless GPX keeps a blank derived date and zero durations', async () =>
     assert.equal(ready.phase, 'ready');
     assert.equal(ready.matches[0].date, '', 'no invented date — the page keeps its autofilled today');
     const job = harness.values.bpbCaptureJobs['5'];
-    assert.deepEqual({ ...job.matches[0].draftFields.upDuration }, { days: 0, hours: 0, minutes: 0 });
+    assert.equal(job.matches[0].draftFields.upDuration, null);
+    assert.equal(job.matches[0].draftFields.downDuration, null);
     assert.doesNotMatch(job.uploadGpx, /<time>/);
 });
 

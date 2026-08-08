@@ -76,6 +76,7 @@ const sanitizeTrack = rawSegments => {
         untimedGaps: 0,
         spatialGaps: 0,
         missingElevation: 0,
+        suspectElevation: 0,
         missingTime: 0
     };
 
@@ -95,7 +96,11 @@ const sanitizeTrack = rawSegments => {
                 continue;
             }
 
-            const ele = finiteOrNull(rawPoint.ele);
+            const parsedElevation = finiteOrNull(rawPoint.ele);
+            const ele = Metrics.isPlausibleElevationM(parsedElevation)
+                ? parsedElevation
+                : null;
+            if (parsedElevation !== null && ele === null) quality.suspectElevation++;
             let time = finiteOrNull(rawPoint.time);
             if (rawPoint.invalidTime) {
                 quality.invalidTimes++;
@@ -561,7 +566,7 @@ const reductionAnchors = (segments, matches) => {
         anchors[segmentIndex].add(segment.length - 1);
         const finiteElevations = segment
             .map((point, index) => ({ index, ele: point.ele }))
-            .filter(item => Number.isFinite(item.ele));
+            .filter(item => Metrics.isPlausibleElevationM(item.ele));
         if (finiteElevations.length) {
             anchors[segmentIndex].add(finiteElevations.reduce((best, item) => item.ele < best.ele ? item : best).index);
             anchors[segmentIndex].add(finiteElevations.reduce((best, item) => item.ele > best.ele ? item : best).index);
@@ -655,7 +660,7 @@ const serializeUploadGpx = (segments, waypoints = []) => {
     }).join('');
     const body = segments.map(segment => {
         const points = segment.map(point => {
-            const elevation = Number.isFinite(point.ele) ? `<ele>${point.ele}</ele>` : '';
+            const elevation = Metrics.isPlausibleElevationM(point.ele) ? `<ele>${point.ele}</ele>` : '';
             const date = Number.isFinite(point.time) ? new Date(point.time) : null;
             const isoTime = date && Number.isFinite(date.getTime()) ? date.toISOString() : '';
             const time = isoTime
@@ -670,8 +675,6 @@ const serializeUploadGpx = (segments, waypoints = []) => {
             + `${waypointBody}<trk>${body}</trk></gpx>`;
 };
 
-const calculateConfirmedGainM = Metrics.calculateConfirmedGainM;
-
 const firstFinite = (segments, key, reverse = false) => {
     const outer = reverse ? segments.slice().reverse() : segments;
     for (const segment of outer) {
@@ -682,30 +685,9 @@ const firstFinite = (segments, key, reverse = false) => {
     return null;
 };
 
-const splitElevationPaths = (segments, encounter) => {
-    const before = [];
-    const after = [];
-    segments.forEach((segment, segmentIndex) => {
-        const values = segment.map(point => point.ele).filter(Number.isFinite);
-        if (segmentIndex < encounter.segmentIndex) before.push(values);
-        else if (segmentIndex > encounter.segmentIndex) after.push(values);
-        else {
-            const encounterElevation = encounter.ele;
-            const beforeValues = segment.slice(0, encounter.edgeIndex + 1).map(point => point.ele).filter(Number.isFinite);
-            const afterValues = segment.slice(encounter.edgeIndex + 1).map(point => point.ele).filter(Number.isFinite);
-            if (Number.isFinite(encounterElevation)) {
-                beforeValues.push(encounterElevation);
-                afterValues.unshift(encounterElevation);
-            }
-            before.push(beforeValues);
-            after.push(afterValues);
-        }
-    });
-    return { before, after };
-};
-
 const durationParts = minutesValue => {
-    const totalMinutes = Math.max(0, Math.round(minutesValue || 0));
+    if (!Number.isFinite(minutesValue)) return null;
+    const totalMinutes = Math.max(0, Math.round(minutesValue));
     return {
         days: Math.floor(totalMinutes / 1440),
         hours: Math.floor((totalMinutes % 1440) / 60),
@@ -806,8 +788,6 @@ const calculateDayStats = (segments, providerMeta = {}) => {
         if (currentDay !== null) appendPath(currentDay, currentPath);
     }
 
-    const pathDistanceM = path => path.reduce((sum, point, index) =>
-        index ? sum + distanceM(path[index - 1], point) : sum, 0);
     const pad = value => String(value).padStart(2, '0');
     const formatDay = day => {
         const date = new Date(day * dayMs);
@@ -817,59 +797,47 @@ const calculateDayStats = (segments, providerMeta = {}) => {
     const result = [];
     for (let day = firstDay; day <= lastDay; day++) {
         const paths = pathsByDay.get(day) || [];
-        const elevations = paths.flatMap(path => path.map(point => point.ele).filter(Number.isFinite));
-        const pathGains = paths.flatMap(path => {
-            const values = path.map(point => point.ele).filter(Number.isFinite);
-            if (!values.length) return [];
-            return [calculateConfirmedGainM(values)];
-        });
-        const startElevationM = firstFinite(paths, 'ele');
-        const endElevationM = firstFinite(paths, 'ele', true);
-        // The confirmed-gain filter is directional, so reversing samples
-        // does not produce a symmetric loss. Enforce the day's elevation
-        // balance across sanitized recording gaps while keeping the sum of
-        // confirmed gains as its lower bound.
-        const recordedGainM = pathGains.reduce((sum, gainM) => sum + gainM, 0);
-        const gainM = elevations.length
-            ? Math.max(recordedGainM, endElevationM - startElevationM) : null;
-        const lossM = elevations.length ? Math.max(0, gainM + startElevationM - endElevationM) : null;
+        const metrics = Metrics.computeMetricsForSegments(paths);
+        const elevationComplete = metrics.elevationQuality.status === 'complete';
+        const startElevationM = elevationComplete ? metrics.routePoints[0]?.rawEleM : null;
+        const endElevationM = elevationComplete ? metrics.routePoints.at(-1)?.rawEleM : null;
+        const gainM = elevationComplete ? metrics.gainM : null;
+        const lossM = elevationComplete
+            ? Math.max(0, gainM + startElevationM - endElevationM)
+            : null;
         result.push({
             date: formatDay(day),
             gainM,
             lossM,
-            distanceM: paths.reduce((sum, path) => sum + pathDistanceM(path), 0),
-            maxElevationM: elevations.length
-                ? elevations.reduce((maximum, elevation) => Math.max(maximum, elevation), -Infinity) : null,
-            campElevationM: day < lastDay ? firstFinite(paths, 'ele', true) : null
+            distanceM: metrics.coordinateQuality.status === 'complete' ? metrics.distanceM : null,
+            maxElevationM: elevationComplete ? metrics.maxEleM : null,
+            campElevationM: elevationComplete && day < lastDay ? endElevationM : null
         });
     }
     return result;
 };
 
 const calculateDraftFields = (segments, match, providerMeta = {}) => {
-    const trackIndex = buildTrackIndex(segments);
     const encounter = match.encounter;
     const firstTime = firstFinite(segments, 'time');
-    const lastTime = firstFinite(segments, 'time', true);
-    const dateTime = formatEncounterDateTime(encounter.time, providerMeta, firstTime);
+    const derived = Metrics.deriveAscentMetrics(segments, encounter);
+    const dateTime = formatEncounterDateTime(derived.encounterTime, providerMeta, firstTime);
     // A timeless encounter still deserves the activity's own start date.
     if (!dateTime.date && providerMeta.displayedLocalStart) {
         dateTime.date = providerMeta.displayedLocalStart.slice(0, 10);
     }
-    const elevationPaths = splitElevationPaths(segments, encounter);
     return {
         date: dateTime.date,
         time: dateTime.time,
-        startElevationM: firstFinite(segments, 'ele'),
-        endElevationM: firstFinite(segments, 'ele', true),
-        upDistanceM: encounter.globalDistanceM,
-        downDistanceM: Math.max(0, trackIndex.totalDistanceM - encounter.globalDistanceM),
-        upGainM: elevationPaths.before.reduce((sum, values) => sum + calculateConfirmedGainM(values), 0),
-        downGainM: elevationPaths.after.reduce((sum, values) => sum + calculateConfirmedGainM(values), 0),
-        upDuration: durationParts(Number.isFinite(firstTime) && Number.isFinite(encounter.time)
-            ? (encounter.time - firstTime) / 60000 : 0),
-        downDuration: durationParts(Number.isFinite(lastTime) && Number.isFinite(encounter.time)
-            ? (lastTime - encounter.time) / 60000 : 0)
+        startElevationM: derived.startElevationM,
+        endElevationM: derived.endElevationM,
+        upDistanceM: derived.upDistanceM,
+        downDistanceM: derived.downDistanceM,
+        upGainM: derived.upGainM,
+        downGainM: derived.downGainM,
+        upDuration: durationParts(derived.upDurationMinutes),
+        downDuration: durationParts(derived.downDurationMinutes),
+        quality: derived.quality,
     };
 };
 

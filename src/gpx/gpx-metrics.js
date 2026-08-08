@@ -79,45 +79,56 @@ const calculatePositiveGainM = elevations => elevations.reduce((gain, ele, index
     return delta > 0 ? gain + delta : gain;
 }, 0);
 
-const calculateConfirmedGainM = elevations => {
-    if (elevations.length < 2) return 0;
+const confirmedClimbs = elevations => {
+    if (elevations.length < 2) return [];
 
-    let gainM = 0;
     let valley = elevations[0];
+    let valleyIndex = 0;
     let peak = elevations[0];
+    let peakIndex = 0;
     let state = 'unknown';
+    const climbs = [];
 
-    elevations.forEach(ele => {
+    elevations.forEach((ele, index) => {
         if (state === 'rising') {
             if (ele > peak) {
                 peak = ele;
+                peakIndex = index;
             } else if (peak - ele >= ELEVATION_GAIN_THRESHOLD_M) {
-                gainM += peak - valley;
+                climbs.push({ valley, valleyIndex, peak, peakIndex, gainM: peak - valley });
                 state = 'falling';
                 valley = ele;
+                valleyIndex = index;
                 peak = ele;
+                peakIndex = index;
             }
             return;
         }
 
         if (ele < valley) {
             valley = ele;
+            valleyIndex = index;
             peak = ele;
+            peakIndex = index;
             return;
         }
 
         if (ele - valley >= ELEVATION_GAIN_THRESHOLD_M) {
             state = 'rising';
             peak = ele;
+            peakIndex = index;
         }
     });
 
     if (state === 'rising') {
-        gainM += peak - valley;
+        climbs.push({ valley, valleyIndex, peak, peakIndex, gainM: peak - valley });
     }
 
-    return gainM;
+    return climbs;
 };
+
+const calculateConfirmedGainM = elevations => confirmedClimbs(elevations)
+    .reduce((sum, climb) => sum + climb.gainM, 0);
 
 const smoothElevations = (points, distMByIndex) => {
     const medianElevations = points.map((point, index) => {
@@ -552,6 +563,8 @@ const computeMetrics = points => {
         rawEleM: point.rawEleM,
         elevationState: point.elevationState,
         timeState: point.timeState,
+        sourceIndex: point.index,
+        draftEncounter: point.draftEncounter === true,
         distM: distMByIndex[index],
     }));
     const timePoints = hasTime
@@ -660,6 +673,8 @@ const computeMetrics = points => {
             rawEleM: point.rawEleM,
             elevationState: point.elevationState,
             timeState: point.timeState,
+            sourceIndex: point.index,
+            draftEncounter: point.draftEncounter === true,
             eleM,
             distM: point.distM,
             grade: calculateGrade(index, analysisDistances, smoothedElevations, analysisPoints)
@@ -721,6 +736,154 @@ const computeMetrics = points => {
         endMs: timeQuality.maxMs,
         summitMs: hasTime ? summitMs : 0,
         maxEleM
+    };
+};
+
+const metricPointsForSegments = segments => (segments || []).flatMap((segment, coordinateGroup) =>
+    (segment || []).map(point => ({
+        lat: point.lat,
+        lon: point.lon,
+        rawEleM: point.ele,
+        elevationState: Number.isFinite(point.ele)
+            ? (isPlausibleElevationM(point.ele) ? 'valid' : 'suspect')
+            : 'missing',
+        ms: point.time,
+        timeState: point.invalidTime
+            ? 'invalid'
+            : (isValidTimestamp(point.time) ? 'valid' : 'missing'),
+        coordinateGroup,
+        draftEncounter: point.draftEncounter === true,
+    })));
+
+const computeMetricsForSegments = segments => computeMetrics(metricPointsForSegments(segments));
+
+const withDraftEncounter = (segments, encounter) => {
+    const segmentIndex = Number.isSafeInteger(encounter?.segmentIndex)
+        ? encounter.segmentIndex
+        : -1;
+    const edgeIndex = Number.isSafeInteger(encounter?.edgeIndex)
+        ? encounter.edgeIndex
+        : -1;
+    if (!segments?.[segmentIndex]?.[edgeIndex]) return null;
+
+    const result = segments.map(segment => segment.slice());
+    const segment = result[segmentIndex];
+    const fraction = Number.isFinite(encounter.fraction)
+        ? Math.max(0, Math.min(1, encounter.fraction))
+        : 0;
+    if (fraction <= 0 || edgeIndex >= segment.length - 1) {
+        segment[edgeIndex] = { ...segment[edgeIndex], draftEncounter: true };
+    } else if (fraction >= 1) {
+        segment[edgeIndex + 1] = { ...segment[edgeIndex + 1], draftEncounter: true };
+    } else {
+        segment.splice(edgeIndex + 1, 0, {
+            lat: encounter.lat,
+            lon: encounter.lon,
+            ele: isPlausibleElevationM(encounter.ele) ? encounter.ele : null,
+            time: isValidTimestamp(encounter.time) ? encounter.time : null,
+            draftEncounter: true,
+        });
+    }
+    return result;
+};
+
+const completeDurationMinutes = points => {
+    if (points.length < 2 || points.some(point => point.timeState !== 'valid')) return null;
+    for (let index = 1; index < points.length; index++) {
+        if (points[index].ms < points[index - 1].ms) return null;
+    }
+    const minutes = (points.at(-1).ms - points[0].ms) / 60000;
+    return minutes > 0 ? minutes : null;
+};
+
+const partitionConfirmedGain = (points, encounterIndex) => {
+    let upGainM = 0;
+    let downGainM = 0;
+    let groupStart = 0;
+    for (let index = 1; index <= points.length; index++) {
+        if (index < points.length
+            && points[index].coordinateGroup === points[groupStart].coordinateGroup) continue;
+        const group = points.slice(groupStart, index);
+        const splitIndex = encounterIndex >= groupStart && encounterIndex < index
+            ? encounterIndex - groupStart
+            : null;
+        for (const climb of confirmedClimbs(group.map(point => point.eleM))) {
+            if (index - 1 <= encounterIndex) {
+                upGainM += climb.gainM;
+            } else if (groupStart >= encounterIndex) {
+                downGainM += climb.gainM;
+            } else if (splitIndex !== null && climb.peakIndex <= splitIndex) {
+                upGainM += climb.gainM;
+            } else if (splitIndex !== null && climb.valleyIndex >= splitIndex) {
+                downGainM += climb.gainM;
+            } else if (splitIndex !== null) {
+                const upPart = Math.max(0, Math.min(
+                    climb.gainM,
+                    group[splitIndex].eleM - climb.valley,
+                ));
+                upGainM += upPart;
+                downGainM += climb.gainM - upPart;
+            }
+        }
+        groupStart = index;
+    }
+    return { upGainM, downGainM };
+};
+
+const deriveAscentMetrics = (segments, encounter) => {
+    const markedSegments = withDraftEncounter(segments, encounter);
+    if (!markedSegments) {
+        return {
+            startElevationM: null,
+            endElevationM: null,
+            upDistanceM: null,
+            downDistanceM: null,
+            upGainM: null,
+            downGainM: null,
+            upDurationMinutes: null,
+            downDurationMinutes: null,
+            encounterTime: null,
+            quality: null,
+        };
+    }
+    const metrics = computeMetricsForSegments(markedSegments);
+    const encounterRouteIndex = metrics.routePoints.findIndex(point => point.draftEncounter);
+    const encounterElevationIndex = metrics.points.findIndex(point => point.draftEncounter);
+    const routeComplete = metrics.coordinateQuality.status === 'complete'
+        && encounterRouteIndex !== -1;
+    const startPoint = metrics.routePoints[0];
+    const endPoint = metrics.routePoints.at(-1);
+    const upRoute = routeComplete ? metrics.routePoints.slice(0, encounterRouteIndex + 1) : [];
+    const downRoute = routeComplete ? metrics.routePoints.slice(encounterRouteIndex) : [];
+    const upElevationComplete = upRoute.length > 0
+        && upRoute.every(point => point.elevationState === 'valid');
+    const downElevationComplete = downRoute.length > 0
+        && downRoute.every(point => point.elevationState === 'valid');
+    const partitionedGain = encounterElevationIndex === -1
+        ? { upGainM: null, downGainM: null }
+        : partitionConfirmedGain(metrics.points, encounterElevationIndex);
+
+    return {
+        startElevationM: startPoint?.elevationState === 'valid' ? startPoint.rawEleM : null,
+        endElevationM: endPoint?.elevationState === 'valid' ? endPoint.rawEleM : null,
+        upDistanceM: routeComplete ? metrics.routePoints[encounterRouteIndex].distM : null,
+        downDistanceM: routeComplete
+            ? Math.max(0, metrics.distanceM - metrics.routePoints[encounterRouteIndex].distM)
+            : null,
+        upGainM: upElevationComplete ? partitionedGain.upGainM : null,
+        downGainM: downElevationComplete ? partitionedGain.downGainM : null,
+        upDurationMinutes: routeComplete ? completeDurationMinutes(upRoute) : null,
+        downDurationMinutes: routeComplete ? completeDurationMinutes(downRoute) : null,
+        encounterTime: routeComplete && metrics.routePoints[encounterRouteIndex].timeState === 'valid'
+            ? metrics.routePoints[encounterRouteIndex].ms
+            : null,
+        quality: {
+            coordinates: metrics.coordinateQuality,
+            elevation: metrics.elevationQuality,
+            time: metrics.timeQuality,
+            upElevationComplete,
+            downElevationComplete,
+        },
     };
 };
 
@@ -800,6 +963,8 @@ const API = {
     computeRouteDistanceM,
     calculateConfirmedGainM,
     computeMetrics,
+    computeMetricsForSegments,
+    deriveAscentMetrics,
     limitMapRouteSegments,
     sanitizeMapRouteSegments,
 };

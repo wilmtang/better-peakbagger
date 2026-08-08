@@ -689,8 +689,8 @@ test('coordinate-only provider GPX still produces a valid Peakbagger draft', asy
     assert.equal(apply.preserveExistingFields, false,
         'capture-opened fresh drafts keep their existing full-fill behavior');
     assert.doesNotMatch(apply.gpx, /<(?:ele|time)>/);
-    assert.deepEqual({ ...apply.fields.upDuration }, { days: 0, hours: 0, minutes: 0 });
-    assert.deepEqual({ ...apply.fields.downDuration }, { days: 0, hours: 0, minutes: 0 });
+    assert.equal(apply.fields.upDuration, null);
+    assert.equal(apply.fields.downDuration, null);
 });
 
 test('a failed Peakbagger Preview keeps the GPX and permits an explicit retry', async () => {

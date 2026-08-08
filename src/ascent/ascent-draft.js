@@ -150,6 +150,7 @@ import { units as Units } from '../ui/units.js';
     };
 
     const setDuration = async (prefix, duration, preserveExistingFields = false) => {
+        if (!duration) return;
         const write = preserveExistingFields ? setFieldIfEmpty : setField;
         await write(`${prefix}Day`, duration.days);
         await write(`${prefix}Hr`, duration.hours);
@@ -173,8 +174,10 @@ import { units as Units } from '../ui/units.js';
             await setFieldIfEmpty(`GainM${sequence}`, row.gainM);
             await setFieldIfEmpty(`LossFt${sequence}`, row.lossM === null ? null : row.lossM * FEET_PER_METER);
             await setFieldIfEmpty(`LossM${sequence}`, row.lossM);
-            await setFieldIfEmpty(`DistMi${sequence}`, row.distanceM / METERS_PER_MILE, 3);
-            await setFieldIfEmpty(`DistKm${sequence}`, row.distanceM / 1000, 2);
+            await setFieldIfEmpty(`DistMi${sequence}`, row.distanceM === null
+                ? null : row.distanceM / METERS_PER_MILE, 3);
+            await setFieldIfEmpty(`DistKm${sequence}`, row.distanceM === null
+                ? null : row.distanceM / 1000, 2);
             await setFieldIfEmpty(`MaxFt${sequence}`, row.maxElevationM === null
                 ? null : row.maxElevationM * FEET_PER_METER);
             await setFieldIfEmpty(`MaxM${sequence}`, row.maxElevationM);
@@ -232,18 +235,27 @@ import { units as Units } from '../ui/units.js';
             await writeNumber('EndFt', fields.endElevationM === null ? null : fields.endElevationM * FEET_PER_METER);
             await writeNumber('EndM', fields.endElevationM);
 
-            await writeNumber('UpMi', fields.upDistanceM / METERS_PER_MILE, 2);
-            await writeNumber('UpKm', fields.upDistanceM / 1000, 2);
-            await writeNumber('DnMi', fields.downDistanceM / METERS_PER_MILE, 2);
-            await writeNumber('DnKm', fields.downDistanceM / 1000, 2);
+            await writeNumber('UpMi', fields.upDistanceM === null
+                ? null : fields.upDistanceM / METERS_PER_MILE, 2);
+            await writeNumber('UpKm', fields.upDistanceM === null
+                ? null : fields.upDistanceM / 1000, 2);
+            await writeNumber('DnMi', fields.downDistanceM === null
+                ? null : fields.downDistanceM / METERS_PER_MILE, 2);
+            await writeNumber('DnKm', fields.downDistanceM === null
+                ? null : fields.downDistanceM / 1000, 2);
             await setDuration('Up', fields.upDuration, preserveExistingFields);
             await setDuration('Dn', fields.downDuration, preserveExistingFields);
 
             const gainFt = Number.parseFloat(document.getElementById('GainFt')?.value);
             const gainM = Number.parseFloat(document.getElementById('GainM')?.value);
-            if (Number.isFinite(gainFt)) await writeNumber('ExUpFt', Math.max(0, fields.upGainM * FEET_PER_METER - gainFt));
-            if (Number.isFinite(gainM)) await writeNumber('ExUpM', Math.max(0, fields.upGainM - gainM));
-            await writeNumber('ExDnFt', fields.downGainM * FEET_PER_METER);
+            if (Number.isFinite(gainFt) && Number.isFinite(fields.upGainM)) {
+                await writeNumber('ExUpFt', Math.max(0, fields.upGainM * FEET_PER_METER - gainFt));
+            }
+            if (Number.isFinite(gainM) && Number.isFinite(fields.upGainM)) {
+                await writeNumber('ExUpM', Math.max(0, fields.upGainM - gainM));
+            }
+            await writeNumber('ExDnFt', fields.downGainM === null
+                ? null : fields.downGainM * FEET_PER_METER);
             await writeNumber('ExDnM', fields.downGainM);
             await fillDayStats(fields.dayStats);
         }
