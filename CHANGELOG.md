@@ -2,6 +2,11 @@
 
 ## 3.4.0 — 2026-08-08
 
+- **Keep experimental 3D maps current and dependable.** The packaged renderer
+  now uses MapLibre GL JS 6.2, falls back to the native 2D map when WebGL2 is
+  unavailable, and keeps summit rings visible and clickable across terrain
+  refreshes and steep views.
+
 - **Make Photo Topos easier to discover.** The public feature tour now shows
   the real editor and its direct ImgBB workflow, while the maintained guide and
   store description explain the annotation tools, upload path, and recovery

@@ -1,6 +1,6 @@
 # MapLibre GL JS 6 migration plan
 
-**Status:** approved, not started
+**Status:** completed 2026-08-07
 
 **Target:** MapLibre GL JS 6.2.x
 
@@ -110,15 +110,15 @@ while updating only its MapLibre section.
 
 ### 1. Establish the packaging proof
 
-- [ ] Record the pre-migration build outputs, archive paths, package sizes,
+- [x] Record the pre-migration build outputs, archive paths, package sizes,
   web-ext warnings, and v5 terrain LOD result for comparison.
-- [ ] Install the selected 6.2.x version and update both package files.
-- [ ] Prototype the separate main wrapper and module-worker arrangement described
+- [x] Install the selected 6.2.x version and update both package files.
+- [x] Prototype the separate main wrapper and module-worker arrangement described
   above without changing product behavior.
-- [ ] Assert that every worker import resolves inside `dist/` and that no worker
+- [x] Assert that every worker import resolves inside `dist/` and that no worker
   code or main renderer is loaded from a CDN.
-- [ ] Run a focused hidden Chrome and Firefox terrain boot against the candidate.
-- [ ] Select the wrapper or ESM-bootstrap design based on observed behavior and
+- [x] Run a focused hidden Chrome and Firefox terrain boot against the candidate.
+- [x] Select the wrapper or ESM-bootstrap design based on observed behavior and
   record the rejected alternative and evidence here before proceeding.
 
 **Gate:** do not start behavioral migration until a real MapLibre 6 canvas and
@@ -126,77 +126,77 @@ terrain worker boot from packaged local files in both browsers.
 
 ### 2. Make the production build and runtime change
 
-- [ ] Replace the deleted CSP main/worker paths in `scripts/build-config.mjs` with
+- [x] Replace the deleted CSP main/worker paths in `scripts/build-config.mjs` with
   the chosen generated/copied v6 artifacts and retain the CSS and BSD license.
-- [ ] Generalize `scripts/build.mjs` vendor generation only as far as needed; do
+- [x] Generalize `scripts/build.mjs` vendor generation only as far as needed; do
   not refactor unrelated dependency handling.
-- [ ] Update `terrain/terrain.html` while preserving stylesheet-before-renderer
+- [x] Update `terrain/terrain.html` while preserving stylesheet-before-renderer
   ordering and lazy iframe loading.
-- [ ] Point `setWorkerUrl()` at the packaged module worker before protocol
+- [x] Point `setWorkerUrl()` at the packaged module worker before protocol
   registration and Map construction.
-- [ ] Keep the renderer-unavailable guard and protocol cleanup valid when the
+- [x] Keep the renderer-unavailable guard and protocol cleanup valid when the
   main module or worker fails partway through startup.
-- [ ] Ensure release-archive enumeration treats every generated and copied
+- [x] Ensure release-archive enumeration treats every generated and copied
   MapLibre artifact as required and rejects a missing shared/worker file.
 
 ### 3. Reconcile v6 behavior deliberately
 
-- [ ] Set `zoomLevelsToOverscale: undefined` initially to preserve the v5
+- [x] Set `zoomLevelsToOverscale: undefined` initially to preserve the v5
   rendering/query behavior. Do not adopt the v6 default in the same migration
   unless separate LOD and interaction evidence shows it is an improvement with
   acceptable traffic and memory cost.
-- [ ] Route every `GeoJSONSource.setData()` promise to an explicit outcome. Ignore
+- [x] Route every `GeoJSONSource.setData()` promise to an explicit outcome. Ignore
   only a proven stale-map/teardown race; an active renderer failure must degrade
   through the owning route, highlight, or peak policy rather than become an
   unhandled rejection.
-- [ ] Verify the v6 `data` and `error` event shapes used to distinguish basemap,
+- [x] Verify the v6 `data` and `error` event shapes used to distinguish basemap,
   elevation, and source-less renderer failures. Update classification only from
   observed v6 events, not a test-stub assumption.
-- [ ] Validate the generated DEM/hillshade style and every extension-added
+- [x] Validate the generated DEM/hillshade style and every extension-added
   raster, line, circle, and GeoJSON layer under style-spec v25.
-- [ ] Exercise the current OpenFreeMap style graft under a bounded, explicit
+- [x] Exercise the current OpenFreeMap style graft under a bounded, explicit
   vector-layer selection. A provider style failure must retain the existing
   terrain-only notice and must not tear down healthy elevation.
-- [ ] Prove that custom-protocol cancellation, missing-tile status, DEM decoding,
+- [x] Prove that custom-protocol cancellation, missing-tile status, DEM decoding,
   route/peak updates, popups, camera handoff, suspend/resume, and removal remain
   race-safe.
-- [ ] Add a WebGL2-unavailable check that waits for the visible postcondition:
+- [x] Add a WebGL2-unavailable check that waits for the visible postcondition:
   iframe removal, native 2D restoration, and the correct actionable failure.
 
 ### 4. Update focused regression coverage
 
-- [ ] Update manifest/build-composition tests to pin the new main, worker, shared,
+- [x] Update manifest/build-composition tests to pin the new main, worker, shared,
   CSS, and license arrangement.
-- [ ] Keep lifecycle tests on a MapLibre stub; do not make `npm test` allocate a
+- [x] Keep lifecycle tests on a MapLibre stub; do not make `npm test` allocate a
   real WebGL renderer.
-- [ ] Preserve the terrain fixture's ability to expose only its test Map instance.
+- [x] Preserve the terrain fixture's ability to expose only its test Map instance.
   If load mechanics change, instrument fixture responses or use a fixture-owned
   global setter rather than adding a production test hook.
-- [ ] Extend terrain tests for asynchronous `setData()` success, rejection during
+- [x] Extend terrain tests for asynchronous `setData()` success, rejection during
   active use, and rejection after teardown.
-- [ ] Pin the intentional `zoomLevelsToOverscale` decision.
-- [ ] Update showcase assertions and browser fixture rewriting for the new loader
+- [x] Pin the intentional `zoomLevelsToOverscale` decision.
+- [x] Update showcase assertions and browser fixture rewriting for the new loader
   filename/order.
-- [ ] Re-run web-ext lint, inspect every changed MapLibre warning, and update the
+- [x] Re-run web-ext lint, inspect every changed MapLibre warning, and update the
   owned warning baseline only for warnings attributable to the packaged 6.2.x
   source. A moved or vanished warning is not automatically accepted.
-- [ ] Update release/archive tests so a package missing the worker or shared
+- [x] Update release/archive tests so a package missing the worker or shared
   module fails closed.
 
 ### 5. Update licensing, review metadata, and maintained documentation
 
-- [ ] Update the MapLibre version, artifact description, package link, source
+- [x] Update the MapLibre version, artifact description, package link, source
   link, and generated-versus-unmodified distinction in
   `ACKNOWLEDGEMENTS.md` and Firefox AMO approval notes.
-- [ ] Update `docs/development.md` so its vendor instructions describe the chosen
+- [x] Update `docs/development.md` so its vendor instructions describe the chosen
   ESM/wrapper arrangement rather than claiming MapLibre ships a copied UMD
   global.
-- [ ] Update `docs/3d-map.md` references to the CSP worker, loader lifecycle,
+- [x] Update `docs/3d-map.md` references to the CSP worker, loader lifecycle,
   WebGL requirement, and every measured LOD/cache value that changed.
-- [ ] Update maintained architecture/build comments and structural tests together;
+- [x] Update maintained architecture/build comments and structural tests together;
   do not rewrite historical archived plans or changelog entries that accurately
   describe v5 behavior at the time.
-- [ ] Add a user-facing changelog entry only after the runtime result and browser
+- [x] Add a user-facing changelog entry only after the runtime result and browser
   compatibility are known.
 
 ### 6. Complete verification and package rehearsal
@@ -255,14 +255,29 @@ closing or revising this plan.
 
 ## Completion record
 
-When implementation is complete, replace this section with:
-
-- **Fixed and verified:** committed runtime, packaging, tests, documentation, and
-  checks with exact results.
-- **Intentionally not changed:** v6 behaviors or optional cleanup deliberately
-  kept outside the migration.
-- **Changed but not fully proven:** live-provider, browser, GPU, accessibility, or
-  native-UI gaps that still require release validation.
-
-Then move this file to `docs/archive/`, update `docs/plans/README.md`, and treat the
-maintained architecture and `docs/3d-map.md` as the shipped source of truth.
+- **Fixed and verified:** MapLibre GL JS 6.2.0 is the only installed version. The
+  generated classic global, copied module worker and shared module, CSS, and BSD
+  license all ship locally. The worker's sole static import resolves to its
+  packaged sibling. Async route, highlight, and peak updates have explicit
+  success/failure ownership; WebGL2 startup failure restores the native map; and
+  terrain-aware DOM summit rings remain visible and clickable over pitched
+  terrain. The full 1,219-test suite, JavaScript lint, owned web-ext warning
+  ledger, dependency audit, Chrome and Firefox real-extension checks, hardware
+  terrain checks, v6 LOD sweep, packaging, and packaged-extension checks passed.
+  The hardware terrain checks used hidden Chrome for Testing with ANGLE Metal on
+  Apple M3 Pro and hidden Firefox 151.0 at 1000x760 with its asserted Apple
+  hardware renderer; the final real unpacked-extension check also passed in
+  hidden Firefox 153.0.3.
+- **Intentionally not changed:** `zoomLevelsToOverscale` remains explicitly
+  `undefined` to preserve v5 query/rendering behavior. No permission, provider,
+  consent, storage, cache, or coordinate-disclosure boundary changed. The
+  generated global was retained instead of an ESM bootstrap because it booted
+  the local module worker in both browsers while preserving the existing lazy
+  loader and test seam; the bootstrap alternative added no demonstrated value.
+- **Changed but not fully proven:** A bounded read-only check validated the live
+  OpenFreeMap style document with one credential-free, no-referrer request, but
+  did not exercise every live vector tile or provider failure. Hidden protocol
+  checks cannot prove native browser focus, prompt placement, toolbar chrome, or
+  window placement. The v5 baseline LOD run had a pre-existing 179 ms collapse
+  against its 120 ms timing bound; the v6 run passed all four acceptance checks,
+  but those measurements remain specific to the recorded hardware and fixture.

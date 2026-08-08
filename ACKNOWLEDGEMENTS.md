@@ -2,8 +2,7 @@
 
 Better Peakbagger is licensed under the
 [GNU Affero General Public License v3.0 or later](LICENSE). This document records
-the license notice for software distributed with the extension and credits a
-project that inspired its design.
+the license notice for software distributed with the extension and credits projects that inspired its design.
 
 ## Third-party software
 
@@ -42,11 +41,13 @@ Better Peakbagger-only Anchor symbol is not derived from BetaCreator.
 
 ### MapLibre GL JS
 
-Better Peakbagger distributes the unmodified MapLibre GL JS 5.24.0 strict-CSP
-browser build, worker, and stylesheet under `vendor/`.
+Better Peakbagger uses esbuild to generate `vendor/maplibre-gl.js`, a classic
+browser global around the MapLibre GL JS 6.2.0 ESM distribution. The matching
+module worker, its shared module, and the stylesheet are copied unmodified under
+`vendor/`.
 
 - Project: [MapLibre GL JS](https://maplibre.org/projects/gl-js/)
-- Source: [MapLibre GL JS v5.24.0](https://github.com/maplibre/maplibre-gl-js/tree/v5.24.0)
+- Source: [MapLibre GL JS v6.2.0](https://github.com/maplibre/maplibre-gl-js/tree/v6.2.0)
 - License: BSD 3-Clause
 - Packaged license text: `vendor/maplibre-LICENSE.txt` (copied from the npm package at build time)
 

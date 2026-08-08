@@ -167,7 +167,7 @@ only exist under `dist/` after a build.
 | `npm run terrain:lod` | Measures the 3D tilt detail collapse against the acceptance criteria in `docs/archive/3d-tilt-detail-blink.md`: which elevation level every visible pixel is drawn from across a cold-cache pitch sweep, plus the elevation and drape traffic it costs. Same HTTPS showcase host and GPU rules as `terrain:verify`. |
 | `npm run showcase:render` | Builds and renders the local UI showcase fixtures into `store-assets/`. Same HTTPS showcase host. |
 | `npm run lint:js` | Runs errors-only ESLint over source, extension surfaces, scripts, and tests. |
-| `npm run lint` | Builds, runs `web-ext lint` as JSON, and accepts only the six owner-annotated manifest/dependency warnings in `scripts/check-web-ext-lint.mjs`, counted per `(code, file)`. A new warning, an extra or missing occurrence in an owned file, any error, or any notice fails. Generated line and column numbers are deliberately not pinned. |
+| `npm run lint` | Builds, runs `web-ext lint` as JSON, and accepts only the eight owner-annotated manifest/dependency warnings in `scripts/check-web-ext-lint.mjs`, counted per `(code, file)`. A new warning, an extra or missing occurrence in an owned file, any error, or any notice fails. Generated line and column numbers are deliberately not pinned. |
 | `npm run audit:ci` | Runs npm audit through the repository policy: no advisory may pass, and there are currently no accepted exceptions. Fix the dependency, or add an exception deliberately — advisory id, exact install path, dev-only lock pins, and an expiry. |
 | `npm run package` | Release build + `web-ext build` from `dist/`; writes the canonical Chrome ZIP under `web-ext-artifacts/`. |
 | `npm run start:chromium` / `start:firefox` | Build, watch, launch a web-ext development browser, and auto-reload the extension after successful rebuilds. Firefox mirrors each complete build into its inline-Preferences source first. |
@@ -223,7 +223,7 @@ the ESM source is bundled down to a classic script per entry.
 ES imports determine dependency evaluation order. The source order in an
 `ENTRIES` record matters only where independent side-effect roots intentionally
 run in sequence; tests pin those compositions. Separately loaded third-party
-UMD scripts remain ordered by `manifest.json` or `terrain/terrain.html`.
+browser scripts remain ordered by `manifest.json` or `terrain/terrain.html`.
 
 `dist/` layout:
 
@@ -289,8 +289,10 @@ Vendor libraries are dev dependencies declared in `package.json` and resolved
 exactly by `package-lock.json`. The build sources them from `node_modules` into
 `dist/vendor`—nothing is hand-copied.
 
-- **marked, Chart.js, MapLibre** ship browser builds that are copied verbatim
-  (with their LICENSEs).
+- **marked and Chart.js** ship browser builds that are copied verbatim.
+- **MapLibre 6** ships ESM only. The build esbuild-wraps its main module as the
+  separately loaded `maplibregl` classic global, then copies its module worker,
+  shared worker module, stylesheet, and license verbatim.
 - **tz-lookup** ships only CommonJS, so the build esbuild-wraps it into a
   `tzlookup` browser global.
 

@@ -13,6 +13,9 @@ living docs in [`docs/`](../).
   restrictions).
 - [3D drape resolution and GPU verification](3d-drape-resolution-and-gpu-verification.md) —
   investigation into blurry drapes at high tilt and MapLibre LOD tuning.
+- [MapLibre GL JS 6 migration](maplibre-6-migration.md) — completed runtime,
+  packaging, asynchronous source-update, WebGL2 fallback, and Chrome/Firefox
+  verification record for the locally packaged 6.2 renderer and module worker.
 - [Peakbagger GPX Ascent Logger](peakbagger-gpx-ascent-detection-research.md) —
   research note on ascent/summit detection.
 - [Vector basemaps for the 3D terrain view](3d-vector-basemap-investigation.md) —

@@ -71,7 +71,7 @@ flowchart LR
 
     subgraph extension["Extension origin"]
         frame["terrain/terrain.html"]
-        maplibre["Packaged MapLibre + CSP worker"]
+        maplibre["Packaged MapLibre 6 + module worker"]
         cache["DEM CacheStorage + local LRU index"]
         worker["Background worker prefetch"]
     end
@@ -92,9 +92,11 @@ flowchart LR
 ```
 
 The renderer is not placed in the page's MAIN world. MapLibre needs a stable
-origin, packaged CSP worker, WebGL context, and extension-origin CacheStorage.
-The extension-owned iframe provides those consistently in Chrome and Firefox
-without giving the host page extension APIs.
+origin, packaged module worker, WebGL2 context, and extension-origin
+CacheStorage. Its ESM main module is build-wrapped as a separately loaded
+classic `maplibregl` global; the worker and shared worker module stay as local,
+unmodified package artifacts. The extension-owned iframe provides those
+consistently in Chrome and Firefox without giving the host page extension APIs.
 
 ## Which module owns what?
 
@@ -106,7 +108,7 @@ without giving the host page extension APIs.
 | `src/maps/peak-map.js` | MAIN | Peak-page identity agreement, summit focus, embedded map context | Storage, renderer internals, duplicate lifecycle logic |
 | `src/terrain/terrain-coordinator.js` | MAIN | `idle`/`loading`/`active` lifecycle, toggle UI, timeouts, camera round trip, compass, recovery | Subject discovery, privileged APIs, provider requests |
 | `src/terrain/terrain-map.js` | isolated | Feature gate, trusted consent UI, settings read, frame creation/parking, page↔frame relay, prefetch relay | Page-owned Leaflet globals, rendering |
-| `src/terrain/terrain-frame.js` | extension iframe | Payload validation, MapLibre, DEM protocol, tile level-of-detail tuning, in-view tilt tile warming, route/peak/highlight layers, drape picker, WebGL failure detection | Authenticated Peakbagger fetches, settings writes |
+| `src/terrain/terrain-frame.js` | extension iframe | Payload validation, MapLibre, DEM protocol, tile level-of-detail tuning, in-view tilt tile warming, route/highlight layers, terrain-positioned peak markers, drape picker, WebGL failure detection | Authenticated Peakbagger fetches, settings writes |
 | `src/terrain/terrain-basemap.js` | MAIN/pure helper | Convert compatible Leaflet raster layers and known menu choices to bounded drape specs | Fetching or assuming a layer is CORS-compatible |
 | `src/terrain/terrain-camera.js` | pure helper | Validate and convert Leaflet↔MapLibre center/zoom | Bearing or pitch persistence |
 | `src/terrain/terrain-compass.js` | page UI helper | Continuous shortest-arc bearing display and reset affordance | Camera state |
@@ -573,10 +575,11 @@ levels at once and read as a blink rather than as loading.
   MapLibre falls back to a tile it already holds; nothing outside the source can
   supply a level the source never requested. Warming shortens the wait and
   cannot make the fall shallower.
-- **Part of the wait is not network at all.** The 67°→70° residual `terrain:lod`
-  still reports fetched **zero** tiles and still took 122–170 ms. That is cache
-  read, image decode and DEM parse on the critical path — no prefetch or LOD
-  setting touches it.
+- **Part of the wait is not network at all.** In the MapLibre 6.2 rehearsal,
+  the 67°→70° step fetched **zero** tiles, settled in 235 ms, and ended its
+  visible shortfall after 65 ms. That residual is cache read, image decode,
+  DEM parse, and render work on the critical path — no prefetch or LOD setting
+  touches it.
 - **Provider ceilings bound the near band independently.** OpenTopoMap stops at
   `maxzoom: 15` regardless of anything we choose.
 - **The obvious fix — hysteresis — does not compose with MapLibre's hook.**
@@ -631,6 +634,13 @@ either setting with `BPB_LOD_DRAPE=L_OS` or `BPB_LOD_DRAPE=L_OT`.
 OpenTopoMap additionally caps at `maxzoom: 15`, so its near band sits one level
 under the render-target ceiling whatever LOD it is given. That is the provider's
 limit, not ours.
+
+The final MapLibre 6.2 hidden hardware-GPU rehearsal used a 1098×698 frame and
+140 ms synthetic DEM latency. It loaded 22 DEM tiles at boot, 55 across the
+cold tilt sweep (77 total), and 597 drape tiles; the peak RTT count was 15
+(30 pooled), with 96 off-screen elevation tiles retained. All four maintained
+LOD acceptance criteria passed. These fixture measurements do not establish
+live-provider latency.
 
 ## Peak dots and route interaction
 

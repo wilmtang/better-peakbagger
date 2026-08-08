@@ -124,7 +124,9 @@ Three files divide assembly responsibility:
 Every entry point becomes a self-contained classic IIFE bundle. ES imports
 determine module evaluation order inside a bundle. Chart.js, MapLibre, marked,
 and `tz-lookup` remain separately loaded browser globals because their scripts
-are deliberately ordered by the manifest or terrain frame HTML.
+are deliberately ordered by the manifest or terrain frame HTML. MapLibre's
+global is generated from its ESM main module; its module worker and shared
+module remain separate, unmodified package artifacts.
 
 The worker ships once as `dist/background.js`. Chrome references it as the
 service worker and Firefox references the same file as its background script.
@@ -694,9 +696,9 @@ feature. No terrain or basemap request occurs merely because a page loaded.
 After the feature is enabled, hovering or focusing an idle 3D toggle may warm a
 bounded DEM tile set as an explicit intent signal.
 
-MapLibre and its CSP worker run in `terrain/terrain.html`, an extension-owned
-frame declared as a web-accessible resource. This avoids page-CSP and
-content-script-world differences between Chrome and Firefox. The isolated
+MapLibre 6 and its extension-owned module worker run in `terrain/terrain.html`,
+an extension-owned frame declared as a web-accessible resource. This avoids
+page-CSP and content-script-world differences between Chrome and Firefox. The isolated
 `src/terrain/terrain-map.js` bridge creates and tears down the frame, owns consent, and
 passes only validated messages between it and the MAIN-world coordinator.
 
@@ -722,7 +724,7 @@ renderer down on every switch, the `src/terrain/terrain-map.js` bridge parks the
 frame in the DOM at opacity 0 and tells `src/terrain/terrain-frame.js` to suspend its
 ambient work (peak debounce, popup, pointer tracking); a quick 2D→3D→2D→3D
 re-entry then resumes the live MapLibre map with a fresh route/camera/theme
-instead of rebuilding the map, its CSP worker, and the terrain mesh. The parked
+instead of rebuilding the map, its module worker, and the terrain mesh. The parked
 frame is fully destroyed and its WebGL context released after a five-minute
 keep-alive TTL, or immediately when 3D is disabled. Failed MapLibre startup,
 invalid input, missing WebGL, WebGL context loss, a source-less post-load
@@ -775,11 +777,12 @@ the native map context, requests the same feed in the page session, and relays a
 validated all-or-nothing reply. New camera positions abort stale requests.
 
 MapLibre's terrain-aware layer events do not reliably hit billboarded rings on
-a pitched camera, so `src/terrain/terrain-frame.js` projects anchors and performs
-screen-space hit testing. Peak anchors may be snapped to a nearby rendered DEM
-maximum within a leash. The exact feed mapping, subject-peak preservation,
-screen-space interaction, snapping rules, privacy boundary, and known limits
-are maintained in [3d-peak-markers.md](3d-peak-markers.md).
+a pitched camera, so `src/terrain/terrain-frame.js` renders terrain-positioned
+Marker buttons; a bounded screen-space hit test remains only for the reduced-API
+circle fallback. Peak anchors may be snapped to a nearby rendered DEM maximum
+within a leash. The exact feed mapping, subject-peak preservation, interaction,
+snapping rules, privacy boundary, and known limits are maintained in
+[3d-peak-markers.md](3d-peak-markers.md).
 
 ### Full Screen GPS maps
 
