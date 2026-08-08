@@ -7,6 +7,14 @@
 // fields returned here (segments, optional waypoint lat/lon/name, track name)
 // may leave that page. No DOM beyond DOMParser and no extension APIs.
 
+import {
+    MAX_GPX_TEXT_CHARS,
+    MAX_GPX_TRACK_POINTS,
+    MAX_GPX_TRACK_SEGMENTS,
+    MAX_GPX_WAYPOINTS,
+    gpxLimitMessage,
+} from '../capture/capture-resource-limits.js';
+
 const directChild = (element, localName) => [...element.children]
     .find(child => child.localName === localName);
 
@@ -81,7 +89,10 @@ const noGpsError = () => {
     return error;
 };
 
+const gpxLimitError = () => Object.assign(new Error(gpxLimitMessage()), { code: 'gpx-too-large' });
+
 const parseGpxData = (text, options = {}) => {
+    if (typeof text !== 'string' || text.length > MAX_GPX_TEXT_CHARS) throw gpxLimitError();
     const xml = new DOMParser().parseFromString(text, 'application/xml');
     if (elementsByLocalName(xml, 'parsererror').length) {
         const error = new Error('The GPX file contains invalid XML.');
@@ -93,11 +104,19 @@ const parseGpxData = (text, options = {}) => {
         : null;
     const tracks = gpxRoot ? directChildren(gpxRoot, 'trk') : [];
     const trackSegments = tracks.flatMap(track => directChildren(track, 'trkseg'));
-    const segments = trackSegments.map(segment =>
-        directChildren(segment, 'trkpt').map(trackPoint => parseTrackPoint(trackPoint)));
+    if (trackSegments.length > MAX_GPX_TRACK_SEGMENTS) throw gpxLimitError();
+    let trackPointCount = 0;
+    const segments = trackSegments.map(segment => {
+        const points = directChildren(segment, 'trkpt');
+        trackPointCount += points.length;
+        if (trackPointCount > MAX_GPX_TRACK_POINTS) throw gpxLimitError();
+        return points.map(trackPoint => parseTrackPoint(trackPoint));
+    });
     if (!segments.length || !segments.some(segment => segment.length)) throw noGpsError();
+    const waypointElements = directChildren(gpxRoot, 'wpt');
+    if (waypointElements.length > MAX_GPX_WAYPOINTS) throw gpxLimitError();
     const waypoints = options.retainWaypoints
-        ? directChildren(gpxRoot, 'wpt').map(waypoint => {
+        ? waypointElements.map(waypoint => {
             const latText = waypoint.getAttribute('lat');
             const lonText = waypoint.getAttribute('lon');
             return {

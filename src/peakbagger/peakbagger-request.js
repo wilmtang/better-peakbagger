@@ -9,6 +9,11 @@ import { peakbaggerError as PeakbaggerError } from './peakbagger-error.js';
 import { isPeakbaggerUrl } from './peakbagger-origin.js';
 import { classifyResponse } from './peakbagger-response.js';
 import { requestDeadline as Deadline } from '../net/request-deadline.js';
+import { boundedText as BoundedText } from '../net/bounded-text.js';
+import {
+    MAX_GPX_TEXT_CHARS,
+    peakbaggerResponseLimit,
+} from '../capture/capture-resource-limits.js';
 
 const DEFAULT_TIMEOUT_MS = 15000;
 const OWNER_REQUIRED_KINDS = new Set(['buddies', 'edit', 'list']);
@@ -67,6 +72,7 @@ export const fetchPeakbaggerResource = async (url, {
     fetchFn = globalThis.fetch,
     timeoutMs = DEFAULT_TIMEOUT_MS,
     init = {},
+    signal = init.signal,
 } = {}) => {
     const requestedUrl = trim(url);
     if (!isPeakbaggerUrl(requestedUrl) || typeof fetchFn !== 'function') {
@@ -79,9 +85,26 @@ export const fetchPeakbaggerResource = async (url, {
     // header followed by a stalled stream still fails.
     const deadline = Deadline.createRequestDeadline(timeoutMs);
     const timedOut = cause => deadline.expired || Deadline.isTimeout(cause);
+    let cancelled = false;
+    let rejectCancellation = null;
+    const cancellation = signal ? new Promise((_, reject) => { rejectCancellation = reject; }) : null;
+    cancellation?.catch(() => {});
+    const cancel = () => {
+        if (cancelled) return;
+        cancelled = true;
+        deadline.abort();
+        rejectCancellation?.(Object.assign(new Error('Peakbagger request cancelled.'), { name: 'AbortError' }));
+    };
+    if (signal?.aborted) cancel();
+    else signal?.addEventListener('abort', cancel, { once: true });
+    const run = promise => deadline.run(cancellation ? Promise.race([promise, cancellation]) : promise);
+    const clear = () => {
+        deadline.clear();
+        signal?.removeEventListener('abort', cancel);
+    };
     let response;
     try {
-        response = await deadline.run(fetchFn(requestedUrl, {
+        response = await run(fetchFn(requestedUrl, {
             ...init,
             credentials: 'include',
             redirect: 'follow',
@@ -89,25 +112,34 @@ export const fetchPeakbaggerResource = async (url, {
             ...(deadline.signal ? { signal: deadline.signal } : {}),
         }));
     } catch (cause) {
-        deadline.clear();
+        clear();
         const base = { requestedUrl, url: requestedUrl, status: 0, redirected: false };
-        const code = timedOut(cause) ? 'timeout' : 'network';
+        const code = cancelled ? 'cancelled' : timedOut(cause) ? 'timeout' : 'network';
         return rejected(base, 'transient', PeakbaggerError.failure(code, { resource: kind }));
     }
 
     const base = baseResult({ requestedUrl, response });
     let text;
     try {
-        text = await deadline.run(response.text());
+        const maxBytes = peakbaggerResponseLimit(kind);
+        text = await run(BoundedText.readBoundedResponseText(response, {
+            maxBytes,
+            maxChars: kind === 'gpx' ? MAX_GPX_TEXT_CHARS : maxBytes,
+            signal: deadline.signal,
+            label: `Peakbagger ${kind} response`,
+        }));
     } catch (cause) {
-        deadline.clear();
-        const code = timedOut(cause) ? 'timeout' : 'response-read';
-        return rejected(base, 'transient', PeakbaggerError.failure(code, {
+        clear();
+        const tooLarge = BoundedText.isLimitError(cause);
+        const code = cancelled ? 'cancelled'
+            : tooLarge ? 'response-too-large'
+                : timedOut(cause) ? 'timeout' : 'response-read';
+        return rejected(base, tooLarge ? 'wrong-content' : 'transient', PeakbaggerError.failure(code, {
             resource: kind,
             status: base.status,
         }));
     }
-    deadline.clear();
+    clear();
 
     const classification = classifyResponse(base.status, response && response.headers, text, { kind });
     if (classification !== 'ok') {

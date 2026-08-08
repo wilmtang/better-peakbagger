@@ -422,7 +422,30 @@ historical note in
 [archive/peakbagger-gpx-ascent-detection-research.md](archive/peakbagger-gpx-ascent-detection-research.md);
 the current code and this guide own shipped behavior.
 
-### 5. Reduction and serialization
+### 5. Capture resource and cancellation contract
+
+Local files, provider exports, the page parser, and the worker enforce the same
+fail-closed contract before summit detection:
+
+| Resource | Limit |
+| --- | ---: |
+| Encoded GPX body and decoded GPX text | 16 MiB each |
+| Parsed track points / track segments / waypoints | 20,000 / 50 / 3,000 |
+| One Peakbagger summit response | 1 MiB |
+| One Peakbagger GPX response | 16 MiB |
+| Other Peakbagger HTML responses | 8 MiB |
+| Corridor boxes / total attempts / concurrent requests | 64 / 128 / 4 |
+| Complete sanitize, corridor, and detection transaction | 60 seconds |
+
+Response bodies are counted while streaming after content decoding; a missing,
+compressed, or dishonest `Content-Length` does not bypass the limit. The
+20,000-point scale case remains supported when its route fits the bounded
+corridor plan. Oversized or excessively fragmented input is rejected with an
+actionable error and is never silently truncated into a partial summit result.
+Cancellation, job replacement, source closure, and expiry abort both the
+page-owned provider request and the worker-owned Peakbagger lookup generation.
+
+### 6. Reduction and serialization
 
 Peakbagger accepts at most 3,000 uploaded points and at most 50 track segments.
 Retained waypoints consume the same 3,000-point budget as trackpoints. Reduction
@@ -437,7 +460,7 @@ fields, source descriptions, waypoint symbols/elevation/time, and arbitrary
 XML. `src/ascent/ascent-draft.js` validates this private GPX again before attaching it
 to Peakbagger's form.
 
-### 6. Draft identity, ordering, and exactly-once Preview
+### 7. Draft identity, ordering, and exactly-once Preview
 
 Capture jobs and prepared drafts live in `storage.session` and expire after 30
 minutes. Draft delivery requires a matching sender tab, job, peak, and climber.

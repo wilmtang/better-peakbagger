@@ -8,6 +8,7 @@
 // transitive deps: gpx-metrics, settings-schema) resolve through these imports.
 import { captureCore as Core } from '../capture/capture-core.js';
 import { capturePhases as CapturePhases } from '../capture/capture-phases.js';
+import { captureResourceLimits as CaptureLimits } from '../capture/capture-resource-limits.js';
 import { providerFromUrl, providerActivityUrl } from '../capture/provider-url.js';
 import { createFavoritesStore, favoritesStore as FavoritesStore } from './favorites-store.js';
 import { createGithubRoutes } from './github-routes.js';
@@ -20,6 +21,7 @@ import { settings as Settings } from '../settings/settings.js';
 import { peakbaggerError as PeakbaggerError } from '../peakbagger/peakbagger-error.js';
 import { PEAKBAGGER_ORIGIN, isPeakbaggerSenderUrl } from '../peakbagger/peakbagger-origin.js';
 import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
+import { requestDeadline as Deadline } from '../net/request-deadline.js';
 
 (() => {
     'use strict';
@@ -49,6 +51,7 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
     const processes = new Map();
     const captureAdmissions = new Map();
     const captureCancellationEpochs = new Map();
+    const localAnalysisOwners = new Map();
     const lifecycleQueues = new Map();
     const lifecycleEpochs = new Map();
     let mutationQueue = Promise.resolve();
@@ -194,7 +197,12 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
         return match ? match[1] : null;
     };
 
-    const fetchBox = async box => {
+    const cancelledCaptureError = () => PublicErrors.exception(
+        'capture-cancelled',
+        'Capture was cancelled. Nothing was retained.',
+    );
+
+    const fetchBox = async (box, { signal, budget }) => {
         const params = new URLSearchParams({
             miny: String(box.miny),
             maxy: String(box.maxy),
@@ -203,11 +211,19 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
         });
         let lastError;
         for (let attempt = 0; attempt < 2; attempt++) {
+            if (signal?.aborted) throw cancelledCaptureError();
+            if (++budget.requests > CaptureLimits.MAX_CORRIDOR_REQUESTS) {
+                throw PublicErrors.exception(
+                    'track-too-large',
+                    'This GPX needs too many summit requests. Split the activity into shorter tracks and try again.',
+                );
+            }
             const response = await fetchPeakbaggerResource(
                 `https://www.peakbagger.com/Async/pllbb2.aspx?${params}`,
-                { kind: 'peaks' }
+                { kind: 'peaks', signal }
             );
             if (response.kind === 'ok') return response.text;
+            if (response.error?.code === 'cancelled') throw cancelledCaptureError();
             lastError = PeakbaggerError.exception(response.error);
             if (response.kind !== 'transient') break;
         }
@@ -231,8 +247,13 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
         return results;
     };
 
-    const fetchPeaks = async boxes => {
-        const responses = await mapWithConcurrency(boxes, 4, fetchBox);
+    const fetchPeaks = async (boxes, { signal }) => {
+        const budget = { requests: 0 };
+        const responses = await mapWithConcurrency(
+            boxes,
+            CaptureLimits.CORRIDOR_CONCURRENCY,
+            box => fetchBox(box, { signal, budget }),
+        );
         const byId = new Map();
         responses.forEach(text => Core.parsePeakbaggerPeaks(text).forEach(peak => byId.set(peak.id, peak)));
         return [...byId.values()];
@@ -306,103 +327,162 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
     // encounters it below the visible-match bar, the result carries an
     // explicit closest-approach fallback ("Use ⟨peak⟩ anyway") instead of
     // silently promoting a weak match — detection itself stays fail-closed.
-    const analyzeTrack = async ({ segments, waypoints, metadata, capturePreferences, boundPid = null, onPhase = async () => {} }) => {
-        const sanitized = Core.sanitizeTrack(segments);
-        const cleanWaypoints = capturePreferences.retainWaypoints
-            ? Core.sanitizeWaypoints(waypoints)
-            : [];
-        const pointCount = sanitized.segments.reduce((sum, segment) => sum + segment.length, 0);
-        if (pointCount === 0) {
-            return { status: 'no-gps', message: 'The exported activity contains no usable route coordinates.' };
-        }
-        if (pointCount < 2) {
-            throw PublicErrors.exception(
-                'invalid-track',
-                'The exported GPX contains fewer than two usable track points.'
-            );
-        }
-        if (sanitized.segments.length > Core.MAX_TRACK_SEGMENTS) {
-            throw PublicErrors.exception(
-                'invalid-track',
-                `The sanitized track has ${sanitized.segments.length} segments; Peakbagger allows 50.`
-            );
-        }
-
-        const boxes = Core.buildQueryBoxes(sanitized.segments);
-        if (!boxes.length) {
-            throw PublicErrors.exception(
-                'invalid-track',
-                'No valid path remained for summit lookup.'
-            );
-        }
-        await onPhase('finding-peaks');
-        const peaks = await fetchPeaks(boxes);
-        const allMatches = Core.detectPeaks(sanitized.segments, peaks, sanitized.quality.score);
-        const visibleMatches = allMatches.filter(match => match.classification === 'strong' || match.classification === 'probable');
-        const boundBelowBar = boundPid === null ? null
-            : allMatches.find(match => match.id === Number(boundPid)
-                && !visibleMatches.some(visible => visible.id === match.id)) || null;
-        if (!visibleMatches.length && !boundBelowBar) {
-            return {
-                status: 'no-matches',
-                trackSummary: { originalPointCount: pointCount, removedPrivateData: true }
-            };
-        }
-        const trackPointLimit = Core.MAX_UPLOAD_POINTS - cleanWaypoints.length;
-        if (trackPointLimit < 2) {
-            throw PublicErrors.exception(
-                'too-many-waypoints',
-                `The GPX has ${cleanWaypoints.length} waypoints, leaving no room for a usable track within Peakbagger’s 3,000-point limit.`
-            );
-        }
-        const anchorMatches = boundBelowBar ? [...visibleMatches, boundBelowBar] : visibleMatches;
-        const reduced = Core.reduceTrack(sanitized.segments, anchorMatches, trackPointLimit);
-        const uploadGpx = Core.serializeUploadGpx(reduced.segments, cleanWaypoints);
-        const matches = visibleMatches.map(match => ({
-            ...Core.publicMatch(match),
-            draftFields: Core.calculateDraftFields(sanitized.segments, match, metadata)
-        }));
-        const rawTripName = typeof metadata?.title === 'string' ? metadata.title : '';
-        // A below-bar bound peak is still selectable on the ascent form. Keep
-        // the source name whenever that fallback can turn the operation into a
-        // multi-peak trip; prepareDraftOpening() remains the owner of whether
-        // the user's eventual selection actually receives Trip Info.
-        const tripName = capturePreferences.fillTripInfo
-            && matches.length + (boundBelowBar ? 1 : 0) > 1
-            ? rawTripName.replace(/\s+/g, ' ').trim().slice(0, 200)
-            : '';
-        const nightsOut = Core.calculateNightsOut(sanitized.segments, metadata);
-        const dayStats = capturePreferences.fillAscentDetails
-            ? Core.calculateDayStats(sanitized.segments, metadata)
-            : [];
-
-        const boundFallback = boundBelowBar ? {
-            ...Core.publicMatch(boundBelowBar),
-            selected: false,
-            closestApproachM: Math.round(boundBelowBar.encounter.distanceM),
-            draftFields: Core.calculateDraftFields(sanitized.segments, boundBelowBar, metadata)
-        } : null;
-
-        return {
-            status: 'ready',
-            matches,
-            boundFallback,
-            trackSummary: {
-                originalPointCount: reduced.originalPointCount,
-                retainedPointCount: reduced.retainedPointCount,
-                retainedWaypointCount: cleanWaypoints.length,
-                maxDeviationM: reduced.maxDeviationM,
-                removedPrivateData: true,
-                breakCounts: sanitized.quality
-            },
-            tripName,
-            nightsOut,
-            dayStats,
-            uploadGpx
+    const analyzeTrack = async ({
+        segments,
+        waypoints,
+        metadata,
+        capturePreferences,
+        boundPid = null,
+        onPhase = async () => {},
+        signal = null,
+    }) => {
+        const deadline = Deadline.createRequestDeadline(CaptureLimits.CORRIDOR_TOTAL_TIMEOUT_MS);
+        const cancel = () => deadline.abort();
+        if (signal?.aborted) cancel();
+        else signal?.addEventListener('abort', cancel, { once: true });
+        const assertActive = () => {
+            if (signal?.aborted) throw cancelledCaptureError();
+            if (deadline.expired) {
+                throw PublicErrors.exception(
+                    'capture-timeout',
+                    'Summit lookup took too long. Try a shorter or less fragmented GPX.',
+                );
+            }
         };
+        try {
+            if (!Array.isArray(segments) || segments.length > CaptureLimits.MAX_GPX_TRACK_SEGMENTS
+                || (Array.isArray(waypoints) && waypoints.length > CaptureLimits.MAX_GPX_WAYPOINTS)) {
+                throw PublicErrors.exception('gpx-too-large', CaptureLimits.gpxLimitMessage());
+            }
+            let sourcePointCount = 0;
+            for (const segment of segments) {
+                if (!Array.isArray(segment)) continue;
+                sourcePointCount += segment.length;
+                if (sourcePointCount > CaptureLimits.MAX_GPX_TRACK_POINTS) {
+                    throw PublicErrors.exception('gpx-too-large', CaptureLimits.gpxLimitMessage());
+                }
+            }
+            assertActive();
+            const sanitized = Core.sanitizeTrack(segments);
+            const cleanWaypoints = capturePreferences.retainWaypoints
+                ? Core.sanitizeWaypoints(waypoints)
+                : [];
+            const pointCount = sanitized.segments.reduce((sum, segment) => sum + segment.length, 0);
+            if (pointCount === 0) {
+                return { status: 'no-gps', message: 'The exported activity contains no usable route coordinates.' };
+            }
+            if (pointCount < 2) {
+                throw PublicErrors.exception(
+                    'invalid-track',
+                    'The exported GPX contains fewer than two usable track points.'
+                );
+            }
+            if (sanitized.segments.length > Core.MAX_TRACK_SEGMENTS) {
+                throw PublicErrors.exception(
+                    'invalid-track',
+                    `The sanitized track has ${sanitized.segments.length} segments; Peakbagger allows 50.`
+                );
+            }
+
+            const boxes = Core.buildQueryBoxes(sanitized.segments);
+            if (!boxes.length) {
+                throw PublicErrors.exception(
+                    'invalid-track',
+                    'No valid path remained for summit lookup.'
+                );
+            }
+            if (boxes.length > CaptureLimits.MAX_CORRIDOR_BOXES) {
+                throw PublicErrors.exception(
+                    'track-too-large',
+                    `This GPX needs ${boxes.length} summit-search areas; the safe limit is ${CaptureLimits.MAX_CORRIDOR_BOXES}. Split the activity into shorter tracks and try again.`,
+                );
+            }
+            await onPhase('finding-peaks');
+            assertActive();
+            const peaks = await deadline.run(fetchPeaks(boxes, { signal: deadline.signal }));
+            assertActive();
+            const allMatches = Core.detectPeaks(sanitized.segments, peaks, sanitized.quality.score);
+            const visibleMatches = allMatches.filter(match => match.classification === 'strong' || match.classification === 'probable');
+            const boundBelowBar = boundPid === null ? null
+                : allMatches.find(match => match.id === Number(boundPid)
+                && !visibleMatches.some(visible => visible.id === match.id)) || null;
+            if (!visibleMatches.length && !boundBelowBar) {
+                return {
+                    status: 'no-matches',
+                    trackSummary: { originalPointCount: pointCount, removedPrivateData: true }
+                };
+            }
+            const trackPointLimit = Core.MAX_UPLOAD_POINTS - cleanWaypoints.length;
+            if (trackPointLimit < 2) {
+                throw PublicErrors.exception(
+                    'too-many-waypoints',
+                    `The GPX has ${cleanWaypoints.length} waypoints, leaving no room for a usable track within Peakbagger’s 3,000-point limit.`
+                );
+            }
+            const anchorMatches = boundBelowBar ? [...visibleMatches, boundBelowBar] : visibleMatches;
+            const reduced = Core.reduceTrack(sanitized.segments, anchorMatches, trackPointLimit);
+            const uploadGpx = Core.serializeUploadGpx(reduced.segments, cleanWaypoints);
+            const matches = visibleMatches.map(match => ({
+                ...Core.publicMatch(match),
+                draftFields: Core.calculateDraftFields(sanitized.segments, match, metadata)
+            }));
+            const rawTripName = typeof metadata?.title === 'string' ? metadata.title : '';
+            // A below-bar bound peak is still selectable on the ascent form. Keep
+            // the source name whenever that fallback can turn the operation into a
+            // multi-peak trip; prepareDraftOpening() remains the owner of whether
+            // the user's eventual selection actually receives Trip Info.
+            const tripName = capturePreferences.fillTripInfo
+            && matches.length + (boundBelowBar ? 1 : 0) > 1
+                ? rawTripName.replace(/\s+/g, ' ').trim().slice(0, 200)
+                : '';
+            const nightsOut = Core.calculateNightsOut(sanitized.segments, metadata);
+            const dayStats = capturePreferences.fillAscentDetails
+                ? Core.calculateDayStats(sanitized.segments, metadata)
+                : [];
+
+            const boundFallback = boundBelowBar ? {
+                ...Core.publicMatch(boundBelowBar),
+                selected: false,
+                closestApproachM: Math.round(boundBelowBar.encounter.distanceM),
+                draftFields: Core.calculateDraftFields(sanitized.segments, boundBelowBar, metadata)
+            } : null;
+
+            assertActive();
+            return {
+                status: 'ready',
+                matches,
+                boundFallback,
+                trackSummary: {
+                    originalPointCount: reduced.originalPointCount,
+                    retainedPointCount: reduced.retainedPointCount,
+                    retainedWaypointCount: cleanWaypoints.length,
+                    maxDeviationM: reduced.maxDeviationM,
+                    removedPrivateData: true,
+                    breakCounts: sanitized.quality
+                },
+                tripName,
+                nightsOut,
+                dayStats,
+                uploadGpx
+            };
+        } catch (error) {
+            deadline.abort();
+            if (signal?.aborted) throw cancelledCaptureError();
+            if (deadline.expired || Deadline.isTimeout(error)) {
+                throw PublicErrors.exception(
+                    'capture-timeout',
+                    'Summit lookup took too long. Try a shorter or less fragmented GPX.',
+                    { cause: error },
+                );
+            }
+            throw error;
+        } finally {
+            deadline.clear();
+            signal?.removeEventListener('abort', cancel);
+        }
     };
 
-    const processCapture = async (tabId, expectedUrl, capturePreferences, generation) => {
+    const processCapture = async (tabId, expectedUrl, capturePreferences, generation, signal) => {
         try {
             const expectedActivity = providerFromUrl(expectedUrl);
             if (!expectedActivity) {
@@ -499,6 +579,7 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
                     'provider-signed-out': 'Sign in to the activity provider before capturing.',
                     'not-owner': 'This activity was recorded by another account, so it cannot be captured.',
                     'ownership-unverified': 'Ownership could not be verified from this activity page. Nothing was captured.',
+                    'gpx-too-large': CaptureLimits.gpxLimitMessage(),
                     'provider-export-timeout': 'The activity provider took too long to export this GPX. Try again.',
                     'provider-export-failed': 'The activity provider could not export this GPX. Reload the activity and try again.',
                     // cancelCapture deletes the job before it aborts the page
@@ -526,6 +607,7 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
                 waypoints: capture.waypoints,
                 metadata: capture.metadata,
                 capturePreferences,
+                signal,
                 onPhase: phase => updateCaptureJob(tabId, generation, { phase })
             });
             if (analysis.status === 'no-gps') {
@@ -624,6 +706,7 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
             expiresAt: now() + JOB_TTL_MS,
             error: null
         };
+        abortOwnedWork(tabId);
         invalidateLifecycle(tabId);
         await serializeLifecycle(tabId, () => installLifecycleJob(job));
         if (cancelled()) {
@@ -632,8 +715,9 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
             });
             return cancelledAdmission();
         }
-        const process = processCapture(tabId, tab.url, capturePreferences, job.id);
-        processes.set(tabId, { generation: job.id, promise: process });
+        const controller = typeof AbortController === 'function' ? new AbortController() : null;
+        const process = processCapture(tabId, tab.url, capturePreferences, job.id, controller?.signal);
+        processes.set(tabId, { generation: job.id, promise: process, controller });
         return { kind: 'started', job, process };
     };
 
@@ -724,8 +808,16 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
     const clearCapture = message => {
         const tabId = Number(message.tabId);
         if (!Number.isInteger(tabId)) return clearCaptureTransaction(message);
+        abortOwnedWork(tabId);
         invalidateLifecycle(tabId);
         return serializeLifecycle(tabId, () => clearCaptureTransaction(message));
+    };
+
+    const abortOwnedWork = (tabId, generation = null) => {
+        const provider = processes.get(tabId);
+        if (provider && (generation === null || provider.generation === generation)) provider.controller?.abort();
+        const local = localAnalysisOwners.get(tabId);
+        if (local && (generation === null || local.generation === generation)) local.controller?.abort();
     };
 
     const cancelAdmittedCapture = async (tabId, cancelledAdmission) => {
@@ -739,6 +831,7 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
         });
         if (cancelled && current) {
             const process = processes.get(tabId);
+            abortOwnedWork(tabId, current.id);
             if (process?.generation === current.id) processes.delete(tabId);
             try {
                 await cancelProviderCapture(tabId, current.id);
@@ -1263,8 +1356,11 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
             expiresAt: now() + JOB_TTL_MS,
             error: null
         };
+        abortOwnedWork(tabId);
         invalidateLifecycle(tabId);
         await serializeLifecycle(tabId, () => installLifecycleJob(job));
+        const controller = typeof AbortController === 'function' ? new AbortController() : null;
+        localAnalysisOwners.set(tabId, { generation: job.id, controller });
         const finish = patch => mutateMap(JOBS_KEY, map => {
             if (!map[tabId] || map[tabId].id !== job.id) return null;
             map[tabId] = { ...map[tabId], ...patch, updatedAt: now(), expiresAt: now() + JOB_TTL_MS };
@@ -1278,10 +1374,11 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
             };
             const analysis = await analyzeTrack({
                 segments: Array.isArray(message.segments) ? message.segments : [],
-                waypoints: capturePreferences.retainWaypoints && Array.isArray(message.waypoints) ? message.waypoints : [],
+                waypoints: Array.isArray(message.waypoints) ? message.waypoints : [],
                 metadata,
                 capturePreferences,
-                boundPid: page.pid
+                boundPid: page.pid,
+                signal: controller?.signal,
             });
             if (analysis.status === 'no-gps') {
                 await finish({ phase: 'no-gps', uploadGpx: null, message: analysis.message });
@@ -1319,6 +1416,8 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
             const failure = publicFailure('local GPX processing', error, UNEXPECTED_PROCESS_ERROR);
             await finish({ phase: 'error', error: failure });
             return { phase: 'error', error: failure };
+        } finally {
+            if (localAnalysisOwners.get(tabId)?.generation === job.id) localAnalysisOwners.delete(tabId);
         }
     };
 
@@ -1670,7 +1769,10 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
             const expiring = jobs[sourceTabId]?.expiresAt <= cutoff
                 || Object.values(drafts).some(draft => Number(draft.sourceTabId) === sourceTabId
                     && draft.expiresAt <= cutoff);
-            if (expiring) invalidateLifecycle(sourceTabId);
+            if (expiring) {
+                abortOwnedWork(sourceTabId, jobs[sourceTabId]?.id ?? null);
+                invalidateLifecycle(sourceTabId);
+            }
             return serializeLifecycle(sourceTabId, () => cleanupSource(sourceTabId, cutoff));
         }));
         await githubRoutes.cleanup(cutoff);
@@ -1877,6 +1979,7 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
             const [drafts, jobs] = await Promise.all([readMap(DRAFTS_KEY), readMap(JOBS_KEY)]);
             const sourceTabId = Number(drafts[tabId]?.sourceTabId ?? (jobs[tabId] ? tabId : NaN));
             if (!Number.isInteger(sourceTabId)) return;
+            abortOwnedWork(sourceTabId, jobs[sourceTabId]?.id ?? null);
             invalidateLifecycle(sourceTabId);
             await serializeLifecycle(sourceTabId, () => cleanupRemovedTab(tabId));
         });

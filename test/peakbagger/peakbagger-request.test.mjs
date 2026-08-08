@@ -10,6 +10,7 @@ import {
     fetchPeakbaggerDocument,
     fetchPeakbaggerResource,
 } from '../../src/peakbagger/peakbagger-request.js';
+import { MAX_PEAKBAGGER_PEAKS_BYTES } from '../../src/capture/capture-resource-limits.js';
 
 const URL = 'https://www.peakbagger.com/report/report.aspx?r=b';
 const BUDDIES = `<!doctype html><html><body>
@@ -125,6 +126,47 @@ test('network rejection, timeout, and unreadable bodies have distinct errors', a
         kind: 'buddies', fetchFn: async () => response({ readError: new Error('stream reset') }),
     });
     assert.equal(unreadable.error.code, 'response-read');
+});
+
+test('kind-specific response limits reject an oversized body before reading it', async () => {
+    let read = false;
+    const result = await fetchPeakbaggerResource(URL, {
+        kind: 'peaks',
+        fetchFn: async () => ({
+            ok: true,
+            status: 200,
+            url: URL,
+            redirected: false,
+            headers: new Headers({ 'content-length': String(MAX_PEAKBAGGER_PEAKS_BYTES + 1) }),
+            text: async () => { read = true; return ''; },
+        }),
+    });
+    assert.equal(result.kind, 'wrong-content');
+    assert.equal(result.error.code, 'response-too-large');
+    assert.match(result.reason, /more nearby summit data/i);
+    assert.equal(read, false);
+});
+
+test('a caller can cancel during a body read even when the reader ignores the signal', async () => {
+    const controller = new AbortController();
+    const pending = fetchPeakbaggerResource(URL, {
+        kind: 'buddies',
+        signal: controller.signal,
+        timeoutMs: 50_000,
+        fetchFn: async () => ({
+            ok: true,
+            status: 200,
+            url: URL,
+            redirected: false,
+            headers: new Headers(),
+            text: () => new Promise(() => {}),
+        }),
+    });
+    await Promise.resolve();
+    controller.abort();
+    const result = await pending;
+    assert.equal(result.kind, 'transient');
+    assert.equal(result.error.code, 'cancelled');
 });
 
 test('signed-out, missing, redirected error, and page-drift responses remain distinguishable', async () => {

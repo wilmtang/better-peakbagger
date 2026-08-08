@@ -24,7 +24,8 @@ const SEGMENTS = [[
     { lat: 0, lon: 0.001, ele: 100, time: Date.UTC(2026, 6, 1, 17, 0), invalidTime: false }
 ]];
 
-const createHarness = ({ peakXml = null, settings = {}, failPeakFetch = false, syncGetError = null, faults = {},
+const createHarness = ({ peakXml = null, settings = {}, failPeakFetch = false, beforePeakFetch = null,
+    syncGetError = null, setTimeoutImpl = setTimeout, faults = {},
     loginHtml = '<a href="climber/climber.aspx?cid=77">My Home Page</a>' } = {}) => {
     const values = {};
     const localValues = {};
@@ -131,11 +132,17 @@ const createHarness = ({ peakXml = null, settings = {}, failPeakFetch = false, s
         alarms: { create: () => {}, onAlarm: { addListener: () => {} } }
     };
 
-    const fetch = async url => {
+    const fetch = async (url, options = {}) => {
         const value = String(url);
         fetchCalls.push(value);
         if (value.includes('/Default.aspx')) return { ok: true, text: async () => loginHtml };
         if (value.includes('/Async/pllbb2.aspx')) {
+            if (beforePeakFetch) {
+                await beforePeakFetch({
+                    options,
+                    number: fetchCalls.filter(call => call.includes('/Async/pllbb2.aspx')).length,
+                });
+            }
             if (failPeakFetch) throw new Error('network unreachable');
             return {
                 ok: true,
@@ -147,7 +154,10 @@ const createHarness = ({ peakXml = null, settings = {}, failPeakFetch = false, s
 
     browser.tabs.group = async details => { grouped.push(structuredClone(details)); return 3; };
 
-    const context = vm.createContext({ browser, fetch, URL, URLSearchParams, Math, Date, console, structuredClone, btoa });
+    const context = vm.createContext({
+        browser, fetch, URL, URLSearchParams, Math, Date, console, structuredClone, btoa,
+        AbortController, TextEncoder, TextDecoder, setTimeout: setTimeoutImpl, clearTimeout,
+    });
     context.globalThis = context;
     context.self = context;
     vm.runInContext(workerBundle, context, { filename: 'dist/background.js' });
@@ -288,6 +298,95 @@ test('a partial corridor lookup fails closed as an error, never as "no peaks"', 
     assert.match(result.error.message, /could not reach Peakbagger for the nearby summit data/i);
     assert.equal(harness.values.bpbCaptureJobs['5'].phase, 'error');
     assert.equal(harness.values.bpbCaptureJobs['5'].uploadGpx, undefined);
+    assert.equal(harness.fetchCalls.filter(url => url.includes('/Async/pllbb2.aspx')).length, 2,
+        'one box receives exactly the documented two-attempt budget');
+});
+
+test('the worker rejects point and corridor limits before issuing summit requests', async () => {
+    const tooManyPoints = createHarness();
+    const point = { lat: 0, lon: 0, ele: null, time: null };
+    const pointsResult = await tooManyPoints.send({
+        type: 'GPX_PROCESS_START',
+        segments: [Array(20_001).fill(point)],
+        waypoints: [],
+        trackName: '',
+        utcOffsetMinutes: 0,
+    });
+    assert.equal(pointsResult.error.code, 'gpx-too-large');
+    assert.match(pointsResult.error.message, /20,000 track points/);
+    assert.equal(tooManyPoints.fetchCalls.filter(url => url.includes('/Async/pllbb2.aspx')).length, 0);
+
+    const fragmented = createHarness();
+    const longTrack = Array.from({ length: 66 }, (_, index) => ({
+        lat: 0,
+        lon: index * 0.085,
+        ele: 100,
+        time: index * 100_000,
+    }));
+    const corridorResult = await fragmented.send({
+        type: 'GPX_PROCESS_START',
+        segments: [longTrack],
+        waypoints: [],
+        trackName: '',
+        utcOffsetMinutes: 0,
+    });
+    assert.equal(corridorResult.error.code, 'track-too-large');
+    assert.match(corridorResult.error.message, /safe limit is 64/);
+    assert.equal(fragmented.fetchCalls.filter(url => url.includes('/Async/pllbb2.aspx')).length, 0);
+});
+
+test('re-processing aborts an older local corridor lookup without mutating the replacement', async () => {
+    let firstSignal;
+    let reached;
+    const firstReached = new Promise(resolve => { reached = resolve; });
+    const harness = createHarness({
+        beforePeakFetch: ({ number, options }) => {
+            if (number !== 1) return undefined;
+            firstSignal = options.signal;
+            reached();
+            return new Promise(() => {});
+        },
+    });
+    const message = {
+        type: 'GPX_PROCESS_START', segments: SEGMENTS, waypoints: [], trackName: '', utcOffsetMinutes: 0,
+    };
+
+    const first = harness.send(message);
+    await firstReached;
+    const replacement = await harness.send(message);
+    const abandoned = await first;
+
+    assert.equal(firstSignal.aborted, true);
+    assert.equal(abandoned.error.code, 'capture-cancelled');
+    assert.equal(replacement.phase, 'ready');
+    assert.equal(harness.values.bpbCaptureJobs['5'].id, replacement.jobId);
+    assert.equal(harness.values.bpbCaptureJobs['5'].phase, 'ready');
+});
+
+test('the one total corridor deadline aborts a stalled body and reports actionable timeout copy', async () => {
+    let signal;
+    const harness = createHarness({
+        setTimeoutImpl: (callback, delay, ...args) => setTimeout(
+            callback,
+            delay === 60_000 ? 0 : delay,
+            ...args,
+        ),
+        beforePeakFetch: ({ options }) => {
+            signal = options.signal;
+            return new Promise(() => {});
+        },
+    });
+
+    const result = await harness.send({
+        type: 'GPX_PROCESS_START', segments: SEGMENTS, waypoints: [], trackName: '', utcOffsetMinutes: 0,
+    });
+
+    assert.equal(result.phase, 'error');
+    assert.equal(result.error.code, 'capture-timeout');
+    assert.match(result.error.message, /shorter or less fragmented GPX/);
+    assert.equal(signal.aborted, true);
+    assert.equal(harness.fetchCalls.filter(url => url.includes('/Async/pllbb2.aspx')).length, 1,
+        'the total deadline aborts before a retry can begin');
 });
 
 test('a corridor with no detectable summit reports no-matches honestly', async () => {

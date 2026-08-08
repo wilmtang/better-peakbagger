@@ -5,6 +5,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import { JSDOM } from 'jsdom';
+import { MAX_GPX_BYTES } from '../../src/capture/capture-resource-limits.js';
 
 // The built bundle (IIFE) evaluated in each page's jsdom realm, so the module
 // reads that page's document/location — exactly as the injected script does.
@@ -271,6 +272,22 @@ test('the same provider deadline bounds a stalled GPX body read', async () => {
     assert.equal(capture.code, 'provider-export-timeout');
     assert.match(capture.message, /took too long/i);
     assert.equal(aborted, true);
+});
+
+test('provider GPX rejects an oversized declared body before reading it', async () => {
+    const dom = load(stravaPage(), 'https://www.strava.com/activities/123');
+    let read = false;
+    dom.window.fetch = async () => ({
+        ok: true,
+        status: 200,
+        headers: new Headers({ 'content-length': String(MAX_GPX_BYTES + 1) }),
+        text: async () => { read = true; return '<gpx/>'; },
+    });
+
+    const capture = await dom.window.BPBProviderPage.capture();
+    assert.equal(capture.code, 'gpx-too-large');
+    assert.match(capture.message, /16 MiB.*20,000 track points/);
+    assert.equal(read, false);
 });
 
 test('cancelling one provider generation aborts only its in-page request', async () => {

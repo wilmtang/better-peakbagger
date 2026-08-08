@@ -211,7 +211,7 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
     };
 
     const fetchCalls = [];
-    const fetch = async url => {
+    const fetch = async (url, options = {}) => {
         const value = String(url);
         fetchCalls.push(value);
         if (value.includes('/Default.aspx')) {
@@ -219,7 +219,7 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
             return { ok: true, text: async () => loginHtml };
         }
         if (value.includes('/Async/pllbb2.aspx')) {
-            if (beforePeakFetch) await beforePeakFetch();
+            if (beforePeakFetch) await beforePeakFetch({ options, number: fetchCalls.filter(call => call.includes('/Async/pllbb2.aspx')).length });
             return {
                 ok: true,
                 text: async () => peakXml || '<p><t i="7" n="Test Peak" a="0" o="0" e="426.51" r="100" l="Test Range"/></p>'
@@ -240,7 +240,10 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
         Date: WorkerDate,
         console: workerConsole,
         structuredClone,
-        btoa
+        btoa,
+        AbortController,
+        TextEncoder,
+        TextDecoder,
     });
     context.globalThis = context;
     context.self = context;
@@ -1006,6 +1009,57 @@ test('cancelling an in-progress capture discards its job and ignores later resul
     assert.equal(await capture, null);
     assert.equal(harness.values.bpbCaptureJobs['1'], undefined,
         'the abandoned process must not recreate or retain its late result');
+});
+
+test('cancelling during corridor lookup aborts the background request owner immediately', async () => {
+    let peakSignal;
+    let reached;
+    const peakReached = new Promise(resolve => { reached = resolve; });
+    const harness = createHarness({
+        beforePeakFetch: ({ options }) => {
+            peakSignal = options.signal;
+            reached();
+            return new Promise(() => {});
+        },
+    });
+
+    const capture = harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    await peakReached;
+    const generation = harness.values.bpbCaptureJobs['1'].id;
+    const cancelled = await harness.send({ type: 'CAPTURE_CANCEL', tabId: 1 });
+
+    assert.equal(cancelled.cancelled, true);
+    assert.equal(await capture, null);
+    assert.equal(peakSignal.aborted, true, 'the background Peakbagger socket owner is aborted');
+    assert.equal(harness.values.bpbCaptureJobs['1'], undefined);
+    assert.deepEqual(harness.providerCancelCalls, [generation],
+        'the page-owned provider request is cancelled independently too');
+    assert.equal(harness.fetchCalls.filter(url => url.includes('/Async/pllbb2.aspx')).length, 1,
+        'cancellation cannot start the retry attempt');
+});
+
+test('expiry during corridor lookup aborts work and removes the expired generation', async () => {
+    let peakSignal;
+    let reached;
+    const peakReached = new Promise(resolve => { reached = resolve; });
+    const clock = { now: Date.now() };
+    const harness = createHarness({
+        clock,
+        beforePeakFetch: ({ options }) => {
+            peakSignal = options.signal;
+            reached();
+            return new Promise(() => {});
+        },
+    });
+
+    const capture = harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    await peakReached;
+    clock.now += 30 * 60 * 1000 + 1;
+    harness.alarmEvent.listeners[0]({ name: 'bpb-capture-cleanup' });
+
+    assert.equal(await capture, null);
+    assert.equal(peakSignal.aborted, true);
+    await waitForCondition(() => !harness.values.bpbCaptureJobs?.['1']);
 });
 
 test('cancel followed immediately by retry starts a new provider generation', async () => {

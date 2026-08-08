@@ -10,6 +10,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { loadPage, waitFor, fireTrustedEvent, PAGE_FIXTURES } from '../helpers/load-page.mjs';
+import { MAX_GPX_BYTES } from '../../src/capture/capture-resource-limits.js';
 
 const FIXTURE = 'climber-ascentedit.html';
 const URL = 'https://www.peakbagger.com/climber/ascentedit.aspx?pid=7&cid=900001';
@@ -278,6 +279,23 @@ test('local upload fails before reading the file when capture settings are unava
     assert.equal(fileReads, 0, 'the GPX must remain unread while privacy choices are unknown');
     assert.equal(dom.messages.some(message => message.type === 'GPX_PROCESS_START'), false);
     assert.match(errors.flat().map(String).join('\n'), /SYNC_UPLOAD_SETTINGS_SENTINEL/);
+});
+
+test('local upload rejects an oversized file before reading or messaging the worker', async () => {
+    const dom = await loadEditor({
+        respond: message => message.type === 'DRAFT_READY' ? { action: 'ignore' } : null,
+    });
+    const input = chooseGpx(dom);
+    let read = false;
+    Object.defineProperty(input.files[0], 'size', { value: MAX_GPX_BYTES + 1 });
+    input.files[0].text = async () => { read = true; return GPX; };
+
+    processButton(dom).click();
+    await waitFor(dom, () => /too large to process safely/.test(uploadStatus(dom)?.textContent || ''));
+
+    assert.equal(read, false);
+    assert.equal(dom.messages.some(message => message.type === 'GPX_PROCESS_START'), false);
+    assert.match(uploadStatus(dom).textContent, /16 MiB.*20,000 track points/);
 });
 
 test('processing failures name the problem and restore the native Preview', async () => {

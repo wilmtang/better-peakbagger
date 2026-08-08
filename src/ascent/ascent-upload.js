@@ -14,8 +14,14 @@
 // always the user's.
 
 import { matchLabel, matchTone } from '../capture/match-confidence.js';
+import {
+    MAX_GPX_BYTES,
+    MAX_GPX_TEXT_CHARS,
+    gpxLimitMessage,
+} from '../capture/capture-resource-limits.js';
 import { gpxParse } from '../gpx/gpx-parse.js';
 import { gpxMetrics as Metrics } from '../gpx/gpx-metrics.js';
+import { boundedText as BoundedText } from '../net/bounded-text.js';
 import { settings as Settings } from '../settings/settings.js';
 import { units as Units } from '../ui/units.js';
 import tzlookup from 'tz-lookup';
@@ -425,7 +431,11 @@ import tzlookup from 'tz-lookup';
             }
             try {
                 const displayUnits = resolveDisplayUnits(settings);
-                const text = await file.text();
+                const text = await BoundedText.readBoundedBlobText(file, {
+                    maxBytes: MAX_GPX_BYTES,
+                    maxChars: MAX_GPX_TEXT_CHARS,
+                    label: 'GPX file',
+                });
                 const parsed = gpxParse.parseGpxData(text, {
                     retainWaypoints: settings.retainWaypoints,
                     includeTripName: settings.fillTripInfo
@@ -450,6 +460,10 @@ import tzlookup from 'tz-lookup';
                 }
                 if (error?.code === 'invalid-gpx') {
                     fail('The GPX file contains invalid XML.');
+                    return;
+                }
+                if (error?.code === 'gpx-too-large' || BoundedText.isLimitError(error)) {
+                    fail(gpxLimitMessage());
                     return;
                 }
                 console.error('Better Peakbagger: local GPX read failed', error);

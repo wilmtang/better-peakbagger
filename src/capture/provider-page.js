@@ -9,6 +9,12 @@
 import { providerFromUrl } from './provider-url.js';
 import { gpxParse } from '../gpx/gpx-parse.js';
 import { requestDeadline as Deadline } from '../net/request-deadline.js';
+import { boundedText as BoundedText } from '../net/bounded-text.js';
+import {
+    MAX_GPX_BYTES,
+    MAX_GPX_TEXT_CHARS,
+    gpxLimitMessage,
+} from './capture-resource-limits.js';
 
 const PROFILE_PATTERNS = {
     garmin: /\/(?:modern\/)?profile\/([^/?#]+)/i,
@@ -220,7 +226,12 @@ const capture = async (
         }
         const beforeBody = inspectExpectedOwnership(expectedActivity);
         if (!beforeBody.ok) return publicOwnership(beforeBody);
-        const text = await deadline.run(response.text());
+        const text = await deadline.run(BoundedText.readBoundedResponseText(response, {
+            maxBytes: MAX_GPX_BYTES,
+            maxChars: MAX_GPX_TEXT_CHARS,
+            signal: deadline.signal,
+            label: 'Provider GPX',
+        }));
         if (!text.trim()) throw noGpsError();
         const afterBody = inspectExpectedOwnership(expectedActivity);
         if (!afterBody.ok) return publicOwnership(afterBody);
@@ -238,19 +249,22 @@ const capture = async (
         };
     } catch (error) {
         const noGps = error?.code === 'no-gps-data';
+        const tooLarge = error?.code === 'gpx-too-large' || BoundedText.isLimitError(error);
         const timedOut = deadline.expired || Deadline.isTimeout(error);
         const cancelled = !timedOut && !!deadline.signal?.aborted;
         return {
             ok: false,
             code: noGps ? 'no-gps-data'
-                : timedOut ? 'provider-export-timeout'
-                    : cancelled ? 'provider-export-cancelled'
-                        : 'provider-export-failed',
+                : tooLarge ? 'gpx-too-large'
+                    : timedOut ? 'provider-export-timeout'
+                        : cancelled ? 'provider-export-cancelled'
+                            : 'provider-export-failed',
             provider: ownership.provider,
             activityId: ownership.activityId,
             message: noGps ? NO_GPS_MESSAGE
-                : timedOut ? EXPORT_TIMEOUT_MESSAGE
-                    : EXPORT_FAILURE_MESSAGE
+                : tooLarge ? gpxLimitMessage()
+                    : timedOut ? EXPORT_TIMEOUT_MESSAGE
+                        : EXPORT_FAILURE_MESSAGE
         };
     } finally {
         deadline.clear();

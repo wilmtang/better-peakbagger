@@ -8,6 +8,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
 import { gpxParse } from '../../src/gpx/gpx-parse.js';
+import {
+    MAX_GPX_TRACK_SEGMENTS,
+    MAX_GPX_WAYPOINTS,
+} from '../../src/capture/capture-resource-limits.js';
 
 // The parser's only platform dependency is DOMParser; give it jsdom's.
 const { DOMParser } = new JSDOM('').window;
@@ -157,12 +161,28 @@ test('trackless and waypoint-only files throw the coded no-GPS error', () => {
     assert.equal(noGpsError().code, 'no-gps-data');
 });
 
-test('parsing does not apply Peakbagger\'s 3,000-point upload budget', () => {
+test('parsing preserves more than Peakbagger\'s later 3,000-point upload budget', () => {
     const points = Array.from({ length: 3001 }, (_, index) =>
         `<trkpt lat="${(47 + index * 1e-5).toFixed(5)}" lon="-121"><ele>${index % 500}</ele></trkpt>`).join('');
     const parsed = parseGpxData(`<gpx><trk><trkseg>${points}</trkseg></trk></gpx>`);
     assert.equal(parsed.segments[0].length, 3001);
     assert.equal(parsed.segments[0][3000].lat, 47.03);
+});
+
+test('GPX structure rejects segment and waypoint limit plus one before retaining it', () => {
+    const segments = '<trk><trkseg><trkpt lat="1" lon="2"/></trkseg></trk>'
+        .repeat(MAX_GPX_TRACK_SEGMENTS + 1);
+    assert.throws(
+        () => parseGpxData(`<gpx>${segments}</gpx>`),
+        error => error.code === 'gpx-too-large' && /20,000 track points/.test(error.message),
+    );
+
+    const waypoints = '<wpt lat="1" lon="2"/>'.repeat(MAX_GPX_WAYPOINTS + 1);
+    assert.throws(
+        () => parseGpxData(`<gpx>${waypoints}<trk><trkseg><trkpt lat="1" lon="2"/></trkseg></trk></gpx>`),
+        error => error.code === 'gpx-too-large',
+        'unrequested waypoints are still bounded before the DOM can become a hidden resource sink',
+    );
 });
 
 test('names decode entities and normalize to 200 characters of single-spaced text', () => {
