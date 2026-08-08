@@ -514,3 +514,18 @@ test('summit time remains attached to the highest route point after chronologica
     assert.deepEqual(metrics.timePoints.map(point => point.rawEleM), [100, 200, 300]);
     assert.deepEqual(metrics.points.map(point => point.rawEleM), [300, 100, 200]);
 });
+
+test('civil offsets and labelled longitude estimates reject impossible inputs', () => {
+    assert.equal(GpxMetrics.isValidUtcOffsetMinutes(-14 * 60), true);
+    assert.equal(GpxMetrics.isValidUtcOffsetMinutes(14 * 60), true);
+    assert.equal(GpxMetrics.isValidUtcOffsetMinutes(-14 * 60 - 1), false);
+    assert.equal(GpxMetrics.isValidUtcOffsetMinutes(14 * 60 + 1), false);
+    assert.equal(GpxMetrics.isValidUtcOffsetMinutes(Number.NaN), false);
+
+    assert.equal(GpxMetrics.isValidCoordinate(0, -180), true);
+    assert.equal(GpxMetrics.isValidCoordinate(0, 180), true);
+    assert.equal(GpxMetrics.longitudeUtcOffsetMinutes(-180), -12 * 60);
+    assert.equal(GpxMetrics.longitudeUtcOffsetMinutes(180), 12 * 60);
+    assert.equal(GpxMetrics.longitudeUtcOffsetMinutes(-180.001), null);
+    assert.equal(GpxMetrics.longitudeUtcOffsetMinutes(180.001), null);
+});

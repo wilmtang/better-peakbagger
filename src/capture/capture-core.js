@@ -695,21 +695,29 @@ const durationParts = minutesValue => {
     };
 };
 
+const cleanUtcOffsetMinutes = value => Metrics.isValidUtcOffsetMinutes(value) ? value : null;
+
+const parseUtcOffsetSuffix = value => {
+    const match = /([+-])(\d{2}):(\d{2})$/.exec(typeof value === 'string' ? value : '');
+    if (!match) return null;
+    const hours = Number(match[2]);
+    const minutes = Number(match[3]);
+    if (minutes > 59) return null;
+    const magnitude = hours * 60 + minutes;
+    const offset = match[1] === '-' ? -magnitude : magnitude;
+    return cleanUtcOffsetMinutes(offset);
+};
+
 const timezoneOffsetMinutes = (providerMeta, referenceTime = null) => {
-    if (Number.isFinite(providerMeta && providerMeta.utcOffsetMinutes)) return providerMeta.utcOffsetMinutes;
-    const localStart = providerMeta && providerMeta.localStart;
-    if (localStart) {
-        const match = /([+-])(\d{2}):(\d{2})$/.exec(localStart);
-        if (match) {
-            const value = Number(match[2]) * 60 + Number(match[3]);
-            return match[1] === '-' ? -value : value;
-        }
-    }
+    const explicit = cleanUtcOffsetMinutes(providerMeta && providerMeta.utcOffsetMinutes);
+    if (explicit !== null) return explicit;
+    const parsed = parseUtcOffsetSuffix(providerMeta && providerMeta.localStart);
+    if (parsed !== null) return parsed;
     const wallClock = providerMeta && providerMeta.displayedLocalStart;
     if (wallClock && Number.isFinite(referenceTime)) {
         const wallClockAsUtc = Date.parse(`${wallClock}Z`);
         const derived = Math.round((wallClockAsUtc - referenceTime) / 60000);
-        if (Number.isFinite(wallClockAsUtc) && derived >= -14 * 60 && derived <= 14 * 60) return derived;
+        if (Number.isFinite(wallClockAsUtc) && cleanUtcOffsetMinutes(derived) !== null) return derived;
     }
     return 0;
 };
@@ -924,7 +932,8 @@ const API = {
     assignDraftSuffixes,
     prepareDraftSelection,
     publicMatch,
-    formatEncounterDateTime
+    formatEncounterDateTime,
+    cleanUtcOffsetMinutes
 };
 
 export const captureCore = API;

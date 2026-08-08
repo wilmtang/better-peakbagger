@@ -360,6 +360,22 @@ test('a timeless GPX keeps a blank derived date and unavailable durations', asyn
     assert.doesNotMatch(job.uploadGpx, /<time>/);
 });
 
+test('the worker rejects an out-of-range local-upload timezone offset', async () => {
+    const harness = createHarness();
+    const ready = await harness.send({
+        type: 'GPX_PROCESS_START',
+        segments: SEGMENTS,
+        waypoints: [],
+        trackName: '',
+        utcOffsetMinutes: 4020,
+    });
+
+    assert.equal(ready.phase, 'ready');
+    assert.equal(ready.matches[0].date, '2026-07-01');
+    assert.equal(ready.matches[0].time, '16:00',
+        'invalid page metadata must not shift the encounter by multiple days');
+});
+
 test('a multi-summit selection fills the current tab and opens grouped sibling drafts with suffix and trip parity', async () => {
     const harness = createHarness({
         peakXml: '<p><t i="7" n="First Peak" a="0" o="0" e="426.51" r="100" l="Test Range"/><t i="8" n="Second Peak" a="0" o="0.0005" e="426.51" r="100" l="Test Range"/></p>'

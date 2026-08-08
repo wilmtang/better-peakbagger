@@ -31,6 +31,8 @@ const MAX_SEGMENT_JOIN_ELEVATION_DELTA_M = 100;
 // disagreement near the lowest and highest land elevations as corrupt data.
 const MIN_PLAUSIBLE_ELEVATION_M = -1000;
 const MAX_PLAUSIBLE_ELEVATION_M = 10000;
+const MIN_UTC_OFFSET_MINUTES = -14 * 60;
+const MAX_UTC_OFFSET_MINUTES = 14 * 60;
 
 const EARTH_RADIUS_M = 6371008.8;
 
@@ -40,6 +42,15 @@ const isValidCoordinate = (lat, lon) => Number.isFinite(lat) && lat >= -90 && la
     && Number.isFinite(lon) && lon >= -180 && lon <= 180;
 
 const isValidTimestamp = ms => Number.isFinite(ms) && ms > 0;
+
+const isValidUtcOffsetMinutes = value => Number.isFinite(value)
+    && value >= MIN_UTC_OFFSET_MINUTES
+    && value <= MAX_UTC_OFFSET_MINUTES;
+
+const longitudeUtcOffsetMinutes = longitude => Number.isFinite(longitude)
+        && longitude >= -180 && longitude <= 180
+    ? Math.round(longitude / 15) * 60
+    : null;
 
 const isPlausibleElevationM = elevationM => Number.isFinite(elevationM)
     && elevationM >= MIN_PLAUSIBLE_ELEVATION_M
@@ -955,9 +966,14 @@ const API = {
     EARTH_RADIUS_M,
     MIN_PLAUSIBLE_ELEVATION_M,
     MAX_PLAUSIBLE_ELEVATION_M,
+    MIN_UTC_OFFSET_MINUTES,
+    MAX_UTC_OFFSET_MINUTES,
     toRad,
     normalizeLonDelta,
     isValidCoordinate,
+    isValidTimestamp,
+    isValidUtcOffsetMinutes,
+    longitudeUtcOffsetMinutes,
     isPlausibleElevationM,
     distanceM: haversineDistanceM,
     computeRouteDistanceM,

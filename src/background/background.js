@@ -1125,7 +1125,7 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
 
         try {
             const metadata = {
-                utcOffsetMinutes: Number.isFinite(message.utcOffsetMinutes) ? Number(message.utcOffsetMinutes) : null,
+                utcOffsetMinutes: Core.cleanUtcOffsetMinutes(message.utcOffsetMinutes),
                 title: capturePreferences.fillTripInfo && typeof message.trackName === 'string' ? message.trackName : ''
             };
             const analysis = await analyzeTrack({

@@ -198,6 +198,48 @@ test('Process parses on the page, resolves the timezone offline, and auto-applie
     observer.disconnect();
 });
 
+test('timezone resolution ignores route-invalid coordinates and untrustworthy timestamps', async () => {
+    const content = `<?xml version="1.0"?><gpx xmlns="http://www.topografix.com/GPX/1/1"><trk><trkseg>
+      <trkpt lat="49.5" lon="999"><time>2026-01-01T12:00:00Z</time></trkpt>
+      <trkpt lat="49.5" lon="-123.1"><time>not-a-time</time></trkpt>
+      <trkpt lat="49.5" lon="-123.099"><time>2026-07-01T15:00:00Z</time></trkpt>
+      <trkpt lat="49.5" lon="-999"><time>2026-01-01T12:00:00Z</time></trkpt>
+    </trkseg></trk></gpx>`;
+    const dom = await loadEditor({
+        respond: message => message.type === 'GPX_PROCESS_START'
+            ? { phase: 'no-matches' }
+            : { action: 'ignore' }
+    });
+    chooseGpx(dom, { content });
+    processButton(dom).click();
+    await waitFor(dom, () => dom.messages.some(message => message.type === 'GPX_PROCESS_START'));
+
+    const start = dom.messages.find(message => message.type === 'GPX_PROCESS_START');
+    assert.equal(start.utcOffsetMinutes, -420,
+        'the valid July point, not rejected January coordinates or an invalid time, controls DST');
+});
+
+test('timezone resolution observes DST and stays unknown for an all-invalid route', async () => {
+    const process = async content => {
+        const dom = await loadEditor({
+            respond: message => message.type === 'GPX_PROCESS_START'
+                ? { phase: 'no-matches' }
+                : { action: 'ignore' }
+        });
+        chooseGpx(dom, { content });
+        processButton(dom).click();
+        await waitFor(dom, () => dom.messages.some(message => message.type === 'GPX_PROCESS_START'));
+        return dom.messages.find(message => message.type === 'GPX_PROCESS_START').utcOffsetMinutes;
+    };
+    const gpx = (lat, lon, time) => `<?xml version="1.0"?><gpx xmlns="http://www.topografix.com/GPX/1/1"><trk><trkseg>
+      <trkpt lat="${lat}" lon="${lon}"><time>${time}</time></trkpt>
+    </trkseg></trk></gpx>`;
+
+    assert.equal(await process(gpx(49.5, -123.1, '2026-01-15T12:00:00Z')), -480);
+    assert.equal(await process(gpx(49.5, -123.1, '2026-07-15T12:00:00Z')), -420);
+    assert.equal(await process(gpx(999, 999, '2026-07-15T12:00:00Z')), null);
+});
+
 test('the trip name is sent only when Trip Info filling is enabled', async () => {
     const dom = await loadEditor({
         settings: { fillTripInfo: true },

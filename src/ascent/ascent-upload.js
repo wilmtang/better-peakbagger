@@ -15,6 +15,7 @@
 
 import { matchLabel, matchTone } from '../capture/match-confidence.js';
 import { gpxParse } from '../gpx/gpx-parse.js';
+import { gpxMetrics as Metrics } from '../gpx/gpx-metrics.js';
 import { settings as Settings } from '../settings/settings.js';
 import { units as Units } from '../ui/units.js';
 import tzlookup from 'tz-lookup';
@@ -70,18 +71,19 @@ import tzlookup from 'tz-lookup';
 
     const resolveUtcOffsetMinutes = segments => {
         const points = (segments || []).flat();
-        const start = points.find(point => Number.isFinite(point.lat) && Number.isFinite(point.lon));
+        const start = points.find(point => Metrics.isValidCoordinate(point.lat, point.lon));
         if (!start) return null;
-        const timed = points.find(point => Number.isFinite(point.time));
+        const timed = points.find(point => Metrics.isValidCoordinate(point.lat, point.lon)
+            && Metrics.isValidTimestamp(point.time));
         const referenceMs = timed ? timed.time : Date.now();
         try {
             const offset = zoneOffsetMinutes(tzlookup(start.lat, start.lon), referenceMs);
-            if (Number.isFinite(offset)) return offset;
+            if (Metrics.isValidUtcOffsetMinutes(offset)) return offset;
         } catch (_error) {
-            // Out-of-range coordinates or a zone id unknown to this browser's
-            // ICU keep the labelled solar estimate below.
+            // A zone id unknown to this browser's ICU keeps the labelled solar
+            // estimate below.
         }
-        return Math.round(start.lon / 15) * 60;
+        return Metrics.longitudeUtcOffsetMinutes(start.lon);
     };
 
     // Peakbagger renders both values on the editor, but orders each unit pair

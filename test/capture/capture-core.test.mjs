@@ -392,6 +392,34 @@ test('an unusable displayed wall clock falls back to UTC without claiming a time
     assert.deepEqual(Object.keys(formatted).sort(), ['date', 'time']);
 });
 
+test('explicit and timestamp-suffix offsets stay inside civil-time bounds', () => {
+    const instant = Date.UTC(2026, 0, 2, 0, 0);
+    const format = metadata => Core.formatEncounterDateTime(instant, metadata, instant);
+
+    assert.deepEqual(format({ utcOffsetMinutes: 14 * 60 }), { date: '2026-01-02', time: '14:00' });
+    assert.deepEqual(format({ utcOffsetMinutes: -14 * 60 }), { date: '2026-01-01', time: '10:00' });
+    assert.deepEqual(format({ utcOffsetMinutes: 14 * 60 + 1 }), { date: '2026-01-02', time: '00:00' });
+    assert.deepEqual(format({ utcOffsetMinutes: -14 * 60 - 1 }), { date: '2026-01-02', time: '00:00' });
+
+    assert.deepEqual(format({ localStart: '2026-01-02T14:00:00+14:00' }),
+        { date: '2026-01-02', time: '14:00' });
+    assert.deepEqual(format({ localStart: '2026-01-01T10:00:00-14:00' }),
+        { date: '2026-01-01', time: '10:00' });
+    for (const localStart of [
+        '2026-01-02T14:01:00+14:01',
+        '2026-01-01T09:59:00-14:01',
+        '2026-01-02T13:60:00+13:60',
+    ]) {
+        assert.deepEqual(format({ localStart }), { date: '2026-01-02', time: '00:00' });
+    }
+
+    assert.equal(Core.cleanUtcOffsetMinutes(840), 840);
+    assert.equal(Core.cleanUtcOffsetMinutes(-840), -840);
+    assert.equal(Core.cleanUtcOffsetMinutes(841), null);
+    assert.equal(Core.cleanUtcOffsetMinutes('-420'), null,
+        'the worker boundary accepts only the numeric contract the page sends');
+});
+
 test('nights out uses the activity-local calendar span and stays unknown without timestamps', () => {
     const start = Date.UTC(2026, 6, 1, 23, 30);
     const segments = [[
