@@ -39,7 +39,7 @@ test('3D terrain showcase uses the production renderer with a synthetic route', 
     assert.match(terrainShowcase, /dist\/content\/terrain-map\.js/);
     assert.doesNotMatch(terrainShowcase, /vendor\/maplibre-gl-csp\.js/,
         'MapLibre should load lazily inside the extension-owned frame');
-    assert.match(terrainFrame, /vendor\/maplibre-gl-csp\.js/);
+    assert.match(terrainFrame, /vendor\/maplibre-gl\.js/);
     // terrain-cache and settings-schema are bundled into the frame bundle now;
     // bundle composition is asserted in manifest-capture.test.mjs.
     assert.match(terrainFrame, /terrain-frame\.js/);

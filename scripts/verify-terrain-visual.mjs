@@ -731,6 +731,40 @@ try {
     if (ascent2dMetrics.gap > 40) throw new Error(`Ascent 2D toggle floats too far above the native zoom (gap ${ascent2dMetrics.gap}px)`);
     await capture(cdp, path.join(outputDir, 'map-default-450.png'));
 
+    // MapLibre 6 requires WebGL2. Deny only that context in documents created
+    // for this probe, then require the complete user-visible fallback before
+    // removing the injection and continuing with hardware-backed checks.
+    const { identifier: noWebGl2Script } = await cdp.call('Page.addScriptToEvaluateOnNewDocument', {
+        source: `(() => {
+            const getContext = HTMLCanvasElement.prototype.getContext;
+            HTMLCanvasElement.prototype.getContext = function (type, ...args) {
+                if (String(type).toLowerCase() === 'webgl2') return null;
+                return getContext.call(this, type, ...args);
+            };
+        })();`
+    });
+    try {
+        await navigate(cdp, `${baseUrl}?mode=terrain&map=wide`, 1280, 950);
+        const fallback = await waitForPageState(cdp, `(() => {
+            const toggle = document.getElementById('bpb-terrain-toggle');
+            const frame = document.getElementById('bpb-terrain-frame');
+            const nativeMap = document.querySelector('iframe[src*="MasterMap.aspx" i]');
+            const message = document.getElementById('bpb-terrain-message');
+            return {
+                ready: toggle && toggle.textContent === '3D' && !frame && nativeMap
+                    && nativeMap.style.visibility !== 'hidden'
+                    && message && /could not render 3D terrain/.test(message.textContent || ''),
+                toggle: toggle && toggle.textContent,
+                frame: Boolean(frame),
+                nativeVisibility: nativeMap && nativeMap.style.visibility,
+                message: message && message.textContent
+            };
+        })()`, 8000);
+        console.log(`WebGL2-unavailable probe: ${fallback.message.trim()}`);
+    } finally {
+        await cdp.call('Page.removeScriptToEvaluateOnNewDocument', { identifier: noWebGl2Script });
+    }
+
     // Regression: a peak whose region the elevation provider does not cover to
     // the level the view wants must degrade to the coarser tiles that do exist,
     // not tear the whole 3D view down. This ran first for a reason — the DEM

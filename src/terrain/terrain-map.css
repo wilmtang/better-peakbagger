@@ -629,6 +629,26 @@ html:has(.bpb-terrain-frame-body),
     color: #aad0ff;
 }
 
+/* Fixed-size native-style summit rings. MapLibre Marker owns terrain-aware
+   placement; the button keeps click and keyboard activation. */
+#bpb-terrain-map .bpb-terrain-peak-marker {
+    box-sizing: border-box;
+    width: 17px;
+    min-width: 0;
+    height: 17px;
+    padding: 0;
+    border: 2.5px solid var(--bpb-peak-color);
+    border-radius: 50%;
+    appearance: none;
+    background: transparent;
+    cursor: pointer;
+}
+
+#bpb-terrain-map .bpb-terrain-peak-marker:focus-visible {
+    outline: 2px solid #fff;
+    outline-offset: 2px;
+}
+
 /* Native-style name/link bubbles for peak markers and clickable routes. */
 #bpb-terrain-map .bpb-peak-popup,
 #bpb-terrain-map .bpb-route-popup {

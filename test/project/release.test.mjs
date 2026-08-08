@@ -8,6 +8,7 @@ import {
     COPY_FILES,
     ENTRIES,
     VENDOR_COPY,
+    VENDOR_MAPLIBRE,
     VENDOR_TZ,
 } from '../../scripts/build-config.mjs';
 import {
@@ -71,7 +72,9 @@ test("Firefox metadata preserves the project's or-later license grant", () => {
     assert.match(metadata.version.approval_notes, /esbuild 0\.28\.1/);
     assert.match(metadata.version.approval_notes, /Chart\.js 4\.5\.1/);
     assert.match(metadata.version.approval_notes, /Marked 18\.0\.6/);
-    assert.match(metadata.version.approval_notes, /MapLibre GL JS 5\.24\.0/);
+    assert.match(metadata.version.approval_notes, /MapLibre GL JS 6\.2\.0/);
+    assert.match(metadata.version.approval_notes, /maplibre-gl-worker\.mjs/);
+    assert.match(metadata.version.approval_notes, /esbuild-generated classic browser global/);
     assert.match(metadata.version.approval_notes, /tz-lookup 6\.1\.25/);
     assert.doesNotMatch(metadata.version.approval_notes, /build-free|@photostructure/);
     assert.match(metadata.version.approval_notes, /tiles\.mapterhorn\.com/);
@@ -86,6 +89,7 @@ async function makeReleaseZip(extraFiles = {}, omittedFiles = []) {
         ...Object.fromEntries(ENTRIES.map(({ out }) => [out, `bundle:${out}`])),
         ...Object.fromEntries(COPY_FILES.map(([, out]) => [out, `copy:${out}`])),
         ...Object.fromEntries(VENDOR_COPY.map(([, out]) => [out, `vendor:${out}`])),
+        [VENDOR_MAPLIBRE.out]: 'vendor:maplibre',
         [VENDOR_TZ.out]: 'vendor:tz-lookup',
         'icons/icon-128.png': 'icon',
         'manifest.json': JSON.stringify({
@@ -338,6 +342,19 @@ test('release archive requires third-party acknowledgements', async () => {
         ),
         /missing required file: ACKNOWLEDGEMENTS\.md/,
     );
+});
+
+test('release archive requires every MapLibre main and module-worker artifact', async () => {
+    for (const required of [
+        VENDOR_MAPLIBRE.out,
+        'vendor/maplibre-gl-worker.mjs',
+        'vendor/maplibre-gl-shared.mjs'
+    ]) {
+        await assert.rejects(
+            verifyReleaseArchive(await makeReleaseZip({}, [required]), '1.4.0'),
+            new RegExp(`missing required file: ${required.replaceAll('.', '\\.').replaceAll('/', '\\/')}`),
+        );
+    }
 });
 
 test('release archive verification requires an explicit browser', () => {

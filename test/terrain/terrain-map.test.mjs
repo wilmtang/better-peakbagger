@@ -24,6 +24,7 @@ const chromeWith = settings => {
 // per test; the bundled terrain cache binds the supplied fetch stub.
 const bridgeBundle = await readFile(path.join(root, 'dist', 'content', 'terrain-map.js'), 'utf8');
 const frameBundle = await readFile(path.join(root, 'dist', 'terrain', 'terrain-frame.js'), 'utf8');
+const terrainCss = await readFile(path.join(root, 'src', 'terrain', 'terrain-map.css'), 'utf8');
 
 test('3D terrain waits for the extension frame handshake before sending route coordinates', async () => {
     const dom = new JSDOM(`<!doctype html><body>
@@ -464,6 +465,7 @@ test('3D terrain frame validates coordinate-only routes before loading public DE
     const maps = [];
     const protocolHandlers = new Map();
     const popups = [];
+    const markers = [];
     let workerUrl = '';
 
     class MapStub {
@@ -472,11 +474,13 @@ test('3D terrain frame validates coordinate-only routes before loading public DE
             this.sources = new Map();
             this.layers = [];
             this.paint = [];
+            this.layout = [];
             this.controls = [];
             this.handlers = new Map();
             this.removed = false;
             this.renderCalls = [];
             this.canvas = window.document.createElement('canvas');
+            this.sourceDataOutcomes = new Map();
             maps.push(this);
         }
         addControl(control, position) { this.controls.push({ control, position }); }
@@ -485,9 +489,17 @@ test('3D terrain frame validates coordinate-only routes before loading public DE
         }
         on(type, callback) { this.handlers.set(type, callback); }
         addSource(id, source) {
+            const terrainMap = this;
             const stored = {
                 ...source,
-                setData(data) { this.data = data; }
+                setData(data) {
+                    const outcome = terrainMap.sourceDataOutcomes.get(id)?.shift();
+                    if (!outcome) {
+                        this.data = data;
+                        return undefined;
+                    }
+                    return Promise.resolve(outcome).then(() => { this.data = data; });
+                }
             };
             this.sources.set(id, stored);
         }
@@ -498,6 +510,7 @@ test('3D terrain frame validates coordinate-only routes before loading public DE
         getCanvas() { return this.canvas; }
         removeSource(id) { this.sources.delete(id); }
         setPaintProperty(...args) { this.paint.push(args); }
+        setLayoutProperty(...args) { this.layout.push(args); }
         fitBounds(bounds, options) { this.fitted = { bounds, options }; }
         getCenter() {
             const center = this.cameraCenter || this.options.center || [
@@ -521,6 +534,13 @@ test('3D terrain frame validates coordinate-only routes before loading public DE
         remove() { this.removedPopup = true; }
     }
 
+    class MarkerStub {
+        constructor(options) { this.options = options; markers.push(this); }
+        setLngLat(lngLat) { this.lngLat = lngLat; return this; }
+        addTo(target) { this.target = target; return this; }
+        remove() { this.removed = true; return this; }
+    }
+
     const resizeObservers = [];
     window.ResizeObserver = class {
         constructor(callback) {
@@ -535,6 +555,7 @@ test('3D terrain frame validates coordinate-only routes before loading public DE
     window.chrome = { runtime: { getURL: path => `chrome-extension://test-id/${path}` } };
     window.maplibregl = {
         Map: MapStub,
+        Marker: MarkerStub,
         Popup: PopupStub,
         NavigationControl: class NavigationControl {},
         ScaleControl: class ScaleControl {},
@@ -596,7 +617,9 @@ test('3D terrain frame validates coordinate-only routes before loading public DE
 
     assert.equal(maps.length, 1);
     const map = maps[0];
-    assert.equal(workerUrl, 'chrome-extension://test-id/vendor/maplibre-gl-csp-worker.js');
+    assert.equal(workerUrl, 'chrome-extension://test-id/vendor/maplibre-gl-worker.mjs');
+    assert.equal(map.options.zoomLevelsToOverscale, undefined,
+        'the v6 overscaling default stays disabled until a separate measured decision');
     assert.deepEqual(JSON.parse(JSON.stringify(map.options.style.sources.terrain.tiles)), ['bpb-dem://{z}/{x}/{y}.webp']);
     assert.equal(map.options.style.sources.terrain.encoding, 'terrarium');
     assert.ok(protocolHandlers.has('bpb-dem'));
@@ -716,6 +739,25 @@ test('3D terrain frame validates coordinate-only routes before loading public DE
     assert.deepEqual(map.paint.at(-1), ['bpb-highlight', 'circle-color', '#ff3b30'],
         'the terrain frame does not treat an unknown series as a color');
 
+    const activeHighlight = Promise.withResolvers();
+    map.sourceDataOutcomes.set('bpb-highlight', [activeHighlight.promise]);
+    dispatch({ type: 'highlight', coordinates: [-121.805, 48.705], series: 'distance' });
+    assert.deepEqual(map.layout.at(-1), ['bpb-highlight', 'visibility', 'none'],
+        'an asynchronous highlight stays hidden until the worker accepts it');
+    activeHighlight.reject(new Error('highlight worker rejected'));
+    await new Promise(resolve => window.queueMicrotask(resolve));
+    assert.equal(map.removed, false, 'an optional highlight rejection does not kill healthy terrain');
+    assert.deepEqual(map.layout.at(-1), ['bpb-highlight', 'visibility', 'none'],
+        'an actively rejected highlight cannot leave its stale dot visible');
+
+    const acceptedHighlight = Promise.withResolvers();
+    map.sourceDataOutcomes.set('bpb-highlight', [acceptedHighlight.promise]);
+    dispatch({ type: 'highlight', coordinates: [-121.806, 48.706], series: 'distance' });
+    acceptedHighlight.resolve();
+    await new Promise(resolve => window.setTimeout(resolve, 0));
+    assert.deepEqual(map.layout.at(-1), ['bpb-highlight', 'visibility', 'visible'],
+        'the current successful source update restores its overlay');
+
     dispatch({
         type: 'update',
         routeStyle: { color: '#347a3f', width: 6, casingColor: '#ffffff', casingWidth: 10 },
@@ -732,6 +774,23 @@ test('3D terrain frame validates coordinate-only routes before loading public DE
     assert.equal(picker().value, '0', 'a drape that rendered a tile stays selected');
     assert.equal(picker().options[0].disabled, false, 'a working drape is not disabled');
     assert.equal(notice().hidden, true, 'no failure notice for a drape that rendered a tile');
+
+    const staleHighlight = Promise.withResolvers();
+    const rejectedRoute = Promise.withResolvers();
+    map.sourceDataOutcomes.set('bpb-highlight', [staleHighlight.promise]);
+    map.sourceDataOutcomes.set('bpb-route', [rejectedRoute.promise]);
+    dispatch({ type: 'highlight', coordinates: [-121.807, 48.707], series: 'distance' });
+    dispatch({ type: 'resume', routeSegments, theme: 'light' });
+    rejectedRoute.reject(new Error('route worker rejected'));
+    await new Promise(resolve => window.setTimeout(resolve, 0));
+    assert.equal(map.removed, true,
+        'rejecting the current route replacement restores authoritative 2D instead of showing the old trip');
+    assert.equal(messages.at(-1).reason, 'renderer');
+    const messagesAfterRouteFailure = messages.length;
+    staleHighlight.reject(new Error('map was removed'));
+    await new Promise(resolve => window.setTimeout(resolve, 0));
+    assert.equal(messages.length, messagesAfterRouteFailure,
+        'a source rejection after teardown is handled as stale work and reports no second failure');
 
     dispatch({ type: 'destroy' });
     assert.equal(map.removed, true);
@@ -852,6 +911,33 @@ test('3D terrain frame validates coordinate-only routes before loading public DE
         properties: { id: 2829, name: 'Mount Shuksan', state: 'unclimbed' },
         geometry: { type: 'Point', coordinates: [-121.60214, 48.83115] }
     }]);
+    const focusMarker = markers.findLast(marker => !marker.removed);
+    assert.ok(focusMarker, 'the summit ring uses MapLibre terrain-aware marker placement');
+    assert.deepEqual(JSON.parse(JSON.stringify(focusMarker.lngLat)), [-121.60214, 48.83115]);
+    assert.equal(focusMarker.options.opacityWhenCovered, 0.95,
+        'coarse terrain depth cannot hide a navigational summit dot');
+    assert.equal(focusMarker.options.element.tagName, 'BUTTON');
+    assert.equal(focusMarker.options.element.getAttribute('aria-label'), 'Mount Shuksan');
+    assert.equal(focusMarker.options.element.style.getPropertyValue('--bpb-peak-color'), '#ff6699');
+    assert.match(terrainCss, /\.bpb-terrain-peak-marker\s*\{[^}]*cursor:\s*pointer/s,
+        'the button owns its pointer cursor without mutating persistent canvas state');
+    const popupsBeforeMarkerClick = popups.length;
+    focusMarker.options.element.click();
+    assert.equal(popups.length, popupsBeforeMarkerClick + 1,
+        'the terrain-aware marker preserves the existing name-link popup');
+    assert.equal(popups.at(-1).node.querySelector('a').href,
+        'https://www.peakbagger.com/peak.aspx?pid=2829');
+
+    const rejectedPeaks = Promise.withResolvers();
+    focused.sourceDataOutcomes.set('bpb-peaks', [rejectedPeaks.promise]);
+    dispatch({ type: 'peaks', unavailable: true });
+    rejectedPeaks.reject(new Error('peak worker rejected'));
+    await new Promise(resolve => window.setTimeout(resolve, 0));
+    assert.equal(focused.removed, false, 'an optional peak overlay rejection does not kill healthy terrain');
+    assert.equal(markers.some(marker => !marker.removed), false,
+        'an actively rejected peak update removes stale navigational dots');
+    assert.deepEqual(focused.layout.at(-1), ['bpb-peaks-ring', 'visibility', 'none']);
+
     dispatch({ type: 'peaks', unavailable: true });
     assert.equal(focusedPeaks().length, 1, 'the subject peak remains when the nearby feed is unavailable');
 

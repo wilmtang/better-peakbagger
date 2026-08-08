@@ -12,8 +12,9 @@
 // ES imports define dependency evaluation order. The order here remains
 // significant for independent side-effect roots, and is pinned by tests.
 // Vendor globals (Chart, tzlookup, marked, maplibregl) are still delivered as
-// separate copied scripts loaded ahead of the bundle that reads them — see the
-// manifest and terrain.html — so they are not listed as bundle sources here.
+// separate copied/generated scripts loaded ahead of the bundle that reads them
+// — see the manifest and terrain.html — so they are not listed as bundle
+// sources here.
 
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -123,14 +124,16 @@ export const COPY_DIRS = [
 
 export const nodeModule = f => path.join(root, 'node_modules', f);
 
-// Vendor browser builds sourced from npm into dist/vendor. marked, Chart.js, and
-// MapLibre ship browser-ready UMD/global builds (byte-identical to the files that
-// were previously hand-copied into vendor/). [from (node_modules), to (dist)].
+// Vendor browser builds sourced from npm into dist/vendor. marked and Chart.js
+// ship browser-ready UMD/global builds. MapLibre 6 is ESM-only: its module
+// worker and shared module remain byte-identical copies while VENDOR_MAPLIBRE
+// below describes the separately generated classic global wrapper.
+// [from (node_modules), to (dist)].
 export const VENDOR_COPY = [
     ['marked/lib/marked.umd.js', 'vendor/marked.umd.js'],
     ['chart.js/dist/chart.umd.min.js', 'vendor/chart.umd.min.js'],
-    ['maplibre-gl/dist/maplibre-gl-csp.js', 'vendor/maplibre-gl-csp.js'],
-    ['maplibre-gl/dist/maplibre-gl-csp-worker.js', 'vendor/maplibre-gl-csp-worker.js'],
+    ['maplibre-gl/dist/maplibre-gl-worker.mjs', 'vendor/maplibre-gl-worker.mjs'],
+    ['maplibre-gl/dist/maplibre-gl-shared.mjs', 'vendor/maplibre-gl-shared.mjs'],
     ['maplibre-gl/dist/maplibre-gl.css', 'vendor/maplibre-gl.css'],
     ['marked/LICENSE', 'vendor/marked-LICENSE.txt'],
     ['chart.js/LICENSE.md', 'vendor/chart-LICENSE.txt'],
@@ -141,3 +144,14 @@ export const VENDOR_COPY = [
 // tz-lookup ships CommonJS only, so esbuild wraps it into a browser global
 // (var tzlookup = …) that the MAIN-world GPX analyzer reads as globalThis.tzlookup.
 export const VENDOR_TZ = { entry: 'tz-lookup/tz.js', out: 'vendor/tz-lookup.js', globalName: 'tzlookup' };
+
+// MapLibre 6 no longer publishes a classic UMD or CSP build. Keep the renderer
+// outside terrain-frame.js (and therefore replaceable by the lifecycle tests)
+// by having esbuild expose the package's ESM namespace as the same maplibregl
+// global terrain.html has always loaded first. The worker stays an extension-
+// owned module URL and imports its copied shared sibling directly.
+export const VENDOR_MAPLIBRE = {
+    entry: 'maplibre-gl/dist/maplibre-gl.mjs',
+    out: 'vendor/maplibre-gl.js',
+    globalName: 'maplibregl'
+};

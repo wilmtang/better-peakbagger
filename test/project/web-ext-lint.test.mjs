@@ -32,8 +32,8 @@ const reportFor = warnings => ({
 
 test('the web-ext lint gate accepts exactly the owned warnings per file', async () => {
     const accepted = evaluateWebExtLint(reportFor(occurrences()));
-    assert.equal(accepted.length, 4);
-    assert.equal(accepted.reduce((sum, warning) => sum + warning.count, 0), 6);
+    assert.equal(accepted.length, 5);
+    assert.equal(accepted.reduce((sum, warning) => sum + warning.count, 0), 8);
     assert.ok(accepted.every(warning => warning.owner && warning.reason));
 
     const packageJson = JSON.parse(await readFile(new URL('../../package.json', import.meta.url), 'utf8'));
@@ -49,7 +49,7 @@ test('the web-ext lint gate ignores generated line and column drift', () => {
         line: warning.line + 4173,
         column: warning.column + 91
     }));
-    assert.equal(evaluateWebExtLint(reportFor(moved)).length, 4);
+    assert.equal(evaluateWebExtLint(reportFor(moved)).length, 5);
 });
 
 test('the web-ext lint gate rejects new, extra, missing, error, and notice output', () => {
@@ -69,8 +69,8 @@ test('the web-ext lint gate rejects new, extra, missing, error, and notice outpu
 
     // A vendored file that keeps its code but loses one of its occurrences
     // must still fail; collapsing to a per-file boolean would hide it.
-    const partial = reportFor(occurrences().filter((warning, index) => index !== 1));
-    assert.throws(() => evaluateWebExtLint(partial), /baseline warnings disappeared: UNSAFE_VAR_ASSIGNMENT vendor\/maplibre-gl-csp\.js \(2, owned 3\)/);
+    const partial = reportFor(occurrences().filter((warning, index) => index !== 3));
+    assert.throws(() => evaluateWebExtLint(partial), /baseline warnings disappeared: UNSAFE_VAR_ASSIGNMENT vendor\/maplibre-gl\.js \(2, owned 3\)/);
 
     assert.throws(() => evaluateWebExtLint({
         ...reportFor(occurrences()),
@@ -85,5 +85,5 @@ test('the web-ext lint gate rejects new, extra, missing, error, and notice outpu
     assert.throws(() => evaluateWebExtLint({
         ...reportFor(occurrences()),
         summary: { errors: 0, notices: 0, warnings: 5 }
-    }), /warning count mismatch: summary 5, reported 6/);
+    }), /warning count mismatch: summary 5, reported 8/);
 });

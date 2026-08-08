@@ -178,6 +178,7 @@ async function main() {
                 route: Boolean(map.getLayer('bpb-route')),
                 basemap: Boolean(map.getSource('basemap')),
                 peaks: Boolean(map.getLayer('bpb-peaks-ring')),
+                peakMarker: Boolean(document.querySelector('.bpb-terrain-peak-marker')),
             };
         });
         if (!rendererState.renderer) throw new Error('Firefox exposed no WebGL renderer');
@@ -185,13 +186,18 @@ async function main() {
             throw new Error(`Refusing Firefox terrain verification on software WebGL (${rendererState.renderer})`);
         }
         if (!rendererState.terrain || !rendererState.route || !rendererState.basemap
-      || !rendererState.peaks || rendererState.canvas.width === 0 || rendererState.canvas.height === 0) {
+      || !rendererState.peaks || !rendererState.peakMarker
+      || rendererState.canvas.width === 0 || rendererState.canvas.height === 0) {
             throw new Error(`Firefox terrain surface was incomplete: ${JSON.stringify(rendererState)}`);
         }
-        await page.waitForFunction(() => {
-            const map = document.getElementById('bpb-terrain-frame')?.contentWindow?.__bpbTerrainTestMap;
-            return map?.querySourceFeatures('bpb-peaks')?.length > 0;
-        }, null, { timeout: 10_000 });
+        const peakMarker = frame.locator('.bpb-terrain-peak-marker').first();
+        await peakMarker.waitFor({ state: 'visible', timeout: 10_000 });
+        await peakMarker.click();
+        const peakLink = frame.locator('.maplibregl-popup .bpb-peak-popup a');
+        await peakLink.waitFor({ state: 'visible', timeout: 8_000 });
+        if (!/\/peak\.aspx\?pid=58603$/.test(await peakLink.getAttribute('href') || '')) {
+            throw new Error('Firefox peak marker opened the wrong popup link');
+        }
 
         const canvas = frame.locator('canvas.maplibregl-canvas');
         const box = await canvas.boundingBox();

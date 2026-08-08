@@ -548,12 +548,13 @@ export const instrumentTerrainFrameHtml = html => html
   </script>
 </head>`)
     .replace('  <script src="terrain-frame.js"></script>', `  <script>
-    maplibregl.Map = new Proxy(maplibregl.Map, {
+    const InstrumentedMap = new Proxy(maplibregl.Map, {
       construct(Target, args, newTarget) {
         const instance = Reflect.construct(Target, args, newTarget);
         globalThis.__bpbTerrainTestMap = instance;
         return instance;
       }
     });
+    globalThis.maplibregl = { ...maplibregl, Map: InstrumentedMap };
   </script>
   <script src="terrain-frame.js"></script>`);

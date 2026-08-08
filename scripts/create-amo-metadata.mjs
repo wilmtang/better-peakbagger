@@ -42,7 +42,7 @@ export function buildAmoMetadata({ licenseText, description }) {
                 '',
                 'vendor/marked.umd.js is copied from the unmodified Marked 18.0.6 npm distribution (MIT). Package: https://www.npmjs.com/package/marked/v/18.0.6 ; readable source: https://github.com/markedjs/marked/tree/v18.0.6',
                 '',
-                'vendor/maplibre-gl-csp.js, vendor/maplibre-gl-csp-worker.js, and vendor/maplibre-gl.css are the unmodified MapLibre GL JS 5.24.0 distribution (BSD-3-Clause). Original package: https://www.npmjs.com/package/maplibre-gl/v/5.24.0 ; readable source: https://github.com/maplibre/maplibre-gl-js/tree/v5.24.0',
+                'vendor/maplibre-gl.js is an esbuild-generated classic browser global around the MapLibre GL JS 6.2.0 ESM distribution (BSD-3-Clause). vendor/maplibre-gl-worker.mjs, vendor/maplibre-gl-shared.mjs, and vendor/maplibre-gl.css are copied unmodified from that package. Package: https://www.npmjs.com/package/maplibre-gl/v/6.2.0 ; readable source: https://github.com/maplibre/maplibre-gl-js/tree/v6.2.0',
                 '',
                 'vendor/tz-lookup.js is an esbuild-generated browser IIFE around the tz-lookup 6.1.25 CommonJS distribution (CC0-1.0), with no application changes to its offline coordinate-to-IANA-timezone data or lookup logic. Package: https://www.npmjs.com/package/tz-lookup/v/6.1.25 ; readable source: https://github.com/darkskyapp/tz-lookup',
                 '',

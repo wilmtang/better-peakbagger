@@ -114,9 +114,8 @@ import { terrainTiles as TerrainTiles } from './terrain-tiles.js';
     };
     // Peak markers: Peakbagger's own dot feed, relayed by the host page on
     // request as the camera settles. Every visual and behavioral knob lives in
-    // this one spec so restyling the markers — swapping the hollow rings for
-    // solid dots, recoloring states, resizing, or replacing the layer type
-    // wholesale in buildPeakLayers() — is a single-place change.
+    // this one spec so the normal terrain-positioned buttons and reduced-API
+    // circle fallback cannot drift in color, geometry, or interaction bounds.
     const PEAK_MARKERS = {
         sourceId: 'bpb-peaks',
         layerId: 'bpb-peaks-ring',
@@ -231,6 +230,7 @@ import { terrainTiles as TerrainTiles } from './terrain-tiles.js';
     // The currently rendered peak features, kept for the screen-space hit
     // test, and the pointer's last position for the frame-throttled hover.
     let peakFeatures = [];
+    let peakMarkers = [];
     // Peak pages pass their subject explicitly because Peakbagger's `t=P`
     // nearby-marker feed may exclude that same peak. Keep it independent of
     // each replace-style feed response so the summit never disappears.
@@ -240,6 +240,10 @@ import { terrainTiles as TerrainTiles } from './terrain-tiles.js';
     // Throttles the bearing/pitch stream the page compass reads to one post per
     // painted frame, like the peak-hover throttle.
     let viewFrame = null;
+    // MapLibre 6 source updates are asynchronous. Track the newest operation
+    // per source so a late rejection from an update superseded by a newer one,
+    // or from a map already torn down, cannot hide/fail the current renderer.
+    const sourceDataRevisions = new Map();
     // Summit-snap verdicts by peak, recency-ordered so the least-recently used
     // entry trims first. ~10 dense screenfuls; a long pan session stays bounded.
     const peakSnapCache = new Map();
@@ -315,6 +319,10 @@ import { terrainTiles as TerrainTiles } from './terrain-tiles.js';
         lastPeaksBoundsKey = null;
         peakSnapCache.clear();
         peakFeatures = [];
+        for (const marker of peakMarkers) {
+            try { marker.remove(); } catch (error) { /* Already detached with its map. */ }
+        }
+        peakMarkers = [];
         focusPeakFeature = null;
         peakPointerPoint = null;
         if (peakPointerFrame !== null) {
@@ -325,6 +333,7 @@ import { terrainTiles as TerrainTiles } from './terrain-tiles.js';
             cancelAnimationFrame(viewFrame);
             viewFrame = null;
         }
+        sourceDataRevisions.clear();
         if (rendererCanvas && contextLostHandler && typeof rendererCanvas.removeEventListener === 'function') {
             rendererCanvas.removeEventListener('webglcontextlost', contextLostHandler);
         }
@@ -408,6 +417,64 @@ import { terrainTiles as TerrainTiles } from './terrain-tiles.js';
     const fail = reason => {
         removeTerrain();
         post('error', { reason });
+    };
+
+    const setLayerVisibility = (layerId, visible, terrainMap = map) => {
+        if (!terrainMap || typeof terrainMap.setLayoutProperty !== 'function') return;
+        try {
+            terrainMap.setLayoutProperty(layerId, 'visibility', visible ? 'visible' : 'none');
+        } catch (error) { /* The layer may be mid-style-swap or teardown. */ }
+    };
+
+    // MapLibre 5 returned the source; MapLibre 6 returns Promise<void>. Route
+    // every v6 outcome explicitly and apply it only while this exact source and
+    // revision still belong to the live map. A teardown rejection is expected
+    // stale work, but an active rejection must reach the owning overlay policy.
+    const setSourceData = (sourceId, data, { onSuccess, onFailure } = {}) => {
+        const terrainMap = map;
+        const source = terrainMap && typeof terrainMap.getSource === 'function'
+            ? terrainMap.getSource(sourceId)
+            : null;
+        if (!source || typeof source.setData !== 'function') return false;
+
+        const revision = (sourceDataRevisions.get(sourceId) || 0) + 1;
+        sourceDataRevisions.set(sourceId, revision);
+        const isCurrent = () => {
+            if (map !== terrainMap || sourceDataRevisions.get(sourceId) !== revision) return false;
+            try { return terrainMap.getSource(sourceId) === source; } catch (error) { return false; }
+        };
+        const succeed = () => {
+            if (!isCurrent()) return;
+            try {
+                onSuccess?.(terrainMap, source);
+            } catch (error) {
+                reject(error);
+            }
+        };
+        const reject = error => {
+            if (!isCurrent()) return;
+            try {
+                onFailure?.(error, terrainMap, source);
+            } catch (handlerError) {
+                // Promise handlers must terminate here rather than turning an
+                // already-routed source failure into an unhandled rejection.
+                console.error('Better Peakbagger: 3D source failure handler failed', handlerError);
+            }
+        };
+
+        let outcome;
+        try {
+            outcome = source.setData(data);
+        } catch (error) {
+            reject(error);
+            return false;
+        }
+        if (outcome && typeof outcome.then === 'function') {
+            void Promise.resolve(outcome).then(succeed, reject);
+        } else {
+            succeed();
+        }
+        return true;
     };
 
     const validateRoute = (segments, colors, links, tracks) => {
@@ -1011,9 +1078,19 @@ import { terrainTiles as TerrainTiles } from './terrain-tiles.js';
                 : HIGHLIGHT_COLORS.distance;
             map.setPaintProperty('bpb-highlight', 'circle-color', color);
         }
-        source.setData(valid ? {
+        const data = valid ? {
             type: 'Feature', properties: {}, geometry: { type: 'Point', coordinates }
-        } : { type: 'FeatureCollection', features: [] });
+        } : { type: 'FeatureCollection', features: [] };
+        // Never leave a stale scrubber dot visible while its replacement is
+        // unconfirmed. A successful current update restores it; an active
+        // rejection leaves this optional overlay hidden without killing 3D.
+        setLayerVisibility('bpb-highlight', false);
+        setSourceData('bpb-highlight', data, {
+            onSuccess: terrainMap => setLayerVisibility('bpb-highlight', valid, terrainMap),
+            onFailure: error => {
+                console.warn('Better Peakbagger: 3D highlight update failed', error);
+            }
+        });
     };
 
     // === Peak markers ===
@@ -1074,6 +1151,57 @@ import { terrainTiles as TerrainTiles } from './terrain-tiles.js';
     // The drawn extent of a ring in screen pixels (MapLibre strokes outward
     // from the fill radius), plus the spec's touch allowance.
     const PEAK_HIT_RADIUS = PEAK_MARKERS.ring.radius + PEAK_MARKERS.ring.strokeWidth + PEAK_MARKERS.hitSlopPx;
+
+    // Circle layers sit exactly on MapLibre's terrain depth surface. After a
+    // terrain tile/GeoJSON refresh that coplanar depth can hide the whole ring,
+    // even though queryRenderedFeatures still reports it. MapLibre's DOM
+    // Marker path has an explicit terrain-depth tolerance, so use it for the
+    // fixed-size rings and keep the circle layer as the API-reduced fallback.
+    const replacePeakMarkers = (features, terrainMap) => {
+        for (const marker of peakMarkers) {
+            try { marker.remove(); } catch (error) { /* Already detached. */ }
+        }
+        peakMarkers = [];
+
+        const Marker = globalThis.maplibregl?.Marker;
+        if (typeof Marker !== 'function') return false;
+        try {
+            for (const feature of features) {
+                const state = feature.properties.state;
+                const element = document.createElement('button');
+                element.type = 'button';
+                element.className = 'bpb-terrain-peak-marker';
+                element.title = feature.properties.name;
+                element.setAttribute('aria-label', feature.properties.name);
+                element.style.setProperty('--bpb-peak-color', PEAK_MARKERS.states[state].color);
+                element.addEventListener('click', event => {
+                    event.stopPropagation();
+                    showPeakPopup(feature);
+                });
+                const marker = new Marker({
+                    element,
+                    anchor: 'center',
+                    opacity: PEAK_MARKERS.ring.opacity,
+                    // Peakbagger's summit dots are navigational overlays, not
+                    // ground objects. Keep them readable like the native 2D
+                    // feed even when a coarse terrain depth sample classifies
+                    // their exact summit anchor as covered.
+                    opacityWhenCovered: PEAK_MARKERS.ring.opacity,
+                    subpixelPositioning: true
+                })
+                    .setLngLat(feature.geometry.coordinates)
+                    .addTo(terrainMap);
+                peakMarkers.push(marker);
+            }
+        } catch (error) {
+            for (const marker of peakMarkers) {
+                try { marker.remove(); } catch (removeError) { /* Partially attached. */ }
+            }
+            peakMarkers = [];
+            return false;
+        }
+        return true;
+    };
 
     // Screen-space hit test against the rendered rings. MapLibre's own
     // layer-scoped events cannot be used here: with terrain enabled the
@@ -1276,21 +1404,32 @@ import { terrainTiles as TerrainTiles } from './terrain-tiles.js';
                 .filter(feature => feature.properties.id !== focusPeakFeature.properties.id)
                 .slice(0, PEAK_MARKERS.maxCount - 1)]
             : features;
-        peakFeatures = merged.map(snapToLocalSummit);
-        const source = map && map.getSource(PEAK_MARKERS.sourceId);
-        if (source && typeof source.setData === 'function') {
-            source.setData({ type: 'FeatureCollection', features: peakFeatures });
-        }
-        // The native map rebuilds its markers on every settle, which closes
-        // any open marker popup; mirror that so a popup never outlives the
-        // dot it points at.
-        if (peakPopup) {
-            try { peakPopup.remove(); } catch (error) { /* Already detached. */ }
-            peakPopup = null;
-        }
-        // Keep the hover cursor honest when the dots refresh or clear under a
-        // resting pointer.
-        if (peakPointerPoint) updatePointer(peakPointerPoint);
+        const nextPeakFeatures = merged.map(snapToLocalSummit);
+        setSourceData(PEAK_MARKERS.sourceId, {
+            type: 'FeatureCollection', features: nextPeakFeatures
+        }, {
+            onSuccess: terrainMap => {
+                peakFeatures = nextPeakFeatures;
+                const hasDomMarkers = replacePeakMarkers(nextPeakFeatures, terrainMap);
+                setLayerVisibility(PEAK_MARKERS.layerId, !hasDomMarkers, terrainMap);
+                // The native map rebuilds its markers on every settle, which
+                // closes any open marker popup; mirror that so a popup never
+                // outlives the dot it points at.
+                if (peakPopup) {
+                    try { peakPopup.remove(); } catch (error) { /* Already detached. */ }
+                    peakPopup = null;
+                }
+                // Keep the hover cursor honest when dots refresh or clear
+                // under a resting pointer.
+                if (peakPointerPoint) updatePointer(peakPointerPoint);
+            },
+            onFailure: error => {
+                peakFeatures = [];
+                replacePeakMarkers([], map);
+                setLayerVisibility(PEAK_MARKERS.layerId, false);
+                console.warn('Better Peakbagger: 3D peak update failed', error);
+            }
+        });
     };
 
     // The visible bounds, clamped to boundsFactor × the straight-down viewport
@@ -1590,7 +1729,7 @@ import { terrainTiles as TerrainTiles } from './terrain-tiles.js';
         document.body.append(mapElement);
 
         try {
-            maplibre.setWorkerUrl(chrome.runtime.getURL('vendor/maplibre-gl-csp-worker.js'));
+            maplibre.setWorkerUrl(chrome.runtime.getURL('vendor/maplibre-gl-worker.mjs'));
             terrainCache = TerrainCache.create({ limitMb: cacheLimitMb });
             terrainCacheWarmable = cacheLimitMb > 0;
             maplibre.addProtocol(TerrainCache.PROTOCOL, (parameters, controller) =>
@@ -1627,6 +1766,11 @@ import { terrainTiles as TerrainTiles } from './terrain-tiles.js';
                 maxZoom: 18,
                 attributionControl: false,
                 fadeDuration: 0,
+                // MapLibre 6 defaults this to 4, which changes source
+                // overscaling and queryRenderedFeatures results. Preserve the
+                // v5 behavior for this migration; LOD changes need their own
+                // measured decision.
+                zoomLevelsToOverscale: undefined,
                 // Tilting a few degrees and tilting back is the most common
                 // gesture in this view, and MapLibre's stock retention (5x the
                 // on-screen tile count per source) can evict the tiles of the
@@ -1637,27 +1781,9 @@ import { terrainTiles as TerrainTiles } from './terrain-tiles.js';
                 maxTileCacheZoomLevels: TILE_CACHE_ZOOM_LEVELS
             });
             const terrainMap = map;
-            rendererCanvas = typeof terrainMap.getCanvas === 'function' ? terrainMap.getCanvas() : null;
-            if (rendererCanvas && typeof rendererCanvas.addEventListener === 'function') {
-                contextLostHandler = event => {
-                    if (map !== terrainMap) return;
-                    // We are abandoning this renderer and falling back to the
-                    // native map, so suppress MapLibre's competing restoration
-                    // attempt before tearing its canvas down.
-                    if (event && typeof event.preventDefault === 'function') event.preventDefault();
-                    fail('renderer');
-                };
-                rendererCanvas.addEventListener('webglcontextlost', contextLostHandler);
-            }
-            // Bottom-right, matching the native 2D map's zoom: a compact
-            // attribution ("ⓘ") first so it can't wrap and shove the zoom upward,
-            // then a zoom-only control (no compass) so the stack is the same
-            // two-button height as the 2D zoom and the floating toggle lines up
-            // the same way in both. The 2D camera preserves center and zoom but
-            // has no bearing, so a later 3D transition starts north-up again.
-            terrainMap.addControl(new maplibre.AttributionControl({ compact: true }), 'bottom-right');
-            terrainMap.addControl(new maplibre.NavigationControl({ showCompass: false }), 'bottom-right');
-            terrainMap.addControl(new maplibre.ScaleControl({ maxWidth: 120, unit: 'metric' }), 'bottom-left');
+            // Register the failure route before controls or canvas inspection:
+            // MapLibre 6 reports WebGL2 initialization through its error event,
+            // and no setup step may race ahead and leave the host on a spinner.
             terrainMap.on('error', event => {
                 if (event && event.sourceId === 'basemap') {
                     basemapErrored = true;
@@ -1680,6 +1806,27 @@ import { terrainTiles as TerrainTiles } from './terrain-tiles.js';
                 // coarser level rather than raising an error at all.
                 fail(event && event.sourceId ? 'elevation' : 'maplibre');
             });
+            rendererCanvas = typeof terrainMap.getCanvas === 'function' ? terrainMap.getCanvas() : null;
+            if (rendererCanvas && typeof rendererCanvas.addEventListener === 'function') {
+                contextLostHandler = event => {
+                    if (map !== terrainMap) return;
+                    // We are abandoning this renderer and falling back to the
+                    // native map, so suppress MapLibre's competing restoration
+                    // attempt before tearing its canvas down.
+                    if (event && typeof event.preventDefault === 'function') event.preventDefault();
+                    fail('renderer');
+                };
+                rendererCanvas.addEventListener('webglcontextlost', contextLostHandler);
+            }
+            // Bottom-right, matching the native 2D map's zoom: a compact
+            // attribution ("ⓘ") first so it can't wrap and shove the zoom upward,
+            // then a zoom-only control (no compass) so the stack is the same
+            // two-button height as the 2D zoom and the floating toggle lines up
+            // the same way in both. The 2D camera preserves center and zoom but
+            // has no bearing, so a later 3D transition starts north-up again.
+            terrainMap.addControl(new maplibre.AttributionControl({ compact: true }), 'bottom-right');
+            terrainMap.addControl(new maplibre.NavigationControl({ showCompass: false }), 'bottom-right');
+            terrainMap.addControl(new maplibre.ScaleControl({ maxWidth: 120, unit: 'metric' }), 'bottom-left');
             // A raster tile that loads fires a 'source' data event carrying the
             // tile. One such event proves the drape can render, so a handful of
             // later tile failures must not tear the whole layer down.
@@ -1849,7 +1996,12 @@ import { terrainTiles as TerrainTiles } from './terrain-tiles.js';
         // Route, style, and theme applied to the existing sources/layers.
         const routeSource = typeof map.getSource === 'function' ? map.getSource('bpb-route') : null;
         if (routeSource && typeof routeSource.setData === 'function') {
-            routeSource.setData(route ? route.geojson : { type: 'FeatureCollection', features: [] });
+            setSourceData('bpb-route', route ? route.geojson : { type: 'FeatureCollection', features: [] }, {
+                // Showing the previous trip's route is materially wrong. If
+                // the live worker rejects the replacement, abandon this 3D
+                // renderer and restore the authoritative native 2D map.
+                onFailure: () => fail('renderer')
+            });
         }
         if (routePopup) {
             try { routePopup.remove(); } catch (error) { /* Already detached. */ }

@@ -29,10 +29,17 @@ export const WEB_EXT_WARNING_BASELINE = Object.freeze([
     },
     {
         code: 'UNSAFE_VAR_ASSIGNMENT',
-        file: 'vendor/maplibre-gl-csp.js',
+        file: 'vendor/maplibre-gl-worker.mjs',
+        count: 2,
+        owner: 'MapLibre GL JS 6.2.0 module worker',
+        reason: 'reviewed upstream optional worker-plugin import paths; Better Peakbagger sets only its fixed local worker URL'
+    },
+    {
+        code: 'UNSAFE_VAR_ASSIGNMENT',
+        file: 'vendor/maplibre-gl.js',
         count: 3,
-        owner: 'MapLibre GL JS 5.24.0',
-        reason: 'pinned vendored renderer code'
+        owner: 'MapLibre GL JS 6.2.0 generated wrapper',
+        reason: 'reviewed upstream popup, attribution, and scale HTML paths; extension popups use DOM nodes and attribution is validated'
     },
     {
         code: 'UNSAFE_VAR_ASSIGNMENT',
