@@ -122,6 +122,7 @@ test('3D terrain is isolated from Peakbagger globals in an extension-owned frame
     const analyzerEntry = contentEntry('content/gpx-analyzer.js');
     assert.ok(analyzerEntry);
     assert.equal(analyzerEntry.world, 'MAIN');
+    assert.deepEqual(analyzerEntry.js, ['vendor/chart.umd.min.js', 'content/gpx-analyzer.js']);
     assert.deepEqual(bundleSources('content/gpx-analyzer.js'),
         ['ui/units.js', 'ui/dom.js', 'gpx/gpx-parse.js', 'gpx/map-route-limits.js', 'gpx/gpx-metrics.js', 'gpx/map-frame-lifecycle.js', 'gpx/map-viewport.js', 'gpx/map-overlay.js', 'gpx/gpx-panel-css.js', 'terrain/terrain-basemap.js', 'terrain/terrain-camera.js', 'terrain/terrain-compass.js', 'terrain/terrain-coordinator.js', 'terrain/terrain-failure.js', 'maps/peak-markers.js', 'peakbagger/peakbagger-origin.js', 'peakbagger/peakbagger-cloudflare.js', 'peakbagger/peakbagger-response.js', 'peakbagger/peakbagger-error.js', 'peakbagger/peakbagger-request.js', 'settings/settings-schema.js', 'settings/page-settings-client.js', 'theme/theme-resolve.js', 'gpx/gpx-analyzer.js']);
 
@@ -220,12 +221,20 @@ test('ascent editor integration is isolated to Peakbagger and runtime code never
     const draftEntry = contentEntry('content/ascent-editor.js');
     assert.ok(draftEntry);
     assert.ok(draftEntry.matches.every(pattern => pattern.includes('peakbagger.com/climber/')));
-    // The Markdown parser and the offline tz-lookup raster (copied vendor
-    // scripts) must load before the bundle that reads them.
-    assert.deepEqual(draftEntry.js, ['vendor/marked.umd.js', 'vendor/tz-lookup.js', 'content/ascent-editor.js']);
+    // The Markdown parser remains a separately loaded vendor script; the
+    // offline tz-lookup raster is bundled into the consumer below.
+    assert.deepEqual(draftEntry.js, ['vendor/marked.umd.js', 'content/ascent-editor.js']);
     assert.deepEqual(draftEntry.css, ['css/report-editor.css', 'css/ascent-upload.css']);
     assert.deepEqual(bundleSources('content/ascent-editor.js'),
         ['ui/units.js', 'capture/match-confidence.js', 'capture/upload-limits.js', 'peakbagger/peakbagger-origin.js', 'ascent/ascent-draft.js', 'gpx/gpx-parse.js', 'settings/settings-schema.js', 'settings/settings.js', 'ascent/ascent-upload.js', 'ascent/ascent-saved.js', 'ascent/ascent-delete.js', 'reports/report-markup.js', 'reports/report-drafts.js', 'ui/dom.js', 'ui/runtime-message.js', 'reports/report-editor.js']);
+    const timezoneConsumers = await Promise.all([
+        'src/ascent/ascent-upload.js',
+        'src/gpx/gpx-analyzer.js'
+    ].map(path => fs.readFile(new URL(`../../${path}`, import.meta.url), 'utf8')));
+    for (const source of timezoneConsumers) {
+        assert.match(source, /import tzlookup from ['"]tz-lookup['"]/);
+        assert.doesNotMatch(source, /globalThis\.tzlookup/);
+    }
     const runtimeSource = await Promise.all([
         'src/ascent/ascent-draft.js',
         'src/background/background.js',

@@ -581,7 +581,6 @@ test('a bound page can only ever fill itself for its own peak', async () => {
 // The sink carries worker→page delivery outside the harness's tab objects,
 // which must stay structuredClone-able for the worker's tabs.get stub.
 const wireWorkerToPage = (harness, sink) => dom => {
-    dom.window.tzlookup = () => 'UTC';
     const pageListeners = [];
     dom.chrome.runtime.sendMessage = message =>
         harness.send(structuredClone(message), { tab: { id: 5, windowId: 9 }, url: dom.window.location.href });

@@ -17,6 +17,7 @@ import { matchLabel, matchTone } from '../capture/match-confidence.js';
 import { gpxParse } from '../gpx/gpx-parse.js';
 import { settings as Settings } from '../settings/settings.js';
 import { units as Units } from '../ui/units.js';
+import tzlookup from 'tz-lookup';
 
 (() => {
     'use strict';
@@ -51,9 +52,9 @@ import { units as Units } from '../ui/units.js';
     // ---- Offline timezone: track start coordinate → UTC offset -------------
     //
     // Provider metadata carries an activity's local start; a bare file does
-    // not. Resolve the IANA zone from the packaged tz-lookup raster (loaded as
-    // a vendor script ahead of this bundle) and read its offset at the track's
-    // start instant via Intl — entirely offline, per docs/mountain-local-time.md.
+    // not. Resolve the IANA zone from the tz-lookup raster bundled into this
+    // content script and read its offset at the track's start instant via Intl
+    // — entirely offline, per docs/mountain-local-time.md.
     // Failures fall back to the longitude estimate, exactly as the analyzer's.
 
     const zoneOffsetMinutes = (timeZone, atMs) => {
@@ -74,10 +75,8 @@ import { units as Units } from '../ui/units.js';
         const timed = points.find(point => Number.isFinite(point.time));
         const referenceMs = timed ? timed.time : Date.now();
         try {
-            if (typeof globalThis.tzlookup === 'function') {
-                const offset = zoneOffsetMinutes(globalThis.tzlookup(start.lat, start.lon), referenceMs);
-                if (Number.isFinite(offset)) return offset;
-            }
+            const offset = zoneOffsetMinutes(tzlookup(start.lat, start.lon), referenceMs);
+            if (Number.isFinite(offset)) return offset;
         } catch (_error) {
             // Out-of-range coordinates or a zone id unknown to this browser's
             // ICU keep the labelled solar estimate below.

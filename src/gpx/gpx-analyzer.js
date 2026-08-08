@@ -20,6 +20,7 @@ import { settingsSchema as Schema } from '../settings/settings-schema.js';
 import { themeResolve as ThemeResolve } from '../theme/theme-resolve.js';
 import { pageSettingsClient as PageSettingsClient } from '../settings/page-settings-client.js';
 import { peakMarkers } from '../maps/peak-markers.js';
+import tzlookup from 'tz-lookup';
 import { terrainBasemap } from '../terrain/terrain-basemap.js';
 import { terrainCompass as TerrainCompass } from '../terrain/terrain-compass.js';
 import { terrainCoordinator as TerrainCoordinator } from '../terrain/terrain-coordinator.js';
@@ -30,7 +31,8 @@ import { mapFrameLifecycle as MapFrameLifecycle } from './map-frame-lifecycle.js
 import { mapOverlay as MapOverlay } from './map-overlay.js';
 import { gpxPanelCss } from './gpx-panel-css.js';
 
-// Chart and tzlookup remain separately-loaded vendor globals (see manifest).
+// Chart remains a separately-loaded vendor global (see manifest). tz-lookup is
+// bundled so Peakbagger page scripts cannot replace the offline resolver.
 const run = async () => {
     const { METERS_PER_MILE, FEET_PER_METER } = Units;
     const MAP_VIEWPORT_MIN_WIDTH = Schema.BOUNDS.viewportWidth.min;
@@ -283,9 +285,9 @@ const run = async () => {
         // 2. Formatting Helpers
         // Clock times and day boundaries use the climb's local time, not the
         // viewer's. The track's starting coordinate resolves to an IANA zone
-        // via the bundled offline tz-lookup raster (vendor/tz-lookup.js), so
+        // via the offline tz-lookup raster bundled into this script, so
         // Intl applies the political zone and DST rules for the trip's date.
-        // If the lookup is unavailable the offset falls back to solar time
+        // If the resolver or formatter throws, the offset falls back to solar time
         // rounded to the whole hour from the start longitude, and the stats
         // bar labels that estimate. GPX timestamps are UTC; the fallback
         // shifts the epoch and formats in UTC to get the same wall clock.
@@ -1344,12 +1346,10 @@ const run = async () => {
             if (startPoint) {
                 mountainOffsetMs = Math.round(startPoint.lon / 15) * 3600000;
                 try {
-                    if (typeof globalThis.tzlookup === 'function') {
-                        mountainTimeZone = globalThis.tzlookup(startPoint.lat, startPoint.lon);
-                        mountainDayFormatter = new Intl.DateTimeFormat('en-CA', {
-                            timeZone: mountainTimeZone, year: 'numeric', month: '2-digit', day: '2-digit'
-                        });
-                    }
+                    mountainTimeZone = tzlookup(startPoint.lat, startPoint.lon);
+                    mountainDayFormatter = new Intl.DateTimeFormat('en-CA', {
+                        timeZone: mountainTimeZone, year: 'numeric', month: '2-digit', day: '2-digit'
+                    });
                 } catch (e) {
                     // A zone id from the packaged raster may be unknown to this
                     // browser's ICU after a tzdata rename. Keep the labelled

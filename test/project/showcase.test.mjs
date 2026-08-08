@@ -52,10 +52,8 @@ test('3D terrain showcase uses the production renderer with a synthetic route', 
         assert.match(source, /runtime:\s*\{\s*getURL:\s*path\s*=>\s*new URL\(/,
             `${name} terrain bridge requires an absolute chrome.runtime.getURL() result`);
     }
-    const timezoneIndex = terrainShowcase.indexOf('/dist/vendor/tz-lookup.js');
-    const analyzerIndex = terrainShowcase.indexOf('/dist/content/gpx-analyzer.js');
-    assert.ok(timezoneIndex >= 0 && timezoneIndex < analyzerIndex,
-        'the terrain analyzer must load the production timezone raster first');
+    assert.doesNotMatch(terrainShowcase, /vendor\/tz-lookup\.js/,
+        'the analyzer bundle owns the timezone raster instead of a page global');
     assert.match(terrainShowcase, /enable3dMap:\s*true/);
     assert.doesNotMatch(terrainShowcase, /bpb-terrain-disclosure/);
     assert.match(terrainGpx, /Synthetic Mount Baker terrain check/);

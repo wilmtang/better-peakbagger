@@ -44,7 +44,7 @@ export function buildAmoMetadata({ licenseText, description }) {
                 '',
                 'vendor/maplibre-gl.js is an esbuild-generated classic browser global around the MapLibre GL JS 6.2.0 ESM distribution (BSD-3-Clause). vendor/maplibre-gl-worker.mjs, vendor/maplibre-gl-shared.mjs, and vendor/maplibre-gl.css are copied unmodified from that package. Package: https://www.npmjs.com/package/maplibre-gl/v/6.2.0 ; readable source: https://github.com/maplibre/maplibre-gl-js/tree/v6.2.0',
                 '',
-                'vendor/tz-lookup.js is an esbuild-generated browser IIFE around the tz-lookup 6.1.25 CommonJS distribution (CC0-1.0), with no application changes to its offline coordinate-to-IANA-timezone data or lookup logic. Package: https://www.npmjs.com/package/tz-lookup/v/6.1.25 ; readable source: https://github.com/darkskyapp/tz-lookup',
+                'The tz-lookup 6.1.25 CommonJS distribution (CC0-1.0) is bundled by esbuild into content/gpx-analyzer.js and content/ascent-editor.js, with no application changes to its offline coordinate-to-IANA-timezone data or lookup logic. Package: https://www.npmjs.com/package/tz-lookup/v/6.1.25 ; readable source: https://github.com/darkskyapp/tz-lookup',
                 '',
                 'The optional 3D view is off by default. Its General setting discloses external tile requests; after it is enabled, an explicit 3D terrain action loads elevation data (not code) from https://tiles.mapterhorn.com and may re-request the selected map layer from its provider. Those services receive the viewed area and request metadata. Returning to 2D destroys the renderer.',
                 '',

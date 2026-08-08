@@ -73,11 +73,11 @@ Better Peakbagger bundles TipTap 3.28.0 and its ProseMirror dependencies into
 
 ### tz-lookup
 
-Better Peakbagger uses esbuild to wrap the `tz-lookup` 6.1.25 CommonJS
-distribution as `vendor/tz-lookup.js`, without application changes to its
-coordinate-to-timezone data or lookup logic. It resolves the GPX track's
-starting coordinate to an IANA timezone entirely offline so chart times can be
-shown in the climb's local time.
+Better Peakbagger uses esbuild to bundle the `tz-lookup` 6.1.25 CommonJS
+distribution directly into the GPX analyzer and ascent editor, without
+application changes to its coordinate-to-timezone data or lookup logic. It
+resolves the GPX track's starting coordinate to an IANA timezone entirely
+offline so chart times can be shown in the climb's local time.
 
 - Project: [tz-lookup](https://github.com/darkskyapp/tz-lookup)
 - Source: [tz-lookup 6.1.25](https://www.npmjs.com/package/tz-lookup/v/6.1.25)

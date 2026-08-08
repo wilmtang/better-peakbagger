@@ -11,10 +11,8 @@ import { readCompressedGpxFixture } from '../helpers/gpx-fixtures.mjs';
 import { waitFor } from '../helpers/load-page.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
-// tz-lookup stays a separately-loaded vendor global (its absence is a tested
-// degradation path); the MAIN-world analyzer bundle carries metrics, basemap,
-// the peak-marker feed, schema, and the analyzer itself.
-const tzLookupSource = await readFile(path.join(root, 'dist', 'vendor', 'tz-lookup.js'), 'utf8');
+// The MAIN-world analyzer bundle carries tz-lookup, metrics, basemap, the
+// peak-marker feed, schema, and the analyzer itself.
 const analyzerBundle = await readFile(path.join(root, 'dist', 'content', 'gpx-analyzer.js'), 'utf8');
 const capitolRegressionGpx =
     await readCompressedGpxFixture('capitol-2021-segment-order.gpx.gz.b64');
@@ -586,7 +584,7 @@ test('GPX analyzer adds a thick, segment-preserving route casing behind native L
 // mountain's local midnight but not UTC midnight, so the Day 2 labels and
 // the camping spot below only appear when day boundaries are computed in
 // the mountain's timezone — regardless of the machine running this test.
-const loadOvernightAnalyzer = async ({ withTzLookup, elevations = [1000, 1200, 1400, 1600, 2000, 1600, 1200] }) => {
+const loadOvernightAnalyzer = async ({ forceTimeZoneFailure = false, elevations = [1000, 1200, 1400, 1600, 2000, 1600, 1200] } = {}) => {
     const points = elevations.map((ele, index) =>
         `<trkpt lat="${(48.7 + index * 0.01).toFixed(2)}" lon="-121.8000"><ele>${ele}</ele>`
         + `<time>2026-07-10T${String(5 + index).padStart(2, '0')}:00:00Z</time></trkpt>`).join('\n');
@@ -601,6 +599,14 @@ const loadOvernightAnalyzer = async ({ withTzLookup, elevations = [1000, 1200, 1
     });
     const { window } = dom;
     window.matchMedia = () => ({ matches: false });
+    if (forceTimeZoneFailure) {
+        const NativeDateTimeFormat = window.Intl.DateTimeFormat;
+        window.Intl.DateTimeFormat = function DateTimeFormat(locales, options) {
+            if (options?.timeZone) throw new RangeError('unsupported test timezone');
+            return new NativeDateTimeFormat(locales, options);
+        };
+        window.Intl.DateTimeFormat.prototype = NativeDateTimeFormat.prototype;
+    }
     window.HTMLCanvasElement.prototype.getContext = () => ({});
     window.fetch = async () => ({ ok: true, text: async () => overnightGpx });
     window.Chart = class ChartStub {
@@ -620,7 +626,6 @@ const loadOvernightAnalyzer = async ({ withTzLookup, elevations = [1000, 1200, 1
     };
 
     Object.defineProperty(window.document, 'readyState', { configurable: true, value: 'complete' });
-    if (withTzLookup) window.eval(tzLookupSource);
     window.eval(analyzerBundle);
     const analysisText = () => window.document.getElementById('bpb-gpx-analysis')?.textContent || '';
     await waitFor(dom, () => analysisText().includes('Possible Camping'));
@@ -944,7 +949,7 @@ test('a late or replaced map frame atomically receives every analyzer map featur
 });
 
 test('chart times use the mountain’s IANA timezone, not the viewer’s', async () => {
-    const { dom, analysisText } = await loadOvernightAnalyzer({ withTzLookup: true });
+    const { dom, analysisText } = await loadOvernightAnalyzer();
 
     assert.match(analysisText(), /Summit time: Day 2/,
         'the summit after mountain-local midnight must be labelled Day 2');
@@ -955,8 +960,8 @@ test('chart times use the mountain’s IANA timezone, not the viewer’s', async
     dom.window.close();
 });
 
-test('without the timezone raster, times fall back to a labelled longitude estimate', async () => {
-    const { dom, analysisText } = await loadOvernightAnalyzer({ withTzLookup: false });
+test('when the resolved timezone is unavailable, times fall back to a labelled longitude estimate', async () => {
+    const { dom, analysisText } = await loadOvernightAnalyzer({ forceTimeZoneFailure: true });
 
     assert.match(analysisText(), /Summit time: Day 2/);
     assert.match(analysisText(), /Possible Camping: Day 1/);
@@ -968,7 +973,6 @@ test('without the timezone raster, times fall back to a labelled longitude estim
 
 test('overnight camping remains visible when the track starts at its highest point', async () => {
     const { dom, analysisText } = await loadOvernightAnalyzer({
-        withTzLookup: true,
         elevations: [2200, 2000, 1800, 1600, 1400, 1200, 1000]
     });
 
@@ -1016,7 +1020,6 @@ const loadElevationAnalyzer = async (gpxSource, {
     clipboard,
     theme = 'light',
     withMap = false,
-    tzlookup,
     settings = {},
 } = {}) => {
     const dom = new JSDOM(`<!doctype html><body>
@@ -1097,7 +1100,6 @@ const loadElevationAnalyzer = async (gpxSource, {
         };
     }
     window.matchMedia = () => ({ matches: false });
-    if (tzlookup) window.tzlookup = tzlookup;
     window.HTMLCanvasElement.prototype.getContext = () => ({});
     window.fetch = async () => ({ ok: true, text: async () => gpxSource });
     if (clipboard) {
@@ -1174,9 +1176,9 @@ test('GPX analyzer drops points whose elevation is missing or invalid', async ()
 
 test('GPX analyzer renders timed coordinate-only data as route progress', async () => {
     const source = `<?xml version="1.0"?><gpx><trk><trkseg>
-      <trkpt lat="47" lon="-121"><time>2026-07-10T07:30:00Z</time></trkpt>
-      <trkpt lat="47" lon="-121.001"><ele>unknown</ele><time>2026-07-10T08:30:00Z</time></trkpt>
-      <trkpt lat="47" lon="-121.002"><time>2026-07-10T09:30:00Z</time></trkpt>
+      <trkpt lat="47" lon="-121"><time>2026-07-10T06:30:00Z</time></trkpt>
+      <trkpt lat="47" lon="-121.001"><ele>unknown</ele><time>2026-07-10T07:30:00Z</time></trkpt>
+      <trkpt lat="47" lon="-121.002"><time>2026-07-10T08:30:00Z</time></trkpt>
     </trkseg></trk></gpx>`;
     const { dom, analysisText, chartConfig, polylineCalls } = await loadElevationAnalyzer(source, { withMap: true });
 
@@ -1335,42 +1337,35 @@ test('GPX analyzer sorts a combined track only for the time series', async () =>
 test('GPX analyzer safely sequences reversed multi-day segments without reordering the map', async () => {
     const source = `<?xml version="1.0"?><gpx><trk>
       <trkseg>
-        <trkpt lat="48.200" lon="-121.200"><ele>130</ele><time>2026-07-11T16:00:00Z</time></trkpt>
-        <trkpt lat="48.300" lon="-121.300"><ele>120</ele><time>2026-07-11T17:00:00Z</time></trkpt>
+        <trkpt lat="40.000" lon="-105.000"><ele>130</ele><time>2026-07-11T16:00:00Z</time></trkpt>
+        <trkpt lat="40.100" lon="-105.100"><ele>120</ele><time>2026-07-11T17:00:00Z</time></trkpt>
       </trkseg>
       <trkseg>
         <trkpt lat="47.000" lon="-121.000"><ele>100</ele><time>2026-07-10T16:00:00Z</time></trkpt>
         <trkpt lat="47.100" lon="-121.100"><ele>110</ele><time>2026-07-10T23:00:00Z</time></trkpt>
       </trkseg>
     </trk></gpx>`;
-    const timezoneLookups = [];
     const { dom, analysisText, chartConfig, polylineCalls } =
-        await loadElevationAnalyzer(source, {
-            withMap: true,
-            tzlookup: (lat, lon) => {
-                timezoneLookups.push([lat, lon]);
-                return 'UTC';
-            }
-        });
+        await loadElevationAnalyzer(source, { withMap: true });
 
     await waitFor(dom, () => chartConfig() !== null);
     await waitFor(dom, () => polylineCalls.length === 2);
     const [distanceSeries, timeSeries] = chartConfig().data.datasets;
-    assert.deepEqual(Array.from(distanceSeries.data, point => point._raw?.lat ?? null), [47, 47.1, null, 48.2, 48.3],
+    assert.deepEqual(Array.from(distanceSeries.data, point => point._raw?.lat ?? null), [47, 47.1, null, 40, 40.1],
         'distance analysis must use safe chronological whole-segment order');
     assert.ok(distanceSeries.data.at(-1)._raw.distM > 25_000
         && distanceSeries.data.at(-1)._raw.distM < 30_000,
     `distance analysis must not bridge the segment gap, got ${distanceSeries.data.at(-1)._raw.distM} m`);
-    assert.deepEqual(Array.from(timeSeries.data, point => point._raw?.lat ?? null), [47, 47.1, null, 48.2, 48.3],
+    assert.deepEqual(Array.from(timeSeries.data, point => point._raw?.lat ?? null), [47, 47.1, null, 40, 40.1],
         'time analysis must span the segments chronologically');
     assert.equal(chartConfig().options.scales.xTime.min, Date.parse('2026-07-10T16:00:00Z'));
     assert.equal(chartConfig().options.scales.xTime.max, Date.parse('2026-07-11T17:00:00Z'));
-    assert.deepEqual(timezoneLookups, [[47, -121]],
+    assert.match(analysisText(), /Times in the mountain’s local time \(PDT\)/,
         'mountain time must come from the earliest route point, not the first appended segment');
     assert.match(analysisText(), /Possible Camping: Day 1 \(47\.10000, -121\.10000\)/,
         'camping inference must use the last chronological point before the local day boundary');
     assert.deepEqual(JSON.parse(JSON.stringify(polylineCalls[0].latLngs)), [
-        [[48.2, -121.2], [48.3, -121.3]],
+        [[40, -105], [40.1, -105.1]],
         [[47, -121], [47.1, -121.1]]
     ], 'the map overlay must retain GPX segment order and boundaries');
 

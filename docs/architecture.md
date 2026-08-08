@@ -122,11 +122,12 @@ Three files divide assembly responsibility:
   never edited directly.
 
 Every entry point becomes a self-contained classic IIFE bundle. ES imports
-determine module evaluation order inside a bundle. Chart.js, MapLibre, marked,
-and `tz-lookup` remain separately loaded browser globals because their scripts
-are deliberately ordered by the manifest or terrain frame HTML. MapLibre's
-global is generated from its ESM main module; its module worker and shared
-module remain separate, unmodified package artifacts.
+determine module evaluation order inside a bundle. Chart.js and marked remain
+copied browser globals ordered by the manifest, and MapLibre's generated global
+is ordered by terrain frame HTML. `tz-lookup` is bundled directly into its two
+content-script consumers so page code cannot clobber the offline resolver.
+MapLibre's module worker and shared module remain separate, unmodified package
+artifacts.
 
 The worker ships once as `dist/background.js`. Chrome references it as the
 service worker and Firefox references the same file as its background script.

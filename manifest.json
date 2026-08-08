@@ -54,7 +54,6 @@
       ],
       "js": [
         "vendor/marked.umd.js",
-        "vendor/tz-lookup.js",
         "content/ascent-editor.js"
       ],
       "run_at": "document_end",
@@ -126,7 +125,6 @@
       ],
       "js": [
         "vendor/chart.umd.min.js",
-        "vendor/tz-lookup.js",
         "content/gpx-analyzer.js"
       ],
       "run_at": "document_end",

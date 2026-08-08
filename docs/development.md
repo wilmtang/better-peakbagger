@@ -293,23 +293,24 @@ exactly by `package-lock.json`. The build sources them from `node_modules` into
 - **MapLibre 6** ships ESM only. The build esbuild-wraps its main module as the
   separately loaded `maplibregl` classic global, then copies its module worker,
   shared worker module, stylesheet, and license verbatim.
-- **tz-lookup** ships only CommonJS, so the build esbuild-wraps it into a
-  `tzlookup` browser global.
+- **tz-lookup** ships only CommonJS, so esbuild bundles it directly into the GPX
+  analyzer and ascent-editor bundles that import it.
 
-These stay **separately-loaded browser globals** (`Chart`, `tzlookup`,
-`maplibregl`, `marked`) rather than being bundled into the modules that use
-them, because the manifest loads them as their own scripts and some code paths
-degrade gracefully when a vendor global is absent. "Zero globals" means no
-Better Peakbagger module uses a global as an internal dependency; it does not
-refer to third-party UMD APIs or the provider boundary below.
+Chart, MapLibre, and marked stay **separately-loaded browser globals** because
+the manifest or terrain frame orders their browser artifacts. tz-lookup is an
+ordinary bundled dependency: manifest content scripts cannot be module entry
+points, and bundling avoids exposing its resolver through the page namespace.
+"Zero globals" means no Better Peakbagger module uses a global as an internal
+dependency; it does not refer to third-party UMD APIs or the provider boundary
+below.
 
 To add or update a runtime dependency:
 
 1. Run `npm install --save-dev <pkg>@<version>` and commit both package files.
 2. Import an ordinary bundled dependency from the consuming module. For a
    separately loaded browser build, add its npm path, destination, and license
-   to `VENDOR_COPY`; use an esbuild wrapper like `VENDOR_TZ` only when an entry
-   must stay a separate global.
+   to `VENDOR_COPY`; generate a wrapper only when an entry must stay a separate
+   global.
 3. Update `ACKNOWLEDGEMENTS.md` and Firefox review metadata when distributed
    third-party code or its version changes.
 4. Run `npm test`, the relevant real-browser check, and `npm run package` when

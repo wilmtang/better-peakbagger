@@ -29,7 +29,6 @@ import {
     COPY_DIRS,
     VENDOR_COPY,
     VENDOR_MAPLIBRE,
-    VENDOR_TZ,
     nodeModule,
     entrySources,
     root,
@@ -78,39 +77,27 @@ async function copyAssets() {
         await mkdir(path.dirname(dest), { recursive: true });
         await copyFile(nodeModule(from), dest);
     }
-    await Promise.all([
-        build({
-            entryPoints: [nodeModule(VENDOR_TZ.entry)],
-            outfile: path.join(distDir, VENDOR_TZ.out),
-            bundle: true,
-            format: 'iife',
-            globalName: VENDOR_TZ.globalName,
-            minify: true,
-            legalComments: 'none',
-            logLevel: 'warning',
-        }),
-        build({
-            entryPoints: [nodeModule(VENDOR_MAPLIBRE.entry)],
-            outfile: path.join(distDir, VENDOR_MAPLIBRE.out),
-            bundle: true,
-            format: 'iife',
-            globalName: VENDOR_MAPLIBRE.globalName,
-            target: ['chrome110', 'firefox115'],
-            platform: 'browser',
-            // Preserve the upstream module's worker auto-detection as a safe
-            // fallback even though terrain-frame.js sets the explicit local
-            // worker URL before constructing a map. Capturing currentScript in
-            // the banner avoids evaluating it later while terrain-frame.js is
-            // the active script.
-            banner: {
-                js: 'var __bpbMapLibreImportMetaUrl = document.currentScript && document.currentScript.src || "";'
-            },
-            define: { 'import.meta.url': '__bpbMapLibreImportMetaUrl' },
-            minify: true,
-            legalComments: 'none',
-            logLevel: 'warning',
-        })
-    ]);
+    await build({
+        entryPoints: [nodeModule(VENDOR_MAPLIBRE.entry)],
+        outfile: path.join(distDir, VENDOR_MAPLIBRE.out),
+        bundle: true,
+        format: 'iife',
+        globalName: VENDOR_MAPLIBRE.globalName,
+        target: ['chrome110', 'firefox115'],
+        platform: 'browser',
+        // Preserve the upstream module's worker auto-detection as a safe
+        // fallback even though terrain-frame.js sets the explicit local
+        // worker URL before constructing a map. Capturing currentScript in
+        // the banner avoids evaluating it later while terrain-frame.js is
+        // the active script.
+        banner: {
+            js: 'var __bpbMapLibreImportMetaUrl = document.currentScript && document.currentScript.src || "";'
+        },
+        define: { 'import.meta.url': '__bpbMapLibreImportMetaUrl' },
+        minify: true,
+        legalComments: 'none',
+        logLevel: 'warning',
+    });
 }
 
 // esbuild takes one entry file per output. For a multi-module bundle we feed it

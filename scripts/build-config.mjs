@@ -11,10 +11,10 @@
 //
 // ES imports define dependency evaluation order. The order here remains
 // significant for independent side-effect roots, and is pinned by tests.
-// Vendor globals (Chart, tzlookup, marked, maplibregl) are still delivered as
+// Vendor globals (Chart, marked, maplibregl) are still delivered as
 // separate copied/generated scripts loaded ahead of the bundle that reads them
 // — see the manifest and terrain.html — so they are not listed as bundle
-// sources here.
+// sources here. tz-lookup is imported into its consuming bundles instead.
 
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -140,10 +140,6 @@ export const VENDOR_COPY = [
     ['maplibre-gl/LICENSE.txt', 'vendor/maplibre-LICENSE.txt'],
     ['tz-lookup/LICENSE', 'vendor/tz-lookup-LICENSE.txt'],
 ];
-
-// tz-lookup ships CommonJS only, so esbuild wraps it into a browser global
-// (var tzlookup = …) that the MAIN-world GPX analyzer reads as globalThis.tzlookup.
-export const VENDOR_TZ = { entry: 'tz-lookup/tz.js', out: 'vendor/tz-lookup.js', globalName: 'tzlookup' };
 
 // MapLibre 6 no longer publishes a classic UMD or CSP build. Keep the renderer
 // outside terrain-frame.js (and therefore replaceable by the lifecycle tests)

@@ -27,7 +27,6 @@ const loadEditor = ({ prepare = null, url = URL, respond = null, settings = {} }
     bundles: BUNDLES,
     fixtures: PAGE_FIXTURES,
     prepare: d => {
-        d.window.tzlookup = () => 'America/Vancouver';
         if (respond) {
             d.messages = [];
             d.chrome.runtime.sendMessage = async message => {

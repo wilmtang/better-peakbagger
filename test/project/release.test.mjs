@@ -9,7 +9,6 @@ import {
     ENTRIES,
     VENDOR_COPY,
     VENDOR_MAPLIBRE,
-    VENDOR_TZ,
 } from '../../scripts/build-config.mjs';
 import {
     buildFirefoxPackage,
@@ -90,7 +89,6 @@ async function makeReleaseZip(extraFiles = {}, omittedFiles = []) {
         ...Object.fromEntries(COPY_FILES.map(([, out]) => [out, `copy:${out}`])),
         ...Object.fromEntries(VENDOR_COPY.map(([, out]) => [out, `vendor:${out}`])),
         [VENDOR_MAPLIBRE.out]: 'vendor:maplibre',
-        [VENDOR_TZ.out]: 'vendor:tz-lookup',
         'icons/icon-128.png': 'icon',
         'manifest.json': JSON.stringify({
             version: '1.4.0',

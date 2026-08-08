@@ -14,8 +14,10 @@ bar discloses it: *"Times in the mountain's local time (PDT)"*.
 The track's **starting coordinate** is resolved to an IANA timezone by
 [`tz-lookup` 6.1.25](https://www.npmjs.com/package/tz-lookup/v/6.1.25), a
 dependency-free ~73 KB raster that answers entirely offline. The locked npm
-package ships CommonJS, so the build wraps it with esbuild as
-`dist/vendor/tz-lookup.js`; the coordinate data and lookup logic are unchanged.
+package ships CommonJS, so esbuild bundles it directly into the two consumers,
+`dist/content/gpx-analyzer.js` and `dist/content/ascent-editor.js`; the
+coordinate data and lookup logic are unchanged. There is no page-owned global
+for Peakbagger or another extension to replace.
 
 - **Why not an accurate polygon library?** `geo-tz` carries ~100 MB of
   boundary data and needs Node file access — unusable in a content script.
@@ -68,7 +70,7 @@ repair incorrect source chronology.
 
 ## Why an offline whole-earth lookup can still fail
 
-Every point on earth has a zone, but three failure paths are real, and all of
+Every point on earth has a zone, but two failure paths are real, and both of
 them must degrade instead of breaking the analysis panel:
 
 1. **Out-of-range coordinates.** `tzlookup` throws
@@ -82,15 +84,12 @@ them must degrade instead of breaking the analysis panel:
    can throw on an id the browser no longer (or does not yet) know. ICU
    keeps aliases, so this is rare — but the vendored raster is frozen while
    users' browsers update for years.
-3. **Missing global.** MAIN-world scripts share the page's global namespace
-   with Peakbagger's scripts and other extensions, so `globalThis.tzlookup`
-   can be absent (packaging or ordering regression) or clobbered. The guard
-   also lets the focused fallback test load the analyzer without the raster.
 
-**Fallback:** on any of these, times use solar time rounded to the whole hour
+**Fallback:** on either failure, times use solar time rounded to the whole hour
 from the start longitude (`Math.round(lon / 15)`), and the hint honestly
 changes to *"(UTC−8, estimated from longitude)"*. The chart never dies on an
-uncaught timezone exception.
+uncaught timezone exception. Because the resolver is a bundled import, a
+missing dependency is a build failure rather than a runtime ordering state.
 
 ## Performance
 
@@ -106,4 +105,4 @@ UTC-minute bucket can never straddle the climb zone's local midnight.
 *mountain's* local midnight but **not** UTC midnight, so its `Day 2` and
 camping assertions hold regardless of the timezone of the machine running the
 tests. One test asserts the IANA path (PDT hint), a second asserts the
-labelled longitude fallback when the raster is not loaded.
+labelled longitude fallback when the browser rejects the resolved timezone.
