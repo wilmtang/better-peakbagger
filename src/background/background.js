@@ -410,12 +410,13 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
                 return;
             }
             const tab = await ext.tabs.get(tabId);
-            if (!tab.url || tab.url !== expectedUrl) {
+            const startingActivity = providerFromUrl(tab?.url);
+            if (!sameProviderActivity(startingActivity, expectedActivity)) {
                 await failCaptureJob(
                     tabId,
                     generation,
-                    'page-changed',
-                    'The active tab changed before capture started.',
+                    'activity-changed',
+                    'The activity page changed before capture started.',
                 );
                 return;
             }

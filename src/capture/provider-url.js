@@ -8,6 +8,7 @@
 export const providerFromUrl = urlValue => {
     try {
         const url = new URL(urlValue);
+        if (url.protocol !== 'https:') return null;
         // Garmin redirects its legacy /modern/activity route to /app/activity.
         // Accept both so a toolbar click that races that navigation still
         // identifies the same activity; generated links remain canonical.

@@ -24,6 +24,16 @@ test('providerFromUrl accepts Garmin activity URLs on both sides of its redirect
     assert.deepEqual(providerFromUrl('https://connect.garmin.com/modern/activity/999'), activity);
 });
 
+test('providerFromUrl ignores URL spelling but rejects unsupported origins', () => {
+    const activity = { provider: 'garmin', activityId: '999' };
+    assert.deepEqual(providerFromUrl('https://connect.garmin.com/app/activity/999?source=redirect#details'), activity);
+    for (const url of [
+        'http://connect.garmin.com/app/activity/999',
+        'https://connect.garmin.com.evil.example/app/activity/999',
+        'ftp://www.strava.com/activities/999',
+    ]) assert.equal(providerFromUrl(url), null, url);
+});
+
 test('providerActivityUrl returns null for junk ids, unknown providers, and local GPX', () => {
     assert.equal(providerActivityUrl({ provider: 'garmin', activityId: 'abc' }), null);
     assert.equal(providerActivityUrl({ provider: 'garmin', activityId: '' }), null);

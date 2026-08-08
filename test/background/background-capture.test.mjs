@@ -18,7 +18,7 @@ const event = () => {
 
 const createHarness = ({ peakXml = null, captureResult = null, ownershipResult = null, settings = {}, beforePeakFetch = null,
     beforePeakbaggerLogin = null,
-    beforeProviderCapture = null, beforeBadgeText = null, groupError = null, faults = {},
+    beforeProviderCapture = null, beforeBadgeText = null, beforeTabGet = null, groupError = null, faults = {},
     loginHtml = '<a href="climber/climber.aspx?cid=77">My Home Page</a>' } = {}) => {
     const values = {};
     const localValues = {};
@@ -51,6 +51,7 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
     let tabNavigationCalls = 0;
     let draftSetCalls = 0;
     let badgeTextCalls = 0;
+    let tabGetCalls = 0;
     const loggedErrors = [];
     const capture = captureResult || {
         ok: true,
@@ -149,7 +150,11 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
             }
         },
         tabs: {
-            get: async tabId => structuredClone(tabs.get(tabId)),
+            get: async tabId => {
+                tabGetCalls++;
+                if (beforeTabGet) await beforeTabGet({ number: tabGetCalls, tabId, tabs });
+                return structuredClone(tabs.get(tabId));
+            },
             create: async details => {
                 if (faults.tabCreate) throw new Error(faults.tabCreate);
                 tabCreateCalls++;
@@ -812,6 +817,83 @@ test('a capture that finishes for a different activity is not reused after navig
     assert.equal(firstJob.phase, 'ready');
     assert.notEqual(secondJob.id, firstJob.id,
         'the completed job for the previous activity must not answer a capture of the new activity');
+});
+
+test('capture follows canonical provider identity across Garmin redirects and URL decoration', async () => {
+    const owned = { ok: true, provider: 'garmin', activityId: '123', viewerId: '42', authorId: '42' };
+    const exported = {
+        ok: true,
+        provider: 'garmin',
+        activityId: '123',
+        metadata: { title: 'Garmin hike', utcOffsetMinutes: 0 },
+        segments: [[
+            { lat: 0, lon: -0.001, ele: 100, time: Date.UTC(2026, 6, 1, 15, 0) },
+            { lat: 0, lon: 0, ele: 130, time: Date.UTC(2026, 6, 1, 16, 0) },
+            { lat: 0, lon: 0.001, ele: 100, time: Date.UTC(2026, 6, 1, 17, 0) },
+        ]],
+    };
+    for (const [clickedUrl, redirectedUrl] of [
+        [
+            'https://connect.garmin.com/modern/activity/123',
+            'https://connect.garmin.com/app/activity/123',
+        ],
+        [
+            'https://connect.garmin.com/app/activity/123?source=toolbar#summary',
+            'https://connect.garmin.com/app/activity/123?source=redirect#details',
+        ],
+    ]) {
+        const harness = createHarness({
+            ownershipResult: owned,
+            captureResult: exported,
+            beforeTabGet: ({ number, tabs }) => {
+                if (number === 2) tabs.get(1).url = redirectedUrl;
+            },
+        });
+        harness.tabs.get(1).url = clickedUrl;
+
+        const result = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+        assert.equal(result.phase, 'ready', `${clickedUrl} -> ${redirectedUrl}`);
+        assert.equal(result.provider, 'garmin');
+        assert.equal(result.activityId, '123');
+        assert.equal(harness.providerCaptureCalls.length, 1);
+    }
+});
+
+test('capture rejects a different activity or unsupported origin at the first worker recheck', async () => {
+    for (const nextUrl of [
+        'https://www.strava.com/activities/456',
+        'http://www.strava.com/activities/123',
+        'https://www.strava.com.evil.example/activities/123',
+    ]) {
+        const harness = createHarness({
+            beforeTabGet: ({ number, tabs }) => {
+                if (number === 2) tabs.get(1).url = nextUrl;
+            },
+        });
+        const result = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+        assert.equal(result.phase, 'error', nextUrl);
+        assert.equal(result.error.code, 'activity-changed', nextUrl);
+        assert.equal(harness.scriptCalls.length, 0, 'no provider page code runs after identity changes');
+        assert.equal(harness.fetchCalls.length, 0, 'no login or summit request runs after identity changes');
+    }
+});
+
+test('capture rejects a provider-reported SPA navigation after the GPX read', async () => {
+    const harness = createHarness({
+        ownershipResult: { ok: true, provider: 'strava', activityId: '123', viewerId: '42', authorId: '42' },
+        captureResult: {
+            ok: false,
+            code: 'activity-changed',
+            provider: 'strava',
+            activityId: '456',
+        },
+    });
+    const result = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    assert.equal(result.phase, 'error');
+    assert.equal(result.error.code, 'activity-changed');
+    assert.equal(harness.providerCaptureCalls.length, 1);
+    assert.equal(harness.fetchCalls.filter(url => url.includes('/Async/pllbb2.aspx')).length, 0,
+        'coordinates from the replacement activity never reach summit lookup');
 });
 
 test('capture does not follow a same-tab activity navigation after ownership approval', async () => {
