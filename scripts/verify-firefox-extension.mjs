@@ -1286,12 +1286,18 @@ async function main() {
           }, new URL(arguments[0]).origin);
         `, baseUrl);
 
-        // The scripted click put only the page coordinator into its cancelable
-        // loading state. One trusted click returns it to 2D; the next trusted
-        // click must mint a fresh capability and open normally. Reaching that
-        // postcondition also gives the guessed direct-frame request a complete
-        // worker round trip without relying on a fixed delay.
-        await terrainToggle.click();
+        // Normalize the page coordinator after the scripted click. Depending
+        // on when the rejected bridge reply arrives, it may already be idle or
+        // still be in its cancelable loading state. Escape is inert when idle,
+        // so one real keypress plus the visible idle postcondition avoids
+        // turning an unconditional second click into an accidental close.
+        await terrainToggle.sendKeys(Key.ESCAPE);
+        await driver.wait(async () => driver.executeScript(selector => {
+            const toggle = document.querySelector(selector);
+            return toggle?.getAttribute('aria-busy') !== 'true'
+                && toggle?.getAttribute('aria-pressed') === 'false'
+                && document.querySelectorAll('#bpb-terrain-frame').length === 0;
+        }, surfaceSelectors.terrainToggle), 5_000);
         await terrainToggle.click();
         await driver.wait(until.elementLocated(By.id('bpb-terrain-frame')), 10_000);
         const ascentFrameOrigin = await driver.executeScript(
