@@ -18,6 +18,10 @@ import {
 import { buildAmoMetadata } from '../../scripts/create-amo-metadata.mjs';
 import { publishChrome } from '../../scripts/publish-chrome.mjs';
 import { validateRelease } from '../../scripts/release-check.mjs';
+import {
+    isRetryableFirefoxStartup,
+    ownedFirefoxPids,
+} from '../../scripts/firefox-verifier-processes.mjs';
 import { prepareFirefoxSource } from '../../scripts/run-firefox.mjs';
 import {
     requireArchiveArguments,
@@ -205,6 +209,39 @@ test('Firefox topo pointer actions re-center the overlay before moving', async (
     assert.notEqual(moveIndex, -1);
     assert.ok(scrollIndex < moveIndex);
     assert.match(pointerHelper, /block: 'center'/);
+});
+
+test('Firefox startup retry targets only a clean exit and verifier-owned profiles', async () => {
+    assert.equal(isRetryableFirefoxStartup({
+        message: 'Process (pid=123) unexpectedly closed with status 0',
+    }), true);
+    assert.equal(isRetryableFirefoxStartup({
+        message: 'Process (pid=123) unexpectedly closed with status 1',
+    }), false);
+    assert.equal(isRetryableFirefoxStartup(new Error('Timed out waiting for Firefox')), false);
+
+    const processList = `
+  100 /Applications/Firefox.app/Contents/MacOS/firefox -profile /Users/test/default
+  200 /Applications/Firefox.app/Contents/MacOS/firefox -profile /tmp/better-peakbagger-firefox-verify-owned/rust_mozprofileA
+  201 /Applications/Firefox.app/Contents/MacOS/plugin-container -profile /tmp/better-peakbagger-firefox-verify-owned/rust_mozprofileA
+  300 /Applications/Firefox.app/Contents/MacOS/firefox -profile /tmp/better-peakbagger-firefox-verify-other/rust_mozprofileB
+`;
+    assert.deepEqual(
+        ownedFirefoxPids(processList, '/tmp/better-peakbagger-firefox-verify-owned'),
+        [200, 201],
+    );
+
+    const verifier = await readFile(
+        new URL('../../scripts/verify-firefox-extension.mjs', import.meta.url),
+        'utf8',
+    );
+    assert.match(verifier, /`--profile-root=\$\{profileRoot\}`/);
+    assert.match(verifier, /catch \(error\) \{\s+await stopOwnedFirefoxProcesses\(profileRoot\)/);
+    const finalCleanup = verifier.lastIndexOf('await stopOwnedFirefoxProcesses(temporaryRoot)');
+    const temporaryRemoval = verifier.lastIndexOf('await rm(temporaryRoot');
+    assert.notEqual(finalCleanup, -1);
+    assert.ok(finalCleanup < temporaryRemoval,
+        'verifier-owned Firefox must stop before its temporary profile is removed');
 });
 
 test('release archive rejects development and internal files', async () => {

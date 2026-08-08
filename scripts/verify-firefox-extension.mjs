@@ -24,9 +24,37 @@ import {
     waitForCondition,
 } from './browser-verification-fixtures.mjs';
 import { prepareFirefoxSource } from './run-firefox.mjs';
+import {
+    isRetryableFirefoxStartup,
+    stopOwnedFirefoxProcesses,
+} from './firefox-verifier-processes.mjs';
 import { readCompressedGpxFixture } from '../test/helpers/gpx-fixtures.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+
+async function startFirefoxDriver(options, profileRoot) {
+    for (let attempt = 1; attempt <= 2; attempt++) {
+        const service = new firefox.ServiceBuilder().addArguments(
+            '--allow-system-access',
+            `--profile-root=${profileRoot}`,
+        );
+        try {
+            return await new Builder()
+                .forBrowser('firefox')
+                .setFirefoxOptions(options)
+                .setFirefoxService(service)
+                .build();
+        } catch (error) {
+            await stopOwnedFirefoxProcesses(profileRoot);
+            if (attempt === 1 && isRetryableFirefoxStartup(error)) {
+                console.warn('Firefox WebDriver exited cleanly during startup; retrying once after verifier-owned cleanup.');
+                continue;
+            }
+            throw error;
+        }
+    }
+    throw new Error('Firefox WebDriver startup exhausted its retry');
+}
 
 async function extensionBaseUrl(driver, addonId) {
     await driver.setContext(firefox.Context.CHROME);
@@ -138,12 +166,7 @@ async function main() {
         options.setAcceptInsecureCerts(true);
         if (process.env.FIREFOX_BIN) options.setBinary(process.env.FIREFOX_BIN);
 
-        const service = new firefox.ServiceBuilder().addArguments('--allow-system-access');
-        driver = await new Builder()
-            .forBrowser('firefox')
-            .setFirefoxOptions(options)
-            .setFirefoxService(service)
-            .build();
+        driver = await startFirefoxDriver(options, temporaryRoot);
         await driver.manage().setTimeouts({ pageLoad: 20_000, script: 15_000 });
 
         addonId = await driver.installAddon(extensionSource, true);
@@ -1654,6 +1677,7 @@ async function main() {
             await driver.uninstallAddon(addonId).catch(() => {});
         }
         if (driver) await driver.quit().catch(() => {});
+        await stopOwnedFirefoxProcesses(temporaryRoot);
         if (fixture) await fixture.close().catch(() => {});
         if (prepared) await prepared.cleanup().catch(() => {});
         await rm(temporaryRoot, { recursive: true, force: true });
