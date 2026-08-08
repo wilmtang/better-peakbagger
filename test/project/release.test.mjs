@@ -7,12 +7,6 @@ import { test } from 'node:test';
 import JSZip from 'jszip';
 
 import {
-    COPY_FILES,
-    ENTRIES,
-    GENERATED_FILES,
-    VENDOR_COPY,
-} from '../../scripts/build-config.mjs';
-import {
     buildFirefoxPackage,
     createFirefoxManifest,
     requirePackagePaths,
@@ -35,7 +29,9 @@ import {
 } from '../../scripts/firefox-verifier-processes.mjs';
 import { prepareFirefoxSource } from '../../scripts/run-firefox.mjs';
 import {
+    expectedReleaseFiles,
     requireArchiveArguments,
+    validateArchiveEntries,
     verifyReleaseArchive,
 } from '../../scripts/verify-release-archive.mjs';
 
@@ -207,12 +203,9 @@ test("Firefox metadata preserves the project's or-later license grant", () => {
 async function makeReleaseZip(extraFiles = {}, omittedFiles = []) {
     const zip = new JSZip();
     const omitted = new Set(omittedFiles);
+    const expectedFiles = await expectedReleaseFiles();
     const files = {
-        ...Object.fromEntries(ENTRIES.map(({ out }) => [out, `bundle:${out}`])),
-        ...Object.fromEntries(COPY_FILES.map(([, out]) => [out, `copy:${out}`])),
-        ...Object.fromEntries(VENDOR_COPY.map(([, out]) => [out, `vendor:${out}`])),
-        ...Object.fromEntries(GENERATED_FILES.map((out) => [out, `generated:${out}`])),
-        'icons/icon-128.png': 'icon',
+        ...Object.fromEntries(expectedFiles.map((out) => [out, `runtime:${out}`])),
         'manifest.json': JSON.stringify({
             version: '1.4.0',
             options_ui: {
@@ -376,11 +369,55 @@ test('release archive rejects development and internal files', async () => {
     );
     await assert.rejects(
         verifyReleaseArchive(await makeReleaseZip({ 'test/private-fixture.html': 'no' }), '1.4.0'),
-        /unexpected entry: test\//,
+        /unexpected (?:file|directory): test\//,
     );
     await assert.rejects(
         verifyReleaseArchive(await makeReleaseZip(), '1.4.1'),
         /does not match/,
+    );
+});
+
+test('release archive rejects extra files under every shipped directory', async () => {
+    const directories = new Set(
+        (await expectedReleaseFiles())
+            .map((file) => path.posix.dirname(file))
+            .filter((directory) => directory !== '.'),
+    );
+    for (const directory of directories) {
+        const extra = `${directory}/private-source.map`;
+        await assert.rejects(
+            verifyReleaseArchive(await makeReleaseZip({ [extra]: 'source map' }), '1.4.0'),
+            new RegExp(`unexpected file: ${extra.replaceAll('.', '\\.').replaceAll('/', '\\/')}`),
+        );
+    }
+});
+
+test('release archive rejects non-canonical, duplicate, and conflicting paths', () => {
+    assert.throws(
+        () => validateArchiveEntries([{ name: 'content\\private.js', directory: false }], []),
+        /non-canonical path/,
+    );
+    assert.throws(
+        () => validateArchiveEntries([{ name: 'content/../private.js', directory: false }], []),
+        /non-canonical path/,
+    );
+    assert.throws(
+        () => validateArchiveEntries([
+            { name: 'content/runtime.js', directory: false },
+            { name: 'content/runtime.js', directory: false },
+        ], ['content/runtime.js']),
+        /duplicate path/,
+    );
+    assert.throws(
+        () => validateArchiveEntries([
+            { name: 'content', directory: false },
+            { name: 'content/runtime.js', directory: false },
+        ], ['content/runtime.js']),
+        /file\/directory conflict/,
+    );
+    assert.throws(
+        () => validateArchiveEntries([{ name: '__MACOSX/._manifest.json', directory: false }], []),
+        /platform metadata/,
     );
 });
 
