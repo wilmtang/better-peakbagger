@@ -1,5 +1,51 @@
 # Changelog
 
+## Unreleased
+
+- **Make Photo Topos easier to discover.** The public feature tour now shows
+  the real editor and its direct ImgBB workflow, while the maintained guide and
+  store description explain the annotation tools, upload path, and recovery
+  boundaries before you start.
+
+- **Keep useful GPX data when an export is incomplete or out of order.** Route
+  geometry, distance, elevation, and time are now admitted independently, so a
+  bad timestamp or missing elevation removes only the result that depends on
+  it. Combined multi-day tracks can recover chronological time views without
+  changing their map path, segment breaks stay honest, and pointer or keyboard
+  selections remain synchronized through 2D and 3D map changes.
+
+- **Finish interrupted work without applying it twice.** Photo Topos saves are
+  serialized before the editor closes, cancelled GitHub sign-ins cannot write
+  late credentials, and activity capture stays bound to the tab and activity
+  you clicked even across cancellation or login. Returning from a photo upload
+  also waits for the report editor's acknowledgement and remains safely
+  retryable when delivery is uncertain.
+
+- **Start a Photo Topo from the image already in hand.** Drop or paste an image
+  into an empty editor and it follows the same validated, recoverable path as
+  the file picker. ImgBB setup is surfaced before the credential controls, the
+  footer keeps upload choices and actions clear at wide and narrow sizes, and
+  the shared canvas, guide, and exports use the corrected Mountain
+  Project-style climbing symbols.
+
+- **Sort Peak Lists without waiting for a reload.** Every Peak List column,
+  including Rank, now sorts the rows already on the page with stable,
+  type-aware ordering. The current list URL stays intact, ordinary modified
+  clicks keep their browser behavior, and ascent-only filter settings remain
+  off this surface.
+
+- **Adapt the GPX chart to whatever the track actually recorded.** Partial
+  elevation or time produces labelled gaps and coverage instead of a smoothed
+  line; coordinate-only tracks show distance over time or a compact route
+  scrubber; and tracks with no usable coordinates show no chart. Nearby
+  recorder segment boundaries can join for charts and metrics only when their
+  coordinates, timing, and elevation make the continuation plausible.
+
+- **Strengthen dependency updates without weakening release gates.** Runtime
+  and development dependency paths use reviewed patched releases with a
+  zero-advisory audit, while Dependabot's npm groups now reach the existing
+  verified auto-merge path and keep otherwise unmatched updates visible.
+
 ## 3.3.0 — 2026-08-02
 
 - **Make 3D group maps as easy to read and leave as the native map.** Moving
