@@ -10,6 +10,9 @@
 const directChild = (element, localName) => [...element.children]
     .find(child => child.localName === localName);
 
+const directChildren = (element, localName) => [...element.children]
+    .filter(child => child.localName === localName);
+
 const elementsByLocalName = (root, localName) => {
     if (root.getElementsByTagNameNS) return [...root.getElementsByTagNameNS('*', localName)];
     return [...root.getElementsByTagName(localName)];
@@ -85,12 +88,16 @@ const parseGpxData = (text, options = {}) => {
         error.code = 'invalid-gpx';
         throw error;
     }
-    const trackSegments = elementsByLocalName(xml, 'trkseg');
+    const gpxRoot = xml.documentElement?.localName === 'gpx'
+        ? xml.documentElement
+        : null;
+    const tracks = gpxRoot ? directChildren(gpxRoot, 'trk') : [];
+    const trackSegments = tracks.flatMap(track => directChildren(track, 'trkseg'));
     const segments = trackSegments.map(segment =>
-        elementsByLocalName(segment, 'trkpt').map(trackPoint => parseTrackPoint(trackPoint)));
+        directChildren(segment, 'trkpt').map(trackPoint => parseTrackPoint(trackPoint)));
     if (!segments.length || !segments.some(segment => segment.length)) throw noGpsError();
     const waypoints = options.retainWaypoints
-        ? elementsByLocalName(xml, 'wpt').map(waypoint => {
+        ? directChildren(gpxRoot, 'wpt').map(waypoint => {
             const latText = waypoint.getAttribute('lat');
             const lonText = waypoint.getAttribute('lon');
             return {
@@ -100,7 +107,7 @@ const parseGpxData = (text, options = {}) => {
             };
         })
         : [];
-    const firstTrack = elementsByLocalName(xml, 'trk')[0];
+    const firstTrack = tracks[0];
     const trackName = options.includeTripName
         ? cleanName((firstTrack && directChild(firstTrack, 'name')?.textContent) || '')
         : '';

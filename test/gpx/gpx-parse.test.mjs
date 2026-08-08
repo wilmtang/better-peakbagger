@@ -35,6 +35,49 @@ test('multi-track GPX flattens to segments in document order with analysis field
     assert.doesNotMatch(JSON.stringify(parsed), /175|hr/);
 });
 
+test('only direct GPX-owned tracks, segments, points, and waypoints are admitted', () => {
+    const gpx = `<gpx xmlns="http://www.topografix.com/GPX/1/1">
+      <wpt lat="47.9" lon="-121.9"><name>Direct camp</name></wpt>
+      <extensions>
+        <wpt lat="99" lon="99"><name>Fake camp</name></wpt>
+        <trk><trkseg><trkpt lat="98" lon="98"/></trkseg></trk>
+      </extensions>
+      <trk><name>Owned track</name><trkseg>
+        <trkpt lat="47" lon="-121"/>
+        <extensions><trkpt lat="97" lon="97"/></extensions>
+        <trkseg><trkpt lat="96" lon="96"/></trkseg>
+        <trkpt lat="47" lon="-121"/>
+      </trkseg></trk>
+    </gpx>`;
+    const parsed = parseGpxData(gpx, { retainWaypoints: true, includeTripName: true });
+
+    assert.deepEqual(parsed.segments.map(segment => segment.map(({ lat, lon }) => [lat, lon])), [
+        [[47, -121], [47, -121]],
+    ], 'legitimate repeated direct points stay in source order');
+    assert.deepEqual(parsed.waypoints, [{ lat: 47.9, lon: -121.9, name: 'Direct camp' }]);
+    assert.equal(parsed.trackName, 'Owned track');
+});
+
+test('prefixed GPX namespaces retain direct ownership semantics', () => {
+    const parsed = parseGpxData(`<g:gpx xmlns:g="urn:gpx">
+      <g:wpt lat="1" lon="2"><g:name>Camp</g:name></g:wpt>
+      <g:trk><g:name>Prefixed</g:name><g:trkseg>
+        <g:trkpt lat="3" lon="4"/><g:trkpt lat="5" lon="6"/>
+      </g:trkseg></g:trk>
+    </g:gpx>`, { retainWaypoints: true, includeTripName: true });
+
+    assert.deepEqual(parsed.segments[0].map(({ lat, lon }) => [lat, lon]), [[3, 4], [5, 6]]);
+    assert.deepEqual(parsed.waypoints, [{ lat: 1, lon: 2, name: 'Camp' }]);
+    assert.equal(parsed.trackName, 'Prefixed');
+});
+
+test('a nested GPX tree under the wrong document root is not route geometry', () => {
+    assert.throws(
+        () => parseGpxData('<wrapper><gpx><trk><trkseg><trkpt lat="1" lon="2"/></trkseg></trk></gpx></wrapper>'),
+        error => error.code === 'no-gps-data',
+    );
+});
+
 test('missing and malformed coordinates, elevations, and times become null (with invalidTime flagged)', () => {
     const gpx = `<gpx><trk><trkseg>
       <trkpt lat="" lon=" "><ele></ele></trkpt>

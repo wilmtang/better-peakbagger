@@ -131,6 +131,30 @@ test('successful capture fetches only the provider GPX endpoint', async () => {
     assert.equal(capture.metadata.displayedLocalStart, '2026-07-11T16:13:00');
 });
 
+test('provider capture excludes extension-owned and nested fake GPX geometry', async () => {
+    const dom = load(stravaPage(), 'https://www.strava.com/activities/123');
+    dom.window.fetch = async () => ({
+        ok: true,
+        text: async () => `<gpx>
+          <extensions><trk><trkseg><trkpt lat="99" lon="99"/></trkseg></trk></extensions>
+          <trk><trkseg>
+            <trkpt lat="1" lon="2"/>
+            <extensions><trkpt lat="98" lon="98"/></extensions>
+            <trkseg><trkpt lat="97" lon="97"/></trkseg>
+            <trkpt lat="1" lon="2"/>
+          </trkseg></trk>
+        </gpx>`,
+    });
+
+    const capture = await dom.window.BPBProviderPage.capture();
+    assert.equal(capture.ok, true);
+    assert.deepEqual(
+        JSON.parse(JSON.stringify(capture.segments.map(segment =>
+            segment.map(({ lat, lon }) => [lat, lon])))),
+        [[[1, 2], [1, 2]]],
+    );
+});
+
 test('capture rejects a same-tab activity change after the GPX body starts', async () => {
     const dom = load(stravaPage(), 'https://www.strava.com/activities/123');
     let releaseBody;
