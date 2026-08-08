@@ -127,6 +127,24 @@ export const COPY_DIRS = [
     ['icons', 'icons'],
 ];
 
+// Generated artifacts are derived during every build and shipped alongside
+// copied assets. They are part of the exact release inventory.
+export const GENERATED_FILES = [
+    'THIRD_PARTY_NOTICES.txt',
+];
+
+// Reviewed overrides are reserved for shipped material that has no npm package
+// root for the metafile inventory to discover.
+export const NON_PACKAGE_NOTICES = [
+    {
+        key: 'betacreator-symbol-geometry',
+        name: 'BetaCreator symbol geometry',
+        version: '2a3b7898f009fbf4cf116673e121cf16202a5498',
+        license: 'Apache-2.0',
+        noticeFile: 'third_party/betacreator-LICENSE.txt',
+    },
+];
+
 export const nodeModule = f => path.join(root, 'node_modules', f);
 
 // Vendor browser builds sourced from npm into dist/vendor. marked and Chart.js

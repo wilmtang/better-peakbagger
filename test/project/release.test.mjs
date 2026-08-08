@@ -9,6 +9,7 @@ import JSZip from 'jszip';
 import {
     COPY_FILES,
     ENTRIES,
+    GENERATED_FILES,
     VENDOR_COPY,
 } from '../../scripts/build-config.mjs';
 import {
@@ -27,6 +28,7 @@ import {
     validateRelease,
     validateTagAtHead,
 } from '../../scripts/release-check.mjs';
+import { validatePackageNoticeMetadata } from '../../scripts/third-party-notices.mjs';
 import {
     isRetryableFirefoxStartup,
     ownedFirefoxPids,
@@ -193,6 +195,9 @@ test("Firefox metadata preserves the project's or-later license grant", () => {
     assert.match(metadata.version.approval_notes, /maplibre-gl-worker\.mjs/);
     assert.match(metadata.version.approval_notes, /imported directly by the native terrain-frame module/);
     assert.match(metadata.version.approval_notes, /tz-lookup 6\.1\.25/);
+    assert.match(metadata.version.approval_notes, /THIRD_PARTY_NOTICES\.txt/);
+    assert.match(metadata.version.approval_notes, /CodeMirror\/Lezer/);
+    assert.match(metadata.version.approval_notes, /TipTap\/ProseMirror/);
     assert.doesNotMatch(metadata.version.approval_notes, /build-free|@photostructure/);
     assert.match(metadata.version.approval_notes, /tiles\.mapterhorn\.com/);
     assert.match(metadata.description['en-US'], /coordinate corridor boxes/);
@@ -206,6 +211,7 @@ async function makeReleaseZip(extraFiles = {}, omittedFiles = []) {
         ...Object.fromEntries(ENTRIES.map(({ out }) => [out, `bundle:${out}`])),
         ...Object.fromEntries(COPY_FILES.map(([, out]) => [out, `copy:${out}`])),
         ...Object.fromEntries(VENDOR_COPY.map(([, out]) => [out, `vendor:${out}`])),
+        ...Object.fromEntries(GENERATED_FILES.map((out) => [out, `generated:${out}`])),
         'icons/icon-128.png': 'icon',
         'manifest.json': JSON.stringify({
             version: '1.4.0',
@@ -457,6 +463,72 @@ test('release archive requires third-party acknowledgements', async () => {
             '1.4.0',
         ),
         /missing required file: ACKNOWLEDGEMENTS\.md/,
+    );
+});
+
+test('release archive requires the generated third-party notice inventory', async () => {
+    await assert.rejects(
+        verifyReleaseArchive(
+            await makeReleaseZip({}, ['THIRD_PARTY_NOTICES.txt']),
+            '1.4.0',
+        ),
+        /missing required file: THIRD_PARTY_NOTICES\.txt/,
+    );
+});
+
+test('generated notices cover the real editor and copied runtime graph', async () => {
+    const notices = await readFile(
+        new URL('../../dist/THIRD_PARTY_NOTICES.txt', import.meta.url),
+        'utf8',
+    );
+    const components = [...notices.matchAll(/^Component: (.+)$/gm)].map((match) => match[1]);
+    const packageRoots = [...notices.matchAll(/^Package root: (.+)$/gm)].map((match) => match[1]);
+    const hashes = [...notices.matchAll(/^Notice SHA-256: ([a-f0-9]{64})$/gm)]
+        .map((match) => match[1]);
+
+    assert.ok(components.length > 40, 'the shipped editor graph must not collapse to top-level packages');
+    assert.equal(packageRoots.length, components.length);
+    assert.equal(new Set(packageRoots).size, packageRoots.length);
+    assert.equal(hashes.length, components.length);
+    for (const required of [
+        '@codemirror/view',
+        '@lezer/markdown',
+        '@tiptap/core',
+        'prosemirror-state',
+        'chart.js',
+        'maplibre-gl',
+        'marked',
+        'tz-lookup',
+        'BetaCreator symbol geometry',
+    ]) {
+        assert.ok(components.includes(required), `missing notice for ${required}`);
+    }
+});
+
+test('notice generation fails closed for missing package metadata or notice text', () => {
+    const complete = {
+        key: 'node_modules/example',
+        name: 'example',
+        version: '1.0.0',
+        license: 'MIT',
+        licenseSource: 'node_modules/example/package.json',
+        notices: [{ name: 'LICENSE', text: 'Permission is granted.' }],
+    };
+    assert.equal(validatePackageNoticeMetadata(complete), complete);
+    assert.throws(
+        () => validatePackageNoticeMetadata({ ...complete, license: '' }),
+        /incomplete name, version, license, or license-source metadata/,
+    );
+    assert.throws(
+        () => validatePackageNoticeMetadata({ ...complete, notices: [] }),
+        /no resolved license or notice file/,
+    );
+    assert.throws(
+        () => validatePackageNoticeMetadata({
+            ...complete,
+            notices: [{ name: 'LICENSE', text: '' }],
+        }),
+        /empty license or notice file/,
     );
 });
 

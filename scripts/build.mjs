@@ -34,6 +34,7 @@ import {
     root,
     distDir
 } from './build-config.mjs';
+import { writeThirdPartyNotices } from './third-party-notices.mjs';
 
 const args = new Set(process.argv.slice(2));
 const MINIFY = args.has('--minify');
@@ -109,6 +110,7 @@ function esbuildOptions(entry, { minify = MINIFY } = {}) {
         target: ['chrome110', 'firefox115'],
         platform: 'browser',
         legalComments: 'none',
+        metafile: true,
         minify,
         sourcemap: minify ? false : 'linked',
         logLevel: 'warning',
@@ -119,7 +121,8 @@ function esbuildOptions(entry, { minify = MINIFY } = {}) {
 export async function buildOnce({ minify = MINIFY } = {}) {
     await rm(distDir, { recursive: true, force: true });
     await mkdir(distDir, { recursive: true });
-    await Promise.all(ENTRIES.map(e => build(esbuildOptions(e, { minify }))));
+    const results = await Promise.all(ENTRIES.map(e => build(esbuildOptions(e, { minify }))));
+    await writeThirdPartyNotices({ metafiles: results.map(({ metafile }) => metafile) });
     await copyAssets();
     console.log(`Built ${ENTRIES.length} bundles into dist/${minify ? ' (minified)' : ''}`);
 }
@@ -156,7 +159,8 @@ export async function watchAll({
 
     const rebuild = async () => {
         const nextSequence = sequence + 1;
-        await Promise.all(contexts.map(buildContext => buildContext.rebuild()));
+        const results = await Promise.all(contexts.map(buildContext => buildContext.rebuild()));
+        await writeThirdPartyNotices({ metafiles: results.map(({ metafile }) => metafile) });
         await copyAssets();
         await afterBuild({ sequence: nextSequence });
         await writeFile(reloadFile, `${nextSequence}\n`);

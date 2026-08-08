@@ -38,6 +38,8 @@ export function buildAmoMetadata({ licenseText, description }) {
             approval_notes: [
                 'Runtime source under src/, options/, and popup/ is authored as ES modules. esbuild 0.28.1 bundles and minifies classic browser entries into self-contained IIFEs under dist/; the extension-owned terrain frame remains a native ESM entry. web-ext packages dist/. Run `npm ci && npm run build:release` from the tagged source to reproduce the runtime tree.',
                 '',
+                'The packaged THIRD_PARTY_NOTICES.txt is generated from esbuild metafiles and separately copied runtime inputs. It records the version, declared license, source notice filenames, SHA-256 notice hash, and full notice text for every shipped npm package root, including the CodeMirror/Lezer and TipTap/ProseMirror editor dependency families. The BetaCreator-derived symbol geometry is the sole reviewed non-package override.',
+                '',
                 'vendor/chart.umd.min.js is copied from the unmodified Chart.js 4.5.1 npm distribution (MIT). Package: https://www.npmjs.com/package/chart.js/v/4.5.1 ; readable source: https://github.com/chartjs/Chart.js/tree/v4.5.1',
                 '',
                 'vendor/marked.umd.js is copied from the unmodified Marked 18.0.6 npm distribution (MIT). Package: https://www.npmjs.com/package/marked/v/18.0.6 ; readable source: https://github.com/markedjs/marked/tree/v18.0.6',

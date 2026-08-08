@@ -4,6 +4,11 @@ Better Peakbagger is licensed under the
 [GNU Affero General Public License v3.0 or later](LICENSE). This document records
 the license notice for software distributed with the extension and credits projects that inspired its design.
 
+The packaged `THIRD_PARTY_NOTICES.txt` is generated from the complete shipped
+npm dependency graph and retains each package's full license and notice text.
+It is the authoritative notice inventory; the summaries below provide human
+context for the extension's principal dependencies and inspirations.
+
 ## Third-party software
 
 ### Chart.js
@@ -25,6 +30,7 @@ editor.
 - Project: [CodeMirror](https://codemirror.net/)
 - Source: [CodeMirror repositories](https://github.com/codemirror)
 - License: MIT
+- Packaged license text: `THIRD_PARTY_NOTICES.txt`
 
 ### BetaCreator
 
@@ -69,6 +75,7 @@ Better Peakbagger bundles TipTap 3.28.0 and its ProseMirror dependencies into
 - Project: [TipTap](https://tiptap.dev/)
 - Source: [TipTap 3.28.0](https://github.com/ueberdosis/tiptap/tree/v3.28.0)
 - License: MIT
+- Packaged license text: `THIRD_PARTY_NOTICES.txt`
 
 ### tz-lookup
 

@@ -7,6 +7,7 @@ import {
     COPY_DIRS,
     COPY_FILES,
     ENTRIES,
+    GENERATED_FILES,
     VENDOR_COPY,
 } from './build-config.mjs';
 
@@ -18,6 +19,7 @@ const REQUIRED_FILES = [...new Set([
     ...ENTRIES.map(({ out }) => out),
     ...COPY_FILES.map(([, to]) => to),
     ...VENDOR_COPY.map(([, to]) => to),
+    ...GENERATED_FILES,
     'icons/icon-128.png',
 ])];
 
