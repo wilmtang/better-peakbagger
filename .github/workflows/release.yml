@@ -32,6 +32,9 @@ jobs:
       - name: Validate tag and version metadata
         run: npm run release:check -- "$GITHUB_REF_NAME"
 
+      - name: Check immutable release history
+        run: npm run release:check-history
+
       # The test workflow runs this too, but nothing makes a release wait for
       # that workflow, and test/project/dependency-audit.test.mjs only exercises
       # evaluateAudit() against synthetic reports — it never calls npm audit. The

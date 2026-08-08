@@ -1,11 +1,13 @@
 # Changelog
 
-## 3.4.0 — 2026-08-08
+## Unreleased
 
 - **Keep experimental 3D maps current and dependable.** The packaged renderer
   now uses MapLibre GL JS 6.2, falls back to the native 2D map when WebGL2 is
   unavailable, and keeps summit rings visible and clickable across terrain
   refreshes and steep views.
+
+## 3.4.0 — 2026-08-08
 
 - **Make Photo Topos easier to discover.** The public feature tour now shows
   the real editor and its direct ImgBB workflow, while the maintained guide and
@@ -402,7 +404,7 @@
   ride directly in the tree request, and every extension-owned GitHub writer is
   serialized before it reads the branch. Failed batches stay ready for Resume
   without another Peakbagger fetch. See the
-  [GitHub backup deep dive](docs/github-ascent-backup.md#full-profile-producer-consumer-pipeline).
+  [pipeline deep dive](docs/profile-backup-pipeline.md).
 
 - **Initialize empty GitHub backup repositories correctly.** The first backup
   now creates the repository marker and default branch through GitHub's
@@ -620,7 +622,7 @@
 - **Tighter page-world settings bridge.** Page scripts can write only the six
   GPX-analyzer-owned settings keys; feature gates, capture privacy options,
   and the theme remain writable solely from extension-owned surfaces.
-- **Internals.** The pure GPX metrics pipeline moved to `src/gpx/gpx-metrics.js`
+- **Internals.** The pure GPX metrics pipeline moved to `src/gpx-metrics.js`
   and is shared with the background capture core, so drafted and displayed
   distance/gain math cannot diverge; analyzer UI text is built with DOM nodes
   instead of dynamic `innerHTML`.
@@ -634,7 +636,7 @@
   Loading 3D sends elevation-tile coordinates for the viewed area to
   Mapterhorn, a third-party DEM service, and may send map-tile requests to the
   selected map provider; no 3D request occurs until the user enables the
-  experiment and chooses **3D terrain**.
+  experiment and chooses **Load 3D terrain**.
 - **Bounded terrain caching.** Successful Mapterhorn DEM tiles use a dedicated,
   best-effort on-device cache with a 512 MB default and a configurable
   0–2,048 MB limit. Settings shows the current cache size and hides the cache

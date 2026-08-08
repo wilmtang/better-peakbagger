@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
@@ -52,6 +53,10 @@ export function validateRelease({
     return version;
 }
 
+export function validateTagAtHead({ tag, tagCommit, headCommit }) {
+    requireEqual(`release tag ${tag} commit`, tagCommit, headCommit);
+}
+
 async function readJson(filePath) {
     return JSON.parse(await readFile(filePath, 'utf8'));
 }
@@ -72,6 +77,15 @@ async function main() {
         packageLock,
         changelog,
     });
+    const headCommit = execFileSync('git', ['rev-parse', 'HEAD'], {
+        encoding: 'utf8',
+    }).trim();
+    const tagCommit = execFileSync(
+        'git',
+        ['rev-list', '-n', '1', tag],
+        { encoding: 'utf8' },
+    ).trim();
+    validateTagAtHead({ tag, tagCommit, headCommit });
     console.log(`Release metadata is consistent for ${version}.`);
 }
 

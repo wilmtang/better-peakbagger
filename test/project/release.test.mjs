@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
-import { lstat, readFile } from 'node:fs/promises';
+import { spawnSync } from 'node:child_process';
+import { lstat, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
 import JSZip from 'jszip';
@@ -16,7 +18,15 @@ import {
 } from '../../scripts/build-firefox-package.mjs';
 import { buildAmoMetadata } from '../../scripts/create-amo-metadata.mjs';
 import { publishChrome } from '../../scripts/publish-chrome.mjs';
-import { validateRelease } from '../../scripts/release-check.mjs';
+import {
+    assertReleasedSectionsUnchanged,
+    releaseSection,
+    stampUnreleased,
+} from '../../scripts/release-changelog.mjs';
+import {
+    validateRelease,
+    validateTagAtHead,
+} from '../../scripts/release-check.mjs';
 import {
     isRetryableFirefoxStartup,
     ownedFirefoxPids,
@@ -55,6 +65,114 @@ test('release metadata requires an exact tag and synchronized versions', () => {
         () => validateRelease(releaseState({ changelog: '# Changelog\n' })),
         /no release heading/,
     );
+});
+
+test('release changelog stamping preserves history and opens the next Unreleased section', () => {
+    const changelog = '# Changelog\n\n## Unreleased\n\n- New work.\n\n'
+        + '## 1.4.0 — 2026-07-13\n\n- Released work.\n\n'
+        + '## 1.3.0 — 2026-07-01\n\n- Older work.\n';
+    const stamped = stampUnreleased(changelog, '1.5.0', '2026-08-08');
+
+    assert.match(stamped, /^## Unreleased\n\n## 1\.5\.0 — 2026-08-08\n\n- New work\./m);
+    assert.equal(releaseSection(stamped, '1.4.0'), releaseSection(changelog, '1.4.0'));
+    assert.equal(releaseSection(stamped, '1.3.0'), releaseSection(changelog, '1.3.0'));
+    assert.throws(
+        () => stampUnreleased(stamped, '1.5.0', '2026-08-08'),
+        /already has a release heading/,
+    );
+    assert.throws(
+        () => stampUnreleased('# Changelog\n', '1.5.0', '2026-08-08'),
+        /no '## Unreleased'/,
+    );
+    assert.throws(
+        () => stampUnreleased('# Changelog\n\n## Unreleased\n\n## 1.4.0\n', '1.5.0', '2026-08-08'),
+        /section is empty/,
+    );
+    assert.throws(
+        () => stampUnreleased('# Changelog\n\n## Unreleased\n\n- One\n\n## Unreleased\n\n- Two\n', '1.5.0', '2026-08-08'),
+        /more than one/,
+    );
+});
+
+test('released changelog sections must remain byte-faithful to their tags', () => {
+    const tagged = '# Changelog\n\n## 1.4.0 — 2026-07-13\n\n- Released work.\n';
+    const current = '# Changelog\n\n## Unreleased\n\n- New work.\n\n'
+        + '## 1.4.0 — 2026-07-13\n\n- Released work.\n';
+
+    assert.doesNotThrow(() => assertReleasedSectionsUnchanged(current, {
+        '1.4.0': tagged,
+    }));
+    assert.throws(
+        () => assertReleasedSectionsUnchanged(current.replace('Released work.', 'Rewritten.'), {
+            '1.4.0': tagged,
+        }),
+        /differs from tag/,
+    );
+    assert.throws(
+        () => assertReleasedSectionsUnchanged(current, {
+            '1.4.0': '# Changelog\n',
+        }),
+        /has no changelog section/,
+    );
+});
+
+test('release validation requires the proposed tag to resolve to HEAD', () => {
+    assert.doesNotThrow(() => validateTagAtHead({
+        tag: 'v1.4.0',
+        tagCommit: 'abc123',
+        headCommit: 'abc123',
+    }));
+    assert.throws(() => validateTagAtHead({
+        tag: 'v1.4.0',
+        tagCommit: 'abc123',
+        headCommit: 'def456',
+    }), /release tag v1\.4\.0 commit/);
+});
+
+test('release bump dry-run validates without writing or tagging', async () => {
+    const fixtureRoot = await mkdtemp(path.join(tmpdir(), 'better-peakbagger-release-'));
+    const files = {
+        'manifest.json': {
+            version: '1.4.0',
+            description: 'Fixture',
+            browser_specific_settings: { gecko: { id: 'fixture@example.test' } },
+        },
+        'package.json': { version: '1.4.0', description: 'Fixture' },
+        'package-lock.json': {
+            version: '1.4.0',
+            packages: { '': { version: '1.4.0' } },
+        },
+    };
+    try {
+        await Promise.all([
+            ...Object.entries(files).map(([name, value]) => writeFile(
+                path.join(fixtureRoot, name),
+                `${JSON.stringify(value, null, 2)}\n`,
+            )),
+            writeFile(
+                path.join(fixtureRoot, 'CHANGELOG.md'),
+                '# Changelog\n\n## Unreleased\n\n- Ready.\n\n## 1.4.0\n\n- Old.\n',
+            ),
+        ]);
+        const before = await Promise.all([
+            ...Object.keys(files).map((name) => readFile(path.join(fixtureRoot, name), 'utf8')),
+            readFile(path.join(fixtureRoot, 'CHANGELOG.md'), 'utf8'),
+        ]);
+        const result = spawnSync(
+            process.execPath,
+            [new URL('../../scripts/release-bump.mjs', import.meta.url).pathname, '1.5.0', '--dry-run'],
+            { cwd: fixtureRoot, encoding: 'utf8' },
+        );
+        assert.equal(result.status, 0, result.stderr);
+        assert.match(result.stdout, /ready to stamp/);
+        const after = await Promise.all([
+            ...Object.keys(files).map((name) => readFile(path.join(fixtureRoot, name), 'utf8')),
+            readFile(path.join(fixtureRoot, 'CHANGELOG.md'), 'utf8'),
+        ]);
+        assert.deepEqual(after, before);
+    } finally {
+        await rm(fixtureRoot, { recursive: true, force: true });
+    }
 });
 
 test("Firefox metadata preserves the project's or-later license grant", () => {
@@ -153,6 +271,7 @@ test('CI tests, lints, and exercises both real browser extensions', async () => 
     assert.match(workflow, /firefox:\s*\n[\s\S]*?run: npm run verify:firefox/);
     assert.equal(workflow.match(/run: npm ci/g)?.length, 4);
     assert.match(workflow, /permissions:\s*\n\s+contents: read/);
+    assert.match(workflow, /fetch-depth: 0[\s\S]*?run: npm run release:check-history/);
     await assert.rejects(
         lstat(new URL('../../.github/workflows/ci.yml', import.meta.url)),
         { code: 'ENOENT' },

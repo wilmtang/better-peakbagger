@@ -2,6 +2,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { execSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
+import { stampUnreleased } from './release-changelog.mjs';
 import { validateRelease } from './release-check.mjs';
 
 const SEMVER = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
@@ -22,8 +23,9 @@ async function writeJson(filePath, obj) {
 
 async function main() {
     const version = process.argv[2];
+    const dryRun = process.argv.slice(3).includes('--dry-run');
     if (!version || !SEMVER.test(version)) {
-        return die('Usage: node scripts/release-bump.mjs <MAJOR.MINOR.PATCH>');
+        return die('Usage: node scripts/release-bump.mjs <MAJOR.MINOR.PATCH> [--dry-run]');
     }
 
     const tag = `v${version}`;
@@ -37,15 +39,7 @@ async function main() {
         readFile('CHANGELOG.md', 'utf8'),
     ]);
 
-    // Stamp the Unreleased heading.
-    const unreleasedRe = /^## Unreleased$/m;
-    if (!unreleasedRe.test(changelog)) {
-        return die("CHANGELOG.md has no '## Unreleased' heading to stamp.");
-    }
-    const newChangelog = changelog.replace(
-        unreleasedRe,
-        `## ${version} \u2014 ${today}`,
-    );
+    const newChangelog = stampUnreleased(changelog, version, today);
 
     // Bump versions.
     manifest.version = version;
@@ -62,6 +56,11 @@ async function main() {
         packageLock,
         changelog: newChangelog,
     });
+
+    if (dryRun) {
+        console.log(`Release ${tag} metadata and changelog are ready to stamp.`);
+        return;
+    }
 
     // Write.
     await Promise.all([
