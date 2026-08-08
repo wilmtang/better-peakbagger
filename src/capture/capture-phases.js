@@ -6,6 +6,7 @@ const TERMINAL_PHASES = Object.freeze([
     'no-matches',
     'no-gps',
     'error',
+    'opening',
     'opened',
     'previewed',
 ]);

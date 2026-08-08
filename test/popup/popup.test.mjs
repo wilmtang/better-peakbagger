@@ -356,6 +356,41 @@ test('popup locks the selection in the same turn the drafts open', async () => {
     dom.window.close();
 });
 
+test('popup keeps a persisted opening generation visibly locked', async () => {
+    const dom = new JSDOM(html, {
+        url: 'chrome-extension://better-peakbagger/popup/popup.html',
+        runScripts: 'outside-only'
+    });
+    const messages = [];
+    const job = {
+        phase: 'opening', provider: 'garmin', hasCachedGpx: true, selectedIds: [1],
+        trackSummary: { originalPointCount: 2, retainedPointCount: 2, maxDeviationM: 0 },
+        matches: [{
+            id: 1, name: 'One Peak', classification: 'strong', confidence: 95,
+            evidence: { distanceM: 5, elevationDeltaM: 2, trackQuality: 1 }
+        }]
+    };
+    dom.window.chrome = {
+        tabs: { query: async () => [{ id: 9 }] },
+        runtime: {
+            sendMessage: async message => {
+                messages.push(message);
+                if (message.type === 'CAPTURE_START' || message.type === 'CAPTURE_STATUS') return structuredClone(job);
+                return { ok: true };
+            }
+        }
+    };
+
+    dom.window.eval(source);
+    const openButton = dom.window.document.getElementById('open-drafts');
+    await waitFor(() => openButton.textContent === 'Opening drafts…');
+    assert.equal(openButton.disabled, true);
+    assert.equal(dom.window.document.querySelector('#peak-list input').disabled, true);
+    assert.equal(dom.window.document.getElementById('selection-lock-hint').hidden, false);
+    assert.equal(messages.some(message => message.type === 'CAPTURE_SELECTION'), false);
+    dom.window.close();
+});
+
 test('popup reports a grouping failure in the status line, not on the primary button', async () => {
     const dom = new JSDOM(html, {
         url: 'chrome-extension://better-peakbagger/popup/popup.html',

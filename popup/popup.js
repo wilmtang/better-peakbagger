@@ -169,6 +169,12 @@ import { units as Units } from '../src/ui/units.js';
     const refreshSelection = () => {
         const count = selectedIds().length;
         selectionCount.textContent = `${count} selected`;
+        if (currentJob?.phase === 'opening') {
+            selectionLockHint.hidden = false;
+            openButton.textContent = 'Opening drafts…';
+            openButton.disabled = true;
+            return;
+        }
         if (currentJob?.phase === 'opened' || currentJob?.phase === 'previewed') {
             selectionLockHint.hidden = false;
             openButton.textContent = 'Show opened drafts';
@@ -206,7 +212,7 @@ import { units as Units } from '../src/ui/units.js';
             checkbox.type = 'checkbox';
             checkbox.value = String(match.id);
             checkbox.checked = (job.selectedIds || []).includes(match.id);
-            checkbox.disabled = job.phase === 'opened' || job.phase === 'previewed';
+            checkbox.disabled = job.phase === 'opening' || job.phase === 'opened' || job.phase === 'previewed';
             if (checkbox.disabled) row.classList.add('selection-locked');
             checkbox.addEventListener('change', refreshSelection);
             const text = document.createElement('span');
@@ -253,7 +259,8 @@ import { units as Units } from '../src/ui/units.js';
             );
             return;
         }
-        if (job.phase === 'ready' || job.phase === 'opened' || job.phase === 'previewed') return renderResults(job);
+        if (job.phase === 'ready' || job.phase === 'opening'
+            || job.phase === 'opened' || job.phase === 'previewed') return renderResults(job);
         const [title, detail] = phaseText(job.phase);
         stateCard(title, detail, { loading: true, action: { label: 'Cancel', onClick: cancelCapture } });
     };

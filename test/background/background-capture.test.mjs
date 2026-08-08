@@ -16,9 +16,18 @@ const event = () => {
     return { listeners, addListener: listener => listeners.push(listener) };
 };
 
+const waitForCondition = async (predicate, timeoutMs = 2000) => {
+    const deadline = Date.now() + timeoutMs;
+    while (!predicate()) {
+        if (Date.now() >= deadline) throw new Error('condition not reached');
+        await new Promise(resolve => setTimeout(resolve, 1));
+    }
+};
+
 const createHarness = ({ peakXml = null, captureResult = null, ownershipResult = null, settings = {}, beforePeakFetch = null,
     beforePeakbaggerLogin = null,
-    beforeProviderCapture = null, beforeBadgeText = null, beforeTabGet = null, groupError = null, faults = {},
+    beforeProviderCapture = null, beforeBadgeText = null, beforeTabGet = null, beforeTabCreate = null,
+    afterSessionSet = null, clock = null, groupError = null, faults = {},
     loginHtml = '<a href="climber/climber.aspx?cid=77">My Home Page</a>' } = {}) => {
     const values = {};
     const localValues = {};
@@ -93,6 +102,7 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
                         throw new Error(message);
                     }
                     Object.assign(values, structuredClone(patch));
+                    if (afterSessionSet) await afterSessionSet(structuredClone(patch));
                 }
             },
             sync: {
@@ -158,6 +168,7 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
             create: async details => {
                 if (faults.tabCreate) throw new Error(faults.tabCreate);
                 tabCreateCalls++;
+                if (beforeTabCreate) await beforeTabCreate({ number: tabCreateCalls, details, tabs });
                 if (faults.tabCreateAt === tabCreateCalls) {
                     const message = faults.tabCreateAtMessage || `tab create ${tabCreateCalls} failed`;
                     faults.tabCreateAt = null;
@@ -219,13 +230,14 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
 
     const workerConsole = Object.create(console);
     workerConsole.error = (...args) => { loggedErrors.push(args); };
+    const WorkerDate = clock ? class extends Date { static now() { return clock.now; } } : Date;
     const context = vm.createContext({
         browser,
         fetch,
         URL,
         URLSearchParams,
         Math,
-        Date,
+        Date: WorkerDate,
         console: workerConsole,
         structuredClone,
         btoa
@@ -471,6 +483,7 @@ test('draft opening rolls back every partial toolbar attempt and remains retryab
         ['first tab navigation', { tabNavigateAt: 1 }],
         ['second tab navigation', { tabNavigateAt: 2 }],
         ['opened-job write', { openedJobSet: 'opened job write failed' }],
+        ['job-and-draft finalization', { draftSetAt: 3 }],
     ];
     const peakXml = '<p><t i="7" n="First Peak" a="0" o="0" e="426.51" r="100" l="Test Range"/>'
         + '<t i="8" n="Second Peak" a="0" o="0.0005" e="426.51" r="100" l="Test Range"/></p>';
@@ -1066,6 +1079,223 @@ test('an opened job refuses selection writes and hands the popup its locked stat
     assert.deepEqual([...refused.selectedIds], [7, 8], 'the response reports the selection that opened');
     assert.deepEqual([...harness.values.bpbCaptureJobs['1'].selectedIds], [7, 8],
         'and nothing was stored');
+});
+
+test('selection cannot change after a draft opening generation starts', async () => {
+    let releaseCreate;
+    let createReached;
+    const createGate = new Promise(resolve => { releaseCreate = resolve; });
+    const reached = new Promise(resolve => { createReached = resolve; });
+    const harness = createHarness({
+        peakXml: '<p><t i="7" n="First Peak" a="0" o="0" e="426.51" r="100" l="Test Range"/><t i="8" n="Second Peak" a="0" o="0" e="426.51" r="100" l="Test Range"/></p>',
+        beforeTabCreate: async ({ number }) => {
+            if (number !== 1) return;
+            createReached();
+            await createGate;
+        },
+    });
+    await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+
+    const opening = harness.send({ type: 'CAPTURE_OPEN_DRAFTS', tabId: 1, selectedIds: [7] });
+    await reached;
+    const lateSelection = harness.send({ type: 'CAPTURE_SELECTION', tabId: 1, selectedIds: [8] });
+    releaseCreate();
+
+    const [opened, selected] = await Promise.all([opening, lateSelection]);
+    assert.deepEqual([...opened.tabIds], [100]);
+    assert.deepEqual([...selected.selectedIds], [7]);
+    assert.deepEqual([...harness.values.bpbCaptureJobs['1'].selectedIds], [7]);
+    assert.equal(harness.values.bpbDraftTabs['100'].pid, 7);
+    assert.equal(harness.tabs.has(101), false, 'the late selection never opens another peak');
+});
+
+test('clearing during draft opening cancels the generation and leaves no orphan state or tab', async () => {
+    let releaseCreate;
+    let createReached;
+    const createGate = new Promise(resolve => { releaseCreate = resolve; });
+    const reached = new Promise(resolve => { createReached = resolve; });
+    const harness = createHarness({
+        beforeTabCreate: async ({ number }) => {
+            if (number !== 1) return;
+            createReached();
+            await createGate;
+        },
+    });
+    await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+
+    const opening = harness.send({ type: 'CAPTURE_OPEN_DRAFTS', tabId: 1, selectedIds: [7] });
+    await reached;
+    const clearing = harness.send({ type: 'CAPTURE_CLEAR', tabId: 1 });
+    releaseCreate();
+
+    const [openResult, clearResult] = await Promise.all([opening, clearing]);
+    assert.equal(openResult.phase, 'error');
+    assert.equal(openResult.error.code, 'draft-open-cancelled');
+    assert.equal(clearResult.ok, true);
+    assert.equal(harness.values.bpbCaptureJobs['1'], undefined);
+    assert.deepEqual(harness.values.bpbDraftTabs || {}, {});
+    assert.equal(harness.tabs.has(100), false);
+    assert.deepEqual(harness.removedTabs, [100]);
+});
+
+test('source-tab closure during draft opening cancels and cleans the generation idempotently', async () => {
+    let releaseCreate;
+    let createReached;
+    const createGate = new Promise(resolve => { releaseCreate = resolve; });
+    const reached = new Promise(resolve => { createReached = resolve; });
+    const harness = createHarness({
+        beforeTabCreate: async ({ number }) => {
+            if (number !== 1) return;
+            createReached();
+            await createGate;
+        },
+    });
+    await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    const opening = harness.send({ type: 'CAPTURE_OPEN_DRAFTS', tabId: 1, selectedIds: [7] });
+    await reached;
+
+    const readsBeforeClose = harness.sessionGetCalls();
+    harness.tabs.delete(1);
+    harness.tabRemoved.listeners[0](1);
+    await waitForCondition(() => harness.sessionGetCalls() >= readsBeforeClose + 2);
+    await Promise.resolve();
+    releaseCreate();
+
+    const openResult = await opening;
+    assert.equal(openResult.phase, 'error');
+    assert.equal(openResult.error.code, 'draft-open-cancelled');
+    await waitForCondition(() => !harness.values.bpbCaptureJobs?.['1']
+        && !harness.values.bpbDraftTabs?.['100']);
+    assert.equal(harness.tabs.has(100), false);
+    assert.deepEqual(harness.removedTabs, [100]);
+    harness.tabRemoved.listeners[0](1);
+    await Promise.resolve();
+    assert.equal(harness.values.bpbCaptureJobs?.['1'], undefined, 'repeated source cleanup stays harmless');
+});
+
+test('expiry during draft opening cancels the generation and removes all expired state', async () => {
+    let releaseCreate;
+    let createReached;
+    const createGate = new Promise(resolve => { releaseCreate = resolve; });
+    const reached = new Promise(resolve => { createReached = resolve; });
+    const clock = { now: Date.now() };
+    const harness = createHarness({
+        clock,
+        beforeTabCreate: async ({ number }) => {
+            if (number !== 1) return;
+            createReached();
+            await createGate;
+        },
+    });
+    await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    const opening = harness.send({ type: 'CAPTURE_OPEN_DRAFTS', tabId: 1, selectedIds: [7] });
+    await reached;
+
+    clock.now += 30 * 60 * 1000 + 1;
+    const readsBeforeExpiry = harness.sessionGetCalls();
+    harness.alarmEvent.listeners[0]({ name: 'bpb-capture-cleanup' });
+    await waitForCondition(() => harness.sessionGetCalls() >= readsBeforeExpiry + 2);
+    await Promise.resolve();
+    releaseCreate();
+
+    const openResult = await opening;
+    assert.equal(openResult.phase, 'error');
+    assert.equal(openResult.error.code, 'draft-open-cancelled');
+    await waitForCondition(() => !harness.values.bpbCaptureJobs?.['1']
+        && !harness.values.bpbDraftTabs?.['100']);
+    assert.equal(harness.tabs.has(100), false);
+    assert.deepEqual(harness.removedTabs, [100]);
+});
+
+test('draft opening cannot restore or mutate a replacement job generation', async () => {
+    let releaseCreate;
+    let createReached;
+    const createGate = new Promise(resolve => { releaseCreate = resolve; });
+    const reached = new Promise(resolve => { createReached = resolve; });
+    const harness = createHarness({
+        beforeTabCreate: async ({ number }) => {
+            if (number !== 1) return;
+            createReached();
+            await createGate;
+        },
+    });
+    await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    const opening = harness.send({ type: 'CAPTURE_OPEN_DRAFTS', tabId: 1, selectedIds: [7] });
+    await reached;
+    harness.values.bpbCaptureJobs['1'] = {
+        ...structuredClone(harness.values.bpbCaptureJobs['1']),
+        id: 'replacement-job',
+        phase: 'ready',
+        selectedIds: [7],
+        uploadGpx: '<gpx>replacement</gpx>',
+    };
+    releaseCreate();
+
+    const openResult = await opening;
+    assert.equal(openResult.phase, 'error');
+    assert.equal(openResult.error.code, 'draft-open-cancelled');
+    assert.equal(harness.values.bpbCaptureJobs['1'].id, 'replacement-job');
+    assert.equal(harness.values.bpbCaptureJobs['1'].uploadGpx, '<gpx>replacement</gpx>');
+    assert.equal(harness.tabs.has(100), false);
+    assert.deepEqual(harness.values.bpbDraftTabs || {}, {});
+});
+
+test('installing a replacement job removes records owned by the prior generation', async () => {
+    const harness = createHarness();
+    await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    const firstJobId = harness.values.bpbCaptureJobs['1'].id;
+    const opened = await harness.send({ type: 'CAPTURE_OPEN_DRAFTS', tabId: 1, selectedIds: [7] });
+    assert.equal(harness.values.bpbDraftTabs[String(opened.tabIds[0])].jobId, firstJobId);
+
+    const replacement = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: true });
+
+    assert.notEqual(replacement.id, firstJobId);
+    assert.equal(harness.values.bpbCaptureJobs['1'].id, replacement.id);
+    assert.deepEqual(harness.values.bpbDraftTabs, {},
+        'completed draft tabs may remain open for review, but no stale record may join the replacement lifecycle');
+    assert.equal(harness.tabs.has(opened.tabIds[0]), true,
+        'replacement does not close a completed user-visible draft tab');
+});
+
+test('an old Preview completion cannot clear a replacement job GPX', async () => {
+    let releaseCompletion;
+    let completionReached;
+    let held = false;
+    const completionGate = new Promise(resolve => { releaseCompletion = resolve; });
+    const reached = new Promise(resolve => { completionReached = resolve; });
+    const harness = createHarness({
+        afterSessionSet: async patch => {
+            if (held || !Object.values(patch.bpbDraftTabs || {}).some(draft => draft.complete)) return;
+            held = true;
+            completionReached();
+            await completionGate;
+        },
+    });
+    await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    await harness.send({ type: 'CAPTURE_OPEN_DRAFTS', tabId: 1, selectedIds: [7] });
+    const apply = await harness.send({ type: 'DRAFT_READY', pid: '7', cid: '77' }, { tab: { id: 100 } });
+    await harness.send({
+        type: 'DRAFT_PREVIEW_STARTED', jobId: apply.jobId, pid: 7, cid: 77,
+    }, { tab: { id: 100 } });
+
+    const completion = harness.send({
+        type: 'DRAFT_READY', pid: '7', cid: '77',
+        previewResult: { state: 'success', message: 'GPX file successfully uploaded.' },
+    }, { tab: { id: 100 } });
+    await reached;
+    const replacement = {
+        ...structuredClone(harness.values.bpbCaptureJobs['1']),
+        id: 'replacement-job',
+        phase: 'ready',
+        uploadGpx: '<gpx>replacement</gpx>',
+    };
+    harness.values.bpbCaptureJobs['1'] = replacement;
+    releaseCompletion();
+
+    assert.equal((await completion).action, 'banner');
+    assert.equal(harness.values.bpbCaptureJobs['1'].id, 'replacement-job');
+    assert.equal(harness.values.bpbCaptureJobs['1'].phase, 'ready');
+    assert.equal(harness.values.bpbCaptureJobs['1'].uploadGpx, '<gpx>replacement</gpx>');
 });
 
 test('same-day suffixes include only selected ascents and follow track order', async () => {

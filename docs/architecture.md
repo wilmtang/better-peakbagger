@@ -444,11 +444,14 @@ minutes. Draft delivery requires a matching sender tab, job, peak, and climber.
 Every selected draft is registered before its tab navigates, closing the race
 between content-script startup and worker state.
 
-Opening selected drafts is a per-source transaction. The worker records every
-tab and draft mutation, restores overwritten current-tab state and exact prior
-records after failure, and closes only tabs that transaction created and that
-the user has not since navigated elsewhere. Stored reusable tab URLs are
-revalidated before reuse so stale identities cannot receive a new draft.
+Selection, opening, Preview completion, replacement, and cleanup share one
+per-source lifecycle queue and generation. Opening first enters a persisted
+`opening` phase that locks selection, then revalidates the job and opening
+generation after each asynchronous boundary. Job and draft completion commit
+together. On cancellation or failure, rollback restores only exact records
+owned by that opening and closes only tabs it created; it cannot restore or
+mutate a replacement job. Stored reusable tab URLs are revalidated before reuse
+so stale identities cannot receive a new draft.
 
 Alphabetical suffixes are assigned only among selected drafts sharing one
 ascent date and follow track encounter order. Singleton dates keep a blank

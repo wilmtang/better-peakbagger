@@ -7,7 +7,7 @@ import { capturePhases } from '../../src/capture/capture-phases.js';
 
 test('capture terminal phases have one shared immutable definition', () => {
     assert.deepEqual(capturePhases.TERMINAL_PHASES, [
-        'ready', 'no-matches', 'no-gps', 'error', 'opened', 'previewed'
+        'ready', 'no-matches', 'no-gps', 'error', 'opening', 'opened', 'previewed'
     ]);
     assert.equal(Object.isFrozen(capturePhases.TERMINAL_PHASES), true);
     for (const phase of capturePhases.TERMINAL_PHASES) assert.equal(capturePhases.isTerminal(phase), true);

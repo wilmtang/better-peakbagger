@@ -49,7 +49,8 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
     const processes = new Map();
     const captureAdmissions = new Map();
     const captureCancellationEpochs = new Map();
-    const draftOpeningQueues = new Map();
+    const lifecycleQueues = new Map();
+    const lifecycleEpochs = new Map();
     let mutationQueue = Promise.resolve();
 
     const now = () => Date.now();
@@ -111,6 +112,16 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
         mutationQueue = operation.catch(() => {});
         return operation;
     };
+    const mutateLifecycleMaps = mutate => {
+        const operation = mutationQueue.then(async () => {
+            const [jobs, drafts] = await Promise.all([readMap(JOBS_KEY), readMap(DRAFTS_KEY)]);
+            const result = await mutate(jobs, drafts);
+            await storage().set({ [JOBS_KEY]: jobs, [DRAFTS_KEY]: drafts });
+            return result;
+        });
+        mutationQueue = operation.catch(() => {});
+        return operation;
+    };
 
     const runDetachedCleanup = (label, cleanup) => {
         void Promise.resolve().then(cleanup).catch(error => {
@@ -140,12 +151,6 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
         await ext.action.setBadgeBackgroundColor({ tabId, color });
         await ext.action.setBadgeText({ tabId, text });
     };
-
-    const updateJob = (tabId, patch) => mutateMap(JOBS_KEY, jobs => {
-        if (!jobs[tabId]) return null;
-        jobs[tabId] = { ...jobs[tabId], ...patch, updatedAt: now() };
-        return jobs[tabId];
-    });
 
     const updateCaptureJob = (tabId, generation, patch) => mutateMap(JOBS_KEY, jobs => {
         if (!jobs[tabId] || jobs[tabId].id !== generation) return null;
@@ -619,7 +624,8 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
             expiresAt: now() + JOB_TTL_MS,
             error: null
         };
-        await mutateMap(JOBS_KEY, map => { map[tabId] = job; });
+        invalidateLifecycle(tabId);
+        await serializeLifecycle(tabId, () => installLifecycleJob(job));
         if (cancelled()) {
             await mutateMap(JOBS_KEY, map => {
                 if (map[tabId]?.id === job.id) delete map[tabId];
@@ -660,7 +666,7 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
         }
     };
 
-    const clearCapture = async message => {
+    const clearCaptureTransaction = async message => {
         const tabId = Number(message.tabId);
         if (!Number.isInteger(tabId)) {
             throw PublicErrors.exception('invalid-tab', 'Activity tab identity is unavailable.');
@@ -715,6 +721,13 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
         return { ok: true, removedGpx, removedDraftCount: removedDraftTabIds.length };
     };
 
+    const clearCapture = message => {
+        const tabId = Number(message.tabId);
+        if (!Number.isInteger(tabId)) return clearCaptureTransaction(message);
+        invalidateLifecycle(tabId);
+        return serializeLifecycle(tabId, () => clearCaptureTransaction(message));
+    };
+
     const cancelAdmittedCapture = async (tabId, cancelledAdmission) => {
         let cancelled = cancelledAdmission;
         let current = null;
@@ -754,13 +767,18 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
     // Once drafts exist for the job, a selection write can never take effect —
     // openDrafts() reuses those tabs — so refuse it at the route rather than
     // storing a change the popup would then misreport as actionable.
-    const SELECTION_LOCKED_PHASES = new Set(['opened', 'previewed']);
+    const SELECTION_LOCKED_PHASES = new Set(['opening', 'opened', 'previewed']);
 
-    const updateSelection = async message => {
+    const updateSelectionTransaction = async message => {
         const tabId = Number(message.tabId);
         const current = (await readMap(JOBS_KEY))[tabId];
         if (isFresh(current) && SELECTION_LOCKED_PHASES.has(current.phase)) return current;
         return applySelection(message);
+    };
+
+    const updateSelection = message => {
+        const tabId = Number(message.tabId);
+        return serializeLifecycle(tabId, () => updateSelectionTransaction(message));
     };
 
     // openDrafts() re-opens a job whose draft tabs were all closed, so the
@@ -779,6 +797,26 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
         });
     };
 
+    const beginDraftOpening = (message, expectedJobId) => {
+        const tabId = Number(message.tabId);
+        const openingId = makeId();
+        return mutateMap(JOBS_KEY, jobs => {
+            const job = jobs[tabId];
+            if (!isFresh(job) || job.id !== expectedJobId
+                || (job.phase !== 'ready' && job.phase !== 'opened' && job.phase !== 'previewed')) return null;
+            if (job.phase === 'ready') {
+                const allowed = new Set(job.matches.map(match => String(match.id)));
+                job.selectedIds = [...new Set((message.selectedIds || []).map(String))]
+                    .filter(id => allowed.has(id))
+                    .map(Number);
+            }
+            job.phase = 'opening';
+            job.openingId = openingId;
+            job.updatedAt = now();
+            return { job: structuredClone(job), openingId };
+        });
+    };
+
     const prepareDraftOpening = (job, matches, sourceTabId) => {
         const selection = Core.prepareDraftSelection(matches);
         const useTripInfo = job.capturePreferences?.fillTripInfo && selection.matches.length > 1;
@@ -792,6 +830,7 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
         }) => ({
             tabId,
             jobId: job.id,
+            openingId: job.openingId,
             sourceTabId,
             pid: match.id,
             cid: job.cid,
@@ -815,24 +854,90 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
         return { ...selection, makeDraft };
     };
 
-    const serializeDraftOpening = (tabId, operation) => {
-        const previous = draftOpeningQueues.get(tabId) || Promise.resolve();
+    const lifecycleEpoch = tabId => lifecycleEpochs.get(tabId) || 0;
+    const invalidateLifecycle = tabId => {
+        lifecycleEpochs.set(tabId, lifecycleEpoch(tabId) + 1);
+    };
+    const serializeLifecycle = (tabId, operation) => {
+        const previous = lifecycleQueues.get(tabId) || Promise.resolve();
         const current = previous.catch(() => {}).then(operation);
-        draftOpeningQueues.set(tabId, current);
+        lifecycleQueues.set(tabId, current);
         return current.finally(() => {
-            if (draftOpeningQueues.get(tabId) === current) draftOpeningQueues.delete(tabId);
+            if (lifecycleQueues.get(tabId) === current) lifecycleQueues.delete(tabId);
         });
+    };
+    const installLifecycleJob = job => {
+        const operation = mutationQueue.then(async () => {
+            const [jobs, drafts] = await Promise.all([readMap(JOBS_KEY), readMap(DRAFTS_KEY)]);
+            let removedDraft = false;
+            Object.entries(drafts).forEach(([draftTabId, draft]) => {
+                if (Number(draft.sourceTabId) === Number(job.sourceTabId) && draft.jobId !== job.id) {
+                    delete drafts[draftTabId];
+                    removedDraft = true;
+                }
+            });
+            jobs[job.sourceTabId] = job;
+            const patch = { [JOBS_KEY]: jobs };
+            if (removedDraft) patch[DRAFTS_KEY] = drafts;
+            await storage().set(patch);
+        });
+        mutationQueue = operation.catch(() => {});
+        return operation;
     };
 
     const sameDraftIdentity = (left, right) => !!left && !!right
         && Number(left.tabId) === Number(right.tabId)
         && left.jobId === right.jobId
+        && left.openingId === right.openingId
         && String(left.pid) === String(right.pid)
         && String(left.cid) === String(right.cid);
 
-    const createDraftOpeningTransaction = ({ jobTabId, priorJob }) => {
+    const createDraftOpeningTransaction = ({ jobTabId, priorJob, openingId, epoch }) => {
         const createdTabIds = [];
         const draftWrites = new Map();
+
+        const isCurrent = async () => {
+            if (lifecycleEpoch(jobTabId) !== epoch) return false;
+            const current = (await readMap(JOBS_KEY))[jobTabId];
+            return current?.id === priorJob?.id && current.openingId === openingId
+                && (current.phase === 'opening' || current.phase === 'opened' || current.phase === 'previewed');
+        };
+        const assertCurrent = async () => {
+            if (await isCurrent()) return;
+            throw PublicErrors.exception(
+                'draft-open-cancelled',
+                'Draft opening was cancelled because the capture changed.',
+            );
+        };
+        const prepareFinish = patch => mutateMap(JOBS_KEY, jobs => {
+            const current = jobs[jobTabId];
+            if (lifecycleEpoch(jobTabId) !== epoch || current?.id !== priorJob?.id
+                || current.openingId !== openingId || current.phase !== 'opening') return null;
+            jobs[jobTabId] = {
+                ...current,
+                ...patch,
+                updatedAt: now(),
+            };
+            return jobs[jobTabId];
+        });
+        const finalize = () => mutateLifecycleMaps((jobs, drafts) => {
+            const current = jobs[jobTabId];
+            if (lifecycleEpoch(jobTabId) !== epoch || current?.id !== priorJob?.id
+                || current.openingId !== openingId
+                || (current.phase !== 'opened' && current.phase !== 'previewed')) return null;
+            const next = { ...current, updatedAt: now() };
+            delete next.openingId;
+            jobs[jobTabId] = next;
+            Object.values(drafts).forEach(draft => {
+                if (draft.jobId === priorJob.id && draft.openingId === openingId) delete draft.openingId;
+            });
+            return next;
+        });
+        const finish = async patch => {
+            const prepared = await prepareFinish(patch);
+            if (!prepared) return null;
+            return finalize();
+        };
 
         const trackTab = tabId => {
             createdTabIds.push(tabId);
@@ -858,16 +963,16 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
                 }
             });
             try {
-                await mutateMap(DRAFTS_KEY, drafts => {
+                await mutateLifecycleMaps((jobs, drafts) => {
                     draftWrites.forEach(({ previous, installed }, key) => {
                         if (!sameDraftIdentity(drafts[key], installed)) return;
                         if (previous) drafts[key] = previous;
                         else delete drafts[key];
                     });
-                });
-                await mutateMap(JOBS_KEY, jobs => {
                     const current = jobs[jobTabId];
-                    if (current?.id === priorJob?.id) jobs[jobTabId] = structuredClone(priorJob);
+                    if (current?.id === priorJob?.id && current.openingId === openingId) {
+                        jobs[jobTabId] = structuredClone(priorJob);
+                    }
                 });
             } catch (rollbackError) {
                 console.error('Better Peakbagger: draft-opening state rollback failed', rollbackError);
@@ -875,7 +980,7 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
             console.error('Better Peakbagger: draft opening failed', cause);
         };
 
-        return { trackTab, writeDraft, rollback };
+        return { trackTab, writeDraft, assertCurrent, prepareFinish, finalize, finish, rollback };
     };
 
     const draftTabMatches = (tab, draft) => {
@@ -927,17 +1032,20 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
         onBeforeNavigate = null,
     }) => {
         const sourceTab = await ext.tabs.get(sourceTabId);
+        await transaction.assertCurrent();
         const created = [];
         for (let index = 0; index < matches.length; index++) {
             const match = matches[index];
             const tab = await ext.tabs.create({ url: 'about:blank', active: false, windowId: sourceTab.windowId });
             transaction.trackTab(tab.id);
+            await transaction.assertCurrent();
             const draft = makeDraft(match, {
                 tabId: tab.id,
                 previewOrder: startOrder + index,
                 focusOnReady: focusFirst && index === 0,
             });
             await transaction.writeDraft(draft);
+            await transaction.assertCurrent();
             created.push(draft);
         }
 
@@ -956,12 +1064,15 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
                 groupWarning = true;
                 console.warn('Better Peakbagger: tab grouping failed', error);
             }
+            await transaction.assertCurrent();
         }
         if (onBeforeNavigate) await onBeforeNavigate({ created, groupWarning });
+        await transaction.assertCurrent();
         await Promise.all(created.map(draft => ext.tabs.update(draft.tabId, {
             url: `${PEAKBAGGER_ORIGIN}/climber/ascentedit.aspx?pid=${draft.pid}&cid=${draft.cid}`,
             active: false
         })));
+        await transaction.assertCurrent();
         return { created, groupWarning };
     };
 
@@ -974,25 +1085,54 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
                 'Capture results are no longer available. Capture the activity again.'
             );
         }
-
-        const existingDrafts = await readMap(DRAFTS_KEY);
-        const inspected = await inspectRecordedDrafts(existingJob.id, existingDrafts);
-        const existingForJob = inspected.live
-            .sort((a, b) => b.confidence - a.confidence);
-        if (existingForJob.length && !inspected.stale.length) {
-            for (const draft of existingForJob) await ext.tabs.update(draft.tabId, { active: false });
-            await ext.tabs.update(existingForJob[0].tabId, { active: true });
-            return {
-                tabIds: existingForJob.map(draft => draft.tabId),
-                reused: true,
-                job: publicJob(existingJob)
-            };
+        const epoch = lifecycleEpoch(tabId);
+        const started = await beginDraftOpening(message, existingJob.id);
+        if (!started) {
+            throw PublicErrors.exception(
+                'job-expired',
+                'Capture results are no longer available. Capture the activity again.'
+            );
         }
-
-        const transaction = createDraftOpeningTransaction({ jobTabId: tabId, priorJob: existingJob });
+        const job = started.job;
+        const transaction = createDraftOpeningTransaction({
+            jobTabId: tabId,
+            priorJob: existingJob,
+            openingId: started.openingId,
+            epoch,
+        });
         try {
-            const job = await applySelection(message);
-            if (!isFresh(job) || !job.uploadGpx || (job.phase !== 'ready' && job.phase !== 'opened')) {
+            if (!isFresh(job)) {
+                throw PublicErrors.exception(
+                    'job-expired',
+                    'Capture results are no longer available. Capture the activity again.'
+                );
+            }
+            const existingDrafts = await readMap(DRAFTS_KEY);
+            await transaction.assertCurrent();
+            const inspected = await inspectRecordedDrafts(job.id, existingDrafts);
+            await transaction.assertCurrent();
+            const existingForJob = inspected.live
+                .sort((a, b) => b.confidence - a.confidence);
+            if (existingForJob.length && !inspected.stale.length) {
+                for (const draft of existingForJob) {
+                    await ext.tabs.update(draft.tabId, { active: false });
+                    await transaction.assertCurrent();
+                }
+                await ext.tabs.update(existingForJob[0].tabId, { active: true });
+                await transaction.assertCurrent();
+                const opened = await transaction.finish({
+                    phase: existingJob.phase === 'previewed' ? 'previewed' : 'opened',
+                    openedDraftTabIds: existingForJob.map(draft => draft.tabId),
+                    groupWarning: job.groupWarning || null,
+                });
+                if (!opened) await transaction.assertCurrent();
+                return {
+                    tabIds: existingForJob.map(draft => draft.tabId),
+                    reused: true,
+                    job: publicJob(opened)
+                };
+            }
+            if (!job.uploadGpx) {
                 throw PublicErrors.exception(
                     'job-expired',
                     'Capture results are no longer available. Capture the activity again.'
@@ -1023,11 +1163,16 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
             });
             const allDrafts = [...existingForJob, ...created].sort((a, b) => a.previewOrder - b.previewOrder);
             const tabIds = allDrafts.map(draft => draft.tabId);
-            const opened = await updateJob(tabId, { phase: 'opened', openedDraftTabIds: tabIds, groupWarning });
             if (existingForJob.length) {
-                for (const draft of allDrafts) await ext.tabs.update(draft.tabId, { active: false });
+                for (const draft of allDrafts) {
+                    await ext.tabs.update(draft.tabId, { active: false });
+                    await transaction.assertCurrent();
+                }
                 await ext.tabs.update(allDrafts[0].tabId, { active: true });
+                await transaction.assertCurrent();
             }
+            const opened = await transaction.finish({ phase: 'opened', openedDraftTabIds: tabIds, groupWarning });
+            if (!opened) await transaction.assertCurrent();
             return { tabIds, groupWarning, reused: false, job: publicJob(opened) };
         } catch (cause) {
             await transaction.rollback(cause);
@@ -1042,7 +1187,7 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
 
     const openDrafts = message => {
         const tabId = Number(message.tabId);
-        return serializeDraftOpening(tabId, () => openDraftsTransaction(message, tabId));
+        return serializeLifecycle(tabId, () => openDraftsTransaction(message, tabId));
     };
 
     // ---- Local-file GPX processing (ascentedit.aspx upload field) ----------
@@ -1118,7 +1263,8 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
             expiresAt: now() + JOB_TTL_MS,
             error: null
         };
-        await mutateMap(JOBS_KEY, map => { map[tabId] = job; });
+        invalidateLifecycle(tabId);
+        await serializeLifecycle(tabId, () => installLifecycleJob(job));
         const finish = patch => mutateMap(JOBS_KEY, map => {
             if (!map[tabId] || map[tabId].id !== job.id) return null;
             map[tabId] = { ...map[tabId], ...patch, updatedAt: now(), expiresAt: now() + JOB_TTL_MS };
@@ -1182,7 +1328,7 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
         }
         const tabId = page.tabId;
         const jobs = await readMap(JOBS_KEY);
-        const job = jobs[tabId];
+        let job = jobs[tabId];
         if (!isFresh(job) || job.provider !== 'upload' || job.id !== message.jobId
             || job.phase !== 'ready' || !job.uploadGpx) {
             return { ok: false, error: { code: 'job-expired', message: 'The processed GPX is no longer available. Process the file again.' } };
@@ -1207,12 +1353,25 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
             return { ok: false, error: { code: 'identity-mismatch', message: 'This form is bound to a different peak.' } };
         }
 
+        const priorJob = job;
+        const epoch = lifecycleEpoch(tabId);
+        const started = await beginDraftOpening({ ...message, tabId }, job.id);
+        if (!started) {
+            return { ok: false, error: { code: 'job-expired', message: 'The processed GPX is no longer available. Process the file again.' } };
+        }
+        job = started.job;
+
         const opening = prepareDraftOpening(job, selectedIds.map(id => byId.get(id)), tabId);
         const primaryMatch = primaryId
             ? opening.matches.find(match => String(match.id) === primaryId)
             : null;
         const siblings = opening.confidenceOrdered.filter(match => match !== primaryMatch);
-        const transaction = createDraftOpeningTransaction({ jobTabId: tabId, priorJob: job });
+        const transaction = createDraftOpeningTransaction({
+            jobTabId: tabId,
+            priorJob,
+            openingId: started.openingId,
+            epoch,
+        });
 
         // Every draft is registered before any tab changes URL, so a fast
         // page load can never race its own identity checks.
@@ -1226,6 +1385,7 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
                     preserveExistingFields: true,
                 });
                 await transaction.writeDraft(currentDraft);
+                await transaction.assertCurrent();
             }
             let tabIds = [];
             const { groupWarning } = await openNewDraftTabs({
@@ -1235,14 +1395,21 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
                 transaction,
                 startOrder: order,
                 focusFirst: !primaryMatch,
-                onBeforeNavigate: async ({ created: pending, groupWarning: warning }) => {
+                onBeforeNavigate: async ({ created: pending }) => {
                     tabIds = [...(primaryMatch ? [tabId] : []), ...pending.map(draft => draft.tabId)];
-                    await updateJob(tabId, { phase: 'opened', openedDraftTabIds: tabIds, groupWarning: warning });
+                    await transaction.assertCurrent();
                 },
             });
+            const prepared = await transaction.prepareFinish({
+                phase: 'opened',
+                openedDraftTabIds: tabIds,
+                groupWarning,
+            });
+            if (!prepared) await transaction.assertCurrent();
             if (primaryMatch) {
                 if (page.pid !== null) {
                     await notifyDraftToProceed({ tabId });
+                    await transaction.assertCurrent();
                 } else {
                     // Unbound page: peak selection on the native form is a
                     // postback, so the standard draft delivery fills the page
@@ -1250,8 +1417,11 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
                     await ext.tabs.update(tabId, {
                         url: `${PEAKBAGGER_ORIGIN}/climber/ascentedit.aspx?pid=${primaryMatch.id}&cid=${job.cid}`
                     });
+                    await transaction.assertCurrent();
                 }
             }
+            const opened = await transaction.finalize();
+            if (!opened) await transaction.assertCurrent();
             return { ok: true, tabIds, groupWarning };
         } catch (cause) {
             await transaction.rollback(cause);
@@ -1277,7 +1447,7 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
                 },
             });
         }
-        return serializeDraftOpening(page.tabId, () => applyGpxProcessTransaction(message, page));
+        return serializeLifecycle(page.tabId, () => applyGpxProcessTransaction(message, page));
     };
 
     const validateDraftPage = (draft, message) => String(draft.pid) === String(message.pid)
@@ -1308,7 +1478,7 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
         return { state, message };
     };
 
-    const draftReady = async (message, sender) => {
+    const draftReadyTransaction = async (message, sender) => {
         const tabId = sender.tab?.id;
         if (!Number.isInteger(tabId)) return { action: 'error', message: 'Draft tab identity is unavailable.' };
         const drafts = await readMap(DRAFTS_KEY);
@@ -1350,7 +1520,7 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
             const result = normalizedPreviewResult(message.previewResult);
             if (result.state !== 'success') {
                 await mutateMap(DRAFTS_KEY, map => {
-                    if (!map[tabId]) return;
+                    if (!sameDraftIdentity(map[tabId], draft)) return;
                     map[tabId].previewStarted = false;
                     map[tabId].previewError = result.message || 'Peakbagger returned no success confirmation.';
                 });
@@ -1364,7 +1534,7 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
                 };
             }
             await mutateMap(DRAFTS_KEY, map => {
-                if (!map[tabId]) return;
+                if (!sameDraftIdentity(map[tabId], draft)) return;
                 map[tabId].complete = true;
                 map[tabId].previewError = null;
                 map[tabId].dayStatsPending = job.capturePreferences?.fillAscentDetails !== false
@@ -1373,7 +1543,7 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
             const currentDrafts = await readMap(DRAFTS_KEY);
             const nextDraft = firstPendingDraft(currentDrafts, draft.jobId);
             if (nextDraft) await notifyDraftToProceed(nextDraft);
-            else await updateJob(draft.sourceTabId, { phase: 'previewed', uploadGpx: null });
+            else await updateCaptureJob(draft.sourceTabId, job.id, { phase: 'previewed', uploadGpx: null });
             const completedDraft = currentDrafts[tabId];
             return {
                 action: 'banner',
@@ -1397,7 +1567,9 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
 
         if (draft.focusOnReady) {
             await ext.tabs.update(tabId, { active: true });
-            await mutateMap(DRAFTS_KEY, map => { if (map[tabId]) map[tabId].focusOnReady = false; });
+            await mutateMap(DRAFTS_KEY, map => {
+                if (sameDraftIdentity(map[tabId], draft)) map[tabId].focusOnReady = false;
+            });
         }
         return {
             action: 'apply',
@@ -1426,7 +1598,15 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
         };
     };
 
-    const previewStarted = async (message, sender) => {
+    const draftReady = async (message, sender) => {
+        const tabId = sender.tab?.id;
+        if (!Number.isInteger(tabId)) return { action: 'error', message: 'Draft tab identity is unavailable.' };
+        const draft = (await readMap(DRAFTS_KEY))[tabId];
+        if (!isFresh(draft)) return { action: 'ignore' };
+        return serializeLifecycle(draft.sourceTabId, () => draftReadyTransaction(message, sender));
+    };
+
+    const previewStartedTransaction = async (message, sender) => {
         const tabId = sender.tab?.id;
         return mutateMap(DRAFTS_KEY, drafts => {
             const draft = drafts[tabId];
@@ -1441,7 +1621,13 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
         });
     };
 
-    const dayStatsApplied = async (message, sender) => {
+    const previewStarted = async (message, sender) => {
+        const draft = (await readMap(DRAFTS_KEY))[sender.tab?.id];
+        if (!draft) return { ok: false };
+        return serializeLifecycle(draft.sourceTabId, () => previewStartedTransaction(message, sender));
+    };
+
+    const dayStatsAppliedTransaction = async (message, sender) => {
         const tabId = sender.tab?.id;
         return mutateMap(DRAFTS_KEY, drafts => {
             const draft = drafts[tabId];
@@ -1453,20 +1639,40 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
         });
     };
 
-    const cleanup = async () => {
-        const cutoff = now();
+    const dayStatsApplied = async (message, sender) => {
+        const draft = (await readMap(DRAFTS_KEY))[sender.tab?.id];
+        if (!draft) return { ok: false };
+        return serializeLifecycle(draft.sourceTabId, () => dayStatsAppliedTransaction(message, sender));
+    };
+
+    const cleanupSource = async (sourceTabId, cutoff) => {
         const drafts = await mutateMap(DRAFTS_KEY, map => {
             Object.entries(map).forEach(([tabId, draft]) => {
-                if (draft.expiresAt <= cutoff) delete map[tabId];
+                if (Number(draft.sourceTabId) === Number(sourceTabId) && draft.expiresAt <= cutoff) delete map[tabId];
             });
             return { ...map };
         });
         const activeJobIds = new Set(Object.values(drafts).map(draft => draft.jobId));
         await mutateMap(JOBS_KEY, jobs => {
-            Object.entries(jobs).forEach(([tabId, job]) => {
-                if (job.expiresAt <= cutoff && !activeJobIds.has(job.id)) delete jobs[tabId];
-            });
+            const job = jobs[sourceTabId];
+            if (job?.expiresAt <= cutoff && !activeJobIds.has(job.id)) delete jobs[sourceTabId];
         });
+    };
+
+    const cleanup = async () => {
+        const cutoff = now();
+        const [jobs, drafts] = await Promise.all([readMap(JOBS_KEY), readMap(DRAFTS_KEY)]);
+        const sourceTabIds = new Set([
+            ...Object.keys(jobs).map(Number),
+            ...Object.values(drafts).map(draft => Number(draft.sourceTabId)),
+        ].filter(Number.isInteger));
+        await Promise.all([...sourceTabIds].map(sourceTabId => {
+            const expiring = jobs[sourceTabId]?.expiresAt <= cutoff
+                || Object.values(drafts).some(draft => Number(draft.sourceTabId) === sourceTabId
+                    && draft.expiresAt <= cutoff);
+            if (expiring) invalidateLifecycle(sourceTabId);
+            return serializeLifecycle(sourceTabId, () => cleanupSource(sourceTabId, cutoff));
+        }));
         await githubRoutes.cleanup(cutoff);
         await photoRoutes.cleanup(cutoff);
     };
@@ -1628,43 +1834,51 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
         return true;
     });
 
+    const cleanupRemovedTab = async tabId => {
+        const removedDraft = await mutateMap(DRAFTS_KEY, drafts => {
+            const value = drafts[tabId] || null;
+            delete drafts[tabId];
+            return value;
+        });
+        const remainingDrafts = await readMap(DRAFTS_KEY);
+        const nextDraft = removedDraft && !removedDraft.complete
+                && !orderedDrafts(remainingDrafts, removedDraft.jobId)
+                    .some(candidate => !candidate.complete && compareDraftOrder(candidate, removedDraft) < 0)
+            ? firstPendingDraft(remainingDrafts, removedDraft.jobId)
+            : null;
+        await mutateMap(JOBS_KEY, jobs => {
+            if (jobs[tabId]) {
+                const job = jobs[tabId];
+                const hasPendingDraft = Object.values(remainingDrafts).some(draft => draft.jobId === job.id);
+                if (hasPendingDraft) job.sourceClosed = true;
+                else delete jobs[tabId];
+            }
+            if (removedDraft) {
+                const sourceJob = Object.values(jobs).find(job => job.id === removedDraft.jobId);
+                const hasSiblingDraft = Object.values(remainingDrafts).some(draft => draft.jobId === removedDraft.jobId);
+                if (sourceJob && !hasSiblingDraft) {
+                    if (sourceJob.sourceClosed) delete jobs[sourceJob.sourceTabId];
+                    else if (sourceJob.uploadGpx) {
+                        sourceJob.phase = 'ready';
+                        sourceJob.openedDraftTabIds = [];
+                        sourceJob.updatedAt = now();
+                    }
+                }
+            }
+        });
+        await notifyDraftToProceed(nextDraft);
+    };
+
     ext.tabs.onRemoved.addListener(tabId => {
         terrainActivation.forgetTab(tabId);
         terrainPrefetch.forgetTab(tabId);
         runDetachedCleanup('photo tab cleanup', () => photoRoutes.forgetTab(tabId));
         runDetachedCleanup('capture tab cleanup', async () => {
-            const removedDraft = await mutateMap(DRAFTS_KEY, drafts => {
-                const value = drafts[tabId] || null;
-                delete drafts[tabId];
-                return value;
-            });
-            const remainingDrafts = await readMap(DRAFTS_KEY);
-            const nextDraft = removedDraft && !removedDraft.complete
-                && !orderedDrafts(remainingDrafts, removedDraft.jobId)
-                    .some(candidate => !candidate.complete && compareDraftOrder(candidate, removedDraft) < 0)
-                ? firstPendingDraft(remainingDrafts, removedDraft.jobId)
-                : null;
-            await mutateMap(JOBS_KEY, jobs => {
-                if (jobs[tabId]) {
-                    const job = jobs[tabId];
-                    const hasPendingDraft = Object.values(remainingDrafts).some(draft => draft.jobId === job.id);
-                    if (hasPendingDraft) job.sourceClosed = true;
-                    else delete jobs[tabId];
-                }
-                if (removedDraft) {
-                    const sourceJob = Object.values(jobs).find(job => job.id === removedDraft.jobId);
-                    const hasSiblingDraft = Object.values(remainingDrafts).some(draft => draft.jobId === removedDraft.jobId);
-                    if (sourceJob && !hasSiblingDraft) {
-                        if (sourceJob.sourceClosed) delete jobs[sourceJob.sourceTabId];
-                        else if (sourceJob.uploadGpx) {
-                            sourceJob.phase = 'ready';
-                            sourceJob.openedDraftTabIds = [];
-                            sourceJob.updatedAt = now();
-                        }
-                    }
-                }
-            });
-            await notifyDraftToProceed(nextDraft);
+            const [drafts, jobs] = await Promise.all([readMap(DRAFTS_KEY), readMap(JOBS_KEY)]);
+            const sourceTabId = Number(drafts[tabId]?.sourceTabId ?? (jobs[tabId] ? tabId : NaN));
+            if (!Number.isInteger(sourceTabId)) return;
+            invalidateLifecycle(sourceTabId);
+            await serializeLifecycle(sourceTabId, () => cleanupRemovedTab(tabId));
         });
     });
 
