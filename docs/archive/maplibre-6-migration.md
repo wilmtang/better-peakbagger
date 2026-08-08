@@ -281,3 +281,13 @@ closing or revising this plan.
   window placement. The v5 baseline LOD run had a pre-existing 179 ms collapse
   against its 120 ms timing bound; the v6 run passed all four acceptance checks,
   but those measurements remain specific to the recorded hardware and fixture.
+
+### Follow-up packaging simplification — 2026-08-08
+
+The generated classic main wrapper described above was subsequently removed.
+`terrain/terrain.html` now loads `terrain-frame.js` as a native module; that entry
+imports the unmodified packaged `vendor/maplibre-gl.mjs` directly. The lifecycle
+runtime remains explicitly injectable for jsdom, and GPU fixtures instrument the
+served frame module rather than publishing a production MapLibre global. The
+module worker, shared sibling, lazy extension-frame boundary, and all privacy and
+fallback invariants are unchanged.

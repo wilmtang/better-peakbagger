@@ -36,9 +36,9 @@ export const WEB_EXT_WARNING_BASELINE = Object.freeze([
     },
     {
         code: 'UNSAFE_VAR_ASSIGNMENT',
-        file: 'vendor/maplibre-gl.js',
+        file: 'vendor/maplibre-gl.mjs',
         count: 3,
-        owner: 'MapLibre GL JS 6.2.0 generated wrapper',
+        owner: 'MapLibre GL JS 6.2.0 main module',
         reason: 'reviewed upstream popup, attribution, and scale HTML paths; extension popups use DOM nodes and attribution is validated'
     },
     {

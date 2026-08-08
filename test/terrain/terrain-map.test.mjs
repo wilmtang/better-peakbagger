@@ -6,6 +6,7 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { build } from 'esbuild';
 import { JSDOM } from 'jsdom';
 import { makeChromeStub } from '../helpers/load-page.mjs';
 import { terrainFailure } from '../../src/terrain/terrain-failure.js';
@@ -19,11 +20,27 @@ const chromeWith = settings => {
     chrome.runtime.getURL = path => `chrome-extension://test-id/${path}`;
     return chrome;
 };
-// The isolated in-page 3D bridge bundle, and the extension-owned terrain frame
-// bundle (settings-schema + terrain-cache + terrain-frame). MapLibre is stubbed
-// per test; the bundled terrain cache binds the supplied fetch stub.
+// The isolated in-page 3D bridge bundle and a classic test harness around the
+// frame's injectable runtime. Production loads the tiny native-ESM entry that
+// imports MapLibre directly; lifecycle tests pass a stub so jsdom never allocates
+// WebGL. The bundled terrain cache still binds each test's supplied fetch stub.
 const bridgeBundle = await readFile(path.join(root, 'dist', 'content', 'terrain-map.js'), 'utf8');
-const frameBundle = await readFile(path.join(root, 'dist', 'terrain', 'terrain-frame.js'), 'utf8');
+const frameHarnessBuild = await build({
+    stdin: {
+        contents: `import { startTerrainFrame } from ${JSON.stringify(path.join(root, 'src', 'terrain', 'terrain-frame-runtime.js'))};\nstartTerrainFrame(globalThis.maplibregl);\n`,
+        resolveDir: root,
+        sourcefile: 'terrain-frame-test-harness.js',
+        loader: 'js',
+    },
+    bundle: true,
+    format: 'iife',
+    target: ['node22'],
+    platform: 'browser',
+    write: false,
+    legalComments: 'none',
+    logLevel: 'silent',
+});
+const frameBundle = frameHarnessBuild.outputFiles[0].text;
 const terrainCss = await readFile(path.join(root, 'src', 'terrain', 'terrain-map.css'), 'utf8');
 
 test('3D terrain waits for the extension frame handshake before sending route coordinates', async () => {

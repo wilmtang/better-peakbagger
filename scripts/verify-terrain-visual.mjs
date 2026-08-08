@@ -17,6 +17,7 @@ import {
     sendFixtureNotFound,
     sendFixtureText,
     instrumentTerrainFrameHtml,
+    instrumentTerrainFrameModule,
 } from './browser-verification-fixtures.mjs';
 
 const chromePath = process.env.CHROME_BIN || ({
@@ -91,9 +92,11 @@ const server = createServer({ key: fixtureKey, cert: fixtureCert }, async (reque
         }
         const transform = url.pathname === '/dist/terrain/terrain.html'
             ? instrumentTerrainFrameHtml
-            : (url.pathname === '/dist/options/options.html' && url.searchParams.get('visual') === '1'
-                ? html => html.replace('    <script src="options.js"></script>\n', '')
-                : null);
+            : (url.pathname === '/dist/terrain/terrain-frame.js'
+                ? instrumentTerrainFrameModule
+                : (url.pathname === '/dist/options/options.html' && url.searchParams.get('visual') === '1'
+                    ? html => html.replace('    <script src="options.js"></script>\n', '')
+                    : null));
         await sendFixtureFile(response, file, { transform });
     } catch (error) {
         sendFixtureError(response, error);
@@ -830,8 +833,17 @@ try {
         throw new Error('The pending-drape regression observed no new raster request');
     }
     holdBasemapRequests = false;
-    await Promise.all(pendingBasemapRequestIds.splice(0).map(requestId =>
-        cdp.call('Fetch.continueRequest', { requestId })));
+    await Promise.all(pendingBasemapRequestIds.splice(0).map(async requestId => {
+        try {
+            await cdp.call('Fetch.continueRequest', { requestId });
+        } catch (error) {
+            // MapLibre may cancel a held raster after the terrain-only style has
+            // already become active. CDP then expires the paused id before this
+            // release loop reaches it; the active-frame assertion above is the
+            // postcondition this probe owns.
+            if (!/Invalid InterceptionId|Fetch domain is not enabled/.test(error.message)) throw error;
+        }
+    }));
     // The pending-drape probe is the only reason to intercept local rasters.
     // Update the enabled Fetch domain in place: disabling it first races late
     // requestPaused handlers that are still continuing local raster requests.

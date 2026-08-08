@@ -9,8 +9,7 @@ import vm from 'node:vm';
 import {
     COPY_FILES,
     ENTRIES,
-    VENDOR_COPY,
-    VENDOR_MAPLIBRE
+    VENDOR_COPY
 } from '../../scripts/build-config.mjs';
 
 const manifest = JSON.parse(await fs.readFile(new URL('../../manifest.json', import.meta.url), 'utf8'));
@@ -146,19 +145,14 @@ test('3D terrain is isolated from Peakbagger globals in an extension-owned frame
         resources: ['terrain/terrain.html', 'photos/guide.html'],
         matches: ['https://www.peakbagger.com/*', 'https://peakbagger.com/*']
     }]);
-    // The frame loads MapLibre (a generated vendor global) then the frame bundle,
-    // which composes the shared camera/schema helpers, terrain cache, and frame.
+    // The extension-owned frame is a native module that imports the unmodified
+    // local MapLibre ESM distribution. There is no page global or script-order
+    // dependency for renderer startup.
     const terrainFrame = await fs.readFile(new URL('../../terrain/terrain.html', import.meta.url), 'utf8');
-    assert.match(terrainFrame, /vendor\/maplibre-gl\.js/);
-    assert.match(terrainFrame, /terrain-frame\.js/);
-    assert.ok(terrainFrame.indexOf('vendor/maplibre-gl.js') < terrainFrame.indexOf('terrain-frame.js'),
-        'the generated MapLibre global must load before the frame bundle reads it');
-    assert.deepEqual(VENDOR_MAPLIBRE, {
-        entry: 'maplibre-gl/dist/maplibre-gl.mjs',
-        out: 'vendor/maplibre-gl.js',
-        globalName: 'maplibregl'
-    });
+    assert.match(terrainFrame, /<script\s+type=["']module["']\s+src=["']terrain-frame\.js["']/);
+    assert.doesNotMatch(terrainFrame, /vendor\/maplibre-gl\.js|\bmaplibregl\b/);
     for (const artifact of [
+        ['maplibre-gl/dist/maplibre-gl.mjs', 'vendor/maplibre-gl.mjs'],
         ['maplibre-gl/dist/maplibre-gl-worker.mjs', 'vendor/maplibre-gl-worker.mjs'],
         ['maplibre-gl/dist/maplibre-gl-shared.mjs', 'vendor/maplibre-gl-shared.mjs'],
         ['maplibre-gl/dist/maplibre-gl.css', 'vendor/maplibre-gl.css'],
@@ -167,20 +161,29 @@ test('3D terrain is isolated from Peakbagger globals in an extension-owned frame
         assert.ok(VENDOR_COPY.some(entry => entry[0] === artifact[0] && entry[1] === artifact[1]),
             `${artifact[1]} must be packaged from MapLibre's local npm distribution`);
     }
-    const [rendererSource, workerSource] = await Promise.all([
-        fs.readFile(new URL('../../dist/vendor/maplibre-gl.js', import.meta.url), 'utf8'),
+    const [frameSource, rendererSource, workerSource] = await Promise.all([
+        fs.readFile(new URL('../../dist/terrain/terrain-frame.js', import.meta.url), 'utf8'),
+        fs.readFile(new URL('../../dist/vendor/maplibre-gl.mjs', import.meta.url), 'utf8'),
         fs.readFile(new URL('../../dist/vendor/maplibre-gl-worker.mjs', import.meta.url), 'utf8'),
         fs.access(new URL('../../dist/vendor/maplibre-gl-shared.mjs', import.meta.url)),
     ]);
-    const staticImports = source => [...source.matchAll(/\b(?:from|import)\s*["']([^"']+)["']/g)]
+    const staticImports = source => [...source.matchAll(/^\s*import(?:[^"'`;]*from\s*)?["']([^"']+)["']/gm)]
         .map(match => match[1]);
-    assert.deepEqual(staticImports(rendererSource), [],
-        'the generated renderer must not depend on a remote or unresolved module');
+    assert.deepEqual(staticImports(frameSource), ['../vendor/maplibre-gl.mjs'],
+        'the terrain entry must resolve MapLibre only from its packaged ESM file');
+    assert.deepEqual(staticImports(rendererSource), ['./maplibre-gl-shared.mjs'],
+        'the copied renderer must resolve only its packaged shared sibling');
     assert.deepEqual(staticImports(workerSource), ['./maplibre-gl-shared.mjs'],
         'the module worker must resolve only its packaged shared sibling');
     assert.doesNotMatch(terrainFrame, /<script[^>]+src=["']https?:/i,
         'the terrain frame must load renderer code only from the extension origin');
-    assert.deepEqual(bundleSources('terrain/terrain-frame.js'), ['gpx/map-route-limits.js', 'peakbagger/peakbagger-origin.js', 'terrain/terrain-camera.js', 'settings/settings-schema.js', 'terrain/terrain-cache.js', 'terrain/terrain-tiles.js', 'terrain/terrain-frame.js']);
+    const terrainBundle = ENTRIES.find(entry => entry.out === 'terrain/terrain-frame.js');
+    assert.equal(terrainBundle.format, 'esm');
+    assert.deepEqual(terrainBundle.browserImports, { 'maplibre-gl': '../vendor/maplibre-gl.mjs' });
+    assert.deepEqual(bundleSources('terrain/terrain-frame.js'), ['gpx/map-route-limits.js', 'peakbagger/peakbagger-origin.js', 'terrain/terrain-camera.js', 'settings/settings-schema.js', 'terrain/terrain-cache.js', 'terrain/terrain-tiles.js', 'terrain/terrain-frame-runtime.js', 'terrain/terrain-frame.js']);
+    const frameEntrySource = await fs.readFile(new URL('../../src/terrain/terrain-frame.js', import.meta.url), 'utf8');
+    assert.match(frameEntrySource, /import \* as maplibre from ['"]maplibre-gl['"]/);
+    assert.doesNotMatch(frameEntrySource, /globalThis\.maplibregl/);
     assert.ok(manifest.host_permissions.every(pattern => !pattern.includes('mapterhorn.com')),
         'public CORS tiles must not broaden persistent extension host access');
 });

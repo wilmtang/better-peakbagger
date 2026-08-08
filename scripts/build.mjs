@@ -4,10 +4,11 @@
 // Better Peakbagger — esbuild bundler.
 //
 // The extension source lives as ES modules under src/. Browsers cannot load an
-// ES module as a classic content script, so every manifest entry point is
-// bundled here into a single self-contained IIFE file under dist/. dist/ is the
-// unpacked extension: it is what you load, what the release packagers zip, and
-// what the real-extension checks exercise.
+// ES module as a classic content script, so manifest entry points are bundled
+// into self-contained IIFEs. The extension-owned terrain page is the deliberate
+// exception: its frame entry stays ESM so it can import MapLibre directly.
+// dist/ is the unpacked extension: it is what you load, what the release
+// packagers zip, and what the real-extension checks exercise.
 //
 // The bundle composition and asset list live in scripts/build-config.mjs (the
 // single source of truth, shared with the test suite). This file only turns
@@ -28,7 +29,6 @@ import {
     COPY_FILES,
     COPY_DIRS,
     VENDOR_COPY,
-    VENDOR_MAPLIBRE,
     nodeModule,
     entrySources,
     root,
@@ -77,31 +77,23 @@ async function copyAssets() {
         await mkdir(path.dirname(dest), { recursive: true });
         await copyFile(nodeModule(from), dest);
     }
-    await build({
-        entryPoints: [nodeModule(VENDOR_MAPLIBRE.entry)],
-        outfile: path.join(distDir, VENDOR_MAPLIBRE.out),
-        bundle: true,
-        format: 'iife',
-        globalName: VENDOR_MAPLIBRE.globalName,
-        target: ['chrome110', 'firefox115'],
-        platform: 'browser',
-        // Preserve the upstream module's worker auto-detection as a safe
-        // fallback even though terrain-frame.js sets the explicit local
-        // worker URL before constructing a map. Capturing currentScript in
-        // the banner avoids evaluating it later while terrain-frame.js is
-        // the active script.
-        banner: {
-            js: 'var __bpbMapLibreImportMetaUrl = document.currentScript && document.currentScript.src || "";'
-        },
-        define: { 'import.meta.url': '__bpbMapLibreImportMetaUrl' },
-        minify: true,
-        legalComments: 'none',
-        logLevel: 'warning',
-    });
 }
 
 // esbuild takes one entry file per output. For a multi-module bundle we feed it
 // a generated stub that imports each source in order.
+function browserImportPlugins(imports = {}) {
+    if (Object.keys(imports).length === 0) return [];
+    return [{
+        name: 'extension-browser-imports',
+        setup(buildContext) {
+            buildContext.onResolve({ filter: /.*/ }, args => {
+                if (!Object.hasOwn(imports, args.path)) return undefined;
+                return { path: imports[args.path], external: true };
+            });
+        }
+    }];
+}
+
 function esbuildOptions(entry, { minify = MINIFY } = {}) {
     const imports = entrySources(entry).map(f => `import ${JSON.stringify(f)};`).join('\n');
     return {
@@ -113,13 +105,14 @@ function esbuildOptions(entry, { minify = MINIFY } = {}) {
         },
         outfile: path.join(distDir, entry.out),
         bundle: true,
-        format: 'iife',
+        format: entry.format || 'iife',
         target: ['chrome110', 'firefox115'],
         platform: 'browser',
         legalComments: 'none',
         minify,
         sourcemap: minify ? false : 'linked',
         logLevel: 'warning',
+        plugins: browserImportPlugins(entry.browserImports),
     };
 }
 

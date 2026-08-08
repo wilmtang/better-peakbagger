@@ -32,6 +32,7 @@ import {
     sendFixtureFile,
     sendFixtureNotFound,
     instrumentTerrainFrameHtml,
+    instrumentTerrainFrameModule,
 } from './browser-verification-fixtures.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -244,6 +245,8 @@ const server = createServer({ key: fixtureKey, cert: fixtureCert }, async (reque
         let transform = null;
         if (url.pathname === '/dist/terrain/terrain.html') {
             transform = instrumentTerrainFrameHtml;
+        } else if (url.pathname === '/dist/terrain/terrain-frame.js') {
+            transform = instrumentTerrainFrameModule;
         } else if (file.endsWith('terrain-native-map.html')) {
             transform = html => html.replace(
                 '<option value="L_FIX" selected>Synthetic topographic map</option>',

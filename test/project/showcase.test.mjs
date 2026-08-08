@@ -7,6 +7,11 @@ import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
+import {
+    instrumentTerrainFrameHtml,
+    instrumentTerrainFrameModule,
+} from '../../scripts/browser-verification-fixtures.mjs';
+
 const gpxShowcase = await readFile(new URL('../../scripts/showcase/gpx.html', import.meta.url), 'utf8');
 const mapShowcase = await readFile(new URL('../../scripts/showcase/map.html', import.meta.url), 'utf8');
 const terrainShowcase = await readFile(new URL('../../scripts/showcase/terrain.html', import.meta.url), 'utf8');
@@ -39,7 +44,8 @@ test('3D terrain showcase uses the production renderer with a synthetic route', 
     assert.match(terrainShowcase, /dist\/content\/terrain-map\.js/);
     assert.doesNotMatch(terrainShowcase, /vendor\/maplibre-gl-csp\.js/,
         'MapLibre should load lazily inside the extension-owned frame');
-    assert.match(terrainFrame, /vendor\/maplibre-gl\.js/);
+    assert.match(terrainFrame, /type="module"\s+src="terrain-frame\.js"/);
+    assert.doesNotMatch(terrainFrame, /vendor\/maplibre-gl\.js/);
     // terrain-cache and settings-schema are bundled into the frame bundle now;
     // bundle composition is asserted in manifest-capture.test.mjs.
     assert.match(terrainFrame, /terrain-frame\.js/);
@@ -58,6 +64,18 @@ test('3D terrain showcase uses the production renderer with a synthetic route', 
     assert.doesNotMatch(terrainShowcase, /bpb-terrain-disclosure/);
     assert.match(terrainGpx, /Synthetic Mount Baker terrain check/);
     assert.doesNotMatch(terrainGpx, /<name>.*(?:Garmin|Strava|Alex|Zihao)/i);
+});
+
+test('terrain fixtures instrument the native module without restoring a production global', () => {
+    const html = instrumentTerrainFrameHtml('<html><head></head><body></body></html>');
+    assert.match(html, /chrome\s*=\s*\{ runtime:/);
+    assert.doesNotMatch(html, /maplibregl|InstrumentedMap/);
+
+    const module = instrumentTerrainFrameModule('const ready = true;\nstartTerrainFrame(maplibre);\n');
+    assert.match(module, /new Proxy\(maplibre\.Map/);
+    assert.match(module, /startTerrainFrame\(\{ \.\.\.maplibre, Map: InstrumentedMap \}\)/);
+    assert.throws(() => instrumentTerrainFrameModule('startTerrainFrame(other);'),
+        /expected fixture injection point/);
 });
 
 test('BigMap showcase contains only synthetic multi-route interaction data', () => {

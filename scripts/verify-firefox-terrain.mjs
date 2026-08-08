@@ -15,6 +15,7 @@ import {
     sendFixtureNotFound,
     sendFixtureText,
     instrumentTerrainFrameHtml,
+    instrumentTerrainFrameModule,
 } from './browser-verification-fixtures.mjs';
 
 
@@ -65,7 +66,9 @@ function createFixtureServer({ key, cert }) {
             await sendFixtureFile(response, file, {
                 transform: url.pathname === '/dist/terrain/terrain.html'
                     ? instrumentTerrainFrameHtml
-                    : null,
+                    : (url.pathname === '/dist/terrain/terrain-frame.js'
+                        ? instrumentTerrainFrameModule
+                        : null),
             });
         } catch (error) {
             sendFixtureError(response, error);

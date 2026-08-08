@@ -41,10 +41,9 @@ Better Peakbagger-only Anchor symbol is not derived from BetaCreator.
 
 ### MapLibre GL JS
 
-Better Peakbagger uses esbuild to generate `vendor/maplibre-gl.js`, a classic
-browser global around the MapLibre GL JS 6.2.0 ESM distribution. The matching
-module worker, its shared module, and the stylesheet are copied unmodified under
-`vendor/`.
+Better Peakbagger loads the MapLibre GL JS 6.2.0 ESM distribution directly from
+the extension-owned terrain frame. Its main module, module worker, shared module,
+and stylesheet are copied unmodified under `vendor/`.
 
 - Project: [MapLibre GL JS](https://maplibre.org/projects/gl-js/)
 - Source: [MapLibre GL JS v6.2.0](https://github.com/maplibre/maplibre-gl-js/tree/v6.2.0)

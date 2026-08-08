@@ -215,15 +215,17 @@ assets/vendor distributions are copied. `scripts/build.mjs` turns that config
 into esbuild calls. The manifest names only generated bundle paths; tests
 cross-check those references against the config.
 
-Every manifest entry point (the service worker, each content script, the
-options and popup pages, the terrain frame) is bundled into one self-contained
-**IIFE** file. Browsers cannot load an ES module as a classic content script, so
-the ESM source is bundled down to a classic script per entry.
+Every classic browser entry point (the service worker, each content script, and
+the options and popup pages) is bundled into one self-contained **IIFE** file.
+Browsers cannot load an ES module as a classic content script, so those entries
+must be bundled down to classic scripts. The extension-owned terrain frame is a
+deliberate native-ESM exception: its module entry imports the local MapLibre ESM
+distribution directly.
 
 ES imports determine dependency evaluation order. The source order in an
 `ENTRIES` record matters only where independent side-effect roots intentionally
 run in sequence; tests pin those compositions. Separately loaded third-party
-browser scripts remain ordered by `manifest.json` or `terrain/terrain.html`.
+browser globals remain ordered by `manifest.json`.
 
 `dist/` layout:
 
@@ -290,16 +292,18 @@ exactly by `package-lock.json`. The build sources them from `node_modules` into
 `dist/vendor`—nothing is hand-copied.
 
 - **marked and Chart.js** ship browser builds that are copied verbatim.
-- **MapLibre 6** ships ESM only. The build esbuild-wraps its main module as the
-  separately loaded `maplibregl` classic global, then copies its module worker,
-  shared worker module, stylesheet, and license verbatim.
+- **MapLibre 6** ships ESM only. The build copies its main module, module worker,
+  shared module, stylesheet, and license verbatim. The native terrain-frame entry
+  imports the main module directly; the frame sets the local worker URL before
+  constructing a map.
 - **tz-lookup** ships only CommonJS, so esbuild bundles it directly into the GPX
   analyzer and ascent-editor bundles that import it.
 
-Chart, MapLibre, and marked stay **separately-loaded browser globals** because
-the manifest or terrain frame orders their browser artifacts. tz-lookup is an
-ordinary bundled dependency: manifest content scripts cannot be module entry
-points, and bundling avoids exposing its resolver through the page namespace.
+Chart and marked stay **separately-loaded browser globals** because the manifest
+orders their browser artifacts. MapLibre is a local native ESM dependency, and
+tz-lookup is an ordinary bundled dependency: manifest content scripts cannot be
+module entry points, and bundling avoids exposing its resolver through the page
+namespace.
 "Zero globals" means no Better Peakbagger module uses a global as an internal
 dependency; it does not refer to third-party UMD APIs or the provider boundary
 below.

@@ -121,13 +121,13 @@ Three files divide assembly responsibility:
 - `scripts/build.mjs` performs the build. Generated files under `dist/` are
   never edited directly.
 
-Every entry point becomes a self-contained classic IIFE bundle. ES imports
+Classic browser entry points become self-contained IIFE bundles. ES imports
 determine module evaluation order inside a bundle. Chart.js and marked remain
-copied browser globals ordered by the manifest, and MapLibre's generated global
-is ordered by terrain frame HTML. `tz-lookup` is bundled directly into its two
-content-script consumers so page code cannot clobber the offline resolver.
-MapLibre's module worker and shared module remain separate, unmodified package
-artifacts.
+copied browser globals ordered by the manifest. `tz-lookup` is bundled directly
+into its two content-script consumers so page code cannot clobber the offline
+resolver. The extension-owned terrain frame is a native module that directly
+imports MapLibre's copied main ESM artifact; its main module, module worker, and
+shared module remain separate, unmodified package artifacts.
 
 The worker ships once as `dist/background.js`. Chrome references it as the
 service worker and Firefox references the same file as its background script.

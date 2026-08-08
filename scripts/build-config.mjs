@@ -11,10 +11,10 @@
 //
 // ES imports define dependency evaluation order. The order here remains
 // significant for independent side-effect roots, and is pinned by tests.
-// Vendor globals (Chart, marked, maplibregl) are still delivered as
-// separate copied/generated scripts loaded ahead of the bundle that reads them
-// — see the manifest and terrain.html — so they are not listed as bundle
-// sources here. tz-lookup is imported into its consuming bundles instead.
+// Vendor globals (Chart and marked) are still delivered as separate copied
+// scripts loaded ahead of the bundles that read them — see the manifest — so
+// they are not listed as bundle sources here. tz-lookup is bundled into its
+// consumers, while the extension-owned terrain frame imports MapLibre as ESM.
 
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -63,7 +63,12 @@ export const ENTRIES = [
     { out: 'content/big-map-bridge.js', sources: ['settings/settings-schema.js', 'settings/settings.js', 'maps/big-map-bridge.js'] },
     { out: 'content/big-map.js', sources: ['gpx/map-route-limits.js', 'gpx/gpx-metrics.js', 'gpx/map-frame-lifecycle.js', 'terrain/terrain-basemap.js', 'terrain/terrain-camera.js', 'terrain/terrain-compass.js', 'terrain/terrain-coordinator.js', 'terrain/terrain-failure.js', 'maps/peak-markers.js', 'settings/settings-schema.js', 'theme/theme-resolve.js', 'maps/big-map.js'] },
 
-    { out: 'terrain/terrain-frame.js', sources: ['gpx/map-route-limits.js', 'peakbagger/peakbagger-origin.js', 'terrain/terrain-camera.js', 'settings/settings-schema.js', 'terrain/terrain-cache.js', 'terrain/terrain-tiles.js', 'terrain/terrain-frame.js'] },
+    {
+        out: 'terrain/terrain-frame.js',
+        sources: ['gpx/map-route-limits.js', 'peakbagger/peakbagger-origin.js', 'terrain/terrain-camera.js', 'settings/settings-schema.js', 'terrain/terrain-cache.js', 'terrain/terrain-tiles.js', 'terrain/terrain-frame-runtime.js', 'terrain/terrain-frame.js'],
+        format: 'esm',
+        browserImports: { 'maplibre-gl': '../vendor/maplibre-gl.mjs' }
+    },
     // The options page keeps its head/tail split: the head bundle applies the
     // theme before first paint, the tail bundle runs the settings UI.
     { out: 'options/drafts-page.js', sources: ['peakbagger/peakbagger-origin.js', 'reports/report-drafts.js', 'reports/report-markup.js', 'options-utils.js', 'options-drafts.js', 'options-drafts-page.js'], page: true },
@@ -125,13 +130,14 @@ export const COPY_DIRS = [
 export const nodeModule = f => path.join(root, 'node_modules', f);
 
 // Vendor browser builds sourced from npm into dist/vendor. marked and Chart.js
-// ship browser-ready UMD/global builds. MapLibre 6 is ESM-only: its module
-// worker and shared module remain byte-identical copies while VENDOR_MAPLIBRE
-// below describes the separately generated classic global wrapper.
+// ship browser-ready UMD/global builds. MapLibre 6's main module, module worker,
+// and shared module remain byte-identical local copies; terrain-frame.js imports
+// the main module directly instead of depending on a generated page global.
 // [from (node_modules), to (dist)].
 export const VENDOR_COPY = [
     ['marked/lib/marked.umd.js', 'vendor/marked.umd.js'],
     ['chart.js/dist/chart.umd.min.js', 'vendor/chart.umd.min.js'],
+    ['maplibre-gl/dist/maplibre-gl.mjs', 'vendor/maplibre-gl.mjs'],
     ['maplibre-gl/dist/maplibre-gl-worker.mjs', 'vendor/maplibre-gl-worker.mjs'],
     ['maplibre-gl/dist/maplibre-gl-shared.mjs', 'vendor/maplibre-gl-shared.mjs'],
     ['maplibre-gl/dist/maplibre-gl.css', 'vendor/maplibre-gl.css'],
@@ -140,14 +146,3 @@ export const VENDOR_COPY = [
     ['maplibre-gl/LICENSE.txt', 'vendor/maplibre-LICENSE.txt'],
     ['tz-lookup/LICENSE', 'vendor/tz-lookup-LICENSE.txt'],
 ];
-
-// MapLibre 6 no longer publishes a classic UMD or CSP build. Keep the renderer
-// outside terrain-frame.js (and therefore replaceable by the lifecycle tests)
-// by having esbuild expose the package's ESM namespace as the same maplibregl
-// global terrain.html has always loaded first. The worker stays an extension-
-// owned module URL and imports its copied shared sibling directly.
-export const VENDOR_MAPLIBRE = {
-    entry: 'maplibre-gl/dist/maplibre-gl.mjs',
-    out: 'vendor/maplibre-gl.js',
-    globalName: 'maplibregl'
-};

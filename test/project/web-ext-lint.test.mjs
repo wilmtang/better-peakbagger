@@ -70,7 +70,7 @@ test('the web-ext lint gate rejects new, extra, missing, error, and notice outpu
     // A vendored file that keeps its code but loses one of its occurrences
     // must still fail; collapsing to a per-file boolean would hide it.
     const partial = reportFor(occurrences().filter((warning, index) => index !== 3));
-    assert.throws(() => evaluateWebExtLint(partial), /baseline warnings disappeared: UNSAFE_VAR_ASSIGNMENT vendor\/maplibre-gl\.js \(2, owned 3\)/);
+    assert.throws(() => evaluateWebExtLint(partial), /baseline warnings disappeared: UNSAFE_VAR_ASSIGNMENT vendor\/maplibre-gl\.mjs \(2, owned 3\)/);
 
     assert.throws(() => evaluateWebExtLint({
         ...reportFor(occurrences()),

@@ -532,29 +532,34 @@ export async function sendFixtureFile(response, file, { transform = null, cacheC
     response.end(contents);
 }
 
-// Both terrain verifiers load terrain/terrain.html directly rather than through
-// the extension, so both have to supply the two things the real frame gets from
-// its extension origin. This was copied byte-for-byte between them; if the two
-// copies ever drifted, the Chrome and Firefox terrain checks would be rendering
-// materially different frames while still reporting the same pass.
+// The terrain verifiers load terrain/terrain.html directly rather than through
+// the extension, so they have to supply the chrome.runtime URL resolver the real
+// frame gets from its extension origin. This was copied byte-for-byte between
+// them; if the copies ever drifted, Chrome and Firefox would render materially
+// different frames while still reporting the same pass.
 //
-// `chrome.runtime.getURL` is what the frame's MapLibre worker and bundle resolve
-// against, and dist/ is where the fixture serves them. The Map proxy exposes
-// only this fixture's instance, so a check can prove the mocked DEM decoded into
-// non-flat terrain; production publishes no MapLibre internals.
+// `chrome.runtime.getURL` is what the frame's MapLibre worker resolves against,
+// and dist/ is where the fixture serves it.
 export const instrumentTerrainFrameHtml = html => html
     .replace('</head>', `  <script>
     globalThis.chrome = { runtime: { getURL: resource => new URL('/dist/' + resource, location.origin).href } };
   </script>
-</head>`)
-    .replace('  <script src="terrain-frame.js"></script>', `  <script>
-    const InstrumentedMap = new Proxy(maplibregl.Map, {
+</head>`);
+
+// The Map proxy exposes only the fixture's instance, so a check can prove the
+// mocked DEM decoded into non-flat terrain. Instrument the served module rather
+// than adding a production test hook or publishing MapLibre internals.
+export const instrumentTerrainFrameModule = source => {
+    const start = 'startTerrainFrame(maplibre);';
+    if (!source.includes(start)) {
+        throw new Error('Terrain frame module no longer exposes the expected fixture injection point');
+    }
+    return source.replace(start, `const InstrumentedMap = new Proxy(maplibre.Map, {
       construct(Target, args, newTarget) {
         const instance = Reflect.construct(Target, args, newTarget);
         globalThis.__bpbTerrainTestMap = instance;
         return instance;
       }
     });
-    globalThis.maplibregl = { ...maplibregl, Map: InstrumentedMap };
-  </script>
-  <script src="terrain-frame.js"></script>`);
+    startTerrainFrame({ ...maplibre, Map: InstrumentedMap });`);
+};

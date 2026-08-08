@@ -8,7 +8,6 @@ import {
     COPY_FILES,
     ENTRIES,
     VENDOR_COPY,
-    VENDOR_MAPLIBRE,
 } from './build-config.mjs';
 
 // Release archives are built from dist/, so derive their required runtime files
@@ -19,7 +18,6 @@ const REQUIRED_FILES = [...new Set([
     ...ENTRIES.map(({ out }) => out),
     ...COPY_FILES.map(([, to]) => to),
     ...VENDOR_COPY.map(([, to]) => to),
-    VENDOR_MAPLIBRE.out,
     'icons/icon-128.png',
 ])];
 

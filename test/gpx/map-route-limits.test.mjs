@@ -60,14 +60,14 @@ test('a route inside both bounds is passed through untouched', () => {
 test('both sides of the bridge read the bounds instead of restating them', async () => {
     const [producer, verifier] = await Promise.all([
         readFile(new URL('../../src/gpx/gpx-metrics.js', import.meta.url), 'utf8'),
-        readFile(new URL('../../src/terrain/terrain-frame.js', import.meta.url), 'utf8'),
+        readFile(new URL('../../src/terrain/terrain-frame-runtime.js', import.meta.url), 'utf8'),
     ]);
-    for (const [name, source] of [['gpx-metrics.js', producer], ['terrain-frame.js', verifier]]) {
+    for (const [name, source] of [['gpx-metrics.js', producer], ['terrain-frame-runtime.js', verifier]]) {
         assert.match(source, /from '[^']*map-route-limits\.js'/,
             `${name} must import the shared route bounds`);
         // Any binding whose name claims a route bound must be defined from the
         // shared module, never from a number typed in beside it. The file is
-        // free to use unrelated numeric literals — terrain-frame.js has an
+        // free to use unrelated numeric literals — the frame runtime has an
         // elevation stop at 1500 m — so match on the assignment, not the digits.
         for (const [, binding, value] of source.matchAll(
             /\b(MAX_(?:MAP_)?ROUTE_(?:POINTS|SEGMENTS))\s*=\s*([^;\n]+)/g)) {
