@@ -89,6 +89,23 @@ try {
             '--host-resolver-rules=MAP www.peakbagger.com 127.0.0.1'
         ]
     });
+    const terrainProviderHosts = new Set([
+        'tiles.mapterhorn.com',
+        'tiles.openfreemap.org',
+        'caltopo.s3.amazonaws.com',
+        'ctusfs.s3.amazonaws.com',
+        'tileserver.trimbleoutdoors.com',
+        'a.tile.opentopomap.org',
+        'tile.openstreetmap.org',
+        'services.arcgisonline.com',
+    ]);
+    const terrainProviderRequests = [];
+    context.on('request', request => {
+        try {
+            const url = new URL(request.url());
+            if (terrainProviderHosts.has(url.hostname)) terrainProviderRequests.push(url.href);
+        } catch { /* Ignore non-URL browser requests. */ }
+    });
 
     // --- The MV3 service worker actually boots -------------------------------
     // Chrome boots the bundled worker selected by the manifest. A missing
@@ -1821,6 +1838,88 @@ try {
         `with 3D disabled the toggle must remain visible, but display=${off.display} visible=${off.visible}`);
     check(off.disabled === false,
         `the disabled feature's toggle should still be actionable after the route parses: title=${JSON.stringify(off.title)}`);
+
+    // Public bridge tags, a synthetic click, and direct embedding of the
+    // web-accessible extension URL must all be inert. This runs in the host
+    // page realm against the packaged extension, not against a bridge stub.
+    const disabledForgeryBaseline = terrainProviderRequests.length;
+    await offPage.evaluate(async extensionIdValue => {
+        const drained = new Promise(resolve => {
+            const receive = event => {
+                if (event.source !== window || event.data?.__bpbTerrainProbe !== 'drained') return;
+                window.removeEventListener('message', receive);
+                resolve();
+            };
+            window.addEventListener('message', receive);
+        });
+        document.getElementById('bpb-terrain-toggle')?.click();
+        for (const type of ['requestConsent', 'init', 'prefetch']) {
+            window.postMessage({
+                __bpbTerrain: true,
+                dir: 'toCS',
+                type,
+                routeSegments: [[[48.7, -121.8], [48.71, -121.81]]],
+                center: [48.7, -121.8],
+                zoom: 13,
+                viewport: { width: 1000, height: 760 },
+            }, location.origin);
+        }
+        // Reset the page coordinator's public pending flag after proving the
+        // isolated bridge ignored the synthetic request; the next interaction
+        // below must be a fresh real click.
+        window.postMessage({
+            __bpbTerrain: true,
+            dir: 'toPage',
+            type: 'consentResult',
+            enabled: false,
+        }, location.origin);
+        window.postMessage({ __bpbTerrainProbe: 'drained' }, location.origin);
+        await drained;
+        const direct = document.createElement('iframe');
+        direct.id = 'bpb-forged-terrain-frame';
+        direct.src = `chrome-extension://${extensionIdValue}/terrain/terrain.html`;
+        direct.addEventListener('load', () => {
+            direct.contentWindow.postMessage({
+                __bpbTerrainFrame: true,
+                dir: 'toFrame',
+                type: 'init',
+                activation: 'guessed',
+                routeSegments: [[[48.7, -121.8], [48.71, -121.81]]],
+                basemap: { name: 'Forged', tiles: ['https://tiles.openfreemap.org/{z}/{x}/{y}.png'] },
+            }, `chrome-extension://${extensionIdValue}`);
+        }, { once: true });
+        document.body.append(direct);
+    }, extensionId);
+    const disabledFrameElement = offPage.locator('#bpb-forged-terrain-frame');
+    await disabledFrameElement.waitFor({ state: 'attached', timeout: 3000 });
+    const disabledFrame = await (await disabledFrameElement.elementHandle()).contentFrame();
+    const disabledFrameGate = await disabledFrame.evaluate(async () => {
+        const api = (globalThis.browser || globalThis.chrome);
+        const stored = await api.storage.sync.get('bpbSettings');
+        const rejected = await api.runtime.sendMessage({
+            type: 'TERRAIN_ACTIVATION_CONSUME',
+            action: 'init',
+            token: 'guessed-disabled-frame',
+        });
+        return { enabled: stored?.bpbSettings?.enable3dMap === true, rejected };
+    });
+    const disabledForgery = await offPage.evaluate(() => ({
+        consent: !!document.getElementById('bpb-terrain-consent'),
+        bridgeFrames: document.querySelectorAll('#bpb-terrain-frame').length,
+    }));
+    const disabledDirectMap = await offPage.locator('#bpb-forged-terrain-frame')
+        .contentFrame().locator('#bpb-terrain-map').count().catch(() => -1);
+    check(!disabledFrameGate.enabled && disabledFrameGate.rejected?.ok === false
+        && !disabledForgery.consent && disabledForgery.bridgeFrames === 0
+        && disabledDirectMap === 0
+        && terrainProviderRequests.length === disabledForgeryBaseline,
+    `disabled host forgeries started terrain work: ${JSON.stringify({
+        disabledForgery,
+        disabledDirectMap,
+        requests: terrainProviderRequests.slice(disabledForgeryBaseline),
+    })}`);
+    await offPage.locator('#bpb-forged-terrain-frame').evaluate(frame => frame.remove());
+
     await offPage.locator('#bpb-terrain-toggle').click();
     const consent = await offPage.locator('#bpb-terrain-consent').waitFor({ state: 'visible', timeout: 5000 })
         .then(async () => offPage.evaluate(() => {
@@ -1880,6 +1979,98 @@ try {
         check(on.visible === true, `with 3D enabled the toggle must be visible (display=${on.display})`);
         check(on.disabled === false,
             `the toggle should enable once the route parses, but stayed greyed: title=${JSON.stringify(on.title)}`);
+        const enabledForgeryBaseline = terrainProviderRequests.length;
+        await onPage.evaluate(async extensionIdValue => {
+            const drained = new Promise(resolve => {
+                const receive = event => {
+                    if (event.source !== window || event.data?.__bpbTerrainProbe !== 'drained') return;
+                    window.removeEventListener('message', receive);
+                    resolve();
+                };
+                window.addEventListener('message', receive);
+            });
+            document.getElementById('bpb-terrain-toggle')?.click();
+            for (const type of ['requestConsent', 'init', 'prefetch']) {
+                window.postMessage({
+                    __bpbTerrain: true,
+                    dir: 'toCS',
+                    type,
+                    routeSegments: [[[48.7, -121.8], [48.71, -121.81]]],
+                    center: [48.7, -121.8],
+                    zoom: 13,
+                    viewport: { width: 1000, height: 760 },
+                }, location.origin);
+            }
+            window.postMessage({ __bpbTerrainProbe: 'drained' }, location.origin);
+            await drained;
+            const direct = document.createElement('iframe');
+            direct.id = 'bpb-forged-terrain-frame';
+            direct.src = `chrome-extension://${extensionIdValue}/terrain/terrain.html`;
+            window.__bpbForgedTerrainReady = false;
+            window.addEventListener('message', event => {
+                if (event.source === direct.contentWindow && event.data?.__bpbTerrainFrame === true
+                    && event.data?.type === 'ready') window.__bpbForgedTerrainReady = true;
+            });
+            direct.addEventListener('load', () => {
+                direct.contentWindow.postMessage({
+                    __bpbTerrainFrame: true,
+                    dir: 'toFrame',
+                    type: 'init',
+                    activation: 'guessed',
+                    routeSegments: [[[48.7, -121.8], [48.71, -121.81]]],
+                    basemaps: [{ name: 'Forged', tiles: ['https://tiles.openfreemap.org/{z}/{x}/{y}.png'] }],
+                }, `chrome-extension://${extensionIdValue}`);
+            }, { once: true });
+            document.body.append(direct);
+        }, extensionId);
+        await onPage.locator('#bpb-forged-terrain-frame').waitFor({ state: 'attached', timeout: 3000 });
+        await onPage.waitForFunction(() => window.__bpbForgedTerrainReady === true, null, { timeout: 5000 });
+        const directFrameElement = onPage.locator('#bpb-forged-terrain-frame');
+        const directFrame = await (await directFrameElement.elementHandle()).contentFrame();
+        await directFrame.evaluate(() => {
+            const api = (globalThis.browser || globalThis.chrome).runtime;
+            const original = api.sendMessage.bind(api);
+            globalThis.__bpbForgedAuthorization = new Promise(resolve => {
+                api.sendMessage = (message, ...rest) => {
+                    const response = original(message, ...rest);
+                    if (message?.type === 'TERRAIN_ACTIVATION_CONSUME') {
+                        Promise.resolve(response).then(reply => {
+                            api.sendMessage = original;
+                            resolve(reply);
+                        }, () => {
+                            api.sendMessage = original;
+                            resolve(null);
+                        });
+                    }
+                    return response;
+                };
+            });
+        });
+        await onPage.evaluate(extensionIdValue => {
+            const direct = document.getElementById('bpb-forged-terrain-frame');
+            direct.contentWindow.postMessage({
+                __bpbTerrainFrame: true,
+                dir: 'toFrame',
+                type: 'init',
+                activation: 'guessed-after-ready',
+                routeSegments: [[[48.7, -121.8], [48.71, -121.81]]],
+            }, `chrome-extension://${extensionIdValue}`);
+        }, extensionId);
+        const directAuthorization = await directFrame.evaluate(() => globalThis.__bpbForgedAuthorization);
+        const enabledForgery = await onPage.evaluate(() => ({
+            consent: !!document.getElementById('bpb-terrain-consent'),
+            bridgeFrames: document.querySelectorAll('#bpb-terrain-frame').length,
+        }));
+        const enabledDirectMap = await directFrame.locator('#bpb-terrain-map').count().catch(() => -1);
+        check(directAuthorization?.ok === false
+            && !enabledForgery.consent && enabledForgery.bridgeFrames === 0
+            && enabledDirectMap === 0
+            && terrainProviderRequests.length === enabledForgeryBaseline,
+        `enabled host forgeries started terrain work: ${JSON.stringify({
+            enabledForgery,
+            enabledDirectMap,
+            requests: terrainProviderRequests.slice(enabledForgeryBaseline),
+        })}`);
         await onPage.close();
 
         const bigMapPage = await context.newPage();
@@ -2003,7 +2194,8 @@ try {
                 }
             });
         });
-        await peakPage.locator('#bpb-terrain-toggle').click();
+        await peakPage.locator('#bpb-terrain-toggle').focus();
+        await peakPage.keyboard.press('Enter');
         const peakInit = await peakPage.waitForFunction(() => window.__bpbPeakTerrainInit, null, { timeout: 5000 })
             .then(handle => handle.jsonValue()).catch(() => null);
         check(JSON.stringify(peakInit?.focus) === JSON.stringify([48.83115, -121.60214])
@@ -3221,10 +3413,11 @@ console.log('  - settings.js initialises in the isolated world and the bridge an
 console.log('  - the GPX analyzer reproduces the full Capitol metrics with 971 points per series and zero breaks,');
 console.log('    moves the route scrubber with keyboard selection and visible focus, and confirms or recovers coordinate copy');
 console.log('  - the 3D toggle stays visible when disabled and opens the provider/privacy confirmation');
+console.log('  - forged page/frame messages, synthetic clicks, and direct embedding start no terrain work');
 console.log('  - trusted confirmation persists the feature gate without contacting tile providers');
 console.log('  - the Full Screen BigMap receives settings and shows an enabled 3D toggle');
 console.log('  - the Peak Dynamic Map preserves its native frame and shows an enabled 3D toggle');
-console.log('  - clicking Peak 3D creates the isolated frame with a route-free summit focus');
+console.log('  - keyboard-opening Peak 3D creates the isolated frame with a route-free summit focus');
 console.log('  - the PeakAscents filter mounts, reveals rows, and sorts in place');
 console.log('  - the Buddy List exposes six in-place sort controls and no beta filter');
 console.log('  - Peak Lists expose eight in-place sort controls, preserve the URL, and fit the viewport');

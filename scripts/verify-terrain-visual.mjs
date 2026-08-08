@@ -380,6 +380,17 @@ const clickTerrainToggle = async cdp => {
     return evaluate(cdp, 'document.activeElement && document.activeElement.id');
 };
 
+const openTerrainWithTrustedClick = async cdp => {
+    await waitForPageState(cdp, `(() => {
+        const toggle = document.getElementById('bpb-terrain-toggle');
+        const nativeMap = document.querySelector('iframe[src*="MasterMap.aspx" i]');
+        let nativeReady = false;
+        try { nativeReady = Boolean(nativeMap?.contentWindow?.mapsPlaceholder); } catch {}
+        return { ready: Boolean(toggle && !toggle.disabled && nativeReady) };
+    })()`);
+    return clickTerrainToggle(cdp);
+};
+
 // The paint the group route is currently drawn with, as the frame's live
 // MapLibre reports it. A hovered track turns the flat/data-driven paint into a
 // 'case' expression that singles that track out.
@@ -734,6 +745,61 @@ try {
     if (ascent2dMetrics.gap > 40) throw new Error(`Ascent 2D toggle floats too far above the native zoom (gap ${ascent2dMetrics.gap}px)`);
     await capture(cdp, path.join(outputDir, 'map-default-450.png'));
 
+    // The showcase runs the production bundles without an extension worker,
+    // but its fixture broker preserves the one-use capability handshake. Prove
+    // that neither a page-script click nor a directly embedded frame with a
+    // guessed capability can cross that boundary before exercising the GPU.
+    const requestsBeforeAuthorizationProbe = terrainRequests.length;
+    const syntheticState = await evaluate(cdp, `(async () => {
+        const toggle = document.getElementById('bpb-terrain-toggle');
+        toggle.click();
+        await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+        return {
+            issueAttempts: globalThis.__bpbTerrainFixtureIssueAttempts,
+            frame: Boolean(document.getElementById('bpb-terrain-frame'))
+        };
+    })()`);
+    if (syntheticState.issueAttempts !== 0 || syntheticState.frame) {
+        throw new Error(`A synthetic terrain click crossed the activation boundary: ${JSON.stringify(syntheticState)}`);
+    }
+    await evaluate(cdp, `(async () => {
+        const frame = document.createElement('iframe');
+        frame.id = 'bpb-direct-terrain-probe';
+        frame.src = '/dist/terrain/terrain.html';
+        document.body.append(frame);
+    })()`);
+    await waitForCondition(async () => evaluate(cdp, `(() => {
+        const frame = document.getElementById('bpb-direct-terrain-probe');
+        frame?.contentWindow?.postMessage({
+            __bpbTerrainFrame: true,
+            dir: 'toFrame',
+            type: 'init',
+            activation: 'guessed-fixture-capability'
+        }, location.origin);
+        return globalThis.__bpbTerrainFixtureAuthorizationAttempts > 0;
+    })()`), async () => `The directly embedded terrain frame never attempted authorization: ${JSON.stringify(await evaluate(cdp, `(() => {
+        const frame = document.getElementById('bpb-direct-terrain-probe');
+        return {
+            readyState: frame?.contentDocument?.readyState,
+            chrome: Boolean(frame?.contentWindow?.chrome),
+            errors: ${JSON.stringify(runtimeErrors)}
+        };
+    })()`))}`);
+    const directFrameState = await evaluate(cdp, `(() => {
+        const frame = document.getElementById('bpb-direct-terrain-probe');
+        const state = {
+            map: Boolean(frame?.contentWindow?.__bpbTerrainTestMap),
+            issueAttempts: globalThis.__bpbTerrainFixtureIssueAttempts,
+            authorizationAttempts: globalThis.__bpbTerrainFixtureAuthorizationAttempts
+        };
+        frame?.remove();
+        return state;
+    })()`);
+    if (directFrameState.map || directFrameState.issueAttempts !== 0
+        || terrainRequests.length !== requestsBeforeAuthorizationProbe) {
+        throw new Error(`Direct terrain embedding started provider work: ${JSON.stringify(directFrameState)}`);
+    }
+
     // MapLibre 6 requires WebGL2. Deny only that context in documents created
     // for this probe, then require the complete user-visible fallback before
     // removing the injection and continuing with hardware-backed checks.
@@ -748,6 +814,7 @@ try {
     });
     try {
         await navigate(cdp, `${baseUrl}?mode=terrain&map=wide`, 1280, 950);
+        await openTerrainWithTrustedClick(cdp);
         const fallback = await waitForPageState(cdp, `(() => {
             const toggle = document.getElementById('bpb-terrain-toggle');
             const frame = document.getElementById('bpb-terrain-frame');
@@ -783,6 +850,7 @@ try {
     terrainCoverageMaxZoom = 8;
     const missingBefore = missingTerrainResponses.length;
     await navigate(cdp, `${baseUrl}?mode=terrain&map=wide`, 1280, 950);
+    await openTerrainWithTrustedClick(cdp);
     const gapState = await waitForPageState(cdp, `(() => {
         const toggle = document.getElementById('bpb-terrain-toggle');
         const frame = document.getElementById('bpb-terrain-frame');
@@ -817,6 +885,7 @@ try {
     holdBasemapRequests = true;
     const pendingBasemapBefore = basemapRequests.length;
     await navigate(cdp, `${baseUrl}?mode=terrain&map=wide`, 1280, 950);
+    await openTerrainWithTrustedClick(cdp);
     await waitForCondition(() => pendingBasemapRequestIds.length > 0,
         () => 'The pending-drape regression did not intercept a raster request');
     await waitForPageState(cdp, `(() => {
@@ -856,6 +925,7 @@ try {
     console.log('Pending-drape boot probe: terrain became active while raster requests were held.');
 
     await navigate(cdp, `${baseUrl}?mode=terrain&map=wide`, 1280, 950);
+    await openTerrainWithTrustedClick(cdp);
     const ready = await waitForPageState(cdp, `(() => {
         const toggle = document.getElementById('bpb-terrain-toggle');
         const frame = document.getElementById('bpb-terrain-frame');
@@ -1156,6 +1226,7 @@ try {
     if (runtimeErrors.length) throw new Error(`Runtime exception: ${runtimeErrors.join('\n')}`);
 
     await navigate(cdp, `${baseUrl}?mode=terrain&theme=dark`, 1000, 900);
+    await openTerrainWithTrustedClick(cdp);
     const darkReady = await waitForPageState(cdp, `(() => {
         const toggle = document.getElementById('bpb-terrain-toggle');
         const frame = document.getElementById('bpb-terrain-frame');
@@ -1205,6 +1276,7 @@ try {
     // …and flips the full-bleed 3D terrain over it, hiding the native map, when clicked.
     const bigMapBasemapBefore = basemapRequests.length;
     await navigate(cdp, `${bigMapUrl}?t=G&mode3d=1`, 1000, 760);
+    await openTerrainWithTrustedClick(cdp);
     const bigMap3d = await waitForPageState(cdp, `(() => {
         const toggle = document.getElementById('bpb-terrain-toggle');
         const frame = document.getElementById('bpb-terrain-frame');
@@ -1409,6 +1481,7 @@ try {
     await navigate(cdp,
         `${bigMapUrl}?t=P&d=2829&cy=48.83115&cx=-121.60214&z=14&c=0&hj=300&cyn=0&mode3d=1`,
         1000, 760);
+    await openTerrainWithTrustedClick(cdp);
     const peakBigMap3d = await waitForPageState(cdp, `(() => {
         const toggle = document.getElementById('bpb-terrain-toggle');
         const frame = document.getElementById('bpb-terrain-frame');

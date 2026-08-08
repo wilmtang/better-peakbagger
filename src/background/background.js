@@ -13,6 +13,7 @@ import { createFavoritesStore, favoritesStore as FavoritesStore } from './favori
 import { createGithubRoutes } from './github-routes.js';
 import { createPhotoRoutes } from './photo-routes.js';
 import { createSettingsFileRoutes } from './settings-file-routes.js';
+import { terrainActivation as TerrainActivation } from './terrain-activation.js';
 import { createTerrainPrefetch } from './terrain-prefetch.js';
 import { publicErrors as PublicErrors } from './public-errors.js';
 import { settings as Settings } from '../settings/settings.js';
@@ -1484,8 +1485,21 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
         catch { return false; }
     };
 
+    const terrainFrameUrl = (() => {
+        try { return ext.runtime.getURL('terrain/terrain.html'); }
+        catch { return null; }
+    })();
+    const isTerrainFrameSender = sender => !!(terrainFrameUrl && sender?.url === terrainFrameUrl
+        && Number.isInteger(sender?.tab?.id));
+    const terrainActivation = TerrainActivation.create({
+        isPeakbaggerSender,
+        isTerrainFrameSender,
+        now,
+    });
+
     const terrainPrefetch = createTerrainPrefetch({
         isPeakbaggerSender,
+        consumeActivation: terrainActivation.consumePrefetch,
         mapWithConcurrency,
         now
     });
@@ -1598,6 +1612,8 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
             case 'DRAFT_READY': return draftReady(message, sender);
             case 'DRAFT_PREVIEW_STARTED': return previewStarted(message, sender);
             case 'DRAFT_DAY_STATS_APPLIED': return dayStatsApplied(message, sender);
+            case TerrainActivation.ISSUE_TYPE: return terrainActivation.issue(message, sender);
+            case TerrainActivation.CONSUME_TYPE: return terrainActivation.consumeFrame(message, sender);
             case 'TERRAIN_PREFETCH': return terrainPrefetch.handle(message, sender);
             default: return null;
             }
@@ -1612,6 +1628,7 @@ import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
     });
 
     ext.tabs.onRemoved.addListener(tabId => {
+        terrainActivation.forgetTab(tabId);
         terrainPrefetch.forgetTab(tabId);
         runDetachedCleanup('photo tab cleanup', () => photoRoutes.forgetTab(tabId));
         runDetachedCleanup('capture tab cleanup', async () => {

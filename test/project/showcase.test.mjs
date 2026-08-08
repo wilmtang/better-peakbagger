@@ -68,12 +68,15 @@ test('3D terrain showcase uses the production renderer with a synthetic route', 
 
 test('terrain fixtures instrument the native module without restoring a production global', () => {
     const html = instrumentTerrainFrameHtml('<html><head></head><body></body></html>');
-    assert.match(html, /chrome\s*=\s*\{ runtime:/);
+    assert.match(html, /chrome\s*=\s*\{\s*runtime:/);
+    assert.match(html, /bpbSettings:\s*\{ enable3dMap:\s*true \}/);
     assert.doesNotMatch(html, /maplibregl|InstrumentedMap/);
 
     const module = instrumentTerrainFrameModule('const ready = true;\nstartTerrainFrame(maplibre);\n');
     assert.match(module, /new Proxy\(maplibre\.Map/);
-    assert.match(module, /startTerrainFrame\(\{ \.\.\.maplibre, Map: InstrumentedMap \}\)/);
+    assert.match(module, /capabilities\.delete\(token\)/);
+    assert.match(module,
+        /startTerrainFrame\(\{ \.\.\.maplibre, Map: InstrumentedMap \}, \{ authorize: authorizeFixtureActivation \}\)/);
     assert.throws(() => instrumentTerrainFrameModule('startTerrainFrame(other);'),
         /expected fixture injection point/);
 });

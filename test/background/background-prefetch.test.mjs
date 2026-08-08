@@ -5,6 +5,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import vm from 'node:vm';
+import { webcrypto } from 'node:crypto';
 
 // The worker ships as one bundle; Unit 7 folds terrain-tiles + terrain-cache in
 // so the DEM prefetch runs entirely inside the extension-origin worker. Boot the
@@ -65,7 +66,10 @@ const createHarness = ({
             local: area(localValues),
             onChanged: event(),
         },
-        runtime: { onMessage: runtimeMessage },
+        runtime: {
+            onMessage: runtimeMessage,
+            getURL: path => `chrome-extension://test-id/${path}`,
+        },
         tabs: { onRemoved: tabRemoved },
         alarms: { create: () => {}, onAlarm: alarmEvent }
     };
@@ -93,7 +97,7 @@ const createHarness = ({
 
     const context = vm.createContext({
         browser, fetch, URL, URLSearchParams, Math, Date, console, structuredClone,
-        caches: new MemoryCacheStorage(), Response, AbortController,
+        caches: new MemoryCacheStorage(), Response, AbortController, crypto: webcrypto,
         setTimeout: wrapTimeout, clearTimeout, btoa
     });
     context.globalThis = context;
@@ -109,7 +113,11 @@ const createHarness = ({
     const peakbaggerSender = (id = 5) => ({
         tab: { id }, url: 'https://www.peakbagger.com/climber/ascent.aspx?aid=1'
     });
-    return { send, fetchCalls, peakbaggerSender, tabRemoved };
+    const prefetch = async (message, sender) => {
+        const issued = await send({ type: 'TERRAIN_ACTIVATION_ISSUE', action: 'prefetch' }, sender);
+        return send({ ...message, ...(issued.ok ? { activation: issued.token } : {}) }, sender);
+    };
+    return { send, prefetch, fetchCalls, peakbaggerSender, tabRemoved };
 };
 
 const ROUTE = {
@@ -121,41 +129,44 @@ const ROUTE = {
 test('DEM prefetch is refused unless a Peakbagger tab asks with 3D on and a cache budget', async () => {
     // 3D disabled: the consent gate for contacting Mapterhorn is closed.
     const off = createHarness({ settings: { enable3dMap: false, terrainCacheLimitMb: 512 } });
-    assert.deepEqual(await off.send(ROUTE, off.peakbaggerSender()), { ok: false, reason: 'disabled' });
+    assert.deepEqual(await off.prefetch(ROUTE, off.peakbaggerSender()), { ok: false, reason: 'disabled' });
     assert.equal(off.fetchCalls.length, 0);
 
     // 3D on but no cache budget: nothing to warm.
     const noBudget = createHarness({ settings: { enable3dMap: true, terrainCacheLimitMb: 0 } });
-    assert.deepEqual(await noBudget.send(ROUTE, noBudget.peakbaggerSender()), { ok: false, reason: 'disabled' });
+    assert.deepEqual(await noBudget.prefetch(ROUTE, noBudget.peakbaggerSender()), { ok: false, reason: 'disabled' });
     assert.equal(noBudget.fetchCalls.length, 0);
 
     // A non-Peakbagger sender may not drive worker→Mapterhorn traffic.
     const enabled = createHarness();
     assert.deepEqual(
-        await enabled.send(ROUTE, { tab: { id: 5 }, url: 'https://evil.example.com/x' }),
+        await enabled.prefetch(ROUTE, { tab: { id: 5 }, url: 'https://evil.example.com/x' }),
         { ok: false, reason: 'forbidden' });
     assert.equal(enabled.fetchCalls.length, 0);
     // A tabless sender (e.g. another extension page) is refused too.
-    assert.deepEqual(await enabled.send(ROUTE, { url: 'https://www.peakbagger.com/' }), { ok: false, reason: 'forbidden' });
+    assert.deepEqual(await enabled.prefetch(ROUTE, { url: 'https://www.peakbagger.com/' }), { ok: false, reason: 'forbidden' });
     assert.equal(enabled.fetchCalls.length, 0);
+    assert.deepEqual(await enabled.send(ROUTE, enabled.peakbaggerSender()),
+        { ok: false, reason: 'activation' });
+    assert.equal(enabled.fetchCalls.length, 0, 'a public payload without a capability warms nothing');
 });
 
 test('DEM prefetch validates the viewport before computing any tiles', async () => {
     const harness = createHarness();
     for (const viewport of [undefined, { width: 50, height: 600 }, { width: 1280, height: 99999 }, { width: NaN, height: 600 }]) {
-        const reply = await harness.send({ ...ROUTE, viewport }, harness.peakbaggerSender());
+        const reply = await harness.prefetch({ ...ROUTE, viewport }, harness.peakbaggerSender());
         assert.deepEqual(reply, { ok: false, reason: 'invalid' }, `viewport ${JSON.stringify(viewport)}`);
     }
     // A well-formed request that names neither bounds nor centre is invalid too.
     assert.deepEqual(
-        await harness.send({ type: 'TERRAIN_PREFETCH', viewport: { width: 1280, height: 800 } }, harness.peakbaggerSender()),
+        await harness.prefetch({ type: 'TERRAIN_PREFETCH', viewport: { width: 1280, height: 800 } }, harness.peakbaggerSender()),
         { ok: false, reason: 'invalid' });
     assert.equal(harness.fetchCalls.length, 0);
 });
 
 test('DEM prefetch warms a bounded set of Mapterhorn tiles for a route view', async () => {
     const harness = createHarness();
-    const reply = await harness.send(ROUTE, harness.peakbaggerSender());
+    const reply = await harness.prefetch(ROUTE, harness.peakbaggerSender());
     assert.equal(reply.ok, true);
     assert.ok(reply.tiles > 0 && reply.tiles <= 32, `expected 1..32 tiles, got ${reply.tiles}`);
     // Every request goes to Mapterhorn as a DEM webp tile; count matches the
@@ -167,7 +178,7 @@ test('DEM prefetch warms a bounded set of Mapterhorn tiles for a route view', as
 
 test('DEM prefetch warms a peak center+zoom view', async () => {
     const harness = createHarness();
-    const reply = await harness.send(
+    const reply = await harness.prefetch(
         { type: 'TERRAIN_PREFETCH', center: [48.83115, -121.60214], zoom: 13, viewport: { width: 1000, height: 425 } },
         harness.peakbaggerSender());
     assert.equal(reply.ok, true);
@@ -178,18 +189,18 @@ test('DEM prefetch warms a peak center+zoom view', async () => {
 
 test('DEM prefetch rate-limits per tab and dedupes tiles across tabs', async () => {
     const harness = createHarness();
-    const first = await harness.send(ROUTE, harness.peakbaggerSender(5));
+    const first = await harness.prefetch(ROUTE, harness.peakbaggerSender(5));
     assert.equal(first.ok, true);
     const warmed = harness.fetchCalls.length;
 
     // A second request from the same tab within the window is throttled — no
     // additional traffic.
-    assert.deepEqual(await harness.send(ROUTE, harness.peakbaggerSender(5)), { ok: false, reason: 'throttled' });
+    assert.deepEqual(await harness.prefetch(ROUTE, harness.peakbaggerSender(5)), { ok: false, reason: 'throttled' });
     assert.equal(harness.fetchCalls.length, warmed, 'a throttled request fetches nothing');
 
     // A different tab bypasses the per-tab limit, but the identical view is
     // already warmed, so the shared dedupe set fetches nothing new.
-    const other = await harness.send(ROUTE, harness.peakbaggerSender(9));
+    const other = await harness.prefetch(ROUTE, harness.peakbaggerSender(9));
     assert.deepEqual(other, { ok: true, tiles: 0 }, 'an already-warmed view fetches no new tiles');
     assert.equal(harness.fetchCalls.length, warmed, 'no duplicate tile fetches across tabs');
 });
@@ -201,20 +212,20 @@ test('DEM prefetch stops re-asking for tiles the provider says do not exist', as
     // server for ground it has already said it does not have. A 404 is a
     // settled answer; a 503 is not, and stays retryable.
     const absent = createHarness({ tileStatus: () => 404 });
-    const first = await absent.send(ROUTE, absent.peakbaggerSender(5));
+    const first = await absent.prefetch(ROUTE, absent.peakbaggerSender(5));
     assert.deepEqual(first, { ok: true, tiles: 0 }, 'no tile was warmed');
     const attempted = absent.fetchCalls.length;
     assert.ok(attempted > 0, 'the absent tiles were tried once');
 
     // Another tab bypasses the per-tab rate limit, so only the dedupe set can
     // hold the second attempt back.
-    assert.deepEqual(await absent.send(ROUTE, absent.peakbaggerSender(9)), { ok: true, tiles: 0 });
+    assert.deepEqual(await absent.prefetch(ROUTE, absent.peakbaggerSender(9)), { ok: true, tiles: 0 });
     assert.equal(absent.fetchCalls.length, attempted, 'an absent tile must not be re-requested');
 
     const failing = createHarness({ tileStatus: () => 503 });
-    await failing.send(ROUTE, failing.peakbaggerSender(5));
+    await failing.prefetch(ROUTE, failing.peakbaggerSender(5));
     const tried = failing.fetchCalls.length;
     assert.ok(tried > 0);
-    await failing.send(ROUTE, failing.peakbaggerSender(9));
+    await failing.prefetch(ROUTE, failing.peakbaggerSender(9));
     assert.ok(failing.fetchCalls.length > tried, 'a provider that is merely failing stays retryable');
 });

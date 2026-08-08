@@ -35,6 +35,7 @@
       };
     })();
   </script>
+  <script src="/scripts/showcase/terrain-activation-fixture.js"></script>
 </head>
 <body>
   <a id="subject-peak" href="/peak.aspx?pid=2829" hidden>Mount Shuksan</a>
@@ -52,7 +53,8 @@
     // Same race as the ascent showcase: the toggle enables from the native
     // tracks, but the drape is read from the MasterMap child frame's layer
     // menu. Clicking before that frame is up yields a legitimate "Terrain only"
-    // fallback. Wait for the frame, the way a real user's timing does.
+    // fallback. Mark the fixture ready there; the verifier supplies the trusted
+    // pointer/keyboard event instead of calling click() from page script.
     window.addEventListener('load', () => {
       if (new URLSearchParams(location.search).get('mode3d') !== '1') return;
       const nativeMapReady = () => {
@@ -67,7 +69,10 @@
       const timer = setInterval(() => {
         attempts++;
         const toggle = document.getElementById('bpb-terrain-toggle');
-        if (toggle && !toggle.disabled && nativeMapReady()) { toggle.click(); clearInterval(timer); }
+        if (toggle && !toggle.disabled && nativeMapReady()) {
+          document.documentElement.dataset.bpbTerrainFixtureReady = 'true';
+          clearInterval(timer);
+        }
         else if (attempts >= 60) clearInterval(timer);
       }, 100);
     });

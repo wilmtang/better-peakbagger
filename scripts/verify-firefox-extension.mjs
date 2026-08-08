@@ -5,6 +5,7 @@
 // deliberately starts as a narrow vertical slice: prove Firefox interprets its
 // manifest, starts background.js, and runs both execution worlds before the
 // broader browser fixtures are shared with the Chrome verifier.
+/* global document, location, window */
 
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -1230,11 +1231,94 @@ async function main() {
         }
 
         const terrainToggle = await driver.findElement(By.css(surfaceSelectors.terrainToggle));
+        await driver.executeScript((extensionRoot, selector) => {
+            window.__bpbTerrainForgeryDrained = false;
+            const receiveDrain = event => {
+                if (event.source !== window || event.data?.__bpbTerrainProbe !== 'drained') return;
+                window.removeEventListener('message', receiveDrain);
+                window.__bpbTerrainForgeryDrained = true;
+            };
+            window.addEventListener('message', receiveDrain);
+            document.querySelector(selector)?.click();
+            for (const type of ['requestConsent', 'init', 'prefetch']) {
+                window.postMessage({
+                    __bpbTerrain: true,
+                    dir: 'toCS',
+                    type,
+                    routeSegments: [[[48.7, -121.8], [48.71, -121.81]]],
+                    center: [48.7, -121.8],
+                    zoom: 13,
+                    viewport: { width: 1000, height: 760 },
+                }, location.origin);
+            }
+            window.postMessage({ __bpbTerrainProbe: 'drained' }, location.origin);
+            const direct = document.createElement('iframe');
+            direct.id = 'bpb-forged-terrain-frame';
+            direct.src = new URL('terrain/terrain.html', extensionRoot).href;
+            window.__bpbForgedTerrainReady = false;
+            window.addEventListener('message', event => {
+                if (event.source === direct.contentWindow && event.data?.__bpbTerrainFrame === true
+                    && event.data?.type === 'ready') window.__bpbForgedTerrainReady = true;
+            });
+            direct.addEventListener('load', () => {
+                direct.contentWindow.postMessage({
+                    __bpbTerrainFrame: true,
+                    dir: 'toFrame',
+                    type: 'init',
+                    activation: 'guessed',
+                    routeSegments: [[[48.7, -121.8], [48.71, -121.81]]],
+                    basemaps: [{ name: 'Forged', tiles: ['https://tiles.openfreemap.org/{z}/{x}/{y}.png'] }],
+                }, new URL(extensionRoot).origin);
+            }, { once: true });
+            document.body.append(direct);
+        }, baseUrl, surfaceSelectors.terrainToggle);
+        const forgedFrame = await driver.findElement(By.id('bpb-forged-terrain-frame'));
+        await driver.wait(async () => driver.executeScript(
+            'return window.__bpbTerrainForgeryDrained === true && window.__bpbForgedTerrainReady === true;'), 5_000);
+        await driver.executeScript(`
+          const direct = document.getElementById('bpb-forged-terrain-frame');
+          direct.contentWindow.postMessage({
+            __bpbTerrainFrame: true,
+            dir: 'toFrame',
+            type: 'init',
+            activation: 'guessed-after-ready',
+            routeSegments: [[[48.7, -121.8], [48.71, -121.81]]]
+          }, new URL(arguments[0]).origin);
+        `, baseUrl);
+
+        // The scripted click put only the page coordinator into its cancelable
+        // loading state. One trusted click returns it to 2D; the next trusted
+        // click must mint a fresh capability and open normally. Reaching that
+        // postcondition also gives the guessed direct-frame request a complete
+        // worker round trip without relying on a fixed delay.
+        await terrainToggle.click();
         await terrainToggle.click();
         await driver.wait(until.elementLocated(By.id('bpb-terrain-frame')), 10_000);
         const ascentFrameOrigin = await driver.executeScript(
             "return document.getElementById('bpb-terrain-frame')?.src || '';",
         );
+
+        await driver.switchTo().frame(forgedFrame);
+        const forgedFrameState = await driver.executeScript(`return {
+          map: Boolean(document.getElementById("bpb-terrain-map")),
+          providerRequests: performance.getEntriesByType("resource")
+            .map(entry => entry.name)
+            .filter(name => /mapterhorn|openfreemap|opentopomap|arcgisonline|trimbleoutdoors|caltopo/i.test(name))
+        };`);
+        await driver.switchTo().defaultContent();
+        const forgedHostState = await driver.executeScript(`return {
+          consent: Boolean(document.getElementById("bpb-terrain-consent")),
+          bridgeFrames: document.querySelectorAll("#bpb-terrain-frame").length
+        };`);
+        assertState(
+            !forgedFrameState.map
+            && forgedFrameState.providerRequests.length === 0
+            && !forgedHostState.consent
+            && forgedHostState.bridgeFrames === 1,
+            'Firefox host forgeries started terrain work',
+            { forgedFrameState, forgedHostState },
+        );
+        await driver.executeScript("document.getElementById('bpb-forged-terrain-frame')?.remove();");
         assertState(
             ascentFrameOrigin.startsWith('moz-extension://'),
             'Firefox ascent 3D did not create an extension-owned frame',
@@ -1669,7 +1753,8 @@ async function main() {
         console.log('  - the full Capitol GPX rendered 971 points per chart series with the corrected metrics and zero breaks');
         console.log('  - a fresh ascent form autofilled its local date and trusted GPX selection swapped Preview for Process');
         console.log('  - the report editor opened the standalone report-drafts manager page, which rendered a seeded draft');
-        console.log('  - AMO report credit, real editor input/draft recovery, filter/sort, and 3D frame passed');
+        console.log('  - forged page/frame messages, synthetic clicks, and direct embedding started no terrain work');
+        console.log('  - AMO report credit, real editor input/draft recovery, filter/sort, and trusted 3D frame passed');
         console.log('  - a real draft tab rejected wrong identity, attached GPX, filled fields, Previewed once, and never Saved');
         console.log('  - native toolbar activeTab grant, popup chrome, prompts, and window placement were not tested');
     } finally {

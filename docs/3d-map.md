@@ -45,7 +45,10 @@ details:
    native-map DOM.
 6. **Every `postMessage` boundary is untrusted.** Tags and direction fields are
    necessary routing hints, not authorization. Receivers also check the event
-   source and origin and validate the bounded payload.
+   source and origin and validate the bounded payload. Opening/resuming terrain
+   and warming its cache additionally require a short-lived, one-use capability
+   minted by the worker for a trusted toggle action observed in the isolated
+   world.
 7. **Page JavaScript never receives extension privileges.** MAIN-world code
    cannot access storage or runtime messaging. It asks the isolated bridge to
    perform the small extension-owned operations it needs.
@@ -77,7 +80,7 @@ flowchart LR
     end
 
     page -->|"validated subject + init payload"| bridge
-    bridge -->|"create / resume iframe"| mount
+    bridge -->|"trusted action + create / resume iframe"| mount
     mount --> frame
     frame --> maplibre
     maplibre --> cache
@@ -85,7 +88,7 @@ flowchart LR
     frame -->|"bounded peak request"| bridge
     bridge --> page
     page -->|"same-origin PLLBB request"| peakbaggerFeed["Peakbagger peak feed"]
-    bridge -->|"bounded prefetch hint"| worker
+    bridge -->|"one-use capability + bounded prefetch hint"| worker
     worker --> cache
     cache --> dem["Mapterhorn DEM"]
     maplibre --> imagery["Selected raster provider or OpenFreeMap"]
@@ -107,8 +110,9 @@ consistently in Chrome and Firefox without giving the host page extension APIs.
 | `src/maps/big-map.js` | MAIN | Full Screen route/peak identity, native layer detection, group colors and ascent links, native map DOM | Storage, renderer internals, duplicate lifecycle logic |
 | `src/maps/peak-map.js` | MAIN | Peak-page identity agreement, summit focus, embedded map context | Storage, renderer internals, duplicate lifecycle logic |
 | `src/terrain/terrain-coordinator.js` | MAIN | `idle`/`loading`/`active` lifecycle, toggle UI, timeouts, camera round trip, compass, recovery | Subject discovery, privileged APIs, provider requests |
-| `src/terrain/terrain-map.js` | isolated | Feature gate, trusted consent UI, settings read, frame creation/parking, page↔frame relay, prefetch relay | Page-owned Leaflet globals, rendering |
-| `src/terrain/terrain-frame.js` | extension iframe | Payload validation, MapLibre, DEM protocol, tile level-of-detail tuning, in-view tilt tile warming, route/highlight layers, terrain-positioned peak markers, drape picker, WebGL failure detection | Authenticated Peakbagger fetches, settings writes |
+| `src/terrain/terrain-map.js` | isolated | Feature gate, trusted consent UI, trusted toggle-event activation, frame creation/parking, page↔frame relay, prefetch relay | Page-owned Leaflet globals, rendering |
+| `src/terrain/terrain-frame.js` | extension iframe entry | Independent settings recheck and MapLibre/runtime composition | Payload handling, authenticated Peakbagger fetches, settings writes |
+| `src/terrain/terrain-frame-runtime.js` | extension iframe runtime | Capability consumption, payload validation, MapLibre, DEM protocol, tile level-of-detail tuning, in-view tilt tile warming, route/highlight layers, terrain-positioned peak markers, drape picker, WebGL failure detection | Authenticated Peakbagger fetches, settings reads or writes |
 | `src/terrain/terrain-basemap.js` | MAIN/pure helper | Convert compatible Leaflet raster layers and known menu choices to bounded drape specs | Fetching or assuming a layer is CORS-compatible |
 | `src/terrain/terrain-camera.js` | pure helper | Validate and convert Leaflet↔MapLibre center/zoom | Bearing or pitch persistence |
 | `src/terrain/terrain-compass.js` | page UI helper | Continuous shortest-arc bearing display and reset affordance | Camera state |
@@ -116,6 +120,7 @@ consistently in Chrome and Firefox without giving the host page extension APIs.
 | `src/terrain/terrain-tiles.js` | pure helper | Bounded DEM tile enumeration: the first-paint set for prefetch, and the coarse-rung set the frame warms while a live camera rests | Network or browser APIs |
 | `src/maps/peak-markers.js` | MAIN | Same-origin Peakbagger feed context, request validation, single-flight fetch | Frame rendering or persistence |
 | `src/background/background.js` | extension worker coordinator | Shared sender predicate, concurrency helper, and `TERRAIN_PREFETCH` dispatch | Map UI, tile selection, or long-lived terrain state |
+| `src/background/terrain-activation.js` | extension worker domain | Five-second, one-use capabilities bound to action and tab, plus issuing frame/document identity for prefetch | UI events, map payloads, or provider requests |
 | `src/background/terrain-prefetch.js` | extension worker domain | Settings revalidation, tile selection, cache warming, per-tab throttling, and recent-tile deduplication | Map UI or provider consent ownership |
 
 The separation is deliberate. For example, putting subject discovery into the
@@ -213,24 +218,31 @@ would trap the user behind slow DEM or browser startup.
 
 1. The surface rechecks that it has a route or validated summit.
 2. If 3D is disabled, the surface asks the isolated bridge to show consent.
-3. The bridge waits for its initial settings read. A newer storage push wins
+3. A trusted pointer or keyboard action on the 3D control makes the isolated
+   bridge ask the worker for a five-second, one-use `init` capability. Synthetic
+   `.click()` and forged page messages cannot mint one.
+4. The bridge waits for its initial settings read. A newer storage push wins
    over a stale initial read through a revision counter.
-4. Consent is accepted only from a trusted click (`event.isTrusted`) inside
+5. Consent is accepted only from a trusted click (`event.isTrusted`) inside
    the isolated world. The bridge writes `enable3dMap` through the settings
    module and reports the result to the page.
-5. The coordinator builds a surface-specific payload, captures the current
+6. The coordinator builds a surface-specific payload, captures the current
    native Leaflet center/zoom, enters `loading`, and posts `init`.
-6. The bridge either resumes a parked loaded frame or creates
+7. The bridge consumes its local activation and either resumes a parked loaded frame or creates
    `terrain/terrain.html` in the surface-owned `#bpb-map-viewport`.
-7. The frame posts `ready`; the bridge then sends the pending `init`. This
+8. The frame independently reads the authoritative `enable3dMap` setting and
+   otherwise installs no renderer listener. It posts `ready`; the bridge sends
+   the pending `init` plus its opaque capability over the private frame channel. This
    handshake avoids the Chromium race where iframe `load` can happen before
    the parent listener is ready.
-8. The frame validates route/focus, style, camera, basemaps, cache budget, and
+9. The frame asks the worker to consume the capability. The worker rejects a
+   missing, expired, reused, wrong-action, or wrong-tab token. Only then does
+   the frame validate route/focus, style, camera, basemaps, cache budget, and
    optional peak/link metadata before constructing MapLibre.
-9. MapLibre boots with a DEM-only style. Route and peak sources are added on
+10. MapLibre boots with a DEM-only style. Route and peak sources are added on
    `load`; the selected drape is attached afterward.
-10. The frame posts `loaded` with bounded camera and control-stack metrics.
-11. Only then does the coordinator hide native 2D and enter `active`.
+11. The frame posts `loaded` with bounded camera and control-stack metrics.
+12. Only then does the coordinator hide native 2D and enter `active`.
 
 There are two intentionally staggered startup timeouts. The frame owns a
 15-second MapLibre load timeout and can report a specific renderer reason. The
@@ -459,9 +471,17 @@ extension origin's cache, so it can only send a hint. The isolated bridge waits
 for its initial settings read before relaying that hint; this prevents a first
 hover from racing the temporary default `terrainEnabled = false`.
 
+Before relaying, the isolated bridge must also have observed a trusted hover or
+focus on the idle 3D control and obtained a one-use `prefetch` capability. The
+worker consumes that capability against the issuing tab, frame, and document
+before it evaluates the public page payload. A known message tag, a synthetic
+event, or a second use of the same token therefore cannot warm any tile.
+
 The background worker then revalidates everything:
 
 - sender must be a Peakbagger tab with an integer tab id;
+- the short-lived `prefetch` capability must match that exact issuing page and
+  is consumed even by a later-invalid request;
 - 3D must still be enabled and cache budget must be non-zero;
 - viewport width and height must each be between 100 and 8,192;
 - the hint must contain either route bounds or peak center plus zoom;

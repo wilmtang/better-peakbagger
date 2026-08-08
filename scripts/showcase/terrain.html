@@ -58,6 +58,7 @@
       }, location.origin);
     });
   </script>
+  <script src="/scripts/showcase/terrain-activation-fixture.js"></script>
 </head>
 <body>
   <main class="terrain-check">
@@ -80,7 +81,8 @@
     // the MasterMap iframe's Leaflet globals, which load independently. Clicking
     // on the toggle alone races that: when the GPX wins, getTerrainBasemap()
     // sees no map, and the frame legitimately falls back to "Terrain only".
-    // A real user clicks seconds later, so wait for the map the way they do.
+    // A real user clicks seconds later. Mark the fixture ready at that same
+    // point; the verifier must supply the trusted pointer/keyboard event.
     window.addEventListener('load', () => {
       const mode = new URLSearchParams(location.search).get('mode');
       const nativeMapReady = () => {
@@ -96,7 +98,7 @@
         attempts++;
         const toggle = document.getElementById('bpb-terrain-toggle');
         if (toggle && !toggle.disabled && nativeMapReady()) {
-          if (mode === 'terrain') toggle.click();
+          if (mode === 'terrain') document.documentElement.dataset.bpbTerrainFixtureReady = 'true';
           clearInterval(timer);
         } else if (attempts >= 50) {
           clearInterval(timer);

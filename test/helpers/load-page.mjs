@@ -87,6 +87,7 @@ export const makeChromeStub = (initial = {}, localInitial = {}) => {
     };
     let delegatedSendMessage = async () => undefined;
     let settingsPatchQueue = Promise.resolve();
+    let terrainActivationSequence = 0;
     const favoriteMutations = createFavoritesStore({ storage: chrome.storage.local });
     const routedSendMessage = (message, callback) => {
         let operation;
@@ -101,6 +102,14 @@ export const makeChromeStub = (initial = {}, localInitial = {}) => {
                 return { ok: true, settings: next };
             });
             settingsPatchQueue = operation.catch(() => {});
+        } else if (message?.type === 'TERRAIN_ACTIVATION_ISSUE'
+            && (message.action === 'init' || message.action === 'prefetch')) {
+            terrainActivationSequence++;
+            operation = Promise.resolve({
+                ok: true,
+                token: `test-terrain-activation-${terrainActivationSequence}`,
+                expiresAt: Date.now() + 5000,
+            });
         } else {
             return delegatedSendMessage(message, callback);
         }

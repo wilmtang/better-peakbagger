@@ -40,6 +40,7 @@ const AUTHORITATIVE = Object.freeze({
     'src/background/settings-file-routes.js': [
         { count: 2, kind: 'preservation', reason: 'export and import complete authoritative settings with API keys' },
     ],
+    'src/terrain/terrain-frame.js': [{ count: 1, kind: 'privacy', reason: 'gate provider-backed renderer startup inside the frame' }],
     'src/theme/theme.js': [{ count: 1, kind: 'preservation', reason: 'reconcile the synchronous theme mirror' }],
 });
 

@@ -262,6 +262,13 @@ may request raster tiles from that layer's existing provider for the 3D camera's
 view. These requests necessarily disclose the viewed location and the user's IP
 address to the provider.
 
+Known page messages alone cannot start these requests. Better Peakbagger's
+isolated extension code must first observe a real pointer or keyboard action on
+the 3D control and obtain a short-lived, one-use authorization from its
+background worker. The terrain frame separately rechecks that 3D is enabled;
+missing, expired, reused, or mismatched authorizations start no renderer or
+prefetch.
+
 The renderer receives coordinate segments or a summit focus plus a bounded,
 transient map-layer descriptor. It does not receive source GPX, timestamps,
 elevation samples, activity metadata, or Peakbagger identity. Successful DEM

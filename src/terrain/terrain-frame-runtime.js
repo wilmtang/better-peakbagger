@@ -11,11 +11,26 @@ import { terrainCache as TerrainCache } from './terrain-cache.js';
 import { terrainCamera } from './terrain-camera.js';
 import { terrainTiles as TerrainTiles } from './terrain-tiles.js';
 
-// The production entry passes the statically imported MapLibre namespace. Tests
-// pass a narrow stub here so lifecycle coverage never has to allocate WebGL.
-export const startTerrainFrame = maplibre => {
-    'use strict';
+const authorizeThroughWorker = async ({ token, action }) => {
+    const runtime = (globalThis.browser || globalThis.chrome)?.runtime;
+    if (!runtime || typeof runtime.sendMessage !== 'function'
+        || typeof token !== 'string' || !token) return false;
+    try {
+        const reply = await runtime.sendMessage({
+            type: 'TERRAIN_ACTIVATION_CONSUME',
+            token,
+            action,
+        });
+        return reply?.ok === true;
+    } catch {
+        return false;
+    }
+};
 
+// The production entry passes the statically imported MapLibre namespace and
+// consumes activation through the worker. Tests inject a narrow MapLibre stub
+// and an explicit authorization decision so jsdom never allocates WebGL.
+export const startTerrainFrame = (maplibre, { authorize = authorizeThroughWorker } = {}) => {
     const FRAME_MESSAGE_TAG = '__bpbTerrainFrame';
     const TERRAIN_TILE_TEMPLATE = 'bpb-dem://{z}/{x}/{y}.webp';
     // The producer on the far side of the bridge samples routes down to these
@@ -171,6 +186,8 @@ export const startTerrainFrame = maplibre => {
     let loadTimer = null;
     let loaded = false;
     let parentOrigin = null;
+    let authorized = false;
+    let authorizationRevision = 0;
     let activeTheme = 'light';
     let activeBasemap = null;
     let availableBasemaps = [];
@@ -2047,16 +2064,40 @@ export const startTerrainFrame = maplibre => {
         const data = event.data;
         if (event.source !== window.parent || !isPeakbaggerPageOrigin(event.origin)
             || !data || data[FRAME_MESSAGE_TAG] !== true || data.dir !== 'toFrame') return;
-        parentOrigin = event.origin;
-
-        if (data.type === 'init') createTerrain(data);
-        else if (data.type === 'resume') {
-            if (!resumeTerrain(data)) createTerrain(data);
-        } else if (data.type === 'suspend') suspendTerrain();
-        else if (data.type === 'destroy') {
+        if (data.type === 'init' || data.type === 'resume') {
+            const revision = ++authorizationRevision;
+            const finishAuthorization = allowed => {
+                if (!allowed || revision !== authorizationRevision) return;
+                parentOrigin = event.origin;
+                authorized = true;
+                if (data.type === 'init') createTerrain(data);
+                else if (!resumeTerrain(data)) createTerrain(data);
+            };
+            try {
+                const decision = authorize({ token: data.activation, action: 'init' });
+                if (decision && typeof decision.then === 'function') {
+                    void decision.then(finishAuthorization, () => {});
+                } else {
+                    finishAuthorization(decision);
+                }
+            } catch {
+                // Authorization failure is deliberately silent and starts no
+                // renderer, cache, or provider request.
+            }
+            return;
+        }
+        if (data.type === 'destroy') {
+            authorizationRevision++;
+            if (!authorized) return;
             removeTerrain();
+            authorized = false;
             post('destroyed');
-        } else if (data.type === 'cameraRequest') {
+            return;
+        }
+        if (!authorized) return;
+
+        if (data.type === 'suspend') suspendTerrain();
+        else if (data.type === 'cameraRequest') {
             const camera = terrainCamera.fromMapLibre(map);
             if (camera && Number.isSafeInteger(data.requestId) && data.requestId > 0) {
                 post('camera', { camera, requestId: data.requestId });

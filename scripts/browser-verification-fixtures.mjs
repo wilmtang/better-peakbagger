@@ -539,10 +539,18 @@ export async function sendFixtureFile(response, file, { transform = null, cacheC
 // different frames while still reporting the same pass.
 //
 // `chrome.runtime.getURL` is what the frame's MapLibre worker resolves against,
-// and dist/ is where the fixture serves it.
+// and dist/ is where the fixture serves it. The production frame also re-reads
+// the feature gate before starting, so the harness supplies the same enabled
+// schema record as its host-page fixtures.
 export const instrumentTerrainFrameHtml = html => html
     .replace('</head>', `  <script>
-    globalThis.chrome = { runtime: { getURL: resource => new URL('/dist/' + resource, location.origin).href } };
+    globalThis.chrome = {
+      runtime: { getURL: resource => new URL('/dist/' + resource, location.origin).href },
+      storage: {
+        sync: { get: async () => ({ bpbSettings: { enable3dMap: true } }) },
+        onChanged: { addListener: () => {}, removeListener: () => {} }
+      }
+    };
   </script>
 </head>`);
 
@@ -554,12 +562,25 @@ export const instrumentTerrainFrameModule = source => {
     if (!source.includes(start)) {
         throw new Error('Terrain frame module no longer exposes the expected fixture injection point');
     }
-    return source.replace(start, `const InstrumentedMap = new Proxy(maplibre.Map, {
+    return source.replace(start, `(() => {
+    const InstrumentedMap = new Proxy(maplibre.Map, {
       construct(Target, args, newTarget) {
         const instance = Reflect.construct(Target, args, newTarget);
         globalThis.__bpbTerrainTestMap = instance;
         return instance;
       }
     });
-    startTerrainFrame({ ...maplibre, Map: InstrumentedMap });`);
+    const authorizeFixtureActivation = async ({ token, action }) => {
+      const owner = window.parent;
+      owner.__bpbTerrainFixtureAuthorizationAttempts =
+        (owner.__bpbTerrainFixtureAuthorizationAttempts || 0) + 1;
+      const capabilities = owner.__bpbTerrainFixtureCapabilities;
+      const usable = capabilities && typeof capabilities.get === 'function'
+        && typeof capabilities.delete === 'function';
+      const issuedAction = usable ? capabilities.get(token) : null;
+      if (usable) capabilities.delete(token);
+      return action === 'init' && issuedAction === 'init';
+    };
+    startTerrainFrame({ ...maplibre, Map: InstrumentedMap }, { authorize: authorizeFixtureActivation });
+    })();`);
 };

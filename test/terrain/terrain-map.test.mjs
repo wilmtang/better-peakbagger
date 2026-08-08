@@ -8,7 +8,7 @@ import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
 import { JSDOM } from 'jsdom';
-import { makeChromeStub } from '../helpers/load-page.mjs';
+import { fireTrustedEvent, makeChromeStub } from '../helpers/load-page.mjs';
 import { terrainFailure } from '../../src/terrain/terrain-failure.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
@@ -20,6 +20,16 @@ const chromeWith = settings => {
     chrome.runtime.getURL = path => `chrome-extension://test-id/${path}`;
     return chrome;
 };
+const armTerrain = (window, type = 'click') => {
+    let toggle = window.document.getElementById('bpb-terrain-toggle');
+    if (!toggle) {
+        toggle = window.document.createElement('button');
+        toggle.id = 'bpb-terrain-toggle';
+        window.document.body.append(toggle);
+    }
+    fireTrustedEvent(toggle, type, { bubbles: true });
+    return toggle;
+};
 // The isolated in-page 3D bridge bundle and a classic test harness around the
 // frame's injectable runtime. Production loads the tiny native-ESM entry that
 // imports MapLibre directly; lifecycle tests pass a stub so jsdom never allocates
@@ -27,7 +37,7 @@ const chromeWith = settings => {
 const bridgeBundle = await readFile(path.join(root, 'dist', 'content', 'terrain-map.js'), 'utf8');
 const frameHarnessBuild = await build({
     stdin: {
-        contents: `import { startTerrainFrame } from ${JSON.stringify(path.join(root, 'src', 'terrain', 'terrain-frame-runtime.js'))};\nstartTerrainFrame(globalThis.maplibregl);\n`,
+        contents: `import { startTerrainFrame } from ${JSON.stringify(path.join(root, 'src', 'terrain', 'terrain-frame-runtime.js'))};\nstartTerrainFrame(globalThis.maplibregl, { authorize: request => globalThis.authorizeTerrain ? globalThis.authorizeTerrain(request) : true });\n`,
         resolveDir: root,
         sourcefile: 'terrain-frame-test-harness.js',
         loader: 'js',
@@ -65,6 +75,7 @@ test('3D terrain waits for the extension frame handshake before sending route co
         origin: window.location.origin,
         data: { __bpbTerrain: true, dir: 'toCS', ...data }
     }));
+    armTerrain(window);
     dispatchPage({
         type: 'init',
         routeSegments: [[[48.7, -121.8], [48.71, -121.81]]],
@@ -110,6 +121,8 @@ test('3D terrain waits for the extension frame handshake before sending route co
     assert.equal(init.theme, 'dark');
     assert.equal(init.cacheLimitMb, 512);
     assert.equal(init.basemap.name, 'Open Topo Map');
+    assert.match(init.activation, /^test-terrain-activation-/,
+        'the private frame message carries the isolated-world capability');
 
     window.dispatchEvent(new window.MessageEvent('message', {
         source: frame.contentWindow,
@@ -246,6 +259,7 @@ const bootLoadedFrame = async (initOverrides = {}) => {
         cacheLimitMb: 512,
         ...initOverrides
     };
+    armTerrain(window);
     dispatchPage(initData);
     await new Promise(resolve => realSetTimeout(resolve, 0));
     const frame = window.document.getElementById('bpb-terrain-frame');
@@ -278,6 +292,7 @@ test('a loaded 3D frame suspends on destroy and resumes on re-entry without a ne
 
     // re-entry → resume: no new iframe, a resume posted carrying the fresh payload.
     frameMessages.length = 0;
+    armTerrain(window);
     dispatchPage(initData);
     await new Promise(resolve => ctx.realSetTimeout(resolve, 0));
     assert.equal(window.document.querySelectorAll('#bpb-terrain-frame').length, 1, 'no second iframe is built');
@@ -286,6 +301,7 @@ test('a loaded 3D frame suspends on destroy and resumes on re-entry without a ne
     assert.ok(resume, 'a resume is posted instead of a fresh boot');
     assert.equal(frameMessages.some(message => message.type === 'init'), false, 'no init handshake on resume');
     assert.deepEqual(JSON.parse(JSON.stringify(resume.camera)), { center: [48.72, -121.79], zoom: 12.5 });
+    assert.match(resume.activation, /^test-terrain-activation-/);
 
     // The frame's normal 'loaded' reply restores the frame to visible.
     dispatchFrame({ type: 'loaded', navTop: 96, camera: { center: [48.72, -121.79], zoom: 12.5 } });
@@ -321,6 +337,7 @@ test('a destroy that races the boot hard-destroys instead of suspending', async 
         source: window, origin: window.location.origin,
         data: { __bpbTerrain: true, dir: 'toCS', ...data }
     }));
+    armTerrain(window);
     dispatchPage({ type: 'init', routeSegments: [[[48.7, -121.8], [48.71, -121.81]]], theme: 'light', cacheLimitMb: 512 });
     await new Promise(resolve => window.setTimeout(resolve, 0));
     assert.ok(window.document.getElementById('bpb-terrain-frame'), 'the iframe was created');
@@ -345,7 +362,7 @@ test('disabling 3D tears down even a suspended frame immediately', async () => {
     ctx.dom.window.close();
 });
 
-test('3D terrain bridge refuses page requests unless the stored feature gate is enabled', async () => {
+test('3D terrain bridge refuses forged page requests without trusted activation', async () => {
     const dom = new JSDOM(`<!doctype html><body>
       <div id="bpb-map-viewport">
         <iframe src="https://www.peakbagger.com/map/MasterMap.aspx"></iframe>
@@ -373,8 +390,7 @@ test('3D terrain bridge refuses page requests unless the stored feature gate is 
     await new Promise(resolve => window.setTimeout(resolve, 0));
 
     assert.equal(window.document.getElementById('bpb-terrain-frame'), null);
-    assert.equal(messages.at(-1).type, 'error');
-    assert.equal(messages.at(-1).reason, 'unavailable');
+    assert.equal(messages.length, 0, 'a forged request gets no bridge response or frame');
     dom.window.close();
 });
 
@@ -390,11 +406,18 @@ test('3D terrain consent is extension-owned, discloses the actual providers, and
     window.postMessage = message => { messages.push(message); };
     window.eval(bridgeBundle);
 
-    const requestConsent = () => window.dispatchEvent(new window.MessageEvent('message', {
-        source: window,
-        origin: window.location.origin,
-        data: { __bpbTerrain: true, dir: 'toCS', type: 'requestConsent' }
-    }));
+    const requestConsent = ({ trusted = true } = {}) => {
+        if (trusted) armTerrain(window);
+        window.dispatchEvent(new window.MessageEvent('message', {
+            source: window,
+            origin: window.location.origin,
+            data: { __bpbTerrain: true, dir: 'toCS', type: 'requestConsent' }
+        }));
+    };
+    requestConsent({ trusted: false });
+    await new Promise(resolve => window.setTimeout(resolve, 0));
+    assert.equal(window.document.querySelector('[role="dialog"]'), null,
+        'host-page script cannot open extension consent with a forged bridge message');
     requestConsent();
     await new Promise(resolve => window.setTimeout(resolve, 0));
 
@@ -453,6 +476,7 @@ test('a newer feature-gate push wins over a stale initial storage read', async (
 
     // A newer enabling push arrives before the initial read resolves.
     await window.chrome.storage.sync.set({ bpbSettings: { enable3dMap: true } });
+    armTerrain(window);
     window.dispatchEvent(new window.MessageEvent('message', {
         source: window,
         origin: window.location.origin,
@@ -468,6 +492,63 @@ test('a newer feature-gate push wins over a stale initial storage read', async (
 
     assert.ok(window.document.getElementById('bpb-terrain-frame'),
         'the stale initial read must not undo the newer enabled setting');
+    dom.window.close();
+});
+
+test('the extension frame starts no renderer for missing, rejected, or replayed activation', () => {
+    const dom = new JSDOM('<!doctype html><body></body>', {
+        url: 'https://www.peakbagger.com/climber/ascent.aspx?aid=1',
+        runScripts: 'outside-only'
+    });
+    const { window } = dom;
+    const maps = [];
+    const validTokens = new Set(['one-use']);
+    window.authorizeTerrain = ({ token, action }) => {
+        if (action !== 'init' || !validTokens.delete(token)) return false;
+        return true;
+    };
+    class MapStub {
+        constructor(options) { this.options = options; maps.push(this); }
+        addControl() {}
+        once() {}
+        on() {}
+        remove() {}
+    }
+    window.chrome = { runtime: { getURL: path => `chrome-extension://test-id/${path}` } };
+    window.maplibregl = {
+        Map: MapStub,
+        NavigationControl: class {},
+        ScaleControl: class {},
+        AttributionControl: class {},
+        setWorkerUrl() {}, addProtocol() {}, removeProtocol() {}
+    };
+    window.fetch = () => { throw new Error('authorization failure must not fetch'); };
+    window.postMessage = () => {};
+    window.eval(frameBundle);
+    const dispatch = activation => window.dispatchEvent(new window.MessageEvent('message', {
+        source: window,
+        origin: window.location.origin,
+        data: {
+            __bpbTerrainFrame: true,
+            dir: 'toFrame',
+            type: 'init',
+            activation,
+            routeSegments: [[[48.7, -121.8], [48.71, -121.81]]],
+        }
+    }));
+
+    dispatch(undefined);
+    dispatch('guessed');
+    assert.equal(maps.length, 0);
+    dispatch('one-use');
+    assert.equal(maps.length, 1);
+    window.dispatchEvent(new window.MessageEvent('message', {
+        source: window,
+        origin: window.location.origin,
+        data: { __bpbTerrainFrame: true, dir: 'toFrame', type: 'destroy' }
+    }));
+    dispatch('one-use');
+    assert.equal(maps.length, 1, 'the consumed token cannot build a second renderer');
     dom.window.close();
 });
 
@@ -1233,6 +1314,7 @@ test('the bridge forwards peak-feed requests to the page and replies to the fram
     window.eval(bridgeBundle);
     await new Promise(resolve => window.setTimeout(resolve, 0)); // settings.get() resolves
 
+    armTerrain(window);
     window.dispatchEvent(new window.MessageEvent('message', {
         source: window,
         origin: window.location.origin,
@@ -1293,7 +1375,17 @@ test('the bridge relays a bounded DEM prefetch to the background worker only whi
         data: { __bpbTerrain: true, dir: 'toCS', ...data }
     }));
 
+    // Public tags alone are not a warm-cache capability.
+    dispatchPage({
+        type: 'prefetch',
+        bounds: { minLat: 48.7, minLon: -121.82, maxLat: 48.76, maxLon: -121.8 },
+        viewport: { width: 1280, height: 800 }
+    });
+    await new Promise(resolve => window.setTimeout(resolve, 0));
+    assert.equal(sent.length, 0);
+
     // A route prefetch forwards route bounds + viewport as a TERRAIN_PREFETCH.
+    armTerrain(window, 'pointerover');
     dispatchPage({
         type: 'prefetch',
         bounds: { minLat: 48.7, minLon: -121.82, maxLat: 48.76, maxLon: -121.8 },
@@ -1308,6 +1400,7 @@ test('the bridge relays a bounded DEM prefetch to the background worker only whi
     assert.equal('center' in sent[0], false, 'a bounds prefetch does not also carry a centre');
 
     // A peak prefetch forwards center + zoom instead.
+    armTerrain(window, 'focus');
     dispatchPage({ type: 'prefetch', center: [48.83, -121.6], zoom: 13, viewport: { width: 1000, height: 425 } });
     await new Promise(resolve => window.setTimeout(resolve, 0));
     assert.equal(sent.length, 2);
@@ -1315,6 +1408,7 @@ test('the bridge relays a bounded DEM prefetch to the background worker only whi
     assert.equal(sent[1].zoom, 13);
 
     // A prefetch that names neither a valid bounds nor a valid centre is dropped.
+    armTerrain(window, 'pointerover');
     dispatchPage({ type: 'prefetch', viewport: { width: 1000, height: 425 } });
     await new Promise(resolve => window.setTimeout(resolve, 0));
     assert.equal(sent.length, 2, 'a prefetch with no view is not forwarded');
@@ -1322,6 +1416,7 @@ test('the bridge relays a bounded DEM prefetch to the background worker only whi
     // Turning the feature off closes the relay: no prefetch reaches the worker.
     await window.chrome.storage.sync.set({ bpbSettings: { enable3dMap: false } });
     await new Promise(resolve => window.setTimeout(resolve, 0));
+    armTerrain(window, 'pointerover');
     dispatchPage({
         type: 'prefetch',
         bounds: { minLat: 48.7, minLon: -121.82, maxLat: 48.76, maxLon: -121.8 },

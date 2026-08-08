@@ -34,6 +34,58 @@ import { terrainFailure } from './terrain-failure.js';
     let consentElement = null;
     let consentKeyHandler = null;
     let consentReturnFocus = null;
+    const activationPromises = new Map();
+
+    const runtime = () => (globalThis.browser || globalThis.chrome)?.runtime || null;
+
+    const issueActivation = action => {
+        const api = runtime();
+        if (!api || typeof api.sendMessage !== 'function') return Promise.resolve(null);
+        const request = Promise.resolve(api.sendMessage({
+            type: 'TERRAIN_ACTIVATION_ISSUE',
+            action,
+        })).then(reply => reply?.ok === true && typeof reply.token === 'string'
+            && Number.isFinite(reply.expiresAt)
+            ? { token: reply.token, expiresAt: reply.expiresAt }
+            : null, () => null);
+        activationPromises.set(action, request);
+        return request;
+    };
+
+    const activationFor = async (action, consume = true) => {
+        const pending = activationPromises.get(action);
+        if (!pending) return null;
+        if (consume) activationPromises.delete(action);
+        const activation = await pending;
+        if (!activation || activation.expiresAt <= Date.now()) return null;
+        return activation.token;
+    };
+
+    const terrainControl = event => {
+        const path = typeof event.composedPath === 'function' ? event.composedPath() : [event.target];
+        return path.find(node => node?.id === 'bpb-terrain-toggle'
+            || node?.classList?.contains('bpb-terrain-consent-primary')) || null;
+    };
+
+    // Page-world coordinators own map data, but only the isolated extension
+    // world can mint the opaque capability that lets data start provider work.
+    // The page can call click() or forge bridge messages; neither produces a
+    // trusted event here.
+    window.addEventListener('click', event => {
+        if (event.isTrusted && terrainControl(event)) void issueActivation('init');
+    }, true);
+    window.addEventListener('keydown', event => {
+        if (!event.isTrusted || !terrainControl(event)
+            || (event.key !== 'Enter' && event.key !== ' ')
+            || event.ctrlKey || event.metaKey || event.altKey) return;
+        void issueActivation('init');
+    }, true);
+    window.addEventListener('pointerover', event => {
+        if (event.isTrusted && terrainControl(event)) void issueActivation('prefetch');
+    }, true);
+    window.addEventListener('focus', event => {
+        if (event.isTrusted && terrainControl(event)) void issueActivation('prefetch');
+    }, true);
 
     const postToPage = (type, detail = {}) => window.postMessage({
         [PAGE_MESSAGE_TAG]: true,
@@ -98,16 +150,22 @@ import { terrainFailure } from './terrain-failure.js';
     // still re-validates the sender, the feature gate, and the numbers. The
     // reply is ignored — a warm cache is a best-effort optimization.
     const forwardPrefetch = async data => {
+        const activation = await activationFor('prefetch');
+        if (!activation) return;
         // A hover can arrive in the same task that booted this bridge. Wait for
         // the initial feature gate instead of treating its temporary false
         // default as a durable opt-out and dropping the one warm-up hint.
         await settingsReady;
         if (!terrainEnabled) return;
-        const runtime = (globalThis.browser || globalThis.chrome)?.runtime;
-        if (!runtime || typeof runtime.sendMessage !== 'function') return;
+        const api = runtime();
+        if (!api || typeof api.sendMessage !== 'function') return;
         const viewport = data && data.viewport;
         if (!viewport || !Number.isFinite(viewport.width) || !Number.isFinite(viewport.height)) return;
-        const payload = { type: 'TERRAIN_PREFETCH', viewport: { width: viewport.width, height: viewport.height } };
+        const payload = {
+            type: 'TERRAIN_PREFETCH',
+            activation,
+            viewport: { width: viewport.width, height: viewport.height }
+        };
         const bounds = data.bounds;
         if (bounds && typeof bounds === 'object'
             && [bounds.minLat, bounds.minLon, bounds.maxLat, bounds.maxLon].every(Number.isFinite)) {
@@ -123,7 +181,7 @@ import { terrainFailure } from './terrain-failure.js';
             return;
         }
         try {
-            const reply = runtime.sendMessage(payload);
+            const reply = api.sendMessage(payload);
             if (reply && typeof reply.then === 'function') reply.catch(() => {});
         } catch (error) {
             // A torn-down worker channel is a normal transient; nothing to warm.
@@ -315,6 +373,8 @@ import { terrainFailure } from './terrain-failure.js';
     });
 
     const createFrame = async data => {
+        const activation = await activationFor('init');
+        if (!activation) return;
         await settingsReady;
         if (!terrainEnabled) {
             fail('unavailable');
@@ -329,7 +389,7 @@ import { terrainFailure } from './terrain-failure.js';
             suspended = false;
             frameLoaded = false;
             pendingInit = payload;
-            postToFrame('resume', payload);
+            postToFrame('resume', { ...payload, activation });
             return;
         }
         if (frame) return;
@@ -350,7 +410,7 @@ import { terrainFailure } from './terrain-failure.js';
         terrainFrame.addEventListener('error', () => {
             if (frame === terrainFrame) fail('frame');
         }, { once: true });
-        pendingInit = payload;
+        pendingInit = { ...payload, activation };
         frameLoaded = false;
         terrainFrame.src = chrome.runtime.getURL('terrain/terrain.html');
         frame = terrainFrame;
@@ -363,10 +423,12 @@ import { terrainFailure } from './terrain-failure.js';
         if (event.source === window && event.origin === location.origin
             && data && data[PAGE_MESSAGE_TAG] === true && data.dir === 'toCS') {
             if (data.type === 'requestConsent') {
-                void settingsReady.then(() => {
+                void (async () => {
+                    if (!await activationFor('init', false)) return;
+                    await settingsReady;
                     if (terrainEnabled) postToPage('consentResult', { enabled: true });
                     else showConsent();
-                });
+                })();
             } else if (data.type === 'init') createFrame(data);
             else if (data.type === 'destroy') {
                 if (suspended) {

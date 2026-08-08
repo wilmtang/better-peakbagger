@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
-/* global document */
+/* global document, location, requestAnimationFrame */
 
 import { createServer } from 'node:https';
 
@@ -134,9 +134,67 @@ async function main() {
         });
 
         await page.goto(
+            `${fixtureOrigin}climber/ascent.aspx?mode=idle&map=wide`,
+            { waitUntil: 'load' },
+        );
+        await page.waitForFunction(() => {
+            const toggle = document.getElementById('bpb-terrain-toggle');
+            const nativeMap = document.querySelector('iframe[src*="MasterMap.aspx" i]');
+            try {
+                return Boolean(toggle && !toggle.disabled && nativeMap?.contentWindow?.mapsPlaceholder);
+            } catch {
+                return false;
+            }
+        });
+        const terrainBeforeAuthorizationProbe = requests.terrain;
+        const syntheticState = await page.evaluate(async () => {
+            document.getElementById('bpb-terrain-toggle').click();
+            await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+            return {
+                issueAttempts: globalThis.__bpbTerrainFixtureIssueAttempts,
+                frame: Boolean(document.getElementById('bpb-terrain-frame')),
+            };
+        });
+        if (syntheticState.issueAttempts !== 0 || syntheticState.frame) {
+            throw new Error(`A synthetic Firefox terrain click crossed the activation boundary: ${JSON.stringify(syntheticState)}`);
+        }
+        await page.evaluate(async () => {
+            const frame = document.createElement('iframe');
+            frame.id = 'bpb-direct-terrain-probe';
+            frame.src = '/dist/terrain/terrain.html';
+            document.body.append(frame);
+        });
+        await page.waitForFunction(() => {
+            const frame = document.getElementById('bpb-direct-terrain-probe');
+            frame?.contentWindow?.postMessage({
+                __bpbTerrainFrame: true,
+                dir: 'toFrame',
+                type: 'init',
+                activation: 'guessed-fixture-capability',
+            }, location.origin);
+            return globalThis.__bpbTerrainFixtureAuthorizationAttempts > 0;
+        });
+        const directFrameState = await page.evaluate(() => {
+            const frame = document.getElementById('bpb-direct-terrain-probe');
+            const result = {
+                map: Boolean(frame?.contentWindow?.__bpbTerrainTestMap),
+                issueAttempts: globalThis.__bpbTerrainFixtureIssueAttempts,
+                authorizationAttempts: globalThis.__bpbTerrainFixtureAuthorizationAttempts,
+            };
+            frame?.remove();
+            return result;
+        });
+        if (directFrameState.map || directFrameState.issueAttempts !== 0
+            || requests.terrain !== terrainBeforeAuthorizationProbe) {
+            throw new Error(`Direct Firefox terrain embedding started provider work: ${JSON.stringify(directFrameState)}`);
+        }
+
+        await page.goto(
             `${fixtureOrigin}climber/ascent.aspx?mode=terrain&map=wide`,
             { waitUntil: 'load' },
         );
+        await page.waitForFunction(() => document.documentElement.dataset.bpbTerrainFixtureReady === 'true');
+        await page.locator('#bpb-terrain-toggle').click();
         try {
             await page.waitForFunction(() => {
                 const frame = document.getElementById('bpb-terrain-frame');
@@ -261,6 +319,7 @@ async function main() {
         console.log('Firefox terrain verification passed:');
         console.log(`  - Firefox ${browser.version()}, hidden/headless ${viewport.width}x${viewport.height}`);
         console.log(`  - renderer: ${rendererState.renderer}`);
+        console.log('  - synthetic activation and direct-frame authorization negatives passed');
         console.log('  - terrain/basemap/route/peaks rendered; scroll zoom, right drag, Ctrl-drag, and resize passed');
         console.log(`  - resized canvas ${resized.width}x${resized.height}; native focus/window placement was not tested`);
         await context.close();

@@ -10,7 +10,7 @@ const PREFETCH_TILE_CAP = 32;
 const PREFETCH_CONCURRENCY = 4;
 const PREFETCH_DEDUPE_TTL_MS = 10 * 60 * 1000;
 
-export function createTerrainPrefetch({ isPeakbaggerSender, mapWithConcurrency, now }) {
+export function createTerrainPrefetch({ isPeakbaggerSender, consumeActivation, mapWithConcurrency, now }) {
     const lastByTab = new Map();
     const recentTiles = new Map();
     let cacheState = null;
@@ -46,6 +46,10 @@ export function createTerrainPrefetch({ isPeakbaggerSender, mapWithConcurrency, 
         // about to render; nothing else may drive worker-to-Mapterhorn traffic.
         if (!isPeakbaggerSender(sender) || !Number.isInteger(sender.tab?.id)) {
             return { ok: false, reason: 'forbidden' };
+        }
+        if (typeof consumeActivation !== 'function'
+            || !consumeActivation(message?.activation, sender)) {
+            return { ok: false, reason: 'activation' };
         }
         const settings = await Settings.get();
         // 3D enablement is the consent gate for contacting Mapterhorn; a zero

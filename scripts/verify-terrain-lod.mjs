@@ -644,6 +644,22 @@ try {
             + `?mode=terrain&viewport=${FRAME_WIDTH}x${FRAME_HEIGHT}`
     });
     await waitForPageState(cdp, '({ ready: document.readyState === "complete" })', 20000);
+    const toggle = await waitForPageState(cdp, `(() => {
+        const control = document.getElementById('bpb-terrain-toggle');
+        const rect = control?.getBoundingClientRect();
+        return {
+            ready: document.documentElement.dataset.bpbTerrainFixtureReady === 'true'
+                && rect && rect.width > 0 && rect.height > 0,
+            x: rect && rect.left + rect.width / 2,
+            y: rect && rect.top + rect.height / 2
+        };
+    })()`, 20000);
+    await cdp.call('Input.dispatchMouseEvent', {
+        type: 'mousePressed', x: toggle.x, y: toggle.y, button: 'left', clickCount: 1
+    });
+    await cdp.call('Input.dispatchMouseEvent', {
+        type: 'mouseReleased', x: toggle.x, y: toggle.y, button: 'left', clickCount: 1
+    });
 
     const ready = await waitForPageState(cdp, `(() => {
         const frame = document.getElementById('bpb-terrain-frame');
