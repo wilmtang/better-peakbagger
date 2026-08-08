@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 3.4.0 — 2026-08-08
 
 - **Make Photo Topos easier to discover.** The public feature tour now shows
   the real editor and its direct ImgBB workflow, while the maintained guide and
