@@ -42,9 +42,11 @@
   coordinates, timing, and elevation make the continuation plausible.
 
 - **Strengthen dependency updates without weakening release gates.** Runtime
-  and development dependency paths use reviewed patched releases with a
-  zero-advisory audit, while Dependabot's npm groups now reach the existing
-  verified auto-merge path and keep otherwise unmatched updates visible.
+  and development dependency paths use reviewed patched releases where they
+  exist, while two newly disclosed image-parser advisories with no upstream fix
+  are accepted only on the exact development-only extension-lint path through
+  August 21. Dependabot's npm groups now reach the existing verified auto-merge
+  path and keep otherwise unmatched updates visible.
 
 ## 3.3.0 — 2026-08-02
 

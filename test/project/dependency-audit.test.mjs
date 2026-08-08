@@ -5,7 +5,10 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
-import { evaluateAudit } from '../../scripts/check-npm-audit.mjs';
+import {
+    AUDIT_ACCEPTANCE,
+    evaluateAudit,
+} from '../../scripts/check-npm-audit.mjs';
 
 const auditWith = (vulnerabilities, counts = {}) => ({
     metadata: {
@@ -22,25 +25,91 @@ const auditWith = (vulnerabilities, counts = {}) => ({
     vulnerabilities,
 });
 
-test('the npm audit gate passes only on a clean tree', () => {
+test('the npm audit gate passes a clean tree', () => {
     assert.deepEqual(evaluateAudit(auditWith({})), { status: 'clean' });
 });
 
-// The gate previously carried one dated acceptance. It is gone, and the point
-// of removing it is that nothing is accepted now — not that the accepted thing
-// changed. A finding of any severity, in any package, fails.
-test('the npm audit gate rejects every finding, whatever it is', () => {
-    assert.throws(() => evaluateAudit(auditWith({
-        'brace-expansion': {
-            severity: 'high',
-            via: [{ source: 1130588, url: 'https://github.com/advisories/GHSA-mh99-v99m-4gvg' }],
-            nodes: ['node_modules/brace-expansion'],
+const acceptedAudit = () => auditWith({
+    'addons-linter': {
+        severity: 'high',
+        via: ['image-size'],
+        nodes: ['node_modules/addons-linter'],
+    },
+    'image-size': {
+        severity: 'high',
+        via: [
+            { source: 1138808, url: 'https://github.com/advisories/GHSA-w3rx-r6r6-pgpr' },
+            { source: 1138809, url: 'https://github.com/advisories/GHSA-5p2g-fcmc-qvqq' },
+        ],
+        nodes: ['node_modules/image-size'],
+    },
+    'web-ext': {
+        severity: 'high',
+        via: ['addons-linter'],
+        nodes: ['node_modules/web-ext'],
+    },
+});
+
+const acceptedLock = () => ({
+    packages: Object.fromEntries(Object.entries(AUDIT_ACCEPTANCE.lockedPackages)
+        .map(([packagePath, version]) => [packagePath, { version, dev: true }])),
+});
+
+test('the npm audit gate accepts only the reviewed image-size lint path before expiry', () => {
+    assert.deepEqual(
+        evaluateAudit(acceptedAudit(), acceptedLock(), '2026-08-07'),
+        {
+            status: 'accepted',
+            message: 'Accepted two image-size advisories only in the dev-only web-ext lint path through 2026-08-21.',
         },
-    })), /Unowned npm audit findings: brace-expansion \(high\) — https:\/\/github\.com\/advisories\/GHSA-mh99-v99m-4gvg/);
+    );
+
+    assert.throws(
+        () => evaluateAudit(acceptedAudit(), acceptedLock(), '2026-08-22'),
+        /expired on 2026-08-21/,
+    );
+});
+
+test('the npm audit gate rejects advisory, path, package, severity, and lock drift', () => {
+    const unknownAdvisory = acceptedAudit();
+    unknownAdvisory.vulnerabilities['image-size'].via[0] = {
+        source: 9999999,
+        url: 'https://github.com/advisories/GHSA-unknown',
+    };
+    assert.throws(
+        () => evaluateAudit(unknownAdvisory, acceptedLock(), '2026-08-07'),
+        /advisories or vulnerable install path changed/,
+    );
+
+    const pathDrift = acceptedAudit();
+    pathDrift.vulnerabilities['addons-linter'].via = ['some-other-package'];
+    assert.throws(
+        () => evaluateAudit(pathDrift, acceptedLock(), '2026-08-07'),
+        /Audit path for addons-linter changed/,
+    );
 
     assert.throws(() => evaluateAudit(auditWith({
-        'some-dev-tool': { severity: 'low', via: ['brace-expansion'], nodes: [] },
-    }, { low: 1, high: 0 })), /Unowned npm audit findings: some-dev-tool \(low\)/);
+        'some-dev-tool': {
+            severity: 'high',
+            via: [{ source: 9999999, url: 'https://github.com/advisories/GHSA-unknown' }],
+            nodes: ['node_modules/some-dev-tool'],
+        },
+    }), acceptedLock(), '2026-08-07'), /Unowned npm audit findings: some-dev-tool/);
+
+    const severityDrift = acceptedAudit();
+    severityDrift.metadata.vulnerabilities.moderate = 1;
+    severityDrift.metadata.vulnerabilities.high = 2;
+    assert.throws(
+        () => evaluateAudit(severityDrift, acceptedLock(), '2026-08-07'),
+        /severity\/counts changed/,
+    );
+
+    const lockDrift = acceptedLock();
+    lockDrift.packages['node_modules/image-size'].version = '2.0.3';
+    assert.throws(
+        () => evaluateAudit(acceptedAudit(), lockDrift, '2026-08-07'),
+        /Audit acceptance lock changed at node_modules\/image-size/,
+    );
 
     // A count with no detail is still a failure, not a pass with a blank list.
     assert.throws(
@@ -76,4 +145,20 @@ test('the vulnerable dev-only brace-expansion path stays pinned to a patched rel
         assert.ok(patchedVersions.has(resolved.version),
             `${packagePath} resolves ${resolved.version}, not a reviewed patched version`);
     }
+});
+
+test('the accepted image-size path and patched js-yaml stay dev-only and pinned', async () => {
+    const [packageJson, lockfile] = await Promise.all([
+        readFile(new URL('../../package.json', import.meta.url), 'utf8').then(JSON.parse),
+        readFile(new URL('../../package-lock.json', import.meta.url), 'utf8').then(JSON.parse),
+    ]);
+    assert.equal(packageJson.devDependencies['web-ext'], '^10.6.0');
+    for (const [packagePath, version] of Object.entries(AUDIT_ACCEPTANCE.lockedPackages)) {
+        const entry = lockfile.packages[packagePath];
+        assert.equal(entry.version, version);
+        assert.equal(entry.dev, true, `${packagePath} must stay development-only`);
+    }
+    const jsYaml = lockfile.packages['node_modules/js-yaml'];
+    assert.equal(jsYaml.version, '4.3.1');
+    assert.equal(jsYaml.dev, true, 'js-yaml must stay development-only');
 });
