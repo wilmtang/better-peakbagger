@@ -20,7 +20,7 @@
 //
 // Hidden: no window is shown and the user's browser/profile is never touched.
 
-import { mkdtemp, rm, readFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -35,6 +35,7 @@ import {
     waitForCondition
 } from './browser-verification-fixtures.mjs';
 import { readCompressedGpxFixture } from '../test/helpers/gpx-fixtures.mjs';
+import { createResourceStack } from './resource-stack.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 // The unpacked extension is the built bundle tree, not the source root.
@@ -56,15 +57,31 @@ try {
     process.exit(1);
 }
 
-const profile = await mkdtemp(path.join(os.tmpdir(), 'better-peakbagger-extension-'));
-const capitolRegressionGpx =
-    await readCompressedGpxFixture('capitol-2021-segment-order.gpx.gz.b64');
-const fixture = await createBrowserFixtureServer({
-    temporaryRoot: profile,
-    analyzerGpx: capitolRegressionGpx,
-});
+const resources = createResourceStack();
+let profile;
+let fixture;
+let setupError = null;
+try {
+    profile = await mkdtemp(path.join(os.tmpdir(), 'better-peakbagger-extension-'));
+    resources.defer('Chrome verification profile', () =>
+        rm(profile, { recursive: true, force: true }));
+    const capitolRegressionGpx =
+        await readCompressedGpxFixture('capitol-2021-segment-order.gpx.gz.b64');
+    fixture = await createBrowserFixtureServer({
+        temporaryRoot: profile,
+        analyzerGpx: capitolRegressionGpx,
+        analyzerDelayMs: Math.max(0, Number(process.env.BPB_VERIFY_ANALYZER_DELAY_MS) || 0),
+    });
+    resources.defer('Chrome browser fixture', () => fixture.close());
+} catch (error) {
+    setupError = error;
+}
+if (setupError) await resources.dispose(setupError);
 const port = fixture.port;
-const buddyListFixture = await readFile(path.join(root, 'test', 'fixtures', 'pages', 'report-buddy-list.html'), 'utf8');
+const buddyListFixture = await resources.guard(readFile(
+    path.join(root, 'test', 'fixtures', 'pages', 'report-buddy-list.html'),
+    'utf8',
+));
 
 const failureCollector = createFailureCollector();
 const { failures, check } = failureCollector;
@@ -77,6 +94,7 @@ const readDownloadText = async download => {
 };
 
 let context;
+let primaryError = null;
 try {
     context = await chromium.launchPersistentContext(profile, {
         channel: 'chromium',
@@ -89,6 +107,7 @@ try {
             '--host-resolver-rules=MAP www.peakbagger.com 127.0.0.1'
         ]
     });
+    resources.defer('Chrome verification context', () => context.close());
     const terrainProviderHosts = new Set([
         'tiles.mapterhorn.com',
         'tiles.openfreemap.org',
@@ -1757,7 +1776,27 @@ try {
     const openAscent = async () => {
         const page = await context.newPage();
         await page.goto(`https://www.peakbagger.com:${port}/climber/ascent.aspx?aid=1`, { waitUntil: 'load' });
-        await page.waitForTimeout(2000);
+        try {
+            await page.waitForFunction(() => {
+                const panel = document.getElementById('bpb-gpx-analysis');
+                const status = panel?.querySelector('.bpb-gpx-stats')?.textContent || '';
+                const legendButtons = panel?.querySelectorAll('#bpb-gpx-chart-legend button').length || 0;
+                const toggle = document.getElementById('bpb-terrain-toggle');
+                return /^Interactive Stats:/.test(status)
+                    && legendButtons === 2
+                    && toggle?.disabled === false;
+            }, null, { timeout: 15_000 });
+        } catch (error) {
+            const current = await page.evaluate(() => ({
+                stats: document.querySelector('#bpb-gpx-analysis .bpb-gpx-stats')?.textContent || null,
+                legendButtons: document.querySelectorAll('#bpb-gpx-chart-legend button').length,
+                terrainDisabled: document.getElementById('bpb-terrain-toggle')?.disabled ?? null,
+            })).catch(readError => ({ unavailable: readError.message }));
+            throw new Error(
+                `Timed out waiting for the analyzer's final visible state; current value: ${JSON.stringify(current)}`,
+                { cause: error },
+            );
+        }
         return page;
     };
 
@@ -3587,11 +3626,10 @@ try {
         await controlPage.close();
         await sourcePage.close();
     }
-} finally {
-    if (context) await context.close();
-    await fixture.close();
-    await rm(profile, { recursive: true, force: true });
+} catch (error) {
+    primaryError = error;
 }
+await resources.dispose(primaryError);
 
 if (failures.length) {
     console.error('Real-extension verification FAILED:');

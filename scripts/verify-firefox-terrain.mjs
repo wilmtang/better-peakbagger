@@ -17,6 +17,11 @@ import {
     instrumentTerrainFrameHtml,
     instrumentTerrainFrameModule,
 } from './browser-verification-fixtures.mjs';
+import {
+    closeServer,
+    createResourceStack,
+    listenServer,
+} from './resource-stack.mjs';
 
 
 const viewport = { width: 1000, height: 760 };
@@ -78,26 +83,28 @@ function createFixtureServer({ key, cert }) {
 }
 
 async function main() {
-    const certificate = await createFixtureCertificate({ host: fixtureHost, label: 'firefox-terrain' });
-    const server = createFixtureServer(certificate);
-    await new Promise((resolve, reject) => {
-        server.once('error', reject);
-        server.listen(0, '127.0.0.1', resolve);
-    });
-    const port = server.address().port;
-
-    let browser;
+    const resources = createResourceStack();
+    let primaryError = null;
     try {
-        browser = await firefox.launch({
+        const certificate = await createFixtureCertificate({ host: fixtureHost, label: 'firefox-terrain' });
+        resources.defer('Firefox terrain certificate', () => certificate.remove());
+        const server = createFixtureServer(certificate);
+        resources.defer('Firefox terrain server', () => closeServer(server));
+        await listenServer(server, 0, '127.0.0.1');
+        const port = server.address().port;
+
+        const browser = await firefox.launch({
             headless: true,
             firefoxUserPrefs: {
                 'network.dns.localDomains': fixtureHost,
                 'webgl.disabled': false,
             },
         });
+        resources.defer('Firefox terrain browser', () => browser.close());
         // The fixture certificate is generated per run for this host only, and the
         // route handler below is the thing that keeps live origins unreachable.
         const context = await browser.newContext({ viewport, ignoreHTTPSErrors: true });
+        resources.defer('Firefox terrain context', () => context.close());
         const page = await context.newPage();
         const errors = [];
         const requests = { terrain: 0, basemap: 0, peaks: 0 };
@@ -322,13 +329,10 @@ async function main() {
         console.log('  - synthetic activation and direct-frame authorization negatives passed');
         console.log('  - terrain/basemap/route/peaks rendered; scroll zoom, right drag, Ctrl-drag, and resize passed');
         console.log(`  - resized canvas ${resized.width}x${resized.height}; native focus/window placement was not tested`);
-        await context.close();
-    } finally {
-        if (browser) await browser.close().catch(() => {});
-        await new Promise(resolve => server.close(resolve));
-        // The fixture key and certificate are disposable and must not outlive the run.
-        await certificate.remove();
+    } catch (error) {
+        primaryError = error;
     }
+    await resources.dispose(primaryError);
 }
 
 main().catch(error => {

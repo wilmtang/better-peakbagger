@@ -17,6 +17,12 @@ import {
     sendFixtureNotFound,
     sendFixtureText,
 } from './browser-verification-fixtures.mjs';
+import {
+    closeServer,
+    createResourceStack,
+    listenServer,
+    manageChildProcess,
+} from './resource-stack.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const outputDir = path.join(root, 'store-assets');
@@ -114,9 +120,13 @@ const multiDayGpx = () => {
     ).join('\n')}\n</trkseg></trk></gpx>`;
 };
 
-const certificate = await createFixtureCertificate({ host: SHOWCASE_HOST, label: 'showcase' });
+const resources = createResourceStack();
+let primaryError = null;
+const certificate = await resources.guard(() =>
+    createFixtureCertificate({ host: SHOWCASE_HOST, label: 'showcase' }));
+resources.defer('showcase certificate', () => certificate.remove());
 
-const server = createServer({ key: certificate.key, cert: certificate.cert }, async (request, response) => {
+const handleRequest = async (request, response) => {
     try {
         const url = new URL(request.url, `https://${SHOWCASE_HOST}`);
 
@@ -154,19 +164,28 @@ const server = createServer({ key: certificate.key, cert: certificate.cert }, as
     } catch (error) {
         sendFixtureError(response, error);
     }
-});
+};
+const server = await resources.guard(() =>
+    createServer({ key: certificate.key, cert: certificate.cert }, handleRequest));
+resources.defer('showcase server', () => closeServer(server));
 
 const run = (command, args) => new Promise((resolve, reject) => {
     const child = spawn(command, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    manageChildProcess(resources, child, `showcase child ${path.basename(command)}`);
     let stdout = '';
     let stderr = '';
+    const timer = setTimeout(() => reject(new Error(`${command} did not finish within 60 seconds`)), 60_000);
+    const settle = operation => value => {
+        clearTimeout(timer);
+        operation(value);
+    };
     child.stdout.on('data', chunk => { stdout += chunk; });
     child.stderr.on('data', chunk => { stderr += chunk; });
-    child.on('error', reject);
-    child.on('close', code => {
+    child.on('error', settle(reject));
+    child.on('close', settle(code => {
         if (code === 0) resolve({ stdout, stderr });
         else reject(new Error(`${command} exited ${code}\n${stdout}\n${stderr}`));
-    });
+    }));
 });
 
 const screenshot = async (port, route, output) => {
@@ -194,40 +213,36 @@ const gif = async (frames, output, frameDuration) => {
     await run(ffmpeg, ['-y', ...concat, '-filter_complex', filter, '-loop', '0', output]);
 };
 
-await mkdir(outputDir, { recursive: true });
-
-const topoResponse = await fetch(usgsTopoUrl);
-if (!topoResponse.ok) throw new Error(`USGS topo request failed with ${topoResponse.status}`);
-usgsTopo = Buffer.from(await topoResponse.arrayBuffer());
-
-await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
-const { port } = server.address();
-
 try {
+    await mkdir(outputDir, { recursive: true });
+
+    const topoResponse = await fetch(usgsTopoUrl);
+    if (!topoResponse.ok) throw new Error(`USGS topo request failed with ${topoResponse.status}`);
+    usgsTopo = Buffer.from(await topoResponse.arrayBuffer());
+
+    await listenServer(server, 0, '127.0.0.1');
+    const { port } = server.address();
+
     const frameDir = await mkdtemp(path.join(os.tmpdir(), 'better-peakbagger-showcase-'));
+    resources.defer('showcase frames', () => rm(frameDir, { recursive: true, force: true }));
     const activityStrava = path.join(frameDir, 'activity-strava.png');
     const activityGarmin = path.join(frameDir, 'activity-garmin.png');
     const gpxHoverFractions = [.14, .28, .42, .56, .7, .84];
     const gpxFrames = gpxHoverFractions.map((_, index) => path.join(frameDir, `gpx-${index}.png`));
 
-    try {
-        await screenshot(port, '/scripts/showcase/capture.html?provider=strava', activityStrava);
-        await screenshot(port, '/scripts/showcase/capture.html?provider=garmin', activityGarmin);
-        await screenshot(port, '/scripts/showcase/capture.html?provider=strava', path.join(outputDir, 'screenshot-0-strava-capture.png'));
-        await screenshot(port, '/scripts/showcase/capture.html?provider=garmin', path.join(outputDir, 'screenshot-0-garmin-capture.png'));
+    await screenshot(port, '/scripts/showcase/capture.html?provider=strava', activityStrava);
+    await screenshot(port, '/scripts/showcase/capture.html?provider=garmin', activityGarmin);
+    await screenshot(port, '/scripts/showcase/capture.html?provider=strava', path.join(outputDir, 'screenshot-0-strava-capture.png'));
+    await screenshot(port, '/scripts/showcase/capture.html?provider=garmin', path.join(outputDir, 'screenshot-0-garmin-capture.png'));
 
-        for (let index = 0; index < gpxFrames.length; index++) {
-            await screenshot(port, `/scripts/showcase/gpx.html?hover=${gpxHoverFractions[index]}`, gpxFrames[index]);
-        }
-        await screenshot(port, '/scripts/showcase/gpx.html?hover=.56', path.join(outputDir, 'screenshot-1-gpx-analyzer.png'));
-
-        await gif([activityStrava, activityGarmin], path.join(outputDir, 'showcase-activity-capture.gif'), 2.4);
-        await gif(gpxFrames, path.join(outputDir, 'showcase-gpx-map-sync.gif'), 1);
-    } finally {
-        await rm(frameDir, { recursive: true, force: true });
+    for (let index = 0; index < gpxFrames.length; index++) {
+        await screenshot(port, `/scripts/showcase/gpx.html?hover=${gpxHoverFractions[index]}`, gpxFrames[index]);
     }
-} finally {
-    server.close();
-    // The showcase key and certificate are disposable and must not outlive the run.
-    await certificate.remove();
+    await screenshot(port, '/scripts/showcase/gpx.html?hover=.56', path.join(outputDir, 'screenshot-1-gpx-analyzer.png'));
+
+    await gif([activityStrava, activityGarmin], path.join(outputDir, 'showcase-activity-capture.gif'), 2.4);
+    await gif(gpxFrames, path.join(outputDir, 'showcase-gpx-map-sync.gif'), 1);
+} catch (error) {
+    primaryError = error;
 }
+await resources.dispose(primaryError);

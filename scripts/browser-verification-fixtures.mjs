@@ -9,6 +9,12 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 
+import {
+    closeServer,
+    createResourceStack,
+    listenServer,
+} from './resource-stack.mjs';
+
 const execFileAsync = promisify(execFile);
 
 export const projectRoot = path.resolve(
@@ -234,36 +240,62 @@ const peakMasterMapHtml = `<!doctype html><html><body>
 // rendered "Better Peakbagger refused an invalid Peakbagger request." into the
 // store-listing screenshots. `remove` deletes the key and certificate; callers
 // that minted their own directory get it cleaned up too.
-export async function createFixtureCertificate({ host = fixtureHost, directory = null, label = 'fixture' } = {}) {
-    const owned = directory === null;
-    const root = owned
-        ? await mkdtemp(path.join(os.tmpdir(), `better-peakbagger-${label}-cert-`))
-        : directory;
-    const keyPath = path.join(root, 'fixture-key.pem');
-    const certificatePath = path.join(root, 'fixture-cert.pem');
+export async function createFixtureCertificate({
+    host = fixtureHost,
+    directory = null,
+    label = 'fixture',
+    opensslPath = 'openssl',
+    readCertificate = readFile,
+} = {}) {
+    const resources = createResourceStack();
     try {
-        await execFileAsync('openssl', [
+        const owned = directory === null;
+        const root = owned
+            ? await mkdtemp(path.join(os.tmpdir(), `better-peakbagger-${label}-cert-`))
+            : directory;
+        const keyPath = path.join(root, 'fixture-key.pem');
+        const certificatePath = path.join(root, 'fixture-cert.pem');
+        if (owned) {
+            resources.defer('fixture certificate directory', () =>
+                rm(root, { recursive: true, force: true }));
+        } else {
+            resources.defer('fixture certificate', () => rm(certificatePath, { force: true }));
+            resources.defer('fixture key', () => rm(keyPath, { force: true }));
+        }
+        await execFileAsync(opensslPath, [
             'req', '-x509', '-newkey', 'rsa:2048', '-nodes',
             '-subj', `/CN=${host}`, '-days', '1',
             '-keyout', keyPath, '-out', certificatePath,
         ]);
+        const [key, cert] = await Promise.all([
+            readCertificate(keyPath),
+            readCertificate(certificatePath),
+        ]);
+        return {
+            key,
+            cert,
+            root,
+            async remove() {
+                await resources.dispose();
+            },
+        };
     } catch (error) {
-        throw new Error(`Could not create the isolated HTTPS fixture certificate: ${error.message}`);
+        await resources.dispose(new Error(
+            `Could not create the isolated HTTPS fixture certificate: ${error.message}`,
+            { cause: error },
+        ));
     }
-    const [key, cert] = await Promise.all([readFile(keyPath), readFile(certificatePath)]);
-    return {
-        key,
-        cert,
-        root,
-        async remove() {
-            await rm(owned ? root : keyPath, { recursive: true, force: true });
-            if (!owned) await rm(certificatePath, { force: true });
-        },
-    };
 }
 
-export async function createBrowserFixtureServer({ temporaryRoot, analyzerGpx = gpx }) {
-    const certificate = await createFixtureCertificate({ directory: temporaryRoot });
+export async function createBrowserFixtureServer({
+    temporaryRoot,
+    analyzerGpx = gpx,
+    analyzerDelayMs = 0,
+} = {}) {
+    const resources = createResourceStack();
+    const certificate = await resources.guard(() =>
+        createFixtureCertificate({ directory: temporaryRoot }));
+    resources.defer('browser fixture certificate', () => certificate.remove());
     const { key, cert } = certificate;
     const [
         ascentEditHtml,
@@ -272,7 +304,7 @@ export async function createBrowserFixtureServer({ temporaryRoot, analyzerGpx = 
         buddyListHtml,
         peakListHtml,
         climberHtml,
-    ] = await Promise.all([
+    ] = await resources.guard(Promise.all([
         readFile(
             path.join(projectRoot, 'test', 'fixtures', 'pages', 'climber-ascentedit.html'),
             'utf8',
@@ -297,9 +329,9 @@ export async function createBrowserFixtureServer({ temporaryRoot, analyzerGpx = 
             path.join(projectRoot, 'test', 'fixtures', 'pages', 'climber-home.html'),
             'utf8',
         ),
-    ]);
+    ]));
     const gpxPath = path.join(temporaryRoot, 'browser-verification.gpx');
-    await writeFile(gpxPath, gpx, 'utf8');
+    await resources.guard(writeFile(gpxPath, gpx, 'utf8'));
     const requests = {
         previewPosts: 0,
         savePosts: 0,
@@ -364,7 +396,7 @@ export async function createBrowserFixtureServer({ temporaryRoot, analyzerGpx = 
         request.on('end', () => resolve(Buffer.concat(chunks).toString('latin1')));
         request.on('error', reject);
     });
-    const server = createServer({ key, cert }, async (request, response) => {
+    const handleRequest = async (request, response) => {
         const url = new URL(request.url, `https://${fixtureHost}`);
         const send = (contentType, body) => {
             response.writeHead(200, { 'content-type': contentType });
@@ -432,20 +464,23 @@ export async function createBrowserFixtureServer({ temporaryRoot, analyzerGpx = 
             return send('text/html; charset=utf-8',
                 (url.searchParams.get('t') || '').toUpperCase() === 'P' ? peakMasterMapHtml : masterMapHtml);
         }
-        if (/track\.gpx/i.test(url.pathname)) return send('application/gpx+xml', analyzerGpx);
+        if (/track\.gpx/i.test(url.pathname)) {
+            if (analyzerDelayMs > 0) {
+                await new Promise(resolve => setTimeout(resolve, analyzerDelayMs));
+            }
+            return send('application/gpx+xml', analyzerGpx);
+        }
         response.writeHead(404);
         response.end('not found');
-    });
-    await new Promise((resolve, reject) => {
-        server.once('error', reject);
-        server.listen(0, '127.0.0.1', resolve);
-    });
+    };
+    const server = await resources.guard(() => createServer({ key, cert }, handleRequest));
+    resources.defer('browser fixture server', () => closeServer(server));
+    await resources.guard(listenServer(server, 0, '127.0.0.1'));
     return {
         port: server.address().port,
         gpxPath,
         requests,
-        close: () => new Promise((resolve, reject) =>
-            server.close(error => error ? reject(error) : resolve())),
+        close: () => resources.dispose(),
     };
 }
 

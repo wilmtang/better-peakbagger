@@ -299,6 +299,15 @@ test('Firefox verification waits for rendered postconditions instead of fixed fr
     assert.match(analyzerProbe, /state => state\?\.ready/);
     assert.doesNotMatch(analyzerProbe, /until\.elementLocated/);
 
+    const terrainStart = verifier.indexOf('const activeTerrainState =');
+    const terrainEnd = verifier.indexOf('const ascentFrameOrigin =', terrainStart);
+    assert.notEqual(terrainStart, -1);
+    assert.notEqual(terrainEnd, -1);
+    const terrainProbe = verifier.slice(terrainStart, terrainEnd);
+    assert.match(terrainProbe, /await waitForScript\(driver,/);
+    assert.match(terrainProbe, /frames\.length === 1 && origin\.startsWith\('moz-extension:\/\/'\)/);
+    assert.doesNotMatch(terrainProbe, /until\.elementLocated/);
+
     const navigationStart = verifier.indexOf('const longDistanceAfter =');
     const navigationEnd = verifier.indexOf('const longDistanceNavigation =', navigationStart);
     assert.notEqual(navigationStart, -1);
@@ -311,7 +320,7 @@ test('Firefox verification waits for rendered postconditions instead of fixed fr
     assert.doesNotMatch(navigationProbe, /requestAnimationFrame/);
 });
 
-test('Firefox topo pointer actions re-center the overlay before moving', async () => {
+test('Firefox topo actions re-center overlay and controls before interaction', async () => {
     const verifier = await readFile(
         new URL('../../scripts/verify-firefox-extension.mjs', import.meta.url),
         'utf8',
@@ -328,6 +337,9 @@ test('Firefox topo pointer actions re-center the overlay before moving', async (
     assert.notEqual(moveIndex, -1);
     assert.ok(scrollIndex < moveIndex);
     assert.match(pointerHelper, /block: 'center'/);
+    assert.match(pointerHelper, /const clickEditorControl = async element/);
+    assert.match(verifier,
+        /clickEditorControl\(await driver\.findElement\(By\.css\('\[data-tool="anchor"\]'\)\)\)/);
 });
 
 test('Firefox startup retry targets only a clean exit and verifier-owned profiles', async () => {

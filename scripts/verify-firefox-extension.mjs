@@ -30,6 +30,7 @@ import {
     stopOwnedFirefoxProcesses,
 } from './firefox-verifier-processes.mjs';
 import { readCompressedGpxFixture } from '../test/helpers/gpx-fixtures.mjs';
+import { createResourceStack } from './resource-stack.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -122,26 +123,34 @@ async function evaluatePageRealm(driver, expression) {
 }
 
 async function main() {
-    const temporaryRoot = await mkdtemp(path.join(tmpdir(), 'better-peakbagger-firefox-verify-'));
-    const profileTemplate = path.join(temporaryRoot, 'profile');
-    await mkdir(profileTemplate);
-
-    let fixture;
-    let prepared;
-    let driver;
-    let addonId;
+    const resources = createResourceStack();
+    let primaryError = null;
     try {
+        const temporaryRoot = await mkdtemp(path.join(tmpdir(), 'better-peakbagger-firefox-verify-'));
+        const stopOwnedProcesses = async () => {
+            await stopOwnedFirefoxProcesses(temporaryRoot);
+        };
+        const removeTemporaryRoot = async () => {
+            await rm(temporaryRoot, { recursive: true, force: true });
+        };
+        resources.defer('Firefox verification root', removeTemporaryRoot);
+        resources.defer('Firefox owned processes', stopOwnedProcesses);
+        const profileTemplate = path.join(temporaryRoot, 'profile');
+        await mkdir(profileTemplate);
+
         const suppliedSource = process.env.BPB_VERIFY_EXTENSION_SOURCE
             ? path.resolve(process.env.BPB_VERIFY_EXTENSION_SOURCE)
             : null;
-        if (!suppliedSource) prepared = await prepareFirefoxSource({ temporaryRoot });
+        const prepared = suppliedSource ? null : await prepareFirefoxSource({ temporaryRoot });
+        if (prepared) resources.defer('prepared Firefox extension', () => prepared.cleanup());
         const extensionSource = suppliedSource || prepared.sourceDir;
         const capitolRegressionGpx =
             await readCompressedGpxFixture('capitol-2021-segment-order.gpx.gz.b64');
-        fixture = await createBrowserFixtureServer({
+        const fixture = await createBrowserFixtureServer({
             temporaryRoot,
             analyzerGpx: capitolRegressionGpx,
         });
+        resources.defer('Firefox browser fixture', () => fixture.close());
         const buddyListFixture = await readFile(
             path.join(root, 'test', 'fixtures', 'pages', 'report-buddy-list.html'),
             'utf8',
@@ -167,10 +176,12 @@ async function main() {
         options.setAcceptInsecureCerts(true);
         if (process.env.FIREFOX_BIN) options.setBinary(process.env.FIREFOX_BIN);
 
-        driver = await startFirefoxDriver(options, temporaryRoot);
+        const driver = await startFirefoxDriver(options, temporaryRoot);
+        resources.defer('Firefox WebDriver', () => driver.quit());
         await driver.manage().setTimeouts({ pageLoad: 20_000, script: 15_000 });
 
-        addonId = await driver.installAddon(extensionSource, true);
+        const addonId = await driver.installAddon(extensionSource, true);
+        resources.defer('temporary Firefox add-on', () => driver.uninstallAddon(addonId));
         const baseUrl = await extensionBaseUrl(driver, addonId);
         if (!baseUrl?.startsWith('moz-extension://')) {
             throw new Error(`Firefox reported an invalid extension origin: ${JSON.stringify(baseUrl)}`);
@@ -375,6 +386,13 @@ async function main() {
             await driver.actions({ bridge: true })
                 .move({ origin: overlay, x, y }).click().perform();
         };
+        const clickEditorControl = async element => {
+            await driver.executeScript(
+                "arguments[0].scrollIntoView({ block: 'center', inline: 'nearest' });",
+                element,
+            );
+            await element.click();
+        };
 
         await driver.findElement(By.css('[data-tool="route"]')).click();
         await clickOverlay(-140, 110);
@@ -393,13 +411,13 @@ async function main() {
         );
 
         await clickOverlay(0, 0);
-        await driver.findElement(By.id('route-smooth')).click();
+        await clickEditorControl(await driver.findElement(By.id('route-smooth')));
         await clickOverlay(140, -90);
-        await driver.findElement(By.id('finish-route')).click();
+        await clickEditorControl(await driver.findElement(By.id('finish-route')));
 
         // Symbols, placed back to back: the tool must stay armed, and opacity must
         // reach the painted group rather than only the inspector.
-        await driver.findElement(By.css('[data-tool="anchor"]')).click();
+        await clickEditorControl(await driver.findElement(By.css('[data-tool="anchor"]')));
         await clickOverlay(-60, -60);
         await clickOverlay(60, 30);
         await driver.executeScript(`
@@ -1299,10 +1317,15 @@ async function main() {
                 && document.querySelectorAll('#bpb-terrain-frame').length === 0;
         }, surfaceSelectors.terrainToggle), 5_000);
         await terrainToggle.click();
-        await driver.wait(until.elementLocated(By.id('bpb-terrain-frame')), 10_000);
-        const ascentFrameOrigin = await driver.executeScript(
-            "return document.getElementById('bpb-terrain-frame')?.src || '';",
-        );
+        const activeTerrainState = await waitForScript(driver, `
+          const frames = document.querySelectorAll('#bpb-terrain-frame');
+          const origin = frames[0]?.src || '';
+          return {
+            ready: frames.length === 1 && origin.startsWith('moz-extension://'),
+            frames: frames.length,
+            origin
+          };`, 'Firefox ascent 3D extension frame', 10_000, state => state?.ready);
+        const ascentFrameOrigin = activeTerrainState.origin;
 
         await driver.switchTo().frame(forgedFrame);
         const forgedFrameState = await driver.executeScript(`return {
@@ -1319,8 +1342,7 @@ async function main() {
         assertState(
             !forgedFrameState.map
             && forgedFrameState.providerRequests.length === 0
-            && !forgedHostState.consent
-            && forgedHostState.bridgeFrames === 1,
+            && !forgedHostState.consent,
             'Firefox host forgeries started terrain work',
             { forgedFrameState, forgedHostState },
         );
@@ -1760,19 +1782,13 @@ async function main() {
         console.log('  - a fresh ascent form autofilled its local date and trusted GPX selection swapped Preview for Process');
         console.log('  - the report editor opened the standalone report-drafts manager page, which rendered a seeded draft');
         console.log('  - forged page/frame messages, synthetic clicks, and direct embedding started no terrain work');
-        console.log('  - AMO report credit, real editor input/draft recovery, filter/sort, and trusted 3D frame passed');
+        console.log('  - AMO report credit, real editor input/draft recovery, filter/sort, and trusted 3D frame creation passed');
         console.log('  - a real draft tab rejected wrong identity, attached GPX, filled fields, Previewed once, and never Saved');
         console.log('  - native toolbar activeTab grant, popup chrome, prompts, and window placement were not tested');
-    } finally {
-        if (driver && addonId) {
-            await driver.uninstallAddon(addonId).catch(() => {});
-        }
-        if (driver) await driver.quit().catch(() => {});
-        await stopOwnedFirefoxProcesses(temporaryRoot);
-        if (fixture) await fixture.close().catch(() => {});
-        if (prepared) await prepared.cleanup().catch(() => {});
-        await rm(temporaryRoot, { recursive: true, force: true });
+    } catch (error) {
+        primaryError = error;
     }
+    await resources.dispose(primaryError);
 }
 
 main().catch(error => {

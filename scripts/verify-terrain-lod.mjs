@@ -34,6 +34,12 @@ import {
     instrumentTerrainFrameHtml,
     instrumentTerrainFrameModule,
 } from './browser-verification-fixtures.mjs';
+import {
+    closeServer,
+    createResourceStack,
+    listenServer,
+    manageChildProcess,
+} from './resource-stack.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const chromePath = process.env.CHROME_BIN || ({
@@ -213,10 +219,14 @@ const boundedMapterhornTile = value => {
 // the GPX Analyzer fetches the route through that guard, so a plain-HTTP fixture
 // makes the extension refuse its own fixture and the 3D toggle never enables.
 // Self-signed for this host only, deleted in teardown.
-const certificate = await createFixtureCertificate({ host: FIXTURE_HOST, label: 'lod' });
+const resources = createResourceStack();
+let primaryError = null;
+const certificate = await resources.guard(() =>
+    createFixtureCertificate({ host: FIXTURE_HOST, label: 'lod' }));
+resources.defer('terrain LOD certificate', () => certificate.remove());
 const { key: fixtureKey, cert: fixtureCert } = certificate;
 
-const server = createServer({ key: fixtureKey, cert: fixtureCert }, async (request, response) => {
+const handleRequest = async (request, response) => {
     try {
         const url = new URL(request.url, `https://${FIXTURE_HOST}`);
         const showcaseRoutes = {
@@ -256,16 +266,22 @@ const server = createServer({ key: fixtureKey, cert: fixtureCert }, async (reque
     } catch (error) {
         sendFixtureError(response, error);
     }
-});
+};
+const server = await resources.guard(() =>
+    createServer({ key: fixtureKey, cert: fixtureCert }, handleRequest));
+resources.defer('terrain LOD server', () => closeServer(server));
 
 // ---------------------------------------------------------------------------
 // CDP plumbing
 // ---------------------------------------------------------------------------
 
-const waitForDebugPort = async (profile, child, timeoutMs = 10000) => {
+const waitForDebugPort = async (profile, child, childState, timeoutMs = 10000) => {
     const activePortFile = path.join(profile, 'DevToolsActivePort');
     const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline) {
+        if (childState.error) throw new Error(`Chrome failed to start: ${childState.error.message}`, {
+            cause: childState.error,
+        });
         if (child.exitCode !== null) throw new Error(`Chrome exited before opening CDP (${child.exitCode})`);
         try {
             const [port] = (await readFile(activePortFile, 'utf8')).trim().split('\n');
@@ -527,9 +543,11 @@ const widestLevelGap = sample => {
     return widest;
 };
 
-await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+await resources.guard(listenServer(server, 0, '127.0.0.1'));
 const serverPort = server.address().port;
-const profile = await mkdtemp(path.join(os.tmpdir(), 'better-peakbagger-lod-profile-'));
+const profile = await resources.guard(
+    mkdtemp(path.join(os.tmpdir(), 'better-peakbagger-lod-profile-')));
+resources.defer('terrain LOD Chrome profile', () => rm(profile, { recursive: true, force: true }));
 const chrome = spawn(chromePath, [
     '--headless=new',
     '--no-first-run',
@@ -545,17 +563,19 @@ const chrome = spawn(chromePath, [
     `--user-data-dir=${profile}`,
     'about:blank'
 ], { stdio: ['ignore', 'ignore', 'pipe'] });
+const chromeState = manageChildProcess(resources, chrome, 'terrain LOD Chrome');
 let chromeStderr = '';
 chrome.stderr.on('data', chunk => { chromeStderr = `${chromeStderr}${chunk}`.slice(-20000); });
 
 let cdp;
 const failures = [];
 try {
-    const debugPort = await waitForDebugPort(profile, chrome);
+    const debugPort = await waitForDebugPort(profile, chrome, chromeState);
     const pages = await (await fetch(`http://127.0.0.1:${debugPort}/json/list`)).json();
     const page = pages.find(candidate => candidate.type === 'page');
     if (!page) throw new Error('Chrome opened no debuggable page');
     cdp = await connectCdp(page.webSocketDebuggerUrl);
+    resources.defer('terrain LOD CDP socket', () => cdp.close());
     await Promise.all([cdp.call('Page.enable'), cdp.call('Runtime.enable')]);
 
     // A software renderer paints plausible screenshots and proves nothing about
@@ -868,16 +888,6 @@ try {
     }
 } catch (error) {
     if (chromeStderr) error.message += `\nChrome stderr (tail):\n${chromeStderr}`;
-    throw error;
-} finally {
-    if (cdp) cdp.close();
-    server.close();
-    if (chrome.exitCode === null) chrome.kill('SIGTERM');
-    await Promise.race([
-        new Promise(resolve => chrome.once('exit', resolve)),
-        delay(2000).then(() => { if (chrome.exitCode === null) chrome.kill('SIGKILL'); })
-    ]);
-    await rm(profile, { recursive: true, force: true });
-    // The fixture key and certificate are disposable and must not outlive the run.
-    await certificate.remove();
+    primaryError = error;
 }
+await resources.dispose(primaryError);
