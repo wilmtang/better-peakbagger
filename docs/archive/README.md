@@ -77,6 +77,11 @@ living docs in [`docs/`](../).
   persistence, accessibility, verifier, metadata, and fixture-privacy findings,
   with legal, live-service, abrupt-shutdown, native-UI, device, and store-review
   proof gaps preserved in the closure ledger.
+- [UX and engineering audit follow-up — 2026-08-08](ux-engineering-audit-2026-08-08.md) —
+  completed remediation of 17 release, transaction, GPX, recovery UX, resource,
+  compatibility, and first-use findings, with remote-policy, crash-durability,
+  legal, live-service, native-UI, assistive-technology, mobile-device, and store
+  proof gaps preserved in the closure ledger.
 - [Codebase audit — 2026-07-19](codebase-audit-2026-07-19.md) — point-in-time
   audit and remediation plan.
 - [Codebase audit — 2026-07-22](codebase-audit-2026-07-22.md) and its

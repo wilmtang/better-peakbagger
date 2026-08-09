@@ -1,12 +1,16 @@
 # UX and engineering audit follow-up — 2026-08-08
 
-Status: **active remediation plan.** No runtime finding in this document has
-been fixed by creating the plan. Close each item only with its focused source
-change, adversarial regression proof, and the relevant verification below.
+Status: **remediated and archived on 2026-08-09.** All 17 repository findings
+have a focused source/test disposition in the [closure ledger](#closure-ledger),
+and the combined tree passed the unit, lint, scale, real-browser, packaged-floor,
+archive, release-history, and hardware-terrain gates recorded below. This is
+not a claim that every release risk is fully proven: remote protection state,
+legal review, live providers, native browser UI, assistive technology, mobile
+devices, and store review remain explicit evidence gaps.
 
 Baseline: clean `main` at `f236fd846193fbc993bf883c5663ab341a350e8a`, tagged
 `v3.5.0` and aligned with `origin/main`. This audit reconciled the current tree
-with the archived [2026-08-08 codebase audit](../archive/codebase-audit-2026-08-08.md).
+with the archived [2026-08-08 codebase audit](codebase-audit-2026-08-08.md).
 Previously closed findings are reopened here only where the current source or a
 deterministic probe disproves the archived invariant.
 
@@ -587,11 +591,128 @@ renderers, viewports, and remaining evidence gaps.
   store checks minimal and separately recorded. Synthetic fixtures do not prove
   live provider behavior.
 
-## Initial closure ledger
+## Closure ledger
 
 ### Fixed and verified
 
-- None. This document records an audit and execution plan only.
+- **F1 — linearizable report-draft recovery (`25e5135`):** editor and manager
+  mutations now share one worker-owned queue with per-key generation tombstones.
+  Undo waits for deletion and cannot replace a newer same-key autosave; single,
+  bulk, expiry, storage-failure, and cross-tab barriers passed in 72 focused
+  tests and the final real-browser suites.
+- **F2 — selection-owned local GPX work (`9f92657`, `82ab184`):** every trusted
+  file selection has a persisted page session, immutable file identity, and
+  generation checked at worker admission, result, and apply boundaries. Delayed
+  settings/read/lookup/apply, replacement, clear, navigation, restart, and dead
+  worker cases passed; the final 81-test capture parity run and packaged browser
+  suites used the production selection lifecycle.
+- **F3 — authorization-owned GitHub repositories (`8e863f3`):** a monotonic
+  credential epoch and snapshot compare-and-set now bind discovery, selection,
+  reconnect, confirmation, and import rollback to the reviewed account. The 134
+  focused GitHub/settings/options tests and hidden Chrome verifier passed.
+- **F4 — protected-main release provenance (`32de5e3`):** release preparation
+  now requires clean synchronized `main`, an unused exact tag, explicit UTC date
+  policy, and owner-created commit/tag steps; CI fetches `origin/main` and proves
+  tag ancestry. Chrome publication checks version state before upload. Thirty-four
+  release tests and three documentation tests passed. Remote protection changes
+  remain owner-controlled below.
+- **F5 — tag-owned immutable history (`8ad9aff`):** exact semver tags are now the
+  changelog authority, shallow repositories fail closed, and release CI fetches
+  full history. Thirty-one focused release tests passed, including deleted
+  sections and shallow-history fixtures; the final full clone found all ten
+  immutable sections.
+- **F6 — one direct-owned GPX analysis tree (`e841aed`):** Analyzer geometry,
+  charts, metrics, and segments now derive from the shared direct-child parser,
+  excluding descendant and extension-owned fake points. Ninety-five focused
+  GPX/capture tests and the final Capitol Peak browser fixture passed.
+- **F7 — truthful autosave feedback (`617c535`):** autosave UI follows the latest
+  edit revision through unsaved, saving, saved, and failed states. Later failures
+  can no longer leave an obsolete success claim, and Copy Markdown provides a
+  selected manual fallback. Seventy-four focused report tests passed.
+- **F8 — terminal Analyzer semantics (`8d3e7f9`, `d7ca2be`):** chart roles,
+  shortcuts, and controls exist only after usable GPX data; every terminal
+  transport/parse/geometry failure destroys chart, route, terrain, and focus
+  state, with retry only for recoverable failures. Sixty-one focused tests and
+  eight hidden real-extension terminal states plus recovery passed.
+- **F9 — explicit photo recovery lifetime (`4c7f32e`):** one 30-day boundary now
+  drives Recently Deleted expiry/status copy and distinguishes complete from
+  record-only restoration. Record-only restore atomically removes residual
+  editing assets while retaining remote/report/backup metadata. Eighty-seven
+  focused photo tests and light/dark wide/narrow inspection passed.
+- **F10 — owned clipboard fallback (`49e3133`):** normal and last-resort photo URL
+  copies share a generation-owned surface that leaves the complete URL visible,
+  focused, and selected when clipboard access is missing or fails. Fifty-five
+  bundled photo tests and hidden wide/narrow visual inspection passed.
+- **F11 — lock-bound release metadata (`ef182b5`):** AMO reviewer versions,
+  maintained acknowledgements/editor docs, packaged notices, and owned web-ext
+  warning acceptances are parity-checked against `package-lock.json`. Forty
+  focused checks, the generated final AMO metadata, and exact package inventory
+  passed; legal sufficiency remains separate below.
+- **F12 — queued photo backup reconciliation (`77d1445`):** snapshot, merge,
+  remote write, durable reconciliation journal, global state, and per-photo
+  stamps now serialize in the branch queue. Confirmed remote content remains
+  successful while idempotent retries repair pending local reconciliation.
+  Seventy-seven focused tests and hidden pending-state renders passed.
+- **F13 — bounded DEM response bodies (`abc8c4e`):** network and cached terrain
+  tiles now stream through a 1 MiB per-tile ceiling under the existing deadline,
+  require `image/webp`, validate RIFF/WebP framing, reject dishonest lengths, and
+  purge invalid cache entries. Fifteen source tests, 43 bundled terrain tests,
+  hardware Chrome/Firefox terrain suites, and a 277,870-byte live Mapterhorn
+  success-tile validation passed.
+- **F14 — exercised desktop browser floors (`af7fd7a`, `5bee468`):** the manifest,
+  build, docs, test CI, and release CI now agree on Chrome 128 and Firefox 152,
+  with floor execution blocking store jobs. The final exact packages passed
+  hidden Chrome for Testing 128.0.6613.137 and Firefox 152.0; current Chrome and
+  Firefox also passed. Firefox Android remains a device gap below.
+- **F15 — failure-atomic photo editor opening (`79f6970`):** return-context and tab
+  creation/binding are one transaction whose later failures independently close
+  the exact tab and delete context through all-settled cleanup. Fifty-one
+  focused fault-injection tests and hidden Chrome passed.
+- **F16 — bounded photo source processing (`0e6aed2`):** newly selected encoded
+  sources have a separate 128 MiB ceiling and storage-estimate preflight while
+  IndexedDB remains authoritative. Decode, hash, quota, atomic cleanup, and exact
+  limit cases passed in 127 focused tests; a hidden Chrome exact-limit probe
+  measured backing storage and available quota without a second persistent hash
+  allocation.
+- **F17 — non-destructive first-use ascent filtering (`0b54801`, `471cf03`):** all
+  filters default off when no strictly valid page state exists, the synced
+  Has-beta definition is visible, and the independent control is labelled
+  `Trip report filter: ≥ N words`. Initialization conceals only the target
+  table and fails open. Seventy-three focused tests, the 4,145-row scale gate,
+  keyboard-driven Chrome/Firefox checks, and four wide/narrow light/dark renders
+  passed.
+
+Final combined-tree verification recorded before archival:
+
+- `npm test`: **1,435 passed, 0 failed** after rebuilding all 27 shipped bundles.
+- `npm run test:scale`: **6 passed**, including 4,145 initially visible ascent
+  rows before the explicit beta filter and the restored full-table sort.
+- `npm run lint`: passed with the eight exact version-owned web-ext warnings.
+  `npm run audit:ci` passed only the two exact development-only `image-size`
+  advisories accepted through 2026-08-21.
+- `npm run release:check-history`: passed all **10** immutable semver-tag
+  sections in the full repository. The whole-section-deletion and shallow-clone
+  cases are pinned by the focused release suite.
+- `npm run verify:browsers`: passed the real unpacked extension in hidden Chrome
+  for Testing 151.0.7922.34 new-headless and hidden Firefox 153.0.3 at 1000x760.
+  Native toolbar `activeTab`, browser chrome, prompts, and window placement were
+  explicitly not exercised.
+- Fresh minified 3.5.0 rehearsal archives were built locally. Chrome and Firefox
+  each passed exact verification at **66 entries**; generated AMO metadata was
+  regenerated; `npm run verify:packages` executed both exact archives on Chrome
+  151.0.7922.34 and Firefox 153.0.3. The same archives then passed hidden Chrome
+  for Testing 128.0.6613.137 and Firefox 152.0 floor runs.
+- `npm run terrain:verify` passed hidden at 798x448 and 448x448 on `ANGLE Metal
+  Renderer: Apple M3 Pro`; `npm run terrain:verify:firefox` passed Firefox 153.0
+  hidden at 1000x760 on its reported Apple hardware renderer. Neither suite used
+  software rendering.
+- Analyzer failure panels, draft statuses, Recently Deleted, clipboard fallback,
+  photo limits, backup reconciliation, and ascent filters were inspected from
+  verifier-owned screenshots at maintained wide/narrow viewports and in both
+  themes. Keyboard behavior passed in isolated hidden browsers; hidden checks do
+  not prove visible native focus or assistive-technology speech.
+- Final process and disposable-profile inspection found no surviving verifier,
+  browser, extracted-package, mounted-image, or floor-download artifact.
 
 ### Intentionally not changed
 
@@ -608,28 +729,44 @@ renderers, viewports, and remaining evidence gaps.
   artifacts.
 - The total terrain cache setting is not itself replaced by F13. The new bound
   applies to each response before the existing cache policy.
+- GitHub tag rules and `browser-stores` environment approvals were not mutated.
+  Repository code now fails closed without protected-main provenance, while
+  remote policy remains an owner action to inspect immediately before release.
+- The two exact development-only `image-size` advisories remain accepted only
+  through 2026-08-21. The audit did not broaden or renew that exception.
+- No version bump, release commit/tag, push, store submission, or live data
+  mutation was performed. The rebuilt 3.5.0 archives are local rehearsal
+  artifacts only: `v3.5.0` names the audit baseline, and the new exact-tag gate
+  deliberately prevents these later commits from being published under it.
 
 ### Changed but not fully proven
 
-- None. No runtime or configuration remediation has begun.
-
-When implementation starts, move every completed item into exactly one ledger
-category. Do not archive the plan or describe it as fully fixed while an owner
-decision, remote configuration change, live-provider check, legal review, or
-native/device verification remains open.
+- **F1, F3, and F12:** controlled interleavings prove queue/generation/journal
+  behavior while the browser is running. An actual browser or OS crash at every
+  persistence boundary was not induced.
+- **F3 and F12:** fixtures exercised GitHub account/repository replacement and
+  backup reconciliation, but no live authenticated GitHub mutation was made.
+- **F4:** repository enforcement is implemented, but the remote ruleset and
+  release-environment observations can drift and were neither changed nor
+  re-certified for a publication in this implementation run.
+- **F8, F9, F10, F16, and F17:** semantic DOM, keyboard interaction, contrast,
+  focus state, and wide/narrow screenshots passed. Native screen-reader speech,
+  switch control, touch, and physical-device behavior were not tested.
+- **F11:** lockfile/reviewer/notice parity is mechanically enforced; it does not
+  establish license sufficiency. Owner or counsel review remains required.
+- **F13:** hardware renderers, synthetic failure cases, and one live success tile
+  passed. No live Mapterhorn outage, malformed CDN response, or full provider
+  availability check was exercised.
+- **F14:** both declared desktop floors passed, but Firefox Android 142+ remains
+  an unproven physical-device release check.
+- No authenticated live Garmin, Strava, Peakbagger, ImgBB, or GitHub backup flow
+  was exercised. No AMO/Chrome Web Store upload, signature, reviewer, or
+  post-publication behavior was tested.
 
 ## Current proof gaps
 
-- No live authenticated Garmin, Strava, Peakbagger, ImgBB, GitHub backup, or
-  Mapterhorn failure path was exercised in this audit.
-- No browser window was launched, so native focus, browser chrome, permission
-  prompts, screen-reader speech, touch, and physical-device layout remain
-  uninspected.
-- The concurrency probes control browser/storage promises while the process is
-  alive; they do not establish durability across an actual browser or OS crash.
-- Current GitHub ruleset/environment observations can drift. Re-query them at
-  implementation and release time.
-- Mechanical dependency/version parity does not establish license sufficiency.
-  Owner or counsel review remains required before release.
-- No release tag, push, remote-rule mutation, store submission, or live data
-  mutation is authorized by this plan.
+The unresolved evidence above remains part of this archived record. Before a
+release, re-query tag rules and environment protection, choose a fresh version,
+run the exact-tag preflight from synchronized protected `main`, perform the
+Firefox Android and other owner-required device checks, and keep every live
+provider/store mutation separately authorized and recorded.
