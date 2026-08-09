@@ -17,6 +17,7 @@ import {
     createResourceStack,
     listenServer,
     manageChildProcess,
+    quitWebDriver,
 } from '../../scripts/resource-stack.mjs';
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
@@ -102,6 +103,17 @@ test('a child that ignores termination cannot skip later cleanup', async () => {
         return true;
     });
     assert.deepEqual(order, ['SIGTERM', 'SIGKILL', 'outer']);
+});
+
+test('quitting an already-closed WebDriver session is idempotent', async () => {
+    await quitWebDriver({
+        quit: async () => {
+            throw new Error('WebDriver session does not exist, or is not active');
+        },
+    });
+    await assert.rejects(quitWebDriver({
+        quit: async () => { throw new Error('geckodriver connection failed'); },
+    }), /geckodriver connection failed/);
 });
 
 test('invalid OpenSSL and certificate reads leave no key material behind', async t => {

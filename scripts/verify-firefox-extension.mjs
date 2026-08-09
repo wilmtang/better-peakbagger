@@ -30,7 +30,7 @@ import {
     stopOwnedFirefoxProcesses,
 } from './firefox-verifier-processes.mjs';
 import { readCompressedGpxFixture } from '../test/helpers/gpx-fixtures.mjs';
-import { createResourceStack } from './resource-stack.mjs';
+import { createResourceStack, quitWebDriver } from './resource-stack.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -177,7 +177,7 @@ async function main() {
         if (process.env.FIREFOX_BIN) options.setBinary(process.env.FIREFOX_BIN);
 
         const driver = await startFirefoxDriver(options, temporaryRoot);
-        resources.defer('Firefox WebDriver', () => driver.quit());
+        resources.defer('Firefox WebDriver', () => quitWebDriver(driver));
         await driver.manage().setTimeouts({ pageLoad: 20_000, script: 15_000 });
 
         const addonId = await driver.installAddon(extensionSource, true);

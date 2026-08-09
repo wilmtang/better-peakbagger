@@ -141,6 +141,15 @@ export async function stopChildProcess(child, { graceMs = 2_000 } = {}) {
     }
 }
 
+export async function quitWebDriver(driver) {
+    try {
+        await driver?.quit();
+    } catch (error) {
+        if (error?.message === 'WebDriver session does not exist, or is not active') return;
+        throw error;
+    }
+}
+
 export function manageChildProcess(resources, child, label, options) {
     const state = { error: null };
     // Attach before the caller can await startup. A failed spawn otherwise emits
