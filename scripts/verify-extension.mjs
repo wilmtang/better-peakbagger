@@ -1831,6 +1831,153 @@ try {
         };
     });
 
+    // Terminal GPX failures must not leave the semantics or focus order of a
+    // chart that never materialized. Exercise the shipped MAIN-world bundle
+    // over the same isolated HTTPS Peakbagger origin as the successful chart.
+    const unavailableCases = [
+        ['signed-out', /sign in/i, true],
+        ['missing', /could not find/i, false],
+        ['challenge', /human check/i, true],
+        ['invalid-xml', /could not parse/i, false],
+        ['invalid-root', /document root is not GPX/i, false],
+        ['timeout', /too long/i, true],
+        ['no-points', /No track points/i, false],
+        ['no-valid-points', /No valid track points/i, false],
+    ];
+    let unavailableVisualPage = null;
+    for (const [analyzerCase, expectedMessage, retryable] of unavailableCases) {
+        const page = await context.newPage();
+        await page.goto(
+            `https://www.peakbagger.com:${port}/climber/ascent.aspx?aid=analyzer-${analyzerCase}`,
+            { waitUntil: 'load' },
+        );
+        const unavailable = await page.waitForFunction(() => {
+            const panel = document.getElementById('bpb-gpx-analysis');
+            const stats = panel?.querySelector('.bpb-gpx-stats');
+            if (!panel || stats?.dataset.state !== 'error') return false;
+            const canvas = panel.querySelector('canvas');
+            const focusable = [...panel.querySelectorAll('button, select, input, [tabindex]')]
+                .filter(element => !element.disabled
+                    && element.tabIndex >= 0
+                    && !element.closest('[hidden]'));
+            const iframe = document.querySelector('iframe[src*="MasterMap.aspx"]');
+            return {
+                message: stats.textContent || '',
+                live: stats.getAttribute('aria-live'),
+                canvasHidden: canvas?.parentElement?.hidden === true,
+                canvasTabIndex: canvas?.tabIndex,
+                canvasRole: canvas?.getAttribute('role'),
+                canvasShortcuts: canvas?.getAttribute('aria-keyshortcuts'),
+                canvasLabel: canvas?.getAttribute('aria-label'),
+                controlsHidden: panel.querySelector('.bpb-gpx-controls')?.hidden === true,
+                coordinatesHidden: panel.querySelector('.bpb-gpx-coordinate-controls')?.hidden === true,
+                legendHidden: panel.querySelector('.bpb-gpx-chart-legend')?.hidden === true,
+                retryHidden: panel.querySelector('.bpb-gpx-retry')?.hidden === true,
+                focusable: focusable.map(element => element.className || element.id || element.textContent),
+                terrainDisabled: document.getElementById('bpb-terrain-toggle')?.disabled === true,
+                extensionRouteLayers: iframe?.contentWindow?.mapsPlaceholder?.layers?.filter(
+                    layer => /^bpb-route-/.test(layer?.options?.className || '')
+                ).length ?? null,
+            };
+        }, null, { timeout: analyzerCase === 'timeout' ? 20_000 : 5000 })
+            .then(handle => handle.jsonValue())
+            .catch(() => null);
+        check(unavailable
+            && expectedMessage.test(unavailable.message)
+            && unavailable.live === 'polite'
+            && unavailable.canvasHidden
+            && unavailable.canvasTabIndex === -1
+            && unavailable.canvasRole === null
+            && unavailable.canvasShortcuts === null
+            && !/Arrow/.test(unavailable.canvasLabel || '')
+            && unavailable.controlsHidden
+            && unavailable.coordinatesHidden
+            && unavailable.legendHidden
+            && unavailable.retryHidden === !retryable
+            && unavailable.focusable.length === (retryable ? 1 : 0)
+            && (!retryable || unavailable.focusable[0] === 'bpb-gpx-retry')
+            && unavailable.terrainDisabled
+            && unavailable.extensionRouteLayers === 0,
+        `the ${analyzerCase} Analyzer failure retained stale semantics or state: ${JSON.stringify(unavailable)}`);
+
+        await page.locator('a', { hasText: 'Download this GPS track' }).focus();
+        await page.keyboard.press('Tab');
+        const nextTabStop = await page.evaluate(() => ({
+            className: document.activeElement?.className || '',
+            text: document.activeElement?.textContent || '',
+        }));
+        check(retryable
+            ? nextTabStop.className === 'bpb-gpx-retry'
+            : /Full Screen Map/.test(nextTabStop.text),
+        `the ${analyzerCase} Analyzer failure left the wrong next tab stop: ${JSON.stringify(nextTabStop)}`);
+
+        if (analyzerCase === 'challenge') unavailableVisualPage = page;
+        else await page.close();
+    }
+
+    const retryPage = await context.newPage();
+    await retryPage.goto(
+        `https://www.peakbagger.com:${port}/climber/ascent.aspx?aid=analyzer-retry`,
+        { waitUntil: 'load' },
+    );
+    await retryPage.waitForFunction(() =>
+        document.querySelector('.bpb-gpx-retry:not([hidden])')
+        && /temporarily unavailable/i.test(document.querySelector('.bpb-gpx-stats')?.textContent || ''),
+    null, { timeout: 5000 });
+    await retryPage.locator('.bpb-gpx-retry').click();
+    const recoveredAnalyzer = await retryPage.waitForFunction(() => {
+        const canvas = document.querySelector('#bpb-gpx-analysis canvas');
+        return canvas?.getAttribute('role') === 'application'
+            && canvas.tabIndex === 0
+            && canvas.parentElement?.hidden === false
+            && /^Interactive Stats:/.test(document.querySelector('.bpb-gpx-stats')?.textContent || '');
+    }, null, { timeout: 15_000 }).then(() => true).catch(() => false);
+    check(recoveredAnalyzer && fixture.requests.analyzerTracks.retry === 2,
+        `the packaged Analyzer retry did not recover exactly once: ${JSON.stringify({
+            recoveredAnalyzer,
+            requests: fixture.requests.analyzerTracks.retry,
+        })}`);
+    await retryPage.close();
+
+    if (unavailableVisualPage) {
+        if (process.env.BPB_VERIFY_ANALYZER_ERROR_SCREENSHOT) {
+            await unavailableVisualPage.locator('#bpb-gpx-analysis').screenshot({
+                path: process.env.BPB_VERIFY_ANALYZER_ERROR_SCREENSHOT,
+            });
+        }
+        if (process.env.BPB_VERIFY_ANALYZER_ERROR_NARROW_SCREENSHOT) {
+            const previousViewport = unavailableVisualPage.viewportSize();
+            await unavailableVisualPage.setViewportSize({
+                width: 440,
+                height: previousViewport?.height || verificationViewport.height,
+            });
+            await unavailableVisualPage.locator('#bpb-gpx-analysis').screenshot({
+                path: process.env.BPB_VERIFY_ANALYZER_ERROR_NARROW_SCREENSHOT,
+            });
+            if (previousViewport) await unavailableVisualPage.setViewportSize(previousViewport);
+        }
+        if (extensionId && process.env.BPB_VERIFY_ANALYZER_ERROR_DARK_SCREENSHOT) {
+            const themePage = await context.newPage();
+            await themePage.goto(`chrome-extension://${extensionId}/options/options.html`);
+            await themePage.evaluate(async () => {
+                const current = (await chrome.storage.sync.get('bpbSettings')).bpbSettings || {};
+                await chrome.storage.sync.set({ bpbSettings: { ...current, theme: 'dark' } });
+            });
+            await unavailableVisualPage.waitForFunction(() =>
+                document.getElementById('bpb-gpx-analysis')?.dataset.theme === 'dark',
+            null, { timeout: 5000 });
+            await unavailableVisualPage.locator('#bpb-gpx-analysis').screenshot({
+                path: process.env.BPB_VERIFY_ANALYZER_ERROR_DARK_SCREENSHOT,
+            });
+            await themePage.evaluate(async () => {
+                const current = (await chrome.storage.sync.get('bpbSettings')).bpbSettings || {};
+                await chrome.storage.sync.set({ bpbSettings: { ...current, theme: 'system' } });
+            });
+            await themePage.close();
+        }
+        await unavailableVisualPage.close();
+    }
+
     // --- 3D off (the default): the toggle stays available but gates traffic --
     const offPage = await openAscent();
     const off = await readToggle(offPage);
@@ -3670,6 +3817,8 @@ console.log('  - settings.js initialises in the isolated world and the bridge an
 console.log('  - the GPX analyzer reproduces the full Capitol metrics with 971 points per series and zero breaks,');
 console.log('    exposes tab-reachable series toggles, announces active chart values, moves the route');
 console.log('    scrubber with keyboard selection and visible focus, and confirms or recovers coordinate copy');
+console.log('  - eight terminal Analyzer failures remove chart roles, shortcuts, controls, route state, and');
+console.log('    stale tab stops; retryable failure recovers into one packaged interactive chart');
 console.log('  - the 3D toggle stays visible when disabled and opens the provider/privacy confirmation');
 console.log('  - forged page/frame messages, synthetic clicks, and direct embedding start no terrain work');
 console.log('  - trusted confirmation persists the feature gate without contacting tile providers');

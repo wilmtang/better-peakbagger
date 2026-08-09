@@ -142,6 +142,9 @@ const run = async () => {
         const statsContainer = document.createElement('div');
         const stats = document.createElement('div');
         stats.className = 'bpb-gpx-stats';
+        stats.setAttribute('role', 'status');
+        stats.setAttribute('aria-live', 'polite');
+        stats.setAttribute('aria-atomic', 'true');
         Object.assign(stats.style, { fontFamily: 'sans-serif', fontWeight: 'bold' });
         stats.textContent = 'Analyzing GPX data…';
 
@@ -149,10 +152,17 @@ const run = async () => {
         subStats.className = 'bpb-gpx-substats';
         Object.assign(subStats.style, { fontFamily: 'sans-serif', fontSize: '0.9em', marginTop: '4px', fontStyle: 'italic' });
 
-        statsContainer.append(stats, subStats);
+        const retryButton = document.createElement('button');
+        retryButton.className = 'bpb-gpx-retry';
+        retryButton.type = 'button';
+        retryButton.textContent = 'Try loading again';
+        retryButton.hidden = true;
+
+        statsContainer.append(stats, subStats, retryButton);
 
         const controlsContainer = document.createElement('div');
         controlsContainer.className = 'bpb-gpx-controls';
+        controlsContainer.hidden = true;
         Object.assign(controlsContainer.style, { display: 'flex', flexDirection: 'column', alignItems: 'flex-end' });
 
         const unitSelect = document.createElement('select');
@@ -210,6 +220,7 @@ const run = async () => {
 
         const coordinateControls = document.createElement('div');
         coordinateControls.className = 'bpb-gpx-coordinate-controls';
+        coordinateControls.hidden = true;
 
         const copyCoordinatesButton = document.createElement('button');
         copyCoordinatesButton.id = 'bpb-gpx-copy-coordinates';
@@ -246,14 +257,10 @@ const run = async () => {
         });
 
         const canvasContainer = document.createElement('div');
+        canvasContainer.hidden = true;
         Object.assign(canvasContainer.style, { position: 'relative', height: '300px', width: '100%' });
 
         const canvas = document.createElement('canvas');
-        canvas.tabIndex = 0;
-        canvas.setAttribute('role', 'application');
-        canvas.setAttribute('aria-label', 'Interactive GPX chart. Use Left and Right Arrow keys to select a point.');
-        canvas.setAttribute('aria-describedby', hintText.id);
-        canvas.setAttribute('aria-keyshortcuts', 'ArrowLeft ArrowRight');
 
         const chartLegend = document.createElement('div');
         chartLegend.id = 'bpb-gpx-chart-legend';
@@ -849,13 +856,70 @@ const run = async () => {
         );
         canvas.addEventListener('mouseleave', restoreSelectedRouteHighlight);
 
+        const renderUnavailable = (message, { retryable = false } = {}) => {
+            clearCoordinateFeedbackTimer();
+            if (chartInstance) {
+                chartInstance.destroy();
+                chartInstance = null;
+            }
+            renderRouteHighlight(null);
+            mapRouteSegments = [];
+            removeRouteOverlay();
+            terrainCoordinator.reset();
+
+            chartData = [];
+            timeChartData = [];
+            hasTimeSeries = false;
+            selectedCoordinateIndex = -1;
+            selectedCoordinateSeries = 'distance';
+            selectedChartValues = () => [];
+            metrics = { distanceM: 0, gainM: 0, rawDistanceM: 0, rawGainM: 0 };
+            totalMs = 0;
+            hasTime = false;
+            startMs = 0;
+            endMs = 0;
+            summitMs = 0;
+            campingSpots = [];
+            mountainTimeZone = null;
+            mountainDayFormatter = null;
+            mountainOffsetMs = 0;
+            mountainDayCache.clear();
+
+            coordinateFallback.hidden = true;
+            coordinateFallback.value = '';
+            copyCoordinatesButton.disabled = true;
+            setCoordinateStatus('');
+            controlsContainer.hidden = true;
+            coordinateControls.hidden = true;
+            chartLegend.hidden = true;
+            chartLegend.replaceChildren();
+            canvasContainer.hidden = true;
+            canvas.tabIndex = -1;
+            canvas.removeAttribute('role');
+            canvas.removeAttribute('aria-label');
+            canvas.removeAttribute('aria-describedby');
+            canvas.removeAttribute('aria-keyshortcuts');
+            subStats.replaceChildren();
+            stats.dataset.state = 'error';
+            stats.textContent = message;
+            retryButton.hidden = !retryable;
+            retryButton.disabled = false;
+        };
+
         // 4. Chart & UI Renderer Engine
         const renderData = () => {
             const p = panelPalette();
             applyPanelTheme();
+            controlsContainer.hidden = false;
+            retryButton.hidden = true;
+            delete stats.dataset.state;
             canvasContainer.hidden = false;
             canvasContainer.style.height = chartMode === 'route' ? '110px'
                 : chartMode === 'progress' ? '260px' : '300px';
+            canvas.tabIndex = 0;
+            canvas.setAttribute('role', 'application');
+            canvas.setAttribute('aria-describedby', hintText.id);
+            canvas.setAttribute('aria-keyshortcuts', 'ArrowLeft ArrowRight');
             coordinateControls.hidden = false;
             chartLegend.hidden = false;
 
@@ -1364,122 +1428,131 @@ const run = async () => {
 
         // 5. Native DOM XML Extraction Engine
         scheduleMapLayerSync();
-        try {
-            const response = await fetchPeakbaggerDocument(gpxLink.href, {
-                kind: 'gpx',
-                mimeType: 'text/xml',
-            });
-            if (response.kind !== 'ok') {
-                stats.textContent = PeakbaggerError.message(response.error);
-                return;
-            }
-            const xml = response.document;
-            const parsedGpx = GpxParse.parseGpxDocument(xml, {
-                includeQuality: true,
-                allowEmpty: true,
-            });
-            const trackPointCount = parsedGpx.segments
-                .reduce((count, segment) => count + segment.length, 0);
-            if (!trackPointCount) {
-                canvasContainer.hidden = true;
-                coordinateControls.hidden = true;
-                chartLegend.hidden = true;
-                stats.textContent = 'No track points found.';
-                return;
-            }
-            const routeSegments = parsedGpx.segments.map(segment =>
-                segment.map(point => [point.lat, point.lon]));
-            mapRouteSegments = GpxMetrics.sanitizeMapRouteSegments(routeSegments);
-            terrainCoordinator.update();
-            scheduleRouteOverlay();
-
-            const parsedPoints = parsedGpx.segments.flatMap((segment, coordinateGroup) =>
-                segment.map(parsed => ({
-                    lat: parsed.lat,
-                    lon: parsed.lon,
-                    rawEleM: parsed.ele,
-                    elevationState: parsed.elevationState,
-                    ms: parsed.time,
-                    timeState: parsed.timeState,
-                    coordinateGroup,
-                })));
-
-            metrics = GpxMetrics.computeMetrics(parsedPoints);
-            hasTime = metrics.hasTime;
-            chartMode = metrics.points.length
-                ? 'elevation'
-                : hasTime ? 'progress' : 'route';
-            chartData = chartMode === 'elevation'
-                ? metrics.chartPoints
-                : metrics.routeChartPoints;
-            timeChartData = chartMode === 'elevation'
-                ? metrics.timeChartPoints
-                : metrics.timeProgressChartPoints;
-            hasTimeSeries = chartMode === 'progress'
-                ? timeChartData.length >= 2
-                : hasTime && timeChartData.length >= 2;
-            startMs = metrics.startMs;
-            endMs = metrics.endMs;
-            summitMs = metrics.summitMs;
-            totalMs = hasTime ? endMs - startMs : 0;
-            campingSpots = [];
-
-            // The trailhead decides the climb's civil time. When timing is
-            // usable, that is the earliest chronological route point rather
-            // than whichever appended GPX segment happened to be serialized
-            // first; untimed routes retain document order.
-            const startPoint = hasTime ? metrics.timePoints[0] : metrics.routePoints[0];
-            if (startPoint) {
-                mountainOffsetMs = Math.round(startPoint.lon / 15) * 3600000;
-                try {
-                    mountainTimeZone = tzlookup(startPoint.lat, startPoint.lon);
-                    mountainDayFormatter = new Intl.DateTimeFormat('en-CA', {
-                        timeZone: mountainTimeZone, year: 'numeric', month: '2-digit', day: '2-digit'
-                    });
-                } catch (e) {
-                    // A zone id from the packaged raster may be unknown to this
-                    // browser's ICU after a tzdata rename. Keep the labelled
-                    // solar estimate instead of losing the analyzer.
-                    mountainTimeZone = null;
-                    mountainDayFormatter = null;
-                }
-            }
-
-            if (hasTime && metrics.timeQuality.status === 'complete') {
-                metrics.timePoints.forEach((point, index) => {
-                    if (index === 0) return;
-                    const prev = metrics.timePoints[index - 1];
-                    const prevDay = getRelativeDay(prev.ms, startMs);
-                    const currDay = getRelativeDay(point.ms, startMs);
-                    if (currDay > prevDay) {
-                        campingSpots.push({ day: prevDay, lat: prev.lat, lon: prev.lon });
-                    }
+        const RETRYABLE_GPX_ERRORS = new Set([
+            'cloudflare', 'signed-out', 'network', 'timeout', 'response-read', 'rate-limit', 'server'
+        ]);
+        let loadGeneration = 0;
+        const loadGpx = async () => {
+            const generation = ++loadGeneration;
+            retryButton.hidden = true;
+            retryButton.disabled = true;
+            delete stats.dataset.state;
+            stats.textContent = 'Analyzing GPX data…';
+            try {
+                const response = await fetchPeakbaggerDocument(gpxLink.href, {
+                    kind: 'gpx',
+                    mimeType: 'text/xml',
                 });
-            }
-
-            if (!metrics.points.length) {
-                if (metrics.routePoints.length) {
-                    renderData();
+                if (generation !== loadGeneration) return;
+                if (response.kind !== 'ok') {
+                    renderUnavailable(PeakbaggerError.message(response.error), {
+                        retryable: RETRYABLE_GPX_ERRORS.has(response.error?.code),
+                    });
                     return;
                 }
-                if (chartInstance) {
-                    chartInstance.destroy();
-                    chartInstance = null;
+                const xml = response.document;
+                const parsedGpx = GpxParse.parseGpxDocument(xml, {
+                    includeQuality: true,
+                    allowEmpty: true,
+                });
+                const trackPointCount = parsedGpx.segments
+                    .reduce((count, segment) => count + segment.length, 0);
+                if (!trackPointCount) {
+                    renderUnavailable('No track points found. Download the GPX to inspect its recorded data.');
+                    return;
                 }
-                canvasContainer.hidden = true;
-                coordinateControls.hidden = true;
-                chartLegend.hidden = true;
-                subStats.replaceChildren();
-                stats.textContent = 'No valid track points found.';
-                return;
+                const routeSegments = parsedGpx.segments.map(segment =>
+                    segment.map(point => [point.lat, point.lon]));
+                mapRouteSegments = GpxMetrics.sanitizeMapRouteSegments(routeSegments);
+                terrainCoordinator.update();
+                scheduleRouteOverlay();
+
+                const parsedPoints = parsedGpx.segments.flatMap((segment, coordinateGroup) =>
+                    segment.map(parsed => ({
+                        lat: parsed.lat,
+                        lon: parsed.lon,
+                        rawEleM: parsed.ele,
+                        elevationState: parsed.elevationState,
+                        ms: parsed.time,
+                        timeState: parsed.timeState,
+                        coordinateGroup,
+                    })));
+
+                metrics = GpxMetrics.computeMetrics(parsedPoints);
+                hasTime = metrics.hasTime;
+                chartMode = metrics.points.length
+                    ? 'elevation'
+                    : hasTime ? 'progress' : 'route';
+                chartData = chartMode === 'elevation'
+                    ? metrics.chartPoints
+                    : metrics.routeChartPoints;
+                timeChartData = chartMode === 'elevation'
+                    ? metrics.timeChartPoints
+                    : metrics.timeProgressChartPoints;
+                hasTimeSeries = chartMode === 'progress'
+                    ? timeChartData.length >= 2
+                    : hasTime && timeChartData.length >= 2;
+                startMs = metrics.startMs;
+                endMs = metrics.endMs;
+                summitMs = metrics.summitMs;
+                totalMs = hasTime ? endMs - startMs : 0;
+                campingSpots = [];
+
+                // The trailhead decides the climb's civil time. When timing is
+                // usable, that is the earliest chronological route point rather
+                // than whichever appended GPX segment happened to be serialized
+                // first; untimed routes retain document order.
+                const startPoint = hasTime ? metrics.timePoints[0] : metrics.routePoints[0];
+                if (startPoint) {
+                    mountainOffsetMs = Math.round(startPoint.lon / 15) * 3600000;
+                    try {
+                        mountainTimeZone = tzlookup(startPoint.lat, startPoint.lon);
+                        mountainDayFormatter = new Intl.DateTimeFormat('en-CA', {
+                            timeZone: mountainTimeZone, year: 'numeric', month: '2-digit', day: '2-digit'
+                        });
+                    } catch (e) {
+                        // A zone id from the packaged raster may be unknown to this
+                        // browser's ICU after a tzdata rename. Keep the labelled
+                        // solar estimate instead of losing the analyzer.
+                        mountainTimeZone = null;
+                        mountainDayFormatter = null;
+                    }
+                }
+
+                if (hasTime && metrics.timeQuality.status === 'complete') {
+                    metrics.timePoints.forEach((point, index) => {
+                        if (index === 0) return;
+                        const prev = metrics.timePoints[index - 1];
+                        const prevDay = getRelativeDay(prev.ms, startMs);
+                        const currDay = getRelativeDay(point.ms, startMs);
+                        if (currDay > prevDay) {
+                            campingSpots.push({ day: prevDay, lat: prev.lat, lon: prev.lon });
+                        }
+                    });
+                }
+
+                if (!metrics.points.length) {
+                    if (metrics.routePoints.length) {
+                        renderData();
+                        return;
+                    }
+                    renderUnavailable('No valid track points found. Download the GPX to inspect its recorded data.');
+                    return;
+                }
+
+                renderData();
+
+            } catch (e) {
+                if (generation !== loadGeneration) return;
+                const knownMessage = e?.code === 'invalid-gpx' || e?.code === 'gpx-too-large'
+                    ? e.message
+                    : 'Better Peakbagger could not parse the GPS track. Download the GPX to inspect it.';
+                renderUnavailable(knownMessage);
+                if (!e?.code) console.error(e);
             }
-
-            renderData();
-
-        } catch (e) {
-            stats.textContent = 'Error parsing GPX file.';
-            console.error(e);
-        }
+        };
+        retryButton.addEventListener('click', () => { void loadGpx(); });
+        void loadGpx();
     };
 
     if (document.readyState === 'loading') {

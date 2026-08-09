@@ -95,7 +95,7 @@ test('text and document entry points return the same direct-owned quality tree',
 test('a nested GPX tree under the wrong document root is not route geometry', () => {
     assert.throws(
         () => parseGpxData('<wrapper><gpx><trk><trkseg><trkpt lat="1" lon="2"/></trkseg></trk></gpx></wrapper>'),
-        error => error.code === 'no-gps-data',
+        error => error.code === 'invalid-gpx' && /document root/i.test(error.message),
     );
 });
 

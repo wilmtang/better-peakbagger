@@ -1021,6 +1021,7 @@ const loadElevationAnalyzer = async (gpxSource, {
     theme = 'light',
     withMap = false,
     settings = {},
+    fetchImpl = null,
 } = {}) => {
     const dom = new JSDOM(`<!doctype html><body>
       ${withMap ? '<iframe src="https://www.peakbagger.com/map/MasterMap.aspx?cy=47&cx=-121&z=14"></iframe>' : ''}
@@ -1101,7 +1102,7 @@ const loadElevationAnalyzer = async (gpxSource, {
     }
     window.matchMedia = () => ({ matches: false });
     window.HTMLCanvasElement.prototype.getContext = () => ({});
-    window.fetch = async () => ({ ok: true, text: async () => gpxSource });
+    window.fetch = fetchImpl || (async () => ({ ok: true, text: async () => gpxSource }));
     if (clipboard) {
         Object.defineProperty(window.navigator, 'clipboard', {
             configurable: true,
@@ -1151,6 +1152,105 @@ const loadElevationAnalyzer = async (gpxSource, {
         replaceMap,
     };
 };
+
+const analyzerResponse = ({
+    status = 200,
+    body = '',
+    headers = {},
+    url = 'https://www.peakbagger.com/demo.gpx',
+} = {}) => ({
+    ok: status >= 200 && status < 300,
+    status,
+    url,
+    redirected: false,
+    headers: new Headers(headers),
+    text: async () => body,
+});
+
+const assertUnavailableAnalyzer = (dom, { retryable }) => {
+    const panel = dom.window.document.getElementById('bpb-gpx-analysis');
+    const canvas = panel.querySelector('canvas');
+    const stats = panel.querySelector('.bpb-gpx-stats');
+    const retry = panel.querySelector('.bpb-gpx-retry');
+    const visibleFocusable = [...panel.querySelectorAll('button, select, input, [tabindex]')]
+        .filter(element => !element.disabled && !element.closest('[hidden]') && element.tabIndex >= 0);
+
+    assert.equal(canvas.parentElement.hidden, true);
+    assert.equal(canvas.tabIndex, -1);
+    assert.equal(canvas.hasAttribute('role'), false);
+    assert.equal(canvas.hasAttribute('aria-keyshortcuts'), false);
+    assert.doesNotMatch(canvas.getAttribute('aria-label') || '', /Arrow/);
+    assert.equal(panel.querySelector('.bpb-gpx-controls').hidden, true);
+    assert.equal(panel.querySelector('.bpb-gpx-coordinate-controls').hidden, true);
+    assert.equal(panel.querySelector('.bpb-gpx-chart-legend').hidden, true);
+    assert.equal(stats.getAttribute('role'), 'status');
+    assert.equal(stats.getAttribute('aria-live'), 'polite');
+    assert.equal(retry.hidden, !retryable);
+    assert.deepEqual(visibleFocusable, retryable ? [retry] : []);
+};
+
+test('terminal GPX outcomes remove chart semantics and expose only real retry actions', async t => {
+    const cases = [
+        ['signed out', () => analyzerResponse({ status: 401, body: '<html>Log In</html>' }), /sign in/i, true],
+        ['missing', () => analyzerResponse({ status: 404, body: 'not found' }), /could not find/i, false],
+        ['challenge HTML', () => analyzerResponse({
+            status: 403,
+            headers: { 'cf-mitigated': 'challenge' },
+            body: '<html>Just a moment</html>',
+        }), /human check/i, true],
+        ['invalid XML', () => analyzerResponse({ body: '<gpx><trk>' }), /could not parse/i, false],
+        ['invalid root', () => analyzerResponse({ body: '<html><gpx/></html>' }), /document root is not GPX/i, false],
+        ['timeout', async () => { throw Object.assign(new Error('slow'), { name: 'TimeoutError' }); }, /too long/i, true],
+        ['no points', () => analyzerResponse({ body: '<gpx><trk><trkseg/></trk></gpx>' }), /No track points/i, false],
+        ['no valid points', () => analyzerResponse({
+            body: '<gpx><trk><trkseg><trkpt lat="north" lon="-121"><ele>100</ele></trkpt></trkseg></trk></gpx>',
+        }), /No valid track points/i, false],
+    ];
+
+    for (const [name, fetchImpl, message, retryable] of cases) {
+        await t.test(name, async () => {
+            const { dom, analysisText } = await loadElevationAnalyzer('', { fetchImpl });
+            try {
+                await waitFor(dom, () => message.test(analysisText()));
+                assertUnavailableAnalyzer(dom, { retryable });
+            } finally {
+                dom.window.close();
+            }
+        });
+    }
+});
+
+test('a retryable GPX failure can recover into one fully interactive chart', async () => {
+    let fetchCalls = 0;
+    const validGpx = `<gpx><trk><trkseg>
+      <trkpt lat="47" lon="-121"><ele>100</ele></trkpt>
+      <trkpt lat="47.001" lon="-121.001"><ele>110</ele></trkpt>
+    </trkseg></trk></gpx>`;
+    const { dom, analysisText, chartConfig } = await loadElevationAnalyzer('', {
+        fetchImpl: async () => ++fetchCalls === 1
+            ? analyzerResponse({ status: 503, body: 'temporarily unavailable' })
+            : analyzerResponse({ body: validGpx }),
+    });
+    await waitFor(dom, () => /temporarily unavailable/i.test(analysisText()));
+    assertUnavailableAnalyzer(dom, { retryable: true });
+
+    dom.window.document.querySelector('.bpb-gpx-retry').click();
+    await waitFor(dom, () => chartConfig() !== null);
+
+    const panel = dom.window.document.getElementById('bpb-gpx-analysis');
+    const canvas = panel.querySelector('canvas');
+    assert.equal(fetchCalls, 2);
+    assert.equal(canvas.parentElement.hidden, false);
+    assert.equal(canvas.tabIndex, 0);
+    assert.equal(canvas.getAttribute('role'), 'application');
+    assert.equal(canvas.getAttribute('aria-keyshortcuts'), 'ArrowLeft ArrowRight');
+    assert.match(canvas.getAttribute('aria-label'), /Interactive elevation chart/);
+    assert.equal(panel.querySelector('.bpb-gpx-controls').hidden, false);
+    assert.equal(panel.querySelector('.bpb-gpx-retry').hidden, true);
+    assert.equal(panel.querySelector('.bpb-gpx-stats').dataset.state, undefined);
+
+    dom.window.close();
+});
 
 test('GPX analyzer drops points whose elevation is missing or invalid', async () => {
     const source = `<?xml version="1.0"?><gpx><trk><trkseg>

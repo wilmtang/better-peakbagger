@@ -339,6 +339,7 @@ export async function createBrowserFixtureServer({
         buddyMutations: 0,
         buddyReports: 0,
         buddyReportStates: [],
+        analyzerTracks: {},
     };
     const relativeAscentEditHtml = ascentEditHtml.replace(
         /action="https:\/\/www\.peakbagger\.com\/climber\/ascentedit\.aspx\?cid=900001"/i,
@@ -398,8 +399,8 @@ export async function createBrowserFixtureServer({
     });
     const handleRequest = async (request, response) => {
         const url = new URL(request.url, `https://${fixtureHost}`);
-        const send = (contentType, body) => {
-            response.writeHead(200, { 'content-type': contentType });
+        const send = (contentType, body, { status = 200, headers = {} } = {}) => {
+            response.writeHead(status, { 'content-type': contentType, ...headers });
             response.end(body);
         };
         if (/ascentedit\.aspx/i.test(url.pathname)) {
@@ -429,7 +430,13 @@ export async function createBrowserFixtureServer({
             }
             return send('text/html; charset=utf-8', relativeAscentEditHtml);
         }
-        if (/ascent\.aspx/i.test(url.pathname)) return send('text/html; charset=utf-8', ascentHtml);
+        if (/ascent\.aspx/i.test(url.pathname)) {
+            const analyzerCase = (url.searchParams.get('aid') || '').replace(/^analyzer-/, '');
+            const body = analyzerCase && analyzerCase !== url.searchParams.get('aid')
+                ? ascentHtml.replace('/track.gpx', `/track.gpx?case=${encodeURIComponent(analyzerCase)}`)
+                : ascentHtml;
+            return send('text/html; charset=utf-8', body);
+        }
         if (/peakascents\.aspx/i.test(url.pathname)) {
             return send('text/html; charset=utf-8', peakAscentsHtml);
         }
@@ -465,6 +472,42 @@ export async function createBrowserFixtureServer({
                 (url.searchParams.get('t') || '').toUpperCase() === 'P' ? peakMasterMapHtml : masterMapHtml);
         }
         if (/track\.gpx/i.test(url.pathname)) {
+            const analyzerCase = url.searchParams.get('case') || 'success';
+            requests.analyzerTracks[analyzerCase] = (requests.analyzerTracks[analyzerCase] || 0) + 1;
+            if (analyzerCase === 'signed-out') {
+                return send('text/html; charset=utf-8', '<html><body>Log In</body></html>', { status: 401 });
+            }
+            if (analyzerCase === 'missing') {
+                return send('text/plain; charset=utf-8', 'not found', { status: 404 });
+            }
+            if (analyzerCase === 'challenge') {
+                return send('text/html; charset=utf-8', '<html><title>Just a moment</title></html>', {
+                    status: 403,
+                    headers: { 'cf-mitigated': 'challenge' },
+                });
+            }
+            if (analyzerCase === 'invalid-xml') {
+                return send('application/gpx+xml', '<gpx><trk>');
+            }
+            if (analyzerCase === 'invalid-root') {
+                return send('application/gpx+xml', '<html><gpx/></html>');
+            }
+            if (analyzerCase === 'timeout') {
+                await new Promise(resolve => setTimeout(resolve, 16_000));
+            }
+            if (analyzerCase === 'no-points') {
+                return send('application/gpx+xml', '<gpx><trk><trkseg/></trk></gpx>');
+            }
+            if (analyzerCase === 'no-valid-points') {
+                return send(
+                    'application/gpx+xml',
+                    '<gpx><trk><trkseg><trkpt lat="north" lon="-121"><ele>100</ele></trkpt></trkseg></trk></gpx>',
+                );
+            }
+            if (analyzerCase === 'retry'
+                && requests.analyzerTracks[analyzerCase] === 1) {
+                return send('text/plain; charset=utf-8', 'temporarily unavailable', { status: 503 });
+            }
             if (analyzerDelayMs > 0) {
                 await new Promise(resolve => setTimeout(resolve, analyzerDelayMs));
             }

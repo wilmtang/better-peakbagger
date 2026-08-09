@@ -100,6 +100,11 @@ const parseGpxDocument = (xml, options = {}) => {
     const gpxRoot = xml.documentElement?.localName === 'gpx'
         ? xml.documentElement
         : null;
+    if (!gpxRoot) {
+        const error = new Error('The document root is not GPX data.');
+        error.code = 'invalid-gpx';
+        throw error;
+    }
     const tracks = gpxRoot ? directChildren(gpxRoot, 'trk') : [];
     const trackSegments = tracks.flatMap(track => directChildren(track, 'trkseg'));
     if (trackSegments.length > MAX_GPX_TRACK_SEGMENTS) throw gpxLimitError();
