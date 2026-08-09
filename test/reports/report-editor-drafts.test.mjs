@@ -48,6 +48,114 @@ test('autosave does not depend on the optional peak label control', async () => 
     assert.equal(draft.label?.peak, undefined);
 });
 
+test('autosave reports Unsaved, Saving, failure, and recovery for the latest edit', async () => {
+    let releaseFirst;
+    let writeCount = 0;
+    const dom = await loadEditor({
+        accelerateAutosave: true,
+        prepare: d => {
+            const nativeSet = d.chrome.storage.local.set;
+            d.chrome.storage.local.set = async patch => {
+                if (typeof patch[DRAFT_KEY]?.text === 'string') {
+                    writeCount++;
+                    if (writeCount === 1) await new Promise(resolve => { releaseFirst = resolve; });
+                    if (writeCount === 2) throw new Error('QUOTA_BYTES quota exceeded');
+                }
+                return nativeSet(patch);
+            };
+        },
+    });
+    await editorReady(dom);
+    const status = dom.window.document.querySelector('.bpb-re-status');
+    const recovery = dom.window.document.querySelector('.bpb-re-save-recovery');
+
+    typeRich(dom, '<p>first saved version</p>');
+    assert.equal(status.textContent, 'Unsaved changes');
+    await waitFor(dom, () => releaseFirst);
+    assert.equal(status.textContent, 'Saving…');
+    releaseFirst();
+    await waitFor(dom, () => /^Draft saved on this device/.test(status.textContent));
+    assert.equal(recovery.hidden, true);
+
+    typeRich(dom, '<p>newer unsaved version</p>');
+    assert.equal(status.textContent, 'Unsaved changes');
+    await waitFor(dom, () => status.textContent === 'Draft not saved — keep this page open');
+    assert.equal(dom.chrome._localStore[DRAFT_KEY].text, 'first saved version');
+    assert.equal(dom.window.document.getElementById('JournalText').value, 'newer unsaved version');
+    assert.equal(recovery.hidden, false);
+    assert.match(recovery.textContent, /Keep this page open.*Copy Markdown/);
+
+    typeRich(dom, '<p>recovered save</p>');
+    assert.equal(status.textContent, 'Unsaved changes');
+    await waitFor(dom, () => dom.chrome._localStore[DRAFT_KEY]?.text === 'recovered save'
+        && /^Draft saved on this device/.test(status.textContent));
+    assert.equal(recovery.hidden, true);
+});
+
+test('a first autosave failure keeps live content and exposes selected Markdown recovery', async () => {
+    const dom = await loadEditor({
+        accelerateAutosave: true,
+        prepare: d => {
+            d.chrome.storage.local.set = async () => { throw new Error('storage unavailable'); };
+        },
+    });
+    await editorReady(dom);
+    typeRich(dom, '<p>copy this <strong>recovery</strong></p>');
+    await waitFor(dom, () => dom.window.document.querySelector('.bpb-re-save-recovery')?.hidden === false);
+    assert.equal(dom.chrome._localStore[DRAFT_KEY], undefined);
+    assert.equal(dom.window.document.getElementById('JournalText').value,
+        'copy this [b]recovery[/b]');
+
+    dom.window.document.querySelector('.bpb-re-save-copy').click();
+    const manual = dom.window.document.querySelector('.bpb-re-save-manual');
+    await waitFor(dom, () => manual.hidden === false);
+    assert.equal(manual.value, 'copy this **recovery**');
+    assert.equal(dom.window.document.activeElement, manual);
+    assert.equal(manual.selectionStart, 0);
+    assert.equal(manual.selectionEnd, manual.value.length);
+    assert.match(dom.window.document.querySelector('.bpb-re-save-feedback').textContent,
+        /Clipboard unavailable/);
+});
+
+test('a failed empty-draft removal discloses that the older device copy remains', async () => {
+    const older = { text: 'older saved copy', mode: 'rich', savedAt: Date.now() - 1000 };
+    const dom = await loadEditor({
+        report: ' ',
+        drafts: { [DRAFT_KEY]: older },
+        prepare: d => {
+            const nativeRemove = d.chrome.storage.local.remove;
+            let failed = false;
+            d.chrome.storage.local.remove = async key => {
+                if (!failed && key === DRAFT_KEY) {
+                    failed = true;
+                    throw new Error('storage unavailable');
+                }
+                return nativeRemove(key);
+            };
+        },
+    });
+    await editorReady(dom);
+    dom.window.dispatchEvent(new dom.window.Event('pagehide'));
+    await waitFor(dom, () => dom.window.document.querySelector('.bpb-re-status').textContent
+        === 'Older saved draft couldn’t be removed');
+    assert.equal(dom.chrome._localStore[DRAFT_KEY].text, 'older saved copy');
+    assert.match(dom.window.document.querySelector('.bpb-re-save-recovery').textContent,
+        /older saved copy is still on this device/i);
+});
+
+test('switching saved draft modes marks and persists the latest recovery mode', async () => {
+    const dom = await loadEditor({ accelerateAutosave: true });
+    await editorReady(dom);
+    typeRich(dom, '<p>mode recovery</p>');
+    await waitFor(dom, () => dom.chrome._localStore[DRAFT_KEY]?.mode === 'rich');
+
+    modeButton(dom.window.document, 'Markdown').click();
+    assert.equal(dom.window.document.querySelector('.bpb-re-status').textContent, 'Unsaved changes');
+    await waitFor(dom, () => dom.chrome._localStore[DRAFT_KEY]?.mode === 'markdown'
+        && /^Draft saved on this device/.test(
+            dom.window.document.querySelector('.bpb-re-status').textContent));
+});
+
 test('page exit removes whitespace-only reports instead of retaining a draft', async () => {
     for (const reportEditorMode of ['rich', 'markdown']) {
         const dom = await loadEditor({

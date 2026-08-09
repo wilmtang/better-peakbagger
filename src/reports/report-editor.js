@@ -443,20 +443,47 @@ import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.js';
     const status = el('span', 'bpb-re-status');
     status.setAttribute('role', 'status');
     status.setAttribute('aria-live', 'polite');
+    const saveRecovery = el('div', 'bpb-re-save-recovery');
+    saveRecovery.hidden = true;
+    const saveRecoveryText = el('span', null,
+        'This draft isn’t saved. Keep this page open until saving works.');
+    const saveRecoveryCopy = button('bpb-re-save-copy', 'Copy Markdown');
+    const saveRecoveryFeedback = el('span', 'bpb-re-save-feedback');
+    saveRecoveryFeedback.setAttribute('role', 'status');
+    const saveRecoveryManual = el('textarea', 'bpb-re-save-manual');
+    saveRecoveryManual.readOnly = true;
+    saveRecoveryManual.rows = 3;
+    saveRecoveryManual.setAttribute('aria-label', 'Unsaved trip report Markdown');
+    saveRecoveryManual.hidden = true;
+    saveRecovery.append(saveRecoveryText, saveRecoveryCopy, saveRecoveryFeedback, saveRecoveryManual);
+    let draftPersistenceStatus = '';
     let draftManagerBusy = false;
     let draftManagerStatus = '';
     let draftManagerStatusTimer = null;
+    const renderStatus = () => { status.textContent = draftManagerStatus || draftPersistenceStatus; };
+    const setDraftPersistenceStatus = (message, { recovery = false, cleanup = false } = {}) => {
+        draftPersistenceStatus = message;
+        saveRecovery.hidden = !recovery;
+        saveRecoveryText.textContent = cleanup
+            ? 'The older saved copy is still on this device. Keep this page open and try editing again.'
+            : 'This draft isn’t saved. Keep this page open until saving works.';
+        if (!recovery) {
+            saveRecoveryFeedback.textContent = '';
+            saveRecoveryManual.hidden = true;
+            saveRecoveryManual.value = '';
+        }
+        renderStatus();
+    };
     const setDraftManagerStatus = message => {
         if (draftManagerStatusTimer != null) globalThis.clearTimeout(draftManagerStatusTimer);
-        if (draftManagerStatus && status.textContent === draftManagerStatus) status.textContent = '';
         draftManagerStatus = message;
         draftManagerStatusTimer = null;
+        renderStatus();
         if (!message) return;
-        status.textContent = message;
         draftManagerStatusTimer = globalThis.setTimeout(() => {
-            if (status.textContent === draftManagerStatus) status.textContent = '';
             draftManagerStatus = '';
             draftManagerStatusTimer = null;
+            renderStatus();
         }, DRAFT_MANAGER_FEEDBACK_MS);
     };
     const openDraftsManager = async () => {
@@ -490,7 +517,7 @@ import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.js';
     const contextual = el('div', 'bpb-re-contextual');
     contextual.append(tableBar, linkBox, imageBox, videoBox, moreBox);
     toolbar.append(conversionBar, draftBar, bar, contextual);
-    ui.append(toolbar, richWrap, mdSplit, foot);
+    ui.append(toolbar, richWrap, mdSplit, saveRecovery, foot);
 
     const boxes = [tableBar, linkBox, imageBox, videoBox, moreBox];
     const manualBoxes = [linkBox, imageBox, videoBox, moreBox];
@@ -631,6 +658,28 @@ import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.js';
 
     const localStore = ext.storage.local;
     const mutateDraft = message => RuntimeMessage.send(ext, { ...message, draftKey });
+    let draftEditRevision = 0;
+
+    saveRecoveryCopy.addEventListener('click', async () => {
+        flushSync();
+        const markdown = state.mode === 'markdown' && typeof state.mdSource === 'string'
+            ? state.mdSource : Markup.bracketToMarkdown(textarea.value);
+        saveRecoveryFeedback.textContent = '';
+        saveRecoveryManual.hidden = true;
+        try {
+            if (typeof globalThis.navigator?.clipboard?.writeText !== 'function') {
+                throw new Error('clipboard unavailable');
+            }
+            await globalThis.navigator.clipboard.writeText(markdown);
+            saveRecoveryFeedback.textContent = 'Markdown copied';
+        } catch (error) {
+            saveRecoveryManual.value = markdown;
+            saveRecoveryManual.hidden = false;
+            saveRecoveryFeedback.textContent = 'Clipboard unavailable. Copy the selected Markdown below.';
+            saveRecoveryManual.focus();
+            saveRecoveryManual.select();
+        }
+    });
 
     const createSaveAttemptId = () => {
         try {
@@ -658,10 +707,15 @@ import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.js';
         if (state.terminalSubmission) return;
         if (!['rich', 'markdown'].includes(state.mode)) return; // uninitialized/Plain: native behavior, native risks
         flushSync();
+        const revision = draftEditRevision;
+        let removing = false;
+        if (revision === draftEditRevision) setDraftPersistenceStatus('Saving…');
         try {
             if (!hasRecoverableDraftContent(textarea.value)) {
-                await mutateDraft({ type: 'REPORT_DRAFT_REMOVE' });
-                status.textContent = '';
+                removing = true;
+                const removal = await mutateDraft({ type: 'REPORT_DRAFT_REMOVE' });
+                if (!removal?.ok) throw new Error('draft removal failed');
+                if (revision === draftEditRevision) setDraftPersistenceStatus('');
                 return;
             }
             const record = { text: textarea.value, mode: state.mode, savedAt: Date.now() };
@@ -673,21 +727,33 @@ import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.js';
             } catch (error) { /* optional display metadata must never block autosave */ }
             const write = await mutateDraft({ type: 'REPORT_DRAFT_WRITE', record });
             if (!write?.ok) throw new Error('draft write failed');
-            if (!write.written) return;
+            if (!write.written) throw new Error('draft write superseded');
             // A worker-confirmed Save or confirmed Delete can arrive while an
             // earlier storage write is already in flight. The completing
             // writer must honor that terminal result so it cannot resurrect
             // the consumed recovery copy.
             if (state.terminalSubmission) {
                 await mutateDraft({ type: 'REPORT_DRAFT_REMOVE' });
+                setDraftPersistenceStatus('');
                 return;
             }
-            status.textContent = `Draft saved on this device · ${timeLabel(record.savedAt)}`;
-        } catch (error) { /* storage unavailable — the form value is still live */ }
+            if (revision !== draftEditRevision) return;
+            setDraftPersistenceStatus(`Draft saved on this device · ${timeLabel(record.savedAt)}`);
+        } catch (error) {
+            if (state.terminalSubmission || revision !== draftEditRevision) return;
+            setDraftPersistenceStatus(
+                removing
+                    ? 'Older saved draft couldn’t be removed'
+                    : 'Draft not saved — keep this page open',
+                { recovery: true, cleanup: removing },
+            );
+        }
     };
 
     const scheduleAutosave = () => {
         if (state.terminalSubmission) return;
+        draftEditRevision++;
+        setDraftPersistenceStatus('Unsaved changes');
         if (state.autosaveTimer !== null) globalThis.clearTimeout(state.autosaveTimer);
         state.autosaveTimer = globalThis.setTimeout(() => { void saveDraftNow(); }, AUTOSAVE_DEBOUNCE_MS);
     };
@@ -702,7 +768,16 @@ import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.js';
             type: 'REPORT_DRAFT_SAVE_CANCEL',
             draftKey,
         });
-        void mutateDraft({ type: 'REPORT_DRAFT_REMOVE' }).catch(() => {});
+        void mutateDraft({ type: 'REPORT_DRAFT_REMOVE' }).then(result => {
+            if (!result?.ok) throw new Error('draft removal failed');
+        }).catch(() => {
+            if (!state.terminalSubmission) {
+                setDraftPersistenceStatus('Older saved draft couldn’t be removed', {
+                    recovery: true,
+                    cleanup: true,
+                });
+            }
+        });
     };
 
     // A confirmed Delete submit has already established the worker-owned
@@ -803,6 +878,7 @@ import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.js';
             globalThis.clearTimeout(state.autosaveTimer);
             state.autosaveTimer = null;
         }
+        setDraftPersistenceStatus('');
     });
 
     const offerDraft = stored => {
@@ -824,7 +900,7 @@ import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.js';
             const restoredMode = MODES.includes(stored.mode) ? stored.mode : state.mode;
             const guarded = configureConversionGuard(stored.text, restoredMode);
             setMode(guarded ? 'plain' : restoredMode, { persist: false, flush: false });
-            status.textContent = 'Draft restored';
+            setDraftManagerStatus('Draft restored');
         });
         discard.addEventListener('click', () => {
             clearDraft();
@@ -1180,8 +1256,9 @@ import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.js';
 
         if (persist) {
             void Settings.set({ reportEditorMode: mode }).catch(() => {
-                status.textContent = 'Editor preference couldn’t be saved';
+                setDraftManagerStatus('Editor preference couldn’t be saved');
             });
+            if (rich || markdown) scheduleAutosave();
             if (rich) richEditor.commands.focus();
             else if (markdown) mdEditor.focus();
             else textarea.focus();
