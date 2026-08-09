@@ -13,6 +13,13 @@ const TIME = '2026-07-27T18:00:00.000Z';
 const LATER = '2026-07-27T18:10:00.000Z';
 const HASH = 'a'.repeat(64);
 const EXPORT_HASH = 'b'.repeat(64);
+const uploadOperation = (localId, operationId = 'operation-1') => ({
+    localId,
+    operationId,
+    state: 'request-started',
+    export: { mime: 'image/jpeg', bytes: 9, width: 1600, height: 1200, sha256: EXPORT_HASH },
+    updatedAt: LATER,
+});
 
 const fixture = (localId = 'photo-1') => {
     const photo = Library.createDraft({
@@ -168,9 +175,21 @@ test('commits public upload metadata and local-only deletion capability together
     });
     const input = fixture();
     input.photo = await store.putDraft(input);
-    const uploaded = Library.completeUpload(input.photo, {
+    const exported = {
         mime: 'image/jpeg', bytes: 9, width: 1600, height: 1200, sha256: EXPORT_HASH,
-    }, {
+    };
+    let operation;
+    ({ photo: input.photo, operation } = await store.beginUploadOperation({
+        photo: Library.beginUpload(input.photo, exported, LATER),
+        operation: uploadOperation(input.photo.localId),
+    }));
+    operation = {
+        ...operation,
+        state: 'response-received',
+        deleteUrl: 'https://ibb.co/delete/secret',
+    };
+    await store.putOperation(operation);
+    const uploaded = Library.completeUpload(input.photo, exported, {
         providerId: 'abc',
         url: 'https://i.ibb.co/a/topo.jpg',
         displayUrl: 'https://i.ibb.co/a/topo.jpg',
@@ -180,12 +199,17 @@ test('commits public upload metadata and local-only deletion capability together
         uploadedAt: LATER,
         expiresAt: null,
     }, LATER);
-    await store.commitUpload({ photo: uploaded, deleteUrl: 'https://ibb.co/delete/secret' });
+    const committed = await store.commitUploadOperation({
+        photo: uploaded,
+        operationId: operation.operationId,
+    });
 
     const bundle = await store.getBundle('photo-1');
     assert.equal(bundle.photo.remote.state, 'uploaded');
     assert.equal(bundle.deleteUrl, 'https://ibb.co/delete/secret');
     assert.equal('deleteUrl' in bundle.photo, false);
+    assert.equal(committed.operation.state, 'catalog-committed');
+    assert.equal((await store.getOperations())[0].state, 'catalog-committed');
     store.close();
 });
 
@@ -254,6 +278,81 @@ test('journals operations and purges all local records explicitly', async () => 
     await store.purge('photo-1');
     assert.equal((await store.listPhotos({ includeDeleted: true })).length, 0);
     assert.equal((await store.getBundle('photo-1')).deleteUrl, null);
+    store.close();
+});
+
+test('upload state and its recovery journal begin in one atomic transaction', async () => {
+    const indexedDB = new IDBFactory();
+    const name = 'photo-store-upload-start';
+    const store = await Store.createPhotoStore({ indexedDB, name });
+    const input = fixture();
+    input.photo = await store.putDraft(input);
+    const uploading = Library.beginUpload(input.photo, uploadOperation(input.photo.localId).export, LATER);
+    const operation = uploadOperation(input.photo.localId);
+
+    const database = indexedDB._databases.get(name).connections.find(connection => !connection._closed);
+    const transaction = database.transaction.bind(database);
+    database.transaction = (storeNames, mode, options) => {
+        const next = transaction(storeNames, mode, options);
+        const names = typeof storeNames === 'string' ? [storeNames] : [...storeNames];
+        if (mode !== 'readwrite' || !names.includes('operations') || !names.includes('photos')) return next;
+        database.transaction = transaction;
+        const objectStore = next.objectStore.bind(next);
+        next.objectStore = storeName => {
+            const target = objectStore(storeName);
+            if (storeName === 'operations') {
+                target.put = () => { throw new Error('forced journal write failure'); };
+            }
+            return target;
+        };
+        return next;
+    };
+
+    await assert.rejects(
+        store.beginUploadOperation({ photo: uploading, operation }),
+        /forced journal write failure/,
+    );
+    assert.equal((await store.getBundle(input.photo.localId)).photo.remote.state, 'draft');
+    assert.deepEqual(await store.getOperations(), []);
+
+    const begun = await store.beginUploadOperation({ photo: uploading, operation });
+    assert.equal(begun.photo.remote.state, 'uploading');
+    assert.equal(begun.operation.photoRevision, begun.photo.revision);
+    assert.deepEqual(await store.getOperations(), [begun.operation]);
+    const reset = await store.resetUploadOperation({
+        photo: Library.resetUpload(begun.photo, LATER),
+        operationId: begun.operation.operationId,
+    });
+    assert.equal(reset.remote.state, 'draft');
+    assert.deepEqual(await store.getOperations(), []);
+    store.close();
+});
+
+test('legacy uploading records without a journal return to a retryable draft once', async () => {
+    const store = await Store.createPhotoStore({
+        indexedDB: new IDBFactory(),
+        name: 'photo-store-legacy-upload',
+    });
+    const input = fixture();
+    input.photo = await store.putDraft(input);
+    const uploading = await store.putPhoto(Library.beginUpload(
+        input.photo,
+        uploadOperation(input.photo.localId).export,
+        LATER,
+    ));
+    assert.equal(uploading.remote.state, 'uploading');
+
+    assert.deepEqual(await store.recoverOrphanedUploads(LATER), {
+        recovered: 1,
+        localIds: [input.photo.localId],
+    });
+    const recovered = (await store.getBundle(input.photo.localId)).photo;
+    assert.equal(recovered.remote.state, 'draft');
+    assert.equal(recovered.revision, uploading.revision + 1);
+    assert.deepEqual(await store.recoverOrphanedUploads(LATER), {
+        recovered: 0,
+        localIds: [],
+    });
     store.close();
 });
 
@@ -488,15 +587,29 @@ test('upload commit rejects stale metadata and preserves the edit for an explici
     };
     const staleUploading = Library.beginUpload(stale, exported, LATER);
     await assert.rejects(
-        second.putPhoto(staleUploading),
+        second.beginUploadOperation({
+            photo: staleUploading,
+            operation: uploadOperation(stale.localId, 'operation-stale'),
+        }),
         error => error instanceof Store.PhotoStoreConflictError,
     );
     assert.equal((await first.getBundle(input.photo.localId)).photo.title, 'Newer title');
 
-    const uploading = await second.putPhoto(Library.beginUpload(edited, exported, LATER));
-    const committed = await second.commitUpload({
-        photo: Library.completeUpload(uploading, exported, remote, LATER),
+    const begun = await second.beginUploadOperation({
+        photo: Library.beginUpload(edited, exported, LATER),
+        operation: uploadOperation(edited.localId, 'operation-retry'),
+    });
+    const uploading = begun.photo;
+    const operation = {
+        ...begun.operation,
+        state: 'response-received',
+        remote,
         deleteUrl: 'https://ibb.co/delete/secret',
+    };
+    await second.putOperation(operation);
+    const { photo: committed } = await second.commitUploadOperation({
+        photo: Library.completeUpload(uploading, exported, remote, LATER),
+        operationId: operation.operationId,
     });
     assert.equal(committed.title, 'Newer title');
     assert.equal(committed.remote.state, 'uploaded');

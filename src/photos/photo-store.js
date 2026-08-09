@@ -332,26 +332,120 @@ const createPhotoStore = async options => {
         return storedPhoto;
     };
 
-    const commitUpload = async ({ photo, deleteUrl }) => {
+    const beginUploadOperation = async ({ photo, operation }) => {
         const cleaned = Library.cleanPhoto(photo);
-        const secret = cleanDeleteUrl(deleteUrl);
-        if (!cleaned || !['uploaded', 'unreachable'].includes(cleaned.remote.state) || !secret) {
-            throw new TypeError('photo store requires a clean uploaded photo and deletion URL');
+        if (!cleaned || cleaned.remote.state !== 'uploading'
+            || !operation || typeof operation !== 'object' || Array.isArray(operation)
+            || operation.localId !== cleaned.localId
+            || typeof operation.operationId !== 'string'
+            || operation.state !== 'request-started') {
+            throw new TypeError('photo store requires a clean upload and recovery operation');
         }
-        const transaction = database.transaction([STORES.photos, STORES.secrets, STORES.tombstones], 'readwrite');
+        const transaction = database.transaction([
+            STORES.photos,
+            STORES.tombstones,
+            STORES.operations,
+        ], 'readwrite');
         const photos = transaction.objectStore(STORES.photos);
+        const tombstones = transaction.objectStore(STORES.tombstones);
+        const operations = transaction.objectStore(STORES.operations);
+        let storedPhoto;
+        let storedOperation;
+        try {
+            const [currentValue, previousOperationIds] = await Promise.all([
+                requestResult(photos.get(cleaned.localId)),
+                requestResult(operations.index('byLocalId').getAllKeys(cleaned.localId)),
+            ]);
+            const current = Library.cleanPhoto(currentValue);
+            if (!current || current.deletedAt || current.revision !== cleaned.revision
+                || !['draft', 'outcome-unknown'].includes(current.remote.state)) {
+                throw new PhotoStoreConflictError(cleaned.localId);
+            }
+            storedPhoto = Library.cleanPhoto({ ...cleaned, revision: current.revision + 1 });
+            storedOperation = structuredClone({
+                ...operation,
+                photoRevision: storedPhoto.revision,
+            });
+            photos.put(storedPhoto);
+            tombstones.delete(cleaned.localId);
+            previousOperationIds.forEach(operationId => operations.delete(operationId));
+            operations.put(storedOperation);
+        } catch (error) {
+            return abortAndRethrow(transaction, error);
+        }
+        await transactionDone(transaction);
+        return { photo: storedPhoto, operation: storedOperation };
+    };
+
+    const commitUploadOperation = async ({ photo, operationId }) => {
+        const cleaned = Library.cleanPhoto(photo);
+        if (!cleaned || !['uploaded', 'unreachable'].includes(cleaned.remote.state)
+            || typeof operationId !== 'string') {
+            throw new TypeError('photo store requires a clean uploaded photo and recovery operation');
+        }
+        const transaction = database.transaction([
+            STORES.photos,
+            STORES.secrets,
+            STORES.operations,
+        ], 'readwrite');
+        const photos = transaction.objectStore(STORES.photos);
+        const operations = transaction.objectStore(STORES.operations);
+        let storedPhoto;
+        let storedOperation;
+        try {
+            const [currentValue, operation] = await Promise.all([
+                requestResult(photos.get(cleaned.localId)),
+                requestResult(operations.get(operationId)),
+            ]);
+            const current = Library.cleanPhoto(currentValue);
+            const secret = cleanDeleteUrl(operation?.deleteUrl);
+            if (!current || current.deletedAt || current.revision !== cleaned.revision
+                || !operation || operation.localId !== cleaned.localId
+                || operation.state !== 'response-received' || !secret) {
+                throw new PhotoStoreConflictError(cleaned.localId);
+            }
+            storedPhoto = Library.cleanPhoto({ ...cleaned, revision: current.revision + 1 });
+            storedOperation = structuredClone({ ...operation, state: 'catalog-committed' });
+            photos.put(storedPhoto);
+            transaction.objectStore(STORES.secrets).put({
+                localId: cleaned.localId,
+                deleteUrl: secret,
+            });
+            operations.put(storedOperation);
+        } catch (error) {
+            return abortAndRethrow(transaction, error);
+        }
+        await transactionDone(transaction);
+        return { photo: storedPhoto, operation: storedOperation };
+    };
+
+    const resetUploadOperation = async ({ photo, operationId }) => {
+        const cleaned = Library.cleanPhoto(photo);
+        if (!cleaned || cleaned.remote.state !== 'draft' || typeof operationId !== 'string') {
+            throw new TypeError('photo store requires a retryable photo and recovery operation');
+        }
+        const transaction = database.transaction([STORES.photos, STORES.operations], 'readwrite');
+        const photos = transaction.objectStore(STORES.photos);
+        const operations = transaction.objectStore(STORES.operations);
         let storedPhoto;
         try {
-            const current = Library.cleanPhoto(await requestResult(photos.get(cleaned.localId)));
-            if (!current || current.deletedAt || current.revision !== cleaned.revision) {
+            const [currentValue, operation] = await Promise.all([
+                requestResult(photos.get(cleaned.localId)),
+                requestResult(operations.get(operationId)),
+            ]);
+            const current = Library.cleanPhoto(currentValue);
+            if (!current || current.deletedAt || current.remote.state !== 'uploading'
+                || current.revision !== cleaned.revision
+                || !operation || operation.localId !== cleaned.localId
+                || operation.state !== 'request-started') {
                 throw new PhotoStoreConflictError(cleaned.localId);
             }
             storedPhoto = Library.cleanPhoto({ ...cleaned, revision: current.revision + 1 });
             photos.put(storedPhoto);
+            operations.delete(operationId);
         } catch (error) {
             return abortAndRethrow(transaction, error);
         }
-        transaction.objectStore(STORES.secrets).put({ localId: cleaned.localId, deleteUrl: secret });
         await transactionDone(transaction);
         return storedPhoto;
     };
@@ -407,6 +501,35 @@ const createPhotoStore = async options => {
         const transaction = database.transaction(STORES.operations, 'readwrite');
         transaction.objectStore(STORES.operations).delete(operationId);
         await transactionDone(transaction);
+    };
+
+    // Version 3.4.0 wrote `uploading` before it wrote the journal, but never
+    // contacted ImgBB until the journal succeeded. Such a record with no
+    // operation is therefore a definite pre-request interruption and can be
+    // returned to a retryable draft without claiming an unknown outcome.
+    const recoverOrphanedUploads = async now => {
+        const transaction = database.transaction([STORES.photos, STORES.operations], 'readwrite');
+        const photos = transaction.objectStore(STORES.photos);
+        const operations = transaction.objectStore(STORES.operations);
+        let recovered = [];
+        try {
+            const [photoValues, operationValues] = await Promise.all([
+                requestResult(photos.getAll()),
+                requestResult(operations.getAll()),
+            ]);
+            const operatedIds = new Set(operationValues.map(value => value.localId));
+            recovered = photoValues.map(Library.cleanPhoto).filter(Boolean)
+                .filter(photo => photo.remote.state === 'uploading'
+                    && !operatedIds.has(photo.localId));
+            recovered.forEach(photo => {
+                const reset = Library.resetUpload(photo, now);
+                photos.put(Library.cleanPhoto({ ...reset, revision: photo.revision + 1 }));
+            });
+        } catch (error) {
+            return abortAndRethrow(transaction, error);
+        }
+        await transactionDone(transaction);
+        return { recovered: recovered.length, localIds: recovered.map(photo => photo.localId) };
     };
 
     const removeLocalAssets = async (localId, now) => {
@@ -643,11 +766,14 @@ const createPhotoStore = async options => {
         putBundle,
         putPhoto,
         restorePhoto,
-        commitUpload,
+        beginUploadOperation,
+        commitUploadOperation,
+        resetUploadOperation,
         updatePhotoBackup,
         putOperation,
         getOperations,
         deleteOperation,
+        recoverOrphanedUploads,
         removeLocalAssets,
         pruneDeletedAssets,
         purge,

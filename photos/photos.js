@@ -1508,8 +1508,6 @@ const uploadAndInsert = async () => {
             sha256: exported.sha256,
         };
         uploadingPhoto = Library.beginUpload(uploadSnapshot.photo, exportMetadata);
-        uploadingPhoto = await store.putPhoto(uploadingPhoto);
-        photo = uploadingPhoto;
         operation = {
             operationId: crypto.randomUUID(),
             localId: uploadSnapshot.photo.localId,
@@ -1522,7 +1520,11 @@ const uploadAndInsert = async () => {
             ),
             updatedAt: new Date().toISOString(),
         };
-        await store.putOperation(operation);
+        ({ photo: uploadingPhoto, operation } = await store.beginUploadOperation({
+            photo: uploadingPhoto,
+            operation,
+        }));
+        photo = uploadingPhoto;
         setEditorStatus('Uploading to ImgBB…');
         providerResponse = await ImgbbClient.upload({
             fetch: globalThis.fetch.bind(globalThis),
@@ -1540,7 +1542,10 @@ const uploadAndInsert = async () => {
         await store.putOperation(operation);
         setEditorStatus('Saving to library…');
         photo = Library.completeUpload(uploadingPhoto, exportMetadata, providerResponse.remote);
-        photo = await store.commitUpload({ photo, deleteUrl: providerResponse.deleteUrl });
+        ({ photo, operation } = await store.commitUploadOperation({
+            photo,
+            operationId: operation.operationId,
+        }));
         committedPhoto = photo;
         project = structuredClone(uploadSnapshot.project);
         ui.title.value = uploadSnapshot.photo.title;
@@ -1551,12 +1556,6 @@ const uploadAndInsert = async () => {
         history = [];
         future = [];
         renderProject();
-        operation = { ...operation, state: 'catalog-committed', updatedAt: new Date().toISOString() };
-        // The preceding response-received journal is already sufficient to
-        // reconstruct this commit, so a failed stage-label write must not stop
-        // report insertion or reclassify the provider result.
-        await store.putOperation(operation).catch(() => {});
-
         if (RETURN_TOKEN) setEditorStatus('Inserting into report…');
         const finished = await UploadTransaction.finishCommittedUpload({
             store,
@@ -1617,9 +1616,11 @@ const uploadAndInsert = async () => {
             photo = Library.markOutcomeUnknown(uploadingPhoto);
             photo = await store.putPhoto(photo).catch(() => photo);
         } else if (uploadingPhoto && operation?.state === 'request-started') {
-            photo = Library.resetUpload(uploadingPhoto);
-            photo = await store.putPhoto(photo).catch(() => photo);
-            await store.deleteOperation(operation.operationId).catch(() => {});
+            const retryable = Library.resetUpload(uploadingPhoto);
+            photo = await store.resetUploadOperation({
+                photo: retryable,
+                operationId: operation.operationId,
+            }).catch(() => uploadingPhoto);
         }
         setEditorStatus(publicFailure.message);
         if (providerResponse?.remote?.url) {
@@ -1642,9 +1643,10 @@ const uploadAndInsert = async () => {
 };
 
 const recoverOperations = async () => {
+    const legacy = await store.recoverOrphanedUploads(new Date().toISOString());
     const operations = await store.getOperations();
-    let changed = false;
-    for (const operation of operations) {
+    let changed = legacy.recovered > 0;
+    for (let operation of operations) {
         const bundle = await store.getBundle(operation.localId);
         if (!bundle.photo) {
             await store.deleteOperation(operation.operationId);
@@ -1666,15 +1668,10 @@ const recoverOperations = async () => {
                         operation.updatedAt,
                     );
                 if (completed) {
-                    if (!alreadyCommitted) {
-                        bundle.photo = await store.commitUpload({
-                            photo: completed,
-                            deleteUrl: operation.deleteUrl,
-                        });
-                    }
-                    operation.state = 'catalog-committed';
-                    await store.putOperation(operation).catch(() => {});
-                    bundle.photo = bundle.photo || completed;
+                    ({ photo: bundle.photo, operation } = await store.commitUploadOperation({
+                        photo: completed,
+                        operationId: operation.operationId,
+                    }));
                     changed = true;
                 }
             }

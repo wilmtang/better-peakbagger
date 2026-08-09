@@ -555,6 +555,13 @@ instead of replacing newer state. Deletion advances the same generation and
 only the explicit restore command may clear its tombstone. GitHub restore is
 bound to the revision snapshot used for its merge, while backup status uses a
 narrow field mutation so it cannot erase a concurrent editor or report change.
+Before any ImgBB request, the store begins the `uploading` state and its
+immutable recovery operation in one transaction. The provider response remains
+journaled until a second transaction commits the public URL, device-local
+deletion capability, and `catalog-committed` operation state together. A
+one-time compatibility scan resets only legacy `uploading` records that have no
+journal; the older flow never contacted ImgBB before that journal existed, so
+those records are definitely retryable rather than outcome-unknown.
 `src/photos/photo-archive.js` both writes and reads the CSP-safe stored-ZIP
 project bundle, so a downloaded original can be imported back.
 `src/photos/photo-report-size.js` resolves the contextual Small, Medium, Large,
