@@ -340,6 +340,8 @@ test('the library renders one bounded thumbnail page and debounces catalog searc
     assert.doesNotMatch(source, /cardFor[\s\S]{0,240}store\.getBundle/);
     assert.match(source, /LIBRARY_SEARCH_DELAY_MS = 180/);
     assert.match(source, /store\.pruneDeletedAssets\(\{/);
+    assert.match(source, /image\.replaceWith\(element\('div', 'photo-placeholder', 'Preview unavailable'\)\)/);
+    assert.doesNotMatch(source, /addEventListener\('error'[\s\S]{0,240}(putPhoto|markUnreachable|notifyBackupChanged)/);
 });
 
 test('GitHub recovery copy states the metadata-only boundary beside its actions', () => {

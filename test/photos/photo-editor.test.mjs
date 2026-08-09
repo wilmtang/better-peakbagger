@@ -18,6 +18,7 @@ import { photoArchive as Archive } from '../../src/photos/photo-archive.js';
 import { photoLibrary as Library } from '../../src/photos/photo-library.js';
 import { photoProject as Project } from '../../src/photos/photo-project.js';
 import { photoRenderer as Renderer } from '../../src/photos/photo-renderer.js';
+import { photoStore as Store } from '../../src/photos/photo-store.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const html = await readFile(path.join(root, 'photos', 'photos.html'), 'utf8');
@@ -617,6 +618,70 @@ test('project import rejects valid matching hashes when decoded dimensions disag
 
     assert.deepEqual(await readPhotoStore(page.win, 'photos'), []);
     assert.equal(page.doc.getElementById('photo-viewport').getAttribute('aria-busy'), 'false');
+    assert.deepEqual(page.errors, []);
+});
+
+test('remote thumbnail presentation failures never rewrite catalog health or backup state', async () => {
+    const indexedDB = new IDBFactory();
+    const store = await Store.createPhotoStore({ indexedDB });
+    const now = '2026-07-30T12:00:00.000Z';
+    const sourceSha256 = 'a'.repeat(64);
+    const exported = {
+        mime: 'image/jpeg', bytes: 8, width: 1600, height: 1200, sha256: 'b'.repeat(64),
+    };
+    const draft = Library.createDraft({
+        localId: 'remote-thumbnail',
+        title: 'Remote-only topo',
+        source: {
+            fileName: 'remote.jpg', mime: 'image/jpeg', bytes: 6,
+            width: 1600, height: 1200, sha256: sourceSha256,
+        },
+        now,
+    });
+    const project = Project.createProject({
+        localId: draft.localId,
+        width: 1600,
+        height: 1200,
+        sourceSha256,
+        updatedAt: now,
+    });
+    const published = Library.completeUpload(draft, exported, {
+        providerId: 'provider-1',
+        url: 'https://i.ibb.co/a/topo.jpg',
+        displayUrl: 'https://i.ibb.co/a/topo.jpg',
+        viewerUrl: 'https://ibb.co/provider-1',
+        thumbnailUrl: 'https://i.ibb.co/a/topo-thumb.jpg',
+        mediumUrl: null,
+        uploadedAt: now,
+        expiresAt: null,
+    }, now);
+    await store.putBundle({
+        photo: published,
+        project,
+        original: new Blob(['source'], { type: 'image/jpeg' }),
+        thumbnail: new Blob(['thumbnail'], { type: 'image/jpeg' }),
+    });
+    await store.removeLocalAssets(draft.localId, now);
+    store.close();
+
+    const page = await loadEditor({ indexedDB, pickPhoto: false });
+    const before = await readPhotoStore(page.win, 'photos');
+    let previous = null;
+    for (const simulatedFailure of ['offline', 'CSP refusal', 'timeout', 'transient 5xx']) {
+        await waitFor(page.dom, () => {
+            const candidate = page.doc.querySelector('.photo-card img[src^="https://i.ibb.co/"]');
+            return candidate && candidate !== previous ? candidate : false;
+        });
+        const image = page.doc.querySelector('.photo-card img[src^="https://i.ibb.co/"]');
+        previous = image;
+        image.dispatchEvent(new page.win.Event('error'));
+        assert.equal(image.isConnected, false, simulatedFailure);
+        assert.match(page.doc.querySelector('.photo-card .photo-placeholder').textContent,
+            /Preview unavailable/);
+        assert.deepEqual(await readPhotoStore(page.win, 'photos'), before,
+            `${simulatedFailure} must not mutate durable catalog truth`);
+        page.doc.getElementById('show-library').click();
+    }
     assert.deepEqual(page.errors, []);
 });
 

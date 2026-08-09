@@ -1991,12 +1991,8 @@ const cardFor = (item, thumbnail, objectUrls) => {
         image.src = item.remote.thumbnailUrl;
         image.alt = '';
         image.referrerPolicy = 'no-referrer';
-        image.addEventListener('error', async () => {
-            if (item.remote.state === 'uploaded') {
-                await store.putPhoto(Library.markUnreachable(item));
-                notifyBackupChanged();
-                toast('The remote thumbnail could not be loaded.');
-            }
+        image.addEventListener('error', () => {
+            image.replaceWith(element('div', 'photo-placeholder', 'Preview unavailable'));
         }, { once: true });
         card.append(image);
     } else {
