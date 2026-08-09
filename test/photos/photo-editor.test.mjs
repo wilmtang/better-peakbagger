@@ -621,6 +621,103 @@ test('project import rejects valid matching hashes when decoded dimensions disag
     assert.deepEqual(page.errors, []);
 });
 
+test('imported annotations enter the same semantic keyboard selection list', async () => {
+    const original = new Blob(['pixels'], { type: 'image/jpeg' });
+    const sourceSha256 = await Renderer.sha256(original);
+    let project = Project.createProject({
+        localId: 'accessible-import',
+        width: IMAGE.width,
+        height: IMAGE.height,
+        sourceSha256,
+        updatedAt: '2026-08-08T12:00:00.000Z',
+    });
+    project = Project.addObject(project, {
+        id: 'imported-anchor',
+        type: 'anchor',
+        geometry: { x: 500, y: 400, rotation: 0 },
+        style: { color: '#e53935', scale: 1, opacity: 1 },
+    });
+    project = Project.addObject(project, {
+        id: 'imported-route',
+        type: 'route',
+        geometry: { points: [[200, 800], [600, 500], [1000, 300]], controls: [] },
+        style: {
+            color: '#1e88e5', width: 12, stroke: 'solid', end: 'none', opacity: 1, smooth: false,
+        },
+    });
+    const photo = Library.createDraft({
+        localId: project.localId,
+        title: 'Accessible import',
+        source: {
+            fileName: 'import.jpg',
+            mime: 'image/jpeg',
+            bytes: original.size,
+            ...IMAGE,
+            sha256: sourceSha256,
+        },
+        now: project.updatedAt,
+    });
+    const indexedDB = new IDBFactory();
+    const page = await loadEditor({
+        indexedDB,
+        pickPhoto: false,
+        onStoreReady: async ({ win }) => {
+            await new Promise((resolve, reject) => {
+                const opened = win.indexedDB.open('betterPeakbaggerPhotos', 2);
+                opened.onerror = () => reject(opened.error);
+                opened.onsuccess = () => {
+                    const database = opened.result;
+                    const transaction = database.transaction(
+                        ['photos', 'projects', 'originals', 'thumbnails'],
+                        'readwrite',
+                    );
+                    transaction.objectStore('photos').put(photo);
+                    transaction.objectStore('projects').put(project);
+                    transaction.objectStore('originals').put({
+                        localId: project.localId,
+                        blob: new Blob(['pixels'], { type: 'image/jpeg' }),
+                    });
+                    transaction.objectStore('thumbnails').put({
+                        localId: project.localId,
+                        blob: new Blob(['thumbnail'], { type: 'image/jpeg' }),
+                    });
+                    transaction.oncomplete = () => {
+                        database.close();
+                        resolve();
+                    };
+                    transaction.onerror = () => reject(transaction.error);
+                };
+            });
+        },
+    });
+    // fake-indexeddb clones the seeded records in Node's Blob realm. Bind the
+    // page to that same constructor for this pre-existing/imported-bundle path;
+    // ordinary file-picking tests keep jsdom's native File/Blob realm.
+    Object.defineProperty(page.win, 'Blob', { value: Blob, configurable: true });
+    page.doc.getElementById('show-library').click();
+    await waitFor(page.dom, () => [...page.doc.querySelectorAll('.photo-card button')]
+        .some(button => button.textContent === 'Edit as new version'));
+    const editImported = [...page.doc.querySelectorAll('.photo-card button')]
+        .find(button => button.textContent === 'Edit as new version');
+    editImported.focus();
+    editImported.click();
+    await waitFor(page.dom, () => page.doc.getElementById('editor-workspace').hidden === false)
+        .catch(error => {
+            error.message += `; toast=${JSON.stringify(page.doc.getElementById('toast-message').textContent)}`
+                + ` errors=${JSON.stringify(page.errors)}`;
+            throw error;
+        });
+
+    const buttons = [...page.doc.querySelectorAll('#annotation-list [data-object-id]')];
+    assert.deepEqual(buttons.map(button => button.textContent), ['Anchor', 'Route, 3 points']);
+    buttons[1].focus();
+    buttons[1].click();
+    assert.equal(page.doc.activeElement.dataset.objectId, 'imported-route');
+    assert.equal(page.doc.activeElement.getAttribute('aria-pressed'), 'true');
+    assert.equal(page.doc.querySelectorAll('#route-point-list button').length, 3);
+    assert.deepEqual(page.errors, []);
+});
+
 test('remote thumbnail presentation failures never rewrite catalog health or backup state', async () => {
     const indexedDB = new IDBFactory();
     const store = await Store.createPhotoStore({ indexedDB });
@@ -1142,6 +1239,94 @@ test('a held arrow key is one nudge, and releasing it starts the next', async ()
     assert.deepEqual(page.errors, []);
 });
 
+test('keyboard controls add, select, reorder, duplicate, nudge, delete, and undo marks', async () => {
+    const page = await loadEditor();
+    const { doc, win } = page;
+    const activate = node => {
+        node.focus();
+        node.click();
+    };
+    const press = (node, key, init = {}) => node.dispatchEvent(new win.KeyboardEvent('keydown', {
+        key, bubbles: true, cancelable: true, ...init,
+    }));
+    const annotationButtons = () => [...doc.querySelectorAll('#annotation-list [data-object-id]')];
+
+    activate(doc.querySelector('[data-tool="bolt"]'));
+    activate(doc.getElementById('add-at-center'));
+    assert.equal(page.markCount(), 1);
+    assert.equal(annotationButtons()[0].textContent, 'Bolt');
+    assert.equal(annotationButtons()[0].getAttribute('aria-pressed'), 'true');
+
+    activate(doc.querySelector('[data-tool="anchor"]'));
+    activate(doc.getElementById('add-at-center'));
+    assert.deepEqual(annotationButtons().map(button => button.textContent), ['Bolt', 'Anchor']);
+
+    activate(annotationButtons()[0]);
+    assert.equal(page.armedTool(), 'select');
+    assert.equal(annotationButtons()[0].getAttribute('aria-pressed'), 'true');
+    press(annotationButtons()[0], 'ArrowRight', { shiftKey: true });
+    annotationButtons()[0].dispatchEvent(new win.KeyboardEvent('keyup', {
+        key: 'ArrowRight', bubbles: true,
+    }));
+    assert.equal(doc.activeElement.dataset.objectId, annotationButtons()[0].dataset.objectId,
+        'an immutable rerender restores annotation-list focus');
+
+    activate(doc.getElementById('bring-front'));
+    assert.deepEqual(annotationButtons().map(button => button.textContent), ['Anchor', 'Bolt']);
+    activate(doc.getElementById('duplicate-object'));
+    assert.equal(page.markCount(), 3);
+    assert.equal(annotationButtons().at(-1).getAttribute('aria-pressed'), 'true');
+
+    activate(annotationButtons().at(-1));
+    const removedId = doc.activeElement.dataset.objectId;
+    press(doc.activeElement, 'Delete');
+    assert.equal(page.markCount(), 2);
+    assert.notEqual(doc.activeElement.dataset.objectId, removedId,
+        'deleting from the list moves focus to a surviving annotation');
+    const focusAfterDelete = doc.activeElement.dataset.objectId;
+    press(doc.activeElement, 'z', { ctrlKey: true });
+    assert.equal(page.markCount(), 3);
+    assert.equal(doc.activeElement.dataset.objectId, focusAfterDelete,
+        'Undo keeps focus on the same surviving annotation after rerender');
+    assert.deepEqual(page.errors, []);
+});
+
+test('keyboard controls add a centered route and edit one focusable vertex', async () => {
+    const page = await loadEditor();
+    const { doc, win } = page;
+    const activate = node => {
+        node.focus();
+        node.click();
+    };
+    const press = (node, key, init = {}) => node.dispatchEvent(new win.KeyboardEvent('keydown', {
+        key, bubbles: true, cancelable: true, ...init,
+    }));
+
+    activate(doc.querySelector('[data-tool="route"]'));
+    activate(doc.getElementById('add-at-center'));
+    assert.equal(page.markCount(), 1);
+    assert.equal(doc.querySelector('#annotation-list button').textContent, 'Route, 2 points');
+
+    activate(doc.querySelector('#annotation-list button'));
+    const points = [...doc.querySelectorAll('#route-point-list [data-vertex]')];
+    assert.equal(points.length, 2);
+    activate(points[1]);
+    const before = page.routePath();
+    press(doc.activeElement, 'ArrowDown');
+    doc.activeElement.dispatchEvent(new win.KeyboardEvent('keyup', {
+        key: 'ArrowDown', bubbles: true,
+    }));
+    assert.notEqual(page.routePath(), before);
+    assert.equal(doc.activeElement.dataset.vertex, '1');
+    assert.equal(doc.activeElement.getAttribute('aria-pressed'), 'true');
+
+    press(doc.activeElement, 'z', { ctrlKey: true });
+    assert.equal(page.routePath(), before);
+    assert.equal(doc.activeElement.dataset.vertex, '1',
+        'Undo preserves focus on the route point it rerenders');
+    assert.deepEqual(page.errors, []);
+});
+
 // Reaching for a browser command used to arm a topo tool behind the dialog, so
 // the user's next click on the photo dropped a mark they never asked for.
 test('browser shortcuts do not arm a topo tool', async () => {
@@ -1187,7 +1372,7 @@ test('moving a smooth route vertex re-derives the curve around it', async () => 
     assert.equal(page.routePath(),
         'M 100 700 C 166.667 650 366.667 500 500 400 C 633.333 300 833.333 150 900 100');
 
-    const handles = [...doc.querySelectorAll('[data-vertex]')];
+    const handles = [...page.overlay.querySelectorAll('.vertex-handle')];
     assert.equal(handles.length, 3, 'a selected route offers one handle per vertex');
     const middle = handles.find(node => node.dataset.vertex === '1');
     page.pointer('pointerdown', 125, 100, middle);

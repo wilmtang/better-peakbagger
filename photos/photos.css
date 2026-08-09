@@ -439,15 +439,97 @@ kbd {
   font-size: 13px;
 }
 
-.inspector {
+.editor-sidebar {
   overflow: auto;
-  padding: 14px;
   border-left: 1px solid var(--border);
+}
+
+.annotation-browser,
+.inspector {
+  padding: 14px;
+}
+
+.annotation-heading-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.annotation-heading-row h2,
+.inspector h2 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.annotation-heading-row button {
+  padding: 5px 7px;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.annotation-help,
+.annotation-empty,
+.route-points p {
+  margin: 8px 0;
+  color: var(--sub);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.annotation-list,
+.route-point-list {
+  display: grid;
+  gap: 5px;
+  margin: 0;
+  padding: 0;
+  list-style-position: inside;
+}
+
+.annotation-list li,
+.route-point-list li {
+  display: flex;
+  min-width: 0;
+}
+
+.annotation-list button,
+.route-point-list button {
+  width: 100%;
+  min-width: 0;
+  padding: 7px 8px;
+  overflow: hidden;
+  border-color: transparent;
+  background: transparent;
+  font-size: 12px;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.annotation-list button[aria-pressed="true"],
+.route-point-list button[aria-pressed="true"] {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--link);
+}
+
+.route-points {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.route-points h3 {
+  margin: 0;
+  font-size: 13px;
+}
+
+.inspector {
+  border-top: 1px solid var(--border);
 }
 
 .inspector h2 {
   margin-bottom: 13px;
-  font-size: 16px;
 }
 
 .inspector .field,
@@ -778,7 +860,7 @@ kbd {
     border-bottom: 1px solid var(--border);
   }
 
-  .inspector {
+  .editor-sidebar {
     border-top: 1px solid var(--border);
     border-left: 0;
   }

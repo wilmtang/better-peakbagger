@@ -163,11 +163,11 @@
 
           <div class="viewport-column">
             <div id="photo-viewport" class="photo-viewport" tabindex="0"
-                 aria-label="Topo editing canvas">
+                 aria-label="Topo preview" aria-describedby="annotation-help">
               <div id="photo-stage" class="photo-stage">
                 <img id="source-image" alt="">
                 <svg id="photo-overlay" xmlns="http://www.w3.org/2000/svg"
-                     aria-label="Editable topo annotations"></svg>
+                     aria-hidden="true" focusable="false"></svg>
               </div>
             </div>
             <div class="viewport-actions">
@@ -176,7 +176,25 @@
             </div>
           </div>
 
-          <aside id="inspector" class="inspector" aria-labelledby="inspector-heading" hidden>
+          <aside class="editor-sidebar" aria-label="Topo annotations and selection">
+            <section class="annotation-browser" aria-labelledby="annotation-heading">
+              <div class="annotation-heading-row">
+                <h2 id="annotation-heading">Annotations</h2>
+                <button id="add-at-center" type="button" class="quiet-button" disabled>Add at center</button>
+              </div>
+              <p id="annotation-help" class="annotation-help">
+                Choose a tool, then add it at the photo center. Select a mark below to edit it with the keyboard.
+              </p>
+              <p id="annotation-empty" class="annotation-empty">No annotations yet.</p>
+              <ol id="annotation-list" class="annotation-list"></ol>
+              <section id="route-points" class="route-points" aria-labelledby="route-points-heading" hidden>
+                <h3 id="route-points-heading">Route points</h3>
+                <p>Choose a point, then use the arrow keys to move it.</p>
+                <ol id="route-point-list" class="route-point-list"></ol>
+              </section>
+            </section>
+
+            <section id="inspector" class="inspector" aria-labelledby="inspector-heading" hidden>
             <h2 id="inspector-heading">Selection</h2>
             <label class="field">
               Color
@@ -250,6 +268,7 @@
               <button id="duplicate-object" type="button" class="quiet-button">Duplicate</button>
               <button id="delete-object" type="button" class="danger-button">Delete</button>
             </div>
+            </section>
           </aside>
         </div>
 

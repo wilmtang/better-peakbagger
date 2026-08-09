@@ -166,6 +166,10 @@ test('all planned topo tools and accessible editor controls are present', () => 
         'photo-alt',
         'photo-viewport',
         'photo-overlay',
+        'add-at-center',
+        'annotation-list',
+        'route-points',
+        'route-point-list',
         'finish-route',
         'object-color',
         'object-opacity',
@@ -192,6 +196,9 @@ test('all planned topo tools and accessible editor controls are present', () => 
         'backup-library',
     ]) assert.ok(doc.getElementById(id), id);
     assert.equal(doc.getElementById('photo-viewport').tabIndex, 0);
+    assert.equal(doc.getElementById('photo-overlay').getAttribute('aria-hidden'), 'true');
+    assert.equal(doc.getElementById('annotation-list').tagName, 'OL');
+    assert.equal(doc.getElementById('route-point-list').tagName, 'OL');
     assert.ok(doc.getElementById('editor-status').hasAttribute('aria-live'));
     assert.equal(doc.getElementById('library-pagination').getAttribute('aria-label'),
         'Photo library pages');

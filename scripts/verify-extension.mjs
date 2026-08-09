@@ -427,12 +427,91 @@ try {
             photoErrors,
         })}`);
 
+        // Use only native button activation and key presses for the equivalent
+        // annotation editor. The SVG stays one visual rendering while the list
+        // and route-point buttons carry the semantic selection and focus.
+        await photoPage.locator('[data-tool="bolt"]').focus();
+        await photoPage.keyboard.press('Enter');
+        await photoPage.locator('#add-at-center').focus();
+        await photoPage.keyboard.press('Enter');
+        await photoPage.waitForFunction(() =>
+            document.querySelectorAll('#annotation-list [data-object-id]').length === 2);
+        const boltControl = photoPage.locator('#annotation-list [data-object-id]', {
+            hasText: /^Bolt$/,
+        });
+        await boltControl.focus();
+        await photoPage.keyboard.press('Enter');
+        await photoPage.keyboard.press('ArrowRight');
+        await photoPage.keyboard.up('ArrowRight');
+        await photoPage.locator('#duplicate-object').focus();
+        await photoPage.keyboard.press('Enter');
+        const selectedCopy = photoPage.locator('#annotation-list [aria-pressed="true"]');
+        await selectedCopy.focus();
+        await photoPage.keyboard.press('Delete');
+        await photoPage.keyboard.press('Control+z');
+
+        const routeControl = photoPage.locator('#annotation-list [data-object-id]', {
+            hasText: /^Route, /,
+        });
+        await routeControl.focus();
+        await photoPage.keyboard.press('Enter');
+        const secondRoutePoint = photoPage.locator('#route-point-list [data-vertex="1"]');
+        await secondRoutePoint.focus();
+        await photoPage.keyboard.press('Enter');
+        const selectedRoutePath = photoPage.locator(
+            '#photo-overlay [data-bpb-object].selected > path'
+        );
+        const routeBeforeKeyboardNudge = await selectedRoutePath.getAttribute('d');
+        await photoPage.keyboard.press('ArrowDown');
+        await photoPage.keyboard.up('ArrowDown');
+        const routeAfterKeyboardNudge = await selectedRoutePath.getAttribute('d');
+        await photoPage.keyboard.press('Control+z');
+        const semanticEditorState = await photoPage.evaluate(() => ({
+            annotations: [...document.querySelectorAll('#annotation-list [data-object-id]')]
+                .map(button => button.textContent),
+            overlayHidden: document.getElementById('photo-overlay')?.getAttribute('aria-hidden'),
+            focusedVertex: document.activeElement?.dataset?.vertex ?? null,
+            selectedVertex: document.activeElement?.getAttribute?.('aria-pressed') ?? null,
+            restoredRoute: document.querySelector(
+                '#photo-overlay [data-bpb-object].selected > path'
+            )?.getAttribute('d'),
+        }));
+        const semanticRoleState = {
+            bolt: await photoPage.getByRole('button', { name: /^Bolt, layer / }).count(),
+            route: await photoPage.getByRole('button', {
+                name: /^Route, 2 points, layer /,
+            }).count(),
+            point: await photoPage.getByRole('button', { name: /^Point 2:/ }).count(),
+        };
+        check(semanticEditorState.annotations.length === 3
+            && semanticEditorState.annotations.some(label => label === 'Bolt')
+            && semanticEditorState.annotations.some(label => /^Route, 2 points$/.test(label))
+            && semanticEditorState.overlayHidden === 'true'
+            && semanticEditorState.focusedVertex === '1'
+            && semanticEditorState.selectedVertex === 'true'
+            && semanticRoleState.bolt >= 1
+            && semanticRoleState.route === 1
+            && semanticRoleState.point === 1
+            && routeAfterKeyboardNudge !== routeBeforeKeyboardNudge
+            && semanticEditorState.restoredRoute === routeBeforeKeyboardNudge,
+        `the packaged topo keyboard editor lost semantics, focus, or history: ${JSON.stringify({
+            semanticEditorState,
+            semanticRoleState,
+            routeBeforeKeyboardNudge,
+            routeAfterKeyboardNudge,
+            photoErrors,
+        })}`);
+        await routeControl.focus();
+        await photoPage.keyboard.press('Enter');
+
         // Coalescing a slider drag into one Undo depends on Chrome's own range
         // input: many `input` events while the thumb moves, exactly one `change`
         // when it is released. jsdom cannot establish either, so the drag here is
         // a real pointer moving a real thumb.
-        const widthBox = await photoPage.locator('#route-width').boundingBox();
-        const widthBefore = await photoPage.locator('#route-width').inputValue();
+        const routeWidthControl = photoPage.locator('#route-width');
+        await routeWidthControl.scrollIntoViewIfNeeded();
+        const widthBox = await routeWidthControl.boundingBox();
+        const widthBefore = await routeWidthControl.inputValue();
         await photoPage.evaluate(() => {
             const slider = document.getElementById('route-width');
             globalThis.__bpbSliderEvents = { input: 0, change: 0 };
@@ -572,16 +651,25 @@ try {
         await photoPage.setViewportSize({ width: 520, height: 800 });
         const narrowPhotoState = await photoPage.evaluate(() => ({
             horizontalOverflow: document.documentElement.scrollWidth > document.documentElement.clientWidth,
-            inspectorWidth: document.querySelector('.inspector')?.getBoundingClientRect().width,
+            sidebarWidth: document.querySelector('.editor-sidebar')?.getBoundingClientRect().width,
+            annotationWidth: document.querySelector('.annotation-browser')?.getBoundingClientRect().width,
             bodyWidth: document.body.getBoundingClientRect().width,
             footerHeight: document.querySelector('.editor-footer')?.getBoundingClientRect().height,
             formatWidth: document.getElementById('upload-format')?.getBoundingClientRect().width,
         }));
         check(!narrowPhotoState.horizontalOverflow
-            && narrowPhotoState.inspectorWidth <= narrowPhotoState.bodyWidth
+            && narrowPhotoState.sidebarWidth <= narrowPhotoState.bodyWidth
+            && narrowPhotoState.annotationWidth <= narrowPhotoState.bodyWidth
             && narrowPhotoState.footerHeight < 420
             && narrowPhotoState.formatWidth <= narrowPhotoState.bodyWidth,
         `the narrow photo editor overflowed horizontally: ${JSON.stringify(narrowPhotoState)}`);
+        if (process.env.BPB_VERIFY_PHOTO_NARROW_SCREENSHOT) {
+            await photoPage.evaluate(() => scrollTo(0, 0));
+            await photoPage.screenshot({
+                path: process.env.BPB_VERIFY_PHOTO_NARROW_SCREENSHOT,
+                fullPage: true,
+            });
+        }
         if (originalPhotoViewport) await photoPage.setViewportSize(originalPhotoViewport);
 
         // Reopen on the library with that autosaved photo in IndexedDB. This is
@@ -3479,7 +3567,8 @@ console.log('  - the MV3 service worker boots and answers messages (capture is a
 console.log('  - sync/local/session storage, storage.onChanged, options persistence, and popup status passed');
 console.log('  - manual settings export/import round-tripped schema settings and the saved ImgBB API key');
 console.log('  - the extension-owned photo library states its metadata-only GitHub boundary, and the topo editor');
-console.log('    decodes a real PNG, draws a route, autosaves to IndexedDB, fits desktop and narrow');
+console.log('    decodes a real PNG, exposes keyboard annotation/point controls, draws a route,');
+console.log('    autosaves to IndexedDB, fits desktop and narrow');
 console.log('    viewports, and folds a real Route width slider drag into a single Undo');
 console.log('  - a 49-photo library stays at 48 cards, fits desktop and narrow pagination, and opens page 2');
 console.log('  - contextual report sizing stays synchronized in Editor and Library, caps only the');

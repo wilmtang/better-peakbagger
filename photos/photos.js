@@ -58,6 +58,11 @@ const ui = {
     overlay: byId('photo-overlay'),
     finishRoute: byId('finish-route'),
     editorStatus: byId('editor-status'),
+    addAtCenter: byId('add-at-center'),
+    annotationEmpty: byId('annotation-empty'),
+    annotationList: byId('annotation-list'),
+    routePoints: byId('route-points'),
+    routePointList: byId('route-point-list'),
     inspector: byId('inspector'),
     inspectorHeading: byId('inspector-heading'),
     objectActions: byId('object-actions'),
@@ -131,6 +136,7 @@ let thumbnailBlob = null;
 let sourceBitmap = null;
 let sourceUrl = null;
 let selectedId = null;
+let selectedVertex = null;
 let activeTool = 'select';
 let routeSession = null;
 let dragSession = null;
@@ -269,6 +275,7 @@ const editorMutationControls = () => [
     ui.text,
     ui.align,
     ui.background,
+    ui.addAtCenter,
     ui.sendBack,
     ui.bringFront,
     ui.duplicate,
@@ -282,6 +289,9 @@ const editorMutationControls = () => [
 const updateEditorControls = () => {
     const locked = editorMutationLocked();
     for (const control of editorMutationControls()) control.disabled = locked;
+    ui.addAtCenter.disabled = locked || activeTool === 'select' || !project;
+    for (const control of ui.annotationList.querySelectorAll('button')) control.disabled = locked;
+    for (const control of ui.routePointList.querySelectorAll('button')) control.disabled = locked;
     ui.upload.disabled = busy || !project || PUBLISHED_STATES.includes(photo?.remote.state);
     ui.showEditor.disabled = busy;
     ui.showLibrary.disabled = busy;
@@ -826,6 +836,76 @@ const renderInspector = () => {
     if (label) ui.background.checked = object.style.background;
 };
 
+const annotationName = object => {
+    if (object.type === 'route') {
+        return `Route, ${object.geometry.points.length} points`;
+    }
+    if (object.type === 'pitch') return `Pitch ${object.pitch}`;
+    if (object.type === 'text') {
+        const text = object.text.length > 60 ? `${object.text.slice(0, 59)}…` : object.text;
+        return `Text: ${text}`;
+    }
+    return toolName(object.type);
+};
+
+// The exported SVG is deliberately hidden from the accessibility tree. This
+// list is the one semantic representation of its marks, with stable ids used
+// to restore focus after every immutable project rerender.
+const renderAnnotationBrowser = () => {
+    const focused = document.activeElement;
+    const restoreObjectId = ui.annotationList.contains(focused)
+        ? focused.dataset.objectId
+        : null;
+    const restoreVertex = ui.routePointList.contains(focused)
+        ? focused.dataset.vertex
+        : null;
+    ui.annotationList.replaceChildren(...project.objects.map((object, index) => {
+        const item = element('li');
+        const button = element('button', 'annotation-select', annotationName(object));
+        button.type = 'button';
+        button.dataset.objectId = object.id;
+        button.setAttribute(
+            'aria-label',
+            `${annotationName(object)}, layer ${index + 1} of ${project.objects.length}`
+        );
+        button.setAttribute('aria-pressed', String(object.id === selectedId));
+        item.append(button);
+        return item;
+    }));
+    ui.annotationEmpty.hidden = project.objects.length > 0;
+
+    const selected = selectedObject();
+    const route = selected?.type === 'route' ? selected : null;
+    if (route && (!Number.isInteger(selectedVertex)
+        || selectedVertex < 0 || selectedVertex >= route.geometry.points.length)) {
+        selectedVertex = null;
+    }
+    ui.routePoints.hidden = !route;
+    ui.routePointList.replaceChildren(...(route ? route.geometry.points.map((point, index) => {
+        const item = element('li');
+        const button = element(
+            'button',
+            'route-point-select',
+            `Point ${index + 1}: ${Math.round(point[0])}, ${Math.round(point[1])}`
+        );
+        button.type = 'button';
+        button.dataset.objectId = route.id;
+        button.dataset.vertex = String(index);
+        button.setAttribute('aria-pressed', String(index === selectedVertex));
+        item.append(button);
+        return item;
+    }) : []));
+    updateEditorControls();
+
+    if (restoreVertex != null) {
+        [...ui.routePointList.querySelectorAll('[data-vertex]')]
+            .find(button => button.dataset.vertex === restoreVertex)?.focus();
+    } else if (restoreObjectId) {
+        [...ui.annotationList.querySelectorAll('[data-object-id]')]
+            .find(button => button.dataset.objectId === restoreObjectId)?.focus();
+    }
+};
+
 // The first click of a route cannot create an object yet — the schema needs two
 // points — so nothing appeared on the photo until the second click landed. Draw
 // the pending point, and rubber-band the segment the next click would commit.
@@ -886,6 +966,7 @@ const renderProject = () => {
             ui.overlay.append(handle);
         });
     }
+    renderAnnotationBrowser();
     renderRoutePreview();
     ui.exportSummary.textContent = `${project.objects.length} annotation${project.objects.length === 1 ? '' : 's'}`
         + ` · ${project.image.width} × ${project.image.height}`;
@@ -926,6 +1007,7 @@ const undo = () => {
     future.push(structuredClone(project));
     project = history.pop();
     selectedId = project.objects.some(object => object.id === selectedId) ? selectedId : null;
+    if (!selectedId) selectedVertex = null;
     routeSession = null;
     ui.finishRoute.hidden = true;
     invalidateExportEstimate();
@@ -939,6 +1021,7 @@ const redo = () => {
     history.push(structuredClone(project));
     project = future.pop();
     selectedId = project.objects.some(object => object.id === selectedId) ? selectedId : null;
+    if (!selectedId) selectedVertex = null;
     invalidateExportEstimate();
     renderProject();
     schedulePersist();
@@ -960,7 +1043,10 @@ const setTool = tool => {
     // arming one lets go of the current selection — including a route that the
     // switch itself just finished. Select keeps it: pressing V after placing a
     // symbol is how the user goes on to adjust that symbol.
-    if (tool !== 'select') selectedId = null;
+    if (tool !== 'select') {
+        selectedId = null;
+        selectedVertex = null;
+    }
     if (tool !== 'route' && routeSession) finishRoute(false);
     // Which handles are on screen depends on the armed tool, so the canvas has
     // to be repainted when it changes.
@@ -968,8 +1054,8 @@ const setTool = tool => {
     setEditorStatus(tool === 'select'
         ? 'Select a mark to move or restyle it.'
         : tool === 'route'
-            ? 'Click along the route. Double-click, right-click, or press Enter to finish.'
-            : `${toolName(tool)}: click the photo to place one. Esc returns to Select.`);
+            ? 'Click along the route, or add one at center. Double-click, right-click, or press Enter to finish.'
+            : `${toolName(tool)}: click the photo or add one at center. Esc returns to Select.`);
 };
 
 const pointerPoint = event => {
@@ -984,6 +1070,15 @@ const defaultStyle = () => ({
     color: styleDefaults.color,
     scale: styleDefaults.scale,
     opacity: styleDefaults.opacity,
+});
+
+const defaultRouteStyle = () => ({
+    color: styleDefaults.color,
+    width: styleDefaults.width,
+    stroke: styleDefaults.stroke,
+    end: styleDefaults.end,
+    opacity: styleDefaults.opacity,
+    smooth: styleDefaults.smooth,
 });
 
 // Finishing on a double-click cannot be left to the browser's `dblclick`.
@@ -1032,14 +1127,7 @@ const addRoutePoint = (point, press) => {
         // Controls stay empty on purpose: a smooth route derives them from its
         // own points, so the curve survives every point added after it.
         geometry: { points: routeSession.points, controls: [] },
-        style: {
-            color: styleDefaults.color,
-            width: styleDefaults.width,
-            stroke: styleDefaults.stroke,
-            end: styleDefaults.end,
-            opacity: styleDefaults.opacity,
-            smooth: styleDefaults.smooth,
-        },
+        style: defaultRouteStyle(),
     };
     if (routeSession.points.length === 2) {
         history.push(structuredClone(routeSession.baseline));
@@ -1051,6 +1139,7 @@ const addRoutePoint = (point, press) => {
         project = Project.updateObject(project, routeSession.id, { geometry: object.geometry });
     }
     selectedId = routeSession.id;
+    selectedVertex = null;
     invalidateExportEstimate();
     renderProject();
 };
@@ -1062,6 +1151,7 @@ const finishRoute = cancel => {
         project = routeSession.baseline;
         if (routeSession.historyPushed) history.pop();
         selectedId = null;
+        selectedVertex = null;
         setEditorStatus('Route cancelled.');
     } else if (routeSession.points.length < 2) {
         setEditorStatus('Route discarded because it needs at least two points.');
@@ -1101,12 +1191,51 @@ const addPointObject = (type, point) => {
     const next = Project.addObject(project, object);
     if (!next) return;
     selectedId = object.id;
+    selectedVertex = null;
     setProject(next);
-    setEditorStatus(`${toolName(type)} placed. Click to place another, or press V to select.`);
+    setEditorStatus(`${toolName(type)} placed. Click or add at center to place another, or press V to select.`);
     if (type === 'text') {
         ui.text.focus();
         ui.text.select();
     }
+};
+
+const addAtCenter = () => {
+    if (!project || editorMutationLocked() || activeTool === 'select' || routeSession) return;
+    const center = [project.image.width / 2, project.image.height / 2];
+    if (activeTool !== 'route') {
+        addPointObject(activeTool, center);
+        return;
+    }
+    const half = Math.min(project.image.width, project.image.height) * 0.08;
+    const object = {
+        id: crypto.randomUUID(),
+        type: 'route',
+        geometry: {
+            points: [[center[0] - half, center[1]], [center[0] + half, center[1]]],
+            controls: [],
+        },
+        style: defaultRouteStyle(),
+    };
+    const next = Project.addObject(project, object);
+    if (!next) return;
+    selectedId = object.id;
+    selectedVertex = null;
+    setProject(next);
+    setEditorStatus('Route added at the photo center. Press V to select it and edit its points.');
+};
+
+const selectAnnotation = (objectId, vertex = null) => {
+    if (editorMutationLocked()) return;
+    const object = project?.objects.find(candidate => candidate.id === objectId);
+    if (!object) return;
+    if (activeTool !== 'select') setTool('select');
+    selectedId = object.id;
+    selectedVertex = object.type === 'route' && Number.isInteger(vertex) ? vertex : null;
+    renderProject();
+    setEditorStatus(selectedVertex == null
+        ? `${annotationName(object)} selected. Use the arrow keys to move it.`
+        : `Route point ${selectedVertex + 1} selected. Use the arrow keys to move it.`);
 };
 
 const translatedGeometry = (object, dx, dy) => {
@@ -1190,6 +1319,7 @@ const onPointerDown = event => {
     const vertexNode = activeTool === 'select' ? event.target.closest?.('[data-vertex]') : null;
     if (vertexNode) {
         selectedId = vertexNode.dataset.objectId;
+        selectedVertex = Number(vertexNode.dataset.vertex);
         renderProject();
         beginDrag(event, selectedId, Number(vertexNode.dataset.vertex));
         return;
@@ -1204,6 +1334,7 @@ const onPointerDown = event => {
     }
     const objectNode = event.target.closest?.('[data-bpb-object]');
     selectedId = objectNode?.getAttribute('data-bpb-object') || null;
+    selectedVertex = null;
     renderProject();
     if (selectedId) beginDrag(event, selectedId);
 };
@@ -1256,21 +1387,38 @@ const duplicateSelected = () => {
     const next = Project.addObject(project, copy);
     if (!next) return;
     selectedId = copy.id;
+    selectedVertex = null;
     setProject(next);
 };
 
 const deleteSelected = () => {
     if (editorMutationLocked()) return;
     if (!selectedId) return;
+    const listButtons = [...ui.annotationList.querySelectorAll('[data-object-id]')];
+    const focusedIndex = listButtons.indexOf(document.activeElement);
     const next = Project.removeObjects(project, [selectedId]);
     selectedId = null;
+    selectedVertex = null;
     setProject(next);
+    if (focusedIndex >= 0) {
+        const remaining = [...ui.annotationList.querySelectorAll('[data-object-id]')];
+        (remaining[Math.min(focusedIndex, remaining.length - 1)] || ui.addAtCenter).focus();
+    }
 };
 
 const nudgeSelected = (dx, dy) => {
     if (editorMutationLocked()) return;
     const object = selectedObject();
     if (!object) return;
+    if (object.type === 'route' && Number.isInteger(selectedVertex)) {
+        const points = object.geometry.points.map((point, index) => index === selectedVertex
+            ? [point[0] + dx, point[1] + dy]
+            : point);
+        updateSelected({ geometry: { points, controls: [] } }, {
+            coalesce: `vertex-nudge-${selectedVertex}`,
+        });
+        return;
+    }
     updateSelected({ geometry: translatedGeometry(object, dx, dy) }, { coalesce: 'nudge' });
 };
 
@@ -1304,6 +1452,7 @@ const loadBundle = async bundle => {
     history = [];
     future = [];
     selectedId = null;
+    selectedVertex = null;
     ui.title.value = photo.title;
     ui.alt.value = photo.alt;
     setSourceDisplay(originalBlob);
@@ -1362,6 +1511,7 @@ const chooseFile = async file => {
         project = nextProject;
         photo = null;
         selectedId = null;
+        selectedVertex = null;
         history = [];
         future = [];
         ui.title.value = defaultTitle(file.name);
@@ -1551,6 +1701,7 @@ const uploadAndInsert = async () => {
         ui.title.value = uploadSnapshot.photo.title;
         ui.alt.value = uploadSnapshot.photo.alt;
         selectedId = null;
+        selectedVertex = null;
         routeSession = null;
         dragSession = null;
         history = [];
@@ -2275,6 +2426,15 @@ const bindEvents = () => {
     document.querySelectorAll('[data-tool]').forEach(button => {
         button.addEventListener('click', () => setTool(button.dataset.tool));
     });
+    ui.addAtCenter.addEventListener('click', addAtCenter);
+    ui.annotationList.addEventListener('click', event => {
+        const button = event.target.closest?.('[data-object-id]');
+        if (button) selectAnnotation(button.dataset.objectId);
+    });
+    ui.routePointList.addEventListener('click', event => {
+        const button = event.target.closest?.('[data-vertex]');
+        if (button) selectAnnotation(button.dataset.objectId, Number(button.dataset.vertex));
+    });
     ui.finishRoute.addEventListener('click', () => finishRoute(false));
     ui.overlay.addEventListener('pointerdown', onPointerDown);
     ui.overlay.addEventListener('pointermove', moveDrag);
@@ -2314,6 +2474,7 @@ const bindEvents = () => {
             return;
         }
         selectedId = null;
+        selectedVertex = null;
         setProject(Project.removeObjects(project, project.objects.map(object => object.id)));
         toast(`${count} annotation${count === 1 ? '' : 's'} removed.`, {
             action: 'Undo',
@@ -2380,6 +2541,7 @@ const bindEvents = () => {
             else if (activeTool !== 'select') setTool('select');
             else {
                 selectedId = null;
+                selectedVertex = null;
                 renderProject();
             }
         } else if (event.key === 'Delete' || event.key === 'Backspace') {
