@@ -17,7 +17,7 @@ import {
 const { DOMParser } = new JSDOM('').window;
 globalThis.DOMParser = DOMParser;
 
-const { parseGpxData, parseTrackPoint, cleanName, noGpsError } = gpxParse;
+const { parseGpxData, parseGpxDocument, parseTrackPoint, cleanName, noGpsError } = gpxParse;
 
 test('multi-track GPX flattens to segments in document order with analysis fields only', () => {
     const gpx = `<?xml version="1.0"?><gpx xmlns="http://www.topografix.com/GPX/1/1"
@@ -73,6 +73,23 @@ test('prefixed GPX namespaces retain direct ownership semantics', () => {
     assert.deepEqual(parsed.segments[0].map(({ lat, lon }) => [lat, lon]), [[3, 4], [5, 6]]);
     assert.deepEqual(parsed.waypoints, [{ lat: 1, lon: 2, name: 'Camp' }]);
     assert.equal(parsed.trackName, 'Prefixed');
+});
+
+test('text and document entry points return the same direct-owned quality tree', () => {
+    const source = `<gpx><trk><trkseg>
+      <trkpt lat="47" lon="-121"><ele>100</ele><time>2026-07-10T12:00:00Z</time></trkpt>
+      <extensions><trkpt lat="0" lon="0"><ele>9999</ele></trkpt></extensions>
+      <trkpt lat="47.1" lon="-121.1"><ele>bad</ele></trkpt>
+    </trkseg></trk></gpx>`;
+    const document = new DOMParser().parseFromString(source, 'application/xml');
+    assert.deepEqual(
+        parseGpxDocument(document, { includeQuality: true }),
+        parseGpxData(source, { includeQuality: true }),
+    );
+    const points = parseGpxDocument(document, { includeQuality: true }).segments[0];
+    assert.equal(points.length, 2);
+    assert.equal(points[0].elevationState, 'valid');
+    assert.equal(points[1].elevationState, 'invalid');
 });
 
 test('a nested GPX tree under the wrong document root is not route geometry', () => {

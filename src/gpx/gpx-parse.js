@@ -91,9 +91,7 @@ const noGpsError = () => {
 
 const gpxLimitError = () => Object.assign(new Error(gpxLimitMessage()), { code: 'gpx-too-large' });
 
-const parseGpxData = (text, options = {}) => {
-    if (typeof text !== 'string' || text.length > MAX_GPX_TEXT_CHARS) throw gpxLimitError();
-    const xml = new DOMParser().parseFromString(text, 'application/xml');
+const parseGpxDocument = (xml, options = {}) => {
     if (elementsByLocalName(xml, 'parsererror').length) {
         const error = new Error('The GPX file contains invalid XML.');
         error.code = 'invalid-gpx';
@@ -110,9 +108,13 @@ const parseGpxData = (text, options = {}) => {
         const points = directChildren(segment, 'trkpt');
         trackPointCount += points.length;
         if (trackPointCount > MAX_GPX_TRACK_POINTS) throw gpxLimitError();
-        return points.map(trackPoint => parseTrackPoint(trackPoint));
+        return points.map(trackPoint => parseTrackPoint(trackPoint, {
+            includeQuality: !!options.includeQuality,
+        }));
     });
-    if (!segments.length || !segments.some(segment => segment.length)) throw noGpsError();
+    if ((!segments.length || !segments.some(segment => segment.length)) && !options.allowEmpty) {
+        throw noGpsError();
+    }
     const waypointElements = directChildren(gpxRoot, 'wpt');
     if (waypointElements.length > MAX_GPX_WAYPOINTS) throw gpxLimitError();
     const waypoints = options.retainWaypoints
@@ -133,4 +135,16 @@ const parseGpxData = (text, options = {}) => {
     return { segments, waypoints, trackName };
 };
 
-export const gpxParse = { parseGpxData, parseTrackPoint, cleanName, noGpsError };
+const parseGpxData = (text, options = {}) => {
+    if (typeof text !== 'string' || text.length > MAX_GPX_TEXT_CHARS) throw gpxLimitError();
+    const xml = new DOMParser().parseFromString(text, 'application/xml');
+    return parseGpxDocument(xml, options);
+};
+
+export const gpxParse = {
+    parseGpxData,
+    parseGpxDocument,
+    parseTrackPoint,
+    cleanName,
+    noGpsError,
+};

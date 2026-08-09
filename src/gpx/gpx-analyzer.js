@@ -42,15 +42,6 @@ const run = async () => {
     const MAP_RESIZE_RAIL_HEIGHT = 18;
     const COORDINATE_HINT = 'Click the chart or use \u2190/\u2192 to select a point';
     const MAP_RESIZE_PERSIST_DELAY_MS = 400;
-    const parseRouteSegments = xml =>
-        Array.from(xml.querySelectorAll('trkseg'), segmentNode =>
-            Array.from(segmentNode.children)
-                .filter(node => node.localName === 'trkpt')
-                .map(node => [
-                    parseFloat(node.getAttribute('lat')),
-                    parseFloat(node.getAttribute('lon')),
-                ]));
-
     // === Better Peakbagger: theming + centralized settings (via bridge) ===
     // Chart.js takes colors as JS options, not CSS, so these have to stay in
     // JS. Everything the panel's *DOM* is painted with moved to
@@ -1383,37 +1374,35 @@ const run = async () => {
                 return;
             }
             const xml = response.document;
-            const trkpts = Array.from(xml.querySelectorAll('trkpt'));
-            if (!trkpts.length) {
+            const parsedGpx = GpxParse.parseGpxDocument(xml, {
+                includeQuality: true,
+                allowEmpty: true,
+            });
+            const trackPointCount = parsedGpx.segments
+                .reduce((count, segment) => count + segment.length, 0);
+            if (!trackPointCount) {
                 canvasContainer.hidden = true;
                 coordinateControls.hidden = true;
                 chartLegend.hidden = true;
                 stats.textContent = 'No track points found.';
                 return;
             }
-            const segmentGroups = new Map(Array.from(
-                xml.querySelectorAll('trkseg'),
-                (segment, index) => [segment, index]
-            ));
-
-            const routeSegments = parseRouteSegments(xml);
+            const routeSegments = parsedGpx.segments.map(segment =>
+                segment.map(point => [point.lat, point.lon]));
             mapRouteSegments = GpxMetrics.sanitizeMapRouteSegments(routeSegments);
             terrainCoordinator.update();
             scheduleRouteOverlay();
 
-            const parsedPoints = trkpts.map(pt => {
-                const parsed = GpxParse.parseTrackPoint(pt, { includeQuality: true });
-
-                return {
+            const parsedPoints = parsedGpx.segments.flatMap((segment, coordinateGroup) =>
+                segment.map(parsed => ({
                     lat: parsed.lat,
                     lon: parsed.lon,
                     rawEleM: parsed.ele,
                     elevationState: parsed.elevationState,
                     ms: parsed.time,
                     timeState: parsed.timeState,
-                    coordinateGroup: segmentGroups.get(pt.parentNode) ?? 0
-                };
-            });
+                    coordinateGroup,
+                })));
 
             metrics = GpxMetrics.computeMetrics(parsedPoints);
             hasTime = metrics.hasTime;

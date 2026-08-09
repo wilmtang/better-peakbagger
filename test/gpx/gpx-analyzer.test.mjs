@@ -1288,6 +1288,38 @@ test('GPX analyzer hides the chart when no track point has valid coordinates', a
     dom.window.close();
 });
 
+test('GPX analyzer geometry and metrics exclude descendant-owned fake points', async () => {
+    const source = `<?xml version="1.0"?><gpx>
+      <extensions><trk><trkseg><trkpt lat="0" lon="0"><ele>9000</ele></trkpt></trkseg></trk></extensions>
+      <trk><trkseg>
+        <trkpt lat="47.000" lon="-121.000"><ele>100</ele></trkpt>
+        <extensions><trkpt lat="0" lon="0"><ele>9000</ele></trkpt></extensions>
+        <trkseg><trkpt lat="1" lon="1"><ele>8000</ele></trkpt></trkseg>
+        <trkpt lat="47.001" lon="-121.001"><ele>110</ele></trkpt>
+      </trkseg></trk>
+    </gpx>`;
+    const { dom, analysisText, chartConfig, polylineCalls } =
+        await loadElevationAnalyzer(source, { withMap: true });
+
+    await waitFor(dom, () => chartConfig() !== null && polylineCalls.length >= 1);
+    const recorded = chartConfig().data.datasets[0].data
+        .map(point => point._raw)
+        .filter(Boolean);
+    assert.deepEqual(JSON.parse(JSON.stringify(recorded.map(point => [point.lat, point.lon]))), [
+        [47, -121],
+        [47.001, -121.001],
+    ]);
+    assert.ok(recorded.at(-1).distM < 200,
+        `direct points are about 135 m apart, got ${recorded.at(-1).distM} m`);
+    assert.deepEqual(JSON.parse(JSON.stringify(polylineCalls[0].latLngs)), [
+        [47, -121],
+        [47.001, -121.001],
+    ]);
+    assert.doesNotMatch(analysisText(), /9000|8000|24,?588/);
+
+    dom.window.close();
+});
+
 test('GPX analyzer hides the chart when the GPX contains no track points', async () => {
     const source = '<?xml version="1.0"?><gpx><trk><trkseg></trkseg></trk></gpx>';
     const { dom, analysisText, chartConfig } = await loadElevationAnalyzer(source);
