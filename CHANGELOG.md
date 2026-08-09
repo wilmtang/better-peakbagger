@@ -2,10 +2,51 @@
 
 ## Unreleased
 
+## 3.5.0 — 2026-08-09
+
 - **Keep experimental 3D maps current and dependable.** The packaged renderer
   now uses MapLibre GL JS 6.2, falls back to the native 2D map when WebGL2 is
   unavailable, and keeps summit rings visible and clickable across terrain
   refreshes and steep views.
+
+- **Ship the exact extension that was reviewed.** Release history can no longer
+  be rewritten after a tag, packaged dependencies now carry complete generated
+  notices, and Chrome and Firefox archives reject every unexpected nested file
+  instead of trusting only its top-level folder.
+
+- **Keep prepared ascents faithful to the GPX that was recorded.** Drafts and
+  the analyzer now share the same source-order geometry, plausible-elevation,
+  continuity, completeness, and mountain-local-time rules. Misplaced or
+  extension-owned XML points are ignored, while missing or invalid values stay
+  blank instead of becoming bridged, reordered, or impossible measurements.
+
+- **Bind terrain and activity work to the click that started it.** One-use 3D
+  capabilities reject forged, replayed, or directly embedded frames; Garmin
+  redirect aliases compare by canonical activity identity; and capture,
+  cancellation, draft opening, Preview, retries, and cleanup share one bounded
+  job generation so stale work cannot mutate its replacement.
+
+- **Keep Photo Topos and report drafts recoverable through interruptions.**
+  Concurrent photo edits use revision-checked transactions, upload recovery is
+  journaled atomically, and a thumbnail outage stays a temporary display error.
+  A report draft is retained until Peakbagger confirms the matching Save, so a
+  validation or navigation failure cannot consume the recovery copy early.
+
+- **Ask before a report conversion can lose markup.** Reports with constructs
+  Rich or Markdown mode cannot preserve remain in Plain until you choose
+  **Convert anyway**. Settings-file rollback also protects newer settings,
+  ImgBB keys, and GitHub connections written by another in-flight change.
+
+- **Make the two visual workspaces usable without a pointer.** Photo Topos now
+  exposes a semantic annotation list, focusable route points, and keyboard
+  placement. GPX charts use tab-reachable series controls and announce the
+  active trustworthy distance, elevation, grade, and mountain-local time.
+
+- **Strengthen the checks that protect privacy and releases.** Browser and
+  terrain verification now cleans up every owned process and temporary file,
+  waits for visible final states, and reports exact teardown failures. The
+  privacy scanner decodes compressed fixtures before checking them, while
+  maintained store and dependency metadata stay tied to runtime sources.
 
 ## 3.4.0 — 2026-08-08
 
