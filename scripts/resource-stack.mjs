@@ -71,7 +71,12 @@ export function createResourceStack({ finalizerTimeoutMs = 10_000 } = {}) {
                 throw primaryError;
             }
             if (cleanupErrors.length) {
-                throw new AggregateError(cleanupErrors, 'One or more verifier resources failed to clean up');
+                throw new AggregateError(
+                    cleanupErrors,
+                    `One or more verifier resources failed to clean up:\n${cleanupErrors
+                        .map(error => `- ${error.message}`)
+                        .join('\n')}`,
+                );
             }
         },
 

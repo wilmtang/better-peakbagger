@@ -34,6 +34,10 @@ test('verifier resources clean up LIFO and one rejection cannot skip the rest', 
     await assert.rejects(resources.dispose(), error => {
         assert.ok(error instanceof AggregateError);
         assert.match(error.errors[0].message, /rejecting/);
+        assert.match(
+            error.message,
+            /One or more verifier resources failed to clean up:\n- Cleanup failed for rejecting: blocked/,
+        );
         return true;
     });
     assert.deepEqual(order, ['last', 'rejecting', 'first']);
