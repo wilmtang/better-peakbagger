@@ -10,14 +10,20 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readdir, readFile } from 'node:fs/promises';
+import { execFileSync } from 'node:child_process';
+import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { JSDOM } from 'jsdom';
 import { containsFixtureBannedIdentifier } from '../../scripts/privacy-guard.mjs';
 import { decideHookInstall, HOOKS_PATH } from '../../scripts/install-git-hooks.mjs';
+import {
+    decodeFixtureForPrivacy,
+    FIXTURE_PRIVACY_MANIFEST,
+} from '../helpers/fixture-privacy-manifest.mjs';
 
 const FIXTURES = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../fixtures');
+const REPO_ROOT = path.resolve(FIXTURES, '../..');
 
 // Wayback captures of public peaks (other people's public data) legitimately
 // carry external links; every other .html fixture is a masked live capture.
@@ -36,36 +42,82 @@ const REVIEWED_CLIMBER_IDS = new Map([
 ]);
 const SOCIAL = /strava\.com|instagram\.com|facebook\.com|youtube\.com|youtu\.be|mountainproject\.com|flickr\.com|twitter\.com|linkedin\.com|@gmail\.|@outlook\.|@yahoo\./i;
 
-const walk = async dir => {
-    const out = [];
-    for (const entry of await readdir(dir, { withFileTypes: true })) {
-        const full = path.join(dir, entry.name);
-        if (entry.isDirectory()) out.push(...await walk(full));
-        else if (/\.(html|md)$/.test(entry.name)) out.push(full);
-    }
-    return out;
-};
+const fixtureFiles = () => execFileSync('git', [
+    'ls-files', '-z', '--cached', '--others', '--exclude-standard', '--', 'test/fixtures',
+], { cwd: REPO_ROOT, encoding: 'utf8' })
+    .split('\0')
+    .filter(Boolean)
+    .map(relative => path.join(REPO_ROOT, relative));
 
 const liveCaptures = files =>
     files.filter(f => f.endsWith('.html') && !WAYBACK.has(path.basename(f)));
 
 test('no fixture or fixture doc contains a banned identifier', async () => {
-    const files = await walk(FIXTURES);
+    const files = fixtureFiles();
     assert.ok(files.filter(f => f.endsWith('.html')).length >= 11, 'expected the fixture set to be present');
 
     const leaks = [];
     for (const file of files) {
-        const text = await readFile(file, 'utf8');
+        const relative = path.relative(FIXTURES, file);
+        const { text } = decodeFixtureForPrivacy(relative, await readFile(file));
         if (containsFixtureBannedIdentifier(text)) {
-            leaks.push(path.relative(FIXTURES, file));
+            leaks.push(relative);
         }
     }
     assert.deepEqual(leaks, [], `PII found in fixtures:\n${leaks.join('\n')}`);
 });
 
+test('every fixture format is registered and encoded XML is structurally sanitized', async () => {
+    assert.deepEqual(FIXTURE_PRIVACY_MANIFEST.map(({ suffix, format, decoder }) =>
+        ({ suffix, format, decoder })), [
+        { suffix: '.gpx.gz.b64', format: 'gpx+xml', decoder: 'base64+gzip+utf8' },
+        { suffix: '.html', format: 'html', decoder: 'utf8' },
+        { suffix: '.gpx', format: 'gpx+xml', decoder: 'utf8' },
+        { suffix: '.xml', format: 'xml', decoder: 'utf8' },
+        { suffix: '.md', format: 'markdown', decoder: 'utf8' },
+    ]);
+    assert.throws(() => decodeFixtureForPrivacy('fixture.zip', Buffer.from('not a fixture')),
+        /Unregistered fixture extension/);
+    assert.throws(() => decodeFixtureForPrivacy('fixture.gpx.gz.b64', Buffer.from('not base64')),
+        /canonical base64/);
+
+    const xmlFixtures = [];
+    for (const file of fixtureFiles()) {
+        const relative = path.relative(FIXTURES, file);
+        const decoded = decodeFixtureForPrivacy(relative, await readFile(file));
+        if (decoded.format === 'gpx+xml' || decoded.format === 'xml') {
+            xmlFixtures.push({ relative, ...decoded });
+        }
+    }
+    assert.ok(xmlFixtures.some(({ relative }) => relative.endsWith('.gpx.gz.b64')),
+        'expected the encoded GPX fixture to be decoded and inspected');
+
+    const forbiddenElements = [
+        'metadata', 'author', 'copyright', 'link', 'email', 'name',
+        'desc', 'cmt', 'wpt', 'rte',
+    ];
+    for (const { relative, format, text } of xmlFixtures) {
+        assert.equal(containsFixtureBannedIdentifier(text), false,
+            `${relative} contains a known personal identifier after decoding`);
+        const document = new JSDOM(text, { contentType: 'application/xml' }).window.document;
+        assert.equal(document.querySelector('parsererror'), null,
+            `${relative} must decode to valid XML`);
+        if (format === 'gpx+xml') {
+            assert.equal(document.documentElement.localName, 'gpx',
+                `${relative} must decode to GPX`);
+        }
+        assert.equal(document.documentElement.hasAttribute('creator'), false,
+            `${relative} retains creator metadata`);
+        for (const tag of forbiddenElements) {
+            assert.equal(document.getElementsByTagNameNS('*', tag).length, 0,
+                `${relative} retains forbidden <${tag}> data`);
+        }
+    }
+});
+
 test('masked live captures carry no external social/identity links', async () => {
     const hits = [];
-    for (const file of liveCaptures(await walk(FIXTURES))) {
+    for (const file of liveCaptures(fixtureFiles())) {
         const match = (await readFile(file, 'utf8')).match(SOCIAL);
         if (match) hits.push(`${path.relative(FIXTURES, file)}: ${match[0]}`);
     }
@@ -73,7 +125,7 @@ test('masked live captures carry no external social/identity links', async () =>
 });
 
 test('masking actually ran: live captures carry the masked climber id, and only it', async () => {
-    const live = liveCaptures(await walk(FIXTURES));
+    const live = liveCaptures(fixtureFiles());
     assert.ok(live.length >= 7, 'expected the live-capture set to be present');
 
     for (const file of live) {
@@ -164,7 +216,7 @@ test('the Peak List fixture contains only the reviewed synthetic row data', asyn
 // setting nothing in the repository used to touch and no document mentioned, so
 // it silently worked in one clone and was silently absent everywhere else.
 test('the staged privacy scan is wired into every clone, not just a configured one', async () => {
-    const repoRoot = path.resolve(FIXTURES, '../..');
+    const repoRoot = REPO_ROOT;
 
     const hook = await readFile(path.join(repoRoot, '.githooks', 'pre-commit'), 'utf8');
     assert.match(hook, /scripts\/privacy-guard\.mjs/,
