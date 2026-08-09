@@ -21,6 +21,15 @@ const STORE_NAMES = Object.freeze(Object.values(STORES));
 const MAX_THUMBNAIL_BATCH = 100;
 const MAX_MAINTENANCE_BATCH = 50;
 
+class PhotoStoreConflictError extends Error {
+    constructor(localId, message = 'The photo changed in another tab. Reload it and try again.') {
+        super(message);
+        this.name = 'PhotoStoreConflictError';
+        this.code = 'photo-conflict';
+        this.localId = localId;
+    }
+}
+
 const requestResult = request => new Promise((resolve, reject) => {
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error || new Error('IndexedDB request failed.'));
@@ -76,15 +85,23 @@ const cleanDeleteUrl = value => {
     } catch { return null; }
 };
 
+const tombstoneRevision = value => Number.isSafeInteger(value?.revision) && value.revision >= 0
+    ? value.revision
+    : 0;
+
+const nextRevision = (photo, tombstone) => Math.max(
+    photo?.revision ?? 0,
+    tombstoneRevision(tombstone),
+) + 1;
+
+const abortAndRethrow = async (transaction, error) => {
+    try { transaction.abort(); } catch {}
+    await transactionDone(transaction).catch(() => {});
+    throw error;
+};
+
 const createPhotoStore = async options => {
     const database = await openDatabase(options);
-
-    const read = async (storeName, localId) => {
-        const transaction = database.transaction(storeName, 'readonly');
-        const result = await requestResult(transaction.objectStore(storeName).get(localId));
-        await transactionDone(transaction);
-        return result ?? null;
-    };
 
     // One record, its project, and its local pixels, written together. The
     // editor goes through putDraft, which additionally refuses a published
@@ -110,20 +127,45 @@ const createPhotoStore = async options => {
             STORES.thumbnails,
             STORES.tombstones,
         ], 'readwrite');
-        transaction.objectStore(STORES.photos).put(cleanPhoto);
+        const photos = transaction.objectStore(STORES.photos);
+        const tombstones = transaction.objectStore(STORES.tombstones);
+        let storedPhoto;
+        try {
+            const [currentValue, tombstone] = await Promise.all([
+                requestResult(photos.get(cleanPhoto.localId)),
+                requestResult(tombstones.get(cleanPhoto.localId)),
+            ]);
+            const current = Library.cleanPhoto(currentValue);
+            if ((current && current.revision !== cleanPhoto.revision)
+                || (!current && (cleanPhoto.revision !== 0 || tombstone))) {
+                throw new PhotoStoreConflictError(cleanPhoto.localId);
+            }
+            if (current?.deletedAt && !cleanPhoto.deletedAt) {
+                throw new PhotoStoreConflictError(cleanPhoto.localId,
+                    'This photo was deleted in another tab. Restore it before editing.');
+            }
+            storedPhoto = Library.cleanPhoto({
+                ...cleanPhoto,
+                revision: nextRevision(current, tombstone),
+            });
+            photos.put(storedPhoto);
+        } catch (error) {
+            return abortAndRethrow(transaction, error);
+        }
         transaction.objectStore(STORES.projects).put(cleanProject);
         transaction.objectStore(STORES.originals).put(cleanOriginal);
         transaction.objectStore(STORES.thumbnails).put(cleanThumbnail);
-        if (cleanPhoto.deletedAt) {
-            transaction.objectStore(STORES.tombstones).put({
-                localId: cleanPhoto.localId,
-                deletedAt: cleanPhoto.deletedAt,
+        if (storedPhoto.deletedAt) {
+            tombstones.put({
+                localId: storedPhoto.localId,
+                deletedAt: storedPhoto.deletedAt,
+                revision: storedPhoto.revision,
             });
         } else {
-            transaction.objectStore(STORES.tombstones).delete(cleanPhoto.localId);
+            tombstones.delete(storedPhoto.localId);
         }
         await transactionDone(transaction);
-        return cleanPhoto;
+        return storedPhoto;
     };
 
     const putDraft = bundle => putBundle(bundle, { editableOnly: true });
@@ -206,7 +248,14 @@ const createPhotoStore = async options => {
                 photo,
                 project: projectsById.get(photo.localId) || null,
             })),
-            tombstones,
+            tombstones: tombstones.map(value => ({
+                localId: value.localId,
+                deletedAt: value.deletedAt,
+            })),
+            revisions: Object.fromEntries([
+                ...photos.map(value => [value.localId, Library.cleanPhoto(value)?.revision ?? 0]),
+                ...tombstones.map(value => [value.localId, tombstoneRevision(value)]),
+            ]),
         };
     };
 
@@ -214,17 +263,73 @@ const createPhotoStore = async options => {
         const cleaned = Library.cleanPhoto(photo);
         if (!cleaned) throw new TypeError('photo store requires a clean photo');
         const transaction = database.transaction([STORES.photos, STORES.tombstones], 'readwrite');
-        transaction.objectStore(STORES.photos).put(cleaned);
-        if (cleaned.deletedAt) {
-            transaction.objectStore(STORES.tombstones).put({
-                localId: cleaned.localId,
-                deletedAt: cleaned.deletedAt,
+        const photos = transaction.objectStore(STORES.photos);
+        const tombstones = transaction.objectStore(STORES.tombstones);
+        let storedPhoto;
+        try {
+            const [currentValue, tombstone] = await Promise.all([
+                requestResult(photos.get(cleaned.localId)),
+                requestResult(tombstones.get(cleaned.localId)),
+            ]);
+            const current = Library.cleanPhoto(currentValue);
+            if ((current && current.revision !== cleaned.revision)
+                || (!current && (cleaned.revision !== 0 || tombstone))) {
+                throw new PhotoStoreConflictError(cleaned.localId);
+            }
+            if (current?.deletedAt && !cleaned.deletedAt) {
+                throw new PhotoStoreConflictError(cleaned.localId,
+                    'This photo was deleted in another tab. Restore it before changing it.');
+            }
+            storedPhoto = Library.cleanPhoto({
+                ...cleaned,
+                revision: nextRevision(current, tombstone),
             });
-        } else {
-            transaction.objectStore(STORES.tombstones).delete(cleaned.localId);
+            photos.put(storedPhoto);
+            if (storedPhoto.deletedAt) {
+                tombstones.put({
+                    localId: storedPhoto.localId,
+                    deletedAt: storedPhoto.deletedAt,
+                    revision: storedPhoto.revision,
+                });
+            } else {
+                tombstones.delete(storedPhoto.localId);
+            }
+        } catch (error) {
+            return abortAndRethrow(transaction, error);
         }
         await transactionDone(transaction);
-        return cleaned;
+        return storedPhoto;
+    };
+
+    const restorePhoto = async photo => {
+        const cleaned = Library.cleanPhoto(photo);
+        if (!cleaned || cleaned.deletedAt) {
+            throw new TypeError('photo store requires a clean restored photo');
+        }
+        const transaction = database.transaction([STORES.photos, STORES.tombstones], 'readwrite');
+        const photos = transaction.objectStore(STORES.photos);
+        const tombstones = transaction.objectStore(STORES.tombstones);
+        let storedPhoto;
+        try {
+            const [currentValue, tombstone] = await Promise.all([
+                requestResult(photos.get(cleaned.localId)),
+                requestResult(tombstones.get(cleaned.localId)),
+            ]);
+            const current = Library.cleanPhoto(currentValue);
+            if (!current?.deletedAt || current.revision !== cleaned.revision || !tombstone) {
+                throw new PhotoStoreConflictError(cleaned.localId);
+            }
+            storedPhoto = Library.cleanPhoto({
+                ...cleaned,
+                revision: nextRevision(current, tombstone),
+            });
+            photos.put(storedPhoto);
+            tombstones.delete(cleaned.localId);
+        } catch (error) {
+            return abortAndRethrow(transaction, error);
+        }
+        await transactionDone(transaction);
+        return storedPhoto;
     };
 
     const commitUpload = async ({ photo, deleteUrl }) => {
@@ -233,11 +338,52 @@ const createPhotoStore = async options => {
         if (!cleaned || !['uploaded', 'unreachable'].includes(cleaned.remote.state) || !secret) {
             throw new TypeError('photo store requires a clean uploaded photo and deletion URL');
         }
-        const transaction = database.transaction([STORES.photos, STORES.secrets], 'readwrite');
-        transaction.objectStore(STORES.photos).put(cleaned);
+        const transaction = database.transaction([STORES.photos, STORES.secrets, STORES.tombstones], 'readwrite');
+        const photos = transaction.objectStore(STORES.photos);
+        let storedPhoto;
+        try {
+            const current = Library.cleanPhoto(await requestResult(photos.get(cleaned.localId)));
+            if (!current || current.deletedAt || current.revision !== cleaned.revision) {
+                throw new PhotoStoreConflictError(cleaned.localId);
+            }
+            storedPhoto = Library.cleanPhoto({ ...cleaned, revision: current.revision + 1 });
+            photos.put(storedPhoto);
+        } catch (error) {
+            return abortAndRethrow(transaction, error);
+        }
         transaction.objectStore(STORES.secrets).put({ localId: cleaned.localId, deleteUrl: secret });
         await transactionDone(transaction);
-        return cleaned;
+        return storedPhoto;
+    };
+
+    // Backup status has one independent owner. Updating only that field keeps
+    // a report reference, deletion, or editor change that won a different
+    // revision from being replaced by a whole stale catalog record.
+    const updatePhotoBackup = async ({ localId, expectedRevision, backup }) => {
+        if (typeof localId !== 'string' || !Number.isSafeInteger(expectedRevision)
+            || expectedRevision < 0) {
+            throw new TypeError('photo backup update requires an observed revision');
+        }
+        const transaction = database.transaction(STORES.photos, 'readwrite');
+        const photos = transaction.objectStore(STORES.photos);
+        let storedPhoto;
+        try {
+            const current = Library.cleanPhoto(await requestResult(photos.get(localId)));
+            if (!current || current.revision !== expectedRevision) {
+                throw new PhotoStoreConflictError(localId);
+            }
+            storedPhoto = Library.cleanPhoto({
+                ...current,
+                revision: current.revision + 1,
+                backup,
+            });
+            if (!storedPhoto) throw new TypeError('photo backup update is invalid');
+            photos.put(storedPhoto);
+        } catch (error) {
+            return abortAndRethrow(transaction, error);
+        }
+        await transactionDone(transaction);
+        return storedPhoto;
     };
 
     const putOperation = async operation => {
@@ -264,20 +410,27 @@ const createPhotoStore = async options => {
     };
 
     const removeLocalAssets = async (localId, now) => {
-        const photo = await read(STORES.photos, localId);
-        const cleaned = Library.updateAssets(photo, {
-            originalRetained: false,
-            projectRetained: false,
-            thumbnailRetained: false,
-        }, now);
-        if (!cleaned) throw new TypeError('photo store could not resolve the local photo');
         const transaction = database.transaction([
             STORES.photos,
             STORES.projects,
             STORES.originals,
             STORES.thumbnails,
         ], 'readwrite');
-        transaction.objectStore(STORES.photos).put(cleaned);
+        const photos = transaction.objectStore(STORES.photos);
+        let cleaned;
+        try {
+            const photo = Library.cleanPhoto(await requestResult(photos.get(localId)));
+            cleaned = Library.updateAssets(photo, {
+                originalRetained: false,
+                projectRetained: false,
+                thumbnailRetained: false,
+            }, now);
+            if (!cleaned) throw new TypeError('photo store could not resolve the local photo');
+            cleaned = Library.cleanPhoto({ ...cleaned, revision: photo.revision + 1 });
+            photos.put(cleaned);
+        } catch (error) {
+            return abortAndRethrow(transaction, error);
+        }
         transaction.objectStore(STORES.projects).delete(localId);
         transaction.objectStore(STORES.originals).delete(localId);
         transaction.objectStore(STORES.thumbnails).delete(localId);
@@ -309,11 +462,12 @@ const createPhotoStore = async options => {
                 || photo.assets.thumbnailRetained);
         const pruning = eligible.slice(0, limit);
         for (const photo of pruning) {
-            photos.put(Library.updateAssets(photo, {
+            const updated = Library.updateAssets(photo, {
                 originalRetained: false,
                 projectRetained: false,
                 thumbnailRetained: false,
-            }, updatedAt));
+            }, updatedAt);
+            photos.put(Library.cleanPhoto({ ...updated, revision: photo.revision + 1 }));
             transaction.objectStore(STORES.projects).delete(photo.localId);
             transaction.objectStore(STORES.originals).delete(photo.localId);
             transaction.objectStore(STORES.thumbnails).delete(photo.localId);
@@ -338,7 +492,11 @@ const createPhotoStore = async options => {
         await transactionDone(transaction);
     };
 
-    const applyRestore = async ({ records = [], tombstones = [] } = {}) => {
+    const applyRestore = async ({ records = [], tombstones = [], expectedRevisions = {} } = {}) => {
+        if (!expectedRevisions || typeof expectedRevisions !== 'object'
+            || Array.isArray(expectedRevisions)) {
+            throw new TypeError('photo restore requires observed revisions');
+        }
         const restored = records.map(value => {
             const photo = Library.cleanPhoto(value?.photo);
             const project = value?.project == null ? null : Project.cleanProject(value.project);
@@ -383,14 +541,52 @@ const createPhotoStore = async options => {
             requestResult(stores[STORES.projects].get(value.photo.localId)),
             requestResult(stores[STORES.originals].get(value.photo.localId)),
             requestResult(stores[STORES.thumbnails].get(value.photo.localId)),
+            requestResult(stores[STORES.tombstones].get(value.photo.localId)),
         ]));
-        const tombstoneLookups = deleted.map(tombstone =>
-            requestResult(stores[STORES.photos].get(tombstone.localId)));
-        const restoredValues = await Promise.all(restoredLookups);
-        const tombstoneValues = await Promise.all(tombstoneLookups);
+        const tombstoneLookups = deleted.map(tombstone => Promise.all([
+            requestResult(stores[STORES.photos].get(tombstone.localId)),
+            requestResult(stores[STORES.tombstones].get(tombstone.localId)),
+        ]));
+        let restoredValues;
+        let tombstoneValues;
+        try {
+            [restoredValues, tombstoneValues] = await Promise.all([
+                Promise.all(restoredLookups),
+                Promise.all(tombstoneLookups),
+            ]);
+            const assertObservedRevision = (localId, current, tombstone) => {
+                const observed = Object.hasOwn(expectedRevisions, localId)
+                    ? expectedRevisions[localId]
+                    : null;
+                const currentRevision = Math.max(
+                    current?.revision ?? 0,
+                    tombstoneRevision(tombstone),
+                );
+                if ((currentRevision > 0 && observed !== currentRevision)
+                    || (currentRevision === 0 && observed != null && observed !== 0)) {
+                    throw new PhotoStoreConflictError(localId);
+                }
+            };
+            restoredValues.forEach((values, index) => {
+                assertObservedRevision(
+                    restored[index].photo.localId,
+                    Library.cleanPhoto(values[0]),
+                    values[4],
+                );
+            });
+            tombstoneValues.forEach((values, index) => {
+                assertObservedRevision(
+                    deleted[index].localId,
+                    Library.cleanPhoto(values[0]),
+                    values[1],
+                );
+            });
+        } catch (error) {
+            return abortAndRethrow(transaction, error);
+        }
 
         restored.forEach((value, index) => {
-            const [existingPhoto, existingProject, original, thumbnail] = restoredValues[index];
+            const [existingPhoto, existingProject, original, thumbnail, tombstone] = restoredValues[index];
             const existing = Library.cleanPhoto(existingPhoto);
             const cleanExistingProject = Project.cleanProject(existingProject);
             const sameSource = existing?.source.sha256 === value.photo.source.sha256
@@ -402,6 +598,7 @@ const createPhotoStore = async options => {
                 && existing.remote.providerId === value.photo.remote.providerId;
             const photo = Library.cleanPhoto({
                 ...value.photo,
+                revision: nextRevision(existing, tombstone),
                 assets: {
                     originalRetained: !!original?.blob && sameSource,
                     projectRetained: !!value.project || !!sameProject,
@@ -421,11 +618,18 @@ const createPhotoStore = async options => {
         });
 
         deleted.forEach((tombstone, index) => {
-            const existing = Library.cleanPhoto(tombstoneValues[index]);
+            const [existingValue, existingTombstone] = tombstoneValues[index];
+            const existing = Library.cleanPhoto(existingValue);
+            const revision = nextRevision(existing, existingTombstone);
             if (existing && (!existing.deletedAt || existing.deletedAt < tombstone.deletedAt)) {
-                stores[STORES.photos].put(Library.markDeleted(existing, tombstone.deletedAt));
+                stores[STORES.photos].put(Library.cleanPhoto({
+                    ...Library.markDeleted(existing, tombstone.deletedAt),
+                    revision,
+                }));
             }
-            stores[STORES.tombstones].put(tombstone);
+            if (!existingTombstone || existingTombstone.deletedAt < tombstone.deletedAt) {
+                stores[STORES.tombstones].put({ ...tombstone, revision });
+            }
         });
         await transactionDone(transaction);
     };
@@ -438,7 +642,9 @@ const createPhotoStore = async options => {
         putDraft,
         putBundle,
         putPhoto,
+        restorePhoto,
         commitUpload,
+        updatePhotoBackup,
         putOperation,
         getOperations,
         deleteOperation,
@@ -454,6 +660,7 @@ export const photoStore = {
     DATABASE_NAME,
     DATABASE_VERSION,
     STORES,
+    PhotoStoreConflictError,
     openDatabase,
     createPhotoStore,
 };

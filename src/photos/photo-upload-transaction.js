@@ -82,8 +82,7 @@ const finishCommittedUpload = async ({
                 );
             }
             try {
-                await store.putPhoto(referenced);
-                photo = referenced;
+                photo = Library.cleanPhoto(await store.putPhoto(referenced)) || referenced;
             } catch (cause) {
                 throw new CommittedUploadError(
                     'reference-pending',

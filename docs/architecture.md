@@ -548,6 +548,13 @@ rail and the guide paint from, and `src/photos/photo-store.js` owns the
 authoritative IndexedDB catalog, projects, originals, thumbnails, operation
 journal, per-photo delete capabilities, and tombstones. Published edits are new
 lineaged versions, never in-place replacement of an existing remote URL.
+Every catalog record also carries a device-local monotonic revision. Whole
+draft, upload, reference, and deletion writes compare the revision they read
+inside the same IndexedDB transaction; a stale writer reports a conflict
+instead of replacing newer state. Deletion advances the same generation and
+only the explicit restore command may clear its tombstone. GitHub restore is
+bound to the revision snapshot used for its merge, while backup status uses a
+narrow field mutation so it cannot erase a concurrent editor or report change.
 `src/photos/photo-archive.js` both writes and reads the CSP-safe stored-ZIP
 project bundle, so a downloaded original can be imported back.
 `src/photos/photo-report-size.js` resolves the contextual Small, Medium, Large,

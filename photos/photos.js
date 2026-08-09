@@ -622,7 +622,10 @@ const cleanDraftFromFields = ({ now, project: draftProject, photo: draftPhoto, o
 
 const currentDraftMatches = snapshot => draftRevision === snapshot.revision
     && project === snapshot.project
-    && photo === snapshot.photo
+    && (photo === snapshot.photo
+        || (photo?.localId === snapshot.project?.localId
+            && (snapshot.photo == null
+                || photo.revision >= snapshot.photo.revision)))
     && originalBlob === snapshot.original
     && thumbnailBlob === snapshot.thumbnail
     && ui.title.value === snapshot.title
@@ -667,25 +670,46 @@ const persistDraft = async ({ required = false } = {}) => {
     setSaveStatus('Saving locally…');
     return enqueueDraftWrite(async () => {
         try {
-            await store.putDraft({
-                photo: nextPhoto,
+            const writePhoto = photo?.localId === nextPhoto.localId
+                && photo.revision > nextPhoto.revision
+                ? Library.cleanPhoto({ ...nextPhoto, revision: photo.revision })
+                : nextPhoto;
+            const storedPhoto = await store.putDraft({
+                photo: writePhoto,
                 project: nextProject,
                 original: snapshot.original,
                 thumbnail: snapshot.thumbnail,
             });
             const stillCurrent = currentDraftMatches(snapshot);
             if (stillCurrent) {
-                photo = nextPhoto;
+                photo = storedPhoto;
                 project = nextProject;
                 setSaveStatus('Saved on this device');
+            } else if (!photo && project?.localId === storedPhoto.localId) {
+                // The first save may finish after the user has already edited
+                // the new project. Adopt only its store identity/revision; the
+                // queued follow-up still serializes the live fields and marks.
+                photo = storedPhoto;
+            } else if (photo?.localId === storedPhoto.localId
+                && photo.revision === snapshot.photo?.revision) {
+                // Keep the newest store revision even when the user changed the
+                // draft while this queued write was in flight. The next save
+                // still owns the newer fields and project.
+                photo = Library.cleanPhoto({ ...photo, revision: storedPhoto.revision });
             }
             notifyBackupChanged();
             return !required || stillCurrent;
-        } catch {
+        } catch (error) {
             const stillCurrent = currentDraftMatches(snapshot);
             if (stillCurrent) {
                 draftDirty = true;
-                setSaveStatus('Could not save locally');
+                setSaveStatus(error instanceof Store.PhotoStoreConflictError
+                    ? 'Changed in another tab'
+                    : 'Could not save locally');
+            }
+            if (error instanceof Store.PhotoStoreConflictError) {
+                if (required) toast(error.message, { duration: 9000 });
+                return false;
             }
             if (required && stillCurrent && confirm(
                 'Better Peakbagger could not retain an editable local copy. '
@@ -697,9 +721,9 @@ const persistDraft = async ({ required = false } = {}) => {
                     thumbnailRetained: false,
                 }, now);
                 try {
-                    await store.putPhoto(minimal);
+                    const storedPhoto = await store.putPhoto(minimal);
                     if (!currentDraftMatches(snapshot)) return false;
-                    photo = minimal;
+                    photo = storedPhoto;
                     project = nextProject;
                     draftDirty = false;
                     setSaveStatus('URL record only · editable copy not retained');
@@ -1484,7 +1508,8 @@ const uploadAndInsert = async () => {
             sha256: exported.sha256,
         };
         uploadingPhoto = Library.beginUpload(uploadSnapshot.photo, exportMetadata);
-        await store.putPhoto(uploadingPhoto);
+        uploadingPhoto = await store.putPhoto(uploadingPhoto);
+        photo = uploadingPhoto;
         operation = {
             operationId: crypto.randomUUID(),
             localId: uploadSnapshot.photo.localId,
@@ -1515,7 +1540,7 @@ const uploadAndInsert = async () => {
         await store.putOperation(operation);
         setEditorStatus('Saving to library…');
         photo = Library.completeUpload(uploadingPhoto, exportMetadata, providerResponse.remote);
-        await store.commitUpload({ photo, deleteUrl: providerResponse.deleteUrl });
+        photo = await store.commitUpload({ photo, deleteUrl: providerResponse.deleteUrl });
         committedPhoto = photo;
         project = structuredClone(uploadSnapshot.project);
         ui.title.value = uploadSnapshot.photo.title;
@@ -1585,13 +1610,15 @@ const uploadAndInsert = async () => {
             await renderLibrary();
             return;
         }
-        const publicFailure = ImgbbClient.publicError(error);
+        const publicFailure = error instanceof Store.PhotoStoreConflictError
+            ? { ambiguous: !!providerResponse, message: error.message }
+            : ImgbbClient.publicError(error);
         if ((publicFailure.ambiguous || providerResponse) && uploadingPhoto) {
             photo = Library.markOutcomeUnknown(uploadingPhoto);
-            await store.putPhoto(photo).catch(() => {});
+            photo = await store.putPhoto(photo).catch(() => photo);
         } else if (uploadingPhoto && operation?.state === 'request-started') {
             photo = Library.resetUpload(uploadingPhoto);
-            await store.putPhoto(photo).catch(() => {});
+            photo = await store.putPhoto(photo).catch(() => photo);
             await store.deleteOperation(operation.operationId).catch(() => {});
         }
         setEditorStatus(publicFailure.message);
@@ -1625,7 +1652,7 @@ const recoverOperations = async () => {
         }
         try {
             if (operation.state === 'request-started' && bundle.photo.remote.state === 'uploading') {
-                await store.putPhoto(Library.markOutcomeUnknown(bundle.photo));
+                bundle.photo = await store.putPhoto(Library.markOutcomeUnknown(bundle.photo));
                 changed = true;
             }
             if (operation.state === 'response-received') {
@@ -1640,11 +1667,14 @@ const recoverOperations = async () => {
                     );
                 if (completed) {
                     if (!alreadyCommitted) {
-                        await store.commitUpload({ photo: completed, deleteUrl: operation.deleteUrl });
+                        bundle.photo = await store.commitUpload({
+                            photo: completed,
+                            deleteUrl: operation.deleteUrl,
+                        });
                     }
                     operation.state = 'catalog-committed';
                     await store.putOperation(operation).catch(() => {});
-                    bundle.photo = completed;
+                    bundle.photo = bundle.photo || completed;
                     changed = true;
                 }
             }
@@ -1723,7 +1753,18 @@ const insertFromLibrary = async item => {
         pid: inserted.identity?.pid ?? null,
         insertedAt: new Date().toISOString(),
     });
-    await store.putPhoto(referenced);
+    try {
+        await store.putPhoto(referenced);
+    } catch (error) {
+        if (error instanceof Store.PhotoStoreConflictError) {
+            toast('The photo was inserted, but its library record changed in another tab. Reload the library.', {
+                duration: 9000,
+            });
+            await renderLibrary();
+            return;
+        }
+        throw error;
+    }
     notifyBackupChanged();
     toast('Photo inserted into the report. You can close this tab.');
     await renderLibrary();
@@ -1813,6 +1854,7 @@ const importProject = async file => {
             })
             : Library.cleanPhoto({
                 ...imported,
+                revision: 0,
                 updatedAt: now,
                 // This device has not backed the record up, whatever the
                 // bundle recorded on the device that wrote it.
@@ -1892,14 +1934,28 @@ const moveToDeleted = async item => {
     if (!confirm(
         `Move “${item.title}” to Recently Deleted? Its ImgBB image and report URLs will not change.`,
     )) return;
-    const deleted = Library.markDeleted(item);
-    await store.putPhoto(deleted);
+    let deleted;
+    try {
+        deleted = await store.putPhoto(Library.markDeleted(item));
+    } catch (error) {
+        if (!(error instanceof Store.PhotoStoreConflictError)) throw error;
+        toast(error.message, { duration: 9000 });
+        await renderLibrary();
+        return;
+    }
     notifyBackupChanged();
     undoDeleted = item;
     toast('Moved to Recently Deleted. The remote image was not deleted.', {
         action: 'Undo',
         onAction: async () => {
-            await store.putPhoto(Library.restoreDeleted(deleted));
+            try {
+                await store.restorePhoto(Library.restoreDeleted(deleted));
+            } catch (error) {
+                if (!(error instanceof Store.PhotoStoreConflictError)) throw error;
+                toast(error.message, { duration: 9000 });
+                await renderLibrary();
+                return;
+            }
             notifyBackupChanged();
             undoDeleted = null;
             ui.toast.hidden = true;
@@ -1911,7 +1967,14 @@ const moveToDeleted = async item => {
 };
 
 const restoreLibraryItem = async item => {
-    await store.putPhoto(Library.restoreDeleted(item));
+    try {
+        await store.restorePhoto(Library.restoreDeleted(item));
+    } catch (error) {
+        if (!(error instanceof Store.PhotoStoreConflictError)) throw error;
+        toast(error.message, { duration: 9000 });
+        await renderLibrary();
+        return;
+    }
     notifyBackupChanged();
     toast('Photo restored to the library.');
     await renderLibrary();

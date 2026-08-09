@@ -25,6 +25,9 @@ const cleanTime = value => {
 };
 const cleanNullableTime = value => value == null ? null : cleanTime(value);
 const cleanPositiveInteger = value => Number.isSafeInteger(value) && value > 0 ? value : null;
+const cleanRevision = value => value == null
+    ? 0
+    : Number.isSafeInteger(value) && value >= 0 ? value : null;
 const cleanHash = value => typeof value === 'string' && HASH.test(value.toLowerCase())
     ? value.toLowerCase()
     : null;
@@ -141,6 +144,7 @@ const cleanAssets = value => ownObject(value)
 const cleanPhoto = value => {
     if (!ownObject(value) || value.schemaVersion !== SCHEMA_VERSION) return null;
     const localId = cleanId(value.localId);
+    const revision = cleanRevision(value.revision);
     const createdAt = cleanTime(value.createdAt);
     const updatedAt = cleanTime(value.updatedAt);
     const title = trim(value.title, TITLE_LIMIT);
@@ -158,7 +162,7 @@ const cleanPhoto = value => {
     // `alt` is optional: an empty description is the HTML convention for a
     // decorative image, and forcing one blocked local autosave rather than
     // improving what people wrote. It is still trimmed and bounded above.
-    if (!localId || !createdAt || !updatedAt || !title
+    if (!localId || revision == null || !createdAt || !updatedAt || !title
         || !source || !remote || !references || !backup || !assets
         || (value.export != null && !exported)
         || (value.lineage?.parentLocalId != null && !parentLocalId)
@@ -167,6 +171,7 @@ const cleanPhoto = value => {
     return {
         schemaVersion: SCHEMA_VERSION,
         localId,
+        revision,
         createdAt,
         updatedAt,
         title,
@@ -192,6 +197,7 @@ const createDraft = ({
 } = {}) => cleanPhoto({
     schemaVersion: SCHEMA_VERSION,
     localId,
+    revision: 0,
     createdAt: now,
     updatedAt: now,
     title,

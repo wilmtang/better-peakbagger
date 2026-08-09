@@ -50,9 +50,10 @@ test('persists and retrieves a matching photo, project, original, and thumbnail 
         name: 'photo-store-bundle',
     });
     const input = fixture();
-    await store.putDraft(input);
+    const stored = await store.putDraft(input);
     const bundle = await store.getBundle('photo-1');
-    assert.deepEqual(bundle.photo, input.photo);
+    assert.deepEqual(bundle.photo, stored);
+    assert.equal(bundle.photo.revision, 1);
     assert.deepEqual(bundle.project, input.project);
     assert.equal(await bundle.original.text(), 'original');
     assert.equal(await bundle.thumbnail.text(), 'thumbnail');
@@ -125,15 +126,15 @@ test('re-saves a pre-upload photo through every retryable state, never a publish
     });
     const input = fixture();
     const exported = { mime: 'image/jpeg', bytes: 9, width: 1600, height: 1200, sha256: EXPORT_HASH };
-    await store.putDraft(input);
+    input.photo = await store.putDraft(input);
 
     const uploading = Library.beginUpload(input.photo, exported, LATER);
-    await store.putDraft({ ...input, photo: uploading });
+    const storedUploading = await store.putDraft({ ...input, photo: uploading });
     assert.equal((await store.getBundle('photo-1')).photo.remote.state, 'uploading');
 
-    const unknown = Library.markOutcomeUnknown(uploading, LATER);
+    const unknown = Library.markOutcomeUnknown(storedUploading, LATER);
     const edited = Library.cleanPhoto({ ...unknown, title: 'Retitled after an unknown outcome' });
-    await store.putDraft({ ...input, photo: edited });
+    const storedEdited = await store.putDraft({ ...input, photo: edited });
     const bundle = await store.getBundle('photo-1');
     assert.equal(bundle.photo.remote.state, 'outcome-unknown');
     assert.equal(bundle.photo.title, 'Retitled after an unknown outcome');
@@ -145,7 +146,7 @@ test('re-saves a pre-upload photo through every retryable state, never a publish
     assert.equal(await bundle.original.text(), 'original');
     assert.deepEqual(bundle.project, input.project);
 
-    const published = Library.completeUpload(unknown, exported, {
+    const published = Library.completeUpload(storedEdited, exported, {
         providerId: 'abc',
         url: 'https://i.ibb.co/a/topo.jpg',
         displayUrl: 'https://i.ibb.co/a/topo.jpg',
@@ -166,7 +167,7 @@ test('commits public upload metadata and local-only deletion capability together
         name: 'photo-store-upload',
     });
     const input = fixture();
-    await store.putDraft(input);
+    input.photo = await store.putDraft(input);
     const uploaded = Library.completeUpload(input.photo, {
         mime: 'image/jpeg', bytes: 9, width: 1600, height: 1200, sha256: EXPORT_HASH,
     }, {
@@ -215,7 +216,7 @@ test('prunes only one bounded batch of expired deleted assets', async () => {
     });
     for (const localId of ['photo-1', 'photo-2', 'photo-3']) {
         const input = fixture(localId);
-        await store.putDraft(input);
+        input.photo = await store.putDraft(input);
         await store.putPhoto(Library.markDeleted(input.photo, TIME));
     }
 
@@ -262,7 +263,7 @@ test('lists metadata backup bundles and persists deletion tombstones separately'
         name: 'photo-store-backup-bundles',
     });
     const input = fixture();
-    await store.putDraft(input);
+    input.photo = await store.putDraft(input);
     await store.putPhoto(Library.markDeleted(input.photo, LATER));
     const snapshot = await store.listBackupBundles();
     assert.equal(snapshot.bundles.length, 1);
@@ -330,13 +331,16 @@ test('restoring matching metadata preserves local editable assets', async () => 
         name: 'photo-store-restore-preserve',
     });
     const input = fixture();
-    await store.putDraft(input);
+    input.photo = await store.putDraft(input);
     const payload = Backup.buildPayload({ bundles: [input], exportedAt: TIME });
     const record = Backup.restoreRecord(payload.photos[0], {
         signature: await Backup.signature(payload),
         restoredAt: LATER,
     });
-    await store.applyRestore({ records: [record] });
+    await store.applyRestore({
+        records: [record],
+        expectedRevisions: (await store.listBackupBundles()).revisions,
+    });
     const restored = await store.getBundle('photo-1');
     assert.equal(await restored.original.text(), 'original');
     assert.equal(await restored.thumbnail.text(), 'thumbnail');
@@ -370,7 +374,7 @@ test('an imported bundle can carry a record ImgBB already published', async () =
 
     // Download project offers a published record, so refusing it on the way
     // back in would strand the round trip that action promises.
-    await store.putBundle({ ...input, photo: published });
+    const storedPublished = await store.putBundle({ ...input, photo: published });
     const bundle = await store.getBundle('photo-1');
     assert.equal(bundle.photo.remote.url, 'https://i.ibb.co/a/topo.jpg');
     assert.equal(await bundle.original.text(), 'original');
@@ -391,10 +395,139 @@ test('an imported bundle can carry a record ImgBB already published', async () =
 
     // Importing a record that was deleted elsewhere must not leave the
     // tombstone that would delete it again on the next backup merge.
-    const removed = Library.markDeleted(published, LATER);
-    await store.putPhoto(removed);
+    const removed = await store.putPhoto(Library.markDeleted(storedPublished, LATER));
     assert.equal((await store.listBackupBundles()).tombstones.length, 1);
-    await store.putBundle({ ...input, photo: published });
+    await store.restorePhoto(Library.restoreDeleted(removed, LATER));
     assert.deepEqual((await store.listBackupBundles()).tombstones, []);
     store.close();
+});
+
+test('a stale autosave cannot resurrect a photo deleted in another tab', async () => {
+    const indexedDB = new IDBFactory();
+    const first = await Store.createPhotoStore({ indexedDB, name: 'photo-store-delete-race' });
+    const second = await Store.createPhotoStore({ indexedDB, name: 'photo-store-delete-race' });
+    const input = fixture();
+    input.photo = await first.putDraft(input);
+    const stale = await second.getBundle(input.photo.localId);
+
+    const deleted = await first.putPhoto(Library.markDeleted(input.photo, LATER));
+    await assert.rejects(
+        second.putDraft({
+            ...stale,
+            photo: Library.cleanPhoto({ ...stale.photo, title: 'Stale edit', updatedAt: LATER }),
+        }),
+        error => error instanceof Store.PhotoStoreConflictError,
+    );
+    assert.equal((await first.getBundle(input.photo.localId)).photo.deletedAt, LATER);
+
+    const restored = await first.restorePhoto(Library.restoreDeleted(deleted, LATER));
+    assert.equal(restored.revision, deleted.revision + 1);
+    assert.equal(restored.deletedAt, null);
+    first.close();
+    second.close();
+});
+
+test('a backup stamp conflict preserves a newer report reference and succeeds after reload', async () => {
+    const indexedDB = new IDBFactory();
+    const first = await Store.createPhotoStore({ indexedDB, name: 'photo-store-metadata-race' });
+    const second = await Store.createPhotoStore({ indexedDB, name: 'photo-store-metadata-race' });
+    const input = fixture();
+    input.photo = await first.putDraft(input);
+    const stale = (await second.getBundle(input.photo.localId)).photo;
+
+    const referenced = await first.putPhoto(Library.addReference(input.photo, {
+        kind: 'ascent', cid: 1, aid: 2, pid: 3, insertedAt: LATER,
+    }, LATER));
+    const backup = { state: 'pending', signature: null, backedUpAt: null, commitUrl: null };
+    await assert.rejects(
+        second.updatePhotoBackup({
+            localId: stale.localId,
+            expectedRevision: stale.revision,
+            backup,
+        }),
+        error => error instanceof Store.PhotoStoreConflictError,
+    );
+    assert.equal((await first.getBundle(input.photo.localId)).photo.references.length, 1);
+
+    const reloaded = (await second.getBundle(input.photo.localId)).photo;
+    const stamped = await second.updatePhotoBackup({
+        localId: reloaded.localId,
+        expectedRevision: reloaded.revision,
+        backup,
+    });
+    assert.equal(stamped.references.length, 1);
+    assert.equal(stamped.revision, referenced.revision + 1);
+    first.close();
+    second.close();
+});
+
+test('upload commit rejects stale metadata and preserves the edit for an explicit retry', async () => {
+    const indexedDB = new IDBFactory();
+    const first = await Store.createPhotoStore({ indexedDB, name: 'photo-store-upload-race' });
+    const second = await Store.createPhotoStore({ indexedDB, name: 'photo-store-upload-race' });
+    const input = fixture();
+    input.photo = await first.putDraft(input);
+    const stale = (await second.getBundle(input.photo.localId)).photo;
+    const edited = await first.putPhoto(Library.cleanPhoto({
+        ...input.photo,
+        title: 'Newer title',
+        updatedAt: LATER,
+    }));
+    const exported = {
+        mime: 'image/jpeg', bytes: 9, width: 1600, height: 1200, sha256: EXPORT_HASH,
+    };
+    const remote = {
+        providerId: 'abc',
+        url: 'https://i.ibb.co/a/topo.jpg',
+        displayUrl: 'https://i.ibb.co/a/topo.jpg',
+        viewerUrl: 'https://ibb.co/abc',
+        thumbnailUrl: 'https://i.ibb.co/a/thumb.jpg',
+        mediumUrl: null,
+        uploadedAt: LATER,
+        expiresAt: null,
+    };
+    const staleUploading = Library.beginUpload(stale, exported, LATER);
+    await assert.rejects(
+        second.putPhoto(staleUploading),
+        error => error instanceof Store.PhotoStoreConflictError,
+    );
+    assert.equal((await first.getBundle(input.photo.localId)).photo.title, 'Newer title');
+
+    const uploading = await second.putPhoto(Library.beginUpload(edited, exported, LATER));
+    const committed = await second.commitUpload({
+        photo: Library.completeUpload(uploading, exported, remote, LATER),
+        deleteUrl: 'https://ibb.co/delete/secret',
+    });
+    assert.equal(committed.title, 'Newer title');
+    assert.equal(committed.remote.state, 'uploaded');
+    first.close();
+    second.close();
+});
+
+test('metadata restore rejects a local edit made after its revision snapshot', async () => {
+    const indexedDB = new IDBFactory();
+    const first = await Store.createPhotoStore({ indexedDB, name: 'photo-store-restore-race' });
+    const second = await Store.createPhotoStore({ indexedDB, name: 'photo-store-restore-race' });
+    const input = fixture();
+    input.photo = await first.putDraft(input);
+    const snapshot = await first.listBackupBundles();
+    const payload = Backup.buildPayload({ bundles: snapshot.bundles, exportedAt: TIME });
+    const record = Backup.restoreRecord(payload.photos[0], {
+        signature: await Backup.signature(payload),
+        restoredAt: LATER,
+    });
+    await second.putPhoto(Library.cleanPhoto({
+        ...input.photo,
+        title: 'Edited while restore was pending',
+        updatedAt: LATER,
+    }));
+
+    await assert.rejects(
+        first.applyRestore({ records: [record], expectedRevisions: snapshot.revisions }),
+        error => error instanceof Store.PhotoStoreConflictError,
+    );
+    assert.equal((await first.getBundle(input.photo.localId)).photo.title,
+        'Edited while restore was pending');
+    first.close();
+    second.close();
 });

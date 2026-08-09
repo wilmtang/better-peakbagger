@@ -5,7 +5,6 @@ import { settings as Settings } from '../settings/settings.js';
 import { settingsTransfer as Transfer } from '../settings/settings-transfer.js';
 import { favoriteClimbers as Favorites } from '../favorites/favorite-climbers.js';
 import { photoBackup as PhotoBackup } from '../photos/photo-backup.js';
-import { photoLibrary as Library } from '../photos/photo-library.js';
 import { photoStore as PhotoStore } from '../photos/photo-store.js';
 import { githubAuth as GithubAuth } from '../github/github-auth.js';
 import { githubClient as GithubClient } from '../github/github-client.js';
@@ -1135,6 +1134,7 @@ export function createGithubRoutes({
         return {
             payload,
             signature: await PhotoBackup.signature(payload),
+            revisions: snapshot.revisions,
         };
     });
 
@@ -1151,7 +1151,12 @@ export function createGithubRoutes({
             && (current.backedUpAt == null) === (next.backedUpAt == null);
     };
 
-    const markPhotoCatalogBackup = async ({ state, signature = null, commitUrl = null }) => {
+    const markPhotoCatalogBackup = async ({
+        state,
+        signature = null,
+        commitUrl = null,
+        revisions = null,
+    }) => {
         await withPhotoStore(async store => {
             const photos = await store.listPhotos({ includeDeleted: true });
             const backup = {
@@ -1160,9 +1165,18 @@ export function createGithubRoutes({
                 backedUpAt: ['current', 'restored'].includes(state) ? photoTimestamp() : null,
                 commitUrl,
             };
+            const observed = revisions || Object.fromEntries(photos.map(photo => [
+                photo.localId,
+                photo.revision,
+            ]));
             await Promise.all(photos
                 .filter(photo => !sameBackupStamp(photo, backup))
-                .map(photo => store.putPhoto(Library.cleanPhoto({ ...photo, backup }))));
+                .filter(photo => Object.hasOwn(observed, photo.localId))
+                .map(photo => store.updatePhotoBackup({
+                    localId: photo.localId,
+                    expectedRevision: observed[photo.localId],
+                    backup,
+                })));
         });
     };
 
@@ -1279,6 +1293,7 @@ export function createGithubRoutes({
                 state: 'current',
                 signature,
                 commitUrl: result.commitUrl || state?.commitUrl || null,
+                revisions: local.revisions,
             });
             return {
                 ok: true,
@@ -1380,6 +1395,7 @@ export function createGithubRoutes({
             await withPhotoStore(store => store.applyRestore({
                 records,
                 tombstones: merged.payload.tombstones,
+                expectedRevisions: local.revisions,
             }));
             await ext.storage.local.set({
                 [PHOTO_BACKUP_STATE_KEY]: {

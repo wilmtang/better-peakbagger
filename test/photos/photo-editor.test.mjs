@@ -370,7 +370,10 @@ test('a late autosave completion cannot replace a newer editor revision', async 
     // that snapshot back into the live editor before the second save begins.
     deferred.release();
     await waitFor(page.dom, () => page.doc.getElementById('save-status').textContent
-        === 'Saved on this device');
+        === 'Saved on this device').catch(error => {
+        throw new Error(`${error.message}; status=${page.doc.getElementById('save-status').textContent}; `
+            + `pageErrors=${page.errors.map(value => value?.message || value).join(' | ')}`);
+    });
     const projects = await waitForPhotoStore(page.win, 'projects', records =>
         records[0]?.objects.length === 1);
     assert.equal(projects[0].objects.length, 1);
