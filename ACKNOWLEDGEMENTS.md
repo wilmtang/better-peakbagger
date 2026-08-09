@@ -58,22 +58,23 @@ and stylesheet are copied unmodified under `vendor/`.
 
 ### Marked
 
-Better Peakbagger distributes the unmodified Marked 18.0.6 UMD browser build
+Better Peakbagger distributes the unmodified Marked 18.0.9 UMD browser build
 as `vendor/marked.umd.js`. The trip-report converter consumes its Markdown
 token stream and does not use its HTML renderer.
 
 - Project: [Marked](https://marked.js.org/)
-- Source: [Marked v18.0.6](https://github.com/markedjs/marked/tree/v18.0.6)
+- Source: [Marked v18.0.9](https://github.com/markedjs/marked/tree/v18.0.9)
 - License: MIT
 - Packaged license text: `vendor/marked-LICENSE.txt` (copied from the npm package at build time)
 
 ### TipTap
 
-Better Peakbagger bundles TipTap 3.28.0 and its ProseMirror dependencies into
-`content/ascent-editor.js` to provide the rich-text editor.
+Better Peakbagger bundles TipTap core 3.29.2 with its TipTap extension and
+ProseMirror dependencies into `content/ascent-editor.js` to provide the
+rich-text editor.
 
 - Project: [TipTap](https://tiptap.dev/)
-- Source: [TipTap 3.28.0](https://github.com/ueberdosis/tiptap/tree/v3.28.0)
+- Source: [TipTap core 3.29.2](https://github.com/ueberdosis/tiptap/tree/v3.29.2)
 - License: MIT
 - Packaged license text: `THIRD_PARTY_NOTICES.txt`
 

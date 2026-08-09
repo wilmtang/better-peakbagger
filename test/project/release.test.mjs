@@ -12,6 +12,11 @@ import {
     requirePackagePaths,
 } from '../../scripts/build-firefox-package.mjs';
 import { buildAmoMetadata } from '../../scripts/create-amo-metadata.mjs';
+import {
+    dependencyVersionsFromLock,
+    validateReviewedDependencyMetadata,
+} from '../../scripts/dependency-metadata.mjs';
+import { WEB_EXT_WARNING_BASELINE } from '../../scripts/check-web-ext-lint.mjs';
 import { publishChrome } from '../../scripts/publish-chrome.mjs';
 import {
     assertReleasedSectionsUnchanged,
@@ -332,11 +337,21 @@ test('release bump dry-run validates without writing or tagging', async () => {
     }
 });
 
-test("Firefox metadata preserves the project's or-later license grant", () => {
+test("Firefox metadata preserves the project's or-later license grant", async () => {
+    const packageLock = JSON.parse(await readFile(
+        new URL('../../package-lock.json', import.meta.url),
+        'utf8',
+    ));
     const metadata = buildAmoMetadata({
         licenseText: 'GNU AFFERO GENERAL PUBLIC LICENSE\nVersion 3',
         description: 'Better Peakbagger streamlines trip planning.\n\ncoordinate corridor boxes\nWaypoint coordinates and names are included by default',
+        dependencyVersions: dependencyVersionsFromLock(packageLock),
     });
+    assert.throws(() => buildAmoMetadata({
+        licenseText: 'license',
+        description: 'description',
+        dependencyVersions: {},
+    }), /Resolved dependency versions/);
     assert.deepEqual(metadata.categories, ['other']);
     assert.deepEqual(metadata.version.compatibility, ['firefox']);
     assert.match(metadata.version.custom_license.name['en-US'], /or later/);
@@ -344,7 +359,7 @@ test("Firefox metadata preserves the project's or-later license grant", () => {
     assert.match(metadata.version.custom_license.text['en-US'], /GNU AFFERO/);
     assert.match(metadata.version.approval_notes, /esbuild 0\.28\.1/);
     assert.match(metadata.version.approval_notes, /Chart\.js 4\.5\.1/);
-    assert.match(metadata.version.approval_notes, /Marked 18\.0\.6/);
+    assert.match(metadata.version.approval_notes, /Marked 18\.0\.9/);
     assert.match(metadata.version.approval_notes, /MapLibre GL JS 6\.2\.0/);
     assert.match(metadata.version.approval_notes, /maplibre-gl\.mjs/);
     assert.match(metadata.version.approval_notes, /maplibre-gl-worker\.mjs/);
@@ -353,6 +368,8 @@ test("Firefox metadata preserves the project's or-later license grant", () => {
     assert.match(metadata.version.approval_notes, /THIRD_PARTY_NOTICES\.txt/);
     assert.match(metadata.version.approval_notes, /CodeMirror\/Lezer/);
     assert.match(metadata.version.approval_notes, /TipTap\/ProseMirror/);
+    assert.match(metadata.version.approval_notes, /TipTap core 3\.29\.2/);
+    assert.match(metadata.version.approval_notes, /ProseMirror view 1\.42\.1/);
     assert.doesNotMatch(metadata.version.approval_notes, /build-free|@photostructure/);
     assert.match(metadata.version.approval_notes, /tiles\.mapterhorn\.com/);
     assert.match(metadata.version.approval_notes,
@@ -691,10 +708,15 @@ test('release archive requires the generated third-party notice inventory', asyn
 });
 
 test('generated notices cover the real editor and copied runtime graph', async () => {
-    const notices = await readFile(
-        new URL('../../dist/THIRD_PARTY_NOTICES.txt', import.meta.url),
-        'utf8',
-    );
+    const [notices, packageLock, acknowledgements, reportEditorDocs, licenseText, description] =
+        await Promise.all([
+            readFile(new URL('../../dist/THIRD_PARTY_NOTICES.txt', import.meta.url), 'utf8'),
+            readFile(new URL('../../package-lock.json', import.meta.url), 'utf8').then(JSON.parse),
+            readFile(new URL('../../ACKNOWLEDGEMENTS.md', import.meta.url), 'utf8'),
+            readFile(new URL('../../docs/trip-report-editor.md', import.meta.url), 'utf8'),
+            readFile(new URL('../../LICENSE', import.meta.url), 'utf8'),
+            readFile(new URL('../../store-assets/description.md', import.meta.url), 'utf8'),
+        ]);
     const components = [...notices.matchAll(/^Component: (.+)$/gm)].map((match) => match[1]);
     const packageRoots = [...notices.matchAll(/^Package root: (.+)$/gm)].map((match) => match[1]);
     const hashes = [...notices.matchAll(/^Notice SHA-256: ([a-f0-9]{64})$/gm)]
@@ -717,6 +739,31 @@ test('generated notices cover the real editor and copied runtime graph', async (
     ]) {
         assert.ok(components.includes(required), `missing notice for ${required}`);
     }
+
+    const approvalNotes = buildAmoMetadata({
+        licenseText,
+        description,
+        dependencyVersions: dependencyVersionsFromLock(packageLock),
+    }).version.approval_notes;
+    assert.doesNotThrow(() => validateReviewedDependencyMetadata({
+        packageLock,
+        approvalNotes,
+        acknowledgements,
+        reportEditorDocs,
+        warningBaseline: WEB_EXT_WARNING_BASELINE,
+        noticeInventory: notices,
+    }));
+
+    const driftedLock = structuredClone(packageLock);
+    driftedLock.packages['node_modules/marked'].version = '18.1.0';
+    assert.throws(() => validateReviewedDependencyMetadata({
+        packageLock: driftedLock,
+        approvalNotes,
+        acknowledgements,
+        reportEditorDocs,
+        warningBaseline: WEB_EXT_WARNING_BASELINE,
+        noticeInventory: notices,
+    }), /AMO approval notes must name only Marked 18\.1\.0/);
 });
 
 test('notice generation fails closed for missing package metadata or notice text', () => {

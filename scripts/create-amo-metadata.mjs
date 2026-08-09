@@ -3,19 +3,34 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
 import { TERRAIN_FRAME_KEEP_ALIVE_MS } from '../src/terrain/terrain-lifecycle.js';
+import { dependencyVersionsFromLock } from './dependency-metadata.mjs';
 
 const terrainKeepAliveMinutes = TERRAIN_FRAME_KEEP_ALIVE_MS / 60_000;
 if (!Number.isInteger(terrainKeepAliveMinutes) || terrainKeepAliveMinutes < 1) {
     throw new Error('Terrain frame keep-alive must be a positive whole number of minutes');
 }
 
-export function buildAmoMetadata({ licenseText, description }) {
+export function buildAmoMetadata({ licenseText, description, dependencyVersions }) {
     if (typeof licenseText !== 'string' || licenseText.trim() === '') {
         throw new Error('LICENSE must contain the full project license text');
     }
     if (typeof description !== 'string' || description.trim() === '') {
         throw new Error('store-assets/description.md must contain the listing description');
     }
+    const requiredDependencyVersions = [
+        'esbuild',
+        'chart',
+        'marked',
+        'maplibre',
+        'tzLookup',
+        'tiptap',
+        'prosemirrorView',
+    ];
+    if (!dependencyVersions
+        || requiredDependencyVersions.some((key) => !dependencyVersions[key])) {
+        throw new Error('Resolved dependency versions are required for reviewer metadata');
+    }
+    const versions = dependencyVersions;
 
     return {
         summary: {
@@ -43,17 +58,19 @@ export function buildAmoMetadata({ licenseText, description }) {
                 },
             },
             approval_notes: [
-                'Runtime source under src/, options/, and popup/ is authored as ES modules. esbuild 0.28.1 bundles and minifies classic browser entries into self-contained IIFEs under dist/; the extension-owned terrain frame remains a native ESM entry. web-ext packages dist/. Run `npm ci && npm run build:release` from the tagged source to reproduce the runtime tree.',
+                `Runtime source under src/, options/, and popup/ is authored as ES modules. esbuild ${versions.esbuild} bundles and minifies classic browser entries into self-contained IIFEs under dist/; the extension-owned terrain frame remains a native ESM entry. web-ext packages dist/. Run \`npm ci && npm run build:release\` from the tagged source to reproduce the runtime tree.`,
                 '',
                 'The packaged THIRD_PARTY_NOTICES.txt is generated from esbuild metafiles and separately copied runtime inputs. It records the version, declared license, source notice filenames, SHA-256 notice hash, and full notice text for every shipped npm package root, including the CodeMirror/Lezer and TipTap/ProseMirror editor dependency families. The BetaCreator-derived symbol geometry is the sole reviewed non-package override.',
                 '',
-                'vendor/chart.umd.min.js is copied from the unmodified Chart.js 4.5.1 npm distribution (MIT). Package: https://www.npmjs.com/package/chart.js/v/4.5.1 ; readable source: https://github.com/chartjs/Chart.js/tree/v4.5.1',
+                `vendor/chart.umd.min.js is copied from the unmodified Chart.js ${versions.chart} npm distribution (MIT). Package: https://www.npmjs.com/package/chart.js/v/${versions.chart} ; readable source: https://github.com/chartjs/Chart.js/tree/v${versions.chart}`,
                 '',
-                'vendor/marked.umd.js is copied from the unmodified Marked 18.0.6 npm distribution (MIT). Package: https://www.npmjs.com/package/marked/v/18.0.6 ; readable source: https://github.com/markedjs/marked/tree/v18.0.6',
+                `vendor/marked.umd.js is copied from the unmodified Marked ${versions.marked} npm distribution (MIT). Package: https://www.npmjs.com/package/marked/v/${versions.marked} ; readable source: https://github.com/markedjs/marked/tree/v${versions.marked}`,
                 '',
-                'vendor/maplibre-gl.mjs is imported directly by the native terrain-frame module. It, vendor/maplibre-gl-worker.mjs, vendor/maplibre-gl-shared.mjs, and vendor/maplibre-gl.css are copied unmodified from the MapLibre GL JS 6.2.0 npm distribution (BSD-3-Clause). Package: https://www.npmjs.com/package/maplibre-gl/v/6.2.0 ; readable source: https://github.com/maplibre/maplibre-gl-js/tree/v6.2.0',
+                `vendor/maplibre-gl.mjs is imported directly by the native terrain-frame module. It, vendor/maplibre-gl-worker.mjs, vendor/maplibre-gl-shared.mjs, and vendor/maplibre-gl.css are copied unmodified from the MapLibre GL JS ${versions.maplibre} npm distribution (BSD-3-Clause). Package: https://www.npmjs.com/package/maplibre-gl/v/${versions.maplibre} ; readable source: https://github.com/maplibre/maplibre-gl-js/tree/v${versions.maplibre}`,
                 '',
-                'The tz-lookup 6.1.25 CommonJS distribution (CC0-1.0) is bundled by esbuild into content/gpx-analyzer.js and content/ascent-editor.js, with no application changes to its offline coordinate-to-IANA-timezone data or lookup logic. Package: https://www.npmjs.com/package/tz-lookup/v/6.1.25 ; readable source: https://github.com/darkskyapp/tz-lookup',
+                `The tz-lookup ${versions.tzLookup} CommonJS distribution (CC0-1.0) is bundled by esbuild into content/gpx-analyzer.js and content/ascent-editor.js, with no application changes to its offline coordinate-to-IANA-timezone data or lookup logic. Package: https://www.npmjs.com/package/tz-lookup/v/${versions.tzLookup} ; readable source: https://github.com/darkskyapp/tz-lookup`,
+                '',
+                `The report editor bundles TipTap core ${versions.tiptap} and ProseMirror view ${versions.prosemirrorView} with their shipped dependency graph into content/ascent-editor.js. Their exact package metadata and license texts are recorded in THIRD_PARTY_NOTICES.txt.`,
                 '',
                 `The optional 3D view is off by default. Its General setting discloses external tile requests; after it is enabled, an explicit 3D terrain action loads elevation data (not code) from https://tiles.mapterhorn.com and may re-request the selected map layer from its provider. Those services receive the viewed area and request metadata. Returning to 2D stops that session's tile activity and parks a loaded renderer idle and non-interactive for up to ${terrainKeepAliveMinutes} minutes so a quick return can resume it. After that keep-alive period—or immediately if startup fails or 3D is disabled—the renderer is destroyed.`,
                 '',
@@ -69,11 +86,16 @@ async function main() {
         throw new Error('Usage: node scripts/create-amo-metadata.mjs OUTPUT_PATH');
     }
 
-    const [licenseText, description] = await Promise.all([
+    const [licenseText, description, packageLock] = await Promise.all([
         readFile('LICENSE', 'utf8'),
         readFile('store-assets/description.md', 'utf8'),
+        readFile('package-lock.json', 'utf8').then(JSON.parse),
     ]);
-    const metadata = buildAmoMetadata({ licenseText, description });
+    const metadata = buildAmoMetadata({
+        licenseText,
+        description,
+        dependencyVersions: dependencyVersionsFromLock(packageLock),
+    });
     await mkdir(path.dirname(outputPath), { recursive: true });
     await writeFile(outputPath, `${JSON.stringify(metadata, null, 2)}\n`);
     console.log(`Wrote Firefox listing metadata to ${outputPath}.`);

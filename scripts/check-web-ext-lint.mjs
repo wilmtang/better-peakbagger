@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { spawnSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -32,6 +33,8 @@ export const WEB_EXT_WARNING_BASELINE = Object.freeze([
         file: 'vendor/maplibre-gl-worker.mjs',
         count: 2,
         owner: 'MapLibre GL JS 6.2.0 module worker',
+        packageName: 'maplibre-gl',
+        packageVersion: '6.2.0',
         reason: 'reviewed upstream optional worker-plugin import paths; Better Peakbagger sets only its fixed local worker URL'
     },
     {
@@ -39,6 +42,8 @@ export const WEB_EXT_WARNING_BASELINE = Object.freeze([
         file: 'vendor/maplibre-gl.mjs',
         count: 3,
         owner: 'MapLibre GL JS 6.2.0 main module',
+        packageName: 'maplibre-gl',
+        packageVersion: '6.2.0',
         reason: 'reviewed upstream popup, attribution, and scale HTML paths; extension popups use DOM nodes and attribution is validated'
     },
     {
@@ -46,13 +51,17 @@ export const WEB_EXT_WARNING_BASELINE = Object.freeze([
         file: 'content/ascent-editor.js',
         count: 1,
         owner: 'ProseMirror view 1.42.1',
+        packageName: 'prosemirror-view',
+        packageVersion: '1.42.1',
         reason: 'dependency clipboard parser uses a detached document'
     },
     {
         code: 'UNSAFE_VAR_ASSIGNMENT',
         file: 'content/ascent-editor.js',
         count: 1,
-        owner: 'TipTap core 3.28.0',
+        owner: 'TipTap core 3.29.2',
+        packageName: '@tiptap/core',
+        packageVersion: '3.29.2',
         reason: 'dependency writes its generated stylesheet into a style element'
     }
 ]);
@@ -116,7 +125,22 @@ export function evaluateWebExtLint(report, baseline = WEB_EXT_WARNING_BASELINE) 
         ({ code, file, count: count ?? 1, owner, reason }));
 }
 
+export function validateWarningDependencyVersions(packageLock, baseline = WEB_EXT_WARNING_BASELINE) {
+    for (const warning of baseline.filter((entry) => entry.packageName)) {
+        const resolved = packageLock.packages?.[`node_modules/${warning.packageName}`]?.version;
+        if (warning.packageVersion !== resolved) {
+            throw new Error(
+                `${warning.owner} warning acceptance is stale: package-lock.json resolves `
+                + `${warning.packageName}@${resolved || 'missing'}`,
+            );
+        }
+    }
+}
+
 function main() {
+    validateWarningDependencyVersions(JSON.parse(
+        readFileSync(path.join(root, 'package-lock.json'), 'utf8'),
+    ));
     const executable = path.join(
         root,
         'node_modules',

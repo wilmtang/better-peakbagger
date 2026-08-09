@@ -7,6 +7,7 @@ import test from 'node:test';
 
 import {
     evaluateWebExtLint,
+    validateWarningDependencyVersions,
     WEB_EXT_WARNING_BASELINE
 } from '../../scripts/check-web-ext-lint.mjs';
 
@@ -37,6 +38,17 @@ test('the web-ext lint gate accepts exactly the owned warnings per file', async 
     assert.ok(accepted.every(warning => warning.owner && warning.reason));
 
     const packageJson = JSON.parse(await readFile(new URL('../../package.json', import.meta.url), 'utf8'));
+    const packageLock = JSON.parse(await readFile(
+        new URL('../../package-lock.json', import.meta.url),
+        'utf8',
+    ));
+    assert.doesNotThrow(() => validateWarningDependencyVersions(packageLock));
+    const driftedLock = structuredClone(packageLock);
+    driftedLock.packages['node_modules/@tiptap/core'].version = '3.30.0';
+    assert.throws(
+        () => validateWarningDependencyVersions(driftedLock),
+        /TipTap core 3\.29\.2 warning acceptance is stale/,
+    );
     assert.equal(packageJson.scripts.lint,
         'eslint src options popup photos scripts test && npm run build && node scripts/check-web-ext-lint.mjs');
 });
