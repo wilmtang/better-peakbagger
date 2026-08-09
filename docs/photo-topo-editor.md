@@ -38,14 +38,25 @@ popover — a content script — can link to it. Its symbol legend is painted fr
 `photo-renderer`, so what it teaches cannot drift from what the export draws.
 
 The extension opens `photos/photos.html` in a normal extension tab. A new
-project starts when the user chooses, drags, or pastes a browser-decodable image
-no larger than 64 megapixels or 16,384 pixels on either side and edits it with
-the route and climbing-symbol tools. Drag and paste are accepted only while the
-editor is empty, so an incidental gesture cannot replace an open project. A
+project starts when the user chooses, drags, or pastes a browser-decodable image.
+The encoded source may be at most 128 MiB, while the decoded image may be no
+larger than 64 megapixels or 16,384 pixels on either side. Drag and paste are
+accepted only while the editor is empty, so an incidental gesture cannot replace
+an open project. A
 title is required — it is filled from the file name when available — and the
 alt text describing the image is optional. Drafts autosave to the browser
 profile.
 Nothing leaves the device until the user chooses **Upload and insert**.
+
+The 128 MiB source ceiling is independent of both the upload and project-archive
+limits. Source hashing uses Web Crypto's one-shot SHA-256 API, which has no
+incremental browser interface and can materialize the complete encoded file;
+the ceiling bounds that allocation beside the decoded bitmap. Before decoding
+or hashing, the page uses the origin storage estimate when the browser provides
+one and reserves the source size plus 8 MiB for its thumbnail and project. An
+unavailable estimate is not treated as a failure because IndexedDB remains the
+authoritative quota gate. A failed preparation or write never changes the
+original file outside the extension.
 
 On upload, Better Peakbagger:
 

@@ -287,16 +287,18 @@ test('the photo chooser states decode bounds separately from provider and projec
     assert.match(doc.querySelector('#editor-empty .photo-import-hint').textContent,
         /drag a photo here or paste one/i);
     assert.equal(doc.getElementById('photo-file').accept, 'image/*');
+    assert.match(doc.querySelector('#editor-empty .fine-print').textContent, /128 MiB/);
     assert.match(doc.querySelector('#editor-empty .fine-print').textContent,
-        /64 MP and 16,384 px per side/);
+        /64 MP and\s+16,384 px per side/);
     assert.match(doc.querySelector('#editor-empty .fine-print').textContent,
-        /ImgBB decides upload size/);
+        /ImgBB(?: separately)? decides\s+upload size/);
     assert.doesNotMatch(doc.querySelector('#editor-empty .fine-print').textContent, /32 MB/);
     assert.match(source, /above the 40 MiB project limit/);
 });
 
 test('maintained photo documentation separates decode, upload, and project-archive bounds', () => {
     for (const [name, contents] of Object.entries(maintainedPhotoDocs)) {
+        assert.match(contents, /128 MiB/i, `${name} must state the encoded-source budget`);
         assert.match(contents, /64 megapixels/i, `${name} must state the decoded-pixel budget`);
         assert.match(contents, /16,384 pixels/i, `${name} must state the per-axis budget`);
         assert.match(contents, /40 MiB/i, `${name} must state the project-bundle budget`);

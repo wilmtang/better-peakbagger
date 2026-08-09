@@ -930,6 +930,18 @@ kbd {
     width: 100%;
   }
 
+  .toast {
+    grid-template-columns: minmax(0, 1fr);
+    align-items: stretch;
+  }
+
+  .toast #toast-action {
+    grid-column: 1;
+    justify-self: start;
+    border: 1px solid var(--input-border);
+    background: var(--input-bg);
+  }
+
   .view-tabs button,
   .library-controls label {
     flex: 1;

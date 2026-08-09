@@ -115,6 +115,9 @@ test('the guide answers the questions the surfaces send readers here with', () =
         /Google or another third-party sign-in, the whole setup usually takes about 15 seconds/i);
     assert.match(text, /never exposed to Peakbagger, another website, GitHub, browser sync, or status UI/);
     assert.match(text, /exact packaged photo page.*direct upload to ImgBB/);
+    assert.match(text, /source file can be up to 128 MiB/i);
+    assert.match(text, /decoded image to 64 megapixels and 16,384 pixels per side/i);
+    assert.match(text, /never changes your original file/i);
     // What a backup holds, and what a restore therefore cannot bring back.
     assert.match(text, /photo-library\.json/);
     assert.match(text, /the images themselves — GitHub holds the record, not the picture/);

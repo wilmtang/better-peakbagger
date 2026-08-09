@@ -28,6 +28,13 @@ const LIBRARY_PAGE_SIZE = 48;
 const LIBRARY_SEARCH_DELAY_MS = 180;
 const LIBRARY_MAINTENANCE_DELAY_MS = 1000;
 const LIBRARY_MAINTENANCE_BATCH = 20;
+// Source bytes have a different cost and lifecycle from the smaller flattened
+// upload and the 40 MiB project archive. Web Crypto has no incremental digest,
+// so hashing may materialize the complete encoded file beside the decoded
+// bitmap. Bound that allocation independently and leave room for the thumbnail
+// and project in the origin's IndexedDB quota estimate.
+const MAX_ENCODED_SOURCE_BYTES = 128 * 1024 * 1024;
+const SOURCE_STORAGE_HEADROOM_BYTES = 8 * 1024 * 1024;
 const IMAGE_LIMIT_MESSAGE = 'That image is too large to edit safely. '
     + 'Use an image no larger than 16,384 px per side and 64 megapixels.';
 const DIMENSION_MISMATCH_MESSAGE = 'That project’s dimensions do not match its image.';
@@ -672,6 +679,29 @@ const decodeBlob = async blob => {
     catch { return createImageBitmap(blob); }
 };
 
+class PhotoSourcePreparationError extends Error {}
+
+const preflightSourceStorage = async sourceBytes => {
+    let storage;
+    try { storage = navigator.storage; }
+    catch { return; }
+    if (!storage || typeof storage.estimate !== 'function') return;
+    let estimate;
+    try { estimate = await storage.estimate(); }
+    catch { return; }
+    const usage = Number(estimate?.usage);
+    const quota = Number(estimate?.quota);
+    if (!Number.isFinite(usage) || usage < 0 || !Number.isFinite(quota) || quota < usage) return;
+    const required = sourceBytes + SOURCE_STORAGE_HEADROOM_BYTES;
+    const available = quota - usage;
+    if (available >= required) return;
+    throw new PhotoSourcePreparationError(
+        `This photo needs about ${formatBytes(required)} of free browser storage, but only `
+        + `${formatBytes(available)} is available. Keep the original file, free browser storage, `
+        + 'and try again.',
+    );
+};
+
 const canvasBlob = (canvas, mime, quality) => new Promise((resolve, reject) => {
     canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('Image encoding failed.')), mime, quality);
 });
@@ -812,11 +842,20 @@ const persistDraft = async ({ required = false } = {}) => {
             return !required || stillCurrent;
         } catch (error) {
             const stillCurrent = currentDraftMatches(snapshot);
+            const quotaExceeded = error?.name === 'QuotaExceededError';
             if (stillCurrent) {
                 draftDirty = true;
                 setSaveStatus(error instanceof Store.PhotoStoreConflictError
                     ? 'Changed in another tab'
-                    : 'Could not save locally');
+                    : quotaExceeded
+                        ? 'Not saved · browser storage is full'
+                        : 'Could not save locally');
+                if (quotaExceeded && !required) {
+                    toast('The editable copy could not be saved because browser storage is full. '
+                        + 'Your original file was not changed. Free browser storage and try again.', {
+                        duration: 9000,
+                    });
+                }
             }
             if (error instanceof Store.PhotoStoreConflictError) {
                 if (required) toast(error.message, { duration: 9000 });
@@ -1566,24 +1605,40 @@ const loadBundle = async bundle => {
     return true;
 };
 
-// No size gate on the way in. The export is re-encoded from the decoded pixels,
-// so the file picked here does not decide the upload's size — a 60 MB source
-// routinely exports to a few MB of JPEG, and refusing to open it withheld an
-// edit that would have uploaded fine. Whether the browser can decode it is the
-// real constraint, and the decode itself answers that.
 const chooseFile = async file => {
     if (busy || !file) return;
     if (file.size <= 0) {
         toast('That file is empty.');
         return;
     }
+    if (file.size > MAX_ENCODED_SOURCE_BYTES) {
+        toast(
+            `That source file is ${formatBytes(file.size)}. Photo Topos can process and retain `
+            + 'source files up to 128 MiB. Your original file was not changed; choose a smaller '
+            + 'or cropped copy.',
+            {
+                action: 'Choose smaller photo',
+                onAction: () => {
+                    dismissToast();
+                    ui.file.value = '';
+                    ui.file.click();
+                },
+                duration: 0,
+            },
+        );
+        return;
+    }
     setBusy(true, 'Reading photo…');
     let shouldPersist = false;
     let bitmap = null;
+    let phase = 'storage';
     try {
+        await preflightSourceStorage(file.size);
+        phase = 'decode';
         bitmap = await decodeBlob(file);
         if (!bitmap.width || !bitmap.height) throw new Error('The image has no dimensions.');
         if (!Project.cleanImageDimensions(bitmap)) throw new RangeError(IMAGE_LIMIT_MESSAGE);
+        phase = 'hash';
         const sourceSha256 = await Renderer.sha256(file);
         let nextProject = Project.createProject({
             localId: crypto.randomUUID(),
@@ -1603,6 +1658,7 @@ const chooseFile = async file => {
             }),
         });
         if (!nextProject) throw new RangeError(IMAGE_LIMIT_MESSAGE);
+        phase = 'thumbnail';
         const nextThumbnail = await makeThumbnail(bitmap);
         closeSource();
         sourceBitmap = bitmap;
@@ -1631,7 +1687,16 @@ const chooseFile = async file => {
         ui.alt.focus();
     } catch (error) {
         bitmap?.close?.();
-        toast(error instanceof RangeError ? error.message : 'This browser could not decode that image.');
+        const message = error instanceof PhotoSourcePreparationError || error instanceof RangeError
+            ? error.message
+            : phase === 'hash'
+                ? 'Better Peakbagger could not verify this photo for local storage. '
+                    + 'Your original file was not changed.'
+                : phase === 'decode'
+                    ? 'This browser could not decode that image. Your original file was not changed.'
+                    : 'Better Peakbagger could not prepare a local editable copy. '
+                        + 'Your original file was not changed.';
+        toast(message, { duration: 9000 });
     } finally {
         setBusy(false);
         if (shouldPersist) schedulePersist();
@@ -2335,10 +2400,14 @@ const cardFor = (item, thumbnail, objectUrls) => {
 
 const renderStorageEstimate = async () => {
     if (!navigator.storage?.estimate) return;
-    const estimate = await navigator.storage.estimate();
-    ui.storageSummary.textContent = Number.isFinite(estimate.usage)
-        ? `${formatBytes(estimate.usage)} used by this extension profile`
-        : '';
+    try {
+        const estimate = await navigator.storage.estimate();
+        ui.storageSummary.textContent = Number.isFinite(estimate.usage)
+            ? `${formatBytes(estimate.usage)} used by this extension profile`
+            : '';
+    } catch {
+        ui.storageSummary.textContent = '';
+    }
 };
 
 async function drawLibrary() {

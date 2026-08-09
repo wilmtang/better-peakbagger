@@ -107,8 +107,10 @@ another website, GitHub, browser sync, or status UI. The background worker gives
 it only to Better Peakbagger's exact packaged photo page for the direct ImgBB
 upload. A manual settings export includes the key only if you tick **Include
 saved credentials**, and warns you to keep that file private. Images decode up to 64 megapixels and 16,384 pixels per
-side; editable project bundles are capped at 40 MiB, while ImgBB decides the
-upload size allowed for your account. A searchable local library keeps drafts
+side. The source file has a separate 128 MiB processing and local-storage
+ceiling; your original file is never changed. Editable project bundles are
+capped at 40 MiB, while ImgBB decides the upload size allowed for your account.
+A searchable local library keeps drafts
 and published versions reusable, while optional GitHub recovery can preserve
 the catalog and annotation projects. See the
 [photo workflow and privacy boundaries](https://github.com/wilmtang/better-peakbagger/blob/main/docs/photo-topo-editor.md).

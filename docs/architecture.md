@@ -598,11 +598,12 @@ Peakbagger's exact packaged photo page immediately before that page sends a
 direct upload to ImgBB. The photo page and the options page can both configure
 it, each gated on its exact packaged page path. The client makes one direct
 multipart POST without imposing a local byte
-ceiling; ImgBB decides the upload limit for the user's key. Source decode and
-canvas export are instead bounded to 64 megapixels and 16,384 pixels per side,
-while the symmetric project-archive writer/reader contract is 40 MiB. It never
-automatically retries an ambiguous outcome because that could duplicate a
-public upload. The local catalog supplies the searchable upload history; no
+ceiling; ImgBB decides the upload limit for the user's key. The encoded source
+has its own 128 MiB processing and device-local storage ceiling. Source decode
+and canvas export are separately bounded to 64 megapixels and 16,384 pixels per
+side, while the symmetric project-archive writer/reader contract is 40 MiB. It
+never automatically retries an ambiguous outcome because that could duplicate
+a public upload. The local catalog supplies the searchable upload history; no
 ImgBB account-gallery read is assumed.
 
 Optional GitHub photo recovery writes a deterministic root

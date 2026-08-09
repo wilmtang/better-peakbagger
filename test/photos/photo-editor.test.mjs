@@ -51,6 +51,8 @@ const loadEditor = async ({
     fixedNow = null,
     confirmImpl = null,
     clipboard = undefined,
+    storageEstimate = undefined,
+    subtle = globalThis.crypto.subtle,
 } = {}) => {
     const params = new URLSearchParams();
     if (returnToReport) params.set('returnToken', 'return-test');
@@ -86,13 +88,28 @@ const loadEditor = async ({
     win.indexedDB = indexedDB;
     win.IDBKeyRange = IDBKeyRange;
     win.structuredClone = globalThis.structuredClone;
+    if (storageEstimate !== undefined) {
+        Object.defineProperty(win.navigator, 'storage', {
+            value: storageEstimate === null ? {} : { estimate: storageEstimate },
+            configurable: true,
+        });
+    }
     let ids = 0;
     win.crypto.randomUUID = () => `mark-${++ids}`;
     // jsdom exposes no SubtleCrypto; the page hashes the picked file with it.
-    Object.defineProperty(win.crypto, 'subtle', { value: globalThis.crypto.subtle, configurable: true });
+    Object.defineProperty(win.crypto, 'subtle', { value: subtle, configurable: true });
     // Decoding and thumbnailing are the browser's, not the editor's, so the
     // harness answers for them with the fixture's dimensions.
-    win.createImageBitmap = async () => ({ ...IMAGE, close() {} });
+    const decodedBitmaps = [];
+    win.createImageBitmap = async () => {
+        const bitmap = {
+            ...IMAGE,
+            closed: false,
+            close() { this.closed = true; },
+        };
+        decodedBitmaps.push(bitmap);
+        return bitmap;
+    };
     win.HTMLCanvasElement.prototype.getContext = () => ({ drawImage() {} });
     const encodeCalls = [];
     win.HTMLCanvasElement.prototype.toBlob = function toBlob(
@@ -146,7 +163,7 @@ const loadEditor = async ({
         || doc.getElementById('library-list').children.length > 0);
     if (onStoreReady) await onStoreReady({ indexedDB, win });
 
-    if (!pickPhoto) return { dom, win, chrome, doc, errors };
+    if (!pickPhoto) return { dom, win, chrome, doc, errors, decodedBitmaps };
 
     // Pick a photo the way the page's file input does.
     const input = doc.getElementById('photo-file');
@@ -189,6 +206,7 @@ const loadEditor = async ({
         doc,
         errors,
         encodeCalls,
+        decodedBitmaps,
         overlay,
         click,
         pointer,
@@ -380,6 +398,27 @@ const deferNextDraftCompletion = indexedDB => {
     };
 };
 
+const failNextDraftTransactionWithQuota = indexedDB => {
+    const raw = indexedDB._databases.get('betterPeakbaggerPhotos');
+    const database = raw?.connections.find(connection => !connection._closed);
+    assert.ok(database, 'the photo page must have an open IndexedDB connection');
+    const transaction = database.transaction.bind(database);
+    let armed = true;
+    database.transaction = (storeNames, mode, options) => {
+        const names = typeof storeNames === 'string' ? [storeNames] : [...storeNames];
+        if (armed && mode === 'readwrite'
+            && ['photos', 'projects', 'originals', 'thumbnails'].every(name => names.includes(name))) {
+            armed = false;
+            throw new DOMException('The storage quota was exceeded.', 'QuotaExceededError');
+        }
+        return transaction(storeNames, mode, options);
+    };
+    return {
+        triggered: () => !armed,
+        restore: () => { database.transaction = transaction; },
+    };
+};
+
 const imgbbSuccess = {
     data: {
         id: 'provider-1',
@@ -415,6 +454,19 @@ const photoTransfer = file => ({
     files: [file],
     dropEffect: 'none',
 });
+
+const selectPhotoFile = (page, {
+    size = null,
+    name = 'north-face.jpg',
+    type = 'image/jpeg',
+} = {}) => {
+    const input = page.doc.getElementById('photo-file');
+    const file = new page.win.File(['pixels'], name, { type });
+    if (size != null) Object.defineProperty(file, 'size', { value: size });
+    Object.defineProperty(input, 'files', { value: [file], configurable: true });
+    input.dispatchEvent(new page.win.Event('change'));
+    return file;
+};
 
 test('dragging a photo highlights the empty editor and imports through the normal file path', async () => {
     const page = await loadEditor({ pickPhoto: false });
@@ -671,7 +723,141 @@ test('a tab-only ImgBB key keeps its one local escape hatch', async () => {
     assert.deepEqual(page.errors, []);
 });
 
-test('a source larger than 32 MiB can flatten to an export the scripted provider accepts', async () => {
+test('accepts an encoded source at the exact 128 MiB ceiling with storage headroom', async () => {
+    const sourceLimit = 128 * 1024 * 1024;
+    const page = await loadEditor({
+        pickedFileSize: sourceLimit,
+        storageEstimate: async () => ({
+            usage: 4 * 1024 * 1024,
+            quota: 4 * 1024 * 1024 + sourceLimit + 8 * 1024 * 1024,
+        }),
+    });
+    await waitFor(page.dom, () => page.doc.getElementById('save-status').textContent
+        === 'Saved on this device');
+    const [catalog] = await readPhotoStore(page.win, 'photos');
+    assert.equal(catalog.source.bytes, sourceLimit);
+    assert.equal(page.decodedBitmaps.length, 1);
+    assert.equal(page.decodedBitmaps[0].closed, false);
+    assert.deepEqual(page.errors, []);
+});
+
+test('rejects limit-plus-one encoded bytes before decoding or hashing a small image', async () => {
+    let hashCalls = 0;
+    const page = await loadEditor({
+        pickPhoto: false,
+        subtle: {
+            digest: async (...args) => {
+                hashCalls += 1;
+                return globalThis.crypto.subtle.digest(...args);
+            },
+        },
+    });
+    selectPhotoFile(page, { size: 128 * 1024 * 1024 + 1 });
+    await waitFor(page.dom, () => /up to 128 MiB/i.test(
+        page.doc.getElementById('toast-message').textContent));
+    assert.equal(page.doc.getElementById('editor-workspace').hidden, true);
+    assert.equal(page.decodedBitmaps.length, 0);
+    assert.equal(hashCalls, 0);
+    assert.equal(page.doc.getElementById('toast-action').textContent, 'Choose smaller photo');
+    assert.deepEqual(await readPhotoStore(page.win, 'photos'), []);
+    assert.deepEqual(page.errors, []);
+});
+
+test('rejects a source before decode when the available quota estimate lacks headroom', async () => {
+    const sourceBytes = 48 * 1024 * 1024;
+    const required = sourceBytes + 8 * 1024 * 1024;
+    const page = await loadEditor({
+        pickPhoto: false,
+        storageEstimate: async () => ({ usage: 10, quota: 10 + required - 1 }),
+    });
+    selectPhotoFile(page, { size: sourceBytes });
+    await waitFor(page.dom, () => /free browser storage/i.test(
+        page.doc.getElementById('toast-message').textContent));
+    assert.equal(page.decodedBitmaps.length, 0);
+    assert.equal(page.doc.getElementById('editor-workspace').hidden, true);
+    assert.deepEqual(await readPhotoStore(page.win, 'photos'), []);
+    assert.deepEqual(page.errors, []);
+});
+
+test('continues when the browser cannot provide a storage estimate', async () => {
+    let estimateCalls = 0;
+    const page = await loadEditor({
+        storageEstimate: async () => {
+            estimateCalls += 1;
+            throw new Error('estimate unavailable');
+        },
+    });
+    await waitFor(page.dom, () => page.doc.getElementById('save-status').textContent
+        === 'Saved on this device');
+    assert.ok(estimateCalls >= 2, 'library display and source preflight both tolerate the failure');
+    assert.equal(page.decodedBitmaps.length, 1);
+    assert.equal((await readPhotoStore(page.win, 'photos')).length, 1);
+    assert.deepEqual(page.errors, []);
+});
+
+test('a hashing failure closes prepared pixels and leaves the editor ready for another file', async () => {
+    let hashCalls = 0;
+    const page = await loadEditor({
+        pickPhoto: false,
+        subtle: {
+            digest: async () => {
+                hashCalls += 1;
+                throw new Error('hash unavailable');
+            },
+        },
+    });
+    selectPhotoFile(page);
+    await waitFor(page.dom, () => /could not verify this photo/i.test(
+        page.doc.getElementById('toast-message').textContent));
+    assert.equal(hashCalls, 1);
+    assert.equal(page.decodedBitmaps.length, 1);
+    assert.equal(page.decodedBitmaps[0].closed, true);
+    assert.equal(page.doc.getElementById('editor-workspace').hidden, true);
+    assert.deepEqual(await readPhotoStore(page.win, 'photos'), []);
+
+    Object.defineProperty(page.win.crypto, 'subtle', {
+        value: globalThis.crypto.subtle,
+        configurable: true,
+    });
+    selectPhotoFile(page, { name: 'retry.jpg' });
+    await waitFor(page.dom, () => page.doc.getElementById('save-status').textContent
+        === 'Saved on this device');
+    assert.equal(page.doc.getElementById('photo-title').value, 'retry');
+    assert.equal((await readPhotoStore(page.win, 'photos')).length, 1);
+    assert.deepEqual(page.errors, []);
+});
+
+test('a persistence quota failure writes no partial bundle and can retry', async t => {
+    const indexedDB = new IDBFactory();
+    let quotaFailure;
+    const page = await loadEditor({
+        indexedDB,
+        pickPhoto: false,
+        onStoreReady: () => { quotaFailure = failNextDraftTransactionWithQuota(indexedDB); },
+    });
+    t.after(() => quotaFailure.restore());
+    selectPhotoFile(page);
+    await waitFor(page.dom, () => /storage is full/i.test(
+        page.doc.getElementById('save-status').textContent));
+    assert.equal(quotaFailure.triggered(), true);
+    for (const storeName of ['photos', 'projects', 'originals', 'thumbnails']) {
+        assert.deepEqual(await readPhotoStore(page.win, storeName), [], storeName);
+    }
+    assert.match(page.doc.getElementById('toast-message').textContent,
+        /editable copy could not be saved.*original file was not changed/i);
+
+    page.doc.getElementById('photo-title').value = 'Retried after quota';
+    page.doc.getElementById('photo-title').dispatchEvent(new page.win.Event('input', { bubbles: true }));
+    await waitFor(page.dom, () => page.doc.getElementById('save-status').textContent
+        === 'Saved on this device');
+    assert.equal((await readPhotoStore(page.win, 'photos'))[0].title, 'Retried after quota');
+    assert.equal((await readPhotoStore(page.win, 'projects')).length, 1);
+    assert.equal((await readPhotoStore(page.win, 'originals')).length, 1);
+    assert.equal((await readPhotoStore(page.win, 'thumbnails')).length, 1);
+    assert.deepEqual(page.errors, []);
+});
+
+test('a large source below the encoded ceiling can flatten to an accepted upload', async () => {
     let uploaded = false;
     const page = await loadEditor({
         pickedFileSize: 32 * 1024 * 1024 + 1,
