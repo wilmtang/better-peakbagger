@@ -339,8 +339,22 @@ test('toolbar capture and local GPX create identical new sibling draft records',
         tab: { id: 5, windowId: 9 },
         url: 'https://www.peakbagger.com/climber/ascentedit.aspx?pid=7&cid=77'
     };
+    const selection = {
+        pageSessionId: 'capture-parity-session',
+        selectionGeneration: 1,
+        fileIdentity: {
+            name: 'test-traverse.gpx',
+            size: 1234,
+            lastModified: 1_786_000_000_001,
+            type: 'application/gpx+xml'
+        }
+    };
+    assert.equal(await harness.send({
+        type: 'GPX_PROCESS_INVALIDATE', ...selection
+    }, sender).then(result => result.ok), true);
     const processed = await harness.send({
         type: 'GPX_PROCESS_START',
+        ...selection,
         trackName: 'Test Traverse',
         utcOffsetMinutes: 0,
         waypoints: [],
@@ -352,7 +366,8 @@ test('toolbar capture and local GPX create identical new sibling draft records',
     }, sender);
     assert.equal(processed.phase, 'ready');
     await harness.send({
-        type: 'GPX_PROCESS_APPLY', jobId: processed.jobId, selectedIds: [7, 8], primaryId: 7
+        type: 'GPX_PROCESS_APPLY', ...selection,
+        jobId: processed.jobId, selectedIds: [7, 8], primaryId: 7
     }, sender);
     const uploadSibling = Object.values(harness.values.bpbDraftTabs)
         .find(draft => draft.sourceTabId === 5 && draft.pid === 8);
