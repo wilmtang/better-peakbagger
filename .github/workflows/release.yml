@@ -31,8 +31,11 @@ jobs:
       - name: Install locked dependencies
         run: npm ci
 
-      - name: Validate tag and version metadata
-        run: npm run release:check -- "$GITHUB_REF_NAME"
+      - name: Fetch protected main tip
+        run: git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+
+      - name: Validate tag, protected-main ancestry, and version metadata
+        run: npm run release:check -- "$GITHUB_REF_NAME" --require-protected-main
 
       - name: Check immutable release history
         run: npm run release:check-history

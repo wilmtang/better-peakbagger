@@ -24,8 +24,14 @@ import {
 } from '../../scripts/check-changelog-history.mjs';
 import {
     validateRelease,
+    validateProtectedMainAncestry,
     validateTagAtHead,
 } from '../../scripts/release-check.mjs';
+import {
+    atomicReleasePushArgs,
+    resolveReleaseDate,
+    validateReleasePreflight,
+} from '../../scripts/release-bump.mjs';
 import { validatePackageNoticeMetadata } from '../../scripts/third-party-notices.mjs';
 import {
     isRetryableFirefoxStartup,
@@ -203,10 +209,69 @@ test('release validation requires the proposed tag to resolve to HEAD', () => {
         tagCommit: 'abc123',
         headCommit: 'def456',
     }), /release tag v1\.4\.0 commit/);
+    assert.doesNotThrow(() => validateProtectedMainAncestry({
+        tag: 'v1.4.0',
+        isAncestor: true,
+    }));
+    assert.throws(() => validateProtectedMainAncestry({
+        tag: 'v1.4.0',
+        isAncestor: false,
+    }), /not integrated into protected origin\/main/);
+});
+
+test('release preflight requires a clean synchronized main and unused exact tag', () => {
+    const valid = {
+        branch: 'main',
+        status: '',
+        headCommit: 'abc123',
+        originMainCommit: 'abc123',
+        localTagExists: false,
+        remoteTagExists: false,
+        tag: 'v1.5.0',
+    };
+    assert.doesNotThrow(() => validateReleasePreflight(valid));
+    assert.throws(
+        () => validateReleasePreflight({ ...valid, branch: 'feature' }),
+        /must be stamped on main/,
+    );
+    assert.throws(
+        () => validateReleasePreflight({ ...valid, branch: '' }),
+        /detached HEAD/,
+    );
+    assert.throws(
+        () => validateReleasePreflight({ ...valid, status: 'M  CHANGELOG.md' }),
+        /clean worktree and index/,
+    );
+    assert.throws(
+        () => validateReleasePreflight({ ...valid, headCommit: 'ahead' }),
+        /exactly match.*origin\/main/,
+    );
+    assert.throws(
+        () => validateReleasePreflight({ ...valid, localTagExists: true }),
+        /already exists locally/,
+    );
+    assert.throws(
+        () => validateReleasePreflight({ ...valid, remoteTagExists: true }),
+        /already exists on origin/,
+    );
+    assert.deepEqual(atomicReleasePushArgs('v1.5.0'), [
+        'push', '--atomic', 'origin', 'main', 'refs/tags/v1.5.0',
+    ]);
+});
+
+test('release dates default explicitly to UTC and accept an owner-supplied date', () => {
+    assert.equal(
+        resolveReleaseDate(undefined, new Date('2026-08-09T00:30:00Z')),
+        '2026-08-09',
+    );
+    assert.equal(resolveReleaseDate('2026-08-08'), '2026-08-08');
+    assert.throws(() => resolveReleaseDate('08/08/2026'), /ISO calendar date/);
+    assert.throws(() => resolveReleaseDate('2026-02-31'), /ISO calendar date/);
 });
 
 test('release bump dry-run validates without writing or tagging', async () => {
     const fixtureRoot = await mkdtemp(path.join(tmpdir(), 'better-peakbagger-release-'));
+    const remoteRoot = `${fixtureRoot}-origin`;
     const files = {
         'manifest.json': {
             version: '1.4.0',
@@ -230,13 +295,27 @@ test('release bump dry-run validates without writing or tagging', async () => {
                 '# Changelog\n\n## Unreleased\n\n- Ready.\n\n## 1.4.0\n\n- Old.\n',
             ),
         ]);
+        runGit(fixtureRoot, ['init', '--initial-branch=main']);
+        runGit(fixtureRoot, ['config', 'user.name', 'Release Test']);
+        runGit(fixtureRoot, ['config', 'user.email', 'release@example.test']);
+        runGit(fixtureRoot, ['add', '.']);
+        runGit(fixtureRoot, ['commit', '-m', 'fixture release']);
+        runGit(tmpdir(), ['init', '--bare', remoteRoot]);
+        runGit(fixtureRoot, ['remote', 'add', 'origin', remoteRoot]);
+        runGit(fixtureRoot, ['push', '--set-upstream', 'origin', 'main']);
         const before = await Promise.all([
             ...Object.keys(files).map((name) => readFile(path.join(fixtureRoot, name), 'utf8')),
             readFile(path.join(fixtureRoot, 'CHANGELOG.md'), 'utf8'),
         ]);
         const result = spawnSync(
             process.execPath,
-            [new URL('../../scripts/release-bump.mjs', import.meta.url).pathname, '1.5.0', '--dry-run'],
+            [
+                new URL('../../scripts/release-bump.mjs', import.meta.url).pathname,
+                '1.5.0',
+                '--dry-run',
+                '--date',
+                '2026-08-08',
+            ],
             { cwd: fixtureRoot, encoding: 'utf8' },
         );
         assert.equal(result.status, 0, result.stderr);
@@ -246,8 +325,10 @@ test('release bump dry-run validates without writing or tagging', async () => {
             readFile(path.join(fixtureRoot, 'CHANGELOG.md'), 'utf8'),
         ]);
         assert.deepEqual(after, before);
+        assert.equal(runGit(fixtureRoot, ['tag', '--list']), '');
     } finally {
         await rm(fixtureRoot, { recursive: true, force: true });
+        await rm(remoteRoot, { recursive: true, force: true });
     }
 });
 
@@ -307,9 +388,10 @@ async function makeReleaseZip(extraFiles = {}, omittedFiles = []) {
 }
 
 test('release and browser development commands use the dist build', async () => {
-    const [packageJson, workflow] = await Promise.all([
+    const [packageJson, workflow, releaseBump] = await Promise.all([
         readFile(new URL('../../package.json', import.meta.url), 'utf8').then(JSON.parse),
         readFile(new URL('../../.github/workflows/release.yml', import.meta.url), 'utf8'),
+        readFile(new URL('../../scripts/release-bump.mjs', import.meta.url), 'utf8'),
     ]);
 
     assert.match(packageJson.scripts.package, /build:release.*--source-dir dist/);
@@ -325,8 +407,15 @@ test('release and browser development commands use the dist build', async () => 
         workflow,
         /- name: Check out tagged source\s+uses: [^\n]+\s+with:\s+fetch-depth: 0/,
     );
+    assert.match(workflow, /git fetch --no-tags origin \+refs\/heads\/main:/);
+    assert.match(
+        workflow,
+        /release:check -- "\$GITHUB_REF_NAME" --require-protected-main/,
+    );
     assert.match(packageJson.scripts.lint, /^eslint .*npm run build.*check-web-ext-lint/);
     assert.match(workflow, /run: npm run lint\n/);
+    assert.doesNotMatch(releaseBump, /exec(?:File)?Sync\([^\n]*git[^\n]*tag/);
+    assert.doesNotMatch(releaseBump, /push origin main --tags/);
 });
 
 test('bare web-ext commands use only the dist build', async () => {
@@ -716,6 +805,7 @@ function chromeArguments(overrides = {}) {
 test('Chrome publisher waits for upload processing before publishing', async () => {
     const calls = [];
     const responses = [
+        jsonResponse({}),
         jsonResponse({ uploadState: 'IN_PROGRESS' }),
         jsonResponse({ lastAsyncUploadState: 'SUCCEEDED' }),
         jsonResponse({ state: 'PENDING_REVIEW' }),
@@ -729,11 +819,12 @@ test('Chrome publisher waits for upload processing before publishing', async () 
     }));
 
     assert.equal(result.uploadedVersion, '1.4.0');
-    assert.equal(calls.length, 3);
-    assert.match(calls[0].url, /\/upload\/v2\/publishers\/publisher-123\/items\//);
-    assert.match(calls[1].url, /:fetchStatus$/);
-    assert.match(calls[2].url, /:publish$/);
-    assert.deepEqual(JSON.parse(calls[2].options.body), {
+    assert.equal(calls.length, 4);
+    assert.match(calls[0].url, /:fetchStatus$/);
+    assert.match(calls[1].url, /\/upload\/v2\/publishers\/publisher-123\/items\//);
+    assert.match(calls[2].url, /:fetchStatus$/);
+    assert.match(calls[3].url, /:publish$/);
+    assert.deepEqual(JSON.parse(calls[3].options.body), {
         publishType: 'DEFAULT_PUBLISH',
         blockOnWarnings: true,
     });
@@ -745,12 +836,14 @@ test('Chrome publisher fails closed and never publishes a failed upload', async 
         publishChrome(chromeArguments({
             fetchImpl: async (url) => {
                 calls.push(url);
-                return jsonResponse({ uploadState: 'FAILED' });
+                return calls.length === 1
+                    ? jsonResponse({})
+                    : jsonResponse({ uploadState: 'FAILED' });
             },
         })),
         /upload did not succeed/,
     );
-    assert.equal(calls.length, 1);
+    assert.equal(calls.length, 2);
 });
 
 test('Chrome publisher rejects an invalid configured extension ID', async () => {
@@ -762,6 +855,7 @@ test('Chrome publisher rejects an invalid configured extension ID', async () => 
 
 test('Chrome publisher treats store warnings as a failed release', async () => {
     const responses = [
+        jsonResponse({}),
         jsonResponse({ uploadState: 'SUCCEEDED', crxVersion: '1.4.0' }),
         jsonResponse({
             state: 'PENDING_REVIEW',
@@ -772,4 +866,28 @@ test('Chrome publisher treats store warnings as a failed release', async () => {
         publishChrome(chromeArguments({ fetchImpl: async () => responses.shift() })),
         /Listing needs attention/,
     );
+});
+
+test('Chrome publisher checks for a consumed or ambiguous version before upload', async () => {
+    for (const [status, message] of [
+        [{
+            submittedItemRevisionStatus: {
+                distributionChannels: [{ crxVersion: '1.4.0' }],
+            },
+        }, /already published or submitted/],
+        [{ lastAsyncUploadState: 'UPLOAD_SUCCEEDED' }, /Inspect its version/],
+    ]) {
+        const calls = [];
+        await assert.rejects(
+            publishChrome(chromeArguments({
+                fetchImpl: async (url) => {
+                    calls.push(url);
+                    return jsonResponse(status);
+                },
+            })),
+            message,
+        );
+        assert.equal(calls.length, 1);
+        assert.match(calls[0], /:fetchStatus$/);
+    }
 });

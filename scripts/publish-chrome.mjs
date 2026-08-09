@@ -11,6 +11,31 @@ const SUBMITTED_STATES = new Set([
     'PUBLISHED_TO_TESTERS',
 ]);
 
+function revisionVersions(revision) {
+    return revision?.distributionChannels
+        ?.map((channel) => channel.crxVersion)
+        .filter(Boolean) || [];
+}
+
+export function requireUnusedChromeVersion(status, expectedVersion) {
+    const knownVersions = [
+        ...revisionVersions(status.publishedItemRevisionStatus),
+        ...revisionVersions(status.submittedItemRevisionStatus),
+    ];
+    if (knownVersions.includes(expectedVersion)) {
+        throw new Error(
+            `Chrome Web Store version ${expectedVersion} is already published or submitted.`,
+        );
+    }
+    if (IN_PROGRESS_STATES.has(status.lastAsyncUploadState)
+        || SUCCESS_STATES.has(status.lastAsyncUploadState)) {
+        throw new Error(
+            `Chrome Web Store reports a recent ${status.lastAsyncUploadState} upload. `
+            + 'Inspect its version in the Developer Dashboard before retrying.',
+        );
+    }
+}
+
 function requireValue(name, value) {
     if (typeof value !== 'string' || value.trim() === '') {
         throw new Error(`${name} is required`);
@@ -72,6 +97,13 @@ export async function publishChrome({
     const itemName = `publishers/${encodeURIComponent(normalizedPublisherId)}/items/${normalizedExtensionId}`;
     const uploadUrl = `${API_ROOT}/upload/v2/${itemName}:upload`;
     const itemUrl = `${API_ROOT}/v2/${itemName}`;
+
+    const existingStatus = await apiRequest(
+        fetchImpl,
+        normalizedToken,
+        `${itemUrl}:fetchStatus`,
+    );
+    requireUnusedChromeVersion(existingStatus, normalizedVersion);
 
     const upload = await apiRequest(fetchImpl, normalizedToken, uploadUrl, {
         method: 'POST',

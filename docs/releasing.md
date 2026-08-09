@@ -103,7 +103,8 @@ visible in the AMO Developer Hub.
 
    Automated fixtures cover the repeatable paths but cannot establish the live
    provider DOM/export, browser chrome, or native toolbar grant.
-2. Bump the version, stamp the changelog, and create the tag:
+2. From a clean local `main` that exactly matches a freshly fetched
+   `origin/main`, stamp the version and changelog:
 
    ```sh
    npm run release:bump X.Y.Z
@@ -111,9 +112,12 @@ visible in the AMO Developer Hub.
 
    This updates `manifest.json`, `package.json`, `package-lock.json`, and
    stamps the `## Unreleased` heading in `CHANGELOG.md` with the version and
-   today's date. It runs `release:check` internally before writing, so version
-   mismatches or a missing changelog heading fail before any file is touched.
-   The script commits all four files and creates a lightweight `vX.Y.Z` tag.
+   current UTC date. Use `--date YYYY-MM-DD` only when the project owner has
+   intentionally chosen a different release date. Before writing, the script
+   fails on a dirty worktree or index, a detached or non-`main` branch, a
+   diverged `origin/main`, or an existing local/remote tag. It creates neither
+   a commit nor a tag, so all verification remains possible before the
+   publication trigger exists.
 
 3. Run the verification suite:
 
@@ -153,17 +157,35 @@ visible in the AMO Developer Hub.
    `scripts/check-web-ext-lint.mjs`, at the exact per-file occurrence counts
    recorded there.
 
-4. Push the release:
+4. Review the four stamped files, commit them, and create only the exact tag
+   after every gate above passes:
 
    ```sh
-   git push origin main --tags
+   git add manifest.json package.json package-lock.json CHANGELOG.md
+   git commit -m "chore: release X.Y.Z"
+   git tag vX.Y.Z
+   npm run release:check -- vX.Y.Z
+   git push --atomic origin main refs/tags/vX.Y.Z
    ```
 
+   The atomic push prevents the branch and release tag from reaching the
+   remote independently and does not include unrelated local tags. Release CI
+   fetches the protected `origin/main` tip and rejects any tag whose commit is
+   not integrated into it. Keep the remote `v*` tag ruleset and
+   `browser-stores` required-reviewer policy enabled; those GitHub settings are
+   owner-controlled and must be inspected immediately before publication.
+
 The verification job must finish before either store job starts. The store jobs
-then run independently because the stores have no shared transaction. If one
-store job fails after the other succeeds, use GitHub's **Re-run failed jobs**
-action. Do not rerun all jobs: the successful store may reject the duplicate
-version.
+then run independently because the stores have no shared transaction. A failed
+HTTP client or workflow result after an upload began does not prove submission
+failed. Before using GitHub's **Re-run failed jobs** action, inspect the exact
+`X.Y.Z` version in both the Chrome Developer Dashboard (including upload and
+submitted revision state) and the AMO Developer Hub (including pending review
+versions), and record what each store accepted. The Chrome publisher also
+fails closed before upload when `fetchStatus` reports that version already
+submitted/published or reports a recent ambiguous upload. Do not rerun a store
+job until its version is confirmed unused; do not rerun all jobs after either
+store consumed it.
 
 `npm run terrain:verify:firefox` fails closed on SwiftShader, llvmpipe, and other
 software renderers. Run it hidden on representative GPU hardware and record the

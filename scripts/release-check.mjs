@@ -1,4 +1,4 @@
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
@@ -57,6 +57,12 @@ export function validateTagAtHead({ tag, tagCommit, headCommit }) {
     requireEqual(`release tag ${tag} commit`, tagCommit, headCommit);
 }
 
+export function validateProtectedMainAncestry({ tag, isAncestor }) {
+    if (!isAncestor) {
+        throw new Error(`Release tag ${tag} is not integrated into protected origin/main.`);
+    }
+}
+
 async function readJson(filePath) {
     return JSON.parse(await readFile(filePath, 'utf8'));
 }
@@ -86,6 +92,20 @@ async function main() {
         { encoding: 'utf8' },
     ).trim();
     validateTagAtHead({ tag, tagCommit, headCommit });
+    if (process.argv.includes('--require-protected-main')) {
+        const ancestry = spawnSync(
+            'git',
+            ['merge-base', '--is-ancestor', tagCommit, 'refs/remotes/origin/main'],
+            { encoding: 'utf8' },
+        );
+        if (ancestry.status !== 0 && ancestry.status !== 1) {
+            throw new Error(
+                ancestry.stderr.trim()
+                || 'Could not compare the release tag with protected origin/main.',
+            );
+        }
+        validateProtectedMainAncestry({ tag, isAncestor: ancestry.status === 0 });
+    }
     console.log(`Release metadata is consistent for ${version}.`);
 }
 
