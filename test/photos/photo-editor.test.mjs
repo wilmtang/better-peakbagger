@@ -50,6 +50,7 @@ const loadEditor = async ({
     startMode = null,
     fixedNow = null,
     confirmImpl = null,
+    clipboard = undefined,
 } = {}) => {
     const params = new URLSearchParams();
     if (returnToReport) params.set('returnToken', 'return-test');
@@ -76,6 +77,12 @@ const loadEditor = async ({
         win.Date = FixedDate;
     }
     if (confirmImpl) win.confirm = confirmImpl;
+    if (clipboard !== undefined) {
+        Object.defineProperty(win.navigator, 'clipboard', {
+            value: clipboard,
+            configurable: true,
+        });
+    }
     win.indexedDB = indexedDB;
     win.IDBKeyRange = IDBKeyRange;
     win.structuredClone = globalThis.structuredClone;
@@ -129,6 +136,9 @@ const loadEditor = async ({
     win.chrome = chrome;
     const errors = [];
     win.addEventListener('error', event => errors.push(String(event.error?.stack || event.message)));
+    win.addEventListener('unhandledrejection', event => {
+        errors.push(String(event.reason?.stack || event.reason));
+    });
     await evalBundle(win, 'photos/photos.js');
     // The page paints its empty library last, so this is the boot finishing —
     // in particular the IndexedDB handle the first autosave needs.
@@ -268,6 +278,53 @@ const readPhotoStore = (win, storeName) => new Promise((resolve, reject) => {
         transaction.onabort = () => reject(transaction.error);
     };
 });
+
+const seedUploadedLibraryPhoto = async (indexedDB, {
+    localId = 'copy-url-photo',
+    url = 'https://i.ibb.co/a/topo.jpg',
+} = {}) => {
+    const store = await Store.createPhotoStore({ indexedDB });
+    const sourceSha256 = 'a'.repeat(64);
+    const input = {
+        photo: Library.createDraft({
+            localId,
+            title: 'Copy URL topo',
+            source: {
+                fileName: 'copy-url.jpg',
+                mime: 'image/jpeg',
+                bytes: 6,
+                width: 1600,
+                height: 1200,
+                sha256: sourceSha256,
+            },
+            now: '2026-08-01T12:00:00.000Z',
+        }),
+        project: Project.createProject({
+            localId,
+            width: 1600,
+            height: 1200,
+            sourceSha256,
+            updatedAt: '2026-08-01T12:00:00.000Z',
+        }),
+        original: new Blob(['source'], { type: 'image/jpeg' }),
+        thumbnail: new Blob(['thumbnail'], { type: 'image/jpeg' }),
+    };
+    input.photo = await store.putDraft(input);
+    const photo = await store.putPhoto(Library.completeUpload(input.photo, {
+        mime: 'image/jpeg', bytes: 8, width: 1600, height: 1200, sha256: 'b'.repeat(64),
+    }, {
+        providerId: localId,
+        url,
+        displayUrl: url,
+        viewerUrl: `https://ibb.co/${localId}`,
+        thumbnailUrl: `https://i.ibb.co/a/${localId}-thumb.jpg`,
+        mediumUrl: null,
+        uploadedAt: '2026-08-02T12:00:00.000Z',
+        expiresAt: null,
+    }, '2026-08-02T12:00:00.000Z'));
+    store.close();
+    return photo;
+};
 
 const waitForPhotoStore = async (win, storeName, predicate, ms = 5000) => {
     const start = Date.now();
@@ -1037,6 +1094,83 @@ test('removing a photo states the 30-day editing-data window before and after co
     assert.deepEqual(page.errors, []);
 });
 
+test('library URL copy falls back to the complete selected value for every clipboard failure', async t => {
+    const longUrl = `https://i.ibb.co/a/topo.jpg?token=${'x'.repeat(3500)}`;
+    const cases = [
+        ['missing API', undefined],
+        ['synchronous throw', { writeText: () => { throw new Error('blocked'); } }],
+        ['rejected promise', { writeText: async () => { throw new Error('denied'); } }],
+    ];
+    for (const [name, clipboard] of cases) {
+        await t.test(name, async () => {
+            const indexedDB = new IDBFactory();
+            await seedUploadedLibraryPhoto(indexedDB, { url: longUrl });
+            const page = await loadEditor({
+                indexedDB,
+                pickPhoto: false,
+                startMode: 'library',
+                clipboard,
+            });
+            const copy = [...page.doc.querySelectorAll('.photo-card button')]
+                .find(button => button.textContent === 'Copy URL');
+            copy.click();
+            await waitFor(page.dom, () => page.doc.getElementById('toast-copy-value').hidden === false);
+
+            const fallback = page.doc.getElementById('toast-copy-value');
+            assert.equal(fallback.value, longUrl);
+            assert.equal(page.doc.activeElement, fallback);
+            assert.equal(fallback.selectionStart, 0);
+            assert.equal(fallback.selectionEnd, longUrl.length);
+            assert.match(page.doc.getElementById('toast-copy-status').textContent,
+                /complete URL is selected/i);
+            assert.equal(copy.disabled, false);
+            assert.deepEqual(page.errors, []);
+            page.dom.window.close();
+        });
+    }
+});
+
+test('library URL copy recovers after lost focus and a repeated click', async () => {
+    const indexedDB = new IDBFactory();
+    const copied = [];
+    await seedUploadedLibraryPhoto(indexedDB);
+    const page = await loadEditor({
+        indexedDB,
+        pickPhoto: false,
+        startMode: 'library',
+        clipboard: {
+            writeText: async value => {
+                copied.push(value);
+                if (copied.length <= 2) throw new Error('clipboard denied');
+            },
+        },
+    });
+    const copy = [...page.doc.querySelectorAll('.photo-card button')]
+        .find(button => button.textContent === 'Copy URL');
+    copy.click();
+    await waitFor(page.dom, () => page.doc.getElementById('toast-copy-value').hidden === false);
+    page.doc.getElementById('library-search').focus();
+    assert.notEqual(page.doc.activeElement, page.doc.getElementById('toast-copy-value'));
+
+    copy.click();
+    const fallback = page.doc.getElementById('toast-copy-value');
+    await waitFor(page.dom, () => copied.length === 2 && page.doc.activeElement === fallback);
+    assert.equal(page.doc.activeElement, fallback,
+        'a repeated failure must restore focus to the complete value');
+    assert.equal(fallback.selectionStart, 0);
+    assert.equal(fallback.selectionEnd, fallback.value.length);
+
+    copy.click();
+    await waitFor(page.dom, () => /Image URL copied/.test(
+        page.doc.getElementById('toast-message').textContent));
+    assert.equal(copied.length, 3);
+    assert.equal(copied[0], 'https://i.ibb.co/a/topo.jpg');
+    assert.equal(page.doc.getElementById('toast-copy-value').hidden, true);
+    assert.equal(page.doc.getElementById('toast-copy-value').value, '');
+    assert.equal(copy.disabled, false);
+    assert.deepEqual(page.errors, []);
+});
+
 test('a failed report insertion keeps the real page catalog at its committed ImgBB success', async () => {
     const messages = [];
     const indexedDB = new IDBFactory();
@@ -1090,6 +1224,44 @@ test('a failed report insertion keeps the real page catalog at its committed Img
     assert.equal(operations[0].state, 'catalog-committed');
     assert.match(doc.getElementById('toast-message').textContent, /waiting report tab/i);
     assert.doesNotMatch(doc.getElementById('toast-message').textContent, /outcome unknown|cataloging failed/i);
+    const recoveryUrl = doc.getElementById('toast-copy-value');
+    assert.equal(recoveryUrl.hidden, false);
+    assert.equal(recoveryUrl.value, catalog[0].remote.url);
+    doc.getElementById('toast-action').click();
+    await waitFor(page.dom, () => /complete URL is selected/i.test(
+        doc.getElementById('toast-copy-status').textContent));
+    assert.equal(doc.activeElement, recoveryUrl);
+    assert.equal(recoveryUrl.selectionStart, 0);
+    assert.equal(recoveryUrl.selectionEnd, catalog[0].remote.url.length);
+
+    let finishCopy;
+    let recoveryCopyCalls = 0;
+    const pendingCopy = new Promise(resolve => { finishCopy = resolve; });
+    Object.defineProperty(page.win.navigator, 'clipboard', {
+        value: {
+            writeText: () => {
+                recoveryCopyCalls += 1;
+                return pendingCopy;
+            },
+        },
+        configurable: true,
+    });
+    const recoveryAction = doc.getElementById('toast-action');
+    recoveryAction.click();
+    await waitFor(page.dom, () => recoveryCopyCalls === 1);
+    doc.getElementById('imgbb-key').value = '';
+    doc.getElementById('save-key').click();
+    await waitFor(page.dom, () => /Enter a valid ImgBB API key/.test(
+        doc.getElementById('toast-message').textContent));
+    finishCopy();
+    await page.settle();
+    assert.match(doc.getElementById('toast-message').textContent, /Enter a valid ImgBB API key/);
+    assert.doesNotMatch(doc.getElementById('toast-message').textContent, /copied/i);
+    assert.equal(recoveryUrl.hidden, true);
+    assert.equal(recoveryUrl.value, '');
+    recoveryAction.click();
+    assert.equal(recoveryCopyCalls, 1,
+        'a replaced recovery surface must not retain a callable URL action');
     assert.deepEqual(page.errors, []);
 
     page.win.dispatchEvent(new page.win.Event('beforeunload'));
@@ -1117,6 +1289,51 @@ test('a failed report insertion keeps the real page catalog at its committed Img
     assert.equal(recoveredCatalog[0].references.length, 1);
     assert.equal(recoveredOperations.length, 0, 'recovery removes the journal without another upload');
     assert.deepEqual(recoveredPage.errors, []);
+});
+
+test('an accepted but uncataloged upload keeps its last-resort URL visible and selectable', async () => {
+    const indexedDB = new IDBFactory();
+    let concurrentEditApplied = false;
+    const page = await loadEditor({
+        indexedDB,
+        imgbbStatus: { ok: true, configured: true, permissionGranted: true },
+        clipboard: { writeText: async () => { throw new Error('clipboard denied'); } },
+        fetchImpl: async () => {
+            const otherTab = await Store.createPhotoStore({ indexedDB });
+            const [current] = await otherTab.listPhotos({ includeDeleted: true });
+            await otherTab.putPhoto(Library.cleanPhoto({
+                ...current,
+                title: 'Concurrent title',
+                updatedAt: '2026-08-09T12:00:00.000Z',
+            }));
+            otherTab.close();
+            concurrentEditApplied = true;
+            return {
+                ok: true,
+                status: 200,
+                text: async () => JSON.stringify(imgbbSuccess),
+            };
+        },
+    });
+    await waitFor(page.dom, () => page.doc.getElementById('save-status').textContent
+        === 'Saved on this device');
+    page.click(page.doc.getElementById('upload-insert'));
+    await waitFor(page.dom, () => concurrentEditApplied
+        && page.doc.getElementById('photo-viewport').getAttribute('aria-busy') === 'false'
+        && /could not finish cataloging/i.test(page.doc.getElementById('toast-message').textContent));
+
+    const fallback = page.doc.getElementById('toast-copy-value');
+    assert.equal(fallback.hidden, false);
+    assert.equal(fallback.value, 'https://i.ibb.co/a/topo.jpg');
+    page.click(page.doc.getElementById('toast-action'));
+    await waitFor(page.dom, () => /complete URL is selected/i.test(
+        page.doc.getElementById('toast-copy-status').textContent));
+    assert.equal(page.doc.activeElement, fallback);
+    assert.equal(fallback.selectionStart, 0);
+    assert.equal(fallback.selectionEnd, fallback.value.length);
+    assert.equal(page.doc.getElementById('toast').hidden, false,
+        'last-resort upload recovery must remain until another surface replaces it');
+    assert.deepEqual(page.errors, []);
 });
 
 test('export and upload hold one immutable snapshot behind every editor mutation path', async () => {

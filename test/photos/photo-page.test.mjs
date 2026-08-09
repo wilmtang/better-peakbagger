@@ -61,6 +61,10 @@ test('the packaged photo page exposes the editor, library, and credential bounda
     assert.deepEqual(ENTRIES.find(candidate => candidate.out === 'photos/photos-head.js')?.sources,
         ['settings/settings-schema.js', 'settings/settings.js', 'theme/panel-theme.js'],
         'the photo page must reuse the shared panel theme bootstrap');
+    const manualCopy = doc.getElementById('toast-copy-value');
+    assert.equal(manualCopy?.readOnly, true);
+    assert.ok(manualCopy?.hasAttribute('hidden'),
+        'the complete URL appears only when copy recovery owns the toast');
 });
 
 // The photo editor and Settings each used to own a :root palette, and they

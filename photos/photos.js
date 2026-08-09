@@ -114,6 +114,8 @@ const ui = {
     toast: byId('toast'),
     toastMessage: byId('toast-message'),
     toastAction: byId('toast-action'),
+    toastCopyValue: byId('toast-copy-value'),
+    toastCopyStatus: byId('toast-copy-status'),
 };
 
 const send = async message => {
@@ -152,6 +154,8 @@ let configuredKey = false;
 let permissionGranted = false;
 let busy = false;
 let toastTimer = null;
+let toastGeneration = 0;
+let toastBaseMessage = '';
 let undoDeleted = null;
 let reportImageWidth = Settings.DEFAULTS.reportImageWidth;
 let unsubscribeSettings = () => {};
@@ -237,14 +241,111 @@ const setEditorStatus = message => { ui.editorStatus.textContent = message; };
 const setSaveStatus = message => { ui.saveStatus.textContent = message; };
 const notifyBackupChanged = () => { void send({ type: 'GITHUB_PHOTOS_CHANGED' }); };
 
+const resetToastCopy = () => {
+    ui.toastCopyValue.hidden = true;
+    ui.toastCopyValue.value = '';
+    ui.toastCopyStatus.hidden = true;
+    ui.toastCopyStatus.textContent = '';
+};
+
+const dismissToast = (generation = toastGeneration) => {
+    if (generation !== toastGeneration) return;
+    clearTimeout(toastTimer);
+    toastGeneration += 1;
+    ui.toast.hidden = true;
+    ui.toastAction.hidden = true;
+    ui.toastAction.disabled = false;
+    ui.toastAction.onclick = null;
+    resetToastCopy();
+};
+
 const toast = (message, { action = '', onAction = null, duration = 5000 } = {}) => {
     clearTimeout(toastTimer);
+    const generation = ++toastGeneration;
+    toastBaseMessage = message;
     ui.toastMessage.textContent = message;
     ui.toastAction.hidden = !action;
+    ui.toastAction.disabled = false;
     ui.toastAction.textContent = action;
     ui.toastAction.onclick = onAction;
+    resetToastCopy();
     ui.toast.hidden = false;
-    if (duration) toastTimer = setTimeout(() => { ui.toast.hidden = true; }, duration);
+    if (duration) toastTimer = setTimeout(() => dismissToast(generation), duration);
+    return generation;
+};
+
+const ownsToast = generation => generation === toastGeneration && !ui.toast.hidden;
+
+const showToastCopyValue = (text, generation, { select = false } = {}) => {
+    if (!ownsToast(generation)) return false;
+    ui.toastCopyValue.value = text;
+    ui.toastCopyValue.hidden = false;
+    if (select) {
+        try { ui.toastCopyValue.focus({ preventScroll: true }); }
+        catch { ui.toastCopyValue.focus(); }
+        ui.toastCopyValue.select();
+        ui.toastCopyValue.setSelectionRange(0, text.length);
+    }
+    return true;
+};
+
+const copyTextWithFallback = async (text, {
+    ownerGeneration = null,
+    control = null,
+    keepVisible = false,
+} = {}) => {
+    const generation = ownerGeneration ?? toast('Copying image URL…', { duration: 0 });
+    if (!ownsToast(generation) || (control && !control.isConnected)) return false;
+    if (control) control.disabled = true;
+    if (keepVisible) {
+        ui.toastMessage.textContent = toastBaseMessage;
+        showToastCopyValue(text, generation);
+    }
+    ui.toastCopyStatus.hidden = true;
+    ui.toastCopyStatus.textContent = '';
+    try {
+        const clipboard = navigator.clipboard;
+        if (!clipboard || typeof clipboard.writeText !== 'function') {
+            throw new Error('Clipboard API unavailable');
+        }
+        await clipboard.writeText(text);
+        if (!ownsToast(generation) || (control && !control.isConnected)) return false;
+        if (keepVisible) {
+            ui.toastCopyStatus.textContent = 'Image URL copied.';
+            ui.toastCopyStatus.hidden = false;
+            if (control) control.textContent = 'Copy again';
+        } else {
+            toast('Image URL copied.');
+        }
+        return true;
+    } catch {
+        if (!ownsToast(generation) || (control && !control.isConnected)) return false;
+        ui.toastMessage.textContent = keepVisible
+            ? `${toastBaseMessage} Copy unavailable.`
+            : 'Copy unavailable.';
+        ui.toastCopyStatus.textContent = 'The complete URL is selected; press Ctrl/Cmd+C.';
+        ui.toastCopyStatus.hidden = false;
+        showToastCopyValue(text, generation, { select: true });
+        if (control) control.textContent = 'Try copy again';
+        return false;
+    } finally {
+        if (control?.isConnected && (ownerGeneration == null || ownsToast(generation))) {
+            control.disabled = false;
+        }
+    }
+};
+
+const showUrlRecovery = (message, url) => {
+    const generation = toast(message, {
+        action: 'Copy URL',
+        onAction: event => void copyTextWithFallback(url, {
+            ownerGeneration: generation,
+            control: event.currentTarget,
+            keepVisible: true,
+        }),
+        duration: 0,
+    });
+    showToastCopyValue(url, generation);
 };
 
 const setView = view => {
@@ -1751,11 +1852,7 @@ const uploadAndInsert = async () => {
                         + 'You can insert it from the photo library.'
                     : 'The photo was uploaded and saved in the library, but local cleanup is still pending.';
             setEditorStatus(message);
-            toast(message, {
-                action: 'Copy URL',
-                onAction: () => void navigator.clipboard.writeText(committedPhoto.remote.url),
-                duration: 0,
-            });
+            showUrlRecovery(`${message} The public image URL is below.`, committedPhoto.remote.url);
             notifyBackupChanged();
             await renderLibrary();
             return;
@@ -1775,14 +1872,10 @@ const uploadAndInsert = async () => {
         }
         setEditorStatus(publicFailure.message);
         if (providerResponse?.remote?.url) {
-            toast(
+            showUrlRecovery(
                 'ImgBB accepted the image, but Better Peakbagger could not finish cataloging it. '
-                + `Save this URL: ${providerResponse.remote.url}`,
-                {
-                    action: 'Copy URL',
-                    onAction: () => void navigator.clipboard.writeText(providerResponse.remote.url),
-                    duration: 0,
-                },
+                + 'Save the public image URL below.',
+                providerResponse.remote.url,
             );
         } else {
             toast(publicFailure.message, { duration: 9000 });
@@ -1875,10 +1968,9 @@ const makeButton = (label, handler, className = 'quiet-button') => {
     return button;
 };
 
-const insertFromLibrary = async item => {
+const insertFromLibrary = async (item, control = null) => {
     if (!RETURN_TOKEN) {
-        await navigator.clipboard.writeText(item.remote.url);
-        toast('Image URL copied.');
+        await copyTextWithFallback(item.remote.url, { control });
         return;
     }
     const displayWidth = ReportSize.displayWidth(item.export.width, reportImageWidth);
@@ -2108,7 +2200,7 @@ const moveToDeleted = async item => {
             }
             notifyBackupChanged();
             undoDeleted = null;
-            ui.toast.hidden = true;
+            dismissToast();
             await renderLibrary();
         },
         duration: 10000,
@@ -2221,7 +2313,7 @@ const cardFor = (item, thumbnail, objectUrls) => {
     const actions = element('div', 'card-actions');
     if (!item.deletedAt && ['uploaded', 'unreachable'].includes(item.remote.state)) {
         actions.append(makeButton(RETURN_TOKEN ? 'Insert' : 'Copy URL',
-            () => void insertFromLibrary(item), 'secondary-button'));
+            event => void insertFromLibrary(item, event.currentTarget), 'secondary-button'));
     }
     if (!item.deletedAt && item.assets.originalRetained && item.assets.projectRetained) {
         actions.append(makeButton('Edit as new version', () => void editAsNewVersion(item)));

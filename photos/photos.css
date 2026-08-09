@@ -824,7 +824,8 @@ kbd {
   z-index: 50;
   right: 18px;
   bottom: 18px;
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 10px;
   max-width: min(440px, calc(100vw - 36px));
@@ -833,6 +834,21 @@ kbd {
   border-radius: 12px;
   background: var(--card);
   box-shadow: 0 6px 20px rgba(0, 0, 0, .18);
+}
+
+.toast-copy-value,
+.toast-copy-status {
+  grid-column: 1 / -1;
+}
+
+.toast-copy-value {
+  min-width: 0;
+  font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.toast-copy-status {
+  color: var(--sub);
+  font-size: 12px;
 }
 
 .sr-only {
