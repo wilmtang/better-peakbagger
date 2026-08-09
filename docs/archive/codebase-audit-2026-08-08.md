@@ -1,15 +1,17 @@
 # Codebase audit — 2026-08-08
 
-Status: **proposed remediation plan; no runtime finding in this document has
-been fixed yet.** This audit found no P0 issue. It found ten P1 issues, ten P2
-issues, and one P3 guardrail gap. F1 through F10 block the next release
-unless the owner explicitly accepts and records the residual risk; none should
-be deferred behind feature development by default.
+Status: **remediated and archived.** Each of the ten P1 findings, ten P2
+findings, and one P3 guardrail gap has a focused source/test disposition in the
+[closure ledger](#closure-ledger). The combined tree passed the repository's
+unit, lint, scale, packaged-browser, archive, and hardware-terrain gates. This
+is not a claim that every release risk is fully proven: legal review, live
+providers, native browser UI, screen-reader speech, touch/device behavior, and
+store review remain explicit evidence gaps below.
 
 Baseline: clean local `main` at `140b4c4`, five commits ahead of
 `origin/main` and the `v3.4.0` tag. Those five commits are the MapLibre 6 and
 bundled-timezone packaging changes. The audit reconciled the current tree with
-the [2026-08-03 closure ledger](../archive/codebase-audit-remediation-2026-08-03.md)
+the [2026-08-03 closure ledger](codebase-audit-remediation-2026-08-03.md)
 so closed findings are not reopened without current evidence.
 
 ## Scope and evidence
@@ -580,7 +582,7 @@ unit with a knowingly incomplete previous one.
 
 ## Final verification matrix
 
-Before archiving this plan, run and record:
+The closeout required the following checks and explicit gap classification:
 
 - focused tests beside every changed owner, then `npm test`, `npm run lint:js`,
   `npm run lint`, `npm run audit:ci`, and `npm run test:scale`;
@@ -603,29 +605,185 @@ toolbar focus, touch behavior, physical-device behavior, live provider
 availability, or store acceptance. Keep those as proof gaps unless they are
 actually exercised.
 
-## Closure ledger requirements
-
-When remediation is complete, move this document to `docs/archive/`, update the
-active-plan index, and replace this section with a closure ledger containing:
+## Closure ledger
 
 ### Fixed and verified
 
-- One entry per finding with its focused commit, changed owners, regression
-  tests, and the exact checks that passed.
+- **F1 — immutable release history (`8dbc3d3`):** `CHANGELOG.md`, the release
+  bump/check scripts, and release CI now keep tagged sections byte-faithful,
+  maintain `Unreleased`, and bind a final tag to `HEAD`. The 24 focused release
+  tests, `release:check-history` over nine sections, a 3.5.0 dry run,
+  `lint:js`, and `git diff --check` passed.
+- **F2 — complete notices (`447e6a8`):** the release build now derives
+  `THIRD_PARTY_NOTICES.txt` from esbuild metafiles and copied runtime inputs,
+  packages it, hashes it, and fails closed on missing package metadata or
+  notice text. `build:release`, 27 focused release tests, `lint:js`, and
+  `git diff --check` passed.
+- **F3 — exact recursive archives (`bd537d6`):** the archive owner now compares
+  the complete normalized file set and validates ZIP records before extraction.
+  Twenty-nine focused release tests and `lint:js` passed; fresh Chrome and
+  Firefox archives each passed exact verification at 66 entries.
+- **F4 — shared prepared-draft metrics (`2c6ef50`):** `gpx-metrics`, capture,
+  reduction, serialization, and draft filling now share plausible-elevation,
+  continuity, quality, and nullable-completeness rules while preserving source
+  order. `npm test` passed 1,238 tests, the five-test scale suite passed, and
+  hidden Chrome/Firefox packaged-browser verification passed.
+- **F5 — authenticated terrain activation (`67f8bb7`):** the isolated bridge,
+  worker, and frame runtime now require a short-lived one-use capability and an
+  independent feature-gate check. Forged, replayed, expired, mismatched,
+  synthetic-click, and direct-frame regressions passed in 1,247 unit tests,
+  hidden Chrome/Firefox, hidden Metal Chrome terrain, hidden Firefox terrain,
+  and the hidden terrain LOD suite.
+- **F6 — generation-owned draft lifecycle (`9e56946`):** the background owner
+  and popup now serialize selection, opening, Preview completion, replacement,
+  cleanup, expiry, and rollback under one source-tab generation. Barrier and
+  identity regressions passed in 1,260 unit tests, `lint`, and hidden Chrome and
+  Firefox extension verification.
+- **F7 — bounded, cancelable capture (`b28efec`):** provider/local GPX,
+  parsing, Peakbagger bodies, corridor work, retries, requests, and wall time
+  now obey one resource contract with generation-owned abort signals. Exact
+  limit, limit+1, streaming, retry, timeout, and cancellation regressions passed
+  in 1,276 unit tests, six scale tests, `lint`, and hidden Chrome/Firefox.
+- **F8 — photo-store concurrency (`4b14458`):** the photo store and every writer
+  now use monotonic revisions, transactional compare-and-swap mutations, and
+  tombstone generations. Cross-store delete/edit, restore/edit, upload/edit,
+  reference/backup, and retry conflicts passed in 1,280 unit tests and 48 final
+  affected photo tests; `lint:js` and `git diff --check` passed.
+- **F9 — atomic upload journal (`d7c63a2`):** upload start, catalog state, and
+  recovery operation are one IndexedDB transaction; provider-result commit and
+  definite pre-response recovery are likewise atomic. Failure-boundary,
+  ambiguous-result, legacy repair, and idempotence cases passed in 1,282 unit
+  tests, 48 focused photo tests, `lint:js`, and `git diff --check`.
+- **F10 — confirmed report-draft consumption (`2ff4a6f`):** report Save now
+  creates a tab/identity-bound pending intent, and only the saved-ascent surface
+  can consume the matching attempt. Validation, navigation, identity,
+  replacement-draft, discard, and Delete regressions passed in 1,294 unit tests
+  and hidden Chrome verification; `lint:js` passed.
+- **F11 — guarded lossy conversion (`70a6c47`):** bracket parsing now returns
+  structured diagnostics, affected reports remain Plain, and Rich/Markdown
+  require an explicit **Convert anyway** action. Unsupported/safe markup,
+  restore, conversion, and wide/narrow layout cases passed in 1,299 unit tests
+  and hidden Chrome; 440 px and wide element screenshots were inspected.
+- **F12 — valid local-time inputs (`b420622`):** ascent upload and shared
+  metrics now resolve timezones only from admitted coordinates/timestamps and
+  enforce the civil ±14-hour boundary at every handoff. Invalid leading and
+  trailing points, DST, antimeridian, parsed offsets, and all-invalid cases
+  passed in 1,243 unit tests, `lint`, hidden Chrome, and hidden Firefox.
+- **F13 — conflict-safe settings rollback (`124baa8`):** settings-file imports
+  now serialize through one owner and use queued compare-and-swap restoration
+  across settings, ImgBB credentials, and GitHub auth with truthful per-store
+  results. Interleaved patch/key/auth/import and rollback-failure cases passed
+  in 1,310 unit tests, `lint`, and hidden Chrome.
+- **F14 — transient thumbnail presentation (`aae51df`):** image-render failure
+  now stays card-local and cannot rewrite catalog reachability or enqueue a
+  backup. Offline/CSP/timeout/provider/retry/rerender cases passed in 135 photo
+  tests plus the repeated-error regression; `lint:js` and `git diff --check`
+  passed.
+- **F15 — failure-safe verifiers (`5a98bd6`):** verifier certificates, servers,
+  profiles, browsers, children, and directories now use a timeout-bounded LIFO
+  resource stack whose finalizers run independently. The analyzer waits on its
+  final condition. Forty-eight resource/release/showcase tests, 1,325 total
+  tests, delayed-analyzer Chrome, Firefox, Chrome terrain, terrain LOD, Firefox
+  terrain, and invalid-browser fault injection passed with no owned residue.
+- **F16 — keyboard-operable Photo Topos (`e69e4e4`):** the photo editor now owns
+  a semantic annotation list, focusable route points, center placement, and
+  rerender-stable selection/focus. Keyboard-only behavior passed in 1,313 unit
+  tests, 69 focused photo tests, `lint`, and hidden Chrome at desktop and 520 px;
+  both screenshots were inspected.
+- **F17 — semantic GPX chart controls (`35a5319`):** the analyzer now renders
+  pressed HTML series buttons and announces trustworthy active values through
+  the shared tooltip formatter. Complete, partial, coordinate-only, gapped,
+  toggle, and stale-selection cases passed in 1,315 unit tests, 39 focused
+  GPX/contrast tests, `lint`, and hidden Chrome at 800 px and 440 px; both
+  screenshots were inspected.
+- **F18 — maintained metadata (`cb14f3a`):** terrain keep-alive now has one
+  runtime/reviewer-metadata constant; maintained owner pointers and exact audit
+  acceptance prose match source; Dependabot grouping is checked against the
+  build graph. Eighty-six focused project/terrain tests, 1,328 total tests,
+  `lint:js`, `audit:ci`, hidden Chrome/Firefox, and `git diff --check` passed.
+- **F19 — decoded fixture privacy (`12fad26`):** every supported fixture suffix
+  now has an explicit format and decoder; the scanner examines decoded content
+  and rejects unregistered formats, malformed encoding, identity metadata,
+  track names, routes, and waypoints. Seven focused privacy tests, 1,329 total
+  tests, `lint:js`, and `git diff --check` passed.
+- **F20 — canonical provider identity (`8891125`):** the shared provider URL
+  owner now compares HTTPS provider/activity identity before URL spelling, so
+  Garmin aliases and harmless decoration work while hostile or changed
+  activities fail closed. Seventy-one provider/page/worker tests, `build`, and
+  `lint:js` passed.
+- **F21 — direct GPX ownership (`bee3314`):** the parser now walks direct
+  local-name children, preserving valid namespaces, tracks, segments, repeated
+  points, and source order while excluding extension-owned or misplaced
+  geometry. Thirty-two parser/provider tests, 68 focused upload/analyzer tests,
+  `build`, `lint:js`, and `git diff --check` passed.
+
+Final combined-tree verification recorded before archival:
+
+- `npm test`: **1,329 passed, 0 failed**; `npm run lint:js` passed.
+- `npm run lint`: passed with the eight exact owner-reviewed warnings; no new
+  error, notice, warning kind, file, or count was accepted.
+- `npm run audit:ci`: passed only the two exact high `image-size` advisories in
+  the development-only `web-ext`/`addons-linter` path through 2026-08-21.
+- `npm run test:scale`: **6 passed**, including the bounded 20,000-point case,
+  its contract+1 rejection, 1,500 favorites, and 1,200 photos.
+- `npm run verify:browsers`: passed against the real unpacked extension in
+  hidden Chrome for Testing new-headless and hidden Firefox 153.0.3 at
+  1000×760. `npm run verify:packages` then passed both fresh minified archives.
+- `npm run terrain:verify`: passed hidden at 798×448 and 448×448 on `ANGLE
+  Metal Renderer: Apple M3 Pro`; `npm run terrain:verify:firefox` passed hidden
+  at 1000×760 on its reported Apple hardware renderer.
+- Fresh Chrome and Firefox archives each passed exact recursive verification at
+  66 entries, including the generated notice inventory. Nine immutable
+  changelog sections passed `release:check-history`.
+- Final process/profile inspection found no verifier-owned process or disposable
+  profile; the generated terrain screenshot directory was removed after review.
 
 ### Intentionally not changed
 
-- Owner decisions, accepted product boundaries, or rejected remediations with
-  the current source evidence and consequence. A deferred P1 must not be
-  described as fixed or silently dropped.
+- The two exact dev-only `image-size` advisories remain accepted only through
+  2026-08-21. The script still fails every other finding and will fail closed
+  when the acceptance expires; this remediation did not widen or renew it.
+- Final Peakbagger review and both Save controls remain user-owned. No extension
+  or verifier path clicks Save merely to prove report-draft consumption.
+- No version bump, release tag, store submission, push, or Dependabot policy
+  expansion was performed. `Unreleased` remains the source for the eventual
+  next version, and MapLibre still requires the documented hardware release
+  rehearsal even when its update is otherwise auto-merge eligible.
+- Deeply arbitrary timestamp permutations remain governed by the documented
+  source-order/quality contract rather than silent global sorting. Missing,
+  reversed, or non-progressing time now degrades derived fields honestly.
+- The cleaned non-secret page-world settings projection was not narrowed; the
+  privileged credential and extension-messaging boundary remains unchanged.
 
 ### Changed but not fully proven
 
-- Live-service, abrupt-shutdown, native-UI, accessibility, graphics, device,
-  legal-review, or store-review gaps that tests could not establish.
-
-Do not summarize the audit as completely fixed while any finding lacks a
-disposition or any required evidence remains in the third category.
+- **F2:** the generated inventory proves packaged dependency coverage and
+  retained notice text, not legal sufficiency. Owner or counsel review remains
+  required before release.
+- **F5, F7, F14, and F20:** synthetic fixtures and isolated browsers proved
+  authorization, cancellation, failure, and provider-identity behavior. No
+  authenticated live Garmin/Strava capture, live Peakbagger corridor run, or
+  live tile/CDN outage was exercised.
+- **F6, F8, and F9:** controllable interleavings and real IndexedDB transactions
+  prove the owned generation/revision/atomicity contracts while the browser is
+  running. An actual browser or OS crash at each persistence boundary was not
+  induced, so storage durability under abrupt shutdown remains outside this
+  evidence.
+- **F10:** failure and confirmation handshakes are covered, but an actual
+  Peakbagger Save was deliberately not automated. Live Add/Edit validation and
+  success remain release-manual checks.
+- **F11, F16, and F17:** semantic DOM, keyboard interaction, live-region values,
+  focus, contrast, and narrow/wide screenshots passed. Native screen-reader
+  speech, touch, switch control, and physical-device behavior were not tested.
+- The terrain suites used hardware renderers with synthetic DEM, basemap,
+  route, and Peakbagger responses. They do not establish live Mapterhorn/drape
+  availability or every physical GPU/driver combination.
+- All browser runs were hidden and isolated. They do not prove native toolbar
+  `activeTab` grant UI, permission prompts, browser chrome, focus, window
+  placement, or visible challenge handling.
+- Fresh unsigned packages booted and matched the exact source inventory. AMO,
+  Chrome Web Store, signature, reviewer, and post-publication behavior remain
+  untested because no release or store submission was authorized.
 
 ## Reconciled non-findings and accepted risks
 

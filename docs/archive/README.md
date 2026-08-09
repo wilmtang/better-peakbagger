@@ -72,6 +72,11 @@ living docs in [`docs/`](../).
   photo autosave and delivery, GitHub authorization cancellation, and
   provider-capture identity, with broader transaction, storage-concurrency,
   live-service, and native-UI gaps kept explicit.
+- [Codebase audit — 2026-08-08](codebase-audit-2026-08-08.md) — completed
+  remediation of 21 release, GPX, terrain authorization, transaction,
+  persistence, accessibility, verifier, metadata, and fixture-privacy findings,
+  with legal, live-service, abrupt-shutdown, native-UI, device, and store-review
+  proof gaps preserved in the closure ledger.
 - [Codebase audit — 2026-07-19](codebase-audit-2026-07-19.md) — point-in-time
   audit and remediation plan.
 - [Codebase audit — 2026-07-22](codebase-audit-2026-07-22.md) and its
