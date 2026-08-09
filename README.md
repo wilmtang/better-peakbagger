@@ -281,7 +281,6 @@ root.
 ```sh
 npm test
 npm run test:scale
-npm run lint:js
 npm run lint
 npm run verify:browsers
 ```

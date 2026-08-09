@@ -72,14 +72,14 @@ dependency visible.
 
 ## Everyday workflow
 
-For test-driven work, edit source and run `npm test`; its `pretest` hook creates
-a fresh development build before the suite.
+For test-driven work, edit source and run `npm test`; the command creates a
+fresh development build before the suite.
 
 For interactive browser work, use one of the managed development commands:
 
 ```bash
-npm run start:firefox
-npm run start:chromium -- --chromium-binary "/path/to/chrome-for-testing"
+npm run start -- firefox
+npm run start -- chromium --chromium-binary "/path/to/chrome-for-testing"
 ```
 
 Without additional profile flags, each command makes the initial `dist/` build,
@@ -92,12 +92,12 @@ To keep site logins and browser settings across development sessions, give each
 browser a dedicated persistent development profile:
 
 ```bash
-npm run start:firefox -- \
+npm run start -- firefox \
   --firefox-profile "$HOME/.better-peakbagger-firefox-profile" \
   --profile-create-if-missing \
   --keep-profile-changes
 
-npm run start:chromium -- \
+npm run start -- chromium \
   --chromium-binary "/path/to/chrome-for-testing" \
   --chromium-profile "$HOME/.better-peakbagger-chromium-profile" \
   --profile-create-if-missing \
@@ -125,7 +125,7 @@ enough for those extension pages. The commands deliberately do not refresh
 activity or ascent-editor tabs automatically, because that could discard page
 state or interrupt a capture.
 
-Do not run `watch`, either `start:*` command, and another build command in the
+Do not run `watch`, `start`, or another build command concurrently in the
 same worktree at the same time. The managed browser commands already own the
 watcher, while one-off builds deliberately replace `dist/`; concurrent writers
 can produce a transient mixed tree.
@@ -150,34 +150,45 @@ only exist under `dist/` after a build.
 
 ## Commands
 
+`package.json` is strict JSON and cannot carry comments. This table is the
+complete command reference; `test/project/development.test.mjs` fails when a
+script is added or removed without updating it.
+
 | Command | What it does |
 | --- | --- |
+| `npm run prepare` | Installs this clone's privacy-preserving Git hooks after `npm install`/`npm ci`; leaves an existing custom `core.hooksPath` unchanged. |
 | `npm run build` | One-off development build (unminified, source maps) into `dist/`. |
 | `npm run build:release` | Minified production build (no source maps). |
 | `npm run watch` | Transactionally rebuild on change and re-copy static assets; does not launch or control a browser. |
-| `npm test` | `pretest` builds `dist/`, then runs `test/**/*.test.mjs`. |
+| `npm run start -- BROWSER [web-ext options]` | With `BROWSER` set to `chromium` or `firefox`, builds, watches, launches an isolated web-ext development browser, and reloads after complete builds. Firefox mirrors each build into an inline-Preferences source first. |
+| `npm test` | Builds `dist/`, then runs the normal pure/jsdom/project suite in `test/**/*.test.mjs`. |
 | `npm run test:scale` | Exercises the 4,145-row ascent fixture, a synthetic 20,000-point provider track, and the full 1,500-entry favorite manager/search/backup path; CI and release checks run these separately from the fast default suite. |
+| `npm run lint` | Runs ESLint over source, page-local surfaces, scripts, and tests; then builds and runs `web-ext lint` against `dist/`, accepting only the owner-reviewed warning baseline. |
+| `npm run audit:ci` | Applies the repository's exact, expiring npm-advisory policy. It currently permits only two exact high `image-size` advisories through the development-only `web-ext`/`addons-linter` path, with locked versions and a 2026-08-21 expiry; every other or expired finding fails. |
 | `npm run verify:chrome` | Builds and loads the real unpacked `dist/` in hidden Chrome for Testing, including trusted GPX selection, draft handoff, 1,500-row favorite management, long settings navigation, and native Buddy synchronization. |
 | `npm run verify:firefox` | Builds the derived Firefox source, temporarily installs it in hidden Firefox, and runs the same manifest-surface and feature smoke. |
 | `npm run verify:browsers` | Builds once, then runs the Chrome and Firefox extension gates. |
-| `npm run verify:extension` | Compatibility alias for `verify:chrome`; existing callers can migrate without losing coverage. |
 | `npm run verify:packages -- CHROME.zip FIREFOX.zip` | Executes the extracted minified Chrome package and the exact generated Firefox archive through the browser gates. |
 | `npm run terrain:verify` | Renders the real MapLibre terrain frame on Chrome's GPU with synthetic route, basemap, peak, and CORS-enabled DEM fixtures. Serves the showcase over HTTPS on `www.peakbagger.com`; needs `openssl`. |
 | `npm run terrain:verify:firefox` | Runs the focused Firefox GPU terrain/interaction check and refuses software WebGL. Same HTTPS showcase host. |
 | `npm run terrain:lod` | Measures the 3D tilt detail collapse against the acceptance criteria in `docs/archive/3d-tilt-detail-blink.md`: which elevation level every visible pixel is drawn from across a cold-cache pitch sweep, plus the elevation and drape traffic it costs. Same HTTPS showcase host and GPU rules as `terrain:verify`. |
 | `npm run showcase:render` | Builds and renders the local UI showcase fixtures into `store-assets/`. Same HTTPS showcase host. |
-| `npm run lint:js` | Runs errors-only ESLint over source, extension surfaces, scripts, and tests. |
-| `npm run lint` | Builds, runs `web-ext lint` as JSON, and accepts only the eight owner-annotated manifest/dependency warnings in `scripts/check-web-ext-lint.mjs`, counted per `(code, file)`. A new warning, an extra or missing occurrence in an owned file, any error, or any notice fails. Generated line and column numbers are deliberately not pinned. |
-| `npm run audit:ci` | Runs npm audit through the repository policy. It currently permits only two exact high `image-size` advisories through the development-only `web-ext`/`addons-linter` lint path, with locked package versions and an expiry of 2026-08-21; every other finding fails. An expired acceptance blocks CI until a fresh source review records advisory ids, the exact dev-only path, lock pins, and a new expiry. |
 | `npm run package` | Release build + `web-ext build` from `dist/`; writes the canonical Chrome ZIP under `web-ext-artifacts/`. |
-| `npm run start:chromium` / `start:firefox` | Build, watch, launch a web-ext development browser, and auto-reload the extension after successful rebuilds. Firefox mirrors each complete build into its inline-Preferences source first. |
+| `npm run build:firefox -- CHROME.zip FIREFOX.zip` | Derives the Firefox store ZIP from the verified Chrome ZIP, changing only Firefox-specific manifest presentation. |
+| `npm run release:bump X.Y.Z` | Validates and synchronizes release metadata, stamps the changelog, commits the version files, and creates the lightweight version tag. |
+| `npm run release:check -- vX.Y.Z` | Validates an exact release tag, synchronized versions, stable Gecko identity, store description, and changelog heading. |
+| `npm run release:check-history` | Fails when already-released changelog sections or tags have been rewritten; CI runs it with full Git history. |
+| `npm run release:metadata:firefox` | Converts the canonical store description into the AMO metadata JSON used for submission. |
+| `npm run release:sign:firefox` | Submits the prepared Firefox source to AMO with the release environment's credentials and metadata. |
+| `npm run release:verify-archive -- ARCHIVE.zip BROWSER` | Checks a Chrome or Firefox archive for required runtime files, licenses, browser-specific manifest policy, and forbidden development artifacts. |
+| `npm run store:description:chrome` | Regenerates Chrome's checked-in plain-text listing from the canonical Markdown description. |
 
 Pushes and pull requests use one least-privilege workflow with four independent
 jobs: Node tests/lint, the scale suite, the real Chrome extension smoke, and
 the real Firefox extension smoke. Each job installs its own runtime and reports
-failures separately. The Node job runs both linters — `lint:js` over source
-before the build, `lint` over the built package after it — because they read
-different artifacts and neither substitutes for the other. It also runs
+failures separately. The Node job runs both lint stages through `npm run lint`:
+ESLint reads source, while web-ext reads the built package, and neither
+substitutes for the other. It also runs
 `audit:ci`, so any new advisory fails CI. Release CI runs the same two linters, adds the
 scale test, and executes both generated store archives before either
 publication job can start.
@@ -199,8 +210,8 @@ through the shared draft path to prove real file attachment and exactly-once
 Preview.
 
 Chrome stable 137+ rejects command-line `--load-extension`, so
-`start:chromium` needs a compatible Chromium/Chrome for Testing binary (pass
-web-ext's `--chromium-binary` after `--`) or it will fail. Manual **Load
+`npm run start -- chromium` needs a compatible Chromium/Chrome for Testing binary (pass
+web-ext's `--chromium-binary` after the `chromium` argument) or it will fail. Manual **Load
 unpacked** from `dist/` remains the simplest Chrome-family loop.
 
 The reload marker (`dist/.better-peakbagger-reload`) exists only in watch mode.
@@ -480,7 +491,7 @@ add it to the merge-step condition, for example
 
 ## What each check can and cannot see
 
-- `npm test` runs in jsdom. It builds `dist/` first (`pretest`) and evaluates
+- `npm test` builds `dist/` first and runs in jsdom. It evaluates
   the shipped bundles, but it does not exercise the real manifest — execution
   worlds, injection order, and the live service-worker lifecycle are invisible
   to it.
@@ -488,9 +499,9 @@ add it to the merge-step condition, for example
   20,000-point GPX completeness case, and 1,500-entry favorite
   render/search/backup path out of the fast local loop. It still uses jsdom
   rather than a browser and does not impose a cross-machine timing threshold.
-- `npm run lint:js` checks undeclared names, unused bindings, and unsafe equality
-  without rewriting source. `npm run lint` checks the built extension package;
-  neither establishes browser behavior.
+- `npm run lint` first checks undeclared names, unused bindings, and unsafe
+  equality in source without rewriting it, then checks the built extension
+  package. Neither lint stage establishes browser behavior.
 - `npm run terrain:verify` and `npm run terrain:verify:firefox` render the true MapLibre
   frame on a reported hardware GPU, but their
   showcase pages provide their own settings/chrome stubs and their Mapterhorn

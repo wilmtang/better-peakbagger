@@ -28,7 +28,7 @@ subsystem changes.
 - [Peakbagger peak dots on 3D terrain](3d-peak-markers.md)
 - [Chart times in the climb's local timezone](mountain-local-time.md)
 - [Dark-mode startup without a light-page flash](dark-mode-flash.md)
-- [`verify:extension` flakes under machine load](verify-extension-load-flake.md)
+- [`verify:chrome` flakes under machine load](verify-extension-load-flake.md)
   — what was measured, and the timeout that was wrongly blamed
 
 ## Document lifecycle

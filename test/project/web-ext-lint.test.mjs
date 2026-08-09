@@ -38,7 +38,7 @@ test('the web-ext lint gate accepts exactly the owned warnings per file', async 
 
     const packageJson = JSON.parse(await readFile(new URL('../../package.json', import.meta.url), 'utf8'));
     assert.equal(packageJson.scripts.lint,
-        'npm run build && node scripts/check-web-ext-lint.mjs');
+        'eslint src options popup photos scripts test && npm run build && node scripts/check-web-ext-lint.mjs');
 });
 
 // The point of dropping line/column: a bundle whose byte offsets moved is not

@@ -24,7 +24,7 @@ export const PAGE_FIXTURES = path.join(root, 'test', 'fixtures', 'pages');
 export const DIST = path.join(root, 'dist');
 
 // Evaluate one or more built bundles (dist-relative paths) into a window or
-// vm-style context, in order. `npm test` runs `npm run build` first (pretest),
+// vm-style context, in order. `npm test` runs `npm run build` first,
 // so dist/ is always current.
 export const evalBundle = async (target, ...bundles) => {
     for (const rel of bundles) {

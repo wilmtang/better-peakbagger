@@ -45,13 +45,10 @@ jobs:
       - name: Check immutable release history
         run: npm run release:check-history
 
-      - name: Lint source
-        run: npm run lint:js
-
       - name: Run tests
         run: npm test
 
-      - name: Lint extension
+      - name: Lint source and extension
         run: npm run lint
 
   scale:

@@ -1501,13 +1501,13 @@ No single green command proves the extension works:
   synthetic 20,000-point provider GPX, and the complete 1,500-entry favorite
   manager/search/backup path so the default local loop can stay fast without
   losing large-input coverage.
-- `npm run lint:js` catches JavaScript errors without rewriting source.
-  `npm run lint` checks the built extension package and accepts only the six
-  owner-annotated manifest/dependency warnings, counted per `(code, file)`; a
+- `npm run lint` catches JavaScript errors without rewriting source, then checks
+  the built extension package and accepts only the eight owner-annotated
+  manifest/dependency warnings, counted per `(code, file)`; a
   new warning, an extra or missing occurrence in an owned file, an error, or a
   notice fails. Generated line and column numbers are not pinned, because every
-  vendored warning's position is a byte offset into a bundle. Both linters run
-  in CI and in release CI. Neither command establishes runtime behavior.
+  vendored warning's position is a byte offset into a bundle. Both lint stages
+  run in CI and in release CI. Neither establishes runtime behavior.
 - `npm run audit:ci` currently permits only two exact high `image-size`
   advisories through the development-only `web-ext`/`addons-linter` lint path,
   with advisory ids, package versions, install paths, and a 2026-08-21 expiry

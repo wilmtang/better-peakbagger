@@ -44,16 +44,13 @@ jobs:
       - name: Check dependency advisories
         run: npm run audit:ci
 
-      - name: Lint source
-        run: npm run lint:js
-
       - name: Run tests
         run: npm test
 
       - name: Run scale tests
         run: npm run test:scale
 
-      - name: Lint extension
+      - name: Lint source and extension
         run: npm run lint
 
       - name: Build store packages

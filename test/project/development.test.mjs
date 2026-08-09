@@ -68,7 +68,7 @@ test('every page-local bundle source is linted like shared source', async () => 
     assert.ok(pageLocalFiles.length > 0, 'expected page-local bundle sources to exist');
 
     const packageJson = JSON.parse(await readFile(path.join(projectRoot, 'package.json'), 'utf8'));
-    const lintTargets = packageJson.scripts['lint:js'].split(/\s+/).slice(1);
+    const lintTargets = packageJson.scripts.lint.split(/\s+/).slice(1);
     const unlintedDirectories = [...new Set(pageLocalFiles
         .map(file => path.relative(root, file).split(path.sep)[0])
         .filter(directory => !lintTargets.includes(directory)))].sort();
@@ -86,6 +86,22 @@ test('every page-local bundle source is linted like shared source', async () => 
         assert.equal(config.languageOptions?.globals?.chrome, false,
             `${relative} must resolve extension globals`);
     }
+});
+
+test('every npm command is described in the development guide', async () => {
+    const [packageJson, developmentGuide] = await Promise.all([
+        readFile(path.join(projectRoot, 'package.json'), 'utf8').then(JSON.parse),
+        readFile(path.join(projectRoot, 'docs', 'development.md'), 'utf8'),
+    ]);
+    const documentedCommands = [];
+    for (const match of developmentGuide.matchAll(/^\| `npm (test|run ([^\s`]+)(?: [^`]*)?)` \|/gm)) {
+        documentedCommands.push(match[1] === 'test' ? 'test' : match[2]);
+    }
+    assert.deepEqual(
+        documentedCommands.sort(),
+        Object.keys(packageJson.scripts).sort(),
+        'docs/development.md must describe every package.json script exactly once',
+    );
 });
 
 test('development reload logs include a local timestamp', () => {

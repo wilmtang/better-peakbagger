@@ -1,6 +1,6 @@
-# `verify:extension` flakes under machine load
+# `verify:chrome` flakes under machine load
 
-`npm run verify:extension` is the only check that loads the real unpacked
+`npm run verify:chrome` is the Chrome check that loads the real unpacked
 `dist/` in a browser, and it fails intermittently — but only when the machine is
 busy, and not always on the same check. This note records what was measured on
 2026-07-30, because a previous attempt to fix it changed a timeout that
@@ -140,7 +140,7 @@ Two of the measurements taken during this investigation were themselves invalid,
 and both failure modes are easy to repeat:
 
 - **Bare `node --test` proves nothing about your edit.** `npm test` runs
-  `npm run build` as `pretest`, and the suite evaluates built `dist/` bundles.
+  `npm run build` first, and the suite evaluates built `dist/` bundles.
   Running `node --test` directly evaluates whatever was built last. A mutation
   test run this way "passed" with the behavior under test deleted.
 - **Never run anything beside the verifier.** Running `npm test` or a build

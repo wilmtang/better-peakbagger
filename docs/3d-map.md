@@ -793,9 +793,8 @@ receiver check.
 | Check | Proves | Does not prove |
 | --- | --- | --- |
 | `npm test` | Builds shipped IIFEs; pure algorithms, jsdom fixtures, protocol/state tests, worker logic | Real manifest interpretation, actual WebGL, browser worker lifecycle |
-| `npm run lint:js` | Source-level JavaScript lint | Runtime behavior or package validity |
-| `npm run lint` | Built extension/package lint | User interaction or renderer output |
-| `npm run verify:extension` | Real unpacked `dist/` in hidden Chrome for Testing: manifest order/worlds, content injection, worker and bridge boot | Firefox behavior, visual WebGL correctness, native focus/window placement |
+| `npm run lint` | Source JavaScript and built extension/package lint | User interaction or renderer output |
+| `npm run verify:chrome` | Real unpacked `dist/` in hidden Chrome for Testing: manifest order/worlds, content injection, worker and bridge boot | Firefox behavior, visual WebGL correctness, native focus/window placement |
 | `npm run verify:browsers` | Real unpacked Chrome and Firefox profiles | Live provider behavior and GPU terrain visuals |
 | `npm run terrain:verify` | Real packaged MapLibre frame in hidden Chrome on asserted hardware GPU; route, drape, elevation coverage gap, pending-drape boot, compass placement, context-loss fallback | Real storage/settings bridge, live Mapterhorn or Peakbagger services, native focus |
 | `npm run terrain:verify:firefox` | Focused Firefox hardware-WebGL terrain and interaction | Full extension workflow or live services |
@@ -941,7 +940,7 @@ turns a future bridge or surface change into an implicit renderer privilege.
 
 ### What test would catch a wrong `world: MAIN` declaration?
 
-Not jsdom and not the standalone terrain showcase. `npm run verify:extension`
+Not jsdom and not the standalone terrain showcase. `npm run verify:chrome`
 or `npm run verify:browsers` must load the real manifest. The bundle-composition
 unit test catches configured source drift, while the real extension catches
 manifest execution-world and injection-order mistakes.
