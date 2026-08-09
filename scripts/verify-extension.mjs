@@ -1861,6 +1861,11 @@ try {
                     && element.tabIndex >= 0
                     && !element.closest('[hidden]'));
             const iframe = document.querySelector('iframe[src*="MasterMap.aspx"]');
+            const mapLayers = iframe?.contentWindow?.mapsPlaceholder?.layers;
+            // The failure UI and MasterMap fixture initialize independently.
+            // Do not sample a null frame seam and report it as stale route
+            // state; wait until the product-owned layer collection exists.
+            if (!Array.isArray(mapLayers)) return false;
             return {
                 message: stats.textContent || '',
                 live: stats.getAttribute('aria-live'),
@@ -1875,9 +1880,9 @@ try {
                 retryHidden: panel.querySelector('.bpb-gpx-retry')?.hidden === true,
                 focusable: focusable.map(element => element.className || element.id || element.textContent),
                 terrainDisabled: document.getElementById('bpb-terrain-toggle')?.disabled === true,
-                extensionRouteLayers: iframe?.contentWindow?.mapsPlaceholder?.layers?.filter(
+                extensionRouteLayers: mapLayers.filter(
                     layer => /^bpb-route-/.test(layer?.options?.className || '')
-                ).length ?? null,
+                ).length,
             };
         }, null, { timeout: analyzerCase === 'timeout' ? 20_000 : 5000 })
             .then(handle => handle.jsonValue())
