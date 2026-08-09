@@ -19,8 +19,9 @@ const visibleRows = dom => dataRows(dom).filter(row => row.style.display === '')
 const sectionRows = dom => [...table(dom).rows].filter(row => row.cells.length === 1);
 const dateTexts = dom => dataRows(dom).map(row => row.cells[1].textContent.trim());
 const sectionLabels = dom => sectionRows(dom).map(row => row.textContent.trim());
-const chipCount = (dom, label) => [...dom.window.document.querySelectorAll('.pbaf-chip')]
-    .find(chip => chip.textContent.includes(label)).querySelector('.pbaf-count').textContent;
+const chip = (dom, label) => [...dom.window.document.querySelectorAll('.pbaf-chip')]
+    .find(control => control.textContent.includes(label));
+const chipCount = (dom, label) => chip(dom, label).querySelector('.pbaf-count').textContent;
 const sortControl = dom => [...dom.window.document.querySelectorAll('.pbaf-table-sort')]
     .find(control => control.firstChild.textContent.trim() === 'Ascent Date');
 
@@ -33,9 +34,13 @@ test('the full Rainier table filters and sorts completely', async () => {
     assert.equal(chipCount(dom, 'Trip report'), '1224');
     assert.equal(chipCount(dom, 'GPS track'), '238');
     assert.equal(chipCount(dom, 'Link'), '151');
+    assert.equal(visibleRows(dom).length, 4145,
+        'first use must preserve every production-scale host row');
+    assert.ok(sectionRows(dom).every(row => row.style.display === ''));
+
+    chip(dom, 'Has beta').click();
     assert.equal(visibleRows(dom).length, 1339);
     assert.ok(sectionRows(dom).some(row => row.style.display === 'none'));
-
     dom.window.document.querySelector('.pbaf-reset').click();
     assert.equal(visibleRows(dom).length, 4145);
     assert.ok(sectionRows(dom).every(row => row.style.display === ''));
