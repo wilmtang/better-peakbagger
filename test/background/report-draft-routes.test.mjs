@@ -6,11 +6,19 @@ import assert from 'node:assert/strict';
 import { createReportDraftRoutes, reportDraftRoutes as Routes }
     from '../../src/background/report-draft-routes.js';
 
+const CLOCK = Date.parse('2026-08-08T12:00:00.000Z');
+
 const makeArea = initial => {
     const values = structuredClone(initial || {});
     return {
         values,
-        async get(key) { return { [key]: structuredClone(values[key]) }; },
+        async get(key) {
+            if (key === null) return structuredClone(values);
+            if (Array.isArray(key)) {
+                return Object.fromEntries(key.map(item => [item, structuredClone(values[item])]));
+            }
+            return { [key]: structuredClone(values[key]) };
+        },
         async set(patch) { Object.assign(values, structuredClone(patch)); },
         async remove(key) {
             for (const item of Array.isArray(key) ? key : [key]) delete values[item];
@@ -22,7 +30,7 @@ const harness = ({ localInitial, localRemove } = {}) => {
     const local = makeArea(localInitial);
     if (localRemove) local.remove = key => localRemove(key, local);
     const session = makeArea();
-    let clock = Date.parse('2026-08-08T12:00:00.000Z');
+    let clock = CLOCK;
     let queue = Promise.resolve();
     const mutateMap = (key, mutate) => {
         const operation = queue.then(async () => {
@@ -38,6 +46,7 @@ const harness = ({ localInitial, localRemove } = {}) => {
         ext: { storage: { local } },
         now: () => clock,
         isPeakbaggerSender: sender => sender?.url?.startsWith('https://www.peakbagger.com/'),
+        isExtensionPage: sender => sender?.url?.startsWith('chrome-extension://test/'),
         mutateMap,
     });
     return {
@@ -56,6 +65,7 @@ const editSender = {
     url: 'https://www.peakbagger.com/climber/ascentedit.aspx?aid=778899&cid=22',
     tab: { id: 41 },
 };
+const extensionSender = { url: 'chrome-extension://test/options/drafts.html' };
 const ADD_ATTEMPT = 'add-attempt-1';
 const pendingRecord = (text, attemptId = ADD_ATTEMPT) => ({
     text,
@@ -224,4 +234,117 @@ test('discard, tab close, and expiry remove only pending worker state', async ()
     await h.routes.cleanup(Date.parse('2026-08-08T12:00:00.000Z') + Routes.TTL_MS + 1);
     assert.equal(h.session.values[Routes.PENDING_KEY]['41'], undefined);
     assert.ok(h.local.values[key], 'worker-state expiry must not delete recovery data');
+});
+
+test('delete and restore use a generation barrier that preserves a newer same-key autosave', async () => {
+    const key = 'bpbReportDraft:22:a778899';
+    const older = { text: 'older snapshot', mode: 'rich', savedAt: CLOCK - 2 };
+    const newer = { text: 'newer editor work', mode: 'rich', savedAt: CLOCK + 1 };
+    const h = harness({ localInitial: { [key]: older } });
+
+    const deletion = await h.routes.handlers.REPORT_DRAFT_DELETE({
+        draftKey: key,
+        expectedGeneration: null,
+        expectedSavedAt: older.savedAt,
+    }, extensionSender);
+    assert.equal(deletion.deleted, true);
+    assert.equal(h.local.values[key].deletedGeneration, deletion.generation);
+
+    const delayed = await h.routes.handlers.REPORT_DRAFT_WRITE({
+        draftKey: key,
+        record: { ...older, text: 'delayed pre-delete write' },
+    }, editSender);
+    assert.equal(delayed.written, false);
+    assert.equal(h.local.values[key].deletedGeneration, deletion.generation);
+
+    const write = await h.routes.handlers.REPORT_DRAFT_WRITE({ draftKey: key, record: newer }, editSender);
+    assert.equal(write.ok, true);
+    const restore = await h.routes.handlers.REPORT_DRAFT_RESTORE({
+        draftKey: key,
+        generation: deletion.generation,
+        record: deletion.record,
+    }, extensionSender);
+    assert.deepEqual(restore, { ok: true, draftKey: key, restored: false, reason: 'changed' });
+    assert.equal(h.local.values[key].text, 'newer editor work');
+});
+
+test('a second manager cannot delete or restore through another manager generation', async () => {
+    const key = 'bpbReportDraft:22:a778899';
+    const record = { text: 'one copy', mode: 'rich', savedAt: CLOCK - 1 };
+    const h = harness({ localInitial: { [key]: record } });
+    const first = await h.routes.handlers.REPORT_DRAFT_DELETE({
+        draftKey: key,
+        expectedGeneration: null,
+        expectedSavedAt: record.savedAt,
+    }, extensionSender);
+    const second = await h.routes.handlers.REPORT_DRAFT_DELETE({
+        draftKey: key,
+        expectedGeneration: null,
+        expectedSavedAt: record.savedAt,
+    }, extensionSender);
+    assert.equal(second.deleted, false);
+
+    await h.routes.handlers.REPORT_DRAFT_REMOVE({ draftKey: key }, editSender);
+    const restore = await h.routes.handlers.REPORT_DRAFT_RESTORE({
+        draftKey: key,
+        generation: first.generation,
+        record,
+    }, extensionSender);
+    assert.equal(restore.restored, false, 'an editor removal must invalidate an older manager Undo');
+});
+
+test('bulk restore resolves conflicts per key without suppressing unrelated recovery', async () => {
+    const firstKey = 'bpbReportDraft:22:a778899';
+    const secondKey = 'bpbReportDraft:22:p33';
+    const first = { text: 'first old', mode: 'rich', savedAt: CLOCK - 2 };
+    const second = { text: 'second old', mode: 'rich', savedAt: CLOCK - 3 };
+    const h = harness({ localInitial: { [firstKey]: first, [secondKey]: second } });
+    const deletion = await h.routes.handlers.REPORT_DRAFT_DELETE_MANY({ entries: [
+        { draftKey: firstKey, expectedGeneration: null, expectedSavedAt: first.savedAt },
+        { draftKey: secondKey, expectedGeneration: null, expectedSavedAt: second.savedAt },
+    ] }, extensionSender);
+    assert.equal(deletion.results.filter(result => result.deleted).length, 2);
+
+    await h.routes.handlers.REPORT_DRAFT_WRITE({
+        draftKey: firstKey,
+        record: { text: 'first newer', mode: 'rich', savedAt: CLOCK + 1 },
+    }, editSender);
+    const restoration = await h.routes.handlers.REPORT_DRAFT_RESTORE_MANY({
+        entries: deletion.results.map(result => ({
+            draftKey: result.draftKey,
+            generation: result.generation,
+            record: result.record,
+        })),
+    }, extensionSender);
+    assert.equal(restoration.results.find(result => result.draftKey === firstKey).restored, false);
+    assert.equal(restoration.results.find(result => result.draftKey === secondKey).restored, true);
+    assert.equal(h.local.values[firstKey].text, 'first newer');
+    assert.equal(h.local.values[secondKey].text, 'second old');
+});
+
+test('Undo expiry removes only its exact tombstone generation', async () => {
+    const key = 'bpbReportDraft:22:a778899';
+    const record = { text: 'expire me', mode: 'rich', savedAt: CLOCK - 1 };
+    const h = harness({ localInitial: { [key]: record } });
+    const deletion = await h.routes.handlers.REPORT_DRAFT_DELETE({
+        draftKey: key,
+        expectedGeneration: null,
+        expectedSavedAt: record.savedAt,
+    }, extensionSender);
+    const finalized = await h.routes.handlers.REPORT_DRAFT_FINALIZE_DELETE({
+        draftKey: key,
+        generation: deletion.generation,
+    }, extensionSender);
+    assert.deepEqual(finalized, { ok: true, finalized: true });
+    assert.equal(h.local.values[key], undefined);
+
+    await h.routes.handlers.REPORT_DRAFT_WRITE({
+        draftKey: key,
+        record: { text: 'newer', mode: 'rich', savedAt: CLOCK + 1 },
+    }, editSender);
+    assert.equal((await h.routes.handlers.REPORT_DRAFT_FINALIZE_DELETE({
+        draftKey: key,
+        generation: deletion.generation,
+    }, extensionSender)).finalized, false);
+    assert.equal(h.local.values[key].text, 'newer');
 });

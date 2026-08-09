@@ -13,6 +13,7 @@ export const initDrafts = ({ extensionApi = globalThis.browser || globalThis.chr
     const emptyEl = document.getElementById('drafts-empty');
     const deleteAllEl = document.getElementById('drafts-delete-all');
     const undoAllEl = document.getElementById('drafts-undo-all');
+    const undoAllLabelEl = undoAllEl?.querySelector('span');
     const undoAllButtonEl = document.getElementById('drafts-undo-all-button');
     const confirmationEl = document.getElementById('drafts-delete-all-confirmation');
     const confirmationTitleEl = document.getElementById('drafts-delete-all-confirmation-title');
@@ -23,6 +24,7 @@ export const initDrafts = ({ extensionApi = globalThis.browser || globalThis.chr
         'drafts-empty': emptyEl,
         'drafts-delete-all': deleteAllEl,
         'drafts-undo-all': undoAllEl,
+        'drafts-undo-all label': undoAllLabelEl,
         'drafts-undo-all-button': undoAllButtonEl,
         'drafts-delete-all-confirmation': confirmationEl,
         'drafts-delete-all-confirmation-title': confirmationTitleEl,
@@ -37,6 +39,7 @@ export const initDrafts = ({ extensionApi = globalThis.browser || globalThis.chr
     let currentDrafts = [];
     let refreshRevision = 0;
     let refreshTimer = null;
+    const sendMutation = message => extensionApi.runtime.sendMessage(message);
 
     const draftTitle = draft => {
         const label = draft.record.label && typeof draft.record.label === 'object'
@@ -93,11 +96,22 @@ export const initDrafts = ({ extensionApi = globalThis.browser || globalThis.chr
         pending.restoring = true;
         render();
         try {
-            await store.set({ [key]: pending.record });
+            const result = await sendMutation({
+                type: 'REPORT_DRAFT_RESTORE',
+                draftKey: key,
+                generation: pending.generation,
+                record: pending.record,
+            });
+            if (!result?.ok) throw new Error('draft restore failed');
             if (pendingDeletes.get(key) === pending) pendingDeletes.delete(key);
-            render();
-            flash('Draft restored');
             await refresh();
+            if (result.restored) {
+                flash('Draft restored');
+                draftRowControl(key)?.focus();
+            } else {
+                flash('Newer edits already restored this draft');
+                draftRowControl(key)?.focus();
+            }
         } catch (error) {
             pending.restoring = false;
             render();
@@ -113,21 +127,42 @@ export const initDrafts = ({ extensionApi = globalThis.browser || globalThis.chr
             savedAt: draft.record.savedAt,
             title: draftTitle(draft),
             timer: null,
-            restoring: false
+            restoring: false,
+            deleting: true,
+            generation: null,
         };
-        pending.timer = globalThis.setTimeout(() => {
-            pendingDeletes.delete(draft.key);
-            render();
-        }, UNDO_MS);
         pendingDeletes.set(draft.key, pending);
         render();
-        // render() replaced the row, so the Delete button the user activated is
-        // gone and focus would fall to <body>. Move it to this row's Undo — the
-        // control they now need, and the one the bulk path already focuses —
-        // because it expires in 6 seconds.
-        undoControlFor(draft.key)?.focus();
         try {
-            await store.remove(draft.key);
+            const result = await sendMutation({
+                type: 'REPORT_DRAFT_DELETE',
+                draftKey: draft.key,
+                expectedGeneration: draft.record[Drafts.GENERATION_FIELD] || null,
+                expectedSavedAt: draft.record.savedAt,
+            });
+            if (!result?.ok) throw new Error('draft delete failed');
+            if (!result.deleted) {
+                pendingDeletes.delete(draft.key);
+                await refresh();
+                flash('Newer edits kept this draft');
+                draftRowControl(draft.key)?.focus();
+                return;
+            }
+            pending.record = result.record;
+            pending.generation = result.generation;
+            pending.deleting = false;
+            pending.timer = globalThis.setTimeout(() => {
+                if (pendingDeletes.get(draft.key) !== pending) return;
+                pendingDeletes.delete(draft.key);
+                render();
+                void sendMutation({
+                    type: 'REPORT_DRAFT_FINALIZE_DELETE',
+                    draftKey: draft.key,
+                    generation: pending.generation,
+                }).catch(() => {});
+            }, UNDO_MS);
+            render();
+            undoControlFor(draft.key)?.focus();
             await refresh();
         } catch (error) {
             globalThis.clearTimeout(pending.timer);
@@ -136,6 +171,10 @@ export const initDrafts = ({ extensionApi = globalThis.browser || globalThis.chr
             flash('Couldn’t delete the draft', { error: true });
         }
     };
+
+    const draftRowControl = key => [...listEl.children]
+        .find(item => item.dataset.draftKey === key)
+        ?.querySelector('a, button');
 
     const copyDraft = async (draft, control) => {
         try {
@@ -203,14 +242,17 @@ export const initDrafts = ({ extensionApi = globalThis.browser || globalThis.chr
         item.className = 'draft-item draft-item-deleted';
         item.dataset.draftKey = key;
         const message = document.createElement('span');
-        message.textContent = pending.restoring ? 'Restoring draft…' : 'Draft deleted';
+        message.textContent = pending.deleting
+            ? 'Deleting draft…'
+            : pending.restoring ? 'Restoring draft…' : 'Draft deleted';
         const undo = actionButton(
             'draft-undo',
-            pending.restoring ? 'Restoring…' : 'Undo',
+            pending.deleting ? 'Deleting…' : pending.restoring ? 'Restoring…' : 'Undo',
             `Undo deletion of ${pending.title}`
         );
         undo.dataset.action = 'undo';
-        undo.disabled = pending.restoring;
+        undo.disabled = pending.deleting || pending.restoring;
+        if (pending.deleting || pending.restoring) item.setAttribute('aria-busy', 'true');
         undo.addEventListener('click', () => { void undoDelete(key); });
         item.append(message, undo);
         return { item, savedAt: pending.savedAt };
@@ -231,8 +273,16 @@ export const initDrafts = ({ extensionApi = globalThis.browser || globalThis.chr
         listEl.append(...rows.map(row => row.item));
         listEl.hidden = rows.length === 0;
         undoAllEl.hidden = !pendingBulk;
-        undoAllButtonEl.disabled = !!pendingBulk?.restoring;
-        undoAllButtonEl.textContent = pendingBulk?.restoring ? 'Restoring…' : 'Undo';
+        undoAllButtonEl.disabled = !!(pendingBulk?.deleting || pendingBulk?.restoring);
+        undoAllButtonEl.textContent = pendingBulk?.deleting
+            ? 'Deleting…' : pendingBulk?.restoring ? 'Restoring…' : 'Undo';
+        if (pendingBulk) {
+            undoAllLabelEl.textContent = pendingBulk.deleting
+                ? 'Deleting drafts…' : pendingBulk.restoring ? 'Restoring drafts…' : 'All drafts deleted';
+            undoAllEl.setAttribute('aria-busy', String(!!(pendingBulk.deleting || pendingBulk.restoring)));
+        } else {
+            undoAllEl.removeAttribute('aria-busy');
+        }
         emptyEl.hidden = rows.length > 0 || !!pendingBulk;
         const freshCount = rows.filter(row => row.fresh).length;
         deleteAllEl.hidden = freshCount === 0;
@@ -255,7 +305,12 @@ export const initDrafts = ({ extensionApi = globalThis.browser || globalThis.chr
             const expiredKeys = validEntries
                 .filter(([, record]) => now - record.savedAt > Drafts.TTL_MS)
                 .map(([key]) => key);
-            if (expiredKeys.length) await store.remove(expiredKeys);
+            if (expiredKeys.length) {
+                await Promise.all(expiredKeys.map(draftKey => sendMutation({
+                    type: 'REPORT_DRAFT_REMOVE',
+                    draftKey,
+                })));
+            }
             if (revision !== refreshRevision) return;
             currentDrafts = validEntries
                 .filter(([key]) => !expiredKeys.includes(key) && Drafts.parseKey(key))
@@ -295,17 +350,48 @@ export const initDrafts = ({ extensionApi = globalThis.browser || globalThis.chr
             .map(draft => [draft.key, draft.record]));
         if (!records.size) return;
         hideDeleteAllConfirmation({ restoreFocus: false });
-        const pending = { records, timer: null, restoring: false };
-        pending.timer = globalThis.setTimeout(() => {
-            if (pendingBulk === pending) pendingBulk = null;
-            render();
-        }, UNDO_MS);
+        const pending = { records, timer: null, restoring: false, deleting: true };
         pendingBulk = pending;
         render();
-        undoAllButtonEl.focus();
         try {
-            await store.remove([...records.keys()]);
+            const result = await sendMutation({
+                type: 'REPORT_DRAFT_DELETE_MANY',
+                entries: [...records].map(([draftKey, record]) => ({
+                    draftKey,
+                    expectedGeneration: record[Drafts.GENERATION_FIELD] || null,
+                    expectedSavedAt: record.savedAt,
+                })),
+            });
+            if (!result?.ok) throw new Error('draft bulk delete failed');
+            const deleted = result.results.filter(item => item.deleted);
+            pending.records = new Map(deleted.map(item => [item.draftKey, {
+                record: item.record,
+                generation: item.generation,
+            }]));
+            if (!pending.records.size) {
+                if (pendingBulk === pending) pendingBulk = null;
+                await refresh();
+                flash('Newer edits kept these drafts');
+                deleteAllEl.focus();
+                return;
+            }
+            pending.deleting = false;
+            pending.timer = globalThis.setTimeout(() => {
+                if (pendingBulk !== pending) return;
+                pendingBulk = null;
+                render();
+                void sendMutation({
+                    type: 'REPORT_DRAFT_FINALIZE_DELETE_MANY',
+                    entries: [...pending.records].map(([draftKey, value]) => ({
+                        draftKey,
+                        generation: value.generation,
+                    })),
+                }).catch(() => {});
+            }, UNDO_MS);
+            render();
+            undoAllButtonEl.focus();
             await refresh();
+            if (deleted.length !== result.results.length) flash('Some newer drafts were kept');
         } catch (error) {
             globalThis.clearTimeout(pending.timer);
             if (pendingBulk === pending) pendingBulk = null;
@@ -323,11 +409,24 @@ export const initDrafts = ({ extensionApi = globalThis.browser || globalThis.chr
         pending.restoring = true;
         render();
         try {
-            await store.set(Object.fromEntries(pending.records));
+            const result = await sendMutation({
+                type: 'REPORT_DRAFT_RESTORE_MANY',
+                entries: [...pending.records].map(([draftKey, value]) => ({
+                    draftKey,
+                    generation: value.generation,
+                    record: value.record,
+                })),
+            });
+            if (!result?.ok) throw new Error('draft bulk restore failed');
             if (pendingBulk === pending) pendingBulk = null;
-            render();
-            flash('Drafts restored');
             await refresh();
+            const restored = result.results.filter(item => item.restored).length;
+            const conflicts = result.results.length - restored;
+            if (restored && conflicts) flash('Drafts restored; newer edits were kept');
+            else if (restored) flash('Drafts restored');
+            else flash('Newer edits already restored these drafts');
+            draftRowControl(result.results.find(item => item.restored)?.draftKey
+                || result.results[0]?.draftKey)?.focus();
         } catch (error) {
             pending.restoring = false;
             render();

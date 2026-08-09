@@ -1839,6 +1839,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
         ext,
         now,
         isPeakbaggerSender,
+        isExtensionPage,
         mutateMap,
     });
     const settingsFileRoutes = createSettingsFileRoutes({

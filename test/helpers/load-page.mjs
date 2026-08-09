@@ -87,13 +87,138 @@ export const makeChromeStub = (initial = {}, localInitial = {}) => {
     };
     let delegatedSendMessage = async () => undefined;
     let settingsPatchQueue = Promise.resolve();
+    let draftMutationQueue = Promise.resolve();
+    let draftGeneration = 0;
     let terrainActivationSequence = 0;
     const favoriteMutations = createFavoritesStore({ storage: chrome.storage.local });
+    const nextDraftGeneration = () => `${Date.now()}:${++draftGeneration}:test-generation`;
+    const draftMutation = message => {
+        const operation = draftMutationQueue.then(async () => {
+            const key = message.draftKey;
+            switch (message.type) {
+            case 'REPORT_DRAFT_WRITE': {
+                const current = (await chrome.storage.local.get(key))[key];
+                if ((typeof current?.text === 'string' && current.savedAt > message.record.savedAt)
+                    || (current?.deletedGeneration && current.deletedAt >= message.record.savedAt)) {
+                    return { ok: true, draftKey: key, written: false, reason: 'superseded' };
+                }
+                const record = structuredClone(message.record);
+                record.storageGeneration = nextDraftGeneration();
+                await chrome.storage.local.set({ [key]: record });
+                return { ok: true, draftKey: key, written: true, record };
+            }
+            case 'REPORT_DRAFT_REMOVE':
+                await chrome.storage.local.remove(key);
+                return { ok: true, draftKey: key };
+            case 'REPORT_DRAFT_DELETE': {
+                const current = (await chrome.storage.local.get(key))[key];
+                const currentGeneration = current?.storageGeneration || null;
+                if (!current || typeof current.text !== 'string'
+                    || current.savedAt !== message.expectedSavedAt
+                    || currentGeneration !== message.expectedGeneration) {
+                    return { ok: true, draftKey: key, deleted: false, reason: 'changed' };
+                }
+                const generation = nextDraftGeneration();
+                await chrome.storage.local.set({
+                    [key]: { deletedGeneration: generation, deletedAt: Date.now() },
+                });
+                return { ok: true, draftKey: key, deleted: true, generation, record: current };
+            }
+            case 'REPORT_DRAFT_RESTORE': {
+                const current = (await chrome.storage.local.get(key))[key];
+                if (current?.deletedGeneration !== message.generation) {
+                    return { ok: true, draftKey: key, restored: false, reason: 'changed' };
+                }
+                const record = structuredClone(message.record);
+                record.storageGeneration = nextDraftGeneration();
+                await chrome.storage.local.set({ [key]: record });
+                return { ok: true, draftKey: key, restored: true, record };
+            }
+            case 'REPORT_DRAFT_DELETE_MANY': {
+                const results = [];
+                for (const entry of message.entries) {
+                    const current = (await chrome.storage.local.get(entry.draftKey))[entry.draftKey];
+                    const currentGeneration = current?.storageGeneration || null;
+                    if (!current || typeof current.text !== 'string'
+                        || current.savedAt !== entry.expectedSavedAt
+                        || currentGeneration !== entry.expectedGeneration) {
+                        results.push({ ok: true, draftKey: entry.draftKey, deleted: false, reason: 'changed' });
+                        continue;
+                    }
+                    const generation = nextDraftGeneration();
+                    await chrome.storage.local.set({
+                        [entry.draftKey]: { deletedGeneration: generation, deletedAt: Date.now() },
+                    });
+                    results.push({
+                        ok: true,
+                        draftKey: entry.draftKey,
+                        deleted: true,
+                        generation,
+                        record: current,
+                    });
+                }
+                return { ok: true, results };
+            }
+            case 'REPORT_DRAFT_RESTORE_MANY': {
+                const results = [];
+                for (const entry of message.entries) {
+                    const current = (await chrome.storage.local.get(entry.draftKey))[entry.draftKey];
+                    if (current?.deletedGeneration !== entry.generation) {
+                        results.push({ ok: true, draftKey: entry.draftKey, restored: false, reason: 'changed' });
+                        continue;
+                    }
+                    const record = structuredClone(entry.record);
+                    record.storageGeneration = nextDraftGeneration();
+                    await chrome.storage.local.set({ [entry.draftKey]: record });
+                    results.push({ ok: true, draftKey: entry.draftKey, restored: true, record });
+                }
+                return { ok: true, results };
+            }
+            case 'REPORT_DRAFT_FINALIZE_DELETE': {
+                const current = (await chrome.storage.local.get(key))[key];
+                if (current?.deletedGeneration !== message.generation) return { ok: true, finalized: false };
+                await chrome.storage.local.remove(key);
+                return { ok: true, finalized: true };
+            }
+            case 'REPORT_DRAFT_FINALIZE_DELETE_MANY': {
+                for (const entry of message.entries) {
+                    const current = (await chrome.storage.local.get(entry.draftKey))[entry.draftKey];
+                    if (current?.deletedGeneration === entry.generation) {
+                        await chrome.storage.local.remove(entry.draftKey);
+                    }
+                }
+                return { ok: true };
+            }
+            case 'REPORT_DRAFT_PRUNE': {
+                const now = Date.now();
+                const drafts = Object.entries(localStore)
+                    .filter(([, value]) => value && typeof value.savedAt === 'number');
+                const expired = drafts.filter(([, value]) => now - value.savedAt > 14 * 24 * 60 * 60 * 1000);
+                const fresh = drafts.filter(([, value]) => now - value.savedAt <= 14 * 24 * 60 * 60 * 1000)
+                    .sort((a, b) => b[1].savedAt - a[1].savedAt);
+                const doomed = [...expired, ...fresh.slice(30)].map(([item]) => item)
+                    .filter(item => item !== message.keepKey);
+                await chrome.storage.local.remove(doomed);
+                return { ok: true, removed: doomed };
+            }
+            default: return null;
+            }
+        });
+        draftMutationQueue = operation.catch(() => {});
+        return operation;
+    };
+    const DRAFT_MUTATION_TYPES = new Set([
+        'REPORT_DRAFT_WRITE', 'REPORT_DRAFT_REMOVE', 'REPORT_DRAFT_DELETE',
+        'REPORT_DRAFT_RESTORE', 'REPORT_DRAFT_DELETE_MANY', 'REPORT_DRAFT_RESTORE_MANY',
+        'REPORT_DRAFT_FINALIZE_DELETE', 'REPORT_DRAFT_FINALIZE_DELETE_MANY', 'REPORT_DRAFT_PRUNE',
+    ]);
     const routedSendMessage = (message, callback) => {
         let operation;
         if (message?.type === favoritesStore.MESSAGE_TYPE) {
             chrome._favoriteMutations.push(structuredClone(message.mutation));
             operation = favoriteMutations.mutate(message.mutation);
+        } else if (DRAFT_MUTATION_TYPES.has(message?.type)) {
+            operation = draftMutation(message);
         } else if (message?.type === 'SETTINGS_PATCH') {
             operation = settingsPatchQueue.then(async () => {
                 const current = settingsSchema.clean(store.bpbSettings);

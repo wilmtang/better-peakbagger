@@ -383,9 +383,8 @@ test('only worker-confirmed success makes in-flight autosaves terminal', async (
     typeRich(dom, '<p>first in-flight write</p>');
     await waitFor(dom, () => releases.length === 1);
     typeRich(dom, '<p>second in-flight write</p>');
-    await waitFor(dom, () => releases.length === 2);
+    await new Promise(resolve => dom.window.setTimeout(resolve, 5));
     dom.window.document.getElementById('SaveButton').click();
-    await waitFor(dom, () => releases.length === 3);
 
     await dom.chrome.storage.local.remove(DRAFT_KEY);
     dom.window.document.dispatchEvent(new dom.window.CustomEvent('bpb:report-draft-saved', {
@@ -393,13 +392,14 @@ test('only worker-confirmed success makes in-flight autosaves terminal', async (
     }));
     dom.window.dispatchEvent(new dom.window.Event('pagehide'));
 
-    releases[2]();
-    await waitFor(dom, () => cleanupCount === 1);
     releases[0]();
-    await waitFor(dom, () => cleanupCount === 2);
+    await waitFor(dom, () => releases.length === 2);
     releases[1]();
-    await waitFor(dom, () => cleanupCount === 3);
-    assert.deepEqual(completions, [2, 0, 1]);
+    await waitFor(dom, () => releases.length === 3);
+    releases[2]();
+    await waitFor(dom, () => cleanupCount >= 3);
+    assert.deepEqual(completions, [0, 1, 2],
+        'the worker-owned draft queue must serialize writes before terminal cleanup');
     assert.equal(dom.chrome._localStore[DRAFT_KEY], undefined);
     dom.window.close();
 });
@@ -500,6 +500,7 @@ test('draft keys distinguish editing an ascent from adding one', async () => {
     await waitFor(dom, () => dom.chrome._localStore['bpbReportDraft:900001:a123456']);
     dom.window.document.getElementById('SaveButton').click();
     await waitFor(dom, () => messages.some(message => message.type === 'REPORT_DRAFT_SAVE_PENDING'));
+    await waitFor(dom, () => dom.chrome._localStore['bpbReportDraft:900001:a123456']?.pendingSave);
     const pending = messages.find(message => message.type === 'REPORT_DRAFT_SAVE_PENDING');
     assert.equal(pending.draftKey, 'bpbReportDraft:900001:a123456');
     assert.deepEqual(pending.identity, { cid: '900001', aid: '123456', pid: null });

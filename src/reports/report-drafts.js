@@ -15,6 +15,7 @@ const TTL_MS = 14 * 24 * 60 * 60 * 1000;
 const LIMIT = 30;
 const EDIT_BASE = `${PEAKBAGGER_ORIGIN}/climber/ascentedit.aspx`;
 const SAVED_EVENT = 'bpb:report-draft-saved';
+const GENERATION_FIELD = 'storageGeneration';
 
 const keyFor = ({ cid, aid, pid } = {}) => {
     const owner = cid || '0';
@@ -67,6 +68,7 @@ export const reportDrafts = {
     TTL_MS,
     LIMIT,
     SAVED_EVENT,
+    GENERATION_FIELD,
     keyFor,
     parseKey,
     editUrl,

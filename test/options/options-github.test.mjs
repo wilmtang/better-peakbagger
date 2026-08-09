@@ -389,7 +389,7 @@ test('deleting one draft is reversible and its Undo survives a live refresh', as
     await waitFor(dom, () => draftRow(dom, key));
 
     draftRow(dom, key).querySelector('[data-action="delete"]').click();
-    await waitFor(dom, () => !(key in dom.chrome._localStore));
+    await waitFor(dom, () => !!dom.chrome._localStore[key]?.deletedGeneration);
     assert.match(draftRow(dom, key).textContent, /Draft deleted\s*Undo/);
     // The activated Delete button is gone from the DOM; a keyboard user must
     // land on the Undo they now need, not on <body>, because it expires in 6s.
@@ -406,7 +406,11 @@ test('deleting one draft is reversible and its Undo survives a live refresh', as
 
     draftRow(dom, key).querySelector('[data-action="undo"]').click();
     await waitFor(dom, () => key in dom.chrome._localStore && draftRow(dom, key)?.querySelector('.draft-title'));
-    assert.deepEqual(JSON.parse(JSON.stringify(dom.chrome._localStore[key])), record);
+    assert.deepEqual(dom.chrome._localStore[key], {
+        ...record,
+        storageGeneration: dom.chrome._localStore[key].storageGeneration,
+    });
+    assert.equal(typeof dom.chrome._localStore[key].storageGeneration, 'string');
     assert.equal(el(dom, 'status').textContent, 'Draft restored');
     assert.equal(el(dom, 'status').classList.contains('show'), true);
 });
@@ -418,7 +422,7 @@ test('a failed single-draft Undo keeps its recovery snapshot available for retry
     await waitFor(dom, () => draftRow(dom, key));
 
     draftRow(dom, key).querySelector('[data-action="delete"]').click();
-    await waitFor(dom, () => !(key in dom.chrome._localStore));
+    await waitFor(dom, () => !!dom.chrome._localStore[key]?.deletedGeneration);
 
     const originalSet = dom.chrome.storage.local.set;
     let failOnce = true;
@@ -432,13 +436,51 @@ test('a failed single-draft Undo keeps its recovery snapshot available for retry
 
     draftRow(dom, key).querySelector('[data-action="undo"]').click();
     await waitFor(dom, () => el(dom, 'status-error-text').textContent === 'Couldn’t restore the draft. Try again.');
-    assert.equal(dom.chrome._localStore[key], undefined);
+    assert.equal(typeof dom.chrome._localStore[key]?.deletedGeneration, 'string');
     assert.match(draftRow(dom, key).textContent, /Draft deleted\s*Undo/);
     assert.equal(dom.window.document.activeElement, draftRow(dom, key).querySelector('[data-action="undo"]'));
 
     draftRow(dom, key).querySelector('[data-action="undo"]').click();
     await waitFor(dom, () => key in dom.chrome._localStore && draftRow(dom, key)?.querySelector('.draft-title'));
-    assert.deepEqual(JSON.parse(JSON.stringify(dom.chrome._localStore[key])), record);
+    assert.equal(dom.chrome._localStore[key].text, record.text);
+});
+
+test('draft deletion stays busy until storage settles and Undo preserves newer same-key edits', async () => {
+    const key = 'bpbReportDraft:900001:a123';
+    const record = { text: 'older recovery', mode: 'rich', savedAt: Date.now() };
+    let releaseDelete;
+    const dom = await loadDraftsPage({}, {
+        local: { [key]: record },
+        prepareChrome: chrome => {
+            const nativeSet = chrome.storage.local.set;
+            chrome.storage.local.set = async patch => {
+                if (patch[key]?.deletedGeneration && !releaseDelete) {
+                    await new Promise(resolve => { releaseDelete = resolve; });
+                }
+                return nativeSet(patch);
+            };
+        },
+    });
+    await waitFor(dom, () => draftRow(dom, key));
+
+    draftRow(dom, key).querySelector('[data-action="delete"]').click();
+    await waitFor(dom, () => releaseDelete);
+    const pendingRow = draftRow(dom, key);
+    assert.match(pendingRow.textContent, /Deleting draft…Deleting…/);
+    assert.equal(pendingRow.getAttribute('aria-busy'), 'true');
+    assert.equal(pendingRow.querySelector('[data-action="undo"]').disabled, true);
+
+    releaseDelete();
+    await waitFor(dom, () => draftRow(dom, key)?.querySelector('[data-action="undo"]')?.disabled === false);
+    assert.equal(dom.window.document.activeElement, draftRow(dom, key).querySelector('[data-action="undo"]'));
+
+    await dom.chrome.storage.local.set({
+        [key]: { text: 'newer same-key autosave', mode: 'rich', savedAt: record.savedAt + 1 },
+    });
+    draftRow(dom, key).querySelector('[data-action="undo"]').click();
+    await waitFor(dom, () => el(dom, 'status').textContent === 'Newer edits already restored this draft');
+    assert.equal(dom.chrome._localStore[key].text, 'newer same-key autosave');
+    assert.equal(dom.window.document.activeElement, draftRow(dom, key).querySelector('a'));
 });
 
 test('delete all states the count, requires confirmation, and retains a failed Undo for retry', async () => {
@@ -486,7 +528,8 @@ test('delete all states the count, requires confirmation, and retains a failed U
 
     el(dom, 'drafts-delete-all').click();
     el(dom, 'drafts-delete-all-confirm').click();
-    await waitFor(dom, () => !(firstKey in dom.chrome._localStore) && !(secondKey in dom.chrome._localStore));
+    await waitFor(dom, () => dom.chrome._localStore[firstKey]?.deletedGeneration
+        && dom.chrome._localStore[secondKey]?.deletedGeneration);
     assert.equal(confirmation.hidden, true, 'the question closes once it is answered');
     assert.equal(el(dom, 'drafts-undo-all').hidden, false);
     assert.match(el(dom, 'drafts-undo-all').textContent, /All drafts deleted\s*Undo/);
@@ -504,15 +547,17 @@ test('delete all states the count, requires confirmation, and retains a failed U
 
     el(dom, 'drafts-undo-all-button').click();
     await waitFor(dom, () => el(dom, 'status-error-text').textContent === 'Couldn’t restore the drafts. Try again.');
-    assert.equal(firstKey in dom.chrome._localStore, false);
-    assert.equal(secondKey in dom.chrome._localStore, false);
+    assert.equal(typeof dom.chrome._localStore[firstKey]?.deletedGeneration, 'string');
+    assert.equal(typeof dom.chrome._localStore[secondKey]?.deletedGeneration, 'string');
     assert.equal(el(dom, 'drafts-undo-all').hidden, false);
     assert.equal(el(dom, 'drafts-undo-all-button').disabled, false);
     assert.equal(dom.window.document.activeElement, el(dom, 'drafts-undo-all-button'));
 
     el(dom, 'drafts-undo-all-button').click();
-    await waitFor(dom, () => firstKey in dom.chrome._localStore && secondKey in dom.chrome._localStore);
-    assert.deepEqual(JSON.parse(JSON.stringify(dom.chrome._localStore)), records);
+    await waitFor(dom, () => typeof dom.chrome._localStore[firstKey]?.text === 'string'
+        && typeof dom.chrome._localStore[secondKey]?.text === 'string');
+    assert.equal(dom.chrome._localStore[firstKey].text, records[firstKey].text);
+    assert.equal(dom.chrome._localStore[secondKey].text, records[secondKey].text);
 });
 
 test('the drafts manager shows an empty state and refreshes when another tab autosaves', async () => {

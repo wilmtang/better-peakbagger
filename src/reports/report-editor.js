@@ -630,6 +630,7 @@ import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.js';
     // ---- Local drafts ---------------------------------------------------------
 
     const localStore = ext.storage.local;
+    const mutateDraft = message => RuntimeMessage.send(ext, { ...message, draftKey });
 
     const createSaveAttemptId = () => {
         try {
@@ -659,7 +660,7 @@ import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.js';
         flushSync();
         try {
             if (!hasRecoverableDraftContent(textarea.value)) {
-                await localStore.remove(draftKey);
+                await mutateDraft({ type: 'REPORT_DRAFT_REMOVE' });
                 status.textContent = '';
                 return;
             }
@@ -670,13 +671,15 @@ import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.js';
                 const label = AscentSnapshot.label({ form, params });
                 if (Object.keys(label).length) record.label = label;
             } catch (error) { /* optional display metadata must never block autosave */ }
-            await localStore.set({ [draftKey]: record });
+            const write = await mutateDraft({ type: 'REPORT_DRAFT_WRITE', record });
+            if (!write?.ok) throw new Error('draft write failed');
+            if (!write.written) return;
             // A worker-confirmed Save or confirmed Delete can arrive while an
             // earlier storage write is already in flight. The completing
             // writer must honor that terminal result so it cannot resurrect
             // the consumed recovery copy.
             if (state.terminalSubmission) {
-                await localStore.remove(draftKey);
+                await mutateDraft({ type: 'REPORT_DRAFT_REMOVE' });
                 return;
             }
             status.textContent = `Draft saved on this device · ${timeLabel(record.savedAt)}`;
@@ -699,7 +702,7 @@ import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.js';
             type: 'REPORT_DRAFT_SAVE_CANCEL',
             draftKey,
         });
-        void localStore.remove(draftKey).catch(() => {});
+        void mutateDraft({ type: 'REPORT_DRAFT_REMOVE' }).catch(() => {});
     };
 
     // A confirmed Delete submit has already established the worker-owned
@@ -854,7 +857,7 @@ import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.js';
                 type: 'REPORT_DRAFT_SAVE_CANCEL',
                 draftKey,
             });
-            void localStore.set({ [draftKey]: retained }).catch(() => {});
+            void mutateDraft({ type: 'REPORT_DRAFT_WRITE', record: retained }).catch(() => {});
         }
         if (Date.now() - stored.savedAt > ReportDrafts.TTL_MS) { clearDraft(); return; }
         const storedText = normalized(stored.text);
@@ -874,15 +877,7 @@ import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.js';
     // store cannot grow without bound.
     const pruneDrafts = async () => {
         try {
-            const everything = await localStore.get(null);
-            const drafts = Object.entries(everything || {})
-                .filter(([key, value]) => key.startsWith(ReportDrafts.PREFIX) && value && typeof value.savedAt === 'number');
-            const expired = drafts.filter(([, value]) => Date.now() - value.savedAt > ReportDrafts.TTL_MS);
-            const fresh = drafts.filter(([, value]) => Date.now() - value.savedAt <= ReportDrafts.TTL_MS)
-                .sort((a, b) => b[1].savedAt - a[1].savedAt);
-            const excess = fresh.slice(ReportDrafts.LIMIT);
-            const doomed = [...expired, ...excess].map(([key]) => key).filter(key => key !== draftKey);
-            if (doomed.length) await localStore.remove(doomed);
+            await RuntimeMessage.send(ext, { type: 'REPORT_DRAFT_PRUNE', keepKey: draftKey });
         } catch (error) { /* best effort */ }
     };
 
