@@ -134,33 +134,49 @@ export function createGithubRoutes({
         return { ok: true, url: url.toString() };
     };
 
+    const publicGithubStatus = (auth, settings) => ({
+        enabled: settings.enableGithubBackup,
+        auto: settings.autoGithubBackup,
+        connected: !!(auth && auth.token && auth.repo && auth.repo.owner && auth.repo.name),
+        hasToken: !!(auth && auth.token),
+        account: (auth && auth.account) || null,
+        repo: (auth && auth.repo) || null,
+        installUrl: GithubAuth.INSTALL_URL,
+        appUrl: GithubAuth.APP_URL,
+        verificationUri: GithubAuth.VERIFICATION_URI,
+    });
     const githubStatus = async () => {
         const auth = await GithubAuth.authStore.read();
         const settings = await Settings.get();
-        return {
-            enabled: settings.enableGithubBackup,
-            auto: settings.autoGithubBackup,
-            connected: !!(auth && auth.token && auth.repo && auth.repo.owner && auth.repo.name),
-            hasToken: !!(auth && auth.token),
-            account: (auth && auth.account) || null,
-            repo: (auth && auth.repo) || null,
-            installUrl: GithubAuth.INSTALL_URL,
-            appUrl: GithubAuth.APP_URL,
-            verificationUri: GithubAuth.VERIFICATION_URI,
-        };
+        return publicGithubStatus(auth, settings);
     };
+
+    const supersededGithubAuth = () => ({
+        phase: 'error',
+        code: 'superseded',
+        message: 'The GitHub connection changed while this request was finishing. Review the current connection and try again.',
+    });
 
     // Keep an existing choice only while it remains in the app installation.
     // New connections always go through repository inspection; auto-selecting a
     // sole repo would skip the populated-repository confirmation and collision
     // checks that make this write boundary safe.
-    const reconcileDiscoveredRepo = async repos => {
-        const selected = await GithubAuth.authStore.getRepo();
-        if (!selected) return;
+    const reconcileDiscoveredRepo = async (repos, snapshot) => {
+        const selected = snapshot.auth?.repo;
+        if (!selected) {
+            return (await GithubAuth.authStore.isSnapshotCurrent(snapshot))
+                ? { ok: true, snapshot }
+                : { ok: false };
+        }
         const stillGranted = repos.some(repo => repo.owner === selected.owner && repo.name === selected.name);
-        if (stillGranted) return;
-        await GithubAuth.authStore.setRepo(null);
-        await GithubAuth.authStore.setInstallationId(null);
+        if (stillGranted) {
+            return (await GithubAuth.authStore.isSnapshotCurrent(snapshot))
+                ? { ok: true, snapshot }
+                : { ok: false };
+        }
+        const replacement = { ...snapshot.auth, repo: null, installationId: null };
+        const result = await GithubAuth.authStore.replaceIfSnapshot(snapshot, replacement);
+        return result.replaced ? { ok: true, snapshot: result.current } : { ok: false };
     };
 
     const sameImportedRepository = (candidate, requested) => {
@@ -263,6 +279,7 @@ export function createGithubRoutes({
         }));
         const { pending, epoch } = snapshot;
         if (!pending) return { phase: 'idle' };
+        const authSnapshot = await GithubAuth.authStore.readSnapshot();
         if (now() > pending.expiresAt) {
             const cleared = await mutateGithubAuthState(async () => {
                 if (epoch !== githubAuthEpoch) return false;
@@ -319,15 +336,17 @@ export function createGithubRoutes({
             });
             if (!claimed) return { phase: 'idle' };
 
-            await GithubAuth.authStore.setCredential(cred);
             if (epoch !== githubAuthEpoch) return { phase: 'idle' };
-            await GithubAuth.authStore.setRepo(null);
-            if (epoch !== githubAuthEpoch) return { phase: 'idle' };
-            await GithubAuth.authStore.setInstallationId(null);
-            if (epoch !== githubAuthEpoch) return { phase: 'idle' };
-            if (account) await GithubAuth.authStore.setAccount(account);
-            if (epoch !== githubAuthEpoch) return { phase: 'idle' };
-            await reconcileDiscoveredRepo(repos);
+            const installed = await GithubAuth.authStore.replaceIfSnapshot(authSnapshot, {
+                token: cred.token,
+                tokenType: cred.tokenType || 'bearer',
+                scope: cred.scope || '',
+                grantedAt: new Date().toISOString(),
+                account,
+                repo: null,
+                installationId: null,
+            });
+            if (!installed.replaced) return { phase: 'idle' };
             if (epoch !== githubAuthEpoch) return { phase: 'idle' };
             return { phase: 'authorized', account, repos, installationCount };
         } catch (error) {
@@ -344,13 +363,18 @@ export function createGithubRoutes({
     // Re-list repositories on demand — after the user returns from the install
     // page having granted (or changed) the selected repositories.
     const githubDiscoverRepos = async () => {
-        const token = await GithubAuth.authStore.getToken();
+        const snapshot = await GithubAuth.authStore.readSnapshot();
+        const token = snapshot.auth?.token;
         if (!token) return { phase: 'error', code: 'no-token' };
         try {
             const { repos, installationCount } = await GithubAuth.listBackupRepositories({ fetch: netFetch, token });
-            await reconcileDiscoveredRepo(repos);
-            return { installationCount, repos, repo: await GithubAuth.authStore.getRepo() };
+            const reconciliation = await reconcileDiscoveredRepo(repos, snapshot);
+            if (!reconciliation.ok) return supersededGithubAuth();
+            return { installationCount, repos, repo: reconciliation.snapshot.auth?.repo || null };
         } catch (error) {
+            if (!(await GithubAuth.authStore.isSnapshotCurrent(snapshot))) {
+                return supersededGithubAuth();
+            }
             return { phase: 'error', ...GithubErrors.publicError(error) };
         }
     };
@@ -358,7 +382,11 @@ export function createGithubRoutes({
     const githubSelectRepo = async message => {
         const r = message && message.repo;
         if (!r || !r.owner || !r.name) return { error: 'invalid-repo' };
-        const token = await GithubAuth.authStore.getToken();
+        const snapshot = await GithubAuth.authStore.readSnapshot();
+        if (message.confirmExisting && message.authorizationEpoch !== snapshot.epoch) {
+            return supersededGithubAuth();
+        }
+        const token = snapshot.auth?.token;
         if (!token) return { connected: false, error: { code: 'no-token' } };
         const client = GithubClient.createGithubClient({
             fetch: netFetch,
@@ -371,10 +399,16 @@ export function createGithubRoutes({
         try {
             inspection = await client.inspectRepository();
         } catch (error) {
+            if (!(await GithubAuth.authStore.isSnapshotCurrent(snapshot))) {
+                return supersededGithubAuth();
+            }
             return {
                 connected: false,
                 error: GithubErrors.publicError(error, 'Could not inspect the repository.'),
             };
+        }
+        if (!(await GithubAuth.authStore.isSnapshotCurrent(snapshot))) {
+            return supersededGithubAuth();
         }
         if (inspection.kind === 'existing' && !message.confirmExisting) {
             return {
@@ -382,17 +416,27 @@ export function createGithubRoutes({
                 needsConfirmation: true,
                 repo: r,
                 inspection,
+                authorizationEpoch: snapshot.epoch,
             };
         }
-        await GithubAuth.authStore.setRepo({
-            owner: r.owner,
-            name: r.name,
-            branch: inspection.branch,
-            id: r.id ?? null,
-            fullName: r.fullName || `${r.owner}/${r.name}`,
-        });
-        if (r.installationId != null) await GithubAuth.authStore.setInstallationId(r.installationId);
-        return { ...(await githubStatus()), inspection };
+        const replacement = {
+            ...snapshot.auth,
+            repo: {
+                owner: r.owner,
+                name: r.name,
+                branch: inspection.branch,
+                id: r.id ?? null,
+                fullName: r.fullName || `${r.owner}/${r.name}`,
+            },
+            installationId: r.installationId ?? null,
+        };
+        const installed = await GithubAuth.authStore.replaceIfSnapshot(snapshot, replacement);
+        if (!installed.replaced) return supersededGithubAuth();
+        const settings = await Settings.get();
+        return {
+            ...publicGithubStatus(installed.current.auth, settings),
+            inspection,
+        };
     };
 
     const githubDisconnect = async () => {
@@ -402,8 +446,9 @@ export function createGithubRoutes({
             GithubAuth.authStore.clear(),
         ]);
         // Clearing the one local record removes the token, repository, and
-        // derived account together. Do not immediately re-read that storage
-        // just to prove what the successful remove already established: a
+        // derived account together while advancing its persisted generation.
+        // Do not immediately re-read storage just to prove what the successful
+        // replacement already established: a
         // follow-up read failure would make the UI report an ambiguous
         // disconnect even though the credential is gone.
         return {

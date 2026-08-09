@@ -33,6 +33,11 @@ const waitFor = async (predicate, ms = 2000) => {
         await new Promise(resolve => setTimeout(resolve, 0));
     }
 };
+const deferred = () => {
+    let resolve;
+    const promise = new Promise(next => { resolve = next; });
+    return { promise, resolve };
+};
 // Asserting that nothing happened has no postcondition to wait for, so the wait
 // has to outlast every stage the work would pass through — including the window
 // a root-file batch stays open for before it commits.
@@ -40,20 +45,25 @@ const settleQuietly = () =>
     new Promise(resolve => setTimeout(resolve, Queue.DEFAULT_COALESCE_WINDOW_MS + 100));
 
 const createWorker = ({ settings = { enableGithubBackup: true }, auth = null, github, session: sharedSession = null,
-    local: sharedLocal = null, failLocalGetAfterRemove = false, syncReadFailures = [],
+    local: sharedLocal = null, failLocalGetAfterClear = false, localSetHook = null, syncReadFailures = [],
     peakbaggerLoginHtml = '<a href="climber/climber.aspx?cid=900001">My Home Page</a>' } = {}) => {
     const session = sharedSession || {};
     const sync = { bpbSettings: structuredClone(settings) };
     const local = sharedLocal || (auth ? { bpbGithubAuth: structuredClone(auth) } : {});
-    const area = (values, { failGetAfterRemove = false } = {}) => {
-        let removed = false;
+    const area = (values, { failGetAfterClear = false, setHook = null } = {}) => {
+        let cleared = false;
         return {
-            get: async key => {
-                if (failGetAfterRemove && removed) throw new Error('local read failed after remove');
-                return { [key]: structuredClone(values[key]) };
+            get: async keys => {
+                if (failGetAfterClear && cleared) throw new Error('local read failed after clear');
+                const requested = Array.isArray(keys) ? keys : [keys];
+                return Object.fromEntries(requested.map(key => [key, structuredClone(values[key])]));
             },
-            set: async patch => Object.assign(values, structuredClone(patch)),
-            remove: async key => { delete values[key]; removed = true; },
+            set: async patch => {
+                if (setHook) await setHook(structuredClone(patch), values);
+                Object.assign(values, structuredClone(patch));
+                if (Object.hasOwn(patch, 'bpbGithubAuth') && patch.bpbGithubAuth === null) cleared = true;
+            },
+            remove: async key => { delete values[key]; },
         };
     };
     const runtimeMessage = event();
@@ -75,7 +85,7 @@ const createWorker = ({ settings = { enableGithubBackup: true }, auth = null, gi
         storage: {
             session: area(session),
             sync: syncArea,
-            local: area(local, { failGetAfterRemove: failLocalGetAfterRemove }),
+            local: area(local, { failGetAfterClear: failLocalGetAfterClear, setHook: localSetHook }),
             onChanged: storageChanged,
         },
         runtime: {
@@ -1470,7 +1480,7 @@ test('disconnect returns a known cleared state without a fallible credential re-
     const worker = createWorker({
         auth: AUTH,
         github: () => null,
-        failLocalGetAfterRemove: true,
+        failLocalGetAfterClear: true,
     });
 
     const result = await worker.send({ type: 'GITHUB_AUTH_DISCONNECT' }, EXTENSION_SENDER);
@@ -1479,7 +1489,8 @@ test('disconnect returns a known cleared state without a fallible credential re-
     assert.equal(result.hasToken, false);
     assert.equal(result.account, null);
     assert.equal(result.repo, null);
-    assert.equal(worker.local.bpbGithubAuth, undefined);
+    assert.equal(worker.local.bpbGithubAuth, null);
+    assert.equal(worker.local.bpbGithubAuthEpoch, 1);
 });
 
 test('disconnect invalidates an authorized device poll before it can restore credentials', async t => {
@@ -1516,7 +1527,8 @@ test('disconnect invalidates an authorized device poll before it can restore cre
     const result = await polling;
 
     assert.equal(result.phase, 'idle');
-    assert.equal(worker.local.bpbGithubAuth, undefined);
+    assert.equal(worker.local.bpbGithubAuth, null);
+    assert.equal(worker.local.bpbGithubAuthEpoch, 1);
     assert.equal(worker.session.bpbGithubAuthPending, undefined);
 });
 
@@ -1541,10 +1553,87 @@ test('repository selection inspects populated content before storing the choice'
     assert.equal(first.inspection.kind, 'existing');
     assert.equal(worker.local.bpbGithubAuth.repo, undefined, 'inspection must not persist an unconfirmed repository');
 
-    const confirmed = await worker.send({ type: 'GITHUB_AUTH_SELECT_REPO', repo, confirmExisting: true }, extensionSender);
+    const confirmed = await worker.send({
+        type: 'GITHUB_AUTH_SELECT_REPO',
+        repo,
+        confirmExisting: true,
+        authorizationEpoch: first.authorizationEpoch,
+    }, extensionSender);
     assert.equal(confirmed.connected, true);
     assert.equal(worker.local.bpbGithubAuth.repo.fullName, 'me/project');
     assert.equal(worker.local.bpbGithubAuth.installationId, 7);
+});
+
+test('an existing-repository confirmation is generation-bound and survives worker restart', async () => {
+    const repo = { owner: 'me', name: 'project', fullName: 'me/project', installationId: 7 };
+    const local = { bpbGithubAuth: { token: 'gho_secret', account: { login: 'me' } } };
+    const github = (method, path) => {
+        if (method === 'GET' && path === '/repos/me/project') return respond(200, {
+            default_branch: 'main', archived: false, size: 1, permissions: { push: true },
+        });
+        if (method === 'GET' && path === '/repos/me/project/git/ref/heads/main') {
+            return respond(200, { object: { sha: 'C0' } });
+        }
+        if (method === 'GET' && path === '/repos/me/project/git/commits/C0') {
+            return respond(200, { tree: { sha: 'T0' } });
+        }
+        if (method === 'GET' && path === '/repos/me/project/git/trees/T0') {
+            return respond(200, { tree: [{ path: 'README.md', type: 'blob', sha: 'r' }] });
+        }
+        return null;
+    };
+    const firstWorker = createWorker({ local, github });
+    const reviewed = await firstWorker.send({ type: 'GITHUB_AUTH_SELECT_REPO', repo }, EXTENSION_SENDER);
+    assert.equal(reviewed.needsConfirmation, true);
+    assert.equal(reviewed.authorizationEpoch, 0);
+
+    const restartedWorker = createWorker({ local, github });
+    const confirmed = await restartedWorker.send({
+        type: 'GITHUB_AUTH_SELECT_REPO',
+        repo,
+        confirmExisting: true,
+        authorizationEpoch: reviewed.authorizationEpoch,
+    }, EXTENSION_SENDER);
+
+    assert.equal(confirmed.connected, true);
+    assert.equal(local.bpbGithubAuth.repo.fullName, 'me/project');
+    assert.equal(local.bpbGithubAuthEpoch, 1);
+    assert.doesNotMatch(JSON.stringify(reviewed), /gho_secret/);
+    assert.doesNotMatch(JSON.stringify(confirmed), /gho_secret/);
+});
+
+test('an existing-repository confirmation becomes superseded after disconnect', async () => {
+    const repo = { owner: 'me', name: 'project', fullName: 'me/project' };
+    const github = (method, path) => {
+        if (method === 'GET' && path === '/repos/me/project') return respond(200, {
+            default_branch: 'main', archived: false, size: 1, permissions: { push: true },
+        });
+        if (method === 'GET' && path === '/repos/me/project/git/ref/heads/main') {
+            return respond(200, { object: { sha: 'C0' } });
+        }
+        if (method === 'GET' && path === '/repos/me/project/git/commits/C0') {
+            return respond(200, { tree: { sha: 'T0' } });
+        }
+        if (method === 'GET' && path === '/repos/me/project/git/trees/T0') {
+            return respond(200, { tree: [{ path: 'README.md', type: 'blob', sha: 'r' }] });
+        }
+        return null;
+    };
+    const worker = createWorker({
+        auth: { token: 'gho_secret', account: { login: 'me' } }, github,
+    });
+    const reviewed = await worker.send({ type: 'GITHUB_AUTH_SELECT_REPO', repo }, EXTENSION_SENDER);
+    await worker.send({ type: 'GITHUB_AUTH_DISCONNECT' }, EXTENSION_SENDER);
+    const stale = await worker.send({
+        type: 'GITHUB_AUTH_SELECT_REPO',
+        repo,
+        confirmExisting: true,
+        authorizationEpoch: reviewed.authorizationEpoch,
+    }, EXTENSION_SENDER);
+
+    assert.equal(stale.code, 'superseded');
+    assert.equal(worker.local.bpbGithubAuth, null);
+    assert.doesNotMatch(JSON.stringify(stale), /gho_secret/);
 });
 
 test('repository selection accepts GitHub\'s 409 response for an empty repository', async () => {
@@ -1566,6 +1655,316 @@ test('repository selection accepts GitHub\'s 409 response for an empty repositor
     assert.equal(result.inspection.kind, 'empty');
     assert.equal(worker.local.bpbGithubAuth.repo.fullName, 'me/backup');
     assert.equal(worker.local.bpbGithubAuth.installationId, 7);
+});
+
+test('a delayed repository selection is superseded by disconnect', async t => {
+    const started = deferred();
+    const release = deferred();
+    t.after(() => release.resolve(respond(503, { message: 'test teardown' })));
+    const github = (method, path) => {
+        if (method === 'GET' && path === '/repos/ada/stale') {
+            started.resolve();
+            return release.promise;
+        }
+        if (method === 'GET' && path === '/repos/ada/stale/git/ref/heads/main') {
+            return respond(409, { message: 'Git Repository is empty.' });
+        }
+        return null;
+    };
+    const worker = createWorker({
+        auth: { token: 'gho_old_secret', account: { login: 'ada' } },
+        github,
+    });
+    const selecting = worker.send({
+        type: 'GITHUB_AUTH_SELECT_REPO',
+        repo: { owner: 'ada', name: 'stale', fullName: 'ada/stale' },
+    }, EXTENSION_SENDER);
+    await started.promise;
+
+    const disconnected = await worker.send({ type: 'GITHUB_AUTH_DISCONNECT' }, EXTENSION_SENDER);
+    release.resolve(respond(200, {
+        default_branch: 'main', archived: false, size: 0, permissions: { push: true },
+    }));
+    const result = await selecting;
+
+    assert.equal(disconnected.connected, false);
+    assert.equal(result.phase, 'error');
+    assert.equal(result.code, 'superseded');
+    assert.equal(worker.local.bpbGithubAuth, null);
+    assert.equal(worker.local.bpbGithubAuthEpoch, 1);
+    assert.doesNotMatch(JSON.stringify(result), /gho_old_secret/);
+});
+
+for (const account of ['ada', 'grace']) {
+    test(`a delayed selection cannot cross disconnect and reconnect to ${account === 'ada' ? 'the same' : 'another'} account`, async t => {
+        const started = deferred();
+        const release = deferred();
+        t.after(() => release.resolve(respond(503, { message: 'test teardown' })));
+        const newToken = `gho_${account}_new_secret`;
+        const github = (method, path) => {
+            if (method === 'GET' && path === '/repos/ada/stale') {
+                started.resolve();
+                return release.promise;
+            }
+            if (method === 'GET' && path === '/repos/ada/stale/git/ref/heads/main') {
+                return respond(409, { message: 'Git Repository is empty.' });
+            }
+            if (method === 'POST' && path === 'https://github.com/login/device/code') return respond(200, {
+                device_code: 'NEW-DEVICE', user_code: 'ABCD-1234',
+                verification_uri: 'https://github.com/login/device', expires_in: 900, interval: 5,
+            });
+            if (method === 'POST' && path === 'https://github.com/login/oauth/access_token') {
+                return respond(200, { access_token: newToken, token_type: 'bearer', scope: '' });
+            }
+            if (method === 'GET' && path === '/user') return respond(200, { login: account, id: 8 });
+            if (method === 'GET' && path === '/user/installations') {
+                return respond(200, { installations: [] });
+            }
+            return null;
+        };
+        const worker = createWorker({
+            auth: { token: 'gho_old_secret', account: { login: 'ada' } },
+            github,
+        });
+        const selecting = worker.send({
+            type: 'GITHUB_AUTH_SELECT_REPO',
+            repo: { owner: 'ada', name: 'stale', fullName: 'ada/stale' },
+        }, EXTENSION_SENDER);
+        await started.promise;
+        await worker.send({ type: 'GITHUB_AUTH_DISCONNECT' }, EXTENSION_SENDER);
+        await worker.send({ type: 'GITHUB_AUTH_BEGIN' }, EXTENSION_SENDER);
+        worker.session.bpbGithubAuthPending.nextPollAt = 0;
+        const authorized = await worker.send({ type: 'GITHUB_AUTH_STATE' }, EXTENSION_SENDER);
+
+        release.resolve(respond(200, {
+            default_branch: 'main', archived: false, size: 0, permissions: { push: true },
+        }));
+        const stale = await selecting;
+
+        assert.equal(authorized.phase, 'authorized');
+        assert.equal(stale.code, 'superseded');
+        assert.equal(worker.local.bpbGithubAuth.token, newToken);
+        assert.equal(worker.local.bpbGithubAuth.account.login, account);
+        assert.equal(worker.local.bpbGithubAuth.repo, null);
+        assert.equal(worker.local.bpbGithubAuthEpoch, 2);
+        assert.doesNotMatch(JSON.stringify(authorized), new RegExp(newToken));
+        assert.doesNotMatch(JSON.stringify(stale), /gho_old_secret/);
+    });
+}
+
+test('a verified credential import supersedes an older repository inspection', async t => {
+    const started = deferred();
+    const release = deferred();
+    t.after(() => release.resolve(respond(503, { message: 'test teardown' })));
+    const github = (method, path) => {
+        if (method === 'GET' && path === '/repos/ada/stale') {
+            started.resolve();
+            return release.promise;
+        }
+        if (method === 'GET' && path === '/repos/ada/stale/git/ref/heads/main') {
+            return respond(409, { message: 'Git Repository is empty.' });
+        }
+        if (method === 'GET' && path === '/user') return respond(200, { login: 'grace', id: 9 });
+        if (method === 'GET' && path === '/user/installations') return respond(200, {
+            installations: [{ id: 44, app_slug: 'better-peakbagger-backup' }],
+        });
+        if (method === 'GET' && path === '/user/installations/44/repositories') return respond(200, {
+            repositories: [{
+                id: 88, name: 'backup', full_name: 'grace/backup', default_branch: 'main',
+                owner: { login: 'grace' },
+            }],
+        });
+        if (method === 'GET' && path === '/repos/grace/backup') return respond(200, {
+            default_branch: 'main', archived: false, size: 0, permissions: { push: true },
+        });
+        if (method === 'GET' && path === '/repos/grace/backup/git/ref/heads/main') {
+            return respond(409, { message: 'Git Repository is empty.' });
+        }
+        return null;
+    };
+    const worker = createWorker({
+        auth: { token: 'gho_old_secret', account: { login: 'ada' } },
+        github,
+    });
+    const selecting = worker.send({
+        type: 'GITHUB_AUTH_SELECT_REPO',
+        repo: { owner: 'ada', name: 'stale', fullName: 'ada/stale' },
+    }, EXTENSION_SENDER);
+    await started.promise;
+    const payload = Transfer.buildPayload({ theme: 'dark' }, {
+        extensionVersion: '3.5.0',
+        exportedAt: '2026-08-09T12:00:00.000Z',
+        githubConnection: {
+            token: 'ghu_imported_secret',
+            repository: { owner: 'grace', name: 'backup', id: 88 },
+        },
+    });
+    const imported = await worker.send({
+        type: 'SETTINGS_FILE_IMPORT', content: Transfer.serialize(payload),
+    }, EXTENSION_SENDER);
+    release.resolve(respond(200, {
+        default_branch: 'main', archived: false, size: 0, permissions: { push: true },
+    }));
+    const stale = await selecting;
+
+    assert.equal(imported.ok, true);
+    assert.equal(stale.code, 'superseded');
+    assert.equal(worker.local.bpbGithubAuth.token, 'ghu_imported_secret');
+    assert.equal(worker.local.bpbGithubAuth.repo.fullName, 'grace/backup');
+    assert.equal(worker.local.bpbGithubAuthEpoch, 1);
+    assert.doesNotMatch(JSON.stringify(imported), /ghu_imported_secret/);
+    assert.doesNotMatch(JSON.stringify(stale), /gho_old_secret/);
+});
+
+test('the second repository selection supersedes the first delayed inspection', async t => {
+    const started = deferred();
+    const release = deferred();
+    t.after(() => release.resolve(respond(503, { message: 'test teardown' })));
+    const github = (method, path) => {
+        if (method === 'GET' && path === '/repos/ada/first') {
+            started.resolve();
+            return release.promise;
+        }
+        if (method === 'GET' && path === '/repos/ada/second') return respond(200, {
+            default_branch: 'main', archived: false, size: 0, permissions: { push: true },
+        });
+        if (method === 'GET' && /\/repos\/ada\/(first|second)\/git\/ref\/heads\/main/.test(path)) {
+            return respond(409, { message: 'Git Repository is empty.' });
+        }
+        return null;
+    };
+    const worker = createWorker({
+        auth: { token: 'gho_secret', account: { login: 'ada' } }, github,
+    });
+    const first = worker.send({
+        type: 'GITHUB_AUTH_SELECT_REPO', repo: { owner: 'ada', name: 'first' },
+    }, EXTENSION_SENDER);
+    await started.promise;
+    const second = await worker.send({
+        type: 'GITHUB_AUTH_SELECT_REPO', repo: { owner: 'ada', name: 'second' },
+    }, EXTENSION_SENDER);
+    release.resolve(respond(200, {
+        default_branch: 'main', archived: false, size: 0, permissions: { push: true },
+    }));
+    const stale = await first;
+
+    assert.equal(second.connected, true);
+    assert.equal(stale.code, 'superseded');
+    assert.equal(worker.local.bpbGithubAuth.repo.name, 'second');
+    assert.equal(worker.local.bpbGithubAuthEpoch, 1);
+    assert.doesNotMatch(JSON.stringify(second), /gho_secret/);
+});
+
+test('repository discovery cannot reconcile a selection after disconnect', async t => {
+    const started = deferred();
+    const release = deferred();
+    t.after(() => release.resolve(respond(503, { message: 'test teardown' })));
+    const github = (method, path) => {
+        if (method === 'GET' && path === '/user/installations') {
+            started.resolve();
+            return release.promise;
+        }
+        return null;
+    };
+    const worker = createWorker({
+        auth: {
+            token: 'gho_secret',
+            account: { login: 'ada' },
+            repo: { owner: 'ada', name: 'old', branch: 'main' },
+            installationId: 7,
+        },
+        github,
+    });
+    const discovery = worker.send({ type: 'GITHUB_AUTH_DISCOVER' }, EXTENSION_SENDER);
+    await started.promise;
+    await worker.send({ type: 'GITHUB_AUTH_DISCONNECT' }, EXTENSION_SENDER);
+    release.resolve(respond(200, { installations: [] }));
+    const stale = await discovery;
+
+    assert.equal(stale.code, 'superseded');
+    assert.equal(worker.local.bpbGithubAuth, null);
+    assert.equal(worker.local.bpbGithubAuthEpoch, 1);
+    assert.doesNotMatch(JSON.stringify(stale), /gho_secret/);
+});
+
+test('repository selection storage failure preserves the prior authorization generation', async () => {
+    const initial = { token: 'gho_secret', account: { login: 'ada' } };
+    const worker = createWorker({
+        auth: initial,
+        github: (method, path) => {
+            if (method === 'GET' && path === '/repos/ada/backup') return respond(200, {
+                default_branch: 'main', archived: false, size: 0, permissions: { push: true },
+            });
+            if (method === 'GET' && path === '/repos/ada/backup/git/ref/heads/main') {
+                return respond(409, { message: 'Git Repository is empty.' });
+            }
+            return null;
+        },
+        localSetHook: patch => {
+            if (patch.bpbGithubAuth?.repo) throw new Error('selection storage failed');
+        },
+    });
+
+    const result = await worker.send({
+        type: 'GITHUB_AUTH_SELECT_REPO',
+        repo: { owner: 'ada', name: 'backup', installationId: 7 },
+    }, EXTENSION_SENDER);
+
+    assert.equal(result.phase, 'error');
+    assert.deepEqual(structuredClone(worker.local.bpbGithubAuth), initial);
+    assert.equal(worker.local.bpbGithubAuthEpoch, undefined);
+    assert.doesNotMatch(JSON.stringify(result), /gho_secret/);
+});
+
+test('repository reconciliation storage failure preserves repo and installation together', async () => {
+    const initial = {
+        token: 'gho_secret',
+        account: { login: 'ada' },
+        repo: { owner: 'ada', name: 'revoked', branch: 'main' },
+        installationId: 7,
+    };
+    const worker = createWorker({
+        auth: initial,
+        github: (method, path) => {
+            if (method === 'GET' && path === '/user/installations') {
+                return respond(200, { installations: [] });
+            }
+            return null;
+        },
+        localSetHook: patch => {
+            if (patch.bpbGithubAuth?.repo === null) throw new Error('reconciliation storage failed');
+        },
+    });
+
+    const result = await worker.send({ type: 'GITHUB_AUTH_DISCOVER' }, EXTENSION_SENDER);
+
+    assert.equal(result.phase, 'error');
+    assert.deepEqual(structuredClone(worker.local.bpbGithubAuth), initial);
+    assert.equal(worker.local.bpbGithubAuthEpoch, undefined);
+    assert.doesNotMatch(JSON.stringify(result), /gho_secret/);
+});
+
+test('disconnect storage failure keeps the complete connected authorization', async () => {
+    const initial = {
+        token: 'gho_secret',
+        account: { login: 'ada' },
+        repo: { owner: 'ada', name: 'backup', branch: 'main' },
+        installationId: 7,
+    };
+    const worker = createWorker({
+        auth: initial,
+        github: () => null,
+        localSetHook: patch => {
+            if (patch.bpbGithubAuth === null) throw new Error('disconnect storage failed');
+        },
+    });
+
+    const result = await worker.send({ type: 'GITHUB_AUTH_DISCONNECT' }, EXTENSION_SENDER);
+
+    assert.equal(result.phase, 'error');
+    assert.deepEqual(structuredClone(worker.local.bpbGithubAuth), initial);
+    assert.equal(worker.local.bpbGithubAuthEpoch, undefined);
+    assert.doesNotMatch(JSON.stringify(result), /gho_secret/);
 });
 
 test('repository selection rejects ambiguous root backup folders', async () => {

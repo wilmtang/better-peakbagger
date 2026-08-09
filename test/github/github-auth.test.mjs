@@ -9,7 +9,11 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { githubAuth as Auth, STORAGE_KEY } from '../../src/github/github-auth.js';
+import {
+    githubAuth as Auth,
+    STORAGE_KEY,
+    EPOCH_KEY,
+} from '../../src/github/github-auth.js';
 import { githubErrors as GithubErrors } from '../../src/github/github-errors.js';
 
 const { ERROR_CODES } = GithubErrors;
@@ -17,6 +21,8 @@ const { ERROR_CODES } = GithubErrors;
 test('GitHub auth publishes its local storage key', () => {
     assert.equal(STORAGE_KEY, 'bpbGithubAuth');
     assert.equal(Auth.STORAGE_KEY, STORAGE_KEY);
+    assert.equal(EPOCH_KEY, 'bpbGithubAuthEpoch');
+    assert.equal(Auth.EPOCH_KEY, EPOCH_KEY);
 });
 
 // A controllable clock: wait() advances virtual time so a poll deadline can be
@@ -283,7 +289,12 @@ const makeArea = () => {
     const data = {};
     return {
         data,
-        get: async key => (key in data ? { [key]: data[key] } : {}),
+        get: async keys => {
+            const requested = Array.isArray(keys) ? keys : [keys];
+            return Object.fromEntries(requested
+                .filter(key => key in data)
+                .map(key => [key, data[key]]));
+        },
         set: async obj => { Object.assign(data, obj); },
         remove: async key => { delete data[key]; },
     };
@@ -307,9 +318,10 @@ test('the auth store keeps the token and repo locally and reports connection', a
     // The secret lands only under the local key, never a sync key.
     assert.ok('bpbGithubAuth' in area.data);
     assert.equal(area.data.bpbGithubAuth.token, 'gho_secret');
+    assert.equal(area.data.bpbGithubAuthEpoch, 2);
 });
 
-test('clear drops the local token and repo', async () => {
+test('clear drops the local token and repo while preserving a generation tombstone', async () => {
     const area = makeArea();
     const store = Auth.createAuthStore(area);
     await store.setCredential({ token: 'gho_secret' });
@@ -317,7 +329,8 @@ test('clear drops the local token and repo', async () => {
     await store.clear();
     assert.equal(await store.getToken(), null);
     assert.equal(await store.isConnected(), false);
-    assert.ok(!('bpbGithubAuth' in area.data));
+    assert.equal(area.data.bpbGithubAuth, null);
+    assert.equal(area.data.bpbGithubAuthEpoch, 3);
 });
 
 test('auth-store replacement atomically installs or restores one complete connection', async () => {
@@ -352,6 +365,45 @@ test('conditional auth restore yields to a newer queued reconnect', async () => 
 
     assert.deepEqual(await rollback, { replaced: false, current: newer });
     assert.deepEqual(await store.read(), newer);
+});
+
+test('snapshot replacement rejects disconnect and same-record reconnect generations', async () => {
+    const area = makeArea();
+    const store = Auth.createAuthStore(area);
+    const credential = { token: 'same-token', account: { login: 'ada' } };
+    await store.replace(credential);
+    const inspected = await store.readSnapshot();
+
+    await store.clear();
+    await store.replace(credential);
+    const result = await store.replaceIfSnapshot(inspected, {
+        ...credential,
+        repo: { owner: 'ada', name: 'stale-repo' },
+    });
+
+    assert.equal(result.replaced, false);
+    assert.deepEqual(result.current, { auth: credential, epoch: 3 });
+    assert.deepEqual(await store.read(), credential);
+});
+
+test('snapshot replacement writes repository, installation, and epoch atomically', async () => {
+    const area = makeArea();
+    const store = Auth.createAuthStore(area);
+    await store.replace({ token: 'gho_secret', account: { login: 'ada' } });
+    const inspected = await store.readSnapshot();
+    const replacement = {
+        ...inspected.auth,
+        repo: { owner: 'ada', name: 'peaks', branch: 'main' },
+        installationId: 7,
+    };
+
+    const result = await store.replaceIfSnapshot(inspected, replacement);
+
+    assert.deepEqual(result, { replaced: true, current: { auth: replacement, epoch: 2 } });
+    assert.deepEqual(area.data, {
+        bpbGithubAuth: replacement,
+        bpbGithubAuthEpoch: 2,
+    });
 });
 
 test('concurrent auth-store writes preserve both patches', async () => {
@@ -401,12 +453,36 @@ test('auth-store write failures propagate and do not poison later mutations', as
     });
 });
 
-test('auth-store clear propagates remove failures and keeps the credential', async () => {
+test('auth-store clear propagates replacement failures and keeps the credential generation', async () => {
     const area = makeArea();
     const store = Auth.createAuthStore(area);
     await store.setCredential({ token: 'gho_secret' });
-    area.remove = async () => { throw new Error('local remove failed'); };
+    const nativeSet = area.set;
+    area.set = async value => {
+        if (value[STORAGE_KEY] === null) throw new Error('local replacement failed');
+        return nativeSet(value);
+    };
 
-    await assert.rejects(store.clear(), /local remove failed/);
+    await assert.rejects(store.clear(), /local replacement failed/);
     assert.equal(await store.getToken(), 'gho_secret');
+    assert.equal(area.data[EPOCH_KEY], 1);
+});
+
+test('snapshot replacement storage failure preserves the complete prior generation', async () => {
+    const area = makeArea();
+    const store = Auth.createAuthStore(area);
+    await store.replace({ token: 'gho_secret', account: { login: 'ada' } });
+    const inspected = await store.readSnapshot();
+    const nativeSet = area.set;
+    area.set = async value => {
+        if (value[STORAGE_KEY]?.repo) throw new Error('local replacement failed');
+        return nativeSet(value);
+    };
+
+    await assert.rejects(store.replaceIfSnapshot(inspected, {
+        ...inspected.auth,
+        repo: { owner: 'ada', name: 'peaks' },
+        installationId: 7,
+    }), /local replacement failed/);
+    assert.deepEqual(await store.readSnapshot(), inspected);
 });

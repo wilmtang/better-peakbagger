@@ -13,7 +13,10 @@ const makeArea = (initial = {}) => {
     const values = structuredClone(initial);
     return {
         values,
-        async get(key) { return { [key]: structuredClone(values[key]) }; },
+        async get(keys) {
+            const requested = Array.isArray(keys) ? keys : [keys];
+            return Object.fromEntries(requested.map(key => [key, structuredClone(values[key])]));
+        },
         async set(patch) { Object.assign(values, structuredClone(patch)); },
         async remove(key) { delete values[key]; },
     };
@@ -241,14 +244,14 @@ test('a failed GitHub credential write rolls settings and API keys back', async 
         repo: { owner: 'old', name: 'backup', branch: 'main' },
     };
     const h = harness({ imgbb: 'old-imgbb-key', github: oldAuth });
-    const nativeReplace = h.authStore.replace;
+    const nativeReplaceIfSnapshot = h.authStore.replaceIfSnapshot;
     let failOnce = true;
-    h.authStore.replace = async value => {
+    h.authStore.replaceIfSnapshot = async (expected, value) => {
         if (failOnce && value?.token === 'ghu_imported_token') {
             failOnce = false;
             throw new Error('auth write failed');
         }
-        return nativeReplace(value);
+        return nativeReplaceIfSnapshot(expected, value);
     };
     const payload = Transfer.buildPayload({ theme: 'light' }, {
         extensionVersion: '3.3.0',
@@ -332,7 +335,11 @@ test('a newer settings patch survives rollback and is reported as a conflict', a
 
 test('a newer API key survives rollback after a later GitHub write fails', async () => {
     const h = harness({ imgbb: 'old-imgbb-key' });
-    h.authStore.replace = async () => {
+    const nativeReplaceIfSnapshot = h.authStore.replaceIfSnapshot;
+    let failOnce = true;
+    h.authStore.replaceIfSnapshot = async (expected, replacement) => {
+        if (!failOnce) return nativeReplaceIfSnapshot(expected, replacement);
+        failOnce = false;
         await h.keyStore.setKey('newer-imgbb-key', '2026-08-08T12:00:00.000Z');
         throw new Error('GitHub write failed');
     };
@@ -362,11 +369,14 @@ test('a disconnect and reconnect survive an ambiguous imported GitHub write fail
     const oldAuth = { token: 'ghu_old_token', repo: { owner: 'old', name: 'backup' } };
     const newerAuth = { token: 'ghu_newer_token', repo: { owner: 'grace', name: 'summits' } };
     const h = harness({ github: oldAuth });
-    const nativeReplace = h.authStore.replace;
-    h.authStore.replace = async value => {
-        await nativeReplace(value);
+    const nativeReplaceIfSnapshot = h.authStore.replaceIfSnapshot;
+    let failOnce = true;
+    h.authStore.replaceIfSnapshot = async (expected, value) => {
+        if (!failOnce) return nativeReplaceIfSnapshot(expected, value);
+        failOnce = false;
+        await nativeReplaceIfSnapshot(expected, value);
         await h.authStore.clear();
-        await nativeReplace(newerAuth);
+        await h.authStore.replace(newerAuth);
         throw new Error('ambiguous GitHub write failure');
     };
     const payload = Transfer.buildPayload({ theme: 'light' }, {
@@ -458,12 +468,14 @@ for (const failedStore of ['settings', 'imgbb', 'github']) {
                 throw new Error('ImgBB rollback failed');
             };
         } else {
-            const nativeReplace = h.authStore.replace;
-            h.authStore.replace = async value => {
-                await nativeReplace(value);
-                throw new Error('ambiguous GitHub write failure');
-            };
-            h.authStore.replaceIfCurrent = async () => {
+            const nativeReplaceIfSnapshot = h.authStore.replaceIfSnapshot;
+            let calls = 0;
+            h.authStore.replaceIfSnapshot = async (expected, value) => {
+                calls += 1;
+                if (calls === 1) {
+                    await nativeReplaceIfSnapshot(expected, value);
+                    throw new Error('ambiguous GitHub write failure');
+                }
                 throw new Error('GitHub rollback failed');
             };
         }

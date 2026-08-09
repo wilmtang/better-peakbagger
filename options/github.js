@@ -217,7 +217,7 @@ export function initGithubBackup({ extensionApi, flash, save }) {
         );
     };
 
-    const renderExistingRepoConfirmation = repo => {
+    const renderExistingRepoConfirmation = (repo, authorizationEpoch) => {
         choosingRepo = true;
         confirmingExistingRepo = true;
         const fullName = repo.fullName || `${repo.owner}/${repo.name}`;
@@ -225,7 +225,10 @@ export function initGithubBackup({ extensionApi, flash, save }) {
             el('p', { class: 'github-line', text: `${fullName} already contains files.` }),
             el('p', { class: 'github-hint', text: 'Existing files will stay in place. Better Peakbagger will add its own files and mountain folders at the repository root.' }),
             el('div', { class: 'github-actions' }, [
-                button('Use this repository', { primary: true, onClick: () => selectRepo(repo, { confirmExisting: true }) }),
+                button('Use this repository', {
+                    primary: true,
+                    onClick: () => selectRepo(repo, { confirmExisting: true, authorizationEpoch }),
+                }),
                 button('Choose another', { onClick: () => refreshRepos({ choose: true }) }),
             ]),
         );
@@ -503,17 +506,26 @@ export function initGithubBackup({ extensionApi, flash, save }) {
         return renderChooseRepo(next, discovery);
     };
 
-    const selectRepo = async (repo, { confirmExisting = false } = {}) => {
+    const selectRepo = async (repo, { confirmExisting = false, authorizationEpoch = null } = {}) => {
         render(el('p', { class: 'github-line', text: 'Checking repository safety…' }));
-        const status = await send({ type: 'GITHUB_AUTH_SELECT_REPO', repo, confirmExisting });
+        const status = await send({
+            type: 'GITHUB_AUTH_SELECT_REPO', repo, confirmExisting, authorizationEpoch,
+        });
         if (status && status.connected) {
             const connected = rememberStatus({ ...status, permissionGranted: true });
             flash('Repository selected');
             return renderConnected(connected);
         }
-        if (status && status.needsConfirmation) return renderExistingRepoConfirmation(repo);
+        if (status && status.needsConfirmation) {
+            return renderExistingRepoConfirmation(repo, status.authorizationEpoch);
+        }
         if (status?.phase === 'error') {
-            return renderError(status.error || status, () => selectRepo(repo, { confirmExisting }));
+            return renderError(
+                status.error || status,
+                (status.error?.code || status.code) === 'superseded'
+                    ? () => refreshRepos({ choose: true })
+                    : () => selectRepo(repo, { confirmExisting, authorizationEpoch }),
+            );
         }
         if (status && status.error) {
             if ([

@@ -260,6 +260,7 @@ const listBackupRepositories = async ({ fetch, token, appSlug = APP_SLUG }) => {
 // ---- Token / repo storage (chrome.storage.local only) ------------------
 
 export const STORAGE_KEY = 'bpbGithubAuth';
+export const EPOCH_KEY = 'bpbGithubAuthEpoch';
 
 const resolveLocalArea = () => {
     const api = (typeof browser !== 'undefined' && browser.storage) ? browser
@@ -282,49 +283,69 @@ const createAuthStore = (area = resolveLocalArea()) => {
         mutationQueue = pending.catch(() => {});
         return pending;
     };
-    const write = patch => mutate(async () => {
-        const next = { ...(await read()), ...patch };
-        await area.set({ [STORAGE_KEY]: next });
+    const epochFrom = result => {
+        const value = Number(result && result[EPOCH_KEY]);
+        return Number.isSafeInteger(value) && value >= 0 ? value : 0;
+    };
+    const readEpoch = async () => {
+        if (!area) throw new Error('GitHub authorization storage is unavailable.');
+        return epochFrom(await area.get(EPOCH_KEY));
+    };
+    const currentSnapshot = async () => {
+        if (!area) throw new Error('GitHub authorization storage is unavailable.');
+        const result = await area.get([STORAGE_KEY, EPOCH_KEY]);
+        return { auth: result?.[STORAGE_KEY] || null, epoch: epochFrom(result) };
+    };
+    const sameSnapshot = (left, right) => !!left && !!right
+        && left.epoch === right.epoch
+        && StorageValue.same(left.auth, right.auth);
+    const install = async (value, epoch) => {
+        if (!area) throw new Error('GitHub authorization storage is unavailable.');
+        if (value !== null && (typeof value !== 'object' || Array.isArray(value))) {
+            throw new TypeError('GitHub authorization record must be an object.');
+        }
+        const next = value === null ? null : { ...value };
+        await area.set({ [STORAGE_KEY]: next, [EPOCH_KEY]: epoch });
         return next;
+    };
+    const write = patch => mutate(async () => {
+        const current = await currentSnapshot();
+        return install({ ...(current.auth || {}), ...patch }, current.epoch + 1);
     });
     // Exact record replacement is reserved for the transactional manual
     // settings-file import. Its caller validates the token/repository
     // against GitHub first and uses the same operation to restore the prior
     // record if a later credential write fails.
     const replace = value => mutate(async () => {
-        if (!area) throw new Error('GitHub authorization storage is unavailable.');
-        if (value == null) {
-            await area.remove(STORAGE_KEY);
-            return null;
-        }
-        if (typeof value !== 'object' || Array.isArray(value)) {
-            throw new TypeError('GitHub authorization record must be an object.');
-        }
-        const next = { ...value };
-        await area.set({ [STORAGE_KEY]: next });
-        return next;
+        const epoch = await readEpoch();
+        return install(value == null ? null : value, epoch + 1);
     });
     const replaceIfCurrent = (expected, replacement) => mutate(async () => {
-        const current = await read();
-        if (!StorageValue.same(current, expected)) {
-            return { replaced: false, current };
+        const snapshot = await currentSnapshot();
+        if (!StorageValue.same(snapshot.auth, expected)) {
+            return { replaced: false, current: snapshot.auth };
         }
-        if (replacement == null) {
-            await area.remove(STORAGE_KEY);
-            return { replaced: true, current: null };
-        }
-        if (typeof replacement !== 'object' || Array.isArray(replacement)) {
-            throw new TypeError('GitHub authorization record must be an object.');
-        }
-        const next = { ...replacement };
-        await area.set({ [STORAGE_KEY]: next });
+        const next = await install(replacement == null ? null : replacement, snapshot.epoch + 1);
         return { replaced: true, current: next };
+    });
+    const readSnapshot = () => mutate(currentSnapshot);
+    const isSnapshotCurrent = expected => mutate(async () =>
+        sameSnapshot(await currentSnapshot(), expected));
+    const replaceIfSnapshot = (expected, replacement) => mutate(async () => {
+        const current = await currentSnapshot();
+        if (!sameSnapshot(current, expected)) return { replaced: false, current };
+        const auth = await install(replacement == null ? null : replacement, current.epoch + 1);
+        return { replaced: true, current: { auth, epoch: current.epoch + 1 } };
     });
     return {
         STORAGE_KEY,
+        EPOCH_KEY,
         read,
+        readSnapshot,
+        isSnapshotCurrent,
         replace,
         replaceIfCurrent,
+        replaceIfSnapshot,
         // The credential half; outside the explicit manual file-transfer
         // exception, the token stays local and is held only by the worker.
         setCredential: ({ token, tokenType = 'bearer', scope = '' }) =>
@@ -341,8 +362,8 @@ const createAuthStore = (area = resolveLocalArea()) => {
         // Disconnect: drop the local token and every derived choice. This
         // does not revoke on GitHub — that is uninstalling the app.
         clear: () => mutate(async () => {
-            if (!area) throw new Error('GitHub authorization storage is unavailable.');
-            await area.remove(STORAGE_KEY);
+            const epoch = await readEpoch();
+            await install(null, epoch + 1);
         }),
     };
 };
@@ -356,6 +377,7 @@ const API = {
     APP_URL,
     VERIFICATION_URI,
     STORAGE_KEY,
+    EPOCH_KEY,
     createDeviceFlow,
     fetchAccount,
     listBackupRepositories,

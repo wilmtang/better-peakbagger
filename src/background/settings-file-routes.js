@@ -58,7 +58,7 @@ export function createSettingsFileRoutes({
 } = {}) {
     if (!ext || !settings?.requireCurrent || !settings?.applyPatch || !settings?.replaceIfCurrent
         || !settings?.clean || !keyStore?.read || !keyStore?.replace || !keyStore?.replaceIfCurrent
-        || !authStore?.read || !authStore?.replace || !authStore?.replaceIfCurrent
+        || !authStore?.read || !authStore?.readSnapshot || !authStore?.replaceIfSnapshot
         || typeof verifyGithubConnection !== 'function') {
         throw new TypeError('settings file routes require extension and storage dependencies');
     }
@@ -158,12 +158,12 @@ export function createSettingsFileRoutes({
 
         let previousSettings;
         let previousImgbb;
-        let previousGithubAuth;
+        let previousGithubSnapshot;
         try {
-            [previousSettings, previousImgbb, previousGithubAuth] = await Promise.all([
+            [previousSettings, previousImgbb, previousGithubSnapshot] = await Promise.all([
                 settings.requireCurrent(),
                 keyStore.read(),
-                importsGithubConnection ? authStore.read() : null,
+                importsGithubConnection ? authStore.readSnapshot() : null,
             ]);
         } catch (error) {
             console.error('Better Peakbagger: settings file import read failed', error);
@@ -182,6 +182,10 @@ export function createSettingsFileRoutes({
             key: parsed.apiKeys.imgbb,
             savedAt: new Date().toISOString(),
         } : null;
+        const installedGithubSnapshot = importsGithubConnection ? {
+            auth: importedGithubAuth,
+            epoch: previousGithubSnapshot.epoch + 1,
+        } : null;
         const attempted = { settings: false, imgbb: false, github: false };
         try {
             attempted.settings = true;
@@ -194,7 +198,15 @@ export function createSettingsFileRoutes({
             }
             if (importsGithubConnection) {
                 attempted.github = true;
-                await authStore.replace(importedGithubAuth);
+                const result = await authStore.replaceIfSnapshot(
+                    previousGithubSnapshot,
+                    importedGithubAuth
+                );
+                if (!result.replaced) {
+                    const conflict = new Error('GitHub authorization changed during settings import.');
+                    conflict.code = 'github-auth-conflict';
+                    throw conflict;
+                }
                 stores.github = 'committed';
             }
             return {
@@ -218,7 +230,20 @@ export function createSettingsFileRoutes({
                 }
             };
             if (attempted.github) {
-                await restore('github', authStore, importedGithubAuth, previousGithubAuth);
+                try {
+                    const result = await authStore.replaceIfSnapshot(
+                        installedGithubSnapshot,
+                        previousGithubSnapshot.auth
+                    );
+                    if (result.replaced) stores.github = 'rolled-back';
+                    else if (StorageValue.same(result.current.auth, previousGithubSnapshot.auth)
+                        && result.current.epoch === previousGithubSnapshot.epoch) {
+                        stores.github = 'not-written';
+                    } else stores.github = 'conflicted';
+                } catch (rollbackError) {
+                    stores.github = 'rollback-failed';
+                    console.error('Better Peakbagger: github import rollback failed', rollbackError);
+                }
             }
             if (attempted.imgbb) await restore('imgbb', keyStore, installedImgbb, previousImgbb);
             if (attempted.settings) {

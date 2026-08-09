@@ -934,7 +934,14 @@ test('a populated repository requires an explicit confirmation before connection
                     reply = { repos: [repo] };
                 } else if (message.type === 'GITHUB_AUTH_SELECT_REPO') {
                     selectMessages.push(message);
-                    if (!message.confirmExisting) reply = { connected: false, needsConfirmation: true, repo };
+                    if (!message.confirmExisting) {
+                        reply = {
+                            connected: false,
+                            needsConfirmation: true,
+                            repo,
+                            authorizationEpoch: 7,
+                        };
+                    }
                     else { connected = true; reply = { connected: true, hasToken: true, account: { login: 'ada' }, repo }; }
                 } else reply = {};
                 if (typeof callback === 'function') Promise.resolve().then(() => callback(reply));
@@ -961,6 +968,7 @@ test('a populated repository requires an explicit confirmation before connection
         .find(button => button.textContent === 'Use this repository').click();
     await waitFor(dom, () => /Repository ada\/project/.test(el(dom, 'github-panel').textContent));
     assert.deepEqual(selectMessages.map(message => !!message.confirmExisting), [false, true]);
+    assert.equal(selectMessages[1].authorizationEpoch, 7);
 });
 
 test('repository setup shows the specific GitHub failure instead of generic copy', async () => {
@@ -992,6 +1000,52 @@ test('repository setup shows the specific GitHub failure instead of generic copy
     assert.doesNotMatch(el(dom, 'github-panel').textContent, /something went wrong/i);
     assert.ok(Array.from(el(dom, 'github-panel').querySelectorAll('button'))
         .some(button => button.textContent === 'Try again'));
+});
+
+test('a superseded repository choice refreshes access instead of replaying the stale choice', async () => {
+    const status = {
+        enabled: true, connected: false, hasToken: true, account: { login: 'ada' },
+        installUrl: 'https://github.com/apps/example/installations/new',
+    };
+    const repo = { owner: 'ada', name: 'backup', fullName: 'ada/backup', installationId: 11 };
+    let discoveries = 0;
+    let selections = 0;
+    const dom = await loadOptions({ enableGithubBackup: true }, {
+        prepareChrome: chrome => {
+            chrome.permissions = { request: async () => true, contains: async () => true, remove: async () => true };
+            chrome.runtime.sendMessage = (message, callback) => {
+                let reply = status;
+                if (message.type === 'GITHUB_AUTH_DISCOVER') {
+                    discoveries += 1;
+                    reply = { repos: [repo] };
+                }
+                if (message.type === 'GITHUB_AUTH_SELECT_REPO') {
+                    selections += 1;
+                    reply = {
+                        phase: 'error',
+                        code: 'superseded',
+                        message: 'The GitHub connection changed while this request was finishing.',
+                    };
+                }
+                if (typeof callback === 'function') Promise.resolve().then(() => callback(reply));
+                return Promise.resolve(reply);
+            };
+        },
+    });
+
+    await waitFor(dom, () => Array.from(el(dom, 'github-panel').querySelectorAll('button'))
+        .some(button => button.textContent === 'ada/backup'));
+    Array.from(el(dom, 'github-panel').querySelectorAll('button'))
+        .find(button => button.textContent === 'ada/backup').click();
+    await waitFor(dom, () => /connection changed/.test(el(dom, 'github-panel').textContent));
+    assert.equal(selections, 1);
+
+    Array.from(el(dom, 'github-panel').querySelectorAll('button'))
+        .find(button => button.textContent === 'Try again').click();
+    await waitFor(dom, () => discoveries >= 2
+        && Array.from(el(dom, 'github-panel').querySelectorAll('button'))
+            .some(button => button.textContent === 'ada/backup'));
+    assert.equal(selections, 1, 'retry must not replay a selection inspected under old credentials');
 });
 
 test('a connected status renders the account and repository', async () => {

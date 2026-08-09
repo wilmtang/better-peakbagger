@@ -32,6 +32,7 @@ const ERROR_TEXT = Object.freeze({
     [ERROR_CODES.TIMEOUT]: 'GitHub took too long to respond. Check your connection, then try again.',
     'not-connected': 'No GitHub repository is connected. Connect one in extension settings first.',
     'no-repo': 'No backup repository is selected. Choose one in extension settings first.',
+    superseded: 'The GitHub connection changed while this request was finishing. Review the current connection and try again.',
     'no-data': 'Better Peakbagger could not read enough ascent information to create this backup.',
     'peakbagger-read': 'Better Peakbagger could not read the saved ascent form. Reload the page and try again.',
     'peakbagger-track': 'Better Peakbagger could not read the stored GPS track. Reload the page and try again.',
