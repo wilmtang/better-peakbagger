@@ -8,6 +8,7 @@
 import { settings } from '../settings/settings.js';
 import { terrainCamera } from './terrain-camera.js';
 import { terrainFailure } from './terrain-failure.js';
+import { TERRAIN_FRAME_KEEP_ALIVE_MS } from './terrain-lifecycle.js';
 
 // Kept as an IIFE for scoping; dependencies are ES imports, no globals published.
 (() => {
@@ -27,7 +28,6 @@ import { terrainFailure } from './terrain-failure.js';
     let suspended = false;
     let suspendTimer = null;
     let frameLoaded = false;
-    const SUSPEND_TTL_MS = 5 * 60 * 1000;
     let terrainEnabled = false;
     let terrainTheme = 'system';
     let settingsRevision = 0;
@@ -443,7 +443,7 @@ import { terrainFailure } from './terrain-failure.js';
                     suspendTimer = setTimeout(() => {
                         postToFrame('destroy');
                         removeFrame();
-                    }, SUSPEND_TTL_MS);
+                    }, TERRAIN_FRAME_KEEP_ALIVE_MS);
                 } else {
                     // A destroy that raced the boot (frame not yet loaded): the
                     // old hard teardown.

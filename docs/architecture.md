@@ -142,7 +142,7 @@ There is no parallel raw-source worker list and no `importScripts` fallback.
 | Ascent editor | `src/ascent/ascent-draft.js`, `src/ascent/ascent-upload.js`, `src/reports/report-editor.js` | Isolated-world form fill, local-file processing, report editing |
 | Photo topo editor and library | `photos/photos.js`, `photos/guide.html`, `photos/guide.js`, `src/photos/photo-project.js`, `src/photos/photo-renderer.js`, `src/photos/photo-library.js`, `src/photos/photo-store.js`, `src/photos/photo-archive.js` | Extension-page editing/export, authoritative local catalog, blobs, operation journal, per-photo delete capability, CSP-safe project download and import, and the packaged user guide |
 | Ascent analysis | `src/gpx/gpx-analyzer.js` | MAIN-world GPX/chart/native-map integration |
-| Terrain lifecycle, bridge, and renderer | `src/terrain/terrain-coordinator.js`, `src/terrain/terrain-map.js`, `src/terrain/terrain-frame.js`, `src/terrain/terrain-frame-runtime.js` | Shared MAIN-world state machine, trusted-event activation in the isolated bridge, a feature-gated extension-frame entry, and the renderer runtime |
+| Terrain lifecycle, bridge, and renderer | `src/terrain/terrain-coordinator.js`, `src/terrain/terrain-lifecycle.js`, `src/terrain/terrain-map.js`, `src/terrain/terrain-frame.js`, `src/terrain/terrain-frame-runtime.js` | Shared MAIN-world state machine and parked-frame TTL, trusted-event activation in the isolated bridge, a feature-gated extension-frame entry, and the renderer runtime |
 | Full Screen and Peak maps | `src/maps/big-map.js`, `src/maps/peak-map.js` | MAIN-world native-map coordinators |
 | Ascent lists | `src/ascent/ascent-filter.js`, `src/profile/profile-backup.js` | Isolated-world filter/sort and owner-only backup pipeline |
 | Favorite climbers | `src/favorites/favorite-climbers.js`, `src/favorites/climber-favorite.js`, `options/favorites.js`, `options/favorites-backup.js` | Pure local-data contract, climber-page toggle, standalone list manager, and its Settings backup surface |
@@ -770,7 +770,7 @@ colors; ascent maps use the configured route color and casing.
 
 Returning to 2D stops that session's tile activity. Rather than tearing the
 renderer down on every switch, the `src/terrain/terrain-map.js` bridge parks the loaded
-frame in the DOM at opacity 0 and tells `src/terrain/terrain-frame.js` to suspend its
+frame in the DOM at opacity 0 and tells `src/terrain/terrain-frame-runtime.js` to suspend its
 ambient work (peak debounce, popup, pointer tracking); a quick 2D→3D→2D→3D
 re-entry then resumes the live MapLibre map with a fresh route/camera/theme
 instead of rebuilding the map, its module worker, and the terrain mesh. The parked
@@ -826,7 +826,7 @@ the native map context, requests the same feed in the page session, and relays a
 validated all-or-nothing reply. New camera positions abort stale requests.
 
 MapLibre's terrain-aware layer events do not reliably hit billboarded rings on
-a pitched camera, so `src/terrain/terrain-frame.js` renders terrain-positioned
+a pitched camera, so `src/terrain/terrain-frame-runtime.js` renders terrain-positioned
 Marker buttons; a bounded screen-space hit test remains only for the reduced-API
 circle fallback. Peak anchors may be snapped to a nearby rendered DEM maximum
 within a leash. The exact feed mapping, subject-peak preservation, interaction,
@@ -1508,12 +1508,12 @@ No single green command proves the extension works:
   notice fails. Generated line and column numbers are not pinned, because every
   vendored warning's position is a byte offset into a bundle. Both linters run
   in CI and in release CI. Neither command establishes runtime behavior.
-- `npm run audit:ci` rejects every production or development advisory, with no
-  exceptions. Its one bounded acceptance — GHSA-mh99-v99m-4gvg reaching
-  `brace-expansion` 1.x through dev-only `web-ext`/`addons-linter`/`minimatch@3`
-  — was removed once a patched 1.1.17 shipped; `package.json` pins it through
-  an override scoped to `minimatch@^3` so the 5.x installs ESLint resolves are
-  untouched.
+- `npm run audit:ci` currently permits only two exact high `image-size`
+  advisories through the development-only `web-ext`/`addons-linter` lint path,
+  with advisory ids, package versions, install paths, and a 2026-08-21 expiry
+  pinned in `scripts/check-npm-audit.mjs`; every other finding fails. The older
+  `brace-expansion` acceptance is gone: `package.json` keeps the dev-only
+  `minimatch@^3` path on patched 1.1.18 through a scoped override.
 - `npm run verify:browsers` loads the real unpacked Chrome and derived Firefox
   manifests in hidden isolated profiles. It exercises runtime origins,
   execution worlds, storage, worker/background startup, manifest surfaces,

@@ -162,3 +162,25 @@ test('the accepted image-size path and patched js-yaml stay dev-only and pinned'
     assert.equal(jsYaml.version, '4.3.1');
     assert.equal(jsYaml.dev, true, 'js-yaml must stay development-only');
 });
+
+test('maintained release guidance names the live expiring audit acceptance', async () => {
+    const maintainedSources = await Promise.all([
+        '../../.github/workflows/release.yml',
+        '../../docs/architecture.md',
+        '../../docs/development.md',
+        '../../docs/releasing.md',
+    ].map(async relative => ({
+        relative,
+        source: await readFile(new URL(relative, import.meta.url), 'utf8'),
+    })));
+
+    assert.equal(Object.keys(AUDIT_ACCEPTANCE.advisories).length, 2);
+    for (const { relative, source } of maintainedSources) {
+        assert.match(source, /two exact high\s+[`]?image-size[`]?\s+advisories/i,
+            `${relative} must name the bounded acceptance count and package`);
+        assert.match(source, /web-ext/);
+        assert.match(source, /addons-linter/);
+        assert.match(source, new RegExp(AUDIT_ACCEPTANCE.expires));
+        assert.doesNotMatch(source, /accepts no advisories|no accepted exceptions|accepts no finding/i);
+    }
+});

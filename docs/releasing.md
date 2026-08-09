@@ -142,11 +142,13 @@ visible in the AMO Developer Hub.
    store credit, before publication. If a new root-level development file is copied
    into `dist/` intentionally, update the build config and archive policy
    together rather than relying on web-ext's old repository-root ignore list.
-   `audit:ci` must pass without editing its baseline during release rehearsal.
-   It accepts no advisories today. A finding is fixed by moving the dependency,
-   not by adding an acceptance to unblock publication; if an acceptance is
-   genuinely unavoidable it needs a fresh source review, the exact install
-   path, and an expiry. `npm run lint`
+   `audit:ci` must pass without editing its acceptance during release rehearsal.
+   It currently permits only two exact high `image-size` advisories through the
+   development-only `web-ext`/`addons-linter` lint path, with locked package
+   versions and an expiry of 2026-08-21. Every other finding fails. If that
+   acceptance expires before an upstream fix exists, publication stays blocked
+   until a fresh source review records the advisory ids, exact install path,
+   locked versions, and a new expiry. `npm run lint`
    likewise permits only the owner-annotated warnings checked into
    `scripts/check-web-ext-lint.mjs`, at the exact per-file occurrence counts
    recorded there.

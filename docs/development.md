@@ -168,7 +168,7 @@ only exist under `dist/` after a build.
 | `npm run showcase:render` | Builds and renders the local UI showcase fixtures into `store-assets/`. Same HTTPS showcase host. |
 | `npm run lint:js` | Runs errors-only ESLint over source, extension surfaces, scripts, and tests. |
 | `npm run lint` | Builds, runs `web-ext lint` as JSON, and accepts only the eight owner-annotated manifest/dependency warnings in `scripts/check-web-ext-lint.mjs`, counted per `(code, file)`. A new warning, an extra or missing occurrence in an owned file, any error, or any notice fails. Generated line and column numbers are deliberately not pinned. |
-| `npm run audit:ci` | Runs npm audit through the repository policy: no advisory may pass, and there are currently no accepted exceptions. Fix the dependency, or add an exception deliberately — advisory id, exact install path, dev-only lock pins, and an expiry. |
+| `npm run audit:ci` | Runs npm audit through the repository policy. It currently permits only two exact high `image-size` advisories through the development-only `web-ext`/`addons-linter` lint path, with locked package versions and an expiry of 2026-08-21; every other finding fails. An expired acceptance blocks CI until a fresh source review records advisory ids, the exact dev-only path, lock pins, and a new expiry. |
 | `npm run package` | Release build + `web-ext build` from `dist/`; writes the canonical Chrome ZIP under `web-ext-artifacts/`. |
 | `npm run start:chromium` / `start:firefox` | Build, watch, launch a web-ext development browser, and auto-reload the extension after successful rebuilds. Firefox mirrors each complete build into its inline-Preferences source first. |
 

@@ -110,6 +110,7 @@ consistently in Chrome and Firefox without giving the host page extension APIs.
 | `src/maps/big-map.js` | MAIN | Full Screen route/peak identity, native layer detection, group colors and ascent links, native map DOM | Storage, renderer internals, duplicate lifecycle logic |
 | `src/maps/peak-map.js` | MAIN | Peak-page identity agreement, summit focus, embedded map context | Storage, renderer internals, duplicate lifecycle logic |
 | `src/terrain/terrain-coordinator.js` | MAIN | `idle`/`loading`/`active` lifecycle, toggle UI, timeouts, camera round trip, compass, recovery | Subject discovery, privileged APIs, provider requests |
+| `src/terrain/terrain-lifecycle.js` | pure | Parked-frame keep-alive shared by runtime teardown and generated reviewer metadata | DOM, settings, provider requests |
 | `src/terrain/terrain-map.js` | isolated | Feature gate, trusted consent UI, trusted toggle-event activation, frame creation/parking, page↔frame relay, prefetch relay | Page-owned Leaflet globals, rendering |
 | `src/terrain/terrain-frame.js` | extension iframe entry | Independent settings recheck and MapLibre/runtime composition | Payload handling, authenticated Peakbagger fetches, settings writes |
 | `src/terrain/terrain-frame-runtime.js` | extension iframe runtime | Capability consumption, payload validation, MapLibre, DEM protocol, tile level-of-detail tuning, in-view tilt tile warming, route/highlight layers, terrain-positioned peak markers, drape picker, WebGL failure detection | Authenticated Peakbagger fetches, settings reads or writes |

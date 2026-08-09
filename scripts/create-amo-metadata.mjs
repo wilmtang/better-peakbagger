@@ -2,6 +2,13 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
+import { TERRAIN_FRAME_KEEP_ALIVE_MS } from '../src/terrain/terrain-lifecycle.js';
+
+const terrainKeepAliveMinutes = TERRAIN_FRAME_KEEP_ALIVE_MS / 60_000;
+if (!Number.isInteger(terrainKeepAliveMinutes) || terrainKeepAliveMinutes < 1) {
+    throw new Error('Terrain frame keep-alive must be a positive whole number of minutes');
+}
+
 export function buildAmoMetadata({ licenseText, description }) {
     if (typeof licenseText !== 'string' || licenseText.trim() === '') {
         throw new Error('LICENSE must contain the full project license text');
@@ -48,7 +55,7 @@ export function buildAmoMetadata({ licenseText, description }) {
                 '',
                 'The tz-lookup 6.1.25 CommonJS distribution (CC0-1.0) is bundled by esbuild into content/gpx-analyzer.js and content/ascent-editor.js, with no application changes to its offline coordinate-to-IANA-timezone data or lookup logic. Package: https://www.npmjs.com/package/tz-lookup/v/6.1.25 ; readable source: https://github.com/darkskyapp/tz-lookup',
                 '',
-                'The optional 3D view is off by default. Its General setting discloses external tile requests; after it is enabled, an explicit 3D terrain action loads elevation data (not code) from https://tiles.mapterhorn.com and may re-request the selected map layer from its provider. Those services receive the viewed area and request metadata. Returning to 2D destroys the renderer.',
+                `The optional 3D view is off by default. Its General setting discloses external tile requests; after it is enabled, an explicit 3D terrain action loads elevation data (not code) from https://tiles.mapterhorn.com and may re-request the selected map layer from its provider. Those services receive the viewed area and request metadata. Returning to 2D stops that session's tile activity and parks a loaded renderer idle and non-interactive for up to ${terrainKeepAliveMinutes} minutes so a quick return can resume it. After that keep-alive period—or immediately if startup fails or 3D is disabled—the renderer is destroyed.`,
                 '',
                 'Automated tests use synthetic data and masked Peakbagger fixtures. Live Garmin/Strava capture requires the reviewer to use an activity owned by their signed-in provider account; ambiguous ownership fails closed.',
             ].join('\n'),

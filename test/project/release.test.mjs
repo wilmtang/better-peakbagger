@@ -28,6 +28,7 @@ import {
     ownedFirefoxPids,
 } from '../../scripts/firefox-verifier-processes.mjs';
 import { prepareFirefoxSource } from '../../scripts/run-firefox.mjs';
+import { TERRAIN_FRAME_KEEP_ALIVE_MS } from '../../src/terrain/terrain-lifecycle.js';
 import {
     expectedReleaseFiles,
     requireArchiveArguments,
@@ -196,6 +197,11 @@ test("Firefox metadata preserves the project's or-later license grant", () => {
     assert.match(metadata.version.approval_notes, /TipTap\/ProseMirror/);
     assert.doesNotMatch(metadata.version.approval_notes, /build-free|@photostructure/);
     assert.match(metadata.version.approval_notes, /tiles\.mapterhorn\.com/);
+    assert.match(metadata.version.approval_notes,
+        new RegExp(`parks a loaded renderer idle and non-interactive for up to ${
+            TERRAIN_FRAME_KEEP_ALIVE_MS / 60_000} minutes`));
+    assert.match(metadata.version.approval_notes, /the renderer is destroyed/);
+    assert.doesNotMatch(metadata.version.approval_notes, /Returning to 2D destroys the renderer/);
     assert.match(metadata.description['en-US'], /coordinate corridor boxes/);
     assert.match(metadata.description['en-US'], /Waypoint coordinates and names are included by default/);
 });

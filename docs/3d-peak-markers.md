@@ -53,7 +53,7 @@ identical semantics) and an archived real `PLLBB.aspx` response.
 Data flows through the existing analyzer → bridge → frame message channel;
 the extension-origin frame never contacts peakbagger.com itself:
 
-1. **Frame** (`src/terrain/terrain-frame.js`): on every camera settle (debounced
+1. **Frame runtime** (`src/terrain/terrain-frame-runtime.js`): on every camera settle (debounced
    `moveend`) it posts a `peaksRequest` with the visible bounds. No request
    below MapLibre zoom 11 — the same ground area as Leaflet 12 (512px vs
    256px tiles) — and the dots are cleared instead. A pitched camera's raw
@@ -115,7 +115,7 @@ made for the same view. Nothing is persisted.
 ### Changing how the markers look
 
 All knobs live in the `PEAK_MARKERS` spec at the top of
-`src/terrain/terrain-frame.js` — zoom cutoff, debounce, count cap, bounds clamp,
+`src/terrain/terrain-frame-runtime.js` — zoom cutoff, debounce, count cap, bounds clamp,
 per-state colors, ring geometry, and hit slop. `replacePeakMarkers()` builds
 the normal terrain-aware buttons; `buildPeakLayers()` produces the API-reduced
 circle fallback with the same data-driven colors. Recoloring or resizing must
@@ -184,7 +184,7 @@ behavior and the rise leash below.
    currently loaded, and the terrain source runs its own LOD
    setting — `(6, 1.5)`, looser than the drape's `(4, 3)`, because the DEM
    source sizes the render-to-texture grid (see the LOD constants in
-   `src/terrain/terrain-frame.js`). A small tilt or a zoom can therefore swap the
+   `src/terrain/terrain-frame-runtime.js`). A small tilt or a zoom can therefore swap the
    DEM under a peak a whole level; the mountain reshapes, the ring is
    re-elevated with it, and on a pitched camera that height change projects
    as a slide across the screen — most visible on knife-edge ridges, where

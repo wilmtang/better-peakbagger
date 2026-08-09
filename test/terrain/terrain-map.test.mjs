@@ -10,6 +10,7 @@ import { build } from 'esbuild';
 import { JSDOM } from 'jsdom';
 import { fireTrustedEvent, makeChromeStub } from '../helpers/load-page.mjs';
 import { terrainFailure } from '../../src/terrain/terrain-failure.js';
+import { TERRAIN_FRAME_KEEP_ALIVE_MS } from '../../src/terrain/terrain-lifecycle.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 // The bridge imports settings, so tests provide the real chrome.storage shape
@@ -220,7 +221,7 @@ test('3D terrain waits for the extension frame handshake before sending route co
     dom.window.close();
 });
 
-// Boot the bridge and drive one frame to 'loaded'. The bridge's only 5-minute
+// Boot the bridge and drive one frame to 'loaded'. The bridge's only keep-alive
 // setTimeout is the keep-alive TTL, so intercept it (by its delay) into `timers`
 // for deterministic firing; every other timeout runs for real.
 const bootLoadedFrame = async (initOverrides = {}) => {
@@ -238,7 +239,7 @@ const bootLoadedFrame = async (initOverrides = {}) => {
     const timers = [];
     const realSetTimeout = window.setTimeout.bind(window);
     window.setTimeout = (fn, delay) => {
-        if (delay === 5 * 60 * 1000) { timers.push(fn); return timers.length; }
+        if (delay === TERRAIN_FRAME_KEEP_ALIVE_MS) { timers.push(fn); return timers.length; }
         return realSetTimeout(fn, delay);
     };
     window.chrome = chromeWith({ enable3dMap: true });

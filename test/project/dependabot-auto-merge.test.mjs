@@ -3,7 +3,14 @@
 
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
+import path from 'node:path';
 import test from 'node:test';
+
+import {
+    ENTRIES,
+    entrySources,
+    VENDOR_COPY,
+} from '../../scripts/build-config.mjs';
 
 const workflow = await readFile(
     new URL('../../.github/workflows/dependabot-auto-merge.yml', import.meta.url),
@@ -19,6 +26,48 @@ const developmentGuide = await readFile(
 );
 
 const stepIndex = name => workflow.indexOf(`- name: ${name}`);
+
+const groupPatterns = name => {
+    const match = dependabotConfig.match(new RegExp(
+        `^      ${name}:\\n        patterns:\\n((?:          - .+\\n)+)`,
+        'm',
+    ));
+    assert.ok(match, `missing Dependabot group ${name}`);
+    return match[1].trim().split('\n').map(line =>
+        line.replace(/^\s*-\s*/, '').replace(/^"|"$/g, ''));
+};
+
+const matchesPattern = (packageName, pattern) => pattern.endsWith('/*')
+    ? packageName.startsWith(pattern.slice(0, -1))
+    : packageName === pattern;
+
+const npmPackageName = specifier => specifier.startsWith('@')
+    ? specifier.split('/').slice(0, 2).join('/')
+    : specifier.split('/')[0];
+
+const browserPackageImports = async () => {
+    const pending = [...new Set(ENTRIES.flatMap(entrySources))];
+    const visited = new Set();
+    const packages = new Set();
+    while (pending.length) {
+        const sourcePath = pending.pop();
+        if (visited.has(sourcePath)) continue;
+        visited.add(sourcePath);
+        const source = await readFile(sourcePath, 'utf8');
+        for (const match of source.matchAll(
+            /^\s*(?:import|export)\s+(?:[^;]*?\s+from\s+)?["']([^"']+)["'];?/gm,
+        )) {
+            const specifier = match[1];
+            if (!specifier.startsWith('.')) {
+                packages.add(npmPackageName(specifier));
+                continue;
+            }
+            const resolved = path.resolve(path.dirname(sourcePath), specifier);
+            pending.push(path.extname(resolved) ? resolved : `${resolved}.js`);
+        }
+    }
+    return packages;
+};
 
 test('the privileged merge decision runs only from trusted base-branch code', () => {
     assert.match(workflow, /^  pull_request_target:\s*$/m);
@@ -79,4 +128,36 @@ test('npm groups preserve release paths and catch otherwise separate updates', (
     assert.match(developmentGuide, /first matching group[\s\S]*otherwise unmatched direct and transitive/);
     assert.match(developmentGuide, /security updates[\s\S]*does not combine with ordinary version updates/);
     assert.doesNotMatch(developmentGuide, /\| `(?:editor|vendored)` \|/);
+});
+
+test('runtime dependency groups match how the build graph ships each package', async () => {
+    const bundledPatterns = groupPatterns('bundled-runtime');
+    const copiedPatterns = groupPatterns('copied-runtime');
+    const copiedPackages = new Set(VENDOR_COPY
+        .filter(([source, output]) => output.startsWith('vendor/')
+            && !/license/i.test(source)
+            && !/license/i.test(output))
+        .map(([source]) => npmPackageName(source)));
+    for (const entry of ENTRIES) {
+        for (const packageName of Object.keys(entry.browserImports || {})) {
+            copiedPackages.add(packageName);
+        }
+    }
+
+    const importedPackages = await browserPackageImports();
+    const bundledPackages = [...importedPackages]
+        .filter(packageName => !copiedPackages.has(packageName));
+    for (const packageName of bundledPackages) {
+        assert.ok(bundledPatterns.some(pattern => matchesPattern(packageName, pattern)),
+            `${packageName} is bundled by the build graph but absent from bundled-runtime`);
+        assert.equal(copiedPatterns.some(pattern => matchesPattern(packageName, pattern)), false,
+            `${packageName} is bundled but also matches copied-runtime`);
+    }
+    for (const packageName of copiedPackages) {
+        assert.ok(copiedPatterns.some(pattern => matchesPattern(packageName, pattern)),
+            `${packageName} is copied by the build graph but absent from copied-runtime`);
+        assert.equal(bundledPatterns.some(pattern => matchesPattern(packageName, pattern)), false,
+            `${packageName} is copied but also matches bundled-runtime`);
+    }
+    assert.ok(bundledPackages.includes('tz-lookup'));
 });

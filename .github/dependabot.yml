@@ -43,13 +43,13 @@ updates:
           - "@tiptap/*"
           - "@codemirror/*"
           - "@lezer/*"
+          - tz-lookup
       # Copied into dist/vendor as browser builds.
       copied-runtime:
         patterns:
           - chart.js
           - maplibre-gl
           - marked
-          - tz-lookup
       # Build and test only. Never reaches dist/, so never reaches a user.
       tooling:
         patterns:
