@@ -47,14 +47,35 @@ const loadEditor = async ({
     fileName = 'north-face.jpg',
     fileType = 'image/jpeg',
     onStoreReady = null,
+    startMode = null,
+    fixedNow = null,
+    confirmImpl = null,
 } = {}) => {
+    const params = new URLSearchParams();
+    if (returnToReport) params.set('returnToken', 'return-test');
+    if (startMode) params.set('mode', startMode);
     const dom = new JSDOM(html, {
-        url: `chrome-extension://test/photos/photos.html${returnToReport ? '?returnToken=return-test' : ''}`,
+        url: `chrome-extension://test/photos/photos.html${params.size ? `?${params}` : ''}`,
         runScripts: 'outside-only',
         pretendToBeVisual: true,
     });
     const win = dom.window;
     const doc = win.document;
+    if (fixedNow) {
+        const NativeDate = win.Date;
+        const fixedTime = NativeDate.parse(fixedNow);
+        class FixedDate extends NativeDate {
+            constructor(...args) {
+                super(...(args.length ? args : [fixedTime]));
+            }
+
+            static now() {
+                return fixedTime;
+            }
+        }
+        win.Date = FixedDate;
+    }
+    if (confirmImpl) win.confirm = confirmImpl;
     win.indexedDB = indexedDB;
     win.IDBKeyRange = IDBKeyRange;
     win.structuredClone = globalThis.structuredClone;
@@ -824,6 +845,195 @@ test('remote thumbnail presentation failures never rewrite catalog health or bac
             `${simulatedFailure} must not mutate durable catalog truth`);
         page.doc.getElementById('show-library').click();
     }
+    assert.deepEqual(page.errors, []);
+});
+
+test('Recently Deleted discloses the asset deadline and restores exact-expiry records only', async () => {
+    const indexedDB = new IDBFactory();
+    const fixedNow = '2026-08-09T12:00:00.000Z';
+    const exactExpiryDeletion = new Date(
+        Date.parse(fixedNow) - Library.DELETED_EDITING_RECOVERY_MS,
+    ).toISOString();
+    const beforeExpiryDeletion = new Date(Date.parse(exactExpiryDeletion) + 60_000).toISOString();
+    const afterExpiryDeletion = new Date(Date.parse(exactExpiryDeletion) - 60_000).toISOString();
+
+    const page = await loadEditor({
+        indexedDB,
+        pickPhoto: false,
+        startMode: 'library',
+        fixedNow,
+        onStoreReady: async () => {
+            const seedStore = await Store.createPhotoStore({ indexedDB });
+            const seed = async ({
+                localId,
+                title,
+                deletedAt,
+                remoteState = 'draft',
+                referenced = false,
+                backedUp = false,
+                prune = false,
+            }) => {
+                const sourceSha256 = 'a'.repeat(64);
+                const input = {
+                    photo: Library.createDraft({
+                        localId,
+                        title,
+                        source: {
+                            fileName: `${localId}.jpg`,
+                            mime: 'image/jpeg',
+                            bytes: 6,
+                            width: 1600,
+                            height: 1200,
+                            sha256: sourceSha256,
+                        },
+                        now: '2026-07-01T12:00:00.000Z',
+                    }),
+                    project: Project.createProject({
+                        localId,
+                        width: 1600,
+                        height: 1200,
+                        sourceSha256,
+                        updatedAt: '2026-07-01T12:00:00.000Z',
+                    }),
+                    original: new Blob(['source'], { type: 'image/jpeg' }),
+                    thumbnail: new Blob(['thumbnail'], { type: 'image/jpeg' }),
+                };
+                let photo = await seedStore.putDraft(input);
+                if (remoteState !== 'draft') {
+                    photo = Library.completeUpload(photo, {
+                        mime: 'image/jpeg',
+                        bytes: 8,
+                        width: 1600,
+                        height: 1200,
+                        sha256: 'b'.repeat(64),
+                    }, {
+                        providerId: localId,
+                        url: `https://i.ibb.co/a/${localId}.jpg`,
+                        displayUrl: `https://i.ibb.co/a/${localId}.jpg`,
+                        viewerUrl: `https://ibb.co/${localId}`,
+                        thumbnailUrl: `https://i.ibb.co/a/${localId}-thumb.jpg`,
+                        mediumUrl: null,
+                        uploadedAt: '2026-07-02T12:00:00.000Z',
+                        expiresAt: null,
+                    }, '2026-07-02T12:00:00.000Z');
+                    if (remoteState === 'unreachable') {
+                        photo = Library.markUnreachable(photo, true, '2026-07-03T12:00:00.000Z');
+                    }
+                    photo = await seedStore.putPhoto(photo);
+                }
+                if (referenced) {
+                    photo = await seedStore.putPhoto(Library.addReference(photo, {
+                        kind: 'ascent', cid: 1, aid: 2, pid: 3,
+                        insertedAt: '2026-07-04T12:00:00.000Z',
+                    }, '2026-07-04T12:00:00.000Z'));
+                }
+                if (backedUp) {
+                    photo = await seedStore.putPhoto(Library.cleanPhoto({
+                        ...photo,
+                        backup: {
+                            state: 'current',
+                            signature: 'c'.repeat(64),
+                            backedUpAt: '2026-07-05T12:00:00.000Z',
+                            commitUrl: 'https://github.com/example/photos/commit/abc',
+                        },
+                    }));
+                }
+                photo = await seedStore.putPhoto(Library.markDeleted(photo, deletedAt));
+                if (prune) await seedStore.removeLocalAssets(photo.localId, fixedNow);
+            };
+
+            await seed({
+                localId: 'local-pre-expiry',
+                title: 'Local editing data',
+                deletedAt: beforeExpiryDeletion,
+            });
+            await seed({
+                localId: 'uploaded-reference',
+                title: 'Uploaded and referenced',
+                deletedAt: beforeExpiryDeletion,
+                remoteState: 'uploaded',
+                referenced: true,
+                backedUp: true,
+            });
+            await seed({
+                localId: 'unreachable-photo',
+                title: 'Unreachable upload',
+                deletedAt: beforeExpiryDeletion,
+                remoteState: 'unreachable',
+            });
+            await seed({
+                localId: 'exact-expiry',
+                title: 'Exact expiry',
+                deletedAt: exactExpiryDeletion,
+            });
+            await seed({
+                localId: 'post-prune',
+                title: 'Post-prune record',
+                deletedAt: afterExpiryDeletion,
+                prune: true,
+            });
+        },
+    });
+
+    const filter = page.doc.getElementById('library-filter');
+    filter.value = 'recently-deleted';
+    filter.dispatchEvent(new page.win.Event('change', { bubbles: true }));
+    await waitFor(page.dom, () => page.doc.querySelectorAll('.photo-card').length === 5);
+    const card = title => [...page.doc.querySelectorAll('.photo-card')]
+        .find(candidate => candidate.querySelector('h3')?.textContent === title);
+
+    assert.match(card('Local editing data').textContent, /Editing data is available/);
+    assert.match(card('Local editing data').textContent, /Local: original, project, thumbnail retained/);
+    assert.match(card('Uploaded and referenced').textContent,
+        /Remote: ImgBB image retained · used in 1 report · backup current/);
+    assert.match(card('Unreachable upload').textContent, /ImgBB image marked unreachable/);
+    assert.match(card('Post-prune record').textContent,
+        /Editing data is no longer retained.*Local: record only/s);
+    assert.equal(card('Local editing data').querySelector('button').textContent,
+        'Restore with editing data');
+
+    const exactCard = card('Exact expiry');
+    assert.match(exactCard.textContent, /Editing recovery has expired/);
+    const exactRestore = exactCard.querySelector('button');
+    assert.equal(exactRestore.textContent, 'Restore record only');
+    exactRestore.click();
+    await waitFor(page.dom, () => !card('Exact expiry'));
+    assert.match(page.doc.getElementById('toast-message').textContent,
+        /record restored.*Editing data is no longer available/i);
+
+    const [restored] = (await readPhotoStore(page.win, 'photos'))
+        .filter(photo => photo.localId === 'exact-expiry');
+    assert.equal(restored.deletedAt, null);
+    assert.deepEqual(restored.assets, {
+        originalRetained: false,
+        projectRetained: false,
+        thumbnailRetained: false,
+    });
+    assert.deepEqual(page.errors, []);
+});
+
+test('removing a photo states the 30-day editing-data window before and after confirmation', async () => {
+    let confirmation = '';
+    const page = await loadEditor({
+        confirmImpl: message => {
+            confirmation = message;
+            return true;
+        },
+    });
+    await waitFor(page.dom, () => page.doc.getElementById('save-status').textContent
+        === 'Saved on this device');
+    page.click(page.doc.getElementById('show-library'));
+    await waitFor(page.dom, () => [...page.doc.querySelectorAll('.photo-card button')]
+        .some(button => button.textContent === 'Remove…'));
+    page.click([...page.doc.querySelectorAll('.photo-card button')]
+        .find(button => button.textContent === 'Remove…'));
+    await waitFor(page.dom, () => /Moved to Recently Deleted/.test(
+        page.doc.getElementById('toast-message').textContent));
+
+    assert.match(confirmation, /restorable with editing data for 30 days/i);
+    assert.match(confirmation, /ImgBB image and report URLs will not change/i);
+    assert.match(page.doc.getElementById('toast-message').textContent,
+        /Restorable with editing data for 30 days/i);
     assert.deepEqual(page.errors, []);
 });
 

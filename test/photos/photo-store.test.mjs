@@ -257,6 +257,81 @@ test('prunes only one bounded batch of expired deleted assets', async () => {
     store.close();
 });
 
+test('restores an expired catalog record without stale local editing assets', async () => {
+    const store = await Store.createPhotoStore({
+        indexedDB: new IDBFactory(),
+        name: 'photo-store-record-only-restore',
+    });
+    const input = fixture();
+    input.photo = await store.putDraft(input);
+    const uploaded = Library.completeUpload(input.photo, {
+        mime: 'image/jpeg', bytes: 9, width: 1600, height: 1200, sha256: EXPORT_HASH,
+    }, {
+        providerId: 'abc',
+        url: 'https://i.ibb.co/a/topo.jpg',
+        displayUrl: 'https://i.ibb.co/a/topo.jpg',
+        viewerUrl: 'https://ibb.co/abc',
+        thumbnailUrl: 'https://i.ibb.co/a/thumb.jpg',
+        mediumUrl: null,
+        uploadedAt: LATER,
+        expiresAt: null,
+    }, LATER);
+    const referenced = Library.addReference(uploaded, {
+        kind: 'ascent', cid: 1, aid: 2, pid: 3, insertedAt: LATER,
+    }, LATER);
+    const withBackup = Library.cleanPhoto({
+        ...referenced,
+        backup: {
+            state: 'current',
+            signature: 'c'.repeat(64),
+            backedUpAt: LATER,
+            commitUrl: 'https://github.com/example/photos/commit/abc',
+        },
+    });
+    const current = await store.putPhoto(withBackup);
+    const deleted = await store.putPhoto(Library.markDeleted(current, LATER));
+    const restored = await store.restorePhoto(Library.restoreDeleted(deleted, LATER), {
+        retainAssets: false,
+    });
+
+    assert.deepEqual(restored.assets, {
+        originalRetained: false,
+        projectRetained: false,
+        thumbnailRetained: false,
+    });
+    assert.equal(restored.remote.url, uploaded.remote.url);
+    assert.deepEqual(restored.references, referenced.references);
+    assert.deepEqual(restored.backup, withBackup.backup);
+    const bundle = await store.getBundle(restored.localId);
+    assert.equal(bundle.original, null);
+    assert.equal(bundle.project, null);
+    assert.equal(bundle.thumbnail, null);
+    assert.deepEqual((await store.listBackupBundles()).tombstones, []);
+    store.close();
+});
+
+test('maintenance leaves editing assets on a photo restored before its deleted deadline', async () => {
+    const store = await Store.createPhotoStore({
+        indexedDB: new IDBFactory(),
+        name: 'photo-store-restored-before-maintenance',
+    });
+    const input = fixture();
+    input.photo = await store.putDraft(input);
+    const deleted = await store.putPhoto(Library.markDeleted(input.photo, TIME));
+    const restored = await store.restorePhoto(Library.restoreDeleted(deleted, LATER));
+
+    assert.deepEqual(await store.pruneDeletedAssets({
+        before: LATER,
+        now: LATER,
+    }), { pruned: 0, remaining: 0 });
+    const bundle = await store.getBundle(restored.localId);
+    assert.equal(await bundle.original.text(), 'original');
+    assert.ok(bundle.project);
+    assert.equal(await bundle.thumbnail.text(), 'thumbnail');
+    assert.equal(bundle.photo.deletedAt, null);
+    store.close();
+});
+
 test('journals operations and purges all local records explicitly', async () => {
     const store = await Store.createPhotoStore({
         indexedDB: new IDBFactory(),

@@ -9,6 +9,7 @@ const ALT_LIMIT = 500;
 const FILE_NAME_LIMIT = 255;
 const URL_LIMIT = 4096;
 const REFERENCE_LIMIT = 100;
+const DELETED_EDITING_RECOVERY_MS = 30 * 24 * 60 * 60 * 1000;
 const REMOTE_STATES = new Set(['draft', 'uploading', 'outcome-unknown', 'uploaded', 'unreachable']);
 const BACKUP_STATES = new Set(['off', 'pending', 'current', 'failed', 'restored']);
 const REFERENCE_KINDS = new Set(['ascent-draft', 'ascent', 'unknown']);
@@ -295,6 +296,21 @@ const restoreDeleted = (value, now = new Date().toISOString()) => {
     return photo ? cleanPhoto({ ...photo, updatedAt: now, deletedAt: null }) : null;
 };
 
+const deletedRecovery = (value, now = Date.now()) => {
+    const photo = cleanPhoto(value);
+    const currentTime = now instanceof Date ? now.getTime() : Number(now);
+    const deletedTime = photo?.deletedAt ? Date.parse(photo.deletedAt) : NaN;
+    if (!photo?.deletedAt || !Number.isFinite(currentTime) || !Number.isFinite(deletedTime)) return null;
+    const expiresAt = new Date(deletedTime + DELETED_EDITING_RECOVERY_MS).toISOString();
+    const editingDataRetained = photo.assets.originalRetained && photo.assets.projectRetained;
+    return {
+        deletedAt: photo.deletedAt,
+        expiresAt,
+        editingDataRetained,
+        editingDataRecoverable: editingDataRetained && currentTime < Date.parse(expiresAt),
+    };
+};
+
 const updateAssets = (value, assets, now = new Date().toISOString()) => {
     const photo = cleanPhoto(value);
     return photo ? cleanPhoto({ ...photo, updatedAt: now, assets: { ...photo.assets, ...assets } }) : null;
@@ -335,6 +351,7 @@ export const photoLibrary = {
     FILE_NAME_LIMIT,
     URL_LIMIT,
     REFERENCE_LIMIT,
+    DELETED_EDITING_RECOVERY_MS,
     cleanPhoto,
     createDraft,
     beginUpload,
@@ -345,6 +362,7 @@ export const photoLibrary = {
     addReference,
     markDeleted,
     restoreDeleted,
+    deletedRecovery,
     updateAssets,
     search,
 };

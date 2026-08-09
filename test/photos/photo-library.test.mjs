@@ -114,6 +114,34 @@ test('adds bounded references and separates local deletion from remote state', (
     assert.equal(Library.restoreDeleted(deleted, LATER).deletedAt, null);
 });
 
+test('treats the exact deleted-asset deadline as record-only recovery', () => {
+    const deleted = Library.markDeleted(draft(), TIME);
+    const expiresAt = new Date(Date.parse(TIME) + Library.DELETED_EDITING_RECOVERY_MS).toISOString();
+
+    assert.deepEqual(Library.deletedRecovery(deleted, Date.parse(expiresAt) - 1), {
+        deletedAt: TIME,
+        expiresAt,
+        editingDataRetained: true,
+        editingDataRecoverable: true,
+    });
+    assert.equal(Library.deletedRecovery(deleted, Date.parse(expiresAt)).editingDataRecoverable, false);
+    assert.equal(Library.deletedRecovery(deleted, Date.parse(expiresAt) + 1).editingDataRecoverable, false);
+
+    const pruned = Library.updateAssets(deleted, {
+        originalRetained: false,
+        projectRetained: false,
+        thumbnailRetained: false,
+    }, expiresAt);
+    assert.deepEqual(Library.deletedRecovery(pruned, Date.parse(expiresAt) - 1), {
+        deletedAt: TIME,
+        expiresAt,
+        editingDataRetained: false,
+        editingDataRecoverable: false,
+    });
+    assert.equal(Library.deletedRecovery(draft(), Date.parse(expiresAt)), null);
+    assert.equal(Library.deletedRecovery(deleted, Number.NaN), null);
+});
+
 test('search and filters use catalog state without inferring provider contents', () => {
     const complete = Library.completeUpload(draft(), exported, remote, LATER);
     const other = Library.createDraft({

@@ -23,7 +23,7 @@ const PUBLISHED_STATES = ['uploaded', 'unreachable'];
 const AUTOSAVE_DELAY_MS = 500;
 const EXPORT_ESTIMATE_DELAY_MS = 300;
 const GITHUB_CAMO_PREVIEW_BYTES = 5 * 1024 * 1024;
-const RECENTLY_DELETED_MS = 30 * 24 * 60 * 60 * 1000;
+const RECENTLY_DELETED_MS = Library.DELETED_EDITING_RECOVERY_MS;
 const LIBRARY_PAGE_SIZE = 48;
 const LIBRARY_SEARCH_DELAY_MS = 180;
 const LIBRARY_MAINTENANCE_DELAY_MS = 1000;
@@ -2080,7 +2080,8 @@ const downloadProject = async item => {
 
 const moveToDeleted = async item => {
     if (!confirm(
-        `Move “${item.title}” to Recently Deleted? Its ImgBB image and report URLs will not change.`,
+        `Move “${item.title}” to Recently Deleted? It is restorable with editing data for 30 days. `
+        + 'Its ImgBB image and report URLs will not change.',
     )) return;
     let deleted;
     try {
@@ -2093,7 +2094,8 @@ const moveToDeleted = async item => {
     }
     notifyBackupChanged();
     undoDeleted = item;
-    toast('Moved to Recently Deleted. The remote image was not deleted.', {
+    toast('Moved to Recently Deleted. Restorable with editing data for 30 days. '
+        + 'The remote image was not deleted.', {
         action: 'Undo',
         onAction: async () => {
             try {
@@ -2115,8 +2117,12 @@ const moveToDeleted = async item => {
 };
 
 const restoreLibraryItem = async item => {
+    const recovery = Library.deletedRecovery(item);
+    const restoreEditingData = recovery?.editingDataRecoverable === true;
     try {
-        await store.restorePhoto(Library.restoreDeleted(item));
+        await store.restorePhoto(Library.restoreDeleted(item), {
+            retainAssets: restoreEditingData,
+        });
     } catch (error) {
         if (!(error instanceof Store.PhotoStoreConflictError)) throw error;
         toast(error.message, { duration: 9000 });
@@ -2124,8 +2130,59 @@ const restoreLibraryItem = async item => {
         return;
     }
     notifyBackupChanged();
-    toast('Photo restored to the library.');
+    toast(restoreEditingData
+        ? 'Photo restored with editing data.'
+        : 'Photo record restored. Editing data is no longer available on this device.');
     await renderLibrary();
+};
+
+const recoveryDate = value => new Date(value).toLocaleDateString(undefined, {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+});
+
+const deletedRecoveryDetails = item => {
+    const recovery = Library.deletedRecovery(item);
+    if (!recovery) return null;
+    const container = element('div', 'deleted-recovery');
+    const dates = element('p', 'deleted-recovery-dates');
+    dates.append('Deleted ');
+    const deleted = element('time', '', recoveryDate(recovery.deletedAt));
+    deleted.dateTime = recovery.deletedAt;
+    dates.append(deleted, ' · 30-day editing-data deadline ');
+    const expires = element('time', '', recoveryDate(recovery.expiresAt));
+    expires.dateTime = recovery.expiresAt;
+    dates.append(expires);
+    container.append(dates);
+
+    container.append(element('p', 'deleted-recovery-outcome',
+        recovery.editingDataRecoverable
+            ? 'Editing data is available if you restore before the deadline.'
+            : recovery.editingDataRetained
+                ? 'Editing recovery has expired. Restoring will remove the remaining local editing data.'
+                : 'Editing data is no longer retained on this device.'));
+
+    const retained = [
+        item.assets.originalRetained ? 'original' : '',
+        item.assets.projectRetained ? 'project' : '',
+        item.assets.thumbnailRetained ? 'thumbnail' : '',
+    ].filter(Boolean);
+    const remote = item.remote.state === 'uploaded'
+        ? 'ImgBB image retained'
+        : item.remote.state === 'unreachable'
+            ? 'ImgBB image marked unreachable'
+            : 'no published image';
+    const references = item.references.length
+        ? `used in ${item.references.length} report${item.references.length === 1 ? '' : 's'}`
+        : 'not used in a report';
+    const backup = item.backup.state === 'off'
+        ? 'not backed up'
+        : `backup ${item.backup.state}`;
+    container.append(element('p', 'deleted-recovery-state',
+        `Local: ${retained.length ? `${retained.join(', ')} retained` : 'record only'} · `
+        + `Remote: ${remote} · ${references} · ${backup}.`));
+    return { container, recovery };
 };
 
 const cardFor = (item, thumbnail, objectUrls) => {
@@ -2159,6 +2216,8 @@ const cardFor = (item, thumbnail, objectUrls) => {
     const chips = element('div', 'status-chips');
     statusLabels(item).forEach(label => chips.append(element('span', 'status-chip', label)));
     body.append(chips);
+    const deletedDetails = item.deletedAt ? deletedRecoveryDetails(item) : null;
+    if (deletedDetails) body.append(deletedDetails.container);
     const actions = element('div', 'card-actions');
     if (!item.deletedAt && ['uploaded', 'unreachable'].includes(item.remote.state)) {
         actions.append(makeButton(RETURN_TOKEN ? 'Insert' : 'Copy URL',
@@ -2173,7 +2232,9 @@ const cardFor = (item, thumbnail, objectUrls) => {
             () => void ext.tabs.create({ url: item.remote.viewerUrl })));
     }
     actions.append(item.deletedAt
-        ? makeButton('Restore', () => void restoreLibraryItem(item), 'secondary-button')
+        ? makeButton(deletedDetails?.recovery.editingDataRecoverable
+            ? 'Restore with editing data'
+            : 'Restore record only', () => void restoreLibraryItem(item), 'secondary-button')
         : makeButton('Remove…', () => void moveToDeleted(item), 'danger-button'));
     body.append(actions);
     card.append(body);

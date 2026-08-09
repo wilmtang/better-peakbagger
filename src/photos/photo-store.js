@@ -301,12 +301,15 @@ const createPhotoStore = async options => {
         return storedPhoto;
     };
 
-    const restorePhoto = async photo => {
+    const restorePhoto = async (photo, { retainAssets = true } = {}) => {
         const cleaned = Library.cleanPhoto(photo);
-        if (!cleaned || cleaned.deletedAt) {
+        if (!cleaned || cleaned.deletedAt || typeof retainAssets !== 'boolean') {
             throw new TypeError('photo store requires a clean restored photo');
         }
-        const transaction = database.transaction([STORES.photos, STORES.tombstones], 'readwrite');
+        const restoreStores = retainAssets
+            ? [STORES.photos, STORES.tombstones]
+            : [STORES.photos, STORES.tombstones, STORES.projects, STORES.originals, STORES.thumbnails];
+        const transaction = database.transaction(restoreStores, 'readwrite');
         const photos = transaction.objectStore(STORES.photos);
         const tombstones = transaction.objectStore(STORES.tombstones);
         let storedPhoto;
@@ -319,12 +322,22 @@ const createPhotoStore = async options => {
             if (!current?.deletedAt || current.revision !== cleaned.revision || !tombstone) {
                 throw new PhotoStoreConflictError(cleaned.localId);
             }
+            const restored = retainAssets ? cleaned : Library.updateAssets(cleaned, {
+                originalRetained: false,
+                projectRetained: false,
+                thumbnailRetained: false,
+            }, cleaned.updatedAt);
             storedPhoto = Library.cleanPhoto({
-                ...cleaned,
+                ...restored,
                 revision: nextRevision(current, tombstone),
             });
             photos.put(storedPhoto);
             tombstones.delete(cleaned.localId);
+            if (!retainAssets) {
+                transaction.objectStore(STORES.projects).delete(cleaned.localId);
+                transaction.objectStore(STORES.originals).delete(cleaned.localId);
+                transaction.objectStore(STORES.thumbnails).delete(cleaned.localId);
+            }
         } catch (error) {
             return abortAndRethrow(transaction, error);
         }

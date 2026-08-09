@@ -789,6 +789,28 @@ kbd {
   font-size: 11px;
 }
 
+.deleted-recovery {
+  display: grid;
+  gap: 4px;
+  padding: 8px 9px;
+  border: 1px solid var(--experimental-border);
+  border-radius: 8px;
+  background: var(--experimental-bg);
+}
+
+.deleted-recovery .deleted-recovery-dates {
+  color: var(--text);
+  font-weight: 650;
+}
+
+.deleted-recovery .deleted-recovery-outcome {
+  color: var(--experimental-text);
+}
+
+.deleted-recovery time {
+  white-space: nowrap;
+}
+
 .card-actions {
   display: flex;
   flex-wrap: wrap;
