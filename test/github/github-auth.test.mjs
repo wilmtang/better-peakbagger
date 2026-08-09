@@ -337,6 +337,23 @@ test('auth-store replacement atomically installs or restores one complete connec
     await assert.rejects(store.replace([]), /must be an object/);
 });
 
+test('conditional auth restore yields to a newer queued reconnect', async () => {
+    const area = makeArea();
+    const store = Auth.createAuthStore(area);
+    const previous = { token: 'old-token', repo: { owner: 'old', name: 'backup' } };
+    const imported = { token: 'imported-token', repo: { owner: 'ada', name: 'peaks' } };
+    const newer = { token: 'newer-token', repo: { owner: 'grace', name: 'summits' } };
+    await store.replace(previous);
+    await store.replace(imported);
+
+    const reconnect = store.replace(newer);
+    const rollback = store.replaceIfCurrent(imported, previous);
+    await reconnect;
+
+    assert.deepEqual(await rollback, { replaced: false, current: newer });
+    assert.deepEqual(await store.read(), newer);
+});
+
 test('concurrent auth-store writes preserve both patches', async () => {
     const area = makeArea();
     const store = Auth.createAuthStore(area);

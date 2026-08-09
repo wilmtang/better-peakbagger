@@ -41,3 +41,20 @@ test('rejects malformed keys and ignores malformed stored values', async () => {
     area.values[Auth.STORAGE_KEY] = { key: 'has whitespace' };
     assert.equal(await store.read(), null);
 });
+
+test('conditional key restore yields to a newer queued replacement', async () => {
+    const area = fakeArea();
+    const store = Auth.createKeyStore(area);
+    const previous = await store.replace({ key: 'old-key', savedAt: 'old-time' });
+    const imported = await store.replace({ key: 'imported-key', savedAt: 'import-time' });
+
+    const newer = store.setKey('newer-key', 'newer-time');
+    const rollback = store.replaceIfCurrent(imported, previous);
+    await newer;
+
+    assert.deepEqual(await rollback, {
+        replaced: false,
+        current: { key: 'newer-key', savedAt: 'newer-time' },
+    });
+    assert.equal(await store.getKey(), 'newer-key');
+});

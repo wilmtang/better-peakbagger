@@ -14,6 +14,7 @@
 
 import { settingsSchema as Schema } from './settings-schema.js';
 import { themeResolve as ThemeResolve } from '../theme/theme-resolve.js';
+import { storageValue as StorageValue } from '../storage/storage-value.js';
 
 export const STORAGE_KEY = 'bpbSettings';
 const { DEFAULTS, clean } = Schema;
@@ -73,6 +74,23 @@ export const createSettingsStore = ({
         return operation;
     };
 
+    // Compare and replace inside the same queue as ordinary SETTINGS_PATCH
+    // writes. Manual file import uses this to restore its snapshot only while
+    // no newer settings mutation has won.
+    const replaceIfCurrent = (expected, replacement) => {
+        const operation = mutationQueue.then(async () => {
+            const current = await read();
+            if (!StorageValue.same(current, clean(expected))) {
+                return { replaced: false, current };
+            }
+            const next = clean(replacement);
+            await area.set({ [STORAGE_KEY]: next });
+            return { replaced: true, current: next };
+        });
+        mutationQueue = operation.catch(() => {});
+        return operation;
+    };
+
     const set = async patch => {
         if (typeof sendMessage !== 'function') {
             throw new Error('The settings worker route is unavailable.');
@@ -104,6 +122,7 @@ export const createSettingsStore = ({
         requireCurrent: read,
         set,
         applyPatch,
+        replaceIfCurrent,
         subscribe,
         resolveTheme: preference => ThemeResolve.resolve(preference),
     };

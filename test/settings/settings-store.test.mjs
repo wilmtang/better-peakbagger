@@ -88,3 +88,21 @@ test('worker-owned settings patches preserve concurrent writes from separate con
     assert.equal(area.data[STORAGE_KEY].theme, 'dark');
     assert.equal(area.data[STORAGE_KEY].units, 'metric');
 });
+
+test('conditional settings restore yields to a newer queued patch', async () => {
+    const area = makeArea({ [STORAGE_KEY]: { theme: 'light', units: 'imperial' } });
+    const store = createSettingsStore({ area, sendMessage: null });
+    const previous = await store.requireCurrent();
+    const imported = await store.applyPatch({ theme: 'dark' });
+
+    const newer = store.applyPatch({ units: 'metric' });
+    const rollback = store.replaceIfCurrent(imported, previous);
+    await newer;
+
+    assert.deepEqual(await rollback, {
+        replaced: false,
+        current: await store.requireCurrent(),
+    });
+    assert.equal(area.data[STORAGE_KEY].theme, 'dark');
+    assert.equal(area.data[STORAGE_KEY].units, 'metric');
+});

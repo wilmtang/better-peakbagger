@@ -90,7 +90,10 @@ const installSettingsFileWorker = (chrome, {
             } catch {
                 return {
                     ok: false,
-                    error: { code: 'import-failed', message: 'Settings could not be imported. Nothing was changed.' },
+                    error: {
+                        code: 'import-failed',
+                        message: 'Settings could not be imported. The attempted changes were rolled back.',
+                    },
                 };
             }
         }

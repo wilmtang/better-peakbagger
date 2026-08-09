@@ -4,7 +4,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createSettingsFileRoutes } from '../../src/background/settings-file-routes.js';
-import { settingsSchema as Schema } from '../../src/settings/settings-schema.js';
+import { createSettingsStore } from '../../src/settings/settings.js';
 import { settingsTransfer as Transfer } from '../../src/settings/settings-transfer.js';
 import { imgbbAuth as ImgbbAuth } from '../../src/photos/imgbb-auth.js';
 import { githubAuth as GithubAuth } from '../../src/github/github-auth.js';
@@ -47,15 +47,7 @@ const harness = ({
         } : {}),
         ...(github ? { [GithubAuth.STORAGE_KEY]: github } : {}),
     });
-    const settingsStore = {
-        requireCurrent: async () => Schema.clean((await sync.get('bpbSettings')).bpbSettings),
-        applyPatch: async patch => {
-            const current = Schema.clean((await sync.get('bpbSettings')).bpbSettings);
-            const next = Schema.clean({ ...current, ...patch });
-            await sync.set({ bpbSettings: next });
-            return next;
-        },
-    };
+    const settingsStore = createSettingsStore({ area: sync, onChanged: null, sendMessage: null });
     const keyStore = ImgbbAuth.createKeyStore(local);
     const authStore = GithubAuth.createAuthStore(local);
     const ext = {
@@ -235,6 +227,9 @@ test('an unverifiable imported GitHub connection changes no local state', async 
 
     assert.equal(response.ok, false);
     assert.equal(response.error.source, 'github');
+    assert.deepEqual(response.stores, {
+        settings: 'not-written', imgbb: 'not-written', github: 'not-written',
+    });
     assert.equal(h.sync.values.bpbSettings.theme, 'dark');
     assert.equal(h.local.values[ImgbbAuth.STORAGE_KEY].key, 'old-imgbb-key');
     assert.deepEqual(h.local.values[GithubAuth.STORAGE_KEY], oldAuth);
@@ -271,6 +266,9 @@ test('a failed GitHub credential write rolls settings and API keys back', async 
 
     assert.equal(response.ok, false);
     assert.equal(response.error.code, 'import-failed');
+    assert.deepEqual(response.stores, {
+        settings: 'rolled-back', imgbb: 'rolled-back', github: 'not-written',
+    });
     assert.equal(h.sync.values.bpbSettings.theme, 'dark');
     assert.equal(h.local.values[ImgbbAuth.STORAGE_KEY].key, 'old-imgbb-key');
     assert.deepEqual(h.local.values[GithubAuth.STORAGE_KEY], oldAuth);
@@ -278,14 +276,14 @@ test('a failed GitHub credential write rolls settings and API keys back', async 
 
 test('a failed API-key write rolls settings back to their previous values', async () => {
     const h = harness({ imgbb: 'old-imgbb-key' });
-    const nativeSetKey = h.keyStore.setKey;
+    const nativeReplace = h.keyStore.replace;
     let failOnce = true;
-    h.keyStore.setKey = async (...args) => {
+    h.keyStore.replace = async value => {
         if (failOnce) {
             failOnce = false;
             throw new Error('local write failed');
         }
-        return nativeSetKey(...args);
+        return nativeReplace(value);
     };
     const payload = Transfer.buildPayload({ theme: 'light', units: 'metric' }, {
         extensionVersion: '3.3.0',
@@ -298,7 +296,199 @@ test('a failed API-key write rolls settings back to their previous values', asyn
 
     assert.equal(response.ok, false);
     assert.equal(response.error.code, 'import-failed');
+    assert.deepEqual(response.stores, {
+        settings: 'rolled-back', imgbb: 'not-written', github: 'not-requested',
+    });
     assert.equal(h.sync.values.bpbSettings.theme, 'dark');
     assert.equal(h.sync.values.bpbSettings.units, 'imperial');
     assert.equal(h.local.values[ImgbbAuth.STORAGE_KEY].key, 'old-imgbb-key');
 });
+
+test('a newer settings patch survives rollback and is reported as a conflict', async () => {
+    const h = harness({ imgbb: 'old-imgbb-key' });
+    h.keyStore.replace = async () => {
+        await h.settingsStore.applyPatch({ units: 'metric' });
+        throw new Error('API key write failed');
+    };
+    const payload = Transfer.buildPayload({ theme: 'light', units: 'imperial' }, {
+        extensionVersion: '3.3.0',
+        exportedAt: '2026-07-30T12:00:00.000Z',
+        apiKeys: { imgbb: 'imported-imgbb-key' },
+    });
+
+    const response = await h.routes.handlers.SETTINGS_FILE_IMPORT({
+        content: Transfer.serialize(payload),
+    }, optionsSender);
+
+    assert.equal(response.error.code, 'rollback-conflict');
+    assert.deepEqual(response.stores, {
+        settings: 'conflicted', imgbb: 'not-written', github: 'not-requested',
+    });
+    assert.equal(h.sync.values.bpbSettings.theme, 'light');
+    assert.equal(h.sync.values.bpbSettings.units, 'metric');
+    assert.equal(h.local.values[ImgbbAuth.STORAGE_KEY].key, 'old-imgbb-key');
+    assert.doesNotMatch(response.error.message, /nothing was changed/i);
+});
+
+test('a newer API key survives rollback after a later GitHub write fails', async () => {
+    const h = harness({ imgbb: 'old-imgbb-key' });
+    h.authStore.replace = async () => {
+        await h.keyStore.setKey('newer-imgbb-key', '2026-08-08T12:00:00.000Z');
+        throw new Error('GitHub write failed');
+    };
+    const payload = Transfer.buildPayload({ theme: 'light' }, {
+        extensionVersion: '3.3.0',
+        exportedAt: '2026-07-30T12:00:00.000Z',
+        apiKeys: { imgbb: 'imported-imgbb-key' },
+        githubConnection: {
+            token: 'ghu_imported_token',
+            repository: { owner: 'ada', name: 'peaks' },
+        },
+    });
+
+    const response = await h.routes.handlers.SETTINGS_FILE_IMPORT({
+        content: Transfer.serialize(payload),
+    }, optionsSender);
+
+    assert.equal(response.error.code, 'rollback-conflict');
+    assert.deepEqual(response.stores, {
+        settings: 'rolled-back', imgbb: 'conflicted', github: 'not-written',
+    });
+    assert.equal(h.sync.values.bpbSettings.theme, 'dark');
+    assert.equal(h.local.values[ImgbbAuth.STORAGE_KEY].key, 'newer-imgbb-key');
+});
+
+test('a disconnect and reconnect survive an ambiguous imported GitHub write failure', async () => {
+    const oldAuth = { token: 'ghu_old_token', repo: { owner: 'old', name: 'backup' } };
+    const newerAuth = { token: 'ghu_newer_token', repo: { owner: 'grace', name: 'summits' } };
+    const h = harness({ github: oldAuth });
+    const nativeReplace = h.authStore.replace;
+    h.authStore.replace = async value => {
+        await nativeReplace(value);
+        await h.authStore.clear();
+        await nativeReplace(newerAuth);
+        throw new Error('ambiguous GitHub write failure');
+    };
+    const payload = Transfer.buildPayload({ theme: 'light' }, {
+        extensionVersion: '3.3.0',
+        exportedAt: '2026-07-30T12:00:00.000Z',
+        githubConnection: {
+            token: 'ghu_imported_token',
+            repository: { owner: 'ada', name: 'peaks' },
+        },
+    });
+
+    const response = await h.routes.handlers.SETTINGS_FILE_IMPORT({
+        content: Transfer.serialize(payload),
+    }, optionsSender);
+
+    assert.equal(response.error.code, 'rollback-conflict');
+    assert.deepEqual(response.stores, {
+        settings: 'rolled-back', imgbb: 'not-requested', github: 'conflicted',
+    });
+    assert.deepEqual(h.local.values[GithubAuth.STORAGE_KEY], newerAuth);
+});
+
+test('two settings-file imports validate and commit in owner order', async () => {
+    let releaseFirst;
+    let firstValidationStarted;
+    const gate = new Promise(resolve => { releaseFirst = resolve; });
+    const started = new Promise(resolve => { firstValidationStarted = resolve; });
+    const validationOrder = [];
+    const verifyGithubConnection = async connection => {
+        validationOrder.push(connection.token);
+        if (connection.token === 'ghu_first_token') {
+            firstValidationStarted();
+            await gate;
+        }
+        return {
+            ok: true,
+            auth: {
+                token: connection.token,
+                repo: { ...connection.repository, branch: 'main' },
+            },
+        };
+    };
+    const h = harness({ verifyGithubConnection });
+    const content = (token, theme) => Transfer.serialize(Transfer.buildPayload({ theme }, {
+        extensionVersion: '3.3.0',
+        exportedAt: '2026-07-30T12:00:00.000Z',
+        githubConnection: { token, repository: { owner: 'ada', name: 'peaks' } },
+    }));
+
+    const first = h.routes.handlers.SETTINGS_FILE_IMPORT({
+        content: content('ghu_first_token', 'light'),
+    }, optionsSender);
+    await started;
+    const second = h.routes.handlers.SETTINGS_FILE_IMPORT({
+        content: content('ghu_second_token', 'dark'),
+    }, optionsSender);
+    await new Promise(resolve => setTimeout(resolve, 0));
+    assert.deepEqual(validationOrder, ['ghu_first_token']);
+
+    releaseFirst();
+    assert.equal((await first).ok, true);
+    assert.equal((await second).ok, true);
+    assert.deepEqual(validationOrder, ['ghu_first_token', 'ghu_second_token']);
+    assert.equal(h.local.values[GithubAuth.STORAGE_KEY].token, 'ghu_second_token');
+    assert.equal(h.sync.values.bpbSettings.theme, 'dark');
+});
+
+for (const failedStore of ['settings', 'imgbb', 'github']) {
+    test(`rollback failure at the ${failedStore} write boundary reports every store`, async () => {
+        const h = harness({ imgbb: 'old-imgbb-key', github: {
+            token: 'ghu_old_token', repo: { owner: 'old', name: 'backup' },
+        } });
+        if (failedStore === 'settings') {
+            const nativeApply = h.settingsStore.applyPatch;
+            h.settingsStore.applyPatch = async patch => {
+                await nativeApply(patch);
+                throw new Error('ambiguous settings write failure');
+            };
+            h.settingsStore.replaceIfCurrent = async () => {
+                throw new Error('settings rollback failed');
+            };
+        } else if (failedStore === 'imgbb') {
+            const nativeReplace = h.keyStore.replace;
+            h.keyStore.replace = async value => {
+                await nativeReplace(value);
+                throw new Error('ambiguous ImgBB write failure');
+            };
+            h.keyStore.replaceIfCurrent = async () => {
+                throw new Error('ImgBB rollback failed');
+            };
+        } else {
+            const nativeReplace = h.authStore.replace;
+            h.authStore.replace = async value => {
+                await nativeReplace(value);
+                throw new Error('ambiguous GitHub write failure');
+            };
+            h.authStore.replaceIfCurrent = async () => {
+                throw new Error('GitHub rollback failed');
+            };
+        }
+        const payload = Transfer.buildPayload({ theme: 'light' }, {
+            extensionVersion: '3.3.0',
+            exportedAt: '2026-07-30T12:00:00.000Z',
+            apiKeys: { imgbb: 'imported-imgbb-key' },
+            githubConnection: {
+                token: 'ghu_imported_token',
+                repository: { owner: 'ada', name: 'peaks' },
+            },
+        });
+
+        const response = await h.routes.handlers.SETTINGS_FILE_IMPORT({
+            content: Transfer.serialize(payload),
+        }, optionsSender);
+
+        assert.equal(response.error.code, 'rollback-failed');
+        const expected = {
+            settings: failedStore === 'settings' ? 'rollback-failed' : 'rolled-back',
+            imgbb: failedStore === 'settings' ? 'not-written'
+                : failedStore === 'imgbb' ? 'rollback-failed' : 'rolled-back',
+            github: failedStore === 'github' ? 'rollback-failed' : 'not-written',
+        };
+        assert.deepEqual(response.stores, expected);
+        assert.match(response.error.message, /Reload Settings and review/);
+    });
+}

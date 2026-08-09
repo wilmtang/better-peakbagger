@@ -31,6 +31,7 @@
 import { githubApi as GithubApi } from './github-api.js';
 import { githubErrors as GithubErrors } from './github-errors.js';
 import { requestDeadline as Deadline } from '../net/request-deadline.js';
+import { storageValue as StorageValue } from '../storage/storage-value.js';
 
 const { ERROR_CODES, GithubError } = GithubErrors;
 // Device-flow polls run on a fixed interval, so one stalled request must
@@ -303,10 +304,27 @@ const createAuthStore = (area = resolveLocalArea()) => {
         await area.set({ [STORAGE_KEY]: next });
         return next;
     });
+    const replaceIfCurrent = (expected, replacement) => mutate(async () => {
+        const current = await read();
+        if (!StorageValue.same(current, expected)) {
+            return { replaced: false, current };
+        }
+        if (replacement == null) {
+            await area.remove(STORAGE_KEY);
+            return { replaced: true, current: null };
+        }
+        if (typeof replacement !== 'object' || Array.isArray(replacement)) {
+            throw new TypeError('GitHub authorization record must be an object.');
+        }
+        const next = { ...replacement };
+        await area.set({ [STORAGE_KEY]: next });
+        return { replaced: true, current: next };
+    });
     return {
         STORAGE_KEY,
         read,
         replace,
+        replaceIfCurrent,
         // The credential half; outside the explicit manual file-transfer
         // exception, the token stays local and is held only by the worker.
         setCredential: ({ token, tokenType = 'bearer', scope = '' }) =>
