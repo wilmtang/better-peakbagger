@@ -249,8 +249,12 @@ try {
                 buffer: Buffer.from(`${JSON.stringify(importedSettings)}\n`),
             });
         }
-        const settingsImportCopy = await optionsPage.locator('#settings-backup-confirmation-detail')
-            .textContent().catch(() => '');
+        const settingsImportCopy = await optionsPage.waitForFunction(() => {
+            const confirmation = document.getElementById('settings-backup-confirmation');
+            const copy = document.getElementById('settings-backup-confirmation-detail')?.textContent || '';
+            return !confirmation?.hidden && /settings and saved API keys/i.test(copy) ? copy : false;
+        }, null, { timeout: 5000 }).then(handle => handle.jsonValue()).catch(async () =>
+            optionsPage.locator('#settings-backup-confirmation-detail').textContent().catch(() => ''));
         check(/settings and saved API keys/i.test(settingsImportCopy || ''),
             `Chrome settings import did not disclose API-key replacement: ${JSON.stringify(settingsImportCopy)}`);
         if (process.env.BPB_VERIFY_SETTINGS_TRANSFER_SCREENSHOT) {

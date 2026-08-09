@@ -183,6 +183,10 @@ test('browser verifiers use the shared resource stack and condition-based analyz
     assert.doesNotMatch(chromeVerifier, /waitForTimeout\(2_?000\)/);
     assert.match(chromeVerifier, /waitForFunction\([\s\S]*Interactive Stats:/);
     assert.match(chromeVerifier, /current value:/);
+    assert.match(
+        chromeVerifier,
+        /waitForFunction\([\s\S]*settings-backup-confirmation[\s\S]*settings and saved API keys/,
+    );
 
     for (const verifierPath of ['scripts/verify-terrain-lod.mjs', 'scripts/verify-terrain-visual.mjs']) {
         const source = sources.find(entry => entry.verifierPath === verifierPath).source;
