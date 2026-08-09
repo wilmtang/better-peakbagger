@@ -197,12 +197,13 @@ substitutes for the other. It also runs
 scale test, and executes both generated store archives before either
 publication job can start.
 
-The source manifest declares Firefox desktop 140.0 and Firefox Android 142.0
-independently because
+The source manifest declares the verified Firefox desktop floor 152.0 and the
+Firefox Android floor 142.0 independently. Android 142 is the first mobile
+release that supports
 [`gecko.data_collection_permissions`](https://extensionworkshop.com/documentation/develop/firefox-builtin-data-consent/)
-reached those platforms in different releases. Desktop browser automation
-cannot prove the Android declaration or mobile layout; use the physical-device
-release check in [Browser store releases](releasing.md).
+and remains separately declared even though the working desktop floor is newer.
+Desktop browser automation cannot prove the Android declaration or mobile
+layout; use the physical-device release check in [Browser store releases](releasing.md).
 
 The browser smokes select a fixture GPX through the native file input and
 confirm that a fresh ascent form receives its local date and replaces Preview
