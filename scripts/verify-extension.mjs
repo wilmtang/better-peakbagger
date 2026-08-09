@@ -1802,6 +1802,37 @@ try {
         && capitolChartState.pointCounts?.join('|') === '971|971'
         && capitolChartState.breakCounts?.join('|') === '0|0',
     `the packaged analyzer reintroduced a Capitol chart break: ${JSON.stringify(capitolChartState)}`);
+    const chartSeriesGroup = offPage.getByRole('group', { name: 'Chart series' });
+    const distanceSeriesButton = chartSeriesGroup.getByRole('button', {
+        name: 'Elevation by Distance',
+    });
+    const timeSeriesButton = chartSeriesGroup.getByRole('button', {
+        name: 'Elevation by Time',
+    });
+    const initialSeriesState = await chartSeriesGroup.getByRole('button').evaluateAll(buttons =>
+        buttons.map(button => ({
+            label: button.textContent,
+            pressed: button.getAttribute('aria-pressed'),
+            tabIndex: button.tabIndex,
+        })));
+    await distanceSeriesButton.focus();
+    await offPage.keyboard.press('Tab');
+    const tabbedSeries = await offPage.evaluate(() => document.activeElement?.textContent);
+    await offPage.keyboard.press('Shift+Tab');
+    for (const button of [distanceSeriesButton, timeSeriesButton]) {
+        await button.focus();
+        const before = await button.getAttribute('aria-pressed');
+        await offPage.keyboard.press('Enter');
+        const after = await button.getAttribute('aria-pressed');
+        await offPage.keyboard.press('Enter');
+        const restored = await button.getAttribute('aria-pressed');
+        check(after === String(before !== 'true') && restored === before,
+            `the packaged chart series button did not keyboard-toggle and restore: ${JSON.stringify({ before, after, restored })}`);
+    }
+    check(initialSeriesState.length === 2
+        && initialSeriesState.every(item => item.tabIndex === 0 && /^(true|false)$/.test(item.pressed))
+        && tabbedSeries === 'Elevation by Time',
+    `the packaged chart legend is not a complete tab-reachable button group: ${JSON.stringify({ initialSeriesState, tabbedSeries })}`);
     await coordinateCanvas.focus();
     await coordinateCanvas.press('ArrowRight');
     const coordinateSelection = await offPage.waitForFunction(() => {
@@ -1821,12 +1852,17 @@ try {
     check(coordinateSelection?.buttonEnabled
         && coordinateSelection?.focusVisible
         && coordinateSelection?.outlineWidth === '3px'
-        && coordinateSelection?.outlineStyle === 'solid',
+        && coordinateSelection?.outlineStyle === 'solid'
+        && /Distance: /.test(coordinateSelection?.status || '')
+        && /Elevation by (Distance|Time): /.test(coordinateSelection?.status || '')
+        && /Time: /.test(coordinateSelection?.status || ''),
     `the analyzer keyboard selection or visible focus ring failed: ${JSON.stringify(coordinateSelection)}`);
     await coordinateCanvas.press('ArrowRight');
     const routeScrubber = await offPage.waitForFunction(() => {
         const status = document.getElementById('bpb-gpx-coordinate-status')?.textContent || '';
-        const selected = status.match(/: (-?\d+\.\d+), (-?\d+\.\d+)$/);
+        const selected = status.match(
+            /^Selected point \d+ of \d+: (-?\d+\.\d+), (-?\d+\.\d+)/
+        );
         const iframe = document.querySelector('iframe[src*="MasterMap.aspx"]');
         const marker = iframe?.contentWindow?.mapsPlaceholder?.layers?.find(
             layer => layer?.options?.radius === 9
@@ -3579,7 +3615,8 @@ console.log('  - the real 1,500-row favorite list reports its total, fuzzy-searc
 console.log('  - the compact profile star persists, and four in-place native Buddy actions refreshed/synced under both removal policies');
 console.log('  - settings.js initialises in the isolated world and the bridge answers');
 console.log('  - the GPX analyzer reproduces the full Capitol metrics with 971 points per series and zero breaks,');
-console.log('    moves the route scrubber with keyboard selection and visible focus, and confirms or recovers coordinate copy');
+console.log('    exposes tab-reachable series toggles, announces active chart values, moves the route');
+console.log('    scrubber with keyboard selection and visible focus, and confirms or recovers coordinate copy');
 console.log('  - the 3D toggle stays visible when disabled and opens the provider/privacy confirmation');
 console.log('  - forged page/frame messages, synthetic clicks, and direct embedding start no terrain work');
 console.log('  - trusted confirmation persists the feature gate without contacting tile providers');

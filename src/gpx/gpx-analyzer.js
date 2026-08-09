@@ -232,7 +232,7 @@ const run = async () => {
         hintText.className = 'bpb-gpx-hint';
         hintText.setAttribute('role', 'status');
         hintText.setAttribute('aria-live', 'polite');
-        Object.assign(hintText.style, { fontSize: '0.8em', fontStyle: 'italic' });
+        Object.assign(hintText.style, { fontSize: '0.8em' });
         hintText.textContent = COORDINATE_HINT;
 
         const coordinateFallback = document.createElement('input');
@@ -243,7 +243,7 @@ const run = async () => {
         coordinateFallback.setAttribute('aria-label', 'Selected coordinates');
 
         coordinateControls.append(copyCoordinatesButton, hintText, coordinateFallback);
-        controlsContainer.append(unitSelect, routeStyleControls, coordinateControls);
+        controlsContainer.append(unitSelect, routeStyleControls);
         headerBox.append(statsContainer, controlsContainer);
         const terrainMessage = document.createElement('div');
         terrainMessage.id = 'bpb-terrain-message';
@@ -263,8 +263,16 @@ const run = async () => {
         canvas.setAttribute('aria-label', 'Interactive GPX chart. Use Left and Right Arrow keys to select a point.');
         canvas.setAttribute('aria-describedby', hintText.id);
         canvas.setAttribute('aria-keyshortcuts', 'ArrowLeft ArrowRight');
+
+        const chartLegend = document.createElement('div');
+        chartLegend.id = 'bpb-gpx-chart-legend';
+        chartLegend.className = 'bpb-gpx-chart-legend';
+        chartLegend.setAttribute('role', 'group');
+        chartLegend.setAttribute('aria-label', 'Chart series');
+        chartLegend.hidden = true;
+
         canvasContainer.append(canvas);
-        container.append(headerBox, terrainMessage, canvasContainer);
+        container.append(headerBox, terrainMessage, coordinateControls, chartLegend, canvasContainer);
         const fullScreenMapLink = Array.from(document.querySelectorAll('a')).find(a => a.textContent.includes('Full Screen Map'));
         if (fullScreenMapLink) fullScreenMapLink.before(container);
         else gpxLink.after(container);
@@ -353,6 +361,7 @@ const run = async () => {
         let hasTimeSeries = false;
         let selectedCoordinateIndex = -1;
         let selectedCoordinateSeries = 'distance';
+        let selectedChartValues = () => [];
         let coordinateFeedbackTimer = null;
         let metrics = { distanceM: 0, gainM: 0, rawDistanceM: 0, rawGainM: 0 };
         let totalMs = 0, hasTime = false;
@@ -364,6 +373,10 @@ const run = async () => {
         const isCoordinatePoint = point =>
             point && Number.isFinite(point.lat) && Number.isFinite(point.lon);
         const coordinateText = point => `${point.lat.toFixed(5)}, ${point.lon.toFixed(5)}`;
+        const chartDatasetVisible = (chart, index) =>
+            typeof chart?.isDatasetVisible === 'function'
+                ? chart.isDatasetVisible(index)
+                : chart?.data?.datasets?.[index]?.hidden !== true;
         const coordinatePointsFor = series => (series === 'time' && hasTimeSeries ? timeChartData : chartData)
             .filter(isCoordinatePoint);
         const chartDescription = () => chartMode === 'elevation'
@@ -374,7 +387,7 @@ const run = async () => {
             if (chartInstance && Array.isArray(chartInstance.data?.datasets)
                 && typeof chartInstance.isDatasetVisible === 'function') {
                 const visibleSeries = chartInstance.data.datasets
-                    .map((dataset, index) => chartInstance.isDatasetVisible(index)
+                    .map((dataset, index) => chartDatasetVisible(chartInstance, index)
                         ? dataset._bpbSeries
                         : null)
                     .filter(Boolean);
@@ -398,7 +411,9 @@ const run = async () => {
             if (!isCoordinatePoint(point)) return COORDINATE_HINT;
             const selectable = coordinatePointsFor(selectedCoordinateSeries);
             const position = selectable.indexOf(point);
-            return `Selected point ${position + 1} of ${selectable.length}: ${coordinateText(point)}`;
+            const values = selectedChartValues(point);
+            return `Selected point ${position + 1} of ${selectable.length}: ${coordinateText(point)}`
+                + (values.length ? `. ${values.join('. ')}` : '');
         };
         const syncCoordinateSelection = ({ unavailable = false } = {}) => {
             const selectedPoint = chartData[selectedCoordinateIndex];
@@ -851,6 +866,7 @@ const run = async () => {
             canvasContainer.style.height = chartMode === 'route' ? '110px'
                 : chartMode === 'progress' ? '260px' : '300px';
             coordinateControls.hidden = false;
+            chartLegend.hidden = false;
 
             const isMet = resolveUnits(BPB.get()) === 'metric';
             const dMult = isMet ? 0.001 : 1 / METERS_PER_MILE, eMult = isMet ? 1 : FEET_PER_METER;
@@ -1086,6 +1102,47 @@ const run = async () => {
                 });
             }
 
+            // One formatter owns the visual tooltip and the semantic selected-
+            // point announcement. A missing elevation, time, or grade stays
+            // absent instead of being restated as zero or inferred data.
+            const formatChartPoint = (point, dataset, y) => {
+                if (!point) return { title: '', label: '', afterBody: [] };
+                const title = chartMode === 'progress'
+                    ? `Time: ${formatTimeStr(point.ms, startMs, isMultiDay)}`
+                    : `Distance: ${(point.distM * dMult).toFixed(2)} ${dUnit}`;
+                let label;
+                if (chartMode === 'progress') {
+                    label = `Distance traveled: ${(point.distM * dMult).toFixed(2)} ${dUnit}`;
+                } else if (chartMode === 'route') {
+                    label = 'Recorded route position';
+                } else {
+                    label = `${dataset.label}: ${y} ${eUnit}`;
+                    if (Number.isFinite(point.grade)) label += ` (Grade: ${point.grade.toFixed(1)}%)`;
+                }
+                const afterBody = chartMode !== 'progress'
+                    && hasTime && Number.isFinite(point.ms) && point.ms > 0
+                    ? [`Time: ${formatTimeStr(point.ms, startMs, isMultiDay)}`]
+                    : [];
+                return { title, label, afterBody };
+            };
+
+            selectedChartValues = point => {
+                const values = [];
+                const add = value => {
+                    if (value && !values.includes(value)) values.push(value);
+                };
+                datasets.forEach((dataset, index) => {
+                    if (chartInstance && !chartDatasetVisible(chartInstance, index)) return;
+                    const plotted = dataset.data.find(candidate => candidate?._raw === point);
+                    if (!plotted || plotted.y == null) return;
+                    const formatted = formatChartPoint(point, dataset, plotted.y);
+                    add(formatted.title);
+                    add(formatted.label);
+                    formatted.afterBody.forEach(add);
+                });
+                return values;
+            };
+
             // Match the legend handler's rule: one series visible -> index mode.
             const startsSingle = datasets.length === 1 || hideDistance || hideTime;
 
@@ -1141,6 +1198,51 @@ const run = async () => {
                         yRoute: { display: false, min: -1, max: 1 }
                     };
 
+            const syncChartInteraction = () => {
+                const visible = datasets.reduce((count, dataset, index) =>
+                    count + (chartDatasetVisible(chartInstance, index) ? 1 : 0), 0);
+                chartInstance.options.interaction = visible === 1
+                    ? { mode: 'index', intersect: false }
+                    : { mode: 'nearest', intersect: true, axis: 'xy' };
+            };
+            const syncChartLegend = () => {
+                chartLegend.querySelectorAll('[data-dataset-index]').forEach(button => {
+                    const index = Number(button.dataset.datasetIndex);
+                    button.setAttribute('aria-pressed', String(chartDatasetVisible(chartInstance, index)));
+                });
+            };
+            const toggleChartSeries = index => {
+                const visible = !chartDatasetVisible(chartInstance, index);
+                if (typeof chartInstance.setDatasetVisibility === 'function') {
+                    chartInstance.setDatasetVisibility(index, visible);
+                } else {
+                    chartInstance.data.datasets[index].hidden = !visible;
+                }
+                syncChartInteraction();
+                syncChartLegend();
+
+                const selectedPoint = chartData[selectedCoordinateIndex];
+                const selectedSeriesVisible = datasets.some((dataset, datasetIndex) =>
+                    dataset._bpbSeries === selectedCoordinateSeries
+                    && chartDatasetVisible(chartInstance, datasetIndex));
+                if (selectedPoint && !selectedSeriesVisible) {
+                    const fallback = datasets.find((dataset, datasetIndex) =>
+                        chartDatasetVisible(chartInstance, datasetIndex)
+                        && coordinatePointsFor(dataset._bpbSeries).includes(selectedPoint));
+                    if (fallback) {
+                        selectedCoordinateSeries = fallback._bpbSeries;
+                    } else {
+                        selectedCoordinateIndex = -1;
+                        syncCoordinateSelection();
+                    }
+                }
+                if (selectedCoordinateIndex >= 0) {
+                    setCoordinateStatus(selectedCoordinateAnnouncement());
+                }
+                chartInstance.update('none');
+                restoreSelectedRouteHighlight();
+            };
+
             chartInstance = new Chart(canvas.getContext('2d'), {
                 type: 'line',
                 data: { datasets },
@@ -1174,54 +1276,33 @@ const run = async () => {
                     },
                     plugins: {
                         legend: {
-                            display: chartMode === 'elevation',
-                            position: 'bottom',
-                            labels: { usePointStyle: true, boxWidth: 8, color: p.chartText },
-                            onClick: function (e, legendItem, legend) {
-                                const index = legendItem.datasetIndex;
-                                const chart = legend.chart;
-
-                                chart.setDatasetVisibility(index, !chart.isDatasetVisible(index));
-
-                                let visibleCount = 0;
-                                chart.data.datasets.forEach((dataset, i) => {
-                                    if (chart.isDatasetVisible(i)) visibleCount++;
-                                });
-
-                                if (visibleCount === 1) {
-                                    chart.options.interaction = { mode: 'index', intersect: false };
-                                } else {
-                                    chart.options.interaction = { mode: 'nearest', intersect: true, axis: 'xy' };
-                                }
-                                chart.update('none');
-                            }
+                            display: false
                         },
                         tooltip: {
                             filter: (tooltipItem, index) => index === 0,
                             callbacks: {
                                 title: items => {
-                                    const d = items[0].raw._raw;
-                                    if (chartMode === 'progress') {
-                                        return formatTimeStr(d.ms, startMs, isMultiDay);
-                                    }
-                                    return `Dist: ${(d.distM * dMult).toFixed(2)} ${dUnit}`;
+                                    const item = items[0];
+                                    return formatChartPoint(
+                                        item.raw._raw,
+                                        item.dataset,
+                                        item.parsed.y
+                                    ).title;
                                 },
                                 label: item => {
-                                    const d = item.raw._raw;
-                                    if (chartMode === 'progress') {
-                                        return `Distance traveled: ${(d.distM * dMult).toFixed(2)} ${dUnit}`;
-                                    }
-                                    if (chartMode === 'route') return 'Recorded route position';
-                                    let lbl = `${item.dataset.label}: ${item.parsed.y} ${eUnit}`;
-                                    if (d.grade !== undefined) lbl += ` (Grade: ${d.grade.toFixed(1)}%)`;
-                                    return lbl;
+                                    return formatChartPoint(
+                                        item.raw._raw,
+                                        item.dataset,
+                                        item.parsed.y
+                                    ).label;
                                 },
                                 afterBody: items => {
-                                    const d = items[0].raw._raw;
-                                    if (hasTime && d.ms) {
-                                        return [`Time: ${formatTimeStr(d.ms, startMs, isMultiDay)}`];
-                                    }
-                                    return [];
+                                    const item = items[0];
+                                    return formatChartPoint(
+                                        item.raw._raw,
+                                        item.dataset,
+                                        item.parsed.y
+                                    ).afterBody;
                                 }
                             }
                         }
@@ -1229,6 +1310,21 @@ const run = async () => {
                     scales
                 }
             });
+            chartLegend.replaceChildren(...datasets.map((dataset, index) => {
+                const button = document.createElement('button');
+                button.type = 'button';
+                button.dataset.datasetIndex = String(index);
+                const swatch = document.createElement('span');
+                swatch.className = 'bpb-gpx-legend-swatch';
+                swatch.setAttribute('aria-hidden', 'true');
+                swatch.style.backgroundColor = dataset.borderColor;
+                const label = document.createElement('span');
+                label.textContent = dataset.label;
+                button.append(swatch, label);
+                button.addEventListener('click', () => toggleChartSeries(index));
+                return button;
+            }));
+            syncChartLegend();
             syncCoordinateSelection();
         };
 
@@ -1291,6 +1387,7 @@ const run = async () => {
             if (!trkpts.length) {
                 canvasContainer.hidden = true;
                 coordinateControls.hidden = true;
+                chartLegend.hidden = true;
                 stats.textContent = 'No track points found.';
                 return;
             }
@@ -1382,6 +1479,7 @@ const run = async () => {
                 }
                 canvasContainer.hidden = true;
                 coordinateControls.hidden = true;
+                chartLegend.hidden = true;
                 subStats.replaceChildren();
                 stats.textContent = 'No valid track points found.';
                 return;

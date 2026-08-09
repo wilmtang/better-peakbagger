@@ -76,11 +76,10 @@ export const gpxPanelCss = `
 #bpb-gpx-analysis .bpb-gpx-coordinate-controls {
     display: flex;
     flex-wrap: wrap;
-    justify-content: flex-end;
+    justify-content: flex-start;
     align-items: center;
     gap: 5px 8px;
-    max-width: 300px;
-    margin-top: 7px;
+    margin: 0 0 8px;
 }
 #bpb-gpx-analysis .bpb-gpx-copy-coordinates {
     appearance: none;
@@ -101,14 +100,53 @@ export const gpxPanelCss = `
     opacity: 0.55;
 }
 #bpb-gpx-analysis .bpb-gpx-copy-coordinates:focus-visible,
+#bpb-gpx-analysis .bpb-gpx-chart-legend button:focus-visible,
 #bpb-gpx-analysis canvas:focus-visible,
 #bpb-gpx-analysis .bpb-gpx-coordinate-fallback:focus-visible {
     outline: 3px solid var(--bpb-gpx-accent);
     outline-offset: 2px;
 }
+#bpb-gpx-analysis .bpb-gpx-chart-legend {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 6px;
+    margin: 0 0 5px;
+    font-family: sans-serif;
+}
+#bpb-gpx-analysis .bpb-gpx-chart-legend[hidden] { display: none; }
+#bpb-gpx-analysis .bpb-gpx-chart-legend button {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    appearance: none;
+    color: var(--bpb-gpx-text);
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 999px;
+    padding: 4px 8px;
+    font: inherit;
+    font-size: 0.8em;
+    cursor: pointer;
+}
+#bpb-gpx-analysis .bpb-gpx-chart-legend button:hover {
+    border-color: var(--bpb-gpx-input-border);
+}
+#bpb-gpx-analysis .bpb-gpx-chart-legend button[aria-pressed="false"] {
+    color: var(--bpb-gpx-muted);
+    text-decoration: line-through;
+    opacity: 0.72;
+}
+#bpb-gpx-analysis .bpb-gpx-legend-swatch {
+    width: 9px;
+    height: 9px;
+    border: 1px solid var(--bpb-gpx-panel-bg);
+    border-radius: 50%;
+    box-shadow: 0 0 0 1px currentColor;
+}
 #bpb-gpx-analysis .bpb-gpx-coordinate-controls .bpb-gpx-hint {
-    flex: 1 1 180px;
-    text-align: right;
+    flex: 1 1 300px;
+    text-align: left;
 }
 #bpb-gpx-analysis .bpb-gpx-coordinate-fallback {
     box-sizing: border-box;
@@ -127,12 +165,8 @@ export const gpxPanelCss = `
     #bpb-gpx-analysis .bpb-gpx-controls {
         align-items: flex-start !important;
     }
-    #bpb-gpx-analysis .bpb-gpx-coordinate-controls {
+    #bpb-gpx-analysis .bpb-gpx-chart-legend {
         justify-content: flex-start;
-        max-width: none;
-    }
-    #bpb-gpx-analysis .bpb-gpx-coordinate-controls .bpb-gpx-hint {
-        text-align: left;
     }
 }
 `;

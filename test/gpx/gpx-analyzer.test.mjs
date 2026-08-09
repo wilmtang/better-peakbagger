@@ -1202,6 +1202,13 @@ test('GPX analyzer renders timed coordinate-only data as route progress', async 
         dom.window.document.querySelector('#bpb-gpx-analysis canvas').getAttribute('aria-label'),
         /route progress chart/i
     );
+    const progressCanvas = dom.window.document.querySelector('#bpb-gpx-analysis canvas');
+    progressCanvas.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'ArrowRight' }));
+    const progressStatus = dom.window.document.getElementById('bpb-gpx-coordinate-status').textContent;
+    assert.match(progressStatus, /Selected point 1 of \d+: 47\.00000, -121\.00000/);
+    assert.match(progressStatus, /Time: /);
+    assert.match(progressStatus, /Distance traveled: 0\.00 km/);
+    assert.doesNotMatch(progressStatus, /Elevation|Grade|Recorded route position/);
     assert.deepEqual(JSON.parse(JSON.stringify(polylineCalls[0].latLngs)), [
         [47, -121], [47, -121.001], [47, -121.002]
     ]);
@@ -1241,8 +1248,10 @@ test('GPX analyzer renders an untimed coordinate-only route as a distance scrubb
     );
     const canvas = dom.window.document.querySelector('#bpb-gpx-analysis canvas');
     canvas.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'ArrowRight' }));
-    assert.match(dom.window.document.querySelector('#bpb-gpx-coordinate-status').textContent,
-        /Selected point 1 of \d+: 47\.00000, -121\.00000/);
+    const routeStatus = dom.window.document.querySelector('#bpb-gpx-coordinate-status').textContent;
+    assert.match(routeStatus, /Selected point 1 of \d+: 47\.00000, -121\.00000/);
+    assert.match(routeStatus, /Distance: 0\.00 km\. Recorded route position/);
+    assert.doesNotMatch(routeStatus, /Elevation|Grade|Time:/);
 
     dom.window.close();
 });
@@ -1469,6 +1478,105 @@ test('GPX analyzer shows partial time runs without drawing through an invalid ti
     }
 });
 
+test('GPX analyzer exposes every chart series as a semantic keyboard toggle', async () => {
+    const source = `<?xml version="1.0"?><gpx><trk><trkseg>
+      <trkpt lat="47.10000" lon="-121.10000"><ele>100</ele><time>2026-07-10T12:00:00Z</time></trkpt>
+      <trkpt lat="47.20000" lon="-121.20000"><ele>200</ele><time>2026-07-10T12:30:00Z</time></trkpt>
+      <trkpt lat="47.30000" lon="-121.30000"><ele>120</ele><time>2026-07-10T13:00:00Z</time></trkpt>
+    </trkseg></trk></gpx>`;
+    const { dom, chartConfig, chartInstance } = await loadElevationAnalyzer(source, {
+        settings: { chartDefaultSeries: 'distance' }
+    });
+    const { window } = dom;
+
+    await waitFor(dom, () => chartConfig() !== null);
+    const legend = window.document.getElementById('bpb-gpx-chart-legend');
+    const buttons = [...legend.querySelectorAll('button')];
+    assert.equal(legend.getAttribute('role'), 'group');
+    assert.equal(legend.getAttribute('aria-label'), 'Chart series');
+    assert.deepEqual(buttons.map(button => button.textContent), [
+        'Elevation by Distance',
+        'Elevation by Time'
+    ]);
+    assert.deepEqual(buttons.map(button => button.getAttribute('aria-pressed')), ['true', 'false']);
+    assert.equal(chartConfig().options.plugins.legend.display, false,
+        'the inaccessible canvas legend must not duplicate the semantic controls');
+
+    const canvas = window.document.querySelector('#bpb-gpx-analysis canvas');
+    const status = window.document.getElementById('bpb-gpx-coordinate-status');
+    canvas.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowRight' }));
+    assert.match(status.textContent, /Elevation by Distance:/);
+    assert.doesNotMatch(status.textContent, /Elevation by Time:/);
+    assert.match(status.textContent, /Distance: .*\. Time: /);
+
+    buttons[1].focus();
+    buttons[1].click();
+    assert.equal(window.document.activeElement, buttons[1]);
+    assert.deepEqual(buttons.map(button => button.getAttribute('aria-pressed')), ['true', 'true']);
+    assert.match(status.textContent, /Elevation by Distance:/);
+    assert.match(status.textContent, /Elevation by Time:/);
+    assert.deepEqual(JSON.parse(JSON.stringify(chartInstance().options.interaction)),
+        { mode: 'nearest', intersect: true, axis: 'xy' });
+
+    buttons[0].click();
+    assert.deepEqual(buttons.map(button => button.getAttribute('aria-pressed')), ['false', 'true']);
+    assert.doesNotMatch(status.textContent, /Elevation by Distance:/);
+    assert.match(status.textContent, /Elevation by Time:/);
+    assert.deepEqual(JSON.parse(JSON.stringify(chartInstance().options.interaction)),
+        { mode: 'index', intersect: false });
+
+    // Each real button can be toggled in either direction. The hidden series
+    // disappears from the same semantic value owner the tooltip uses.
+    buttons[1].click();
+    assert.deepEqual(buttons.map(button => button.getAttribute('aria-pressed')), ['false', 'false']);
+    assert.equal(status.textContent, 'Click the chart or use ←/→ to select a point');
+    buttons[0].click();
+    assert.deepEqual(buttons.map(button => button.getAttribute('aria-pressed')), ['true', 'false']);
+
+    dom.window.close();
+});
+
+test('GPX analyzer announces only trustworthy active values across a time gap', async () => {
+    const source = `<?xml version="1.0"?><gpx><trk><trkseg>
+      <trkpt lat="47.10000" lon="-121.10000"><ele>100</ele></trkpt>
+      <trkpt lat="47.20000" lon="-121.20000"><ele>200</ele><time>2026-07-10T12:00:00Z</time></trkpt>
+      <trkpt lat="47.30000" lon="-121.30000"><ele>120</ele><time>2026-07-10T13:00:00Z</time></trkpt>
+    </trkseg></trk></gpx>`;
+    const { dom, chartConfig, setActiveElements } = await loadElevationAnalyzer(source, {
+        settings: { chartDefaultSeries: 'distance' }
+    });
+    const { window } = dom;
+
+    await waitFor(dom, () => chartConfig() !== null);
+    const distanceData = chartConfig().data.datasets[0].data;
+    const missingTimeIndex = distanceData.findIndex(point => point._raw?.lat === 47.1);
+    assert.notEqual(missingTimeIndex, -1);
+    const canvas = window.document.querySelector('#bpb-gpx-analysis canvas');
+    const status = window.document.getElementById('bpb-gpx-coordinate-status');
+    setActiveElements([{ datasetIndex: 0, index: missingTimeIndex }]);
+    canvas.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    assert.match(status.textContent, /47\.10000, -121\.10000/);
+    assert.match(status.textContent, /Elevation by Distance:/);
+    assert.doesNotMatch(status.textContent, /Time:/,
+        'an absent timestamp must not become a clock value in the live region');
+
+    const [distanceButton, timeButton] = window.document.querySelectorAll(
+        '#bpb-gpx-chart-legend button'
+    );
+    timeButton.click();
+    distanceButton.click();
+    assert.equal(status.textContent, 'Click the chart or use ←/→ to select a point',
+        'a point absent from the remaining series must not survive as a ghost selection');
+
+    canvas.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowRight' }));
+    assert.match(status.textContent, /47\.20000, -121\.20000/);
+    assert.match(status.textContent, /Elevation by Time:/);
+    assert.match(status.textContent, /Time: /);
+    assert.doesNotMatch(status.textContent, /Elevation by Distance:/);
+
+    dom.window.close();
+});
+
 test('GPX analyzer selects coordinates by click and keyboard before copying them', async () => {
     const source = `<?xml version="1.0"?><gpx><trk><trkseg>
       <trkpt lat="47.10000" lon="-121.10000"><ele>100</ele></trkpt>
@@ -1497,7 +1605,9 @@ test('GPX analyzer selects coordinates by click and keyboard before copying them
     setActiveElements([{ datasetIndex: 0, index: 0 }]);
     canvas.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
     assert.equal(copyButton.disabled, false);
-    assert.equal(status.textContent, 'Selected point 1 of 2: 47.10000, -121.10000');
+    assert.match(status.textContent,
+        /^Selected point 1 of 2: 47\.10000, -121\.10000\. Distance: 0\.00 km\./);
+    assert.match(status.textContent, /Elevation by Distance: 110 m/);
     assert.deepEqual(eventQueries[0], { mode: 'nearest', intersect: false, axis: 'xy' });
     assert.equal(chartConfig().data.datasets[0].pointRadius({ raw: points[0] }), 5);
     assert.equal(chartConfig().data.datasets[0].pointRadius({ raw: points[1] }), 0);
@@ -1505,9 +1615,9 @@ test('GPX analyzer selects coordinates by click and keyboard before copying them
 
     canvas.focus();
     canvas.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
-    assert.equal(status.textContent, 'Selected point 2 of 2: 47.30000, -121.30000');
+    assert.match(status.textContent, /^Selected point 2 of 2: 47\.30000, -121\.30000\./);
     canvas.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }));
-    assert.equal(status.textContent, 'Selected point 1 of 2: 47.10000, -121.10000');
+    assert.match(status.textContent, /^Selected point 1 of 2: 47\.10000, -121\.10000\./);
 
     copyButton.click();
     await waitFor(dom, () => status.dataset.state === 'success');
@@ -1519,7 +1629,7 @@ test('GPX analyzer selects coordinates by click and keyboard before copying them
     // double-click shortcut also delegates to the shared selection/copy path.
     setActiveElements([{ datasetIndex: 0, index: 1 }]);
     canvas.dispatchEvent(new window.Event('click', { bubbles: true }));
-    assert.equal(status.textContent, 'Selected point 2 of 2: 47.30000, -121.30000');
+    assert.match(status.textContent, /^Selected point 2 of 2: 47\.30000, -121\.30000\./);
     canvas.dispatchEvent(new window.MouseEvent('dblclick', { bubbles: true }));
     await waitFor(dom, () => writes.length === 2 && status.dataset.state === 'success');
     assert.deepEqual(writes, [
@@ -1589,7 +1699,10 @@ test('GPX analyzer keyboard traversal follows chronological time-series order', 
         [47.1, -121.1],
         [47.2, -121.2]
     ], 'time-only traversal starts at the earliest timestamp rather than route order');
-    assert.equal(status.textContent, 'Selected point 2 of 3: 47.20000, -121.20000');
+    assert.match(status.textContent,
+        /^Selected point 2 of 3: 47\.20000, -121\.20000\./);
+    assert.match(status.textContent, /Elevation by Time: 110 m/);
+    assert.match(status.textContent, /Time: /);
     assert.equal(markerStyles.at(-1).fillColor, '#0055FF',
         'the route marker retains the time-series identity');
 
@@ -1642,7 +1755,7 @@ test('GPX analyzer coordinate focus styles use readable light and dark theme tok
     assert.equal(analysis.dataset.theme, 'dark');
     assert.match(css, /--bpb-gpx-accent: #1769aa;/);
     assert.match(css, /#bpb-gpx-analysis\[data-theme="dark"\][\s\S]*--bpb-gpx-accent: #79b8ff;/);
-    assert.match(css, /\.bpb-gpx-copy-coordinates:focus-visible,[\s\S]*canvas:focus-visible,[\s\S]*outline: 3px solid var\(--bpb-gpx-accent\)/);
+    assert.match(css, /\.bpb-gpx-copy-coordinates:focus-visible,[\s\S]*\.bpb-gpx-chart-legend button:focus-visible,[\s\S]*canvas:focus-visible,[\s\S]*outline: 3px solid var\(--bpb-gpx-accent\)/);
 
     dom.window.close();
 });
