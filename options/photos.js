@@ -77,9 +77,11 @@ export function initPhotoBackup({ extensionApi, flash, save }) {
             return;
         }
         const when = backedUpAt();
-        statusEl.textContent = when
-            ? `${backupState?.syncedAt ? 'Backed up to' : 'Restored from'} ${repoName()} · ${when}`
-            : `Stored as photo-library.json in ${repoName()}.`;
+        statusEl.textContent = backupState?.reconciliationPending
+            ? `Backup reached ${repoName()} · local changes still need backup.`
+            : when
+                ? `${backupState?.syncedAt ? 'Backed up to' : 'Restored from'} ${repoName()} · ${when}`
+                : `Stored as photo-library.json in ${repoName()}.`;
     };
 
     const refresh = async () => {
@@ -118,7 +120,9 @@ export function initPhotoBackup({ extensionApi, flash, save }) {
         const response = await send({ type: 'GITHUB_PHOTOS_BACKUP' });
         if (response?.ok) {
             await refresh();
-            flash(`Photo records backed up to ${repoName()}`);
+            flash(response.reconciliationPending
+                ? response.warning?.message || 'The GitHub backup is safe, but local changes still need backup.'
+                : `Photo records backed up to ${repoName()}`);
             return;
         }
         // A conflict is not a failed write: both sides changed the same record

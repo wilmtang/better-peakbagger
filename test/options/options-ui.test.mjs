@@ -123,6 +123,60 @@ test('theme bootstrap loads before the options stylesheet', async () => {
     assert.deepEqual(resources, ['options-head.js', '../css/panel.css', 'options.css']);
 });
 
+test('Settings distinguishes a confirmed photo backup from pending local reconciliation', async () => {
+    let pending = false;
+    const dom = await loadOptions({ autoPhotoLibraryBackup: false }, {
+        prepareChrome: chrome => {
+            chrome.permissions = {
+                contains: async () => true,
+                request: async () => true,
+                remove: async () => true,
+            };
+            chrome.runtime.sendMessage = async message => {
+                if (message.type === 'GITHUB_AUTH_STATUS') {
+                    return {
+                        connected: true,
+                        account: { login: 'me' },
+                        repo: { owner: 'me', name: 'backup', fullName: 'me/backup' },
+                    };
+                }
+                if (message.type === 'GITHUB_PHOTOS_STATUS') {
+                    return {
+                        ok: true,
+                        connected: true,
+                        repo: { owner: 'me', name: 'backup', fullName: 'me/backup' },
+                        state: pending ? {
+                            syncedAt: '2026-07-27T18:10:00.000Z',
+                            reconciliationPending: true,
+                        } : null,
+                    };
+                }
+                if (message.type === 'GITHUB_PHOTOS_BACKUP') {
+                    pending = true;
+                    return {
+                        ok: true,
+                        reconciliationPending: true,
+                        warning: {
+                            code: 'photo-backup-reconciliation',
+                            message: 'The GitHub backup is safe, but local backup status could not be fully updated. Try again.',
+                        },
+                    };
+                }
+                return {};
+            };
+        },
+    });
+    await waitFor(dom, () => el(dom, 'photos-github-actions').hidden === false);
+
+    el(dom, 'photos-backup').click();
+    await waitFor(dom, () => /Backup reached me\/backup/.test(
+        el(dom, 'photos-github-status').textContent));
+
+    assert.match(el(dom, 'photos-github-status').textContent, /local changes still need backup/);
+    assert.match(el(dom, 'status').textContent, /GitHub backup is safe/);
+    assert.doesNotMatch(el(dom, 'status').textContent, /failed/i);
+});
+
 // Settings and Photo Topos each used to declare their own :root palette, and
 // they drifted into two different-looking products. The palette now has one
 // home; a page stylesheet that re-declares a token has started a third.

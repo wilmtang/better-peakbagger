@@ -2299,7 +2299,9 @@ const refreshPhotoBackupStatus = async () => {
     const repository = response.repo?.fullName
         || [response.repo?.owner, response.repo?.name].filter(Boolean).join('/');
     const state = response.state;
-    if (state?.syncedAt) {
+    if (state?.reconciliationPending) {
+        ui.backupStatus.textContent = `Backup reached ${repository} · local changes still need backup.`;
+    } else if (state?.syncedAt) {
         ui.backupStatus.textContent = `Backed up to ${repository} · ${formatBackupTime(state.syncedAt)}`;
     } else if (state?.restoredAt) {
         ui.backupStatus.textContent = `Restored from ${repository} · ${formatBackupTime(state.restoredAt)}`;
@@ -2315,7 +2317,9 @@ const backupPhotoLibrary = async () => {
     const response = await send({ type: 'GITHUB_PHOTOS_BACKUP' });
     setPhotoBackupBusy(false);
     if (response?.ok) {
-        toast('Photo-library metadata backed up to GitHub.');
+        toast(response.reconciliationPending
+            ? response.warning?.message || 'The GitHub backup is safe, but local changes still need backup.'
+            : 'Photo-library metadata backed up to GitHub.');
         await renderLibrary();
         await refreshPhotoBackupStatus();
         return;

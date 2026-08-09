@@ -22,8 +22,7 @@ const optionsSender = {
     tab: { id: 92 },
 };
 
-const makeStorageArea = () => {
-    const values = {};
+const makeStorageArea = ({ values = {}, setHook = null } = {}) => {
     return {
         values,
         async get(key) {
@@ -33,7 +32,10 @@ const makeStorageArea = () => {
             }
             return { [key]: structuredClone(values[key]) };
         },
-        async set(patch) { Object.assign(values, structuredClone(patch)); },
+        async set(patch) {
+            if (setHook) await setHook(structuredClone(patch), values);
+            Object.assign(values, structuredClone(patch));
+        },
         async remove(key) { delete values[key]; },
     };
 };
@@ -66,35 +68,84 @@ const bundle = (localId = 'photo-1', title = 'North face topo', now = TIME) => {
 // onSettingsChanged fires the gate check without awaiting it (a storage
 // subscriber must not block). Drain the microtask/storage turns it needs.
 const waitForAlarms = async () => { for (let i = 0; i < 5; i++) await Promise.resolve(); };
+const waitFor = async (predicate, ms = 2000) => {
+    const started = Date.now();
+    while (!predicate()) {
+        if (Date.now() - started > ms) throw new Error('waitFor timed out');
+        await new Promise(resolve => setTimeout(resolve, 0));
+    }
+};
+const deferred = () => {
+    let resolve;
+    const promise = new Promise(next => { resolve = next; });
+    return { promise, resolve };
+};
 
-const harness = async ({ remoteText = null, seed = null } = {}) => {
-    const local = makeStorageArea();
+const harness = async ({
+    remoteText = null,
+    remoteState = null,
+    seed = null,
+    seeds = null,
+    localValues = null,
+    localSetHook = null,
+    indexedDB: sharedIndexedDB = null,
+    databaseName: sharedDatabaseName = null,
+    commits: sharedCommits = null,
+    beforeRemoteUpdate = null,
+    decoratePhotoStore = null,
+    autoEnabled = true,
+} = {}) => {
+    const local = makeStorageArea({ values: localValues || {}, setHook: localSetHook });
     const session = makeStorageArea();
-    const indexedDB = new IDBFactory();
-    const databaseName = `photo-backup-${crypto.randomUUID()}`;
-    const createPhotoStore = () => Store.createPhotoStore({ indexedDB, name: databaseName });
-    if (seed) {
-        const store = await createPhotoStore();
+    const indexedDB = sharedIndexedDB || new IDBFactory();
+    const databaseName = sharedDatabaseName || `photo-backup-${crypto.randomUUID()}`;
+    const rawPhotoStore = () => Store.createPhotoStore({ indexedDB, name: databaseName });
+    const createPhotoStore = async () => {
+        const store = await rawPhotoStore();
+        return decoratePhotoStore ? decoratePhotoStore(store) : store;
+    };
+    for (const value of seeds || (seed ? [seed] : [])) {
+        const store = await rawPhotoStore();
         await store.putDraft({
-            ...seed,
+            ...value,
             original: new Blob(['private pixels'], { type: 'image/jpeg' }),
             thumbnail: new Blob(['private thumbnail'], { type: 'image/jpeg' }),
         });
         store.close();
     }
-    const commits = [];
+    const remote = remoteState || { text: remoteText };
+    const commits = sharedCommits || [];
+    let accessCalls = 0;
     const client = {
         async readRootFile(path) {
             assert.equal(path, Backup.BACKUP_PATH);
-            return remoteText;
+            return remote.text;
         },
         async updateRootFile(path, update, message) {
             assert.equal(path, Backup.BACKUP_PATH);
-            remoteText = await update(remoteText);
-            commits.push({ path, message, content: remoteText });
+            if (beforeRemoteUpdate) await beforeRemoteUpdate({ calls: commits.length });
+            const previous = remote.text;
+            const next = await update(previous);
+            if (next === previous) {
+                return {
+                    sha: commits.at(-1)?.sha || null,
+                    commitUrl: commits.at(-1)?.commitUrl || null,
+                    path,
+                    unchanged: true,
+                };
+            }
+            remote.text = next;
+            const commit = {
+                sha: `commit-${commits.length + 1}`,
+                commitUrl: `https://github.com/me/backup/commit/${commits.length + 1}`,
+                path,
+                message,
+                content: remote.text,
+            };
+            commits.push(commit);
             return {
-                sha: `commit-${commits.length}`,
-                commitUrl: `https://github.com/me/backup/commit/${commits.length}`,
+                sha: commit.sha,
+                commitUrl: commit.commitUrl,
                 path,
                 unchanged: false,
             };
@@ -136,10 +187,14 @@ const harness = async ({ remoteText = null, seed = null } = {}) => {
         readMap,
         mutateMap,
         createPhotoStore,
-        resolveGithubAccess: async () => ({
-            client,
-            repo: { owner: 'me', name: 'backup', branch: 'main' },
-        }),
+        resolveGithubAccess: async () => {
+            accessCalls += 1;
+            return {
+                client,
+                repo: { owner: 'me', name: 'backup', branch: 'main' },
+            };
+        },
+        photoBackupSettings: { get: async () => ({ autoPhotoLibraryBackup: autoEnabled }) },
     });
     return {
         routes,
@@ -147,7 +202,11 @@ const harness = async ({ remoteText = null, seed = null } = {}) => {
         commits,
         alarmed,
         createPhotoStore,
-        get remoteText() { return remoteText; },
+        indexedDB,
+        databaseName,
+        remoteState: remote,
+        accessCalls: () => accessCalls,
+        get remoteText() { return remote.text; },
     };
 };
 
@@ -168,6 +227,247 @@ test('manual backup reads IndexedDB itself and writes only the metadata recovery
         url: 'chrome-extension://test-extension/popup/popup.html',
     });
     assert.equal(forbidden.error.code, 'forbidden');
+});
+
+test('overlapping manual backups serialize snapshot through local reconciliation', async () => {
+    const started = deferred();
+    const release = deferred();
+    let updates = 0;
+    const h = await harness({
+        seed: bundle(),
+        beforeRemoteUpdate: async () => {
+            updates += 1;
+            if (updates === 1) {
+                started.resolve();
+                await release.promise;
+            }
+        },
+    });
+    const first = h.routes.handlers.GITHUB_PHOTOS_BACKUP({}, photoSender);
+    await started.promise;
+    const second = h.routes.handlers.GITHUB_PHOTOS_BACKUP({}, optionsSender);
+    release.resolve();
+    const [firstResult, secondResult] = await Promise.all([first, second]);
+
+    assert.equal(firstResult.ok, true);
+    assert.equal(secondResult.ok, true);
+    assert.equal(secondResult.unchanged, true);
+    assert.equal(h.commits.length, 1);
+    const state = h.local.values.bpbPhotoLibraryBackupState;
+    assert.equal(state.reconciliationPending, false);
+    const store = await h.createPhotoStore();
+    const saved = (await store.getBundle('photo-1')).photo;
+    assert.equal(saved.backup.state, 'current');
+    assert.equal(saved.backup.signature, state.signature);
+    store.close();
+});
+
+test('manual and automatic backups share the complete transaction queue', async () => {
+    const started = deferred();
+    const release = deferred();
+    let updates = 0;
+    const h = await harness({
+        seed: bundle(),
+        beforeRemoteUpdate: async () => {
+            updates += 1;
+            if (updates === 1) {
+                started.resolve();
+                await release.promise;
+            }
+        },
+    });
+    const manual = h.routes.handlers.GITHUB_PHOTOS_BACKUP({}, photoSender);
+    await started.promise;
+    h.routes.onAlarm('bpb-photo-library-backup');
+    release.resolve();
+    assert.equal((await manual).ok, true);
+    await waitFor(() => h.accessCalls() >= 2);
+
+    assert.equal(h.commits.length, 1);
+    assert.equal(h.local.values.bpbPhotoLibraryBackupState.reconciliationPending, false);
+    assert.deepEqual(h.alarmed, []);
+});
+
+test('overlapping automatic alarm deliveries produce one remote commit', async () => {
+    const started = deferred();
+    const release = deferred();
+    let updates = 0;
+    const h = await harness({
+        seed: bundle(),
+        beforeRemoteUpdate: async () => {
+            updates += 1;
+            if (updates === 1) {
+                started.resolve();
+                await release.promise;
+            }
+        },
+    });
+    h.routes.onAlarm('bpb-photo-library-backup');
+    await started.promise;
+    h.routes.onAlarm('bpb-photo-library-backup');
+    release.resolve();
+    await waitFor(() => h.accessCalls() >= 2
+        && h.local.values.bpbPhotoLibraryBackupState?.reconciliationPending === false);
+
+    assert.equal(h.commits.length, 1);
+    assert.deepEqual(h.alarmed, []);
+});
+
+test('an unchanged manual backup is coalesced without another remote write', async () => {
+    const h = await harness({ seed: bundle() });
+    const first = await h.routes.handlers.GITHUB_PHOTOS_BACKUP({}, photoSender);
+    const second = await h.routes.handlers.GITHUB_PHOTOS_BACKUP({}, photoSender);
+
+    assert.equal(first.ok, true);
+    assert.equal(second.ok, true);
+    assert.equal(second.unchanged, true);
+    assert.equal(h.commits.length, 1);
+    assert.equal(second.signature, first.signature);
+});
+
+test('a photo edit during the remote commit remains pending instead of failing the catalog', async () => {
+    const started = deferred();
+    const release = deferred();
+    const h = await harness({
+        seed: bundle(),
+        beforeRemoteUpdate: async () => {
+            started.resolve();
+            await release.promise;
+        },
+    });
+    const backingUp = h.routes.handlers.GITHUB_PHOTOS_BACKUP({}, photoSender);
+    await started.promise;
+    const store = await h.createPhotoStore();
+    const current = (await store.getBundle('photo-1')).photo;
+    await store.putPhoto(Library.cleanPhoto({
+        ...current,
+        title: 'Edited while GitHub committed',
+        updatedAt: LATER,
+        backup: { ...current.backup, state: 'pending' },
+    }));
+    store.close();
+    release.resolve();
+    const result = await backingUp;
+
+    assert.equal(result.ok, true);
+    assert.equal(result.reconciliationPending, true);
+    assert.equal(h.commits.length, 1);
+    assert.equal(h.local.values.bpbPhotoLibraryBackupState.reconciliationPending, true);
+    const after = await h.createPhotoStore();
+    const edited = (await after.getBundle('photo-1')).photo;
+    assert.equal(edited.title, 'Edited while GitHub committed');
+    assert.equal(edited.backup.state, 'pending');
+    after.close();
+
+    const retried = await h.routes.handlers.GITHUB_PHOTOS_BACKUP({}, photoSender);
+    assert.equal(retried.ok, true);
+    assert.equal(retried.current, true);
+    assert.equal(h.commits.length, 2);
+    assert.equal(Backup.parse(h.remoteText).payload.photos[0].title,
+        'Edited while GitHub committed');
+});
+
+test('delete and restore during commit preserve the newer local record for retry', async () => {
+    const started = deferred();
+    const release = deferred();
+    const h = await harness({
+        seed: bundle(),
+        beforeRemoteUpdate: async () => {
+            started.resolve();
+            await release.promise;
+        },
+    });
+    const backingUp = h.routes.handlers.GITHUB_PHOTOS_BACKUP({}, photoSender);
+    await started.promise;
+    const store = await h.createPhotoStore();
+    const current = (await store.getBundle('photo-1')).photo;
+    const pending = Library.cleanPhoto({
+        ...current,
+        backup: { ...current.backup, state: 'pending' },
+    });
+    const deleted = await store.putPhoto(Library.markDeleted(pending, LATER));
+    await store.restorePhoto(Library.restoreDeleted(deleted, '2026-07-27T18:11:00.000Z'));
+    store.close();
+    release.resolve();
+    const result = await backingUp;
+
+    assert.equal(result.ok, true);
+    assert.equal(result.reconciliationPending, true);
+    const after = await h.createPhotoStore();
+    const restored = (await after.getBundle('photo-1')).photo;
+    assert.equal(restored.deletedAt, null);
+    assert.notEqual(restored.backup.state, 'failed');
+    after.close();
+
+    assert.equal((await h.routes.handlers.GITHUB_PHOTOS_BACKUP({}, photoSender)).current, true);
+    assert.equal(h.local.values.bpbPhotoLibraryBackupState.reconciliationPending, false);
+});
+
+test('a worker restart repairs state after a confirmed commit without another commit', async () => {
+    let failStateWrites = true;
+    const localValues = {};
+    const first = await harness({
+        seed: bundle(),
+        localValues,
+        localSetHook: patch => {
+            if (failStateWrites && patch.bpbPhotoLibraryBackupState) {
+                throw new Error('photo backup state write failed');
+            }
+        },
+    });
+    const committed = await first.routes.handlers.GITHUB_PHOTOS_BACKUP({}, photoSender);
+    assert.equal(committed.ok, true);
+    assert.equal(committed.reconciliationPending, true);
+    assert.equal(first.commits.length, 1);
+    assert.equal(localValues.bpbPhotoLibraryBackupState, undefined);
+
+    failStateWrites = false;
+    const restarted = await harness({
+        indexedDB: first.indexedDB,
+        databaseName: first.databaseName,
+        localValues,
+        remoteState: first.remoteState,
+        commits: first.commits,
+    });
+    const repaired = await restarted.routes.handlers.GITHUB_PHOTOS_BACKUP({}, photoSender);
+
+    assert.equal(repaired.ok, true);
+    assert.equal(repaired.current, true);
+    assert.equal(restarted.commits.length, 1, 'the already-confirmed remote content is not recommitted');
+    assert.equal(localValues.bpbPhotoLibraryBackupState.reconciliationPending, false);
+});
+
+test('partial catalog stamping is journaled and an automatic retry repairs only the remainder', async () => {
+    let failSecondStamp = true;
+    const h = await harness({
+        seeds: [bundle('photo-1'), bundle('photo-2', 'South face topo')],
+        decoratePhotoStore: store => ({
+            ...store,
+            updatePhotoBackup: args => {
+                if (failSecondStamp && args.localId === 'photo-2') {
+                    throw new Error('second catalog stamp failed');
+                }
+                return store.updatePhotoBackup(args);
+            },
+        }),
+    });
+    const first = await h.routes.handlers.GITHUB_PHOTOS_BACKUP({}, photoSender);
+    assert.equal(first.ok, true);
+    assert.equal(first.reconciliationPending, true);
+    assert.equal(h.commits.length, 1);
+    assert.equal(h.local.values.bpbPhotoLibraryBackupState.reconciliationPending, true);
+    let store = await h.createPhotoStore();
+    assert.equal((await store.getBundle('photo-1')).photo.backup.state, 'current');
+    assert.equal((await store.getBundle('photo-2')).photo.backup.state, 'off');
+    store.close();
+
+    failSecondStamp = false;
+    h.routes.onAlarm('bpb-photo-library-backup');
+    await waitFor(() => h.local.values.bpbPhotoLibraryBackupState?.reconciliationPending === false);
+    assert.equal(h.commits.length, 1);
+    store = await h.createPhotoStore();
+    assert.equal((await store.getBundle('photo-2')).photo.backup.state, 'current');
+    store.close();
 });
 
 test('Settings drives the same recovery routes, and only the library announces a change', async () => {
@@ -221,6 +521,10 @@ test('a divergent same-id remote edit stops backup without replacing the reposit
     assert.equal(response.error.conflictCount, 1);
     assert.equal(h.remoteText, originalRemote);
     assert.equal(h.commits.length, 0);
+    const store = await h.createPhotoStore();
+    assert.equal((await store.getBundle('photo-1')).photo.backup.state, 'failed',
+        'only a backup that never reached GitHub is marked failed');
+    store.close();
 });
 
 test('restore previews counts then atomically imports metadata without original pixels', async () => {

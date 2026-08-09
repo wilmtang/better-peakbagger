@@ -66,6 +66,7 @@ export function createGithubRoutes({
     mutateMap,
     createPhotoStore = PhotoStore.createPhotoStore,
     resolveGithubAccess = null,
+    photoBackupSettings = Settings,
 }) {
     // ---- GitHub ascent backup: auth + repository setup ---------------------
     //
@@ -1202,7 +1203,7 @@ export function createGithubRoutes({
         commitUrl = null,
         revisions = null,
     }) => {
-        await withPhotoStore(async store => {
+        return withPhotoStore(async store => {
             const photos = await store.listPhotos({ includeDeleted: true });
             const backup = {
                 state,
@@ -1214,7 +1215,7 @@ export function createGithubRoutes({
                 photo.localId,
                 photo.revision,
             ]));
-            await Promise.all(photos
+            const outcomes = await Promise.allSettled(photos
                 .filter(photo => !sameBackupStamp(photo, backup))
                 .filter(photo => Object.hasOwn(observed, photo.localId))
                 .map(photo => store.updatePhotoBackup({
@@ -1222,6 +1223,16 @@ export function createGithubRoutes({
                     expectedRevision: observed[photo.localId],
                     backup,
                 })));
+            const conflicts = [];
+            let failure = null;
+            for (const outcome of outcomes) {
+                if (outcome.status === 'fulfilled') continue;
+                if (outcome.reason?.code === 'photo-conflict') {
+                    conflicts.push(outcome.reason.localId);
+                } else if (!failure) failure = outcome.reason;
+            }
+            if (failure) throw failure;
+            return { conflicts };
         });
     };
 
@@ -1289,71 +1300,131 @@ export function createGithubRoutes({
         if (!automatic && !isPhotoBackupPage(sender)) {
             return { ok: false, error: { code: 'forbidden' } };
         }
-        const access = await connectedGithubClient();
-        if (access.error) return { ok: false, error: access.error };
-        let local;
-        let state;
-        try {
-            [local, state] = await Promise.all([buildPhotoLibraryBackup(), readPhotoBackupState()]);
-            if (automatic && state?.signature === local.signature && sameRepo(state.repo, access.repo)) {
-                return { ok: true, current: true, signature: local.signature };
-            }
-            let committed = null;
-            const result = await writeQueue.run(() => access.client.updateRootFile(
-                PhotoBackup.BACKUP_PATH,
-                async remoteText => {
-                    const remote = parseRemotePhotoBackup(remoteText);
-                    const merged = await PhotoBackup.mergePayloads(local.payload, remote, {
-                        exportedAt: photoTimestamp(),
-                        extensionVersion: ext.runtime.getManifest?.().version || '',
-                        baseSignature: sameRepo(state?.repo, access.repo) ? state.signature : null,
-                    });
-                    if (!merged.ok) {
-                        throw new PhotoBackupError(
-                            'photo-backup-conflict',
-                            'Backup conflict. Review the photo library before replacing either version.',
-                            { conflictCount: merged.conflicts.length },
-                        );
-                    }
-                    committed = merged;
-                    const remoteSignature = await PhotoBackup.signature(remote);
-                    return merged.signature === remoteSignature && remoteText != null
-                        ? remoteText
-                        : PhotoBackup.serialize(merged.payload);
-                },
-                'Back up photo library',
-            ));
-            const signature = committed?.signature || local.signature;
-            const syncedAt = photoTimestamp();
-            await ext.storage.local.set({
-                [PHOTO_BACKUP_STATE_KEY]: {
+        // The GitHub branch queue owns the complete operation, not just the
+        // remote mutation. A second manual request or automatic alarm cannot
+        // snapshot the catalog until the first request has reconciled its
+        // confirmed commit back into local state.
+        return writeQueue.run(async () => {
+            const access = await connectedGithubClient();
+            if (access.error) return { ok: false, error: access.error };
+            let local;
+            let state;
+            let remoteConfirmed = false;
+            try {
+                [local, state] = await Promise.all([buildPhotoLibraryBackup(), readPhotoBackupState()]);
+                if (!state?.reconciliationPending
+                    && state?.signature === local.signature
+                    && sameRepo(state.repo, access.repo)) {
+                    return { ok: true, current: true, signature: local.signature, unchanged: true };
+                }
+                let committed = null;
+                const result = await access.client.updateRootFile(
+                    PhotoBackup.BACKUP_PATH,
+                    async remoteText => {
+                        const remote = parseRemotePhotoBackup(remoteText);
+                        const merged = await PhotoBackup.mergePayloads(local.payload, remote, {
+                            exportedAt: photoTimestamp(),
+                            extensionVersion: ext.runtime.getManifest?.().version || '',
+                            baseSignature: sameRepo(state?.repo, access.repo) ? state.signature : null,
+                        });
+                        if (!merged.ok) {
+                            throw new PhotoBackupError(
+                                'photo-backup-conflict',
+                                'Backup conflict. Review the photo library before replacing either version.',
+                                { conflictCount: merged.conflicts.length },
+                            );
+                        }
+                        committed = merged;
+                        const remoteSignature = await PhotoBackup.signature(remote);
+                        return merged.signature === remoteSignature && remoteText != null
+                            ? remoteText
+                            : PhotoBackup.serialize(merged.payload);
+                    },
+                    'Back up photo library',
+                );
+                remoteConfirmed = true;
+                const signature = committed?.signature || local.signature;
+                const syncedAt = photoTimestamp();
+                const commitUrl = result.commitUrl || state?.commitUrl || null;
+                const stateRecord = {
                     signature,
                     syncedAt,
-                    commitUrl: result.commitUrl || state?.commitUrl || null,
+                    commitUrl,
                     repo: access.repo,
                     attempts: 0,
-                },
-            });
-            await markPhotoCatalogBackup({
-                state: 'current',
-                signature,
-                commitUrl: result.commitUrl || state?.commitUrl || null,
-                revisions: local.revisions,
-            });
-            return {
-                ok: true,
-                current: true,
-                signature,
-                result,
-                counts: committed?.counts || null,
-            };
-        } catch (error) {
-            await markPhotoCatalogBackup({ state: 'failed' }).catch(() => {});
-            return {
-                ok: false,
-                error: publicPhotoBackupError(error, 'The photo-library backup failed.'),
-            };
-        }
+                    reconciliationPending: true,
+                };
+                // Journal the confirmed remote state before touching individual
+                // records. A worker restart or partial IndexedDB failure can
+                // then retry idempotently without calling the commit a failure.
+                let stateFailure = null;
+                try {
+                    await ext.storage.local.set({ [PHOTO_BACKUP_STATE_KEY]: stateRecord });
+                } catch (error) {
+                    stateFailure = error;
+                }
+
+                let reconciliation = null;
+                let reconciliationFailure = null;
+                try {
+                    reconciliation = await markPhotoCatalogBackup({
+                        state: 'current',
+                        signature,
+                        commitUrl,
+                        revisions: local.revisions,
+                    });
+                } catch (error) {
+                    reconciliationFailure = error;
+                }
+                const conflicts = reconciliation?.conflicts || [];
+                const reconciliationPending = !!(reconciliationFailure || conflicts.length);
+                try {
+                    await ext.storage.local.set({
+                        [PHOTO_BACKUP_STATE_KEY]: {
+                            ...stateRecord,
+                            reconciliationPending,
+                        },
+                    });
+                    stateFailure = null;
+                } catch (error) {
+                    stateFailure = error;
+                }
+                const pending = !!(stateFailure || reconciliationFailure || conflicts.length);
+                return {
+                    ok: true,
+                    current: !pending,
+                    reconciliationPending: pending,
+                    signature,
+                    result,
+                    counts: committed?.counts || null,
+                    ...(pending ? {
+                        warning: {
+                            code: 'photo-backup-reconciliation',
+                            message: conflicts.length
+                                ? 'The GitHub backup is safe, but newer local photo changes still need another backup.'
+                                : 'The GitHub backup is safe, but local backup status could not be fully updated. Try again.',
+                        },
+                    } : {}),
+                };
+            } catch (error) {
+                if (!remoteConfirmed) {
+                    await markPhotoCatalogBackup({ state: 'failed' }).catch(() => {});
+                    return {
+                        ok: false,
+                        error: publicPhotoBackupError(error, 'The photo-library backup failed.'),
+                    };
+                }
+                return {
+                    ok: true,
+                    current: false,
+                    reconciliationPending: true,
+                    warning: {
+                        code: 'photo-backup-reconciliation',
+                        message: 'The GitHub backup is safe, but local backup status could not be fully updated. Try again.',
+                    },
+                };
+            }
+        });
     };
 
     const previewPhotoLibraryRestore = async (_message, sender) => {
@@ -1491,9 +1562,10 @@ export function createGithubRoutes({
     };
 
     const firePhotoAutoBackup = async () => {
-        if (!(await Settings.get()).autoPhotoLibraryBackup) return;
+        if (!(await photoBackupSettings.get()).autoPhotoLibraryBackup) return;
         const result = await backupPhotoLibrary({ automatic: true });
-        if (result.ok || result.error?.code === 'photo-backup-conflict' || !ext.alarms) return;
+        if ((result.ok && !result.reconciliationPending)
+            || result.error?.code === 'photo-backup-conflict' || !ext.alarms) return;
         const state = await readPhotoBackupState();
         const attempts = ((state && state.attempts) || 0) + 1;
         await ext.storage.local.set({ [PHOTO_BACKUP_STATE_KEY]: { ...(state || {}), attempts } });

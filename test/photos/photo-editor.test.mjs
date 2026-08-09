@@ -187,6 +187,51 @@ const loadEditor = async ({
     };
 };
 
+test('a confirmed backup with pending local reconciliation is never announced as failed', async () => {
+    let pending = false;
+    const page = await loadEditor({
+        pickPhoto: false,
+        runtimeHandler: async message => {
+            if (message.type === 'GITHUB_PHOTOS_STATUS') {
+                return {
+                    ok: true,
+                    connected: true,
+                    repo: { owner: 'me', name: 'backup', fullName: 'me/backup' },
+                    state: pending ? {
+                        syncedAt: '2026-07-27T18:10:00.000Z',
+                        reconciliationPending: true,
+                    } : null,
+                };
+            }
+            if (message.type === 'GITHUB_PHOTOS_BACKUP') {
+                pending = true;
+                return {
+                    ok: true,
+                    current: false,
+                    reconciliationPending: true,
+                    warning: {
+                        code: 'photo-backup-reconciliation',
+                        message: 'The GitHub backup is safe, but newer local photo changes still need another backup.',
+                    },
+                };
+            }
+            return { ok: true };
+        },
+    });
+    await waitFor(page.dom, () => page.doc.getElementById('backup-library').disabled === false);
+
+    page.doc.getElementById('backup-library').click();
+    await waitFor(page.dom, () => /GitHub backup is safe/.test(
+        page.doc.getElementById('toast-message').textContent));
+
+    assert.match(page.doc.getElementById('photo-backup-status').textContent,
+        /Backup reached me\/backup/);
+    assert.match(page.doc.getElementById('photo-backup-status').textContent,
+        /local changes still need backup/);
+    assert.doesNotMatch(page.doc.getElementById('toast-message').textContent, /failed/i);
+    assert.deepEqual(page.errors, []);
+});
+
 const readPhotoStore = (win, storeName) => new Promise((resolve, reject) => {
     const opened = win.indexedDB.open('betterPeakbaggerPhotos', 2);
     opened.onerror = () => reject(opened.error);
