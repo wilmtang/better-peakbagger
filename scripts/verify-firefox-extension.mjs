@@ -1409,13 +1409,19 @@ async function main() {
         const filterStateBefore = await driver.executeScript(`return {
       visible: [...document.querySelectorAll("table.gray tr")]
         .filter(row => row.cells.length > 1 && row.cells[0].tagName === "TD" && getComputedStyle(row).display !== "none").length,
+      total: [...document.querySelectorAll("table.gray tr")]
+        .filter(row => row.cells.length > 1 && row.cells[0].tagName === "TD").length,
       first: document.querySelector("table.gray tr td")?.textContent.trim(),
       controls: document.querySelectorAll(".pbaf-table-sort").length,
+      resetHidden: document.querySelector(".pbaf-reset")?.hidden,
+      definition: document.querySelector(".pbaf-beta-definition")?.textContent,
     };`);
-        const showAll = await driver.findElement(By.css('.pbaf-reset'));
-        await showAll.click();
+        const hasBeta = await driver.findElement(By.xpath(
+            '//button[contains(@class,"pbaf-chip")][.//span[normalize-space()="Has beta"]]',
+        ));
+        await hasBeta.sendKeys(Key.ENTER);
         const climberSort = await driver.findElements(By.css('.pbaf-table-sort'));
-        await climberSort[0].click();
+        await climberSort[0].sendKeys(Key.ENTER);
         const filterStateAfter = await driver.executeScript(`return {
       visible: [...document.querySelectorAll("table.gray tr")]
         .filter(row => row.cells.length > 1 && row.cells[0].tagName === "TD" && getComputedStyle(row).display !== "none").length,
@@ -1423,9 +1429,12 @@ async function main() {
     };`);
         assertState(
             filterStateBefore.controls > 1
-        && filterStateAfter.visible > filterStateBefore.visible
+        && filterStateBefore.visible === filterStateBefore.total
+        && filterStateBefore.resetHidden === true
+        && /Counts .*trip report.*GPS track.*link/i.test(filterStateBefore.definition || '')
+        && filterStateAfter.visible < filterStateBefore.visible
         && filterStateAfter.first !== filterStateBefore.first,
-            'Firefox ascent filter did not mount, reveal rows, and sort in place',
+            'Firefox ascent filter did not preserve first-use rows, filter, and sort by keyboard',
             { before: filterStateBefore, after: filterStateAfter },
         );
 

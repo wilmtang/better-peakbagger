@@ -40,12 +40,22 @@ const favoritesPromise = isPeakAscentsPage
 // (chrome.storage) own only the cross-cutting "has beta" definition.
 
 const STORAGE_KEY = 'pbAscentBetaFilter.v1';
-const DEFAULT_STATE = { beta: true, tr: false, minWords: 1, gps: false, link: false, fav: false };
+const DEFAULT_STATE = { beta: false, tr: false, minWords: 1, gps: false, link: false, fav: false };
+
+const cleanState = saved => {
+    if (!saved || typeof saved !== 'object' || Array.isArray(saved)) return { ...DEFAULT_STATE };
+    const state = { ...DEFAULT_STATE };
+    for (const key of ['beta', 'tr', 'gps', 'link', 'fav']) {
+        if (typeof saved[key] === 'boolean') state[key] = saved[key];
+    }
+    if (Number.isSafeInteger(saved.minWords) && saved.minWords > 0) state.minWords = saved.minWords;
+    return state;
+};
 
 const loadState = () => {
     try {
         const saved = JSON.parse(localStorage.getItem(STORAGE_KEY));
-        if (saved && typeof saved === 'object') return { ...DEFAULT_STATE, ...saved };
+        return cleanState(saved);
     } catch (e) { /* corrupted state -> defaults */ }
     return { ...DEFAULT_STATE };
 };
@@ -491,7 +501,7 @@ html[data-bpb-theme="dark"] {
        dark table header behind the sort controls. */
     --pbaf-focus: #69b58a;
 }
-#pbaf-bar { position: sticky; top: 0; z-index: 400; box-sizing: border-box; margin: 10px 0; padding: 8px 12px;
+#pbaf-bar { position: sticky; top: 0; z-index: 400; box-sizing: border-box; max-width: calc(100vw - 24px); margin: 10px 0; padding: 8px 12px;
     background: var(--pbaf-bar-bg); border: 1px solid var(--pbaf-bar-border); border-radius: 8px; box-shadow: var(--pbaf-bar-shadow);
     display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px;
     font: 13px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; color: var(--pbaf-bar-text); }
@@ -509,6 +519,8 @@ html[data-bpb-theme="dark"] {
 .pbaf-chip[aria-pressed="true"] .pbaf-count { color: var(--pbaf-count-on); }
 .pbaf-tick { display: none; font-weight: 700; }
 .pbaf-chip[aria-pressed="true"] .pbaf-tick { display: inline; }
+.pbaf-beta-group { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 5px 7px; }
+.pbaf-beta-definition { color: var(--pbaf-muted); font-size: 11px; }
 .pbaf-words { display: inline-flex; align-items: center; gap: 4px; color: var(--pbaf-muted); }
 .pbaf-words[hidden] { display: none; }
 .pbaf-words input { width: 4.6em; padding: 2px 5px; border: 1px solid var(--pbaf-chip-border); border-radius: 6px; font: inherit; color: var(--pbaf-input-text); background: var(--pbaf-chip-bg); }
@@ -585,6 +597,26 @@ const renderCompactNotice = table => {
     table.parentNode.insertBefore(bar, table);
 };
 
+let startupTable = null;
+let startupVisibility = null;
+let startupVisibilityPriority = '';
+const concealStartupTable = table => {
+    if (!isAscentListPage || startupTable) return;
+    startupTable = table;
+    startupVisibility = table.style.getPropertyValue('visibility');
+    startupVisibilityPriority = table.style.getPropertyPriority('visibility');
+    table.style.setProperty('visibility', 'hidden', 'important');
+};
+const revealStartupTable = () => {
+    if (!startupTable) return;
+    if (startupVisibility) {
+        startupTable.style.setProperty('visibility', startupVisibility, startupVisibilityPriority);
+    } else {
+        startupTable.style.removeProperty('visibility');
+    }
+    startupTable = null;
+};
+
 const init = async () => {
     if (document.getElementById('pbaf-bar')) return;
     if (!isAscentListPage && !isSorterOnlyPage) return optOutInstantSort();
@@ -606,6 +638,11 @@ const init = async () => {
     const rows = Array.from(table.rows);
     const headerRow = rows.find(row => row.cells.length > 1 && row.cells[0].tagName === 'TH');
     if (!headerRow) return optOutInstantSort();
+    // The page-local filter state is synchronous, but the Has-beta definition,
+    // favorites, and optional newest-first setting come from extension storage.
+    // Keep only the target data table laid out but unpainted until those owners
+    // reconcile, so remembered filtering/sorting never flashes the wrong rows.
+    concealStartupTable(table);
 
     // Column order and presence vary by URL params (y=, u=, per-year views),
     // so columns must be resolved from header text on every load.
@@ -690,7 +727,7 @@ const init = async () => {
     // descending once settings resolve — the rows are already in the DOM, so
     // this lands within a frame. Runs before the compact-view return so it
     // applies to date-only lists too.
-    void settingsPromise.then(s => {
+    const autoSortPromise = settingsPromise.then(s => {
         if (!s || s.betaSortDateDesc !== true) return;
         // Peakbagger carries the page's current sort into every year-navigation
         // link, so the "All" (y=9999) and per-year links off a default list all
@@ -705,6 +742,7 @@ const init = async () => {
     });
 
     if (columns.tr === null && columns.gps === null && columns.link === null) {
+        await autoSortPromise;
         renderCompactNotice(table);
         return;
     }
@@ -726,14 +764,25 @@ const init = async () => {
         (betaCfg.tr && record.words >= betaCfg.trMinWords) ||
             (betaCfg.gps && record.gps) ||
             (betaCfg.link && record.link);
-    const betaTooltip = () => {
+    const betaParts = article => {
         const parts = [];
-        if (betaCfg.tr) parts.push(betaCfg.trMinWords > 1 ? `a trip report of ≥ ${betaCfg.trMinWords} words` : 'a trip report');
-        if (betaCfg.gps) parts.push('a GPS track');
-        if (betaCfg.link) parts.push('a link');
-        return `Only ascents with ${parts.join(' or ')} — hides entries with no climb beta. `
-                + 'What counts as beta is configurable in the extension settings. Remembered across visits.';
+        if (betaCfg.tr) {
+            const report = betaCfg.trMinWords > 1
+                ? `trip report ≥ ${betaCfg.trMinWords} words`
+                : 'trip report';
+            parts.push(article ? `a ${report}` : report);
+        }
+        if (betaCfg.gps) parts.push(article ? 'a GPS track' : 'GPS track');
+        if (betaCfg.link) parts.push(article ? 'a link' : 'link');
+        return parts;
     };
+    const joinOr = parts => parts.length < 2
+        ? parts[0]
+        : `${parts.slice(0, -1).join(', ')}${parts.length > 2 ? ',' : ''} or ${parts.at(-1)}`;
+    const betaDefinition = () => `Counts ${joinOr(betaParts(false))}.`;
+    const betaTooltip = () => `Only ascents with ${joinOr(betaParts(true))} — hides entries with no climb beta. `
+                + 'What counts as beta is configurable in the extension settings. Remembered across visits.';
+    let betaDefinitionEl = null;
     const refreshBeta = () => {
         counts.beta = 0;
         for (const record of dataRows) {
@@ -744,6 +793,7 @@ const init = async () => {
             chips.beta.querySelector('.pbaf-count').textContent = String(counts.beta);
             chips.beta.title = betaTooltip();
         }
+        if (betaDefinitionEl) betaDefinitionEl.textContent = betaDefinition();
     };
 
     const state = loadState();
@@ -893,9 +943,9 @@ const init = async () => {
     wordsInput.step = '1';
     wordsInput.inputMode = 'numeric';
     wordsInput.className = 'pbaf-control';
-    wordsInput.setAttribute('aria-label', 'Minimum trip report word count');
+    wordsInput.setAttribute('aria-label', 'Trip report filter minimum word count');
     wordsInput.value = String(Math.max(1, parseInt(state.minWords, 10) || 1));
-    wordsWrap.append('≥ ', wordsInput, ' words');
+    wordsWrap.append('Trip report filter: ≥ ', wordsInput, ' words');
     wordsInput.addEventListener('input', () => {
         const value = parseInt(wordsInput.value, 10);
         state.minWords = Number.isFinite(value) && value > 0 ? value : 1;
@@ -925,8 +975,15 @@ const init = async () => {
         render();
     });
 
+    const betaGroup = document.createElement('span');
+    betaGroup.className = 'pbaf-beta-group';
+    betaDefinitionEl = document.createElement('span');
+    betaDefinitionEl.className = 'pbaf-beta-definition';
+    betaDefinitionEl.setAttribute('aria-live', 'polite');
+    betaGroup.append(makeChip('beta', 'Has beta', ''), betaDefinitionEl);
+
     const filterControls = [
-        makeChip('beta', 'Has beta', ''),
+        betaGroup,
         makeChip('tr', 'Trip report',
             'Only ascents with a written trip report of at least the chosen word count.'),
         wordsWrap,
@@ -1035,7 +1092,7 @@ const init = async () => {
 const start = () => init().catch(error => {
     optOutInstantSort();
     console.error('Better Peakbagger ascent filter failed:', error);
-});
+}).finally(revealStartupTable);
 
 if (document.readyState === 'loading') {
     window.addEventListener('DOMContentLoaded', start);

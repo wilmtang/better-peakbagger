@@ -50,8 +50,12 @@ const tableSortControl = (dom, label) =>
         .find(control => control.firstChild.textContent.trim() === label);
 const sortControl = dom => tableSortControl(dom, 'Ascent Date');
 const arrow = dom => sortControl(dom)?.querySelector('.pbaf-sort-arrow') || null;
+const rememberFilterState = (page, patch = {}) => page.window.localStorage.setItem(
+    'pbAscentBetaFilter.v1',
+    JSON.stringify({ beta: false, tr: false, minWords: 1, gps: false, link: false, fav: false, ...patch })
+);
 
-test('parses an ascent table and filters to beta by default', async () => {
+test('a first visit preserves every host row until the user chooses a filter', async () => {
     const dom = await loadPageWithBar(SMALL, { url: SMALL_URL });
     const rows = dataRows(dom);
     const betaRows = defaultBetaRows(dom);
@@ -65,16 +69,74 @@ test('parses an ascent table and filters to beta by default', async () => {
     assert.equal(chipCount(dom, 'GPS track'), String(gpsCount));
     assert.equal(chipCount(dom, 'Link'), String(linkCount));
 
-    // "Has beta" is on by default.
+    assert.equal(status(dom), `${rows.length} ascents`);
+    assert.equal(visibleRows(dom).length, rows.length);
+    assert.ok([...bar(dom).querySelectorAll('.pbaf-chip')]
+        .every(control => control.getAttribute('aria-pressed') === 'false'));
+    assert.equal(dom.window.document.querySelector('.pbaf-reset').hidden, true);
+    assert.ok(sectionRows(dom).every(r => r.style.display === ''));
+
+    chip(dom, 'Has beta').click();
     assert.equal(status(dom), `Showing ${betaRows.length} of ${rows.length} ascents`);
     assert.equal(visibleRows(dom).length, betaRows.length);
-    // Year sections with no visible rows collapse.
     assert.ok(sectionRows(dom).some(r => r.style.display === 'none'));
-
     dom.window.document.querySelector('.pbaf-reset').click();
     assert.equal(visibleRows(dom).length, rows.length);
     assert.equal(status(dom), `${rows.length} ascents`);
     assert.ok(sectionRows(dom).every(r => r.style.display === ''));
+});
+
+test('a remembered pre-change filter state still applies on the next visit', async () => {
+    const dom = await loadPageWithBar(SMALL, {
+        url: SMALL_URL,
+        prepare: page => page.window.localStorage.setItem('pbAscentBetaFilter.v1', JSON.stringify({
+            beta: true, tr: false, minWords: 1, gps: false, link: false
+        }))
+    });
+    const expected = defaultBetaRows(dom).length;
+
+    assert.equal(chip(dom, 'Has beta').getAttribute('aria-pressed'), 'true');
+    assert.equal(visibleRows(dom).length, expected);
+    assert.equal(status(dom), `Showing ${expected} of ${dataRows(dom).length} ascents`);
+});
+
+test('malformed remembered filter types fail to the all-off first-use state', async () => {
+    const dom = await loadPageWithBar(SMALL, {
+        url: SMALL_URL,
+        prepare: page => page.window.localStorage.setItem('pbAscentBetaFilter.v1', JSON.stringify({
+            beta: 'false', tr: 1, minWords: '100', gps: null, link: {}, fav: []
+        }))
+    });
+
+    assert.equal(visibleRows(dom).length, dataRows(dom).length);
+    assert.equal(status(dom), `${dataRows(dom).length} ascents`);
+    assert.ok([...bar(dom).querySelectorAll('.pbaf-chip')]
+        .every(control => control.getAttribute('aria-pressed') === 'false'));
+    assert.equal(dom.window.document.querySelector('.pbaf-words input').value, '1');
+});
+
+test('the ascent table stays concealed until remembered settings and row state reconcile', async () => {
+    let releaseSettings;
+    const settingsGate = new Promise(resolve => { releaseSettings = resolve; });
+    const dom = await loadPage(SMALL, {
+        url: SMALL_URL,
+        settings: { betaSortDateDesc: true },
+        prepare: page => {
+            rememberFilterState(page, { beta: true });
+            const nativeGet = page.chrome.storage.sync.get;
+            page.chrome.storage.sync.get = async (...args) => {
+                await settingsGate;
+                return nativeGet(...args);
+            };
+        }
+    });
+    await waitFor(dom, () => table(dom).style.getPropertyValue('visibility') === 'hidden');
+    assert.equal(bar(dom), null, 'the table must not paint before the filter bar has authoritative settings');
+
+    releaseSettings();
+    await waitFor(dom, () => bar(dom) && table(dom).style.getPropertyValue('visibility') !== 'hidden');
+    assert.equal(visibleRows(dom).length, defaultBetaRows(dom).length);
+    assert.equal(new dom.window.URL(dom.window.location.href).searchParams.get('sort'), 'ascentdated');
 });
 
 test('filter chips form one group without a divider after Has beta', async () => {
@@ -94,6 +156,7 @@ test('Fav climbers counts climber rows and AND-composes with Has beta', async ()
         url: SMALL_URL,
         settings: { favoritesSource: 'custom' },
         local: { [FAVORITES_KEY]: favoriteStore(customCids) },
+        prepare: page => rememberFilterState(page, { beta: true }),
     });
     const ids = new Set(customCids);
     const favoriteRows = dataRows(dom).filter(row => ids.has(rowCid(row)));
@@ -320,10 +383,12 @@ test('trip-report chip applies its inline word threshold', async () => {
 
     // The threshold is per-page UI state, edited through the inline input.
     const wordsInput = dom.window.document.querySelector('.pbaf-words input');
+    assert.equal(wordsInput.getAttribute('aria-label'), 'Trip report filter minimum word count');
     wordsInput.value = '100';
     wordsInput.dispatchEvent(new dom.window.Event('input'));
 
     chip(dom, 'Trip report').click();
+    assert.match(dom.window.document.querySelector('.pbaf-words').textContent, /Trip report filter:\s*≥\s*words/);
     // Independent expectation: rows whose TR cell reports >= 100 words.
     // (Every such row also counts as beta, so stacking with "Has beta" is a no-op.)
     const expected = dataRows(dom).filter(r => {
@@ -334,10 +399,44 @@ test('trip-report chip applies its inline word threshold', async () => {
     assert.equal(visibleRows(dom).length, expected);
 });
 
+test('the synced Has-beta definition and page-local trip-report threshold visibly AND-compose', async () => {
+    const dom = await loadPageWithBar(SMALL, {
+        url: SMALL_URL,
+        settings: { betaTr: false, betaGps: true, betaLink: false },
+        prepare: page => rememberFilterState(page, { beta: true, tr: true, minWords: 100 })
+    });
+    const expected = dataRows(dom).filter(row => {
+        const match = /^TR-(\d+)/.exec(row.cells[4].textContent.trim());
+        return rowHasGps(row) && match && Number(match[1]) >= 100;
+    }).length;
+
+    assert.ok(expected > 0);
+    assert.equal(visibleRows(dom).length, expected);
+    assert.equal(chip(dom, 'Has beta').getAttribute('aria-pressed'), 'true');
+    assert.equal(chip(dom, 'Trip report').getAttribute('aria-pressed'), 'true');
+    assert.equal(dom.window.document.querySelector('.pbaf-beta-definition').textContent, 'Counts GPS track.');
+    assert.equal(dom.window.document.querySelector('.pbaf-words input').value, '100');
+});
+
+test('a zero-match trip-report filter collapses sections and Show all restores them', async () => {
+    const dom = await loadPageWithBar(SMALL, {
+        url: SMALL_URL,
+        prepare: page => rememberFilterState(page, { tr: true, minWords: 1_000_000 })
+    });
+
+    assert.equal(visibleRows(dom).length, 0);
+    assert.equal(status(dom), `Showing 0 of ${dataRows(dom).length} ascents`);
+    assert.ok(sectionRows(dom).every(row => row.style.display === 'none'));
+    dom.window.document.querySelector('.pbaf-reset').click();
+    assert.equal(visibleRows(dom).length, dataRows(dom).length);
+    assert.ok(sectionRows(dom).every(row => row.style.display === ''));
+});
+
 test('"has beta" definition comes from settings (GPS-only)', async () => {
     const dom = await loadPageWithBar(SMALL, {
         url: SMALL_URL,
-        settings: { betaTr: false, betaLink: false }
+        settings: { betaTr: false, betaLink: false },
+        prepare: page => rememberFilterState(page, { beta: true })
     });
     const expected = dataRows(dom).filter(rowHasGps).length;
     assert.ok(expected > 0);
@@ -345,12 +444,14 @@ test('"has beta" definition comes from settings (GPS-only)', async () => {
     assert.equal(visibleRows(dom).length, expected);
     assert.match(chip(dom, 'Has beta').title, /GPS track/);
     assert.doesNotMatch(chip(dom, 'Has beta').title, /trip report/);
+    assert.equal(dom.window.document.querySelector('.pbaf-beta-definition').textContent, 'Counts GPS track.');
 });
 
 test('beta trip-report signal honors its own word threshold', async () => {
     const dom = await loadPageWithBar(SMALL, {
         url: SMALL_URL,
-        settings: { betaGps: false, betaLink: false, betaTrMinWords: 100 }
+        settings: { betaGps: false, betaLink: false, betaTrMinWords: 100 },
+        prepare: page => rememberFilterState(page, { beta: true })
     });
     const expected = dataRows(dom).filter(r => {
         const m = /^TR-(\d+)/.exec(r.cells[4].textContent.trim());
@@ -360,6 +461,8 @@ test('beta trip-report signal honors its own word threshold', async () => {
     assert.equal(chipCount(dom, 'Has beta'), String(expected));
     assert.equal(visibleRows(dom).length, expected);
     assert.match(chip(dom, 'Has beta').title, /≥ 100 words/);
+    assert.equal(dom.window.document.querySelector('.pbaf-beta-definition').textContent,
+        'Counts trip report ≥ 100 words.');
 });
 
 test('an all-off beta definition falls back to all-on', async () => {
@@ -373,7 +476,10 @@ test('an all-off beta definition falls back to all-on', async () => {
 });
 
 test('beta definition changes apply live via storage.onChanged', async () => {
-    const dom = await loadPageWithBar(SMALL, { url: SMALL_URL });
+    const dom = await loadPageWithBar(SMALL, {
+        url: SMALL_URL,
+        prepare: page => rememberFilterState(page, { beta: true })
+    });
     const initial = Number(chipCount(dom, 'Has beta'));
     const expected = dataRows(dom).filter(rowHasGps).length;
     assert.ok(initial > expected && expected > 0);
@@ -383,6 +489,7 @@ test('beta definition changes apply live via storage.onChanged', async () => {
 
     assert.equal(chipCount(dom, 'Has beta'), String(expected));
     assert.equal(visibleRows(dom).length, expected);
+    assert.equal(dom.window.document.querySelector('.pbaf-beta-definition').textContent, 'Counts GPS track.');
 });
 
 test('the date header is one persistent toggle with no backend links', async () => {
@@ -504,6 +611,8 @@ test('sort clicks fall back to native navigation when initialization fails', asy
     });
     await new Promise(resolve => setTimeout(resolve, 20));
     assert.equal(bar(dom), null, 'the filter bar must not appear after the forced failure');
+    assert.notEqual(table(dom).style.getPropertyValue('visibility'), 'hidden',
+        'a failed initialization must reveal the untouched host table');
 
     const header = dom.window.document.querySelector('th a[href*="sort="]');
     assert.ok(header, 'the native sort links must remain in place');
@@ -620,7 +729,7 @@ test('personal ClimbListC pages retain the beta bar and persistent date toggle',
     await waitFor(dom, () => bar(dom) && sortControl(dom));
 
     assert.ok(bar(dom));
-    assert.match(status(dom), /^Showing \d+ of 38 ascents$/);
+    assert.equal(status(dom), '38 ascents');
     assert.equal(sortControl(dom).textContent.trim(), 'Ascent Date ▲');
     assert.equal(sortControl(dom).tabIndex, 0);
     const visibleBefore = visibleRows(dom).length;

@@ -879,11 +879,22 @@ header text because Peakbagger serves different column sets for year, unit, and
 detail variants. Rows are modeled from the page that was actually returned; the
 extension never follows a backend sort link to silently change the result set.
 
-Filter chips compose with AND semantics. “Has beta” is calculated from the
-shared settings definition—trip report at or above the configured word count,
-GPS, or external link—while the active chip state and per-page trip-report
-threshold live in Peakbagger `localStorage`. Year separators disappear when a
-filtered section is empty and return with their original rows.
+Filter chips compose with AND semantics, but a first visit leaves every filter
+off so installing the extension never removes host rows without a choice.
+Remembered boolean chip state and the page-local Trip report threshold live in
+Peakbagger `localStorage`; malformed saved types fall back per field to the
+all-off defaults. “Has beta” is a separate synced definition—trip report at or
+above its configured word count, GPS, or external link—and the active definition
+is printed beside that chip. The inline control is explicitly labelled “Trip
+report filter” so activating both concepts reads as the AND operation it is.
+Year separators disappear when a filtered section is empty and return with their
+original rows.
+
+The target table keeps its layout but remains unpainted during the short initial
+settings/favorites reconciliation. It is revealed after remembered filters and
+the optional newest-first ordering have settled, or immediately on an
+initialization failure, preventing a flash of rows that are about to disappear
+or move without risking a permanently hidden host table.
 
 The full `PeakAscents.aspx` view also models the climber id from each row's
 profile link. Its Favorites chip intersects those ids with either the custom

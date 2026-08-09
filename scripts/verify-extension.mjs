@@ -2553,19 +2553,101 @@ try {
                 visible: [...document.querySelectorAll('table.gray tr')]
                     .filter(row => row.cells.length > 1 && row.cells[0].tagName === 'TD'
                         && getComputedStyle(row).display !== 'none').length,
+                total: [...document.querySelectorAll('table.gray tr')]
+                    .filter(row => row.cells.length > 1 && row.cells[0].tagName === 'TD').length,
                 first: document.querySelector('table.gray tr td')?.textContent.trim(),
-                controls: document.querySelectorAll('.pbaf-table-sort').length
+                controls: document.querySelectorAll('.pbaf-table-sort').length,
+                resetHidden: document.querySelector('.pbaf-reset')?.hidden,
+                definition: document.querySelector('.pbaf-beta-definition')?.textContent
             }));
-            await filterPage.locator('.pbaf-reset').click();
-            await filterPage.locator('.pbaf-table-sort').first().click();
+            const hasBeta = filterPage.locator('.pbaf-chip').filter({ hasText: 'Has beta' });
+            await hasBeta.focus();
+            await filterPage.keyboard.press('Enter');
+            const tripReport = filterPage.locator('.pbaf-chip').filter({ hasText: 'Trip report' });
+            await tripReport.focus();
+            await filterPage.keyboard.press('Enter');
+
+            const originalFilterViewport = filterPage.viewportSize();
+            if (process.env.BPB_VERIFY_ASCENT_FILTER_SCREENSHOT) {
+                await filterPage.screenshot({ path: process.env.BPB_VERIFY_ASCENT_FILTER_SCREENSHOT });
+            }
+            if (process.env.BPB_VERIFY_ASCENT_FILTER_NARROW_SCREENSHOT) {
+                await filterPage.setViewportSize({ width: 448, height: 760 });
+                const layout = await filterPage.locator('#pbaf-bar').evaluate(element => {
+                    const rect = element.getBoundingClientRect();
+                    return {
+                        left: rect.left,
+                        right: rect.right,
+                        viewport: document.documentElement.clientWidth,
+                        scrollWidth: element.scrollWidth,
+                        clientWidth: element.clientWidth
+                    };
+                });
+                check(layout.left >= 0 && layout.right <= layout.viewport + 1
+                    && layout.scrollWidth <= layout.clientWidth + 1,
+                `the narrow ascent filter clips or overflows: ${JSON.stringify(layout)}`);
+                await filterPage.screenshot({ path: process.env.BPB_VERIFY_ASCENT_FILTER_NARROW_SCREENSHOT });
+            }
+            if (process.env.BPB_VERIFY_ASCENT_FILTER_DARK_SCREENSHOT
+                    || process.env.BPB_VERIFY_ASCENT_FILTER_DARK_NARROW_SCREENSHOT) {
+                const previousTheme = await filterPage.locator('html').getAttribute('data-bpb-theme');
+                // Theme storage/bridge behavior is already asserted earlier in
+                // this verifier. The Peakbagger MAIN world correctly has no
+                // chrome.storage access, so visual-only variants switch the
+                // trusted attribute the isolated theme bundle already applied.
+                await filterPage.locator('html').evaluate(element => element.setAttribute('data-bpb-theme', 'dark'));
+                await filterPage.waitForFunction(() => {
+                    if (document.documentElement.getAttribute('data-bpb-theme') !== 'dark') return false;
+                    const gps = [...document.querySelectorAll('.pbaf-chip')]
+                        .find(control => control.querySelector('.pbaf-chip-label')?.textContent === 'GPS track');
+                    return gps && getComputedStyle(gps).backgroundColor === 'rgb(43, 47, 52)';
+                });
+                const darkPalette = await filterPage.evaluate(() => {
+                    const gps = [...document.querySelectorAll('.pbaf-chip')]
+                        .find(control => control.querySelector('.pbaf-chip-label')?.textContent === 'GPS track');
+                    const input = document.querySelector('.pbaf-words input');
+                    const bar = document.getElementById('pbaf-bar');
+                    return {
+                        chipBackground: getComputedStyle(gps).backgroundColor,
+                        chipText: getComputedStyle(gps).color,
+                        inputBackground: getComputedStyle(input).backgroundColor,
+                        inputText: getComputedStyle(input).color,
+                        barBackground: getComputedStyle(bar).backgroundColor
+                    };
+                });
+                check(darkPalette.chipBackground === 'rgb(43, 47, 52)'
+                    && darkPalette.chipText === 'rgb(215, 210, 201)'
+                    && darkPalette.inputBackground === 'rgb(43, 47, 52)'
+                    && darkPalette.inputText === 'rgb(230, 225, 216)'
+                    && darkPalette.barBackground === 'rgb(35, 38, 42)',
+                `the ascent filter did not apply its owned dark palette: ${JSON.stringify(darkPalette)}`);
+                if (process.env.BPB_VERIFY_ASCENT_FILTER_DARK_SCREENSHOT) {
+                    await filterPage.setViewportSize(originalFilterViewport);
+                    await filterPage.screenshot({ path: process.env.BPB_VERIFY_ASCENT_FILTER_DARK_SCREENSHOT });
+                }
+                if (process.env.BPB_VERIFY_ASCENT_FILTER_DARK_NARROW_SCREENSHOT) {
+                    await filterPage.setViewportSize({ width: 448, height: 760 });
+                    await filterPage.screenshot({ path: process.env.BPB_VERIFY_ASCENT_FILTER_DARK_NARROW_SCREENSHOT });
+                }
+                await filterPage.locator('html').evaluate((element, value) => {
+                    if (value) element.setAttribute('data-bpb-theme', value);
+                    else element.removeAttribute('data-bpb-theme');
+                }, previousTheme);
+            }
+            await filterPage.setViewportSize(originalFilterViewport);
+            const firstSort = filterPage.locator('.pbaf-table-sort').first();
+            await firstSort.focus();
+            await filterPage.keyboard.press('Enter');
             const after = await filterPage.evaluate(() => ({
                 visible: [...document.querySelectorAll('table.gray tr')]
                     .filter(row => row.cells.length > 1 && row.cells[0].tagName === 'TD'
                         && getComputedStyle(row).display !== 'none').length,
                 first: document.querySelector('table.gray tr td')?.textContent.trim()
             }));
-            check(before.controls > 1 && after.visible > before.visible && after.first !== before.first,
-                `the Chrome ascent filter did not reveal rows and sort in place: ${JSON.stringify({ before, after })}`);
+            check(before.controls > 1 && before.visible === before.total && before.resetHidden === true
+                && /Counts .*trip report.*GPS track.*link/i.test(before.definition || '')
+                && after.visible < before.visible && after.first !== before.first,
+            `the Chrome ascent filter did not preserve first-use rows, filter, and sort by keyboard: ${JSON.stringify({ before, after })}`);
         }
         await filterPage.close();
     }
@@ -3830,7 +3912,7 @@ console.log('  - trusted confirmation persists the feature gate without contacti
 console.log('  - the Full Screen BigMap receives settings and shows an enabled 3D toggle');
 console.log('  - the Peak Dynamic Map preserves its native frame and shows an enabled 3D toggle');
 console.log('  - keyboard-opening Peak 3D creates the isolated frame with a route-free summit focus');
-console.log('  - the PeakAscents filter mounts, reveals rows, and sorts in place');
+console.log('  - the PeakAscents filter starts unfiltered, then filters and sorts by keyboard in place');
 console.log('  - the Buddy List exposes six in-place sort controls and no beta filter');
 console.log('  - Peak Lists expose eight in-place sort controls, preserve the URL, and fit the viewport');
 console.log('  - the owner-only full-profile backup surface mounts with a connected fixture repository');
