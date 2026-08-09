@@ -109,6 +109,9 @@ import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.js';
         autosaveTimer: null,
         pendingSave: null,
         saveIntentScheduled: false,
+        conversionDiagnostics: [],
+        conversionAccepted: true,
+        conversionTarget: 'rich',
         terminalSubmission: false
     };
     let nextSaveAttempt = 0;
@@ -136,6 +139,14 @@ import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.js';
     const draftBar = el('div', 'bpb-re-draft');
     draftBar.setAttribute('role', 'status');
     draftBar.hidden = true;
+
+    const conversionBar = el('div', 'bpb-re-conversion');
+    conversionBar.setAttribute('role', 'status');
+    conversionBar.setAttribute('aria-live', 'polite');
+    conversionBar.hidden = true;
+    const conversionText = el('span', 'bpb-re-conversion-text');
+    const convertAnyway = button('bpb-re-convert', 'Convert anyway');
+    conversionBar.append(conversionText, convertAnyway);
 
     const bar = el('div', 'bpb-re-bar');
     bar.setAttribute('role', 'toolbar');
@@ -478,7 +489,7 @@ import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.js';
     const toolbar = el('div', 'bpb-re-toolbar');
     const contextual = el('div', 'bpb-re-contextual');
     contextual.append(tableBar, linkBox, imageBox, videoBox, moreBox);
-    toolbar.append(draftBar, bar, contextual);
+    toolbar.append(conversionBar, draftBar, bar, contextual);
     ui.append(toolbar, richWrap, mdSplit, foot);
 
     const boxes = [tableBar, linkBox, imageBox, videoBox, moreBox];
@@ -526,6 +537,40 @@ import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.js';
         const parsed = new DOMParser().parseFromString(html, 'text/html');
         preview.replaceChildren(...parsed.body.childNodes);
     };
+
+    const diagnosticLabel = diagnostic => {
+        const tag = `[${diagnostic.tag}]`;
+        if (diagnostic.code === 'unsupported-attribute') {
+            return `${diagnostic.attribute} on ${tag}`;
+        }
+        if (diagnostic.code === 'unsafe-attribute') return `${tag} source or attributes`;
+        if (diagnostic.code === 'unsupported-nesting') return `${tag} nesting`;
+        return tag;
+    };
+
+    const summarizeDiagnostics = diagnostics => {
+        const labels = [...new Set(diagnostics.map(diagnosticLabel))];
+        const visible = labels.slice(0, 3);
+        const remainder = labels.length - visible.length;
+        if (remainder) visible.push(`${remainder} more`);
+        if (visible.length < 2) return visible[0] || 'unsupported markup';
+        return `${visible.slice(0, -1).join(', ')} and ${visible.at(-1)}`;
+    };
+
+    const configureConversionGuard = (source, preferredMode = state.conversionTarget) => {
+        const { diagnostics } = Markup.parseBracketWithDiagnostics(source);
+        state.conversionDiagnostics = diagnostics;
+        state.conversionAccepted = diagnostics.length === 0;
+        if (preferredMode === 'rich' || preferredMode === 'markdown') {
+            state.conversionTarget = preferredMode;
+        }
+        conversionBar.hidden = diagnostics.length === 0;
+        if (diagnostics.length) {
+            conversionText.textContent = 'This report uses markup Rich text and Markdown can’t preserve: '
+                + `${summarizeDiagnostics(diagnostics)}. Continue in Plain, or convert anyway.`;
+        }
+        return diagnostics.length > 0;
+    };
     const renderPreview = () => {
         const html = Markup.markdownToPreviewHtml(mdEditor.getValue());
         if (html) renderSanitizedPreviewHtml(html);
@@ -566,6 +611,7 @@ import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.js';
         if (state.mode === 'plain') {
             state.mdSource = null;
             state.creditScaffold = false;
+            configureConversionGuard(textarea.value);
         }
     });
     globalThis.addEventListener('pagehide', () => {
@@ -772,7 +818,9 @@ import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.js';
             draftBar.hidden = true;
             // flush: false — the restored textarea value must not be clobbered
             // by a serialization of the outgoing (pre-restore) content.
-            setMode(MODES.includes(stored.mode) ? stored.mode : state.mode, { persist: false, flush: false });
+            const restoredMode = MODES.includes(stored.mode) ? stored.mode : state.mode;
+            const guarded = configureConversionGuard(stored.text, restoredMode);
+            setMode(guarded ? 'plain' : restoredMode, { persist: false, flush: false });
             status.textContent = 'Draft restored';
         });
         discard.addEventListener('click', () => {
@@ -1146,8 +1194,21 @@ import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.js';
     };
 
     for (const [name, control] of Object.entries(modeButtons)) {
-        control.addEventListener('click', () => { if (state.mode !== name) setMode(name); });
+        control.addEventListener('click', () => {
+            if (state.mode === name) return;
+            if (name !== 'plain' && state.conversionDiagnostics.length && !state.conversionAccepted) {
+                state.conversionTarget = name;
+                convertAnyway.focus();
+                return;
+            }
+            setMode(name);
+        });
     }
+    convertAnyway.addEventListener('click', () => {
+        state.conversionAccepted = true;
+        conversionBar.hidden = true;
+        setMode(state.conversionTarget);
+    });
 
     // Same bound the photo library and its page input enforce
     // (photoLibrary.ALT_LIMIT). The catalog model itself stays out of this
@@ -1249,7 +1310,8 @@ import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.js';
 
         textarea.before(ui);
         await checkDraft();               // may adopt a markdown source pre-render
-        setMode(settings.reportEditorMode, { persist: false });
+        const guarded = configureConversionGuard(textarea.value, settings.reportEditorMode);
+        setMode(guarded ? 'plain' : settings.reportEditorMode, { persist: false });
         ext.runtime.onMessage.addListener(handlePhotoInsertion);
         void pruneDrafts();
 

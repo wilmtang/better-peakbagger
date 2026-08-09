@@ -530,7 +530,7 @@ draft. Validation errors, failed navigation, mismatched identities, duplicate
 postbacks, and expired worker state therefore leave recovery data intact.
 
 The editor's representations, sanitization boundaries, media restrictions,
-round trips, draft lifecycle, and known lossy-import limitation are maintained
+round trips, guarded lossy-import conversion, and draft lifecycle are maintained
 in [trip-report-editor.md](trip-report-editor.md). That focused design note is
 the source of truth for markup behavior; this guide does not duplicate its tag
 matrix.

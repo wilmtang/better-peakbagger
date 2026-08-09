@@ -146,6 +146,35 @@ test('a differing stored draft offers management, and Restore applies it in its 
     assert.equal(doc.getElementById('JournalText').value, 'draft copy with **md**');
 });
 
+test('restoring a lossy draft keeps it in Plain until conversion is explicit', async () => {
+    const source = '[iframe src="https://example.com/embed"][/iframe]';
+    const dom = await loadEditor({
+        report: 'server copy',
+        drafts: {
+            [DRAFT_KEY]: {
+                text: source,
+                source,
+                mode: 'markdown',
+                savedAt: Date.now() - 1000,
+            },
+        },
+    });
+    const ui = await editorReady(dom);
+    const doc = dom.window.document;
+    const restore = [...doc.querySelectorAll('.bpb-re-draft button')]
+        .find(button => button.textContent === 'Restore draft');
+
+    restore.click();
+    assert.equal(doc.getElementById('JournalText').value, source);
+    assert.equal(ui.dataset.mode, 'plain');
+    assert.equal(ui.querySelector('.bpb-re-conversion').hidden, false);
+
+    modeButton(doc, 'Markdown').click();
+    assert.equal(ui.dataset.mode, 'plain');
+    ui.querySelector('.bpb-re-convert').click();
+    assert.equal(ui.dataset.mode, 'markdown');
+});
+
 test('Delete draft removes it without touching the form content', async () => {
     const messages = [];
     const dom = await loadEditor({

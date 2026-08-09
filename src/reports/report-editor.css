@@ -40,9 +40,9 @@
     background: #f2f2f0;
 }
 
-/* Contextual controls open above the complete toolbar region, including a
- * visible draft-recovery bar. Keeping this layer out of normal flow preserves
- * the editor's position without covering recovery actions or the surface. */
+/* Contextual controls open above the complete toolbar region, including visible
+ * conversion and draft-recovery bars. Keeping this layer out of normal flow
+ * preserves the editor's position without covering actions or the surface. */
 .bpb-re-toolbar {
     position: relative;
     z-index: 2;
@@ -85,6 +85,7 @@
 
 .bpb-re-modes {
     display: flex;
+    flex: 0 0 auto;
     align-items: center;
     gap: 0;
     margin-left: auto;
@@ -141,6 +142,7 @@
     padding: 0 9px;
     font-size: 12px;
     border-radius: 0;
+    white-space: nowrap;
 }
 
 .bpb-re-mode:hover {
@@ -830,6 +832,38 @@
     background: #fdf3d7;
 }
 
+.bpb-re-conversion {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: 0 0 5px;
+    padding: 7px 10px;
+    border: 1px solid #d8a72f;
+    border-radius: 6px;
+    background: #fff8df;
+    color: #744500;
+}
+
+.bpb-re-conversion-text {
+    flex: 1 1 280px;
+    min-width: 0;
+    line-height: 1.35;
+}
+
+.bpb-re-conversion button {
+    flex: 0 0 auto;
+    padding: 4px 10px;
+    border: 1px solid #b98300;
+    background: #fff;
+    color: #744500;
+    font-weight: bold;
+}
+
+.bpb-re-conversion button:hover {
+    background: #ffedb5;
+}
+
 /* --- prepared-draft notification -------------------------------------------------- */
 
 .bpb-draft-banner {
@@ -1084,5 +1118,21 @@ html[data-bpb-theme="dark"] .bpb-re-draft button {
 }
 
 html[data-bpb-theme="dark"] .bpb-re-draft button:hover {
+    background: #35301f;
+}
+
+html[data-bpb-theme="dark"] .bpb-re-conversion {
+    background: #2b2416;
+    border-color: #8b6b20;
+    color: #f0cf78;
+}
+
+html[data-bpb-theme="dark"] .bpb-re-conversion button {
+    background: #202224;
+    border-color: #8b6b20;
+    color: #f0cf78;
+}
+
+html[data-bpb-theme="dark"] .bpb-re-conversion button:hover {
     background: #35301f;
 }

@@ -530,7 +530,7 @@ test('keyboard image resizing stops at the serialized dimension ceiling', async 
 });
 
 test('plain mode is the untouched native textarea, hints restored', async () => {
-    const dom = await loadEditor({ report: 'raw [whatever] text' });
+    const dom = await loadEditor({ report: 'raw [b]supported[/b] text' });
     const ui = await editorReady(dom);
     const doc = dom.window.document;
     const plainHint = ui.querySelector('.bpb-re-plain-hint');
@@ -542,7 +542,7 @@ test('plain mode is the untouched native textarea, hints restored', async () => 
     modeButton(doc, 'Plain').click();
     const textarea = doc.getElementById('JournalText');
     assert.equal(textarea.classList.contains('bpb-re-hidden'), false);
-    assert.equal(textarea.value, 'raw [whatever] text');
+    assert.equal(textarea.value, 'raw [b]supported[/b] text');
     assert.equal(plainHint.hidden, false);
     assert.equal(plainHint.textContent,
         'Peakbagger’s original text editor — use Peakbagger’s [bracket] syntax.');
@@ -573,22 +573,61 @@ test('editing Plain invalidates the exact Markdown sidecar', async () => {
 test('visiting Markdown mode does not rewrite an untouched server report', async () => {
     const report = '[iframe src="https://example.com"][/iframe]';
     const dom = await loadEditor({ report });
-    await editorReady(dom);
+    const ui = await editorReady(dom);
     const doc = dom.window.document;
 
+    assert.equal(ui.dataset.mode, 'plain');
+    assert.equal(ui.querySelector('.bpb-re-conversion').hidden, false);
+    assert.match(ui.querySelector('.bpb-re-conversion-text').textContent, /\[iframe\] source or attributes/);
     modeButton(doc, 'Markdown').click();
-    modeButton(doc, 'Plain').click();
+    assert.equal(ui.dataset.mode, 'plain', 'a mode click cannot bypass explicit conversion');
+    assert.equal(doc.activeElement, ui.querySelector('.bpb-re-convert'));
     assert.equal(doc.getElementById('JournalText').value, report);
 });
 
-test('editing in rich mode neutralizes unsupported embed markup before submission', async () => {
+test('Convert anyway intentionally enters Rich mode before unsupported markup can change', async () => {
     const dom = await loadEditor({ report: '[iframe src="https://example.com"][/iframe]' });
-    await editorReady(dom);
+    const ui = await editorReady(dom);
     const doc = dom.window.document;
 
-    editors(dom).rich.chain().focus('end').insertContent(' edited').run();
+    modeButton(doc, 'Rich text').click();
+    ui.querySelector('.bpb-re-convert').click();
+    assert.equal(ui.dataset.mode, 'rich');
+    assert.equal(ui.querySelector('.bpb-re-conversion').hidden, true);
+    assert.equal(doc.getElementById('JournalText').value, '[iframe src="https://example.com"][/iframe]',
+        'conversion remains non-destructive until the user edits');
+    const rich = editors(dom).rich;
+    rich.chain().focus('end').insertContent(' edited').run();
     await waitFor(dom, () => /edited/.test(doc.getElementById('JournalText').value));
     const submitted = doc.getElementById('JournalText').value;
     assert.doesNotMatch(submitted, /\[iframe\b/i);
     assert.match(submitted, /&#91;iframe/);
+
+    rich.chain().focus().undo().run();
+    doc.getElementById('GPXPreview').click();
+    assert.doesNotMatch(doc.getElementById('JournalText').value, /edited/);
+    assert.match(doc.getElementById('JournalText').value, /&#91;iframe/,
+        'undo reverses the edit, not the conversion the user already accepted');
+});
+
+test('lossy diagnostics name unsupported tags, attributes, and nesting concisely', async () => {
+    const report = '[unknown]x[/unknown] [b onclick="run()"]bold[/b] [li]orphan[/li]';
+    const dom = await loadEditor({ report });
+    const ui = await editorReady(dom);
+    const copy = ui.querySelector('.bpb-re-conversion-text').textContent;
+
+    assert.equal(ui.dataset.mode, 'plain');
+    assert.match(copy, /\[unknown\]/);
+    assert.match(copy, /onclick on \[b\]/);
+    assert.match(copy, /\[li\] nesting/);
+    assert.equal(ui.querySelectorAll('.bpb-re-conversion button').length, 1);
+    assert.equal(ui.querySelector('.bpb-re-convert').textContent, 'Convert anyway');
+});
+
+test('safe aliases and whitespace normalization do not trigger the conversion guard', async () => {
+    const dom = await loadEditor({ report: '  [strong]safe[/strong]\r\n\r\n- one\n- two  ' });
+    const ui = await editorReady(dom);
+
+    assert.equal(ui.dataset.mode, 'rich');
+    assert.equal(ui.querySelector('.bpb-re-conversion').hidden, true);
 });

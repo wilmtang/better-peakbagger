@@ -265,9 +265,81 @@ const safeOpening = (name, attrs) => {
 
 const TAG_TOKEN = /\[(\/?)([a-z][a-z0-9]*)([^\]\r\n]*)\]|<(\/?)([a-z][a-z0-9]*)([^>\r\n]*)>/gi;
 
+const attributeEntries = raw => {
+    const source = String(raw || '').replace(/\/\s*$/, '').trim();
+    if (!source) return [];
+    const entries = [];
+    const pattern = /([a-z][a-z0-9:-]*)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s]+)))?/gi;
+    for (let match = pattern.exec(source); match; match = pattern.exec(source)) {
+        entries.push({ name: match[1].toLowerCase(), value: match[2] ?? match[3] ?? match[4] ?? null });
+    }
+    return entries;
+};
+
+const acceptedAttributeNames = tag => {
+    if (INLINE_TAGS.has(tag)) return new Set();
+    if (tag === 'a') return new Set(['href', 'target']);
+    if (tag === 'img') return new Set(['src', 'alt', 'width', 'height']);
+    if (tag === 'video') {
+        return new Set(['src', 'width', 'height', 'controls', 'preload', 'playsinline', 'referrerpolicy']);
+    }
+    if (tag === 'iframe') {
+        return new Set(['src', 'width', 'height', 'title', 'loading', 'referrerpolicy', 'allow', 'allowfullscreen']);
+    }
+    if (tag === 'font') return new Set(['color']);
+    if (tag === 'span') return new Set(['style']);
+    if (tag === 'table') return new Set(['border']);
+    return new Set();
+};
+
+const droppedAttributes = (tag, attrs) => {
+    const entries = attributeEntries(attrs);
+    const accepted = acceptedAttributeNames(tag);
+    const dropped = entries.filter(entry => !accepted.has(entry.name));
+    const byName = name => entries.find(entry => entry.name === name);
+    const dropIf = (name, invalid) => {
+        const entry = byName(name);
+        if (entry && invalid(entry.value)) dropped.push(entry);
+    };
+    dropIf('target', value => value !== '_blank');
+    for (const name of ['width', 'height']) {
+        dropIf(name, value => sanitizeDimension(value) === null);
+    }
+    dropIf('border', value => value !== '1');
+    if (tag === 'video') {
+        dropIf('controls', value => value !== null);
+        dropIf('preload', value => value !== 'metadata');
+        dropIf('playsinline', value => value !== null);
+        dropIf('referrerpolicy', value => value !== 'no-referrer');
+    }
+    if (tag === 'iframe') {
+        dropIf('title', value => value !== 'YouTube video');
+        dropIf('loading', value => value !== 'lazy');
+        dropIf('referrerpolicy', value => value !== 'strict-origin-when-cross-origin');
+        dropIf('allow', value => value !== 'accelerometer; encrypted-media; gyroscope; picture-in-picture');
+        dropIf('allowfullscreen', value => value !== null);
+    }
+    return [...new Map(dropped.map(entry => [entry.name, entry])).values()];
+};
+
+const invalidStructuralParent = (tag, ancestors) => {
+    const parent = ancestors.at(-1) || null;
+    if (tag === 'li') return parent !== 'ul' && parent !== 'ol';
+    if (tag === 'tr') return !['table', 'thead', 'tbody', 'tfoot'].includes(parent);
+    if (tag === 'th' || tag === 'td') return parent !== 'tr';
+    if (['thead', 'tbody', 'tfoot'].includes(tag)) return parent !== 'table';
+    if (tag === 'a') return ancestors.includes('a');
+    return BLOCK_TAGS.has(tag) && ancestors.includes('p');
+};
+
+const addDiagnostic = (diagnostics, diagnostic) => {
+    if (!diagnostics) return;
+    diagnostics.push(diagnostic);
+};
+
 // Convert only balanced, validated allowlisted tags to detached HTML. Raw
 // source newlines become <br>, exactly as Peakbagger renders them.
-const bracketSourceToSafeHtml = (source, { inlineOnly = false } = {}) => {
+const bracketSourceToSafeHtml = (source, { inlineOnly = false, diagnostics = null } = {}) => {
     const input = String(source ?? '').replace(/\r\n?/g, '\n');
     const tokens = [];
     for (let hit = TAG_TOKEN.exec(input); hit; hit = TAG_TOKEN.exec(input)) {
@@ -291,8 +363,24 @@ const bracketSourceToSafeHtml = (source, { inlineOnly = false } = {}) => {
     for (const token of tokens) {
         if (!token.closing) {
             const safe = safeOpening(token.name, token.attrs);
-            if (!safe || (inlineOnly && (BLOCK_TAGS.has(token.name) || safe.tag === 'hr'))) continue;
+            if (!safe || (inlineOnly && (BLOCK_TAGS.has(token.name) || safe.tag === 'hr'))) {
+                if (!inlineOnly) addDiagnostic(diagnostics, {
+                    action: 'neutralize',
+                    code: normalizedTag(token.name) ? 'unsafe-attribute' : 'unsupported-tag',
+                    tag: token.name,
+                });
+                token.rejectedOpening = !!normalizedTag(token.name);
+                continue;
+            }
             token.safe = safe;
+            if (!inlineOnly) {
+                for (const attribute of droppedAttributes(token.name, token.attrs)) {
+                    addDiagnostic(diagnostics, {
+                        action: 'drop', code: 'unsupported-attribute', tag: token.name,
+                        attribute: attribute.name,
+                    });
+                }
+            }
             if (safe.self) token.paired = true;
             else stack.push(token);
             continue;
@@ -305,6 +393,46 @@ const bracketSourceToSafeHtml = (source, { inlineOnly = false } = {}) => {
             open.paired = true;
             token.safe = { tag: closeTag, html: `</${closeTag}>`, self: false };
             token.paired = true;
+        }
+    }
+
+    if (!inlineOnly) {
+        const rejectedStack = [];
+        for (const token of tokens) {
+            if (!token.closing && token.rejectedOpening
+                && !['br', 'hr', 'img'].includes(normalizedTag(token.name))) {
+                rejectedStack.push(token.name);
+            } else if (token.closing && !token.paired
+                && rejectedStack[rejectedStack.length - 1] === token.name) {
+                rejectedStack.pop();
+                token.rejectedPair = true;
+            }
+        }
+        const structuralStack = [];
+        for (const token of tokens) {
+            if (!token.safe || !token.paired || token.safe.self) continue;
+            if (!token.closing) {
+                const ancestors = structuralStack.map(item => item.safe.tag);
+                const parent = ancestors.at(-1) || null;
+                if (invalidStructuralParent(token.safe.tag, ancestors)) {
+                    addDiagnostic(diagnostics, {
+                        action: 'unwrap', code: 'unsupported-nesting', tag: token.name,
+                        parent,
+                    });
+                }
+                structuralStack.push(token);
+            } else {
+                structuralStack.pop();
+            }
+        }
+        for (const token of tokens) {
+            const unsupportedOpen = !token.closing && !token.paired && token.safe;
+            const unsupportedClose = token.closing && !token.paired
+                && !token.rejectedPair && normalizedTag(token.name);
+            if (!unsupportedOpen && !unsupportedClose) continue;
+            addDiagnostic(diagnostics, {
+                action: 'neutralize', code: 'unsupported-nesting', tag: token.name,
+            });
         }
     }
 
@@ -574,10 +702,22 @@ const upgradeLegacyLists = blocks => blocks.map(block => {
     return { type: 'list', ordered, items };
 });
 
-const parseBracket = source => {
-    const doc = getParserDocument(bracketSourceToSafeHtml(source));
-    return upgradeLegacyLists(domToAst(doc.getElementById('bpb-report-root')));
+const parseBracketWithDiagnostics = source => {
+    const diagnostics = [];
+    const doc = getParserDocument(bracketSourceToSafeHtml(source, { diagnostics }));
+    const ast = upgradeLegacyLists(domToAst(doc.getElementById('bpb-report-root')));
+    const unique = new Map();
+    for (const diagnostic of diagnostics) {
+        const key = [diagnostic.action, diagnostic.code, diagnostic.tag,
+            diagnostic.attribute || '', diagnostic.parent || ''].join(':');
+        const existing = unique.get(key);
+        if (existing) existing.count++;
+        else unique.set(key, { ...diagnostic, count: 1 });
+    }
+    return { ast, diagnostics: [...unique.values()] };
 };
+
+const parseBracket = source => parseBracketWithDiagnostics(source).ast;
 
 const parseBracketInline = source => {
     const doc = getParserDocument(bracketSourceToSafeHtml(source, { inlineOnly: true }));
@@ -1140,6 +1280,7 @@ const API = {
     sanitizeYouTubeEmbedSrc,
     sanitizeReportDimension,
     parseBracket,
+    parseBracketWithDiagnostics,
     parseMarkdown,
     domToAst,
     astToBracket,

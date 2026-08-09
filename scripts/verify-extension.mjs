@@ -2480,6 +2480,85 @@ try {
             check(creditState?.href === storeUrls.chrome
                 && creditState.serialized.includes(storeUrls.chrome),
             `the Chrome report credit did not render and serialize its store URL: ${JSON.stringify(creditState)}`);
+
+            // Enter lossy source through Plain, where every input re-runs the
+            // same guard used for initial server reports and restored drafts.
+            // This proves the parser guard in the shipped isolated-world bundle
+            // and inspects both wide and narrow layout without exposing the
+            // user's browser or display.
+            const guardSource = '[unknown]route[/unknown] [b onclick="run()"]note[/b] [li]orphan[/li]';
+            await editorPage.getByRole('button', { name: 'Plain', exact: true }).click();
+            await editorPage.locator('#JournalText').fill(guardSource);
+            const readConversionLayout = () => editorPage.evaluate(() => {
+                const editor = document.getElementById('bpb-report-editor');
+                const guard = editor?.querySelector('.bpb-re-conversion');
+                const copy = guard?.querySelector('.bpb-re-conversion-text');
+                const action = guard?.querySelector('.bpb-re-convert');
+                const editorRect = editor?.getBoundingClientRect();
+                const guardRect = guard?.getBoundingClientRect();
+                const copyRect = copy?.getBoundingClientRect();
+                const actionRect = action?.getBoundingClientRect();
+                const modeButtons = [...(editor?.querySelectorAll('.bpb-re-mode') || [])];
+                return editorRect && guardRect && copyRect && actionRect ? {
+                    mode: editor.dataset.mode,
+                    text: copy.textContent,
+                    action: action.textContent,
+                    visible: getComputedStyle(guard).display !== 'none',
+                    withinEditor: guardRect.left >= editorRect.left - 1
+                        && guardRect.right <= editorRect.right + 1,
+                    noOverlap: copyRect.right <= actionRect.left + 1
+                        || copyRect.bottom <= actionRect.top + 1,
+                    noHorizontalOverflow: editor.scrollWidth <= editor.clientWidth + 1,
+                    actionVisible: actionRect.width > 0 && actionRect.height > 0,
+                    modeButtonsSingleLine: modeButtons.every(button => button.scrollHeight <= button.clientHeight + 1
+                        && button.scrollWidth <= button.clientWidth + 1),
+                } : null;
+            });
+            const wideConversion = await readConversionLayout();
+            check(wideConversion?.mode === 'plain' && wideConversion.visible
+                && /\[unknown\]/.test(wideConversion.text || '')
+                && /onclick on \[b\]/.test(wideConversion.text || '')
+                && /\[li\] nesting/.test(wideConversion.text || '')
+                && wideConversion.action === 'Convert anyway'
+                && wideConversion.withinEditor && wideConversion.noOverlap
+                && wideConversion.noHorizontalOverflow && wideConversion.actionVisible
+                && wideConversion.modeButtonsSingleLine,
+            `the wide lossy-conversion guard was incomplete or clipped: ${JSON.stringify(wideConversion)}`);
+            if (process.env.BPB_VERIFY_EDITOR_CONVERSION_SCREENSHOT) {
+                await editorPage.locator('#bpb-report-editor').screenshot({
+                    path: process.env.BPB_VERIFY_EDITOR_CONVERSION_SCREENSHOT,
+                });
+            }
+            const guardViewport = editorPage.viewportSize();
+            const guardEditorStyle = await editorPage.locator('#bpb-report-editor').getAttribute('style');
+            await editorPage.setViewportSize({ width: 480, height: 760 });
+            await editorPage.locator('#bpb-report-editor').evaluate(editor => {
+                editor.style.width = '440px';
+                editor.style.maxWidth = '440px';
+            });
+            const narrowConversion = await readConversionLayout();
+            check(narrowConversion?.mode === 'plain' && narrowConversion.visible
+                && narrowConversion.withinEditor && narrowConversion.noOverlap
+                && narrowConversion.noHorizontalOverflow && narrowConversion.actionVisible
+                && narrowConversion.modeButtonsSingleLine,
+            `the narrow lossy-conversion guard was clipped: ${JSON.stringify(narrowConversion)}`);
+            if (process.env.BPB_VERIFY_EDITOR_CONVERSION_NARROW_SCREENSHOT) {
+                await editorPage.locator('#bpb-report-editor').screenshot({
+                    path: process.env.BPB_VERIFY_EDITOR_CONVERSION_NARROW_SCREENSHOT,
+                });
+            }
+            await editorPage.locator('#bpb-report-editor').evaluate((editor, style) => {
+                if (style == null) editor.removeAttribute('style');
+                else editor.setAttribute('style', style);
+            }, guardEditorStyle);
+            if (guardViewport) await editorPage.setViewportSize(guardViewport);
+            await editorPage.getByRole('button', { name: 'Markdown', exact: true }).click();
+            check(await editorPage.locator('#bpb-report-editor').getAttribute('data-mode') === 'plain',
+                'a Markdown mode click bypassed the lossy-conversion action');
+            await editorPage.getByRole('button', { name: 'Convert anyway', exact: true }).click();
+            check(await editorPage.locator('#bpb-report-editor').getAttribute('data-mode') === 'markdown',
+                'the explicit lossy-conversion action did not enter the requested mode');
+
             // The remainder of the deep editor verifier intentionally starts
             // from the fixture's empty report.
             await editorPage.locator('#bpb-report-editor').getByRole('button', {
@@ -3427,6 +3506,8 @@ console.log('  - the opt-in report credit renders and serializes the Chrome Web 
 console.log('  - the report editor opens the standalone report-drafts manager page, which renders');
 console.log('    a seeded draft with no settings sidebar');
 console.log('  - the dark trip-report palette retains seven distinct text-color swatches');
+console.log('  - lossy report markup starts in Plain with an unclipped wide/narrow guard, and only');
+console.log('    the explicit Convert anyway action enters the requested Rich or Markdown mode');
 console.log('  - a real grouped draft tab rejects a wrong identity, attaches GPX, fills fields,');
 console.log('    submits Preview exactly once, and never submits Save');
 console.log('  - the trip-report editor mounts on the captured ascent form; real typing,');

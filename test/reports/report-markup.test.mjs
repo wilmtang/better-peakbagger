@@ -289,6 +289,17 @@ test('server-confirmed inline aliases normalize without losing semantics', () =>
         + '[q]quote[/q] [span style="color:green"]green[/span]');
 });
 
+test('safe aliases, legacy lists, and whitespace normalization have no lossy diagnostics', () => {
+    for (const source of [
+        '  [strong]safe[/strong]\r\n\r\ntext  ',
+        '- first\n- second',
+        '[table border="1"][tr][td]safe[/td][/tr][/table]',
+        `[video src="https://example.com/clip.mp4"${VIDEO_ATTRIBUTES}][/video]`,
+    ]) {
+        assert.deepEqual(Markup.parseBracketWithDiagnostics(source).diagnostics, [], source);
+    }
+});
+
 test('hex colors survive every bracket, Markdown, editor, and preview conversion path', () => {
     for (const color of ['#abc', '#2471a3']) {
         const source = `[span style="color:${color}"]blue[/span]`;
@@ -341,6 +352,30 @@ test('unknown, unclosed, and unsafe tags become visible inert text', () => {
     for (const [source, expected] of cases) {
         assert.equal(Markup.astToBracket(Markup.parseBracket(source)), expected);
     }
+});
+
+test('bracket diagnostics distinguish neutralized tags, dropped attributes, and unwrapped nesting', () => {
+    const { diagnostics } = Markup.parseBracketWithDiagnostics([
+        '[unknown]tag[/unknown]',
+        '[b onclick="run()"]bold[/b]',
+        '[iframe src="https://example.com/embed"][/iframe]',
+        '[li]orphan item[/li]',
+        '[p]outer [p]inner[/p][/p]',
+        '[a href="https://example.com"]outer [b][a href="https://example.org"]nested[/a][/b][/a]',
+        'stray [/b]',
+    ].join('\n'));
+    assert.deepEqual(diagnostics, [
+        { action: 'neutralize', code: 'unsupported-tag', tag: 'unknown', count: 1 },
+        {
+            action: 'drop', code: 'unsupported-attribute', tag: 'b',
+            attribute: 'onclick', count: 1,
+        },
+        { action: 'neutralize', code: 'unsafe-attribute', tag: 'iframe', count: 1 },
+        { action: 'unwrap', code: 'unsupported-nesting', tag: 'li', parent: null, count: 1 },
+        { action: 'unwrap', code: 'unsupported-nesting', tag: 'p', parent: 'p', count: 1 },
+        { action: 'unwrap', code: 'unsupported-nesting', tag: 'a', parent: 'b', count: 1 },
+        { action: 'neutralize', code: 'unsupported-nesting', tag: 'b', count: 1 },
+    ]);
 });
 
 test('editor HTML escapes text content so imports cannot inject markup', () => {

@@ -253,24 +253,32 @@ malformed hex, `rgb()`/`rgba()`, HSL, variables, URLs, quotes, and arbitrary CSS
 remain inert or unstyled. Plain mode continues to preserve every spelling
 verbatim because it performs no conversion.
 
-## Known issue
-
-### Lossy imports are not surfaced before the first edit
+## Lossy import guard
 
 Rich and Markdown deliberately omit, unwrap, or neutralize markup outside the
-allowlisted report AST. Dirty flags protect an untouched server report when the
-user merely visits those modes. They do not protect it after the first real
-edit: serializing the active view rewrites the entire report, so an unrelated
-change can make unsupported existing markup permanently inert.
+allowlisted report AST. `parseBracketWithDiagnostics()` returns that AST beside
+structured `drop`, `unwrap`, and `neutralize` diagnostics. Detection is made at
+the exact parser decision—unsupported tag or attribute, unsafe attribute, or
+unsupported nesting—not by comparing serialized strings. Supported aliases,
+legacy list structure, and whitespace normalization therefore remain safe and
+do not produce false warnings.
 
-Plain mode avoids that conversion, but the editor does not currently detect a
-lossy import or direct the user to Plain before editing. This is a UX guardrail
-gap rather than a reason to weaken sanitization. The recommended follow-up is
-for the bracket parser to return explicit diagnostics when source is dropped or
-neutralized. A report with those diagnostics should start in Plain and require
-an intentional action before conversion to Rich or Markdown. Do not infer loss
-by comparing serialized strings: supported aliases, legacy structure, and
-whitespace are intentionally normalized and would create false positives.
+When the server report has any lossy diagnostic, the editor starts in Plain
+regardless of the saved mode preference. A concise status row names up to three
+specific constructs, keeps the original `JournalText` visible and unchanged,
+and offers one explicit **Convert anyway** action. Selecting Rich text or
+Markdown while guarded chooses the intended destination but cannot switch modes
+until that action is used. Conversion itself remains non-destructive until the
+first edit; after acceptance, edit and Undo operate on the converted document,
+not the unsupported source representation.
+
+The same gate runs after **Restore draft** and after every Plain edit. Restoring
+a lossy draft therefore stays in Plain even when its recorded mode was Rich or
+Markdown. If the user repairs the unsupported source in Plain, the guard clears
+without requiring conversion. If Plain introduces a new unsupported construct,
+the guard is reinstated. The allowlist remains strict throughout; the action is
+consent to the already-documented conversion, never permission to render unsafe
+HTML.
 
 ## Supported Markdown
 
@@ -768,10 +776,9 @@ shows the exact bracket source.
 
 ## Regression boundaries
 
-- Existing tests pin unsupported-markup neutralization after an edit, but there
-  is no parser diagnostic or mode-level guardrail for a lossy import. A future
-  guardrail must distinguish actual dropped or neutralized source from allowed
-  canonical normalization.
+- Parser tests pin structured drop/unwrap/neutralize diagnostics for unsupported
+  tags, attributes, and nesting, while proving aliases, legacy lists, and
+  whitespace normalization remain warning-free.
 - `test/reports/report-markup.test.mjs` pins Markdown tokens, bracket aliases, DOM
   import, canonical output, unsafe-input neutralization, raw color validation,
   TipTap color-token revalidation, and round trips.
@@ -782,7 +789,8 @@ shows the exact bracket source.
   truth, untouched-value preservation, expanded rich DOM, toolbar active
   states, image-source validation, hex-color preservation after Rich and
   Markdown edits, undo isolation across mode switches, mode switching
-  (including invalidation of stale Markdown source after a Plain edit), local
+  (including invalidation of stale Markdown source after a Plain edit), the
+  Plain-first conversion guard, explicit conversion, guarded draft restore, local
   drafts, whitespace-only and runtime-derived credit-only suppression, deletion
   back to credit-only in both editors, disabled-editor write rejection, and
   pre-postback flushing. They drive the TipTap and CodeMirror instances through
