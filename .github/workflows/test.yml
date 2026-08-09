@@ -94,8 +94,8 @@ jobs:
       - name: Verify the real Chrome extension
         run: npm run verify:chrome
 
-  firefox:
-    name: Firefox extension smoke
+  chrome-floor:
+    name: Chrome 128 extension smoke
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -111,11 +111,47 @@ jobs:
       - name: Install locked dependencies
         run: npm ci
 
+      - name: Install Chrome 128 for Testing
+        id: chrome-floor
+        uses: browser-actions/setup-chrome@2e1d749697dd1612b833dba4a722266286fbefcd # v2.1.2
+        with:
+          chrome-version: 128
+          install-dependencies: true
+
+      - name: Verify the real Chrome 128 extension
+        env:
+          CHROME_BIN: ${{ steps.chrome-floor.outputs.chrome-path }}
+        run: npm run verify:chrome
+
+  firefox:
+    name: Firefox ${{ matrix.firefox }} extension smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        firefox:
+          - "152.0"
+          - latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
       - name: Install Firefox
         # v1.7.2 — SHA-tracked by Dependabot, so this one is not auto-maintained.
+        id: firefox
         uses: browser-actions/setup-firefox@0bc507ddf224827e3b1af68e014d5e42ab93e795
         with:
-          firefox-version: latest
+          firefox-version: ${{ matrix.firefox }}
 
       - name: Install geckodriver
         # Pinned to a commit on this action's `latest` branch, which is where its
@@ -129,4 +165,6 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Verify the real Firefox extension
+        env:
+          FIREFOX_BIN: ${{ steps.firefox.outputs.firefox-path }}
         run: npm run verify:firefox

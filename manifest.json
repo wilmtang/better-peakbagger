@@ -1,5 +1,6 @@
 {
   "manifest_version": 3,
+  "minimum_chrome_version": "128",
   "name": "Better Peakbagger",
   "version": "3.5.0",
   "description": "Captures Garmin and Strava into Peakbagger drafts, plus 3D maps, GPX analysis, beta filters, dark mode, and more.",
@@ -301,7 +302,7 @@
   "browser_specific_settings": {
     "gecko": {
       "id": "better-peakbagger@wilmtang.github.io",
-      "strict_min_version": "140.0",
+      "strict_min_version": "152.0",
       "data_collection_permissions": {
         "required": [
           "locationInfo"

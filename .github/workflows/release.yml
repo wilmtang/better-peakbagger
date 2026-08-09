@@ -107,9 +107,80 @@ jobs:
           compression-level: 0
           retention-days: 30
 
+  compatibility:
+    name: Packaged ${{ matrix.browser }} ${{ matrix.version }} floor
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - browser: chrome
+            version: "128"
+          - browser: firefox
+            version: "152.0"
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Install Chrome floor
+        if: matrix.browser == 'chrome'
+        id: chrome-floor
+        uses: browser-actions/setup-chrome@2e1d749697dd1612b833dba4a722266286fbefcd # v2.1.2
+        with:
+          chrome-version: ${{ matrix.version }}
+          install-dependencies: true
+
+      - name: Install Firefox floor
+        if: matrix.browser == 'firefox'
+        id: firefox-floor
+        uses: browser-actions/setup-firefox@0bc507ddf224827e3b1af68e014d5e42ab93e795
+        with:
+          firefox-version: ${{ matrix.version }}
+
+      - name: Install geckodriver
+        if: matrix.browser == 'firefox'
+        uses: browser-actions/setup-geckodriver@fac5b0424c584257f32cf12c5eb4ba86014c34f8
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Download verified store packages
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: browser-extension-${{ github.ref_name }}
+          path: release-package
+
+      - name: Execute the packaged extension at its browser floor
+        env:
+          CHROME_BIN: ${{ steps.chrome-floor.outputs.chrome-path }}
+          FIREFOX_BIN: ${{ steps.firefox-floor.outputs.firefox-path }}
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          if [ "${{ matrix.browser }}" = chrome ]; then
+            BPB_VERIFY_EXTENSION_SOURCE="release-package/better_peakbagger-${version}.zip"
+            mkdir floor-extension
+            unzip -q "$BPB_VERIFY_EXTENSION_SOURCE" -d floor-extension
+            BPB_VERIFY_EXTENSION_SOURCE=floor-extension node scripts/verify-extension.mjs
+          else
+            BPB_VERIFY_EXTENSION_SOURCE="release-package/better_peakbagger-${version}-firefox.zip" \
+              node scripts/verify-firefox-extension.mjs
+          fi
+
   chrome:
     name: Submit Chrome Web Store
-    needs: verify
+    needs: [verify, compatibility]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment: browser-stores
@@ -166,7 +237,7 @@ jobs:
 
   firefox:
     name: Submit Firefox Add-ons
-    needs: verify
+    needs: [verify, compatibility]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment: browser-stores

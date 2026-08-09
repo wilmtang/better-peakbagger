@@ -175,7 +175,7 @@ script is added or removed without updating it.
 | `npm run showcase:render` | Builds and renders the local UI showcase fixtures into `store-assets/`. Same HTTPS showcase host. |
 | `npm run package` | Release build + `web-ext build` from `dist/`; writes the canonical Chrome ZIP under `web-ext-artifacts/`. |
 | `npm run build:firefox -- CHROME.zip FIREFOX.zip` | Derives the Firefox store ZIP from the verified Chrome ZIP, changing only Firefox-specific manifest presentation. |
-| `npm run release:bump X.Y.Z` | Validates and synchronizes release metadata, stamps the changelog, commits the version files, and creates the lightweight version tag. |
+| `npm run release:bump X.Y.Z` | From a clean synchronized `main`, validates and stamps release metadata and the UTC changelog date; deliberately creates no commit or tag before verification. |
 | `npm run release:check -- vX.Y.Z` | Validates an exact release tag, synchronized versions, stable Gecko identity, store description, and changelog heading. |
 | `npm run release:check-history` | Fails when already-released changelog sections or tags have been rewritten; CI runs it with full Git history. |
 | `npm run release:metadata:firefox` | Converts the canonical store description into the AMO metadata JSON used for submission. |
@@ -183,9 +183,13 @@ script is added or removed without updating it.
 | `npm run release:verify-archive -- ARCHIVE.zip BROWSER` | Checks a Chrome or Firefox archive for required runtime files, licenses, browser-specific manifest policy, and forbidden development artifacts. |
 | `npm run store:description:chrome` | Regenerates Chrome's checked-in plain-text listing from the canonical Markdown description. |
 
-Pushes and pull requests use one least-privilege workflow with four independent
-jobs: Node tests/lint, the scale suite, the real Chrome extension smoke, and
-the real Firefox extension smoke. Each job installs its own runtime and reports
+Pushes and pull requests use one least-privilege workflow with independent
+jobs for Node tests/lint, the scale suite, current Chrome for Testing, Chrome
+128, and Firefox 152 plus latest. The desktop manifest promises those exact
+floors (`minimum_chrome_version: 128` and Firefox `strict_min_version: 152.0`),
+and release CI repeats both floor smokes against the minified store archives
+before either submission job can start. Firefox Android 142+ remains a separate
+physical-device release check. Each job installs its own runtime and reports
 failures separately. The Node job runs both lint stages through `npm run lint`:
 ESLint reads source, while web-ext reads the built package, and neither
 substitutes for the other. It also runs
@@ -539,6 +543,10 @@ add it to the merge-step condition, for example
 - `npm run verify:packages -- CHROME.zip FIREFOX.zip` runs those same gates against minified store bytes
   and additionally pins Chrome's full-tab versus Firefox's inline Preferences
   manifest presentation.
+- CI additionally supplies exact `CHROME_BIN` and `FIREFOX_BIN` paths to run
+  the same hidden verifier against Chrome for Testing 128 and Firefox 152.
+  Current-browser success does not substitute for either declared desktop
+  floor, and neither desktop run establishes Firefox Android behavior.
 
 The real-extension and terrain checks are hidden/headless and use an isolated
 test profile. They establish browser loading, DOM behavior, and (for terrain)

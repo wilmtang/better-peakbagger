@@ -16,7 +16,8 @@
 //     which Playwright installs.
 //   - Playwright's default headless is chrome-headless-shell, a separate binary
 //     with no extension support at all. channel:'chromium' + headless:true runs
-//     full Chrome for Testing in new headless, which does load extensions.
+//     full Chrome for Testing in new headless, which does load extensions. CI
+//     may provide an exact full Chrome for Testing binary through CHROME_BIN.
 //
 // Hidden: no window is shown and the user's browser/profile is never touched.
 
@@ -47,6 +48,9 @@ const dist = process.env.BPB_VERIFY_EXTENSION_SOURCE
 // regenerating the Photo Topos showcase through the same packaged surface.
 const photoShowcaseSource = process.env.BPB_VERIFY_PHOTO_SHOWCASE_SOURCE
     ? path.resolve(process.env.BPB_VERIFY_PHOTO_SHOWCASE_SOURCE)
+    : null;
+const chromeBinary = process.env.CHROME_BIN
+    ? path.resolve(process.env.CHROME_BIN)
     : null;
 
 let chromium;
@@ -97,7 +101,7 @@ let context;
 let primaryError = null;
 try {
     context = await chromium.launchPersistentContext(profile, {
-        channel: 'chromium',
+        ...(chromeBinary ? { executablePath: chromeBinary } : { channel: 'chromium' }),
         headless: true,
         ignoreHTTPSErrors: true,
         viewport: verificationViewport,
@@ -1779,6 +1783,11 @@ try {
 
     const openAscent = async () => {
         const page = await context.newPage();
+        const runtimeErrors = [];
+        page.on('pageerror', error => runtimeErrors.push(String(error)));
+        page.on('console', message => {
+            if (message.type() === 'error') runtimeErrors.push(message.text());
+        });
         await page.goto(`https://www.peakbagger.com:${port}/climber/ascent.aspx?aid=1`, { waitUntil: 'load' });
         try {
             await page.waitForFunction(() => {
@@ -1791,11 +1800,12 @@ try {
                     && toggle?.disabled === false;
             }, null, { timeout: 15_000 });
         } catch (error) {
-            const current = await page.evaluate(() => ({
+            const domState = await page.evaluate(() => ({
                 stats: document.querySelector('#bpb-gpx-analysis .bpb-gpx-stats')?.textContent || null,
                 legendButtons: document.querySelectorAll('#bpb-gpx-chart-legend button').length,
                 terrainDisabled: document.getElementById('bpb-terrain-toggle')?.disabled ?? null,
             })).catch(readError => ({ unavailable: readError.message }));
+            const current = { ...domState, runtimeErrors };
             throw new Error(
                 `Timed out waiting for the analyzer's final visible state; current value: ${JSON.stringify(current)}`,
                 { cause: error },
@@ -3640,7 +3650,8 @@ if (failures.length) {
     for (const failure of failures) console.error(`  - ${failure}`);
     process.exit(1);
 }
-console.log('Real-extension verification passed (hidden Chrome for Testing, new headless):');
+console.log(`Real-extension verification passed (hidden Chrome for Testing ${
+    context.browser()?.version() || 'unknown'}, new headless):`);
 console.log('  - the MV3 service worker boots and answers messages (capture is alive)');
 console.log('  - sync/local/session storage, storage.onChanged, options persistence, and popup status passed');
 console.log('  - manual settings export/import round-tripped schema settings and the saved ImgBB API key');

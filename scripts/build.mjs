@@ -107,7 +107,7 @@ function esbuildOptions(entry, { minify = MINIFY } = {}) {
         outfile: path.join(distDir, entry.out),
         bundle: true,
         format: entry.format || 'iife',
-        target: ['chrome110', 'firefox115'],
+        target: ['chrome128', 'firefox152'],
         platform: 'browser',
         legalComments: 'none',
         metafile: true,

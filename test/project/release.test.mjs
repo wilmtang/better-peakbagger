@@ -450,13 +450,38 @@ test('CI tests, lints, and exercises both real browser extensions', async () => 
     assert.match(workflow, /scale:\s*\n[\s\S]*?run: npm run test:scale/);
     assert.match(workflow, /chrome:\s*\n[\s\S]*?run: npm run verify:chrome/);
     assert.match(workflow, /firefox:\s*\n[\s\S]*?run: npm run verify:firefox/);
-    assert.equal(workflow.match(/run: npm ci/g)?.length, 4);
+    assert.match(workflow, /chrome-floor:\s*\n[\s\S]*?chrome-version: 128/);
+    assert.match(workflow, /firefox:\s*\n[\s\S]*?"152\.0"[\s\S]*?- latest/);
+    assert.match(workflow, /CHROME_BIN: \$\{\{ steps\.chrome-floor\.outputs\.chrome-path \}\}/);
+    assert.match(workflow, /FIREFOX_BIN: \$\{\{ steps\.firefox\.outputs\.firefox-path \}\}/);
+    assert.equal(workflow.match(/run: npm ci/g)?.length, 5);
     assert.match(workflow, /permissions:\s*\n\s+contents: read/);
     assert.match(workflow, /fetch-depth: 0[\s\S]*?run: npm run release:check-history/);
     await assert.rejects(
         lstat(new URL('../../.github/workflows/ci.yml', import.meta.url)),
         { code: 'ENOENT' },
     );
+});
+
+test('release publication waits for packaged declared-browser-floor verification', async () => {
+    const workflow = await readFile(
+        new URL('../../.github/workflows/release.yml', import.meta.url),
+        'utf8',
+    );
+    assert.match(workflow, /compatibility:\s*\n[\s\S]*?browser: chrome\s+version: "128"/);
+    assert.match(workflow, /browser: firefox\s+version: "152\.0"/);
+    assert.match(workflow, /BPB_VERIFY_EXTENSION_SOURCE=floor-extension node scripts\/verify-extension\.mjs/);
+    assert.match(workflow, /node scripts\/verify-firefox-extension\.mjs/);
+    assert.equal(workflow.match(/needs: \[verify, compatibility\]/g)?.length, 2);
+});
+
+test('Chrome verifier accepts an exact externally installed floor binary', async () => {
+    const verifier = await readFile(
+        new URL('../../scripts/verify-extension.mjs', import.meta.url),
+        'utf8',
+    );
+    assert.match(verifier, /process\.env\.CHROME_BIN/);
+    assert.match(verifier, /chromeBinary \? \{ executablePath: chromeBinary \}/);
 });
 
 test('Firefox verification waits for rendered postconditions instead of fixed frames', async () => {

@@ -157,6 +157,12 @@ visible in the AMO Developer Hub.
    `scripts/check-web-ext-lint.mjs`, at the exact per-file occurrence counts
    recorded there.
 
+   Release CI also downloads the verified archives and executes them in hidden
+   Chrome for Testing 128 and Firefox 152 before either store job becomes
+   eligible. The ordinary package verifier separately covers current Chrome
+   for Testing and current Firefox. Record all four exact browser versions;
+   these desktop checks do not replace the Firefox Android 142+ device step.
+
 4. Review the four stamped files, commit them, and create only the exact tag
    after every gate above passes:
 

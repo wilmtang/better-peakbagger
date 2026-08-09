@@ -67,8 +67,9 @@ test('the worker ships as one bundle for both Chrome and Firefox', () => {
         'capture/provider-page.js',
     ]);
     assert.deepEqual(manifest.browser_specific_settings.gecko.data_collection_permissions.required, ['locationInfo']);
-    assert.equal(manifest.browser_specific_settings.gecko.strict_min_version, '140.0');
+    assert.equal(manifest.browser_specific_settings.gecko.strict_min_version, '152.0');
     assert.equal(manifest.browser_specific_settings.gecko_android.strict_min_version, '142.0');
+    assert.equal(manifest.minimum_chrome_version, '128');
 });
 
 test('ImgBB upload access is optional and scoped to its API origin', () => {
