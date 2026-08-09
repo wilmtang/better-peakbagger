@@ -72,8 +72,11 @@ export function createPhotoRoutes({
     readMap,
     randomToken = defaultToken,
     keyStore = ImgbbAuth.keyStore,
+    buildOpenResponse = tabId => ({ ok: true, tabId }),
+    logCleanupFailure = message => console.error(message),
 } = {}) {
-    if (!ext || !storage || !isPeakbaggerSender || !mutateMap || !readMap || !keyStore) {
+    if (!ext || !storage || !isPeakbaggerSender || !mutateMap || !readMap || !keyStore
+        || typeof buildOpenResponse !== 'function' || typeof logCleanupFailure !== 'function') {
         throw new TypeError('photo routes require extension, storage, and sender dependencies');
     }
 
@@ -163,37 +166,77 @@ export function createPhotoRoutes({
         if (!identity) return { ok: false, error: { code: 'invalid-context' } };
         const token = randomToken();
         const createdAt = now();
-        await mutateMap(RETURN_CONTEXTS_KEY, contexts => {
-            contexts[token] = {
-                token,
-                sourceTabId: sender.tab.id,
-                sourceFrameId: Number.isInteger(sender.frameId) ? sender.frameId : 0,
-                editorTabId: null,
-                identity,
-                createdAt,
-                expiresAt: createdAt + RETURN_TTL_MS,
-                consumed: false,
-                inFlight: false,
-            };
-        });
-        let tab;
+        let contextMayExist = false;
+        let createdTabId = null;
+        const rollbackOpen = async () => {
+            const cleanup = [];
+            if (contextMayExist) {
+                cleanup.push({
+                    owner: 'return context',
+                    run: () => mutateMap(RETURN_CONTEXTS_KEY, contexts => {
+                        delete contexts[token];
+                    }),
+                });
+            }
+            if (createdTabId != null) {
+                cleanup.push({
+                    owner: 'tab',
+                    run: () => {
+                        if (typeof ext.tabs?.remove !== 'function') {
+                            throw new Error('tabs.remove is unavailable');
+                        }
+                        return ext.tabs.remove(createdTabId);
+                    },
+                });
+            }
+            const results = await Promise.allSettled(cleanup.map(item =>
+                Promise.resolve().then(item.run)));
+            results.forEach((result, index) => {
+                if (result.status === 'rejected') {
+                    try {
+                        logCleanupFailure(`Better Peakbagger: photo editor ${cleanup[index].owner} cleanup failed`);
+                    } catch { /* Cleanup reporting must not replace the owned public failure. */ }
+                }
+            });
+        };
         try {
+            // Treat the context as possibly written before awaiting: a storage
+            // adapter can reject after an ambiguous successful commit, and the
+            // rollback must still try to remove it.
+            contextMayExist = true;
+            await mutateMap(RETURN_CONTEXTS_KEY, contexts => {
+                contexts[token] = {
+                    token,
+                    sourceTabId: sender.tab.id,
+                    sourceFrameId: Number.isInteger(sender.frameId) ? sender.frameId : 0,
+                    editorTabId: null,
+                    identity,
+                    createdAt,
+                    expiresAt: createdAt + RETURN_TTL_MS,
+                    consumed: false,
+                    inFlight: false,
+                };
+            });
             const url = new URL(photoPageBase);
             url.searchParams.set('mode', mode);
             url.searchParams.set('returnToken', token);
-            tab = await ext.tabs.create({ url: url.toString() });
+            const tab = await ext.tabs.create({ url: url.toString() });
             if (!Number.isInteger(tab?.id)) throw new Error('Photo editor tab did not open.');
-            await mutateMap(RETURN_CONTEXTS_KEY, contexts => {
-                if (contexts[token]) contexts[token].editorTabId = tab.id;
+            createdTabId = tab.id;
+            const bound = await mutateMap(RETURN_CONTEXTS_KEY, contexts => {
+                if (!contexts[token]) return false;
+                contexts[token].editorTabId = createdTabId;
+                return true;
             });
+            if (!bound) throw new Error('Photo editor return context disappeared.');
+            return buildOpenResponse(createdTabId);
         } catch {
-            await mutateMap(RETURN_CONTEXTS_KEY, contexts => { delete contexts[token]; });
+            await rollbackOpen();
             return {
                 ok: false,
                 error: { code: 'open-failed', message: 'The photo editor could not be opened.' },
             };
         }
-        return { ok: true, tabId: tab.id };
     };
 
     const insertResult = async (message, sender) => {
