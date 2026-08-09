@@ -1323,19 +1323,91 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
         upDistanceM: Number.isFinite(match.draftFields?.upDistanceM) ? match.draftFields.upDistanceM : null
     });
 
+    const cleanUploadSelection = message => {
+        const pageSessionId = typeof message?.pageSessionId === 'string'
+            && /^[a-zA-Z0-9:_-]{8,100}$/.test(message.pageSessionId)
+            ? message.pageSessionId : null;
+        const selectionGeneration = Number(message?.selectionGeneration);
+        const source = message?.fileIdentity;
+        const fileIdentity = source && typeof source === 'object'
+            && typeof source.name === 'string' && source.name.length > 0 && source.name.length <= 255
+            && Number.isSafeInteger(source.size) && source.size >= 0
+            && Number.isFinite(source.lastModified) && source.lastModified >= 0
+            && typeof source.type === 'string' && source.type.length <= 100
+            ? {
+                name: source.name,
+                size: source.size,
+                lastModified: source.lastModified,
+                type: source.type,
+            }
+            : null;
+        if (!pageSessionId || !Number.isSafeInteger(selectionGeneration)
+            || selectionGeneration <= 0 || !fileIdentity) return null;
+        return { pageSessionId, selectionGeneration, fileIdentity };
+    };
+    const sameUploadSelection = (left, right) => !!left && !!right
+        && left.pageSessionId === right.pageSessionId
+        && left.selectionGeneration === right.selectionGeneration
+        && JSON.stringify(left.fileIdentity) === JSON.stringify(right.fileIdentity);
+    const uploadSelectionIsCurrent = async (tabId, selection) => {
+        const jobs = await readMap(JOBS_KEY);
+        return jobs[tabId]?.provider === 'upload'
+            && sameUploadSelection(jobs[tabId], selection);
+    };
+
+    const invalidateGpxSelection = async (message, sender) => {
+        const page = uploadPageIdentity(sender);
+        const selection = cleanUploadSelection(message);
+        if (!page || !selection) return { ok: false, error: { code: 'invalid-selection' } };
+        return serializeLifecycle(page.tabId, async () => {
+            const jobs = await readMap(JOBS_KEY);
+            const current = jobs[page.tabId];
+            if (current?.pageSessionId === selection.pageSessionId
+                && current.selectionGeneration > selection.selectionGeneration) {
+                return { ok: false, error: { code: 'superseded' } };
+            }
+            abortOwnedWork(page.tabId);
+            invalidateLifecycle(page.tabId);
+            await mutateMap(JOBS_KEY, currentJobs => {
+                currentJobs[page.tabId] = {
+                    id: `selection:${selection.pageSessionId}:${selection.selectionGeneration}`,
+                    sourceTabId: page.tabId,
+                    provider: 'upload',
+                    phase: 'selection',
+                    createdAt: now(),
+                    updatedAt: now(),
+                    expiresAt: now() + JOB_TTL_MS,
+                    ...selection,
+                };
+            });
+            return { ok: true, ...selection };
+        });
+    };
+
     const startGpxProcess = async (message, sender) => {
         const page = uploadPageIdentity(sender);
+        const selection = cleanUploadSelection(message);
+        const reply = result => ({ ...(result || {}), ...(selection || {}) });
         if (!page) {
-            return { phase: 'error', error: { code: 'forbidden', message: 'GPX processing is only available on a Peakbagger ascent form.' } };
+            return reply({ phase: 'error', error: { code: 'forbidden', message: 'GPX processing is only available on a Peakbagger ascent form.' } });
+        }
+        if (!selection || !(await uploadSelectionIsCurrent(page.tabId, selection))) {
+            return reply({ phase: 'error', error: { code: 'superseded', message: 'A newer GPX was chosen for this form; this result was discarded.' } });
         }
         const tabId = page.tabId;
         const capturePreferences = await readCapturePreferences();
+        if (!(await uploadSelectionIsCurrent(tabId, selection))) {
+            return reply({ phase: 'error', error: { code: 'superseded', message: 'A newer GPX was chosen for this form; this result was discarded.' } });
+        }
         const cid = await peakbaggerLogin();
+        if (!(await uploadSelectionIsCurrent(tabId, selection))) {
+            return reply({ phase: 'error', error: { code: 'superseded', message: 'A newer GPX was chosen for this form; this result was discarded.' } });
+        }
         if (!cid) {
-            return { phase: 'error', error: { code: 'peakbagger-signed-out', message: 'Your Peakbagger login could not be verified. Confirm you’re signed in, then try again.' } };
+            return reply({ phase: 'error', error: { code: 'peakbagger-signed-out', message: 'Your Peakbagger login could not be verified. Confirm you’re signed in, then try again.' } });
         }
         if (page.cid && String(page.cid) !== String(cid)) {
-            return { phase: 'error', error: { code: 'identity-mismatch', message: 'This ascent form belongs to a different Peakbagger account.' } };
+            return reply({ phase: 'error', error: { code: 'identity-mismatch', message: 'This ascent form belongs to a different Peakbagger account.' } });
         }
 
         // Re-picking a file supersedes any earlier job for this tab (same
@@ -1355,13 +1427,21 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
             createdAt: now(),
             updatedAt: now(),
             expiresAt: now() + JOB_TTL_MS,
-            error: null
+            error: null,
+            ...selection,
         };
-        abortOwnedWork(tabId);
-        invalidateLifecycle(tabId);
-        await serializeLifecycle(tabId, () => installLifecycleJob(job));
         const controller = typeof AbortController === 'function' ? new AbortController() : null;
-        localAnalysisOwners.set(tabId, { generation: job.id, controller });
+        const installed = await serializeLifecycle(tabId, async () => {
+            if (!(await uploadSelectionIsCurrent(tabId, selection))) return false;
+            abortOwnedWork(tabId);
+            invalidateLifecycle(tabId);
+            await installLifecycleJob(job);
+            localAnalysisOwners.set(tabId, { generation: job.id, controller });
+            return true;
+        });
+        if (!installed) {
+            return reply({ phase: 'error', error: { code: 'superseded', message: 'A newer GPX was chosen for this form; this result was discarded.' } });
+        }
         const finish = patch => mutateMap(JOBS_KEY, map => {
             if (!map[tabId] || map[tabId].id !== job.id) return null;
             map[tabId] = { ...map[tabId], ...patch, updatedAt: now(), expiresAt: now() + JOB_TTL_MS };
@@ -1383,11 +1463,11 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
             });
             if (analysis.status === 'no-gps') {
                 await finish({ phase: 'no-gps', uploadGpx: null, message: analysis.message });
-                return { phase: 'no-gps', message: analysis.message };
+                return reply({ phase: 'no-gps', message: analysis.message });
             }
             if (analysis.status === 'no-matches') {
                 await finish({ phase: 'no-matches', trackSummary: analysis.trackSummary, uploadGpx: null });
-                return { phase: 'no-matches', boundPid: page.pid };
+                return reply({ phase: 'no-matches', boundPid: page.pid });
             }
             const updated = await finish({
                 phase: 'ready',
@@ -1401,9 +1481,9 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
                 uploadGpx: analysis.uploadGpx
             });
             if (!updated) {
-                return { phase: 'error', error: { code: 'superseded', message: 'A newer GPX was chosen for this form; this result was discarded.' } };
+                return reply({ phase: 'error', error: { code: 'superseded', message: 'A newer GPX was chosen for this form; this result was discarded.' } });
             }
-            return {
+            return reply({
                 phase: 'ready',
                 jobId: job.id,
                 boundPid: page.pid,
@@ -1412,11 +1492,11 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
                     ...uploadMatchSummary(analysis.boundFallback),
                     closestApproachM: analysis.boundFallback.closestApproachM
                 } : null
-            };
+            });
         } catch (error) {
             const failure = publicFailure('local GPX processing', error, UNEXPECTED_PROCESS_ERROR);
             await finish({ phase: 'error', error: failure });
-            return { phase: 'error', error: failure };
+            return reply({ phase: 'error', error: failure });
         } finally {
             if (localAnalysisOwners.get(tabId)?.generation === job.id) localAnalysisOwners.delete(tabId);
         }
@@ -1429,7 +1509,10 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
         const tabId = page.tabId;
         const jobs = await readMap(JOBS_KEY);
         let job = jobs[tabId];
-        if (!isFresh(job) || job.provider !== 'upload' || job.id !== message.jobId
+        const selection = cleanUploadSelection(message);
+        if (!selection || !(await uploadSelectionIsCurrent(tabId, selection))
+            || !isFresh(job) || job.provider !== 'upload' || job.id !== message.jobId
+            || !sameUploadSelection(job, selection)
             || job.phase !== 'ready' || !job.uploadGpx) {
             return { ok: false, error: { code: 'job-expired', message: 'The processed GPX is no longer available. Process the file again.' } };
         }
@@ -1924,6 +2007,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
                 return job && job.provider !== 'upload' ? publicJob(job) : null;
             }
             case 'GPX_PROCESS_START': return startGpxProcess(message, sender);
+            case 'GPX_PROCESS_INVALIDATE': return invalidateGpxSelection(message, sender);
             case 'GPX_PROCESS_APPLY': return applyGpxProcess(message, sender);
             case 'CAPTURE_CANCEL': return cancelCapture(message);
             case 'CAPTURE_CLEAR': return clearCapture(message);

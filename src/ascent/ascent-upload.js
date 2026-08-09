@@ -131,6 +131,28 @@ import tzlookup from 'tz-lookup';
         let status = null;
         let card = null;
         let requestToken = 0;
+        let selectionGeneration = 0;
+        let selectedFile = null;
+        const pageSessionId = (() => {
+            try { return globalThis.crypto.randomUUID(); }
+            catch (error) { return `page-${Date.now()}-${Math.random().toString(36).slice(2)}`; }
+        })();
+
+        const fileIdentity = file => ({
+            name: String(file?.name || '(no file)').slice(0, 255),
+            size: Number.isSafeInteger(file?.size) && file.size >= 0 ? file.size : 0,
+            lastModified: Number.isFinite(file?.lastModified) && file.lastModified >= 0
+                ? file.lastModified : 0,
+            type: String(file?.type || '').slice(0, 100),
+        });
+        const sameFileIdentity = (left, right) => !!left && !!right
+            && left.name === right.name && left.size === right.size
+            && left.lastModified === right.lastModified && left.type === right.type;
+        const selectionMessage = (generation, identity) => ({
+            pageSessionId,
+            selectionGeneration: generation,
+            fileIdentity: identity,
+        });
 
         const clearStatus = () => {
             status?.remove();
@@ -151,8 +173,7 @@ import tzlookup from 'tz-lookup';
             card = null;
         };
 
-        const restoreNative = () => {
-            requestToken++;
+        const resetNativeUi = () => {
             removeCard();
             button?.remove();
             button = null;
@@ -160,9 +181,26 @@ import tzlookup from 'tz-lookup';
             nativePreview.classList.remove('bpb-native-preview-hidden');
         };
 
-        const currentGpxFile = () => {
+        const restoreNative = () => {
+            requestToken++;
+            const generation = ++selectionGeneration;
+            selectedFile = null;
+            resetNativeUi();
+            void ext.runtime.sendMessage({
+                type: 'GPX_PROCESS_INVALIDATE',
+                ...selectionMessage(generation, fileIdentity(null)),
+            }).catch(() => {});
+        };
+
+        const nativeGpxFile = () => {
             const file = upload.files && upload.files[0];
             return file && /\.gpx$/i.test(file.name || '') ? file : null;
+        };
+        const currentGpxFile = () => {
+            const file = nativeGpxFile();
+            if (!file || !selectedFile || file !== selectedFile.file
+                || !sameFileIdentity(fileIdentity(file), selectedFile.identity)) return null;
+            return file;
         };
 
         const setBusy = label => {
@@ -207,6 +245,10 @@ import tzlookup from 'tz-lookup';
         };
 
         const applySelection = async (response, selectedIds, primaryId, token) => {
+            if (token !== requestToken || !selectedFile
+                || response.pageSessionId !== pageSessionId
+                || response.selectionGeneration !== selectedFile.generation
+                || !sameFileIdentity(response.fileIdentity, selectedFile.identity)) return;
             setBusy(primaryId !== null ? 'Filling form…' : 'Opening drafts…');
             let applied;
             try {
@@ -214,7 +256,8 @@ import tzlookup from 'tz-lookup';
                     type: 'GPX_PROCESS_APPLY',
                     jobId: response.jobId,
                     selectedIds,
-                    primaryId
+                    primaryId,
+                    ...selectionMessage(selectedFile.generation, selectedFile.identity),
                 });
             } catch (error) {
                 if (token !== requestToken) return;
@@ -417,6 +460,7 @@ import tzlookup from 'tz-lookup';
         const processFile = async () => {
             const file = currentGpxFile();
             if (!file || !button || button.disabled) return;
+            const selection = selectedFile;
             const token = ++requestToken;
             clearStatus();
             setBusy('Reading track…');
@@ -441,16 +485,20 @@ import tzlookup from 'tz-lookup';
                     includeTripName: settings.fillTripInfo
                 });
                 const utcOffsetMinutes = resolveUtcOffsetMinutes(parsed.segments);
-                if (token !== requestToken) return;
+                if (token !== requestToken || selectedFile !== selection || currentGpxFile() !== file) return;
                 setBusy('Finding summits…');
                 const response = await ext.runtime.sendMessage({
                     type: 'GPX_PROCESS_START',
                     segments: parsed.segments,
                     waypoints: parsed.waypoints,
                     trackName: parsed.trackName,
-                    utcOffsetMinutes
+                    utcOffsetMinutes,
+                    ...selectionMessage(selection.generation, selection.identity),
                 });
-                if (token !== requestToken) return;
+                if (token !== requestToken || selectedFile !== selection || currentGpxFile() !== file) return;
+                if (response?.pageSessionId !== pageSessionId
+                    || response?.selectionGeneration !== selection.generation
+                    || !sameFileIdentity(response?.fileIdentity, selection.identity)) return;
                 await handleProcessResult(response, token, displayUnits);
             } catch (error) {
                 if (token !== requestToken) return;
@@ -471,14 +519,46 @@ import tzlookup from 'tz-lookup';
             }
         };
 
+        const handleFileChange = async file => {
+            const token = ++requestToken;
+            const generation = ++selectionGeneration;
+            const identity = fileIdentity(file);
+            selectedFile = null;
+            clearStatus();
+            resetNativeUi();
+            let invalidated;
+            try {
+                invalidated = await ext.runtime.sendMessage({
+                    type: 'GPX_PROCESS_INVALIDATE',
+                    ...selectionMessage(generation, identity),
+                });
+            } catch (error) {
+                if (token !== requestToken) return;
+                if (file && /\.gpx$/i.test(file.name || '')) {
+                    showStatus('error', 'The selected GPX could not be prepared. Reload the ascent form and try again.');
+                }
+                return;
+            }
+            if (token !== requestToken || generation !== selectionGeneration) return;
+            if (!invalidated?.ok) {
+                if (file && /\.gpx$/i.test(file.name || '')) {
+                    showStatus('error', 'The selected GPX could not be prepared. Reload the ascent form and try again.');
+                }
+                return;
+            }
+            if (!file || !/\.gpx$/i.test(file.name || '')) return;
+            selectedFile = { file, identity, generation };
+            showProcessButton();
+        };
+
         upload.addEventListener('change', event => {
             // The capture draft flow attaches files programmatically; its
             // synthetic change is not trusted and must not trigger the swap.
             if (!event.isTrusted) return;
-            if (currentGpxFile()) showProcessButton();
-            else restoreNative();
+            void handleFileChange(upload.files && upload.files[0]);
         });
         document.getElementById('GPXRemove')?.addEventListener('click', () => restoreNative());
+        window.addEventListener('pagehide', restoreNative, { once: true });
     };
 
     autofillDate();

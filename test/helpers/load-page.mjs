@@ -235,6 +235,13 @@ export const makeChromeStub = (initial = {}, localInitial = {}) => {
                 token: `test-terrain-activation-${terrainActivationSequence}`,
                 expiresAt: Date.now() + 5000,
             });
+        } else if (message?.type === 'GPX_PROCESS_INVALIDATE') {
+            operation = Promise.resolve(delegatedSendMessage(message)).then(response => response ?? {
+                ok: true,
+                pageSessionId: message.pageSessionId,
+                selectionGeneration: message.selectionGeneration,
+                fileIdentity: structuredClone(message.fileIdentity),
+            });
         } else {
             return delegatedSendMessage(message, callback);
         }

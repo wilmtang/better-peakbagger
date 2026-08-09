@@ -32,18 +32,29 @@ const loadEditor = ({ prepare = null, url = URL, respond = null, settings = {} }
             d.messages = [];
             d.chrome.runtime.sendMessage = async message => {
                 d.messages.push(message);
-                return respond(message);
+                if (message.type === 'GPX_PROCESS_INVALIDATE') return undefined;
+                const response = await respond(message);
+                return message.type === 'GPX_PROCESS_START' && response
+                    ? {
+                        ...response,
+                        pageSessionId: message.pageSessionId,
+                        selectionGeneration: message.selectionGeneration,
+                        fileIdentity: structuredClone(message.fileIdentity),
+                    }
+                    : response;
             };
         }
         if (prepare) prepare(d);
     }
 });
 
-const chooseGpx = (dom, { name = 'walk.gpx', content = GPX } = {}) => {
+const chooseGpx = async (dom, { name = 'walk.gpx', content = GPX, size = null } = {}) => {
     const input = dom.window.document.getElementById('GPXUpload');
     const file = new dom.window.File([content], name, { type: 'application/gpx+xml' });
+    if (size !== null) Object.defineProperty(file, 'size', { value: size });
     Object.defineProperty(input, 'files', { value: [file], configurable: true, writable: true });
     fireTrustedEvent(input, 'change', { bubbles: true });
+    await new Promise(resolve => dom.window.setTimeout(resolve, 0));
     return input;
 };
 
@@ -100,7 +111,7 @@ test('whitespace-only counts as empty; a page without the field is left alone', 
 
 test('a user-picked .gpx swaps native Preview for an accessible Process button', async () => {
     const dom = await loadEditor();
-    chooseGpx(dom);
+    await chooseGpx(dom);
 
     const button = processButton(dom);
     assert.ok(button, 'the Process button should appear');
@@ -126,10 +137,10 @@ test('a user-picked .gpx swaps native Preview for an accessible Process button',
 
 test('a non-gpx selection and Peakbagger’s Remove both restore the native button', async () => {
     const dom = await loadEditor();
-    chooseGpx(dom, { name: 'photo.jpeg', content: 'not gpx' });
+    await chooseGpx(dom, { name: 'photo.jpeg', content: 'not gpx' });
     assert.equal(processButton(dom), null, 'only a .gpx candidate earns the swap');
 
-    chooseGpx(dom);
+    await chooseGpx(dom);
     assert.ok(processButton(dom));
     dom.window.document.getElementById('GPXRemove').dispatchEvent(
         new dom.window.Event('click', { bubbles: true }));
@@ -145,6 +156,197 @@ test('the capture draft flow’s programmatic change never triggers the swap', a
     Object.defineProperty(input, 'files', { value: [file], configurable: true, writable: true });
     input.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
     assert.equal(processButton(dom), null, 'a synthetic (untrusted) change must not swap the buttons');
+});
+
+test('selecting file B invalidates file A while capture settings are still loading', async () => {
+    let releaseSettings;
+    let settingsBlocked = false;
+    const dom = await loadEditor({
+        respond: () => ({ action: 'ignore' }),
+        prepare: d => {
+            const nativeGet = d.chrome.storage.sync.get;
+            d.chrome.storage.sync.get = async key => {
+                if (settingsBlocked) await new Promise(resolve => { releaseSettings = resolve; });
+                return nativeGet(key);
+            };
+        },
+    });
+    await chooseGpx(dom, { name: 'A.gpx' });
+    settingsBlocked = true;
+    processButton(dom).click();
+    await waitFor(dom, () => releaseSettings);
+
+    await chooseGpx(dom, { name: 'B.gpx' });
+    releaseSettings();
+    await new Promise(resolve => dom.window.setTimeout(resolve, 20));
+    assert.equal(dom.messages.some(message => message.type === 'GPX_PROCESS_START'), false);
+    assert.equal(uploadStatus(dom), null);
+    assert.equal(processButton(dom)?.querySelector('.bpb-process-label').textContent, 'Process');
+});
+
+test('selecting file B invalidates file A while its body is still being read', async () => {
+    const dom = await loadEditor({ respond: () => ({ action: 'ignore' }) });
+    const input = await chooseGpx(dom, { name: 'A.gpx' });
+    let releaseRead;
+    let readStarted = false;
+    input.files[0].text = async () => {
+        readStarted = true;
+        await new Promise(resolve => { releaseRead = resolve; });
+        return GPX;
+    };
+    processButton(dom).click();
+    await waitFor(dom, () => readStarted && releaseRead);
+
+    await chooseGpx(dom, { name: 'B.gpx' });
+    releaseRead();
+    await new Promise(resolve => dom.window.setTimeout(resolve, 20));
+    assert.equal(dom.messages.some(message => message.type === 'GPX_PROCESS_START'), false);
+    assert.equal(uploadStatus(dom), null);
+    assert.equal(processButton(dom)?.querySelector('.bpb-process-label').textContent, 'Process');
+});
+
+test('a delayed A worker result cannot apply after B is selected, while processed B can', async () => {
+    let releaseA;
+    let startCount = 0;
+    const dom = await loadEditor({
+        respond: async message => {
+            if (message.type === 'GPX_PROCESS_START') {
+                startCount++;
+                if (startCount === 1) await new Promise(resolve => { releaseA = resolve; });
+                return {
+                    phase: 'ready',
+                    jobId: startCount === 1 ? 'job-A' : 'job-B',
+                    boundPid: 7,
+                    matches: [{
+                        id: 7, name: 'Test Peak', confidence: 91,
+                        classification: 'strong', selected: true,
+                    }],
+                };
+            }
+            if (message.type === 'GPX_PROCESS_APPLY') return { ok: true, tabIds: [5] };
+            return undefined;
+        },
+    });
+    await chooseGpx(dom, { name: 'A.gpx' });
+    processButton(dom).click();
+    await waitFor(dom, () => releaseA);
+
+    await chooseGpx(dom, { name: 'B.gpx' });
+    releaseA();
+    await new Promise(resolve => dom.window.setTimeout(resolve, 20));
+    assert.equal(dom.messages.some(message => message.type === 'GPX_PROCESS_APPLY'), false);
+    assert.equal(dom.window.document.querySelector('.bpb-summit-card'), null);
+    assert.equal(uploadStatus(dom), null);
+
+    processButton(dom).click();
+    await waitFor(dom, () => dom.messages.some(message =>
+        message.type === 'GPX_PROCESS_APPLY' && message.jobId === 'job-B'));
+    assert.equal(dom.messages.filter(message => message.type === 'GPX_PROCESS_APPLY').length, 1);
+    const startB = dom.messages.filter(message => message.type === 'GPX_PROCESS_START')[1];
+    const applyB = dom.messages.find(message => message.type === 'GPX_PROCESS_APPLY');
+    assert.equal(applyB.selectionGeneration, startB.selectionGeneration);
+    assert.equal(applyB.fileIdentity.name, 'B.gpx');
+});
+
+test('B selection supersedes an A Apply that settles late', async () => {
+    let releaseApply;
+    const dom = await loadEditor({
+        respond: async message => {
+            if (message.type === 'GPX_PROCESS_START') return {
+                phase: 'ready', jobId: 'job-A', boundPid: 7,
+                matches: [{ id: 7, name: 'Test Peak', confidence: 91, classification: 'strong', selected: true }],
+            };
+            if (message.type === 'GPX_PROCESS_APPLY') {
+                await new Promise(resolve => { releaseApply = resolve; });
+                return { ok: true, tabIds: [5] };
+            }
+            return undefined;
+        },
+    });
+    await chooseGpx(dom, { name: 'A.gpx' });
+    processButton(dom).click();
+    await waitFor(dom, () => releaseApply);
+    await chooseGpx(dom, { name: 'B.gpx' });
+    releaseApply();
+    await new Promise(resolve => dom.window.setTimeout(resolve, 20));
+
+    assert.equal(uploadStatus(dom), null);
+    assert.equal(processButton(dom)?.querySelector('.bpb-process-label').textContent, 'Process');
+    assert.equal(dom.window.document.querySelector('.bpb-summit-card'), null);
+});
+
+test('clearing, replacing, removing, or navigating invalidates a delayed A result', async () => {
+    const cases = [
+        ['cleared selection', async dom => {
+            const input = dom.window.document.getElementById('GPXUpload');
+            Object.defineProperty(input, 'files', { value: [], configurable: true, writable: true });
+            fireTrustedEvent(input, 'change', { bubbles: true });
+        }],
+        ['non-GPX replacement', dom => chooseGpx(dom, { name: 'photo.jpeg', content: 'not gpx' })],
+        ['native Remove', async dom => {
+            dom.window.document.getElementById('GPXRemove').dispatchEvent(
+                new dom.window.Event('click', { bubbles: true }));
+        }],
+        ['tab navigation', async dom => {
+            dom.window.dispatchEvent(new dom.window.Event('pagehide'));
+        }],
+    ];
+
+    for (const [label, replace] of cases) {
+        let releaseA;
+        const dom = await loadEditor({
+            respond: async message => {
+                if (message.type === 'GPX_PROCESS_START') {
+                    await new Promise(resolve => { releaseA = resolve; });
+                    return {
+                        phase: 'ready', jobId: `job-A-${label}`, boundPid: 7,
+                        matches: [{
+                            id: 7, name: 'Test Peak', confidence: 91,
+                            classification: 'strong', selected: true,
+                        }],
+                    };
+                }
+                if (message.type === 'GPX_PROCESS_APPLY') return { ok: true, tabIds: [5] };
+                return undefined;
+            },
+        });
+        await chooseGpx(dom, { name: 'A.gpx' });
+        processButton(dom).click();
+        await waitFor(dom, () => releaseA);
+
+        await replace(dom);
+        releaseA();
+        await new Promise(resolve => dom.window.setTimeout(resolve, 20));
+
+        assert.equal(dom.messages.some(message => message.type === 'GPX_PROCESS_APPLY'), false, label);
+        assert.equal(dom.window.document.querySelector('.bpb-summit-card'), null, label);
+        assert.equal(uploadStatus(dom), null, label);
+        assert.equal(processButton(dom), null, label);
+        assert.equal(dom.window.document.getElementById('GPXPreview')
+            .classList.contains('bpb-native-preview-hidden'), false, label);
+    }
+});
+
+test('file selection sends only bounded identity metadata and fails closed with a dead worker', async () => {
+    const dom = await loadEditor();
+    let reads = 0;
+    let invalidation = null;
+    dom.chrome.runtime.sendMessage = async message => {
+        invalidation = structuredClone(message);
+        throw new Error('Extension context invalidated.');
+    };
+    const input = dom.window.document.getElementById('GPXUpload');
+    const file = new dom.window.File([GPX], 'private-name.gpx', { type: 'application/gpx+xml' });
+    file.text = async () => { reads++; return GPX; };
+    Object.defineProperty(input, 'files', { value: [file], configurable: true, writable: true });
+    fireTrustedEvent(input, 'change', { bubbles: true });
+
+    await waitFor(dom, () => uploadStatus(dom));
+    assert.equal(invalidation.type, 'GPX_PROCESS_INVALIDATE');
+    assert.deepEqual(Object.keys(invalidation.fileIdentity).sort(), ['lastModified', 'name', 'size', 'type']);
+    assert.equal(reads, 0, 'selection identity must not read or hash the GPX body');
+    assert.equal(processButton(dom), null);
+    assert.match(uploadStatus(dom).textContent, /selected GPX could not be prepared/);
 });
 
 test('Process parses on the page, resolves the timezone offline, and auto-applies a single bound match', async () => {
@@ -165,7 +367,7 @@ test('Process parses on the page, resolves the timezone offline, and auto-applie
             return undefined;
         }
     });
-    chooseGpx(dom);
+    await chooseGpx(dom);
     const button = processButton(dom);
     const observer = new dom.window.MutationObserver(() => {
         const label = button.querySelector('.bpb-process-label').textContent;
@@ -187,8 +389,14 @@ test('Process parses on the page, resolves the timezone offline, and auto-applie
         'no source-XML marker may cross to the worker');
 
     const apply = dom.messages.find(message => message.type === 'GPX_PROCESS_APPLY');
-    assert.deepEqual(JSON.parse(JSON.stringify(apply)),
-        { type: 'GPX_PROCESS_APPLY', jobId: 'job-1', selectedIds: [7], primaryId: 7 });
+    assert.deepEqual(JSON.parse(JSON.stringify({
+        type: apply.type,
+        jobId: apply.jobId,
+        selectedIds: apply.selectedIds,
+        primaryId: apply.primaryId,
+    })), { type: 'GPX_PROCESS_APPLY', jobId: 'job-1', selectedIds: [7], primaryId: 7 });
+    assert.equal(apply.selectionGeneration, start.selectionGeneration);
+    assert.deepEqual(apply.fileIdentity, start.fileIdentity);
 
     assert.ok(labels.includes('Reading track…') || labels.includes('Finding summits…'),
         'the busy label cycles through real states');
@@ -211,7 +419,7 @@ test('timezone resolution ignores route-invalid coordinates and untrustworthy ti
             ? { phase: 'no-matches' }
             : { action: 'ignore' }
     });
-    chooseGpx(dom, { content });
+    await chooseGpx(dom, { content });
     processButton(dom).click();
     await waitFor(dom, () => dom.messages.some(message => message.type === 'GPX_PROCESS_START'));
 
@@ -227,7 +435,7 @@ test('timezone resolution observes DST and stays unknown for an all-invalid rout
                 ? { phase: 'no-matches' }
                 : { action: 'ignore' }
         });
-        chooseGpx(dom, { content });
+        await chooseGpx(dom, { content });
         processButton(dom).click();
         await waitFor(dom, () => dom.messages.some(message => message.type === 'GPX_PROCESS_START'));
         return dom.messages.find(message => message.type === 'GPX_PROCESS_START').utcOffsetMinutes;
@@ -248,7 +456,7 @@ test('the trip name is sent only when Trip Info filling is enabled', async () =>
             ? { phase: 'no-matches' }
             : { action: 'ignore' }
     });
-    chooseGpx(dom);
+    await chooseGpx(dom);
     processButton(dom).click();
     await waitFor(dom, () => dom.messages.some(message => message.type === 'GPX_PROCESS_START'));
     assert.equal(dom.messages.find(message => message.type === 'GPX_PROCESS_START').trackName, 'Corridor walk');
@@ -265,7 +473,7 @@ test('local upload fails before reading the file when capture settings are unava
         },
         respond: message => message.type === 'DRAFT_READY' ? { action: 'ignore' } : null,
     });
-    const input = chooseGpx(dom);
+    const input = await chooseGpx(dom);
     let fileReads = 0;
     input.files[0].text = async () => {
         fileReads++;
@@ -285,9 +493,8 @@ test('local upload rejects an oversized file before reading or messaging the wor
     const dom = await loadEditor({
         respond: message => message.type === 'DRAFT_READY' ? { action: 'ignore' } : null,
     });
-    const input = chooseGpx(dom);
+    const input = await chooseGpx(dom, { size: MAX_GPX_BYTES + 1 });
     let read = false;
-    Object.defineProperty(input.files[0], 'size', { value: MAX_GPX_BYTES + 1 });
     input.files[0].text = async () => { read = true; return GPX; };
 
     processButton(dom).click();
@@ -304,7 +511,7 @@ test('processing failures name the problem and restore the native Preview', asyn
             ? { phase: 'error', error: { code: 'peakbagger-signed-out', message: 'Your Peakbagger login could not be verified. Confirm you’re signed in, then try again.' } }
             : { action: 'ignore' }
     });
-    chooseGpx(dom);
+    await chooseGpx(dom);
     processButton(dom).click();
     await waitFor(dom, () => uploadStatus(dom));
 
@@ -328,7 +535,7 @@ test('runtime exceptions are logged without entering the local-upload status', a
             throw new Error(sentinel);
         }
     });
-    chooseGpx(dom);
+    await chooseGpx(dom);
     processButton(dom).click();
     await waitFor(dom, () => uploadStatus(dom));
 
@@ -341,7 +548,7 @@ test('an unparseable file fails inline without leaving the page broken', async (
     const dom = await loadEditor({
         respond: () => ({ action: 'ignore' })
     });
-    chooseGpx(dom, { content: '<gpx><trk><trkseg></gpx' });
+    await chooseGpx(dom, { content: '<gpx><trk><trkseg></gpx' });
     processButton(dom).click();
     await waitFor(dom, () => uploadStatus(dom));
     assert.match(uploadStatus(dom).textContent, /GPX file contains invalid XML/);
@@ -352,7 +559,7 @@ test('an unparseable file fails inline without leaving the page broken', async (
 
 test('a waypoint-only file points the user back at Peakbagger’s own path', async () => {
     const dom = await loadEditor({ respond: () => ({ action: 'ignore' }) });
-    chooseGpx(dom, { content: '<gpx><wpt lat="1" lon="2"/></gpx>' });
+    await chooseGpx(dom, { content: '<gpx><wpt lat="1" lon="2"/></gpx>' });
     processButton(dom).click();
     await waitFor(dom, () => uploadStatus(dom));
     assert.match(uploadStatus(dom).textContent, /no track points.*Preview may still accept/i);
@@ -382,7 +589,7 @@ const loadCard = async ({
             return undefined;
         }
     });
-    chooseGpx(dom);
+    await chooseGpx(dom);
     processButton(dom).click();
     await waitFor(dom, () => dom.window.document.querySelector('.bpb-summit-card'));
     return dom;
@@ -417,8 +624,12 @@ test('several summits earn the picker card with strong and bound peaks preselect
     apply.click();
     await waitFor(dom, () => dom.messages.some(message => message.type === 'GPX_PROCESS_APPLY'));
     const message = dom.messages.find(entry => entry.type === 'GPX_PROCESS_APPLY');
-    assert.deepEqual(JSON.parse(JSON.stringify(message)),
-        { type: 'GPX_PROCESS_APPLY', jobId: 'job-2', selectedIds: [7, 8], primaryId: 7 });
+    assert.deepEqual(JSON.parse(JSON.stringify({
+        type: message.type,
+        jobId: message.jobId,
+        selectedIds: message.selectedIds,
+        primaryId: message.primaryId,
+    })), { type: 'GPX_PROCESS_APPLY', jobId: 'job-2', selectedIds: [7, 8], primaryId: 7 });
     await waitFor(dom, () => !dom.window.document.querySelector('.bpb-summit-card'));
     const button = processButton(dom);
     assert.equal(button.getAttribute('aria-busy'), 'true');
@@ -491,8 +702,13 @@ test('a bound peak off the track offers an explicit closest-approach override', 
 
     apply.click();
     await waitFor(dom, () => dom.messages.some(message => message.type === 'GPX_PROCESS_APPLY'));
-    assert.deepEqual(JSON.parse(JSON.stringify(dom.messages.find(entry => entry.type === 'GPX_PROCESS_APPLY'))),
-        { type: 'GPX_PROCESS_APPLY', jobId: 'job-2', selectedIds: [7], primaryId: 7 });
+    const applied = dom.messages.find(entry => entry.type === 'GPX_PROCESS_APPLY');
+    assert.deepEqual(JSON.parse(JSON.stringify({
+        type: applied.type,
+        jobId: applied.jobId,
+        selectedIds: applied.selectedIds,
+        primaryId: applied.primaryId,
+    })), { type: 'GPX_PROCESS_APPLY', jobId: 'job-2', selectedIds: [7], primaryId: 7 });
 });
 
 test('sibling-only drafts leave this page on its native path with a confirmation', async () => {
@@ -534,7 +750,7 @@ test('a single summit on an unbound page fills immediately without a card', asyn
             return { action: 'ignore' };
         }
     });
-    chooseGpx(dom);
+    await chooseGpx(dom);
     processButton(dom).click();
     await waitFor(dom, () => dom.messages.some(message => message.type === 'GPX_PROCESS_APPLY'));
     assert.equal(dom.window.document.querySelector('.bpb-summit-card'), null);

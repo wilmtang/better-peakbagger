@@ -23,11 +23,21 @@ const SEGMENTS = [[
     { lat: 0, lon: 0, ele: 130, time: Date.UTC(2026, 6, 1, 16, 0), invalidTime: false },
     { lat: 0, lon: 0.001, ele: 100, time: Date.UTC(2026, 6, 1, 17, 0), invalidTime: false }
 ]];
+const uploadSelection = (generation, name = `track-${generation}.gpx`) => ({
+    pageSessionId: 'explicit-page-session',
+    selectionGeneration: generation,
+    fileIdentity: {
+        name,
+        size: 1234,
+        lastModified: 1_786_000_000_000 + generation,
+        type: 'application/gpx+xml',
+    },
+});
 
 const createHarness = ({ peakXml = null, settings = {}, failPeakFetch = false, beforePeakFetch = null,
-    syncGetError = null, setTimeoutImpl = setTimeout, faults = {},
-    loginHtml = '<a href="climber/climber.aspx?cid=77">My Home Page</a>' } = {}) => {
-    const values = {};
+    syncGetError = null, beforeSyncGet = null, setTimeoutImpl = setTimeout, faults = {},
+    loginHtml = '<a href="climber/climber.aspx?cid=77">My Home Page</a>', sessionInitial = {} } = {}) => {
+    const values = structuredClone(sessionInitial);
     const localValues = {};
     const syncValues = { bpbSettings: structuredClone(settings) };
     const tabs = new Map([[5, { id: 5, windowId: 9, url: PAGE_URL, active: true }]]);
@@ -38,6 +48,7 @@ const createHarness = ({ peakXml = null, settings = {}, failPeakFetch = false, b
     const groupUpdates = [];
     const navigations = [];
     const removedTabs = [];
+    const runtimeMessages = [];
     let syncGetCalls = 0;
     let tabCreateCalls = 0;
     let tabNavigationCalls = 0;
@@ -72,6 +83,7 @@ const createHarness = ({ peakXml = null, settings = {}, failPeakFetch = false, b
             sync: {
                 get: async key => {
                     syncGetCalls++;
+                    if (beforeSyncGet) await beforeSyncGet(syncGetCalls);
                     if (syncGetError) throw new Error(syncGetError);
                     return { [key]: structuredClone(syncValues[key]) };
                 },
@@ -162,11 +174,35 @@ const createHarness = ({ peakXml = null, settings = {}, failPeakFetch = false, b
     context.self = context;
     vm.runInContext(workerBundle, context, { filename: 'dist/background.js' });
     const listener = browser.runtime.onMessage.listeners[0];
-    const send = (message, sender = SENDER) => new Promise(resolve => {
+    const rawSend = (message, sender = SENDER) => new Promise(resolve => {
+        runtimeMessages.push(structuredClone(message));
         assert.equal(listener(message, sender, resolve), true);
     });
+    let selectionGeneration = 0;
+    let currentSelection = null;
+    const send = async (message, sender = SENDER) => {
+        let routed = message;
+        if (message?.type === 'GPX_PROCESS_START' && !message.pageSessionId) {
+            currentSelection = {
+                pageSessionId: 'test-page-session',
+                selectionGeneration: ++selectionGeneration,
+                fileIdentity: {
+                    name: `track-${selectionGeneration}.gpx`,
+                    size: 1234,
+                    lastModified: 1_786_000_000_000 + selectionGeneration,
+                    type: 'application/gpx+xml',
+                },
+            };
+            await rawSend({ type: 'GPX_PROCESS_INVALIDATE', ...currentSelection }, sender);
+            routed = { ...message, ...currentSelection };
+        } else if (message?.type === 'GPX_PROCESS_APPLY' && !message.pageSessionId && currentSelection) {
+            routed = { ...message, ...currentSelection };
+        }
+        return rawSend(routed, sender);
+    };
     return {
-        send, values, tabs, tabMessages, fetchCalls, grouped, groupUpdates, navigations, removedTabs,
+        send, rawSend, values, tabs, tabMessages, fetchCalls, grouped, groupUpdates, navigations, removedTabs,
+        runtimeMessages,
         syncGetCalls: () => syncGetCalls, faults,
     };
 };
@@ -242,7 +278,9 @@ test('processing fails closed when Peakbagger is signed out or the account diffe
     });
     assert.equal(rejected.phase, 'error');
     assert.equal(rejected.error.code, 'peakbagger-signed-out');
-    assert.equal(signedOut.values.bpbCaptureJobs, undefined, 'nothing is prepared for a signed-out user');
+    assert.equal(signedOut.values.bpbCaptureJobs['5'].phase, 'selection',
+        'only the non-processable selection sentinel remains for a signed-out user');
+    assert.equal(signedOut.values.bpbCaptureJobs['5'].uploadGpx, undefined);
 
     const otherAccount = createHarness();
     const mismatch = await otherAccount.send({
@@ -268,7 +306,8 @@ test('the worker independently rejects a local upload when capture settings are 
         code: 'settings-unavailable',
         message: 'Capture settings could not be read. Reload and try again. Nothing was captured.',
     });
-    assert.equal(harness.values.bpbCaptureJobs, undefined);
+    assert.equal(harness.values.bpbCaptureJobs['5'].phase, 'selection');
+    assert.equal(harness.values.bpbCaptureJobs['5'].uploadGpx, undefined);
     assert.equal(harness.fetchCalls.length, 0, 'the login and summit queries stay behind the settings gate');
     assert.doesNotMatch(JSON.stringify(harness.values), /Private camp|Private traverse/);
 });
@@ -361,6 +400,136 @@ test('re-processing aborts an older local corridor lookup without mutating the r
     assert.equal(replacement.phase, 'ready');
     assert.equal(harness.values.bpbCaptureJobs['5'].id, replacement.jobId);
     assert.equal(harness.values.bpbCaptureJobs['5'].phase, 'ready');
+});
+
+test('selection invalidation supersedes a start still waiting for capture settings', async () => {
+    let releaseSettings;
+    let reachedSettings;
+    const settingsReached = new Promise(resolve => { reachedSettings = resolve; });
+    const harness = createHarness({
+        beforeSyncGet: calls => {
+            if (calls !== 1) return undefined;
+            reachedSettings();
+            return new Promise(resolve => { releaseSettings = resolve; });
+        },
+    });
+    const firstSelection = uploadSelection(1, 'A.gpx');
+    const secondSelection = uploadSelection(2, 'B.gpx');
+    assert.equal((await harness.rawSend({
+        type: 'GPX_PROCESS_INVALIDATE', ...firstSelection,
+    })).ok, true);
+    const first = harness.rawSend({
+        type: 'GPX_PROCESS_START',
+        segments: SEGMENTS,
+        waypoints: [],
+        trackName: '',
+        utcOffsetMinutes: 0,
+        ...firstSelection,
+    });
+    await settingsReached;
+    assert.equal((await harness.rawSend({
+        type: 'GPX_PROCESS_INVALIDATE', ...secondSelection,
+    })).ok, true);
+    releaseSettings();
+
+    const abandoned = await first;
+    assert.equal(abandoned.error.code, 'superseded');
+    assert.equal(harness.values.bpbCaptureJobs['5'].phase, 'selection');
+    assert.equal(harness.values.bpbCaptureJobs['5'].fileIdentity.name, 'B.gpx');
+    assert.equal(harness.fetchCalls.some(url => url.includes('/Async/pllbb2.aspx')), false);
+});
+
+test('selection invalidation aborts an A corridor lookup without requiring B processing', async () => {
+    let firstSignal;
+    let reached;
+    const firstReached = new Promise(resolve => { reached = resolve; });
+    const harness = createHarness({
+        beforePeakFetch: ({ options }) => {
+            firstSignal = options.signal;
+            reached();
+            return new Promise(() => {});
+        },
+    });
+    const firstSelection = uploadSelection(1, 'A.gpx');
+    await harness.rawSend({ type: 'GPX_PROCESS_INVALIDATE', ...firstSelection });
+    const first = harness.rawSend({
+        type: 'GPX_PROCESS_START',
+        segments: SEGMENTS,
+        waypoints: [],
+        trackName: '',
+        utcOffsetMinutes: 0,
+        ...firstSelection,
+    });
+    await firstReached;
+    await harness.rawSend({ type: 'GPX_PROCESS_INVALIDATE', ...uploadSelection(2, 'B.gpx') });
+    const abandoned = await first;
+
+    assert.equal(firstSignal.aborted, true);
+    assert.equal(abandoned.error.code, 'capture-cancelled');
+    assert.equal(harness.values.bpbCaptureJobs['5'].phase, 'selection');
+    assert.equal(harness.values.bpbCaptureJobs['5'].fileIdentity.name, 'B.gpx');
+});
+
+test('selection generations reject late invalidation without disturbing the newer sentinel', async () => {
+    const harness = createHarness();
+    const newer = uploadSelection(2, 'B.gpx');
+    assert.equal((await harness.rawSend({ type: 'GPX_PROCESS_INVALIDATE', ...newer })).ok, true);
+
+    const stale = await harness.rawSend({
+        type: 'GPX_PROCESS_INVALIDATE',
+        ...uploadSelection(1, 'A.gpx'),
+    });
+
+    assert.equal(stale.ok, false);
+    assert.equal(stale.error.code, 'superseded');
+    assert.equal(harness.values.bpbCaptureJobs['5'].selectionGeneration, 2);
+    assert.equal(harness.values.bpbCaptureJobs['5'].fileIdentity.name, 'B.gpx');
+});
+
+test('a worker restart retains the current local-file selection binding', async () => {
+    const selection = uploadSelection(1, 'restart.gpx');
+    const firstWorker = createHarness();
+    await firstWorker.rawSend({ type: 'GPX_PROCESS_INVALIDATE', ...selection });
+
+    const restarted = createHarness({ sessionInitial: firstWorker.values });
+    const result = await restarted.rawSend({
+        type: 'GPX_PROCESS_START',
+        segments: SEGMENTS,
+        waypoints: [],
+        trackName: '',
+        utcOffsetMinutes: 0,
+        ...selection,
+    });
+
+    assert.equal(result.phase, 'ready');
+    assert.equal(restarted.values.bpbCaptureJobs['5'].fileIdentity.name, 'restart.gpx');
+});
+
+test('B selection invalidates A ready and apply generations before any draft opens', async () => {
+    const harness = createHarness();
+    const firstSelection = uploadSelection(1, 'A.gpx');
+    await harness.rawSend({ type: 'GPX_PROCESS_INVALIDATE', ...firstSelection });
+    const ready = await harness.rawSend({
+        type: 'GPX_PROCESS_START',
+        segments: SEGMENTS,
+        waypoints: [],
+        trackName: '',
+        utcOffsetMinutes: 0,
+        ...firstSelection,
+    });
+    assert.equal(ready.phase, 'ready');
+    await harness.rawSend({ type: 'GPX_PROCESS_INVALIDATE', ...uploadSelection(2, 'B.gpx') });
+
+    const stale = await harness.rawSend({
+        type: 'GPX_PROCESS_APPLY',
+        jobId: ready.jobId,
+        selectedIds: [7],
+        primaryId: 7,
+        ...firstSelection,
+    });
+    assert.equal(stale.ok, false);
+    assert.equal(stale.error.code, 'job-expired');
+    assert.equal(harness.values.bpbDraftTabs, undefined);
 });
 
 test('the one total corridor deadline aborts a stalled body and reports actionable timeout copy', async () => {
@@ -752,13 +921,21 @@ test('end to end: user file pick → Process → filled form → exactly one GPS
     const input = dom.window.document.getElementById('GPXUpload');
     input.files = [new dom.window.File([gpx], 'myclimb.gpx', { type: 'application/gpx+xml' })];
     fireTrustedEvent(input, 'change', { bubbles: true });
+    await waitFor(dom, () => dom.window.document.querySelector('.bpb-process-button'));
 
     const button = dom.window.document.querySelector('.bpb-process-button');
     assert.ok(button, 'the Process button replaces native Preview');
     button.click();
 
-    await waitFor(dom, () => previewClicks === 1);
-    clearInterval(pumpTimer);
+    try {
+        await waitFor(dom, () => previewClicks === 1);
+    } catch (error) {
+        const status = dom.window.document.querySelector('.bpb-upload-status')?.textContent || '';
+        const job = harness.values.bpbCaptureJobs?.['5'];
+        throw new Error(`${error.message}; upload status=${status}; job phase=${job?.phase || 'none'}; messages=${JSON.stringify(harness.runtimeMessages)}`);
+    } finally {
+        clearInterval(pumpTimer);
+    }
 
     assert.equal(dom.window.document.getElementById('DateText').value, '2026-07-01');
     assert.equal(dom.window.document.getElementById('StartM').value, '100');
