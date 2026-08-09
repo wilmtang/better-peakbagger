@@ -13,6 +13,7 @@ import { providerFromUrl, providerActivityUrl } from '../capture/provider-url.js
 import { createFavoritesStore, favoritesStore as FavoritesStore } from './favorites-store.js';
 import { createGithubRoutes } from './github-routes.js';
 import { createPhotoRoutes } from './photo-routes.js';
+import { reportDraftRoutes as ReportDraftRoutes } from './report-draft-routes.js';
 import { createSettingsFileRoutes } from './settings-file-routes.js';
 import { terrainActivation as TerrainActivation } from './terrain-activation.js';
 import { createTerrainPrefetch } from './terrain-prefetch.js';
@@ -1777,6 +1778,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
         }));
         await githubRoutes.cleanup(cutoff);
         await photoRoutes.cleanup(cutoff);
+        await reportDraftRoutes.cleanup(cutoff);
     };
 
     const isPeakbaggerSender = sender =>
@@ -1833,6 +1835,12 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
         mutateMap,
         readMap,
     });
+    const reportDraftRoutes = ReportDraftRoutes.createReportDraftRoutes({
+        ext,
+        now,
+        isPeakbaggerSender,
+        mutateMap,
+    });
     const settingsFileRoutes = createSettingsFileRoutes({
         ext,
         verifyGithubConnection: githubRoutes.validateImportedConnection,
@@ -1875,6 +1883,8 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
             if (settingsFileHandler) return settingsFileHandler(message, sender);
             const photoHandler = photoRoutes.handlers[type];
             if (photoHandler) return photoHandler(message, sender);
+            const reportDraftHandler = reportDraftRoutes.handlers[type];
+            if (reportDraftHandler) return reportDraftHandler(message, sender);
             const githubHandler = githubRoutes.handlers[type];
             if (githubHandler) return githubHandler(message, sender);
             switch (type) {
@@ -1975,6 +1985,7 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
         terrainActivation.forgetTab(tabId);
         terrainPrefetch.forgetTab(tabId);
         runDetachedCleanup('photo tab cleanup', () => photoRoutes.forgetTab(tabId));
+        runDetachedCleanup('report draft tab cleanup', () => reportDraftRoutes.forgetTab(tabId));
         runDetachedCleanup('capture tab cleanup', async () => {
             const [drafts, jobs] = await Promise.all([readMap(DRAFTS_KEY), readMap(JOBS_KEY)]);
             const sourceTabId = Number(drafts[tabId]?.sourceTabId ?? (jobs[tabId] ? tabId : NaN));

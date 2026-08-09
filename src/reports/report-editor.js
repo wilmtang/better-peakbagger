@@ -17,9 +17,9 @@
 // Drafts autosave to extension-local storage keyed by climber/ascent identity.
 // They never leave the device, expire after two weeks, and are offered back —
 // never silently applied — when they differ from what the server rendered.
-// A Save Ascent submission clears the draft and becomes terminal before
-// navigation; the posted value itself still round-trips through the form if
-// the save fails server-side.
+// Save marks the draft pending but retains it until the worker confirms the
+// matching Add/Edit success in this tab. Validation and navigation failures
+// therefore keep the local recovery copy.
 
 import { settings as Settings } from '../settings/settings.js';
 import { settingsSchema as Schema } from '../settings/settings-schema.js';
@@ -107,8 +107,11 @@ import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.js';
         creditScaffold: false, // temporary blank writing space before a newly seeded credit
         syncTimer: null,
         autosaveTimer: null,
+        pendingSave: null,
+        saveIntentScheduled: false,
         terminalSubmission: false
     };
+    let nextSaveAttempt = 0;
 
     let richEditor = null;   // created in initialize(), only when enabled
     let mdEditor = null;
@@ -582,6 +585,16 @@ import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.js';
 
     const localStore = ext.storage.local;
 
+    const createSaveAttemptId = () => {
+        try {
+            if (typeof globalThis.crypto?.randomUUID === 'function') {
+                return globalThis.crypto.randomUUID();
+            }
+        } catch (error) { /* fall through to a non-authorizing uniqueness token */ }
+        nextSaveAttempt++;
+        return `fallback-${Date.now()}-${nextSaveAttempt}-${Math.random().toString(36).slice(2)}`;
+    };
+
     const timeLabel = stamp => {
         const then = new Date(stamp);
         const now = new Date();
@@ -606,14 +619,16 @@ import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.js';
             }
             const record = { text: textarea.value, mode: state.mode, savedAt: Date.now() };
             if (state.mode === 'markdown') record.source = mdEditor.getValue();
+            if (state.pendingSave) record.pendingSave = state.pendingSave;
             try {
                 const label = AscentSnapshot.label({ form, params });
                 if (Object.keys(label).length) record.label = label;
             } catch (error) { /* optional display metadata must never block autosave */ }
             await localStore.set({ [draftKey]: record });
-            // A Save can begin while an earlier storage write is already in
-            // flight. Its first removal may then lose the race to that write,
-            // so the completing writer must honor the terminal state too.
+            // A worker-confirmed Save or confirmed Delete can arrive while an
+            // earlier storage write is already in flight. The completing
+            // writer must honor that terminal result so it cannot resurrect
+            // the consumed recovery copy.
             if (state.terminalSubmission) {
                 await localStore.remove(draftKey);
                 return;
@@ -633,6 +648,11 @@ import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.js';
             globalThis.clearTimeout(state.autosaveTimer);
             state.autosaveTimer = null;
         }
+        state.pendingSave = null;
+        void RuntimeMessage.send(ext, {
+            type: 'REPORT_DRAFT_SAVE_CANCEL',
+            draftKey,
+        });
         void localStore.remove(draftKey).catch(() => {});
     };
 
@@ -678,12 +698,30 @@ import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.js';
         } catch (error) { /* backup is best-effort; never disrupt the save */ }
     };
 
-    const beginTerminalSave = () => {
+    const beginPendingSave = () => {
         if (state.terminalSubmission) return;
-        state.terminalSubmission = true;
+        if (state.saveIntentScheduled) return;
+        state.saveIntentScheduled = true;
+        queueMicrotask(() => { state.saveIntentScheduled = false; });
         flushSync();
+        const identity = {
+            cid: params.get('cid') || '0',
+            aid: params.get('aid'),
+            pid: params.get('pid'),
+        };
+        state.pendingSave = {
+            attemptId: createSaveAttemptId(),
+            requestedAt: Date.now(),
+            identity,
+        };
         captureBackupSnapshot();
-        clearDraft();
+        void saveDraftNow();
+        void RuntimeMessage.send(ext, {
+            type: 'REPORT_DRAFT_SAVE_PENDING',
+            draftKey,
+            identity,
+            attemptId: state.pendingSave.attemptId,
+        });
     };
 
     // Enter-to-submit does not click a Save button. A submit with no submitter
@@ -692,17 +730,31 @@ import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.js';
     form.addEventListener('submit', event => {
         const submitter = event.submitter;
         if (submitter && !SAVE_BUTTON_IDS.has(submitter.id)) return;
-        beginTerminalSave();
+        beginPendingSave();
     }, true);
 
-    // Mark both native Save controls terminal at click time as well. This
+    // Mark both native Save controls pending at click time as well. This
     // covers Peakbagger postback handlers that navigate without a submit event,
-    // while beginTerminalSave() keeps the ordinary click + submit path
+    // while beginPendingSave() keeps the ordinary click + submit path
     // idempotent.
     for (const id of SAVE_BUTTON_IDS) {
         const save = document.getElementById(id);
-        if (save) save.addEventListener('click', beginTerminalSave, true);
+        if (save) save.addEventListener('click', beginPendingSave, true);
     }
+
+    // An async UpdatePanel success can leave this editor instance alive until
+    // pagehide. Only the worker-confirmed event may make that old instance
+    // terminal; otherwise it could recreate the draft after the worker removed
+    // it on the successful response.
+    document.addEventListener(ReportDrafts.SAVED_EVENT, event => {
+        if (event.detail?.draftKey !== draftKey) return;
+        state.terminalSubmission = true;
+        state.pendingSave = null;
+        if (state.autosaveTimer !== null) {
+            globalThis.clearTimeout(state.autosaveTimer);
+            state.autosaveTimer = null;
+        }
+    });
 
     const offerDraft = stored => {
         draftBar.textContent = '';
@@ -742,6 +794,20 @@ import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.js';
             stored = (await localStore.get(draftKey))[draftKey];
         } catch (error) { return; }
         if (!stored || typeof stored.text !== 'string' || typeof stored.savedAt !== 'number') return;
+        if (stored.pendingSave && typeof stored.pendingSave === 'object') {
+            // Reaching the editor again means the previous Save did not reach
+            // the success surface in this document. Retain the recovery copy,
+            // but detach it from that old attempt so a late confirmation cannot
+            // consume newer edits or a same-key draft from another tab.
+            const retained = { ...stored };
+            delete retained.pendingSave;
+            stored = retained;
+            void RuntimeMessage.send(ext, {
+                type: 'REPORT_DRAFT_SAVE_CANCEL',
+                draftKey,
+            });
+            void localStore.set({ [draftKey]: retained }).catch(() => {});
+        }
         if (Date.now() - stored.savedAt > ReportDrafts.TTL_MS) { clearDraft(); return; }
         const storedText = normalized(stored.text);
         if (!storedText) { clearDraft(); return; }

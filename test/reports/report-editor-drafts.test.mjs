@@ -147,9 +147,16 @@ test('a differing stored draft offers management, and Restore applies it in its 
 });
 
 test('Delete draft removes it without touching the form content', async () => {
+    const messages = [];
     const dom = await loadEditor({
         report: 'server copy',
-        drafts: { [DRAFT_KEY]: { text: 'stale draft', mode: 'rich', savedAt: Date.now() - 1000 } }
+        drafts: { [DRAFT_KEY]: { text: 'stale draft', mode: 'rich', savedAt: Date.now() - 1000 } },
+        prepare: d => {
+            d.chrome.runtime.sendMessage = async message => {
+                messages.push(structuredClone(message));
+                return { ok: true };
+            };
+        },
     });
     await editorReady(dom);
     const doc = dom.window.document;
@@ -159,6 +166,10 @@ test('Delete draft removes it without touching the form content', async () => {
     await waitFor(dom, () => !dom.chrome._localStore[DRAFT_KEY]);
     assert.equal(draftBar.hidden, true);
     assert.equal(doc.getElementById('JournalText').value, 'server copy');
+    assert.deepEqual(messages.filter(message => message.type === 'REPORT_DRAFT_SAVE_CANCEL'), [{
+        type: 'REPORT_DRAFT_SAVE_CANCEL',
+        draftKey: DRAFT_KEY,
+    }]);
 });
 
 test('a draft equal to the server copy is not offered; its markdown source is adopted', async () => {
@@ -192,43 +203,94 @@ test('a whitespace-only stored draft is deleted instead of silently retained', a
 });
 
 for (const saveId of ['SaveButton', 'SaveButton2']) {
-    test(`${saveId} clears the draft and page exit cannot recreate it`, async () => {
+    test(`${saveId} retains a tab-bound pending draft through page exit`, async () => {
         const report = 'about to be saved';
+        const messages = [];
         const dom = await loadEditor({
             report,
-            drafts: { [DRAFT_KEY]: { text: report, mode: 'rich', savedAt: Date.now() } }
+            drafts: { [DRAFT_KEY]: { text: report, mode: 'rich', savedAt: Date.now() } },
+            prepare: d => {
+                d.chrome.runtime.sendMessage = async message => {
+                    messages.push(structuredClone(message));
+                    return { ok: true };
+                };
+            },
         });
         await editorReady(dom);
 
         dom.window.document.getElementById(saveId).click();
         dom.window.dispatchEvent(new dom.window.Event('pagehide'));
-        await waitFor(dom, () => !dom.chrome._localStore[DRAFT_KEY]);
-        await new Promise(resolve => dom.window.setTimeout(resolve, 20));
+        await waitFor(dom, () => dom.chrome._localStore[DRAFT_KEY]?.pendingSave);
 
-        assert.equal(dom.chrome._localStore[DRAFT_KEY], undefined);
+        assert.equal(dom.chrome._localStore[DRAFT_KEY].text, report);
+        assert.deepEqual(JSON.parse(JSON.stringify(dom.chrome._localStore[DRAFT_KEY].pendingSave.identity)), {
+            cid: '900001', aid: null, pid: null,
+        });
+        const pending = messages.filter(message => message.type === 'REPORT_DRAFT_SAVE_PENDING');
+        assert.equal(pending.length, 1, 'the ordinary click + submit path must register once');
+        assert.equal(pending[0].draftKey, DRAFT_KEY);
+        assert.deepEqual(pending[0].identity, { cid: '900001', aid: null, pid: null });
+        assert.equal(pending[0].attemptId, dom.chrome._localStore[DRAFT_KEY].pendingSave.attemptId);
         dom.window.close();
     });
 }
 
-test('an implicit Save submission clears the draft and page exit cannot recreate it', async () => {
+test('an implicit Save submission retains recovery when no success arrives', async () => {
     const report = 'save by pressing Enter';
+    const messages = [];
     const dom = await loadEditor({
         report,
-        drafts: { [DRAFT_KEY]: { text: report, mode: 'rich', savedAt: Date.now() } }
+        drafts: { [DRAFT_KEY]: { text: report, mode: 'rich', savedAt: Date.now() } },
+        prepare: d => {
+            d.chrome.runtime.sendMessage = async message => {
+                messages.push(structuredClone(message));
+                return { ok: true };
+            };
+        },
     });
     await editorReady(dom);
     const form = dom.window.document.getElementById('JournalText').form;
 
     form.dispatchEvent(new dom.window.SubmitEvent('submit', { bubbles: true, cancelable: true }));
     dom.window.dispatchEvent(new dom.window.Event('pagehide'));
-    await waitFor(dom, () => !dom.chrome._localStore[DRAFT_KEY]);
-    await new Promise(resolve => dom.window.setTimeout(resolve, 20));
+    await waitFor(dom, () => dom.chrome._localStore[DRAFT_KEY]?.pendingSave);
 
-    assert.equal(dom.chrome._localStore[DRAFT_KEY], undefined);
+    assert.equal(dom.chrome._localStore[DRAFT_KEY].text, report);
+    assert.equal(messages.filter(message => message.type === 'REPORT_DRAFT_SAVE_PENDING').length, 1);
     dom.window.close();
 });
 
-test('a Save cancels a pending autosave timer and rejects even a late callback', async () => {
+test('a server validation round-trip offers the still-pending recovery copy', async () => {
+    const dom = await loadEditor({ report: 'locally submitted report' });
+    await editorReady(dom);
+    dom.window.document.getElementById('SaveButton').click();
+    await waitFor(dom, () => dom.chrome._localStore[DRAFT_KEY]?.pendingSave);
+    const retained = structuredClone(dom.chrome._localStore[DRAFT_KEY]);
+    dom.window.close();
+
+    const messages = [];
+    const returned = await loadEditor({
+        report: 'server copy after validation failure',
+        drafts: { [DRAFT_KEY]: retained },
+        prepare: d => {
+            d.chrome.runtime.sendMessage = async message => {
+                messages.push(structuredClone(message));
+                return { ok: true };
+            };
+        },
+    });
+    await editorReady(returned);
+    await waitFor(returned, () => !returned.chrome._localStore[DRAFT_KEY]?.pendingSave);
+    const draftBar = returned.window.document.querySelector('.bpb-re-draft');
+
+    assert.equal(draftBar.hidden, false);
+    assert.match(draftBar.textContent, /locally saved draft/i);
+    assert.equal(returned.chrome._localStore[DRAFT_KEY].text, 'locally submitted report');
+    assert.equal(messages.some(message => message.type === 'REPORT_DRAFT_SAVE_CANCEL'), true);
+    returned.window.close();
+});
+
+test('a Save flushes a pending autosave and even a late callback retains recovery', async () => {
     const AUTOSAVE_TIMER_ID = 8675309;
     let autosaveCallback;
     let autosaveCancelled = false;
@@ -259,14 +321,14 @@ test('a Save cancels a pending autosave timer and rejects even a late callback',
     dom.window.document.getElementById('SaveButton').click();
     dom.window.dispatchEvent(new dom.window.Event('pagehide'));
     autosaveCallback(); // Simulate a queued callback delivered despite cancellation.
-    await new Promise(resolve => dom.window.setTimeout(resolve, 20));
+    await waitFor(dom, () => dom.chrome._localStore[DRAFT_KEY]?.pendingSave);
 
     assert.equal(autosaveCancelled, true);
-    assert.equal(dom.chrome._localStore[DRAFT_KEY], undefined);
+    assert.equal(dom.chrome._localStore[DRAFT_KEY].text, 'timer still pending');
     dom.window.close();
 });
 
-test('a Save removes multiple in-flight autosaves even when they finish out of order', async () => {
+test('only worker-confirmed success makes in-flight autosaves terminal', async () => {
     const releases = [];
     const completions = [];
     let cleanupCount = 0;
@@ -294,14 +356,39 @@ test('a Save removes multiple in-flight autosaves even when they finish out of o
     typeRich(dom, '<p>second in-flight write</p>');
     await waitFor(dom, () => releases.length === 2);
     dom.window.document.getElementById('SaveButton').click();
+    await waitFor(dom, () => releases.length === 3);
+
+    await dom.chrome.storage.local.remove(DRAFT_KEY);
+    dom.window.document.dispatchEvent(new dom.window.CustomEvent('bpb:report-draft-saved', {
+        detail: { draftKey: DRAFT_KEY },
+    }));
     dom.window.dispatchEvent(new dom.window.Event('pagehide'));
 
-    releases[1]();
+    releases[2]();
     await waitFor(dom, () => cleanupCount === 1);
     releases[0]();
     await waitFor(dom, () => cleanupCount === 2);
-    assert.deepEqual(completions, [1, 0]);
+    releases[1]();
+    await waitFor(dom, () => cleanupCount === 3);
+    assert.deepEqual(completions, [2, 0, 1]);
     assert.equal(dom.chrome._localStore[DRAFT_KEY], undefined);
+    dom.window.close();
+});
+
+test('a mismatched success event cannot consume or suppress this draft', async () => {
+    const report = 'still belongs to this ascent';
+    const dom = await loadEditor({ report });
+    await editorReady(dom);
+    dom.window.document.getElementById('SaveButton').click();
+    await waitFor(dom, () => dom.chrome._localStore[DRAFT_KEY]?.pendingSave);
+
+    dom.window.document.dispatchEvent(new dom.window.CustomEvent('bpb:report-draft-saved', {
+        detail: { draftKey: 'bpbReportDraft:900001:a999' },
+    }));
+    dom.window.dispatchEvent(new dom.window.Event('pagehide'));
+    await waitFor(dom, () => dom.chrome._localStore[DRAFT_KEY]);
+
+    assert.equal(dom.chrome._localStore[DRAFT_KEY].text, report);
     dom.window.close();
 });
 
@@ -368,11 +455,25 @@ test('disabling the setting live hands the form back to the native textarea', as
 });
 
 test('draft keys distinguish editing an ascent from adding one', async () => {
+    const messages = [];
     const dom = await loadEditor({
         url: 'https://www.peakbagger.com/climber/ascentedit.aspx?aid=123456&cid=900001',
-        accelerateAutosave: true
+        accelerateAutosave: true,
+        prepare: d => {
+            d.chrome.runtime.sendMessage = async message => {
+                messages.push(structuredClone(message));
+                return { ok: true };
+            };
+        },
     });
     await editorReady(dom);
     typeRich(dom, '<p>edit of an existing ascent</p>');
     await waitFor(dom, () => dom.chrome._localStore['bpbReportDraft:900001:a123456']);
+    dom.window.document.getElementById('SaveButton').click();
+    await waitFor(dom, () => messages.some(message => message.type === 'REPORT_DRAFT_SAVE_PENDING'));
+    const pending = messages.find(message => message.type === 'REPORT_DRAFT_SAVE_PENDING');
+    assert.equal(pending.draftKey, 'bpbReportDraft:900001:a123456');
+    assert.deepEqual(pending.identity, { cid: '900001', aid: '123456', pid: null });
+    assert.equal(pending.attemptId,
+        dom.chrome._localStore['bpbReportDraft:900001:a123456'].pendingSave.attemptId);
 });

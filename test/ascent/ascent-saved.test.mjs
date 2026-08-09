@@ -31,14 +31,28 @@ const successHtml = ({ subtitle = 'Ascent Added/Saved Successfully!', photo = tr
   </div>
 </body>`;
 
-const load = (html, { url = EDITOR_URL, status = null, navigations = null } = {}) => {
+const load = (html, {
+    url = EDITOR_URL,
+    status = null,
+    navigations = null,
+    messages = null,
+    draftConfirmation = null,
+    draftEvents = null,
+} = {}) => {
     const dom = new JSDOM(html, { url, runScripts: 'outside-only' });
+    if (draftEvents) {
+        dom.window.document.addEventListener('bpb:report-draft-saved', event => {
+            draftEvents.push(event.detail);
+        });
+    }
     dom.window.chrome = {
         runtime: {
             lastError: null,
             sendMessage: async message => {
-                const response = message.type === 'GITHUB_BACKUP_STATUS' ? status : null;
-                return response;
+                if (messages) messages.push(structuredClone(message));
+                if (message.type === 'GITHUB_BACKUP_STATUS') return status;
+                if (message.type === 'REPORT_DRAFT_SAVE_CONFIRMED') return draftConfirmation;
+                return null;
             },
         },
     };
@@ -100,16 +114,69 @@ test('an Edit success uses the stable URL aid even without a photo link', () => 
     dom.window.close();
 });
 
+test('confirmed Add and Edit success notify the worker and editor exactly once', async () => {
+    for (const scenario of [
+        { html: successHtml(), url: EDITOR_URL, aid: '778899', key: 'bpbReportDraft:900001:p12' },
+        {
+            html: successHtml({ subtitle: 'Ascent Saved Successfully!', photo: false }),
+            url: 'https://peakbagger.com/climber/ascentedit.aspx?aid=445566&cid=900001',
+            aid: '445566',
+            key: 'bpbReportDraft:900001:a445566',
+        },
+    ]) {
+        const messages = [];
+        const draftEvents = [];
+        const dom = load(scenario.html, {
+            url: scenario.url,
+            messages,
+            draftEvents,
+            draftConfirmation: { ok: true, draftKey: scenario.key, removed: true },
+        });
+        await tick();
+        dom.window.document.getElementById('UpdatePanelAE').append(dom.window.document.createElement('span'));
+        await tick();
+
+        assert.deepEqual(
+            messages.filter(message => message.type === 'REPORT_DRAFT_SAVE_CONFIRMED'),
+            [{ type: 'REPORT_DRAFT_SAVE_CONFIRMED', aid: scenario.aid }],
+        );
+        assert.deepEqual(JSON.parse(JSON.stringify(draftEvents)), [{ draftKey: scenario.key }]);
+        dom.window.close();
+    }
+});
+
+test('a newer retained draft does not make the old editor terminal', async () => {
+    const messages = [];
+    const draftEvents = [];
+    const dom = load(successHtml(), {
+        messages,
+        draftEvents,
+        draftConfirmation: {
+            ok: true,
+            draftKey: 'bpbReportDraft:900001:p12',
+            removed: false,
+        },
+    });
+    await tick();
+
+    assert.equal(messages.some(message => message.type === 'REPORT_DRAFT_SAVE_CONFIRMED'), true);
+    assert.deepEqual(draftEvents, []);
+    dom.window.close();
+});
+
 test('conflicting URL and success-panel identities fail closed', async () => {
     const navigations = [];
+    const messages = [];
     const dom = load(successHtml(), {
         url: 'https://peakbagger.com/climber/ascentedit.aspx?aid=445566&cid=900001',
         status: { enabled: true, connected: true, auto: true },
         navigations,
+        messages,
     });
     await tick();
     assert.equal(links(dom).length, 0);
     assert.deepEqual(navigations, []);
+    assert.equal(messages.some(message => message.type === 'REPORT_DRAFT_SAVE_CONFIRMED'), false);
     dom.window.close();
 });
 

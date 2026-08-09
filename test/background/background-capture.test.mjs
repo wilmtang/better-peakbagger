@@ -785,22 +785,27 @@ test('status reads hide expired jobs without running global cleanup', async () =
 
 test('detached tab and alarm cleanup failures are contained and reported independently', async () => {
     const harness = createHarness({ faults: { sessionGet: 'session unavailable' } });
-    const waitForErrors = async count => {
+    const waitForError = async expected => {
         const deadline = Date.now() + 2000;
-        while (harness.loggedErrors.length < count) {
+        while (!harness.loggedErrors.some(args => String(args[0]).includes(expected))) {
             if (Date.now() > deadline) throw new Error('cleanup errors were not reported');
             await new Promise(resolve => setTimeout(resolve, 1));
         }
     };
 
     assert.doesNotThrow(() => harness.tabRemoved.listeners[0](1));
-    await waitForErrors(2);
+    await Promise.all([
+        waitForError('photo tab cleanup failed'),
+        waitForError('report draft tab cleanup failed'),
+        waitForError('capture tab cleanup failed'),
+    ]);
     const tabRemovalLogs = harness.loggedErrors.map(args => String(args[0]));
     assert.ok(tabRemovalLogs.some(message => message.includes('photo tab cleanup failed')));
+    assert.ok(tabRemovalLogs.some(message => message.includes('report draft tab cleanup failed')));
     assert.ok(tabRemovalLogs.some(message => message.includes('capture tab cleanup failed')));
 
     assert.doesNotThrow(() => harness.alarmEvent.listeners[0]({ name: 'bpb-capture-cleanup' }));
-    await waitForErrors(3);
+    await waitForError('expired capture cleanup failed');
     assert.ok(harness.loggedErrors.some(args => String(args[0]).includes('expired capture cleanup failed')));
 });
 

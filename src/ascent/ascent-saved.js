@@ -19,6 +19,7 @@
     'use strict';
 
     const LINK_ID = 'bpb-view-new-ascent';
+    const DRAFT_SAVED_EVENT = 'bpb:report-draft-saved';
     const ext = globalThis.browser || globalThis.chrome;
     // Tolerant of the observed live text ("Ascent Added/Saved Successfully!")
     // and the plainer "Ascent Saved Successfully" / "Ascent Added Successfully".
@@ -68,6 +69,23 @@
         catch (_error) { return null; }
     };
 
+    let draftConfirmationInFlight = null;
+    let confirmedDraftAid = null;
+    const confirmReportDraft = aid => {
+        if (confirmedDraftAid === aid || draftConfirmationInFlight === aid) return;
+        draftConfirmationInFlight = aid;
+        void sendBg({ type: 'REPORT_DRAFT_SAVE_CONFIRMED', aid }).then(response => {
+            if (!response?.ok) return;
+            confirmedDraftAid = aid;
+            if (!response.removed) return;
+            document.dispatchEvent(new CustomEvent(DRAFT_SAVED_EVENT, {
+                detail: { draftKey: response.draftKey },
+            }));
+        }).finally(() => {
+            if (draftConfirmationInFlight === aid) draftConfirmationInFlight = null;
+        });
+    };
+
     const referringPageLink = () => [...document.querySelectorAll('a')]
         .find(anchor => /go back to referring page/i.test(anchor.textContent || '')) || null;
 
@@ -88,6 +106,7 @@
         if (!successConfirmed()) return;
         const aid = savedAscentId();
         if (!aid) return;
+        confirmReportDraft(aid);
         const existing = document.getElementById(LINK_ID);
         if (existing) {
             routeAutomaticBackup(existing, aid);

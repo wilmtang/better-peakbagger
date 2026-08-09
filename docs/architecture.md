@@ -521,6 +521,14 @@ worker accepts it only from a Peakbagger tab and opens the extension-owned
 `options/drafts.html` page (an existing `options/options.html#drafts` link
 still lands on the same topic).
 
+Save is a two-phase lifecycle rather than an optimistic deletion. The editor
+retains the local record and registers a 30-minute pending intent bound to its
+form identity and source tab. `src/ascent/ascent-saved.js` recognizes
+Peakbagger's Add/Edit success view and sends the resulting ascent id through
+`src/background/report-draft-routes.js`; only a matching intent may remove the
+draft. Validation errors, failed navigation, mismatched identities, duplicate
+postbacks, and expired worker state therefore leave recovery data intact.
+
 The editor's representations, sanitization boundaries, media restrictions,
 round trips, draft lifecycle, and known lossy-import limitation are maintained
 in [trip-report-editor.md](trip-report-editor.md). That focused design note is
@@ -1463,7 +1471,7 @@ comparison, first-visit compromises, and lockstep invariant are in
 | --- | --- | --- |
 | `storage.sync` | User preferences and feature gates | Validated by the single settings schema; no secrets |
 | `storage.local` | GitHub token/repository, ImgBB API key, custom favorites, Buddy List cache, report drafts, terrain-cache index, automatic-backup state | Device-local and never browser-synced; credentials leave it only for their explicit manual settings-file export, favorites are bounded, Buddy cache is owner-scoped, report drafts expire |
-| `storage.session` | Capture jobs, prepared drafts, save-time backup snapshots, ascent-deletion intents/tombstones, pending device auth | Short-lived and identity-bound; capture/backup/delete records expire after 30 minutes |
+| `storage.session` | Capture jobs, prepared drafts, pending report-save intents, save-time backup snapshots, ascent-deletion intents/tombstones, pending device auth | Short-lived and identity-bound; capture/report-save/backup/delete records expire after 30 minutes |
 | IndexedDB `betterPeakbaggerPhotos` | Photo catalog, annotation projects, original/thumbnail blobs, upload journal, ImgBB delete URLs, tombstones | Authoritative device-local photo library; deleted assets are eligible for pruning after 30 days, tombstones remain |
 | CacheStorage | Successful Mapterhorn DEM responses | Best effort, bounded by the local LRU index |
 | Peakbagger `localStorage` | Filter UI state and early theme mirror | Page-local convenience state, never authoritative extension credentials |

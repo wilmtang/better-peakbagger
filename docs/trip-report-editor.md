@@ -480,6 +480,11 @@ type ReportDraftRecord = {
     peak?: string;
     date?: string;
   };
+  pendingSave?: {
+    attemptId: string;
+    requestedAt: number;
+    identity: { cid: string; aid: string | null; pid: string | null };
+  };
 };
 ```
 
@@ -494,6 +499,7 @@ roles and authority boundaries:
 | `source` | Markdown only | The exact CodeMirror string, including the user's Markdown spelling and whitespace. It is an authoring-fidelity sidecar; `text` remains the Peakbagger-facing value. Rich writes omit it because a Rich edit invalidates any earlier Markdown spelling. |
 | `label.peak` | Optional | Display-only selected peak name, or the matching prepared-draft peak name when the native picker is not ready. It is trimmed and capped at 200 characters. The key, not this label, is identity. |
 | `label.date` | Optional | Display-only raw trimmed `DateText`, capped at 20 characters. It is intentionally not normalized into the backup date identity. |
+| `pendingSave` | Save attempt only | Recovery metadata recording a unique attempt marker, when Save began, and the exact Add/Edit form identity. It does not prove success or authorize deletion; the worker separately binds the matching marker to the sender tab. |
 
 `label` is omitted when both members are empty. Label extraction is isolated in
 its own `try`/`catch`: missing or changed optional form controls may make the
@@ -643,9 +649,9 @@ sender, or tab-creation failure produces bounded live-region copy—“Couldn’
 open report drafts. Try again.”—then re-enables the actions for retry.
 
 Restore is intentionally not an immediate storage write. The record remains
-the recovery source until a later edit/autosave, explicit deletion, or
-Peakbagger Save clearing. The server copy is never overwritten merely because a
-draft exists or because the manager's **Open** link was used.
+the recovery source until a later edit/autosave, explicit deletion, or a
+worker-confirmed Peakbagger Save. The server copy is never overwritten merely
+because a draft exists or because the manager's **Open** link was used.
 
 ### Retention and management
 
@@ -694,22 +700,37 @@ original native Delete submitter is resubmitted. Cancelling the combined
 confirmation or failing to prepare GitHub cleanup leaves both Peakbagger and
 the local draft unchanged.
 
-### Clearing at Peakbagger Save
+### Pending and confirmed Peakbagger Save
 
 Clicking either Peakbagger **Save Ascent** button, or completing a valid
-implicit form submission with no named submitter, flushes `JournalText`, enters
-a terminal Save state, captures the optional GitHub handoff once, and clears
-the matching TR draft. Named non-Save submitters such as Cancel, Delete, and
-GPS Preview do not enter that state. The extension never clicks Save itself.
+implicit form submission with no named submitter, flushes `JournalText`, refreshes
+the local draft with `pendingSave`, captures the optional GitHub handoff once,
+and registers a short-lived worker intent. The intent is bound to the exact
+`cid` plus Add/Edit target and to the sending tab. The ordinary click → submit
+sequence is idempotent. Named non-Save submitters such as Cancel, Delete, and
+GPS Preview do not register an intent. The extension never clicks Save itself.
 
-The terminal state cancels pending autosave and prevents both a late timer and
-the navigation-time `pagehide` handler from writing the draft again. The
-completion path of an autosave write that was already in flight performs a
-second terminal cleanup, so it cannot win a write-after-remove race. The
-ordinary click → submit sequence is idempotent, so the same save neither clears
-nor captures twice. Removal still happens before Peakbagger confirms success.
-If the server rejects the save, the posted report may round-trip in
-Peakbagger's form, but the local draft has already been scheduled for removal.
+Peakbagger can return either the edit form with validation feedback or an
+Add/Edit success view on the same URL. Validation, navigation, and network
+failure leave the local recovery record in place; a new editor instance offers
+it through the normal compare-and-restore gate. On a success view,
+`ascent-saved.js` obtains the one unambiguous saved ascent id and asks the
+worker to confirm it. For Edit, both the URL `aid` and reported saved `aid` must
+equal the pending ascent. For Add, the unchanged URL `cid` and `pid` must equal
+the pending form and the new positive `aid` must come from the bounded success
+panel. The sender tab must also be the one that registered the intent.
+
+Only that worker-confirmed match may remove the local draft. The stored
+`pendingSave.attemptId` must still equal the worker intent; a newer same-key
+draft from another tab is retained. The worker then consumes the pending
+session record. It serializes registration, confirmation,
+cancellation, tab cleanup, and expiry so a replacement intent cannot be
+consumed by an older confirmation. It reports the exact removed draft key back
+to the success surface; the still-live editor then enters terminal state so
+`pagehide` or an already-running autosave cannot recreate the removed record.
+Identity mismatch, duplicate confirmation, expired intent, or storage failure
+fails toward retention. Explicit **Delete draft** still removes the local copy
+and cancels a matching pending intent by user choice.
 
 ### Reviewer questions this design must keep answering
 
