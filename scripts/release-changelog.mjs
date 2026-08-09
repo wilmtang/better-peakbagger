@@ -57,6 +57,9 @@ export function assertReleasedSectionsUnchanged(currentChangelog, taggedChangelo
         if (!taggedSection) {
             throw new Error(`Tag v${version} has no changelog section for ${version}.`);
         }
+        if (!currentSection) {
+            throw new Error(`Current changelog has no section for tagged release ${version}.`);
+        }
         if (currentSection !== taggedSection) {
             throw new Error(`Released changelog section ${version} differs from tag v${version}.`);
         }

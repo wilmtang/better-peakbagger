@@ -19,6 +19,10 @@ import {
     stampUnreleased,
 } from '../../scripts/release-changelog.mjs';
 import {
+    exactReleaseTags,
+    requireCompleteHistory,
+} from '../../scripts/check-changelog-history.mjs';
+import {
     validateRelease,
     validateTagAtHead,
 } from '../../scripts/release-check.mjs';
@@ -48,6 +52,12 @@ function releaseState(overrides = {}) {
         changelog: '# Changelog\n\n## 1.4.0 — 2026-07-13\n',
         ...overrides,
     };
+}
+
+function runGit(cwd, args) {
+    const result = spawnSync('git', args, { cwd, encoding: 'utf8' });
+    assert.equal(result.status, 0, result.stderr);
+    return result.stdout.trim();
 }
 
 test('release metadata requires an exact tag and synchronized versions', () => {
@@ -113,6 +123,73 @@ test('released changelog sections must remain byte-faithful to their tags', () =
         }),
         /has no changelog section/,
     );
+    assert.throws(
+        () => assertReleasedSectionsUnchanged('# Changelog\n\n## Unreleased\n', {
+            '1.4.0': tagged,
+        }),
+        /Current changelog has no section/,
+    );
+});
+
+test('release history authority is the complete exact-semver tag inventory', () => {
+    assert.deepEqual(exactReleaseTags([
+        'v1.0.0',
+        'v1.2.3-rc.1',
+        'release-2.0.0',
+        'v2.0.0',
+        'v01.0.0',
+        '',
+    ].join('\n')), ['v1.0.0', 'v2.0.0']);
+    assert.doesNotThrow(() => requireCompleteHistory('false\n'));
+    assert.throws(() => requireCompleteHistory('true\n'), /shallow repository/);
+});
+
+test('release history checker rejects a deleted tagged section and shallow history', async () => {
+    const fixtureRoot = await mkdtemp(path.join(tmpdir(), 'better-peakbagger-history-'));
+    const shallowRoot = `${fixtureRoot}-shallow`;
+    const script = new URL('../../scripts/check-changelog-history.mjs', import.meta.url).pathname;
+    try {
+        runGit(fixtureRoot, ['init', '--initial-branch=main']);
+        runGit(fixtureRoot, ['config', 'user.name', 'Release Test']);
+        runGit(fixtureRoot, ['config', 'user.email', 'release@example.test']);
+        await writeFile(
+            path.join(fixtureRoot, 'CHANGELOG.md'),
+            '# Changelog\n\n## 1.0.0 — 2026-08-01\n\n- First.\n',
+        );
+        runGit(fixtureRoot, ['add', 'CHANGELOG.md']);
+        runGit(fixtureRoot, ['commit', '-m', 'release 1.0.0']);
+        runGit(fixtureRoot, ['tag', 'v1.0.0']);
+
+        await writeFile(
+            path.join(fixtureRoot, 'CHANGELOG.md'),
+            '# Changelog\n\n## Unreleased\n\n- Next.\n',
+        );
+        const deleted = spawnSync(process.execPath, [script], {
+            cwd: fixtureRoot,
+            encoding: 'utf8',
+        });
+        assert.equal(deleted.status, 1);
+        assert.match(deleted.stderr, /Current changelog has no section for tagged release 1\.0\.0/);
+
+        runGit(fixtureRoot, ['checkout', '--', 'CHANGELOG.md']);
+        await writeFile(
+            path.join(fixtureRoot, 'CHANGELOG.md'),
+            '# Changelog\n\n## Unreleased\n\n- Next.\n\n## 1.0.0 — 2026-08-01\n\n- First.\n',
+        );
+        runGit(fixtureRoot, ['add', 'CHANGELOG.md']);
+        runGit(fixtureRoot, ['commit', '-m', 'open unreleased']);
+        runGit(tmpdir(), ['clone', '--depth', '1', `file://${fixtureRoot}`, shallowRoot]);
+
+        const shallow = spawnSync(process.execPath, [script], {
+            cwd: shallowRoot,
+            encoding: 'utf8',
+        });
+        assert.equal(shallow.status, 1);
+        assert.match(shallow.stderr, /cannot be verified in a shallow repository/);
+    } finally {
+        await rm(fixtureRoot, { recursive: true, force: true });
+        await rm(shallowRoot, { recursive: true, force: true });
+    }
 });
 
 test('release validation requires the proposed tag to resolve to HEAD', () => {
@@ -244,6 +321,10 @@ test('release and browser development commands use the dist build', async () => 
         /- name: Build store packages[\s\S]*?npm run package[\s\S]*?chrome_archive=/,
     );
     assert.match(workflow, /- name: Run scale tests\s+run: npm run test:scale/);
+    assert.match(
+        workflow,
+        /- name: Check out tagged source\s+uses: [^\n]+\s+with:\s+fetch-depth: 0/,
+    );
     assert.match(packageJson.scripts.lint, /^eslint .*npm run build.*check-web-ext-lint/);
     assert.match(workflow, /run: npm run lint\n/);
 });
