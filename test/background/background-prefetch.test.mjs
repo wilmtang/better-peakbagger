@@ -39,6 +39,17 @@ class MemoryCacheStorage {
     async delete(name) { return this.named.delete(name); }
 }
 
+const makeWebp = () => {
+    const bytes = new Uint8Array(24);
+    bytes.set(new TextEncoder().encode('RIFF'), 0);
+    bytes.set(new TextEncoder().encode('WEBP'), 8);
+    bytes.set(new TextEncoder().encode('VP8L'), 12);
+    const view = new DataView(bytes.buffer);
+    view.setUint32(4, bytes.byteLength - 8, true);
+    view.setUint32(16, bytes.byteLength - 20, true);
+    return bytes;
+};
+
 const createHarness = ({
     settings = { enable3dMap: true, terrainCacheLimitMb: 512 },
     // The status the tile host answers each request with, so a region the
@@ -78,13 +89,9 @@ const createHarness = ({
         const value = String(url);
         fetchCalls.push(value);
         const status = tileStatus(value);
-        // A tiny non-empty WebP-ish body; the cache only needs bytes + headers.
-        return {
-            ok: status === 200,
-            status,
-            headers: { get: name => (name === 'content-type' ? 'image/webp' : null) },
-            arrayBuffer: async () => new Uint8Array([1, 2, 3, 4]).buffer
-        };
+        return status === 200
+            ? new Response(makeWebp(), { status, headers: { 'content-type': 'image/webp' } })
+            : new Response('Tile not found', { status });
     };
 
     // scheduleSave arms a 1 s timer inside terrain-cache; unref so a pending

@@ -13,6 +13,16 @@ import { terrainFailure } from '../../src/terrain/terrain-failure.js';
 import { TERRAIN_FRAME_KEEP_ALIVE_MS } from '../../src/terrain/terrain-lifecycle.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+const makeWebp = () => {
+    const bytes = new Uint8Array(24);
+    bytes.set(new TextEncoder().encode('RIFF'), 0);
+    bytes.set(new TextEncoder().encode('WEBP'), 8);
+    bytes.set(new TextEncoder().encode('VP8L'), 12);
+    const view = new DataView(bytes.buffer);
+    view.setUint32(4, bytes.byteLength - 8, true);
+    view.setUint32(16, bytes.byteLength - 20, true);
+    return bytes;
+};
 // The bridge imports settings, so tests provide the real chrome.storage shape
 // that module reads from, plus the getURL the bridge needs. Push updates with
 // chrome.storage.sync.set(...).
@@ -2125,7 +2135,7 @@ const bootFrameWithTileHost = ({ tileStatus, deferLoad = false } = {}) => {
         requested.push(String(url));
         const status = tileStatus(String(url));
         if (status === 200) {
-            return new Response(new Uint8Array([1, 2, 3, 4]), {
+            return new Response(makeWebp(), {
                 status: 200, headers: { 'content-type': 'image/webp' }
             });
         }

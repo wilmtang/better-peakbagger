@@ -20,6 +20,13 @@ const MISSING_TILE_STATUS = 404;
 // enough that a slow connection still completes; a refused tile falls back
 // to its parent exactly as a 404 already does.
 const TILE_TIMEOUT_MS = 20000;
+// A 2026-08-09 live sample across Mapterhorn zooms 10-14 measured
+// 277,870-402,962 encoded bytes. One MiB leaves more than 2.5x headroom for
+// legitimate terrain variation while bounding a provider or intermediary that
+// returns an HTML error page, an unbounded stream, or otherwise hostile data.
+// This is independent of the user-selected total CacheStorage budget: it
+// applies before MapLibre or the cache receives any one response.
+const MAX_TILE_BYTES = 1024 * 1024;
 const INDEX_KEY = 'bpbMapterhornDemIndexV1';
 const PROTOCOL = 'bpb-dem';
 const REMOTE_TILE_ORIGIN = 'https://tiles.mapterhorn.com';
@@ -43,13 +50,124 @@ class TileRequestError extends Error {
 
 const isMissingTile = error => error instanceof TileRequestError && error.status === MISSING_TILE_STATUS;
 
+const responseHeader = (response, name) => response?.headers?.get?.(name);
+
+const parseContentLength = response => {
+    const raw = responseHeader(response, 'content-length');
+    if (raw === null || raw === undefined) return null;
+    const value = String(raw).trim();
+    if (!/^\d+$/.test(value)) throw new Error('DEM tile had an invalid Content-Length');
+    const size = Number(value);
+    if (!Number.isSafeInteger(size)) throw new Error('DEM tile had an invalid Content-Length');
+    return size;
+};
+
+const hasAscii = (bytes, offset, value) => {
+    for (let index = 0; index < value.length; index++) {
+        if (bytes[offset + index] !== value.charCodeAt(index)) return false;
+    }
+    return true;
+};
+
+const validateWebp = data => {
+    const bytes = new Uint8Array(data);
+    if (bytes.byteLength < 20) throw new Error('DEM tile was empty or truncated');
+    if (!hasAscii(bytes, 0, 'RIFF') || !hasAscii(bytes, 8, 'WEBP')) {
+        throw new Error('DEM tile was not a WebP image');
+    }
+
+    const view = new DataView(data);
+    if (view.getUint32(4, true) + 8 !== bytes.byteLength) {
+        throw new Error('DEM tile had an invalid WebP RIFF length');
+    }
+    const validFirstChunk = hasAscii(bytes, 12, 'VP8 ')
+        || hasAscii(bytes, 12, 'VP8L')
+        || hasAscii(bytes, 12, 'VP8X');
+    if (!validFirstChunk) throw new Error('DEM tile had an invalid WebP image chunk');
+
+    const chunkSize = view.getUint32(16, true);
+    const chunkEnd = 20 + chunkSize + (chunkSize % 2);
+    if (chunkEnd > bytes.byteLength) throw new Error('DEM tile had a truncated WebP image chunk');
+};
+
+const readBoundedWebp = async (response, deadline = null) => {
+    const mediaType = String(responseHeader(response, 'content-type') || '')
+        .split(';', 1)[0]
+        .trim()
+        .toLowerCase();
+    if (mediaType !== 'image/webp') {
+        deadline?.abort();
+        throw new Error('DEM tile had an unexpected media type');
+    }
+
+    let declaredSize;
+    try {
+        declaredSize = parseContentLength(response);
+    } catch (error) {
+        deadline?.abort();
+        throw error;
+    }
+    if (declaredSize !== null && declaredSize > MAX_TILE_BYTES) {
+        deadline?.abort();
+        throw new Error(`DEM tile exceeded the ${MAX_TILE_BYTES}-byte limit`);
+    }
+
+    const reader = response?.body?.getReader?.();
+    if (!reader) {
+        deadline?.abort();
+        throw new Error('DEM tile response body was unavailable');
+    }
+
+    const chunks = [];
+    let complete = false;
+    let total = 0;
+    try {
+        while (true) {
+            const pending = reader.read();
+            const result = deadline ? await deadline.run(pending) : await pending;
+            if (result.done) {
+                complete = true;
+                break;
+            }
+            const chunk = result.value instanceof Uint8Array
+                ? result.value
+                : new Uint8Array(result.value);
+            total += chunk.byteLength;
+            if (total > MAX_TILE_BYTES) {
+                throw new Error(`DEM tile exceeded the ${MAX_TILE_BYTES}-byte limit`);
+            }
+            chunks.push(chunk);
+        }
+    } finally {
+        if (!complete) {
+            deadline?.abort();
+            try { reader.cancel().catch(() => {}); } catch (error) { /* Best-effort stream teardown. */ }
+        }
+        try { reader.releaseLock(); } catch (error) { /* A pending read releases after cancellation. */ }
+    }
+
+    if (declaredSize !== null && declaredSize !== total) {
+        throw new Error('DEM tile body did not match its Content-Length');
+    }
+    const data = new ArrayBuffer(total);
+    const output = new Uint8Array(data);
+    let offset = 0;
+    for (const chunk of chunks) {
+        output.set(chunk, offset);
+        offset += chunk.byteLength;
+    }
+    validateWebp(data);
+    return data;
+};
+
 const cleanIndex = raw => {
     const index = {};
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return index;
     for (const [url, entry] of Object.entries(raw)) {
         if (!url.startsWith(`${REMOTE_TILE_ORIGIN}/`) || !entry || typeof entry !== 'object') continue;
         const size = Number(entry.size), used = Number(entry.used);
-        if (Number.isFinite(size) && size > 0 && Number.isFinite(used) && used > 0) {
+        if (Number.isFinite(size) && size > 0 && size <= MAX_TILE_BYTES
+                && Number.isFinite(used) && used > 0) {
             index[url] = { size: Math.floor(size), used: Math.floor(used) };
         }
     }
@@ -140,7 +258,7 @@ const create = ({
             const response = await cache.match(item);
             const size = Number(response && response.headers.get('x-bpb-size'));
             const used = Number(response && response.headers.get('x-bpb-used'));
-            if (Number.isFinite(size) && size > 0) {
+            if (Number.isFinite(size) && size > 0 && size <= MAX_TILE_BYTES) {
                 index[item.url] = {
                     size: Math.floor(size),
                     used: Number.isFinite(used) && used > 0 ? Math.floor(used) : now()
@@ -178,17 +296,14 @@ const create = ({
                 scheduleSave(state);
                 return null;
             }
-            const data = await response.arrayBuffer();
-            if (!data.byteLength) {
-                await state.cache.delete(remoteUrl);
-                delete state.index[remoteUrl];
-                scheduleSave(state);
-                return null;
-            }
+            const data = await readBoundedWebp(response);
             state.index[remoteUrl] = { size: data.byteLength, used: now() };
             scheduleSave(state);
             return data;
         } catch (error) {
+            try { await state.cache.delete(remoteUrl); } catch (deleteError) { /* Best-effort corrupt-entry cleanup. */ }
+            delete state.index[remoteUrl];
+            scheduleSave(state);
             return null;
         }
     };
@@ -196,7 +311,7 @@ const create = ({
     const enqueueStore = (remoteUrl, data, contentType) => {
         writeQueue = writeQueue.then(async () => {
             const state = await getState();
-            if (!state || data.byteLength > limitBytes) return;
+            if (!state || data.byteLength > limitBytes || data.byteLength > MAX_TILE_BYTES) return;
             const used = now();
             const response = new CachedResponse(data.slice(0), {
                 status: 200,
@@ -248,9 +363,8 @@ const create = ({
                     response && response.status
                 );
             }
-            const data = await deadline.run(response.arrayBuffer());
-            if (!data.byteLength) throw new Error('DEM tile was empty');
-            if (limitBytes > 0) enqueueStore(remoteUrl, data, response.headers.get('content-type'));
+            const data = await readBoundedWebp(response, deadline);
+            if (limitBytes > 0) enqueueStore(remoteUrl, data, responseHeader(response, 'content-type'));
             return { data };
         } finally {
             deadline.clear();
@@ -306,4 +420,6 @@ const getUsage = async ({ cacheStorage, storageArea } = {}) => {
     }
 };
 
-export const terrainCache = { CACHE_NAME, INDEX_KEY, PROTOCOL, create, getUsage, isMissingTile, parseTileUrl };
+export const terrainCache = {
+    CACHE_NAME, INDEX_KEY, MAX_TILE_BYTES, PROTOCOL, create, getUsage, isMissingTile, parseTileUrl
+};

@@ -791,11 +791,21 @@ applied after the base style becomes ready.
 
 ### Bounded DEM cache
 
-Successful Mapterhorn responses may be kept in CacheStorage. A best-effort LRU
-index in `storage.local` tracks size and use; the configured byte budget is
-validated by the shared settings schema. Index reconciliation tolerates browser
-eviction and partial storage cleanup. The extension does not request persistent
-storage, so cache loss simply returns to the network on the next 3D session.
+Successful Mapterhorn responses may be kept in CacheStorage. Before MapLibre or
+the cache receives a tile, the loader requires `image/webp`, streams it through
+the shared request deadline, stops above a 1 MiB encoded-body ceiling, and
+validates the RIFF/WebP envelope. The ceiling is separate from the user-selected
+total cache budget: a 2026-08-09 live sample across zooms 10–14 measured
+277,870–402,962 bytes, so 1 MiB retains more than 2.5x headroom without trusting
+one provider response to size itself. An honest oversized `Content-Length` is
+rejected before reading; a missing or dishonest length remains bounded by the
+stream.
+
+A best-effort LRU index in `storage.local` tracks size and use; the configured
+byte budget is validated by the shared settings schema. Index reconciliation
+tolerates browser eviction and partial storage cleanup, and invalid legacy cache
+entries are purged on read. The extension does not request persistent storage,
+so cache loss simply returns to the network on the next 3D session.
 
 Only DEM response bytes are owned by this cache. OpenFreeMap and selected
 raster providers follow their own browser cache policies.

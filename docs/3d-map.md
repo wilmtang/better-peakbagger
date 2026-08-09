@@ -458,8 +458,13 @@ best-effort `storage.local` LRU index. Important properties:
 - missing or independently evicted entries become ordinary cache misses;
 - a missing index can be reconstructed from metadata stored on cached
   responses;
-- writes are serialized, oversized single tiles are not stored, and oldest
-  entries are trimmed first;
+- every network and cached body must be `image/webp`, remain at or below the
+  measured 1 MiB per-tile ceiling, and pass RIFF/WebP envelope validation;
+- network bodies are streamed under the whole-request deadline, so absent or
+  dishonest `Content-Length` cannot bypass the ceiling and an honest oversized
+  response is rejected before its body is read;
+- writes are serialized, validated tiles larger than the selected total cache
+  budget are not stored, and oldest entries are trimmed first;
 - quota pressure, index-write failure, or browser eviction never makes terrain
   fail if the network tile itself is usable;
 - only DEM bytes use this cache. Raster and vector imagery follow normal

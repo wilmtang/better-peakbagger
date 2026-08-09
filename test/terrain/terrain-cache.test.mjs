@@ -49,6 +49,27 @@ const loadCacheModule = () => {
     return { dom, module: terrainCache };
 };
 
+const makeWebp = (size = 24, marker = 0) => {
+    assert.ok(size >= 20 && size % 2 === 0, 'test WebP sizes must be even and include one chunk');
+    const bytes = new Uint8Array(size);
+    const writeAscii = (offset, value) => {
+        for (let index = 0; index < value.length; index++) bytes[offset + index] = value.charCodeAt(index);
+    };
+    writeAscii(0, 'RIFF');
+    writeAscii(8, 'WEBP');
+    writeAscii(12, 'VP8L');
+    const view = new DataView(bytes.buffer);
+    view.setUint32(4, size - 8, true);
+    view.setUint32(16, size - 20, true);
+    bytes.fill(marker, 20);
+    return bytes;
+};
+
+const webpResponse = (bytes = makeWebp(), headers = {}) => new Response(bytes, {
+    status: 200,
+    headers: { 'content-type': 'image/webp', ...headers }
+});
+
 test('DEM protocol accepts only bounded Mapterhorn tile coordinates', () => {
     const { dom, module } = loadCacheModule();
     assert.equal(module.parseTileUrl('bpb-dem://14/2651/5947.webp'), 'https://tiles.mapterhorn.com/14/2651/5947.webp');
@@ -104,14 +125,14 @@ test('DEM cache reuses a tile without another network request', async () => {
         ResponseCtor: Response,
         fetchFn: async () => {
             fetches++;
-            return new Response(new Uint8Array([1, 2, 3, 4]), { status: 200, headers: { 'content-type': 'image/webp' } });
+            return webpResponse(makeWebp(24, 7));
         }
     });
 
     const request = { url: 'bpb-dem://1/1/0.webp' };
-    assert.deepEqual(Array.from(new Uint8Array((await loader.load(request, new AbortController())).data)), [1, 2, 3, 4]);
+    assert.deepEqual(new Uint8Array((await loader.load(request, new AbortController())).data), makeWebp(24, 7));
     await loader.flush();
-    assert.deepEqual(Array.from(new Uint8Array((await loader.load(request, new AbortController())).data)), [1, 2, 3, 4]);
+    assert.deepEqual(new Uint8Array((await loader.load(request, new AbortController())).data), makeWebp(24, 7));
     assert.equal(fetches, 1);
     await loader.flush();
     dom.window.close();
@@ -130,7 +151,7 @@ test('DEM cache evicts least-recently-used tiles above its limit', async () => {
         now: () => ++clock,
         fetchFn: async () => {
             fetches++;
-            return new Response(new Uint8Array(700 * 1024).fill(fetches), { status: 200, headers: { 'content-type': 'image/webp' } });
+            return webpResponse(makeWebp(700 * 1024, fetches));
         }
     });
 
@@ -166,7 +187,7 @@ test('a zero DEM cache limit clears owned best-effort storage', async () => {
         ResponseCtor: Response,
         fetchFn: async () => {
             fetches++;
-            return new Response(new Uint8Array([7]), { status: 200, headers: { 'content-type': 'image/webp' } });
+            return webpResponse(makeWebp(24, 7));
         }
     });
 
@@ -176,6 +197,186 @@ test('a zero DEM cache limit clears owned best-effort storage', async () => {
     assert.equal(fetches, 2);
     assert.equal(cacheStorage.deletions.includes(module.CACHE_NAME), true);
     assert.equal(storageArea.values[module.INDEX_KEY], undefined);
+    dom.window.close();
+});
+
+test('DEM response size accepts the exact ceiling and rejects an honest byte over before reading', async () => {
+    const { dom, module } = loadCacheModule();
+    const exact = makeWebp(module.MAX_TILE_BYTES, 3);
+    let oversizedBodyReads = 0;
+    const responses = [
+        webpResponse(exact, {
+            'content-length': String(module.MAX_TILE_BYTES),
+            'content-type': 'Image/WebP; charset=binary'
+        }),
+        {
+            ok: true,
+            status: 200,
+            headers: { get: name => ({
+                'content-type': 'image/webp',
+                'content-length': String(module.MAX_TILE_BYTES + 1)
+            })[name.toLowerCase()] ?? null },
+            get body() {
+                oversizedBodyReads++;
+                return new ReadableStream();
+            }
+        }
+    ];
+    const loader = module.create({
+        limitMb: 0,
+        cacheStorage: new MemoryCacheStorage(),
+        storageArea: makeStorageArea(),
+        ResponseCtor: Response,
+        fetchFn: async () => responses.shift()
+    });
+
+    const accepted = await loader.load({ url: 'bpb-dem://2/0/0.webp' }, new AbortController());
+    assert.equal(accepted.data.byteLength, module.MAX_TILE_BYTES);
+    await assert.rejects(
+        loader.load({ url: 'bpb-dem://2/1/0.webp' }, new AbortController()),
+        /exceeded.*byte limit/i
+    );
+    assert.equal(oversizedBodyReads, 0, 'an honest oversized response must be rejected before its body is read');
+    dom.window.close();
+});
+
+test('DEM response streaming catches missing and dishonest Content-Length overflow', async () => {
+    const { dom, module } = loadCacheModule();
+    const responses = [
+        webpResponse(makeWebp(24, 1)),
+        webpResponse(makeWebp(24, 2), { 'content-length': '22' })
+    ];
+    let overflowCancelled = 0;
+    let overflowSignal = null;
+    const overflowReader = {
+        index: 0,
+        async read() {
+            const chunks = [makeWebp(module.MAX_TILE_BYTES, 4), new Uint8Array([0])];
+            return this.index < chunks.length
+                ? { done: false, value: chunks[this.index++] }
+                : { done: true };
+        },
+        cancel() { overflowCancelled++; return Promise.resolve(); },
+        releaseLock() {}
+    };
+    const loader = module.create({
+        limitMb: 0,
+        cacheStorage: new MemoryCacheStorage(),
+        storageArea: makeStorageArea(),
+        ResponseCtor: Response,
+        fetchFn: async (_url, init) => {
+            if (responses.length) return responses.shift();
+            overflowSignal = init.signal;
+            return {
+                ok: true,
+                status: 200,
+                headers: { get: name => (name.toLowerCase() === 'content-type' ? 'image/webp' : null) },
+                body: { getReader: () => overflowReader }
+            };
+        }
+    });
+
+    assert.equal((await loader.load({ url: 'bpb-dem://2/0/0.webp' })).data.byteLength, 24,
+        'a chunked response without Content-Length remains valid');
+    await assert.rejects(loader.load({ url: 'bpb-dem://2/1/0.webp' }), /match its Content-Length/i);
+    await assert.rejects(loader.load({ url: 'bpb-dem://2/2/0.webp' }), /exceeded.*byte limit/i);
+    assert.equal(overflowCancelled, 1, 'overflow must cancel the unread remainder of the stream');
+    assert.equal(overflowSignal.aborted, true, 'overflow must abort the network request');
+    dom.window.close();
+});
+
+test('DEM response validation rejects empty, truncated, mistyped, and malformed WebP bodies', async () => {
+    const { dom, module } = loadCacheModule();
+    const badRiff = makeWebp();
+    badRiff[0] = 'N'.charCodeAt(0);
+    const badWebp = makeWebp();
+    badWebp[8] = 'N'.charCodeAt(0);
+    const badChunk = makeWebp();
+    badChunk[12] = 'J'.charCodeAt(0);
+    const badRiffLength = makeWebp();
+    new DataView(badRiffLength.buffer).setUint32(4, 100, true);
+    const truncatedChunk = makeWebp();
+    new DataView(truncatedChunk.buffer).setUint32(16, 100, true);
+    const cases = [
+        { response: webpResponse(new Uint8Array()), pattern: /empty or truncated/i },
+        { response: webpResponse(makeWebp().subarray(0, 12)), pattern: /empty or truncated/i },
+        { response: webpResponse(badRiff), pattern: /not a WebP/i },
+        { response: webpResponse(badWebp), pattern: /not a WebP/i },
+        { response: webpResponse(badChunk), pattern: /invalid WebP image chunk/i },
+        { response: webpResponse(badRiffLength), pattern: /invalid WebP RIFF length/i },
+        { response: webpResponse(truncatedChunk), pattern: /truncated WebP image chunk/i },
+        {
+            response: new Response(makeWebp(), { headers: { 'content-type': 'text/html' } }),
+            pattern: /unexpected media type/i
+        },
+        {
+            response: webpResponse(makeWebp(), { 'content-length': '24, 25' }),
+            pattern: /invalid Content-Length/i
+        }
+    ];
+    const loader = module.create({
+        limitMb: 0,
+        cacheStorage: new MemoryCacheStorage(),
+        storageArea: makeStorageArea(),
+        ResponseCtor: Response,
+        fetchFn: async () => cases[0].response
+    });
+
+    for (let index = 0; cases.length; index++) {
+        const { pattern } = cases[0];
+        await assert.rejects(loader.load({ url: `bpb-dem://4/${index}/0.webp` }), pattern);
+        cases.shift();
+    }
+    dom.window.close();
+});
+
+test('a corrupt cached DEM tile is purged before a validated network replacement is used', async () => {
+    const { dom, module } = loadCacheModule();
+    const cacheStorage = new MemoryCacheStorage();
+    const storageArea = makeStorageArea();
+    const remoteUrl = 'https://tiles.mapterhorn.com/1/1/0.webp';
+    const cache = await cacheStorage.open(module.CACHE_NAME);
+    await cache.put(remoteUrl, webpResponse(new Uint8Array([1, 2, 3, 4]), {
+        'x-bpb-size': '4', 'x-bpb-used': '1'
+    }));
+    storageArea.values[module.INDEX_KEY] = { [remoteUrl]: { size: 4, used: 1 } };
+    let fetches = 0;
+    const loader = module.create({
+        limitMb: 1,
+        cacheStorage,
+        storageArea,
+        ResponseCtor: Response,
+        fetchFn: async () => {
+            fetches++;
+            return webpResponse(makeWebp(24, 8));
+        }
+    });
+
+    assert.deepEqual(new Uint8Array((await loader.load({ url: 'bpb-dem://1/1/0.webp' })).data), makeWebp(24, 8));
+    await loader.flush();
+    assert.deepEqual(new Uint8Array((await loader.load({ url: 'bpb-dem://1/1/0.webp' })).data), makeWebp(24, 8));
+    assert.equal(fetches, 1, 'the validated replacement should become the next cache hit');
+    dom.window.close();
+});
+
+test('concurrent DEM loads validate each response independently', async () => {
+    const { dom, module } = loadCacheModule();
+    let fetches = 0;
+    const loader = module.create({
+        limitMb: 0,
+        cacheStorage: new MemoryCacheStorage(),
+        storageArea: makeStorageArea(),
+        ResponseCtor: Response,
+        fetchFn: async () => webpResponse(makeWebp(24, ++fetches))
+    });
+    const results = await Promise.all([
+        'bpb-dem://3/0/0.webp', 'bpb-dem://3/1/0.webp',
+        'bpb-dem://3/2/0.webp', 'bpb-dem://3/3/0.webp'
+    ].map(url => loader.load({ url })));
+
+    assert.equal(results.length, 4);
+    assert.equal(results.every(result => result.data.byteLength === 24), true);
+    assert.equal(fetches, 4);
     dom.window.close();
 });
 
@@ -235,6 +436,74 @@ test('a DEM tile that never answers fails instead of leaving a hole in the mesh'
 
     await assert.rejects(loader.load({ url: 'bpb-dem://1/1/0.webp' }), /deadline/i);
     assert.equal(aborts.length, 1, 'the stalled tile socket must be released');
+    dom.window.close();
+});
+
+test('a DEM body that stalls after headers is cancelled at the same request deadline', async () => {
+    const { dom, module } = loadCacheModule();
+    let aborts = 0, cancellations = 0;
+    const reader = {
+        read: () => new Promise(() => {}),
+        cancel() { cancellations++; return Promise.resolve(); },
+        releaseLock() {}
+    };
+    const loader = module.create({
+        limitMb: 0,
+        cacheStorage: new MemoryCacheStorage(),
+        storageArea: makeStorageArea(),
+        ResponseCtor: Response,
+        tileTimeoutMs: 10,
+        fetchFn: async (_url, init) => {
+            init.signal.addEventListener('abort', () => { aborts++; }, { once: true });
+            return {
+                ok: true,
+                status: 200,
+                headers: { get: name => (name.toLowerCase() === 'content-type' ? 'image/webp' : null) },
+                body: { getReader: () => reader }
+            };
+        }
+    });
+
+    await assert.rejects(loader.load({ url: 'bpb-dem://1/1/0.webp' }), /deadline/i);
+    assert.equal(aborts, 1, 'the body deadline must abort the underlying request');
+    assert.equal(cancellations, 1, 'the unread response stream must be cancelled');
+    dom.window.close();
+});
+
+test('MapLibre cancellation tears down a DEM response body already being streamed', async () => {
+    const { dom, module } = loadCacheModule();
+    let readStarted;
+    const started = new Promise(resolve => { readStarted = resolve; });
+    let cancellations = 0;
+    const controller = new AbortController();
+    const loader = module.create({
+        limitMb: 0,
+        cacheStorage: new MemoryCacheStorage(),
+        storageArea: makeStorageArea(),
+        ResponseCtor: Response,
+        tileTimeoutMs: 50_000,
+        fetchFn: async (_url, init) => ({
+            ok: true,
+            status: 200,
+            headers: { get: name => (name.toLowerCase() === 'content-type' ? 'image/webp' : null) },
+            body: {
+                getReader: () => ({
+                    read: () => new Promise((_resolve, reject) => {
+                        readStarted();
+                        init.signal.addEventListener('abort', () => reject(new Error('aborted')), { once: true });
+                    }),
+                    cancel() { cancellations++; return Promise.resolve(); },
+                    releaseLock() {}
+                })
+            }
+        })
+    });
+
+    const pending = loader.load({ url: 'bpb-dem://1/1/0.webp' }, controller);
+    await started;
+    controller.abort();
+    await assert.rejects(pending, error => !/deadline/i.test(error.message));
+    assert.equal(cancellations, 1);
     dom.window.close();
 });
 
