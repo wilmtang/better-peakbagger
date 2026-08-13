@@ -7,7 +7,7 @@ import { photoProject as Project } from './photo-project.js';
 import { photoLibrary as Library } from './photo-library.js';
 
 const DATABASE_NAME = 'betterPeakbaggerPhotos';
-const DATABASE_VERSION = 2;
+const DATABASE_VERSION = 3;
 const STORES = Object.freeze({
     photos: 'photos',
     projects: 'projects',
@@ -16,10 +16,12 @@ const STORES = Object.freeze({
     operations: 'operations',
     secrets: 'secrets',
     tombstones: 'tombstones',
+    metadata: 'metadata',
 });
 const STORE_NAMES = Object.freeze(Object.values(STORES));
 const MAX_THUMBNAIL_BATCH = 100;
 const MAX_MAINTENANCE_BATCH = 50;
+const CATALOG_STATE_KEY = 'catalog';
 
 class PhotoStoreConflictError extends Error {
     constructor(localId, message = 'The photo changed in another tab. Reload it and try again.') {
@@ -48,15 +50,28 @@ const openDatabase = ({
     if (!indexedDB?.open) return Promise.reject(new Error('IndexedDB is unavailable.'));
     return new Promise((resolve, reject) => {
         const request = indexedDB.open(name, DATABASE_VERSION);
-        request.onupgradeneeded = () => {
+        request.onupgradeneeded = event => {
             const database = request.result;
             for (const storeName of STORE_NAMES) {
                 if (!database.objectStoreNames.contains(storeName)) {
                     const store = database.createObjectStore(storeName, {
-                        keyPath: storeName === STORES.operations ? 'operationId' : 'localId',
+                        keyPath: storeName === STORES.operations
+                            ? 'operationId'
+                            : storeName === STORES.metadata ? 'key' : 'localId',
                     });
                     if (storeName === STORES.operations) {
                         store.createIndex('byLocalId', 'localId', { unique: false });
+                    }
+                    if (storeName === STORES.metadata) {
+                        store.put({
+                            key: CATALOG_STATE_KEY,
+                            generation: event.oldVersion > 0 ? 1 : 0,
+                            confirmedGeneration: 0,
+                            signature: null,
+                            commitUrl: null,
+                            backedUpAt: null,
+                            revisions: {},
+                        });
                     }
                 }
             }
@@ -94,6 +109,75 @@ const nextRevision = (photo, tombstone) => Math.max(
     tombstoneRevision(tombstone),
 ) + 1;
 
+const cleanCatalogState = value => {
+    const generation = Number.isSafeInteger(value?.generation) && value.generation >= 0
+        ? value.generation
+        : 0;
+    const confirmedGeneration = Number.isSafeInteger(value?.confirmedGeneration)
+        && value.confirmedGeneration >= 0
+        && value.confirmedGeneration <= generation
+        ? value.confirmedGeneration
+        : 0;
+    return {
+        key: CATALOG_STATE_KEY,
+        generation,
+        confirmedGeneration,
+        signature: typeof value?.signature === 'string' ? value.signature : null,
+        commitUrl: cleanDeleteUrl(value?.commitUrl),
+        backedUpAt: typeof value?.backedUpAt === 'string'
+            && Number.isFinite(Date.parse(value.backedUpAt))
+            ? new Date(value.backedUpAt).toISOString()
+            : null,
+        revisions: value?.revisions && typeof value.revisions === 'object'
+            && !Array.isArray(value.revisions)
+            ? structuredClone(value.revisions)
+            : {},
+    };
+};
+
+const advanceCatalog = (metadata, state) => {
+    const next = { ...state, generation: state.generation + 1 };
+    metadata.put(next);
+    return next;
+};
+
+const recoveryPhotoIdentity = value => {
+    const photo = Library.cleanPhoto(value);
+    if (!photo) return null;
+    if (photo.deletedAt) {
+        return JSON.stringify({ kind: 'tombstone', localId: photo.localId, deletedAt: photo.deletedAt });
+    }
+    return JSON.stringify({
+        kind: 'photo',
+        schemaVersion: photo.schemaVersion,
+        localId: photo.localId,
+        createdAt: photo.createdAt,
+        updatedAt: photo.updatedAt,
+        title: photo.title,
+        alt: photo.alt,
+        source: photo.source,
+        export: photo.export,
+        remote: photo.remote,
+        lineage: photo.lineage,
+        references: photo.references,
+    });
+};
+
+const recoveryBundleIdentity = (photo, project) => JSON.stringify({
+    photo: recoveryPhotoIdentity(photo),
+    project: photo?.deletedAt ? null : Project.cleanProject(project),
+});
+
+const presentPhoto = (value, catalog) => {
+    const photo = Library.cleanPhoto(value);
+    if (!photo || catalog.generation === catalog.confirmedGeneration
+        || !['current', 'restored'].includes(photo.backup.state)) return photo;
+    return Library.cleanPhoto({
+        ...photo,
+        backup: { state: 'pending', signature: null, backedUpAt: null, commitUrl: null },
+    });
+};
+
 const abortAndRethrow = async (transaction, error) => {
     try { transaction.abort(); } catch {}
     await transactionDone(transaction).catch(() => {});
@@ -126,14 +210,19 @@ const createPhotoStore = async options => {
             STORES.originals,
             STORES.thumbnails,
             STORES.tombstones,
+            STORES.metadata,
         ], 'readwrite');
         const photos = transaction.objectStore(STORES.photos);
         const tombstones = transaction.objectStore(STORES.tombstones);
+        const projects = transaction.objectStore(STORES.projects);
+        const metadata = transaction.objectStore(STORES.metadata);
         let storedPhoto;
         try {
-            const [currentValue, tombstone] = await Promise.all([
+            const [currentValue, currentProject, tombstone, catalogValue] = await Promise.all([
                 requestResult(photos.get(cleanPhoto.localId)),
+                requestResult(projects.get(cleanPhoto.localId)),
                 requestResult(tombstones.get(cleanPhoto.localId)),
+                requestResult(metadata.get(CATALOG_STATE_KEY)),
             ]);
             const current = Library.cleanPhoto(currentValue);
             if ((current && current.revision !== cleanPhoto.revision)
@@ -149,10 +238,14 @@ const createPhotoStore = async options => {
                 revision: nextRevision(current, tombstone),
             });
             photos.put(storedPhoto);
+            if (recoveryBundleIdentity(current, currentProject)
+                !== recoveryBundleIdentity(storedPhoto, cleanProject)) {
+                advanceCatalog(metadata, cleanCatalogState(catalogValue));
+            }
         } catch (error) {
             return abortAndRethrow(transaction, error);
         }
-        transaction.objectStore(STORES.projects).put(cleanProject);
+        projects.put(cleanProject);
         transaction.objectStore(STORES.originals).put(cleanOriginal);
         transaction.objectStore(STORES.thumbnails).put(cleanThumbnail);
         if (storedPhoto.deletedAt) {
@@ -177,6 +270,7 @@ const createPhotoStore = async options => {
             STORES.originals,
             STORES.thumbnails,
             STORES.secrets,
+            STORES.metadata,
         ], 'readonly');
         const stores = {
             photo: STORES.photos,
@@ -184,15 +278,18 @@ const createPhotoStore = async options => {
             original: STORES.originals,
             thumbnail: STORES.thumbnails,
             secret: STORES.secrets,
+            catalog: STORES.metadata,
         };
         const entries = await Promise.all(Object.entries(stores).map(async ([key, storeName]) => [
             key,
-            await requestResult(transaction.objectStore(storeName).get(localId)),
+            await requestResult(transaction.objectStore(storeName).get(
+                storeName === STORES.metadata ? CATALOG_STATE_KEY : localId)),
         ]));
         await transactionDone(transaction);
         const values = Object.fromEntries(entries);
+        const catalog = cleanCatalogState(values.catalog);
         return {
-            photo: values.photo ? Library.cleanPhoto(values.photo) : null,
+            photo: values.photo ? presentPhoto(values.photo, catalog) : null,
             project: values.project ? Project.cleanProject(values.project) : null,
             original: values.original?.blob instanceof Blob ? values.original.blob : null,
             thumbnail: values.thumbnail?.blob instanceof Blob ? values.thumbnail.blob : null,
@@ -201,10 +298,14 @@ const createPhotoStore = async options => {
     };
 
     const listPhotos = async ({ includeDeleted = false } = {}) => {
-        const transaction = database.transaction(STORES.photos, 'readonly');
-        const values = await requestResult(transaction.objectStore(STORES.photos).getAll());
+        const transaction = database.transaction([STORES.photos, STORES.metadata], 'readonly');
+        const [values, catalogValue] = await Promise.all([
+            requestResult(transaction.objectStore(STORES.photos).getAll()),
+            requestResult(transaction.objectStore(STORES.metadata).get(CATALOG_STATE_KEY)),
+        ]);
         await transactionDone(transaction);
-        return values.map(Library.cleanPhoto).filter(Boolean)
+        const catalog = cleanCatalogState(catalogValue);
+        return values.map(value => presentPhoto(value, catalog)).filter(Boolean)
             .filter(photo => includeDeleted || !photo.deletedAt)
             .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
     };
@@ -235,11 +336,13 @@ const createPhotoStore = async options => {
             STORES.photos,
             STORES.projects,
             STORES.tombstones,
+            STORES.metadata,
         ], 'readonly');
-        const [photos, projects, tombstones] = await Promise.all([
+        const [photos, projects, tombstones, catalogValue] = await Promise.all([
             requestResult(transaction.objectStore(STORES.photos).getAll()),
             requestResult(transaction.objectStore(STORES.projects).getAll()),
             requestResult(transaction.objectStore(STORES.tombstones).getAll()),
+            requestResult(transaction.objectStore(STORES.metadata).get(CATALOG_STATE_KEY)),
         ]);
         await transactionDone(transaction);
         const projectsById = new Map(projects.map(value => [value.localId, Project.cleanProject(value)]));
@@ -256,20 +359,67 @@ const createPhotoStore = async options => {
                 ...photos.map(value => [value.localId, Library.cleanPhoto(value)?.revision ?? 0]),
                 ...tombstones.map(value => [value.localId, tombstoneRevision(value)]),
             ]),
+            catalog: cleanCatalogState(catalogValue),
         };
+    };
+
+    const getCatalogState = async () => {
+        const transaction = database.transaction(STORES.metadata, 'readonly');
+        const value = await requestResult(
+            transaction.objectStore(STORES.metadata).get(CATALOG_STATE_KEY));
+        await transactionDone(transaction);
+        return cleanCatalogState(value);
+    };
+
+    const confirmCatalogBackup = async ({
+        generation,
+        signature,
+        revisions,
+        commitUrl = null,
+        backedUpAt,
+    } = {}) => {
+        if (!Number.isSafeInteger(generation) || generation < 0
+            || typeof signature !== 'string'
+            || !revisions || typeof revisions !== 'object' || Array.isArray(revisions)
+            || typeof backedUpAt !== 'string' || !Number.isFinite(Date.parse(backedUpAt))) {
+            throw new TypeError('photo catalog confirmation is invalid');
+        }
+        const transaction = database.transaction(STORES.metadata, 'readwrite');
+        const metadata = transaction.objectStore(STORES.metadata);
+        const current = cleanCatalogState(await requestResult(metadata.get(CATALOG_STATE_KEY)));
+        if (generation > current.generation) {
+            return abortAndRethrow(transaction, new TypeError('photo catalog generation is in the future'));
+        }
+        const confirmed = cleanCatalogState({
+            ...current,
+            confirmedGeneration: generation,
+            signature,
+            revisions,
+            commitUrl,
+            backedUpAt,
+        });
+        metadata.put(confirmed);
+        await transactionDone(transaction);
+        return confirmed;
     };
 
     const putPhoto = async photo => {
         const cleaned = Library.cleanPhoto(photo);
         if (!cleaned) throw new TypeError('photo store requires a clean photo');
-        const transaction = database.transaction([STORES.photos, STORES.tombstones], 'readwrite');
+        const transaction = database.transaction([
+            STORES.photos,
+            STORES.tombstones,
+            STORES.metadata,
+        ], 'readwrite');
         const photos = transaction.objectStore(STORES.photos);
         const tombstones = transaction.objectStore(STORES.tombstones);
+        const metadata = transaction.objectStore(STORES.metadata);
         let storedPhoto;
         try {
-            const [currentValue, tombstone] = await Promise.all([
+            const [currentValue, tombstone, catalogValue] = await Promise.all([
                 requestResult(photos.get(cleaned.localId)),
                 requestResult(tombstones.get(cleaned.localId)),
+                requestResult(metadata.get(CATALOG_STATE_KEY)),
             ]);
             const current = Library.cleanPhoto(currentValue);
             if ((current && current.revision !== cleaned.revision)
@@ -285,6 +435,9 @@ const createPhotoStore = async options => {
                 revision: nextRevision(current, tombstone),
             });
             photos.put(storedPhoto);
+            if (recoveryPhotoIdentity(current) !== recoveryPhotoIdentity(storedPhoto)) {
+                advanceCatalog(metadata, cleanCatalogState(catalogValue));
+            }
             if (storedPhoto.deletedAt) {
                 tombstones.put({
                     localId: storedPhoto.localId,
@@ -307,16 +460,19 @@ const createPhotoStore = async options => {
             throw new TypeError('photo store requires a clean restored photo');
         }
         const restoreStores = retainAssets
-            ? [STORES.photos, STORES.tombstones]
-            : [STORES.photos, STORES.tombstones, STORES.projects, STORES.originals, STORES.thumbnails];
+            ? [STORES.photos, STORES.tombstones, STORES.metadata]
+            : [STORES.photos, STORES.tombstones, STORES.projects, STORES.originals,
+                STORES.thumbnails, STORES.metadata];
         const transaction = database.transaction(restoreStores, 'readwrite');
         const photos = transaction.objectStore(STORES.photos);
         const tombstones = transaction.objectStore(STORES.tombstones);
+        const metadata = transaction.objectStore(STORES.metadata);
         let storedPhoto;
         try {
-            const [currentValue, tombstone] = await Promise.all([
+            const [currentValue, tombstone, catalogValue] = await Promise.all([
                 requestResult(photos.get(cleaned.localId)),
                 requestResult(tombstones.get(cleaned.localId)),
+                requestResult(metadata.get(CATALOG_STATE_KEY)),
             ]);
             const current = Library.cleanPhoto(currentValue);
             if (!current?.deletedAt || current.revision !== cleaned.revision || !tombstone) {
@@ -332,6 +488,9 @@ const createPhotoStore = async options => {
                 revision: nextRevision(current, tombstone),
             });
             photos.put(storedPhoto);
+            if (recoveryPhotoIdentity(current) !== recoveryPhotoIdentity(storedPhoto)) {
+                advanceCatalog(metadata, cleanCatalogState(catalogValue));
+            }
             tombstones.delete(cleaned.localId);
             if (!retainAssets) {
                 transaction.objectStore(STORES.projects).delete(cleaned.localId);
@@ -358,16 +517,19 @@ const createPhotoStore = async options => {
             STORES.photos,
             STORES.tombstones,
             STORES.operations,
+            STORES.metadata,
         ], 'readwrite');
         const photos = transaction.objectStore(STORES.photos);
         const tombstones = transaction.objectStore(STORES.tombstones);
         const operations = transaction.objectStore(STORES.operations);
+        const metadata = transaction.objectStore(STORES.metadata);
         let storedPhoto;
         let storedOperation;
         try {
-            const [currentValue, previousOperationIds] = await Promise.all([
+            const [currentValue, previousOperationIds, catalogValue] = await Promise.all([
                 requestResult(photos.get(cleaned.localId)),
                 requestResult(operations.index('byLocalId').getAllKeys(cleaned.localId)),
+                requestResult(metadata.get(CATALOG_STATE_KEY)),
             ]);
             const current = Library.cleanPhoto(currentValue);
             if (!current || current.deletedAt || current.revision !== cleaned.revision
@@ -380,6 +542,9 @@ const createPhotoStore = async options => {
                 photoRevision: storedPhoto.revision,
             });
             photos.put(storedPhoto);
+            if (recoveryPhotoIdentity(current) !== recoveryPhotoIdentity(storedPhoto)) {
+                advanceCatalog(metadata, cleanCatalogState(catalogValue));
+            }
             tombstones.delete(cleaned.localId);
             previousOperationIds.forEach(operationId => operations.delete(operationId));
             operations.put(storedOperation);
@@ -400,15 +565,18 @@ const createPhotoStore = async options => {
             STORES.photos,
             STORES.secrets,
             STORES.operations,
+            STORES.metadata,
         ], 'readwrite');
         const photos = transaction.objectStore(STORES.photos);
         const operations = transaction.objectStore(STORES.operations);
+        const metadata = transaction.objectStore(STORES.metadata);
         let storedPhoto;
         let storedOperation;
         try {
-            const [currentValue, operation] = await Promise.all([
+            const [currentValue, operation, catalogValue] = await Promise.all([
                 requestResult(photos.get(cleaned.localId)),
                 requestResult(operations.get(operationId)),
+                requestResult(metadata.get(CATALOG_STATE_KEY)),
             ]);
             const current = Library.cleanPhoto(currentValue);
             const secret = cleanDeleteUrl(operation?.deleteUrl);
@@ -420,6 +588,9 @@ const createPhotoStore = async options => {
             storedPhoto = Library.cleanPhoto({ ...cleaned, revision: current.revision + 1 });
             storedOperation = structuredClone({ ...operation, state: 'catalog-committed' });
             photos.put(storedPhoto);
+            if (recoveryPhotoIdentity(current) !== recoveryPhotoIdentity(storedPhoto)) {
+                advanceCatalog(metadata, cleanCatalogState(catalogValue));
+            }
             transaction.objectStore(STORES.secrets).put({
                 localId: cleaned.localId,
                 deleteUrl: secret,
@@ -437,14 +608,20 @@ const createPhotoStore = async options => {
         if (!cleaned || cleaned.remote.state !== 'draft' || typeof operationId !== 'string') {
             throw new TypeError('photo store requires a retryable photo and recovery operation');
         }
-        const transaction = database.transaction([STORES.photos, STORES.operations], 'readwrite');
+        const transaction = database.transaction([
+            STORES.photos,
+            STORES.operations,
+            STORES.metadata,
+        ], 'readwrite');
         const photos = transaction.objectStore(STORES.photos);
         const operations = transaction.objectStore(STORES.operations);
+        const metadata = transaction.objectStore(STORES.metadata);
         let storedPhoto;
         try {
-            const [currentValue, operation] = await Promise.all([
+            const [currentValue, operation, catalogValue] = await Promise.all([
                 requestResult(photos.get(cleaned.localId)),
                 requestResult(operations.get(operationId)),
+                requestResult(metadata.get(CATALOG_STATE_KEY)),
             ]);
             const current = Library.cleanPhoto(currentValue);
             if (!current || current.deletedAt || current.remote.state !== 'uploading'
@@ -455,6 +632,9 @@ const createPhotoStore = async options => {
             }
             storedPhoto = Library.cleanPhoto({ ...cleaned, revision: current.revision + 1 });
             photos.put(storedPhoto);
+            if (recoveryPhotoIdentity(current) !== recoveryPhotoIdentity(storedPhoto)) {
+                advanceCatalog(metadata, cleanCatalogState(catalogValue));
+            }
             operations.delete(operationId);
         } catch (error) {
             return abortAndRethrow(transaction, error);
@@ -521,14 +701,20 @@ const createPhotoStore = async options => {
     // operation is therefore a definite pre-request interruption and can be
     // returned to a retryable draft without claiming an unknown outcome.
     const recoverOrphanedUploads = async now => {
-        const transaction = database.transaction([STORES.photos, STORES.operations], 'readwrite');
+        const transaction = database.transaction([
+            STORES.photos,
+            STORES.operations,
+            STORES.metadata,
+        ], 'readwrite');
         const photos = transaction.objectStore(STORES.photos);
         const operations = transaction.objectStore(STORES.operations);
+        const metadata = transaction.objectStore(STORES.metadata);
         let recovered = [];
         try {
-            const [photoValues, operationValues] = await Promise.all([
+            const [photoValues, operationValues, catalogValue] = await Promise.all([
                 requestResult(photos.getAll()),
                 requestResult(operations.getAll()),
+                requestResult(metadata.get(CATALOG_STATE_KEY)),
             ]);
             const operatedIds = new Set(operationValues.map(value => value.localId));
             recovered = photoValues.map(Library.cleanPhoto).filter(Boolean)
@@ -538,6 +724,7 @@ const createPhotoStore = async options => {
                 const reset = Library.resetUpload(photo, now);
                 photos.put(Library.cleanPhoto({ ...reset, revision: photo.revision + 1 }));
             });
+            if (recovered.length) advanceCatalog(metadata, cleanCatalogState(catalogValue));
         } catch (error) {
             return abortAndRethrow(transaction, error);
         }
@@ -614,9 +801,20 @@ const createPhotoStore = async options => {
 
     const purge = async localId => {
         const transaction = database.transaction(STORE_NAMES, 'readwrite');
+        const photos = transaction.objectStore(STORES.photos);
+        const tombstones = transaction.objectStore(STORES.tombstones);
+        const metadata = transaction.objectStore(STORES.metadata);
+        const [photo, tombstone, catalogValue] = await Promise.all([
+            requestResult(photos.get(localId)),
+            requestResult(tombstones.get(localId)),
+            requestResult(metadata.get(CATALOG_STATE_KEY)),
+        ]);
         for (const storeName of STORE_NAMES) {
-            if (storeName !== STORES.operations) transaction.objectStore(storeName).delete(localId);
+            if (![STORES.operations, STORES.metadata].includes(storeName)) {
+                transaction.objectStore(storeName).delete(localId);
+            }
         }
+        if (photo || tombstone) advanceCatalog(metadata, cleanCatalogState(catalogValue));
         const cursorRequest = transaction.objectStore(STORES.operations)
             .index('byLocalId').openKeyCursor(localId);
         cursorRequest.onsuccess = () => {
@@ -662,6 +860,7 @@ const createPhotoStore = async options => {
             STORES.thumbnails,
             STORES.secrets,
             STORES.tombstones,
+            STORES.metadata,
         ], 'readwrite');
         const stores = Object.fromEntries([
             STORES.photos,
@@ -670,6 +869,7 @@ const createPhotoStore = async options => {
             STORES.thumbnails,
             STORES.secrets,
             STORES.tombstones,
+            STORES.metadata,
         ].map(name => [name, transaction.objectStore(name)]));
 
         const restoredLookups = restored.map(value => Promise.all([
@@ -685,10 +885,12 @@ const createPhotoStore = async options => {
         ]));
         let restoredValues;
         let tombstoneValues;
+        let catalogValue;
         try {
-            [restoredValues, tombstoneValues] = await Promise.all([
+            [restoredValues, tombstoneValues, catalogValue] = await Promise.all([
                 Promise.all(restoredLookups),
                 Promise.all(tombstoneLookups),
+                requestResult(stores[STORES.metadata].get(CATALOG_STATE_KEY)),
             ]);
             const assertObservedRevision = (localId, current, tombstone) => {
                 const observed = Object.hasOwn(expectedRevisions, localId)
@@ -767,6 +969,9 @@ const createPhotoStore = async options => {
                 stores[STORES.tombstones].put({ ...tombstone, revision });
             }
         });
+        if (restored.length || deleted.length) {
+            advanceCatalog(stores[STORES.metadata], cleanCatalogState(catalogValue));
+        }
         await transactionDone(transaction);
     };
 
@@ -775,6 +980,8 @@ const createPhotoStore = async options => {
         listPhotos,
         getThumbnails,
         listBackupBundles,
+        getCatalogState,
+        confirmCatalogBackup,
         putDraft,
         putBundle,
         putPhoto,
@@ -799,6 +1006,7 @@ export const photoStore = {
     DATABASE_NAME,
     DATABASE_VERSION,
     STORES,
+    CATALOG_STATE_KEY,
     PhotoStoreConflictError,
     openDatabase,
     createPhotoStore,

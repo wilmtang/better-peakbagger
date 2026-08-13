@@ -325,7 +325,7 @@ test('backup completion does not claim success when authoritative status cannot 
 });
 
 const readPhotoStore = (win, storeName) => new Promise((resolve, reject) => {
-    const opened = win.indexedDB.open('betterPeakbaggerPhotos', 2);
+    const opened = win.indexedDB.open('betterPeakbaggerPhotos', Store.DATABASE_VERSION);
     opened.onerror = () => reject(opened.error);
     opened.onsuccess = () => {
         const database = opened.result;
@@ -1015,7 +1015,8 @@ test('imported annotations enter the same semantic keyboard selection list', asy
         pickPhoto: false,
         onStoreReady: async ({ win }) => {
             await new Promise((resolve, reject) => {
-                const opened = win.indexedDB.open('betterPeakbaggerPhotos', 2);
+                const opened = win.indexedDB.open(
+                    'betterPeakbaggerPhotos', Store.DATABASE_VERSION);
                 opened.onerror = () => reject(opened.error);
                 opened.onsuccess = () => {
                     const database = opened.result;
@@ -1271,7 +1272,7 @@ test('Recently Deleted discloses the asset deadline and restores exact-expiry re
     assert.match(card('Local editing data').textContent, /Editing data is available/);
     assert.match(card('Local editing data').textContent, /Local: original, project, thumbnail retained/);
     assert.match(card('Uploaded and referenced').textContent,
-        /Remote: ImgBB image retained · used in 1 report · backup current/);
+        /Remote: ImgBB image retained · used in 1 report · backup pending/);
     assert.match(card('Unreachable upload').textContent, /ImgBB image marked unreachable/);
     assert.match(card('Post-prune record').textContent,
         /Editing data is no longer retained.*Local: record only/s);

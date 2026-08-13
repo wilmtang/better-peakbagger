@@ -51,6 +51,40 @@ const fixture = (localId = 'photo-1') => {
     };
 };
 
+test('upgrading a pre-generation catalog starts dirty instead of inventing confirmation', async () => {
+    const indexedDB = new IDBFactory();
+    const name = 'photo-store-generation-migration';
+    const legacy = await new Promise((resolve, reject) => {
+        const request = indexedDB.open(name, 2);
+        request.onupgradeneeded = () => {
+            for (const storeName of Object.values(Store.STORES).filter(value => value !== 'metadata')) {
+                const store = request.result.createObjectStore(storeName, {
+                    keyPath: storeName === 'operations' ? 'operationId' : 'localId',
+                });
+                if (storeName === 'operations') {
+                    store.createIndex('byLocalId', 'localId', { unique: false });
+                }
+            }
+        };
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+    });
+    const write = legacy.transaction('photos', 'readwrite');
+    write.objectStore('photos').put(fixture().photo);
+    await new Promise((resolve, reject) => {
+        write.oncomplete = resolve;
+        write.onerror = () => reject(write.error);
+        write.onabort = () => reject(write.error);
+    });
+    legacy.close();
+
+    const store = await Store.createPhotoStore({ indexedDB, name });
+    const state = await store.getCatalogState();
+    assert.equal(state.generation, 1);
+    assert.equal(state.confirmedGeneration, 0);
+    store.close();
+});
+
 test('persists and retrieves a matching photo, project, original, and thumbnail atomically', async () => {
     const store = await Store.createPhotoStore({
         indexedDB: new IDBFactory(),
@@ -301,7 +335,8 @@ test('restores an expired catalog record without stale local editing assets', as
     });
     assert.equal(restored.remote.url, uploaded.remote.url);
     assert.deepEqual(restored.references, referenced.references);
-    assert.deepEqual(restored.backup, withBackup.backup);
+    assert.deepEqual(restored.backup,
+        { state: 'pending', signature: null, backedUpAt: null, commitUrl: null });
     const bundle = await store.getBundle(restored.localId);
     assert.equal(bundle.original, null);
     assert.equal(bundle.project, null);
@@ -467,13 +502,65 @@ test('applies a restored project atomically without inventing original pixels', 
     });
 
     const restored = await store.getBundle('photo-1');
-    assert.equal(restored.photo.backup.state, 'restored');
+    assert.equal(restored.photo.backup.state, 'pending');
     assert.equal(restored.project.localId, 'photo-1');
     assert.equal(restored.original, null);
     assert.equal(restored.thumbnail, null);
     assert.equal(restored.deleteUrl, null);
     const snapshot = await store.listBackupBundles();
     assert.deepEqual(snapshot.tombstones, [{ localId: 'remote-deleted', deletedAt: LATER }]);
+    store.close();
+});
+
+test('catalog generation is atomic with recovery data and ignores editing-asset cleanup', async () => {
+    const store = await Store.createPhotoStore({
+        indexedDB: new IDBFactory(),
+        name: 'photo-store-catalog-generation',
+    });
+    const input = fixture();
+    input.photo = await store.putDraft(input);
+    assert.deepEqual(await store.getCatalogState(), {
+        key: Store.CATALOG_STATE_KEY,
+        generation: 1,
+        confirmedGeneration: 0,
+        signature: null,
+        commitUrl: null,
+        backedUpAt: null,
+        revisions: {},
+    });
+
+    const stamp = {
+        state: 'current',
+        signature: 'c'.repeat(64),
+        backedUpAt: LATER,
+        commitUrl: 'https://github.com/example/photos/commit/abc',
+    };
+    input.photo = await store.updatePhotoBackup({
+        localId: input.photo.localId,
+        expectedRevision: input.photo.revision,
+        backup: stamp,
+    });
+    await store.confirmCatalogBackup({
+        generation: 1,
+        signature: stamp.signature,
+        revisions: { [input.photo.localId]: input.photo.revision },
+        commitUrl: stamp.commitUrl,
+        backedUpAt: LATER,
+    });
+    const beforeCleanup = input.photo.updatedAt;
+    const cleaned = await store.removeLocalAssets(input.photo.localId, LATER);
+    assert.equal(cleaned.updatedAt, beforeCleanup);
+    assert.equal((await store.getCatalogState()).generation, 1);
+    assert.equal((await store.getBundle(input.photo.localId)).photo.backup.state, 'current');
+
+    const referenced = Library.addReference(cleaned, {
+        kind: 'ascent', cid: 1, aid: 2, pid: 3, insertedAt: LATER,
+    }, LATER);
+    await store.putPhoto(referenced);
+    const dirty = await store.getCatalogState();
+    assert.equal(dirty.generation, 2);
+    assert.equal(dirty.confirmedGeneration, 1);
+    assert.equal((await store.getBundle(input.photo.localId)).photo.backup.state, 'pending');
     store.close();
 });
 

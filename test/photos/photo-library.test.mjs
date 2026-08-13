@@ -114,6 +114,36 @@ test('adds bounded references and separates local deletion from remote state', (
     assert.equal(Library.restoreDeleted(deleted, LATER).deletedAt, null);
 });
 
+test('recovery mutations invalidate a confirmed stamp while asset cleanup does not', () => {
+    const uploaded = Library.completeUpload(draft(), exported, remote, LATER);
+    const current = Library.cleanPhoto({
+        ...uploaded,
+        backup: {
+            state: 'current',
+            signature: 'c'.repeat(64),
+            backedUpAt: LATER,
+            commitUrl: 'https://github.com/example/photos/commit/abc',
+        },
+    });
+    const reference = {
+        kind: 'ascent', cid: 1, aid: 2, pid: 3, insertedAt: LATER,
+    };
+
+    for (const changed of [
+        Library.addReference(current, reference, LATER),
+        Library.markUnreachable(current, true, LATER),
+        Library.markDeleted(current, LATER),
+        Library.restoreDeleted(Library.markDeleted(current, LATER), LATER),
+    ]) {
+        assert.deepEqual(changed.backup,
+            { state: 'pending', signature: null, backedUpAt: null, commitUrl: null });
+    }
+
+    const assets = Library.updateAssets(current, { thumbnailRetained: false }, LATER);
+    assert.deepEqual(assets.backup, current.backup);
+    assert.equal(assets.updatedAt, current.updatedAt);
+});
+
 test('treats the exact deleted-asset deadline as record-only recovery', () => {
     const deleted = Library.markDeleted(draft(), TIME);
     const expiresAt = new Date(Date.parse(TIME) + Library.DELETED_EDITING_RECOVERY_MS).toISOString();

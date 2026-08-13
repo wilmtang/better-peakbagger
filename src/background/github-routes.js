@@ -24,6 +24,7 @@ const PHOTO_BACKUP_GATE_KEY = 'bpbPhotoLibraryBackupGate';
 const AUTO_BACKUP_DELAY_MINUTES = 1;
 const AUTO_BACKUP_RETRY_MINUTES = 10;
 const AUTO_BACKUP_MAX_RETRIES = 2;
+const AUTO_BACKUP_WATCHDOG_MINUTES = 30;
 const SNAPSHOT_TTL_MS = 30 * 60 * 1000;
 const SNAPSHOT_LIMIT = 10;
 const PROFILE_BACKUP_BATCH_LIMIT = 10;
@@ -1181,6 +1182,8 @@ export function createGithubRoutes({
             payload,
             signature: await PhotoBackup.signature(payload),
             revisions: snapshot.revisions,
+            generation: snapshot.catalog.generation,
+            confirmedGeneration: snapshot.catalog.confirmedGeneration,
         };
     });
 
@@ -1274,7 +1277,11 @@ export function createGithubRoutes({
 
     const photoBackupStatus = async (_message, sender) => {
         if (!isPhotoBackupPage(sender)) return { ok: false, error: { code: 'forbidden' } };
-        const [status, state] = await Promise.all([githubStatus(), readPhotoBackupState()]);
+        const [status, state, catalog] = await Promise.all([
+            githubStatus(),
+            readPhotoBackupState(),
+            withPhotoStore(store => store.getCatalogState()),
+        ]);
         // The identity this backup state is about, plus the display name the
         // library header renders. Deliberately not the stored record: the
         // installation id and repository id are account plumbing no page needs.
@@ -1291,8 +1298,15 @@ export function createGithubRoutes({
             // "which repository is this backup state about", and the page has
             // no use for the installation id or cached full name.
             repo,
-            auto: (await Settings.get()).autoPhotoLibraryBackup,
-            state: state && sameRepo(state.repo, repo) ? state : null,
+            auto: (await photoBackupSettings.get()).autoPhotoLibraryBackup,
+            state: state && sameRepo(state.repo, repo) ? {
+                ...state,
+                catalogGeneration: catalog.generation,
+                confirmedGeneration: catalog.confirmedGeneration,
+                reconciliationPending: state.reconciliationPending === true
+                    || state.generation !== catalog.confirmedGeneration
+                    || catalog.generation !== catalog.confirmedGeneration,
+            } : null,
         };
     };
 
@@ -1314,6 +1328,8 @@ export function createGithubRoutes({
                 [local, state] = await Promise.all([buildPhotoLibraryBackup(), readPhotoBackupState()]);
                 if (!state?.reconciliationPending
                     && state?.signature === local.signature
+                    && state?.generation === local.generation
+                    && local.confirmedGeneration === local.generation
                     && sameRepo(state.repo, access.repo)) {
                     return { ok: true, current: true, signature: local.signature, unchanged: true };
                 }
@@ -1348,6 +1364,8 @@ export function createGithubRoutes({
                 const commitUrl = result.commitUrl || state?.commitUrl || null;
                 const stateRecord = {
                     signature,
+                    generation: local.generation,
+                    revisions: local.revisions,
                     syncedAt,
                     commitUrl,
                     repo: access.repo,
@@ -1358,10 +1376,23 @@ export function createGithubRoutes({
                 // records. A worker restart or partial IndexedDB failure can
                 // then retry idempotently without calling the commit a failure.
                 let stateFailure = null;
+                let catalogFailure = null;
                 try {
                     await ext.storage.local.set({ [PHOTO_BACKUP_STATE_KEY]: stateRecord });
                 } catch (error) {
                     stateFailure = error;
+                }
+
+                try {
+                    await withPhotoStore(store => store.confirmCatalogBackup({
+                        generation: local.generation,
+                        signature,
+                        revisions: local.revisions,
+                        commitUrl,
+                        backedUpAt: syncedAt,
+                    }));
+                } catch (error) {
+                    catalogFailure = error;
                 }
 
                 let reconciliation = null;
@@ -1377,7 +1408,8 @@ export function createGithubRoutes({
                     reconciliationFailure = error;
                 }
                 const conflicts = reconciliation?.conflicts || [];
-                const reconciliationPending = !!(reconciliationFailure || conflicts.length);
+                const reconciliationPending = !!(
+                    catalogFailure || reconciliationFailure || conflicts.length);
                 try {
                     await ext.storage.local.set({
                         [PHOTO_BACKUP_STATE_KEY]: {
@@ -1389,7 +1421,8 @@ export function createGithubRoutes({
                 } catch (error) {
                     stateFailure = error;
                 }
-                const pending = !!(stateFailure || reconciliationFailure || conflicts.length);
+                const pending = !!(
+                    stateFailure || catalogFailure || reconciliationFailure || conflicts.length);
                 return {
                     ok: true,
                     current: !pending,
@@ -1513,13 +1546,26 @@ export function createGithubRoutes({
                 tombstones: merged.payload.tombstones,
                 expectedRevisions: local.revisions,
             }));
+            const restoredSnapshot = await buildPhotoLibraryBackup();
+            const restoredCurrent = restoredSnapshot.signature === remoteSignature;
+            if (restoredCurrent) {
+                await withPhotoStore(store => store.confirmCatalogBackup({
+                    generation: restoredSnapshot.generation,
+                    signature: remoteSignature,
+                    revisions: restoredSnapshot.revisions,
+                    backedUpAt: photoTimestamp(),
+                }));
+            }
             await ext.storage.local.set({
                 [PHOTO_BACKUP_STATE_KEY]: {
                     signature: remoteSignature,
+                    generation: restoredSnapshot.generation,
+                    revisions: restoredSnapshot.revisions,
                     restoredAt: photoTimestamp(),
                     commitUrl: null,
                     repo: access.repo,
                     attempts: 0,
+                    reconciliationPending: !restoredCurrent,
                 },
             });
             return {
@@ -1535,10 +1581,15 @@ export function createGithubRoutes({
         }
     };
 
+    const armPhotoBackup = delayInMinutes => ext.alarms?.create(PHOTO_BACKUP_ALARM, {
+        delayInMinutes,
+        periodInMinutes: AUTO_BACKUP_WATCHDOG_MINUTES,
+    });
+
     const photoLibraryChanged = async (_message, sender) => {
         if (!isPhotoPage(sender)) return { ok: false, error: { code: 'forbidden' } };
-        if ((await Settings.get()).autoPhotoLibraryBackup && ext.alarms) {
-            ext.alarms.create(PHOTO_BACKUP_ALARM, { delayInMinutes: AUTO_BACKUP_DELAY_MINUTES });
+        if ((await photoBackupSettings.get()).autoPhotoLibraryBackup && ext.alarms) {
+            armPhotoBackup(AUTO_BACKUP_DELAY_MINUTES);
         }
         return { ok: true };
     };
@@ -1554,11 +1605,26 @@ export function createGithubRoutes({
             // An unreadable gate record is treated as "not seen yet": a
             // redundant first scan is better than a backup that never starts.
         }
-        if (previous === enabled) return;
+        if (previous === enabled) {
+            if (enabled && ext.alarms?.get) {
+                const alarm = await ext.alarms.get(PHOTO_BACKUP_ALARM);
+                if (!alarm || alarm.periodInMinutes !== AUTO_BACKUP_WATCHDOG_MINUTES) {
+                    armPhotoBackup(AUTO_BACKUP_DELAY_MINUTES);
+                }
+            }
+            return;
+        }
         await ext.storage.local.set({ [PHOTO_BACKUP_GATE_KEY]: enabled });
         if (enabled && ext.alarms) {
-            ext.alarms.create(PHOTO_BACKUP_ALARM, { delayInMinutes: AUTO_BACKUP_DELAY_MINUTES });
+            armPhotoBackup(AUTO_BACKUP_DELAY_MINUTES);
+        } else if (!enabled && ext.alarms?.clear) {
+            await ext.alarms.clear(PHOTO_BACKUP_ALARM);
         }
+    };
+
+    const startPhotoBackupWatchdog = async () => {
+        const enabled = (await photoBackupSettings.get()).autoPhotoLibraryBackup === true;
+        await schedulePhotoBackupOnEnable(enabled);
     };
 
     const firePhotoAutoBackup = async () => {
@@ -1570,7 +1636,7 @@ export function createGithubRoutes({
         const attempts = ((state && state.attempts) || 0) + 1;
         await ext.storage.local.set({ [PHOTO_BACKUP_STATE_KEY]: { ...(state || {}), attempts } });
         if (attempts <= AUTO_BACKUP_MAX_RETRIES) {
-            ext.alarms.create(PHOTO_BACKUP_ALARM, { delayInMinutes: AUTO_BACKUP_RETRY_MINUTES });
+            armPhotoBackup(AUTO_BACKUP_RETRY_MINUTES);
         }
     };
 
@@ -1652,6 +1718,7 @@ export function createGithubRoutes({
         onStorageChanged,
         onSettingsChanged,
         onAlarm,
+        startPhotoBackupWatchdog,
         validateImportedConnection,
         isExtensionOnly: routeTable.isExtensionOnly,
         isPhotoPage,

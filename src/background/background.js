@@ -2090,6 +2090,8 @@ import { requestDeadline as Deadline } from '../net/request-deadline.js';
     // debounce. Nudging favorites here makes enabling its toggle create the
     // first backup; equal signatures make other settings changes free.
     Settings.subscribe(githubRoutes.onSettingsChanged);
+    runDetachedCleanup('photo backup watchdog startup', () =>
+        githubRoutes.startPhotoBackupWatchdog());
 
     if (ext.alarms) {
         ext.alarms.create(CLEANUP_ALARM, { periodInMinutes: 5 });

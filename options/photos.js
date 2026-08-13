@@ -81,7 +81,7 @@ export function initPhotoBackup({ extensionApi, flash, save }) {
             ? `Backup reached ${repoName()} · local changes still need backup.`
             : when
                 ? `${backupState?.syncedAt ? 'Backed up to' : 'Restored from'} ${repoName()} · ${when}`
-                : `Stored as photo-library.json in ${repoName()}.`;
+                : `Ready to back up photo records to ${repoName()}.`;
     };
 
     const refresh = async () => {

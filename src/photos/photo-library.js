@@ -213,6 +213,14 @@ const createDraft = ({
     deletedAt: null,
 });
 
+const pendingBackup = photo => ({
+    ...photo.backup,
+    state: photo.backup.state === 'off' ? 'off' : 'pending',
+    signature: photo.backup.state === 'off' ? photo.backup.signature : null,
+    backedUpAt: photo.backup.state === 'off' ? photo.backup.backedUpAt : null,
+    commitUrl: photo.backup.state === 'off' ? photo.backup.commitUrl : null,
+});
+
 // The pending export is validated here but deliberately not carried on the
 // record: until ImgBB confirms a URL the catalog stays in its non-uploaded
 // shape, and the export metadata belongs in the operation journal, which is
@@ -226,7 +234,7 @@ const beginUpload = (value, exported, now = new Date().toISOString()) => {
         updatedAt: now,
         export: null,
         remote: { provider: 'imgbb', state: 'uploading' },
-        backup: { ...photo.backup, state: photo.backup.state === 'off' ? 'off' : 'pending' },
+        backup: pendingBackup(photo),
     });
 };
 
@@ -237,6 +245,7 @@ const markOutcomeUnknown = (value, now = new Date().toISOString()) => {
         ...photo,
         updatedAt: now,
         remote: { provider: 'imgbb', state: 'outcome-unknown' },
+        backup: pendingBackup(photo),
     });
 };
 
@@ -247,6 +256,7 @@ const resetUpload = (value, now = new Date().toISOString()) => {
         ...photo,
         updatedAt: now,
         remote: { provider: 'imgbb', state: 'draft' },
+        backup: pendingBackup(photo),
     });
 };
 
@@ -261,7 +271,7 @@ const completeUpload = (value, exported, remote, now = new Date().toISOString())
         updatedAt: now,
         export: exportMetadata,
         remote: remoteMetadata,
-        backup: { ...photo.backup, state: photo.backup.state === 'off' ? 'off' : 'pending' },
+        backup: pendingBackup(photo),
     });
 };
 
@@ -272,6 +282,7 @@ const markUnreachable = (value, unreachable = true, now = new Date().toISOString
         ...photo,
         updatedAt: now,
         remote: { ...photo.remote, state: unreachable ? 'unreachable' : 'uploaded' },
+        backup: pendingBackup(photo),
     });
 };
 
@@ -283,17 +294,28 @@ const addReference = (value, reference, now = new Date().toISOString()) => {
         ...photo,
         updatedAt: now,
         references: [...photo.references, cleanedReference].slice(-REFERENCE_LIMIT),
+        backup: pendingBackup(photo),
     });
 };
 
 const markDeleted = (value, deletedAt = new Date().toISOString()) => {
     const photo = cleanPhoto(value);
-    return photo ? cleanPhoto({ ...photo, updatedAt: deletedAt, deletedAt }) : null;
+    return photo ? cleanPhoto({
+        ...photo,
+        updatedAt: deletedAt,
+        deletedAt,
+        backup: pendingBackup(photo),
+    }) : null;
 };
 
 const restoreDeleted = (value, now = new Date().toISOString()) => {
     const photo = cleanPhoto(value);
-    return photo ? cleanPhoto({ ...photo, updatedAt: now, deletedAt: null }) : null;
+    return photo ? cleanPhoto({
+        ...photo,
+        updatedAt: now,
+        deletedAt: null,
+        backup: pendingBackup(photo),
+    }) : null;
 };
 
 const deletedRecovery = (value, now = Date.now()) => {
@@ -311,9 +333,9 @@ const deletedRecovery = (value, now = Date.now()) => {
     };
 };
 
-const updateAssets = (value, assets, now = new Date().toISOString()) => {
+const updateAssets = (value, assets) => {
     const photo = cleanPhoto(value);
-    return photo ? cleanPhoto({ ...photo, updatedAt: now, assets: { ...photo.assets, ...assets } }) : null;
+    return photo ? cleanPhoto({ ...photo, assets: { ...photo.assets, ...assets } }) : null;
 };
 
 const searchableText = photo => [

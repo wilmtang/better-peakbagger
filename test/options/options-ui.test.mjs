@@ -167,6 +167,8 @@ test('Settings distinguishes a confirmed photo backup from pending local reconci
         },
     });
     await waitFor(dom, () => el(dom, 'photos-github-actions').hidden === false);
+    assert.equal(el(dom, 'photos-github-status').textContent,
+        'Ready to back up photo records to me/backup.');
 
     el(dom, 'photos-backup').click();
     await waitFor(dom, () => /Backup reached me\/backup/.test(

@@ -35,7 +35,7 @@ const transactionDone = transaction => new Promise((resolve, reject) => {
 });
 
 const openDatabase = indexedDB => new Promise((resolve, reject) => {
-    const request = indexedDB.open('betterPeakbaggerPhotos', 2);
+    const request = indexedDB.open('betterPeakbaggerPhotos', Store.DATABASE_VERSION);
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error);
 });
@@ -135,8 +135,10 @@ test('a 1,200-photo library renders and filters through bounded pages and transa
         maximumCards = Math.max(maximumCards, list.querySelectorAll('.photo-card').length);
     });
     observer.observe(list, { childList: true });
-    const renderTransactions = () => transactions.filter(call =>
-        call.names.length === 1 && ['photos', 'thumbnails'].includes(call.names[0]));
+    const renderTransactions = () => transactions.filter(call => {
+        const names = [...call.names].sort().join(',');
+        return names === 'metadata,photos' || names === 'thumbnails';
+    });
 
     try {
         const openedAt = performance.now();

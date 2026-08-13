@@ -239,10 +239,15 @@ stores:
 | `operations` | In-flight upload journal | Never |
 | `secrets` | Per-photo ImgBB delete URL | Never |
 | `tombstones` | Stable local id and deletion time | Yes |
+| `metadata` | Catalog generation, last confirmed remote generation, signature, and included revisions | Recovery coordination only |
 
-Creating a draft writes its catalog record, project, original, and thumbnail in
-one transaction. Completing an upload writes the uploaded catalog record and
-delete URL in one transaction. Restore applies reconstructed records and
+Creating a draft writes its catalog record, project, original, thumbnail, and
+new catalog generation in one transaction. Every recovery-document mutation
+advances that durable generation in the transaction that owns the mutation;
+editing-pixel cleanup does not. Completing an upload writes the uploaded
+catalog record, delete URL, and generation together. A confirmed GitHub write
+journals the exact generation and included record revisions before decorative
+per-record stamps are reconciled. Restore applies reconstructed records and
 tombstones through one store-owned transaction.
 
 The library can search titles, alt text, source file names, and recorded report
@@ -402,9 +407,14 @@ the client to reread the latest branch head and rerun that semantic merge; it
 does not replay stale serialized JSON.
 
 Automatic photo recovery is a separate, default-off setting. A local catalog
-change arms a one-minute trailing-edge alarm. Content signatures skip unchanged
-writes, failure retries are bounded, and a semantic conflict stops instead of
-guessing. The manual action is the visible recovery path.
+change arms a one-minute trailing-edge alarm, while a recurring 30-minute
+watchdog remains installed until the option is disabled. The watchdog compares
+the durable local and confirmed generations, so losing the page's fast runtime
+notification can delay a backup but cannot suppress it indefinitely. Content
+signatures skip unchanged writes, failure retries are bounded, and a semantic
+conflict stops instead of guessing. “Backed up” is shown only while those
+generations match; a connected repository with no confirmation says it is ready
+to back up. The manual action is the visible recovery path.
 
 Restore is always explicit and preview-first:
 

@@ -155,13 +155,21 @@ const harness = async ({
         },
     };
     const alarmed = [];
+    const alarms = new Map();
     const ext = {
         runtime: {
             getURL: path => `chrome-extension://test-extension/${path}`,
             getManifest: () => ({ version: '3.2.0' }),
         },
         storage: { local },
-        alarms: { create(name) { alarmed.push(name); } },
+        alarms: {
+            create(name, options = {}) {
+                alarmed.push(name);
+                alarms.set(name, { name, ...options });
+            },
+            async get(name) { return alarms.get(name); },
+            async clear(name) { return alarms.delete(name); },
+        },
     };
     let queue = Promise.resolve();
     const readMap = async key => (await session.get(key))[key] || {};
@@ -201,6 +209,7 @@ const harness = async ({
         local,
         commits,
         alarmed,
+        alarms,
         createPhotoStore,
         indexedDB,
         databaseName,
@@ -491,6 +500,7 @@ test('Settings drives the same recovery routes, and only the library announces a
         'forbidden',
     );
     assert.equal((await h.routes.handlers.GITHUB_PHOTOS_CHANGED({}, photoSender)).ok, true);
+    assert.equal(h.alarms.get('bpb-photo-library-backup').periodInMinutes, 30);
 
     for (const sender of [
         { url: 'https://www.peakbagger.com/climber/ascentedit.aspx', tab: { id: 4 } },
@@ -583,4 +593,38 @@ test('only switching the photo backup toggle on re-arms the library scan', async
     h.routes.onSettingsChanged(settings(true));
     await waitForAlarms();
     assert.deepEqual(h.alarmed, ['bpb-photo-library-backup', 'bpb-photo-library-backup']);
+    assert.equal(h.alarms.get('bpb-photo-library-backup').periodInMinutes, 30);
+});
+
+test('the recurring watchdog backs up a durable mutation after its page notification is lost', async () => {
+    const first = await harness({ seed: bundle() });
+    assert.equal((await first.routes.handlers.GITHUB_PHOTOS_BACKUP({}, photoSender)).ok, true);
+    assert.equal(first.commits.length, 1);
+
+    const store = await first.createPhotoStore();
+    const current = (await store.getBundle('photo-1')).photo;
+    await store.putPhoto(Library.addReference(current, {
+        kind: 'ascent', cid: 1, aid: 2, pid: 3, insertedAt: LATER,
+    }, LATER));
+    store.close();
+
+    const restarted = await harness({
+        indexedDB: first.indexedDB,
+        databaseName: first.databaseName,
+        localValues: first.local.values,
+        remoteState: first.remoteState,
+        commits: first.commits,
+    });
+    await restarted.routes.startPhotoBackupWatchdog();
+    assert.equal(restarted.alarms.get('bpb-photo-library-backup').periodInMinutes, 30);
+
+    restarted.routes.onAlarm('bpb-photo-library-backup');
+    await waitFor(() => restarted.commits.length === 2
+        && restarted.local.values.bpbPhotoLibraryBackupState?.reconciliationPending === false);
+
+    const confirmed = await restarted.createPhotoStore();
+    const catalog = await confirmed.getCatalogState();
+    assert.equal(catalog.generation, catalog.confirmedGeneration);
+    assert.equal((await confirmed.getBundle('photo-1')).photo.backup.state, 'current');
+    confirmed.close();
 });
