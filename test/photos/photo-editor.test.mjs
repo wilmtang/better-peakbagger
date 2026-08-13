@@ -238,10 +238,13 @@ const loadEditor = async ({
 
 test('a confirmed backup with pending local reconciliation is never announced as failed', async () => {
     let pending = false;
+    let releaseStatus;
+    const statusBarrier = new Promise(resolve => { releaseStatus = resolve; });
     const page = await loadEditor({
         pickPhoto: false,
         runtimeHandler: async message => {
             if (message.type === 'GITHUB_PHOTOS_STATUS') {
+                if (pending) await statusBarrier;
                 return {
                     ok: true,
                     connected: true,
@@ -270,6 +273,16 @@ test('a confirmed backup with pending local reconciliation is never announced as
     await waitFor(page.dom, () => page.doc.getElementById('backup-library').disabled === false);
 
     page.doc.getElementById('backup-library').click();
+    await waitFor(page.dom, () => pending);
+
+    assert.equal(page.doc.getElementById('photo-backup-status').textContent,
+        'Backing up photo metadata…');
+    assert.doesNotMatch(page.doc.getElementById('toast-message').textContent,
+        /GitHub backup is safe|backed up/i);
+
+    releaseStatus();
+    await waitFor(page.dom, () => /Backup reached me\/backup/.test(
+        page.doc.getElementById('photo-backup-status').textContent));
     await waitFor(page.dom, () => /GitHub backup is safe/.test(
         page.doc.getElementById('toast-message').textContent));
 
@@ -278,6 +291,36 @@ test('a confirmed backup with pending local reconciliation is never announced as
     assert.match(page.doc.getElementById('photo-backup-status').textContent,
         /local changes still need backup/);
     assert.doesNotMatch(page.doc.getElementById('toast-message').textContent, /failed/i);
+    assert.deepEqual(page.errors, []);
+});
+
+test('backup completion does not claim success when authoritative status cannot refresh', async () => {
+    let statusCalls = 0;
+    const page = await loadEditor({
+        pickPhoto: false,
+        runtimeHandler: async message => {
+            if (message.type === 'GITHUB_PHOTOS_STATUS') {
+                statusCalls += 1;
+                return statusCalls === 1 ? {
+                    ok: true,
+                    connected: true,
+                    repo: { owner: 'me', name: 'backup', fullName: 'me/backup' },
+                    state: null,
+                } : null;
+            }
+            if (message.type === 'GITHUB_PHOTOS_BACKUP') return { ok: true };
+            return { ok: true };
+        },
+    });
+    await waitFor(page.dom, () => page.doc.getElementById('backup-library').disabled === false);
+
+    page.doc.getElementById('backup-library').click();
+    await waitFor(page.dom, () => page.doc.getElementById('photo-backup-status').textContent
+        === 'GitHub recovery is unavailable.');
+    await waitFor(page.dom, () => /status could not be refreshed/i.test(
+        page.doc.getElementById('toast-message').textContent));
+
+    assert.doesNotMatch(page.doc.getElementById('toast-message').textContent, /backed up/i);
     assert.deepEqual(page.errors, []);
 });
 

@@ -2511,12 +2511,12 @@ const refreshPhotoBackupStatus = async () => {
     if (!response?.ok) {
         ui.backupStatus.textContent = 'GitHub recovery is unavailable.';
         ui.backupNow.disabled = true;
-        return;
+        return false;
     }
     ui.backupNow.disabled = !response.connected || photoBackupBusy;
     if (!response.connected) {
         ui.backupStatus.textContent = 'Connect a GitHub backup repository in Settings to enable recovery.';
-        return;
+        return false;
     }
     const repository = response.repo?.fullName
         || [response.repo?.owner, response.repo?.name].filter(Boolean).join('/');
@@ -2530,6 +2530,7 @@ const refreshPhotoBackupStatus = async () => {
     } else {
         ui.backupStatus.textContent = `Ready to back up metadata to ${repository}.`;
     }
+    return true;
 };
 
 const backupPhotoLibrary = async () => {
@@ -2539,11 +2540,13 @@ const backupPhotoLibrary = async () => {
     const response = await send({ type: 'GITHUB_PHOTOS_BACKUP' });
     setPhotoBackupBusy(false);
     if (response?.ok) {
-        toast(response.reconciliationPending
-            ? response.warning?.message || 'The GitHub backup is safe, but local changes still need backup.'
-            : 'Photo-library metadata backed up to GitHub.');
-        await renderLibrary();
-        await refreshPhotoBackupStatus();
+        const statusCurrent = await refreshPhotoBackupStatus();
+        toast(statusCurrent
+            ? response.reconciliationPending
+                ? response.warning?.message || 'The GitHub backup is safe, but local changes still need backup.'
+                : 'Photo-library metadata backed up to GitHub.'
+            : 'The backup finished, but its current GitHub status could not be refreshed.');
+        void renderLibrary();
         return;
     }
     ui.backupStatus.textContent = response?.error?.code === 'photo-backup-conflict'
