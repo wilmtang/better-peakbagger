@@ -12,6 +12,19 @@ const MAX_BYTES = 8 * 1024 * 1024;
 const KIND = 'better-peakbagger-photo-library';
 const encode = value => new TextEncoder().encode(value);
 
+class PhotoBackupCapacityError extends RangeError {
+    constructor(actualBytes, maxBytes = MAX_BYTES) {
+        const actualMiB = (actualBytes / (1024 * 1024)).toFixed(1);
+        const maxMiB = (maxBytes / (1024 * 1024)).toFixed(0);
+        super(`Photo-library metadata uses ${actualMiB} MiB, above the ${maxMiB} MiB GitHub recovery limit. `
+            + 'Move unneeded drafts to Recently Deleted; after their editing-data window ends, try again.');
+        this.name = 'PhotoBackupCapacityError';
+        this.code = 'photo-backup-too-large';
+        this.actualBytes = actualBytes;
+        this.maxBytes = maxBytes;
+    }
+}
+
 const cleanTime = value => {
     if (typeof value !== 'string' || !value) return null;
     const parsed = Date.parse(value);
@@ -127,19 +140,38 @@ const buildPayload = ({
     };
 };
 
-const serialize = payload => {
-    const normalized = buildPayload({
-        bundles: payload?.photos,
-        tombstones: payload?.tombstones,
-        exportedAt: payload?.exportedAt,
-        extensionVersion: payload?.extensionVersion,
-    });
-    const text = `${JSON.stringify(normalized, null, 2)}\n`;
-    if (encode(text).byteLength > MAX_BYTES) {
-        throw new RangeError('photo-library.json exceeds the 8 MB recovery limit');
+const normalizePayload = payload => buildPayload({
+    bundles: payload?.photos,
+    tombstones: payload?.tombstones,
+    exportedAt: payload?.exportedAt,
+    extensionVersion: payload?.extensionVersion,
+});
+
+const contentTimestamp = payload => [
+    ...payload.photos.map(value => value.updatedAt),
+    ...payload.tombstones.map(value => value.deletedAt),
+].sort().at(-1) || '1970-01-01T00:00:00.000Z';
+
+const canonicalDocument = (payload, { maxBytes = MAX_BYTES } = {}) => {
+    if (!Number.isSafeInteger(maxBytes) || maxBytes < 1 || maxBytes > MAX_BYTES) {
+        throw new TypeError('photo backup requires a valid byte limit');
     }
-    return text;
+    const built = normalizePayload(payload);
+    const normalized = {
+        ...built,
+        exportedAt: contentTimestamp(built),
+        // Runtime version is diagnostic metadata, not recovery content. Keep
+        // the canonical document stable across an extension upgrade so its
+        // exact bytes can also be the content signature.
+        extensionVersion: '',
+    };
+    const text = `${JSON.stringify(normalized, null, 2)}\n`;
+    const bytes = encode(text);
+    if (bytes.byteLength > maxBytes) throw new PhotoBackupCapacityError(bytes.byteLength, maxBytes);
+    return { payload: normalized, text, bytes, byteLength: bytes.byteLength };
 };
+
+const serialize = payload => canonicalDocument(payload).text;
 
 const parse = text => {
     if (typeof text !== 'string') return { ok: false, reason: 'not-text' };
@@ -171,23 +203,27 @@ const parse = text => {
     }
 };
 
-const contentIdentity = payload => JSON.stringify({
+const digestHex = async bytes => {
+    const digest = await globalThis.crypto.subtle.digest('SHA-256', bytes);
+    return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');
+};
+
+const legacySignature = payload => digestHex(encode(JSON.stringify({
     photos: payload.photos,
     tombstones: payload.tombstones,
-});
+})));
 
 const signature = async payload => {
-    const normalized = buildPayload({
-        bundles: payload?.photos,
-        tombstones: payload?.tombstones,
-        exportedAt: payload?.exportedAt,
-        extensionVersion: payload?.extensionVersion,
-    });
-    const digest = await globalThis.crypto.subtle.digest(
-        'SHA-256',
-        encode(contentIdentity(normalized)),
-    );
-    return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');
+    const canonical = canonicalDocument(payload);
+    return digestHex(canonical.bytes);
+};
+
+const prepare = async (payload, options) => {
+    const canonical = canonicalDocument(payload, options);
+    return {
+        ...canonical,
+        signature: await digestHex(canonical.bytes),
+    };
 };
 
 const entriesById = payload => {
@@ -211,6 +247,7 @@ const mergePayloads = async (local, remote, {
     exportedAt = new Date().toISOString(),
     extensionVersion = local?.extensionVersion || '',
     baseSignature = null,
+    baseSignatureVersion = 2,
     conflictPolicy = 'stop',
 } = {}) => {
     if (!['stop', 'keep-local'].includes(conflictPolicy)) {
@@ -229,7 +266,9 @@ const mergePayloads = async (local, remote, {
         extensionVersion: remote?.extensionVersion,
     });
     const remoteSignature = await signature(right);
-    const remoteIsBase = typeof baseSignature === 'string' && baseSignature === remoteSignature;
+    const remoteIsBase = typeof baseSignature === 'string'
+        && (baseSignature === remoteSignature
+            || (baseSignatureVersion < 2 && baseSignature === await legacySignature(right)));
     const localEntries = entriesById(left);
     const remoteEntries = entriesById(right);
     const ids = [...new Set([...localEntries.keys(), ...remoteEntries.keys()])].sort();
@@ -287,13 +326,15 @@ const mergePayloads = async (local, remote, {
         exportedAt,
         extensionVersion,
     });
+    const prepared = await prepare(payload);
     return {
         ok: true,
-        payload,
+        payload: prepared.payload,
         counts,
         conflicts,
         remoteSignature,
-        signature: await signature(payload),
+        signature: prepared.signature,
+        prepared,
     };
 };
 
@@ -326,7 +367,9 @@ export const photoBackup = {
     SCHEMA_VERSION,
     BACKUP_PATH,
     MAX_BYTES,
+    PhotoBackupCapacityError,
     buildPayload,
+    prepare,
     serialize,
     parse,
     signature,

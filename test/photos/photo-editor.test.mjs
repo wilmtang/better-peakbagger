@@ -324,6 +324,38 @@ test('backup completion does not claim success when authoritative status cannot 
     assert.deepEqual(page.errors, []);
 });
 
+test('photo backup capacity failures preserve the worker action and byte details', async () => {
+    const message = 'Photo-library metadata uses 8.4 MiB, above the 8 MiB GitHub recovery limit. '
+        + 'Move unneeded drafts to Recently Deleted; after their editing-data window ends, try again.';
+    const page = await loadEditor({
+        pickPhoto: false,
+        runtimeHandler: async request => request.type === 'GITHUB_PHOTOS_STATUS'
+            ? {
+                ok: true,
+                connected: true,
+                repo: { owner: 'me', name: 'backup', fullName: 'me/backup' },
+                state: null,
+            }
+            : request.type === 'GITHUB_PHOTOS_BACKUP'
+                ? {
+                    ok: false,
+                    error: {
+                        code: 'photo-backup-too-large',
+                        message,
+                        actualBytes: 8_800_000,
+                        maxBytes: 8_388_608,
+                    },
+                }
+                : { ok: true },
+    });
+    await waitFor(page.dom, () => page.doc.getElementById('backup-library').disabled === false);
+
+    page.doc.getElementById('backup-library').click();
+    await waitFor(page.dom, () => page.doc.getElementById('photo-backup-status').textContent === message);
+
+    assert.deepEqual(page.errors, []);
+});
+
 const readPhotoStore = (win, storeName) => new Promise((resolve, reject) => {
     const opened = win.indexedDB.open('betterPeakbaggerPhotos', Store.DATABASE_VERSION);
     opened.onerror = () => reject(opened.error);

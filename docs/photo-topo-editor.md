@@ -407,6 +407,13 @@ through `github-client.updateRootFile()`. A non-fast-forward ref conflict causes
 the client to reread the latest branch head and rerun that semantic merge; it
 does not replay stale serialized JSON.
 
+The worker prepares one canonical UTF-8 representation for the local snapshot
+before any GitHub request and reuses it for the 8 MiB capacity check, content
+signature, and upload. A remote merge is prepared and bounded before its write.
+An over-capacity generation stays pending with its exact measured size and a
+stable cleanup action; automatic backup does not rebuild the same hopeless
+generation until the catalog changes.
+
 Automatic photo recovery is a separate, default-off setting. A local catalog
 change arms a one-minute trailing-edge alarm, while a recurring 30-minute
 watchdog remains installed until the option is disabled. The watchdog compares

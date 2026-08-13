@@ -1178,13 +1178,20 @@ export function createGithubRoutes({
             exportedAt: photoTimestamp(),
             extensionVersion: ext.runtime.getManifest?.().version || '',
         });
-        return {
-            payload,
-            signature: await PhotoBackup.signature(payload),
-            revisions: snapshot.revisions,
-            generation: snapshot.catalog.generation,
-            confirmedGeneration: snapshot.catalog.confirmedGeneration,
-        };
+        try {
+            const prepared = await PhotoBackup.prepare(payload);
+            return {
+                ...prepared,
+                revisions: snapshot.revisions,
+                generation: snapshot.catalog.generation,
+                confirmedGeneration: snapshot.catalog.confirmedGeneration,
+            };
+        } catch (error) {
+            if (error instanceof PhotoBackup.PhotoBackupCapacityError) {
+                error.generation = snapshot.catalog.generation;
+            }
+            throw error;
+        }
     });
 
     // Every record carries the same backup stamp, so rewriting one whose stamp
@@ -1259,10 +1266,13 @@ export function createGithubRoutes({
     };
 
     const publicPhotoBackupError = (error, fallback) => error instanceof PhotoBackupError
+        || error instanceof PhotoBackup.PhotoBackupCapacityError
         ? {
             code: error.code,
             message: error.message,
             ...(Number.isInteger(error.conflictCount) ? { conflictCount: error.conflictCount } : {}),
+            ...(Number.isSafeInteger(error.actualBytes) ? { actualBytes: error.actualBytes } : {}),
+            ...(Number.isSafeInteger(error.maxBytes) ? { maxBytes: error.maxBytes } : {}),
         }
         : writeError(error, fallback);
 
@@ -1333,6 +1343,7 @@ export function createGithubRoutes({
                             exportedAt: photoTimestamp(),
                             extensionVersion: ext.runtime.getManifest?.().version || '',
                             baseSignature: sameRepo(state?.repo, access.repo) ? state.signature : null,
+                            baseSignatureVersion: state?.signatureVersion || 1,
                         });
                         if (!merged.ok) {
                             throw new PhotoBackupError(
@@ -1342,10 +1353,9 @@ export function createGithubRoutes({
                             );
                         }
                         committed = merged;
-                        const remoteSignature = await PhotoBackup.signature(remote);
-                        return merged.signature === remoteSignature && remoteText != null
+                        return merged.signature === merged.remoteSignature && remoteText != null
                             ? remoteText
-                            : PhotoBackup.serialize(merged.payload);
+                            : merged.prepared.text;
                     },
                     'Back up photo library',
                 );
@@ -1355,6 +1365,7 @@ export function createGithubRoutes({
                 const commitUrl = result.commitUrl || state?.commitUrl || null;
                 const stateRecord = {
                     signature,
+                    signatureVersion: 2,
                     generation: local.generation,
                     revisions: local.revisions,
                     syncedAt,
@@ -1432,7 +1443,20 @@ export function createGithubRoutes({
                 };
             } catch (error) {
                 if (!remoteConfirmed) {
-                    await markPhotoCatalogBackup({ state: 'failed' }).catch(() => {});
+                    if (error instanceof PhotoBackup.PhotoBackupCapacityError) {
+                        const previous = state || await readPhotoBackupState().catch(() => null);
+                        await ext.storage.local.set({
+                            [PHOTO_BACKUP_STATE_KEY]: {
+                                ...(previous || {}),
+                                capacityBlockedGeneration: error.generation ?? local?.generation ?? null,
+                                capacityActualBytes: error.actualBytes,
+                                capacityMaxBytes: error.maxBytes,
+                                attempts: 0,
+                            },
+                        }).catch(() => {});
+                    } else {
+                        await markPhotoCatalogBackup({ state: 'failed' }).catch(() => {});
+                    }
                     return {
                         ok: false,
                         error: publicPhotoBackupError(error, 'The photo-library backup failed.'),
@@ -1470,6 +1494,7 @@ export function createGithubRoutes({
                 exportedAt: photoTimestamp(),
                 extensionVersion: ext.runtime.getManifest?.().version || '',
                 baseSignature: sameRepo(state?.repo, access.repo) ? state.signature : null,
+                baseSignatureVersion: state?.signatureVersion || 1,
             });
             return {
                 ok: true,
@@ -1515,6 +1540,7 @@ export function createGithubRoutes({
                 exportedAt: photoTimestamp(),
                 extensionVersion: ext.runtime.getManifest?.().version || '',
                 baseSignature: sameRepo(state?.repo, access.repo) ? state.signature : null,
+                baseSignatureVersion: state?.signatureVersion || 1,
                 conflictPolicy: message.keepLocalConflicts ? 'keep-local' : 'stop',
             });
             if (!merged.ok) {
@@ -1530,6 +1556,7 @@ export function createGithubRoutes({
             const records = merged.payload.photos.map(record =>
                 PhotoBackup.restoreRecord(record, {
                     signature: remoteSignature,
+                    signatureVersion: 2,
                     restoredAt: photoTimestamp(),
                 }));
             await withPhotoStore(store => store.applyRestore({
@@ -1620,9 +1647,15 @@ export function createGithubRoutes({
 
     const firePhotoAutoBackup = async () => {
         if (!(await photoBackupSettings.get()).autoPhotoLibraryBackup) return;
+        const [catalog, previousState] = await Promise.all([
+            withPhotoStore(store => store.getCatalogState()),
+            readPhotoBackupState(),
+        ]);
+        if (previousState?.capacityBlockedGeneration === catalog.generation) return;
         const result = await backupPhotoLibrary({ automatic: true });
         if ((result.ok && !result.reconciliationPending)
-            || result.error?.code === 'photo-backup-conflict' || !ext.alarms) return;
+            || ['photo-backup-conflict', 'photo-backup-too-large'].includes(result.error?.code)
+            || !ext.alarms) return;
         const state = await readPhotoBackupState();
         const attempts = ((state && state.attempts) || 0) + 1;
         await ext.storage.local.set({ [PHOTO_BACKUP_STATE_KEY]: { ...(state || {}), attempts } });
@@ -1700,7 +1733,8 @@ export function createGithubRoutes({
     const onAlarm = name => {
         if (name === SETTINGS_BACKUP_ALARM) void settingsAutoBackup.fire();
         if (name === FAVORITES_BACKUP_ALARM) void favoritesAutoBackup.fire();
-        if (name === PHOTO_BACKUP_ALARM) void firePhotoAutoBackup();
+        if (name === PHOTO_BACKUP_ALARM) return firePhotoAutoBackup();
+        return undefined;
     };
 
     return {

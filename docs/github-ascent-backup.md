@@ -694,6 +694,13 @@ stop with a conflict rather than choosing a winner. `updateRootFile()` reruns
 the semantic merge against the newest branch head after a non-fast-forward
 conflict, so a repository race cannot replay stale serialized JSON.
 
+Before any GitHub request, the worker creates one canonical UTF-8 local
+representation and reuses it for the 8 MiB capacity check, content signature,
+and upload. It also prepares and bounds the merged remote representation before
+the repository mutation. An over-capacity generation reports its measured and
+maximum sizes with a stable cleanup action; automatic runs stay blocked until a
+new catalog generation makes another attempt meaningful.
+
 Automatic photo backup is a third independent, default-off alarm. Catalog
 mutations atomically advance an IndexedDB generation and request the one-minute
 trailing-edge run; an installed 30-minute watchdog also checks that durable

@@ -116,12 +116,14 @@ const harness = async ({
     const remote = remoteState || { text: remoteText };
     const commits = sharedCommits || [];
     let accessCalls = 0;
+    let updateCalls = 0;
     const client = {
         async readRootFile(path) {
             assert.equal(path, Backup.BACKUP_PATH);
             return remote.text;
         },
         async updateRootFile(path, update, message) {
+            updateCalls += 1;
             assert.equal(path, Backup.BACKUP_PATH);
             if (beforeRemoteUpdate) await beforeRemoteUpdate({ calls: commits.length });
             const previous = remote.text;
@@ -215,6 +217,7 @@ const harness = async ({
         databaseName,
         remoteState: remote,
         accessCalls: () => accessCalls,
+        updateCalls: () => updateCalls,
         get remoteText() { return remote.text; },
     };
 };
@@ -236,6 +239,96 @@ test('manual backup reads IndexedDB itself and writes only the metadata recovery
         url: 'chrome-extension://test-extension/popup/popup.html',
     });
     assert.equal(forbidden.error.code, 'forbidden');
+});
+
+test('an oversized local catalog fails before GitHub and blocks automatic repeats by generation', async () => {
+    const bundles = [];
+    const revisions = {};
+    for (let index = 0; index < 8000; index += 1) {
+        const value = bundle(`capacity-photo-${index}`);
+        bundles.push(value);
+        revisions[value.photo.localId] = 0;
+    }
+    let generation = 1;
+    const catalog = () => ({
+        key: Store.CATALOG_STATE_KEY,
+        generation,
+        confirmedGeneration: 0,
+        signature: null,
+        commitUrl: null,
+        backedUpAt: null,
+        revisions: {},
+    });
+    const h = await harness({
+        decoratePhotoStore: store => ({
+            ...store,
+            getCatalogState: async () => catalog(),
+            listBackupBundles: async () => ({
+                bundles,
+                tombstones: [],
+                revisions,
+                catalog: catalog(),
+            }),
+        }),
+    });
+
+    const response = await h.routes.handlers.GITHUB_PHOTOS_BACKUP({}, photoSender);
+    assert.equal(response.ok, false);
+    assert.equal(response.error.code, 'photo-backup-too-large');
+    assert.ok(response.error.actualBytes > response.error.maxBytes);
+    assert.match(response.error.message, /Recently Deleted/);
+    assert.equal(h.updateCalls(), 0, 'local capacity is checked before a GitHub update starts');
+    assert.equal(h.local.values.bpbPhotoLibraryBackupState.capacityBlockedGeneration, 1);
+
+    const accesses = h.accessCalls();
+    await h.routes.onAlarm('bpb-photo-library-backup');
+    assert.equal(h.accessCalls(), accesses, 'the same hopeless generation is not rebuilt remotely');
+
+    generation = 2;
+    await h.routes.onAlarm('bpb-photo-library-backup');
+    assert.equal(h.accessCalls(), accesses + 1);
+    assert.equal(h.local.values.bpbPhotoLibraryBackupState.capacityBlockedGeneration, 2);
+    assert.equal(h.updateCalls(), 0);
+});
+
+test('a remote merge that exceeds capacity stops before the repository mutation', async () => {
+    const makeBundles = (prefix, count) => Array.from({ length: count }, (_, index) =>
+        bundle(`${prefix}-${index}`));
+    const localBundles = makeBundles('local-capacity', 4000);
+    const remotePayload = Backup.buildPayload({
+        bundles: makeBundles('remote-capacity', 4000),
+        exportedAt: TIME,
+    });
+    const originalRemote = Backup.serialize(remotePayload);
+    const revisions = Object.fromEntries(localBundles.map(value => [value.photo.localId, 0]));
+    const catalog = {
+        key: Store.CATALOG_STATE_KEY,
+        generation: 1,
+        confirmedGeneration: 0,
+        signature: null,
+        commitUrl: null,
+        backedUpAt: null,
+        revisions: {},
+    };
+    const h = await harness({
+        remoteText: originalRemote,
+        decoratePhotoStore: store => ({
+            ...store,
+            listBackupBundles: async () => ({
+                bundles: localBundles,
+                tombstones: [],
+                revisions,
+                catalog,
+            }),
+        }),
+    });
+
+    const response = await h.routes.handlers.GITHUB_PHOTOS_BACKUP({}, photoSender);
+    assert.equal(response.ok, false);
+    assert.equal(response.error.code, 'photo-backup-too-large');
+    assert.equal(h.updateCalls(), 1, 'the remote document must be read before its merge can be sized');
+    assert.equal(h.commits.length, 0);
+    assert.equal(h.remoteText, originalRemote);
 });
 
 test('overlapping manual backups serialize snapshot through local reconciliation', async () => {

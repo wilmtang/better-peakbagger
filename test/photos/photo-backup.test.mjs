@@ -88,6 +88,24 @@ test('rejects malformed, oversized, and unsupported future recovery documents', 
         { ok: false, reason: 'too-large' });
 });
 
+test('prepares one bounded canonical representation for size, signature, and upload', async () => {
+    const document = payload([bundle({ title: 'Crème brûlée topo' })]);
+    const prepared = await Backup.prepare(document);
+    const exact = await Backup.prepare(document, { maxBytes: prepared.byteLength });
+
+    assert.equal(new TextDecoder().decode(prepared.bytes), prepared.text);
+    assert.equal(prepared.byteLength, new TextEncoder().encode(prepared.text).byteLength);
+    assert.equal(prepared.signature, await Backup.signature(document));
+    assert.equal(exact.text, prepared.text);
+    await assert.rejects(
+        Backup.prepare(document, { maxBytes: prepared.byteLength - 1 }),
+        error => error instanceof Backup.PhotoBackupCapacityError
+            && error.code === 'photo-backup-too-large'
+            && error.actualBytes === prepared.byteLength
+            && error.maxBytes === prepared.byteLength - 1,
+    );
+});
+
 test('merge preserves remote-only records and accepts local changes only from the known remote base', async () => {
     const changed = payload([
         bundle({ localId: 'photo-common', title: 'Revised topo', now: LATER }),
@@ -109,6 +127,26 @@ test('merge preserves remote-only records and accepts local changes only from th
         ['photo-local', 'North face topo'],
         ['photo-remote', 'North face topo'],
     ]);
+});
+
+test('merge recognizes the legacy content signature during canonical-signature migration', async () => {
+    const remote = payload([bundle({ title: 'Remote base' })]);
+    const local = payload([bundle({ title: 'Local change', now: LATER })]);
+    const legacyBytes = new TextEncoder().encode(JSON.stringify({
+        photos: remote.photos,
+        tombstones: remote.tombstones,
+    }));
+    const digest = await crypto.subtle.digest('SHA-256', legacyBytes);
+    const baseSignature = Array.from(new Uint8Array(digest), byte =>
+        byte.toString(16).padStart(2, '0')).join('');
+    const merged = await Backup.mergePayloads(local, remote, {
+        exportedAt: LATER,
+        baseSignature,
+        baseSignatureVersion: 1,
+    });
+
+    assert.equal(merged.ok, true);
+    assert.equal(merged.payload.photos[0].title, 'Local change');
 });
 
 test('merge stops on divergent same-id edits and lets a newer tombstone prevent resurrection', async () => {

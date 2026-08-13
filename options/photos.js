@@ -44,6 +44,10 @@ export function initPhotoBackup({ extensionApi, flash, save }) {
     }
 
     const send = RuntimeMessage.bind(extensionApi);
+    const photoBackupError = error => error?.code === 'photo-backup-too-large'
+        && typeof error.message === 'string'
+        ? error.message
+        : GithubError.message(error);
     let githubStatus = null;
     let backupState = null;
     let busy = false;
@@ -130,7 +134,7 @@ export function initPhotoBackup({ extensionApi, flash, save }) {
         flash(response?.error?.code === 'photo-backup-conflict'
             ? `Backup conflict in ${plural(response.error.conflictCount || 1, 'photo record')}. `
                 + 'Restore and review before backing up again.'
-            : GithubError.message(response?.error), { error: true });
+            : photoBackupError(response?.error), { error: true });
     }));
 
     restoreEl.addEventListener('click', () => void withBusy('preview', async () => {
@@ -138,7 +142,7 @@ export function initPhotoBackup({ extensionApi, flash, save }) {
         if (!preview?.ok) {
             flash(preview?.error?.code === 'not-found'
                 ? `No photo-library.json found in ${repoName()}.`
-                : GithubError.message(preview?.error), { error: true });
+                : photoBackupError(preview?.error), { error: true });
             return;
         }
         const conflicts = preview.conflicts?.length || 0;
@@ -186,7 +190,7 @@ export function initPhotoBackup({ extensionApi, flash, save }) {
                 confirmEl.disabled = false;
                 cancelEl.disabled = false;
                 confirmationEl.removeAttribute('aria-busy');
-                flash(GithubError.message(response?.error), { error: true });
+                flash(photoBackupError(response?.error), { error: true });
                 return;
             }
             hideConfirmation();

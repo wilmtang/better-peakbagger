@@ -179,6 +179,54 @@ test('Settings distinguishes a confirmed photo backup from pending local reconci
     assert.doesNotMatch(el(dom, 'status').textContent, /failed/i);
 });
 
+test('Settings preserves actionable photo backup capacity details from the worker', async () => {
+    const message = 'Photo-library metadata uses 8.4 MiB, above the 8 MiB GitHub recovery limit. '
+        + 'Move unneeded drafts to Recently Deleted; after their editing-data window ends, try again.';
+    const dom = await loadOptions({ autoPhotoLibraryBackup: false }, {
+        prepareChrome: chrome => {
+            chrome.permissions = {
+                contains: async () => true,
+                request: async () => true,
+                remove: async () => true,
+            };
+            chrome.runtime.sendMessage = async request => {
+                if (request.type === 'GITHUB_AUTH_STATUS') {
+                    return {
+                        connected: true,
+                        account: { login: 'me' },
+                        repo: { owner: 'me', name: 'backup', fullName: 'me/backup' },
+                    };
+                }
+                if (request.type === 'GITHUB_PHOTOS_STATUS') {
+                    return {
+                        ok: true,
+                        connected: true,
+                        repo: { owner: 'me', name: 'backup', fullName: 'me/backup' },
+                        state: null,
+                    };
+                }
+                if (request.type === 'GITHUB_PHOTOS_BACKUP') {
+                    return {
+                        ok: false,
+                        error: {
+                            code: 'photo-backup-too-large',
+                            message,
+                            actualBytes: 8_800_000,
+                            maxBytes: 8_388_608,
+                        },
+                    };
+                }
+                return {};
+            };
+        },
+    });
+    await waitFor(dom, () => el(dom, 'photos-github-actions').hidden === false);
+
+    el(dom, 'photos-backup').click();
+    await waitFor(dom, () => el(dom, 'status-error-text').textContent === message);
+    assert.equal(el(dom, 'status-error').hidden, false);
+});
+
 // Settings and Photo Topos each used to declare their own :root palette, and
 // they drifted into two different-looking products. The palette now has one
 // home; a page stylesheet that re-declares a token has started a third.

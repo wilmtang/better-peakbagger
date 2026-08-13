@@ -9,7 +9,8 @@ import { githubErrors as GithubErrors } from '../../src/github/github-errors.js'
 test('every typed GitHub auth and backup failure has specific user-facing copy', () => {
     const codes = new Set([
         ...Object.values(GithubErrors.ERROR_CODES),
-        'no-token', 'not-connected', 'no-repo', 'no-data', 'settings-unavailable', 'disabled',
+        'no-token', 'not-connected', 'no-repo', 'no-data', 'settings-unavailable',
+        'photo-backup-too-large', 'disabled',
     ]);
     for (const code of codes) {
         const text = GithubError.message({ code, message: 'GitHub supplied this exact detail.' });
