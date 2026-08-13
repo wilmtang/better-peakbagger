@@ -1641,8 +1641,15 @@ export function createGithubRoutes({
     };
 
     const startPhotoBackupWatchdog = async () => {
-        const enabled = (await photoBackupSettings.get()).autoPhotoLibraryBackup === true;
-        await schedulePhotoBackupOnEnable(enabled);
+        if (!ext.alarms) return;
+        const alarm = ext.alarms.get ? await ext.alarms.get(PHOTO_BACKUP_ALARM) : null;
+        if (!alarm || alarm.periodInMinutes !== AUTO_BACKUP_WATCHDOG_MINUTES) {
+            // Startup must not consume a settings read that belongs to a
+            // privacy or preservation transaction. The inexpensive alarm can
+            // always exist; firePhotoAutoBackup checks the opt-in before any
+            // catalog or GitHub work.
+            armPhotoBackup(AUTO_BACKUP_WATCHDOG_MINUTES);
+        }
     };
 
     const firePhotoAutoBackup = async () => {

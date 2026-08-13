@@ -20,7 +20,7 @@ const FAIL_SOFT = Object.freeze({
     'src/ascent/ascent-delete.js': [{ count: 1, kind: 'safe-gate', reason: 'default-off GitHub deletion mirror' }],
     'src/ascent/ascent-filter.js': [{ count: 1, kind: 'display', reason: 'render filter preferences' }],
     'src/background/github-routes.js': [
-        { count: 12, kind: 'safe-gate', reason: 'status and default-off GitHub and photo-recovery gates' },
+        { count: 13, kind: 'safe-gate', reason: 'status and default-off GitHub and photo-recovery gates' },
         { count: 1, kind: 'display', reason: 'render the default-off photo-recovery status' },
     ],
     'src/background/terrain-prefetch.js': [{ count: 1, kind: 'safe-gate', reason: 'default-off terrain gate' }],
@@ -56,7 +56,7 @@ const sourceFiles = async directory => {
 
 const occurrences = async method => {
     const found = {};
-    const expression = new RegExp(`\\b(?:Settings|S|settings)\\.${method}\\(`, 'g');
+    const expression = new RegExp(`\\b(?:Settings|S|settings|photoBackupSettings)\\.${method}\\(`, 'g');
     for (const file of await Promise.all(['src', 'options', 'popup'].map(sourceFiles)).then(groups => groups.flat())) {
         const source = await readFile(path.join(root, file), 'utf8');
         const count = (source.match(expression) || []).length;

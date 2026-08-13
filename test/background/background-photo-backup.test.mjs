@@ -117,6 +117,7 @@ const harness = async ({
     const commits = sharedCommits || [];
     let accessCalls = 0;
     let updateCalls = 0;
+    let photoSettingsReads = 0;
     const client = {
         async readRootFile(path) {
             assert.equal(path, Backup.BACKUP_PATH);
@@ -204,7 +205,12 @@ const harness = async ({
                 repo: { owner: 'me', name: 'backup', branch: 'main' },
             };
         },
-        photoBackupSettings: { get: async () => ({ autoPhotoLibraryBackup: autoEnabled }) },
+        photoBackupSettings: {
+            get: async () => {
+                photoSettingsReads += 1;
+                return { autoPhotoLibraryBackup: autoEnabled };
+            },
+        },
     });
     return {
         routes,
@@ -218,6 +224,7 @@ const harness = async ({
         remoteState: remote,
         accessCalls: () => accessCalls,
         updateCalls: () => updateCalls,
+        photoSettingsReads: () => photoSettingsReads,
         get remoteText() { return remote.text; },
     };
 };
@@ -721,4 +728,15 @@ test('the recurring watchdog backs up a durable mutation after its page notifica
     assert.equal(catalog.generation, catalog.confirmedGeneration);
     assert.equal((await confirmed.getBundle('photo-1')).photo.backup.state, 'current');
     confirmed.close();
+});
+
+test('watchdog startup arms recurrence without consuming a settings read', async () => {
+    const h = await harness({ autoEnabled: false });
+    await h.routes.startPhotoBackupWatchdog();
+    assert.equal(h.photoSettingsReads(), 0);
+    assert.deepEqual(h.alarms.get('bpb-photo-library-backup'), {
+        name: 'bpb-photo-library-backup',
+        delayInMinutes: 30,
+        periodInMinutes: 30,
+    });
 });
