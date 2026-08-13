@@ -69,8 +69,17 @@ const createGithubClient = ({
 
     // A tree read, one level unless recursive. Missing trees surface as
     // read-phase errors (no-access) rather than throwing raw.
-    const readTree = (sha, { recursive = false } = {}) =>
-        request('GET', `/git/trees/${sha}${recursive ? '?recursive=1' : ''}`, { phase: 'read' });
+    const readTree = async (sha, { recursive = false } = {}) => {
+        const result = await request('GET', `/git/trees/${sha}${recursive ? '?recursive=1' : ''}`, { phase: 'read' });
+        if (!result || !Array.isArray(result.tree)) {
+            throw new GithubError(ERROR_CODES.INVALID, 'GitHub returned an invalid repository tree.');
+        }
+        if (result.truncated === true) {
+            throw new GithubError(ERROR_CODES.INVALID,
+                'GitHub truncated the repository tree. Reduce the backup repository size before trying again.');
+        }
+        return result;
+    };
 
     // Root-level mountain folders plus the validated marker are the only
     // repository layout. Keeping one representation avoids ambiguous

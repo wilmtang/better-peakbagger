@@ -947,6 +947,15 @@ Two of those exist because a status code cannot report them:
   both aborts the request and rejects the race, because an injected or
   non-conforming fetch may ignore `signal`.
 
+The shared REST reader also counts decoded bytes while streaming: ordinary
+responses stop at 2 MiB, file-content responses at 12 MiB, tree responses at
+16 MiB, and error bodies at 256 KiB. Parsed JSON has separate depth, node,
+array, object-key, and string ceilings. Git's documented 100,000-entry tree
+maximum remains representable, but a response marked `truncated` is rejected
+instead of being treated as a complete ownership view. Installation and
+repository discovery additionally stop at 100 pages or 10,000 items. Device
+authorization responses have their own 64 KiB and narrow-structure budget.
+
 A `rate-limit` failure carries GitHub's own retry window — `retry-after` on a
 secondary limit, `x-ratelimit-reset` on a primary one — through
 `publicError()` to the copy layer, so the UI names the wait instead of guessing

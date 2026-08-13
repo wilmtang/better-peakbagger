@@ -20,6 +20,7 @@
 //   - c="1" is climbed (green), c="2" is unknown/anonymous (orange), anything
 //     else is unclimbed (pink); peak ids can be negative (provisional peaks).
 
+import { boundedText as BoundedText } from '../net/bounded-text.js';
 
 // The native 2D map hides all peak markers below this zoom ("the map
 // covers too big an area"). The 3D view mirrors the same cutoff.
@@ -33,6 +34,9 @@ const MAX_PEAKS = 400;
 // server for a continent.
 const MAX_BBOX_SPAN_DEGREES = 6;
 const REQUEST_TIMEOUT_MS = 10000;
+const RESPONSE_MAX_BYTES = 512 * 1024;
+const MAX_SOURCE_PEAKS = 2000;
+const MAX_XML_TAGS = MAX_SOURCE_PEAKS + 4;
 // Map types whose native map loads peak markers (the Leaflet renderer's
 // list). Group maps ('G') intentionally never show other peaks.
 const PEAK_MAP_TYPES = new Set(['P', 'A', 'K', 'W', 'I', 'E', 'U', 'J', 'S']);
@@ -100,6 +104,13 @@ const stateFromClimbedFlag = flag => {
 // non-numeric prominence always dropped).
 const parsePeaks = (xmlText, hj) => {
     if (typeof xmlText !== 'string' || !xmlText) return [];
+    // The feed is a flat <ts> list of self-closing <t> rows. Bound its node
+    // count and reject DTD/entity input before DOMParser can expand anything.
+    if (/<!DOCTYPE|<!ENTITY/i.test(xmlText)) return [];
+    const tags = xmlText.match(/</g);
+    if ((tags?.length || 0) > MAX_XML_TAGS) return [];
+    const sourceRows = xmlText.match(/<t(?:\s|\/?>)/g);
+    if ((sourceRows?.length || 0) > MAX_SOURCE_PEAKS) return [];
     let doc;
     try { doc = new DOMParser().parseFromString(xmlText, 'text/xml'); } catch (error) { return []; }
     if (!doc || doc.getElementsByTagName('parsererror').length) return [];
@@ -147,7 +158,11 @@ const createClient = iframeSrc => {
                     credentials: 'same-origin',
                     headers: { Accept: 'text/xml' }
                 });
-                const text = response.ok ? await response.text() : '';
+                const text = response.ok ? await BoundedText.readBoundedResponseText(response, {
+                    maxBytes: RESPONSE_MAX_BYTES,
+                    signal: controller.signal,
+                    label: 'Peak marker response',
+                }) : '';
                 if (controller !== inflight) return null;
                 return response.ok ? parsePeaks(text, context.hj) : [];
             } catch (error) {
@@ -162,4 +177,13 @@ const createClient = iframeSrc => {
     };
 };
 
-export const peakMarkers = { MIN_PEAK_ZOOM, MAX_PEAKS, contextFrom, requestUrl, parsePeaks, createClient };
+export const peakMarkers = {
+    MIN_PEAK_ZOOM,
+    MAX_PEAKS,
+    RESPONSE_MAX_BYTES,
+    MAX_SOURCE_PEAKS,
+    contextFrom,
+    requestUrl,
+    parsePeaks,
+    createClient,
+};

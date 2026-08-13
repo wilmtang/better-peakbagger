@@ -5,8 +5,8 @@
 // ceilings. Response bodies are counted after content decoding, so a small or
 // dishonest Content-Length cannot hide decompression expansion.
 
-const limitError = (label, limit) => Object.assign(
-    new Error(`${label} exceeds its ${limit}-byte limit.`),
+const limitError = (label, limit, unit = 'byte') => Object.assign(
+    new Error(`${label} exceeds its ${limit}-${unit} limit.`),
     { name: 'ResourceLimitError', code: 'response-too-large', limit },
 );
 
@@ -64,6 +64,50 @@ const validateText = (text, { maxBytes, maxChars, label }) => {
     return value;
 };
 
+// JSON.parse itself is bounded by the text ceiling, but callers can still be
+// handed a pathologically deep or broad graph. Walk the parsed result before
+// any endpoint-specific code touches it so structure cost is explicit too.
+export const assertBoundedStructure = (value, {
+    maxDepth,
+    maxNodes,
+    maxArrayItems,
+    maxObjectKeys,
+    maxStringChars,
+    label = 'Parsed response',
+}) => {
+    const stack = [{ value, depth: 0 }];
+    let nodes = 0;
+    while (stack.length) {
+        const current = stack.pop();
+        nodes += 1;
+        if (nodes > maxNodes) throw limitError(label, maxNodes, 'node');
+        if (current.depth > maxDepth) throw limitError(label, maxDepth, 'level');
+        if (typeof current.value === 'string') {
+            if (current.value.length > maxStringChars) {
+                throw limitError(label, maxStringChars, 'character');
+            }
+            continue;
+        }
+        if (!current.value || typeof current.value !== 'object') continue;
+        if (Array.isArray(current.value)) {
+            if (current.value.length > maxArrayItems) {
+                throw limitError(label, maxArrayItems, 'array-item');
+            }
+            for (const child of current.value) stack.push({ value: child, depth: current.depth + 1 });
+            continue;
+        }
+        const entries = Object.entries(current.value);
+        if (entries.length > maxObjectKeys) {
+            throw limitError(label, maxObjectKeys, 'object-key');
+        }
+        for (const [key, child] of entries) {
+            if (key.length > maxStringChars) throw limitError(label, maxStringChars, 'character');
+            stack.push({ value: child, depth: current.depth + 1 });
+        }
+    }
+    return value;
+};
+
 export const readBoundedResponseText = async (response, {
     maxBytes,
     maxChars = maxBytes,
@@ -99,6 +143,7 @@ export const readBoundedBlobText = async (blob, {
 export const boundedText = {
     readBoundedResponseText,
     readBoundedBlobText,
+    assertBoundedStructure,
     isLimitError: error => error?.name === 'ResourceLimitError',
     isAbortError: error => error?.name === 'AbortError',
 };

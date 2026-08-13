@@ -13,6 +13,7 @@
 // user never learns about is the worse outcome.
 
 import { requestDeadline as Deadline } from '../net/request-deadline.js';
+import { boundedText as BoundedText } from '../net/bounded-text.js';
 
 const API_ROOT = 'https://api.imgbb.com/1/upload';
 const KEY_LIMIT = 512;
@@ -22,6 +23,14 @@ const URL_LIMIT = 4096;
 // longer than a page read — long enough for a slow upload to finish, short
 // enough that a dead connection still becomes a stated failure.
 const DEFAULT_TIMEOUT_MS = 120000;
+const RESPONSE_MAX_BYTES = 512 * 1024;
+const RESPONSE_STRUCTURE_LIMITS = Object.freeze({
+    maxDepth: 8,
+    maxNodes: 1000,
+    maxArrayItems: 100,
+    maxObjectKeys: 100,
+    maxStringChars: URL_LIMIT,
+});
 
 class ImgbbError extends Error {
     constructor(code, message, { status = null, ambiguous = false, cause = null } = {}) {
@@ -243,12 +252,21 @@ const upload = async ({
     }
 
     let text;
-    try { text = await deadline.run(response.text()); }
+    try {
+        text = await deadline.run(BoundedText.readBoundedResponseText(response, {
+            maxBytes: RESPONSE_MAX_BYTES,
+            signal: deadline.signal,
+            label: 'ImgBB response',
+        }));
+    }
     catch (cause) {
         release();
+        const tooLarge = BoundedText.isLimitError(cause);
         throw new ImgbbError(
-            deadline.expired ? 'timeout' : 'ambiguous',
-            'ImgBB stopped responding before Better Peakbagger could read the result.'
+            deadline.expired ? 'timeout' : tooLarge ? 'response-too-large' : 'ambiguous',
+            (tooLarge
+                ? 'ImgBB returned more response data than Better Peakbagger can safely process.'
+                : 'ImgBB stopped responding before Better Peakbagger could read the result.')
                 + ' Check your ImgBB account before uploading this photo again.',
             { status: response.status, ambiguous: true, cause },
         );
@@ -260,6 +278,19 @@ const upload = async ({
     // page into "returned a response Better Peakbagger could not read" — a
     // parser complaint standing in for "ImgBB is down".
     const payload = parseJson(text);
+    try {
+        if (payload !== undefined) BoundedText.assertBoundedStructure(payload, {
+            ...RESPONSE_STRUCTURE_LIMITS,
+            label: 'ImgBB response structure',
+        });
+    } catch (cause) {
+        throw new ImgbbError(
+            'response-too-large',
+            'ImgBB returned more response data than Better Peakbagger can safely process.'
+                + ' Check your ImgBB account before uploading this photo again.',
+            { status: response.status, ambiguous: true, cause },
+        );
+    }
     if (!response.ok) {
         if (response.status === 429) {
             throw providerFailure(payload, response.status, 'rate-limit',
@@ -292,6 +323,8 @@ const upload = async ({
 
 export const imgbbClient = {
     API_ROOT,
+    RESPONSE_MAX_BYTES,
+    RESPONSE_STRUCTURE_LIMITS,
     ImgbbError,
     cleanKey,
     cleanUploadResponse,

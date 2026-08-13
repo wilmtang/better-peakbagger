@@ -9,10 +9,34 @@
 
 import { githubErrors as GithubErrors } from './github-errors.js';
 import { requestDeadline as Deadline } from '../net/request-deadline.js';
+import { boundedText as BoundedText } from '../net/bounded-text.js';
 
 const API_ROOT = 'https://api.github.com';
 const { ERROR_CODES, GithubError } = GithubErrors;
 const DEFAULT_TIMEOUT_MS = 20000;
+const RESPONSE_LIMITS = Object.freeze({
+    default: 2 * 1024 * 1024,
+    content: 12 * 1024 * 1024,
+    tree: 16 * 1024 * 1024,
+    error: 256 * 1024,
+});
+const STRUCTURE_LIMITS = Object.freeze({
+    default: Object.freeze({
+        maxDepth: 24, maxNodes: 100000, maxArrayItems: 10000,
+        maxObjectKeys: 10000, maxStringChars: RESPONSE_LIMITS.default,
+    }),
+    content: Object.freeze({
+        maxDepth: 24, maxNodes: 100000, maxArrayItems: 10000,
+        maxObjectKeys: 10000, maxStringChars: RESPONSE_LIMITS.content,
+    }),
+    // GitHub documents at most 100,000 entries for a recursive tree. Leave
+    // enough nodes for every entry's scalar fields, then reject `truncated`
+    // in github-client rather than treating an incomplete repository as safe.
+    tree: Object.freeze({
+        maxDepth: 12, maxNodes: 700000, maxArrayItems: 100000,
+        maxObjectKeys: 100, maxStringChars: 4096,
+    }),
+});
 // A read is repeatable by definition, so a transient GitHub blip on one need
 // not end a whole backup. Writes are deliberately excluded: a 502 after a ref
 // update may have applied it, and only the caller's compare-and-swap retry can
@@ -130,7 +154,17 @@ const createGithubApi = ({
         // The body read shares the deadline: headers can arrive promptly and
         // the stream still stall, which would otherwise hang past every bound.
         let text = '';
-        try { text = await deadline.run(response.text()); }
+        const responseKind = /\/git\/trees(?:\/|$)/.test(url.pathname)
+            ? 'tree'
+            : /\/contents(?:\/|$)/.test(url.pathname) ? 'content' : 'default';
+        const successLimit = RESPONSE_LIMITS[responseKind];
+        try {
+            text = await deadline.run(BoundedText.readBoundedResponseText(response, {
+                maxBytes: response.ok ? successLimit : RESPONSE_LIMITS.error,
+                signal: deadline.signal,
+                label: 'GitHub response',
+            }));
+        }
         catch (cause) {
             if (deadline.expired) {
                 deadline.clear();
@@ -138,12 +172,37 @@ const createGithubApi = ({
                     status: response.status, cause,
                 });
             }
+            if (BoundedText.isLimitError(cause)) {
+                deadline.clear();
+                throw new GithubError(ERROR_CODES.INVALID,
+                    'GitHub returned more data than this backup operation can safely process.', {
+                        status: response.status,
+                        cause,
+                    });
+            }
             text = '';
         }
         deadline.clear();
 
         let data = null;
-        try { data = text ? JSON.parse(text) : null; } catch { data = null; }
+        try {
+            data = text ? JSON.parse(text) : null;
+            if (data != null) {
+                BoundedText.assertBoundedStructure(data, {
+                    ...STRUCTURE_LIMITS[responseKind],
+                    label: 'GitHub response structure',
+                });
+            }
+        } catch (cause) {
+            if (BoundedText.isLimitError(cause)) {
+                throw new GithubError(ERROR_CODES.INVALID,
+                    'GitHub returned a response structure that was too large to process safely.', {
+                        status: response.status,
+                        cause,
+                    });
+            }
+            data = null;
+        }
 
         if (!response.ok) {
             if (allowNotFound && response.status === 404) return null;
@@ -186,4 +245,10 @@ const createGithubApi = ({
     return { request, resolveUrl };
 };
 
-export const githubApi = { API_ROOT, DEFAULT_TIMEOUT_MS, createGithubApi };
+export const githubApi = {
+    API_ROOT,
+    DEFAULT_TIMEOUT_MS,
+    RESPONSE_LIMITS,
+    STRUCTURE_LIMITS,
+    createGithubApi,
+};

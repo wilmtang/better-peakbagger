@@ -178,6 +178,32 @@ test('a network failure surfaces the network code', async () => {
     await assert.rejects(flow.requestCode(), err => err.code === ERROR_CODES.NETWORK);
 });
 
+test('device authorization rejects oversized bodies and valid-size excessive structure', async () => {
+    let read = false;
+    const declared = Auth.createDeviceFlow({
+        fetch: async () => ({
+            ok: true,
+            status: 200,
+            headers: { get: name => name === 'content-length' ? String(Auth.DEVICE_RESPONSE_MAX_BYTES + 1) : null },
+            body: { cancel: async () => {} },
+            text: async () => { read = true; return '{}'; },
+        }),
+    });
+    await assert.rejects(declared.requestCode(),
+        error => error.code === ERROR_CODES.INVALID && /too large/.test(error.message));
+    assert.equal(read, false);
+
+    const nested = {};
+    let cursor = nested;
+    for (let depth = 0; depth <= Auth.DEVICE_STRUCTURE_LIMITS.maxDepth; depth += 1) {
+        cursor.child = {};
+        cursor = cursor.child;
+    }
+    const structured = Auth.createDeviceFlow({ fetch: async () => respond(200, nested) });
+    await assert.rejects(structured.requestCode(),
+        error => error.code === ERROR_CODES.INVALID && /structure/.test(error.message));
+});
+
 test('authorize requests a code, reports it, then resolves with the token', async () => {
     const clock = makeClock();
     const { fetch } = makeFetch({
@@ -275,6 +301,22 @@ test('repository discovery follows installation and repository pagination', asyn
     assert.equal(result.installationCount, 2);
     assert.deepEqual(result.repos.map(repo => repo.fullName), ['me/one', 'me/two', 'me/three']);
     assert.equal(calls.length, 5);
+});
+
+test('repository discovery rejects missing and excessive paginated collections', async () => {
+    const missing = makeFetch({
+        [`${API}/user/installations?per_page=100`]: () => respond(200, {}),
+    });
+    await assert.rejects(Auth.listBackupRepositories({ fetch: missing.fetch, token: 't' }),
+        error => error.code === ERROR_CODES.INVALID && /unexpected/.test(error.message));
+
+    const excessive = makeFetch({
+        [`${API}/user/installations?per_page=100`]: () => respond(200, {
+            installations: Array.from({ length: Auth.DISCOVERY_MAX_ITEMS + 1 }, (_, id) => ({ id })),
+        }),
+    });
+    await assert.rejects(Auth.listBackupRepositories({ fetch: excessive.fetch, token: 't' }),
+        error => error.code === ERROR_CODES.INVALID);
 });
 
 test('fetchAccount returns the login behind the token', async () => {

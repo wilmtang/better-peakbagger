@@ -31,6 +31,7 @@
 import { githubApi as GithubApi } from './github-api.js';
 import { githubErrors as GithubErrors } from './github-errors.js';
 import { requestDeadline as Deadline } from '../net/request-deadline.js';
+import { boundedText as BoundedText } from '../net/bounded-text.js';
 import { storageValue as StorageValue } from '../storage/storage-value.js';
 
 const { ERROR_CODES, GithubError } = GithubErrors;
@@ -38,6 +39,16 @@ const { ERROR_CODES, GithubError } = GithubErrors;
 // give way well before the next poll is due rather than stacking up behind
 // a socket that will never answer.
 const DEVICE_TIMEOUT_MS = 15000;
+const DEVICE_RESPONSE_MAX_BYTES = 64 * 1024;
+const DEVICE_STRUCTURE_LIMITS = Object.freeze({
+    maxDepth: 6,
+    maxNodes: 256,
+    maxArrayItems: 32,
+    maxObjectKeys: 64,
+    maxStringChars: 8192,
+});
+const DISCOVERY_MAX_PAGES = 100;
+const DISCOVERY_MAX_ITEMS = 10000;
 
 // The registered Better Peakbagger backup app. Public by design.
 const CLIENT_ID = 'Iv23liZpTdD1iZfT3eL1';
@@ -97,7 +108,13 @@ const createDeviceFlow = ({
                 : new GithubError(ERROR_CODES.NETWORK, 'Could not reach GitHub.', { cause });
         }
         let text = '';
-        try { text = await deadline.run(res.text()); }
+        try {
+            text = await deadline.run(BoundedText.readBoundedResponseText(res, {
+                maxBytes: DEVICE_RESPONSE_MAX_BYTES,
+                signal: deadline.signal,
+                label: 'GitHub authorization response',
+            }));
+        }
         catch (cause) {
             if (deadline.expired) {
                 deadline.clear();
@@ -105,11 +122,34 @@ const createDeviceFlow = ({
                     'GitHub stopped responding while sending its answer.',
                     { status: res ? res.status : null, cause });
             }
+            if (BoundedText.isLimitError(cause)) {
+                deadline.clear();
+                throw new GithubError(ERROR_CODES.INVALID,
+                    'GitHub returned an authorization response that was too large.', {
+                        status: res ? res.status : null,
+                        cause,
+                    });
+            }
             text = '';
         }
         deadline.clear();
         let json = null;
-        try { json = text ? JSON.parse(text) : null; } catch { json = null; }
+        try {
+            json = text ? JSON.parse(text) : null;
+            if (json != null) BoundedText.assertBoundedStructure(json, {
+                ...DEVICE_STRUCTURE_LIMITS,
+                label: 'GitHub authorization response structure',
+            });
+        } catch (cause) {
+            if (BoundedText.isLimitError(cause)) {
+                throw new GithubError(ERROR_CODES.INVALID,
+                    'GitHub returned an authorization response structure that was too large.', {
+                        status: res ? res.status : null,
+                        cause,
+                    });
+            }
+            json = null;
+        }
         if (json && json.error) return json;
         if (!res || !res.ok || !json) {
             const status = res ? res.status : null;
@@ -211,11 +251,23 @@ const apiGetAll = async (api, path, key) => {
     const seen = new Set();
     let next = path;
     while (next) {
+        if (seen.size >= DISCOVERY_MAX_PAGES) {
+            throw new GithubError(ERROR_CODES.INVALID,
+                'GitHub repository discovery returned too many pages.');
+        }
         const url = api.resolveUrl(next);
         if (seen.has(url.href)) throw new GithubError(ERROR_CODES.UNKNOWN, 'GitHub returned a pagination loop.');
         seen.add(url.href);
         const page = await api.request('GET', url.href, { withResponse: true });
-        if (Array.isArray(page.data[key])) items.push(...page.data[key]);
+        if (!Array.isArray(page.data[key])) {
+            throw new GithubError(ERROR_CODES.INVALID,
+                'GitHub repository discovery returned an unexpected response.');
+        }
+        if (items.length + page.data[key].length > DISCOVERY_MAX_ITEMS) {
+            throw new GithubError(ERROR_CODES.INVALID,
+                'GitHub repository discovery returned too many items.');
+        }
+        items.push(...page.data[key]);
         const link = page.headers && typeof page.headers.get === 'function'
             ? page.headers.get('link')
             : null;
@@ -378,6 +430,10 @@ const API = {
     VERIFICATION_URI,
     STORAGE_KEY,
     EPOCH_KEY,
+    DEVICE_RESPONSE_MAX_BYTES,
+    DEVICE_STRUCTURE_LIMITS,
+    DISCOVERY_MAX_PAGES,
+    DISCOVERY_MAX_ITEMS,
     createDeviceFlow,
     fetchAccount,
     listBackupRepositories,

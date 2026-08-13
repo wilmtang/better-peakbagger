@@ -291,6 +291,21 @@ test('repository inspection distinguishes empty, populated, and owned repositori
     });
 });
 
+test('repository inspection rejects a truncated Git tree instead of treating it as complete', async () => {
+    const { fetch } = makeFetch({
+        'GET /repos/me/backup': REPO_OK(),
+        'GET /repos/me/backup/git/ref/heads/main': REF('C0'),
+        'GET /repos/me/backup/git/commits/C0': COMMIT('C0', 'T0'),
+        'GET /repos/me/backup/git/trees/T0': () => respond(200, {
+            truncated: true,
+            tree: [{ path: 'partial', type: 'blob', sha: 'B1' }],
+        }),
+    });
+    const client = Client.createGithubClient({ fetch, token: 't', owner: 'me', repo: 'backup' });
+    await assert.rejects(client.inspectRepository(),
+        error => error.code === ERROR_CODES.INVALID && /truncated/.test(error.message));
+});
+
 test('an empty repository is initialized with the first backup commit', async () => {
     const { fetch, calls } = makeFetch({
         'GET /repos/me/backup': () => respond(200, {

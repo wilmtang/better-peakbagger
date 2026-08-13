@@ -133,6 +133,46 @@ test('a response whose body stalls times out rather than outliving the deadline'
     );
 });
 
+test('endpoint-specific GitHub response budgets reject before parsing', async () => {
+    let read = false;
+    let cancelled = false;
+    const api = GithubApi.createGithubApi({
+        token: 't',
+        sleep: async () => {},
+        fetch: async () => ({
+            ok: true,
+            status: 200,
+            headers: { get: name => name === 'content-length' ? String(GithubApi.RESPONSE_LIMITS.default + 1) : null },
+            body: { cancel: async () => { cancelled = true; } },
+            text: async () => { read = true; return '{}'; },
+        }),
+    });
+    await assert.rejects(api.request('GET', '/user'),
+        error => error.code === ERROR_CODES.INVALID && /more data/.test(error.message));
+    assert.equal(read, false, 'a declared over-limit body is not retained or parsed');
+    assert.equal(cancelled, true, 'the rejected response body is released');
+
+    const content = 'a'.repeat(GithubApi.RESPONSE_LIMITS.default + 1);
+    const largeContent = GithubApi.createGithubApi({
+        token: 't',
+        fetch: async () => respond(200, { encoding: 'base64', content }),
+    });
+    assert.equal((await largeContent.request('GET', '/repos/me/backup/contents/archive.json')).content.length,
+        content.length, 'the contents endpoint keeps its separately reviewed larger ceiling');
+});
+
+test('valid-size GitHub JSON still has a bounded parsed structure', async () => {
+    const nested = {};
+    let cursor = nested;
+    for (let depth = 0; depth <= GithubApi.STRUCTURE_LIMITS.default.maxDepth; depth += 1) {
+        cursor.child = {};
+        cursor = cursor.child;
+    }
+    const api = GithubApi.createGithubApi({ token: 't', fetch: async () => respond(200, nested) });
+    await assert.rejects(api.request('GET', '/user'),
+        error => error.code === ERROR_CODES.INVALID && /structure/.test(error.message));
+});
+
 test('idempotent reads ride out a transient GitHub failure; writes are never replayed', async () => {
     let reads = 0;
     const flaky = GithubApi.createGithubApi({

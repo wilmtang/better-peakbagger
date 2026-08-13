@@ -5,6 +5,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+    assertBoundedStructure,
     readBoundedBlobText,
     readBoundedResponseText,
 } from '../../src/net/bounded-text.js';
@@ -84,4 +85,25 @@ test('caller cancellation stops a streaming body immediately', async () => {
     controller.abort();
     await assert.rejects(reading, error => error?.name === 'AbortError');
     assert.equal(cancelled, true);
+});
+
+test('parsed structure budgets bound depth, breadth, nodes, and strings', () => {
+    const limits = {
+        maxDepth: 2,
+        maxNodes: 6,
+        maxArrayItems: 2,
+        maxObjectKeys: 2,
+        maxStringChars: 4,
+    };
+    assert.deepEqual(assertBoundedStructure({ one: ['1234', 2] }, limits), { one: ['1234', 2] });
+    for (const value of [
+        { one: { two: { three: true } } },
+        { one: [1, 2, 3] },
+        { one: 1, two: 2, three: 3 },
+        { one: '12345' },
+        [1, 2, { three: 3 }],
+    ]) {
+        assert.throws(() => assertBoundedStructure(value, limits),
+            error => error?.code === 'response-too-large');
+    }
 });

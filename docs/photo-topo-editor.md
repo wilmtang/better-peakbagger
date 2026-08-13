@@ -298,6 +298,11 @@ The client does not retry. A clear request rejection returns the record to a
 local draft. A network interruption or other case where ImgBB may have accepted
 the body becomes `outcome-unknown`; automatic retry would risk creating a
 duplicate public image. The user must review and decide what to do.
+Response reads share the upload deadline and stop at 512 KiB of decoded data;
+the parsed provider envelope also has narrow depth, node, collection, key, and
+string ceilings. An over-limit response after dispatch remains
+`outcome-unknown`, with the same instruction to inspect the ImgBB account before
+uploading again.
 
 ## Crash consistency and failure states
 

@@ -137,7 +137,7 @@ test('every third-party transport bounds its requests through this one module', 
         ['background/github-routes.js', source => /const netFetch = \(url, init\) => fetch\(url, init\)/.test(source)
             && /github-client\.js/.test(source) && /github-auth\.js/.test(source)],
         ['maps/peak-markers.js', source => /setTimeout\(\(\) => controller\.abort\(\), REQUEST_TIMEOUT_MS\)/.test(source)
-            && /await response\.text\(\)/.test(source)
+            && /readBoundedResponseText\(response/.test(source)
             && /clearTimeout\(timeout\)/.test(source)],
     ]);
     const discoveredExceptions = new Set();

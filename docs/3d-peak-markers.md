@@ -68,6 +68,10 @@ the extension-origin frame never contacts peakbagger.com itself:
    native 2D map would make (single-flight: a newer camera position aborts
    the in-flight fetch). Surfaces without a native peak feed — group maps, a
    missing iframe — answer `unavailable` once and the frame stops asking.
+   The decoded XML stops at 512 KiB, and the flat feed stops at 2,000 source
+   rows/tags before `DOMParser`; declarations that could define or expand
+   entities are rejected. The separate 400-marker display cap still keeps the
+   most prominent validated rows.
 4. **Frame render**: replies are re-validated all-or-nothing (like the route)
    and drawn as terrain-positioned MapLibre Marker buttons in the native
    colors above the route, with a click popup carrying the peak name as a link

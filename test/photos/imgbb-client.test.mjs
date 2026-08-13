@@ -28,9 +28,10 @@ const successPayload = (overrides = {}) => ({
     status: 200,
 });
 
-const response = (status, body) => ({
+const response = (status, body, headers = {}) => ({
     ok: status >= 200 && status < 300,
     status,
+    headers: { get: name => headers[name.toLowerCase()] ?? null },
     text: async () => typeof body === 'string' ? body : JSON.stringify(body),
 });
 
@@ -203,6 +204,36 @@ test('a reply that stops mid-body keeps the outcome unknown', async () => {
         key: KEY,
         blob: new Blob([new Uint8Array(8)], { type: 'image/png' }),
     }), error => error.ambiguous === true && /check your imgbb account/i.test(error.message));
+});
+
+test('oversized ImgBB response bytes and structure keep the upload outcome unknown', async () => {
+    let read = false;
+    await assert.rejects(Client.upload({
+        fetch: async () => ({
+            ...response(200, successPayload(), {
+                'content-length': String(Client.RESPONSE_MAX_BYTES + 1),
+            }),
+            body: { cancel: async () => {} },
+            text: async () => { read = true; return '{}'; },
+        }),
+        key: KEY,
+        blob: new Blob([new Uint8Array(8)], { type: 'image/png' }),
+    }), error => error.code === 'response-too-large'
+        && error.ambiguous === true
+        && /check your imgbb account/i.test(error.message));
+    assert.equal(read, false);
+
+    const nested = {};
+    let cursor = nested;
+    for (let depth = 0; depth <= Client.RESPONSE_STRUCTURE_LIMITS.maxDepth; depth += 1) {
+        cursor.child = {};
+        cursor = cursor.child;
+    }
+    await assert.rejects(Client.upload({
+        fetch: async () => response(200, nested),
+        key: KEY,
+        blob: new Blob([new Uint8Array(8)], { type: 'image/png' }),
+    }), error => error.code === 'response-too-large' && error.ambiguous === true);
 });
 
 // The dangerous shape: ImgBB said yes, and the only thing lost is the URL of
