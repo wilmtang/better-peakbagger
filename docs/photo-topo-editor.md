@@ -247,8 +247,9 @@ advances that durable generation in the transaction that owns the mutation;
 editing-pixel cleanup does not. Completing an upload writes the uploaded
 catalog record, delete URL, and generation together. A confirmed GitHub write
 journals the exact generation and included record revisions before decorative
-per-record stamps are reconciled. Restore applies reconstructed records and
-tombstones through one store-owned transaction.
+per-record stamps are reconciled through sequential store-owned batches of at
+most 50 records. Restore applies reconstructed records and tombstones through
+one store-owned transaction.
 
 The library can search titles, alt text, source file names, and recorded report
 identities. Its filters distinguish local drafts, uploaded images, images not

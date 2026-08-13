@@ -452,11 +452,12 @@ test('partial catalog stamping is journaled and an automatic retry repairs only 
         seeds: [bundle('photo-1'), bundle('photo-2', 'South face topo')],
         decoratePhotoStore: store => ({
             ...store,
-            updatePhotoBackup: args => {
-                if (failSecondStamp && args.localId === 'photo-2') {
+            updatePhotoBackups: async args => {
+                if (failSecondStamp && args.localIds.includes('photo-2')) {
+                    await store.updatePhotoBackups({ ...args, localIds: ['photo-1'] });
                     throw new Error('second catalog stamp failed');
                 }
-                return store.updatePhotoBackup(args);
+                return store.updatePhotoBackups(args);
             },
         }),
     });

@@ -21,6 +21,7 @@ const STORES = Object.freeze({
 const STORE_NAMES = Object.freeze(Object.values(STORES));
 const MAX_THUMBNAIL_BATCH = 100;
 const MAX_MAINTENANCE_BATCH = 50;
+const MAX_BACKUP_RECONCILIATION_BATCH = 50;
 const CATALOG_STATE_KEY = 'catalog';
 
 class PhotoStoreConflictError extends Error {
@@ -673,6 +674,59 @@ const createPhotoStore = async options => {
         return storedPhoto;
     };
 
+    const updatePhotoBackups = async ({
+        localIds,
+        expectedRevisions,
+        backup,
+        batchSize = MAX_BACKUP_RECONCILIATION_BATCH,
+    } = {}) => {
+        const ids = Array.isArray(localIds)
+            ? [...new Set(localIds.filter(value => typeof value === 'string'))]
+            : [];
+        if (!expectedRevisions || typeof expectedRevisions !== 'object'
+            || Array.isArray(expectedRevisions)
+            || !Number.isInteger(batchSize) || batchSize < 1
+            || batchSize > MAX_BACKUP_RECONCILIATION_BATCH
+            || ids.some(localId => !Number.isSafeInteger(expectedRevisions[localId])
+                || expectedRevisions[localId] < 0)) {
+            throw new TypeError('photo backup batch requires bounded observed revisions');
+        }
+        const conflicts = [];
+        let changed = 0;
+        let transactions = 0;
+        let maxBatchSize = 0;
+        for (let offset = 0; offset < ids.length; offset += batchSize) {
+            const batch = ids.slice(offset, offset + batchSize);
+            maxBatchSize = Math.max(maxBatchSize, batch.length);
+            const transaction = database.transaction(STORES.photos, 'readwrite');
+            const photos = transaction.objectStore(STORES.photos);
+            try {
+                const currentValues = await Promise.all(batch.map(localId =>
+                    requestResult(photos.get(localId))));
+                batch.forEach((localId, index) => {
+                    const current = Library.cleanPhoto(currentValues[index]);
+                    if (!current || current.revision !== expectedRevisions[localId]) {
+                        conflicts.push(localId);
+                        return;
+                    }
+                    const stored = Library.cleanPhoto({
+                        ...current,
+                        revision: current.revision + 1,
+                        backup,
+                    });
+                    if (!stored) throw new TypeError('photo backup update is invalid');
+                    photos.put(stored);
+                    changed += 1;
+                });
+            } catch (error) {
+                return abortAndRethrow(transaction, error);
+            }
+            await transactionDone(transaction);
+            transactions += 1;
+        }
+        return { conflicts, changed, transactions, maxBatchSize };
+    };
+
     const putOperation = async operation => {
         if (!operation || typeof operation !== 'object' || Array.isArray(operation)
             || typeof operation.localId !== 'string' || typeof operation.operationId !== 'string') {
@@ -990,6 +1044,7 @@ const createPhotoStore = async options => {
         commitUploadOperation,
         resetUploadOperation,
         updatePhotoBackup,
+        updatePhotoBackups,
         putOperation,
         getOperations,
         deleteOperation,
@@ -1007,6 +1062,7 @@ export const photoStore = {
     DATABASE_VERSION,
     STORES,
     CATALOG_STATE_KEY,
+    MAX_BACKUP_RECONCILIATION_BATCH,
     PhotoStoreConflictError,
     openDatabase,
     createPhotoStore,

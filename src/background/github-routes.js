@@ -1218,24 +1218,15 @@ export function createGithubRoutes({
                 photo.localId,
                 photo.revision,
             ]));
-            const outcomes = await Promise.allSettled(photos
+            const localIds = photos
                 .filter(photo => !sameBackupStamp(photo, backup))
                 .filter(photo => Object.hasOwn(observed, photo.localId))
-                .map(photo => store.updatePhotoBackup({
-                    localId: photo.localId,
-                    expectedRevision: observed[photo.localId],
-                    backup,
-                })));
-            const conflicts = [];
-            let failure = null;
-            for (const outcome of outcomes) {
-                if (outcome.status === 'fulfilled') continue;
-                if (outcome.reason?.code === 'photo-conflict') {
-                    conflicts.push(outcome.reason.localId);
-                } else if (!failure) failure = outcome.reason;
-            }
-            if (failure) throw failure;
-            return { conflicts };
+                .map(photo => photo.localId);
+            return store.updatePhotoBackups({
+                localIds,
+                expectedRevisions: observed,
+                backup,
+            });
         });
     };
 

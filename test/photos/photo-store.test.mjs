@@ -21,6 +21,12 @@ const uploadOperation = (localId, operationId = 'operation-1') => ({
     updatedAt: LATER,
 });
 
+const transactionDone = transaction => new Promise((resolve, reject) => {
+    transaction.oncomplete = resolve;
+    transaction.onerror = () => reject(transaction.error);
+    transaction.onabort = () => reject(transaction.error);
+});
+
 const fixture = (localId = 'photo-1') => {
     const photo = Library.createDraft({
         localId,
@@ -561,6 +567,56 @@ test('catalog generation is atomic with recovery data and ignores editing-asset 
     assert.equal(dirty.generation, 2);
     assert.equal(dirty.confirmedGeneration, 1);
     assert.equal((await store.getBundle(input.photo.localId)).photo.backup.state, 'pending');
+    store.close();
+});
+
+test('backup reconciliation bounds a 1,200-photo catalog and preserves stale revisions', async () => {
+    const indexedDB = new IDBFactory();
+    const name = 'photo-store-bounded-backup-reconciliation';
+    const schema = await Store.createPhotoStore({ indexedDB, name });
+    schema.close();
+    const database = await Store.openDatabase({ indexedDB, name });
+    const seed = database.transaction('photos', 'readwrite');
+    const photos = seed.objectStore('photos');
+    const expectedRevisions = {};
+    const localIds = [];
+    for (let index = 0; index < 1200; index += 1) {
+        const localId = `batch-photo-${String(index).padStart(4, '0')}`;
+        const photo = fixture(localId).photo;
+        localIds.push(localId);
+        expectedRevisions[localId] = 0;
+        photos.put(index === 625 ? Library.cleanPhoto({
+            ...photo,
+            revision: 1,
+            title: 'Newer revision',
+            updatedAt: LATER,
+        }) : photo);
+    }
+    await transactionDone(seed);
+    database.close();
+
+    const store = await Store.createPhotoStore({ indexedDB, name });
+    const result = await store.updatePhotoBackups({
+        localIds,
+        expectedRevisions,
+        backup: {
+            state: 'current',
+            signature: 'c'.repeat(64),
+            backedUpAt: LATER,
+            commitUrl: 'https://github.com/example/photos/commit/abc',
+        },
+    });
+
+    assert.deepEqual(result, {
+        conflicts: ['batch-photo-0625'],
+        changed: 1199,
+        transactions: 24,
+        maxBatchSize: Store.MAX_BACKUP_RECONCILIATION_BATCH,
+    });
+    const stale = (await store.getBundle('batch-photo-0625')).photo;
+    assert.equal(stale.title, 'Newer revision');
+    assert.equal(stale.backup.state, 'off');
+    assert.equal((await store.getBundle('batch-photo-0624')).photo.backup.state, 'current');
     store.close();
 });
 

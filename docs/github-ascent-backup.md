@@ -699,9 +699,10 @@ mutations atomically advance an IndexedDB generation and request the one-minute
 trailing-edge run; an installed 30-minute watchdog also checks that durable
 generation, so a lost page-to-worker notification does not strand a change.
 Confirmed writes journal the generation and included record revisions before
-per-record display stamps are reconciled. The path keeps the content-only
-signature check, ten-minute retry delay, and two-retry cap while remaining
-serialized through the shared worker write queue. Restore is always
+per-record display stamps are reconciled in sequential 50-record IndexedDB
+batches. The path keeps the content-only signature check, ten-minute retry
+delay, and two-retry cap while remaining serialized through the shared worker
+write queue. Restore is always
 preview-first and explicit. The worker rereads the remote file and requires the
 previewed signature before applying it. If local and remote records conflict,
 the user may stop or explicitly keep local conflicting versions while restoring
