@@ -1,9 +1,10 @@
 # Code, performance, and UX audit — 2026-08-12
 
-Status: **active remediation plan; no runtime code was changed by this audit.**
-The current tree has three P1 findings, seven P2 findings, and two P3 findings.
-Each item below records a broken invariant, current-source evidence, the
-smallest safe remediation boundary, and adversarial regression proof.
+Status: **remediation completed and archived on 2026-08-14.** The audit found
+three P1 findings, seven P2 findings, and two P3 findings. Each item below
+records the original broken invariant, source evidence, remediation boundary,
+and adversarial regression proof; the closure ledger records what changed and
+what the available checks still cannot prove.
 
 Baseline: clean local `main` at `b6736ef1`, 23 commits ahead of `origin/main`.
 This pass reconciled the current tree with the remediated and archived
@@ -636,20 +637,96 @@ onscreen evidence.
 
 ## Closure ledger
 
-This section is the required handoff ledger for the audit itself. During
-remediation, move each finding into exactly one disposition with commit and
-verification evidence; do not call the plan fully fixed while an open finding
-or proof gap remains.
-
-### Open findings
-
-- F1–F12 are confirmed and unimplemented. This audit changed documentation
-  only.
-
 ### Fixed and verified
 
-- None. No runtime, test, build, package, privacy, or UX behavior was changed by
-  this audit.
+- **F1 — generation-owned photo recovery (`e601f77`, corrected by
+  `3299082`):** every recovery-relevant catalog mutation now advances a durable
+  generation in its owning IndexedDB transaction. Remote confirmation journals
+  that generation and its exact record revisions before stamp reconciliation;
+  a recurring watchdog is armed without consuming a fail-soft settings read.
+  Focused photo, worker, settings-policy, documentation, and 1,200-photo scale
+  coverage passed in 155- and 95-test runs.
+- **F2 — constrained vector style transaction (`97c5331`):** the OpenFreeMap
+  style now passes explicit byte, structure, identifier, source, layer, type,
+  and exact-origin validation before MapLibre receives it. Resource installation
+  rolls back partial sources, layers, glyphs, and sprites on failure. Thirty-
+  three focused tests passed; the live Liberty style normalized to 2 sources
+  and 111 layers; hidden Chrome terrain passed at 798×448 and 448×448 on the
+  Apple M3 Pro Metal renderer, followed by hidden real-extension verification.
+- **F3 — reconciled Chrome publication (`4af7262`):** each Web Store request has
+  a 30-second deadline and 64 KiB response ceiling with typed phase, endpoint,
+  status, and outcome-unknown failures. Upload and publish are never replayed
+  after an ambiguous mutation result. Success is reported only after
+  `fetchStatus` proves the expected version in an appropriate submitted
+  revision, while a retry observing that exact revision completes without
+  another mutation. Forty-three release tests and the 1,486-test full suite
+  passed.
+- **F4 — bounded remote response owners (`478d695`):** GitHub REST and device
+  flow, ImgBB, and Peakbagger marker readers now stream through endpoint byte
+  ceilings and validate bounded parsed structures. GitHub discovery caps pages
+  and items and rejects incomplete trees. One hundred thirty-one focused cases,
+  ESLint, and hidden Chrome for Testing 151.0.7922.34 passed.
+- **F5 — bounded settings import (`9a51238`):** both the options page and worker
+  enforce the same 1 MiB UTF-8 and parsed-structure contract before JSON,
+  credential, or settings-store work. Sixty-eight bounded-reader, transfer,
+  worker, and options cases passed.
+- **F6 — serialized photo version creation (`987e530`):** one synchronous owner
+  now admits **Edit as new version**, keeps the control busy, distinguishes a
+  committed child from later editor-load failure, and closes temporary
+  `ImageBitmap` instances in every path. Fifty-two editor tests, ESLint, and
+  hidden Chrome passed.
+- **F7 — bounded photo reconciliation (`66464b8`):** a sequential store-owned
+  compare-and-swap operation replaced per-photo transaction fan-out and handles
+  at most 50 records per IndexedDB transaction while preserving exact conflicts
+  and progress. Forty-two store/background/documentation tests passed,
+  including the 1,200-photo transaction-bound case.
+- **F8 — complete Recently Deleted maintenance (`c270254`):** schema version 4
+  adds a deletion-time cursor; page-owned maintenance drains all eligible
+  bounded batches with event-loop yields, retries transient failures, and arms
+  only the next retained expiry while respecting hidden and teardown states.
+  Eighty photo tests, ESLint, and hidden Chrome passed.
+- **F9 — pre-write photo capacity (`6415843`):** one canonical UTF-8 recovery
+  document now owns the 8 MiB check, signature, and upload. Local and merged
+  overflow stop before remote mutation, expose measured actionable failures,
+  and suppress futile automatic rebuilds until the generation changes. One
+  hundred fifteen focused cases passed.
+- **F10 — selectable Markdown recovery (`829dcf6`):** clipboard absence or
+  refusal reveals the exact already-derived Markdown in a labelled readonly
+  textarea, focuses and selects it, and returns focus after Done or Escape.
+  Thirty-nine tests and two hidden Chrome runs passed; dark and light screenshots
+  at the wide and 420×720 viewports were inspected without clipping or overflow.
+- **F11 — truthful profile stop states (`683ca2e`):** Pause and Cancel publish
+  requested state synchronously and abort owned Peakbagger reads and waits. A
+  non-retractable GitHub batch is named, allowed to settle, counted, and followed
+  by no later work. Thirty-eight core/runner/DOM tests, ESLint, and hidden Chrome
+  passed.
+- **F12 — authoritative backup completion (`fe68c6b`):** the persistent status
+  refresh now completes before the success toast; a refresh failure produces
+  matching recovery feedback while library rendering stays outside the
+  completion-critical path. Three focused backup cases passed, and the final
+  full suite passed without the original synchronization failure.
+
+Final combined-tree verification recorded before archival:
+
+- `npm test`: **1,486 passed, 0 failed**, after rebuilding all 27 `dist/`
+  bundles.
+- `npm run lint`: passed with the eight exact owner-reviewed warnings; no new
+  error, notice, warning kind, file, or count was accepted.
+- `npm run audit:ci`: passed only the two exact high `image-size` advisories in
+  the development-only `web-ext`/`addons-linter` path through 2026-08-21.
+- `npm run test:scale`: **6 passed**, covering the full Rainier table, 1,500
+  favorites, the 20,000-point contract and contract+1 rejection, and a
+  1,200-photo library.
+- `npm run verify:browsers`: passed against the real unpacked extension in
+  hidden Chrome for Testing 151.0.7922.34 new-headless and hidden Firefox
+  153.0.4 at 1000×760. Fresh minified Chrome and Firefox archives each passed
+  exact verification at 66 entries and then passed `verify:packages` in those
+  isolated browsers.
+- `npm run terrain:verify`: passed hidden at 798×448 and 448×448 on `ANGLE
+  Metal Renderer: Apple M3 Pro`; wide, narrow dark, and failure-fallback
+  screenshots were inspected. `npm run terrain:verify:firefox` passed hidden
+  at 1000×760 on its reported Apple hardware renderer. Disposable screenshots,
+  archives, certificates, and profiles were removed after inspection.
 
 ### Intentionally not changed
 
@@ -668,23 +745,34 @@ or proof gap remains.
   clean.
 - Previously closed 2026-08-08 findings remain closed unless implementation of
   this plan supplies new contrary evidence.
+- No version bump, release tag, push, Chrome Web Store/AMO submission, or live
+  remote write was performed. Those actions require separate release authority.
 
 ### Changed but not fully proven
 
-- None. There are no runtime changes to assess. The plan and index are the only
-  repository changes from this audit.
-
-### Open proof gaps
-
-- No current-turn real-browser, hardware-terrain, native-focus, screen-reader,
-  touch, or physical-device check was run.
-- The final full `npm test` gate is red at F12: 1,434 passed and one
-  synchronization assertion failed. The earlier 1,435-pass run does not erase
-  that reproducible source-level race.
-- No live Garmin, Strava, Peakbagger, OpenFreeMap, GitHub, ImgBB, Chrome Web
-  Store, or Firefox Add-ons mutation was performed.
-- Unit and scale checks do not prove abrupt page/service-worker/browser/OS loss
-  between IndexedDB, alarm, and remote-commit phases.
-- Dependency-policy acceptance is temporary; legal review, privacy-policy
-  sufficiency, package signing, store review, and publication remain owner or
-  release-process evidence.
+- **F1, F7, F8, and F9:** deterministic IndexedDB interleavings, restart
+  reconstruction, watchdog routing, and 1,200-record scale coverage prove the
+  owned transaction contracts while the browser is running. Abrupt page,
+  worker, browser, or OS termination at each persistence boundary and real
+  low-memory devices were not exercised.
+- **F2:** a current live style document was normalized and hidden hardware-GPU
+  fixtures exercised installation and rollback. This does not guarantee future
+  OpenFreeMap policy, availability, nested resource behavior, or other physical
+  GPU/driver combinations.
+- **F3:** fake responses prove deadlines, response caps, exact revision
+  reconciliation, and no-replay decisions against the documented API schema.
+  No live Chrome Web Store upload, timeout, submission, review, or publication
+  was authorized.
+- **F4 and F5:** adversarial readers and isolated extension runs prove local
+  limits. No authenticated live Garmin, Strava, Peakbagger, GitHub, or ImgBB
+  failure/oversize response was induced, and browser-native file-picker
+  presentation was not inspected.
+- **F6, F10, F11, and F12:** DOM behavior, packaged startup, and the stated
+  screenshots passed, but hidden automation does not prove native clipboard or
+  permission prompts, focus/window placement, screen-reader speech, touch,
+  switch control, or physical-device behavior. F11 also leaves an already-
+  dispatched GitHub mutation intentionally non-retractable.
+- The two reviewed development-only `image-size` advisories remain accepted
+  only through 2026-08-21; this is not a clean advisory graph. Legal review,
+  privacy-policy sufficiency, package signing, store acceptance, and
+  post-publication behavior remain release-owner evidence.

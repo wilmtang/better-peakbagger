@@ -54,7 +54,15 @@ For subsequent automated releases, follow Google's
 The workflow requests a short-lived token scoped only to
 `https://www.googleapis.com/auth/chromewebstore`, uploads the verified ZIP,
 waits for package processing, and submits it with automatic publication after
-approval. Store warnings fail the job instead of being accepted silently.
+approval. Store warnings fail the job instead of being accepted silently. Each
+API request has its own deadline and bounded response. After submission, the
+publisher requires `fetchStatus` to show the manifest version in the submitted
+revision with an accepted submitted state; it never reports the local package
+version as a substitute for that remote evidence. If an upload or publish
+response becomes ambiguous after dispatch, the script reconciles status and
+stops with Developer Dashboard guidance instead of replaying the mutation. A
+rerun that already observes the exact submitted revision completes without a
+duplicate upload.
 
 If listing visibility is changed in the Developer Dashboard, Chrome requires
 one manual publication with that visibility before the API can publish again.
@@ -188,10 +196,11 @@ failed. Before using GitHub's **Re-run failed jobs** action, inspect the exact
 `X.Y.Z` version in both the Chrome Developer Dashboard (including upload and
 submitted revision state) and the AMO Developer Hub (including pending review
 versions), and record what each store accepted. The Chrome publisher also
-fails closed before upload when `fetchStatus` reports that version already
-submitted/published or reports a recent ambiguous upload. Do not rerun a store
-job until its version is confirmed unused; do not rerun all jobs after either
-store consumed it.
+completes without another mutation when `fetchStatus` proves that exact version
+is already submitted. It fails closed when the version is already published, a
+different submission is active, or a recent upload remains ambiguous. Do not
+retry a store mutation until its version is confirmed unused, and do not rerun
+all jobs after either store consumed it.
 
 `npm run terrain:verify:firefox` fails closed on SwiftShader, llvmpipe, and other
 software renderers. Run it hidden on representative GPU hardware and record the
