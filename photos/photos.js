@@ -27,6 +27,7 @@ const RECENTLY_DELETED_MS = Library.DELETED_EDITING_RECOVERY_MS;
 const LIBRARY_PAGE_SIZE = 48;
 const LIBRARY_SEARCH_DELAY_MS = 180;
 const LIBRARY_MAINTENANCE_DELAY_MS = 1000;
+const LIBRARY_MAINTENANCE_RETRY_MS = 1000;
 const LIBRARY_MAINTENANCE_BATCH = 20;
 // Source bytes have a different cost and lifecycle from the smaller flattened
 // upload and the 40 MiB project archive. Web Crypto has no incremental digest,
@@ -230,6 +231,9 @@ let libraryRenderQueued = false;
 let libraryPage = 0;
 let librarySearchTimer = null;
 let libraryMaintenanceTimer = null;
+let libraryMaintenanceRunning = false;
+let libraryMaintenanceSuspended = false;
+let libraryMaintenanceFailure = null;
 let photoBackupBusy = false;
 let newVersionTransaction = null;
 // A new mark inherits the last style the user chose, the way every drawing tool
@@ -2284,6 +2288,7 @@ const moveToDeleted = async item => {
         return;
     }
     notifyBackupChanged();
+    scheduleLibraryMaintenance();
     undoDeleted = item;
     toast('Moved to Recently Deleted. Restorable with editing data for 30 days. '
         + 'The remote image was not deleted.', {
@@ -2513,21 +2518,56 @@ const scheduleLibrarySearch = () => {
     }, LIBRARY_SEARCH_DELAY_MS);
 };
 
-const scheduleLibraryMaintenance = () => {
-    if (libraryMaintenanceTimer) return;
+const scheduleLibraryMaintenance = (delay = LIBRARY_MAINTENANCE_DELAY_MS) => {
+    if (libraryMaintenanceTimer || libraryMaintenanceRunning
+        || libraryMaintenanceSuspended || teardownStarted) return;
     libraryMaintenanceTimer = setTimeout(async () => {
         libraryMaintenanceTimer = null;
+        if (libraryMaintenanceSuspended || teardownStarted) return;
+        libraryMaintenanceRunning = true;
         const now = new Date();
         const before = new Date(now.getTime() - RECENTLY_DELETED_MS).toISOString();
-        await store.pruneDeletedAssets({
-            before,
-            now: now.toISOString(),
-            limit: LIBRARY_MAINTENANCE_BATCH,
-        }).then(result => {
+        let nextDelay = null;
+        try {
+            const result = await store.pruneDeletedAssets({
+                before,
+                now: now.toISOString(),
+                limit: LIBRARY_MAINTENANCE_BATCH,
+            });
+            libraryMaintenanceFailure = null;
             if (result.pruned && ui.filter.value === 'recently-deleted'
                 && !ui.libraryView.hidden) void renderLibrary();
-        }).catch(() => {});
-    }, LIBRARY_MAINTENANCE_DELAY_MS);
+            if (result.remaining > 0) nextDelay = 0;
+            else if (result.nextDeletedAt) {
+                nextDelay = Math.max(0,
+                    Date.parse(result.nextDeletedAt) + RECENTLY_DELETED_MS - Date.now());
+            }
+        } catch (error) {
+            if (!libraryMaintenanceFailure) {
+                console.warn('Better Peakbagger: photo library maintenance failed', error);
+            }
+            libraryMaintenanceFailure = {
+                at: new Date().toISOString(),
+                message: error instanceof Error ? error.message : String(error),
+            };
+            nextDelay = LIBRARY_MAINTENANCE_RETRY_MS;
+        } finally {
+            libraryMaintenanceRunning = false;
+            if (nextDelay != null) scheduleLibraryMaintenance(nextDelay);
+        }
+    }, delay);
+};
+
+const suspendLibraryMaintenance = () => {
+    libraryMaintenanceSuspended = true;
+    clearTimeout(libraryMaintenanceTimer);
+    libraryMaintenanceTimer = null;
+};
+
+const resumeLibraryMaintenance = () => {
+    if (teardownStarted) return;
+    libraryMaintenanceSuspended = false;
+    if (store) scheduleLibraryMaintenance(0);
 };
 
 const formatBackupTime = value => {
@@ -2832,16 +2872,27 @@ const bindEvents = () => {
         if (event.key.startsWith('Arrow')) endCoalescing();
     });
     document.addEventListener('visibilitychange', () => {
-        if (document.visibilityState === 'hidden') void flushDraftPersistence();
+        if (document.visibilityState === 'hidden') {
+            suspendLibraryMaintenance();
+            void flushDraftPersistence();
+        } else {
+            resumeLibraryMaintenance();
+        }
     });
-    window.addEventListener('pagehide', () => { void flushDraftPersistence(); });
+    window.addEventListener('pagehide', () => {
+        suspendLibraryMaintenance();
+        void flushDraftPersistence();
+    });
+    window.addEventListener('pageshow', () => {
+        resumeLibraryMaintenance();
+    });
     window.addEventListener('beforeunload', () => {
         if (teardownStarted) return;
         teardownStarted = true;
+        suspendLibraryMaintenance();
         const pendingDraftWrite = flushDraftPersistence();
         unsubscribeSettings();
         clearTimeout(librarySearchTimer);
-        clearTimeout(libraryMaintenanceTimer);
         closeSource();
         libraryObjectUrls.forEach(url => URL.revokeObjectURL(url));
         // Closing IndexedDB here used to abort the only chance to persist an

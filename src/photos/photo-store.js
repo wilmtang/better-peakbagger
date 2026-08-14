@@ -7,7 +7,7 @@ import { photoProject as Project } from './photo-project.js';
 import { photoLibrary as Library } from './photo-library.js';
 
 const DATABASE_NAME = 'betterPeakbaggerPhotos';
-const DATABASE_VERSION = 3;
+const DATABASE_VERSION = 4;
 const STORES = Object.freeze({
     photos: 'photos',
     projects: 'projects',
@@ -23,6 +23,7 @@ const MAX_THUMBNAIL_BATCH = 100;
 const MAX_MAINTENANCE_BATCH = 50;
 const MAX_BACKUP_RECONCILIATION_BATCH = 50;
 const CATALOG_STATE_KEY = 'catalog';
+const DELETED_AT_INDEX = 'byDeletedAt';
 
 class PhotoStoreConflictError extends Error {
     constructor(localId, message = 'The photo changed in another tab. Reload it and try again.') {
@@ -75,6 +76,10 @@ const openDatabase = ({
                         });
                     }
                 }
+            }
+            const photos = request.transaction.objectStore(STORES.photos);
+            if (!photos.indexNames.contains(DELETED_AT_INDEX)) {
+                photos.createIndex(DELETED_AT_INDEX, 'deletedAt', { unique: false });
             }
         };
         request.onsuccess = () => resolve(request.result);
@@ -817,6 +822,7 @@ const createPhotoStore = async options => {
 
     const pruneDeletedAssets = async ({ before, now, limit = 20 } = {}) => {
         const beforeTime = Date.parse(before);
+        const beforeAt = Number.isFinite(beforeTime) ? new Date(beforeTime).toISOString() : null;
         const updatedAt = typeof now === 'string' && Number.isFinite(Date.parse(now))
             ? new Date(now).toISOString()
             : null;
@@ -831,26 +837,64 @@ const createPhotoStore = async options => {
             STORES.thumbnails,
         ], 'readwrite');
         const photos = transaction.objectStore(STORES.photos);
-        const values = await requestResult(photos.getAll());
-        const eligible = values.map(Library.cleanPhoto).filter(Boolean)
-            .filter(photo => photo.deletedAt && Date.parse(photo.deletedAt) <= beforeTime)
-            .filter(photo => photo.assets.originalRetained
-                || photo.assets.projectRetained
-                || photo.assets.thumbnailRetained);
-        const pruning = eligible.slice(0, limit);
-        for (const photo of pruning) {
-            const updated = Library.updateAssets(photo, {
-                originalRetained: false,
-                projectRetained: false,
-                thumbnailRetained: false,
-            }, updatedAt);
-            photos.put(Library.cleanPhoto({ ...updated, revision: photo.revision + 1 }));
-            transaction.objectStore(STORES.projects).delete(photo.localId);
-            transaction.objectStore(STORES.originals).delete(photo.localId);
-            transaction.objectStore(STORES.thumbnails).delete(photo.localId);
+        const pruning = [];
+        let remaining = 0;
+        let nextDeletedAt = null;
+        try {
+            await new Promise((resolve, reject) => {
+                const request = photos.index(DELETED_AT_INDEX).openCursor();
+                request.onerror = () => reject(request.error || new Error('Photo maintenance cursor failed.'));
+                request.onsuccess = () => {
+                    const cursor = request.result;
+                    if (!cursor) {
+                        resolve();
+                        return;
+                    }
+                    const photo = Library.cleanPhoto(cursor.value);
+                    const retainsAssets = photo && (photo.assets.originalRetained
+                        || photo.assets.projectRetained || photo.assets.thumbnailRetained);
+                    if (cursor.key > beforeAt) {
+                        if (retainsAssets) {
+                            nextDeletedAt = photo.deletedAt;
+                            resolve();
+                        } else {
+                            cursor.continue();
+                        }
+                        return;
+                    }
+                    if (retainsAssets) {
+                        if (pruning.length >= limit) {
+                            remaining = 1;
+                            resolve();
+                            return;
+                        }
+                        pruning.push(photo);
+                    }
+                    cursor.continue();
+                };
+            });
+            for (const photo of pruning) {
+                const updated = Library.updateAssets(photo, {
+                    originalRetained: false,
+                    projectRetained: false,
+                    thumbnailRetained: false,
+                }, updatedAt);
+                const stored = Library.cleanPhoto({ ...updated, revision: photo.revision + 1 });
+                if (!stored) throw new TypeError('photo maintenance produced an invalid record');
+                photos.put(stored);
+                transaction.objectStore(STORES.projects).delete(photo.localId);
+                transaction.objectStore(STORES.originals).delete(photo.localId);
+                transaction.objectStore(STORES.thumbnails).delete(photo.localId);
+            }
+        } catch (error) {
+            return abortAndRethrow(transaction, error);
         }
         await transactionDone(transaction);
-        return { pruned: pruning.length, remaining: Math.max(0, eligible.length - pruning.length) };
+        return {
+            pruned: pruning.length,
+            remaining,
+            ...(nextDeletedAt ? { nextDeletedAt } : {}),
+        };
     };
 
     const purge = async localId => {

@@ -89,6 +89,12 @@ test('upgrading a pre-generation catalog starts dirty instead of inventing confi
     assert.equal(state.generation, 1);
     assert.equal(state.confirmedGeneration, 0);
     store.close();
+    const upgraded = await Store.openDatabase({ indexedDB, name });
+    const transaction = upgraded.transaction('photos', 'readonly');
+    assert.equal(transaction.objectStore('photos').indexNames.contains('byDeletedAt'), true,
+        'the upgrade indexes existing deletion timestamps for bounded maintenance');
+    await transactionDone(transaction);
+    upgraded.close();
 });
 
 test('persists and retrieves a matching photo, project, original, and thumbnail atomically', async () => {
@@ -294,6 +300,27 @@ test('prunes only one bounded batch of expired deleted assets', async () => {
     assert.equal(bundles.filter(bundle => bundle.original == null).length, 2);
     assert.equal(bundles.filter(bundle => bundle.original != null).length, 1);
     assert.equal(bundles.filter(bundle => bundle.photo.assets.projectRetained).length, 1);
+    store.close();
+});
+
+test('maintenance reports the next retained deletion deadline and includes the exact cutoff', async () => {
+    const store = await Store.createPhotoStore({
+        indexedDB: new IDBFactory(),
+        name: 'photo-store-next-maintenance-deadline',
+    });
+    const input = fixture();
+    input.photo = await store.putDraft(input);
+    await store.putPhoto(Library.markDeleted(input.photo, TIME));
+    const beforeDeadline = new Date(Date.parse(TIME) - 1).toISOString();
+
+    assert.deepEqual(await store.pruneDeletedAssets({
+        before: beforeDeadline,
+        now: LATER,
+    }), { pruned: 0, remaining: 0, nextDeletedAt: TIME });
+    assert.deepEqual(await store.pruneDeletedAssets({
+        before: TIME,
+        now: LATER,
+    }), { pruned: 1, remaining: 0 });
     store.close();
 });
 

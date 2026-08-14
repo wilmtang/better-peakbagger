@@ -437,6 +437,95 @@ const seedUploadedLibraryPhoto = async (indexedDB, {
     return photo;
 };
 
+const seedDeletedLibraryPhotos = async (indexedDB, count, {
+    deletedAt = '2026-06-01T12:00:00.000Z',
+} = {}) => {
+    const store = await Store.createPhotoStore({ indexedDB });
+    for (let index = 0; index < count; index += 1) {
+        const localId = `expired-photo-${String(index).padStart(3, '0')}`;
+        const sourceSha256 = String(index % 10).repeat(64);
+        const input = {
+            photo: Library.createDraft({
+                localId,
+                title: `Expired topo ${index + 1}`,
+                source: {
+                    fileName: `${localId}.jpg`, mime: 'image/jpeg', bytes: 6,
+                    width: IMAGE.width, height: IMAGE.height, sha256: sourceSha256,
+                },
+                now: deletedAt,
+            }),
+            project: Project.createProject({
+                localId,
+                width: IMAGE.width,
+                height: IMAGE.height,
+                sourceSha256,
+                updatedAt: deletedAt,
+            }),
+            original: new Blob(['source'], { type: 'image/jpeg' }),
+            thumbnail: new Blob(['thumbnail'], { type: 'image/jpeg' }),
+        };
+        input.photo = await store.putDraft(input);
+        await store.putPhoto(Library.markDeleted(input.photo, deletedAt));
+    }
+    store.close();
+};
+
+test('one photo-page lifetime drains more than two expired maintenance batches', async t => {
+    const indexedDB = new IDBFactory();
+    await seedDeletedLibraryPhotos(indexedDB, 45);
+    const page = await loadEditor({
+        indexedDB,
+        pickPhoto: false,
+        fixedNow: '2026-08-14T12:00:00.000Z',
+    });
+    t.after(() => page.dom.window.close());
+
+    const photos = await waitForPhotoStore(page.win, 'photos', records => records.length === 45
+        && records.every(photo => !photo.assets.originalRetained
+            && !photo.assets.projectRetained && !photo.assets.thumbnailRetained));
+    assert.equal(photos.length, 45);
+    assert.equal((await readPhotoStore(page.win, 'originals')).length, 0);
+    assert.equal((await readPhotoStore(page.win, 'projects')).length, 0);
+    assert.equal((await readPhotoStore(page.win, 'thumbnails')).length, 0);
+    assert.deepEqual(page.errors, []);
+});
+
+test('photo maintenance pauses while hidden and retries one failed batch after visibility returns', async t => {
+    const indexedDB = new IDBFactory();
+    await seedDeletedLibraryPhotos(indexedDB, 1);
+    let quotaFailure;
+    const warnings = [];
+    const page = await loadEditor({
+        indexedDB,
+        pickPhoto: false,
+        fixedNow: '2026-08-14T12:00:00.000Z',
+        onStoreReady: ({ win }) => {
+            win.console.warn = (...args) => warnings.push(args);
+            quotaFailure = failNextDraftTransactionWithQuota(indexedDB);
+            Object.defineProperty(win.document, 'visibilityState', {
+                value: 'hidden', configurable: true,
+            });
+            win.document.dispatchEvent(new win.Event('visibilitychange'));
+        },
+    });
+    t.after(() => {
+        quotaFailure.restore();
+        page.dom.window.close();
+    });
+
+    await new Promise(resolve => page.win.setTimeout(resolve, 1100));
+    assert.equal(quotaFailure.triggered(), false, 'hidden maintenance owns no live timer');
+    assert.equal((await readPhotoStore(page.win, 'photos'))[0].assets.originalRetained, true);
+
+    Object.defineProperty(page.doc, 'visibilityState', { value: 'visible', configurable: true });
+    page.doc.dispatchEvent(new page.win.Event('visibilitychange'));
+    await waitForPhotoStore(page.win, 'photos', records => records.length === 1
+        && !records[0].assets.originalRetained);
+    assert.equal(quotaFailure.triggered(), true);
+    assert.equal(warnings.length, 1, 'the first transient failure remains diagnosable without retry spam');
+    assert.deepEqual(page.errors, []);
+});
+
 const waitForPhotoStore = async (win, storeName, predicate, ms = 5000) => {
     const start = Date.now();
     while (true) {
@@ -1336,7 +1425,7 @@ test('remote thumbnail presentation failures never rewrite catalog health or bac
     assert.deepEqual(page.errors, []);
 });
 
-test('Recently Deleted discloses the asset deadline and restores exact-expiry records only', async () => {
+test('Recently Deleted discloses the asset deadline and restores exact-expiry records only', async t => {
     const indexedDB = new IDBFactory();
     const fixedNow = '2026-08-09T12:00:00.000Z';
     const exactExpiryDeletion = new Date(
@@ -1462,6 +1551,7 @@ test('Recently Deleted discloses the asset deadline and restores exact-expiry re
             });
         },
     });
+    t.after(() => page.dom.window.close());
 
     const filter = page.doc.getElementById('library-filter');
     filter.value = 'recently-deleted';
@@ -1500,7 +1590,7 @@ test('Recently Deleted discloses the asset deadline and restores exact-expiry re
     assert.deepEqual(page.errors, []);
 });
 
-test('removing a photo states the 30-day editing-data window before and after confirmation', async () => {
+test('removing a photo states the 30-day editing-data window before and after confirmation', async t => {
     let confirmation = '';
     const page = await loadEditor({
         confirmImpl: message => {
@@ -1508,6 +1598,7 @@ test('removing a photo states the 30-day editing-data window before and after co
             return true;
         },
     });
+    t.after(() => page.dom.window.close());
     await waitFor(page.dom, () => page.doc.getElementById('save-status').textContent
         === 'Saved on this device');
     page.click(page.doc.getElementById('show-library'));

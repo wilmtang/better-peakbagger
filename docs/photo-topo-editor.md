@@ -257,7 +257,11 @@ yet inserted, backup-pending entries, and states needing attention. Public
 image reachability is advisory; an unreachable check never destroys local
 metadata. Catalog searches are debounced, and the grid reads thumbnails and
 renders at most 48 cards at a time. Expired Recently Deleted assets are pruned
-in bounded background batches instead of blocking the visible library.
+through a deletion-time IndexedDB cursor in bounded background batches instead
+of loading or blocking the visible library. A page drains every eligible batch,
+retries transient failures, and schedules the next retained deletion deadline
+so a long-lived library also catches later expirations; hidden or parked pages
+resume that work when they become visible again.
 
 ## ImgBB credential and upload protocol
 
