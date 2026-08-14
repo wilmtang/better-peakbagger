@@ -21,6 +21,8 @@ const byteLength = text => {
     return unescape(encodeURIComponent(text)).length;
 };
 
+export const encodedByteLength = byteLength;
+
 const readStream = async (stream, {
     maxBytes,
     maxChars,
@@ -141,6 +143,7 @@ export const readBoundedBlobText = async (blob, {
 };
 
 export const boundedText = {
+    encodedByteLength,
     readBoundedResponseText,
     readBoundedBlobText,
     assertBoundedStructure,

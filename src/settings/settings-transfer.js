@@ -5,11 +5,20 @@
 
 import { settingsSchema as Schema } from './settings-schema.js';
 import { imgbbClient as ImgbbClient } from '../photos/imgbb-client.js';
+import { boundedText as BoundedText } from '../net/bounded-text.js';
 
 const KIND = 'better-peakbagger-settings';
 const SCHEMA_VERSION = 3;
 const BACKUP_PATH = 'settings.json';
 const API_KEY_NAMES = Object.freeze(['imgbb']);
+const IMPORT_MAX_BYTES = 1024 * 1024;
+const IMPORT_STRUCTURE_LIMITS = Object.freeze({
+    maxDepth: 12,
+    maxNodes: 5000,
+    maxArrayItems: 256,
+    maxObjectKeys: 512,
+    maxStringChars: 8192,
+});
 
 // Schema.clean() intentionally preserves unknown keys. Transfer payloads do
 // not: they contain only the settings this extension version understands.
@@ -87,11 +96,24 @@ const buildPayload = (settings, {
 const serialize = payload => `${JSON.stringify(payload, null, 2)}\n`;
 
 const parse = text => {
+    if (typeof text !== 'string') return { ok: false, reason: 'not-json' };
+    if (BoundedText.encodedByteLength(text) > IMPORT_MAX_BYTES) {
+        return { ok: false, reason: 'too-large' };
+    }
     let parsed;
     try {
         parsed = JSON.parse(text);
     } catch {
         return { ok: false, reason: 'not-json' };
+    }
+    try {
+        BoundedText.assertBoundedStructure(parsed, {
+            ...IMPORT_STRUCTURE_LIMITS,
+            label: 'Settings import structure',
+        });
+    } catch (error) {
+        if (BoundedText.isLimitError(error)) return { ok: false, reason: 'too-complex' };
+        throw error;
     }
     if (!parsed || typeof parsed !== 'object' || parsed.kind !== KIND) {
         return { ok: false, reason: 'wrong-kind' };
@@ -126,6 +148,8 @@ export const settingsTransfer = {
     SCHEMA_VERSION,
     BACKUP_PATH,
     API_KEY_NAMES,
+    IMPORT_MAX_BYTES,
+    IMPORT_STRUCTURE_LIMITS,
     buildPayload,
     serialize,
     parse,

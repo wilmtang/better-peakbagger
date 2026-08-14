@@ -157,6 +157,30 @@ test('manual file import replaces settings and the API key, including an explici
     assert.equal(h.local.values[ImgbbAuth.STORAGE_KEY], undefined);
 });
 
+test('a direct oversized import message is rejected before any settings or credential access', async () => {
+    let verified = 0;
+    const h = harness({ verifyGithubConnection: async () => { verified += 1; return { ok: false }; } });
+    let touched = 0;
+    for (const [store, methods] of [
+        [h.settingsStore, ['requireCurrent', 'applyPatch', 'replaceIfCurrent']],
+        [h.keyStore, ['read', 'replace', 'replaceIfCurrent']],
+        [h.authStore, ['read', 'readSnapshot', 'replaceIfSnapshot']],
+    ]) {
+        for (const method of methods) {
+            store[method] = async () => { touched += 1; throw new Error('must not touch stores'); };
+        }
+    }
+    const response = await h.routes.handlers.SETTINGS_FILE_IMPORT({
+        content: 'x'.repeat(Transfer.IMPORT_MAX_BYTES + 1),
+    }, optionsSender);
+    assert.deepEqual(response, {
+        ok: false,
+        error: { code: 'invalid-file', reason: 'too-large' },
+    });
+    assert.equal(touched, 0);
+    assert.equal(verified, 0);
+});
+
 test('legacy imports preserve the destination API key', async () => {
     const h = harness({ imgbb: 'keep-imgbb-key' });
     const legacy = JSON.stringify({

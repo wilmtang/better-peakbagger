@@ -8,14 +8,24 @@ import { settingsTransfer as Transfer } from '../src/settings/settings-transfer.
 import { STORAGE_KEY as GITHUB_AUTH_STORAGE_KEY } from '../src/github/github-auth.js';
 import { githubError as GithubError } from '../src/github/github-error-copy.js';
 import { runtimeMessage as RuntimeMessage } from '../src/ui/runtime-message.js';
+import { boundedText as BoundedText } from '../src/net/bounded-text.js';
 import { GITHUB_ORIGINS, hasGithubPermission } from './github.js';
 import { optionsUtils as OptionsUtils } from './options-utils.js';
 
 const SETTINGS_STORAGE_KEY = S.STORAGE_KEY;
 
-const invalidFileMessage = reason => reason === 'newer-version'
-    ? 'This settings file was made by a newer version of the extension.'
-    : 'That is not a Better Peakbagger settings file.';
+const invalidFileMessage = reason => {
+    if (reason === 'newer-version') {
+        return 'This settings file was made by a newer version of the extension.';
+    }
+    if (reason === 'too-large') {
+        return 'That file is too large. Choose a Better Peakbagger settings export.';
+    }
+    if (reason === 'too-complex') {
+        return 'That file is too complex. Choose a Better Peakbagger settings export.';
+    }
+    return 'That is not a Better Peakbagger settings file.';
+};
 
 export function initSettingsBackup({ extensionApi, flash, save, refreshCredentials = async () => {} }) {
     const exportEl = document.getElementById('settings-backup-export');
@@ -125,16 +135,23 @@ export function initSettingsBackup({ extensionApi, flash, save, refreshCredentia
         const file = fileEl.files && fileEl.files[0];
         fileEl.value = '';
         if (!file) return;
+        hideConfirmation({ restoreFocus: false });
         let text;
         try {
-            text = await file.text();
-        } catch {
+            text = await BoundedText.readBoundedBlobText(file, {
+                maxBytes: Transfer.IMPORT_MAX_BYTES,
+                label: 'Settings file',
+            });
+        } catch (error) {
+            if (BoundedText.isLimitError(error)) {
+                flash(invalidFileMessage('too-large'), { error: true });
+                return;
+            }
             flash('That settings file could not be read.', { error: true });
             return;
         }
         const parsed = Transfer.parse(text);
         if (!parsed.ok) {
-            hideConfirmation();
             flash(invalidFileMessage(parsed.reason), { error: true });
             return;
         }

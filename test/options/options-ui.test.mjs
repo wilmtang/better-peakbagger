@@ -656,6 +656,45 @@ test('settings import replaces known settings and API keys only after inline con
     assert.equal(el(dom, 'status').textContent, 'Settings imported');
 });
 
+test('settings import rejects honest and streamed oversized files before confirmation or messaging', async () => {
+    const messages = [];
+    const dom = await loadOptions({ theme: 'dark' }, {
+        prepareChrome: chrome => installSettingsFileWorker(chrome, { messages }),
+    });
+    const input = el(dom, 'settings-backup-file');
+    let fallbackRead = false;
+    Object.defineProperty(input, 'files', {
+        configurable: true,
+        value: [{
+            name: 'oversized-settings.json',
+            size: settingsTransfer.IMPORT_MAX_BYTES + 1,
+            text: async () => { fallbackRead = true; return '{}'; },
+        }],
+    });
+    input.dispatchEvent(new dom.window.Event('change'));
+    await waitFor(dom, () => /file is too large/i.test(el(dom, 'status-error-text').textContent));
+    assert.equal(fallbackRead, false, 'an honest size rejects before the file is read');
+    assert.equal(el(dom, 'settings-backup-confirmation').hidden, true);
+
+    const bytes = new TextEncoder().encode('x'.repeat(settingsTransfer.IMPORT_MAX_BYTES + 1));
+    let cancelled = false;
+    Object.defineProperty(input, 'files', {
+        configurable: true,
+        value: [{
+            name: 'dishonest-settings.json',
+            size: 1,
+            stream: () => new ReadableStream({
+                start(controller) { controller.enqueue(bytes); },
+                cancel() { cancelled = true; },
+            }),
+        }],
+    });
+    input.dispatchEvent(new dom.window.Event('change'));
+    await waitFor(dom, () => /file is too large/i.test(el(dom, 'status-error-text').textContent));
+    await waitFor(dom, () => cancelled === true);
+    assert.equal(messages.some(message => message.type === 'SETTINGS_FILE_IMPORT'), false);
+});
+
 test('settings import requests GitHub permission and restores a validated connection after confirmation', async () => {
     const messages = [];
     const permissionRequests = [];

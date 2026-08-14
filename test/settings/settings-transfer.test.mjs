@@ -168,6 +168,62 @@ test('settings transfer rejects invalid and unsupported payloads', () => {
     })), { ok: false, reason: 'no-settings' });
 });
 
+const settingsFileAtBytes = target => {
+    const payload = {
+        kind: Transfer.KIND,
+        schemaVersion: Transfer.SCHEMA_VERSION,
+        settings: { theme: 'dark' },
+        ignoredPadding: [],
+    };
+    while (true) {
+        const withEmpty = JSON.stringify({
+            ...payload,
+            ignoredPadding: [...payload.ignoredPadding, ''],
+        });
+        const remaining = target - new TextEncoder().encode(withEmpty).byteLength;
+        if (remaining <= 8192) {
+            assert.ok(remaining >= 0);
+            payload.ignoredPadding.push('x'.repeat(remaining));
+            return JSON.stringify(payload);
+        }
+        payload.ignoredPadding.push('x'.repeat(8192));
+    }
+};
+
+test('settings import size is counted as UTF-8 before JSON parsing', () => {
+    const exact = settingsFileAtBytes(Transfer.IMPORT_MAX_BYTES);
+    assert.equal(new TextEncoder().encode(exact).byteLength, Transfer.IMPORT_MAX_BYTES);
+    assert.equal(Transfer.parse(exact).ok, true);
+    assert.deepEqual(Transfer.parse(`${exact} `), { ok: false, reason: 'too-large' });
+
+    const multibyte = JSON.stringify({
+        kind: Transfer.KIND,
+        schemaVersion: Transfer.SCHEMA_VERSION,
+        settings: {},
+        ignored: 'é'.repeat(Math.floor(Transfer.IMPORT_MAX_BYTES / 2)),
+    });
+    assert.ok(multibyte.length < Transfer.IMPORT_MAX_BYTES,
+        'the character count alone would incorrectly admit this file');
+    assert.deepEqual(Transfer.parse(multibyte), { ok: false, reason: 'too-large' });
+});
+
+test('valid-size settings imports reject excessive parsed structure', () => {
+    const payload = {
+        kind: Transfer.KIND,
+        schemaVersion: Transfer.SCHEMA_VERSION,
+        settings: {},
+    };
+    let cursor = payload;
+    for (let depth = 0; depth <= Transfer.IMPORT_STRUCTURE_LIMITS.maxDepth; depth += 1) {
+        cursor.ignored = {};
+        cursor = cursor.ignored;
+    }
+    assert.deepEqual(Transfer.parse(JSON.stringify(payload)), {
+        ok: false,
+        reason: 'too-complex',
+    });
+});
+
 test('settings signature depends only on cleaned known settings in schema order', () => {
     const first = {
         theme: 'dark',
