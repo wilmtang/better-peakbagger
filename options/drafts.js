@@ -19,6 +19,9 @@ export const initDrafts = ({ extensionApi = globalThis.browser || globalThis.chr
     const confirmationTitleEl = document.getElementById('drafts-delete-all-confirmation-title');
     const confirmationCancelEl = document.getElementById('drafts-delete-all-cancel');
     const confirmationConfirmEl = document.getElementById('drafts-delete-all-confirm');
+    const copyFallbackEl = document.getElementById('drafts-copy-fallback');
+    const copyFallbackValueEl = document.getElementById('drafts-copy-fallback-value');
+    const copyFallbackDismissEl = document.getElementById('drafts-copy-fallback-dismiss');
     if (!store || OptionsUtils.logMissingElements('draft manager', {
         'drafts-list': listEl,
         'drafts-empty': emptyEl,
@@ -30,6 +33,9 @@ export const initDrafts = ({ extensionApi = globalThis.browser || globalThis.chr
         'drafts-delete-all-confirmation-title': confirmationTitleEl,
         'drafts-delete-all-cancel': confirmationCancelEl,
         'drafts-delete-all-confirm': confirmationConfirmEl,
+        'drafts-copy-fallback': copyFallbackEl,
+        'drafts-copy-fallback-value': copyFallbackValueEl,
+        'drafts-copy-fallback-dismiss': copyFallbackDismissEl,
     })) return { refresh() {} };
 
     const DAY_MS = 24 * 60 * 60 * 1000;
@@ -39,6 +45,7 @@ export const initDrafts = ({ extensionApi = globalThis.browser || globalThis.chr
     let currentDrafts = [];
     let refreshRevision = 0;
     let refreshTimer = null;
+    let copyFallbackReturn = null;
     const sendMutation = message => extensionApi.runtime.sendMessage(message);
 
     const draftTitle = draft => {
@@ -176,18 +183,57 @@ export const initDrafts = ({ extensionApi = globalThis.browser || globalThis.chr
         .find(item => item.dataset.draftKey === key)
         ?.querySelector('a, button');
 
+    const dismissCopyFallback = ({ restoreFocus = true } = {}) => {
+        copyFallbackEl.hidden = true;
+        copyFallbackValueEl.value = '';
+        if (restoreFocus) {
+            const control = copyFallbackReturn?.control?.isConnected
+                ? copyFallbackReturn.control
+                : [...listEl.children]
+                    .find(item => item.dataset.draftKey === copyFallbackReturn?.key)
+                    ?.querySelector('[data-action="copy"]');
+            control?.focus();
+        }
+        copyFallbackReturn = null;
+    };
+
+    const showCopyFallback = (markdown, draft, control) => {
+        copyFallbackReturn = { key: draft.key, control };
+        copyFallbackValueEl.value = markdown;
+        copyFallbackEl.hidden = false;
+        copyFallbackValueEl.focus();
+        copyFallbackValueEl.select();
+        flash('Markdown selected for manual copy');
+    };
+
+    copyFallbackDismissEl.addEventListener('click', () => dismissCopyFallback());
+    copyFallbackEl.addEventListener('keydown', event => {
+        if (event.key !== 'Escape') return;
+        event.preventDefault();
+        event.stopPropagation();
+        dismissCopyFallback();
+    });
+
     const copyDraft = async (draft, control) => {
+        let markdown;
+        try {
+            markdown = markdownFor(draft.record);
+        } catch {
+            flash('Couldn’t prepare Markdown for copying', { error: true });
+            return;
+        }
         try {
             const clipboard = globalThis.navigator?.clipboard;
             if (!clipboard || typeof clipboard.writeText !== 'function') throw new Error('Clipboard unavailable');
-            await clipboard.writeText(markdownFor(draft.record));
+            await clipboard.writeText(markdown);
+            if (!copyFallbackEl.hidden) dismissCopyFallback({ restoreFocus: false });
             control.textContent = 'Copied';
             flash('Copied');
             globalThis.setTimeout(() => {
                 if (control.isConnected) control.textContent = 'Copy Markdown';
             }, 1400);
-        } catch (error) {
-            flash('Couldn’t copy Markdown', { error: true });
+        } catch {
+            showCopyFallback(markdown, draft, control);
         }
     };
 

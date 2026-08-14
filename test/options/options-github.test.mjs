@@ -372,13 +372,66 @@ test('copy Markdown preserves exact source or converts the stored bracket report
     assert.deepEqual(writes, ['exact  **source**', '<u>under</u>']);
     await waitFor(dom, () => el(dom, 'status').textContent === 'Copied');
     assert.equal(el(dom, 'status').textContent, 'Copied');
+});
+
+test('copy Markdown exposes and selects the complete source for every clipboard failure', async () => {
+    const now = Date.now();
+    const richKey = 'bpbReportDraft:900001:a201';
+    const markdownKey = 'bpbReportDraft:900001:a202';
+    const emptyKey = 'bpbReportDraft:900001:a203';
+    const longMarkdown = `Snowman ☃️\n\n${'ridge αβγ '.repeat(80)}`;
+    const dom = await loadDraftsPage({}, { local: {
+        [richKey]: { text: 'Rich [b]recovery[/b]', mode: 'rich', savedAt: now },
+        [markdownKey]: {
+            text: 'normalized', mode: 'markdown', source: longMarkdown, savedAt: now - 1,
+        },
+        [emptyKey]: { text: '', mode: 'markdown', source: '', savedAt: now - 2 },
+    } });
+    const fallback = el(dom, 'drafts-copy-fallback');
+    const value = el(dom, 'drafts-copy-fallback-value');
+    const dismiss = el(dom, 'drafts-copy-fallback-dismiss');
+    const copy = key => draftRow(dom, key).querySelector('[data-action="copy"]');
+
+    const cases = [
+        [richKey, 'Rich **recovery**', { writeText: () => { throw new Error('blocked'); } }],
+        [markdownKey, longMarkdown, { writeText: async () => { throw new Error('denied'); } }],
+        [emptyKey, '', undefined],
+    ];
+    for (const [key, expected, clipboard] of cases) {
+        Object.defineProperty(dom.window.navigator, 'clipboard', {
+            configurable: true,
+            value: clipboard,
+        });
+        const control = copy(key);
+        control.click();
+        await waitFor(dom, () => !fallback.hidden && value.value === expected);
+        assert.equal(value.value, expected);
+        assert.equal(value.getAttribute('aria-label'), 'Markdown to copy manually');
+        assert.equal(dom.window.document.activeElement, value);
+        assert.equal(value.selectionStart, 0);
+        assert.equal(value.selectionEnd, expected.length);
+        dismiss.click();
+        assert.equal(fallback.hidden, true);
+        assert.equal(dom.window.document.activeElement, control);
+    }
 
     Object.defineProperty(dom.window.navigator, 'clipboard', {
         configurable: true,
         value: { writeText: async () => { throw new Error('denied'); } }
     });
-    draftRow(dom, richKey).querySelector('[data-action="copy"]').click();
-    await waitFor(dom, () => el(dom, 'status-error-text').textContent === 'Couldn’t copy Markdown');
+    const escapeControl = copy(markdownKey);
+    escapeControl.click();
+    await waitFor(dom, () => dom.window.document.activeElement === value);
+    value.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    assert.equal(fallback.hidden, true);
+    assert.equal(dom.window.document.activeElement, escapeControl);
+
+    const richControl = copy(richKey);
+    richControl.click();
+    await waitFor(dom, () => value.value === 'Rich **recovery**');
+    copy(markdownKey).click();
+    await waitFor(dom, () => value.value === longMarkdown);
+    assert.equal(value.selectionEnd, longMarkdown.length, 'repeat use replaces and selects the exact source');
 });
 
 test('deleting one draft is reversible and its Undo survives a live refresh', async () => {

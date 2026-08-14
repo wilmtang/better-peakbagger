@@ -31,6 +31,16 @@
                 <p class="drafts-intro">Rich and Markdown trip report drafts autosave on this device and become eligible for cleanup after two weeks.</p>
                 <p class="drafts-empty" id="drafts-empty">No trip report drafts on this device.</p>
                 <ul class="drafts-list" id="drafts-list" hidden></ul>
+                <section class="draft-copy-fallback" id="drafts-copy-fallback"
+                    role="region" aria-labelledby="drafts-copy-fallback-title" hidden>
+                    <h2 id="drafts-copy-fallback-title">Copy Markdown manually</h2>
+                    <p>The complete Markdown is selected. Use your system copy shortcut, then choose Done.</p>
+                    <textarea id="drafts-copy-fallback-value" rows="8" readonly spellcheck="false"
+                        aria-label="Markdown to copy manually"></textarea>
+                    <div class="draft-copy-fallback-actions">
+                        <button id="drafts-copy-fallback-dismiss" class="secondary" type="button">Done</button>
+                    </div>
+                </section>
                 <div class="drafts-undo-all" id="drafts-undo-all" role="status" hidden>
                     <span>All drafts deleted</span>
                     <button class="draft-undo" id="drafts-undo-all-button" type="button">Undo</button>

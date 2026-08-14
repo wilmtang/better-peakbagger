@@ -2824,13 +2824,70 @@ try {
                     };
                 }).catch(error => ({ error: String(error) }))
                 : null;
+            let draftsCopyState = null;
+            if (draftsManagerPage && draftsManagerState?.rows === 1) {
+                await draftsManagerPage.evaluate(() => {
+                    Object.defineProperty(navigator, 'clipboard', {
+                        configurable: true,
+                        value: { writeText: () => { throw new Error('verification clipboard refusal'); } },
+                    });
+                });
+                const copyControl = draftsManagerPage.locator('[data-action="copy"]').first();
+                await copyControl.click();
+                await draftsManagerPage.locator('#drafts-copy-fallback').waitFor({ state: 'visible' });
+                draftsCopyState = await draftsManagerPage.evaluate(() => {
+                    const value = document.getElementById('drafts-copy-fallback-value');
+                    return {
+                        value: value?.value,
+                        focused: document.activeElement === value,
+                        selectionStart: value?.selectionStart,
+                        selectionEnd: value?.selectionEnd,
+                        label: value?.getAttribute('aria-label'),
+                        horizontalOverflow: document.documentElement.scrollWidth
+                            > document.documentElement.clientWidth,
+                    };
+                });
+                if (process.env.BPB_VERIFY_DRAFT_COPY_SCREENSHOT) {
+                    await draftsManagerPage.screenshot({
+                        path: process.env.BPB_VERIFY_DRAFT_COPY_SCREENSHOT,
+                        fullPage: true,
+                    });
+                }
+                const previousViewport = draftsManagerPage.viewportSize();
+                await draftsManagerPage.setViewportSize({ width: 420, height: 720 });
+                const narrowOverflow = await draftsManagerPage.evaluate(() =>
+                    document.documentElement.scrollWidth > document.documentElement.clientWidth);
+                if (process.env.BPB_VERIFY_DRAFT_COPY_NARROW_SCREENSHOT) {
+                    await draftsManagerPage.screenshot({
+                        path: process.env.BPB_VERIFY_DRAFT_COPY_NARROW_SCREENSHOT,
+                        fullPage: true,
+                    });
+                }
+                await draftsManagerPage.keyboard.press('Escape');
+                const dismissed = await draftsManagerPage.evaluate(() => ({
+                    hidden: document.getElementById('drafts-copy-fallback')?.hidden,
+                    focusReturned: document.activeElement?.dataset?.action === 'copy',
+                }));
+                draftsCopyState.narrowOverflow = narrowOverflow;
+                draftsCopyState.dismissed = dismissed;
+                if (previousViewport) await draftsManagerPage.setViewportSize(previousViewport);
+            }
             check(draftsManagerUrl === `chrome-extension://${extensionId}/options/drafts.html`
                 && draftsManagerState?.heading === 'Trip report drafts'
                 && draftsManagerState.rows === 1
                 && /Verification Peak/.test(draftsManagerState.title || '')
-                && draftsManagerState.sidebar === false,
+                && draftsManagerState.sidebar === false
+                && draftsCopyState?.value === 'Standalone drafts page verification'
+                && draftsCopyState.focused
+                && draftsCopyState.selectionStart === 0
+                && draftsCopyState.selectionEnd === draftsCopyState.value.length
+                && draftsCopyState.label === 'Markdown to copy manually'
+                && draftsCopyState.horizontalOverflow === false
+                && draftsCopyState.narrowOverflow === false
+                && draftsCopyState.dismissed?.hidden
+                && draftsCopyState.dismissed?.focusReturned,
             `the report editor did not open a working standalone drafts manager: ${JSON.stringify({
-                draftsManagerUrl, draftsManagerState
+                draftsManagerUrl, draftsManagerState, draftsCopyState
             })}`);
             if (draftsManagerPage) await draftsManagerPage.close();
             if (process.env.BPB_VERIFY_DRAFT_MANAGER_SCREENSHOT) {

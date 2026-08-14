@@ -687,7 +687,10 @@ minimally valid records, newest first:
 - the excerpt uses exact Markdown `source` when qualified, otherwise converts
   bracket `text` to Markdown, collapses whitespace, and caps display at 160
   characters;
-- **Copy Markdown** uses the same exact-source-or-convert rule;
+- **Copy Markdown** uses the same exact-source-or-convert rule; when clipboard
+  access is missing or refused, the manager reveals that complete result in a
+  labelled readonly textarea, focuses and selects it, and returns focus to the
+  triggering control after Done or Escape;
 - **Open** reconstructs the form URL, but the destination editor's normal
   compare-and-offer gate still owns Restore.
 
